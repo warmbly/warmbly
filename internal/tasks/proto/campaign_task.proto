@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+package tasks;
+
+option go_package = "warmbly/internal/tasks/proto;proto";
+
+message CampaignTask {
+  // UUID of the campaign
+  string campaign_id = 1;
+  // UUID of the task
+  string task_id = 2;
+}

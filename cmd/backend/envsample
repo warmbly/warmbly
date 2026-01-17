@@ -1,0 +1,44 @@
+# DATABASES / SERVICES
+PRIMARY_DB="postgresql://username:password@localhost:5433/database"
+REDIS="redis://arbitrary_usrname:password@ipaddress:6379/0"
+KAFKA="amqp://username:password@ip:port/vhost"
+GEO_DB_PATH="./database.mmdb"
+
+# NoSQL Cassandra Database (Datastax Astra)
+ASTRA_DB_ID=""
+ASTRA_DB_REGION=""
+ASTRA_KEYSPACE_NAME=""
+ASTRA_APPLICATION_TOKEN=""
+
+# Authentication
+GOOGLE_CLIENT_ID=""
+GOOGLE_CLIENT_SECRET=""
+GOOGLE_REDIRECT_URI=""
+
+APPLE_APP_ID=""
+APPLE_TEAM_ID=""
+APPLE_KEY_ID=""
+APPLE_KEY_SECRET=""
+
+# Config
+NOTIFY_NAME="Warmbly Notifications"
+NOTIFY_ADDRESS="noreply@warmbly.com"
+TRACKING_DOMAIN="track.example.com"
+WEBSOCKET_URL="ws://localhost:4000"
+
+# Api 
+PORT=8080
+GIN_MODE=release
+OPEN_API=true
+
+# Logs
+SENTRY_DSN=""
+
+# SECRETS
+AUTH_SECRET="example123"
+TURNSTILE_SECRET=""
+
+# Amazon AWS
+AWS_ACCESS_KEY_ID=AKIAxxxxxxxxxxxx
+AWS_SECRET_ACCESS_KEY=xxxxxxxxxxxxxxxxxxxxxxxxx
+AWS_DEFAULT_REGION=eu-north-1

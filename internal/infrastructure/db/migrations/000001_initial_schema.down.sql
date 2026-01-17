@@ -1,0 +1,6 @@
+DROP EXTENSION IF EXISTS pgcrypto;
+
+DROP TABLE IF EXISTS users;
+DROP TABLE IF EXISTS email_verification;
+DROP TABLE IF EXISTS password_reset;
+DROP TABLE IF EXISTS tokens;
