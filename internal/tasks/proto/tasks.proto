@@ -10,3 +10,10 @@ message CampaignTask {
   // UUID of the task
   string task_id = 2;
 }
+
+message EmailTask {
+  // UUID of the email account
+  string email_id = 1;
+  // UUID of the task
+  string task_id = 2;
+}

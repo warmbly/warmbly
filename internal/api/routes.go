@@ -10,7 +10,12 @@ import (
 	"github.com/warmbly/warmbly/internal/api/middleware"
 )
 
-func Run(h *handler.Handler, m *middleware.Handler, addr, ginMode string) {
+func Run(
+	h *handler.Handler,
+	m *middleware.Handler,
+	oidcm *middleware.OidcHandler,
+	addr, ginMode string,
+) {
 	gin.SetMode(ginMode)
 
 	r := gin.Default()
@@ -94,6 +99,13 @@ func Run(h *handler.Handler, m *middleware.Handler, addr, ginMode string) {
 		}
 
 		protected.POST("/getaway", h.GenerateWebsocket)
+	}
+
+	webhook := r.Group("/webhook")
+	protected.Use(oidcm.Middleware())
+	{
+		webhook.POST("/campaign", h.HandleCampaignTasks)
+		webhook.POST("/email", h.HandleEmailTask)
 	}
 
 	r.Run(addr)

@@ -13,6 +13,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/tz"
 	"github.com/warmbly/warmbly/internal/app/unibox"
 	"github.com/warmbly/warmbly/internal/app/user"
+	"github.com/warmbly/warmbly/internal/tasks"
 )
 
 type Handler struct {
@@ -32,4 +33,5 @@ type Handler struct {
 
 	TzService     tz.TzService
 	SocketService socket.SocketService
+	TasksService  tasks.TasksService
 }

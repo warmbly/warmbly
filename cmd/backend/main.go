@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 
+	"github.com/MicahParks/keyfunc/v3"
 	awsconf "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/getsentry/sentry-go"
 	"github.com/joho/godotenv"
@@ -47,6 +48,9 @@ func main() {
 	var ginMode string
 
 	var tzService tz.TzService
+
+	var serviceAccount string
+	var keySet keyfunc.Keyfunc
 
 	var tokenService token.TokenService
 	var authService auth.AuthService
@@ -97,6 +101,18 @@ func main() {
 			if err != nil {
 				log.Fatal(err)
 			}
+		}
+
+		serviceAccount, err = cfg.LoadGoogleServiceAccount(context.Background())
+		if err != nil {
+			sentry.CaptureException(err)
+			log.Fatal(err)
+		}
+
+		keySet, err = keyfunc.NewDefaultCtx(context.Background(), []string{"https://www.googleapis.com/oauth2/v3/certs"})
+		if err != nil {
+			sentry.CaptureException(err)
+			log.Fatal(err)
 		}
 
 		apiCfg, err := cfg.LoadApiConfig(context.Background())
@@ -309,7 +325,12 @@ func main() {
 		TokenService: tokenService,
 	}
 
+	oidcH := &middleware.OidcHandler{
+		ServiceAccount: serviceAccount,
+		KeySet:         keySet,
+	}
+
 	sentry.CaptureMessage("Starting the backend on " + addr)
 
-	api.Run(h, m, addr, ginMode)
+	api.Run(h, m, oidcH, addr, ginMode)
 }
