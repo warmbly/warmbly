@@ -1,10 +1,63 @@
-CREATE TYPE task_type AS ENUM('campaign', 'warmup');
-CREATE TYPE task_status AS ENUM('loaded', 'processing', 'completed')
+CREATE TYPE task_type AS ENUM('campaign', 'warmup', 'email');
+CREATE TYPE task_status AS ENUM('pending', 'active', 'completed', 'failed')
 
 CREATE TABLE tasks (
-    id UUID PRIMARY KEY NOT NULL,
-    task_type task_type,
-    email_account_id UUID REFERENCES email_accounts(id) ON DELETE CASCADE,
-    campaign_id UUID REFERENCES campaigns(id) ON DELETE CASCADE,
-    lead_id UUID REFERENCES campaign_leads()
-)
+    id UUID NOT NULL DEFAULT gen_random_uuid(),
+    task_type task_type NOT NULL,
+    email_account_id UUID NOT NULL,
+    status task_status NOT NULL DEFAULT 'pending',
+
+    message_id TEXT NOT NULL,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    PRIMARY KEY (id),
+    FOREIGN KEY (email_account_id) REFERENCES email_accounts(id)
+);
+
+CREATE TABLE campaign_tasks (
+    task_id UUID NOT NULL,
+    campaign_id UUID,
+    contact_id UUID,
+    sequence_id UUID,
+
+    PRIMARY KEY (task_id),
+    FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+    FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE SET NULL,
+    FOREIGN KEY (contact_id) REFERENCES contacts(id) ON DELETE SET NULL,
+    FOREIGN KEY (sequence_id) REFERENCES sequences(id) ON DELETE SET NULL
+);
+
+CREATE TABLE warmup_tasks (
+    task_id UUID NOT NULL,
+    target_account_id UUID,
+
+    PRIMARY KEY (task_id),
+    FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+    FOREIGN KEY (target_account_id) REFERENCES email_accounts(id) ON DELETE SET NULL
+);
+
+CREATE TABLE email_tasks (
+    task_id UUID NOT NULL,
+
+    to TEXT[],
+    cc TEXT[],
+    bcc TEXT[],
+    in_reply_to TEXT[],
+    subject TEXT NOT NULL,
+
+    PRIMARY KEY (task_id),
+    FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+    FOREIGN KEY (target_account_id) REFERENCES email_accounts(id) ON DELETE SET NULL
+);
+
+CREATE TABLE task_failures (
+    task_id UUID NOT NULL,
+
+    title TEXT NOT NULL,
+    message TEXT NOT NULL,
+
+    PRIMARY KEY (task_id),
+    FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+);

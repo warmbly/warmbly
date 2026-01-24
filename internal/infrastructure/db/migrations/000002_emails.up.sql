@@ -188,7 +188,7 @@ CREATE TABLE contacts (
 );
 
 CREATE TABLE campaign_leads (
-    contact_id UUID NOT NULL ,
+    contact_id UUID NOT NULL,
     campaign_id UUID NOT NULL REFERENCES campaigns (id) ON DELETE CASCADE,
     PRIMARY KEY (campaign_id, contact_id)
     FOREIGN KEY (contact_id) REFERENCES contacts (id) ON DELETE CASCADE,
