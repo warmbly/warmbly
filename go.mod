@@ -4,6 +4,8 @@ go 1.25.0
 
 require (
 	cloud.google.com/go/cloudtasks v1.13.7
+	cloud.google.com/go/pubsub v1.50.1
+	github.com/MicahParks/keyfunc/v3 v3.7.0
 	github.com/aws/aws-sdk-go-v2 v1.41.0
 	github.com/aws/aws-sdk-go-v2/config v1.30.2
 	github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue v1.20.29
@@ -23,16 +25,19 @@ require (
 	github.com/gocql/gocql v1.7.0
 	github.com/golang-jwt/jwt/v5 v5.2.2
 	github.com/google/uuid v1.6.0
+	github.com/invopop/jsonschema v0.13.0
 	github.com/jackc/pgx/v5 v5.7.5
 	github.com/joho/godotenv v1.5.1
 	github.com/meszmate/apple-go v0.0.0-20250828163208-7fea48c91b32
 	github.com/meszmate/google-go v0.0.0-20251207085436-d08bef99cd5d
 	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/mileusna/useragent v1.3.5
+	github.com/openai/openai-go/v2 v2.7.1
 	github.com/oschwald/geoip2-golang/v2 v2.0.0
 	github.com/redis/go-redis/v9 v9.11.0
 	github.com/rs/zerolog v1.34.0
-	go.uber.org/zap v1.27.1
+	github.com/stripe/stripe-go/v76 v76.25.0
+	go.uber.org/zap v1.27.0
 	golang.org/x/crypto v0.47.0
 	golang.org/x/oauth2 v0.34.0
 	google.golang.org/api v0.260.0
@@ -45,10 +50,8 @@ require (
 	cloud.google.com/go/auth/oauth2adapt v0.2.8 // indirect
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
 	cloud.google.com/go/iam v1.5.3 // indirect
-	cloud.google.com/go/pubsub v1.50.1 // indirect
 	cloud.google.com/go/pubsub/v2 v2.0.0 // indirect
 	github.com/MicahParks/jwkset v0.11.0 // indirect
-	github.com/MicahParks/keyfunc/v3 v3.7.0 // indirect
 	github.com/apapsch/go-jsonmerge/v2 v2.0.0 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.4 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.18.2 // indirect
@@ -97,7 +100,6 @@ require (
 	github.com/gorilla/css v1.0.1 // indirect
 	github.com/hailocab/go-hostpool v0.0.0-20160125115350-e80d13ce29ed // indirect
 	github.com/hamba/avro/v2 v2.24.0 // indirect
-	github.com/invopop/jsonschema v0.13.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
@@ -110,7 +112,6 @@ require (
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
-	github.com/openai/openai-go/v2 v2.7.1 // indirect
 	github.com/oschwald/maxminddb-golang/v2 v2.0.0 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/tideland/golib v4.24.2+incompatible // indirect

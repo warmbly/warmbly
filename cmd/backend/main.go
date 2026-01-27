@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"time"
 
 	"github.com/MicahParks/keyfunc/v3"
 	awsconf "github.com/aws/aws-sdk-go-v2/config"
@@ -18,14 +19,19 @@ import (
 	"github.com/warmbly/warmbly/internal/app/cipher"
 	"github.com/warmbly/warmbly/internal/app/contact"
 	"github.com/warmbly/warmbly/internal/app/email"
+	"github.com/warmbly/warmbly/internal/app/feature"
 	"github.com/warmbly/warmbly/internal/app/group"
 	"github.com/warmbly/warmbly/internal/app/role"
 	"github.com/warmbly/warmbly/internal/app/sequence"
 	"github.com/warmbly/warmbly/internal/app/socket"
+	"github.com/warmbly/warmbly/internal/app/stripe"
+	"github.com/warmbly/warmbly/internal/app/subscription"
 	"github.com/warmbly/warmbly/internal/app/token"
+	"github.com/warmbly/warmbly/internal/app/trial"
 	"github.com/warmbly/warmbly/internal/app/tz"
 	"github.com/warmbly/warmbly/internal/app/unibox"
 	"github.com/warmbly/warmbly/internal/app/user"
+	"github.com/warmbly/warmbly/internal/app/worker"
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/infrastructure/cache"
 	"github.com/warmbly/warmbly/internal/infrastructure/cdb"
@@ -36,6 +42,7 @@ import (
 	"github.com/warmbly/warmbly/internal/infrastructure/secrets"
 	"github.com/warmbly/warmbly/internal/infrastructure/ssm"
 	"github.com/warmbly/warmbly/internal/infrastructure/storage"
+	"github.com/warmbly/warmbly/internal/jobs"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/notify"
 	"github.com/warmbly/warmbly/internal/pkg/captcha"
@@ -67,6 +74,13 @@ func main() {
 	var folderService group.GroupService
 	var tagService group.GroupService
 	var categoryService group.GroupService
+
+	// New services for trial, feature gates, and worker assignment
+	var trialService trial.TrialService
+	var featureGateService feature.FeatureGateService
+	var workerAssignmentService worker.WorkerAssignmentService
+	var subscriptionService subscription.SubscriptionService
+	var stripeService stripe.StripeService
 
 	{
 		godotenv.Overload("cmd/backend/.env")
@@ -270,7 +284,26 @@ func main() {
 		tagRepostory := repository.NewGroupRepostory(primaryDB, models.Tags)
 		categoryRepostory := repository.NewGroupRepostory(primaryDB, models.Categories)
 
+		// New repositories for subscription & worker management
+		subscriptionRepository := repository.NewSubscriptionRepository(primaryDB.Pool)
+		planRepository := repository.NewPlanRepository(primaryDB.Pool)
+		workerRepository := repository.NewWorkerRepository(primaryDB.Pool)
+
 		tzService = tz.NewService()
+
+		// Initialize new services for trial, feature gates, and worker assignment
+		trialService = trial.NewService(subscriptionRepository)
+		featureGateService = feature.NewService(subscriptionRepository, planRepository)
+		workerAssignmentService = worker.NewAssignmentService(workerRepository, subscriptionRepository, planRepository)
+		subscriptionService = subscription.NewService(subscriptionRepository, planRepository)
+
+		// Load Stripe config and initialize service
+		stripeCfg, err := cfg.LoadStripeConfig(context.Background())
+		if err != nil {
+			sentry.CaptureException(err)
+			log.Fatal(err)
+		}
+		stripeService = stripe.NewService(stripeCfg, subscriptionRepository, planRepository, workerAssignmentService)
 
 		tokenService = token.NewService(primaryDB, tokenRepostory, cache, geoloc, authCfg.AuthSecret)
 		authService = auth.NewService(
@@ -283,6 +316,7 @@ func main() {
 				GoogleAuth: googleAuth,
 				AppleAuth:  appleAuth,
 			},
+			trialService,
 		)
 		userService = user.NewService(userRepostory, cache)
 		cipherService = cipher.NewService(kms, cache, userEncryptedKeysRepository)
@@ -297,6 +331,11 @@ func main() {
 		folderService = group.NewService(folderRepostory)
 		tagService = group.NewService(tagRepostory)
 		categoryService = group.NewService(categoryRepostory)
+
+		// Start trial expiration job in background
+		trialExpirationJob := jobs.NewTrialExpirationJobWithDB(subscriptionRepository, primaryDB.Pool, emailNotificationService)
+		trialScheduler := jobs.NewTrialExpirationScheduler(trialExpirationJob, 1*time.Hour)
+		go trialScheduler.Start(context.Background())
 
 		addr = apiCfg.Hostname
 		ginMode = apiCfg.GinMode
@@ -319,6 +358,15 @@ func main() {
 
 		TzService:     tzService,
 		SocketService: socketService,
+
+		// Subscription & billing
+		SubscriptionService: subscriptionService,
+		StripeService:       stripeService,
+
+		// Trial & feature gates
+		TrialService:            trialService,
+		FeatureGateService:      featureGateService,
+		WorkerAssignmentService: workerAssignmentService,
 	}
 
 	m := &middleware.Handler{

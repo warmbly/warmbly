@@ -8,15 +8,21 @@ import (
 	"github.com/warmbly/warmbly/internal/app/campaign"
 	"github.com/warmbly/warmbly/internal/app/contact"
 	"github.com/warmbly/warmbly/internal/app/email"
+	"github.com/warmbly/warmbly/internal/app/feature"
 	"github.com/warmbly/warmbly/internal/app/group"
+	"github.com/warmbly/warmbly/internal/app/organization"
 	"github.com/warmbly/warmbly/internal/app/ratelimit"
 	"github.com/warmbly/warmbly/internal/app/role"
 	"github.com/warmbly/warmbly/internal/app/sequence"
 	"github.com/warmbly/warmbly/internal/app/socket"
+	"github.com/warmbly/warmbly/internal/app/stripe"
+	"github.com/warmbly/warmbly/internal/app/subscription"
 	"github.com/warmbly/warmbly/internal/app/token"
+	"github.com/warmbly/warmbly/internal/app/trial"
 	"github.com/warmbly/warmbly/internal/app/tz"
 	"github.com/warmbly/warmbly/internal/app/unibox"
 	"github.com/warmbly/warmbly/internal/app/user"
+	"github.com/warmbly/warmbly/internal/app/worker"
 	"github.com/warmbly/warmbly/internal/tasks"
 )
 
@@ -44,4 +50,16 @@ type Handler struct {
 	AnalyticsService analytics.AnalyticsService
 	AuditService     audit.AuditService
 	RateLimitService ratelimit.RateLimitService
+
+	// Subscription & billing
+	SubscriptionService subscription.SubscriptionService
+	StripeService       stripe.StripeService
+
+	// Trial & feature gates
+	TrialService            trial.TrialService
+	FeatureGateService      feature.FeatureGateService
+	WorkerAssignmentService worker.WorkerAssignmentService
+
+	// Organization & IAM
+	OrganizationService organization.OrganizationService
 }

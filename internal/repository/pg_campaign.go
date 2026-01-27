@@ -23,6 +23,8 @@ type CampaignRepository interface {
 	GetSequenceByID(ctx context.Context, sequenceID uuid.UUID) (*models.Sequence, error)
 	Search(ctx context.Context, userID, query string, cursor, folder *string, limit int32) (*models.CampaignsResult, error)
 	Update(ctx context.Context, userID, query string, data *models.UpdateCampaign) (*models.Campaign, *errx.Error)
+	UpdateStatus(ctx context.Context, campaignID uuid.UUID, status string) error
+	PauseAllByUserID(ctx context.Context, userID uuid.UUID, reason string) error
 	Delete(ctx context.Context, userID, id string) error
 }
 
@@ -309,6 +311,20 @@ func (r *campaignRepository) Update(ctx context.Context, userID, campaignID stri
 		args = append(args, *data.Description)
 		argPos++
 	}
+	if data.Status != nil {
+		// Valid statuses: draft, active, paused, completed, paused_trial_expired
+		status := *data.Status
+		validStatuses := map[string]bool{
+			"draft": true, "active": true, "paused": true,
+			"completed": true, "paused_trial_expired": true,
+		}
+		if !validStatuses[status] {
+			return nil, errx.ErrInvalid
+		}
+		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", "status", argPos))
+		args = append(args, status)
+		argPos++
+	}
 	if data.StopOnReply != nil {
 		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", "stop_on_reply", argPos))
 		args = append(args, *data.StopOnReply)
@@ -537,4 +553,18 @@ func (r *campaignRepository) GetSequenceByID(ctx context.Context, sequenceID uui
 	}
 
 	return &seq, nil
+}
+
+// UpdateStatus updates only the status of a campaign
+func (r *campaignRepository) UpdateStatus(ctx context.Context, campaignID uuid.UUID, status string) error {
+	query := `UPDATE campaigns SET status = $1, updated_at = NOW() WHERE id = $2`
+	_, err := r.DB.Exec(ctx, query, status, campaignID)
+	return err
+}
+
+// PauseAllByUserID pauses all active campaigns for a user
+func (r *campaignRepository) PauseAllByUserID(ctx context.Context, userID uuid.UUID, reason string) error {
+	query := `UPDATE campaigns SET status = $1, updated_at = NOW() WHERE user_id = $2 AND status = 'active'`
+	_, err := r.DB.Exec(ctx, query, reason, userID)
+	return err
 }

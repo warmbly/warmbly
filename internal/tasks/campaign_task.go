@@ -63,6 +63,35 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 		return nil // Don't create next task
 	}
 
+	// STEP 5.5: Check if user can send campaign emails (trial expired, etc.)
+	userID, parseErr := uuid.Parse(campaign.UserID)
+	if parseErr != nil {
+		sentry.CaptureException(parseErr)
+		return errx.InternalError()
+	}
+
+	if s.featureGate != nil {
+		canSend, _ := s.featureGate.CanSendCampaignEmail(ctx, userID)
+		if !canSend {
+			// User cannot send - pause campaign
+			s.campaignRepo.UpdateStatus(ctx, campaign.ID, "paused_trial_expired")
+			s.taskRepo.UpdateTaskStatus(ctx, taskID, "skipped_trial_expired")
+			return nil
+		}
+
+		// Check daily limit
+		limit, _ := s.featureGate.GetDailyEmailLimit(ctx, userID)
+		if limit >= 0 {
+			// TODO: Check sentToday from stats repository
+			// For now, we'll just track that there's a limit
+			// sentToday, _ := s.statsRepo.GetSentToday(ctx, userID)
+			// if sentToday >= limit {
+			//     s.taskRepo.UpdateTaskStatus(ctx, taskID, "skipped_daily_limit")
+			//     return nil
+			// }
+		}
+	}
+
 	// STEP 6: Calculate next email to send
 	nextTime, nextPair, accountID, err := s.scheduler.CalculateNextCampaignTime(ctx, *campaignTask.CampaignID)
 	if err != nil {

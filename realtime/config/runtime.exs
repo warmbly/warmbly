@@ -14,6 +14,10 @@ if config_env() == :prod do
     System.get_env("GCP_PROJECT_ID") ||
       raise "GCP_PROJECT_ID environment variable is required"
 
+  database_url =
+    System.get_env("DATABASE_URL") ||
+      raise "DATABASE_URL environment variable is required"
+
   port = String.to_integer(System.get_env("PORT") || "4000")
   host = System.get_env("PHX_HOST") || "localhost"
 
@@ -32,7 +36,17 @@ if config_env() == :prod do
       "email-inbox-sub",
       "bulk-operations-sub",
       "contacts-sync-sub"
-    ]
+    ],
+    # Redis configuration
+    redis_url: System.get_env("REDIS_URL") || "redis://localhost:6379/0",
+    # Connection limits
+    max_connections_per_user: String.to_integer(System.get_env("MAX_CONNECTIONS_PER_USER") || "10"),
+    max_connections_per_ip: String.to_integer(System.get_env("MAX_CONNECTIONS_PER_IP") || "50"),
+    max_connections_global: String.to_integer(System.get_env("MAX_CONNECTIONS_GLOBAL") || "100000"),
+    # Rate limits (per minute)
+    rate_limit_ws_message: String.to_integer(System.get_env("RATE_LIMIT_WS_MESSAGE") || "120"),
+    rate_limit_ws_join: String.to_integer(System.get_env("RATE_LIMIT_WS_JOIN") || "30"),
+    rate_limit_ws_event: String.to_integer(System.get_env("RATE_LIMIT_WS_EVENT") || "60")
 
   config :realtime, RealtimeWeb.Endpoint,
     url: [host: host, port: 443, scheme: "https"],
@@ -42,6 +56,11 @@ if config_env() == :prod do
     ],
     secret_key_base: secret_key_base,
     check_origin: System.get_env("CHECK_ORIGIN", "false") == "true"
+
+  # Ecto Repo configuration (for API key validation)
+  config :realtime, Realtime.Repo,
+    url: database_url,
+    pool_size: String.to_integer(System.get_env("DATABASE_POOL_SIZE") || "10")
 
   # Sentry configuration
   if sentry_dsn = System.get_env("SENTRY_DSN") do

@@ -28,6 +28,12 @@ type UserRateLimits struct {
 	LimitAPICallsDaily int `json:"limit_api_calls_daily"`
 	LimitBulkOpsDaily  int `json:"limit_bulk_ops_daily"`
 
+	// Realtime/WebSocket limits
+	LimitWSMessagePM int `json:"limit_ws_message_pm"`
+	LimitWSJoinPM    int `json:"limit_ws_join_pm"`
+	LimitWSEventPM   int `json:"limit_ws_event_pm"`
+	MaxConnections   int `json:"max_connections"`
+
 	BurstMultiplier float64 `json:"burst_multiplier"`
 
 	Notes     *string    `json:"notes,omitempty"`
@@ -48,6 +54,12 @@ type PlanRateLimits struct {
 
 	LimitAPICallsDaily int `json:"limit_api_calls_daily"`
 	LimitBulkOpsDaily  int `json:"limit_bulk_ops_daily"`
+
+	// Realtime/WebSocket limits
+	LimitWSMessagePM int `json:"limit_ws_message_pm"`
+	LimitWSJoinPM    int `json:"limit_ws_join_pm"`
+	LimitWSEventPM   int `json:"limit_ws_event_pm"`
+	MaxConnections   int `json:"max_connections"`
 
 	BurstMultiplier float64 `json:"burst_multiplier"`
 
@@ -87,7 +99,31 @@ func DefaultRateLimits() *UserRateLimits {
 		LimitAnalyticsPM:   60,
 		LimitAPICallsDaily: 50000,
 		LimitBulkOpsDaily:  100,
+		LimitWSMessagePM:   120,
+		LimitWSJoinPM:      30,
+		LimitWSEventPM:     60,
+		MaxConnections:     10,
 		BurstMultiplier:    1.5,
+	}
+}
+
+// ToRealtimeLimits extracts WebSocket-specific limits
+func (r *UserRateLimits) ToRealtimeLimits() *RealtimeRateLimits {
+	return &RealtimeRateLimits{
+		LimitWSMessagePM: r.LimitWSMessagePM,
+		LimitWSJoinPM:    r.LimitWSJoinPM,
+		LimitWSEventPM:   r.LimitWSEventPM,
+		MaxConnections:   r.MaxConnections,
+	}
+}
+
+// ToRealtimeLimits extracts WebSocket-specific limits from plan
+func (r *PlanRateLimits) ToRealtimeLimits() *RealtimeRateLimits {
+	return &RealtimeRateLimits{
+		LimitWSMessagePM: r.LimitWSMessagePM,
+		LimitWSJoinPM:    r.LimitWSJoinPM,
+		LimitWSEventPM:   r.LimitWSEventPM,
+		MaxConnections:   r.MaxConnections,
 	}
 }
 

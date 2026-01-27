@@ -39,6 +39,22 @@ func (s *tasksService) HandleEmailTask(task *proto.ProcessTask) *errx.Error {
 		return xerr
 	}
 
+	// STEP 3.5: Check if user can use warmup (only paid users)
+	userID, err := uuid.Parse(account.UserID)
+	if err != nil {
+		sentry.CaptureException(err)
+		return errx.InternalError()
+	}
+
+	if s.featureGate != nil {
+		canWarmup, _ := s.featureGate.CanUseWarmup(ctx, userID)
+		if !canWarmup {
+			// User cannot use warmup - skip this task
+			s.taskRepo.UpdateTaskStatus(ctx, taskID, "skipped_no_warmup_access")
+			return nil
+		}
+	}
+
 	// STEP 4: Mark task as active
 	if err := s.taskRepo.UpdateTaskStatus(ctx, taskID, "active"); err != nil {
 		sentry.CaptureException(err)
@@ -155,8 +171,20 @@ func (s *tasksService) HandleEmailTask(task *proto.ProcessTask) *errx.Error {
 // selectWarmupPartner selects a warmup partner from the pool
 func (s *tasksService) selectWarmupPartner(ctx context.Context, account Email) (*Email, error) {
 	// Determine pool type based on user subscription
-	// TODO: Check user subscription
-	poolType := "free"
+	// Only paid users can reach here (free users blocked in HandleEmailTask)
+	// All paid users use premium pool
+	poolType := "premium"
+
+	// Check if user is paid to determine pool type
+	if s.featureGate != nil {
+		userID, err := uuid.Parse(account.UserID)
+		if err == nil {
+			isPaid, _ := s.featureGate.IsPaidUser(ctx, userID)
+			if !isPaid {
+				poolType = "free"
+			}
+		}
+	}
 
 	// Get all participants in the pool
 	participantIDs, err := s.warmupRepo.GetPoolParticipants(ctx, poolType, true)

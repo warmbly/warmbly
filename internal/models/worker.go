@@ -7,19 +7,40 @@ import (
 	"golang.org/x/oauth2"
 )
 
+// WorkerType represents the type of worker
+type WorkerType string
+
+const (
+	WorkerTypeShared    WorkerType = "shared"
+	WorkerTypeDedicated WorkerType = "dedicated"
+)
+
 type Worker struct {
-	ID       uuid.UUID `json:"id"`
-	IPAddr   string    `json:"ip_addr"`
-	Active   bool      `json:"active"`
-	FreeTier bool      `json:"free_tier"`
+	ID           uuid.UUID  `json:"id"`
+	IPAddr       string     `json:"ip_addr"`
+	Active       bool       `json:"active"`
+	FreeTier     bool       `json:"free_tier"`
+	WorkerType   WorkerType `json:"worker_type"`
+	AccountCount int        `json:"account_count"`
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type UpdateWorker struct {
-	IPAddr *string `json:"ip_addr"`
-	Active *bool   `json:"active"`
+	IPAddr     *string     `json:"ip_addr"`
+	Active     *bool       `json:"active"`
+	WorkerType *WorkerType `json:"worker_type,omitempty"`
+}
+
+// DedicatedWorkerAssignment represents a dedicated worker assignment to a user
+type DedicatedWorkerAssignment struct {
+	ID             uuid.UUID  `json:"id"`
+	WorkerID       uuid.UUID  `json:"worker_id"`
+	UserID         uuid.UUID  `json:"user_id"`
+	SubscriptionID uuid.UUID  `json:"subscription_id"`
+	AssignedAt     time.Time  `json:"assigned_at"`
+	ReleasedAt     *time.Time `json:"released_at,omitempty"`
 }
 
 type WorkerStatus string

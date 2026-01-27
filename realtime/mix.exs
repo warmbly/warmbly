@@ -31,6 +31,13 @@ defmodule Realtime.MixProject do
       {:broadway_cloud_pub_sub, "~> 0.9"},
       {:goth, "~> 1.4"},
 
+      # Database
+      {:ecto_sql, "~> 3.10"},
+      {:postgrex, "~> 0.17"},
+
+      # Redis
+      {:redix, "~> 1.3"},
+
       # Authentication
       {:jose, "~> 1.11"},
 

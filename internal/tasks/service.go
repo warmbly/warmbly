@@ -2,6 +2,7 @@ package tasks
 
 import (
 	"github.com/warmbly/warmbly/internal/app/cipher"
+	"github.com/warmbly/warmbly/internal/app/feature"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/infrastructure/gtasks"
 	"github.com/warmbly/warmbly/internal/infrastructure/kafka"
@@ -43,6 +44,7 @@ type tasksService struct {
 	scheduler     scheduler.SchedulerService
 	cipherService cipher.CipherService
 	emailSender   EmailSender
+	featureGate   feature.FeatureGateService
 
 	// Repositories
 	taskRepo             repository.TaskRepository
@@ -60,6 +62,7 @@ func NewService(
 	scheduler scheduler.SchedulerService,
 	cipherService cipher.CipherService,
 	emailSender EmailSender,
+	featureGate feature.FeatureGateService,
 	taskRepo repository.TaskRepository,
 	warmupRepo repository.WarmupRepository,
 	campaignProgressRepo repository.CampaignProgressRepository,
@@ -74,6 +77,7 @@ func NewService(
 		scheduler:            scheduler,
 		cipherService:        cipherService,
 		emailSender:          emailSender,
+		featureGate:          featureGate,
 		taskRepo:             taskRepo,
 		warmupRepo:           warmupRepo,
 		campaignProgressRepo: campaignProgressRepo,

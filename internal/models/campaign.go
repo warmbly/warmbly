@@ -7,8 +7,9 @@ import (
 )
 
 type Campaign struct {
-	ID     uuid.UUID `json:"id"`
-	UserID string    `json:"user_id"`
+	ID             uuid.UUID  `json:"id"`
+	UserID         string     `json:"user_id"`
+	OrganizationID *uuid.UUID `json:"organization_id,omitempty"`
 
 	Name        string `json:"name"`
 	Description string `json:"description"`
@@ -52,6 +53,7 @@ type CampaignsResult struct {
 type UpdateCampaign struct {
 	Name        *string `json:"name"`
 	Description *string `json:"description"`
+	Status      *string `json:"status,omitempty"`
 
 	StopOnReply       *bool `json:"stop_on_reply"`
 	OpenTracking      *bool `json:"open_tracking"`

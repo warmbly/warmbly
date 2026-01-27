@@ -138,6 +138,58 @@ func Run(
 		{
 			realtime.GET("/info", h.GetRealtimeInfo)
 		}
+
+		// Organization management
+		org := protected.Group("/organization")
+		{
+			org.POST("", h.CreateOrganization)
+			org.GET("", h.GetUserOrganizations)
+			org.POST("/switch/:id", h.SwitchOrganization)
+
+			// Current organization operations (require organization selected)
+			org.GET("/current", h.GetCurrentOrganization)
+			org.PATCH("/current", m.RequireOrganization(), m.RequirePermission(models.PermManageSettings), h.UpdateOrganization)
+			org.GET("/current/limits", m.RequireOrganization(), h.GetOrganizationLimits)
+
+			// Member management
+			org.GET("/members", m.RequireOrganization(), h.GetMembers)
+			org.POST("/members/invite", m.RequireOrganization(), m.RequirePermission(models.PermManageTeam), h.InviteMember)
+			org.PATCH("/members/:id", m.RequireOrganization(), m.RequirePermission(models.PermManageTeam), h.UpdateMemberRole)
+			org.DELETE("/members/:id", m.RequireOrganization(), m.RequirePermission(models.PermManageTeam), h.RemoveMember)
+
+			// Invitations
+			org.GET("/invitations", m.RequireOrganization(), m.RequirePermission(models.PermManageTeam), h.GetPendingInvitations)
+			org.DELETE("/invitations/:id", m.RequireOrganization(), m.RequirePermission(models.PermManageTeam), h.CancelInvitation)
+
+			// Ownership transfer
+			org.POST("/transfer-ownership", m.RequireOrganization(), m.RequirePermission(models.PermTransferOwnership), h.TransferOwnership)
+		}
+
+		// User's pending invitations
+		protected.GET("/invitations", h.GetMyPendingInvitations)
+		protected.POST("/invitations/accept", h.AcceptInvitation)
+
+		// Subscription & billing
+		subscriptions := protected.Group("/subscription")
+		{
+			subscriptions.GET("", h.GetSubscription)
+			subscriptions.GET("/limits", h.GetSubscriptionLimits)
+			subscriptions.GET("/trial", h.GetTrialStatus)
+			subscriptions.GET("/features", h.GetFeatureStatus)
+			subscriptions.POST("/checkout", h.CreateCheckoutSession)
+			subscriptions.POST("/portal", h.CreateBillingPortalSession)
+			subscriptions.POST("/cancel", h.CancelSubscription)
+
+			// Plan changes with proration
+			subscriptions.POST("/change-plan", m.RequireOrganization(), m.RequirePermission(models.PermManageBilling), h.ChangePlan)
+			subscriptions.GET("/preview-change", m.RequireOrganization(), m.RequirePermission(models.PermManageBilling), h.PreviewPlanChange)
+
+			// Enterprise inquiry (no permission required)
+			subscriptions.POST("/enterprise-inquiry", h.SubmitEnterpriseInquiry)
+		}
+
+		// Plans (public info but auth required for consistency)
+		protected.GET("/plans", h.ListPlans)
 	}
 
 	// Admin routes (requires additional role check)
@@ -150,11 +202,14 @@ func Run(
 	}
 
 	webhook := r.Group("/webhook")
-	protected.Use(oidcm.Middleware())
+	webhook.Use(oidcm.Middleware())
 	{
 		webhook.POST("/campaign", h.HandleCampaignTasks)
 		webhook.POST("/email", h.HandleEmailTask)
 	}
+
+	// Stripe webhook (no auth - uses signature verification)
+	r.POST("/webhook/stripe", h.HandleStripeWebhook)
 
 	r.Run(addr)
 }

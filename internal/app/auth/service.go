@@ -3,7 +3,9 @@ package auth
 import (
 	"context"
 
+	"github.com/warmbly/warmbly/internal/app/organization"
 	"github.com/warmbly/warmbly/internal/app/token"
+	"github.com/warmbly/warmbly/internal/app/trial"
 	"github.com/warmbly/warmbly/internal/app/user"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/infrastructure/cache"
@@ -29,6 +31,8 @@ type authService struct {
 	userRepository           repository.UserRepository
 	tokenService             token.TokenService
 	userService              user.UserService
+	trialService             trial.TrialService
+	organizationService      organization.OrganizationService
 	emailNotificationService notify.EmailNotificationService
 	cache                    *cache.Cache
 	captcha                  *captcha.Turnstile
@@ -42,6 +46,8 @@ func NewService(
 	tokenService token.TokenService,
 	emailNotificationService notify.EmailNotificationService,
 	externalAuthData *models.ExternalAuth,
+	trialService trial.TrialService,
+	organizationService organization.OrganizationService,
 ) AuthService {
 	return &authService{
 		authRepository:           authRepository,
@@ -50,5 +56,7 @@ func NewService(
 		cache:                    cache,
 		captcha:                  captcha,
 		externalAuth:             externalAuthData,
+		trialService:             trialService,
+		organizationService:      organizationService,
 	}
 }

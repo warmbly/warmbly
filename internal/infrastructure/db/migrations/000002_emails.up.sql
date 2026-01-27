@@ -17,6 +17,7 @@ CREATE TYPE email_status AS ENUM('active', 'inactive', 'revoked');
 CREATE TABLE email_accounts (
     id UUID NOT NULL,
     user_id UUID NOT NULL,
+    organization_id UUID REFERENCES organizations(id),
     worker_id UUID,
     email VARCHAR(255) NOT NULL,
 
@@ -53,6 +54,8 @@ CREATE TABLE email_accounts (
     FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
     CONSTRAINT valid_reply_rate CHECK (warmup_reply_rate >= 0 AND warmup_reply_rate <= 100)
 );
+
+CREATE INDEX idx_email_accounts_org ON email_accounts(organization_id);
 
 CREATE TABLE email_tags (
     email_id UUID NOT NULL,
@@ -106,6 +109,7 @@ CREATE TYPE campaign_status AS ENUM('draft', 'active', 'paused');
 CREATE TABLE campaigns (
     id UUID NOT NULL DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL,
+    organization_id UUID REFERENCES organizations(id),
 
     name VARCHAR(50) NOT NULL,
     description TEXT NOT NULL,
@@ -129,11 +133,13 @@ CREATE TABLE campaigns (
     end_time TIME NOT NULL DEFAULT '18:00',
 
     updated_at TIMESTAMP NOT NULL,
-    created_at TIMESTAMP NOT NULL
+    created_at TIMESTAMP NOT NULL,
 
     PRIMARY KEY (id),
     FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
 );
+
+CREATE INDEX idx_campaigns_org ON campaigns(organization_id);
 
 CREATE TABLE campaign_email_tags (
     tag_id UUID NOT NULL ,
@@ -145,7 +151,8 @@ CREATE TABLE campaign_email_tags (
 
 CREATE TABLE sequences (
     id UUID NOT NULL DEFAULT gen_random_uuid(),
-    campaign_id UUID NOT NULL ,
+    campaign_id UUID NOT NULL,
+    organization_id UUID REFERENCES organizations(id),
 
     name VARCHAR(50) NOT NULL,
     subject TEXT NOT NULL,
@@ -164,9 +171,12 @@ CREATE TABLE sequences (
     FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE
 );
 
+CREATE INDEX idx_sequences_org ON sequences(organization_id);
+
 CREATE TABLE contacts (
     id UUID NOT NULL DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL,
+    organization_id UUID REFERENCES organizations(id),
 
     first_name TEXT NOT NULL,
     last_name TEXT NOT NULL,
@@ -183,6 +193,8 @@ CREATE TABLE contacts (
     PRIMARY KEY (id),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
+
+CREATE INDEX idx_contacts_org ON contacts(organization_id);
 
 CREATE TABLE campaign_leads (
     contact_id UUID NOT NULL,

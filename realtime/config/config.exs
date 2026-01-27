@@ -16,7 +16,28 @@ config :realtime,
     "email-inbox-sub",
     "bulk-operations-sub",
     "contacts-sync-sub"
-  ]
+  ],
+  # Redis configuration
+  redis_url: System.get_env("REDIS_URL") || "redis://localhost:6379/0",
+  # Connection limits
+  max_connections_per_user: String.to_integer(System.get_env("MAX_CONNECTIONS_PER_USER") || "10"),
+  max_connections_per_ip: String.to_integer(System.get_env("MAX_CONNECTIONS_PER_IP") || "50"),
+  max_connections_global: String.to_integer(System.get_env("MAX_CONNECTIONS_GLOBAL") || "100000"),
+  # Rate limits (per minute)
+  rate_limit_ws_message: String.to_integer(System.get_env("RATE_LIMIT_WS_MESSAGE") || "120"),
+  rate_limit_ws_join: String.to_integer(System.get_env("RATE_LIMIT_WS_JOIN") || "30"),
+  rate_limit_ws_event: String.to_integer(System.get_env("RATE_LIMIT_WS_EVENT") || "60")
+
+# Ecto Repo configuration (for API key validation)
+config :realtime, Realtime.Repo,
+  database: System.get_env("DATABASE_NAME") || "warmbly_dev",
+  username: System.get_env("DATABASE_USER") || "postgres",
+  password: System.get_env("DATABASE_PASSWORD") || "postgres",
+  hostname: System.get_env("DATABASE_HOST") || "localhost",
+  port: String.to_integer(System.get_env("DATABASE_PORT") || "5432"),
+  pool_size: String.to_integer(System.get_env("DATABASE_POOL_SIZE") || "5")
+
+config :realtime, ecto_repos: [Realtime.Repo]
 
 # Phoenix Endpoint configuration
 config :realtime, RealtimeWeb.Endpoint,

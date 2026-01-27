@@ -19,6 +19,9 @@ type TokenRepository interface {
 
 	FindExpiredSessions(ctx context.Context, userID uuid.UUID, cutoff time.Time) ([]uuid.UUID, *errx.Error)
 	RevokeSessions(ctx context.Context, userID uuid.UUID) *errx.Error
+
+	// Organization switching
+	UpdateCurrentOrganization(ctx context.Context, sessionID uuid.UUID, orgID *uuid.UUID) *errx.Error
 }
 
 type tokenRepository struct {
@@ -34,22 +37,22 @@ func NewTokenRepostory(db *db.DB) TokenRepository {
 func (r *tokenRepository) GenerateSession(ctx context.Context, tx pgx.Tx, session *models.Session) *errx.Error {
 	query := `
 		INSERT INTO sessions (
-		 id, user_id,
+		 id, user_id, current_organization_id,
 		 created_at, expires_at, last_refreshed_at, revoked_at,
 		 access_nonce, refresh_nonce,
 		 location_city, location_region, location_country, location_country_code, location_postal_code,
 		 os_name, browser_name
 		) VALUES (
-		 $1, $2,
-		 $3, $4, $5, $6,
-		 $7, $8,
-		 $9, $10, $11, $12, $13,
-		 $14, $15
+		 $1, $2, $3,
+		 $4, $5, $6, $7,
+		 $8, $9,
+		 $10, $11, $12, $13, $14,
+		 $15, $16
 		)
 	`
 
 	params := []any{
-		session.ID, session.UserID,
+		session.ID, session.UserID, session.CurrentOrganizationID,
 		session.CreatedAt, session.ExpiresAt, session.LastRefreshedAt, session.RevokedAt,
 		session.AccessNonce, session.RefreshNonce,
 		session.LocationCity, session.LocationRegion, session.LocationCountry, session.LocationCountryCode, session.LocationPostalCode,
@@ -71,7 +74,7 @@ func (r *tokenRepository) GenerateSession(ctx context.Context, tx pgx.Tx, sessio
 func (r *tokenRepository) GetSession(ctx context.Context, sessionID uuid.UUID) (*models.Session, *errx.Error) {
 	query := `
 		SELECT
-		 id, user_id,
+		 id, user_id, current_organization_id,
 		 created_at, expires_at, last_refreshed_at, revoked_at,
 		 access_nonce, refresh_nonce,
 		 location_city, location_region, location_country, location_country_code, location_postal_code,
@@ -91,7 +94,7 @@ func (r *tokenRepository) GetSession(ctx context.Context, sessionID uuid.UUID) (
 		query,
 		params...,
 	).Scan(
-		&sess.ID, &sess.UserID,
+		&sess.ID, &sess.UserID, &sess.CurrentOrganizationID,
 		&sess.CreatedAt, &sess.ExpiresAt, &sess.LastRefreshedAt, &sess.RevokedAt,
 		&sess.AccessNonce, &sess.RefreshNonce,
 		&sess.LocationCity, &sess.LocationRegion, &sess.LocationCountry, &sess.LocationCountryCode, &sess.LocationPostalCode,
@@ -221,6 +224,34 @@ func (r *tokenRepository) RevokeSessions(ctx context.Context, userID uuid.UUID) 
 	if err != nil {
 		db.CaptureError(err, query, params, "exec")
 		return errx.InternalError()
+	}
+
+	return nil
+}
+
+func (r *tokenRepository) UpdateCurrentOrganization(ctx context.Context, sessionID uuid.UUID, orgID *uuid.UUID) *errx.Error {
+	query := `
+		UPDATE sessions
+		SET current_organization_id = $2
+		WHERE id = $1 AND revoked_at IS NULL
+	`
+
+	params := []any{
+		sessionID, orgID,
+	}
+
+	cmd, err := r.DB.Exec(
+		ctx,
+		query,
+		params...,
+	)
+	if err != nil {
+		db.CaptureError(err, query, params, "exec")
+		return errx.InternalError()
+	}
+
+	if cmd.RowsAffected() == 0 {
+		return errx.New(errx.NotFound, "session not found")
 	}
 
 	return nil

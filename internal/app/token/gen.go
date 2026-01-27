@@ -62,6 +62,10 @@ func (s *tokenService) VerifyToken(tokenStr string) (*TokenClaims, *errx.Error) 
 }
 
 func (s *tokenService) GenerateSession(ctx context.Context, userID uuid.UUID, email, ipaddr, userAgent, authProvider string) (*models.Token, *errx.Error) {
+	return s.GenerateSessionWithOrg(ctx, userID, email, ipaddr, userAgent, authProvider, nil)
+}
+
+func (s *tokenService) GenerateSessionWithOrg(ctx context.Context, userID uuid.UUID, email, ipaddr, userAgent, authProvider string, orgID *uuid.UUID) (*models.Token, *errx.Error) {
 	ip, err := netip.ParseAddr(ipaddr)
 	if err != nil {
 		sentry.CaptureException(err)
@@ -77,8 +81,9 @@ func (s *tokenService) GenerateSession(ctx context.Context, userID uuid.UUID, em
 	userAgentInfo := useragent.Parse(userAgent)
 
 	session := &models.Session{
-		ID:     uuid.New(),
-		UserID: userID,
+		ID:                    uuid.New(),
+		UserID:                userID,
+		CurrentOrganizationID: orgID,
 
 		LocationCity:       ipinfo.City,
 		LocationRegion:     ipinfo.Region,
@@ -143,4 +148,26 @@ func (s *tokenService) GenerateSession(ctx context.Context, userID uuid.UUID, em
 		RefreshToken:          refreshToken,
 		RefreshTokenExpiresAt: refreshTokenExpiresAt,
 	}, nil
+}
+
+// SwitchOrganization updates the current organization for a session
+func (s *tokenService) SwitchOrganization(ctx context.Context, sessionID uuid.UUID, orgID *uuid.UUID) *errx.Error {
+	// Update in database
+	if err := s.tokenRepository.UpdateCurrentOrganization(ctx, sessionID, orgID); err != nil {
+		return err
+	}
+
+	// Invalidate cache for this session
+	s.deleteSession(ctx, sessionID)
+
+	return nil
+}
+
+// GetCurrentOrganization retrieves the current organization for a session
+func (s *tokenService) GetCurrentOrganization(ctx context.Context, sessionID uuid.UUID) (*uuid.UUID, *errx.Error) {
+	session, err := s.GetSession(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	return session.CurrentOrganizationID, nil
 }

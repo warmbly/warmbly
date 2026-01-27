@@ -15,7 +15,10 @@ type Token struct {
 
 type Session struct {
 	ID     uuid.UUID `json:"id"`
-	UserID uuid.UUID `json:"string"`
+	UserID uuid.UUID `json:"user_id"`
+
+	// Current organization context for multi-org support
+	CurrentOrganizationID *uuid.UUID `json:"current_organization_id,omitempty"`
 
 	LocationCity        string `json:"location_city"`
 	LocationRegion      string `json:"location_region"`

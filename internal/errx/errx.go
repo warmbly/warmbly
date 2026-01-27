@@ -59,3 +59,13 @@ func Handle(c *gin.Context, err error) {
 	// Unexpected error → treat as internal
 	Handle(c, InternalError())
 }
+
+// JSON sends a business error as JSON response
+func JSON(c *gin.Context, err *Error) {
+	httpCode := codeToHTTP[err.Code]
+	httpError := codeToString[err.Code]
+	c.JSON(httpCode, response{
+		Error:   httpError,
+		Message: err.Message,
+	})
+}

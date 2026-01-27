@@ -12,6 +12,7 @@ const (
 	Conflict           Code = http.StatusConflict
 	Unprocessable      Code = http.StatusUnprocessableEntity
 	Internal           Code = http.StatusInternalServerError
+	NotImplemented     Code = http.StatusNotImplemented
 	ServiceUnavailable Code = http.StatusServiceUnavailable
 )
 
@@ -23,6 +24,7 @@ var codeToHTTP = map[Code]int{
 	Conflict:           http.StatusConflict,
 	Unprocessable:      http.StatusUnprocessableEntity,
 	Internal:           http.StatusInternalServerError,
+	NotImplemented:     http.StatusNotImplemented,
 	ServiceUnavailable: http.StatusServiceUnavailable,
 }
 
@@ -34,5 +36,6 @@ var codeToString = map[Code]string{
 	Conflict:           "Conflict",
 	Unprocessable:      "Unprocessable",
 	Internal:           "Internal Server Error",
+	NotImplemented:     "Not Implemented",
 	ServiceUnavailable: "Service Unavailable",
 }

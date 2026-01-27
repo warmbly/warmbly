@@ -20,6 +20,15 @@ func (h *Handler) GetUniboxIncoming(c *gin.Context) {
 		return
 	}
 
+	// Check if user can use unibox (paid subscription required)
+	if h.FeatureGateService != nil {
+		canUse, _ := h.FeatureGateService.CanUseUnibox(c.Request.Context(), uid)
+		if !canUse {
+			errx.Handle(c, errx.New(errx.Forbidden, "Unibox requires a paid subscription"))
+			return
+		}
+	}
+
 	// Build search params from query
 	params := &models.MailSearchParams{
 		Cursor: c.Query("cursor"),
@@ -83,6 +92,15 @@ func (h *Handler) GetUniboxEmail(c *gin.Context) {
 		return
 	}
 
+	// Check if user can use unibox
+	if h.FeatureGateService != nil {
+		canUse, _ := h.FeatureGateService.CanUseUnibox(c.Request.Context(), uid)
+		if !canUse {
+			errx.Handle(c, errx.New(errx.Forbidden, "Unibox requires a paid subscription"))
+			return
+		}
+	}
+
 	mailID := c.Param("id")
 	mid, err := uuid.Parse(mailID)
 	if err != nil {
@@ -108,6 +126,15 @@ func (h *Handler) GetUniboxThread(c *gin.Context) {
 	if err != nil {
 		errx.Handle(c, errx.ErrUser)
 		return
+	}
+
+	// Check if user can use unibox
+	if h.FeatureGateService != nil {
+		canUse, _ := h.FeatureGateService.CanUseUnibox(c.Request.Context(), uid)
+		if !canUse {
+			errx.Handle(c, errx.New(errx.Forbidden, "Unibox requires a paid subscription"))
+			return
+		}
 	}
 
 	emailID := c.Query("email")
