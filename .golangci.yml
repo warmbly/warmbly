@@ -1,0 +1,63 @@
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+
+linters:
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - typecheck
+    - unused
+    - gofmt
+    - goimports
+    - misspell
+    - unconvert
+    - unparam
+    - prealloc
+    - exportloopref
+    - gosec
+    - bodyclose
+    - noctx
+    - sqlclosecheck
+
+linters-settings:
+  errcheck:
+    check-type-assertions: true
+    check-blank: false
+
+  govet:
+    enable-all: true
+    disable:
+      - fieldalignment
+
+  goimports:
+    local-prefixes: github.com/warmbly/warmbly
+
+  misspell:
+    locale: US
+
+  gosec:
+    excludes:
+      - G104 # Audit errors not checked
+      - G304 # File path provided as taint input
+
+  unparam:
+    check-exported: false
+
+issues:
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - errcheck
+        - gosec
+        - unparam
+
+    - path: cmd/
+      linters:
+        - unparam
+
+  max-issues-per-linter: 50
+  max-same-issues: 10

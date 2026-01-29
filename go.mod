@@ -24,11 +24,10 @@ require (
 	github.com/gin-gonic/gin v1.10.1
 	github.com/gocql/gocql v1.7.0
 	github.com/golang-jwt/jwt/v5 v5.2.2
+	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/google/uuid v1.6.0
-	github.com/gorilla/websocket v1.5.0
 	github.com/invopop/jsonschema v0.13.0
 	github.com/jackc/pgx/v5 v5.7.5
-	github.com/joho/godotenv v1.5.1
 	github.com/meszmate/apple-go v0.0.0-20250828163208-7fea48c91b32
 	github.com/meszmate/google-go v0.0.0-20251207085436-d08bef99cd5d
 	github.com/microcosm-cc/bluemonday v1.0.27
@@ -107,10 +106,14 @@ require (
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
+	github.com/lib/pq v1.10.9 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
+	github.com/moby/go-archive v0.2.0 // indirect
+	github.com/moby/sys/atomicwriter v0.1.0 // indirect
+	github.com/moby/sys/user v0.4.0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/oschwald/maxminddb-golang/v2 v2.0.0 // indirect

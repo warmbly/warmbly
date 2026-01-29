@@ -27,12 +27,17 @@ patches:
 
 images:
   - name: warmbly/backend
+    newName: ghcr.io/warmbly/warmbly/backend
     newTag: dev
   - name: warmbly/consumer
+    newName: ghcr.io/warmbly/warmbly/consumer
     newTag: dev
   - name: warmbly/worker
+    newName: ghcr.io/warmbly/warmbly/worker
     newTag: dev
   - name: warmbly/tracking
+    newName: ghcr.io/warmbly/warmbly/tracking
     newTag: dev
   - name: warmbly/realtime
+    newName: ghcr.io/warmbly/warmbly/realtime
     newTag: dev

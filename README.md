@@ -47,12 +47,13 @@ Warmbly is a microservices-based platform for email warmup and cold outreach. It
 | Worker | Go, distributed (1 per machine) |
 | Tracking | Rust, Axum |
 | Realtime | Elixir 1.18, Phoenix Channels |
-| Message Queue | Apache Kafka with Avro/Schema Registry |
-| Primary Database | PostgreSQL 16 |
-| Time-series | Cassandra (Astra) |
+| Message Queue | Confluent Kafka with Avro/Schema Registry |
+| Primary Database | PostgreSQL 16 (AWS RDS) |
+| Time-series | DataStax Astra (Cassandra) |
 | Cache | Redis 7 |
 | Object Storage | AWS S3 |
 | Pub/Sub | Google Cloud Pub/Sub |
+| Task Queue | Google Cloud Tasks |
 
 ## Services
 
@@ -123,6 +124,8 @@ warmbly/
 
 ## Documentation
 
+- [Deployment Guide](docs/deployment-guide.md) - Step-by-step deployment instructions
+- [CI/CD Pipeline](docs/cicd.md) - CI/CD technical details
 - [Architecture](docs/architecture.md) - System architecture overview
 - [Events](docs/Events.md) - Kafka event system
 - [EMSG Format](docs/EMSG.md) - Email message blob format
@@ -143,6 +146,20 @@ cd tracking && cargo build --release
 # Realtime service
 cd realtime && mix deps.get && mix release
 ```
+
+## CI/CD Pipeline
+
+Warmbly uses GitHub Actions for CI/builds and GitOps for deployments.
+
+```
+PR Created → CI (tests) → Merge to main → Build images → Deploy
+```
+
+| Workflow | Trigger | Purpose |
+|----------|---------|---------|
+| `ci.yml` | PR/Push | Tests, linting, security scan |
+| `build-push.yml` | Push to main | Build & push Docker images |
+| `release.yml` | Tag `v*.*.*` | Build release images (triggers prod deploy) |
 
 ## License
 

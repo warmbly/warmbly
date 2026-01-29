@@ -28,14 +28,19 @@ configMapGenerator:
 
 images:
   - name: warmbly/backend
+    newName: ghcr.io/warmbly/warmbly/backend
     newTag: prod
   - name: warmbly/consumer
+    newName: ghcr.io/warmbly/warmbly/consumer
     newTag: prod
   - name: warmbly/worker
+    newName: ghcr.io/warmbly/warmbly/worker
     newTag: prod
   - name: warmbly/tracking
+    newName: ghcr.io/warmbly/warmbly/tracking
     newTag: prod
   - name: warmbly/realtime
+    newName: ghcr.io/warmbly/warmbly/realtime
     newTag: prod
 
 patches:

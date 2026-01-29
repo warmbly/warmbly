@@ -193,6 +193,14 @@ func main() {
 			log.Fatal(err)
 		}
 
+		// Run database migrations
+		log.Println("Running database migrations...")
+		if err := db.RunMigrations(primaryDBEndpoint); err != nil {
+			sentry.CaptureException(err)
+			log.Fatal("Failed to run migrations: ", err)
+		}
+		log.Println("Database migrations completed")
+
 		astraConfig, err := cfg.LoadAstraConfig(ctx)
 		if err != nil {
 			sentry.CaptureException(err)
