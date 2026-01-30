@@ -1,0 +1,246 @@
+name: Build and Push
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      service:
+        description: "Service to build (all, backend, consumer, worker, tracking, realtime)"
+        required: false
+        default: "all"
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/warmbly
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      consumer: ${{ steps.filter.outputs.consumer }}
+      worker: ${{ steps.filter.outputs.worker }}
+      tracking: ${{ steps.filter.outputs.tracking }}
+      realtime: ${{ steps.filter.outputs.realtime }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'go.mod'
+              - 'go.sum'
+              - 'internal/**'
+              - 'cmd/backend/**'
+              - 'deploy/docker/backend.Dockerfile'
+            consumer:
+              - 'go.mod'
+              - 'go.sum'
+              - 'internal/**'
+              - 'cmd/consumer/**'
+              - 'deploy/docker/consumer.Dockerfile'
+            worker:
+              - 'go.mod'
+              - 'go.sum'
+              - 'internal/**'
+              - 'cmd/worker/**'
+              - 'deploy/docker/worker.Dockerfile'
+            tracking:
+              - 'tracking/**'
+              - 'deploy/docker/tracking.Dockerfile'
+            realtime:
+              - 'realtime/**'
+              - 'deploy/docker/realtime.Dockerfile'
+
+  build-backend:
+    name: Build Backend
+    needs: changes
+    if: |
+      github.event_name == 'workflow_dispatch' && (github.event.inputs.service == 'all' || github.event.inputs.service == 'backend') ||
+      github.event_name == 'push' && needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/backend.Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/backend:${{ github.sha }}
+            ${{ env.IMAGE_PREFIX }}/backend:dev
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            SERVICE=backend
+
+  build-consumer:
+    name: Build Consumer
+    needs: changes
+    if: |
+      github.event_name == 'workflow_dispatch' && (github.event.inputs.service == 'all' || github.event.inputs.service == 'consumer') ||
+      github.event_name == 'push' && needs.changes.outputs.consumer == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/consumer.Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/consumer:${{ github.sha }}
+            ${{ env.IMAGE_PREFIX }}/consumer:dev
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            SERVICE=consumer
+
+  build-worker:
+    name: Build Worker
+    needs: changes
+    if: |
+      github.event_name == 'workflow_dispatch' && (github.event.inputs.service == 'all' || github.event.inputs.service == 'worker') ||
+      github.event_name == 'push' && needs.changes.outputs.worker == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/worker.Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/worker:${{ github.sha }}
+            ${{ env.IMAGE_PREFIX }}/worker:dev
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            SERVICE=worker
+
+  build-tracking:
+    name: Build Tracking
+    needs: changes
+    if: |
+      github.event_name == 'workflow_dispatch' && (github.event.inputs.service == 'all' || github.event.inputs.service == 'tracking') ||
+      github.event_name == 'push' && needs.changes.outputs.tracking == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./tracking
+          file: deploy/docker/tracking.Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/tracking:${{ github.sha }}
+            ${{ env.IMAGE_PREFIX }}/tracking:dev
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  build-realtime:
+    name: Build Realtime
+    needs: changes
+    if: |
+      github.event_name == 'workflow_dispatch' && (github.event.inputs.service == 'all' || github.event.inputs.service == 'realtime') ||
+      github.event_name == 'push' && needs.changes.outputs.realtime == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/realtime.Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/realtime:${{ github.sha }}
+            ${{ env.IMAGE_PREFIX }}/realtime:dev
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

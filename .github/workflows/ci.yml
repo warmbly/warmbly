@@ -1,0 +1,185 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      go-services: ${{ steps.filter.outputs.go-services }}
+      backend: ${{ steps.filter.outputs.backend }}
+      consumer: ${{ steps.filter.outputs.consumer }}
+      worker: ${{ steps.filter.outputs.worker }}
+      tracking: ${{ steps.filter.outputs.tracking }}
+      realtime: ${{ steps.filter.outputs.realtime }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            go-services:
+              - 'go.mod'
+              - 'go.sum'
+              - 'internal/**'
+              - 'cmd/**'
+            backend:
+              - 'cmd/backend/**'
+              - 'deploy/docker/backend.Dockerfile'
+            consumer:
+              - 'cmd/consumer/**'
+              - 'deploy/docker/consumer.Dockerfile'
+            worker:
+              - 'cmd/worker/**'
+              - 'deploy/docker/worker.Dockerfile'
+            tracking:
+              - 'tracking/**'
+              - 'deploy/docker/tracking.Dockerfile'
+            realtime:
+              - 'realtime/**'
+              - 'deploy/docker/realtime.Dockerfile'
+
+  go-ci:
+    name: Go CI
+    needs: changes
+    if: needs.changes.outputs.go-services == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          args: --timeout=5m
+
+      - name: Run tests with coverage
+        run: |
+          go test -race -coverprofile=coverage.out -covermode=atomic ./...
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.out
+          flags: go
+          fail_ci_if_error: false
+
+  rust-ci:
+    name: Rust CI
+    needs: changes
+    if: needs.changes.outputs.tracking == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tracking
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: tracking
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Run Clippy
+        run: cargo clippy -- -D warnings
+
+      - name: Run tests
+        run: cargo test
+
+  elixir-ci:
+    name: Elixir CI
+    needs: changes
+    if: needs.changes.outputs.realtime == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: realtime
+    env:
+      MIX_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: "1.16"
+          otp-version: "26"
+
+      - name: Cache deps
+        uses: actions/cache@v4
+        with:
+          path: |
+            realtime/deps
+            realtime/_build
+          key: ${{ runner.os }}-mix-${{ hashFiles('realtime/mix.lock') }}
+          restore-keys: ${{ runner.os }}-mix-
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      - name: Check formatting
+        run: mix format --check-formatted
+
+      - name: Run Credo
+        run: mix credo --strict
+
+      - name: Compile without warnings
+        run: mix compile --warnings-as-errors
+
+      - name: Run tests
+        run: mix test
+
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: "fs"
+          scan-ref: "."
+          severity: "CRITICAL,HIGH"
+          exit-code: "1"
+          ignore-unfixed: true
+
+  ci-status:
+    name: CI Status
+    runs-on: ubuntu-latest
+    needs: [changes, go-ci, rust-ci, elixir-ci, security]
+    if: always()
+    steps:
+      - name: Check CI status
+        run: |
+          if [[ "${{ needs.go-ci.result }}" == "failure" ]] || \
+             [[ "${{ needs.rust-ci.result }}" == "failure" ]] || \
+             [[ "${{ needs.elixir-ci.result }}" == "failure" ]] || \
+             [[ "${{ needs.security.result }}" == "failure" ]]; then
+            echo "CI failed"
+            exit 1
+          fi
+          echo "CI passed"

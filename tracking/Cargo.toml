@@ -1,0 +1,42 @@
+[package]
+name = "tracking"
+version = "0.1.0"
+edition = "2021"
+description = "Lightweight tracking pixel and click tracking service for Warmbly"
+
+[dependencies]
+# Web framework
+axum = "0.7"
+tokio = { version = "1", features = ["full"] }
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+
+# AWS SDK
+aws-config = "1.1"
+aws-sdk-ssm = "1.15"
+aws-sdk-secretsmanager = "1.15"
+
+# Kafka with Avro
+rdkafka = { version = "0.36", features = ["cmake-build"] }
+apache-avro = { version = "0.21", features = ["derive"] }
+schema_registry_converter = { version = "4.0", features = ["avro", "blocking"] }
+reqwest = { version = "0.11", features = ["blocking", "json"] }
+
+# Utils
+uuid = { version = "1", features = ["v4", "serde"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", features = ["serde"] }
+sha2 = "0.10"
+base64 = "0.21"
+urlencoding = "2"
+moka = { version = "0.12", features = ["future"] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = "z"
+strip = true

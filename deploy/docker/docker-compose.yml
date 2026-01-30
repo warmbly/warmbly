@@ -1,0 +1,262 @@
+version: '3.8'
+
+services:
+  # Infrastructure
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: warmbly
+      POSTGRES_PASSWORD: warmbly
+      POSTGRES_DB: warmbly_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U warmbly"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+
+  schema-registry:
+    image: confluentinc/cp-schema-registry:7.5.0
+    depends_on:
+      - kafka
+    ports:
+      - "8081:8081"
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: kafka:29092
+
+  # Application Services
+  backend:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/backend.Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      # === General ===
+      APP_ENV: dev
+      AWS_CONFIG_ENABLED: "false"
+      AWS_REGION: us-east-1
+
+      # === API ===
+      API_HOST: "0.0.0.0:8080"
+      GIN_MODE: debug
+      WEBSOCKET_URL: ws://realtime:4000/socket
+
+      # === Database ===
+      PRIMARY_DB: postgres://warmbly:warmbly@postgres:5432/warmbly_dev?sslmode=disable
+      REDIS: redis://redis:6379
+      GEODB_PATH: /app/data/GeoLite2-City.mmdb
+
+      # === Kafka ===
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      KAFKA_CONSUMER_GROUP: consumer-group
+      KAFKA_TRACKING_TOPIC: tracking-events
+      # KAFKA_SASL_USERNAME: (not needed for local dev)
+      # KAFKA_SASL_PASSWORD: (not needed for local dev)
+
+      # === Schema Registry ===
+      SCHEMA_REGISTRY_URL: http://schema-registry:8081
+      # SCHEMA_REGISTRY_KEY: (not needed for local dev)
+      # SCHEMA_REGISTRY_SECRET: (not needed for local dev)
+
+      # === Auth ===
+      AUTH_SECRET: local-dev-auth-secret-minimum-32-characters-long
+      GOOGLE_CLIENT_ID: local-google-client-id
+      GOOGLE_CLIENT_SECRET: local-google-client-secret
+      GOOGLE_REDIRECT_URI: http://localhost:3000/auth/google/callback
+      APPLE_APP_ID: local-apple-app-id
+      APPLE_TEAM_ID: local-apple-team-id
+      APPLE_KEY_ID: local-apple-key-id
+      APPLE_KEY_SECRET: local-apple-key-secret-base64
+      TURNSTILE_SECRET: local-turnstile-secret
+
+      # === Stripe ===
+      STRIPE_SECRET_KEY: sk_test_local
+      STRIPE_WEBHOOK_SECRET: whsec_local
+      STRIPE_PUBLISHABLE_KEY: pk_test_local
+
+      # === Email ===
+      EMAIL_NAME: Warmbly Dev
+      EMAIL_ADDRESS: dev@warmbly.local
+      TRACKING_DOMAIN: localhost:3000
+
+      # === GCP (optional) ===
+      GCP_PROJECT_ID: ""
+      GOOGLE_APPLICATION_CREDENTIALS_JSON: ""
+
+      # === Cassandra/Astra (dev stubs) ===
+      ASTRA_DB_ID: local-astra-db-id
+      ASTRA_DB_REGION: local-region
+      ASTRA_KEYSPACE_NAME: warmbly_dev
+      ASTRA_APPLICATION_TOKEN: local-astra-token
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      schema-registry:
+        condition: service_started
+
+  consumer:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/consumer.Dockerfile
+    environment:
+      # === General ===
+      APP_ENV: dev
+      AWS_CONFIG_ENABLED: "false"
+      AWS_REGION: us-east-1
+
+      # === Database ===
+      PRIMARY_DB: postgres://warmbly:warmbly@postgres:5432/warmbly_dev?sslmode=disable
+      REDIS: redis://redis:6379
+
+      # === Kafka ===
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      KAFKA_CONSUMER_GROUP: consumer-group
+
+      # === Schema Registry ===
+      SCHEMA_REGISTRY_URL: http://schema-registry:8081
+
+      # === Cassandra/Astra (dev stubs) ===
+      ASTRA_DB_ID: local-astra-db-id
+      ASTRA_DB_REGION: local-region
+      ASTRA_KEYSPACE_NAME: warmbly_dev
+      ASTRA_APPLICATION_TOKEN: local-astra-token
+
+      # === GCP (optional) ===
+      GCP_PROJECT_ID: ""
+    depends_on:
+      - backend
+      - kafka
+      - schema-registry
+
+  worker:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/worker.Dockerfile
+    environment:
+      # === General ===
+      APP_ENV: dev
+      AWS_CONFIG_ENABLED: "false"
+      AWS_REGION: us-east-1
+
+      # === Database ===
+      REDIS: redis://redis:6379
+
+      # === Kafka ===
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+
+      # === Schema Registry ===
+      SCHEMA_REGISTRY_URL: http://schema-registry:8081
+    depends_on:
+      - kafka
+      - schema-registry
+      - redis
+
+  tracking:
+    build:
+      context: ../../tracking
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      # === General ===
+      APP_ENV: dev
+      AWS_CONFIG_ENABLED: "false"
+      AWS_REGION: us-east-1
+
+      # === Tracking ===
+      TRACKING_HOST: "0.0.0.0"
+      TRACKING_PORT: "3000"
+
+      # === Kafka ===
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      KAFKA_TRACKING_TOPIC: tracking-events
+
+      # === Schema Registry ===
+      SCHEMA_REGISTRY_URL: http://schema-registry:8081
+    depends_on:
+      - kafka
+      - schema-registry
+
+  realtime:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/realtime.Dockerfile
+    ports:
+      - "4000:4000"
+    environment:
+      # === General ===
+      PHX_HOST: localhost
+      PORT: 4000
+
+      # === Database ===
+      DATABASE_URL: postgres://warmbly:warmbly@postgres:5432/warmbly_dev
+      DATABASE_POOL_SIZE: "10"
+      REDIS_URL: redis://redis:6379
+
+      # === Auth ===
+      JWT_SECRET: local-development-jwt-secret-minimum-64-characters-long-for-testing
+      SECRET_KEY_BASE: local-development-secret-key-base-minimum-64-characters-for-phoenix
+
+      # === Realtime ===
+      PUBSUB_ENABLED: "false"
+      CHECK_ORIGIN: "false"
+      MAX_CONNECTIONS_PER_USER: "10"
+      MAX_CONNECTIONS_PER_IP: "50"
+      MAX_CONNECTIONS_GLOBAL: "100000"
+      RATE_LIMIT_WS_MESSAGE: "120"
+      RATE_LIMIT_WS_JOIN: "30"
+      RATE_LIMIT_WS_EVENT: "60"
+
+      # === GCP (optional) ===
+      GCP_PROJECT_ID: ""
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:

@@ -1,0 +1,285 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/warmbly
+
+jobs:
+  validate-tag:
+    name: Validate Tag
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      major: ${{ steps.version.outputs.major }}
+      minor: ${{ steps.version.outputs.minor }}
+    steps:
+      - name: Extract version
+        id: version
+        run: |
+          TAG="${{ github.ref_name }}"
+          # Remove 'v' prefix
+          VERSION="${TAG#v}"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+          # Extract major and minor
+          MAJOR=$(echo "$VERSION" | cut -d. -f1)
+          MINOR=$(echo "$VERSION" | cut -d. -f1-2)
+          echo "major=${MAJOR}" >> $GITHUB_OUTPUT
+          echo "minor=${MINOR}" >> $GITHUB_OUTPUT
+
+          echo "Release version: ${VERSION}"
+          echo "Major: ${MAJOR}, Minor: ${MINOR}"
+
+  build-backend:
+    name: Build Backend
+    needs: validate-tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/backend.Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/backend:${{ github.ref_name }}
+            ${{ env.IMAGE_PREFIX }}/backend:v${{ needs.validate-tag.outputs.minor }}
+            ${{ env.IMAGE_PREFIX }}/backend:v${{ needs.validate-tag.outputs.major }}
+            ${{ env.IMAGE_PREFIX }}/backend:prod
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            SERVICE=backend
+            VERSION=${{ needs.validate-tag.outputs.version }}
+
+  build-consumer:
+    name: Build Consumer
+    needs: validate-tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/consumer.Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/consumer:${{ github.ref_name }}
+            ${{ env.IMAGE_PREFIX }}/consumer:v${{ needs.validate-tag.outputs.minor }}
+            ${{ env.IMAGE_PREFIX }}/consumer:v${{ needs.validate-tag.outputs.major }}
+            ${{ env.IMAGE_PREFIX }}/consumer:prod
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            SERVICE=consumer
+            VERSION=${{ needs.validate-tag.outputs.version }}
+
+  build-worker:
+    name: Build Worker
+    needs: validate-tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/worker.Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/worker:${{ github.ref_name }}
+            ${{ env.IMAGE_PREFIX }}/worker:v${{ needs.validate-tag.outputs.minor }}
+            ${{ env.IMAGE_PREFIX }}/worker:v${{ needs.validate-tag.outputs.major }}
+            ${{ env.IMAGE_PREFIX }}/worker:prod
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            SERVICE=worker
+            VERSION=${{ needs.validate-tag.outputs.version }}
+
+  build-tracking:
+    name: Build Tracking
+    needs: validate-tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./tracking
+          file: deploy/docker/tracking.Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/tracking:${{ github.ref_name }}
+            ${{ env.IMAGE_PREFIX }}/tracking:v${{ needs.validate-tag.outputs.minor }}
+            ${{ env.IMAGE_PREFIX }}/tracking:v${{ needs.validate-tag.outputs.major }}
+            ${{ env.IMAGE_PREFIX }}/tracking:prod
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            VERSION=${{ needs.validate-tag.outputs.version }}
+
+  build-realtime:
+    name: Build Realtime
+    needs: validate-tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/realtime.Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/realtime:${{ github.ref_name }}
+            ${{ env.IMAGE_PREFIX }}/realtime:v${{ needs.validate-tag.outputs.minor }}
+            ${{ env.IMAGE_PREFIX }}/realtime:v${{ needs.validate-tag.outputs.major }}
+            ${{ env.IMAGE_PREFIX }}/realtime:prod
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            VERSION=${{ needs.validate-tag.outputs.version }}
+
+  create-release:
+    name: Create GitHub Release
+    needs: [validate-tag, build-backend, build-consumer, build-worker, build-tracking, build-realtime]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Get previous tag
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+
+          if [[ -n "$PREV_TAG" ]]; then
+            echo "Generating changelog from $PREV_TAG to ${{ github.ref_name }}"
+            CHANGELOG=$(git log --pretty=format:"- %s (%h)" $PREV_TAG..${{ github.ref_name }} | head -50)
+          else
+            echo "No previous tag found, generating from beginning"
+            CHANGELOG=$(git log --pretty=format:"- %s (%h)" | head -50)
+          fi
+
+          # Escape for GitHub Actions
+          CHANGELOG="${CHANGELOG//'%'/'%25'}"
+          CHANGELOG="${CHANGELOG//$'\n'/'%0A'}"
+          CHANGELOG="${CHANGELOG//$'\r'/'%0D'}"
+
+          echo "changelog=${CHANGELOG}" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
+          body: |
+            ## What's Changed
+
+            ${{ steps.changelog.outputs.changelog }}
+
+            ## Docker Images
+
+            All images are available at `ghcr.io/${{ github.repository_owner }}/warmbly`:
+
+            | Service | Image |
+            |---------|-------|
+            | Backend | `${{ env.IMAGE_PREFIX }}/backend:${{ github.ref_name }}` |
+            | Consumer | `${{ env.IMAGE_PREFIX }}/consumer:${{ github.ref_name }}` |
+            | Worker | `${{ env.IMAGE_PREFIX }}/worker:${{ github.ref_name }}` |
+            | Tracking | `${{ env.IMAGE_PREFIX }}/tracking:${{ github.ref_name }}` |
+            | Realtime | `${{ env.IMAGE_PREFIX }}/realtime:${{ github.ref_name }}` |
+
+            ## Deployment
+
+            This release will be automatically deployed to production.
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          generate_release_notes: true
