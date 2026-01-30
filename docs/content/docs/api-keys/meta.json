@@ -1,0 +1,12 @@
+{
+  "title": "API Keys",
+  "pages": [
+    "index",
+    "create",
+    "list",
+    "permissions",
+    "get",
+    "update",
+    "revoke"
+  ]
+}

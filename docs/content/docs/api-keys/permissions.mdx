@@ -1,0 +1,190 @@
+---
+title: List Permissions
+description: Retrieve all available API permissions and preset permission sets.
+---
+
+# List Permissions
+
+Get a list of all available API permissions and preset permission combinations.
+
+```
+GET /api-keys/permissions
+```
+
+## Request
+
+### Headers
+
+| Header | Value |
+|--------|-------|
+| `Authorization` | `Bearer wmbly_<your_key>` |
+
+### Example Request
+
+```bash
+curl -X GET "https://api.warmbly.com/api-keys/permissions" \
+  -H "Authorization: Bearer wmbly_abc123..."
+```
+
+## Response
+
+### Success Response (200 OK)
+
+```json
+{
+  "permissions": [
+    {
+      "name": "READ_EMAILS",
+      "value": 1,
+      "description": "View email accounts and settings",
+      "category": "read"
+    },
+    {
+      "name": "READ_CAMPAIGNS",
+      "value": 2,
+      "description": "View campaigns and sequences",
+      "category": "read"
+    },
+    {
+      "name": "READ_CONTACTS",
+      "value": 4,
+      "description": "View contact lists",
+      "category": "read"
+    },
+    {
+      "name": "READ_UNIBOX",
+      "value": 8,
+      "description": "Access unified inbox",
+      "category": "read"
+    },
+    {
+      "name": "READ_ANALYTICS",
+      "value": 16,
+      "description": "View analytics and statistics",
+      "category": "read"
+    },
+    {
+      "name": "WRITE_EMAILS",
+      "value": 32,
+      "description": "Modify email account settings",
+      "category": "write"
+    },
+    {
+      "name": "WRITE_CAMPAIGNS",
+      "value": 64,
+      "description": "Create and modify campaigns",
+      "category": "write"
+    },
+    {
+      "name": "WRITE_CONTACTS",
+      "value": 128,
+      "description": "Create and modify contacts",
+      "category": "write"
+    },
+    {
+      "name": "WRITE_UNIBOX",
+      "value": 256,
+      "description": "Mark emails as read/unread",
+      "category": "write"
+    },
+    {
+      "name": "BULK_CONTACTS",
+      "value": 512,
+      "description": "Bulk import/export contacts",
+      "category": "bulk"
+    },
+    {
+      "name": "BULK_CAMPAIGNS",
+      "value": 1024,
+      "description": "Bulk campaign operations",
+      "category": "bulk"
+    },
+    {
+      "name": "REALTIME_SUBSCRIBE",
+      "value": 2048,
+      "description": "Subscribe to real-time events",
+      "category": "special"
+    },
+    {
+      "name": "WEBHOOKS",
+      "value": 4096,
+      "description": "Manage webhook endpoints",
+      "category": "special"
+    },
+    {
+      "name": "API_KEYS",
+      "value": 8192,
+      "description": "Create and manage API keys",
+      "category": "special"
+    }
+  ],
+  "presets": {
+    "read_only": 31,
+    "full_access": 16383
+  }
+}
+```
+
+### Permission Object
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | string | Permission identifier |
+| `value` | integer | Bitmask value (power of 2) |
+| `description` | string | Human-readable description |
+| `category` | string | Category: `read`, `write`, `bulk`, or `special` |
+
+### Presets Object
+
+| Preset | Value | Description |
+|--------|-------|-------------|
+| `read_only` | 31 | All read permissions |
+| `full_access` | 16383 | All permissions |
+
+## Working with Permissions
+
+### Combining Permissions
+
+Permissions use a bitmask system. Combine them using bitwise OR (`|`):
+
+```javascript
+const READ_EMAILS = 1;
+const READ_CAMPAIGNS = 2;
+const WRITE_CAMPAIGNS = 64;
+
+// Combine permissions
+const permissions = READ_EMAILS | READ_CAMPAIGNS | WRITE_CAMPAIGNS;
+// Result: 67
+```
+
+### Checking Permissions
+
+Use bitwise AND (`&`) to check if a permission is set:
+
+```javascript
+const permissions = 67;
+const WRITE_CAMPAIGNS = 64;
+
+if (permissions & WRITE_CAMPAIGNS) {
+  console.log('Has WRITE_CAMPAIGNS permission');
+}
+```
+
+### Using Presets
+
+```bash
+# Create a read-only key using the preset
+curl -X POST "https://api.warmbly.com/api-keys" \
+  -H "Authorization: Bearer wmbly_abc123..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Read Only Key",
+    "permissions": 31
+  }'
+```
+
+## See Also
+
+- [Permissions Reference](/reference/permissions) - Detailed permission documentation
+- [Create API Key](/api-keys/create)
+- [Authentication](/authentication)

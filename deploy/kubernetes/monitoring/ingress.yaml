@@ -1,0 +1,39 @@
+# Optional Grafana Ingress
+# Apply after installing kube-prometheus-stack if you want external access to Grafana
+#
+# Before applying, set the GRAFANA_DOMAIN environment variable or replace it:
+#   export GRAFANA_DOMAIN=grafana.yourdomain.com
+#   envsubst < ingress.yaml | kubectl apply -f -
+#
+# Or use kubectl with --dry-run to preview:
+#   kubectl apply -f ingress.yaml --dry-run=client -o yaml
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: grafana-ingress
+  namespace: monitoring
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    # Security headers
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      add_header X-Frame-Options "SAMEORIGIN" always;
+      add_header X-Content-Type-Options "nosniff" always;
+      add_header X-XSS-Protection "1; mode=block" always;
+spec:
+  tls:
+    - hosts:
+        - ${GRAFANA_DOMAIN}
+      secretName: grafana-tls
+  rules:
+    - host: ${GRAFANA_DOMAIN}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: prometheus-stack-grafana
+                port:
+                  number: 80

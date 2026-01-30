@@ -1,0 +1,141 @@
+---
+title: Revoke API Key
+description: Permanently revoke an API key to disable its access.
+---
+
+# Revoke API Key
+
+Permanently revoke an API key. Once revoked, the key cannot be restored and will return `401 Unauthorized` on any request.
+
+```
+DELETE /api-keys/:id
+```
+
+## Request
+
+### Headers
+
+| Header | Value |
+|--------|-------|
+| `Authorization` | `Bearer wmbly_<your_key>` |
+
+### Path Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `id` | UUID | The unique identifier of the API key to revoke |
+
+### Query Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `reason` | string | "Revoked by user" | Reason for revocation (for audit purposes) |
+
+### Example Request
+
+```bash
+curl -X DELETE "https://api.warmbly.com/api-keys/550e8400-e29b-41d4-a716-446655440000?reason=Security%20rotation" \
+  -H "Authorization: Bearer wmbly_abc123..."
+```
+
+## Response
+
+### Success Response (200 OK)
+
+```json
+{
+  "status": "revoked"
+}
+```
+
+### Error Responses
+
+#### 401 Unauthorized
+
+```json
+{
+  "error": "Unauthorized",
+  "message": "Token not found."
+}
+```
+
+#### 404 Not Found
+
+```json
+{
+  "error": "Not Found",
+  "message": "Resource not found."
+}
+```
+
+## When to Revoke Keys
+
+<Callout type="warn" title="Revocation is Permanent">
+  Revoked keys cannot be restored. If you need the same access, create a new key.
+</Callout>
+
+### Security Incidents
+
+Immediately revoke keys if:
+- A key may have been exposed (logs, repositories, etc.)
+- A team member with key access leaves
+- Suspicious activity is detected
+
+### Routine Rotation
+
+Best practice is to rotate keys regularly:
+1. Create a new key with the same permissions
+2. Update your applications to use the new key
+3. Verify everything works
+4. Revoke the old key
+
+## Key Rotation Example
+
+Complete key rotation workflow:
+
+```javascript
+async function rotateKey(oldKeyId) {
+  // 1. Get the old key's configuration
+  const oldKeyResponse = await fetch(
+    `https://api.warmbly.com/api-keys/${oldKeyId}`,
+    { headers: { 'Authorization': `Bearer ${API_KEY}` } }
+  );
+  const oldKey = await oldKeyResponse.json();
+
+  // 2. Create a new key with the same settings
+  const newKeyResponse = await fetch('https://api.warmbly.com/api-keys', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      name: `${oldKey.name} (Rotated)`,
+      permissions: oldKey.permissions,
+      allowed_ips: oldKey.allowed_ips,
+      allowed_email_accounts: oldKey.allowed_email_accounts,
+    }),
+  });
+  const newKey = await newKeyResponse.json();
+
+  // 3. Store the new key secret securely
+  console.log('New key created:', newKey.secret);
+
+  // 4. Revoke the old key
+  await fetch(
+    `https://api.warmbly.com/api-keys/${oldKeyId}?reason=Scheduled%20rotation`,
+    {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${API_KEY}` },
+    }
+  );
+
+  return newKey;
+}
+```
+
+## See Also
+
+- [Create API Key](/api-keys/create)
+- [List API Keys](/api-keys/list)
+- [Authentication Security](/authentication)

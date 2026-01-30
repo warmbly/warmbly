@@ -1,0 +1,137 @@
+---
+title: List API Keys
+description: Retrieve a paginated list of all API keys in your organization.
+---
+
+# List API Keys
+
+Retrieve all API keys for your organization with pagination support.
+
+```
+GET /api-keys
+```
+
+## Request
+
+### Headers
+
+| Header | Value |
+|--------|-------|
+| `Authorization` | `Bearer wmbly_<your_key>` |
+
+### Query Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `cursor` | UUID | - | Cursor for pagination (from previous response) |
+| `limit` | integer | 50 | Number of results per page (1-100) |
+
+### Example Request
+
+```bash
+# First page
+curl -X GET "https://api.warmbly.com/api-keys?limit=10" \
+  -H "Authorization: Bearer wmbly_abc123..."
+
+# Next page (using cursor from previous response)
+curl -X GET "https://api.warmbly.com/api-keys?limit=10&cursor=550e8400-e29b-41d4-a716-446655440000" \
+  -H "Authorization: Bearer wmbly_abc123..."
+```
+
+## Response
+
+### Success Response (200 OK)
+
+```json
+{
+  "data": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "user_id": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+      "organization_id": "6ba7b811-9dad-11d1-80b4-00c04fd430c8",
+      "name": "Production API Key",
+      "key_prefix": "wmbly_abc",
+      "permissions": 8191,
+      "allowed_ips": ["203.0.113.10"],
+      "allowed_email_accounts": [],
+      "status": "active",
+      "last_used_at": "2024-01-15T10:30:00Z",
+      "expires_at": null,
+      "revoked_at": null,
+      "revoked_reason": null,
+      "created_at": "2024-01-01T00:00:00Z",
+      "updated_at": "2024-01-15T10:30:00Z"
+    }
+  ],
+  "pagination": {
+    "total": 1,
+    "has_more": false,
+    "next_cursor": null
+  }
+}
+```
+
+### Pagination Object
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `total` | integer | Total number of API keys |
+| `has_more` | boolean | Whether there are more results |
+| `next_cursor` | UUID | Cursor to fetch next page (null if no more) |
+
+### Error Responses
+
+#### 401 Unauthorized
+
+```json
+{
+  "error": "Unauthorized",
+  "message": "Token not found."
+}
+```
+
+#### 403 Forbidden
+
+```json
+{
+  "error": "Forbidden",
+  "message": "You doesn't have access to this feature."
+}
+```
+
+## Pagination Example
+
+Here's how to paginate through all API keys:
+
+```javascript
+async function getAllApiKeys() {
+  const allKeys = [];
+  let cursor = null;
+
+  do {
+    const url = new URL('https://api.warmbly.com/api-keys');
+    url.searchParams.set('limit', '50');
+    if (cursor) {
+      url.searchParams.set('cursor', cursor);
+    }
+
+    const response = await fetch(url, {
+      headers: {
+        'Authorization': `Bearer ${API_KEY}`,
+      },
+    });
+
+    const data = await response.json();
+    allKeys.push(...data.data);
+    cursor = data.pagination.next_cursor;
+  } while (cursor);
+
+  return allKeys;
+}
+```
+
+## See Also
+
+- [Create API Key](/api-keys/create)
+- [Get API Key](/api-keys/get)
+- [Revoke API Key](/api-keys/revoke)
