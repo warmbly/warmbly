@@ -18,7 +18,6 @@ RUN mix deps.compile
 # Copy application code
 COPY realtime/config config/
 COPY realtime/lib lib/
-COPY realtime/priv priv/
 
 # Compile and build release
 RUN mix compile

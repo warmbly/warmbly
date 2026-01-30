@@ -43,7 +43,6 @@ jobs:
               - 'deploy/docker/worker.Dockerfile'
             tracking:
               - 'tracking/**'
-              - 'deploy/docker/tracking.Dockerfile'
             realtime:
               - 'realtime/**'
               - 'deploy/docker/realtime.Dockerfile'
