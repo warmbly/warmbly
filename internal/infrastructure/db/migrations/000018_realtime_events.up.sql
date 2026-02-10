@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS realtime_events (
 
 -- Index for fetching undelivered events for a user
 CREATE INDEX idx_realtime_events_user_pending ON realtime_events(user_id, created_at)
-    WHERE delivered = FALSE AND expires_at > NOW();
+    WHERE delivered = FALSE;
 
 -- Index for fetching undelivered events for an organization
 CREATE INDEX idx_realtime_events_org ON realtime_events(org_id, created_at)

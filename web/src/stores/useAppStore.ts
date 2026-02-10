@@ -5,8 +5,15 @@ import { createOrganizationSlice, type OrganizationSlice } from './slices/organi
 import { createUISlice, type UISlice } from './slices/uiSlice'
 import { createShortcutSlice, type ShortcutSlice } from './slices/shortcutSlice'
 import { createDataSlice, type DataSlice } from './slices/dataSlice'
+import { createRealtimeSlice, type RealtimeSlice } from './slices/realtimeSlice'
+import { createCRMSlice, type CRMSlice } from './slices/crmSlice'
+import { createUniboxSlice, type UniboxSlice } from './slices/uniboxSlice'
+import { createAnalyticsSlice, type AnalyticsSlice } from './slices/analyticsSlice'
+import { createSubscriptionSlice, type SubscriptionSlice } from './slices/subscriptionSlice'
+import { createAPIKeysSlice, type APIKeysSlice } from './slices/apiKeysSlice'
 
 export type AppStore = UserSlice & OrganizationSlice & UISlice & ShortcutSlice & DataSlice
+  & RealtimeSlice & CRMSlice & UniboxSlice & AnalyticsSlice & SubscriptionSlice & APIKeysSlice
 
 export const useAppStore = create<AppStore>()(
   devtools(
@@ -17,6 +24,12 @@ export const useAppStore = create<AppStore>()(
         ...createUISlice(...args),
         ...createShortcutSlice(...args),
         ...createDataSlice(...args),
+        ...createRealtimeSlice(...args),
+        ...createCRMSlice(...args),
+        ...createUniboxSlice(...args),
+        ...createAnalyticsSlice(...args),
+        ...createSubscriptionSlice(...args),
+        ...createAPIKeysSlice(...args),
       }),
       {
         name: 'warmbly-storage',
@@ -73,3 +86,10 @@ export const useCachedData = () =>
     folders: state.folders,
     categories: state.categories,
   }))
+export const useConnectionStatus = () =>
+  useAppStore((state) => ({
+    status: state.connectionStatus,
+    quality: state.connectionQuality,
+    reconnectAttempt: state.reconnectAttempt,
+  }))
+export const useUnseenCount = () => useAppStore((state) => state.unseenCount)

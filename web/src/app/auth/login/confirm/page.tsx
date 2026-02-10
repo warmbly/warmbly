@@ -1,94 +1,40 @@
-"use client";
-
+import { Link } from "react-router-dom";
+import { TurnstileModal } from "@/components/captcha/TurnstileModal";
 import AuthButton from "@/components/auth/button";
 import OTPInput from "@/components/auth/OTP";
-import { TurnstileModal } from "@/components/captcha/TurnstileModal";
-import { saveTokens } from "@/lib/auth";
-import { useTurnstile as useTurnstileL } from "react-turnstile";
-import React from "react";
-import useLoginConfirm from "@/lib/api/hooks/auth/useLoginConfirm";
-import toast from "react-hot-toast";
-import type { AppError } from "@/lib/api/client/normalizeError";
-import buildError from "@/lib/helper/buildError";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLoginConfirmForm } from "../../hooks/useLoginConfirmForm";
+import { ArrowLeft } from "lucide-react";
 
 export default function LoginConfirmPage() {
-    const searchParams = useParams();
-    const navigate = useNavigate();
-    const turnstile = useTurnstileL();
+    const { mail, otp, setOtp, captcha, pending, onSubmit, onToken } = useLoginConfirmForm();
 
-    const loginConfirm = useLoginConfirm();
+    return (
+        <div className="space-y-6">
+            <div className="text-center">
+                <div className="mx-auto w-14 h-14 rounded-2xl bg-sky-50 flex items-center justify-center mb-4">
+                    <svg className="w-7 h-7 text-sky-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
+                    </svg>
+                </div>
+                <h1 className="font-serif text-[32px] text-slate-800 tracking-tight leading-tight">Check your email</h1>
+                <p className="text-sm text-slate-400 mt-1.5">
+                    We sent a 6-digit code{mail ? " to " : ""}
+                    {mail && <span className="text-slate-600 font-medium">{mail}</span>}
+                </p>
+            </div>
 
-    const mail = searchParams["to"] ?? ""
-    const token = searchParams["session"] ?? ""
+            <form onSubmit={onSubmit} className="space-y-5">
+                <OTPInput value={otp} setValue={setOtp} />
+                <AuthButton loading={pending}>Verify</AuthButton>
+                <TurnstileModal visible={captcha} onToken={onToken} />
+            </form>
 
-    const [otp, setOtp] = React.useState<string[]>(Array(6).fill(""));
-
-    const [turnstileToken, setTurnstileToken] = React.useState<string>("");
-    const [captcha, setCaptcha] = React.useState<boolean>(false);
-
-    const [pending, setPending] = React.useState(false);
-
-    const TurnstileUse = () => {
-        setTurnstileToken("");
-        turnstile.reset();
-    }
-
-    async function submit() {
-        if (pending) {
-            return
-        } else if (turnstileToken === "") {
-            setCaptcha(true);
-        } else {
-            setPending(true);
-            try {
-                const resp = await toast.promise(
-                    loginConfirm.mutateAsync({
-                        session: token,
-                        code: otp.map((val) => (val === "" ? "0" : val)).join(""),
-                        turnstile: turnstileToken,
-                    }),
-                    {
-                        loading: "Loading...",
-                        success: "Successfully authorized.",
-                        error: (err: AppError) => buildError(err),
-                    }
-                )
-                saveTokens(Object.fromEntries(
-                    Object.entries(resp).map(([key, value]) => [key, String(value)])
-                ));
-                navigate("/app/emails")
-            } finally {
-                setPending(false)
-                TurnstileUse();
-            }
-        }
-    }
-
-    const submitForm = async (e: React.FormEvent) => {
-        e.preventDefault();
-        await submit()
-    }
-
-    return <form onSubmit={submitForm}>
-        <p className="mb-9 text-green-600">Email sent to <b>{mail}</b>, please enter the verification code.</p>
-        <TurnstileModal
-            visible={captcha}
-            onToken={(t) => {
-                setTurnstileToken(t);
-                if (captcha) {
-                    setCaptcha(false);
-                    if (turnstileToken) {
-                        submit();
-                    }
-                }
-            }}
-        />
-        <div className="mb-3 flex justify-between">
-            <OTPInput value={otp} setValue={setOtp} />
+            <div className="text-center pt-1">
+                <Link to="/auth/login" className="inline-flex items-center gap-1 text-sm text-slate-400 hover:text-slate-600 transition-colors">
+                    <ArrowLeft className="w-4 h-4" />
+                    Back to sign in
+                </Link>
+            </div>
         </div>
-        <AuthButton loading={captcha || pending}>
-            Sign in
-        </AuthButton>
-    </form>
+    );
 }

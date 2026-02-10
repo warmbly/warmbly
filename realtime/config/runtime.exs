@@ -60,14 +60,15 @@ if config_env() == :prod do
   # Ecto Repo configuration (for API key validation)
   config :realtime, Realtime.Repo,
     url: database_url,
-    pool_size: String.to_integer(System.get_env("DATABASE_POOL_SIZE") || "10")
+    ssl: System.get_env("DATABASE_SSL", "true") == "true",
+    pool_size: String.to_integer(System.get_env("DATABASE_POOL_SIZE") || "10"),
+    show_sensitive_data_on_connection_error: true
 
   # Sentry configuration
   if sentry_dsn = System.get_env("SENTRY_DSN") do
     config :sentry,
       dsn: sentry_dsn,
-      environment_name: :prod,
-      included_environments: [:prod]
+      environment_name: :prod
   end
 
   # Goth for GCP authentication

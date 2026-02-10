@@ -19,4 +19,15 @@ defmodule RealtimeWeb.Endpoint do
   # Minimal plugs for WebSocket upgrade handling
   plug Plug.RequestId
   plug Plug.Telemetry, event_prefix: [:realtime, :endpoint]
+
+  # Health check endpoint for Docker/load balancer probes
+  plug :health_check
+
+  defp health_check(%Plug.Conn{request_path: "/health"} = conn, _opts) do
+    conn
+    |> Plug.Conn.send_resp(200, "ok")
+    |> Plug.Conn.halt()
+  end
+
+  defp health_check(conn, _opts), do: conn
 end

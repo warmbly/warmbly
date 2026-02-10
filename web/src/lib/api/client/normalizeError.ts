@@ -1,12 +1,23 @@
 import axios from "axios";
+import { AuthError } from "@/lib/errors/auth";
 
 export interface AppError {
     error: string;
     message: string;
     status?: number;
+    redirect?: boolean;
 }
 
 export function normalizeError(error: unknown): AppError {
+    if (error instanceof AuthError) {
+        return {
+            error: "Authentication Required",
+            message: error.message,
+            status: 401,
+            redirect: true,
+        };
+    }
+
     if (axios.isAxiosError(error)) {
         if (!error.response) {
             // network, CORS, or timeout

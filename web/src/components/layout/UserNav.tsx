@@ -5,6 +5,7 @@ import {
   SettingsIcon,
   CreditCardIcon,
   UsersIcon,
+  BellIcon,
 } from 'lucide-react'
 import {
   DropdownMenu,
@@ -29,6 +30,7 @@ export function UserNav() {
   const navigate = useNavigate()
   const user = useAppStore((state) => state.user)
   const logout = useAppStore((state) => state.logout)
+  const unseenCount = useAppStore((state) => state.unseenCount)
 
   if (!user) return null
 
@@ -51,11 +53,16 @@ export function UserNav() {
               size="lg"
               className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
             >
-              <Avatar className="size-8 rounded-lg">
-                <AvatarFallback className="rounded-lg bg-primary text-primary-foreground">
-                  {getInitials(user.email)}
-                </AvatarFallback>
-              </Avatar>
+              <div className="relative">
+                <Avatar className="size-8">
+                  <AvatarFallback className="bg-primary text-primary-foreground">
+                    {getInitials(user.email)}
+                  </AvatarFallback>
+                </Avatar>
+                {unseenCount > 0 && (
+                  <span className="absolute -top-1 -right-1 size-3 bg-destructive border border-sidebar" />
+                )}
+              </div>
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-medium">{user.email}</span>
                 <span className="truncate text-xs text-muted-foreground">
@@ -66,15 +73,15 @@ export function UserNav() {
             </SidebarMenuButton>
           </DropdownMenuTrigger>
           <DropdownMenuContent
-            className="w-[--radix-dropdown-menu-trigger-width] min-w-56 rounded-lg"
+            className="w-[--radix-dropdown-menu-trigger-width] min-w-56"
             side={isMobile ? 'top' : 'right'}
             align="end"
             sideOffset={4}
           >
             <DropdownMenuLabel className="p-0 font-normal">
               <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
-                <Avatar className="size-8 rounded-lg">
-                  <AvatarFallback className="rounded-lg bg-primary text-primary-foreground">
+                <Avatar className="size-8">
+                  <AvatarFallback className="bg-primary text-primary-foreground">
                     {getInitials(user.email)}
                   </AvatarFallback>
                 </Avatar>
@@ -91,13 +98,24 @@ export function UserNav() {
               <DropdownMenuItem asChild>
                 <Link to="/app/settings">
                   <SettingsIcon className="size-4" />
-                  <span className="ml-2">Settings</span>
+                  <span className="ml-2">Account</span>
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
                 <Link to="/app/billing">
                   <CreditCardIcon className="size-4" />
                   <span className="ml-2">Billing</span>
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link to="/app/unibox">
+                  <BellIcon className="size-4" />
+                  <span className="ml-2">Notifications</span>
+                  {unseenCount > 0 && (
+                    <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center bg-primary px-1 text-[10px] font-bold text-primary-foreground">
+                      {unseenCount}
+                    </span>
+                  )}
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>

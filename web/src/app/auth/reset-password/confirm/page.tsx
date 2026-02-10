@@ -1,117 +1,63 @@
-import AuthButton from "@/components/auth/button";
+import { Link } from "react-router-dom";
 import { TurnstileModal } from "@/components/captcha/TurnstileModal";
-import { Input } from "@/components/input";
-import { is64ByteHex } from "@/lib/token";
-import { RiArrowRightSLine, RiErrorWarningLine } from "@remixicon/react";
-import { useTurnstile as useTurnstileL } from "react-turnstile";
-import React from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
-import toast from "react-hot-toast";
-import useResetPasswordConfirm from "@/lib/api/hooks/auth/useResetPasswordConfirm";
-import type { AppError } from "@/lib/api/client/normalizeError";
-import buildError from "@/lib/helper/buildError";
-import Label from "@/components/app/text/Label";
+import AuthButton from "@/components/auth/button";
+import { useResetPasswordConfirmForm } from "../../hooks/useResetPasswordConfirmForm";
+import { AlertTriangle } from "lucide-react";
+
+const INPUT = "w-full h-11 rounded-lg border border-sky-200 bg-white px-4 text-[15px] text-slate-800 placeholder:text-slate-300 outline-none transition-all duration-200 focus:border-sky-400 focus:ring-4 focus:ring-sky-400/15";
 
 export default function ResetPasswordConfirmPage() {
-    const searchParams = useParams();
-    const navigate = useNavigate();
-    const turnstile = useTurnstileL();
+    const { isValidToken, password, setPassword, password2, setPassword2, captcha, pending, onSubmit, onToken } = useResetPasswordConfirmForm();
 
-    const token = searchParams["token"] ?? ""
-
-    const resetPasswordConfirm = useResetPasswordConfirm();
-
-    const [password, setPassword] = React.useState<string>("");
-    const [password2, setPassword2] = React.useState<string>("");
-
-    const [turnstileToken, setTurnstileToken] = React.useState<string>("");
-    const [captcha, setCaptcha] = React.useState<boolean>(false);
-
-    const [pending, setPending] = React.useState<boolean>(false);
-
-    const TurnstileUse = () => {
-        setTurnstileToken("");
-        turnstile.reset();
-    }
-
-    const submit = async () => {
-        if (turnstileToken === "") {
-            setCaptcha(true);
-        } if (password !== password2) {
-            toast.error("Passwords don’t match. Please make sure you type the same password twice.")
-        } else {
-            setPending(true);
-            try {
-                await toast.promise(
-                    resetPasswordConfirm.mutateAsync({
-                        token,
-                        password,
-                        turnstile: turnstileToken,
-                    }),
-                    {
-                        loading: "Loading...",
-                        success: "Password successfully changed",
-                        error: (err: AppError) => buildError(err),
-                    }
-                )
-
-                navigate("/auth/login?action=1")
-            } finally {
-                setPending(false);
-                TurnstileUse();
-            }
-        }
-    }
-
-    const submitForm = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (pending) return;
-
-        await submit()
-    }
-
-
-    return <>
-        {is64ByteHex(token) ? <>
-            <form onSubmit={submitForm}>
-                <div className="flex gap-5 flex-col">
-                    <div>
-                        <Label htmlFor="password">New Password</Label>
-                        <Input value={password} onChange={(e) => setPassword(e.target.value)} id="password" placeholder="Enter your password" />
-                    </div>
-                    <div>
-                        <Label htmlFor="password2">Confirm Password</Label>
-                        <Input value={password2} onChange={(e) => setPassword2(e.target.value)} id="password2" placeholder="Confirm Password" />
-                    </div>
+    if (!isValidToken) {
+        return (
+            <div className="space-y-5 text-center py-4">
+                <div className="mx-auto w-14 h-14 rounded-2xl bg-rose-50 flex items-center justify-center">
+                    <AlertTriangle className="w-7 h-7 text-rose-500" />
                 </div>
-                <div className="flex gap-5 justify-end my-6 items-center">
-                    <div>
-                        <Link to={"/auth/login"} className="text-blue-500 hover:underline flex gap-4 items-center text-md">
-                            Back to Login <RiArrowRightSLine className="w-5" />
-                        </Link>
-                    </div>
+                <div>
+                    <h2 className="font-serif text-[28px] text-slate-800 tracking-tight">Link expired</h2>
+                    <p className="text-sm text-slate-400 mt-1.5">This password reset link is no longer valid.</p>
                 </div>
-                <TurnstileModal
-                    visible={captcha}
-                    onToken={(t) => {
-                        setTurnstileToken(t);
-                        if (captcha) {
-                            setCaptcha(false);
-                            submit();
-                        }
-                    }}
-                />
-                <AuthButton loading={captcha || pending}>
-                    Reset Password
-                </AuthButton>
-            </form>
-        </> : <>
-            <div className="flex flex-col items-center justify-center">
-                <div className="bg-red-500/30 px-5 py-4 rounded-full">
-                    <RiErrorWarningLine className="w-5 text-red-700" />
-                </div>
-                <p className="text-red-500 text-lg mt-7">Reset token must be valid.</p>
+                <Link
+                    to="/auth/reset-password"
+                    className="inline-block text-sm text-sky-500 font-medium hover:text-sky-600 transition-colors pt-2"
+                >
+                    Request a new link
+                </Link>
             </div>
-        </>}
-    </>
+        );
+    }
+
+    return (
+        <div className="space-y-6">
+            <div className="text-center">
+                <h1 className="font-serif text-[32px] text-slate-800 tracking-tight leading-tight">New password</h1>
+                <p className="text-sm text-slate-400 mt-1.5">Choose a strong password for your account</p>
+            </div>
+
+            <form onSubmit={onSubmit} className="space-y-4">
+                <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-slate-600 pl-0.5">New password</label>
+                    <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter new password" required className={INPUT} />
+                </div>
+
+                <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-slate-600 pl-0.5">Confirm password</label>
+                    <input type="password" value={password2} onChange={(e) => setPassword2(e.target.value)} placeholder="Confirm new password" required className={INPUT} />
+                </div>
+
+                <div className="pt-1">
+                    <AuthButton loading={pending}>Reset password</AuthButton>
+                </div>
+
+                <TurnstileModal visible={captcha} onToken={onToken} />
+            </form>
+
+            <p className="text-center text-sm text-slate-400 pt-1">
+                Remember your password?{" "}
+                <Link to="/auth/login" className="text-sky-500 font-medium hover:text-sky-600 transition-colors">Sign in</Link>
+            </p>
+        </div>
+    );
 }

@@ -61,8 +61,7 @@ config :phoenix, :json_library, Jason
 config :sentry,
   environment_name: Mix.env(),
   enable_source_code_context: true,
-  root_source_code_paths: [File.cwd!()],
-  included_environments: [:prod]
+  root_source_code_paths: [File.cwd!()]
 
 # Goth configuration for GCP authentication (if credentials available)
 if System.get_env("GOOGLE_APPLICATION_CREDENTIALS_JSON") do

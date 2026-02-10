@@ -1,4 +1,4 @@
-defmodule Realtime.PubSub.Subscriber do
+defmodule Realtime.CloudPubSub.Subscriber do
   @moduledoc """
   Broadway pipeline for consuming Google Pub/Sub messages.
 

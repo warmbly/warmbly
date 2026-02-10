@@ -22,9 +22,9 @@ CREATE TABLE IF NOT EXISTS tracking_events_processed (
     task_id UUID NOT NULL,
     event_type VARCHAR(20) NOT NULL, -- 'opened' or 'clicked'
     ip_hash VARCHAR(32),
-    url_hash VARCHAR(16), -- For click deduplication per URL
+    url_hash VARCHAR(16) NOT NULL DEFAULT '', -- For click deduplication per URL
     processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (task_id, event_type, COALESCE(url_hash, ''))
+    PRIMARY KEY (task_id, event_type, url_hash)
 );
 
 -- Auto-cleanup old tracking dedupe records (older than 7 days)
@@ -50,4 +50,4 @@ ON campaign_contact_progress(campaign_id, sent_at DESC) WHERE sent_at IS NOT NUL
 
 -- Add index for daily trend queries
 CREATE INDEX IF NOT EXISTS idx_campaign_progress_daily
-ON campaign_contact_progress(DATE(sent_at), campaign_id) WHERE sent_at IS NOT NULL;
+ON campaign_contact_progress(sent_at, campaign_id) WHERE sent_at IS NOT NULL;

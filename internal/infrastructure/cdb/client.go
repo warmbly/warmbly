@@ -17,6 +17,12 @@ type Client struct {
 func NewClient(
 	cfg *config.AstraConfig,
 ) (*Client, error) {
+	// Skip Astra connection in dev - no real Astra instance available
+	if os.Getenv("APP_ENV") == "dev" {
+		log.Println("Warning: Skipping Astra/Cassandra connection in dev mode")
+		return nil, nil
+	}
+
 	var err error
 	var cluster *gocql.ClusterConfig
 

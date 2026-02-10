@@ -27,6 +27,7 @@ import APIKeysPage from './app/app/api-keys/page';
 import SettingsPage from './app/app/settings/page';
 import BillingPage from './app/app/billing/page';
 import TeamPage from './app/app/team/page';
+import UniboxPage from './app/app/unibox/page';
 
 import { Toaster } from '@/components/ui/sonner';
 
@@ -69,11 +70,11 @@ const router = createBrowserRouter([
         children: [
           {
             path: "register",
-            element: <RegisterLayout />,
+            element: <LoginLayout />,
             children: [
               {
                 index: true,
-                element: <RegisterPage />,
+                element: <LoginPage />,
               },
               {
                 path: "confirm",
@@ -190,6 +191,10 @@ const router = createBrowserRouter([
           {
             path: "billing",
             element: <BillingPage />,
+          },
+          {
+            path: "unibox",
+            element: <UniboxPage />,
           },
           {
             path: "team",

@@ -9,7 +9,6 @@ import (
 func GenerateSchema[T any]() *jsonschema.Schema {
 	reflector := jsonschema.Reflector{
 		AllowAdditionalProperties: false,
-		DoNotReference:            true,
 	}
 	var v T
 	return reflector.Reflect(v)

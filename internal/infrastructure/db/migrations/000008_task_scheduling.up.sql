@@ -13,7 +13,7 @@ ON tasks(email_account_id, completed_at)
 WHERE status = 'completed';
 
 CREATE INDEX idx_tasks_scheduled_date
-ON tasks(DATE(scheduled_at))
+ON tasks(scheduled_at)
 WHERE status = 'pending';
 
 -- Add encryption flag to email_tasks

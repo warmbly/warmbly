@@ -12,5 +12,4 @@ config :logger, :console, format: "[$level] $message\n"
 
 # Disable Sentry in development
 config :sentry,
-  dsn: nil,
-  included_environments: []
+  dsn: nil

@@ -1,118 +1,76 @@
-import AuthButton from "@/components/auth/button";
+import { Link } from "react-router-dom";
 import { TurnstileModal } from "@/components/captcha/TurnstileModal";
-import DefaultHref from "@/components/default-link";
-import { Checkbox, Input, InputSecret } from "@/components/input";
+import AuthButton from "@/components/auth/button";
+import ExternalLogin from "@/components/auth/external";
+import { useRegisterForm } from "../hooks/useRegisterForm";
 import { WEBSITE_URL } from "@/lib/information";
-import { useTurnstile as useTurnstileL } from "react-turnstile";
-import React from "react";
-import { useNavigate } from "react-router-dom";
-import useRegister from "@/lib/api/hooks/auth/useRegister";
-import toast from "react-hot-toast";
-import type { AppError } from "@/lib/api/client/normalizeError";
-import buildError from "@/lib/helper/buildError";
 
-function Label({ htmlFor, children }: { htmlFor: string, children: React.ReactNode }) {
-    return <label htmlFor={htmlFor} className="block mb-2 text-md font-sans font-bold text-gray-600">
-        {children}
-    </label>
-}
+const INPUT = "w-full h-11 rounded-lg border border-sky-200 bg-white px-4 text-[15px] text-slate-800 placeholder:text-slate-300 outline-none transition-all duration-200 focus:border-sky-400 focus:ring-4 focus:ring-sky-400/15";
 
 export default function RegisterPage() {
-    const navigate = useNavigate();
+    const { mail, setMail, password, setPassword, password2, setPassword2, acceptTerms, setAcceptTerms, captcha, pending, onSubmit, onToken } = useRegisterForm();
 
-    const register = useRegister();
-    const turnstile = useTurnstileL();
-
-    const [mail, setMail] = React.useState<string>("");
-    const [password, setPassword] = React.useState<string>("");
-    const [password2, setPassword2] = React.useState<string>("");
-    const [acceptTerms, setAcceptTerms] = React.useState<boolean>(false);
-
-    const [turnstileToken, setTurnstileToken] = React.useState<string>("");
-    const [captcha, setCaptcha] = React.useState<boolean>(false);
-
-    const [pending, setPending] = React.useState<boolean>(false);
-
-    const TurnstileUse = () => {
-        setTurnstileToken("");
-        turnstile.reset();
-    }
-
-    const submit = async () => {
-        if (pending) {
-            return
-        } else if (!acceptTerms) {
-            toast.error("Please accept the Terms of Service and Privacy Policy to continue.")
-        } else if (turnstileToken === "") {
-            setCaptcha(true);
-        } else if (password !== password2) {
-            toast.error("Passwords don’t match. Please make sure you type the same password twice.")
-        } else {
-            setPending(true);
-            try {
-                const resp = await toast.promise(
-                    register.mutateAsync({
-                        email: mail,
-                        password,
-                        turnstile: turnstileToken,
-                    }),
-                    {
-                        loading: "Loading...",
-                        error: (err: AppError) => buildError(err),
-                    }
-                )
-
-                navigate(`/auth/register/confirm?session=${resp.session}&to=${mail}`)
-            } finally {
-                setPending(false);
-                TurnstileUse();
-            }
-        }
-    }
-
-    const submitForm = async (e: React.FormEvent) => {
-        e.preventDefault();
-        await submit()
-    }
-
-
-
-    return <>
-        <form onSubmit={submitForm}>
-            <div className="flex gap-5 flex-col">
-                <div>
-                    <Label htmlFor="email">Email</Label>
-                    <Input onChange={(e) => setMail(e.target.value)} id="email" placeholder="Enter your email" />
-                </div>
-                <div>
-                    <Label htmlFor="password">Password</Label>
-                    <InputSecret onChange={(e) => setPassword(e.target.value)} value={password} id="password" placeholder="Enter your Password" />
-                </div>
-                <div>
-                    <Label htmlFor="password2">Confirm Password</Label>
-                    <InputSecret onChange={(e) => setPassword2(e.target.value)} value={password2} id="password2" placeholder="Confirm your Password" />
-                </div>
+    return (
+        <div className="space-y-6">
+            <div className="text-center">
+                <h1 className="font-serif text-[32px] text-slate-800 tracking-tight leading-tight">Create your account</h1>
+                <p className="text-sm text-slate-400 mt-1.5">Get started with Warmbly for free</p>
             </div>
-            <div className="flex gap-5 justify-between mt-9 items-center">
-                <Checkbox id="termsandservice" value={acceptTerms} onChange={(e) => setAcceptTerms(e.target.checked)}>Accept our <DefaultHref href={`${WEBSITE_URL}/terms`}>Terms of Service</DefaultHref> and <DefaultHref href={`${WEBSITE_URL}/privacy`}>Privacy Policy</DefaultHref></Checkbox>
+
+            <form onSubmit={onSubmit} className="space-y-4">
+                <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-slate-600 pl-0.5">Email</label>
+                    <input type="email" value={mail} onChange={(e) => setMail(e.target.value)} placeholder="name@company.com" required className={INPUT} />
+                </div>
+
+                <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-slate-600 pl-0.5">Password</label>
+                    <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Create a password" required className={INPUT} />
+                </div>
+
+                <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-slate-600 pl-0.5">Confirm password</label>
+                    <input type="password" value={password2} onChange={(e) => setPassword2(e.target.value)} placeholder="Confirm your password" required className={INPUT} />
+                </div>
+
+                <label className="flex items-start gap-3 pt-0.5 cursor-pointer">
+                    <div className="relative mt-0.5 shrink-0">
+                        <input type="checkbox" checked={acceptTerms} onChange={(e) => setAcceptTerms(e.target.checked)} className="peer sr-only" />
+                        <div className="size-[18px] rounded-md border-2 border-sky-200 bg-white peer-checked:bg-sky-500 peer-checked:border-sky-500 peer-focus-visible:ring-4 peer-focus-visible:ring-sky-400/15 transition-all duration-200 flex items-center justify-center">
+                            {acceptTerms && (
+                                <svg className="size-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                </svg>
+                            )}
+                        </div>
+                    </div>
+                    <span className="text-[13px] text-slate-400 leading-relaxed">
+                        I agree to the{" "}
+                        <a href={`${WEBSITE_URL}/terms`} target="_blank" rel="noopener noreferrer" className="text-sky-500 hover:text-sky-600 font-medium transition-colors">Terms of Service</a>
+                        {" "}and{" "}
+                        <a href={`${WEBSITE_URL}/privacy`} target="_blank" rel="noopener noreferrer" className="text-sky-500 hover:text-sky-600 font-medium transition-colors">Privacy Policy</a>
+                    </span>
+                </label>
+
+                <div className="pt-1">
+                    <AuthButton loading={pending}>Create account</AuthButton>
+                </div>
+
+                <TurnstileModal visible={captcha} onToken={onToken} />
+            </form>
+
+            <div className="flex items-center gap-3">
+                <div className="flex-1 h-px bg-sky-100" />
+                <span className="text-xs text-slate-300 font-medium">or continue with</span>
+                <div className="flex-1 h-px bg-sky-100" />
             </div>
-            <TurnstileModal
-                visible={captcha}
-                onToken={(t) => {
-                    setTurnstileToken(t);
-                    if (captcha) {
-                        setCaptcha(false);
-                        if (turnstileToken) {
-                            submit();
-                        }
-                    }
-                }}
-            />
-            <div className="mt-10">
-                <AuthButton loading={captcha || pending}>
-                    Register
-                </AuthButton>
-            </div>
-        </form>
-    </>
+
+            <ExternalLogin />
+
+            <p className="text-center text-sm text-slate-400 pt-1">
+                Already have an account?{" "}
+                <Link to="/auth/login" className="text-sky-500 font-medium hover:text-sky-600 transition-colors">Sign in</Link>
+            </p>
+        </div>
+    );
 }

@@ -7,6 +7,11 @@ defmodule Realtime.Application do
 
   @impl true
   def start(_type, _args) do
+    # Ensure postgrex application is fully started before we start the Repo.
+    # In releases, dependent apps can sometimes be stopped during restart cycles
+    # while named processes (like PubSub.Supervisor) survive, causing conflicts.
+    {:ok, _} = Application.ensure_all_started(:postgrex)
+
     children = [
       # Database repository for API key lookups
       Realtime.Repo,
@@ -24,7 +29,7 @@ defmodule Realtime.Application do
       {Realtime.Connections, []},
 
       # Google Pub/Sub subscriber supervisor
-      {Realtime.PubSub.Supervisor, []}
+      {Realtime.CloudPubSub.Supervisor, []}
     ]
 
     opts = [strategy: :one_for_one, name: Realtime.Supervisor]

@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # Infrastructure
   postgres:
@@ -8,6 +6,8 @@ services:
       POSTGRES_USER: warmbly
       POSTGRES_PASSWORD: warmbly
       POSTGRES_DB: warmbly_dev
+      POSTGRES_HOST_AUTH_METHOD: md5
+      POSTGRES_INITDB_ARGS: "--auth-host=md5"
     ports:
       - "5432:5432"
     volumes:
@@ -50,6 +50,12 @@ services:
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
 
   schema-registry:
     image: confluentinc/cp-schema-registry:7.5.0
@@ -60,6 +66,12 @@ services:
     environment:
       SCHEMA_REGISTRY_HOST_NAME: schema-registry
       SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: kafka:29092
+
+  cloud-tasks-emulator:
+    image: ghcr.io/aertje/cloud-tasks-emulator:latest
+    command: ["-host", "0.0.0.0", "-port", "8123", "-queue", "projects/local/locations/local/queues/default"]
+    ports:
+      - "8123:8123"
 
   # Application Services
   backend:
@@ -119,7 +131,12 @@ services:
 
       # === GCP (optional) ===
       GCP_PROJECT_ID: ""
-      GOOGLE_APPLICATION_CREDENTIALS_JSON: ""
+      GOOGLE_APPLICATION_CREDENTIALS_JSON: "dev@local.iam.gserviceaccount.com"
+
+      # === Cloud Tasks ===
+      CLOUD_TASKS_EMULATOR_HOST: cloud-tasks-emulator:8123
+      CLOUD_TASKS_QUEUE_NAME: projects/local/locations/local/queues/default
+      CLOUD_TASKS_WEBHOOK_URL: http://backend:8080/webhook/email
 
       # === Cassandra/Astra (dev stubs) ===
       ASTRA_DB_ID: local-astra-db-id
@@ -132,8 +149,10 @@ services:
       redis:
         condition: service_healthy
       kafka:
-        condition: service_started
+        condition: service_healthy
       schema-registry:
+        condition: service_started
+      cloud-tasks-emulator:
         condition: service_started
 
   consumer:
@@ -166,9 +185,12 @@ services:
       # === GCP (optional) ===
       GCP_PROJECT_ID: ""
     depends_on:
-      - backend
-      - kafka
-      - schema-registry
+      backend:
+        condition: service_started
+      kafka:
+        condition: service_healthy
+      schema-registry:
+        condition: service_started
 
   worker:
     build:
@@ -189,9 +211,12 @@ services:
       # === Schema Registry ===
       SCHEMA_REGISTRY_URL: http://schema-registry:8081
     depends_on:
-      - kafka
-      - schema-registry
-      - redis
+      kafka:
+        condition: service_healthy
+      schema-registry:
+        condition: service_started
+      redis:
+        condition: service_healthy
 
   tracking:
     build:
@@ -216,8 +241,10 @@ services:
       # === Schema Registry ===
       SCHEMA_REGISTRY_URL: http://schema-registry:8081
     depends_on:
-      - kafka
-      - schema-registry
+      kafka:
+        condition: service_healthy
+      schema-registry:
+        condition: service_started
 
   realtime:
     build:
@@ -231,7 +258,8 @@ services:
       PORT: 4000
 
       # === Database ===
-      DATABASE_URL: postgres://warmbly:warmbly@postgres:5432/warmbly_dev
+      DATABASE_URL: postgres://warmbly:warmbly@postgres:5432/warmbly_dev?sslmode=disable
+      DATABASE_SSL: "false"
       DATABASE_POOL_SIZE: "10"
       REDIS_URL: redis://redis:6379
 

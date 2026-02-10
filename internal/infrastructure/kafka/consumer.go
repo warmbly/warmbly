@@ -72,7 +72,13 @@ func (cons *Consumer) Consume(ctx context.Context, handler func(msg *ckf.Message
 		default:
 			msg, err := cons.c.ReadMessage(100 * time.Millisecond)
 			if err != nil {
-				if kafkaErr, ok := err.(ckf.Error); ok && kafkaErr.Code() == ckf.ErrTimedOut {
+				if kafkaErr, ok := err.(ckf.Error); ok {
+					if kafkaErr.Code() == ckf.ErrTimedOut {
+						continue
+					}
+					// Log transient Kafka errors and retry after a brief delay
+					fmt.Printf("kafka consumer error (code=%v): %v\n", kafkaErr.Code(), kafkaErr)
+					time.Sleep(time.Second)
 					continue
 				}
 				return fmt.Errorf("error reading message: %w", err)

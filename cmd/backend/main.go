@@ -43,6 +43,7 @@ import (
 	"github.com/warmbly/warmbly/internal/infrastructure/cdb"
 	"github.com/warmbly/warmbly/internal/infrastructure/db"
 	"github.com/warmbly/warmbly/internal/infrastructure/dynamo"
+	"github.com/warmbly/warmbly/internal/infrastructure/gtasks"
 	"github.com/warmbly/warmbly/internal/infrastructure/kafka"
 	"github.com/warmbly/warmbly/internal/infrastructure/kms"
 	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
@@ -135,8 +136,12 @@ func main() {
 
 		keySet, err = keyfunc.NewDefaultCtx(ctx, []string{"https://www.googleapis.com/oauth2/v3/certs"})
 		if err != nil {
-			sentry.CaptureException(err)
-			log.Fatal(err)
+			if cfg.Env == "dev" {
+				log.Printf("Warning: Failed to fetch Google OIDC keys: %v", err)
+			} else {
+				sentry.CaptureException(err)
+				log.Fatal(err)
+			}
 		}
 
 		apiCfg, err := cfg.LoadApiConfig(ctx)
@@ -169,10 +174,15 @@ func main() {
 			log.Fatal(err)
 		}
 
-		geoloc, err := geo.New(geoPath)
+		var geoloc *geo.Client
+		geoloc, err = geo.New(geoPath)
 		if err != nil {
-			sentry.CaptureException(err)
-			log.Fatal(err)
+			if cfg.Env == "dev" {
+				log.Printf("Warning: GeoIP database not found at %s, geo lookups disabled", geoPath)
+			} else {
+				sentry.CaptureException(err)
+				log.Fatal(err)
+			}
 		}
 
 		s3, err := storage.NewClient(ctx, awscfg, "main")
@@ -272,15 +282,22 @@ func main() {
 			nil,
 		)
 
-		appleAuth, err := apple.NewB64(
+		var appleAuthClient apple.AppleAuth
+		appleAuthInstance, appleErr := apple.NewB64(
 			authCfg.AppleAppID,
 			authCfg.AppleTeamID,
 			authCfg.AppleKeyID,
 			authCfg.AppleKeySecret,
 		)
-		if err != nil {
-			sentry.CaptureException(err)
-			log.Fatal(err)
+		if appleErr != nil {
+			if cfg.Env == "dev" {
+				log.Printf("Warning: Apple auth initialization failed (expected in dev): %v", appleErr)
+			} else {
+				sentry.CaptureException(appleErr)
+				log.Fatal(appleErr)
+			}
+		} else {
+			appleAuthClient = appleAuthInstance
 		}
 
 		kafkaBootstrapServers, err := cfg.LoadKafkaBootstrapServers(ctx)
@@ -308,7 +325,9 @@ func main() {
 		}
 
 		kafkaProducerConfig := kafka.NewProducer(kafkaBootstrapServers)
-		kafkaProducerConfig.WithSASL(kafkaSaslConfig)
+		if kafkaSaslConfig != nil {
+			kafkaProducerConfig.WithSASL(kafkaSaslConfig)
+		}
 
 		kafkaProducer, err := kafkaProducerConfig.Connect()
 		if err != nil {
@@ -373,7 +392,7 @@ func main() {
 			emailNotificationService,
 			&models.ExternalAuth{
 				GoogleAuth: googleAuth,
-				AppleAuth:  appleAuth,
+				AppleAuth:  appleAuthClient,
 			},
 			trialService,
 			organizationService,
@@ -390,10 +409,23 @@ func main() {
 		socketService = socket.NewService(cache, tokenService)
 		uniboxService = unibox.NewService(cache, s3, uniboxRepository)
 
+		// Cloud Tasks client
+		cloudTasksCfg, err := cfg.LoadCloudTasksConfig(ctx)
+		if err != nil {
+			sentry.CaptureException(err)
+			log.Fatal(err)
+		}
+
+		tasksClient, err := gtasks.NewClient(ctx, cloudTasksCfg.QueueName, cloudTasksCfg.WebhookURL, serviceAccount, cloudTasksCfg.EmulatorHost)
+		if err != nil {
+			sentry.CaptureException(err)
+			log.Fatal(err)
+		}
+
 		// Template & email send services
 		templateService = template.NewService(templateRepository)
 		schedulerService := scheduler.NewSchedulerService(taskRepository, warmupRepository, campaignProgressRepository, emailRepostory, campaignRepostory)
-		emailSendService = emailsend.NewService(taskRepository, emailRepostory, schedulerService, nil, featureGateService)
+		emailSendService = emailsend.NewService(taskRepository, emailRepostory, schedulerService, tasksClient, featureGateService)
 
 		// Admin service
 		adminRepository := repository.NewAdminRepository(primaryDB.Pool)
@@ -467,6 +499,7 @@ func main() {
 	oidcH := &middleware.OidcHandler{
 		ServiceAccount: serviceAccount,
 		KeySet:         keySet,
+		AppEnv:         os.Getenv("APP_ENV"),
 	}
 
 	sentry.CaptureMessage("Starting the backend on " + addr)

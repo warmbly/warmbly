@@ -8,7 +8,7 @@ export default function Label({
     children: React.ReactNode
 }) {
     return (
-        <label htmlFor={htmlFor} className="block mb-2 text-md font-sans font-bold text-gray-600">
+        <label htmlFor={htmlFor} className="block mb-2 text-md font-sans font-bold text-foreground">
             {children}
         </label>
     )

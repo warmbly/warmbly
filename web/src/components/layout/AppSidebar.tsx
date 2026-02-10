@@ -11,6 +11,9 @@ import {
   FileTextIcon,
   KeyIcon,
   HelpCircleIcon,
+  SettingsIcon,
+  CreditCardIcon,
+  Users2Icon,
 } from 'lucide-react'
 import {
   Sidebar,
@@ -23,6 +26,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarRail,
   SidebarSeparator,
 } from '@/components/ui/sidebar'
 import { OrgSwitcher } from './OrgSwitcher'
@@ -62,6 +66,12 @@ const resourceNavItems: NavItem[] = [
   { title: 'API Keys', url: '/app/api-keys', icon: KeyIcon, shortcut: 'g k' },
 ]
 
+const bottomNavItems: NavItem[] = [
+  { title: 'Settings', url: '/app/settings', icon: SettingsIcon, shortcut: 'g s' },
+  { title: 'Billing', url: '/app/billing', icon: CreditCardIcon },
+  { title: 'Team', url: '/app/team', icon: Users2Icon },
+]
+
 const navGroups: NavGroup[] = [
   { label: 'Main', items: mainNavItems },
   { label: 'CRM', items: crmNavItems },
@@ -74,7 +84,7 @@ function ShortcutBadge({ shortcut }: { shortcut: string }) {
       {shortcut.split(' ').map((key, i) => (
         <kbd
           key={i}
-          className="inline-flex h-5 min-w-5 items-center justify-center rounded border border-border bg-muted px-1 font-mono text-[10px] font-medium text-muted-foreground"
+          className="inline-flex h-5 min-w-5 items-center justify-center border border-border bg-muted px-1 font-mono text-[10px] font-medium text-muted-foreground"
         >
           {key}
         </kbd>
@@ -83,9 +93,10 @@ function ShortcutBadge({ shortcut }: { shortcut: string }) {
   )
 }
 
-function NavItem({ item }: { item: NavItem }) {
+function NavItemComponent({ item }: { item: NavItem }) {
   const location = useLocation()
   const isActive = location.pathname === item.url || location.pathname.startsWith(item.url + '/')
+  const unseenCount = useAppStore((s) => s.unseenCount)
 
   return (
     <SidebarMenuItem>
@@ -93,10 +104,18 @@ function NavItem({ item }: { item: NavItem }) {
         asChild
         isActive={isActive}
         tooltip={item.title}
+        className={cn(
+          isActive && 'border-l-3 border-primary bg-sidebar-accent font-medium'
+        )}
       >
         <Link to={item.url}>
           <item.icon className="size-4" />
           <span>{item.title}</span>
+          {item.title === 'Unibox' && unseenCount > 0 && (
+            <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center bg-primary px-1.5 text-[10px] font-bold text-primary-foreground">
+              {unseenCount > 99 ? '99+' : unseenCount}
+            </span>
+          )}
           {item.shortcut && <ShortcutBadge shortcut={item.shortcut} />}
         </Link>
       </SidebarMenuButton>
@@ -120,7 +139,7 @@ export function AppSidebar() {
             <SidebarGroupContent>
               <SidebarMenu>
                 {group.items.map((item) => (
-                  <NavItem key={item.url} item={item} />
+                  <NavItemComponent key={item.url} item={item} />
                 ))}
               </SidebarMenu>
             </SidebarGroupContent>
@@ -132,6 +151,9 @@ export function AppSidebar() {
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
+              {bottomNavItems.map((item) => (
+                <NavItemComponent key={item.url} item={item} />
+              ))}
               <SidebarMenuItem>
                 <div className="flex items-center gap-2 px-2 py-1.5">
                   <ThemeToggle />
@@ -145,7 +167,7 @@ export function AppSidebar() {
                   <HelpCircleIcon className="size-4" />
                   <span>Help</span>
                   <div className="ml-auto opacity-60 group-data-[collapsible=icon]:hidden">
-                    <kbd className="inline-flex h-5 min-w-5 items-center justify-center rounded border border-border bg-muted px-1 font-mono text-[10px] font-medium text-muted-foreground">
+                    <kbd className="inline-flex h-5 min-w-5 items-center justify-center border border-border bg-muted px-1 font-mono text-[10px] font-medium text-muted-foreground">
                       ?
                     </kbd>
                   </div>
@@ -159,6 +181,8 @@ export function AppSidebar() {
       <SidebarFooter>
         <UserNav />
       </SidebarFooter>
+
+      <SidebarRail />
     </Sidebar>
   )
 }

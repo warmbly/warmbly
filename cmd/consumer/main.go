@@ -131,7 +131,9 @@ func main() {
 
 	// Kafka producer
 	producerConfig := kafka.NewProducer(kafkaBootstrapServers)
-	producerConfig.WithSASL(kafkaSaslConfig)
+	if kafkaSaslConfig != nil {
+		producerConfig.WithSASL(kafkaSaslConfig)
+	}
 	kafkaProducer, err := producerConfig.Connect()
 	if err != nil {
 		log.Fatal(err)
@@ -141,7 +143,9 @@ func main() {
 
 	// Kafka consumer
 	consumerConfig := kafka.NewConsumer(kafkaBootstrapServers)
-	consumerConfig.WithSASL(kafkaSaslConfig)
+	if kafkaSaslConfig != nil {
+		consumerConfig.WithSASL(kafkaSaslConfig)
+	}
 	consumerConfig.Set("group.id", "consumer-group")
 	consumerConfig.Set("auto.offset.reset", "earliest")
 	kafkaConsumer, err := consumerConfig.Connect()

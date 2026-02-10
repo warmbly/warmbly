@@ -7,7 +7,7 @@ interface Props {
 export default function Turnstile({setToken}: Props) {
     return <>
         <TurnstileObj.default
-            sitekey={process.env.NEXT_PUBLIC_TURNSTILE_KEY!}
+            sitekey={import.meta.env.VITE_TURNSTILE_KEY!}
             onVerify={(token: string) => setToken(token)}
             onExpire={() => setToken("")}
             theme={"light"}

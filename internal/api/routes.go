@@ -20,6 +20,11 @@ func Run(
 	gin.SetMode(ginMode)
 
 	r := gin.Default()
+
+	r.GET("/health", func(c *gin.Context) {
+		c.JSON(200, gin.H{"status": "ok"})
+	})
+
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{"*"},
 		AllowMethods:     []string{"POST", "GET", "PATCH", "OPTIONS", "DELETE"},

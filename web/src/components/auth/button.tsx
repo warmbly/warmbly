@@ -1,10 +1,16 @@
 import React from "react";
 import { Loading } from "../loader";
 
-export default function AuthButton({children, loading}:{children: React.ReactNode, loading: boolean}) {
-    return <button type="submit" className="bg-blue-500 flex justify-center items-center text-gray-50 w-full rounded-lg text-lg font-sans h-12 hover:bg-blue-600 cursor-pointer transition-bg">
-        {!loading ? children: <>
-            <Loading className="h-7 text-white"/>
-        </>}
-    </button>
+export default function AuthButton({ children, loading }: { children: React.ReactNode, loading: boolean }) {
+    return (
+        <button
+            type="submit"
+            disabled={loading}
+            className="w-full h-11 rounded-lg bg-gradient-to-b from-sky-500 to-sky-600 text-white font-semibold text-[15px] shadow-[0_1px_2px_rgba(0,0,0,0.06),0_4px_12px_rgba(14,165,233,0.35)] hover:-translate-y-[1px] hover:shadow-[0_1px_2px_rgba(0,0,0,0.06),0_8px_20px_rgba(14,165,233,0.45)] active:translate-y-0 active:shadow-[0_1px_2px_rgba(0,0,0,0.06),0_2px_6px_rgba(14,165,233,0.25)] transition-all duration-200 disabled:opacity-50 disabled:pointer-events-none cursor-pointer"
+        >
+            {!loading ? children : (
+                <Loading className="h-5 text-white" />
+            )}
+        </button>
+    )
 }

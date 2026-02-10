@@ -1,4 +1,4 @@
-defmodule Realtime.PubSub.Supervisor do
+defmodule Realtime.CloudPubSub.Supervisor do
   @moduledoc """
   Supervisor for Google Pub/Sub subscribers.
 
@@ -25,7 +25,7 @@ defmodule Realtime.PubSub.Supervisor do
 
         Enum.map(subscriptions, fn subscription ->
           Supervisor.child_spec(
-            {Realtime.PubSub.Subscriber, subscription: subscription},
+            {Realtime.CloudPubSub.Subscriber, subscription: subscription},
             id: String.to_atom("pubsub_#{subscription}")
           )
         end)
