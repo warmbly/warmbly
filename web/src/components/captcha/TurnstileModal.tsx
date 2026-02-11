@@ -1,4 +1,5 @@
-import Turnstile from './Turnstile';
+import { useEffect, useRef, useCallback } from "react";
+import Turnstile from "react-turnstile";
 
 interface Props {
     visible: boolean;
@@ -6,11 +7,47 @@ interface Props {
 }
 
 export function TurnstileModal({ visible, onToken }: Props) {
+    const tokenRef = useRef("");
+    const waitingRef = useRef(false);
+    const turnstileRef = useRef<{ reset(): void } | null>(null);
+    const onTokenRef = useRef(onToken);
+    onTokenRef.current = onToken;
+
+    const deliver = useCallback((token: string) => {
+        onTokenRef.current(token);
+        setTimeout(() => turnstileRef.current?.reset(), 50);
+    }, []);
+
+    const handleVerify = useCallback((token: string) => {
+        if (waitingRef.current) {
+            waitingRef.current = false;
+            deliver(token);
+        } else {
+            tokenRef.current = token;
+        }
+    }, [deliver]);
+
+    useEffect(() => {
+        if (visible) {
+            if (tokenRef.current) {
+                const t = tokenRef.current;
+                tokenRef.current = "";
+                deliver(t);
+            } else {
+                waitingRef.current = true;
+            }
+        } else {
+            waitingRef.current = false;
+        }
+    }, [visible, deliver]);
+
     return (
-        <div className={`fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm transition-all duration-300 ${visible ? "opacity-100 visible" : "opacity-0 invisible pointer-events-none"}`}>
-            <div className="rounded-2xl bg-white p-8 shadow-[0_25px_50px_-12px_rgba(0,0,0,0.25)]">
-                <Turnstile setToken={onToken} />
-            </div>
-        </div>
+        <Turnstile
+            ref={turnstileRef as React.RefObject<never>}
+            sitekey={import.meta.env.VITE_TURNSTILE_KEY!}
+            onVerify={handleVerify}
+            onExpire={() => { tokenRef.current = ""; turnstileRef.current?.reset(); }}
+            size="invisible"
+        />
     );
 }

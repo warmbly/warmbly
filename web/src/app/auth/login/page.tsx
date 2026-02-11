@@ -7,7 +7,7 @@ import { z } from "zod";
 import toast from "react-hot-toast";
 import { ArrowLeft } from "lucide-react";
 
-import { TurnstileModal } from "@/components/captcha/TurnstileModal";
+import Turnstile from "react-turnstile";
 import AuthButton from "@/components/auth/button";
 import ExternalLogin from "@/components/auth/external";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
@@ -155,8 +155,9 @@ export default function LoginPage() {
     const [password, setPassword] = useState("");
     const [session, setSession] = useState("");
     const [direction, setDirection] = useState(0);
-    const [captcha, setCaptcha] = useState(false);
     const pendingRef = useRef<((token: string) => Promise<void>) | null>(null);
+    const tokenRef = useRef<string>("");
+    const turnstileRef = useRef<{ reset(): void } | null>(null);
 
     /* Mutations */
     const loginMutation = useLogin();
@@ -171,16 +172,23 @@ export default function LoginPage() {
     /* Step nav */
     const goTo = (s: Step, dir: 1 | -1 = 1) => { setDirection(dir); setStep(s); };
 
-    /* Captcha helper */
+    /* Captcha helper — invisible Turnstile, no modal */
     const withCaptcha = (fn: (token: string) => Promise<void>) => {
-        pendingRef.current = fn;
-        setCaptcha(true);
+        if (tokenRef.current) {
+            const t = tokenRef.current;
+            tokenRef.current = "";
+            fn(t).finally(() => turnstileRef.current?.reset());
+        } else {
+            pendingRef.current = fn;
+        }
     };
-    const onToken = async (token: string) => {
-        setCaptcha(false);
+    const onTurnstileVerify = (token: string) => {
         if (pendingRef.current) {
-            await pendingRef.current(token);
+            const fn = pendingRef.current;
             pendingRef.current = null;
+            fn(token).finally(() => turnstileRef.current?.reset());
+        } else {
+            tokenRef.current = token;
         }
     };
 
@@ -292,7 +300,13 @@ export default function LoginPage() {
                 )}
             </AnimatePresence>
 
-            <TurnstileModal visible={captcha} onToken={onToken} />
+            <Turnstile
+                ref={turnstileRef as React.RefObject<never>}
+                sitekey={import.meta.env.VITE_TURNSTILE_KEY!}
+                onVerify={onTurnstileVerify}
+                onExpire={() => { tokenRef.current = ""; turnstileRef.current?.reset(); }}
+                size="invisible"
+            />
         </div>
     );
 }
