@@ -4,7 +4,7 @@ import AuthButton from "@/components/auth/button";
 import { useResetPasswordForm } from "../hooks/useResetPasswordForm";
 import { Mail } from "lucide-react";
 
-const INPUT = "w-full h-11 rounded-lg border border-sky-200 bg-white px-4 text-[15px] text-slate-800 placeholder:text-slate-300 outline-none transition-all duration-200 focus:border-sky-400 focus:ring-4 focus:ring-sky-400/15";
+const INPUT = "w-full h-11 rounded-lg border border-sky-200 bg-white px-4 text-[15px] text-slate-800 placeholder:text-slate-300 outline-none transition-colors duration-200 focus:border-sky-400 focus:ring-4 focus:ring-sky-400/15";
 
 export default function ResetPasswordPage() {
     const { mail, setMail, captcha, pending, sent, onSubmit, onToken } = useResetPasswordForm();

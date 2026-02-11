@@ -50,19 +50,19 @@ const signUpSchema = z.object({
 /* ── Animation ─────────────────────── */
 
 const slideVariants = {
-    enter: (dir: number) => ({ x: dir > 0 ? 260 : -260, opacity: 0 }),
-    center: { x: 0, opacity: 1 },
-    exit: (dir: number) => ({ x: dir > 0 ? -260 : 260, opacity: 0 }),
+    enter: (dir: number) => ({ opacity: 0, y: dir > 0 ? 20 : -20 }),
+    center: { opacity: 1, y: 0 },
+    exit: (dir: number) => ({ opacity: 0, y: dir > 0 ? -20 : 20 }),
 };
 
 const slideTrans = {
-    x: { type: "spring" as const, stiffness: 320, damping: 32 },
+    y: { type: "tween" as const, duration: 0.25, ease: "easeOut" },
     opacity: { duration: 0.18 },
 };
 
 /* ── Shared input class ─────────────────────── */
 
-const INPUT = "w-full h-11 rounded-lg border border-sky-200 bg-white px-4 text-[15px] text-slate-800 placeholder:text-slate-300 outline-none transition-all duration-200 focus:border-sky-400 focus:ring-4 focus:ring-sky-400/15";
+const INPUT = "w-full h-11 rounded-lg border border-sky-200 bg-white px-4 text-[15px] text-slate-800 placeholder:text-slate-300 outline-none transition-colors duration-200 focus:border-sky-400 focus:ring-4 focus:ring-sky-400/15";
 
 /* ── Password strength ─────────────────────── */
 
@@ -246,8 +246,8 @@ export default function LoginPage() {
     }, [mode, email, password, loginMutation, registerMutation]);
 
     return (
-        <div className="relative overflow-hidden p-4 -m-4">
-            <AnimatePresence mode="wait" custom={direction}>
+        <div className="relative">
+            <AnimatePresence mode="wait" custom={direction} initial={false}>
                 {step === "email" && (
                     <MotionWrap key="email" direction={direction}>
                         <EmailStep
@@ -354,8 +354,14 @@ function EmailStep({
     return (
         <div className="space-y-6">
             <div className="text-center overflow-hidden">
-                <AnimatePresence mode="wait">
-                    <motion.div key={mode}>
+                <AnimatePresence mode="wait" initial={false}>
+                    <motion.div
+                        key={mode}
+                        initial={false}
+                        animate={{}}
+                        exit={{ opacity: 0, y: -6 }}
+                        transition={{ duration: 0.15 }}
+                    >
                         <h1 className="font-serif text-[32px] text-slate-800 tracking-tight leading-tight">
                             {(mode === "signin" ? ["Welcome", "back"] : ["Get", "started"]).map((word, i) => (
                                 <motion.span
@@ -363,7 +369,6 @@ function EmailStep({
                                     className="inline-block"
                                     initial={{ opacity: 0, y: 20, filter: "blur(4px)" }}
                                     animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-                                    exit={{ opacity: 0, y: -10 }}
                                     transition={{ delay: i * 0.1, duration: 0.3 }}
                                 >
                                     {word}{i === 0 ? "\u00A0" : ""}
@@ -374,7 +379,6 @@ function EmailStep({
                             className="text-sm text-slate-400 mt-1.5"
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
                             transition={{ delay: 0.15, duration: 0.25 }}
                         >
                             {mode === "signin" ? "Sign in to your account" : "Create your free account"}
