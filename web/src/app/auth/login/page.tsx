@@ -155,9 +155,11 @@ export default function LoginPage() {
     const [password, setPassword] = useState("");
     const [session, setSession] = useState("");
     const [direction, setDirection] = useState(0);
-    const pendingRef = useRef<((token: string) => Promise<void>) | null>(null);
+    const pendingRef = useRef<((token: string) => void) | null>(null);
     const tokenRef = useRef<string>("");
     const turnstileRef = useRef<{ reset(): void } | null>(null);
+    const [captchaLoading, setCaptchaLoading] = useState(false);
+    const captchaTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     /* Mutations */
     const loginMutation = useLogin();
@@ -165,31 +167,65 @@ export default function LoginPage() {
     const loginConfirmMutation = useLoginConfirm();
     const registerConfirmMutation = useRegisterConfirm();
 
-    const pending =
+    const pending = captchaLoading ||
         loginMutation.isPending || registerMutation.isPending ||
         loginConfirmMutation.isPending || registerConfirmMutation.isPending;
 
     /* Step nav */
     const goTo = (s: Step, dir: 1 | -1 = 1) => { setDirection(dir); setStep(s); };
 
-    /* Captcha helper — invisible Turnstile, no modal */
+    /* Captcha helper — invisible Turnstile with loading + timeout */
     const withCaptcha = (fn: (token: string) => Promise<void>) => {
+        if (captchaTimeoutRef.current) {
+            clearTimeout(captchaTimeoutRef.current);
+            captchaTimeoutRef.current = null;
+        }
+
+        const execute = (token: string) => {
+            setCaptchaLoading(false);
+            fn(token).finally(() => turnstileRef.current?.reset());
+        };
+
         if (tokenRef.current) {
             const t = tokenRef.current;
             tokenRef.current = "";
-            fn(t).finally(() => turnstileRef.current?.reset());
+            execute(t);
         } else {
-            pendingRef.current = fn;
+            setCaptchaLoading(true);
+            pendingRef.current = execute;
+            captchaTimeoutRef.current = setTimeout(() => {
+                if (pendingRef.current) {
+                    pendingRef.current = null;
+                    setCaptchaLoading(false);
+                    toast.error("Verification timed out. Please try again.");
+                    turnstileRef.current?.reset();
+                }
+            }, 10000);
         }
     };
+
     const onTurnstileVerify = (token: string) => {
+        if (captchaTimeoutRef.current) {
+            clearTimeout(captchaTimeoutRef.current);
+            captchaTimeoutRef.current = null;
+        }
         if (pendingRef.current) {
             const fn = pendingRef.current;
             pendingRef.current = null;
-            fn(token).finally(() => turnstileRef.current?.reset());
+            fn(token);
         } else {
             tokenRef.current = token;
         }
+    };
+
+    const onTurnstileError = () => {
+        if (pendingRef.current) {
+            pendingRef.current = null;
+            setCaptchaLoading(false);
+            toast.error("Verification failed. Please try again.");
+        }
+        tokenRef.current = "";
+        turnstileRef.current?.reset();
     };
 
     /* ── Step 1: Email ─────────────────────── */
@@ -204,9 +240,12 @@ export default function LoginPage() {
         withCaptcha(async (token) => {
             try {
                 const res = await loginMutation.mutateAsync({ email, password: data.password, turnstile: token });
+                toast.success("Verification code sent!");
                 setSession(res.session);
                 goTo("verify");
-            } catch (e) { toast.error(buildError(e as AppError)); }
+            } catch (e) {
+                toast.error(buildError(e as AppError));
+            }
         });
     };
 
@@ -216,9 +255,12 @@ export default function LoginPage() {
         withCaptcha(async (token) => {
             try {
                 const res = await registerMutation.mutateAsync({ email, password: data.password, turnstile: token });
+                toast.success("Verification code sent!");
                 setSession(res.session);
                 goTo("verify");
-            } catch (e) { toast.error(buildError(e as AppError)); }
+            } catch (e) {
+                toast.error(buildError(e as AppError));
+            }
         });
     };
 
@@ -229,6 +271,7 @@ export default function LoginPage() {
             try {
                 if (mode === "signin") {
                     const res = await loginConfirmMutation.mutateAsync({ session, code, turnstile: token });
+                    toast.success("Welcome back!");
                     saveTokens(res as unknown as Record<string, string>);
                     navigate("/app/emails");
                 } else {
@@ -237,7 +280,9 @@ export default function LoginPage() {
                     handleModeChange("signin");
                     goTo("email", -1);
                 }
-            } catch (e) { toast.error(buildError(e as AppError)); }
+            } catch (e) {
+                toast.error(buildError(e as AppError));
+            }
         });
     };
 
@@ -247,9 +292,11 @@ export default function LoginPage() {
             try {
                 const mutation = mode === "signin" ? loginMutation : registerMutation;
                 const res = await mutation.mutateAsync({ email, password, turnstile: token });
-                setSession(res.session);
                 toast.success("Code resent!");
-            } catch (e) { toast.error(buildError(e as AppError)); }
+                setSession(res.session);
+            } catch (e) {
+                toast.error(buildError(e as AppError));
+            }
         });
     }, [mode, email, password, loginMutation, registerMutation]);
 
@@ -304,6 +351,8 @@ export default function LoginPage() {
                 ref={turnstileRef as React.RefObject<never>}
                 sitekey={import.meta.env.VITE_TURNSTILE_KEY!}
                 onVerify={onTurnstileVerify}
+                onError={onTurnstileError}
+                onTimeout={onTurnstileError}
                 onExpire={() => { tokenRef.current = ""; turnstileRef.current?.reset(); }}
                 size="invisible"
             />

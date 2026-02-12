@@ -29,7 +29,7 @@ import BillingPage from './app/app/billing/page';
 import TeamPage from './app/app/team/page';
 import UniboxPage from './app/app/unibox/page';
 
-import { Toaster } from '@/components/ui/sonner';
+import { Toaster } from '@/components/ui/toaster';
 
 import * as Sentry from "@sentry/react";
 

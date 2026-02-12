@@ -24,6 +24,7 @@ This gives you:
 | Backend API | http://localhost:8080 |
 | Realtime (WebSocket) | ws://localhost:4000/socket |
 | Tracking | http://localhost:3000 |
+| Mailpit (email inbox) | http://localhost:8025 |
 
 ### Lighter setup (API only)
 
@@ -72,11 +73,15 @@ docker-compose down -v && docker-compose up -d
 docker-compose down
 ```
 
+## Email in local dev
+
+All emails sent by the backend (login codes, verification codes, password resets) are captured by **Mailpit**. Open http://localhost:8025 to view them — no real email is ever sent in local dev.
+
 ## Which services do I need?
 
 | What you're building | Run |
 |---------------------|-----|
-| Most UI work (auth, campaigns, contacts, settings) | infra + `backend` |
+| Most UI work (auth, campaigns, contacts, settings) | infra + `backend` + `mailpit` |
 | Live updates / realtime UI | above + `realtime` |
 | Email tracking / analytics | above + `tracking consumer` |
 | Full integration | `docker-compose up -d` |

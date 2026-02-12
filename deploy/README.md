@@ -60,6 +60,7 @@ docker-compose up
 - Backend API: http://localhost:8080
 - Tracking: http://localhost:3000
 - Realtime: http://localhost:4000
+- Mailpit (email inbox): http://localhost:8025
 - Kafka: localhost:9092
 - Schema Registry: http://localhost:8081
 - PostgreSQL: localhost:5432

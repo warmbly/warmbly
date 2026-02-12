@@ -53,6 +53,7 @@ This will build and start:
 - **zookeeper** - Kafka coordination
 - **kafka** - Message queue
 - **schema-registry** - Avro schema registry
+- **mailpit** - Local email catcher (SMTP + web UI)
 - **backend** - Go API server
 - **consumer** - Kafka event consumer
 - **worker** - Distributed worker
@@ -84,6 +85,7 @@ Once running, services are available at:
 | Backend API | http://localhost:8080 | REST API |
 | Tracking | http://localhost:3000 | Pixel/click tracking |
 | Realtime | http://localhost:4000 | WebSocket gateway |
+| Mailpit UI | http://localhost:8025 | Email inbox (catches all outbound emails) |
 | Schema Registry | http://localhost:8081 | Avro schemas |
 | PostgreSQL | localhost:5432 | Database |
 | Redis | localhost:6379 | Cache |
@@ -190,6 +192,99 @@ For local Docker development, the `docker-compose.yml` includes sensible default
 | `REDIS` | redis://redis:6379 | Redis connection |
 | `KAFKA_BOOTSTRAP_SERVERS` | kafka:29092 | Kafka brokers |
 | `AUTH_SECRET` | (auto-generated) | JWT signing secret |
+| `SMTP_HOST` | mailpit | SMTP server for local email delivery |
+| `SMTP_PORT` | 1025 | SMTP port (Mailpit) |
+
+## Email in Local Development
+
+The local stack includes [Mailpit](https://github.com/axllent/mailpit), a mail catcher that captures all outbound emails sent by the backend (login codes, registration codes, password resets, etc.).
+
+- **Web UI:** http://localhost:8025 — view all captured emails
+- **SMTP:** `mailpit:1025` (inside Docker) / `localhost:1025` (from host)
+
+When `SMTP_HOST` is set, the backend uses a plain SMTP sender instead of AWS SES. This is automatic in docker-compose — no AWS credentials needed for local dev.
+
+If you're running the backend natively (outside Docker), set the env vars to point at Mailpit on the host:
+
+```bash
+export SMTP_HOST=localhost
+export SMTP_PORT=1025
+```
+
+## Email Templates
+
+All email templates live in `internal/notify/templates/`. They share a base layout (`base.go`) with the sky/cloud theme, logo, and legal footer. Each template file defines only its content section.
+
+### Run tests
+
+```bash
+go test ./internal/notify/templates/ -v
+```
+
+This verifies all templates render without errors, contain the expected content, include the required legal details (Companies Act 2006), and don't leak content across templates.
+
+### Preview in browser
+
+Generate the HTML and open it directly:
+
+```bash
+# Login code
+go test ./internal/notify/templates/ -run TestGenerateLoginCodeHTML -v
+
+# Or dump all three to files and open them:
+go test ./internal/notify/templates/ -run TestPreview -v
+```
+
+To quickly preview a template, create a one-off test or use `go run`:
+
+```bash
+go run -exec 'open' <<'EOF'
+//go:build ignore
+
+package main
+
+import (
+    "os"
+    "github.com/warmbly/warmbly/internal/notify/templates"
+)
+
+func main() {
+    html, _ := templates.GenerateLoginCodeHTML("123456")
+    os.WriteFile("/tmp/login-code.html", []byte(html), 0644)
+
+    html, _ = templates.GenerateRegistrationCodeHTML("789012")
+    os.WriteFile("/tmp/registration-code.html", []byte(html), 0644)
+
+    html, _ = templates.GenerateResetPasswordHTML("", "https://app.warmbly.com/reset?token=abc123")
+    os.WriteFile("/tmp/reset-password.html", []byte(html), 0644)
+}
+EOF
+
+# Then open in browser:
+open /tmp/login-code.html
+open /tmp/registration-code.html
+open /tmp/reset-password.html
+```
+
+### Preview via Mailpit (full flow)
+
+Start the dev stack and trigger the auth flow — all emails are captured:
+
+1. `docker compose -f deploy/docker/docker-compose.yml up`
+2. Open http://localhost:8025 (Mailpit inbox)
+3. Register, login, or reset password via the app
+4. Emails appear in Mailpit in real time
+
+### Editing templates
+
+| File | Purpose |
+|------|---------|
+| `base.go` | Shared layout (sky theme, logo, card, legal footer), business constants |
+| `login_code.go` | Login verification code email |
+| `registration_code.go` | Registration verification code email |
+| `reset_password.go` | Password reset email with button |
+
+To change branding, legal details, or the footer — edit the constants at the top of `base.go`. To change the sky/card/cloud design — edit the `baseHTML` template in `base.go`. To change a specific email's content — edit that template's content const.
 
 ## Common Tasks
 

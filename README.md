@@ -8,35 +8,11 @@ Warmbly is a microservices-based platform for email warmup and cold outreach. It
 
 ## Architecture
 
-```
-                                    ┌─────────────────┐
-                                    │   Frontend      │
-                                    │   (React)       │
-                                    └────────┬────────┘
-                                             │
-              ┌──────────────────────────────┼──────────────────────────────┐
-              │                              │                              │
-              v                              v                              v
-    ┌─────────────────┐           ┌─────────────────┐           ┌─────────────────┐
-    │  Backend API    │           │    Realtime     │           │    Tracking     │
-    │  (Go, :8080)    │           │ (Elixir, :4000) │           │  (Rust, :3000)  │
-    └────────┬────────┘           └────────┬────────┘           └────────┬────────┘
-             │                             │                             │
-             │                    Google Pub/Sub                         │
-             │                             │                             │
-             ├─────────────────────────────┼─────────────────────────────┤
-             │                             │                             │
-             v                             v                             v
-    ┌─────────────────────────────────────────────────────────────────────────────┐
-    │                                  Kafka                                      │
-    └─────────────────────────────────────────────────────────────────────────────┘
-             │                             │                             │
-             v                             v                             v
-    ┌─────────────────┐           ┌─────────────────┐           ┌─────────────────┐
-    │    Consumer     │           │     Worker      │           │   PostgreSQL    │
-    │      (Go)       │           │      (Go)       │           │   Redis, etc.   │
-    └─────────────────┘           └─────────────────┘           └─────────────────┘
-```
+The **Frontend** (React) connects to three backend services: the **Backend API** (Go, :8080), **Realtime** (Elixir/Phoenix, :4000), and **Tracking** (Rust, :3000).
+
+All three services publish events to **Kafka** (with Avro/Schema Registry). The Realtime service also uses **Google Pub/Sub** for cross-node message fanout.
+
+Downstream from Kafka, the **Consumer** (Go) processes tracking events and the **Worker** (Go, 1 per machine) handles email operations. Both read/write to **PostgreSQL**, **Redis**, and **Cassandra** (DataStax Astra).
 
 ## Tech Stack
 
@@ -91,6 +67,7 @@ docker-compose up
 - Backend API: http://localhost:8080
 - Tracking: http://localhost:3000
 - Realtime: http://localhost:4000
+- Mailpit (email inbox): http://localhost:8025
 - Schema Registry: http://localhost:8081
 - PostgreSQL: localhost:5432
 - Redis: localhost:6379
@@ -98,29 +75,22 @@ docker-compose up
 
 ## Project Structure
 
-```
-warmbly/
-├── cmd/
-│   ├── backend/          # Backend API entrypoint
-│   ├── consumer/         # Kafka consumer entrypoint
-│   └── worker/           # Worker entrypoint
-├── internal/
-│   ├── api/              # HTTP handlers
-│   ├── app/              # Application services
-│   ├── config/           # Configuration loading
-│   ├── events/           # Kafka event schemas
-│   ├── infrastructure/   # Database, cache, queue clients
-│   ├── models/           # Domain models
-│   ├── pkg/              # Internal packages (emsg, crypto, etc.)
-│   ├── repository/       # Data access layer
-│   └── tasks/            # Background task processing
-├── tracking/             # Rust tracking service
-├── realtime/             # Elixir WebSocket service
-├── deploy/
-│   ├── docker/           # Docker Compose and Dockerfiles
-│   └── kubernetes/       # Kubernetes manifests
-└── resources/                 # Technical documentation
-```
+- **`cmd/`** — Service entrypoints: `backend/`, `consumer/`, `worker/`
+- **`internal/`** — Core Go code:
+  - `api/` — HTTP handlers
+  - `app/` — Application services (auth, email, campaign, etc.)
+  - `config/` — Configuration loading (env vars + AWS Secrets Manager)
+  - `events/` — Kafka event schemas
+  - `infrastructure/` — Database, cache, and queue clients
+  - `models/` — Domain models
+  - `notify/` — Email notification service and templates
+  - `pkg/` — Internal packages (emsg, crypto, etc.)
+  - `repository/` — Data access layer
+- **`tracking/`** — Rust tracking service (Axum)
+- **`realtime/`** — Elixir WebSocket service (Phoenix Channels)
+- **`web/`** — React frontend
+- **`deploy/`** — Docker Compose, Dockerfiles, Kubernetes manifests
+- **`resources/`** — Technical documentation
 
 ## Documentation
 
@@ -152,9 +122,7 @@ cd realtime && mix deps.get && mix release
 
 Warmbly uses GitHub Actions for CI/builds and GitOps for deployments.
 
-```
-PR Created → CI (tests) → Merge to main → Build images → Deploy
-```
+PRs trigger CI (tests, linting, security scan). Merging to main builds and pushes Docker images. Tagging a release (`v*.*.*`) triggers a production deploy via ArgoCD.
 
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|

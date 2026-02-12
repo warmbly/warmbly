@@ -3,7 +3,7 @@ import SocketProvider from "@/hooks/SocketProvider";
 import { UserProvider } from "@/hooks/UserProvider";
 import ConfirmProvider from "@/hooks/ConfirmProvider";
 import { AppLayout } from "@/components/layout/AppLayout";
-import { Toaster } from "@/components/ui/sonner";
+
 import getToken from "@/lib/helper/getToken";
 import { Navigate } from "react-router-dom";
 import { DataSyncProvider } from "@/hooks/DataSyncProvider";
@@ -22,7 +22,6 @@ export default function RootAppLayout() {
                     <SocketProvider>
                         <RealtimeManager>
                             <AppLayout />
-                            <Toaster />
                         </RealtimeManager>
                     </SocketProvider>
                 </LinkProvider>

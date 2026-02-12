@@ -73,6 +73,12 @@ services:
     ports:
       - "8123:8123"
 
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "8025:8025"   # Web UI
+      - "1025:1025"   # SMTP
+
   # Application Services
   backend:
     build:
@@ -128,6 +134,10 @@ services:
       EMAIL_NAME: Warmbly Dev
       EMAIL_ADDRESS: dev@warmbly.local
       TRACKING_DOMAIN: localhost:3000
+
+      # === SMTP (local mail catcher) ===
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
 
       # === GCP (optional) ===
       GCP_PROJECT_ID: ""

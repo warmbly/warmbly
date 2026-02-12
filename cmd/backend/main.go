@@ -259,14 +259,24 @@ func main() {
 			log.Fatal(err)
 		}
 
-		emailNotificationService, err = notify.NewEmailNotficiationService(
-			ctx,
-			emailCfg.EmailName,
-			emailCfg.EmailAddress,
-		)
-		if err != nil {
-			sentry.CaptureException(err)
-			log.Fatal(err)
+		smtpCfg := cfg.LoadSMTPConfig(ctx)
+		if smtpCfg != nil {
+			emailNotificationService = notify.NewSMTPEmailNotificationService(
+				emailCfg.EmailName,
+				emailCfg.EmailAddress,
+				smtpCfg.Host,
+				smtpCfg.Port,
+			)
+		} else {
+			emailNotificationService, err = notify.NewEmailNotficiationService(
+				ctx,
+				emailCfg.EmailName,
+				emailCfg.EmailAddress,
+			)
+			if err != nil {
+				sentry.CaptureException(err)
+				log.Fatal(err)
+			}
 		}
 
 		authCfg, err := cfg.LoadAuthConfig(ctx)
@@ -384,6 +394,7 @@ func main() {
 		stripeService = stripe.NewService(stripeCfg, subscriptionRepository, planRepository, workerAssignmentService)
 
 		tokenService = token.NewService(primaryDB, tokenRepostory, cache, geoloc, authCfg.AuthSecret)
+		userService = user.NewService(userRepostory, cache)
 		authService = auth.NewService(
 			authRepostory,
 			cache,
@@ -396,8 +407,9 @@ func main() {
 			},
 			trialService,
 			organizationService,
+			userRepostory,
+			userService,
 		)
-		userService = user.NewService(userRepostory, cache)
 		cipherService = cipher.NewService(kms, cache, userEncryptedKeysRepository)
 		eventsPublisher := events.NewPublisher(kafkaProducer, s3, avrov2Client, cipherService)
 		emailService = email.NewServiceWithKafka(emailRepostory, cipherService, eventsPublisher, kafkaProducer, cache)

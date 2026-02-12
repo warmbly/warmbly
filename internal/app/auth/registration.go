@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/notify/templates"
 	"github.com/warmbly/warmbly/internal/pkg/argon2"
 	"github.com/warmbly/warmbly/internal/pkg/crypt"
 )
@@ -40,6 +41,17 @@ func (s *authService) RegistrationStart(ctx context.Context, data *AuthData, ipa
 
 	code, xerr := crypt.VerificationCode()
 	if xerr != nil {
+		sentry.CaptureException(xerr)
+		return nil, errx.InternalError()
+	}
+
+	text, xerr := templates.GenerateRegistrationCodeHTML(code)
+	if xerr != nil {
+		sentry.CaptureException(xerr)
+		return nil, errx.InternalError()
+	}
+
+	if xerr := s.emailNotificationService.Send(ctx, []string{data.Email}, nil, nil, "Your Verification Code", text); xerr != nil {
 		sentry.CaptureException(xerr)
 		return nil, errx.InternalError()
 	}
