@@ -9,7 +9,7 @@ services:
       POSTGRES_HOST_AUTH_METHOD: md5
       POSTGRES_INITDB_ARGS: "--auth-host=md5"
     ports:
-      - "5432:5432"
+      - "15432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -21,7 +21,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "16379:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -41,11 +41,11 @@ services:
     depends_on:
       - zookeeper
     ports:
-      - "9092:9092"
+      - "19092:9092"
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:19092
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
@@ -62,7 +62,7 @@ services:
     depends_on:
       - kafka
     ports:
-      - "8081:8081"
+      - "18081:8081"
     environment:
       SCHEMA_REGISTRY_HOST_NAME: schema-registry
       SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: kafka:29092
@@ -71,13 +71,13 @@ services:
     image: ghcr.io/aertje/cloud-tasks-emulator:latest
     command: ["-host", "0.0.0.0", "-port", "8123", "-queue", "projects/local/locations/local/queues/default"]
     ports:
-      - "8123:8123"
+      - "18123:8123"
 
   mailpit:
     image: axllent/mailpit:latest
     ports:
-      - "8025:8025"   # Web UI
-      - "1025:1025"   # SMTP
+      - "18025:8025"   # Web UI
+      - "11025:1025"   # SMTP
 
   # Application Services
   backend:
@@ -85,7 +85,7 @@ services:
       context: ../..
       dockerfile: deploy/docker/backend.Dockerfile
     ports:
-      - "8080:8080"
+      - "18080:8080"
     environment:
       # === General ===
       APP_ENV: dev
@@ -118,7 +118,7 @@ services:
       AUTH_SECRET: local-dev-auth-secret-minimum-32-characters-long
       GOOGLE_CLIENT_ID: local-google-client-id
       GOOGLE_CLIENT_SECRET: local-google-client-secret
-      GOOGLE_REDIRECT_URI: http://localhost:3000/auth/google/callback
+      GOOGLE_REDIRECT_URI: http://localhost:13000/auth/google/callback
       APPLE_APP_ID: local-apple-app-id
       APPLE_TEAM_ID: local-apple-team-id
       APPLE_KEY_ID: local-apple-key-id
@@ -133,7 +133,7 @@ services:
       # === Email ===
       EMAIL_NAME: Warmbly Dev
       EMAIL_ADDRESS: dev@warmbly.local
-      TRACKING_DOMAIN: localhost:3000
+      TRACKING_DOMAIN: localhost:13000
 
       # === SMTP (local mail catcher) ===
       SMTP_HOST: mailpit
@@ -233,7 +233,7 @@ services:
       context: ../../tracking
       dockerfile: Dockerfile
     ports:
-      - "3000:3000"
+      - "13000:3000"
     environment:
       # === General ===
       APP_ENV: dev
@@ -261,7 +261,7 @@ services:
       context: ../..
       dockerfile: deploy/docker/realtime.Dockerfile
     ports:
-      - "4000:4000"
+      - "14000:4000"
     environment:
       # === General ===
       PHX_HOST: localhost
@@ -295,6 +295,24 @@ services:
       redis:
         condition: service_healthy
 
+  web:
+    image: node:22-alpine
+    working_dir: /app
+    volumes:
+      - ../../web:/app
+      - web_node_modules:/app/node_modules
+    ports:
+      - "15173:5173"
+    command: sh -c "corepack enable && pnpm install && pnpm dev --host"
+    environment:
+      VITE_APP_URL: "http://localhost:15173"
+      VITE_API_URL: "http://localhost:18080"
+      VITE_TRACKING_DOMAIN: "localhost:13000"
+      VITE_TURNSTILE_KEY: "1x00000000000000000000AA"
+    depends_on:
+      backend:
+        condition: service_healthy
+
   # One-off: seed dev database with sample user
   seed:
     build:
@@ -312,3 +330,4 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  web_node_modules:
