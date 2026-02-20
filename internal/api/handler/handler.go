@@ -2,6 +2,7 @@ package handler
 
 import (
 	"github.com/warmbly/warmbly/internal/app/admin"
+	"github.com/warmbly/warmbly/internal/app/advanced"
 	"github.com/warmbly/warmbly/internal/app/analytics"
 	"github.com/warmbly/warmbly/internal/app/apikey"
 	"github.com/warmbly/warmbly/internal/app/audit"
@@ -78,4 +79,7 @@ type Handler struct {
 
 	// Notifications
 	EmailNotificationService notify.EmailNotificationService
+
+	// Advanced outreach controls
+	AdvancedService advanced.Service
 }

@@ -9,6 +9,7 @@ import (
 
 	awsconf "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/getsentry/sentry-go"
+	"github.com/warmbly/warmbly/internal/app/advanced"
 	"github.com/warmbly/warmbly/internal/app/cipher"
 	jobs "github.com/warmbly/warmbly/internal/app/consumer"
 	"github.com/warmbly/warmbly/internal/config"
@@ -171,6 +172,23 @@ func main() {
 	emailHistoryIDRepo := repository.NewEmailHistoryIDRepository(dynamoDB)
 	emailAccountErrorRepo := repository.NewEmailAccountErrorRepository(primaryDB)
 	warmupRepo := repository.NewWarmupRepository(primaryDB.Pool)
+	campaignRepo := repository.NewCampaignRepostory(primaryDB)
+	taskRepo := repository.NewTaskRepository(primaryDB.Pool)
+	contactRepo := repository.NewContactRepostory(primaryDB)
+	campaignProgressRepo := repository.NewCampaignProgressRepository(primaryDB.Pool)
+	crmRepo := repository.NewCRMRepository(primaryDB.Pool)
+	advancedRepo := repository.NewAdvancedOutreachRepository(primaryDB.Pool)
+
+	advancedService := advanced.NewService(
+		advancedRepo,
+		campaignRepo,
+		emailRepo,
+		taskRepo,
+		contactRepo,
+		campaignProgressRepo,
+		crmRepo,
+		nil,
+	)
 
 	// Events publisher
 	eventsPublisher := events.NewPublisher(kafkaProducer, s3Client, avrov2Client, cipherService)
@@ -186,6 +204,7 @@ func main() {
 		WarmupRepo:                  warmupRepo,
 		Publisher:                   eventsPublisher,
 		StreamingPublisher:          streamingPublisher,
+		AdvancedService:             advancedService,
 	}
 
 	jobsService.InitEvents()

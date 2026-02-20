@@ -39,6 +39,11 @@ type ContactSequencePair struct {
 	SequenceID uuid.UUID
 }
 
+type CampaignSequencePair struct {
+	CampaignID uuid.UUID
+	SequenceID uuid.UUID
+}
+
 // CampaignProgressRepository defines methods for campaign progress tracking
 type CampaignProgressRepository interface {
 	// Record email status
@@ -54,6 +59,7 @@ type CampaignProgressRepository interface {
 	GetContactLastSequenceTime(ctx context.Context, contactID, campaignID uuid.UUID) (*time.Time, error)
 	CheckContactHasReplied(ctx context.Context, contactID, campaignID uuid.UUID) (bool, error)
 	CountEmailsSentTodayByOrganization(ctx context.Context, organizationID uuid.UUID) (int, error)
+	GetLatestCampaignSequenceForContact(ctx context.Context, contactID uuid.UUID) (*CampaignSequencePair, error)
 
 	// Find next email to send
 	FindNextContactSequence(ctx context.Context, campaignID uuid.UUID, orderBy, orderDir, orderField string) (*ContactSequencePair, error)
@@ -277,6 +283,25 @@ func (r *campaignProgressRepository) CountEmailsSentTodayByOrganization(ctx cont
 	var count int
 	err := r.db.QueryRow(ctx, query, organizationID).Scan(&count)
 	return count, err
+}
+
+func (r *campaignProgressRepository) GetLatestCampaignSequenceForContact(ctx context.Context, contactID uuid.UUID) (*CampaignSequencePair, error) {
+	query := `
+		SELECT campaign_id, sequence_id
+		FROM campaign_contact_progress
+		WHERE contact_id = $1
+		  AND sent_at IS NOT NULL
+		ORDER BY sent_at DESC
+		LIMIT 1
+	`
+	out := &CampaignSequencePair{}
+	if err := r.db.QueryRow(ctx, query, contactID).Scan(&out.CampaignID, &out.SequenceID); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return out, nil
 }
 
 // FindNextContactSequence finds the next contact/sequence pair that needs to be sent

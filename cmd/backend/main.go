@@ -15,6 +15,7 @@ import (
 	"github.com/warmbly/warmbly/internal/api/handler"
 	"github.com/warmbly/warmbly/internal/api/middleware"
 	"github.com/warmbly/warmbly/internal/app/admin"
+	"github.com/warmbly/warmbly/internal/app/advanced"
 	"github.com/warmbly/warmbly/internal/app/apikey"
 	"github.com/warmbly/warmbly/internal/app/auth"
 	"github.com/warmbly/warmbly/internal/app/campaign"
@@ -79,6 +80,7 @@ func main() {
 	var uniboxService unibox.UniboxService
 	var cipherService cipher.CipherService
 	var tasksService tasks.TasksService
+	var advancedService advanced.Service
 
 	var folderService group.GroupService
 	var tagService group.GroupService
@@ -363,6 +365,7 @@ func main() {
 		taskRepository := repository.NewTaskRepository(primaryDB.Pool)
 		apiKeyRepository := repository.NewAPIKeyRepository(primaryDB)
 		crmRepository := repository.NewCRMRepository(primaryDB.Pool)
+		advancedRepository := repository.NewAdvancedOutreachRepository(primaryDB.Pool)
 		templateRepository := repository.NewTemplateRepository(primaryDB.Pool)
 		warmupRepository := repository.NewWarmupRepository(primaryDB.Pool)
 		campaignProgressRepository := repository.NewCampaignProgressRepository(primaryDB.Pool)
@@ -430,6 +433,16 @@ func main() {
 		templateService = template.NewService(templateRepository)
 		schedulerService := scheduler.NewSchedulerService(taskRepository, warmupRepository, campaignProgressRepository, emailRepostory, campaignRepostory)
 		emailSendService = emailsend.NewService(taskRepository, emailRepostory, schedulerService, tasksClient, featureGateService)
+		advancedService = advanced.NewService(
+			advancedRepository,
+			campaignRepostory,
+			emailRepostory,
+			taskRepository,
+			contactRepostory,
+			campaignProgressRepository,
+			crmRepository,
+			tasksClient,
+		)
 		emailSender := tasks.NewEmailSender(emailRepostory, eventsPublisher)
 		tasksService = tasks.NewService(
 			tasksClient,
@@ -448,6 +461,7 @@ func main() {
 			campaignRepostory,
 			contactRepostory,
 			campaignLogRepository,
+			advancedService,
 		)
 
 		// Admin service
@@ -512,6 +526,9 @@ func main() {
 
 		// Notifications
 		EmailNotificationService: emailNotificationService,
+
+		// Advanced outreach controls
+		AdvancedService: advancedService,
 	}
 
 	m := &middleware.Handler{

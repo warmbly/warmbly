@@ -31,6 +31,11 @@ func (s *JobsService) HandleNewEmail(ctx context.Context, e *models.JobEventNewE
 		return err
 	}
 
+	// Advanced reply-intent automation is best-effort and should not block inbox ingest.
+	if s.AdvancedService != nil {
+		_ = s.AdvancedService.ProcessIncomingReply(ctx, e.Message.EmailID, e.Message)
+	}
+
 	return nil
 }
 

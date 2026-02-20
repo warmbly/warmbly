@@ -24,6 +24,25 @@ func (s *tasksService) HandleEmailTask(task *proto.ProcessTask) *errx.Error {
 		return errx.New(errx.BadRequest, "invalid task ID")
 	}
 
+	executionKey := "warmup:" + taskID.String()
+	executionStatus := "failed"
+	if s.advanced != nil {
+		duplicate, xerr := s.advanced.StartTaskExecution(ctx, taskID, executionKey, map[string]interface{}{
+			"task_type": "warmup",
+		})
+		if xerr != nil {
+			return xerr
+		}
+		if duplicate {
+			return nil
+		}
+		defer func() {
+			_ = s.advanced.CompleteTaskExecution(ctx, taskID, executionKey, executionStatus, map[string]interface{}{
+				"task_type": "warmup",
+			})
+		}()
+	}
+
 	// STEP 2: Load task record
 	taskRecord, err := s.taskRepo.GetTask(ctx, taskID)
 	if err != nil {
@@ -47,6 +66,7 @@ func (s *tasksService) HandleEmailTask(task *proto.ProcessTask) *errx.Error {
 		if !canWarmup {
 			// Organization cannot use warmup - skip this task
 			s.taskRepo.UpdateTaskStatus(ctx, taskID, "skipped_no_warmup_access")
+			executionStatus = "completed"
 			return nil
 		}
 	}
@@ -61,6 +81,12 @@ func (s *tasksService) HandleEmailTask(task *proto.ProcessTask) *errx.Error {
 	partner, err := s.selectWarmupPartner(ctx, *account)
 	if err != nil {
 		s.taskRepo.RecordTaskFailure(ctx, taskID, "No warmup partner", err.Error())
+		if s.advanced != nil {
+			_ = s.advanced.CaptureTaskDeadLetter(ctx, taskID, "warmup", map[string]interface{}{
+				"reason": "no_warmup_partner",
+			}, err.Error(), 1)
+			_ = s.taskRepo.UpdateTaskStatus(ctx, taskID, "dead_lettered")
+		}
 		return nil
 	}
 
@@ -156,6 +182,12 @@ func (s *tasksService) HandleEmailTask(task *proto.ProcessTask) *errx.Error {
 
 	if err := s.emailSender.Send(ctx, taskID, emailMsg, *account); err != nil {
 		s.taskRepo.RecordTaskFailure(ctx, taskID, "Send failed", err.Error())
+		if s.advanced != nil {
+			_ = s.advanced.CaptureTaskDeadLetter(ctx, taskID, "warmup", map[string]interface{}{
+				"partner_email": partner.Email,
+			}, err.Error(), 1)
+			_ = s.taskRepo.UpdateTaskStatus(ctx, taskID, "dead_lettered")
+		}
 		return nil
 	}
 
@@ -188,6 +220,7 @@ func (s *tasksService) HandleEmailTask(task *proto.ProcessTask) *errx.Error {
 		fmt.Printf("Failed to create next warmup task: %v\n", err)
 	}
 
+	executionStatus = "completed"
 	return nil
 }
 

@@ -75,6 +75,15 @@ func Run(
 			campaigns.PATCH("/:id", h.UpdateCampaign)
 			campaigns.DELETE("/:id", h.DeleteCampaign)
 
+			// Advanced campaign controls
+			campaigns.GET("/:id/advanced", m.RequireOrganization(), h.GetCampaignAdvancedSettings)
+			campaigns.PATCH("/:id/advanced", m.RequireOrganization(), m.RequirePermission(models.PermManageSettings), h.UpdateCampaignAdvancedSettings)
+			campaigns.GET("/:id/ab-variants", m.RequireOrganization(), h.ListCampaignABVariants)
+			campaigns.POST("/:id/ab-variants", m.RequireOrganization(), m.RequirePermission(models.PermManageSettings), h.CreateCampaignABVariant)
+			campaigns.PATCH("/:id/ab-variants/:variantId", m.RequireOrganization(), m.RequirePermission(models.PermManageSettings), h.UpdateCampaignABVariant)
+			campaigns.DELETE("/:id/ab-variants/:variantId", m.RequireOrganization(), m.RequirePermission(models.PermManageSettings), h.DeleteCampaignABVariant)
+			campaigns.POST("/:id/preflight", m.RequireOrganization(), m.RequirePermission(models.PermSendCampaigns), h.RunCampaignPreflight)
+
 			// Campaign start/stop
 			campaigns.POST("/:id/start", m.RequireOrganization(), m.RequirePermission(models.PermSendCampaigns), h.StartCampaign)
 			campaigns.POST("/:id/stop", m.RequireOrganization(), m.RequirePermission(models.PermSendCampaigns), h.StopCampaign)
@@ -142,6 +151,7 @@ func Run(
 		{
 			// Dashboard overview
 			analytics.GET("/dashboard", h.GetDashboardAnalytics)
+			analytics.GET("/deliverability", m.RequireOrganization(), h.GetDeliverabilityDashboard)
 
 			// Warmup analytics
 			analytics.GET("/warmup", h.GetWarmupAnalytics)
@@ -171,6 +181,29 @@ func Run(
 		realtime := protected.Group("/realtime")
 		{
 			realtime.GET("/info", h.GetRealtimeInfo)
+		}
+
+		// Advanced outreach controls (org-scoped)
+		outreach := protected.Group("/outreach")
+		outreach.Use(m.RequireOrganization(), m.RequirePermission(models.PermManageSettings))
+		{
+			outreach.GET("/settings", h.GetOutreachSettings)
+			outreach.PATCH("/settings", h.UpdateOutreachSettings)
+		}
+
+		// Deliverability event ingestion (org-scoped)
+		deliverability := protected.Group("/deliverability")
+		deliverability.Use(m.RequireOrganization(), m.RequirePermission(models.PermSendCampaigns))
+		{
+			deliverability.POST("/events", h.IngestDeliverabilityEvent)
+		}
+
+		// Task dead letter operations (org-scoped)
+		taskOps := protected.Group("/tasks")
+		taskOps.Use(m.RequireOrganization(), m.RequirePermission(models.PermSendCampaigns))
+		{
+			taskOps.GET("/dlq", h.ListTaskDeadLetters)
+			taskOps.POST("/dlq/:id/replay", h.ReplayTaskDeadLetter)
 		}
 
 		// Organization management

@@ -21,6 +21,7 @@ import (
 type ContactRepository interface {
 	Add(ctx context.Context, userID string, contacts []models.AddContact) ([]models.Contact, *errx.Error)
 	GetByID(ctx context.Context, contactID uuid.UUID) (*models.Contact, *errx.Error)
+	GetByEmailAndOrganization(ctx context.Context, organizationID uuid.UUID, email string) (*models.Contact, *errx.Error)
 	Search(ctx context.Context, userID string, category, cursor *string, filters models.SearchContacts, limit int32) (*models.ContactsResult, *errx.Error)
 	BulkUpdate(ctx context.Context, userID string, data *models.BulkEditContactsData) ([]models.Contact, *errx.Error)
 	Update(ctx context.Context, userID, contactID string, data *models.UpdateContact) (*models.Contact, *errx.Error)
@@ -189,6 +190,35 @@ func (r *contactRepository) GetByID(ctx context.Context, contactID uuid.UUID) (*
 		return nil, errx.InternalError()
 	}
 
+	contact.Campaigns = []models.MiniCampaign{}
+	return &contact, nil
+}
+
+func (r *contactRepository) GetByEmailAndOrganization(ctx context.Context, organizationID uuid.UUID, email string) (*models.Contact, *errx.Error) {
+	query := `
+		SELECT
+			c.id, c.first_name, c.last_name, c.email, c.company, c.phone,
+			c.custom_fields, c.subscribed, c.updated_at, c.created_at
+		FROM contacts c
+		WHERE c.organization_id = $1
+		  AND LOWER(c.email) = LOWER($2)
+		ORDER BY c.updated_at DESC
+		LIMIT 1
+	`
+
+	var contact models.Contact
+	err := r.DB.QueryRow(ctx, query, organizationID, strings.TrimSpace(email)).Scan(
+		&contact.ID, &contact.FirstName, &contact.LastName, &contact.Email,
+		&contact.Company, &contact.Phone, &contact.CustomFields, &contact.Subscribed,
+		&contact.UpdatedAt, &contact.CreatedAt,
+	)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
+		db.CaptureError(err, query, []any{organizationID, email}, "queryrow")
+		return nil, errx.InternalError()
+	}
 	contact.Campaigns = []models.MiniCampaign{}
 	return &contact, nil
 }

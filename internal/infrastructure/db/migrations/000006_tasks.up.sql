@@ -1,5 +1,16 @@
 CREATE TYPE task_type AS ENUM('campaign', 'warmup', 'email');
-CREATE TYPE task_status AS ENUM('pending', 'active', 'completed', 'failed');
+CREATE TYPE task_status AS ENUM(
+    'pending',
+    'active',
+    'completed',
+    'failed',
+    'cancelled',
+    'skipped_trial_expired',
+    'skipped_daily_limit',
+    'skipped_suppressed',
+    'skipped_no_warmup_access',
+    'dead_lettered'
+);
 
 CREATE TABLE tasks (
     id UUID NOT NULL DEFAULT gen_random_uuid(),

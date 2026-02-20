@@ -70,6 +70,7 @@ type TaskRepository interface {
 
 	// Read operations
 	GetTask(ctx context.Context, taskID uuid.UUID) (*Task, error)
+	GetTaskByMessageID(ctx context.Context, messageID string) (*Task, error)
 	GetCampaignTask(ctx context.Context, taskID uuid.UUID) (*CampaignTask, error)
 	GetWarmupTask(ctx context.Context, taskID uuid.UUID) (*WarmupTask, error)
 	GetEmailTask(ctx context.Context, taskID uuid.UUID) (*EmailTask, error)
@@ -219,6 +220,36 @@ func (r *taskRepository) GetTask(ctx context.Context, taskID uuid.UUID) (*Task, 
 		return nil, nil
 	}
 
+	return task, err
+}
+
+// GetTaskByMessageID retrieves the latest task by RFC Message-ID.
+func (r *taskRepository) GetTaskByMessageID(ctx context.Context, messageID string) (*Task, error) {
+	query := `
+		SELECT id, task_type, email_account_id, status, message_id,
+		       scheduled_at, completed_at, cloud_task_name, created_at, updated_at
+		FROM tasks
+		WHERE message_id = $1
+		ORDER BY created_at DESC
+		LIMIT 1
+	`
+
+	task := &Task{}
+	err := r.db.QueryRow(ctx, query, messageID).Scan(
+		&task.ID,
+		&task.TaskType,
+		&task.EmailAccountID,
+		&task.Status,
+		&task.MessageID,
+		&task.ScheduledAt,
+		&task.CompletedAt,
+		&task.CloudTaskName,
+		&task.CreatedAt,
+		&task.UpdatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
 	return task, err
 }
 

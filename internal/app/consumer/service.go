@@ -3,6 +3,7 @@ package jobs
 import (
 	"context"
 
+	"github.com/warmbly/warmbly/internal/app/advanced"
 	"github.com/warmbly/warmbly/internal/events"
 	"github.com/warmbly/warmbly/internal/infrastructure/kafka"
 	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
@@ -24,6 +25,7 @@ type JobsService struct {
 
 	// Pub/Sub for real-time notifications to users
 	StreamingPublisher *pubsub.StreamingPublisher
+	AdvancedService    advanced.Service
 
 	eventHandlers map[models.JobEventType]func(ctx context.Context, body any) error
 }

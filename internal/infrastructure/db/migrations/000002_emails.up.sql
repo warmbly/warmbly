@@ -107,7 +107,14 @@ CREATE TABLE categories (
 );
 
 
-CREATE TYPE campaign_status AS ENUM('draft', 'active', 'paused');
+CREATE TYPE campaign_status AS ENUM(
+    'draft',
+    'active',
+    'paused',
+    'completed',
+    'paused_trial_expired',
+    'paused_no_accounts'
+);
 
 CREATE TABLE campaigns (
     id UUID NOT NULL DEFAULT gen_random_uuid(),

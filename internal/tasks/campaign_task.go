@@ -26,6 +26,25 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 		return errx.New(errx.BadRequest, "invalid task ID")
 	}
 
+	executionKey := "campaign:" + taskID.String()
+	executionStatus := "failed"
+	if s.advanced != nil {
+		duplicate, xerr := s.advanced.StartTaskExecution(ctx, taskID, executionKey, map[string]interface{}{
+			"task_type": "campaign",
+		})
+		if xerr != nil {
+			return xerr
+		}
+		if duplicate {
+			return nil
+		}
+		defer func() {
+			_ = s.advanced.CompleteTaskExecution(ctx, taskID, executionKey, executionStatus, map[string]interface{}{
+				"task_type": "campaign",
+			})
+		}()
+	}
+
 	// STEP 2: Load task record
 	taskRecord, err := s.taskRepo.GetTask(ctx, taskID)
 	if err != nil {
@@ -72,6 +91,7 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 	// Check if campaign is still active
 	if campaign.Status != "active" {
 		s.taskRepo.UpdateTaskStatus(ctx, taskID, "cancelled")
+		executionStatus = "completed"
 		return nil // Don't create next task
 	}
 
@@ -99,6 +119,7 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 			// Organization cannot send - pause campaign
 			s.campaignRepo.UpdateStatus(ctx, campaign.ID, "paused_trial_expired")
 			s.taskRepo.UpdateTaskStatus(ctx, taskID, "skipped_trial_expired")
+			executionStatus = "completed"
 			return nil
 		}
 
@@ -128,6 +149,7 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 						fmt.Printf("Failed to create next campaign task after daily limit: %v\n", err)
 					}
 				}
+				executionStatus = "completed"
 				return nil
 			}
 		}
@@ -138,6 +160,7 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 	if err != nil {
 		if errors.Is(err, scheduler.ErrNoEmailAccounts) {
 			s.autoPauseCampaign(ctx, *campaignTask.CampaignID, taskID)
+			executionStatus = "completed"
 			return nil
 		}
 		if errors.Is(err, scheduler.ErrCampaignCompleted) {
@@ -151,6 +174,7 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 			}
 		}
 		s.taskRepo.UpdateTaskStatus(ctx, taskID, "completed")
+		executionStatus = "completed"
 		return nil
 	}
 
@@ -158,6 +182,29 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 	contact, xerr := s.contactRepo.GetByID(ctx, nextPair.ContactID)
 	if xerr != nil {
 		return xerr
+	}
+
+	if s.advanced != nil && campaign.OrganizationID != nil {
+		suppressed, reason, sxerr := s.advanced.ShouldSuppressRecipient(ctx, *campaign.OrganizationID, contact.Email)
+		if sxerr != nil {
+			return sxerr
+		}
+		if suppressed {
+			_ = s.taskRepo.UpdateTaskStatusWithLock(ctx, taskID, "skipped_suppressed")
+			if s.campaignLogRepo != nil {
+				_ = s.campaignLogRepo.CreateLog(ctx, &repository.CampaignLogEntry{
+					CampaignID: campaign.ID,
+					EventType:  "suppressed",
+					Message:    fmt.Sprintf("Suppressed recipient skipped: %s", contact.Email),
+					Metadata: map[string]interface{}{
+						"reason": reason,
+					},
+				})
+			}
+			_ = s.createCampaignTask(ctx, campaign.ID, accountID, nextTime)
+			executionStatus = "completed"
+			return nil
+		}
 	}
 
 	sequence, err := s.campaignRepo.GetSequenceByID(ctx, nextPair.SequenceID)
@@ -182,6 +229,7 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 			s.taskRepo.UpdateTaskStatus(ctx, taskID, "completed")
 			// Create next task anyway for next contact
 			s.createCampaignTask(ctx, campaign.ID, accountID, nextTime)
+			executionStatus = "completed"
 			return nil
 		}
 	}
@@ -200,6 +248,18 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 	// If no plain text provided, extract from HTML
 	if bodyPlain == "" && bodyHTML != "" {
 		bodyPlain = ExtractPlainTextFromHTML(bodyHTML)
+	}
+
+	if s.advanced != nil && campaign.OrganizationID != nil {
+		selection, sxerr := s.advanced.SelectVariant(ctx, *campaign.OrganizationID, campaign.ID, contact.ID, subject, bodyHTML, bodyPlain)
+		if sxerr != nil {
+			return sxerr
+		}
+		if selection != nil {
+			subject = selection.Subject
+			bodyHTML = selection.BodyHTML
+			bodyPlain = selection.BodyPlain
+		}
 	}
 
 	// STEP 11: Add tracking
@@ -320,6 +380,14 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 				ProcessedCount: processedCount,
 			})
 		}
+		if s.advanced != nil {
+			_ = s.advanced.CaptureTaskDeadLetter(ctx, taskID, "campaign", map[string]interface{}{
+				"campaign_id": campaign.ID.String(),
+				"contact_id":  contact.ID.String(),
+				"email":       contact.Email,
+			}, err.Error(), 1)
+			_ = s.taskRepo.UpdateTaskStatus(ctx, taskID, "dead_lettered")
+		}
 		return nil
 	}
 
@@ -401,11 +469,19 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 	s.publishEmailSentEvent(ctx, taskRecord, account, campaign, contact, sequence)
 
 	// STEP 20: Create next campaign task
-	if err := s.createCampaignTask(ctx, campaign.ID, account.ID, nextTime); err != nil {
+	scheduledNext := nextTime
+	if s.advanced != nil && campaign.OrganizationID != nil {
+		if optimized, xerr := s.advanced.OptimizeSendTime(ctx, *campaign.OrganizationID, contact, nextTime); xerr == nil {
+			scheduledNext = optimized
+		}
+	}
+
+	if err := s.createCampaignTask(ctx, campaign.ID, account.ID, scheduledNext); err != nil {
 		// Log but don't fail the current task
 		fmt.Printf("Failed to create next campaign task: %v\n", err)
 	}
 
+	executionStatus = "completed"
 	return nil
 }
 

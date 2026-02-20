@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"github.com/warmbly/warmbly/internal/app/advanced"
 	"github.com/warmbly/warmbly/internal/app/cipher"
 	"github.com/warmbly/warmbly/internal/app/feature"
 	"github.com/warmbly/warmbly/internal/errx"
@@ -50,6 +51,7 @@ type tasksService struct {
 	cipherService cipher.CipherService
 	emailSender   EmailSender
 	featureGate   feature.FeatureGateService
+	advanced      advanced.Service
 
 	// Repositories
 	taskRepo             repository.TaskRepository
@@ -78,6 +80,7 @@ func NewService(
 	campaignRepo repository.CampaignRepository,
 	contactRepo repository.ContactRepository,
 	campaignLogRepo repository.CampaignLogRepository,
+	advanced advanced.Service,
 ) TasksService {
 	return &tasksService{
 		tasksClient:          tasksClient,
@@ -89,6 +92,7 @@ func NewService(
 		cipherService:        cipherService,
 		emailSender:          emailSender,
 		featureGate:          featureGate,
+		advanced:             advanced,
 		taskRepo:             taskRepo,
 		warmupRepo:           warmupRepo,
 		campaignProgressRepo: campaignProgressRepo,
