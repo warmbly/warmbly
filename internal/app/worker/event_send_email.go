@@ -85,6 +85,8 @@ func (w *WorkerService) HandleSendEmail(ctx context.Context, body any) error {
 			Str("provider_msg_id", result.ProviderMsgID).
 			Msg("Email sent successfully")
 
+		w.deleteTransportEmailBody(ctx, sendEmail.TaskID, sendEmail.BodyS3Key)
+
 		w.sendEmailSuccess(sendEmail.TaskID, result.MessageID, result.ProviderMsgID)
 	} else {
 		log.Error().
@@ -97,6 +99,23 @@ func (w *WorkerService) HandleSendEmail(ctx context.Context, body any) error {
 	}
 
 	return nil
+}
+
+func (w *WorkerService) deleteTransportEmailBody(ctx context.Context, taskID uuid.UUID, s3Key string) {
+	if w.Storage == nil || s3Key == "" {
+		return
+	}
+
+	if _, err := w.Storage.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: aws.String(w.Storage.Bucket),
+		Key:    aws.String(s3Key),
+	}); err != nil {
+		log.Warn().
+			Err(err).
+			Str("task_id", taskID.String()).
+			Str("s3_key", s3Key).
+			Msg("Failed to delete transport email body from S3")
+	}
 }
 
 // fetchEmailBody fetches and decodes email body from S3
