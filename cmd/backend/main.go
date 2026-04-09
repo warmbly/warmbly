@@ -111,6 +111,9 @@ func main() {
 	// Notifications
 	var emailNotificationService notify.EmailNotificationService
 
+	// Warmup
+	var warmupService warmupapp.Service
+
 	// Pub/Sub for realtime streaming
 	var streamingPublisher *pubsub.StreamingPublisher
 
@@ -379,7 +382,7 @@ func main() {
 		warmupRepository := repository.NewWarmupRepository(primaryDB.Pool)
 		campaignProgressRepository := repository.NewCampaignProgressRepository(primaryDB.Pool)
 		campaignLogRepository := repository.NewCampaignLogRepository(primaryDB)
-		warmupService := warmupapp.NewService(warmupRepository)
+		warmupService = warmupapp.NewService(warmupRepository)
 
 		tzService = tz.NewService()
 
@@ -543,6 +546,9 @@ func main() {
 
 		// Advanced outreach controls
 		AdvancedService: advancedService,
+
+		// Warmup health
+		WarmupService: warmupService,
 
 		WebsocketURI: websocketURI,
 	}

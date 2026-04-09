@@ -26,6 +26,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/tz"
 	"github.com/warmbly/warmbly/internal/app/unibox"
 	"github.com/warmbly/warmbly/internal/app/user"
+	"github.com/warmbly/warmbly/internal/app/warmup"
 	"github.com/warmbly/warmbly/internal/app/worker"
 	"github.com/warmbly/warmbly/internal/notify"
 	"github.com/warmbly/warmbly/internal/tasks"
@@ -82,6 +83,9 @@ type Handler struct {
 
 	// Advanced outreach controls
 	AdvancedService advanced.Service
+
+	// Warmup health
+	WarmupService warmup.Service
 
 	// Public websocket URL used by frontend clients
 	WebsocketURI string

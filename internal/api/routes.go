@@ -378,6 +378,7 @@ func Run(
 
 		// Warmup Management
 		adminRoutes.GET("/warmup/pools", middleware.RequireAdminPermission(models.AdminPermViewWarmupPool), h.AdminListWarmupPools)
+		adminRoutes.GET("/warmup/health", middleware.RequireAdminPermission(models.AdminPermViewWarmupPool), h.AdminGetWarmupHealthSummary)
 		adminRoutes.GET("/warmup/pools/:type/participants", middleware.RequireAdminPermission(models.AdminPermViewWarmupPool), h.AdminGetPoolParticipants)
 		adminRoutes.GET("/warmup/blocked", middleware.RequireAdminPermission(models.AdminPermViewWarmupPool), h.AdminListBlockedAccounts)
 		adminRoutes.POST("/warmup/block/:accountId", middleware.RequireAdminPermission(models.AdminPermManageWarmupBans), h.AdminBlockAccount)

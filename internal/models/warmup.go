@@ -50,6 +50,15 @@ type WarmupParticipantHealth struct {
 	LastHealthEvaluatedAt *time.Time        `json:"last_health_evaluated_at,omitempty"`
 }
 
+type WarmupPoolHealthSummary struct {
+	TotalParticipants int            `json:"total_participants"`
+	ByState           map[string]int `json:"by_state"`
+	AvgSpamScore      float64        `json:"avg_spam_score"`
+	AvgSpamPlacement  float64        `json:"avg_spam_placement_rate"`
+	BlockedCount      int            `json:"blocked_count"`
+	AtRiskCount       int            `json:"at_risk_count"`
+}
+
 type WarmupHealthMetrics struct {
 	SentLast7d            int     `json:"sent_last_7d"`
 	SpamReportsLast7d     int     `json:"spam_reports_last_7d"`

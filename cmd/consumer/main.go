@@ -216,6 +216,9 @@ func main() {
 	// Start DLQ auto-retry loop in background (every 60 seconds)
 	go jobsService.StartDLQRetryLoop(ctx, 60*time.Second)
 
+	// Start warmup health evaluation sweep (every hour)
+	go jobsService.StartWarmupHealthSweep(ctx, 1*time.Hour)
+
 	log.Println("Consumer started, listening on", kafka.TopicWorkerEvents)
 	jobsService.Start(ctx)
 	log.Println("Consumer stopped")

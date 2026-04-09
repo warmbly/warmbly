@@ -44,6 +44,10 @@ type Service interface {
 	ApplySpamReport(ctx context.Context, reporterAccountID, reportedAccountID uuid.UUID, messageID, reportType string) (*models.WarmupParticipantHealth, *errx.Error)
 	ApplyInvalidTokenAttempt(ctx context.Context, accountID uuid.UUID, attemptedToken string, scoreDelta int) (*models.WarmupParticipantHealth, *errx.Error)
 	ApplyRateLimitExceeded(ctx context.Context, accountID uuid.UUID, reason string) (*models.WarmupParticipantHealth, *errx.Error)
+
+	// Scheduled health evaluation
+	EvaluateAllParticipants(ctx context.Context) (evaluated int, stateChanges int, err *errx.Error)
+	GetPoolHealthSummary(ctx context.Context) (*models.WarmupPoolHealthSummary, *errx.Error)
 }
 
 type service struct {
@@ -417,4 +421,77 @@ func maxFloat(a, b float64) float64 {
 		return a
 	}
 	return b
+}
+
+// EvaluateAllParticipants runs a health evaluation sweep across all warmup pool participants.
+// Returns the number evaluated and the number of state changes.
+func (s *service) EvaluateAllParticipants(ctx context.Context) (int, int, *errx.Error) {
+	accountIDs, err := s.repo.GetAllParticipantAccountIDs(ctx)
+	if err != nil {
+		return 0, 0, errx.InternalError()
+	}
+
+	evaluated := 0
+	stateChanges := 0
+
+	for _, accountID := range accountIDs {
+		// Get current state before evaluation
+		healthBefore, err := s.repo.GetParticipantHealth(ctx, accountID, "")
+		if err != nil || healthBefore == nil {
+			// Try both pool types
+			for _, poolType := range []string{"premium", "free"} {
+				healthBefore, err = s.repo.GetParticipantHealth(ctx, accountID, poolType)
+				if err == nil && healthBefore != nil {
+					break
+				}
+			}
+		}
+
+		var stateBefore models.WarmupHealthState
+		if healthBefore != nil {
+			stateBefore = healthBefore.HealthState
+		}
+
+		// Evaluate
+		healthAfter, xerr := s.evaluateAndPersistAnyPool(ctx, accountID)
+		if xerr != nil {
+			continue
+		}
+		evaluated++
+
+		if healthAfter != nil && healthAfter.HealthState != stateBefore {
+			stateChanges++
+		}
+	}
+
+	return evaluated, stateChanges, nil
+}
+
+// GetPoolHealthSummary returns an aggregate health overview across all warmup pools
+func (s *service) GetPoolHealthSummary(ctx context.Context) (*models.WarmupPoolHealthSummary, *errx.Error) {
+	counts, avgScore, err := s.repo.GetPoolHealthCounts(ctx)
+	if err != nil {
+		return nil, errx.InternalError()
+	}
+
+	total := 0
+	blockedCount := 0
+	atRiskCount := 0
+	for state, count := range counts {
+		total += count
+		switch models.WarmupHealthState(state) {
+		case models.WarmupHealthQuarantined, models.WarmupHealthBlocked:
+			blockedCount += count
+		case models.WarmupHealthWatch, models.WarmupHealthThrottled:
+			atRiskCount += count
+		}
+	}
+
+	return &models.WarmupPoolHealthSummary{
+		TotalParticipants: total,
+		ByState:           counts,
+		AvgSpamScore:      avgScore,
+		BlockedCount:      blockedCount,
+		AtRiskCount:       atRiskCount,
+	}, nil
 }

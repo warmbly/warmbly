@@ -78,6 +78,10 @@ type WarmupRepository interface {
 	CountDeliverabilityEventsByAccount(ctx context.Context, accountID uuid.UUID, eventType string, since time.Time) (int, error)
 	CountDeliveredByAccount(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error)
 
+	// Health sweep
+	GetAllParticipantAccountIDs(ctx context.Context) ([]uuid.UUID, error)
+	GetPoolHealthCounts(ctx context.Context) (map[string]int, float64, error)
+
 	// Spam tracking
 	RecordSpamReport(ctx context.Context, report *SpamReport) (bool, error)
 	GetSpamScore(ctx context.Context, accountID uuid.UUID) (int, error)
@@ -685,4 +689,58 @@ func (r *warmupRepository) GetLatestReplyCandidate(ctx context.Context, senderAc
 	}
 
 	return candidate, nil
+}
+
+// GetAllParticipantAccountIDs returns all unique account IDs across all warmup pools
+func (r *warmupRepository) GetAllParticipantAccountIDs(ctx context.Context) ([]uuid.UUID, error) {
+	rows, err := r.db.Query(ctx, `SELECT DISTINCT email_account_id FROM warmup_pool_participants`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var ids []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// GetPoolHealthCounts returns counts per health state and average spam score
+func (r *warmupRepository) GetPoolHealthCounts(ctx context.Context) (map[string]int, float64, error) {
+	query := `
+		SELECT health_state, COUNT(*), AVG(spam_score)
+		FROM warmup_pool_participants
+		GROUP BY health_state
+	`
+	rows, err := r.db.Query(ctx, query)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	counts := map[string]int{}
+	var totalScore float64
+	var totalCount int
+	for rows.Next() {
+		var state string
+		var count int
+		var avgScore float64
+		if err := rows.Scan(&state, &count, &avgScore); err != nil {
+			return nil, 0, err
+		}
+		counts[state] = count
+		totalScore += avgScore * float64(count)
+		totalCount += count
+	}
+
+	avgScore := 0.0
+	if totalCount > 0 {
+		avgScore = totalScore / float64(totalCount)
+	}
+	return counts, avgScore, rows.Err()
 }
