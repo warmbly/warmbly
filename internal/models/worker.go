@@ -54,20 +54,21 @@ const (
 )
 
 type SendEmail struct {
-	TaskID       uuid.UUID     `json:"task_id" avro:"task_id"`
-	EmailID      uuid.UUID     `json:"email_id" avro:"email_id"`
-	UserID       uuid.UUID     `json:"user_id" avro:"user_id"`
-	To           []string      `json:"to" avro:"to"`
-	Cc           []string      `json:"cc" avro:"cc"`
-	Bcc          []string      `json:"bcc" avro:"bcc"`
-	Subject      string        `json:"subject" avro:"subject"`
-	BodyS3Key    string        `json:"body_s3_key" avro:"body_s3_key"`
-	MessageID    string        `json:"message_id" avro:"message_id"`
-	InReplyTo    string        `json:"in_reply_to,omitempty" avro:"in_reply_to"`
-	Parent       *EmailParent  `json:"parent,omitempty" avro:"parent"`
-	IsWarmup     bool          `json:"is_warmup" avro:"is_warmup"`
-	TrackingInfo *TrackingInfo `json:"tracking_info,omitempty" avro:"tracking_info"`
-	WarmupToken  string        `json:"warmup_token,omitempty" avro:"warmup_token"`
+	TaskID         uuid.UUID     `json:"task_id" avro:"task_id"`
+	EmailID        uuid.UUID     `json:"email_id" avro:"email_id"`
+	UserID         uuid.UUID     `json:"user_id" avro:"user_id"`
+	To             []string      `json:"to" avro:"to"`
+	Cc             []string      `json:"cc" avro:"cc"`
+	Bcc            []string      `json:"bcc" avro:"bcc"`
+	Subject        string        `json:"subject" avro:"subject"`
+	BodyS3Key      string        `json:"body_s3_key" avro:"body_s3_key"`
+	MessageID      string        `json:"message_id" avro:"message_id"`
+	InReplyTo      string        `json:"in_reply_to,omitempty" avro:"in_reply_to"`
+	Parent         *EmailParent  `json:"parent,omitempty" avro:"parent"`
+	IsWarmup       bool          `json:"is_warmup" avro:"is_warmup"`
+	TrackingInfo   *TrackingInfo `json:"tracking_info,omitempty" avro:"tracking_info"`
+	WarmupToken    string        `json:"warmup_token,omitempty" avro:"warmup_token"`
+	UnsubscribeURL string        `json:"unsubscribe_url,omitempty" avro:"unsubscribe_url"`
 }
 
 // TrackingInfo contains tracking configuration for campaign emails

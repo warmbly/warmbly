@@ -9,6 +9,7 @@ import (
 	"github.com/getsentry/sentry-go"
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
+	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/infrastructure/metrics"
 	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
@@ -329,19 +330,27 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 		}
 	}
 
+	// STEP 15.5: Generate List-Unsubscribe URL if enabled
+	var unsubscribeURL string
+	if campaign.UnsubscribeHeader {
+		unsubscribeURL = fmt.Sprintf("https://%s/unsubscribe?cid=%s&rid=%s",
+			config.Domain, campaign.ID.String(), contact.ID.String())
+	}
+
 	// STEP 16: Send email to worker via Kafka
 	emailMsg := EmailMessage{
-		From:      account.Email,
-		To:        []string{contact.Email},
-		CC:        campaign.CC,
-		BCC:       campaign.BCC,
-		Subject:   subject,
-		BodyHTML:  bodyHTML,
-		BodyPlain: bodyPlain,
-		MessageID: messageID,
-		IsWarmup:  false,
-		Tracking:  tracking,
-		UserID:    userUUID,
+		From:           account.Email,
+		To:             []string{contact.Email},
+		CC:             campaign.CC,
+		BCC:            campaign.BCC,
+		Subject:        subject,
+		BodyHTML:       bodyHTML,
+		BodyPlain:      bodyPlain,
+		MessageID:      messageID,
+		IsWarmup:       false,
+		Tracking:       tracking,
+		UserID:         userUUID,
+		UnsubscribeURL: unsubscribeURL,
 	}
 
 	if err := s.emailSender.Send(ctx, taskID, emailMsg, *account); err != nil {

@@ -52,8 +52,9 @@ type SendEmailParams struct {
 	BodyPlain    string
 	BodyHTML     string
 	IsWarmup     bool
-	TrackingInfo *models.TrackingInfo
-	WarmupToken  string
+	TrackingInfo   *models.TrackingInfo
+	WarmupToken    string
+	UnsubscribeURL string
 }
 
 type publisher struct {
@@ -97,19 +98,20 @@ func (p *publisher) PublishSendEmail(ctx context.Context, workerID uuid.UUID, pa
 
 	// Create SendEmail message for worker
 	sendEmail := &models.SendEmail{
-		TaskID:       params.TaskID,
-		EmailID:      params.EmailID,
-		UserID:       params.UserID,
-		To:           params.To,
-		Cc:           params.CC,
-		Bcc:          params.BCC,
-		Subject:      subject,
-		BodyS3Key:    s3Key,
-		MessageID:    params.MessageID,
-		InReplyTo:    params.InReplyTo,
-		IsWarmup:     params.IsWarmup,
-		TrackingInfo: params.TrackingInfo,
-		WarmupToken:  params.WarmupToken,
+		TaskID:         params.TaskID,
+		EmailID:        params.EmailID,
+		UserID:         params.UserID,
+		To:             params.To,
+		Cc:             params.CC,
+		Bcc:            params.BCC,
+		Subject:        subject,
+		BodyS3Key:      s3Key,
+		MessageID:      params.MessageID,
+		InReplyTo:      params.InReplyTo,
+		IsWarmup:       params.IsWarmup,
+		TrackingInfo:   params.TrackingInfo,
+		WarmupToken:    params.WarmupToken,
+		UnsubscribeURL: params.UnsubscribeURL,
 	}
 
 	// Publish worker event
