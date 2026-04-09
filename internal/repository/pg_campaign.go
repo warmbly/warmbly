@@ -640,9 +640,31 @@ func (r *campaignRepository) GetSequencesByCampaignID(ctx context.Context, campa
 	return sequences, rows.Err()
 }
 
-// UpdateStatus updates only the status of a campaign
+// validCampaignTransitions defines which status transitions are allowed.
+// Key is the current status, values are the statuses it can transition to.
+var validCampaignTransitions = map[string]map[string]bool{
+	"draft":                {"active": true},
+	"active":               {"paused": true, "completed": true, "paused_no_accounts": true, "paused_trial_expired": true},
+	"paused":               {"active": true, "draft": true},
+	"paused_no_accounts":   {"active": true, "paused": true},
+	"paused_trial_expired": {"active": true, "paused": true},
+	"completed":            {}, // terminal state
+}
+
+// UpdateStatus updates only the status of a campaign with state machine validation
 func (r *campaignRepository) UpdateStatus(ctx context.Context, campaignID uuid.UUID, status string) error {
-	query := `UPDATE campaigns SET status = $1, updated_at = NOW() WHERE id = $2`
+	query := `UPDATE campaigns SET status = $1, updated_at = NOW() WHERE id = $2 AND status != $1`
+
+	// Validate that the transition is allowed
+	var currentStatus string
+	if err := r.DB.QueryRow(ctx, `SELECT status FROM campaigns WHERE id = $1`, campaignID).Scan(&currentStatus); err != nil {
+		return err
+	}
+	allowed, ok := validCampaignTransitions[currentStatus]
+	if !ok || !allowed[status] {
+		return fmt.Errorf("invalid campaign transition from %q to %q", currentStatus, status)
+	}
+
 	_, err := r.DB.Exec(ctx, query, status, campaignID)
 	return err
 }
