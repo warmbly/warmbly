@@ -94,13 +94,14 @@ func (r *templateRepository) GetByID(ctx context.Context, orgID, templateID uuid
 	return t, err
 }
 
-// List retrieves all reply templates for an organization
+// List retrieves reply templates for an organization with a hard limit to prevent unbounded queries
 func (r *templateRepository) List(ctx context.Context, orgID uuid.UUID) ([]models.ReplyTemplate, error) {
 	query := `
 		SELECT id, organization_id, user_id, name, subject, body_html, body_plain, position, created_at, updated_at
 		FROM reply_templates
 		WHERE organization_id = $1
 		ORDER BY position ASC
+		LIMIT 500
 	`
 
 	rows, err := r.db.Query(ctx, query, orgID)
