@@ -444,6 +444,7 @@ func main() {
 			campaignProgressRepository,
 			crmRepository,
 			tasksClient,
+			warmupService,
 		)
 		emailSender := tasks.NewEmailSender(emailRepostory, eventsPublisher)
 		tasksService = tasks.NewService(

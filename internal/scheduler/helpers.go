@@ -186,17 +186,6 @@ func resolveConflicts(desired time.Time, scheduled []repository.Task, minWait in
 	return candidate.Add(time.Hour)
 }
 
-// selectAccountForSend selects an email account for sending (round-robin or least loaded)
-func selectAccountForSend(accounts []models.Email, currentTime time.Time) *models.Email {
-	if len(accounts) == 0 {
-		return nil
-	}
-
-	// For now, use simple round-robin based on current minute
-	index := currentTime.Minute() % len(accounts)
-	return &accounts[index]
-}
-
 // AccountCandidate holds an email account with its computed scheduling weight
 type AccountCandidate struct {
 	Account        models.Email

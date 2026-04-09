@@ -23,6 +23,7 @@ type AdminRepository interface {
 	BanUser(ctx context.Context, userID, bannedBy uuid.UUID, reason string) error
 	UnbanUser(ctx context.Context, userID, unbannedBy uuid.UUID, reason string) error
 	GetUserBans(ctx context.Context, userID uuid.UUID) ([]models.UserBan, error)
+	GetUserEmails(ctx context.Context, userID uuid.UUID, cursor *uuid.UUID, limit int) ([]models.AdminWorkerEmail, *models.Pagination, error)
 	ListAdmins(ctx context.Context, cursor *uuid.UUID, limit int) (*models.AdminsResult, error)
 
 	// Worker Management
@@ -444,6 +445,59 @@ func (r *adminRepository) GetUserBans(ctx context.Context, userID uuid.UUID) ([]
 	}
 
 	return bans, nil
+}
+
+// GetUserEmails gets email accounts belonging to a user
+func (r *adminRepository) GetUserEmails(ctx context.Context, userID uuid.UUID, cursor *uuid.UUID, limit int) ([]models.AdminWorkerEmail, *models.Pagination, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+
+	args := []interface{}{userID, limit + 1}
+	whereClause := "WHERE ea.user_id = $1::text"
+	if cursor != nil {
+		whereClause += " AND ea.id < $3"
+		args = append(args, *cursor)
+	}
+
+	query := `
+		SELECT ea.id, ea.email, ea.user_id::uuid, ea.organization_id,
+			ea.status, ea.provider, ea.warmup IS NOT NULL, ea.last_synced_at
+		FROM email_accounts ea
+		` + whereClause + `
+		ORDER BY ea.created_at DESC
+		LIMIT $2
+	`
+
+	rows, err := r.db.Query(ctx, query, args...)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+
+	var emails []models.AdminWorkerEmail
+	for rows.Next() {
+		var e models.AdminWorkerEmail
+		err := rows.Scan(
+			&e.ID, &e.Email, &e.UserID, &e.OrganizationID,
+			&e.Status, &e.Provider, &e.WarmupEnabled, &e.LastSyncedAt,
+		)
+		if err != nil {
+			return nil, nil, err
+		}
+		emails = append(emails, e)
+	}
+
+	pagination := &models.Pagination{
+		HasMore: len(emails) > limit,
+	}
+
+	if len(emails) > limit {
+		emails = emails[:limit]
+		pagination.NextCursor = &emails[limit-1].ID
+	}
+
+	return emails, pagination, nil
 }
 
 // ListAdmins lists all admin users

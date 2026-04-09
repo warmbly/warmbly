@@ -75,6 +75,8 @@ type WarmupRepository interface {
 	UpdateParticipantHealth(ctx context.Context, accountID uuid.UUID, state models.WarmupHealthState, blockedUntil *time.Time, reason string, score float64) error
 	CountSpamReportsSince(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error)
 	SumWarmupSentSince(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error)
+	CountDeliverabilityEventsByAccount(ctx context.Context, accountID uuid.UUID, eventType string, since time.Time) (int, error)
+	CountDeliveredByAccount(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error)
 
 	// Spam tracking
 	RecordSpamReport(ctx context.Context, report *SpamReport) (bool, error)
@@ -147,7 +149,7 @@ func (r *warmupRepository) GetPoolParticipants(ctx context.Context, poolType str
 	if excludeBlocked {
 		query += `
 		 AND (
-		  wpp.health_state IN ('healthy', 'watch')
+		  wpp.health_state IN ('healthy', 'watch', 'throttled')
 		  OR (
 		   wpp.health_state IN ('quarantined', 'blocked')
 		   AND wpp.blocked_until IS NOT NULL
@@ -400,6 +402,36 @@ func (r *warmupRepository) SumWarmupSentSince(ctx context.Context, accountID uui
 	var total int
 	err := r.db.QueryRow(ctx, query, accountID, since).Scan(&total)
 	return total, err
+}
+
+// CountDeliverabilityEventsByAccount counts deliverability events (bounce, complaint, etc.)
+// for a specific email account by joining through the tasks table.
+func (r *warmupRepository) CountDeliverabilityEventsByAccount(ctx context.Context, accountID uuid.UUID, eventType string, since time.Time) (int, error) {
+	query := `
+		SELECT COUNT(*)
+		FROM deliverability_events de
+		JOIN tasks t ON t.id = de.task_id
+		WHERE t.email_account_id = $1
+		  AND de.event_type = $2
+		  AND de.created_at >= $3
+	`
+	var count int
+	err := r.db.QueryRow(ctx, query, accountID, eventType, since).Scan(&count)
+	return count, err
+}
+
+// CountDeliveredByAccount counts completed tasks (sent emails) for an account since a given time.
+func (r *warmupRepository) CountDeliveredByAccount(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error) {
+	query := `
+		SELECT COUNT(*)
+		FROM tasks
+		WHERE email_account_id = $1
+		  AND status = 'completed'
+		  AND completed_at >= $2
+	`
+	var count int
+	err := r.db.QueryRow(ctx, query, accountID, since).Scan(&count)
+	return count, err
 }
 
 // IncrementSpamScore increments the spam score for an account

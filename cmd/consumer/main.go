@@ -179,6 +179,7 @@ func main() {
 		campaignProgressRepo,
 		crmRepo,
 		nil,
+		warmupService,
 	)
 
 	// Events publisher

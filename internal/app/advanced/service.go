@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	warmupapp "github.com/warmbly/warmbly/internal/app/warmup"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/infrastructure/gtasks"
 	"github.com/warmbly/warmbly/internal/models"
@@ -45,6 +46,7 @@ type Service interface {
 	ReplayDeadLetter(ctx context.Context, organizationID, deadLetterID uuid.UUID) *errx.Error
 
 	ProcessIncomingReply(ctx context.Context, emailAccountID uuid.UUID, msg *models.EmailMessageStoreData) *errx.Error
+	GetABWinnerAnalysis(ctx context.Context, organizationID, campaignID uuid.UUID) (*models.ABWinnerAnalysis, *errx.Error)
 }
 
 type service struct {
@@ -56,6 +58,7 @@ type service struct {
 	campaignProgressRepo repository.CampaignProgressRepository
 	crmRepo              repository.CRMRepository
 	tasksClient          *gtasks.Client
+	warmupService        warmupapp.Service
 }
 
 func NewService(
@@ -67,6 +70,7 @@ func NewService(
 	campaignProgressRepo repository.CampaignProgressRepository,
 	crmRepo repository.CRMRepository,
 	tasksClient *gtasks.Client,
+	warmupService warmupapp.Service,
 ) Service {
 	return &service{
 		repo:                 repo,
@@ -77,6 +81,7 @@ func NewService(
 		campaignProgressRepo: campaignProgressRepo,
 		crmRepo:              crmRepo,
 		tasksClient:          tasksClient,
+		warmupService:        warmupService,
 	}
 }
 
@@ -637,6 +642,16 @@ func (s *service) IngestDeliverabilityEvent(ctx context.Context, organizationID 
 		}
 	}
 
+	// Trigger warmup health re-evaluation on bounce or complaint events.
+	// This connects deliverability signals to the warmup pool health system.
+	if s.warmupService != nil && req.TaskID != nil &&
+		(eventType == models.DeliverabilityEventBounce || eventType == models.DeliverabilityEventComplaint) {
+		task, tErr := s.taskRepo.GetTask(ctx, *req.TaskID)
+		if tErr == nil && task != nil {
+			_, _ = s.warmupService.ApplySpamReport(ctx, uuid.Nil, task.EmailAccountID, req.IdempotencyKey, string(eventType))
+		}
+	}
+
 	return nil
 }
 
@@ -711,14 +726,25 @@ func (s *service) CompleteTaskExecution(ctx context.Context, taskID uuid.UUID, e
 }
 
 func (s *service) CaptureTaskDeadLetter(ctx context.Context, taskID uuid.UUID, taskType string, payload map[string]interface{}, lastError string, attempts int) *errx.Error {
+	maxAttempts := 5
+
+	// Compute next retry time using exponential backoff: 30s * 2^attempts
+	var nextRetryAt *time.Time
+	if attempts < maxAttempts {
+		backoff := time.Duration(30*(1<<uint(attempts))) * time.Second
+		t := time.Now().UTC().Add(backoff)
+		nextRetryAt = &t
+	}
+
 	item := &models.TaskDeadLetter{
 		TaskID:      taskID,
 		TaskType:    taskType,
 		Payload:     payload,
 		LastError:   lastError,
 		Attempts:    attempts,
-		MaxAttempts: 5,
+		MaxAttempts: maxAttempts,
 		Status:      "pending",
+		NextRetryAt: nextRetryAt,
 	}
 	if err := s.repo.CreateTaskDeadLetter(ctx, item); err != nil {
 		return toErrx(err)
@@ -950,4 +976,76 @@ func (s *service) GetDeliverabilityDashboard(ctx context.Context, organizationID
 		return nil, toErrx(err)
 	}
 	return out, nil
+}
+
+func (s *service) GetABWinnerAnalysis(ctx context.Context, organizationID, campaignID uuid.UUID) (*models.ABWinnerAnalysis, *errx.Error) {
+	campaign, err := s.campaignRepo.GetByID(ctx, campaignID)
+	if err != nil || campaign == nil {
+		return nil, errx.ErrNotFound
+	}
+	if campaign.OrganizationID == nil || *campaign.OrganizationID != organizationID {
+		return nil, errx.ErrForbidden
+	}
+
+	settings, xerr := s.effectiveSettings(ctx, organizationID, campaignID)
+	if xerr != nil {
+		return nil, xerr
+	}
+
+	stats, err := s.repo.GetABVariantStats(ctx, campaignID)
+	if err != nil {
+		return nil, toErrx(err)
+	}
+
+	analysis := &models.ABWinnerAnalysis{
+		CampaignID:  campaignID,
+		Variants:    stats,
+		WinningRule: settings.ABTesting.DefaultWinningRule,
+	}
+
+	if len(stats) == 0 {
+		analysis.Confidence = "none"
+		return analysis, nil
+	}
+
+	// Determine winner based on the winning rule
+	var bestIdx int
+	var bestScore float64
+	for i, v := range stats {
+		var score float64
+		switch settings.ABTesting.DefaultWinningRule {
+		case "reply_rate":
+			score = v.ReplyRate
+		case "click_rate":
+			score = v.ClickRate
+		case "open_rate":
+			score = v.OpenRate
+		default:
+			score = v.ReplyRate
+		}
+		if score > bestScore {
+			bestScore = score
+			bestIdx = i
+		}
+	}
+
+	minSample := settings.ABTesting.MinSampleSize
+	if minSample <= 0 {
+		minSample = 30
+	}
+
+	winner := stats[bestIdx]
+	if winner.TotalSent >= minSample {
+		analysis.WinnerID = &winner.VariantID
+		analysis.WinnerName = winner.VariantName
+		if winner.TotalSent >= minSample*3 {
+			analysis.Confidence = "high"
+		} else if winner.TotalSent >= minSample {
+			analysis.Confidence = "medium"
+		}
+	} else {
+		analysis.Confidence = "low"
+	}
+
+	return analysis, nil
 }

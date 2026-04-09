@@ -257,6 +257,29 @@ type DeliverabilityDashboard struct {
 	IntentNeutral        int       `json:"intent_neutral"`
 }
 
+type ABVariantStats struct {
+	VariantID   uuid.UUID `json:"variant_id"`
+	VariantName string    `json:"variant_name"`
+	TotalSent   int       `json:"total_sent"`
+	Opened      int       `json:"opened"`
+	Clicked     int       `json:"clicked"`
+	Replied     int       `json:"replied"`
+	Bounced     int       `json:"bounced"`
+	OpenRate    float64   `json:"open_rate"`
+	ClickRate   float64   `json:"click_rate"`
+	ReplyRate   float64   `json:"reply_rate"`
+	BounceRate  float64   `json:"bounce_rate"`
+}
+
+type ABWinnerAnalysis struct {
+	CampaignID  uuid.UUID        `json:"campaign_id"`
+	Variants    []ABVariantStats  `json:"variants"`
+	WinnerID    *uuid.UUID       `json:"winner_id,omitempty"`
+	WinnerName  string           `json:"winner_name,omitempty"`
+	WinningRule string           `json:"winning_rule"`
+	Confidence  string           `json:"confidence"`
+}
+
 func DefaultAdvancedOutreachSettings() AdvancedOutreachSettings {
 	return AdvancedOutreachSettings{
 		BouncePipeline: BouncePipelineSettings{

@@ -77,6 +77,7 @@ func Run(
 	protected.Use(m.AuthMiddleware())
 	{
 		emails := protected.Group("/emails")
+		emails.Use(m.RateLimitMiddleware(models.RateLimitWrite))
 		{
 			emails.GET("", h.EmailsSearch)
 			emails.GET("/:id", h.GetEmail)
@@ -87,6 +88,7 @@ func Run(
 		}
 
 		campaigns := protected.Group("/campaigns")
+		campaigns.Use(m.RateLimitMiddleware(models.RateLimitWrite))
 		{
 			campaigns.GET("", h.SearchCampaigns)
 			campaigns.POST("", h.CreateCampaign)
@@ -102,6 +104,7 @@ func Run(
 			campaigns.PATCH("/:id/ab-variants/:variantId", m.RequireOrganization(), m.RequirePermission(models.PermManageSettings), h.UpdateCampaignABVariant)
 			campaigns.DELETE("/:id/ab-variants/:variantId", m.RequireOrganization(), m.RequirePermission(models.PermManageSettings), h.DeleteCampaignABVariant)
 			campaigns.POST("/:id/preflight", m.RequireOrganization(), m.RequirePermission(models.PermSendCampaigns), h.RunCampaignPreflight)
+			campaigns.GET("/:id/ab-analysis", m.RequireOrganization(), h.GetCampaignABAnalysis)
 
 			// Campaign start/stop
 			campaigns.POST("/:id/start", m.RequireOrganization(), m.RequirePermission(models.PermSendCampaigns), h.StartCampaign)
@@ -118,6 +121,7 @@ func Run(
 		}
 
 		contacts := protected.Group("/contacts")
+		contacts.Use(m.RateLimitMiddleware(models.RateLimitWrite))
 		{
 			contacts.POST("/search", h.SearchContacts)
 			contacts.POST("", h.AddContacts)
@@ -140,6 +144,7 @@ func Run(
 		grouph.New(protected, h.CategoryService, "categories")
 
 		unibox := protected.Group("/unibox")
+		unibox.Use(m.RateLimitMiddleware(models.RateLimitRead))
 		{
 			unibox.GET("", h.GetUniboxIncoming)
 			unibox.GET("/count", h.GetUnseenCount)
@@ -227,6 +232,7 @@ func Run(
 
 		// Organization management
 		org := protected.Group("/organization")
+		org.Use(m.RateLimitMiddleware(models.RateLimitWrite))
 		{
 			org.POST("", h.CreateOrganization)
 			org.GET("", h.GetUserOrganizations)
@@ -257,6 +263,7 @@ func Run(
 
 		// Subscription & billing
 		subscriptions := protected.Group("/subscription")
+		subscriptions.Use(m.RateLimitMiddleware(models.RateLimitWrite))
 		{
 			subscriptions.GET("", h.GetSubscription)
 			subscriptions.GET("/limits", h.GetSubscriptionLimits)
@@ -280,7 +287,7 @@ func Run(
 
 		// Reply templates (org-scoped)
 		templates := protected.Group("/templates")
-		templates.Use(m.RequireOrganization())
+		templates.Use(m.RequireOrganization(), m.RateLimitMiddleware(models.RateLimitWrite))
 		{
 			templates.GET("", h.ListTemplates)
 			templates.POST("", h.CreateTemplate)
@@ -291,7 +298,7 @@ func Run(
 
 		// CRM routes (require org)
 		crmGroup := protected.Group("/crm")
-		crmGroup.Use(m.RequireOrganization())
+		crmGroup.Use(m.RequireOrganization(), m.RateLimitMiddleware(models.RateLimitWrite))
 		{
 			// Pipelines
 			pipelines := crmGroup.Group("/pipelines")

@@ -157,6 +157,25 @@ func (h *Handler) DeleteCampaignABVariant(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+func (h *Handler) GetCampaignABAnalysis(c *gin.Context) {
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "no organization selected"))
+		return
+	}
+	campaignID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		errx.JSON(c, errx.ErrUuid)
+		return
+	}
+	analysis, xerr := h.AdvancedService.GetABWinnerAnalysis(c.Request.Context(), *orgID, campaignID)
+	if xerr != nil {
+		errx.JSON(c, xerr)
+		return
+	}
+	c.JSON(http.StatusOK, analysis)
+}
+
 func (h *Handler) RunCampaignPreflight(c *gin.Context) {
 	orgID := middleware.GetOrganizationID(c)
 	if orgID == nil {

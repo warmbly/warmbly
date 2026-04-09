@@ -15,12 +15,23 @@ const (
 	minSpamPlacementSample = 20
 
 	spamPlacementWatchPct        = 10.0
+	spamPlacementThrottlePct     = 15.0
 	spamPlacementQuarantinePct   = 20.0
 	spamPlacementBlockPct        = 40.0
 	spamPlacementCatastrophicPct = 80.0
 
+	complaintRateWatchPct      = 0.03
+	complaintRateQuarantinePct = 0.10
+	complaintRateBlockPct      = 0.30
+
+	bounceRateQuarantinePct = 5.0
+	bounceRateBlockPct      = 10.0
+
+	minComplaintSample = 100
+
 	invalidTokenBlockThreshold = 3
 
+	warmupThrottleDuration   = 3 * 24 * time.Hour
 	warmupQuarantineDuration = 7 * 24 * time.Hour
 	warmupBlockDuration      = 30 * 24 * time.Hour
 	warmupCatastrophicBlock  = 90 * 24 * time.Hour
@@ -103,6 +114,9 @@ func (s *service) CanParticipate(ctx context.Context, accountID uuid.UUID, poolT
 			}
 			return false, string(health.HealthState), nil
 		}
+	case models.WarmupHealthThrottled:
+		// Throttled accounts can still participate but callers should reduce volume
+		return true, "throttled", nil
 	}
 
 	return true, "", nil
@@ -222,12 +236,41 @@ func (s *service) loadMetrics(ctx context.Context, accountID uuid.UUID) (*models
 		rate = float64(spamReportsLast7d) / float64(sentLast7d) * 100
 	}
 
+	// Load complaint and bounce counts from deliverability events (last 30 days)
+	since30d := now.Add(-30 * 24 * time.Hour)
+	complaintsLast30d, err := s.repo.CountDeliverabilityEventsByAccount(ctx, accountID, "complaint", since30d)
+	if err != nil {
+		return nil, err
+	}
+	bouncesLast30d, err := s.repo.CountDeliverabilityEventsByAccount(ctx, accountID, "bounce", since30d)
+	if err != nil {
+		return nil, err
+	}
+	deliveredLast30d, err := s.repo.CountDeliveredByAccount(ctx, accountID, since30d)
+	if err != nil {
+		return nil, err
+	}
+
+	complaintRate := 0.0
+	if deliveredLast30d > 0 {
+		complaintRate = float64(complaintsLast30d) / float64(deliveredLast30d) * 100
+	}
+	bounceRate := 0.0
+	if deliveredLast30d > 0 {
+		bounceRate = float64(bouncesLast30d) / float64(deliveredLast30d) * 100
+	}
+
 	return &models.WarmupHealthMetrics{
 		SentLast7d:            sentLast7d,
 		SpamReportsLast7d:     spamReportsLast7d,
 		SpamPlacementRate:     rate,
 		InvalidAttemptsLast24: invalidAttemptsLast24h,
 		SpamScore:             spamScore,
+		ComplaintsLast30d:     complaintsLast30d,
+		DeliveredLast30d:      deliveredLast30d,
+		ComplaintRate:         complaintRate,
+		BouncesLast30d:        bouncesLast30d,
+		BounceRate:            bounceRate,
 	}, nil
 }
 
@@ -254,6 +297,57 @@ func evaluateMetrics(metrics *models.WarmupHealthMetrics, now time.Time) evaluat
 		}
 	}
 
+	// Evaluate complaint rate (requires minimum sample of 100 delivered in 30d)
+	if metrics.DeliveredLast30d >= minComplaintSample {
+		switch {
+		case metrics.ComplaintRate >= complaintRateBlockPct:
+			until := now.Add(warmupBlockDuration)
+			return evaluationDecision{
+				State:        models.WarmupHealthBlocked,
+				BlockedUntil: &until,
+				Reason:       fmt.Sprintf("complaint rate %.2f%% exceeded block threshold over %d delivered", metrics.ComplaintRate, metrics.DeliveredLast30d),
+				Score:        maxFloat(metrics.ComplaintRate*100, metrics.SpamPlacementRate),
+			}
+		case metrics.ComplaintRate >= complaintRateQuarantinePct:
+			until := now.Add(warmupQuarantineDuration)
+			return evaluationDecision{
+				State:        models.WarmupHealthQuarantined,
+				BlockedUntil: &until,
+				Reason:       fmt.Sprintf("complaint rate %.2f%% exceeded quarantine threshold", metrics.ComplaintRate),
+				Score:        maxFloat(metrics.ComplaintRate*100, metrics.SpamPlacementRate),
+			}
+		case metrics.ComplaintRate >= complaintRateWatchPct:
+			decision = evaluationDecision{
+				State:  models.WarmupHealthWatch,
+				Reason: fmt.Sprintf("complaint rate %.2f%% in watch band", metrics.ComplaintRate),
+				Score:  maxFloat(metrics.ComplaintRate*100, metrics.SpamPlacementRate),
+			}
+		}
+	}
+
+	// Evaluate bounce rate (requires minimum sample of 100 delivered in 30d)
+	if metrics.DeliveredLast30d >= minComplaintSample {
+		switch {
+		case metrics.BounceRate >= bounceRateBlockPct:
+			until := now.Add(warmupBlockDuration)
+			return evaluationDecision{
+				State:        models.WarmupHealthBlocked,
+				BlockedUntil: &until,
+				Reason:       fmt.Sprintf("bounce rate %.1f%% exceeded block threshold over %d delivered", metrics.BounceRate, metrics.DeliveredLast30d),
+				Score:        maxFloat(metrics.BounceRate, metrics.SpamPlacementRate),
+			}
+		case metrics.BounceRate >= bounceRateQuarantinePct:
+			until := now.Add(warmupQuarantineDuration)
+			return evaluationDecision{
+				State:        models.WarmupHealthQuarantined,
+				BlockedUntil: &until,
+				Reason:       fmt.Sprintf("bounce rate %.1f%% exceeded quarantine threshold", metrics.BounceRate),
+				Score:        maxFloat(metrics.BounceRate, metrics.SpamPlacementRate),
+			}
+		}
+	}
+
+	// Evaluate spam placement rate (requires minimum 20 warmup sends in 7d)
 	if metrics.SentLast7d < minSpamPlacementSample {
 		return decision
 	}
@@ -283,12 +377,24 @@ func evaluateMetrics(metrics *models.WarmupHealthMetrics, now time.Time) evaluat
 			Reason:       fmt.Sprintf("warmup spam placement %.1f%% exceeded quarantine threshold", metrics.SpamPlacementRate),
 			Score:        metrics.SpamPlacementRate,
 		}
-	case metrics.SpamPlacementRate >= spamPlacementWatchPct:
+	case metrics.SpamPlacementRate >= spamPlacementThrottlePct:
+		until := now.Add(warmupThrottleDuration)
 		return evaluationDecision{
-			State:  models.WarmupHealthWatch,
-			Reason: fmt.Sprintf("warmup spam placement %.1f%% in watch band", metrics.SpamPlacementRate),
-			Score:  metrics.SpamPlacementRate,
+			State:        models.WarmupHealthThrottled,
+			BlockedUntil: &until,
+			Reason:       fmt.Sprintf("warmup spam placement %.1f%% in throttle band", metrics.SpamPlacementRate),
+			Score:        metrics.SpamPlacementRate,
 		}
+	case metrics.SpamPlacementRate >= spamPlacementWatchPct:
+		// Only upgrade to watch if not already at a worse state from complaint checks
+		if decision.State == models.WarmupHealthHealthy {
+			return evaluationDecision{
+				State:  models.WarmupHealthWatch,
+				Reason: fmt.Sprintf("warmup spam placement %.1f%% in watch band", metrics.SpamPlacementRate),
+				Score:  metrics.SpamPlacementRate,
+			}
+		}
+		return decision
 	default:
 		return decision
 	}

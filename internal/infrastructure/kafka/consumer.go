@@ -78,7 +78,7 @@ func (cons *Consumer) Consume(ctx context.Context, handler func(msg *ckf.Message
 						continue
 					}
 					// Log transient Kafka errors and retry after a brief delay
-					log.Warn().Str("code", string(kafkaErr.Code())).Err(kafkaErr).Msg("kafka consumer error")
+					log.Warn().Str("code", fmt.Sprintf("%d", kafkaErr.Code())).Err(kafkaErr).Msg("kafka consumer error")
 					time.Sleep(time.Second)
 					continue
 				}

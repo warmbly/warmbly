@@ -44,6 +44,8 @@ type AdvancedOutreachRepository interface {
 
 	CreateReplyIntent(ctx context.Context, record *models.ReplyIntentRecord) error
 	CreatePreflightReport(ctx context.Context, report *models.PreflightReport) error
+
+	GetABVariantStats(ctx context.Context, campaignID uuid.UUID) ([]models.ABVariantStats, error)
 }
 
 type advancedOutreachRepository struct {
@@ -711,4 +713,42 @@ func (r *advancedOutreachRepository) CreatePreflightReport(ctx context.Context, 
 	`
 	_, err = r.db.Exec(ctx, query, report.OrganizationID, report.CampaignID, report.Passed, report.Score, checks, recommendations)
 	return err
+}
+
+func (r *advancedOutreachRepository) GetABVariantStats(ctx context.Context, campaignID uuid.UUID) ([]models.ABVariantStats, error) {
+	query := `
+		SELECT
+			v.id, v.name,
+			COUNT(a.contact_id) AS total_sent,
+			COUNT(a.opened_at) AS opened,
+			COUNT(a.clicked_at) AS clicked,
+			COUNT(a.replied_at) AS replied,
+			COUNT(a.bounced_at) AS bounced
+		FROM campaign_ab_variants v
+		LEFT JOIN campaign_ab_assignments a ON a.variant_id = v.id AND a.campaign_id = v.campaign_id
+		WHERE v.campaign_id = $1
+		GROUP BY v.id, v.name
+		ORDER BY v.created_at
+	`
+	rows, err := r.db.Query(ctx, query, campaignID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var stats []models.ABVariantStats
+	for rows.Next() {
+		var s models.ABVariantStats
+		if err := rows.Scan(&s.VariantID, &s.VariantName, &s.TotalSent, &s.Opened, &s.Clicked, &s.Replied, &s.Bounced); err != nil {
+			return nil, err
+		}
+		if s.TotalSent > 0 {
+			s.OpenRate = float64(s.Opened) / float64(s.TotalSent) * 100
+			s.ClickRate = float64(s.Clicked) / float64(s.TotalSent) * 100
+			s.ReplyRate = float64(s.Replied) / float64(s.TotalSent) * 100
+			s.BounceRate = float64(s.Bounced) / float64(s.TotalSent) * 100
+		}
+		stats = append(stats, s)
+	}
+	return stats, rows.Err()
 }

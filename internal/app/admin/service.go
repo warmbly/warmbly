@@ -221,9 +221,12 @@ func (s *adminService) GetUserCampaigns(ctx context.Context, userID uuid.UUID, c
 }
 
 func (s *adminService) GetUserEmails(ctx context.Context, userID uuid.UUID, cursor *uuid.UUID, limit int) ([]models.AdminWorkerEmail, *models.Pagination, *errx.Error) {
-	// This would need a separate query by user ID
-	// For now, return empty
-	return []models.AdminWorkerEmail{}, &models.Pagination{}, nil
+	emails, pagination, err := s.repo.GetUserEmails(ctx, userID, cursor, limit)
+	if err != nil {
+		sentry.CaptureException(err)
+		return nil, nil, errx.New(errx.Internal, "failed to get user emails")
+	}
+	return emails, pagination, nil
 }
 
 func (s *adminService) GetUserRateLimits(ctx context.Context, userID uuid.UUID) (*models.AdminUserRateLimits, *errx.Error) {

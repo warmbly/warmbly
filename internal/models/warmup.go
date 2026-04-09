@@ -30,6 +30,7 @@ type WarmupHealthState string
 const (
 	WarmupHealthHealthy     WarmupHealthState = "healthy"
 	WarmupHealthWatch       WarmupHealthState = "watch"
+	WarmupHealthThrottled   WarmupHealthState = "throttled"
 	WarmupHealthQuarantined WarmupHealthState = "quarantined"
 	WarmupHealthBlocked     WarmupHealthState = "blocked"
 )
@@ -55,4 +56,9 @@ type WarmupHealthMetrics struct {
 	SpamPlacementRate     float64 `json:"spam_placement_rate"`
 	InvalidAttemptsLast24 int     `json:"invalid_attempts_last_24h"`
 	SpamScore             int     `json:"spam_score"`
+	ComplaintsLast30d     int     `json:"complaints_last_30d"`
+	DeliveredLast30d      int     `json:"delivered_last_30d"`
+	ComplaintRate         float64 `json:"complaint_rate"`
+	BouncesLast30d        int     `json:"bounces_last_30d"`
+	BounceRate            float64 `json:"bounce_rate"`
 }
