@@ -114,6 +114,9 @@ func main() {
 	// Pub/Sub for realtime streaming
 	var streamingPublisher *pubsub.StreamingPublisher
 
+	// Infrastructure refs for health checks
+	var primaryDB *db.DB
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -198,7 +201,7 @@ func main() {
 			log.Fatal(err)
 		}
 
-		primaryDB, err := db.New(ctx, primaryDBEndpoint)
+		primaryDB, err = db.New(ctx, primaryDBEndpoint)
 		if err != nil {
 			sentry.CaptureException(err)
 			log.Fatal(err)
@@ -558,7 +561,14 @@ func main() {
 
 	sentry.CaptureMessage("Starting the backend on " + addr)
 
-	router := api.Run(h, m, oidcH, addr, ginMode, allowedOrigins)
+	var healthDeps *api.HealthDeps
+	if primaryDB != nil {
+		healthDeps = &api.HealthDeps{
+			DB: primaryDB.Pool,
+		}
+	}
+
+	router := api.Run(h, m, oidcH, addr, ginMode, allowedOrigins, healthDeps)
 
 	srv := &http.Server{
 		Addr:    addr,
