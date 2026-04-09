@@ -80,7 +80,7 @@ func calculateHoursRemainingUntil(timezone, endTime string) float64 {
 	if now.After(endOfDay) {
 		return 0
 	}
-	return math.Max(0, endOfDay.Sub(now).Hours())
+	return max(0, endOfDay.Sub(now).Hours())
 }
 
 // calculateFirstSlotTomorrowAt calculates first slot tomorrow at a specific start time
