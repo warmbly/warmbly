@@ -138,16 +138,9 @@ func (s *workerAssignmentService) SelectSharedWorker(ctx context.Context, freeTi
 
 // AssignDedicatedWorker assigns a dedicated worker to an organization
 func (s *workerAssignmentService) AssignDedicatedWorker(ctx context.Context, orgID, subscriptionID uuid.UUID) error {
-	// Check if org already has a dedicated worker
-	existing, err := s.workerRepo.GetActiveDedicatedAssignment(ctx, orgID)
-	if err != nil {
-		return err
-	}
-	if existing != nil {
-		return ErrOrgAlreadyAssigned
-	}
-
-	// Find an available dedicated worker
+	// Use atomic insert with conflict check to prevent race conditions.
+	// Two concurrent requests could both pass the "check if exists" step and
+	// both attempt to insert, causing duplicate assignments.
 	worker, err := s.workerRepo.GetAvailableDedicatedWorker(ctx)
 	if err != nil {
 		return err
@@ -156,7 +149,6 @@ func (s *workerAssignmentService) AssignDedicatedWorker(ctx context.Context, org
 		return ErrNoDedicatedWorkers
 	}
 
-	// Create assignment
 	assignment := &models.DedicatedWorkerAssignment{
 		ID:             uuid.New(),
 		WorkerID:       worker.ID,
@@ -165,7 +157,14 @@ func (s *workerAssignmentService) AssignDedicatedWorker(ctx context.Context, org
 		AssignedAt:     time.Now(),
 	}
 
-	return s.workerRepo.CreateDedicatedAssignment(ctx, assignment)
+	created, err := s.workerRepo.CreateDedicatedAssignmentIfNotExists(ctx, assignment)
+	if err != nil {
+		return err
+	}
+	if !created {
+		return ErrOrgAlreadyAssigned
+	}
+	return nil
 }
 
 // ReleaseDedicatedWorker releases a dedicated worker assignment

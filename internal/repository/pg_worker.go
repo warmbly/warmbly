@@ -30,6 +30,7 @@ type WorkerRepository interface {
 
 	// Dedicated worker assignments
 	CreateDedicatedAssignment(ctx context.Context, assignment *models.DedicatedWorkerAssignment) error
+	CreateDedicatedAssignmentIfNotExists(ctx context.Context, assignment *models.DedicatedWorkerAssignment) (bool, error)
 	GetActiveDedicatedAssignment(ctx context.Context, userID uuid.UUID) (*models.DedicatedWorkerAssignment, error)
 	GetDedicatedWorkerByUserID(ctx context.Context, userID uuid.UUID) (*models.Worker, error)
 	ReleaseDedicatedAssignment(ctx context.Context, userID uuid.UUID) error
@@ -169,6 +170,31 @@ func (r *workerRepository) CreateDedicatedAssignment(ctx context.Context, assign
 		assignment.AssignedAt,
 	)
 	return err
+}
+
+// CreateDedicatedAssignmentIfNotExists atomically creates a dedicated worker assignment
+// only if no active (released_at IS NULL) assignment exists for the user.
+// Returns (true, nil) if created, (false, nil) if already exists.
+func (r *workerRepository) CreateDedicatedAssignmentIfNotExists(ctx context.Context, assignment *models.DedicatedWorkerAssignment) (bool, error) {
+	query := `
+		INSERT INTO dedicated_worker_assignments (id, worker_id, user_id, subscription_id, assigned_at)
+		SELECT $1, $2, $3, $4, $5
+		WHERE NOT EXISTS (
+			SELECT 1 FROM dedicated_worker_assignments
+			WHERE user_id = $3 AND released_at IS NULL
+		)
+	`
+	result, err := r.db.Exec(ctx, query,
+		assignment.ID,
+		assignment.WorkerID,
+		assignment.UserID,
+		assignment.SubscriptionID,
+		assignment.AssignedAt,
+	)
+	if err != nil {
+		return false, err
+	}
+	return result.RowsAffected() > 0, nil
 }
 
 // GetActiveDedicatedAssignment retrieves the active dedicated assignment for a user
