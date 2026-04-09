@@ -106,7 +106,7 @@ func (r *contactRepository) Add(ctx context.Context, userID string, contacts []m
 			FROM   campaigns
 			WHERE  campaigns.id = ANY($2)
 			AND  campaigns.user_id = $3
-			ON CONFLICT (campaign, contact) DO NOTHING
+			ON CONFLICT (campaign_id, contact_id) DO NOTHING
 			RETURNING campaigns.id, campaigns.name`
 
 			bc.Queue(
@@ -734,7 +734,7 @@ func (r *contactRepository) Update(ctx context.Context, userID, contactID string
 			SELECT $1, id
 			FROM campaigns
 			WHERE id = $2 AND user_id = $3
-			ON CONFLICT (campaign, contact) DO NOTHING
+			ON CONFLICT (campaign_id, contact_id) DO NOTHING
 		`
 		for _, campaignID := range toInsert {
 			params := []any{
@@ -829,19 +829,25 @@ func (r *contactRepository) BulkUpdate(ctx context.Context, userID string, data 
 
 	if len(data.RemoveCampaigns) > 0 {
 		b.Queue(`DELETE FROM campaign_leads cl
-		         USING contacts c
-		         WHERE cl.contact_id =c.id
+		         USING contacts c, campaigns cam
+		         WHERE cl.contact_id = c.id
+		           AND cl.campaign_id = cam.id
 		           AND c.user_id = $1
-		           AND cl.contact_id =ANY($2)
+		           AND cam.user_id = $1
+		           AND cl.contact_id = ANY($2)
 		           AND cl.campaign_id = ANY($3)`,
 			userID, data.Contacts, data.RemoveCampaigns)
 	}
 
 	if len(data.AddCampaigns) > 0 {
 		b.Queue(`INSERT INTO campaign_leads (contact_id, campaign_id)
-		         SELECT c.id, UNNEST($3::uuid[])
+		         SELECT c.id, cam.id
 		         FROM contacts c
-		         WHERE c.user_id = $1 AND c.id = ANY($2)
+		         CROSS JOIN campaigns cam
+		         WHERE c.user_id = $1
+		           AND c.id = ANY($2)
+		           AND cam.id = ANY($3::uuid[])
+		           AND cam.user_id = $1
 		         ON CONFLICT DO NOTHING`,
 			userID, data.Contacts, data.AddCampaigns)
 	}
