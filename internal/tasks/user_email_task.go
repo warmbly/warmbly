@@ -2,10 +2,10 @@ package tasks
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/google/uuid"
+	"github.com/rs/zerolog/log"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/tasks/proto"
 )
@@ -133,7 +133,7 @@ func (s *tasksService) HandleUserEmailTask(task *proto.ProcessTask) *errx.Error 
 	}
 
 	// STEP 12: Publish events
-	fmt.Printf("User email sent: task=%s, account=%s\n", task.TaskId, account.ID)
+	log.Info().Str("task_id", task.TaskId).Str("account_id", account.ID.String()).Msg("user email sent")
 
 	executionStatus = "completed"
 	return nil

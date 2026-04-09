@@ -6,6 +6,7 @@ import (
 	"time"
 
 	ckf "github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	"github.com/rs/zerolog/log"
 )
 
 type Consumer struct {
@@ -77,7 +78,7 @@ func (cons *Consumer) Consume(ctx context.Context, handler func(msg *ckf.Message
 						continue
 					}
 					// Log transient Kafka errors and retry after a brief delay
-					fmt.Printf("kafka consumer error (code=%v): %v\n", kafkaErr.Code(), kafkaErr)
+					log.Warn().Str("code", string(kafkaErr.Code())).Err(kafkaErr).Msg("kafka consumer error")
 					time.Sleep(time.Second)
 					continue
 				}
@@ -85,7 +86,7 @@ func (cons *Consumer) Consume(ctx context.Context, handler func(msg *ckf.Message
 			}
 
 			if err := handler(msg); err != nil {
-				fmt.Printf("handler error: %v\n", err)
+				log.Error().Err(err).Msg("kafka message handler error")
 			}
 
 			cons.c.CommitMessage(msg)
