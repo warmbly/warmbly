@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/getsentry/sentry-go"
+
 	"github.com/google/uuid"
 	"github.com/stripe/stripe-go/v76"
 	portalsession "github.com/stripe/stripe-go/v76/billingportal/session"
@@ -86,7 +88,8 @@ func (s *stripeService) CreateCustomer(ctx context.Context, userID uuid.UUID, em
 
 	cust, err := customer.New(params)
 	if err != nil {
-		return "", errx.New(errx.Internal, fmt.Sprintf("failed to create Stripe customer: %v", err))
+		sentry.CaptureException(fmt.Errorf("stripe customer creation failed: %w", err))
+		return "", errx.New(errx.Internal, "failed to create billing account")
 	}
 
 	return cust.ID, nil
@@ -142,7 +145,8 @@ func (s *stripeService) CreateCheckoutSession(ctx context.Context, userID uuid.U
 
 	sess, err := session.New(params)
 	if err != nil {
-		return nil, errx.New(errx.Internal, fmt.Sprintf("failed to create checkout session: %v", err))
+		sentry.CaptureException(fmt.Errorf("stripe checkout session failed: %w", err))
+		return nil, errx.New(errx.Internal, "failed to create checkout session")
 	}
 
 	return sess, nil
@@ -156,7 +160,8 @@ func (s *stripeService) CreatePortalSession(ctx context.Context, customerID, ret
 
 	sess, err := portalsession.New(params)
 	if err != nil {
-		return "", errx.New(errx.Internal, fmt.Sprintf("failed to create portal session: %v", err))
+		sentry.CaptureException(fmt.Errorf("stripe portal session failed: %w", err))
+		return "", errx.New(errx.Internal, "failed to create billing portal session")
 	}
 
 	return sess.URL, nil
@@ -177,7 +182,8 @@ func (s *stripeService) CancelSubscription(ctx context.Context, subscriptionID s
 
 	_, err := subscription.Update(subscriptionID, params)
 	if err != nil {
-		return errx.New(errx.Internal, fmt.Sprintf("failed to cancel subscription: %v", err))
+		sentry.CaptureException(fmt.Errorf("stripe subscription cancel failed: %w", err))
+		return errx.New(errx.Internal, "failed to update subscription")
 	}
 
 	return nil
