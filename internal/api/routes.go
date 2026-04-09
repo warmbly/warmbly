@@ -19,21 +19,17 @@ func Run(
 	oidcm *middleware.OidcHandler,
 	addr, ginMode string,
 	allowedOrigins []string,
-	healthDeps *HealthDeps,
 ) *gin.Engine {
 	gin.SetMode(ginMode)
 
 	r := gin.Default()
 
-	r.GET("/health", func(c *gin.Context) {
+	// Public endpoints with IP-based rate limiting (60 req/min per IP)
+	publicLimiter := middleware.IPRateLimitMiddleware(60, time.Minute)
+	r.GET("/health", publicLimiter, func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
-	if healthDeps != nil {
-		r.GET("/health/deep", healthHandler(healthDeps))
-	}
-
-	// Prometheus metrics endpoint
-	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
+	r.GET("/metrics", publicLimiter, gin.WrapH(promhttp.Handler()))
 
 	corsConfig := cors.Config{
 		AllowMethods:  []string{"POST", "GET", "PATCH", "OPTIONS", "DELETE"},
