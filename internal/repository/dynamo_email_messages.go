@@ -84,7 +84,7 @@ func (r *emailMessageMapRepository) Del(ctx context.Context, userID, emailID uui
 
 	keys["userId"] = &types.AttributeValueMemberS{Value: userID.String()}
 
-	if emailID == uuid.Nil {
+	if emailID != uuid.Nil {
 		keys["emailId"] = &types.AttributeValueMemberS{Value: emailID.String()}
 	}
 
@@ -92,7 +92,7 @@ func (r *emailMessageMapRepository) Del(ctx context.Context, userID, emailID uui
 		keys["messageId"] = &types.AttributeValueMemberS{Value: messageID}
 	}
 
-	if id == uuid.Nil {
+	if id != uuid.Nil {
 		keys["id"] = &types.AttributeValueMemberS{Value: id.String()}
 	}
 
