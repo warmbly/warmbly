@@ -79,7 +79,10 @@ func NewWMail(
 
 	mail := &WMail{
 		ID:        data.ID,
+		UserID:    data.UserID,
 		Email:     data.Email,
+		FirstName: data.FirstName,
+		LastName:  data.LastName,
 		EmailType: data.Type,
 		onEvent: func(jobType models.JobEventType, body any) error {
 			return OnEvent(jobType, data.ID.String(), body)
@@ -88,7 +91,10 @@ func NewWMail(
 		Cancel:        cancel,
 		TerminateFunc: terminate,
 
-		Cache: cache,
+		Cache:                     cache,
+		Storage:                   storage,
+		EmailMessageMapRepository: emailMessageMapRepository,
+		CipherService:             cipherService,
 	}
 
 	switch data.Type {

@@ -114,6 +114,7 @@ type AddWorkerEmailSmtpImapData struct {
 
 type AddWorkerEmail struct {
 	ID        uuid.UUID                   `json:"id" avro:"id"`
+	UserID    uuid.UUID                   `json:"user_id" avro:"user_id"`
 	ImapSync  bool                        `json:"imap_sync" avro:"imap_sync"`
 	Email     string                      `json:"email" avro:"email"`
 	FirstName string                      `json:"first_name" avro:"first_name"`
