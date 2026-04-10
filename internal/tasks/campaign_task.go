@@ -11,7 +11,6 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
-	"github.com/warmbly/warmbly/internal/infrastructure/metrics"
 	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
@@ -21,7 +20,6 @@ import (
 
 func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 	ctx := context.Background()
-	start := time.Now()
 
 	// STEP 1: Parse task ID
 	taskID, err := uuid.Parse(task.TaskId)
@@ -32,13 +30,6 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 
 	executionKey := "campaign:" + taskID.String()
 	executionStatus := "failed"
-	defer func() {
-		metrics.TasksProcessed.WithLabelValues("campaign", executionStatus).Inc()
-		metrics.EmailSendDuration.WithLabelValues("campaign").Observe(time.Since(start).Seconds())
-		if executionStatus == "completed" {
-			metrics.EmailsSentTotal.WithLabelValues("campaign").Inc()
-		}
-	}()
 	if s.advanced != nil {
 		duplicate, xerr := s.advanced.StartTaskExecution(ctx, taskID, executionKey, map[string]interface{}{
 			"task_type": "campaign",

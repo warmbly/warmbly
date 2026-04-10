@@ -6,7 +6,6 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/warmbly/warmbly/internal/api/handler"
 	"github.com/warmbly/warmbly/internal/api/handler/grouph"
 	"github.com/warmbly/warmbly/internal/api/middleware"
@@ -24,12 +23,9 @@ func Run(
 
 	r := gin.Default()
 
-	// Public endpoints with IP-based rate limiting (60 req/min per IP)
-	publicLimiter := middleware.IPRateLimitMiddleware(60, time.Minute)
-	r.GET("/health", publicLimiter, func(c *gin.Context) {
+	r.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
-	r.GET("/metrics", publicLimiter, gin.WrapH(promhttp.Handler()))
 
 	corsConfig := cors.Config{
 		AllowMethods:  []string{"POST", "GET", "PATCH", "OPTIONS", "DELETE"},
@@ -57,7 +53,6 @@ func Run(
 	}
 
 	r.Use(cors.New(corsConfig))
-	r.Use(middleware.MetricsMiddleware())
 
 	// Limit request body size to 10MB to prevent OOM
 	r.Use(func(c *gin.Context) {

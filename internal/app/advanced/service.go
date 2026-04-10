@@ -13,7 +13,6 @@ import (
 	warmupapp "github.com/warmbly/warmbly/internal/app/warmup"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/infrastructure/gtasks"
-	"github.com/warmbly/warmbly/internal/infrastructure/metrics"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
 	"github.com/warmbly/warmbly/internal/tasks/proto"
@@ -610,8 +609,6 @@ func (s *service) IngestDeliverabilityEvent(ctx context.Context, organizationID 
 	}); err != nil {
 		return toErrx(err)
 	}
-
-	metrics.DeliverabilityEvents.WithLabelValues(string(eventType)).Inc()
 
 	settings, err := s.repo.GetOutreachSettings(ctx, organizationID)
 	if err != nil {

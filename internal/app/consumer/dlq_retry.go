@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/rs/zerolog/log"
-	"github.com/warmbly/warmbly/internal/infrastructure/metrics"
 )
 
 // StartDLQRetryLoop polls for retryable dead-lettered tasks and replays them.
@@ -31,7 +30,6 @@ func (s *JobsService) StartDLQRetryLoop(ctx context.Context, interval time.Durat
 				continue
 			}
 			if retried > 0 {
-				metrics.DLQRetriesTotal.Add(float64(retried))
 				log.Info().Int("retried", retried).Msg("DLQ auto-retry processed dead letters")
 			}
 		}
