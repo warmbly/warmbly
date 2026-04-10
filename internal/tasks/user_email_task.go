@@ -2,6 +2,7 @@ package tasks
 
 import (
 	"context"
+	"time"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/google/uuid"
@@ -11,7 +12,8 @@ import (
 )
 
 func (s *tasksService) HandleUserEmailTask(task *proto.ProcessTask) *errx.Error {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
 
 	// STEP 1: Parse task ID
 	taskID, err := uuid.Parse(task.TaskId)

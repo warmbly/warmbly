@@ -19,7 +19,8 @@ import (
 )
 
 func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
 
 	// STEP 1: Parse task ID
 	taskID, err := uuid.Parse(task.TaskId)
