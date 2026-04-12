@@ -340,12 +340,26 @@ func (r *campaignProgressRepository) FindNextContactSequence(ctx context.Context
 			SELECT
 				cl.contact_id,
 				s.id as sequence_id,
-				ROW_NUMBER() OVER (ORDER BY ` + contactOrder + ` ` + dir + `, s.created_at) as pair_order
+				ROW_NUMBER() OVER (ORDER BY ` + contactOrder + ` ` + dir + `, s.position, s.created_at) as pair_order
 			FROM campaign_leads cl
 			JOIN contacts c ON c.id = cl.contact_id
 			CROSS JOIN sequences s
 			WHERE cl.campaign_id = $1
 			  AND s.campaign_id = $1
+			  -- Skip contacts that bounced in ANY campaign
+			  AND NOT EXISTS (
+			    SELECT 1 FROM campaign_contact_progress ccp2
+			    WHERE ccp2.contact_id = cl.contact_id
+			      AND ccp2.bounced_at IS NOT NULL
+			  )
+			  -- Skip suppressed recipients (bounce, complaint, unsubscribe from deliverability)
+			  AND NOT EXISTS (
+			    SELECT 1 FROM suppressed_recipients sr
+			    JOIN campaigns camp ON camp.organization_id = sr.organization_id
+			    WHERE camp.id = $1
+			      AND LOWER(sr.email) = LOWER(c.email)
+			      AND (sr.expires_at IS NULL OR sr.expires_at > NOW())
+			  )
 		),
 		sent_pairs AS (
 			-- Get all already-sent pairs
