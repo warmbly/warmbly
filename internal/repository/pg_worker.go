@@ -23,6 +23,7 @@ type WorkerRepository interface {
 	// Worker queries
 	GetByID(ctx context.Context, id uuid.UUID) (*models.Worker, error)
 	GetSharedWorkersByTier(ctx context.Context, freeTier bool) ([]models.Worker, error)
+	GetAllActiveWorkers(ctx context.Context) ([]models.Worker, error)
 	GetAvailableDedicatedWorker(ctx context.Context) (*models.Worker, error)
 	IncrementAccountCount(ctx context.Context, workerID uuid.UUID) error
 	DecrementAccountCount(ctx context.Context, workerID uuid.UUID) error
@@ -104,6 +105,34 @@ func (r *workerRepository) GetSharedWorkersByTier(ctx context.Context, freeTier 
 		workers = append(workers, w)
 	}
 
+	return workers, rows.Err()
+}
+
+// GetAllActiveWorkers retrieves all active workers regardless of tier
+func (r *workerRepository) GetAllActiveWorkers(ctx context.Context) ([]models.Worker, error) {
+	query := `
+		SELECT id, ip_addr, active, free_tier, worker_type, account_count, created_at, updated_at
+		FROM workers
+		WHERE active = true
+		ORDER BY created_at
+	`
+	rows, err := r.db.Query(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var workers []models.Worker
+	for rows.Next() {
+		var w models.Worker
+		if err := rows.Scan(
+			&w.ID, &w.IPAddr, &w.Active, &w.FreeTier, &w.WorkerType, &w.AccountCount,
+			&w.CreatedAt, &w.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		workers = append(workers, w)
+	}
 	return workers, rows.Err()
 }
 

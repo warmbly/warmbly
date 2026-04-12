@@ -6,6 +6,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/advanced"
 	warmupapp "github.com/warmbly/warmbly/internal/app/warmup"
 	"github.com/warmbly/warmbly/internal/events"
+	"github.com/warmbly/warmbly/internal/infrastructure/cache"
 	"github.com/warmbly/warmbly/internal/infrastructure/kafka"
 	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/models"
@@ -21,6 +22,7 @@ type JobsService struct {
 	EmailAccountErrorRepository repository.EmailAccountErrorRepository
 	WarmupRepo                  repository.WarmupRepository
 	WarmupService               warmupapp.Service
+	WorkerRepo                  repository.WorkerRepository
 
 	// Publisher for sending events to workers
 	Publisher events.Publisher
@@ -28,6 +30,9 @@ type JobsService struct {
 	// Pub/Sub for real-time notifications to users
 	StreamingPublisher *pubsub.StreamingPublisher
 	AdvancedService    advanced.Service
+
+	// Cache for dead worker detection
+	Cache *cache.Cache
 
 	eventHandlers map[models.JobEventType]func(ctx context.Context, body any) error
 }

@@ -164,6 +164,7 @@ func main() {
 	emailAccountErrorRepo := repository.NewEmailAccountErrorRepository(primaryDB)
 	warmupRepo := repository.NewWarmupRepository(primaryDB.Pool)
 	warmupService := warmupapp.NewService(warmupRepo)
+	workerRepo := repository.NewWorkerRepository(primaryDB.Pool)
 	campaignRepo := repository.NewCampaignRepostory(primaryDB)
 	taskRepo := repository.NewTaskRepository(primaryDB.Pool)
 	contactRepo := repository.NewContactRepostory(primaryDB)
@@ -196,9 +197,11 @@ func main() {
 		EmailAccountErrorRepository: emailAccountErrorRepo,
 		WarmupRepo:                  warmupRepo,
 		WarmupService:               warmupService,
+		WorkerRepo:                  workerRepo,
 		Publisher:                   eventsPublisher,
 		StreamingPublisher:          streamingPublisher,
 		AdvancedService:             advancedService,
+		Cache:                       redisCache,
 	}
 
 	jobsService.InitEvents()
@@ -218,6 +221,9 @@ func main() {
 
 	// Start warmup health evaluation sweep (every hour)
 	go jobsService.StartWarmupHealthSweep(ctx, 1*time.Hour)
+
+	// Start dead worker detection (every 5 minutes)
+	go jobsService.StartDeadWorkerDetection(ctx, 5*time.Minute)
 
 	log.Println("Consumer started, listening on", kafka.TopicWorkerEvents)
 	jobsService.Start(ctx)
