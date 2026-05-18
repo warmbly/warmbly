@@ -12,7 +12,8 @@ PROTOC_GEN_GO_GRPC_VERSION ?= v1.6.1
 PROTO_DIR := internal/tasks/proto
 PROTO_GEN_FILES := $(PROTO_DIR)/tasks.pb.go
 
-.PHONY: setup-tools lint proto check-proto
+.PHONY: setup-tools lint proto check-proto \
+        dev sim seed reset logs status stop down tools
 
 setup-tools:
 	@echo "Installing required Go tools into $(GO_BIN)"
@@ -38,3 +39,40 @@ check-proto:
 		echo "Generated protobuf files are out of date. Run 'make proto' and commit the changes."; \
 		exit 1; \
 	fi
+
+# ─── dev / simulation stack ─────────────────────────────────────────────
+
+# Start infra + app services (one worker). Foreground.
+dev:
+	docker compose up
+
+# Full simulation: infra + app + premium and dedicated workers.
+sim:
+	docker compose --profile sim up
+
+# Load rich fixture data. Backend must already be healthy.
+seed:
+	docker compose --profile seed run --rm seed
+
+# Spin up debugging UIs (kafka-ui).
+tools:
+	docker compose --profile tools up -d kafka-ui
+	@echo "kafka-ui: http://localhost:18090"
+
+# Stop services, keep volumes.
+stop:
+	docker compose --profile sim --profile seed --profile tools stop
+
+# Stop + remove containers, keep volumes (postgres, redis, web node_modules).
+down:
+	docker compose --profile sim --profile seed --profile tools down
+
+# Nuke everything including volumes. Useful for "start over".
+reset:
+	docker compose --profile sim --profile seed --profile tools down -v
+
+logs:
+	docker compose logs -f --tail=200
+
+status:
+	docker compose ps

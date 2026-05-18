@@ -1,34 +1,83 @@
+# Warmbly full dev/simulation stack.
+#
+# Profiles:
+#   (default)    infrastructure + app services (postgres, redis, kafka,
+#                schema-registry, mailpit, cloud-tasks, localstack, backend,
+#                consumer, tracking, realtime, web, one worker)
+#   sim          adds 2 more workers (premium + dedicated) so assignment,
+#                rebalancing, and per-pool routing have real targets
+#   seed         one-shot seeder; safe to re-run
+#   tools        debugging UIs (kafka-ui, mailpit already in default)
+#
+# Usage:
+#   docker compose up                          # default profile
+#   docker compose --profile sim up            # full simulation
+#   docker compose --profile seed run --rm seed
+#   docker compose --profile tools up -d kafka-ui
+#
+# All ports are offset so they don't clash with locally-run services:
+#   postgres 15432, redis 16379, kafka 19092, schema-registry 18081,
+#   backend 8080, tracking 13000, realtime 14000, web 15173,
+#   mailpit ui 18025 / smtp 11025, kafka-ui 18090,
+#   localstack 14566, stripe-mock 12111, cloud-tasks 18123.
+
+x-aws-localstack: &aws-localstack
+  AWS_ENDPOINT_URL: http://localstack:4566
+  AWS_REGION: us-east-1
+  AWS_ACCESS_KEY_ID: test
+  AWS_SECRET_ACCESS_KEY: test
+
+x-worker-base: &worker-base
+  build:
+    context: .
+    dockerfile: deploy/docker/worker.Dockerfile
+  restart: unless-stopped
+  environment: &worker-env
+    <<: *aws-localstack
+    APP_ENV: dev
+    AWS_CONFIG_ENABLED: "false"
+    REDIS: redis://redis:6379
+    KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    SCHEMA_REGISTRY_URL: http://schema-registry:8081
+  depends_on:
+    kafka:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+    schema-registry:
+      condition: service_started
+    localstack-init:
+      condition: service_completed_successfully
+
 services:
-  # Infrastructure
+
+  # infrastructure
+
   postgres:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: warmbly
       POSTGRES_PASSWORD: warmbly
       POSTGRES_DB: warmbly_dev
-      POSTGRES_HOST_AUTH_METHOD: md5
-      POSTGRES_INITDB_ARGS: "--auth-host=md5"
-    ports:
-      - "15432:5432"
+    ports: ["15432:5432"]
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U warmbly"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "16379:6379"
+    ports: ["16379:6379"]
     volumes:
       - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
 
   zookeeper:
     image: confluentinc/cp-zookeeper:7.5.0
@@ -38,10 +87,8 @@ services:
 
   kafka:
     image: confluentinc/cp-kafka:7.5.0
-    depends_on:
-      - zookeeper
-    ports:
-      - "19092:19092"
+    depends_on: [zookeeper]
+    ports: ["19092:19092"]
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
@@ -55,67 +102,101 @@ services:
       test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:29092"]
       interval: 10s
       timeout: 10s
-      retries: 10
+      retries: 12
       start_period: 30s
 
   schema-registry:
     image: confluentinc/cp-schema-registry:7.5.0
     depends_on:
-      - kafka
-    ports:
-      - "18081:8081"
+      kafka:
+        condition: service_healthy
+    ports: ["18081:8081"]
     environment:
       SCHEMA_REGISTRY_HOST_NAME: schema-registry
       SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: kafka:29092
 
   cloud-tasks-emulator:
     image: ghcr.io/aertje/cloud-tasks-emulator:latest
-    command: ["-host", "0.0.0.0", "-port", "8123", "-queue", "projects/local/locations/local/queues/default"]
-    ports:
-      - "18123:8123"
+    command:
+      - "-host"
+      - "0.0.0.0"
+      - "-port"
+      - "8123"
+      - "-queue"
+      - "projects/local/locations/local/queues/default"
+    ports: ["18123:8123"]
 
   mailpit:
     image: axllent/mailpit:latest
     ports:
-      - "18025:8025"   # Web UI
+      - "18025:8025"   # web UI
       - "11025:1025"   # SMTP
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8025"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
-  # Application Services
+  localstack:
+    image: localstack/localstack:3.7
+    ports:
+      - "14566:4566"
+    environment:
+      SERVICES: kms,dynamodb,s3
+      DEBUG: "0"
+      AWS_DEFAULT_REGION: us-east-1
+      PERSISTENCE: "0"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:4566/_localstack/health | grep -q '\"kms\": \"available\"'"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  localstack-init:
+    image: amazon/aws-cli:2.15.0
+    depends_on:
+      localstack:
+        condition: service_healthy
+    environment:
+      <<: *aws-localstack
+    entrypoint: ["/bin/sh", "/init/localstack-init.sh"]
+    volumes:
+      - ./scripts/localstack-init.sh:/init/localstack-init.sh:ro
+
+  stripe-mock:
+    image: stripe/stripe-mock:latest
+    ports:
+      - "12111:12111"
+      - "12112:12112"
+
+  # app: backend
+
   backend:
     build:
-      context: ../..
+      context: .
       dockerfile: deploy/docker/backend.Dockerfile
-    ports:
-      - "8080:8080"
+    ports: ["8080:8080"]
     environment:
-      # === General ===
+      <<: *aws-localstack
       APP_ENV: dev
       AWS_CONFIG_ENABLED: "false"
-      AWS_REGION: us-east-1
 
-      # === API ===
       API_HOST: "0.0.0.0:8080"
       GIN_MODE: debug
       WEBSOCKET_URL: ws://localhost:14000/socket/websocket
 
-      # === Database ===
       PRIMARY_DB: postgres://warmbly:warmbly@postgres:5432/warmbly_dev?sslmode=disable
       REDIS: redis://redis:6379
       GEODB_PATH: /app/data/GeoLite2-City.mmdb
 
-      # === Kafka ===
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       KAFKA_CONSUMER_GROUP: consumer-group
       KAFKA_TRACKING_TOPIC: tracking-events
-      # KAFKA_SASL_USERNAME: (not needed for local dev)
-      # KAFKA_SASL_PASSWORD: (not needed for local dev)
-
-      # === Schema Registry ===
       SCHEMA_REGISTRY_URL: http://schema-registry:8081
-      # SCHEMA_REGISTRY_KEY: (not needed for local dev)
-      # SCHEMA_REGISTRY_SECRET: (not needed for local dev)
 
-      # === Auth ===
       AUTH_SECRET: local-dev-auth-secret-minimum-32-characters-long
       GOOGLE_CLIENT_ID: local-google-client-id
       GOOGLE_CLIENT_SECRET: local-google-client-secret
@@ -127,30 +208,25 @@ services:
       TURNSTILE_SECRET: 1x0000000000000000000000000000000AA
       TURNSTILE_BYPASS_TOKEN: warmbly-local-turnstile-bypass
 
-      # === Stripe ===
+      STRIPE_API_BASE: http://stripe-mock:12111
       STRIPE_SECRET_KEY: sk_test_local
       STRIPE_WEBHOOK_SECRET: whsec_local
       STRIPE_PUBLISHABLE_KEY: pk_test_local
 
-      # === Email ===
       EMAIL_NAME: Warmbly Dev
       EMAIL_ADDRESS: dev@warmbly.local
       TRACKING_DOMAIN: localhost:13000
 
-      # === SMTP (local mail catcher) ===
       SMTP_HOST: mailpit
       SMTP_PORT: "1025"
 
-      # === GCP (optional) ===
       GCP_PROJECT_ID: ""
       GOOGLE_APPLICATION_CREDENTIALS_JSON: "dev@local.iam.gserviceaccount.com"
 
-      # === Cloud Tasks ===
       CLOUD_TASKS_EMULATOR_HOST: cloud-tasks-emulator:8123
       CLOUD_TASKS_QUEUE_NAME: projects/local/locations/local/queues/default
       CLOUD_TASKS_WEBHOOK_URL: http://backend:8080/webhook/email
 
-      # === Cassandra/Astra (dev stubs) ===
       ASTRA_DB_ID: local-astra-db-id
       ASTRA_DB_REGION: local-region
       ASTRA_KEYSPACE_NAME: warmbly_dev
@@ -166,91 +242,86 @@ services:
         condition: service_started
       cloud-tasks-emulator:
         condition: service_started
+      localstack-init:
+        condition: service_completed_successfully
+      stripe-mock:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
 
   consumer:
     build:
-      context: ../..
+      context: .
       dockerfile: deploy/docker/consumer.Dockerfile
     environment:
-      # === General ===
+      <<: *aws-localstack
       APP_ENV: dev
       AWS_CONFIG_ENABLED: "false"
-      AWS_REGION: us-east-1
 
-      # === Database ===
       PRIMARY_DB: postgres://warmbly:warmbly@postgres:5432/warmbly_dev?sslmode=disable
       REDIS: redis://redis:6379
-
-      # === Kafka ===
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       KAFKA_CONSUMER_GROUP: consumer-group
-
-      # === Schema Registry ===
       SCHEMA_REGISTRY_URL: http://schema-registry:8081
 
-      # === Cassandra/Astra (dev stubs) ===
       ASTRA_DB_ID: local-astra-db-id
       ASTRA_DB_REGION: local-region
       ASTRA_KEYSPACE_NAME: warmbly_dev
       ASTRA_APPLICATION_TOKEN: local-astra-token
-
-      # === GCP (optional) ===
       GCP_PROJECT_ID: ""
     depends_on:
       backend:
-        condition: service_started
+        condition: service_healthy
       kafka:
         condition: service_healthy
       schema-registry:
         condition: service_started
 
-  worker:
-    build:
-      context: ../..
-      dockerfile: deploy/docker/worker.Dockerfile
+  # workers
+  # Hostnames are deterministic UUIDv5(URL, "worker-N") so the worker can
+  # parse os.Hostname() back into its UUID. Same value every boot.
+
+  worker-shared-1:
+    <<: *worker-base
+    hostname: "10c8f5e4-1c39-5b2a-9c8b-3d2f0a8b1a01"
     environment:
-      # === General ===
-      APP_ENV: dev
-      AWS_CONFIG_ENABLED: "false"
-      AWS_REGION: us-east-1
+      <<: *worker-env
+      WORKER_TIER: shared
 
-      # === Database ===
-      REDIS: redis://redis:6379
+  worker-premium-1:
+    <<: *worker-base
+    hostname: "10c8f5e4-1c39-5b2a-9c8b-3d2f0a8b1a02"
+    environment:
+      <<: *worker-env
+      WORKER_TIER: premium
+    profiles: ["sim"]
 
-      # === Kafka ===
-      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+  worker-dedicated-1:
+    <<: *worker-base
+    hostname: "10c8f5e4-1c39-5b2a-9c8b-3d2f0a8b1a03"
+    environment:
+      <<: *worker-env
+      WORKER_TIER: dedicated
+    profiles: ["sim"]
 
-      # === Schema Registry ===
-      SCHEMA_REGISTRY_URL: http://schema-registry:8081
-    depends_on:
-      kafka:
-        condition: service_healthy
-      schema-registry:
-        condition: service_started
-      redis:
-        condition: service_healthy
+  # tracking + realtime + web
 
   tracking:
     build:
-      context: ../../tracking
+      context: ./tracking
       dockerfile: Dockerfile
-    ports:
-      - "13000:3000"
+    ports: ["13000:3000"]
     environment:
-      # === General ===
       APP_ENV: dev
       AWS_CONFIG_ENABLED: "false"
-      AWS_REGION: us-east-1
-
-      # === Tracking ===
       TRACKING_HOST: "0.0.0.0"
       TRACKING_PORT: "3000"
-
-      # === Kafka ===
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       KAFKA_TRACKING_TOPIC: tracking-events
-
-      # === Schema Registry ===
       SCHEMA_REGISTRY_URL: http://schema-registry:8081
     depends_on:
       kafka:
@@ -260,26 +331,18 @@ services:
 
   realtime:
     build:
-      context: ../..
+      context: .
       dockerfile: deploy/docker/realtime.Dockerfile
-    ports:
-      - "14000:4000"
+    ports: ["14000:4000"]
     environment:
-      # === General ===
       PHX_HOST: localhost
       PORT: 4000
-
-      # === Database ===
       DATABASE_URL: postgres://warmbly:warmbly@postgres:5432/warmbly_dev?sslmode=disable
       DATABASE_SSL: "false"
       DATABASE_POOL_SIZE: "10"
       REDIS_URL: redis://redis:6379
-
-      # === Auth ===
       JWT_SECRET: local-dev-auth-secret-minimum-32-characters-long
       SECRET_KEY_BASE: local-development-secret-key-base-minimum-64-characters-for-phoenix
-
-      # === Realtime ===
       PUBSUB_ENABLED: "false"
       CHECK_ORIGIN: "false"
       MAX_CONNECTIONS_PER_USER: "10"
@@ -288,8 +351,6 @@ services:
       RATE_LIMIT_WS_MESSAGE: "120"
       RATE_LIMIT_WS_JOIN: "30"
       RATE_LIMIT_WS_EVENT: "60"
-
-      # === GCP (optional) ===
       GCP_PROJECT_ID: ""
     depends_on:
       postgres:
@@ -301,11 +362,9 @@ services:
     image: node:22-alpine
     working_dir: /app
     volumes:
-      - ../../web:/app
+      - ./web:/app
       - web_node_modules:/app/node_modules
-    ports:
-      - "5173:5173"
-      - "15173:5173"
+    ports: ["15173:5173"]
     command: >
       sh -c '
       until corepack enable; do echo "corepack retry..."; sleep 2; done;
@@ -314,7 +373,7 @@ services:
       '
     environment:
       VITE_APP_URL: "http://localhost:15173"
-      VITE_API_URL: "http://localhost:18080"
+      VITE_API_URL: "http://localhost:8080"
       VITE_TRACKING_DOMAIN: "localhost:13000"
       VITE_TURNSTILE_KEY: "1x00000000000000000000AA"
       VITE_TURNSTILE_BYPASS_TOKEN: "warmbly-local-turnstile-bypass"
@@ -322,19 +381,35 @@ services:
       backend:
         condition: service_healthy
 
-  # One-off: seed dev database with sample user
+  # one-shots
+
   seed:
     build:
-      context: ../..
+      context: .
       dockerfile: deploy/docker/backend.Dockerfile
     entrypoint: ["/app/seed"]
     environment:
+      <<: *aws-localstack
       PRIMARY_DB: postgres://warmbly:warmbly@postgres:5432/warmbly_dev?sslmode=disable
+      SEED_RICH: "true"
     depends_on:
       backend:
         condition: service_healthy
-    profiles:
-      - seed
+    profiles: ["seed"]
+
+  # tools (debugging UIs)
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    ports: ["18090:8080"]
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+      KAFKA_CLUSTERS_0_SCHEMAREGISTRY: http://schema-registry:8081
+    depends_on:
+      kafka:
+        condition: service_healthy
+    profiles: ["tools"]
 
 volumes:
   postgres_data:
