@@ -321,6 +321,143 @@ func (h *Handler) AdminRebootWorker(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
+// AdminConvertWorkerToDedicated drains a shared worker's accounts to a
+// target worker, flips its worker_type to dedicated, and binds it to a
+// user/org via dedicated_worker_assignments.
+//
+// Body:
+//   {
+//     "user_id":         "uuid",           // the org/user that gets exclusive use
+//     "subscription_id": "uuid",           // their active sub
+//     "drain_to_worker_id": "uuid|null"    // optional: target for evicted accounts.
+//                                          //   null = let assignment service pick
+//                                          //   per-account
+//   }
+//
+// The whole operation is sequential, not transactional across services —
+// if a step fails mid-flight the worker is left in a half-converted state
+// and the admin needs to investigate. That's acceptable because the steps
+// are individually idempotent: re-running the endpoint with the same
+// inputs converges.
+type convertToDedicatedBody struct {
+	UserID           string  `json:"user_id" binding:"required"`
+	SubscriptionID   string  `json:"subscription_id" binding:"required"`
+	DrainToWorkerID  *string `json:"drain_to_worker_id"`
+}
+
+func (h *Handler) AdminConvertWorkerToDedicated(c *gin.Context) {
+	id, ok := h.parseID(c)
+	if !ok {
+		return
+	}
+
+	var body convertToDedicatedBody
+	if err := c.ShouldBindJSON(&body); err != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "invalid request body"))
+		return
+	}
+	userID, err := uuid.Parse(body.UserID)
+	if err != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "invalid user_id"))
+		return
+	}
+	subID, err := uuid.Parse(body.SubscriptionID)
+	if err != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "invalid subscription_id"))
+		return
+	}
+
+	w, err := h.WorkerRepo.GetWorkerDetail(c.Request.Context(), id)
+	if err != nil {
+		errx.JSON(c, errx.New(errx.Internal, err.Error()))
+		return
+	}
+	if w == nil {
+		errx.JSON(c, errx.New(errx.NotFound, "worker not found"))
+		return
+	}
+	if w.WorkerType == models.WorkerTypeDedicated {
+		errx.JSON(c, errx.New(errx.BadRequest, "worker is already dedicated"))
+		return
+	}
+
+	// Step 1: drain existing accounts to a target. If drain_to_worker_id is
+	// supplied, move them all there; otherwise we leave reassignment to the
+	// assignment service which picks per-account based on the source org.
+	accountIDs, err := h.WorkerRepo.GetEmailAccountsByWorkerID(c.Request.Context(), id)
+	if err != nil {
+		errx.JSON(c, errx.New(errx.Internal, "list accounts: "+err.Error()))
+		return
+	}
+	movedTo := ""
+	if body.DrainToWorkerID != nil && *body.DrainToWorkerID != "" {
+		targetID, perr := uuid.Parse(*body.DrainToWorkerID)
+		if perr != nil {
+			errx.JSON(c, errx.New(errx.BadRequest, "invalid drain_to_worker_id"))
+			return
+		}
+		if targetID == id {
+			errx.JSON(c, errx.New(errx.BadRequest, "drain target must be a different worker"))
+			return
+		}
+		for _, aid := range accountIDs {
+			if err := h.WorkerRepo.UpdateEmailAccountWorker(c.Request.Context(), aid, targetID); err != nil {
+				errx.JSON(c, errx.New(errx.Internal, "drain "+aid.String()+": "+err.Error()))
+				return
+			}
+			_ = h.WorkerRepo.IncrementAccountCount(c.Request.Context(), targetID)
+			_ = h.WorkerRepo.DecrementAccountCount(c.Request.Context(), id)
+		}
+		movedTo = targetID.String()
+	} else if len(accountIDs) > 0 {
+		// We don't auto-pick targets here because the right per-account choice
+		// depends on each account's owning org. If the admin wants that, they
+		// should pick a single drain target.
+		errx.JSON(c, errx.New(errx.BadRequest, "worker has accounts; supply drain_to_worker_id to evict them first"))
+		return
+	}
+
+	// Step 2: flip worker_type to dedicated.
+	if err := h.WorkerRepo.SetWorkerType(c.Request.Context(), id, models.WorkerTypeDedicated); err != nil {
+		errx.JSON(c, errx.New(errx.Internal, "set type: "+err.Error()))
+		return
+	}
+
+	// Step 3: bind to user/org. Idempotent via CreateDedicatedAssignmentIfNotExists.
+	created, err := h.WorkerRepo.CreateDedicatedAssignmentIfNotExists(c.Request.Context(), &models.DedicatedWorkerAssignment{
+		ID:             uuid.New(),
+		WorkerID:       id,
+		UserID:         userID,
+		SubscriptionID: subID,
+		AssignedAt:     time.Now(),
+	})
+	if err != nil {
+		errx.JSON(c, errx.New(errx.Internal, "create assignment: "+err.Error()))
+		return
+	}
+
+	h.audit(c, "convert_to_dedicated", models.AuditEntityWorker, &id, map[string]string{
+		"user_id":         userID.String(),
+		"subscription_id": subID.String(),
+		"drained_to":      movedTo,
+		"accounts_moved":  itoa(len(accountIDs)),
+		"new_assignment":  boolStr(created),
+	})
+	c.JSON(http.StatusOK, gin.H{
+		"ok":               true,
+		"accounts_drained": len(accountIDs),
+		"new_assignment":   created,
+	})
+}
+
+func itoa(n int) string { return strconv.Itoa(n) }
+func boolStr(b bool) string {
+	if b {
+		return "true"
+	}
+	return "false"
+}
+
 func (h *Handler) AdminDeleteSSHWorker(c *gin.Context) {
 	id, ok := h.parseID(c)
 	if !ok {

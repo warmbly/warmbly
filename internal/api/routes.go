@@ -388,6 +388,7 @@ func Run(
 		adminRoutes.POST("/workers/:id/apply", middleware.RequireAdminPermission(models.AdminPermManageWorkers), h.AdminApplyWorkerConfig)
 		adminRoutes.POST("/workers/:id/system-update", middleware.RequireAdminPermission(models.AdminPermManageWorkers), h.AdminSystemUpdate)
 		adminRoutes.POST("/workers/:id/reboot", middleware.RequireAdminPermission(models.AdminPermManageWorkers), h.AdminRebootWorker)
+		adminRoutes.POST("/workers/:id/convert-to-dedicated", middleware.RequireAdminPermission(models.AdminPermManageWorkers), h.AdminConvertWorkerToDedicated)
 
 		// Reusable AWS credentials (gated under AdminPermManageSettings — these
 		// hold real production secrets, not just worker assignments).

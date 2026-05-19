@@ -122,6 +122,18 @@ export function rebootWorker(id: string): Promise<{ ok: boolean }> {
     });
 }
 
+export function convertWorkerToDedicated(
+    workerID: string,
+    body: { user_id: string; subscription_id: string; drain_to_worker_id?: string | null },
+): Promise<{ ok: boolean; accounts_drained: number; new_assignment: boolean }> {
+    return Request({
+        method: "POST",
+        url: `/admin/workers/${workerID}/convert-to-dedicated`,
+        data: body,
+        authorization: true,
+    });
+}
+
 // Reassign emails from one worker to another. The :id in the URL is the
 // TARGET worker; the body lists the email-account IDs to move.
 export function reassignEmailsToWorker(targetWorkerID: string, emailIDs: string[]): Promise<{ message: string }> {

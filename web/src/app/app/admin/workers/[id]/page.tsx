@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+    convertWorkerToDedicated,
     deleteWorker,
     getManagedWorker,
     getWorkerLiveStatus,
@@ -42,6 +43,12 @@ export default function AdminWorkerDetailPage() {
     const [sysRebootNeeded, setSysRebootNeeded] = useState<boolean>(false);
     const [rewireTarget, setRewireTarget] = useState<string>("");
     const [rewireMsg, setRewireMsg] = useState<string | null>(null);
+    const [convertOpen, setConvertOpen] = useState(false);
+    const [convertUser, setConvertUser] = useState("");
+    const [convertSub, setConvertSub] = useState("");
+    const [convertDrain, setConvertDrain] = useState("");
+    const [convertMsg, setConvertMsg] = useState<string | null>(null);
+    const [converting, setConverting] = useState(false);
 
     const allWorkers = useQuery({
         queryKey: ["admin", "workers", "managed"],
@@ -124,6 +131,31 @@ export default function AdminWorkerDetailPage() {
             allWorkers.refetch();
         } catch (e: any) {
             setRewireMsg("error: " + (e?.message || "failed"));
+        }
+    }
+
+    async function doConvertToDedicated() {
+        if (!convertUser || !convertSub) {
+            setConvertMsg("user_id and subscription_id are required");
+            return;
+        }
+        setConverting(true);
+        setConvertMsg("converting…");
+        try {
+            const r = await convertWorkerToDedicated(id, {
+                user_id: convertUser,
+                subscription_id: convertSub,
+                drain_to_worker_id: convertDrain || null,
+            });
+            setConvertMsg(
+                `✓ converted · ${r.accounts_drained} account${r.accounts_drained === 1 ? "" : "s"} drained · ${r.new_assignment ? "newly assigned" : "already assigned"}`,
+            );
+            refresh();
+            allWorkers.refetch();
+        } catch (e: any) {
+            setConvertMsg("error: " + (e?.message || "failed"));
+        } finally {
+            setConverting(false);
         }
     }
 
@@ -324,6 +356,83 @@ export default function AdminWorkerDetailPage() {
                 )}
             </Section>
 
+            {w.worker_type === "shared" && (
+                <Section title="Convert to dedicated">
+                    <p className="text-slate-500 text-sm mb-2">
+                        Flip this worker from the shared pool into a dedicated worker bound to one
+                        organization. Any current accounts must be evicted to another worker first.
+                    </p>
+                    {!convertOpen ? (
+                        <Btn onClick={() => setConvertOpen(true)} primary>
+                            Convert this worker to dedicated…
+                        </Btn>
+                    ) : (
+                        <div className="border rounded p-3 bg-slate-50">
+                            <Field label="User / organization ID">
+                                <input
+                                    value={convertUser}
+                                    onChange={(e) => setConvertUser(e.target.value)}
+                                    placeholder="uuid (find on Users tab)"
+                                    className="w-full border rounded px-3 py-1.5 text-sm font-mono"
+                                />
+                            </Field>
+                            <Field label="Subscription ID">
+                                <input
+                                    value={convertSub}
+                                    onChange={(e) => setConvertSub(e.target.value)}
+                                    placeholder="uuid"
+                                    className="w-full border rounded px-3 py-1.5 text-sm font-mono"
+                                />
+                            </Field>
+                            <Field
+                                label={
+                                    w.account_count > 0
+                                        ? `Drain ${w.account_count} account${w.account_count === 1 ? "" : "s"} to (required)`
+                                        : "Drain target (not needed — this worker is empty)"
+                                }
+                            >
+                                <select
+                                    value={convertDrain}
+                                    onChange={(e) => setConvertDrain(e.target.value)}
+                                    className="w-full border rounded px-3 py-1.5 text-sm"
+                                >
+                                    <option value="">— pick a target —</option>
+                                    {(allWorkers.data?.data ?? [])
+                                        .filter((other) =>
+                                            other.id !== id &&
+                                            other.worker_type === "shared" &&
+                                            other.install_state === "installed",
+                                        )
+                                        .sort((a, b) => a.account_count - b.account_count)
+                                        .map((c) => (
+                                            <option key={c.id} value={c.id}>
+                                                {c.name || c.id.slice(0, 8)} · {c.account_count} accounts ·{" "}
+                                                {c.free_tier ? "free" : "premium"}
+                                            </option>
+                                        ))}
+                                </select>
+                            </Field>
+                            <div className="flex gap-2 mt-3">
+                                <Btn onClick={doConvertToDedicated} disabled={converting} primary>
+                                    {converting ? "Converting…" : "Convert"}
+                                </Btn>
+                                <button
+                                    onClick={() => setConvertOpen(false)}
+                                    className="border px-3 py-1.5 rounded text-sm"
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                            {convertMsg && (
+                                <pre className="mt-3 bg-white border text-xs p-2 rounded whitespace-pre-wrap">
+                                    {convertMsg}
+                                </pre>
+                            )}
+                        </div>
+                    )}
+                </Section>
+            )}
+
             <Section title="System updates">
                 <div className="flex gap-2 flex-wrap">
                     <Btn onClick={runSystemUpdate}>Update OS packages</Btn>
@@ -397,5 +506,14 @@ function Btn({
         <button onClick={onClick} disabled={disabled} className={`${base} ${variant}`}>
             {children}
         </button>
+    );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+    return (
+        <div className="mb-2">
+            <label className="text-xs font-medium text-slate-500 uppercase block mb-1">{label}</label>
+            {children}
+        </div>
     );
 }
