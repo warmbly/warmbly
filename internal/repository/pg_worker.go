@@ -61,6 +61,12 @@ type WorkerRepository interface {
 	MarkConfigApplied(ctx context.Context, workerID uuid.UUID, at time.Time) error
 	MarkImageVersion(ctx context.Context, workerID uuid.UUID, version string) error
 	ListWorkersByProfile(ctx context.Context, profileID uuid.UUID) ([]models.Worker, error)
+
+	// Threat-level segregation
+	SetWorkerRiskPool(ctx context.Context, workerID uuid.UUID, pool models.WorkerRiskPool) error
+	SetEmailAccountRiskBand(ctx context.Context, emailAccountID uuid.UUID, band models.EmailRiskBand) error
+	GetSharedWorkersByTierAndPool(ctx context.Context, freeTier bool, pool models.WorkerRiskPool) ([]models.Worker, error)
+	ListRiskCandidates(ctx context.Context, limit int) ([]RiskCandidate, error)
 }
 
 type workerRepository struct {

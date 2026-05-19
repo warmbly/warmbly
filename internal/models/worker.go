@@ -15,15 +15,27 @@ const (
 	WorkerTypeDedicated WorkerType = "dedicated"
 )
 
+// WorkerRiskPool buckets shared workers by acceptable mailbox risk level.
+// Dedicated workers don't use it (one customer per worker — no
+// cross-tenant contamination risk).
+type WorkerRiskPool string
+
+const (
+	WorkerRiskPoolClean      WorkerRiskPool = "clean"
+	WorkerRiskPoolRisky      WorkerRiskPool = "risky"
+	WorkerRiskPoolQuarantine WorkerRiskPool = "quarantine"
+)
+
 type Worker struct {
-	ID           uuid.UUID  `json:"id"`
-	Name         string     `json:"name"`
-	Notes        string     `json:"notes"`
-	IPAddr       string     `json:"ip_addr"`
-	Active       bool       `json:"active"`
-	FreeTier     bool       `json:"free_tier"`
-	WorkerType   WorkerType `json:"worker_type"`
-	AccountCount int        `json:"account_count"`
+	ID           uuid.UUID      `json:"id"`
+	Name         string         `json:"name"`
+	Notes        string         `json:"notes"`
+	IPAddr       string         `json:"ip_addr"`
+	Active       bool           `json:"active"`
+	FreeTier     bool           `json:"free_tier"`
+	WorkerType   WorkerType     `json:"worker_type"`
+	AccountCount int            `json:"account_count"`
+	RiskPool     WorkerRiskPool `json:"risk_pool"`
 
 	// SSH management (none of these expose secret material — the encrypted
 	// private key is fetched separately via GetWorkerSSHCredentials).
