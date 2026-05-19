@@ -104,6 +104,27 @@ func (s *JobsService) detectDeadWorkers(ctx context.Context) {
 				Str("replacement", replacement.ID.String()).
 				Int("reassigned", reassigned).
 				Msg("email accounts reassigned from dead worker")
+
+			// Record in admin_audit_log so the dashboard's audit viewer
+			// shows when and where the fleet auto-reassigned. uuid.Nil for
+			// admin_user_id signals "system action".
+			if s.AdminRepo != nil {
+				_ = s.AdminRepo.CreateAuditLog(ctx, &models.AdminAuditLog{
+					ID:          uuid.New(),
+					AdminUserID: uuid.Nil,
+					Action:      "auto_reassign",
+					TargetType:  "worker",
+					TargetID:    w.ID,
+					Details: map[string]any{
+						"replacement":         replacement.ID.String(),
+						"accounts_reassigned": reassigned,
+						"reason":              "heartbeat_expired",
+					},
+					IPAddress: "",
+					UserAgent: "system",
+					CreatedAt: time.Now(),
+				})
+			}
 		}
 	}
 }

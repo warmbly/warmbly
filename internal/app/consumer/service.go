@@ -34,6 +34,11 @@ type JobsService struct {
 	// Cache for dead worker detection
 	Cache *cache.Cache
 
+	// AdminRepo for writing audit-log rows when the dead-worker job
+	// auto-reassigns email accounts (optional — heartbeat sync also writes
+	// here so admins can see why their fleet moved). Nil disables logging.
+	AdminRepo repository.AdminRepository
+
 	eventHandlers map[models.JobEventType]func(ctx context.Context, body any) error
 }
 

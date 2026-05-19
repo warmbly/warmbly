@@ -202,6 +202,7 @@ func main() {
 		StreamingPublisher:          streamingPublisher,
 		AdvancedService:             advancedService,
 		Cache:                       redisCache,
+		AdminRepo:                   repository.NewAdminRepository(primaryDB.Pool),
 	}
 
 	jobsService.InitEvents()
