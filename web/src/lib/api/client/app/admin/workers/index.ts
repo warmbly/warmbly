@@ -122,6 +122,31 @@ export function rebootWorker(id: string): Promise<{ ok: boolean }> {
     });
 }
 
+export function preflightWorker(host: string, port: number): Promise<{ ok: boolean; latency_ms?: number; error?: string }> {
+    return Request({
+        method: "POST",
+        url: "/admin/workers/preflight",
+        data: { host, port },
+        authorization: true,
+    });
+}
+
+interface AdminUserSearchResult {
+    data: Array<{ id: string; email: string; first_name?: string; last_name?: string }>;
+    pagination?: { has_more?: boolean };
+}
+
+export function searchAdminUsers(query: string, limit = 10): Promise<AdminUserSearchResult> {
+    const q = new URLSearchParams();
+    if (query) q.set("query", query);
+    q.set("limit", String(limit));
+    return Request({
+        method: "GET",
+        url: "/admin/users?" + q.toString(),
+        authorization: true,
+    });
+}
+
 export function setWorkerRiskPool(workerID: string, pool: "clean" | "risky" | "quarantine"): Promise<{ ok: boolean }> {
     return Request({
         method: "PUT",
