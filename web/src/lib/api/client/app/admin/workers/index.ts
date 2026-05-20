@@ -122,6 +122,23 @@ export function rebootWorker(id: string): Promise<{ ok: boolean }> {
     });
 }
 
+export function setWorkerTags(workerID: string, tags: string[]): Promise<{ ok: boolean; tags: string[] }> {
+    return Request({
+        method: "PUT",
+        url: `/admin/workers/${workerID}/tags`,
+        data: { tags },
+        authorization: true,
+    });
+}
+
+export function listAllWorkerTags(): Promise<{ data: string[] }> {
+    return Request({
+        method: "GET",
+        url: "/admin/workers/tags",
+        authorization: true,
+    });
+}
+
 export function preflightWorker(host: string, port: number): Promise<{ ok: boolean; latency_ms?: number; error?: string }> {
     return Request({
         method: "POST",

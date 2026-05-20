@@ -33,6 +33,7 @@ export interface ManagedWorker {
     profile_id?: string;
     config_applied_at?: string;
     image_version?: string;
+    tags?: string[];
 
     created_at: string;
     updated_at: string;

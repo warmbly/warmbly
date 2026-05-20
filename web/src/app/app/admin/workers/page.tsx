@@ -5,6 +5,7 @@ import { listManagedWorkers } from "@/lib/api/client/app/admin/workers";
 import { listWorkerProfiles } from "@/lib/api/client/app/admin/credentials";
 import type { ManagedWorker, WorkerInstallState } from "@/lib/api/models/app/admin/Worker";
 import type { WorkerProfile } from "@/lib/api/models/app/admin/Credentials";
+import { TagsCell, smartLabels } from "../_components/WorkerLabels";
 
 const stateStyle: Record<WorkerInstallState, string> = {
     pending: "bg-slate-100 text-slate-600",
@@ -91,24 +92,40 @@ export default function AdminWorkersPage() {
     const health = useMemo(() => computeHealth(data?.data ?? [], profilesById), [data, profilesById]);
 
     const [filter, setFilter] = useState<Filter>("all");
+    const [tagFilter, setTagFilter] = useState<string | null>(null);
 
     const filteredWorkers = useMemo(() => {
         const all = data?.data ?? [];
+        let base: ManagedWorker[];
         switch (filter) {
-            case "errored":
-                return health.errored;
-            case "offline":
-                return health.offline;
-            case "stale_config":
-                return health.staleConfig;
-            case "update_available":
-                return health.updateAvailable;
-            case "in_progress":
-                return health.inProgress;
-            default:
-                return all;
+            case "errored":          base = health.errored; break;
+            case "offline":          base = health.offline; break;
+            case "stale_config":     base = health.staleConfig; break;
+            case "update_available": base = health.updateAvailable; break;
+            case "in_progress":      base = health.inProgress; break;
+            default:                 base = all;
         }
-    }, [filter, data, health]);
+        if (tagFilter) {
+            base = base.filter((w) => {
+                const labels = [...(w.tags ?? []), ...smartLabels(w)];
+                return labels.includes(tagFilter);
+            });
+        }
+        return base;
+    }, [filter, data, health, tagFilter]);
+
+    // Tag frequency across all workers (user tags + auto labels) for the
+    // "filter by tag" chip strip.
+    const tagFrequency = useMemo(() => {
+        const counts = new Map<string, number>();
+        for (const w of data?.data ?? []) {
+            const labels = [...(w.tags ?? []), ...smartLabels(w)];
+            for (const t of labels) counts.set(t, (counts.get(t) ?? 0) + 1);
+        }
+        return Array.from(counts.entries())
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 16);
+    }, [data]);
 
     const totalNeedsAttention =
         health.errored.length + health.offline.length + health.inProgress.length;
@@ -175,6 +192,31 @@ export default function AdminWorkersPage() {
                 </Chip>
             </div>
 
+            {/* Categorize by tag — combines admin tags + smart auto-labels. */}
+            {tagFrequency.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5 mb-3 text-xs">
+                    <span className="text-slate-400 mr-1">filter by tag:</span>
+                    {tagFrequency.map(([t, n]) => (
+                        <button
+                            key={t}
+                            onClick={() => setTagFilter(tagFilter === t ? null : t)}
+                            className={`px-2 py-0.5 rounded border ${
+                                tagFilter === t
+                                    ? "bg-slate-700 text-white border-slate-700"
+                                    : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                            }`}
+                        >
+                            {t} <span className="opacity-70">{n}</span>
+                        </button>
+                    ))}
+                    {tagFilter && (
+                        <button onClick={() => setTagFilter(null)} className="text-slate-500 hover:underline">
+                            clear
+                        </button>
+                    )}
+                </div>
+            )}
+
             {isLoading && <p className="text-slate-400 text-sm">Loading…</p>}
             {error && (
                 <p className="text-red-600 text-sm">
@@ -195,6 +237,7 @@ export default function AdminWorkersPage() {
                             <th className="text-left px-3 py-2">Version</th>
                             <th className="text-left px-3 py-2">Live</th>
                             <th className="text-left px-3 py-2">Accounts</th>
+                            <th className="text-left px-3 py-2">Tags</th>
                             <th className="text-left px-3 py-2">Last seen</th>
                         </tr>
                     </thead>
@@ -237,6 +280,9 @@ export default function AdminWorkersPage() {
                                         {live.label}
                                     </td>
                                     <td className="px-3 py-2">{w.account_count}</td>
+                                    <td className="px-3 py-2">
+                                        <TagsCell worker={w} />
+                                    </td>
                                     <td className="px-3 py-2 text-slate-500 text-xs">
                                         {w.last_seen_at
                                             ? new Date(w.last_seen_at).toLocaleString()
@@ -247,7 +293,7 @@ export default function AdminWorkersPage() {
                         })}
                         {filteredWorkers.length === 0 && (
                             <tr>
-                                <td colSpan={9} className="px-3 py-8 text-center text-slate-400 text-sm">
+                                <td colSpan={10} className="px-3 py-8 text-center text-slate-400 text-sm">
                                     {data?.data?.length === 0
                                         ? "No workers yet. Add one to get started."
                                         : "No workers match this filter."}

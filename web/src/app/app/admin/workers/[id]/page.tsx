@@ -25,6 +25,7 @@ import {
     assignWorkerProfile,
     listWorkerProfiles,
 } from "@/lib/api/client/app/admin/credentials";
+import { SmartLabel, TagEditor, smartLabels } from "../../_components/WorkerLabels";
 
 export default function AdminWorkerDetailPage() {
     const { id = "" } = useParams();
@@ -236,6 +237,26 @@ export default function AdminWorkerDetailPage() {
                 {w.last_error && (
                     <pre className="mt-3 bg-red-50 text-red-700 text-xs p-2 rounded whitespace-pre-wrap">{w.last_error}</pre>
                 )}
+            </Section>
+
+            <Section title="Tags">
+                <div className="flex flex-wrap gap-1 mb-3">
+                    {smartLabels(w).map((l) => (
+                        <SmartLabel key={l} label={l} />
+                    ))}
+                </div>
+                <p className="text-slate-400 text-xs mb-3">
+                    Smart labels above are computed from the worker's state. Add your own free-form
+                    tags below for region, provider, role, customer cohort, anything.
+                </p>
+                <TagEditor
+                    worker={w}
+                    onSaved={(tags) => {
+                        qc.setQueryData(["admin", "worker", id], { ...w, tags });
+                        qc.invalidateQueries({ queryKey: ["admin", "workers", "managed"] });
+                        qc.invalidateQueries({ queryKey: ["admin", "worker-tags"] });
+                    }}
+                />
             </Section>
 
             <Section title="Worker profile">
