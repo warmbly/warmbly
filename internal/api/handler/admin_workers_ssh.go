@@ -24,6 +24,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"net"
 	"net/http"
 	"strconv"
 	"time"
@@ -456,6 +457,48 @@ func boolStr(b bool) string {
 		return "true"
 	}
 	return "false"
+}
+
+type preflightBody struct {
+	Host string `json:"host" binding:"required"`
+	Port int    `json:"port"`
+}
+
+type preflightResult struct {
+	OK        bool   `json:"ok"`
+	LatencyMS int64  `json:"latency_ms,omitempty"`
+	Error     string `json:"error,omitempty"`
+}
+
+// AdminPreflightWorker checks TCP reachability of host:port before the
+// admin commits to creating a worker row. Catches typos and firewall
+// problems while the wizard is still open — much better UX than failing
+// later at the SSH test step.
+//
+// Note: this does NOT attempt SSH handshake. We don't have credentials at
+// this stage. A successful TCP dial just means "something is listening
+// there"; the SSH test runs after the worker is created and the admin has
+// pasted the generated pubkey.
+func (h *Handler) AdminPreflightWorker(c *gin.Context) {
+	var body preflightBody
+	if err := c.ShouldBindJSON(&body); err != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "invalid request body"))
+		return
+	}
+	port := body.Port
+	if port == 0 {
+		port = 22
+	}
+	addr := net.JoinHostPort(body.Host, strconv.Itoa(port))
+
+	start := time.Now()
+	conn, err := (&net.Dialer{Timeout: 5 * time.Second}).DialContext(c.Request.Context(), "tcp", addr)
+	if err != nil {
+		c.JSON(http.StatusOK, preflightResult{OK: false, Error: err.Error()})
+		return
+	}
+	_ = conn.Close()
+	c.JSON(http.StatusOK, preflightResult{OK: true, LatencyMS: time.Since(start).Milliseconds()})
 }
 
 type setRiskPoolBody struct {
