@@ -13,7 +13,8 @@ PROTO_DIR := internal/tasks/proto
 PROTO_GEN_FILES := $(PROTO_DIR)/tasks.pb.go
 
 .PHONY: setup-tools lint proto check-proto \
-        dev sim seed reset logs status stop down tools test-seed
+        dev sim seed reset logs status stop down tools test-seed \
+        restart rebuild rebuild-go rebuild-all
 
 setup-tools:
 	@echo "Installing required Go tools into $(GO_BIN)"
@@ -76,6 +77,34 @@ logs:
 
 status:
 	docker compose ps
+
+# Restart one service without rebuilding. Useful when config or env
+# changed but the binary is still current.
+#   make restart SVC=backend
+restart:
+	@if [ -z "$(SVC)" ]; then echo "Usage: make restart SVC=<service>"; exit 1; fi
+	docker compose restart $(SVC)
+
+# Rebuild + restart one service. Use after a code change.
+#   make rebuild SVC=backend
+rebuild:
+	@if [ -z "$(SVC)" ]; then echo "Usage: make rebuild SVC=<service>"; exit 1; fi
+	docker compose build $(SVC)
+	docker compose up -d $(SVC)
+
+# Rebuild + restart every Go service in one shot. Quick "I changed
+# internal/ and don't want to think about which service uses it".
+rebuild-go:
+	docker compose build backend consumer worker-shared-1
+	docker compose up -d backend consumer worker-shared-1
+
+# Rebuild + restart everything that has source. Includes Rust (tracking)
+# and Elixir (realtime) so cross-stack changes are picked up too. Slower
+# than rebuild-go but the safe choice when you don't remember what you
+# touched.
+rebuild-all:
+	docker compose build backend consumer worker-shared-1 tracking realtime
+	docker compose up -d backend consumer worker-shared-1 tracking realtime
 
 # Run seeder tests against the docker-compose Postgres. Brings up the db
 # if it isn't running. Requires `docker compose up -d postgres` to have

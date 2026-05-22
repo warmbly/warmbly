@@ -14,7 +14,9 @@ For native development (running services outside Docker against the containerize
 - Elixir 1.18+ (for realtime)
 - Node 22+ and pnpm (for web)
 
-## The five Make targets
+## Make targets
+
+Day-one:
 
 ```bash
 make dev        # infra + app + one worker (the everyday default)
@@ -22,6 +24,22 @@ make sim        # adds premium + dedicated workers; full simulation
 make seed       # load rich fixtures (3 orgs, 6 mailboxes, a campaign)
 make tools      # debugging UIs (kafka-ui at :18090)
 make reset      # nuke everything including volumes — start over
+```
+
+Iterating on code:
+
+```bash
+# Web has Vite HMR — save a file in web/src/, browser updates instantly.
+# No need to restart anything for web changes.
+
+# Backend/consumer/worker/tracking/realtime: rebuild the changed service.
+make rebuild SVC=backend           # one service
+make rebuild-go                    # backend + consumer + worker (Go only)
+make rebuild-all                   # everything that has source (Go + Rust + Elixir)
+
+# Restart without rebuild (e.g. you only changed an env var or want to
+# re-apply a migration the backend already has):
+make restart SVC=backend
 ```
 
 All targets shell out to `docker compose`. If you don't have Make, the equivalents are:
@@ -198,8 +216,9 @@ Or just trigger the auth flow in the running app and watch the email arrive in M
 ### Rebuild one service
 
 ```bash
-docker compose build backend
-docker compose up -d backend
+make rebuild SVC=backend
+# or by hand:
+docker compose build backend && docker compose up -d backend
 ```
 
 ### Reset Postgres only
