@@ -44,7 +44,7 @@ export function Page({
         full: "",
     }[width];
     return (
-        <div className={cn("px-6 pt-6 pb-12", widthClass, "mx-auto", className)}>
+        <div className={cn("px-8 pt-8 pb-16", widthClass, "mx-auto", className)}>
             {children}
         </div>
     );
@@ -66,24 +66,31 @@ export function PageHeader({
     className?: string;
 }) {
     return (
-        <div className={cn("flex items-start gap-4 mb-6", className)}>
+        <div className={cn("flex items-start gap-6 mb-8", className)}>
             <div className="min-w-0 flex-1">
                 {eyebrow && (
-                    <div className="text-[11px] uppercase tracking-[0.14em] text-slate-400 font-medium mb-1.5">
+                    <div className="text-[10.5px] uppercase tracking-[0.18em] text-slate-400 font-semibold mb-2">
                         {eyebrow}
                     </div>
                 )}
-                <h1 className="text-[22px] font-semibold text-slate-900 tracking-tight leading-tight">
+                {/* Serif page title — uses --font-serif (Georgia) which lends
+                    the dashboard the same character as the marketing site
+                    without screaming "branding." Tight tracking + crisp
+                    optical sizing in slate-950 (one notch darker than 900). */}
+                <h1
+                    style={{ fontFamily: "var(--font-serif)" }}
+                    className="text-[28px] leading-[1.1] font-medium text-slate-950 tracking-[-0.01em]"
+                >
                     {title}
                 </h1>
                 {subtitle && (
-                    <p className="text-[13px] text-slate-500 mt-1 leading-snug">
+                    <p className="text-[13.5px] text-slate-500 mt-2 leading-snug max-w-2xl">
                         {subtitle}
                     </p>
                 )}
             </div>
             {children && (
-                <div className="flex items-center gap-2 shrink-0">{children}</div>
+                <div className="flex items-center gap-2 shrink-0 pt-1">{children}</div>
             )}
         </div>
     );
@@ -129,8 +136,12 @@ export function PageSection({
 }
 
 /**
- * A standard stat card — small icon, label, big number, optional trend.
- * Used on dashboards: emails, analytics, admin workers, etc.
+ * Stat card — small icon, label, large number.
+ *
+ * Two-layer shadow gives Linear-style soft elevation without a hard
+ * border line — the card reads as "sitting on" the page rather than
+ * "drawn on" it. Tabular-nums for the value so digits don't dance
+ * when numbers change.
  */
 export function StatCard({
     icon,
@@ -140,14 +151,14 @@ export function StatCard({
     hint,
 }: {
     icon: React.ReactNode;
-    /** Hint color for the icon background. */
+    /** Hint color for the icon tile. */
     iconTone?: "slate" | "blue" | "emerald" | "amber" | "red" | "violet";
     label: string;
     value: string | number;
     hint?: string;
 }) {
     const toneCls = {
-        slate:   "bg-slate-100   text-slate-600",
+        slate:   "bg-slate-100   text-slate-700",
         blue:    "bg-sky-100     text-sky-700",
         emerald: "bg-emerald-100 text-emerald-700",
         amber:   "bg-amber-100   text-amber-700",
@@ -155,26 +166,29 @@ export function StatCard({
         violet:  "bg-violet-100  text-violet-700",
     }[iconTone];
     return (
-        <div className="rounded-xl border border-slate-200/80 bg-white p-4">
-            <div className="flex items-center gap-2.5 mb-2.5">
-                <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center", toneCls)}>
+        <div className="rounded-2xl bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_8px_24px_-12px_rgba(15,23,42,0.08)] ring-1 ring-slate-200/60">
+            <div className="flex items-center gap-2.5 mb-3">
+                <div className={cn("w-7 h-7 rounded-lg flex items-center justify-center", toneCls)}>
                     {icon}
                 </div>
-                <span className="text-[12.5px] text-slate-500">{label}</span>
+                <span className="text-[12px] uppercase tracking-[0.08em] text-slate-500 font-medium">
+                    {label}
+                </span>
             </div>
-            <div className="text-[22px] font-semibold text-slate-900 tracking-tight tabular-nums">
+            <div className="text-[28px] font-medium text-slate-950 tracking-[-0.02em] tabular-nums leading-none">
                 {value}
             </div>
             {hint && (
-                <div className="text-[11.5px] text-slate-400 mt-1">{hint}</div>
+                <div className="text-[11.5px] text-slate-400 mt-2">{hint}</div>
             )}
         </div>
     );
 }
 
 /**
- * Empty state — used when a list is empty. Icon + headline + supporting
- * line + optional CTA.
+ * Empty state — when there's nothing to show. Composed of a small icon
+ * tile, a serif headline (matches PageHeader voice), a supporting line,
+ * and an optional CTA row.
  */
 export function EmptyState({
     icon,
@@ -188,19 +202,24 @@ export function EmptyState({
     children?: React.ReactNode;
 }) {
     return (
-        <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/50 px-6 py-12 text-center">
+        <div className="rounded-2xl bg-[#fafbfd] ring-1 ring-slate-200/60 px-8 py-14 text-center">
             {icon && (
-                <div className="w-12 h-12 mx-auto mb-3 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-slate-400">
+                <div className="w-11 h-11 mx-auto mb-4 rounded-xl bg-white ring-1 ring-slate-200/70 flex items-center justify-center text-slate-400 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
                     {icon}
                 </div>
             )}
-            <h3 className="text-[14px] font-semibold text-slate-800">{title}</h3>
+            <h3
+                style={{ fontFamily: "var(--font-serif)" }}
+                className="text-[17px] text-slate-900 tracking-[-0.005em]"
+            >
+                {title}
+            </h3>
             {description && (
-                <p className="text-[12.5px] text-slate-500 mt-1 max-w-sm mx-auto">
+                <p className="text-[13px] text-slate-500 mt-1.5 max-w-md mx-auto leading-relaxed">
                     {description}
                 </p>
             )}
-            {children && <div className="mt-4 flex justify-center gap-2">{children}</div>}
+            {children && <div className="mt-5 flex justify-center gap-2">{children}</div>}
         </div>
     );
 }
