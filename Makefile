@@ -14,7 +14,8 @@ PROTO_GEN_FILES := $(PROTO_DIR)/tasks.pb.go
 
 .PHONY: setup-tools lint proto check-proto \
         dev sim seed reset logs status stop down tools test-seed \
-        restart rebuild rebuild-go rebuild-all
+        restart restart-go restart-all \
+        rebuild rebuild-go rebuild-all
 
 setup-tools:
 	@echo "Installing required Go tools into $(GO_BIN)"
@@ -78,33 +79,50 @@ logs:
 status:
 	docker compose ps
 
-# Restart one service without rebuilding. Useful when config or env
-# changed but the binary is still current.
-#   make restart SVC=backend
+# Rebuild + restart a single service, picking up code changes.
+# Usage: `make restart backend` (positional) or `make restart SVC=backend`.
+#
+# In Docker, a service's binary is compiled into its image at build time —
+# `docker compose restart` alone keeps the old binary. This target rebuilds
+# the image first and then brings the container up against it, so saving a
+# Go file and running `make restart backend` is the only step you need.
+#
+# The positional form works via the trick at the bottom of the file that
+# captures extra goals as $(RUN_ARGS) and makes them no-op targets.
 restart:
-	@if [ -z "$(SVC)" ]; then echo "Usage: make restart SVC=<service>"; exit 1; fi
-	docker compose restart $(SVC)
+	@svc="$(RUN_ARGS)"; \
+	if [ -z "$$svc" ]; then svc="$(SVC)"; fi; \
+	if [ -z "$$svc" ]; then echo "Usage: make restart <service>"; exit 1; fi; \
+	docker compose build $$svc && docker compose up -d $$svc
 
-# Rebuild + restart one service. Use after a code change.
-#   make rebuild SVC=backend
-rebuild:
-	@if [ -z "$(SVC)" ]; then echo "Usage: make rebuild SVC=<service>"; exit 1; fi
-	docker compose build $(SVC)
-	docker compose up -d $(SVC)
-
-# Rebuild + restart every Go service in one shot. Quick "I changed
-# internal/ and don't want to think about which service uses it".
-rebuild-go:
+# Rebuild + restart every Go service in one shot. Use when you've touched
+# something in internal/ and don't want to think about which service uses
+# it.
+restart-go:
 	docker compose build backend consumer worker-shared-1
 	docker compose up -d backend consumer worker-shared-1
 
-# Rebuild + restart everything that has source. Includes Rust (tracking)
-# and Elixir (realtime) so cross-stack changes are picked up too. Slower
-# than rebuild-go but the safe choice when you don't remember what you
-# touched.
-rebuild-all:
+# Same but including Rust (tracking) and Elixir (realtime). Slower; the
+# safe choice when you've touched things across stacks.
+restart-all:
 	docker compose build backend consumer worker-shared-1 tracking realtime
 	docker compose up -d backend consumer worker-shared-1 tracking realtime
+
+# `rebuild` is an alias for `restart` — same behaviour (rebuild image +
+# bring container up), kept so muscle memory works either way:
+#   make restart backend
+#   make rebuild backend
+rebuild:     restart
+rebuild-go:  restart-go
+rebuild-all: restart-all
+
+# Positional-args plumbing. Captures every goal after `restart` or
+# `rebuild` as RUN_ARGS, then declares those leftover goals as no-op
+# targets so make doesn't error with "no rule for target".
+ifneq (,$(filter restart rebuild,$(firstword $(MAKECMDGOALS))))
+  RUN_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
+  $(eval $(RUN_ARGS):;@:)
+endif
 
 # Run seeder tests against the docker-compose Postgres. Brings up the db
 # if it isn't running. Requires `docker compose up -d postgres` to have

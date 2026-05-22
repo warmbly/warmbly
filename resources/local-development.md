@@ -32,15 +32,18 @@ Iterating on code:
 # Web has Vite HMR — save a file in web/src/, browser updates instantly.
 # No need to restart anything for web changes.
 
-# Backend/consumer/worker/tracking/realtime: rebuild the changed service.
-make rebuild SVC=backend           # one service
-make rebuild-go                    # backend + consumer + worker (Go only)
-make rebuild-all                   # everything that has source (Go + Rust + Elixir)
-
-# Restart without rebuild (e.g. you only changed an env var or want to
-# re-apply a migration the backend already has):
-make restart SVC=backend
+# Everything else needs a rebuild because the binary is compiled into
+# the image. One target, both names work, takes the service name
+# positionally:
+make restart backend               # or: make rebuild backend
+make restart-go                    # all Go services in one shot
+make restart-all                   # Go + Rust + Elixir
 ```
+
+There's no "restart without rebuild" target because in this setup that
+never does what you want — the container would come back with the same
+old binary. If you ever genuinely need that (e.g. you only changed an
+env var), use `docker compose restart <service>` directly.
 
 All targets shell out to `docker compose`. If you don't have Make, the equivalents are:
 
@@ -216,9 +219,7 @@ Or just trigger the auth flow in the running app and watch the email arrive in M
 ### Rebuild one service
 
 ```bash
-make rebuild SVC=backend
-# or by hand:
-docker compose build backend && docker compose up -d backend
+make restart backend       # or: make rebuild backend
 ```
 
 ### Reset Postgres only
