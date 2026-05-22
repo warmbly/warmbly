@@ -9,7 +9,7 @@ export default function BillingPage() {
                 subtitle="Manage your subscription and invoices."
             />
 
-            <div className="rounded-md border border-slate-200 bg-white">
+            <div className="rounded-xl border border-slate-200/80 bg-white">
                 <div className="p-5 flex items-start justify-between">
                     <div>
                         <div className="flex items-center gap-2 mb-1">
@@ -20,8 +20,8 @@ export default function BillingPage() {
                         </div>
                         <p className="text-xs text-slate-400">Basic features for getting started.</p>
                     </div>
-                    <button className="flex items-center gap-1.5 h-7 px-2.5 rounded-md bg-slate-900 text-white hover:bg-slate-800 text-[12.5px] font-medium transition-colors">
-                        <SparklesIcon className="w-3 h-3" />
+                    <button className="bg-sky-600 text-white hover:bg-sky-700 rounded-lg px-3 py-1.5 text-[13px] font-medium transition-colors flex items-center gap-1.5">
+                        <SparklesIcon className="w-3.5 h-3.5" />
                         Upgrade
                     </button>
                 </div>

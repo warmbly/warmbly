@@ -41,17 +41,17 @@ export function UserNav() {
     return (
         <DropdownMenu>
             <DropdownMenuTrigger asChild>
-                <button className="flex items-center gap-2 mx-1.5 my-1 px-1.5 h-9 rounded hover:bg-slate-100 transition-colors w-[calc(100%-0.75rem)] cursor-pointer">
-                    <div className="w-6 h-6 rounded-full bg-slate-900 flex items-center justify-center shrink-0">
-                        <span className="text-[10px] font-medium text-white leading-none">
+                <button className="flex items-center gap-2.5 mx-3 my-2 px-1.5 py-1 rounded-md hover:bg-white/70 transition-colors w-[calc(100%-1.5rem)] cursor-pointer">
+                    <div className="w-7 h-7 rounded-full bg-slate-900 flex items-center justify-center shrink-0">
+                        <span className="text-[11px] font-medium text-white leading-none">
                             {initials}
                         </span>
                     </div>
                     <div className="flex-1 min-w-0 text-left">
-                        <div className="text-[12.5px] text-slate-900 truncate leading-tight">
+                        <div className="text-[13px] text-slate-900 truncate">
                             {displayName}
                         </div>
-                        <div className="text-[10.5px] text-slate-500 truncate leading-tight">
+                        <div className="text-[10.5px] text-slate-500 truncate">
                             {user.email}
                         </div>
                     </div>
