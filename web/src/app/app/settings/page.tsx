@@ -9,7 +9,7 @@ export default function SettingsPage() {
                 subtitle="Manage your account."
             />
 
-            <div className="rounded-xl border border-slate-200/80 bg-white divide-y divide-slate-100">
+            <div className="rounded-md border border-slate-200 bg-white divide-y divide-slate-100">
                 <div className="p-5">
                     <h2 className="text-[13.5px] font-medium text-slate-900 mb-0.5">Profile</h2>
                     <p className="text-xs text-slate-400">Update your personal information.</p>
@@ -25,8 +25,8 @@ export default function SettingsPage() {
                         />
                     </div>
                     <Separator />
-                    <button className="bg-sky-600 text-white hover:bg-sky-700 rounded-lg px-3 py-1.5 text-[13px] font-medium transition-colors">
-                        Save Changes
+                    <button className="h-7 px-2.5 rounded-md bg-slate-900 text-white hover:bg-slate-800 text-[12.5px] font-medium transition-colors">
+                        Save changes
                     </button>
                 </div>
             </div>

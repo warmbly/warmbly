@@ -5,8 +5,8 @@ export default function APIKeysPage() {
     return (
         <Page width="wide">
             <PageHeader title="API keys" subtitle="Issue and revoke programmatic access.">
-                <button className="bg-sky-600 text-white hover:bg-sky-700 rounded-lg px-3 py-1.5 text-[13px] font-medium transition-colors flex items-center gap-1.5">
-                    <PlusIcon className="w-3.5 h-3.5" />
+                <button className="flex items-center gap-1.5 h-7 px-2.5 rounded-md bg-slate-900 text-white hover:bg-slate-800 text-[12.5px] font-medium transition-colors">
+                    <PlusIcon className="w-3 h-3" />
                     Create key
                 </button>
             </PageHeader>

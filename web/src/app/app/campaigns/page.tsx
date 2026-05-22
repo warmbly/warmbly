@@ -40,14 +40,14 @@ export default function CampaignsPage() {
                 title="Campaigns"
                 subtitle="Outreach sequences. Click a card to edit and monitor."
             >
-                <button className="flex items-center gap-1.5 bg-sky-600 hover:bg-sky-700 text-white text-[13px] font-medium rounded-lg px-3 py-1.5 transition-colors">
+                <button className="flex items-center gap-1.5 h-7 px-2.5 rounded-md bg-slate-900 text-white hover:bg-slate-800 text-[12.5px] font-medium transition-colors">
                     <PlusIcon className="w-3.5 h-3.5" />
                     <span>New campaign</span>
                 </button>
             </PageHeader>
 
-            <div className="rounded-xl border border-slate-200/80 bg-white overflow-hidden">
-                <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+            <div className="rounded-md border border-slate-200 bg-white overflow-hidden">
+                <div className="flex items-center justify-between px-3 py-2 border-b border-slate-200">
                     <div className="flex items-center gap-2">
                         <Search value={query} onChange={(v) => setQuery(v)} />
                         <HeadSelectMenu icon={<FilterIcon className="w-3.5 h-3.5" />} title={sfolder.title}>
@@ -101,7 +101,7 @@ export default function CampaignsPage() {
                             title="No campaigns yet"
                             description="Create your first campaign to start reaching prospects."
                         >
-                            <button className="flex items-center gap-1.5 bg-sky-600 hover:bg-sky-700 text-white text-[13px] font-medium rounded-lg px-3 py-1.5 transition-colors">
+                            <button className="flex items-center gap-1.5 h-7 px-2.5 rounded-md bg-slate-900 text-white hover:bg-slate-800 text-[12.5px] font-medium transition-colors">
                                 <PlusIcon className="w-3.5 h-3.5" />
                                 New campaign
                             </button>
@@ -113,17 +113,17 @@ export default function CampaignsPage() {
                             <Link
                                 to={`/app/campaigns/${c.id}`}
                                 key={c.id}
-                                className="rounded-xl border border-slate-200/80 p-4 bg-white hover:border-sky-200 hover:shadow-sm transition-all group"
+                                className="rounded-md border border-slate-200 p-3 bg-white hover:border-slate-300 transition-colors group"
                             >
-                                <div className="flex items-start justify-between mb-3">
-                                    <div className="w-9 h-9 rounded-lg bg-sky-50 flex items-center justify-center shrink-0">
-                                        <MegaphoneIcon className="w-4 h-4 text-sky-600" />
+                                <div className="flex items-start justify-between mb-2">
+                                    <div className="w-7 h-7 rounded-md bg-slate-100 flex items-center justify-center shrink-0">
+                                        <MegaphoneIcon className="w-3.5 h-3.5 text-slate-600" />
                                     </div>
-                                    <ChevronRightIcon className="w-4 h-4 text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity mt-1" />
+                                    <ChevronRightIcon className="w-3.5 h-3.5 text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity" />
                                 </div>
-                                <h3 className="text-sm font-medium text-slate-900 truncate mb-1">{c.name}</h3>
+                                <h3 className="text-[13px] font-medium text-slate-900 truncate mb-0.5">{c.name}</h3>
                                 {c.description && (
-                                    <p className="text-xs text-slate-400 truncate mb-3">{c.description}</p>
+                                    <p className="text-[11.5px] text-slate-500 truncate mb-2">{c.description}</p>
                                 )}
                                 <div className="flex items-center gap-3 text-[11px] text-slate-400">
                                     <span className="flex items-center gap-1">

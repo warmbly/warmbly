@@ -15,7 +15,7 @@ import {
     ShieldCheckIcon,
 } from "lucide-react";
 import Search from "@/components/app/Search";
-import { EmptyState, Page, PageHeader, StatCard } from "@/components/layout/Page";
+import { EmptyState, Page, PageHeader, StatCard, StatRow } from "@/components/layout/Page";
 
 const DefaultFolder = {
     title: "All accounts",
@@ -62,46 +62,42 @@ export default function AddressesPage() {
             >
                 <button
                     onClick={() => p?.setAddEmail(true)}
-                    className="flex items-center gap-1.5 bg-sky-600 hover:bg-sky-700 text-white text-[13px] font-medium rounded-lg px-3 py-1.5 transition-colors"
+                    className="flex items-center gap-1.5 h-7 px-2.5 rounded-md bg-slate-900 text-white hover:bg-slate-800 text-[12.5px] font-medium transition-colors"
                 >
                     <PlusIcon className="w-3.5 h-3.5" />
                     <span>Add account</span>
                 </button>
             </PageHeader>
 
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+            <StatRow>
                 <StatCard
-                    icon={<MailIcon className="w-4 h-4" />}
-                    iconTone="blue"
-                    label="Total accounts"
+                    icon={<MailIcon className="w-3 h-3" />}
+                    label="Total"
                     value={stats.total}
                 />
                 <StatCard
-                    icon={<ShieldCheckIcon className="w-4 h-4" />}
-                    iconTone="emerald"
+                    icon={<ShieldCheckIcon className="w-3 h-3" />}
                     label="Healthy"
                     value={stats.healthy}
                 />
                 <StatCard
-                    icon={<FlameIcon className="w-4 h-4" />}
-                    iconTone="amber"
-                    label="Warming up"
+                    icon={<FlameIcon className="w-3 h-3" />}
+                    label="Warming"
                     value={stats.warming}
                 />
                 <StatCard
-                    icon={<AlertCircleIcon className="w-4 h-4" />}
-                    iconTone="red"
+                    icon={<AlertCircleIcon className="w-3 h-3" />}
                     label="Needs attention"
                     value={stats.issues}
                 />
-            </div>
+            </StatRow>
 
-            <div className="rounded-xl border border-slate-200/80 bg-white overflow-hidden">
-                <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+            <div className="rounded-md border border-slate-200 bg-white overflow-hidden">
+                <div className="flex items-center justify-between px-3 py-2 border-b border-slate-200">
                     <div className="flex items-baseline gap-2">
-                        <h2 className="text-[13.5px] font-semibold text-slate-900">Email accounts</h2>
+                        <h2 className="text-[12.5px] font-semibold text-slate-700">Accounts</h2>
                         {emailsData.emails && (
-                            <span className="text-xs text-slate-400 tabular-nums">{emailsData.emails.length}</span>
+                            <span className="text-[11px] text-slate-400 tabular-nums">{emailsData.emails.length}</span>
                         )}
                     </div>
                     <div className="flex items-center gap-2">
@@ -143,7 +139,7 @@ export default function AddressesPage() {
                         >
                             <button
                                 onClick={() => p?.setAddEmail(true)}
-                                className="flex items-center gap-1.5 bg-sky-600 hover:bg-sky-700 text-white text-[13px] font-medium rounded-lg px-3 py-1.5 transition-colors"
+                                className="flex items-center gap-1.5 h-7 px-2.5 rounded-md bg-slate-900 text-white hover:bg-slate-800 text-[12.5px] font-medium transition-colors"
                             >
                                 <PlusIcon className="w-3.5 h-3.5" />
                                 Add account
@@ -163,7 +159,7 @@ export default function AddressesPage() {
                                 <th className="pl-4 pr-2 py-2.5 w-10">
                                     <input
                                         type="checkbox"
-                                        className="w-3.5 h-3.5 rounded accent-sky-600"
+                                        className="w-3.5 h-3.5 rounded accent-slate-900"
                                         checked={isSelectedAll()}
                                         onChange={() => {
                                             if (isSelectedAll()) {
@@ -208,12 +204,12 @@ export default function AddressesPage() {
                                     </td>
                                     <td className="px-3 py-3">
                                         <div className="flex items-center gap-2.5">
-                                            <div className="w-7 h-7 rounded-full bg-sky-100 flex items-center justify-center shrink-0">
-                                                <span className="text-[10px] font-medium text-sky-700">
+                                            <div className="w-6 h-6 rounded-md bg-slate-100 flex items-center justify-center shrink-0">
+                                                <span className="text-[10px] font-medium text-slate-600">
                                                     {box.email.slice(0, 2).toUpperCase()}
                                                 </span>
                                             </div>
-                                            <span className="text-[13.5px] font-medium text-slate-900">{box.email}</span>
+                                            <span className="text-[12.5px] font-medium text-slate-900">{box.email}</span>
                                         </div>
                                     </td>
                                     <td className="px-3 py-3 text-[13px] text-slate-500 tabular-nums">0</td>
