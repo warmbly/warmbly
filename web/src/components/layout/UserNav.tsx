@@ -1,89 +1,94 @@
-import { Link, useNavigate } from 'react-router-dom'
+// User menu — sits at the very bottom of the sidebar on the sky chrome.
+// Styled for the dark background; the dropdown itself is light because
+// it overlays the content area.
+
+import { Link, useNavigate } from "react-router-dom";
 import {
-  LogOutIcon,
-  SettingsIcon,
-  CreditCardIcon,
-  UsersIcon,
-} from 'lucide-react'
+    CreditCardIcon,
+    LogOutIcon,
+    SettingsIcon,
+    UsersIcon,
+} from "lucide-react";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import { useSidebar } from '@/components/ui/sidebar'
-import { useAppStore } from '@/stores'
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuGroup,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { useAppStore } from "@/stores";
 
 export function UserNav() {
-  const { isMobile } = useSidebar()
-  const navigate = useNavigate()
-  const user = useAppStore((state) => state.user)
-  const logout = useAppStore((state) => state.logout)
+    const navigate = useNavigate();
+    const user = useAppStore((s) => s.user);
+    const logout = useAppStore((s) => s.logout);
 
-  if (!user) return null
+    if (!user) return null;
 
-  const handleLogout = () => {
-    logout()
-    localStorage.removeItem('token')
-    navigate('/auth/login')
-  }
+    const handleLogout = () => {
+        logout();
+        localStorage.removeItem("token");
+        navigate("/auth/login");
+    };
 
-  const initials = user.email.slice(0, 2).toUpperCase()
-  const displayName = user.first_name && user.last_name
-    ? `${user.first_name} ${user.last_name}`
-    : user.email
+    const initials = user.email.slice(0, 2).toUpperCase();
+    const displayName =
+        user.first_name && user.last_name
+            ? `${user.first_name} ${user.last_name}`
+            : user.email;
 
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button className="flex items-center gap-2.5 px-1 py-1 rounded-md hover:bg-zinc-50 transition-colors duration-150 w-full cursor-pointer">
-          <div className="w-6 h-6 rounded-full bg-zinc-200 flex items-center justify-center shrink-0">
-            <span className="text-[10px] font-medium text-zinc-600 leading-none">{initials}</span>
-          </div>
-          <div className="flex-1 min-w-0 text-left group-data-[collapsible=icon]:hidden">
-            <div className="text-sm text-zinc-900 truncate">{displayName}</div>
-          </div>
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        className="min-w-56"
-        side={isMobile ? 'top' : 'top'}
-        align="start"
-        sideOffset={4}
-      >
-        <div className="px-2 py-1.5">
-          <div className="text-sm font-medium text-zinc-900">{displayName}</div>
-          <div className="text-xs text-zinc-400">{user.email}</div>
-        </div>
-        <DropdownMenuSeparator />
-        <DropdownMenuGroup>
-          <DropdownMenuItem asChild>
-            <Link to="/app/settings">
-              <SettingsIcon className="w-4 h-4" />
-              <span className="ml-2">Settings</span>
-            </Link>
-          </DropdownMenuItem>
-          <DropdownMenuItem asChild>
-            <Link to="/app/billing">
-              <CreditCardIcon className="w-4 h-4" />
-              <span className="ml-2">Billing</span>
-            </Link>
-          </DropdownMenuItem>
-          <DropdownMenuItem asChild>
-            <Link to="/app/team">
-              <UsersIcon className="w-4 h-4" />
-              <span className="ml-2">Team</span>
-            </Link>
-          </DropdownMenuItem>
-        </DropdownMenuGroup>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={handleLogout}>
-          <LogOutIcon className="w-4 h-4" />
-          <span className="ml-2">Log out</span>
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  )
+    return (
+        <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+                <button className="flex items-center gap-2.5 mx-3 my-2 px-1.5 py-1 rounded-md hover:bg-white/[0.08] transition-colors w-[calc(100%-1.5rem)] cursor-pointer">
+                    <div className="w-7 h-7 rounded-full bg-white/15 border border-white/10 flex items-center justify-center shrink-0">
+                        <span className="text-[11px] font-medium text-white leading-none">
+                            {initials}
+                        </span>
+                    </div>
+                    <div className="flex-1 min-w-0 text-left">
+                        <div className="text-[13px] text-white truncate">
+                            {displayName}
+                        </div>
+                        <div className="text-[10.5px] text-white/50 truncate">
+                            {user.email}
+                        </div>
+                    </div>
+                </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="min-w-56" side="top" align="start" sideOffset={6}>
+                <div className="px-2 py-1.5">
+                    <div className="text-sm font-medium text-zinc-900">{displayName}</div>
+                    <div className="text-xs text-zinc-400">{user.email}</div>
+                </div>
+                <DropdownMenuSeparator />
+                <DropdownMenuGroup>
+                    <DropdownMenuItem asChild>
+                        <Link to="/app/settings">
+                            <SettingsIcon className="w-4 h-4" />
+                            <span className="ml-2">Settings</span>
+                        </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                        <Link to="/app/billing">
+                            <CreditCardIcon className="w-4 h-4" />
+                            <span className="ml-2">Billing</span>
+                        </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                        <Link to="/app/team">
+                            <UsersIcon className="w-4 h-4" />
+                            <span className="ml-2">Team</span>
+                        </Link>
+                    </DropdownMenuItem>
+                </DropdownMenuGroup>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={handleLogout}>
+                    <LogOutIcon className="w-4 h-4" />
+                    <span className="ml-2">Log out</span>
+                </DropdownMenuItem>
+            </DropdownMenuContent>
+        </DropdownMenu>
+    );
 }
