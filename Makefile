@@ -72,8 +72,12 @@ down:
 reset:
 	docker compose --profile sim --profile seed --profile tools down -v
 
+# Stream container logs.
+#   make logs              # all services, last 200 lines + follow
+#   make logs backend      # one service
+#   make logs backend consumer    # multiple
 logs:
-	docker compose logs -f --tail=200
+	docker compose logs -f --tail=200 $(RUN_ARGS)
 
 status:
 	docker compose ps
@@ -107,10 +111,10 @@ restart-all:
 	docker compose build backend consumer worker-shared-1 tracking realtime
 	docker compose up -d backend consumer worker-shared-1 tracking realtime
 
-# Positional-args plumbing. Captures every goal after `restart` as
-# RUN_ARGS, then declares those leftover goals as no-op targets so make
-# doesn't error with "no rule for target".
-ifeq (restart,$(firstword $(MAKECMDGOALS)))
+# Positional-args plumbing. When the first goal is `restart` or `logs`,
+# capture every following word as RUN_ARGS and declare those words as
+# no-op rules so make doesn't error with "no rule for target".
+ifneq (,$(filter restart logs,$(firstword $(MAKECMDGOALS))))
   RUN_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
   $(eval $(RUN_ARGS):;@:)
 endif

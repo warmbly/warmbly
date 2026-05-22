@@ -37,6 +37,11 @@ Iterating on code:
 make restart backend
 make restart-go                    # all Go services in one shot
 make restart-all                   # Go + Rust + Elixir
+
+# Tail logs:
+make logs                          # everything
+make logs backend                  # one service
+make logs backend consumer         # multiple
 ```
 
 There's no "restart without rebuild" target because in this setup that
