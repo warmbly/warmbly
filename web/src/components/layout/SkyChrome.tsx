@@ -20,8 +20,10 @@ import React from "react";
 export function SkyChrome() {
     return (
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
-            {/* Base tint — slightly cooler than pure white. */}
-            <div className="absolute inset-0 bg-[#f4f7fb]" />
+            {/* Base tint — clean neutral, a half-step darker than white.
+                Avoid blue-leaning here; the only colour cue is the soft
+                clouds above. */}
+            <div className="absolute inset-0 bg-[#f5f6f8]" />
 
             {/* Faint cloud blobs. Positioned to suggest a softly clouded
                 sky in the upper half. Generous blur radius + low alpha
@@ -66,15 +68,6 @@ export function SkyChrome() {
                 }}
             />
 
-            {/* Very gentle vignette at the bottom — keeps the lower half
-                from feeling identical to the upper half. */}
-            <div
-                className="absolute inset-x-0 bottom-0 h-1/2 pointer-events-none"
-                style={{
-                    background:
-                        "linear-gradient(to top, rgba(186,230,253,0.08) 0%, transparent 100%)",
-                }}
-            />
         </div>
     );
 }

@@ -72,7 +72,10 @@ export function AppHeader() {
                 to="/app/emails"
                 className="w-64 px-5 h-full flex items-center gap-2.5 shrink-0 group"
             >
-                <Logo className="w-7 text-slate-400 group-hover:text-slate-700 transition-colors duration-150" />
+                {/* Cool blue-leaning gray at rest; deeper blue-gray on hover.
+                    Light enough to read as neutral chrome, but with a clear
+                    blue lean so the brand sneaks in. */}
+                <Logo className="w-7 text-[#8aa1c1] group-hover:text-[#4e6285] transition-colors duration-150" />
                 <span
                     style={{ fontFamily: "var(--font-display)" }}
                     className="font-extrabold text-[15.5px] tracking-tight text-slate-900"

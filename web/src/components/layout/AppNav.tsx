@@ -42,8 +42,10 @@ interface NavSection {
     items: NavItem[];
 }
 
+// "Home" was duplicating "Accounts" (both pointed at /app/emails) — that's
+// why the same row lit up twice. Dropping Home; Accounts IS the home page.
+// If a true "Overview" page lands later, add it back here with its own URL.
 const topItems: NavItem[] = [
-    { title: "Home", url: "/app/emails", icon: HomeIcon },
     { title: "Inbox", url: "/app/unibox", icon: InboxIcon, badgeStoreKey: "unseenCount" },
 ];
 
@@ -87,7 +89,7 @@ function NavRow({ item }: { item: NavItem }) {
             className={cn(
                 "group mx-2 flex items-center gap-2.5 px-2.5 h-8 rounded-md text-[13px] transition-colors duration-100",
                 active
-                    ? "bg-white text-slate-900 font-medium shadow-[0_1px_2px_rgba(15,23,42,0.04),inset_0_0_0_1px_rgba(15,23,42,0.06)]"
+                    ? "bg-slate-200 text-slate-900 font-medium"
                     : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60",
             )}
         >
