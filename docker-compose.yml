@@ -186,6 +186,12 @@ services:
 
       API_HOST: "0.0.0.0:8080"
       GIN_MODE: debug
+      # Web origin for CORS. Backend's allow-list resolution checks
+      # CORS_ALLOW_ORIGINS, then APP_URL, then a fallback derived from
+      # WEBSOCKET_URL. Without this the origin would default to the
+      # realtime port (14000), not the Vite dev server (5173), and
+      # browser preflights from the dashboard get 403'd.
+      APP_URL: "http://localhost:5173"
       WEBSOCKET_URL: ws://localhost:14000/socket/websocket
 
       PRIMARY_DB: postgres://warmbly:warmbly@postgres:5432/warmbly_dev?sslmode=disable
