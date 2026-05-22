@@ -365,10 +365,14 @@ services:
       - ./web:/app
       - web_node_modules:/app/node_modules
     ports: ["15173:5173"]
+    # Retry corepack only — that one tends to fail transiently while it
+    # downloads the pnpm version. pnpm install failures are PERMANENT (bad
+    # package.json, unresolvable peer dep, etc.) so we fail fast instead of
+    # looping forever and burying the actual error.
     command: >
       sh -c '
       until corepack enable; do echo "corepack retry..."; sleep 2; done;
-      until pnpm install; do echo "pnpm install retry..."; sleep 3; done;
+      pnpm install || { echo ""; echo "pnpm install failed — fix package.json then run make restart web"; exit 1; };
       pnpm dev --host
       '
     environment:
