@@ -34,22 +34,6 @@ docker compose --profile tools up -d kafka-ui                # tools
 docker compose --profile sim --profile seed --profile tools down -v   # reset
 ```
 
-## Hot reload
-
-What rebuilds when you save a file:
-
-| You change | What happens |
-|------------|--------------|
-| `web/src/**` | Vite HMR — browser refreshes in <1s |
-| `cmd/backend/**`, `internal/**` (Go) | `air` inside the backend container recompiles + restarts. First rebuild ~10s, subsequent ones ~2s. |
-| `cmd/consumer/**`, `internal/**` (Go) | same — air picks up consumer changes too |
-| `cmd/worker/**`, `internal/**` (Go) | same for every running worker container |
-| `tracking/**` (Rust) | not auto-rebuilt yet — `docker compose build tracking && docker compose up -d tracking` |
-| `realtime/**` (Elixir) | not auto-rebuilt yet — `docker compose build realtime && docker compose up -d realtime` |
-| `*.sql` migrations | runs on next backend start; restart backend with `docker compose restart backend` |
-
-The Go services share a dev image (`deploy/docker/go.dev.Dockerfile`) that ships the toolchain + `air`. Each service has its own `air.<name>.toml` next to it. Source is bind-mounted at `/app`; Go module + build caches live in named volumes (`go_mod_cache`, `go_build_cache`) so restarts don't redo the work. First cold start downloads modules — expect ~60s before the first build finishes. After that, save-to-restart is in the single-digit seconds.
-
 ## What's running
 
 In default profile (`make dev`):

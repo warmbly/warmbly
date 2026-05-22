@@ -30,16 +30,8 @@ x-aws-localstack: &aws-localstack
 x-worker-base: &worker-base
   build:
     context: .
-    dockerfile: deploy/docker/go.dev.Dockerfile
+    dockerfile: deploy/docker/worker.Dockerfile
   restart: unless-stopped
-  # Mount source so air sees changes immediately, plus named volumes for
-  # the Go module + build caches so restarts don't re-download or
-  # re-compile from scratch.
-  volumes:
-    - ./:/app
-    - go_mod_cache:/go/pkg/mod
-    - go_build_cache:/root/.cache/go-build
-  command: ["air", "-c", "/app/deploy/docker/air.worker.toml"]
   environment: &worker-env
     <<: *aws-localstack
     APP_ENV: dev
@@ -185,12 +177,7 @@ services:
   backend:
     build:
       context: .
-      dockerfile: deploy/docker/go.dev.Dockerfile
-    volumes:
-      - ./:/app
-      - go_mod_cache:/go/pkg/mod
-      - go_build_cache:/root/.cache/go-build
-    command: ["air", "-c", "/app/deploy/docker/air.backend.toml"]
+      dockerfile: deploy/docker/backend.Dockerfile
     ports: ["8080:8080"]
     environment:
       <<: *aws-localstack
@@ -269,12 +256,7 @@ services:
   consumer:
     build:
       context: .
-      dockerfile: deploy/docker/go.dev.Dockerfile
-    volumes:
-      - ./:/app
-      - go_mod_cache:/go/pkg/mod
-      - go_build_cache:/root/.cache/go-build
-    command: ["air", "-c", "/app/deploy/docker/air.consumer.toml"]
+      dockerfile: deploy/docker/consumer.Dockerfile
     environment:
       <<: *aws-localstack
       APP_ENV: dev
@@ -432,9 +414,4 @@ services:
 volumes:
   postgres_data:
   redis_data:
-  # Go module + build caches so `air` rebuilds in ~2s instead of ~30s after
-  # the first cold compile. Survives `docker compose down`; nuke with
-  # `make reset`.
-  go_mod_cache:
-  go_build_cache:
   web_node_modules:
