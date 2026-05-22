@@ -108,8 +108,8 @@ Each worker profile picks a release channel (`pinned` / `stable` / `dev`) and an
 
 ```bash
 curl http://localhost:8080/health    # backend
-curl http://localhost:13000/health   # tracking
-curl http://localhost:14000/health   # realtime
+curl http://localhost:3000/health   # tracking
+curl http://localhost:4000/health   # realtime
 ```
 
 ## Documentation

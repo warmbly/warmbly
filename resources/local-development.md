@@ -75,22 +75,22 @@ The `sim` profile adds two more workers (`worker-premium-1`, `worker-dedicated-1
 
 ## Service URLs
 
-All ports are offset to avoid colliding with locally-installed daemons:
+Mostly standard ports. A few are offset because their defaults conflict too often: Postgres `15432`, Redis `16379`, Mailpit UI `18025` and SMTP `11025`, kafka-ui `18090` (because 8080 is backend). Everything else uses its natural port. Override locally in a `docker-compose.override.yml` if you still hit a conflict.
 
 | Service | URL |
 |---------|-----|
 | Backend API | http://localhost:8080 |
-| Tracking | http://localhost:13000 |
-| Realtime | http://localhost:14000 |
+| Tracking | http://localhost:3000 |
+| Realtime | http://localhost:4000 |
 | Web (Vite dev) | http://localhost:5173 |
 | Mailpit | http://localhost:18025 |
-| Kafka | localhost:19092 |
-| Schema Registry | http://localhost:18081 |
+| Kafka | localhost:9092 |
+| Schema Registry | http://localhost:8081 |
 | Postgres | localhost:15432 |
 | Redis | localhost:16379 |
-| LocalStack | http://localhost:14566 |
+| LocalStack | http://localhost:4566 |
 | stripe-mock | http://localhost:12111 |
-| Cloud Tasks emulator | http://localhost:18123 |
+| Cloud Tasks emulator | http://localhost:8123 |
 | kafka-ui (with `make tools`) | http://localhost:18090 |
 
 ## Database setup
@@ -153,9 +153,9 @@ go install github.com/cosmtrek/air@latest
 # Point at containerized infra
 export PRIMARY_DB="postgres://warmbly:warmbly@localhost:15432/warmbly_dev?sslmode=disable"
 export REDIS="redis://localhost:16379"
-export KAFKA_BOOTSTRAP_SERVERS="localhost:19092"
-export SCHEMA_REGISTRY_URL="http://localhost:18081"
-export AWS_ENDPOINT_URL="http://localhost:14566"
+export KAFKA_BOOTSTRAP_SERVERS="localhost:9092"
+export SCHEMA_REGISTRY_URL="http://localhost:8081"
+export AWS_ENDPOINT_URL="http://localhost:4566"
 export AWS_REGION="us-east-1"
 export AWS_ACCESS_KEY_ID="test"
 export AWS_SECRET_ACCESS_KEY="test"
@@ -253,13 +253,13 @@ Or use kafka-ui at http://localhost:18090 (`make tools`).
 ### Inspect schema registry
 
 ```bash
-curl http://localhost:18081/subjects | jq
-curl http://localhost:18081/subjects/tracking-events-value/versions/latest | jq
+curl http://localhost:8081/subjects | jq
+curl http://localhost:8081/subjects/tracking-events-value/versions/latest | jq
 ```
 
 ## Troubleshooting
 
-**Port already in use** — `lsof -i :15432` (or whichever) to find what's holding it. The compose ports are offset on purpose; if you have a local Postgres on 5432 it shouldn't clash.
+**Port already in use** — `lsof -i :5432` (or whichever) to find what's holding it. The compose ports are offset on purpose; if you have a local Postgres on 5432 it shouldn't clash.
 
 **Backend can't reach Kafka** — Kafka needs ~30s to fully start. Healthchecks gate the dependent services, so `docker compose up` should handle this. If you brought services up in a weird order, `docker compose restart backend consumer`.
 

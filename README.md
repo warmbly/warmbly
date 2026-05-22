@@ -33,8 +33,8 @@ The frontend (React) talks to three control-plane services: the **Backend API** 
 | Service | Port (local) | Plane | Description |
 |---------|------|-------|-------------|
 | Backend | 8080 | control | REST API, auth, business logic, worker orchestration |
-| Tracking | 13000 | control | Open/click pixel + redirect service |
-| Realtime | 14000 | control | WebSocket gateway |
+| Tracking | 3000 | control | Open/click pixel + redirect service |
+| Realtime | 4000 | control | WebSocket gateway |
 | Consumer | – | control | Kafka event processor |
 | Worker | – | execution | SSH-managed sender process, one per VPS |
 | Web | 5173 | – | Vite dev server (frontend) |
@@ -60,15 +60,15 @@ make tools
 Service URLs (all ports offset to avoid clashes with locally-installed daemons):
 
 - Backend API: http://localhost:8080
-- Tracking: http://localhost:13000
-- Realtime: http://localhost:14000
+- Tracking: http://localhost:3000
+- Realtime: http://localhost:4000
 - Web: http://localhost:5173
 - Mailpit: http://localhost:18025
-- Kafka: localhost:19092
-- Schema Registry: http://localhost:18081
+- Kafka: localhost:9092
+- Schema Registry: http://localhost:8081
 - Postgres: localhost:15432
 - Redis: localhost:16379
-- LocalStack: http://localhost:14566
+- LocalStack: http://localhost:4566
 - stripe-mock: http://localhost:12111
 
 See [resources/local-development.md](resources/local-development.md) for the full setup.
