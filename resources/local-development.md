@@ -33,17 +33,16 @@ Iterating on code:
 # No need to restart anything for web changes.
 
 # Everything else needs a rebuild because the binary is compiled into
-# the image. One target, both names work, takes the service name
-# positionally:
-make restart backend               # or: make rebuild backend
+# the image. One target, takes the service name positionally:
+make restart backend
 make restart-go                    # all Go services in one shot
 make restart-all                   # Go + Rust + Elixir
 ```
 
 There's no "restart without rebuild" target because in this setup that
 never does what you want — the container would come back with the same
-old binary. If you ever genuinely need that (e.g. you only changed an
-env var), use `docker compose restart <service>` directly.
+old binary. If you ever genuinely need that (env var change only, etc.),
+use `docker compose restart <service>` directly.
 
 All targets shell out to `docker compose`. If you don't have Make, the equivalents are:
 
@@ -219,7 +218,7 @@ Or just trigger the auth flow in the running app and watch the email arrive in M
 ### Rebuild one service
 
 ```bash
-make restart backend       # or: make rebuild backend
+make restart backend
 ```
 
 ### Reset Postgres only

@@ -14,8 +14,7 @@ PROTO_GEN_FILES := $(PROTO_DIR)/tasks.pb.go
 
 .PHONY: setup-tools lint proto check-proto \
         dev sim seed reset logs status stop down tools test-seed \
-        restart restart-go restart-all \
-        rebuild rebuild-go rebuild-all
+        restart restart-go restart-all
 
 setup-tools:
 	@echo "Installing required Go tools into $(GO_BIN)"
@@ -108,18 +107,10 @@ restart-all:
 	docker compose build backend consumer worker-shared-1 tracking realtime
 	docker compose up -d backend consumer worker-shared-1 tracking realtime
 
-# `rebuild` is an alias for `restart` — same behaviour (rebuild image +
-# bring container up), kept so muscle memory works either way:
-#   make restart backend
-#   make rebuild backend
-rebuild:     restart
-rebuild-go:  restart-go
-rebuild-all: restart-all
-
-# Positional-args plumbing. Captures every goal after `restart` or
-# `rebuild` as RUN_ARGS, then declares those leftover goals as no-op
-# targets so make doesn't error with "no rule for target".
-ifneq (,$(filter restart rebuild,$(firstword $(MAKECMDGOALS))))
+# Positional-args plumbing. Captures every goal after `restart` as
+# RUN_ARGS, then declares those leftover goals as no-op targets so make
+# doesn't error with "no rule for target".
+ifeq (restart,$(firstword $(MAKECMDGOALS)))
   RUN_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
   $(eval $(RUN_ARGS):;@:)
 endif
