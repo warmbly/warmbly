@@ -1,197 +1,352 @@
-// Page primitives.
+// Page primitives — dense, edge-to-edge, hairline dividers.
 //
-// Every page lives inside the white content panel of the new shell. That
-// panel has a rounded top-left corner (where it meets the sky chrome).
-// To make titles read well across all pages without each one inventing
-// its own header, three primitives cover ~95% of cases:
-//
-//   <Page>           outer container with consistent padding
-//   <PageHeader>     title + optional subtitle + optional right-side actions
-//   <PageSection>    a labeled block inside a page (heading + children)
-//
-// Use them like:
+// Inspired by brae's dashboard chrome: pages fill the white content panel
+// to its edges, sections separate by a single hairline (border-b
+// border-slate-200), not by gutter or shadow. Small tracked-uppercase
+// eyebrow labels replace large titles. Stats live in a strip cell across
+// the full width, not in scattered cards.
 //
 //   <Page>
-//     <PageHeader title="Accounts" subtitle="One row per mailbox">
-//       <Button>Connect new</Button>
-//     </PageHeader>
-//     <PageSection title="Active">{...}</PageSection>
+//     <PageTopbar eyebrow="Accounts" subtitle="One row per mailbox">
+//       <Action>Add account</Action>
+//     </PageTopbar>
+//     <StatStrip>
+//       <Stat label="Total" value={42} />
+//       <Stat label="Healthy" value={36} accent />
+//       ...
+//     </StatStrip>
+//     <PageBody>{...table...}</PageBody>
 //   </Page>
-//
-// Anything more bespoke can drop down to raw classnames — the primitives
-// are a default, not a straitjacket.
 
 import React from "react";
 import { cn } from "@/lib/utils";
 
-export function Page({
-    children,
-    className,
-    width = "default",
-}: {
+/**
+ * Page — outer frame. Fills its parent (the white content panel) without
+ * a max-width ceiling or padding. Sub-sections paint their own structure.
+ */
+export function Page({ children, className }: {
     children: React.ReactNode;
     className?: string;
-    /**
-     * default → constrained to a comfortable reading column
-     * wide → 1280px ceiling, used for data tables / dashboards
-     * full → no max-width, used for editors/maps/anything that wants the room
-     */
+    /** Deprecated — kept so old callers compile. New layout fills the panel. */
     width?: "default" | "wide" | "full";
 }) {
-    const widthClass = {
-        default: "max-w-3xl",
-        wide: "max-w-7xl",
-        full: "",
-    }[width];
     return (
-        <div className={cn("px-8 pt-8 pb-16", widthClass, "mx-auto", className)}>
+        <div className={cn("flex flex-col min-h-full bg-white", className)}>
             {children}
         </div>
-    );
-}
-
-export function PageHeader({
-    title,
-    subtitle,
-    eyebrow,
-    children,
-    className,
-}: {
-    title: string;
-    subtitle?: string;
-    /** Tiny uppercase label above the title (e.g. section group). Optional. */
-    eyebrow?: string;
-    /** Right-side actions (buttons, search box, etc.). */
-    children?: React.ReactNode;
-    className?: string;
-}) {
-    return (
-        <div className={cn("flex items-start gap-6 mb-8", className)}>
-            <div className="min-w-0 flex-1">
-                {eyebrow && (
-                    <div className="text-[10.5px] uppercase tracking-[0.18em] text-slate-400 font-semibold mb-2">
-                        {eyebrow}
-                    </div>
-                )}
-                {/* Serif page title — uses --font-serif (Georgia) which lends
-                    the dashboard the same character as the marketing site
-                    without screaming "branding." Tight tracking + crisp
-                    optical sizing in slate-950 (one notch darker than 900). */}
-                <h1
-                    style={{ fontFamily: "var(--font-serif)" }}
-                    className="text-[28px] leading-[1.1] font-medium text-slate-950 tracking-[-0.01em]"
-                >
-                    {title}
-                </h1>
-                {subtitle && (
-                    <p className="text-[13.5px] text-slate-500 mt-2 leading-snug max-w-2xl">
-                        {subtitle}
-                    </p>
-                )}
-            </div>
-            {children && (
-                <div className="flex items-center gap-2 shrink-0 pt-1">{children}</div>
-            )}
-        </div>
-    );
-}
-
-export function PageSection({
-    title,
-    description,
-    children,
-    className,
-    actions,
-}: {
-    title?: string;
-    description?: string;
-    children: React.ReactNode;
-    className?: string;
-    actions?: React.ReactNode;
-}) {
-    return (
-        <section className={cn("mb-8", className)}>
-            {(title || description || actions) && (
-                <div className="flex items-end justify-between gap-4 mb-3">
-                    <div>
-                        {title && (
-                            <h2 className="text-[14px] font-semibold text-slate-800 tracking-tight">
-                                {title}
-                            </h2>
-                        )}
-                        {description && (
-                            <p className="text-[12.5px] text-slate-500 mt-0.5">
-                                {description}
-                            </p>
-                        )}
-                    </div>
-                    {actions && (
-                        <div className="flex items-center gap-2 shrink-0">{actions}</div>
-                    )}
-                </div>
-            )}
-            {children}
-        </section>
     );
 }
 
 /**
- * Stat card — small icon, label, large number.
- *
- * Two-layer shadow gives Linear-style soft elevation without a hard
- * border line — the card reads as "sitting on" the page rather than
- * "drawn on" it. Tabular-nums for the value so digits don't dance
- * when numbers change.
+ * PageTopbar — 48px topbar at the top of a page. Eyebrow label at the
+ * left in small tracked uppercase, an inline subtitle for context, actions
+ * on the right.
  */
-export function StatCard({
+export function PageTopbar({
+    eyebrow,
+    subtitle,
+    children,
+    className,
+}: {
+    eyebrow: string;
+    subtitle?: string;
+    children?: React.ReactNode;
+    className?: string;
+}) {
+    return (
+        <div
+            className={cn(
+                "h-12 px-5 border-b border-slate-200 flex items-center gap-3 shrink-0 bg-white sticky top-0 z-10",
+                className,
+            )}
+        >
+            <span className="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">
+                {eyebrow}
+            </span>
+            {subtitle && (
+                <>
+                    <div className="h-4 w-px bg-slate-200" />
+                    <span className="text-[12.5px] text-slate-600 truncate">
+                        {subtitle}
+                    </span>
+                </>
+            )}
+            {children && <div className="ml-auto flex items-center gap-1.5">{children}</div>}
+        </div>
+    );
+}
+
+/**
+ * Primary topbar action — solid sky pill at 28px tall.
+ */
+export function TopbarAction({
+    children,
+    onClick,
+    href,
     icon,
-    iconTone = "slate",
+    variant = "primary",
+}: {
+    children: React.ReactNode;
+    onClick?: () => void;
+    href?: string;
+    icon?: React.ReactNode;
+    variant?: "primary" | "ghost";
+}) {
+    const cls =
+        variant === "primary"
+            ? "bg-sky-600 hover:bg-sky-700 text-white"
+            : "border border-slate-200 hover:border-slate-300 text-slate-700 hover:text-slate-900 bg-white";
+    if (href) {
+        return (
+            <a
+                href={href}
+                className={cn(
+                    "h-7 px-2.5 rounded-md inline-flex items-center gap-1.5 text-[12px] font-medium transition-colors",
+                    cls,
+                )}
+            >
+                {icon}
+                {children}
+            </a>
+        );
+    }
+    return (
+        <button
+            onClick={onClick}
+            className={cn(
+                "h-7 px-2.5 rounded-md inline-flex items-center gap-1.5 text-[12px] font-medium transition-colors",
+                cls,
+            )}
+        >
+            {icon}
+            {children}
+        </button>
+    );
+}
+
+/**
+ * StatStrip — full-width grid of stats with vertical-rule dividers and a
+ * bottom hairline. Use Stat as children.
+ */
+export function StatStrip({ children, cols = 4 }: { children: React.ReactNode; cols?: 2 | 3 | 4 | 5 }) {
+    const gridCls = {
+        2: "grid-cols-2",
+        3: "grid-cols-2 md:grid-cols-3",
+        4: "grid-cols-2 md:grid-cols-4",
+        5: "grid-cols-2 md:grid-cols-5",
+    }[cols];
+    return (
+        <div className={cn("grid border-b border-slate-200 shrink-0 bg-white", gridCls)}>
+            {children}
+        </div>
+    );
+}
+
+/**
+ * Stat — one cell of the StatStrip. `accent` shows a small pulsing sky
+ * dot next to the label. Each cell has a right border that compounds into
+ * the strip's vertical-rule pattern; the last one drops it via `last`.
+ */
+export function Stat({
+    label,
+    value,
+    sub,
+    accent = false,
+    href,
+    last = false,
+    onClick,
+}: {
+    label: string;
+    value: string | number;
+    sub?: string;
+    accent?: boolean;
+    href?: string;
+    onClick?: () => void;
+    last?: boolean;
+}) {
+    const inner = (
+        <>
+            <div className="flex items-center gap-2">
+                <span className="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">
+                    {label}
+                </span>
+                {accent && (
+                    <span className="size-1.5 rounded-full bg-sky-500 animate-pulse" />
+                )}
+                {(href || onClick) && (
+                    <span className="ml-auto text-[10px] text-slate-300 group-hover:text-slate-500 transition-colors">
+                        →
+                    </span>
+                )}
+            </div>
+            <div className="text-[26px] text-slate-900 font-light leading-none mt-2 tabular-nums">
+                {typeof value === "number" ? value.toLocaleString() : value}
+            </div>
+            {sub && (
+                <div className="text-[10px] text-slate-400 mt-1.5 font-mono truncate">{sub}</div>
+            )}
+        </>
+    );
+    const cls = cn(
+        "group px-5 py-4 transition-colors",
+        !last && "border-r border-slate-200",
+        (href || onClick) && "hover:bg-slate-50 cursor-pointer",
+    );
+    if (href) {
+        return (
+            <a href={href} className={cls}>
+                {inner}
+            </a>
+        );
+    }
+    if (onClick) {
+        return (
+            <button onClick={onClick} className={cn(cls, "text-left")}>
+                {inner}
+            </button>
+        );
+    }
+    return <div className={cls}>{inner}</div>;
+}
+
+/**
+ * PageBody — scrollable content area below the topbar/strip. No padding;
+ * children paint their own structure (a table, a kanban, etc.).
+ */
+export function PageBody({ children, className }: { children: React.ReactNode; className?: string }) {
+    return (
+        <div className={cn("flex-1 min-h-0 overflow-auto", className)}>{children}</div>
+    );
+}
+
+/**
+ * SectionBar — secondary toolbar inside a PageBody. Same anatomy as the
+ * PageTopbar but a touch slimmer (h-9) and with a lighter divider, so it
+ * reads as a sub-header rather than a peer.
+ */
+export function SectionBar({
+    label,
+    count,
+    children,
+    className,
+}: {
+    label: string;
+    count?: number | string;
+    children?: React.ReactNode;
+    className?: string;
+}) {
+    return (
+        <div
+            className={cn(
+                "h-9 px-5 border-b border-slate-200/60 flex items-center gap-2.5 shrink-0",
+                className,
+            )}
+        >
+            <span className="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">
+                {label}
+            </span>
+            {count !== undefined && (
+                <span className="font-mono text-[10.5px] text-slate-400 tabular-nums">
+                    {count}
+                </span>
+            )}
+            {children && <div className="ml-auto flex items-center gap-1.5">{children}</div>}
+        </div>
+    );
+}
+
+/**
+ * Row — generic flexible h-11 list row with a hover state and bottom
+ * hairline. Compose freely; use status dots / mono IDs / pill labels
+ * to taste.
+ */
+export function Row({
+    children,
+    href,
+    onClick,
+    className,
+}: {
+    children: React.ReactNode;
+    href?: string;
+    onClick?: () => void;
+    className?: string;
+}) {
+    const cls = cn(
+        "group h-11 px-5 flex items-center gap-3 border-b border-slate-200/60 transition-colors",
+        (href || onClick) && "hover:bg-slate-50/80 cursor-pointer",
+        className,
+    );
+    if (href) return <a href={href} className={cls}>{children}</a>;
+    if (onClick) return <button onClick={onClick} className={cn(cls, "w-full text-left")}>{children}</button>;
+    return <div className={cls}>{children}</div>;
+}
+
+/**
+ * EmptyBlock — tight text-led empty state. Sized to slot inside a
+ * PageBody or a section, not occupy the whole page.
+ */
+export function EmptyBlock({
+    title,
+    body,
+    cta,
+}: {
+    title: string;
+    body?: string;
+    cta?: React.ReactNode;
+}) {
+    return (
+        <div className="px-5 py-16 text-center">
+            <p className="text-[12.5px] text-slate-700 font-medium mb-1">{title}</p>
+            {body && (
+                <p className="text-[11.5px] text-slate-400 mb-4 max-w-[34ch] mx-auto leading-relaxed">
+                    {body}
+                </p>
+            )}
+            {cta && <div className="mt-4 flex justify-center gap-1.5">{cta}</div>}
+        </div>
+    );
+}
+
+// ── Compatibility shims ──────────────────────────────────────────────
+// The previous primitives (PageHeader, StatCard, EmptyState, PageSection)
+// are still imported across many app pages. Keep thin shims so the new
+// chrome lands without breaking other pages — the sweep will migrate
+// each page to the new vocabulary at its own pace.
+
+export function PageHeader({
+    title,
+    subtitle,
+    children,
+}: {
+    title: string;
+    subtitle?: string;
+    eyebrow?: string;
+    children?: React.ReactNode;
+    className?: string;
+}) {
+    return (
+        <PageTopbar eyebrow={title} subtitle={subtitle}>
+            {children}
+        </PageTopbar>
+    );
+}
+
+export function StatCard({
     label,
     value,
     hint,
 }: {
-    icon: React.ReactNode;
-    /** Hint color for the icon tile. */
+    icon?: React.ReactNode;
     iconTone?: "slate" | "blue" | "emerald" | "amber" | "red" | "violet";
     label: string;
     value: string | number;
     hint?: string;
 }) {
-    const toneCls = {
-        slate:   "bg-slate-100   text-slate-700",
-        blue:    "bg-sky-100     text-sky-700",
-        emerald: "bg-emerald-100 text-emerald-700",
-        amber:   "bg-amber-100   text-amber-700",
-        red:     "bg-red-100     text-red-700",
-        violet:  "bg-violet-100  text-violet-700",
-    }[iconTone];
-    return (
-        <div className="rounded-2xl bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_8px_24px_-12px_rgba(15,23,42,0.08)] ring-1 ring-slate-200/60">
-            <div className="flex items-center gap-2.5 mb-3">
-                <div className={cn("w-7 h-7 rounded-lg flex items-center justify-center", toneCls)}>
-                    {icon}
-                </div>
-                <span className="text-[12px] uppercase tracking-[0.08em] text-slate-500 font-medium">
-                    {label}
-                </span>
-            </div>
-            <div className="text-[28px] font-medium text-slate-950 tracking-[-0.02em] tabular-nums leading-none">
-                {value}
-            </div>
-            {hint && (
-                <div className="text-[11.5px] text-slate-400 mt-2">{hint}</div>
-            )}
-        </div>
-    );
+    return <Stat label={label} value={value} sub={hint} />;
 }
 
-/**
- * Empty state — when there's nothing to show. Composed of a small icon
- * tile, a serif headline (matches PageHeader voice), a supporting line,
- * and an optional CTA row.
- */
 export function EmptyState({
-    icon,
     title,
     description,
     children,
@@ -201,25 +356,30 @@ export function EmptyState({
     description?: string;
     children?: React.ReactNode;
 }) {
+    return <EmptyBlock title={title} body={description} cta={children} />;
+}
+
+export function PageSection({
+    title,
+    description,
+    actions,
+    children,
+    className,
+}: {
+    title?: string;
+    description?: string;
+    actions?: React.ReactNode;
+    children: React.ReactNode;
+    className?: string;
+}) {
     return (
-        <div className="rounded-2xl bg-[#fafbfd] ring-1 ring-slate-200/60 px-8 py-14 text-center">
-            {icon && (
-                <div className="w-11 h-11 mx-auto mb-4 rounded-xl bg-white ring-1 ring-slate-200/70 flex items-center justify-center text-slate-400 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
-                    {icon}
-                </div>
+        <section className={className}>
+            {(title || description || actions) && (
+                <SectionBar label={title ?? ""} count={undefined}>
+                    {actions}
+                </SectionBar>
             )}
-            <h3
-                style={{ fontFamily: "var(--font-serif)" }}
-                className="text-[17px] text-slate-900 tracking-[-0.005em]"
-            >
-                {title}
-            </h3>
-            {description && (
-                <p className="text-[13px] text-slate-500 mt-1.5 max-w-md mx-auto leading-relaxed">
-                    {description}
-                </p>
-            )}
-            {children && <div className="mt-5 flex justify-center gap-2">{children}</div>}
-        </div>
+            {children}
+        </section>
     );
 }
