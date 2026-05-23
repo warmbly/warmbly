@@ -6,6 +6,15 @@ on:
   pull_request:
     branches: [main]
 
+# Default token only gets `contents: read` on PRs from forks; the
+# dorny/paths-filter action needs to list PR files via the GitHub
+# API, which requires `pull-requests: read`. Without this the
+# "Detect Changes" job dies with "Bad credentials" and every
+# downstream language CI is skipped.
+permissions:
+  contents: read
+  pull-requests: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true

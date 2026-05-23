@@ -1,0 +1,13 @@
+# Trivy ignore list — vulnerabilities we've consciously accepted.
+#
+# Each entry must include the CVE/GHSA, the package, and a reason
+# we're not patching it. Re-evaluate on dependency upgrades.
+
+# rustls-webpki 0.101.7 — DoS via panic on malformed CRL.
+# Pulled in transitively by hyper-rustls 0.24, which is pinned by
+# aws-smithy-http-client / aws-config. The AWS Rust SDK hasn't yet
+# migrated to rustls 0.23+, so we can't bump this without forking
+# the SDK. tracking/ only uses the AWS SDK for SSM + Secrets Manager
+# fetched at startup over the public CA chain; the affected code
+# path (CRL parsing) is not reachable in our usage.
+GHSA-82j2-j2ch-gfr8
