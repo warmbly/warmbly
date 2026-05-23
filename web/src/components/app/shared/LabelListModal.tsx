@@ -36,7 +36,7 @@ interface Props {
     eyebrow: string;
     subtitle: string;
     items: LabelItem[];
-    onCreate: (title: string) => Promise<unknown>;
+    onCreate: (title: string, color: string) => Promise<unknown>;
     onUpdate: (id: string, data: { title?: string; color?: string }) => Promise<unknown>;
     onDelete: (id: string) => Promise<unknown>;
     addCta: string;
@@ -68,14 +68,27 @@ export function LabelListModal({
 }: Props) {
     const [adding, setAdding] = React.useState(false);
     const [newTitle, setNewTitle] = React.useState("");
+    // Pick the next palette color in rotation when starting an add. The
+    // user can change it via the swatch popover before committing.
+    const [newColor, setNewColor] = React.useState<string>(PALETTE[0]);
+    const [paletteOpen, setPaletteOpen] = React.useState(false);
     const [creating, setCreating] = React.useState(false);
 
     React.useEffect(() => {
         if (!open) {
             setAdding(false);
             setNewTitle("");
+            setPaletteOpen(false);
         }
     }, [open]);
+
+    React.useEffect(() => {
+        if (adding) {
+            // Rotate the default color so consecutive adds aren't all the
+            // same swatch (purely cosmetic, the user can still override).
+            setNewColor(PALETTE[items.length % PALETTE.length]);
+        }
+    }, [adding, items.length]);
 
     async function commitAdd() {
         const t = newTitle.trim();
@@ -85,7 +98,7 @@ export function LabelListModal({
         }
         setCreating(true);
         try {
-            await toast.promise(onCreate(t), {
+            await toast.promise(onCreate(t, newColor), {
                 loading: "Creating…",
                 success: "Created",
                 error: (e: AppError) => buildError(e),
@@ -164,12 +177,38 @@ export function LabelListModal({
                                     />
                                 ))}
                                 {adding && (
-                                    <div className="px-3 py-2 flex items-center gap-2">
-                                        <span
-                                            aria-hidden
-                                            className="size-2 rounded-full shrink-0"
-                                            style={{ backgroundColor: PALETTE[0] }}
-                                        />
+                                    <div className="px-3 py-2 flex items-center gap-2 bg-slate-50/60">
+                                        <div className="relative shrink-0">
+                                            <button
+                                                type="button"
+                                                onClick={() => setPaletteOpen((o) => !o)}
+                                                className="size-5 rounded-md border border-slate-200 hover:border-slate-300 transition-colors flex items-center justify-center"
+                                                aria-label="Pick color"
+                                            >
+                                                <span className="size-3 rounded-full" style={{ backgroundColor: newColor }} />
+                                            </button>
+                                            {paletteOpen && (
+                                                <div
+                                                    className="absolute z-10 top-7 left-0 rounded-md bg-white border border-slate-200 shadow-[0_4px_12px_-2px_rgba(15,23,42,0.08)] p-1.5 grid grid-cols-4 gap-1"
+                                                    onClick={(e) => e.stopPropagation()}
+                                                >
+                                                    {PALETTE.map((p) => (
+                                                        <button
+                                                            key={p}
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setNewColor(p);
+                                                                setPaletteOpen(false);
+                                                            }}
+                                                            className="size-6 rounded flex items-center justify-center hover:bg-slate-50 transition-colors"
+                                                            aria-label={`Color ${p}`}
+                                                        >
+                                                            <span className="size-3.5 rounded-full" style={{ backgroundColor: p }} />
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
                                         <TextInput
                                             value={newTitle}
                                             onChange={setNewTitle}
@@ -195,6 +234,7 @@ export function LabelListModal({
                                             onClick={() => {
                                                 setAdding(false);
                                                 setNewTitle("");
+                                                setPaletteOpen(false);
                                             }}
                                             className="size-7 rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100 inline-flex items-center justify-center transition-colors"
                                             aria-label="Cancel"

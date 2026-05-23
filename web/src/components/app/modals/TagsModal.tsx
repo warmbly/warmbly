@@ -28,8 +28,8 @@ export default function TagsModal() {
             subtitle="Label email accounts by purpose, region or audience"
             addCta="New tag"
             items={user?.user.tags ?? []}
-            onCreate={async (title) => {
-                const t = await createTag(title);
+            onCreate={async (title, color) => {
+                const t = await createTag(title, color);
                 updateUser((u) => ({ ...u, tags: [...u.tags, t] }));
             }}
             onUpdate={async (id, data) => {

@@ -46,7 +46,7 @@ var (
 	ErrCaptcha = New(BadRequest, "We couldn’t verify you’re human. Please try the security check again or reload the page.")
 
 	// Group
-	ErrGroupTitle = New(BadRequest, "The title lenght must be between 3 and 50 characters.")
+	ErrGroupTitle = New(BadRequest, "The title length must be between 1 and 50 characters.")
 	ErrGroupMax   = New(BadRequest, "You reached the maximum amount.")
 
 	// Email

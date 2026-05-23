@@ -297,40 +297,47 @@ export function PopoverMenuKbd({ children }: { children: React.ReactNode }) {
 /**
  * SelectButton — convenience trigger styled to match the rest of the
  * brae chrome. Pairs with PopoverMenu out of the box.
+ *
+ * Implementation note: forwardRef + {...rest} spread is required so
+ * that `<PopoverMenuTrigger asChild>` can inject its onClick / ref /
+ * aria-expanded via React.cloneElement. Without these, the trigger
+ * was a silent no-op — every dropdown across the dashboard refused
+ * to open. Same applies to any custom button used as a trigger.
  */
-export function SelectButton({
-    icon,
-    label,
-    placeholder,
-    className,
-}: {
+type SelectButtonProps = {
     icon?: React.ReactNode;
     label?: string;
     placeholder?: string;
     className?: string;
-}) {
-    return (
-        <button
-            type="button"
-            className={cn(
-                "h-7 px-2 rounded-md border border-slate-200 hover:border-slate-300 bg-white text-slate-700 hover:text-slate-900 inline-flex items-center gap-1.5 text-[12px] font-medium transition-colors",
-                className,
-            )}
-        >
-            {icon && <span className="text-slate-400 shrink-0">{icon}</span>}
-            <span className="truncate max-w-[160px]">{label ?? placeholder ?? ""}</span>
-            <svg
-                width="10"
-                height="10"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                className="text-slate-400 shrink-0"
+} & Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "children">;
+
+export const SelectButton = React.forwardRef<HTMLButtonElement, SelectButtonProps>(
+    function SelectButton({ icon, label, placeholder, className, ...rest }, ref) {
+        return (
+            <button
+                ref={ref}
+                type="button"
+                {...rest}
+                className={cn(
+                    "h-7 px-2 rounded-md border border-slate-200 hover:border-slate-300 bg-white text-slate-700 hover:text-slate-900 inline-flex items-center gap-1.5 text-[12px] font-medium transition-colors",
+                    className,
+                )}
             >
-                <path d="M6 9l6 6 6-6" />
-            </svg>
-        </button>
-    );
-}
+                {icon && <span className="text-slate-400 shrink-0">{icon}</span>}
+                <span className="truncate max-w-[160px]">{label ?? placeholder ?? ""}</span>
+                <svg
+                    width="10"
+                    height="10"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    className="text-slate-400 shrink-0"
+                >
+                    <path d="M6 9l6 6 6-6" />
+                </svg>
+            </button>
+        );
+    },
+);

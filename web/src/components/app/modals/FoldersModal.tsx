@@ -32,8 +32,8 @@ export default function FoldersModal() {
             subtitle="Group campaigns by goal, audience or region"
             addCta="New folder"
             items={user?.user.folders ?? []}
-            onCreate={async (title) => {
-                const f = await createFolder(title);
+            onCreate={async (title, color) => {
+                const f = await createFolder(title, color);
                 updateUser((u) => ({ ...u, folders: [...u.folders, f] }));
             }}
             onUpdate={async (id, data) => {
