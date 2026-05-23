@@ -115,6 +115,7 @@ func (r *sequenceRepository) Create(ctx context.Context, userID string, campaign
 		db.CaptureError(err, "", nil, "begin")
 		return nil, errx.InternalError()
 	}
+	defer tx.Rollback(ctx)
 
 	query := `
 		SELECT user_id

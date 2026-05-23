@@ -323,6 +323,11 @@ func (r *emailRepository) Search(ctx context.Context, userID, search string, cur
 		db.CaptureError(err, "", nil, "begin")
 		return nil, errx.InternalError()
 	}
+	// Read-only transaction — Commit is fine but Rollback at end is the
+	// safety net. Pool only has 4 connections; a single leaked tx here
+	// (under load) is enough to deadlock the whole backend, including
+	// /auth/refresh which blocks waiting for a connection.
+	defer tx.Rollback(ctx)
 
 	query := `
 		SELECT

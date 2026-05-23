@@ -180,6 +180,7 @@ func (r *campaignRepository) Search(ctx context.Context, userID, query string, c
 		db.CaptureError(err, "", nil, "begin")
 		return nil, err
 	}
+	defer tx.Rollback(ctx)
 	campaigns := make([]models.Campaign, 0, limit+1)
 
 	sql := fmt.Sprintf(`
