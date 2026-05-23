@@ -8,6 +8,7 @@ import getToken from "@/lib/helper/getToken";
 import { Navigate } from "react-router-dom";
 import { DataSyncProvider } from "@/hooks/DataSyncProvider";
 import { RealtimeManager } from "@/hooks/RealtimeManager";
+import { OrgGate } from "@/hooks/OrgGate";
 import TagsModal from "@/components/app/modals/TagsModal";
 import FoldersModal from "@/components/app/modals/FoldersModal";
 import AddEmailModal from "@/components/app/modals/AddEmailModal";
@@ -28,6 +29,11 @@ export default function RootAppLayout() {
                 <LinkProvider>
                     <SocketProvider>
                         <RealtimeManager>
+                            {/* OrgGate runs ahead of AppLayout — if
+                                the user has no workspaces it redirects
+                                to /select-org before any org-scoped
+                                query (e.g. /unibox) runs with no org. */}
+                            <OrgGate />
                             <AppLayout />
                         </RealtimeManager>
                     </SocketProvider>

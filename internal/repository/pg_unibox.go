@@ -275,6 +275,12 @@ func (r *uniboxRepository) Search(ctx context.Context, userID uuid.UUID, params 
 		argPos++
 	}
 
+	if len(params.EmailAccountIDs) > 0 {
+		query += fmt.Sprintf(` AND email_id = ANY($%d)`, argPos)
+		args = append(args, params.EmailAccountIDs)
+		argPos++
+	}
+
 	if params.Cursor != "" {
 		cursorID, err := uuid.Parse(params.Cursor)
 		if err == nil {

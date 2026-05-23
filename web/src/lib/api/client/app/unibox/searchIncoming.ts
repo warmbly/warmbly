@@ -38,7 +38,11 @@ export default async function searchIncoming(
     // here in case the user passed something.
     if (p.query) usp.set("subject", p.query);
     if (p.from) usp.set("from", p.from);
-    if (p.accountId) usp.set("email_id", p.accountId);
+    if (p.accountIds && p.accountIds.length > 0) {
+        // Backend accepts comma-separated email_ids and falls back to a
+        // single email_id for legacy callers; we always use the multi form.
+        usp.set("email_ids", p.accountIds.join(","));
+    }
     if (p.unseen) usp.set("unseen", "true");
     if (p.since) usp.set("since", isoDay(p.since));
     if (p.until) usp.set("until", isoDay(p.until));

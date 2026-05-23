@@ -3,6 +3,7 @@ package handler
 import (
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -73,10 +74,28 @@ func (h *Handler) GetUniboxIncoming(c *gin.Context) {
 		}
 	}
 
-	// Parse email account filter
-	if emailIDStr := c.Query("email_id"); emailIDStr != "" {
-		// Note: For email account filtering, we may need to enhance the repository
-		// This is left as metadata in search params for now
+	// Parse email account filter. Accepts either:
+	//   - email_id=<uuid>          single account (legacy)
+	//   - email_ids=<uuid>,<uuid>  comma-separated list (used by the
+	//                              tag/multi-account filter sheet)
+	// Invalid UUIDs are silently dropped; an empty resulting list
+	// behaves the same as "no account filter".
+	collectAccountIDs := func(raw string) {
+		for _, s := range strings.Split(raw, ",") {
+			s = strings.TrimSpace(s)
+			if s == "" {
+				continue
+			}
+			if id, err := uuid.Parse(s); err == nil {
+				params.EmailAccountIDs = append(params.EmailAccountIDs, id)
+			}
+		}
+	}
+	if v := c.Query("email_id"); v != "" {
+		collectAccountIDs(v)
+	}
+	if v := c.Query("email_ids"); v != "" {
+		collectAccountIDs(v)
 	}
 
 	resp, xerr := h.UniboxService.Search(c.Request.Context(), uid, params)

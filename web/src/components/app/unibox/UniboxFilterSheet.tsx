@@ -15,22 +15,18 @@
 import React from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
+    CheckIcon,
     Loader2Icon,
+    MailIcon,
     RotateCcwIcon,
     SearchIcon,
+    TagIcon,
     XIcon,
 } from "lucide-react";
 import { SearchInput, TextInput } from "@/components/ui/field";
-import {
-    PopoverMenu,
-    PopoverMenuContent,
-    PopoverMenuItem,
-    PopoverMenuLabel,
-    PopoverMenuTrigger,
-    SelectButton,
-} from "@/components/ui/popover-menu";
 import { SectionBar } from "@/components/layout/Page";
 import { useAppStore } from "@/stores";
+import { useUserProfile } from "@/hooks/context/user";
 import type { UniboxSearchParams } from "@/lib/api/models/app/unibox/UniboxSearch";
 
 interface Props {
@@ -44,15 +40,64 @@ interface Props {
 export function UniboxFilterSheet({ open, setOpen, filters, setFilters, loading }: Props) {
     const [draft, setDraft] = React.useState<UniboxSearchParams>(filters);
     const emails = useAppStore((s) => s.emails);
+    const p = useUserProfile();
+    const tags = p.user.tags ?? [];
 
     React.useEffect(() => {
         if (open) setDraft(filters);
     }, [open, filters]);
 
+    const accountIds = React.useMemo(() => new Set(draft.accountIds ?? []), [draft.accountIds]);
+    const selectedTagId = draft.tagId;
+
+    // Accounts that carry the currently-selected tag. Used to compute
+    // whether the chip should show as "all picked" and to resolve to
+    // concrete IDs at apply time.
+    const accountsByTag = React.useMemo(() => {
+        if (!selectedTagId) return null;
+        return emails.filter((e) => (e.tags ?? []).includes(selectedTagId));
+    }, [emails, selectedTagId]);
+
+    function toggleAccount(id: string) {
+        setDraft((s) => {
+            const next = new Set(s.accountIds ?? []);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            return { ...s, accountIds: Array.from(next) };
+        });
+    }
+    function selectTag(tagId: string) {
+        setDraft((s) => {
+            if (s.tagId === tagId) {
+                // Clicking the active tag clears it.
+                return { ...s, tagId: undefined };
+            }
+            return { ...s, tagId };
+        });
+    }
+    function selectAllAccounts() {
+        setDraft((s) => ({ ...s, accountIds: emails.map((e) => e.id), tagId: undefined }));
+    }
+    function clearAccounts() {
+        setDraft((s) => ({ ...s, accountIds: [], tagId: undefined }));
+    }
+
     const activeCount = countActive(draft);
 
     const apply = () => {
-        setFilters(draft);
+        // If a tag is selected, resolve it to the underlying account
+        // IDs before committing — the server only knows about
+        // accountIds. We keep tagId in the draft for UI display but
+        // strip it before passing up.
+        let resolvedIds = draft.accountIds ?? [];
+        if (draft.tagId) {
+            const tagAccountIds = emails
+                .filter((e) => (e.tags ?? []).includes(draft.tagId!))
+                .map((e) => e.id);
+            // Tag selection replaces manual picks — simpler mental model.
+            resolvedIds = tagAccountIds;
+        }
+        setFilters({ ...draft, accountIds: resolvedIds });
         setOpen(false);
     };
 
@@ -121,43 +166,134 @@ export function UniboxFilterSheet({ open, setOpen, filters, setFilters, loading 
                                 />
                             </div>
 
-                            <SectionBar label="Account" />
-                            <div className="px-4 py-3 space-y-2">
-                                <PopoverMenu align="start">
-                                    <PopoverMenuTrigger asChild>
-                                        <SelectButton
-                                            label={
-                                                draft.accountId
-                                                    ? (emails.find((e) => e.id === draft.accountId)?.email ?? "Unknown")
-                                                    : "All accounts"
-                                            }
-                                            className="w-full justify-between"
-                                        />
-                                    </PopoverMenuTrigger>
-                                    <PopoverMenuContent minWidth={260}>
-                                        <PopoverMenuLabel>Email accounts</PopoverMenuLabel>
-                                        <PopoverMenuItem
-                                            onSelect={() => setDraft((s) => ({ ...s, accountId: undefined }))}
-                                            selected={!draft.accountId}
-                                        >
-                                            All accounts
-                                        </PopoverMenuItem>
-                                        {emails.map((e) => (
-                                            <PopoverMenuItem
-                                                key={e.id}
-                                                onSelect={() =>
-                                                    setDraft((s) => ({
-                                                        ...s,
-                                                        accountId: draft.accountId === e.id ? undefined : e.id,
-                                                    }))
-                                                }
-                                                selected={draft.accountId === e.id}
-                                            >
-                                                {e.email}
-                                            </PopoverMenuItem>
-                                        ))}
-                                    </PopoverMenuContent>
-                                </PopoverMenu>
+                            <SectionBar
+                                label="Accounts"
+                                count={
+                                    selectedTagId
+                                        ? accountsByTag?.length
+                                        : draft.accountIds?.length || undefined
+                                }
+                            >
+                                {(draft.accountIds?.length || draft.tagId) ? (
+                                    <button
+                                        type="button"
+                                        onClick={clearAccounts}
+                                        className="text-[11px] text-slate-500 hover:text-slate-900 transition-colors"
+                                    >
+                                        Clear
+                                    </button>
+                                ) : (
+                                    <button
+                                        type="button"
+                                        onClick={selectAllAccounts}
+                                        className="text-[11px] text-slate-500 hover:text-slate-900 transition-colors"
+                                    >
+                                        Select all
+                                    </button>
+                                )}
+                            </SectionBar>
+
+                            {/* Tag chips — fastest way to scope to a group of mailboxes.
+                                Picking a tag visually expands the selection: every
+                                account that carries the tag is included at Apply time. */}
+                            {tags.length > 0 && (
+                                <div className="px-4 pt-3">
+                                    <div className="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium mb-1.5 flex items-center gap-1.5">
+                                        <TagIcon className="w-3 h-3" />
+                                        Tags
+                                    </div>
+                                    <div className="flex flex-wrap gap-1.5">
+                                        {tags.map((t) => {
+                                            const active = selectedTagId === t.id;
+                                            const count = emails.filter((e) => (e.tags ?? []).includes(t.id)).length;
+                                            return (
+                                                <button
+                                                    key={t.id}
+                                                    type="button"
+                                                    onClick={() => selectTag(t.id)}
+                                                    className={`group h-6 pl-1.5 pr-2 rounded-full inline-flex items-center gap-1.5 text-[11.5px] font-medium border transition-colors ${
+                                                        active
+                                                            ? "bg-slate-900 text-white border-slate-900"
+                                                            : "bg-white text-slate-700 border-slate-200 hover:border-slate-300"
+                                                    }`}
+                                                >
+                                                    <span
+                                                        aria-hidden
+                                                        className="size-2 rounded-full"
+                                                        style={{ backgroundColor: t.color }}
+                                                    />
+                                                    <span className="truncate max-w-[120px]">{t.title}</span>
+                                                    <span
+                                                        className={`font-mono tabular-nums text-[10px] ${
+                                                            active ? "text-white/80" : "text-slate-400"
+                                                        }`}
+                                                    >
+                                                        {count}
+                                                    </span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Individual account chips with avatars. Multi-select.
+                                When a tag is active, accounts that belong to it get
+                                a subtle ring so the relationship is visible. */}
+                            <div className="px-4 py-3">
+                                <div className="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium mb-1.5 flex items-center gap-1.5">
+                                    <MailIcon className="w-3 h-3" />
+                                    Mailboxes
+                                </div>
+                                {emails.length === 0 ? (
+                                    <p className="text-[11.5px] text-slate-400 py-2">
+                                        No mailboxes connected yet.
+                                    </p>
+                                ) : (
+                                    <div className="space-y-1">
+                                        {emails.map((e) => {
+                                            const checked = accountIds.has(e.id);
+                                            const tagMatch =
+                                                selectedTagId &&
+                                                (e.tags ?? []).includes(selectedTagId);
+                                            return (
+                                                <button
+                                                    key={e.id}
+                                                    type="button"
+                                                    onClick={() => toggleAccount(e.id)}
+                                                    className={`w-full flex items-center gap-2.5 px-2 py-1.5 rounded-md transition-colors text-left ${
+                                                        checked
+                                                            ? "bg-sky-50/80 hover:bg-sky-50"
+                                                            : tagMatch
+                                                                ? "bg-slate-50 hover:bg-slate-100"
+                                                                : "hover:bg-slate-50"
+                                                    }`}
+                                                >
+                                                    <span
+                                                        className={`size-4 rounded border flex items-center justify-center transition-colors shrink-0 ${
+                                                            checked
+                                                                ? "bg-slate-900 border-slate-900 text-white"
+                                                                : "bg-white border-slate-300"
+                                                        }`}
+                                                    >
+                                                        {checked && <CheckIcon className="w-2.5 h-2.5" />}
+                                                    </span>
+                                                    <span className="size-5 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center text-[9px] font-semibold shrink-0">
+                                                        {e.email.slice(0, 2).toUpperCase()}
+                                                    </span>
+                                                    <span className="text-[12px] text-slate-900 truncate flex-1">
+                                                        {e.email}
+                                                    </span>
+                                                    {tagMatch && !checked && (
+                                                        <span className="text-[10px] text-slate-400 font-mono">
+                                                            via tag
+                                                        </span>
+                                                    )}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                )}
                             </div>
 
                             <SectionBar label="Status" />
@@ -323,7 +459,8 @@ function countActive(f: UniboxSearchParams): number {
     let n = 0;
     if (f.query) n++;
     if (f.from) n++;
-    if (f.accountId) n++;
+    if (f.tagId) n++;
+    if (f.accountIds && f.accountIds.length > 0) n++;
     if (f.unseen !== undefined) n++;
     if (f.since) n++;
     if (f.until) n++;
