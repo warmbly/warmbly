@@ -3,14 +3,11 @@ run:
   modules-download-mode: readonly
 
 linters:
-  # Curated set focused on real bugs, not stylistic churn. errcheck,
-  # unparam, prealloc, gosec, exportloopref are intentionally
-  # disabled — the legacy codebase has thousands of unchecked
-  # `tx.Rollback()` calls (which is idiomatic — Rollback after a
-  # successful Commit is a no-op), preallocation suggestions on hot
-  # paths the author chose not to follow, gosec rules that don't
-  # apply to our control-plane code, and exportloopref's check is
-  # already covered by govet's loopclosure in modern Go.
+  # disable-all + explicit enable list so we don't accidentally
+  # inherit golangci-lint's defaults (which include errcheck — the
+  # legacy codebase has thousands of unchecked tx.Rollback() calls
+  # that aren't worth fixing in this PR).
+  disable-all: true
   enable:
     - gosimple
     - govet
