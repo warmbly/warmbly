@@ -17,11 +17,11 @@ defmodule RealtimeWeb.UserSocket do
   alias Realtime.Subscription
 
   # Channels
-  channel "user:*", RealtimeWeb.UserChannel
-  channel "campaign:*", RealtimeWeb.CampaignChannel
-  channel "account:*", RealtimeWeb.AccountChannel
-  channel "bulk:*", RealtimeWeb.BulkChannel
-  channel "org:*", RealtimeWeb.OrgChannel
+  channel("user:*", RealtimeWeb.UserChannel)
+  channel("campaign:*", RealtimeWeb.CampaignChannel)
+  channel("account:*", RealtimeWeb.AccountChannel)
+  channel("bulk:*", RealtimeWeb.BulkChannel)
+  channel("org:*", RealtimeWeb.OrgChannel)
 
   @impl true
   def connect(%{"token" => token}, socket, connect_info) do

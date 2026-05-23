@@ -141,7 +141,11 @@ defmodule Realtime.Connections do
   def init(_) do
     :ets.new(@table, [:named_table, :public, :set])
     :ets.new(@ip_table, [:named_table, :public, :set])
-    Logger.info("Connections tracker started (limits: user=#{max_per_user()}, ip=#{max_per_ip()}, global=#{max_global()})")
+
+    Logger.info(
+      "Connections tracker started (limits: user=#{max_per_user()}, ip=#{max_per_ip()}, global=#{max_global()})"
+    )
+
     # State: %{monitor_ref => {user_id, ip}} so DOWN messages can find
     # the (user, ip) pair to decrement.
     {:ok, %{monitors: %{}}}
@@ -202,7 +206,10 @@ defmodule Realtime.Connections do
         {:error, :ip_limit_exceeded}
 
       global_count >= max_global() ->
-        Logger.warning("Connection rejected: global limit reached (#{global_count}/#{max_global()})")
+        Logger.warning(
+          "Connection rejected: global limit reached (#{global_count}/#{max_global()})"
+        )
+
         {:error, :global_limit_exceeded}
 
       true ->
@@ -271,23 +278,35 @@ defmodule Realtime.Connections do
 
   defp redis_counter_command(key, :incr) do
     # INCR with expire
-    ["EVAL", """
-    local count = redis.call('INCR', KEYS[1])
-    redis.call('EXPIRE', KEYS[1], ARGV[1])
-    return count
-    """, "1", key, to_string(@redis_ttl)]
+    [
+      "EVAL",
+      """
+      local count = redis.call('INCR', KEYS[1])
+      redis.call('EXPIRE', KEYS[1], ARGV[1])
+      return count
+      """,
+      "1",
+      key,
+      to_string(@redis_ttl)
+    ]
   end
 
   defp redis_counter_command(key, :decr) do
     # DECR with minimum of 0
-    ["EVAL", """
-    local count = redis.call('DECR', KEYS[1])
-    if count < 0 then
-      redis.call('SET', KEYS[1], 0)
-      count = 0
-    end
-    redis.call('EXPIRE', KEYS[1], ARGV[1])
-    return count
-    """, "1", key, to_string(@redis_ttl)]
+    [
+      "EVAL",
+      """
+      local count = redis.call('DECR', KEYS[1])
+      if count < 0 then
+        redis.call('SET', KEYS[1], 0)
+        count = 0
+      end
+      redis.call('EXPIRE', KEYS[1], ARGV[1])
+      return count
+      """,
+      "1",
+      key,
+      to_string(@redis_ttl)
+    ]
   end
 end

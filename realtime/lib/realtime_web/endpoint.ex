@@ -8,20 +8,21 @@ defmodule RealtimeWeb.Endpoint do
 
   use Phoenix.Endpoint, otp_app: :realtime
 
-  socket "/socket", RealtimeWeb.UserSocket,
+  socket("/socket", RealtimeWeb.UserSocket,
     websocket: [
       timeout: 60_000,
       compress: true,
       check_origin: false
     ],
     longpoll: false
+  )
 
   # Minimal plugs for WebSocket upgrade handling
-  plug Plug.RequestId
-  plug Plug.Telemetry, event_prefix: [:realtime, :endpoint]
+  plug(Plug.RequestId)
+  plug(Plug.Telemetry, event_prefix: [:realtime, :endpoint])
 
   # Health check endpoint for Docker/load balancer probes
-  plug :health_check
+  plug(:health_check)
 
   defp health_check(%Plug.Conn{request_path: "/health"} = conn, _opts) do
     conn
