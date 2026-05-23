@@ -12,6 +12,7 @@ import "@fontsource/poppins/700.css";
 import RootAppLayout from './app/app/layout';
 import AddressesPage from './app/app/emails/page';
 import ContactsPage from './app/app/contacts/page';
+import CampaignsPage from './app/app/campaigns/page';
 import CampaignLayout from './app/app/campaigns/[id]/layout';
 import CampaignPreview from './app/app/campaigns/[id]/page';
 import CampaignLeads from './app/app/campaigns/[id]/leads/page';
@@ -146,6 +147,10 @@ const router = createBrowserRouter([
           {
             path: "campaigns",
             children: [
+              {
+                index: true,
+                element: <CampaignsPage />,
+              },
               {
                 path: ":id",
                 element: <CampaignLayout />,
