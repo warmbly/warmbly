@@ -7,12 +7,12 @@ import (
 )
 
 type BouncePipelineSettings struct {
-	Enabled                    bool    `json:"enabled"`
-	AutoSuppressOnBounce       bool    `json:"auto_suppress_on_bounce"`
-	AutoSuppressOnComplaint    bool    `json:"auto_suppress_on_complaint"`
-	AutoSuppressOnUnsubscribe  bool    `json:"auto_suppress_on_unsubscribe"`
-	AutoPauseCampaignOnSpike   bool    `json:"auto_pause_campaign_on_spike"`
-	PauseBounceRateThreshold   float64 `json:"pause_bounce_rate_threshold"`
+	Enabled                     bool    `json:"enabled"`
+	AutoSuppressOnBounce        bool    `json:"auto_suppress_on_bounce"`
+	AutoSuppressOnComplaint     bool    `json:"auto_suppress_on_complaint"`
+	AutoSuppressOnUnsubscribe   bool    `json:"auto_suppress_on_unsubscribe"`
+	AutoPauseCampaignOnSpike    bool    `json:"auto_pause_campaign_on_spike"`
+	PauseBounceRateThreshold    float64 `json:"pause_bounce_rate_threshold"`
 	PauseComplaintRateThreshold float64 `json:"pause_complaint_rate_threshold"`
 }
 
@@ -273,7 +273,7 @@ type ABVariantStats struct {
 
 type ABWinnerAnalysis struct {
 	CampaignID  uuid.UUID        `json:"campaign_id"`
-	Variants    []ABVariantStats  `json:"variants"`
+	Variants    []ABVariantStats `json:"variants"`
 	WinnerID    *uuid.UUID       `json:"winner_id,omitempty"`
 	WinnerName  string           `json:"winner_name,omitempty"`
 	WinningRule string           `json:"winning_rule"`
@@ -283,12 +283,12 @@ type ABWinnerAnalysis struct {
 func DefaultAdvancedOutreachSettings() AdvancedOutreachSettings {
 	return AdvancedOutreachSettings{
 		BouncePipeline: BouncePipelineSettings{
-			Enabled:                    true,
-			AutoSuppressOnBounce:       true,
-			AutoSuppressOnComplaint:    true,
-			AutoSuppressOnUnsubscribe:  true,
-			AutoPauseCampaignOnSpike:   true,
-			PauseBounceRateThreshold:   8,
+			Enabled:                     true,
+			AutoSuppressOnBounce:        true,
+			AutoSuppressOnComplaint:     true,
+			AutoSuppressOnUnsubscribe:   true,
+			AutoPauseCampaignOnSpike:    true,
+			PauseBounceRateThreshold:    8,
 			PauseComplaintRateThreshold: 1.5,
 		},
 		TaskReliability: TaskReliabilitySettings{

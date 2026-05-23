@@ -154,18 +154,18 @@ func (h *Handler) AdminDeleteAWSCreds(c *gin.Context) {
 // worker profiles
 
 type profileBody struct {
-	Name                  string  `json:"name" binding:"required"`
-	Description           string  `json:"description"`
-	AppEnv                string  `json:"app_env"`
-	WorkerImage           string  `json:"worker_image"`
-	KafkaBootstrap        string  `json:"kafka_bootstrap_servers"`
-	KafkaSASLUsername     string  `json:"kafka_sasl_username"`
-	KafkaSASLPassword     string  `json:"kafka_sasl_password"`
-	SchemaRegistryURL     string  `json:"schema_registry_url"`
-	SchemaRegistryKey     string  `json:"schema_registry_key"`
-	SchemaRegistrySecret  string  `json:"schema_registry_secret"`
-	RedisURL              string  `json:"redis_url"`
-	AWSCredentialID       *string `json:"aws_credential_id"`
+	Name                 string  `json:"name" binding:"required"`
+	Description          string  `json:"description"`
+	AppEnv               string  `json:"app_env"`
+	WorkerImage          string  `json:"worker_image"`
+	KafkaBootstrap       string  `json:"kafka_bootstrap_servers"`
+	KafkaSASLUsername    string  `json:"kafka_sasl_username"`
+	KafkaSASLPassword    string  `json:"kafka_sasl_password"`
+	SchemaRegistryURL    string  `json:"schema_registry_url"`
+	SchemaRegistryKey    string  `json:"schema_registry_key"`
+	SchemaRegistrySecret string  `json:"schema_registry_secret"`
+	RedisURL             string  `json:"redis_url"`
+	AWSCredentialID      *string `json:"aws_credential_id"`
 }
 
 func (h *Handler) AdminListProfiles(c *gin.Context) {

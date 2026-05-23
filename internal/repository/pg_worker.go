@@ -494,4 +494,3 @@ func MarkSubscriptionTrialExpired(ctx context.Context, db *pgxpool.Pool, subID u
 	_, err := db.Exec(ctx, query, subID)
 	return err
 }
-

@@ -63,7 +63,8 @@ type adminCreateWorkerResponse struct {
 // handlers
 
 // AdminCreateWorker creates a new SSH-managed worker.
-//   POST /admin/workers
+//
+//	POST /admin/workers
 func (h *Handler) AdminCreateWorker(c *gin.Context) {
 	if h.WorkerOrchestrator == nil || h.WorkerRepo == nil {
 		errx.JSON(c, errx.New(errx.Internal, "worker orchestrator not configured"))
@@ -154,7 +155,8 @@ func (h *Handler) AdminCreateWorker(c *gin.Context) {
 }
 
 // AdminListSSHWorkers lists all workers with their install state and last_seen.
-//   GET /admin/workers/managed
+//
+//	GET /admin/workers/managed
 func (h *Handler) AdminListSSHWorkers(c *gin.Context) {
 	if h.WorkerRepo == nil {
 		errx.JSON(c, errx.New(errx.Internal, "worker repo not configured"))
@@ -175,7 +177,8 @@ func (h *Handler) AdminListSSHWorkers(c *gin.Context) {
 }
 
 // AdminGetSSHWorker returns full worker detail.
-//   GET /admin/workers/:id/managed
+//
+//	GET /admin/workers/:id/managed
 func (h *Handler) AdminGetSSHWorker(c *gin.Context) {
 	w, xerr := h.parseAndFetch(c)
 	if xerr != nil {
@@ -193,7 +196,8 @@ type setTagsBody struct {
 }
 
 // AdminSetWorkerTags replaces a worker's tag set.
-//   PUT /admin/workers/:id/tags
+//
+//	PUT /admin/workers/:id/tags
 func (h *Handler) AdminSetWorkerTags(c *gin.Context) {
 	id, ok := h.parseID(c)
 	if !ok {
@@ -230,7 +234,8 @@ func (h *Handler) AdminSetWorkerTags(c *gin.Context) {
 }
 
 // AdminListWorkerTags returns every distinct tag in use, for autocomplete.
-//   GET /admin/workers/tags
+//
+//	GET /admin/workers/tags
 func (h *Handler) AdminListWorkerTags(c *gin.Context) {
 	tags, err := h.WorkerRepo.ListAllWorkerTags(c.Request.Context())
 	if err != nil {
@@ -242,7 +247,8 @@ func (h *Handler) AdminListWorkerTags(c *gin.Context) {
 
 // AdminTestWorker runs a no-op SSH command. Pins the host fingerprint on
 // first success.
-//   POST /admin/workers/:id/test
+//
+//	POST /admin/workers/:id/test
 func (h *Handler) AdminTestWorker(c *gin.Context) {
 	id, ok := h.parseID(c)
 	if !ok {
@@ -258,7 +264,8 @@ func (h *Handler) AdminTestWorker(c *gin.Context) {
 }
 
 // AdminInstallWorker uploads installer + env file and runs it.
-//   POST /admin/workers/:id/install
+//
+//	POST /admin/workers/:id/install
 func (h *Handler) AdminInstallWorker(c *gin.Context) {
 	id, ok := h.parseID(c)
 	if !ok {
@@ -390,13 +397,14 @@ func (h *Handler) AdminRebootWorker(c *gin.Context) {
 // user/org via dedicated_worker_assignments.
 //
 // Body:
-//   {
-//     "user_id":         "uuid",           // the org/user that gets exclusive use
-//     "subscription_id": "uuid",           // their active sub
-//     "drain_to_worker_id": "uuid|null"    // optional: target for evicted accounts.
-//                                          //   null = let assignment service pick
-//                                          //   per-account
-//   }
+//
+//	{
+//	  "user_id":         "uuid",           // the org/user that gets exclusive use
+//	  "subscription_id": "uuid",           // their active sub
+//	  "drain_to_worker_id": "uuid|null"    // optional: target for evicted accounts.
+//	                                       //   null = let assignment service pick
+//	                                       //   per-account
+//	}
 //
 // The whole operation is sequential, not transactional across services —
 // if a step fails mid-flight the worker is left in a half-converted state
@@ -404,9 +412,9 @@ func (h *Handler) AdminRebootWorker(c *gin.Context) {
 // are individually idempotent: re-running the endpoint with the same
 // inputs converges.
 type convertToDedicatedBody struct {
-	UserID           string  `json:"user_id" binding:"required"`
-	SubscriptionID   string  `json:"subscription_id" binding:"required"`
-	DrainToWorkerID  *string `json:"drain_to_worker_id"`
+	UserID          string  `json:"user_id" binding:"required"`
+	SubscriptionID  string  `json:"subscription_id" binding:"required"`
+	DrainToWorkerID *string `json:"drain_to_worker_id"`
 }
 
 func (h *Handler) AdminConvertWorkerToDedicated(c *gin.Context) {

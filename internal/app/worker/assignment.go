@@ -11,9 +11,9 @@ import (
 )
 
 var (
-	ErrNoAvailableWorkers  = errors.New("no available workers")
-	ErrNoDedicatedWorkers  = errors.New("no dedicated workers available")
-	ErrOrgAlreadyAssigned  = errors.New("organization already has a dedicated worker assigned")
+	ErrNoAvailableWorkers = errors.New("no available workers")
+	ErrNoDedicatedWorkers = errors.New("no dedicated workers available")
+	ErrOrgAlreadyAssigned = errors.New("organization already has a dedicated worker assigned")
 )
 
 type WorkerAssignmentService interface {
@@ -145,12 +145,12 @@ func (s *workerAssignmentService) SelectSharedWorker(ctx context.Context, freeTi
 // SelectSharedWorkerForBand picks the least-loaded shared worker whose
 // risk_pool matches band.MatchingRiskPool(). Fallback chain:
 //
-//   1. Worker in the matching pool of the right tier
-//   2. Worker in the clean pool of the right tier (better to land risky
-//      mailboxes on clean workers than to refuse, but log + audit this
-//      since it dilutes the clean pool — operator should provision a
-//      risky/quarantine worker)
-//   3. Any worker of the right tier (existing SelectSharedWorker behavior)
+//  1. Worker in the matching pool of the right tier
+//  2. Worker in the clean pool of the right tier (better to land risky
+//     mailboxes on clean workers than to refuse, but log + audit this
+//     since it dilutes the clean pool — operator should provision a
+//     risky/quarantine worker)
+//  3. Any worker of the right tier (existing SelectSharedWorker behavior)
 //
 // Step 3 maintains backwards compatibility with installations that don't
 // run risk pools yet — they leave everything in risk_pool='clean' and

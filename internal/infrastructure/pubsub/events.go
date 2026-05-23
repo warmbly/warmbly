@@ -150,14 +150,14 @@ type TaskProgressEvent struct {
 	BaseEvent
 	CampaignID     string `json:"campaign_id"`
 	TaskID         string `json:"task_id"`
-	Status         string `json:"status"`         // pending, active, completed, failed
+	Status         string `json:"status"` // pending, active, completed, failed
 	ContactID      string `json:"contact_id"`
 	ContactEmail   string `json:"contact_email"`
 	ContactName    string `json:"contact_name"`
 	SequenceID     string `json:"sequence_id"`
 	SequenceName   string `json:"sequence_name"`
 	SequenceIndex  int    `json:"sequence_index"`
-	Progress       int    `json:"progress"`        // Percentage 0-100
+	Progress       int    `json:"progress"` // Percentage 0-100
 	TotalContacts  int    `json:"total_contacts"`
 	ProcessedCount int    `json:"processed_count"`
 }

@@ -8,11 +8,11 @@ import (
 
 // Event types
 const (
-	EventTypeEmailSent        = "EMAIL_SENT"
-	EventTypeWarmupEmailSent  = "WARMUP_EMAIL_SENT"
-	EventTypeWarmupAction     = "WARMUP_ACTION"
-	EventTypeEmailOpened      = "EMAIL_OPENED"
-	EventTypeEmailClicked     = "EMAIL_CLICKED"
+	EventTypeEmailSent       = "EMAIL_SENT"
+	EventTypeWarmupEmailSent = "WARMUP_EMAIL_SENT"
+	EventTypeWarmupAction    = "WARMUP_ACTION"
+	EventTypeEmailOpened     = "EMAIL_OPENED"
+	EventTypeEmailClicked    = "EMAIL_CLICKED"
 )
 
 // Kafka topics
@@ -24,16 +24,16 @@ const (
 
 // EmailSentEvent represents an email sent event
 type EmailSentEvent struct {
-	EventType   string    `json:"event_type" avro:"event_type"`
-	TaskID      uuid.UUID `json:"task_id" avro:"task_id"`
-	AccountID   uuid.UUID `json:"account_id" avro:"account_id"`
-	CampaignID  uuid.UUID `json:"campaign_id" avro:"campaign_id"`
-	ContactID   uuid.UUID `json:"contact_id" avro:"contact_id"`
-	SequenceID  uuid.UUID `json:"sequence_id" avro:"sequence_id"`
-	MessageID   string    `json:"message_id" avro:"message_id"`
-	Recipient   string    `json:"recipient" avro:"recipient"`
-	Subject     string    `json:"subject" avro:"subject"`
-	SentAt      time.Time `json:"sent_at" avro:"sent_at"`
+	EventType  string    `json:"event_type" avro:"event_type"`
+	TaskID     uuid.UUID `json:"task_id" avro:"task_id"`
+	AccountID  uuid.UUID `json:"account_id" avro:"account_id"`
+	CampaignID uuid.UUID `json:"campaign_id" avro:"campaign_id"`
+	ContactID  uuid.UUID `json:"contact_id" avro:"contact_id"`
+	SequenceID uuid.UUID `json:"sequence_id" avro:"sequence_id"`
+	MessageID  string    `json:"message_id" avro:"message_id"`
+	Recipient  string    `json:"recipient" avro:"recipient"`
+	Subject    string    `json:"subject" avro:"subject"`
+	SentAt     time.Time `json:"sent_at" avro:"sent_at"`
 }
 
 // WarmupEmailSentEvent represents a warmup email sent event

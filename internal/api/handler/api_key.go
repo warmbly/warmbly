@@ -170,4 +170,3 @@ func (h *Handler) ListAPIPermissions(c *gin.Context) {
 		},
 	})
 }
-

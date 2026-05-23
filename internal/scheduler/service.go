@@ -141,4 +141,3 @@ func roundToNearestMinute(t time.Time, minutes int) time.Time {
 
 	return rounded
 }
-

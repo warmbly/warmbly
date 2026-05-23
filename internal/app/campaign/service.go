@@ -29,12 +29,12 @@ type CampaignService interface {
 }
 
 type campaignService struct {
-	campaignRepository   repository.CampaignRepository
-	taskRepo             repository.TaskRepository
-	emailRepo            repository.EmailRepository
-	campaignLogRepo      repository.CampaignLogRepository
-	featureGate          feature.FeatureGateService
-	streamingPublisher   *pubsub.StreamingPublisher
+	campaignRepository repository.CampaignRepository
+	taskRepo           repository.TaskRepository
+	emailRepo          repository.EmailRepository
+	campaignLogRepo    repository.CampaignLogRepository
+	featureGate        feature.FeatureGateService
+	streamingPublisher *pubsub.StreamingPublisher
 }
 
 func NewService(
@@ -46,11 +46,11 @@ func NewService(
 	streamingPublisher *pubsub.StreamingPublisher,
 ) CampaignService {
 	return &campaignService{
-		campaignRepository:   campaignRepository,
-		taskRepo:             taskRepo,
-		emailRepo:            emailRepo,
-		campaignLogRepo:      campaignLogRepo,
-		featureGate:          featureGate,
-		streamingPublisher:   streamingPublisher,
+		campaignRepository: campaignRepository,
+		taskRepo:           taskRepo,
+		emailRepo:          emailRepo,
+		campaignLogRepo:    campaignLogRepo,
+		featureGate:        featureGate,
+		streamingPublisher: streamingPublisher,
 	}
 }

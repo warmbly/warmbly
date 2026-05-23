@@ -40,18 +40,18 @@ type Publisher interface {
 
 // SendEmailParams contains parameters for publishing a send email event
 type SendEmailParams struct {
-	TaskID       uuid.UUID
-	EmailID      uuid.UUID
-	UserID       uuid.UUID
-	To           []string
-	CC           []string
-	BCC          []string
-	InReplyTo    string
-	Subject      string
-	MessageID    string
-	BodyPlain    string
-	BodyHTML     string
-	IsWarmup     bool
+	TaskID         uuid.UUID
+	EmailID        uuid.UUID
+	UserID         uuid.UUID
+	To             []string
+	CC             []string
+	BCC            []string
+	InReplyTo      string
+	Subject        string
+	MessageID      string
+	BodyPlain      string
+	BodyHTML       string
+	IsWarmup       bool
 	TrackingInfo   *models.TrackingInfo
 	WarmupToken    string
 	UnsubscribeURL string

@@ -88,7 +88,7 @@ func (h *Handler) CreateCheckoutSession(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"session_id":  session.ID,
+		"session_id":   session.ID,
 		"checkout_url": session.URL,
 	})
 }

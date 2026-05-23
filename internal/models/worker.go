@@ -39,14 +39,14 @@ type Worker struct {
 
 	// SSH management (none of these expose secret material — the encrypted
 	// private key is fetched separately via GetWorkerSSHCredentials).
-	SSHHost            string              `json:"ssh_host,omitempty"`
-	SSHPort            int                 `json:"ssh_port,omitempty"`
-	SSHUser            string              `json:"ssh_user,omitempty"`
-	SSHPublicKey       string              `json:"ssh_public_key,omitempty"`
-	SSHHostFingerprint string              `json:"ssh_host_fingerprint,omitempty"`
-	InstallState       WorkerInstallState  `json:"install_state"`
-	LastSeenAt         *time.Time          `json:"last_seen_at,omitempty"`
-	LastError          string              `json:"last_error,omitempty"`
+	SSHHost            string             `json:"ssh_host,omitempty"`
+	SSHPort            int                `json:"ssh_port,omitempty"`
+	SSHUser            string             `json:"ssh_user,omitempty"`
+	SSHPublicKey       string             `json:"ssh_public_key,omitempty"`
+	SSHHostFingerprint string             `json:"ssh_host_fingerprint,omitempty"`
+	InstallState       WorkerInstallState `json:"install_state"`
+	LastSeenAt         *time.Time         `json:"last_seen_at,omitempty"`
+	LastError          string             `json:"last_error,omitempty"`
 
 	// Profile assignment. Nil means "use backend env defaults".
 	ProfileID       *uuid.UUID `json:"profile_id,omitempty"`
@@ -81,13 +81,13 @@ const (
 // connection info. Only the orchestrator should ever fetch this; the field is
 // never serialised to admin clients.
 type WorkerSSHCredentials struct {
-	WorkerID                uuid.UUID
-	SSHHost                 string
-	SSHPort                 int
-	SSHUser                 string
-	SSHPublicKey            string
-	SSHPrivateKeyEncrypted  string
-	SSHHostFingerprint      string
+	WorkerID               uuid.UUID
+	SSHHost                string
+	SSHPort                int
+	SSHUser                string
+	SSHPublicKey           string
+	SSHPrivateKeyEncrypted string
+	SSHHostFingerprint     string
 }
 
 type UpdateWorker struct {

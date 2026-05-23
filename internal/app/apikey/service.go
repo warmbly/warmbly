@@ -17,9 +17,9 @@ import (
 )
 
 const (
-	KeyPrefix     = "wmbly_"
-	KeyLength     = 32 // 32 bytes = 256 bits of randomness
-	CacheKeyTTL   = 300 // 5 minutes cache for key lookups
+	KeyPrefix   = "wmbly_"
+	KeyLength   = 32  // 32 bytes = 256 bits of randomness
+	CacheKeyTTL = 300 // 5 minutes cache for key lookups
 )
 
 type APIKeyService interface {

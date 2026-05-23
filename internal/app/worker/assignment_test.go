@@ -26,12 +26,12 @@ import (
 type stubWorkerRepo struct {
 	repository.WorkerRepository // embed for the panic-on-unused-method behavior
 
-	dedicatedForOrg          *models.Worker
-	sharedFree               []models.Worker
-	sharedPremium            []models.Worker
-	lastEmailWorkerAssigned  uuid.UUID
-	lastEmailPoolTypeSet     string
-	incrementedWorkerCounts  map[uuid.UUID]int
+	dedicatedForOrg         *models.Worker
+	sharedFree              []models.Worker
+	sharedPremium           []models.Worker
+	lastEmailWorkerAssigned uuid.UUID
+	lastEmailPoolTypeSet    string
+	incrementedWorkerCounts map[uuid.UUID]int
 }
 
 func (r *stubWorkerRepo) GetDedicatedWorkerByUserID(_ context.Context, _ uuid.UUID) (*models.Worker, error) {

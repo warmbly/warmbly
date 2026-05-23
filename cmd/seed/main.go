@@ -128,12 +128,12 @@ func seedRich(ctx context.Context, pool *pgxpool.Pool) error {
 
 	// workers
 	workers := []struct {
-		id        uuid.UUID
-		name      string
-		ip        string
-		wtype     string
-		freeTier  bool
-		active    bool
+		id       uuid.UUID
+		name     string
+		ip       string
+		wtype    string
+		freeTier bool
+		active   bool
 	}{
 		{workerShared, "shared-1", "10.0.0.11", "shared", true, true},
 		{workerPremium, "premium-1", "10.0.0.12", "shared", false, true},

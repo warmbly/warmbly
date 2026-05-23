@@ -59,9 +59,9 @@ func (s *JobsService) rebalanceRisk(ctx context.Context) {
 	}
 
 	var (
-		updatedBand   int
-		migrated      int
-		skipped       int
+		updatedBand int
+		migrated    int
+		skipped     int
 	)
 
 	for _, c := range candidates {

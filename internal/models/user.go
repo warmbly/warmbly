@@ -15,7 +15,7 @@ type User struct {
 	AvatarURL *string     `json:"avatar_url,omitempty"`
 	Roles     []uuid.UUID `json:"roles"`
 
-	ReferralSource      *string    `json:"referral_source"`
+	ReferralSource        *string    `json:"referral_source"`
 	OnboardingCompletedAt *time.Time `json:"onboarding_completed_at"`
 
 	MaxOrganizations int  `json:"max_organizations"`

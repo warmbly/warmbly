@@ -142,7 +142,7 @@ func (r *crmRepository) ListNotes(ctx context.Context, orgID, contactID uuid.UUI
 	}
 
 	return &models.ContactNotesResult{
-		Data: notes,
+		Data:       notes,
 		Pagination: models.Pagination{NextCursor: nextCursor, HasMore: hasMore},
 	}, nil
 }

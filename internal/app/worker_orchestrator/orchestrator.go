@@ -41,12 +41,12 @@ var platformCipherUser = uuid.Nil
 // time. The orchestrator writes these into /etc/warmbly/worker.env on the
 // target. Provide credentials that scope only what the worker can reach.
 type WorkerEnvConfig struct {
-	AppEnv             string // "dev" or "prod"
-	WorkerImage        string // e.g. ghcr.io/warmbly/worker:latest
+	AppEnv      string // "dev" or "prod"
+	WorkerImage string // e.g. ghcr.io/warmbly/worker:latest
 
-	KafkaBootstrap     string
-	KafkaSASLUsername  string
-	KafkaSASLPassword  string
+	KafkaBootstrap    string
+	KafkaSASLUsername string
+	KafkaSASLPassword string
 
 	SchemaRegistryURL    string
 	SchemaRegistryKey    string
@@ -225,9 +225,10 @@ func (o *Orchestrator) UpdateToImage(ctx context.Context, workerID uuid.UUID, im
 
 // imageTag extracts the human-readable tag part of an image reference. Used
 // for the workers.image_version column.
-//   ghcr.io/foo/worker:v1.2.3 → "v1.2.3"
-//   ghcr.io/foo/worker        → "latest"
-//   ghcr.io/foo/worker@sha256:abc → "abc[:12]"
+//
+//	ghcr.io/foo/worker:v1.2.3 → "v1.2.3"
+//	ghcr.io/foo/worker        → "latest"
+//	ghcr.io/foo/worker@sha256:abc → "abc[:12]"
 func imageTag(image string) string {
 	if i := strings.LastIndex(image, "@sha256:"); i >= 0 {
 		d := image[i+len("@sha256:"):]
@@ -483,11 +484,11 @@ func (o *Orchestrator) EncryptPrivateKey(ctx context.Context, pem string) (strin
 
 // renderEnvFile produces the contents of /etc/warmbly/worker.env for this
 // worker. Resolution order:
-//   1. If the worker has a profile assigned, fetch the profile + linked AWS
-//      credentials, decrypt each secret with the cipher service, and use
-//      those values.
-//   2. Otherwise fall back to the orchestrator's defaultEnv (the backend's
-//      own process env). This lets dev/sim work without setting up profiles.
+//  1. If the worker has a profile assigned, fetch the profile + linked AWS
+//     credentials, decrypt each secret with the cipher service, and use
+//     those values.
+//  2. Otherwise fall back to the orchestrator's defaultEnv (the backend's
+//     own process env). This lets dev/sim work without setting up profiles.
 //
 // Also returns the image to run, since profiles can pin their own.
 func (o *Orchestrator) renderEnvFile(ctx context.Context, workerID uuid.UUID) (envContent string, image string, err error) {
@@ -615,4 +616,3 @@ func tail(s string, lines int) string {
 	}
 	return strings.Join(parts[len(parts)-lines:], "\n")
 }
-

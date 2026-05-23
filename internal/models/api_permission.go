@@ -4,17 +4,17 @@ package models
 // These control what API keys can access (uint64 for growth room)
 const (
 	// Read permissions
-	APIPermReadEmails      uint64 = 1 << iota // Read email accounts
-	APIPermReadCampaigns                       // Read campaigns
-	APIPermReadContacts                        // Read contacts
-	APIPermReadUnibox                          // Read unified inbox
-	APIPermReadAnalytics                       // Read analytics/stats
+	APIPermReadEmails    uint64 = 1 << iota // Read email accounts
+	APIPermReadCampaigns                    // Read campaigns
+	APIPermReadContacts                     // Read contacts
+	APIPermReadUnibox                       // Read unified inbox
+	APIPermReadAnalytics                    // Read analytics/stats
 
 	// Write permissions
-	APIPermWriteEmails     // Modify email accounts
-	APIPermWriteCampaigns  // Create/modify campaigns
-	APIPermWriteContacts   // Create/modify contacts
-	APIPermWriteUnibox     // Modify inbox (mark seen, etc.)
+	APIPermWriteEmails    // Modify email accounts
+	APIPermWriteCampaigns // Create/modify campaigns
+	APIPermWriteContacts  // Create/modify contacts
+	APIPermWriteUnibox    // Modify inbox (mark seen, etc.)
 
 	// Bulk operations
 	APIPermBulkContacts  // Bulk contact operations

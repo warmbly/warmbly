@@ -59,8 +59,8 @@ type OrganizationInvitation struct {
 	CreatedAt      time.Time              `json:"created_at"`
 
 	// Joined data
-	Organization *Organization `json:"organization,omitempty"`
-	InvitedByUser *User        `json:"invited_by_user,omitempty"`
+	Organization  *Organization `json:"organization,omitempty"`
+	InvitedByUser *User         `json:"invited_by_user,omitempty"`
 }
 
 // IsExpired returns true if the invitation has expired
@@ -87,10 +87,10 @@ type EnterpriseInquiry struct {
 type EnterpriseInquiryStatus string
 
 const (
-	EnterpriseInquiryStatusPending    EnterpriseInquiryStatus = "pending"
-	EnterpriseInquiryStatusContacted  EnterpriseInquiryStatus = "contacted"
-	EnterpriseInquiryStatusConverted  EnterpriseInquiryStatus = "converted"
-	EnterpriseInquiryStatusDeclined   EnterpriseInquiryStatus = "declined"
+	EnterpriseInquiryStatusPending   EnterpriseInquiryStatus = "pending"
+	EnterpriseInquiryStatusContacted EnterpriseInquiryStatus = "contacted"
+	EnterpriseInquiryStatusConverted EnterpriseInquiryStatus = "converted"
+	EnterpriseInquiryStatusDeclined  EnterpriseInquiryStatus = "declined"
 )
 
 // CreateOrganizationRequest represents the request to create a new organization
@@ -129,12 +129,12 @@ type AcceptInvitationRequest struct {
 
 // OrganizationCounts represents resource counts for an organization
 type OrganizationCounts struct {
-	TotalCampaigns     int `json:"total_campaigns"`
-	ActiveCampaigns    int `json:"active_campaigns"`
-	TotalContacts      int `json:"total_contacts"`
-	TotalMembers       int `json:"total_members"`
-	EmailAccounts      int `json:"email_accounts"`
-	EmailsSentToday    int `json:"emails_sent_today"`
+	TotalCampaigns  int `json:"total_campaigns"`
+	ActiveCampaigns int `json:"active_campaigns"`
+	TotalContacts   int `json:"total_contacts"`
+	TotalMembers    int `json:"total_members"`
+	EmailAccounts   int `json:"email_accounts"`
+	EmailsSentToday int `json:"emails_sent_today"`
 }
 
 // OrganizationLimits represents the limits for an organization based on their plan

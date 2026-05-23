@@ -19,8 +19,8 @@ type APIKey struct {
 	UserID         uuid.UUID `json:"user_id"`
 	OrganizationID uuid.UUID `json:"organization_id"`
 	Name           string    `json:"name"`
-	KeyPrefix   string     `json:"key_prefix"`
-	Permissions uint64     `json:"permissions"`
+	KeyPrefix      string    `json:"key_prefix"`
+	Permissions    uint64    `json:"permissions"`
 
 	AllowedIPs           []string    `json:"allowed_ips,omitempty"`
 	AllowedEmailAccounts []uuid.UUID `json:"allowed_email_accounts,omitempty"`

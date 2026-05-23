@@ -17,10 +17,10 @@ const (
 // (collapses watch/throttled/quarantined into the recovery pool) — the
 // reverse direction is meaningless.
 //
-//   healthy           → clean
-//   watch, throttled  → risky      (degraded but still sending)
-//   quarantined,      → quarantine (sending stopped or close to it)
-//   blocked
+//	healthy           → clean
+//	watch, throttled  → risky      (degraded but still sending)
+//	quarantined,      → quarantine (sending stopped or close to it)
+//	blocked
 //
 // Any state not covered (e.g. a row with NULL warmup state) defaults to
 // clean — assume innocent until proven otherwise.
