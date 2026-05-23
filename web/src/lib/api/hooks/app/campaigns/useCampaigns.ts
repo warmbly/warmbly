@@ -32,7 +32,13 @@ export default function useCampaigns({ query, folder, limit = DEFAULT_PAGINATION
         enabled,
     });
 
-    const campaigns = queryResult.data?.pages.flatMap((p) => p.data) ?? [];
+    // Defensive: backend may return `data: null` on empty result sets if
+    // the underlying slice was nil. Coerce + drop nulls so consumers can
+    // safely read fields without optional-chaining every access.
+    const campaigns =
+        queryResult.data?.pages
+            .flatMap((p) => p.data ?? [])
+            .filter((c): c is NonNullable<typeof c> => c != null) ?? [];
 
     return {
         ...queryResult,

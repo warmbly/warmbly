@@ -236,7 +236,10 @@ func (r *campaignRepository) Search(ctx context.Context, userID, query string, c
 	}
 	defer rows.Close()
 
-	var i int
+	// campaigns is a 0-length slice with capacity limit+1 — append (not
+	// index assignment) is required, otherwise the first iteration panics
+	// "index out of range". That bug blanked the Campaigns page for any
+	// user who actually had campaigns.
 	for rows.Next() {
 		var campaign models.Campaign
 		err = getCampaignFull(rows, &campaign)
@@ -244,8 +247,7 @@ func (r *campaignRepository) Search(ctx context.Context, userID, query string, c
 			db.CaptureError(err, "", nil, "scan")
 			return nil, err
 		}
-		campaigns[i] = campaign
-		i++
+		campaigns = append(campaigns, campaign)
 	}
 
 	var total *int64

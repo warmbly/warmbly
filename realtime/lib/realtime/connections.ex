@@ -4,6 +4,13 @@ defmodule Realtime.Connections do
 
   Uses ETS for fast local lookups and Redis for cross-instance tracking.
   Supports configurable limits via environment variables.
+
+  Process-monitoring lifecycle: when `track/2` is called from a socket
+  process, the GenServer monitors that process and automatically calls
+  `do_untrack/2` on `:DOWN`. This handles the case where the socket
+  disconnects without ever joining a channel — channel `terminate`
+  callbacks don't run in that path, so we'd otherwise leak the count
+  and eventually trip the per-user limit until a restart.
   """
 
   use GenServer
@@ -34,11 +41,13 @@ defmodule Realtime.Connections do
   Options:
   - :ip - Client IP address for IP-based limiting
   - :max_connections - Custom max connections limit (subscription-based)
+  - :pid - Owning process (defaults to caller); used for monitor-based untrack
   """
   def track(user_id, opts \\ []) do
     ip = Keyword.get(opts, :ip)
     custom_max = Keyword.get(opts, :max_connections)
-    GenServer.call(__MODULE__, {:track, user_id, ip, custom_max})
+    pid = Keyword.get(opts, :pid, self())
+    GenServer.call(__MODULE__, {:track, user_id, ip, custom_max, pid})
   end
 
   @doc """
@@ -133,18 +142,43 @@ defmodule Realtime.Connections do
     :ets.new(@table, [:named_table, :public, :set])
     :ets.new(@ip_table, [:named_table, :public, :set])
     Logger.info("Connections tracker started (limits: user=#{max_per_user()}, ip=#{max_per_ip()}, global=#{max_global()})")
-    {:ok, %{}}
+    # State: %{monitor_ref => {user_id, ip}} so DOWN messages can find
+    # the (user, ip) pair to decrement.
+    {:ok, %{monitors: %{}}}
   end
 
   @impl true
-  def handle_call({:track, user_id, ip, custom_max}, _from, state) do
-    result = do_track(user_id, ip, custom_max)
-    {:reply, result, state}
+  def handle_call({:track, user_id, ip, custom_max, pid}, _from, state) do
+    case do_track(user_id, ip, custom_max) do
+      :ok ->
+        ref = Process.monitor(pid)
+        monitors = Map.put(state.monitors, ref, {user_id, ip})
+        {:reply, :ok, %{state | monitors: monitors}}
+
+      error ->
+        {:reply, error, state}
+    end
   end
 
   @impl true
   def handle_cast({:untrack, user_id, ip}, state) do
     do_untrack(user_id, ip)
+    {:noreply, state}
+  end
+
+  @impl true
+  def handle_info({:DOWN, ref, :process, _pid, _reason}, state) do
+    case Map.pop(state.monitors, ref) do
+      {nil, _} ->
+        {:noreply, state}
+
+      {{user_id, ip}, monitors} ->
+        do_untrack(user_id, ip)
+        {:noreply, %{state | monitors: monitors}}
+    end
+  end
+
+  def handle_info(_msg, state) do
     {:noreply, state}
   end
 

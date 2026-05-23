@@ -33,7 +33,12 @@ export default function useSearchContacts({ options, limit = DEFAULT_PAGINATION_
         enabled,
     });
 
-    const contacts = queryResult.data?.pages.flatMap((p) => p.data);
+    // Defensive: backend may serialize a nil slice as JSON null on empty
+    // result sets. `flatMap((p) => p.data)` over null would yield [null].
+    // Coerce + drop nulls so downstream UIs can safely read fields.
+    const contacts = queryResult.data?.pages
+        .flatMap((p) => p.data ?? [])
+        .filter((c): c is NonNullable<typeof c> => c != null);
 
     return {
         ...queryResult,

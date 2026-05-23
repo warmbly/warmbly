@@ -493,7 +493,11 @@ func (r *contactRepository) Search(
 	}
 	defer rows.Close()
 
-	var contacts []models.Contact
+	// Initialize as non-nil so JSON marshals to [] on zero rows. A nil
+	// slice marshals to `null`, and the frontend's flatMap((p) => p.data)
+	// then produces [null], which crashes any downstream `.subscribed`
+	// access. Always return an array.
+	contacts := make([]models.Contact, 0, limit+1)
 	for rows.Next() {
 		var c models.Contact
 		var campaignCount int

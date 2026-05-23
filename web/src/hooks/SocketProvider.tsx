@@ -369,9 +369,14 @@ export default function SocketProvider({
 
         try {
             const urlData = await getSocket();
-            // Append vsn=2.0.0 for Phoenix protocol version
+            // Phoenix vsn=1.0.0 — our sendRaw / joinChannel paths emit the
+            // V1 object format ({topic, event, payload, ref}), not the
+            // V2 array format. Sending vsn=2.0.0 made the realtime server
+            // try to decode each message via Phoenix.Socket.V2.JSONSerializer,
+            // which crashes on object payloads (badmatch). The result was
+            // the WS would open and immediately die on the first phx_join.
             const url = new URL(urlData.url);
-            url.searchParams.set('vsn', '2.0.0');
+            url.searchParams.set('vsn', '1.0.0');
 
             wsRef.current = new WebSocket(url.toString());
 
