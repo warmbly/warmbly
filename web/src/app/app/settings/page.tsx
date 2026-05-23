@@ -1,6 +1,9 @@
 import { Page, PageBody, PageTopbar, SectionBar, TopbarAction } from "@/components/layout/Page";
+import { useUserProfile } from "@/hooks/context/user";
+import { comingSoon } from "@/lib/helper/comingSoon";
 
 export default function SettingsPage() {
+    const { user } = useUserProfile();
     return (
         <Page>
             <PageTopbar eyebrow="Settings" subtitle="Account" />
@@ -14,13 +17,15 @@ export default function SettingsPage() {
                         </label>
                         <input
                             type="email"
-                            placeholder="your@email.com"
+                            value={user.email}
                             disabled
                             className="w-full h-8 px-2.5 rounded-md border border-slate-200 bg-slate-50 text-[12.5px] text-slate-500"
                         />
                     </div>
                     <div className="pt-2">
-                        <TopbarAction>Save changes</TopbarAction>
+                        <TopbarAction onClick={() => comingSoon("Profile editing")}>
+                            Save changes
+                        </TopbarAction>
                     </div>
                 </div>
             </PageBody>

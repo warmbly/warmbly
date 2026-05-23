@@ -1,5 +1,7 @@
 import { SparklesIcon, ArrowUpRightIcon } from "lucide-react";
+import { Link } from "react-router-dom";
 import { Page, PageBody, PageTopbar, SectionBar, TopbarAction } from "@/components/layout/Page";
+import { comingSoon } from "@/lib/helper/comingSoon";
 
 export default function BillingPage() {
     return (
@@ -17,14 +19,22 @@ export default function BillingPage() {
                     </div>
                     <p className="text-[11.5px] text-slate-500 mt-0.5">Basic features for getting started.</p>
                 </div>
-                <TopbarAction icon={<SparklesIcon className="w-3 h-3" />}>Upgrade</TopbarAction>
+                <TopbarAction
+                    icon={<SparklesIcon className="w-3 h-3" />}
+                    onClick={() => comingSoon("Upgrade flow")}
+                >
+                    Upgrade
+                </TopbarAction>
             </div>
             <PageBody>
                 <div className="px-5 py-3">
-                    <a className="inline-flex items-center gap-1 text-[11px] text-slate-500 hover:text-slate-900 transition-colors">
+                    <Link
+                        to="/#pricing"
+                        className="inline-flex items-center gap-1 text-[11px] text-slate-500 hover:text-slate-900 transition-colors"
+                    >
                         <ArrowUpRightIcon className="w-3 h-3" />
                         <span>View all plans and pricing</span>
-                    </a>
+                    </Link>
                 </div>
             </PageBody>
         </Page>

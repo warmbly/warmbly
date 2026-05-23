@@ -214,12 +214,19 @@ export default function AddressesPage() {
                                         </td>
                                         <td className="px-3">
                                             <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <button className="w-6 h-6 flex items-center justify-center rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setView(box.id)}
+                                                    aria-label="Warmup settings"
+                                                    className="w-6 h-6 flex items-center justify-center rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
+                                                >
                                                     <RiFireLine className="w-3.5 h-3.5" />
                                                 </button>
                                                 <button
+                                                    type="button"
                                                     className="w-6 h-6 flex items-center justify-center rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
                                                     onClick={() => setView(box.id)}
+                                                    aria-label="Account details"
                                                 >
                                                     <RiMoreLine className="w-3.5 h-3.5" />
                                                 </button>

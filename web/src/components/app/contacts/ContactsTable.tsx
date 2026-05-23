@@ -39,6 +39,7 @@ import ContactFilters from "./ContactFilters";
 import ContactEdit from "./ContactEdit";
 import type MiniCampaign from "@/lib/api/models/app/campaigns/MiniCampaign";
 import ContactsEditBulk from "./ContactsEditBulk";
+import { NewContactDialog } from "./NewContactDialog";
 
 import {
     EmptyBlock,
@@ -75,6 +76,42 @@ export default function ContactsTable({
     const [edit, setEdit] = React.useState<string>("");
     const [bulkEdit, setBulkEdit] = React.useState<boolean>(false);
     const [subFilter, setSubFilter] = React.useState<SubFilter>("all");
+    const [newOpen, setNewOpen] = React.useState<boolean>(false);
+
+    function exportContacts() {
+        if (!contacts || contacts.length === 0) {
+            toast.error("Nothing to export yet");
+            return;
+        }
+        const cols = ["email", "first_name", "last_name", "company", "phone", "subscribed"];
+        const escape = (v: unknown) => {
+            const s = v == null ? "" : String(v);
+            return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+        };
+        const rows = [cols.join(",")];
+        for (const c of contacts) {
+            rows.push(cols.map((k) => escape((c as unknown as Record<string, unknown>)[k])).join(","));
+        }
+        const blob = new Blob([rows.join("\n")], { type: "text/csv;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `contacts-${new Date().toISOString().slice(0, 10)}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        toast.success(`Exported ${contacts.length} contacts`);
+    }
+
+    function importCSV() {
+        // Import flow is not yet built — surface a clear message instead
+        // of silently doing nothing. Once a real importer lands this
+        // becomes the trigger for the import wizard.
+        toast("CSV import is coming soon — add contacts one by one for now.", {
+            icon: "📄",
+        });
+    }
 
     const [searchProps, setSearchProps] = React.useState<SearchContacts>({
         query: "",
@@ -181,7 +218,12 @@ export default function ContactsTable({
                         Show all
                     </TopbarAction>
                 ) : (
-                    <TopbarAction icon={<UserPlusIcon className="w-3 h-3" />}>New contact</TopbarAction>
+                    <TopbarAction
+                        icon={<UserPlusIcon className="w-3 h-3" />}
+                        onClick={() => setNewOpen(true)}
+                    >
+                        New contact
+                    </TopbarAction>
                 )
             }
             hasNextPage={!!contactsData.hasNextPage}
@@ -207,7 +249,12 @@ export default function ContactsTable({
                     >
                         Filters
                     </TopbarAction>
-                    <TopbarAction icon={<UserPlusIcon className="w-3 h-3" />}>Add lead</TopbarAction>
+                    <TopbarAction
+                        icon={<UserPlusIcon className="w-3 h-3" />}
+                        onClick={() => setNewOpen(true)}
+                    >
+                        Add lead
+                    </TopbarAction>
                 </SectionBar>
                 <div className="relative">
                     {tableNode}
@@ -238,6 +285,7 @@ export default function ContactsTable({
                     setActive={setEdit}
                 />
                 <ContactsEditBulk active={bulkEdit} setActive={setBulkEdit} selected={selected} />
+                <NewContactDialog open={newOpen} onClose={() => setNewOpen(false)} />
             </>
         );
     }
@@ -257,16 +305,21 @@ export default function ContactsTable({
                 <TopbarAction
                     variant="ghost"
                     icon={<UploadIcon className="w-3 h-3" />}
+                    onClick={importCSV}
                 >
                     Import CSV
                 </TopbarAction>
                 <TopbarAction
                     variant="ghost"
                     icon={<DownloadIcon className="w-3 h-3" />}
+                    onClick={exportContacts}
                 >
                     Export
                 </TopbarAction>
-                <TopbarAction icon={<UserPlusIcon className="w-3 h-3" />}>
+                <TopbarAction
+                    icon={<UserPlusIcon className="w-3 h-3" />}
+                    onClick={() => setNewOpen(true)}
+                >
                     New contact
                 </TopbarAction>
             </PageTopbar>
@@ -392,6 +445,7 @@ export default function ContactsTable({
             />
             <ContactEdit contacts={contacts ?? []} active={edit} setActive={setEdit} />
             <ContactsEditBulk active={bulkEdit} setActive={setBulkEdit} selected={selected} />
+            <NewContactDialog open={newOpen} onClose={() => setNewOpen(false)} />
         </Page>
     );
 }

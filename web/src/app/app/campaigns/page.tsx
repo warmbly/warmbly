@@ -1,5 +1,12 @@
 import { useUserProfile } from "@/hooks/context/user";
 import useCampaigns from "@/lib/api/hooks/app/campaigns/useCampaigns";
+import useStartCampaign from "@/lib/api/hooks/app/campaigns/useStartCampaign";
+import useStopCampaign from "@/lib/api/hooks/app/campaigns/useStopCampaign";
+import { useConfirm } from "@/hooks/context/confirm";
+import { NewCampaignDialog } from "@/components/app/campaigns/NewCampaignDialog";
+import toast from "react-hot-toast";
+import type { AppError } from "@/lib/api/client/normalizeError";
+import buildError from "@/lib/helper/buildError";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -36,12 +43,38 @@ import {
 } from "@/components/ui/popover-menu";
 
 type StatusFilter = "all" | "active" | "paused" | "draft";
+type SortMode = "newest" | "oldest" | "name";
 
 export default function CampaignsPage() {
     const p = useUserProfile();
+    const confirm = useConfirm();
+    const startCampaign = useStartCampaign();
+    const stopCampaign = useStopCampaign();
     const [folder, setFolder] = useState<string>("");
     const [query, setQuery] = useState<string>("");
     const [status, setStatus] = useState<StatusFilter>("all");
+    const [sort, setSort] = useState<SortMode>("newest");
+    const [newOpen, setNewOpen] = useState<boolean>(false);
+
+    async function toggleCampaign(id: string, currentStatus: string) {
+        try {
+            if (currentStatus === "active") {
+                await toast.promise(stopCampaign.mutateAsync(id), {
+                    loading: "Pausing campaign…",
+                    success: "Campaign paused",
+                    error: (e: AppError) => buildError(e),
+                });
+            } else {
+                await toast.promise(startCampaign.mutateAsync(id), {
+                    loading: "Starting campaign…",
+                    success: "Campaign started",
+                    error: (e: AppError) => buildError(e),
+                });
+            }
+        } catch {
+            /* toast.promise already surfaced */
+        }
+    }
 
     const campaignsData = useCampaigns({ query, folder });
     const campaigns = campaignsData.campaigns ?? [];
@@ -49,10 +82,20 @@ export default function CampaignsPage() {
     const folders = p.user.folders ?? [];
     const activeFolder = folders.find((f) => f.id === folder);
 
-    const filtered = useMemo(
-        () => (status === "all" ? campaigns : campaigns.filter((c) => (c.status ?? "draft") === status)),
-        [campaigns, status],
-    );
+    const filtered = useMemo(() => {
+        const base = status === "all"
+            ? campaigns
+            : campaigns.filter((c) => (c.status ?? "draft") === status);
+        const sorted = [...base];
+        if (sort === "newest") {
+            sorted.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        } else if (sort === "oldest") {
+            sorted.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+        } else {
+            sorted.sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
+        }
+        return sorted;
+    }, [campaigns, status, sort]);
 
     const counts = useMemo(() => {
         const stats = { total: campaigns.length, active: 0, paused: 0, draft: 0 };
@@ -80,10 +123,14 @@ export default function CampaignsPage() {
                 <TopbarAction
                     variant="ghost"
                     icon={<Settings2Icon className="w-3 h-3" />}
+                    onClick={() => p.setFoldersEdit(true)}
                 >
                     Folders
                 </TopbarAction>
-                <TopbarAction icon={<PlusIcon className="w-3 h-3" />}>
+                <TopbarAction
+                    icon={<PlusIcon className="w-3 h-3" />}
+                    onClick={() => setNewOpen(true)}
+                >
                     New campaign
                 </TopbarAction>
             </PageTopbar>
@@ -167,14 +214,35 @@ export default function CampaignsPage() {
                     <PopoverMenuTrigger asChild>
                         <SelectButton
                             icon={<FilterIcon className="w-3.5 h-3.5" />}
-                            label="More"
+                            label={
+                                sort === "newest"
+                                    ? "Newest"
+                                    : sort === "oldest"
+                                        ? "Oldest"
+                                        : "Name"
+                            }
                         />
                     </PopoverMenuTrigger>
                     <PopoverMenuContent>
                         <PopoverMenuLabel>Sort</PopoverMenuLabel>
-                        <PopoverMenuItem selected>Newest first</PopoverMenuItem>
-                        <PopoverMenuItem>Oldest first</PopoverMenuItem>
-                        <PopoverMenuItem>Name (A–Z)</PopoverMenuItem>
+                        <PopoverMenuItem
+                            selected={sort === "newest"}
+                            onSelect={() => setSort("newest")}
+                        >
+                            Newest first
+                        </PopoverMenuItem>
+                        <PopoverMenuItem
+                            selected={sort === "oldest"}
+                            onSelect={() => setSort("oldest")}
+                        >
+                            Oldest first
+                        </PopoverMenuItem>
+                        <PopoverMenuItem
+                            selected={sort === "name"}
+                            onSelect={() => setSort("name")}
+                        >
+                            Name (A–Z)
+                        </PopoverMenuItem>
                     </PopoverMenuContent>
                 </PopoverMenu>
             </SectionBar>
@@ -197,7 +265,10 @@ export default function CampaignsPage() {
                             title="No campaigns yet"
                             body="Create your first sequence to start reaching prospects."
                             cta={
-                                <TopbarAction icon={<PlusIcon className="w-3 h-3" />}>
+                                <TopbarAction
+                                    icon={<PlusIcon className="w-3 h-3" />}
+                                    onClick={() => setNewOpen(true)}
+                                >
                                     New campaign
                                 </TopbarAction>
                             }
@@ -262,9 +333,18 @@ export default function CampaignsPage() {
                                         onClick={(e) => {
                                             e.preventDefault();
                                             e.stopPropagation();
-                                            /* TODO toggle */
+                                            const action =
+                                                cstatus === "active" ? "Pause" : "Start";
+                                            confirm?.show(
+                                                `${action} ${c.name}?`,
+                                                () => toggleCampaign(c.id, cstatus),
+                                            );
                                         }}
-                                        className="size-6 rounded text-slate-400 hover:text-slate-900 hover:bg-slate-100 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                                        disabled={
+                                            (cstatus === "active" && stopCampaign.isPending) ||
+                                            (cstatus !== "active" && startCampaign.isPending)
+                                        }
+                                        className="size-6 rounded text-slate-400 hover:text-slate-900 hover:bg-slate-100 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shrink-0 disabled:opacity-30"
                                         aria-label={
                                             cstatus === "active" ? "Pause campaign" : "Start campaign"
                                         }
@@ -277,6 +357,8 @@ export default function CampaignsPage() {
                     </div>
                 )}
             </PageBody>
+
+            <NewCampaignDialog open={newOpen} onClose={() => setNewOpen(false)} />
         </Page>
     );
 }
