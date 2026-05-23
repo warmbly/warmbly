@@ -4,15 +4,18 @@
 //
 //   [eyebrow] · description  …………………………………………………  [×]
 //   ─────────────────────────────────────────────────────────────
-//   ● Title                                            edit ⋮
+//   ● Title                                            edit del
 //   ─────────────────────────────────────────────────────────────
-//   + Add Folder
+//   ◐ NAME [______________________________]
+//   ◐ COLOR  ● ● ● ● ● ● ● ●                      [Cancel][Add]
 //   ─────────────────────────────────────────────────────────────
-//   [Done]
+//   + Add Folder                                          [Done]
 //
-// Inline edit mode swaps the row in place: color swatch popover +
-// title input + Save / Cancel. No drag-and-drop here — keeping it
-// simple; ordering can come back as up/down arrows if requested.
+// The color picker is rendered INLINE in the add/edit row instead of
+// inside a popover — previous popover often got clipped by the modal's
+// overflow-y-auto container, so the user couldn't see it at all. With
+// the palette inline you always see the swatches and which one is
+// selected (ring on the active swatch).
 
 import React from "react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -22,6 +25,7 @@ import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import { TextInput, Label } from "@/components/ui/field";
 import { useConfirm } from "@/hooks/context/confirm";
+import { cn } from "@/lib/utils";
 
 export interface LabelItem {
     id: string;
@@ -54,6 +58,96 @@ const PALETTE = [
     "#14b8a6", // teal
 ];
 
+/**
+ * Inline swatch strip — a row of clickable circles. The selected one
+ * gets a slate-900 ring so it's unmistakably the active choice.
+ */
+function ColorStrip({
+    value,
+    onChange,
+}: {
+    value: string;
+    onChange: (c: string) => void;
+}) {
+    return (
+        <div className="flex items-center gap-1.5">
+            {PALETTE.map((p) => {
+                const active = value.toLowerCase() === p.toLowerCase();
+                return (
+                    <button
+                        key={p}
+                        type="button"
+                        onClick={() => onChange(p)}
+                        aria-label={`Color ${p}`}
+                        aria-pressed={active}
+                        className={cn(
+                            "size-5 rounded-full flex items-center justify-center transition-shadow",
+                            active
+                                ? "ring-2 ring-slate-900 ring-offset-1 ring-offset-white"
+                                : "hover:ring-2 hover:ring-slate-300 hover:ring-offset-1 hover:ring-offset-white",
+                        )}
+                    >
+                        <span
+                            className="size-4 rounded-full"
+                            style={{ backgroundColor: p }}
+                        />
+                    </button>
+                );
+            })}
+        </div>
+    );
+}
+
+/**
+ * Two-line label form used by both add and edit. Caller wires the
+ * values and the action buttons; this just renders the fields.
+ */
+function LabelForm({
+    title,
+    onTitleChange,
+    color,
+    onColorChange,
+    onSubmit,
+    onCancel,
+    actions,
+}: {
+    title: string;
+    onTitleChange: (t: string) => void;
+    color: string;
+    onColorChange: (c: string) => void;
+    onSubmit: () => void;
+    onCancel: () => void;
+    actions: React.ReactNode;
+}) {
+    return (
+        <div className="px-4 py-3 bg-slate-50/60 space-y-2.5">
+            <div className="flex items-center gap-3">
+                <span className="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium w-12 shrink-0">
+                    Name
+                </span>
+                <TextInput
+                    value={title}
+                    onChange={onTitleChange}
+                    placeholder="Name…"
+                    autoFocus
+                    className="flex-1"
+                    onKeyDown={(e) => {
+                        if (e.key === "Enter") onSubmit();
+                        if (e.key === "Escape") onCancel();
+                    }}
+                />
+            </div>
+            <div className="flex items-center gap-3">
+                <span className="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium w-12 shrink-0">
+                    Color
+                </span>
+                <ColorStrip value={color} onChange={onColorChange} />
+            </div>
+            <div className="flex items-center gap-1.5 pt-1.5">{actions}</div>
+        </div>
+    );
+}
+
 export function LabelListModal({
     open,
     onClose,
@@ -68,23 +162,19 @@ export function LabelListModal({
 }: Props) {
     const [adding, setAdding] = React.useState(false);
     const [newTitle, setNewTitle] = React.useState("");
-    // Pick the next palette color in rotation when starting an add. The
-    // user can change it via the swatch popover before committing.
     const [newColor, setNewColor] = React.useState<string>(PALETTE[0]);
-    const [paletteOpen, setPaletteOpen] = React.useState(false);
     const [creating, setCreating] = React.useState(false);
 
     React.useEffect(() => {
         if (!open) {
             setAdding(false);
             setNewTitle("");
-            setPaletteOpen(false);
         }
     }, [open]);
 
     React.useEffect(() => {
         if (adding) {
-            // Rotate the default color so consecutive adds aren't all the
+            // Rotate default color so consecutive adds aren't all the
             // same swatch (purely cosmetic, the user can still override).
             setNewColor(PALETTE[items.length % PALETTE.length]);
         }
@@ -177,71 +267,40 @@ export function LabelListModal({
                                     />
                                 ))}
                                 {adding && (
-                                    <div className="px-3 py-2 flex items-center gap-2 bg-slate-50/60">
-                                        <div className="relative shrink-0">
-                                            <button
-                                                type="button"
-                                                onClick={() => setPaletteOpen((o) => !o)}
-                                                className="size-5 rounded-md border border-slate-200 hover:border-slate-300 transition-colors flex items-center justify-center"
-                                                aria-label="Pick color"
-                                            >
-                                                <span className="size-3 rounded-full" style={{ backgroundColor: newColor }} />
-                                            </button>
-                                            {paletteOpen && (
-                                                <div
-                                                    className="absolute z-10 top-7 left-0 rounded-md bg-white border border-slate-200 shadow-[0_4px_12px_-2px_rgba(15,23,42,0.08)] p-1.5 grid grid-cols-4 gap-1"
-                                                    onClick={(e) => e.stopPropagation()}
+                                    <LabelForm
+                                        title={newTitle}
+                                        onTitleChange={setNewTitle}
+                                        color={newColor}
+                                        onColorChange={setNewColor}
+                                        onSubmit={commitAdd}
+                                        onCancel={() => {
+                                            setAdding(false);
+                                            setNewTitle("");
+                                        }}
+                                        actions={
+                                            <>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setAdding(false);
+                                                        setNewTitle("");
+                                                    }}
+                                                    className="ml-auto h-7 px-2.5 rounded-md text-[12px] text-slate-700 hover:text-slate-900 hover:bg-slate-100 transition-colors"
                                                 >
-                                                    {PALETTE.map((p) => (
-                                                        <button
-                                                            key={p}
-                                                            type="button"
-                                                            onClick={() => {
-                                                                setNewColor(p);
-                                                                setPaletteOpen(false);
-                                                            }}
-                                                            className="size-6 rounded flex items-center justify-center hover:bg-slate-50 transition-colors"
-                                                            aria-label={`Color ${p}`}
-                                                        >
-                                                            <span className="size-3.5 rounded-full" style={{ backgroundColor: p }} />
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            )}
-                                        </div>
-                                        <TextInput
-                                            value={newTitle}
-                                            onChange={setNewTitle}
-                                            placeholder="Name…"
-                                            autoFocus
-                                            className="flex-1"
-                                            onKeyDown={(e) => {
-                                                if (e.key === "Enter") commitAdd();
-                                                if (e.key === "Escape") setAdding(false);
-                                            }}
-                                        />
-                                        <button
-                                            type="button"
-                                            onClick={commitAdd}
-                                            disabled={creating}
-                                            className="h-7 px-2.5 rounded-md bg-slate-900 hover:bg-slate-800 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors disabled:opacity-60"
-                                        >
-                                            {creating ? <Loader2Icon className="w-3 h-3 animate-spin" /> : <CheckIcon className="w-3 h-3" />}
-                                            Add
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                setAdding(false);
-                                                setNewTitle("");
-                                                setPaletteOpen(false);
-                                            }}
-                                            className="size-7 rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100 inline-flex items-center justify-center transition-colors"
-                                            aria-label="Cancel"
-                                        >
-                                            <XIcon className="w-3.5 h-3.5" />
-                                        </button>
-                                    </div>
+                                                    Cancel
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={commitAdd}
+                                                    disabled={creating}
+                                                    className="h-7 px-2.5 rounded-md bg-slate-900 hover:bg-slate-800 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors disabled:opacity-60"
+                                                >
+                                                    {creating ? <Loader2Icon className="w-3 h-3 animate-spin" /> : <CheckIcon className="w-3 h-3" />}
+                                                    Add
+                                                </button>
+                                            </>
+                                        }
+                                    />
                                 )}
                             </div>
                         </div>
@@ -293,7 +352,6 @@ function ItemRow({
     const [color, setColor] = React.useState(item.color);
     const [saving, setSaving] = React.useState(false);
     const [deleting, setDeleting] = React.useState(false);
-    const [paletteOpen, setPaletteOpen] = React.useState(false);
 
     React.useEffect(() => {
         if (!editing) {
@@ -353,66 +411,47 @@ function ItemRow({
 
     if (editing) {
         return (
-            <div className="px-3 py-2 flex items-center gap-2 bg-slate-50/60">
-                <div className="relative shrink-0">
-                    <button
-                        type="button"
-                        onClick={() => setPaletteOpen((o) => !o)}
-                        className="size-5 rounded-md border border-slate-200 hover:border-slate-300 transition-colors flex items-center justify-center"
-                        aria-label="Pick color"
-                    >
-                        <span className="size-3 rounded-full" style={{ backgroundColor: color }} />
-                    </button>
-                    {paletteOpen && (
-                        <div
-                            className="absolute z-10 top-7 left-0 rounded-md bg-white border border-slate-200 shadow-[0_4px_12px_-2px_rgba(15,23,42,0.08)] p-1.5 grid grid-cols-4 gap-1"
-                            onClick={(e) => e.stopPropagation()}
+            <LabelForm
+                title={title}
+                onTitleChange={setTitle}
+                color={color}
+                onColorChange={setColor}
+                onSubmit={save}
+                onCancel={() => setEditing(false)}
+                actions={
+                    <>
+                        <button
+                            type="button"
+                            onClick={() => confirm?.show(`Delete "${item.title}"?`, remove)}
+                            disabled={deleting}
+                            className="h-7 px-2.5 rounded-md text-[12px] text-red-600 hover:text-white hover:bg-red-600 font-medium inline-flex items-center gap-1.5 transition-colors disabled:opacity-60"
                         >
-                            {PALETTE.map((p) => (
-                                <button
-                                    key={p}
-                                    type="button"
-                                    onClick={() => {
-                                        setColor(p);
-                                        setPaletteOpen(false);
-                                    }}
-                                    className="size-6 rounded flex items-center justify-center hover:bg-slate-50 transition-colors"
-                                    aria-label={`Color ${p}`}
-                                >
-                                    <span className="size-3.5 rounded-full" style={{ backgroundColor: p }} />
-                                </button>
-                            ))}
-                        </div>
-                    )}
-                </div>
-                <TextInput
-                    value={title}
-                    onChange={setTitle}
-                    className="flex-1"
-                    autoFocus
-                    onKeyDown={(e) => {
-                        if (e.key === "Enter") save();
-                        if (e.key === "Escape") setEditing(false);
-                    }}
-                />
-                <button
-                    type="button"
-                    onClick={save}
-                    disabled={saving}
-                    className="h-7 px-2.5 rounded-md bg-slate-900 hover:bg-slate-800 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors disabled:opacity-60"
-                >
-                    {saving ? <Loader2Icon className="w-3 h-3 animate-spin" /> : <CheckIcon className="w-3 h-3" />}
-                    Save
-                </button>
-                <button
-                    type="button"
-                    onClick={() => setEditing(false)}
-                    className="size-7 rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100 inline-flex items-center justify-center transition-colors"
-                    aria-label="Cancel"
-                >
-                    <XIcon className="w-3.5 h-3.5" />
-                </button>
-            </div>
+                            {deleting ? (
+                                <Loader2Icon className="w-3 h-3 animate-spin" />
+                            ) : (
+                                <TrashIcon className="w-3 h-3" />
+                            )}
+                            Delete
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setEditing(false)}
+                            className="ml-auto h-7 px-2.5 rounded-md text-[12px] text-slate-700 hover:text-slate-900 hover:bg-slate-100 transition-colors"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="button"
+                            onClick={save}
+                            disabled={saving || !isDirty}
+                            className="h-7 px-2.5 rounded-md bg-slate-900 hover:bg-slate-800 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors disabled:opacity-60"
+                        >
+                            {saving ? <Loader2Icon className="w-3 h-3 animate-spin" /> : <CheckIcon className="w-3 h-3" />}
+                            Save
+                        </button>
+                    </>
+                }
+            />
         );
     }
 
