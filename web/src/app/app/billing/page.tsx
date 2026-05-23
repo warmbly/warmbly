@@ -1,12 +1,13 @@
-// Billing — plan + usage + invoices preview.
+// Billing — plan + usage + invoices.
 //
-// Distinct from Settings (form-heavy) and the empty-state pages —
-// dominated by a plan card on the left + a usage strip on the right
-// + a fake-invoices preview. Reads as "money", not "config".
+// Owner-only page. Non-owners (admin/member) see an explicit
+// permissions message rather than the contents — the data here is
+// payment-sensitive and roles matter.
 
-import { ArrowUpRightIcon, FileTextIcon, SparklesIcon } from "lucide-react";
+import { ArrowUpRightIcon, FileTextIcon, ShieldAlertIcon, SparklesIcon } from "lucide-react";
 import { Link } from "react-router-dom";
 import {
+    EmptyBlock,
     Page,
     PageBody,
     PageTopbar,
@@ -16,12 +17,40 @@ import {
     TopbarAction,
 } from "@/components/layout/Page";
 import { comingSoon } from "@/lib/helper/comingSoon";
+import useFeatureAccess from "@/hooks/useFeatureAccess";
 
 const SAMPLE_INVOICES = [
     { number: "INV-2026-001", amount: "$0.00", status: "Trial", date: "May 22" },
 ];
 
 export default function BillingPage() {
+    const access = useFeatureAccess();
+
+    // Gate the page contents for non-owners — admins and members
+    // shouldn't see invoices, payment methods, or plan controls.
+    if (!access.loading && !access.isOwner) {
+        return (
+            <Page>
+                <PageTopbar eyebrow="Billing" subtitle="Owner only" />
+                <PageBody>
+                    <EmptyBlock
+                        title="Only the workspace owner can view billing"
+                        body="Plan changes, invoices and payment methods are scoped to the owner role. Ask your owner to share an update if you need one."
+                        cta={
+                            <Link
+                                to="/app/emails"
+                                className="h-7 px-2.5 rounded-md border border-slate-200 hover:border-slate-300 text-slate-700 hover:text-slate-900 text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors"
+                            >
+                                <ShieldAlertIcon className="w-3 h-3" />
+                                Back to dashboard
+                            </Link>
+                        }
+                    />
+                </PageBody>
+            </Page>
+        );
+    }
+
     return (
         <Page>
             <PageTopbar eyebrow="Billing" subtitle="Plan · usage · invoices" />

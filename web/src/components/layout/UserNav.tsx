@@ -15,6 +15,7 @@ import {
     UsersIcon,
 } from "lucide-react";
 import { useAppStore } from "@/stores";
+import useFeatureAccess from "@/hooks/useFeatureAccess";
 import {
     PopoverMenu,
     PopoverMenuContent,
@@ -27,6 +28,7 @@ export function UserNav() {
     const navigate = useNavigate();
     const user = useAppStore((s) => s.user);
     const logout = useAppStore((s) => s.logout);
+    const access = useFeatureAccess();
 
     if (!user) return null;
 
@@ -81,12 +83,14 @@ export function UserNav() {
                 >
                     Settings
                 </PopoverMenuItem>
-                <PopoverMenuItem
-                    onSelect={() => navigate("/app/billing")}
-                    icon={<CreditCardIcon className="w-3 h-3" />}
-                >
-                    Billing
-                </PopoverMenuItem>
+                {access.isOwner && (
+                    <PopoverMenuItem
+                        onSelect={() => navigate("/app/billing")}
+                        icon={<CreditCardIcon className="w-3 h-3" />}
+                    >
+                        Billing
+                    </PopoverMenuItem>
+                )}
                 <PopoverMenuItem
                     onSelect={() => navigate("/app/team")}
                     icon={<UsersIcon className="w-3 h-3" />}
