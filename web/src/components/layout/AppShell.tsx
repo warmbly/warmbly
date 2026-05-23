@@ -19,6 +19,7 @@ import { Outlet } from "react-router-dom";
 import { SkyChrome } from "./SkyChrome";
 import { AppHeader } from "./AppHeader";
 import { AppNav } from "./AppNav";
+import { RouteBoundary } from "./ErrorBoundary";
 import { ShortcutsModal } from "@/components/shared/ShortcutsModal";
 import { CommandPalette } from "@/components/shared/CommandPalette";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
@@ -44,7 +45,9 @@ export function AppShell() {
                         defines the panel without a heavy shadow. */}
                     <main className="flex-1 min-w-0 rounded-tl-2xl bg-white overflow-hidden border-t border-l border-slate-200/70">
                         <div className="h-full overflow-auto">
-                            <Outlet />
+                            <RouteBoundary>
+                                <Outlet />
+                            </RouteBoundary>
                         </div>
                     </main>
                 </div>
