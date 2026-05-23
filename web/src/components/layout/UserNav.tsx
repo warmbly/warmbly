@@ -1,23 +1,27 @@
-// User menu — sits at the very bottom of the sidebar on the sky chrome.
-// Styled for the dark background; the dropdown itself is light because
-// it overlays the content area.
+// User menu — bottom of the sidebar.
+//
+// Moved off the shadcn DropdownMenu onto the same PopoverMenu primitive
+// every other dropdown in the dashboard uses (folders, sort, accounts,
+// org switcher). One animation curve, one surface, one set of styles.
+//
+// Opens upward (side="top") from the trigger so the popover settles up
+// from the bottom of the sidebar instead of falling off-screen.
 
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import {
     CreditCardIcon,
     LogOutIcon,
     SettingsIcon,
     UsersIcon,
 } from "lucide-react";
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuGroup,
-    DropdownMenuItem,
-    DropdownMenuSeparator,
-    DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { useAppStore } from "@/stores";
+import {
+    PopoverMenu,
+    PopoverMenuContent,
+    PopoverMenuItem,
+    PopoverMenuSeparator,
+    PopoverMenuTrigger,
+} from "@/components/ui/popover-menu";
 
 export function UserNav() {
     const navigate = useNavigate();
@@ -39,8 +43,8 @@ export function UserNav() {
             : user.email;
 
     return (
-        <DropdownMenu>
-            <DropdownMenuTrigger asChild>
+        <PopoverMenu side="top" align="start">
+            <PopoverMenuTrigger asChild>
                 <button className="flex items-center gap-2.5 mx-3 my-2 px-1.5 py-1 rounded-md hover:bg-slate-200/40 transition-colors w-[calc(100%-1.5rem)] cursor-pointer">
                     <div className="w-7 h-7 rounded-full bg-slate-900 flex items-center justify-center shrink-0">
                         <span className="text-[11px] font-medium text-white leading-none">
@@ -56,39 +60,48 @@ export function UserNav() {
                         </div>
                     </div>
                 </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent className="min-w-56" side="top" align="start" sideOffset={6}>
-                <div className="px-2 py-1.5">
-                    <div className="text-sm font-medium text-zinc-900">{displayName}</div>
-                    <div className="text-xs text-zinc-400">{user.email}</div>
+            </PopoverMenuTrigger>
+
+            <PopoverMenuContent minWidth={232}>
+                {/* Identity block — same name/email row but inside the
+                    PopoverMenu chrome so it inherits the consistent
+                    hairline border + shadow. */}
+                <div className="px-3 py-2">
+                    <div className="text-[12.5px] font-medium text-slate-900 truncate">
+                        {displayName}
+                    </div>
+                    <div className="text-[11px] text-slate-400 truncate font-mono">
+                        {user.email}
+                    </div>
                 </div>
-                <DropdownMenuSeparator />
-                <DropdownMenuGroup>
-                    <DropdownMenuItem asChild>
-                        <Link to="/app/settings">
-                            <SettingsIcon className="w-4 h-4" />
-                            <span className="ml-2">Settings</span>
-                        </Link>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem asChild>
-                        <Link to="/app/billing">
-                            <CreditCardIcon className="w-4 h-4" />
-                            <span className="ml-2">Billing</span>
-                        </Link>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem asChild>
-                        <Link to="/app/team">
-                            <UsersIcon className="w-4 h-4" />
-                            <span className="ml-2">Team</span>
-                        </Link>
-                    </DropdownMenuItem>
-                </DropdownMenuGroup>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleLogout}>
-                    <LogOutIcon className="w-4 h-4" />
-                    <span className="ml-2">Log out</span>
-                </DropdownMenuItem>
-            </DropdownMenuContent>
-        </DropdownMenu>
+                <PopoverMenuSeparator />
+                <PopoverMenuItem
+                    onSelect={() => navigate("/app/settings")}
+                    icon={<SettingsIcon className="w-3 h-3" />}
+                >
+                    Settings
+                </PopoverMenuItem>
+                <PopoverMenuItem
+                    onSelect={() => navigate("/app/billing")}
+                    icon={<CreditCardIcon className="w-3 h-3" />}
+                >
+                    Billing
+                </PopoverMenuItem>
+                <PopoverMenuItem
+                    onSelect={() => navigate("/app/team")}
+                    icon={<UsersIcon className="w-3 h-3" />}
+                >
+                    Team
+                </PopoverMenuItem>
+                <PopoverMenuSeparator />
+                <PopoverMenuItem
+                    onSelect={handleLogout}
+                    icon={<LogOutIcon className="w-3 h-3" />}
+                    danger
+                >
+                    Log out
+                </PopoverMenuItem>
+            </PopoverMenuContent>
+        </PopoverMenu>
     );
 }
