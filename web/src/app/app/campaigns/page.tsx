@@ -3,12 +3,15 @@ import useCampaigns from "@/lib/api/hooks/app/campaigns/useCampaigns";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
+    AlertTriangleIcon,
     CalendarIcon,
     FilterIcon,
     FolderIcon,
+    Loader2Icon,
     PauseIcon,
     PlayIcon,
     PlusIcon,
+    RefreshCcwIcon,
     Settings2Icon,
 } from "lucide-react";
 import {
@@ -180,17 +183,13 @@ export default function CampaignsPage() {
                 {campaignsData.isPending ? (
                     <SkeletonRows />
                 ) : campaignsData.isError ? (
-                    <EmptyBlock
-                        title="Couldn't load campaigns"
-                        body={
+                    <ErrorState
+                        message={
                             campaignsData.error?.message ||
-                            "The request failed. Check the backend is up."
+                            "The request failed. The backend may be down or returning an error."
                         }
-                        cta={
-                            <TopbarAction onClick={() => campaignsData.refetch()} variant="ghost">
-                                Retry
-                            </TopbarAction>
-                        }
+                        onRetry={() => campaignsData.refetch()}
+                        isRefetching={campaignsData.isFetching}
                     />
                 ) : filtered.length === 0 ? (
                     campaigns.length === 0 ? (
@@ -279,6 +278,50 @@ export default function CampaignsPage() {
                 )}
             </PageBody>
         </Page>
+    );
+}
+
+function ErrorState({
+    message,
+    onRetry,
+    isRefetching,
+}: {
+    message: string;
+    onRetry: () => void;
+    isRefetching: boolean;
+}) {
+    return (
+        <div className="px-5 py-12 text-center">
+            <div className="mx-auto mb-3 size-8 rounded-md bg-red-50 text-red-600 flex items-center justify-center">
+                <AlertTriangleIcon className="w-4 h-4" />
+            </div>
+            <p className="text-[12.5px] text-slate-900 font-medium">Couldn't load campaigns</p>
+            <p className="text-[11.5px] text-slate-500 mt-1 max-w-[44ch] mx-auto leading-relaxed">
+                {message}
+            </p>
+            <div className="mt-4 flex items-center justify-center gap-1.5">
+                <button
+                    type="button"
+                    onClick={onRetry}
+                    disabled={isRefetching}
+                    className="h-7 px-2.5 rounded-md bg-slate-900 hover:bg-slate-800 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors disabled:opacity-60"
+                >
+                    {isRefetching ? (
+                        <Loader2Icon className="w-3 h-3 animate-spin" />
+                    ) : (
+                        <RefreshCcwIcon className="w-3 h-3" />
+                    )}
+                    Try again
+                </button>
+                <button
+                    type="button"
+                    onClick={() => window.location.reload()}
+                    className="h-7 px-2.5 rounded-md border border-slate-200 hover:border-slate-300 text-slate-700 hover:text-slate-900 text-[12px] font-medium transition-colors"
+                >
+                    Reload page
+                </button>
+            </div>
+        </div>
     );
 }
 

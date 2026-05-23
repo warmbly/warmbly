@@ -12,6 +12,7 @@
 
 import React from "react";
 import {
+    AlertTriangleIcon,
     Building2Icon,
     CheckIcon,
     DownloadIcon,
@@ -20,6 +21,7 @@ import {
     MoreHorizontalIcon,
     PhoneIcon,
     PlusIcon,
+    RefreshCcwIcon,
     Settings2Icon,
     TrashIcon,
     UploadIcon,
@@ -142,7 +144,11 @@ export default function ContactsTable({
     const embedded = !!current_campaign;
     const tableNode = (
         <ContactsTableBody
-            isLoading={!contacts}
+            isLoading={contactsData.isPending}
+            isError={contactsData.isError}
+            errorMessage={(contactsData.error as Error | undefined)?.message ?? "Request failed."}
+            onRetry={() => contactsData.refetch()}
+            isRefetching={contactsData.isFetching && !contactsData.isPending}
             contacts={filtered}
             selected={selected}
             onToggle={(id, on) =>
@@ -392,6 +398,10 @@ export default function ContactsTable({
 
 function ContactsTableBody({
     isLoading,
+    isError,
+    errorMessage,
+    onRetry,
+    isRefetching,
     contacts,
     selected,
     onToggle,
@@ -407,6 +417,10 @@ function ContactsTableBody({
     onLoadMore,
 }: {
     isLoading: boolean;
+    isError: boolean;
+    errorMessage: string;
+    onRetry: () => void;
+    isRefetching: boolean;
     contacts: Array<{
         id: string;
         first_name: string;
@@ -443,6 +457,41 @@ function ContactsTableBody({
                         <div className="ml-auto h-3 w-16 bg-slate-100 rounded animate-pulse" />
                     </div>
                 ))}
+            </div>
+        );
+    }
+    if (isError) {
+        return (
+            <div className="px-5 py-12 text-center">
+                <div className="mx-auto mb-3 size-8 rounded-md bg-red-50 text-red-600 flex items-center justify-center">
+                    <AlertTriangleIcon className="w-4 h-4" />
+                </div>
+                <p className="text-[12.5px] text-slate-900 font-medium">Couldn't load contacts</p>
+                <p className="text-[11.5px] text-slate-500 mt-1 max-w-[44ch] mx-auto leading-relaxed">
+                    {errorMessage}
+                </p>
+                <div className="mt-4 flex items-center justify-center gap-1.5">
+                    <button
+                        type="button"
+                        onClick={onRetry}
+                        disabled={isRefetching}
+                        className="h-7 px-2.5 rounded-md bg-slate-900 hover:bg-slate-800 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors disabled:opacity-60"
+                    >
+                        {isRefetching ? (
+                            <Loader2Icon className="w-3 h-3 animate-spin" />
+                        ) : (
+                            <RefreshCcwIcon className="w-3 h-3" />
+                        )}
+                        Try again
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => window.location.reload()}
+                        className="h-7 px-2.5 rounded-md border border-slate-200 hover:border-slate-300 text-slate-700 hover:text-slate-900 text-[12px] font-medium transition-colors"
+                    >
+                        Reload page
+                    </button>
+                </div>
             </div>
         );
     }
