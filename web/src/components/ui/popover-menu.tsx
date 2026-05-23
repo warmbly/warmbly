@@ -41,6 +41,7 @@ import React, {
     useRef,
     useState,
 } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 
 interface MenuCtx {
@@ -203,27 +204,54 @@ export function PopoverMenuContent({
         };
     }, [open, setOpen, triggerRef]);
 
-    if (!open) return null;
+    // Anchor the animation origin to the side the menu opens from so
+    // the scale + lift feels like it's growing out of the trigger
+    // rather than floating in from nowhere. `align="end"` opens
+    // top-right, `center` opens top-center, default opens top-left.
+    const originX = align === "end" ? "right" : align === "center" ? "center" : "left";
+    const originY = side === "bottom" ? "top" : "bottom";
+    const transformOrigin = `${originY} ${originX}`;
+
+    // Direction of the entrance slide depends on which side the menu
+    // anchors to — bottom-anchored menus settle down 4px, top-anchored
+    // ones settle up 4px.
+    const enterY = side === "bottom" ? -4 : 4;
+
     return (
-        <div
-            ref={ref}
-            role="menu"
-            style={{
-                position: "fixed",
-                top: pos?.top ?? -9999,
-                left: pos?.left ?? -9999,
-                minWidth,
-                visibility: pos ? "visible" : "hidden",
-                zIndex: 100,
-            }}
-            className={cn(
-                "rounded-md border border-slate-200 bg-white shadow-[0_4px_12px_-2px_rgba(15,23,42,0.08),0_2px_4px_rgba(15,23,42,0.04)] overflow-hidden py-1",
-                className,
+        <AnimatePresence>
+            {open && (
+                <motion.div
+                    ref={ref}
+                    key="popover"
+                    role="menu"
+                    initial={{ opacity: 0, scale: 0.96, y: enterY }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.97, y: enterY * 0.5 }}
+                    transition={{
+                        opacity: { duration: 0.14, ease: [0.16, 1, 0.3, 1] },
+                        scale: { duration: 0.18, ease: [0.16, 1, 0.3, 1] },
+                        y: { duration: 0.18, ease: [0.16, 1, 0.3, 1] },
+                    }}
+                    style={{
+                        position: "fixed",
+                        top: pos?.top ?? -9999,
+                        left: pos?.left ?? -9999,
+                        minWidth,
+                        visibility: pos ? "visible" : "hidden",
+                        zIndex: 100,
+                        transformOrigin,
+                        willChange: "transform, opacity",
+                    }}
+                    className={cn(
+                        "rounded-md border border-slate-200 bg-white shadow-[0_4px_12px_-2px_rgba(15,23,42,0.08),0_2px_4px_rgba(15,23,42,0.04)] overflow-hidden py-1",
+                        className,
+                    )}
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    {children}
+                </motion.div>
             )}
-            onClick={(e) => e.stopPropagation()}
-        >
-            {children}
-        </div>
+        </AnimatePresence>
     );
 }
 
