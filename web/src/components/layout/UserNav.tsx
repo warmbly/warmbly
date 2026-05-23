@@ -41,7 +41,7 @@ export function UserNav() {
     return (
         <DropdownMenu>
             <DropdownMenuTrigger asChild>
-                <button className="flex items-center gap-2.5 mx-3 my-2 px-1.5 py-1 rounded-md hover:bg-white/70 transition-colors w-[calc(100%-1.5rem)] cursor-pointer">
+                <button className="flex items-center gap-2.5 mx-3 my-2 px-1.5 py-1 rounded-md hover:bg-slate-200/40 transition-colors w-[calc(100%-1.5rem)] cursor-pointer">
                     <div className="w-7 h-7 rounded-full bg-slate-900 flex items-center justify-center shrink-0">
                         <span className="text-[11px] font-medium text-white leading-none">
                             {initials}
