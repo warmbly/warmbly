@@ -402,30 +402,26 @@ func (s *service) sendOrgScheduledEmail(ctx context.Context, org *models.Organiz
 	if s.notifier == nil {
 		return
 	}
-	owner, _ := s.userRepo.GetUser(ctx, org.OwnerUserID)
-	if owner == nil {
+	recipients := s.orgRecipients(ctx, org)
+	if len(recipients) == 0 {
 		return
 	}
 	subject := fmt.Sprintf("%s scheduled for deletion", org.Name)
 	body := orgScheduledHTML(org, d, s.frontendBaseURL)
-	if err := s.notifier.Send(ctx, []string{owner.Email}, nil, nil, subject, body); err != nil {
-		sentry.CaptureException(err)
-	}
+	s.sendToEach(ctx, recipients, subject, body)
 }
 
 func (s *service) sendOrgCancelledEmail(ctx context.Context, org *models.Organization, d *models.ScheduledDeletion) {
 	if s.notifier == nil {
 		return
 	}
-	owner, _ := s.userRepo.GetUser(ctx, org.OwnerUserID)
-	if owner == nil {
+	recipients := s.orgRecipients(ctx, org)
+	if len(recipients) == 0 {
 		return
 	}
 	subject := fmt.Sprintf("Deletion cancelled for %s", org.Name)
 	body := orgCancelledHTML(org, d)
-	if err := s.notifier.Send(ctx, []string{owner.Email}, nil, nil, subject, body); err != nil {
-		sentry.CaptureException(err)
-	}
+	s.sendToEach(ctx, recipients, subject, body)
 }
 
 func (s *service) sendUserScheduledEmail(ctx context.Context, user *models.User, d *models.ScheduledDeletion) {
@@ -455,38 +451,36 @@ func (s *service) sendReminderEmail(ctx context.Context, d *models.ScheduledDele
 		return
 	}
 
-	to, subject, body := s.buildReminder(ctx, d, bit)
-	if to == "" {
+	recipients, subject, body := s.buildReminder(ctx, d, bit)
+	if len(recipients) == 0 {
 		return
 	}
-	if err := s.notifier.Send(ctx, []string{to}, nil, nil, subject, body); err != nil {
-		sentry.CaptureException(err)
-	}
+	s.sendToEach(ctx, recipients, subject, body)
 }
 
-func (s *service) buildReminder(ctx context.Context, d *models.ScheduledDeletion, bit int) (to, subject, body string) {
+func (s *service) buildReminder(ctx context.Context, d *models.ScheduledDeletion, bit int) (recipients []string, subject, body string) {
 	var resourceName string
 	switch d.ResourceType {
 	case models.DeletionResourceOrganization:
 		org, _ := s.orgRepo.GetByID(ctx, d.ResourceID)
 		if org == nil {
-			return "", "", ""
+			return nil, "", ""
 		}
-		owner, _ := s.userRepo.GetUser(ctx, org.OwnerUserID)
-		if owner == nil {
-			return "", "", ""
-		}
-		to = owner.Email
+		recipients = s.orgRecipients(ctx, org)
 		resourceName = org.Name
 	case models.DeletionResourceUser:
 		user, _ := s.userRepo.GetUser(ctx, d.ResourceID)
 		if user == nil {
-			return "", "", ""
+			return nil, "", ""
 		}
-		to = user.Email
+		recipients = []string{user.Email}
 		resourceName = displayName(user)
 	default:
-		return "", "", ""
+		return nil, "", ""
+	}
+
+	if len(recipients) == 0 {
+		return nil, "", ""
 	}
 
 	switch bit {
@@ -499,7 +493,7 @@ func (s *service) buildReminder(ctx context.Context, d *models.ScheduledDeletion
 	}
 
 	body = reminderHTML(resourceName, d, s.frontendBaseURL)
-	return to, subject, body
+	return recipients, subject, body
 }
 
 func (s *service) sendCompletionEmail(ctx context.Context, d *models.ScheduledDeletion) {
@@ -549,4 +543,49 @@ func displayName(u *models.User) string {
 		return name
 	}
 	return u.Email
+}
+
+// orgRecipients returns every member email for an org, owner first.
+// Owner is always included even if GetMembers somehow fails to load
+// them (defensive — the owner is the only person who can actually
+// cancel, so they MUST get the email).
+func (s *service) orgRecipients(ctx context.Context, org *models.Organization) []string {
+	seen := make(map[string]struct{}, 8)
+	out := make([]string, 0, 8)
+
+	if owner, _ := s.userRepo.GetUser(ctx, org.OwnerUserID); owner != nil && owner.Email != "" {
+		key := strings.ToLower(owner.Email)
+		seen[key] = struct{}{}
+		out = append(out, owner.Email)
+	}
+
+	members, err := s.orgRepo.GetMembers(ctx, org.ID)
+	if err != nil {
+		sentry.CaptureException(err)
+		return out
+	}
+	for i := range members {
+		u := members[i].User
+		if u == nil || u.Email == "" {
+			continue
+		}
+		key := strings.ToLower(u.Email)
+		if _, dup := seen[key]; dup {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, u.Email)
+	}
+	return out
+}
+
+// sendToEach mails one-to-one rather than To/Cc/Bcc-fanning. Keeps
+// every recipient unaware of the others' addresses, and makes per-
+// person bounces/spam reports cleanly attributable.
+func (s *service) sendToEach(ctx context.Context, recipients []string, subject, body string) {
+	for _, to := range recipients {
+		if err := s.notifier.Send(ctx, []string{to}, nil, nil, subject, body); err != nil {
+			sentry.CaptureException(err)
+		}
+	}
 }
