@@ -83,19 +83,35 @@ type Oauth2SmtpImap struct {
 }
 
 type NewOauthAccount struct {
-	Provider     InboxProvider
-	Name         string
-	Email        string
-	AccessToken  string
-	RefreshToken string
-	ExpiresAt    time.Time
+	OrganizationID *uuid.UUID
+	Provider       InboxProvider
+	Name           string
+	Email          string
+	AccessToken    string
+	RefreshToken   string
+	ExpiresAt      time.Time
 }
 
 type NewSMTPIMAPAccount struct {
-	Name  string
-	Email string
-	SMTP  *Service
-	IMAP  *Service
+	OrganizationID *uuid.UUID
+	Name           string
+	Email          string
+	SMTP           *Service
+	IMAP           *Service
+}
+
+// EmailOnboardingState is stored in Redis for the lifetime of an OAuth round trip.
+type EmailOnboardingState struct {
+	UserID         string     `json:"user_id"`
+	OrganizationID *uuid.UUID `json:"organization_id,omitempty"`
+	Provider       string     `json:"provider"`
+	Nonce          string     `json:"nonce"`
+}
+
+// EmailOnboardingStartResponse is returned from POST /emails/onboarding/oauth/start.
+type EmailOnboardingStartResponse struct {
+	URL   string `json:"url"`
+	State string `json:"state"`
 }
 
 type EmailsResult struct {

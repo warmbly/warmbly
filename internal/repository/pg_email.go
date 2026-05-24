@@ -55,6 +55,9 @@ type EmailRepository interface {
 	NewOauthAccount(ctx context.Context, userID string, data models.NewOauthAccount) (*models.Email, *errx.Error)
 	NewSMTPIMAPAccount(ctx context.Context, userID string, data models.NewSMTPIMAPAccount) (*models.Email, *errx.Error)
 	RefreshBoxToken(ctx context.Context, id uuid.UUID, accessToken, refreshToken string, expiresAt time.Time) error
+
+	// ExistsForUser checks whether the given (user_id, email) pair is already connected.
+	ExistsForUser(ctx context.Context, userID, email string) (bool, *errx.Error)
 }
 
 type emailRepository struct {
@@ -66,6 +69,16 @@ func NewEmailRepostory(db *db.DB) EmailRepository {
 	return &emailRepository{
 		DB: db,
 	}
+}
+
+func (r *emailRepository) ExistsForUser(ctx context.Context, userID, email string) (bool, *errx.Error) {
+	var exists bool
+	query := `SELECT EXISTS(SELECT 1 FROM email_accounts WHERE user_id = $1 AND email = $2)`
+	if err := r.DB.QueryRow(ctx, query, userID, email).Scan(&exists); err != nil {
+		db.CaptureError(err, query, []any{userID, email}, "queryrow")
+		return false, errx.InternalError()
+	}
+	return exists, nil
 }
 
 func (r *emailRepository) NewOauthAccount(ctx context.Context, userID string, data models.NewOauthAccount) (*models.Email, *errx.Error) {
@@ -93,13 +106,14 @@ func (r *emailRepository) NewOauthAccount(ctx context.Context, userID string, da
 	}
 
 	query := `
-		INSERT INTO email_accounts (id, user_id, email, name, provider, signature_plain, signature_html, tracking_domain, last_synced_at, created_at, updated_at, warmup_tag) 
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8, $8, $9, $10) 
+		INSERT INTO email_accounts (id, user_id, organization_id, email, name, provider, signature_plain, signature_html, tracking_domain, last_synced_at, created_at, updated_at, warmup_tag)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10, $10, $11)
 	`
 
 	params := []any{
 		id,
 		userID,
+		data.OrganizationID,
 		data.Email,
 		data.Name,
 		data.Provider,
@@ -121,7 +135,7 @@ func (r *emailRepository) NewOauthAccount(ctx context.Context, userID string, da
 	}
 
 	query = `
-		INSERT INTO email_accounts_oauth (email_account_id, access_token, refresh_token, expires_at) 
+		INSERT INTO email_accounts_oauth (email_account_id, access_token, refresh_token, expires_at)
 		VALUES ($1, $2, $3, $4)
 	`
 
@@ -148,8 +162,10 @@ func (r *emailRepository) NewOauthAccount(ctx context.Context, userID string, da
 	}
 
 	return &models.Email{
-		ID:    id,
-		Email: data.Email,
+		ID:             id,
+		UserID:         userID,
+		OrganizationID: data.OrganizationID,
+		Email:          data.Email,
 
 		Name: data.Name,
 
@@ -198,12 +214,13 @@ func (r *emailRepository) NewSMTPIMAPAccount(ctx context.Context, userID string,
 	}
 
 	query := `
-		INSERT INTO email_accounts (id, user_id, email, name, provider, signature_plain, signature_html, tracking_domain, last_synced_at, updated_at, created_at, warmup_tag)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8, $8, $9, $10)
+		INSERT INTO email_accounts (id, user_id, organization_id, email, name, provider, signature_plain, signature_html, tracking_domain, last_synced_at, updated_at, created_at, warmup_tag)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10, $10, $11)
 	`
 	params := []any{
 		id,
 		userID,
+		data.OrganizationID,
 		data.Email,
 		data.Name,
 		"smtp_imap",
@@ -287,8 +304,10 @@ func (r *emailRepository) NewSMTPIMAPAccount(ctx context.Context, userID string,
 	}
 
 	return &models.Email{
-		ID:    id,
-		Email: data.Email,
+		ID:             id,
+		UserID:         userID,
+		OrganizationID: data.OrganizationID,
+		Email:          data.Email,
 
 		Name: data.Name,
 

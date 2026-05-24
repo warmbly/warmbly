@@ -483,7 +483,19 @@ func main() {
 		releasesService.RunBootCheck(ctx)
 
 		eventsPublisher := events.NewPublisher(kafkaProducer, s3, avrov2Client, cipherService)
-		emailService = email.NewServiceWithKafka(emailRepostory, cipherService, featureGateService, warmupService, eventsPublisher, kafkaProducer, cache)
+
+		oauth2Cfg := config.LoadOauth2(apiCfg.Hostname)
+		emailService = email.NewServiceWithKafka(
+			emailRepostory,
+			cipherService,
+			featureGateService,
+			warmupService,
+			eventsPublisher,
+			kafkaProducer,
+			cache,
+			&oauth2Cfg.InboxAuthorization,
+			workerAssignmentService,
+		)
 		campaignService = campaign.NewService(campaignRepostory, taskRepository, emailRepostory, campaignLogRepository, featureGateService, streamingPublisher)
 		sequenceService = sequence.NewService(sequenceRepostory)
 		contactService = contact.NewService(contactRepostory, subscriptionRepository, planRepository)

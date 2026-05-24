@@ -4,3 +4,10 @@
 # and needs to compile its native binary at install time.
 allowBuilds:
   esbuild: true
+
+# Overrides used to live under `pnpm.overrides` in package.json but
+# pnpm 11 ignores that block, which broke the web container's install
+# (rolldown-vite was being requested as plain `vite@7.1.14`, which doesn't
+# exist on the registry).
+overrides:
+  picomatch: ^4.0.4
