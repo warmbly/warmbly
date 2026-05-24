@@ -2,13 +2,11 @@ import type Template from "@/lib/api/models/app/templates/Template";
 import type { TemplatesResult } from "@/lib/api/models/app/templates/Template";
 import Request from "../../Request";
 
-export default async function listTemplates(search?: string): Promise<Template[]> {
-    const url = search && search.trim()
-        ? `/templates?q=${encodeURIComponent(search.trim())}`
-        : `/templates`;
+export default async function reorderTemplates(ids: string[]): Promise<Template[]> {
     const res = await Request<TemplatesResult>({
-        method: "GET",
-        url,
+        method: "PATCH",
+        url: `/templates/reorder`,
+        data: { ids },
         authorization: true,
     });
     return res.data ?? [];

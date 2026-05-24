@@ -15,9 +15,11 @@ import (
 type TemplateRepository interface {
 	Create(ctx context.Context, orgID, userID uuid.UUID, data *models.CreateReplyTemplate) (*models.ReplyTemplate, error)
 	GetByID(ctx context.Context, orgID, templateID uuid.UUID) (*models.ReplyTemplate, error)
-	List(ctx context.Context, orgID uuid.UUID) ([]models.ReplyTemplate, error)
+	List(ctx context.Context, orgID uuid.UUID, search string) ([]models.ReplyTemplate, error)
 	Update(ctx context.Context, orgID, templateID uuid.UUID, data *models.UpdateReplyTemplate) (*models.ReplyTemplate, error)
 	Delete(ctx context.Context, orgID, templateID uuid.UUID) error
+	Duplicate(ctx context.Context, orgID, userID, templateID uuid.UUID) (*models.ReplyTemplate, error)
+	Reorder(ctx context.Context, orgID uuid.UUID, ids []uuid.UUID) error
 }
 
 type templateRepository struct {
@@ -94,17 +96,25 @@ func (r *templateRepository) GetByID(ctx context.Context, orgID, templateID uuid
 	return t, err
 }
 
-// List retrieves reply templates for an organization with a hard limit to prevent unbounded queries
-func (r *templateRepository) List(ctx context.Context, orgID uuid.UUID) ([]models.ReplyTemplate, error) {
-	query := `
+// List retrieves reply templates for an organization with a hard limit to prevent unbounded queries.
+// If search is non-empty, name and subject are matched case-insensitively.
+func (r *templateRepository) List(ctx context.Context, orgID uuid.UUID, search string) ([]models.ReplyTemplate, error) {
+	args := []interface{}{orgID}
+	where := "organization_id = $1"
+	if s := strings.TrimSpace(search); s != "" {
+		args = append(args, "%"+s+"%")
+		where += " AND (name ILIKE $2 OR subject ILIKE $2)"
+	}
+
+	query := fmt.Sprintf(`
 		SELECT id, organization_id, user_id, name, subject, body_html, body_plain, position, created_at, updated_at
 		FROM reply_templates
-		WHERE organization_id = $1
-		ORDER BY position ASC
+		WHERE %s
+		ORDER BY position ASC, created_at ASC
 		LIMIT 500
-	`
+	`, where)
 
-	rows, err := r.db.Query(ctx, query, orgID)
+	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -200,6 +210,57 @@ func (r *templateRepository) Delete(ctx context.Context, orgID, templateID uuid.
 	query := `DELETE FROM reply_templates WHERE id = $1 AND organization_id = $2`
 	_, err := r.db.Exec(ctx, query, templateID, orgID)
 	return err
+}
+
+// Duplicate copies an existing template under the calling user, appending
+// " (copy)" to the name and placing it at the end of the org's list.
+func (r *templateRepository) Duplicate(ctx context.Context, orgID, userID, templateID uuid.UUID) (*models.ReplyTemplate, error) {
+	src, err := r.GetByID(ctx, orgID, templateID)
+	if err != nil {
+		return nil, err
+	}
+	if src == nil {
+		return nil, nil
+	}
+
+	name := src.Name + " (copy)"
+	if len(name) > 255 {
+		name = name[:255]
+	}
+
+	return r.Create(ctx, orgID, userID, &models.CreateReplyTemplate{
+		Name:      name,
+		Subject:   src.Subject,
+		BodyHTML:  src.BodyHTML,
+		BodyPlain: src.BodyPlain,
+	})
+}
+
+// Reorder updates positions to match the given ID order. IDs not owned by
+// the org are silently ignored. The operation runs in a single transaction
+// so a partial failure leaves positions unchanged.
+func (r *templateRepository) Reorder(ctx context.Context, orgID uuid.UUID, ids []uuid.UUID) error {
+	if len(ids) == 0 {
+		return nil
+	}
+
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	for i, id := range ids {
+		_, err := tx.Exec(ctx,
+			`UPDATE reply_templates SET position = $1, updated_at = NOW() WHERE id = $2 AND organization_id = $3`,
+			i+1, id, orgID,
+		)
+		if err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit(ctx)
 }
 
 // Ensure the type satisfies the interface at compile time
