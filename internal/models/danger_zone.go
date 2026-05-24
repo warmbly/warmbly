@@ -62,9 +62,9 @@ type ScheduledDeletion struct {
 
 	Status DeletionStatus `json:"status"`
 
-	CancelledAt        *time.Time `json:"cancelled_at,omitempty"`
-	CancelledByUserID  *uuid.UUID `json:"cancelled_by_user_id,omitempty"`
-	CancelledReason    *string    `json:"cancelled_reason,omitempty"`
+	CancelledAt       *time.Time `json:"cancelled_at,omitempty"`
+	CancelledByUserID *uuid.UUID `json:"cancelled_by_user_id,omitempty"`
+	CancelledReason   *string    `json:"cancelled_reason,omitempty"`
 
 	ExecutedAt     *time.Time `json:"executed_at,omitempty"`
 	ExecutionError *string    `json:"execution_error,omitempty"`
