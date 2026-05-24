@@ -36,3 +36,29 @@ type UpdateReplyTemplate struct {
 type ReplyTemplatesResult struct {
 	Data []ReplyTemplate `json:"data"`
 }
+
+// ListReplyTemplatesQuery accepts optional ?q= search filter that matches
+// against name and subject (case-insensitive).
+type ListReplyTemplatesQuery struct {
+	Search string `form:"q"`
+}
+
+// ReorderReplyTemplates carries the new ordering for an organization's
+// reply templates. Every ID in IDs is repositioned in the listed order
+// (1-indexed). Templates not in the list are left untouched.
+type ReorderReplyTemplates struct {
+	IDs []uuid.UUID `json:"ids" binding:"required"`
+}
+
+// RenderReplyTemplateRequest expands template variables (e.g. {{.FirstName}})
+// against an arbitrary key/value map. Used by Unibox to preview a reply.
+type RenderReplyTemplateRequest struct {
+	Variables map[string]string `json:"variables"`
+}
+
+// RenderedReplyTemplate is the rendered output returned to the client.
+type RenderedReplyTemplate struct {
+	Subject   string `json:"subject"`
+	BodyHTML  string `json:"body_html"`
+	BodyPlain string `json:"body_plain"`
+}

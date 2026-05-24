@@ -337,9 +337,12 @@ func Run(
 		{
 			templates.GET("", h.ListTemplates)
 			templates.POST("", h.CreateTemplate)
+			templates.PATCH("/reorder", h.ReorderTemplates)
 			templates.GET("/:id", h.GetTemplate)
 			templates.PATCH("/:id", h.UpdateTemplate)
 			templates.DELETE("/:id", h.DeleteTemplate)
+			templates.POST("/:id/duplicate", h.DuplicateTemplate)
+			templates.POST("/:id/render", h.RenderTemplate)
 		}
 
 		// CRM routes (require org)
