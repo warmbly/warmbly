@@ -6,6 +6,15 @@ import (
 	"github.com/google/uuid"
 )
 
+// MiniCategory is the lightweight shape we attach to contact responses
+// so the UI can render category chips without doing a second lookup. It
+// is a denormalised slice of the row in `categories` plus nothing else.
+type MiniCategory struct {
+	ID    uuid.UUID `json:"id"`
+	Title string    `json:"title"`
+	Color string    `json:"color"`
+}
+
 type Contact struct {
 	ID uuid.UUID `json:"id"`
 
@@ -19,7 +28,7 @@ type Contact struct {
 
 	Subscribed bool           `json:"subscribed"`
 	Campaigns  []MiniCampaign `json:"campaigns"`
-	Categories []string       `json:"categories,omitempty"`
+	Categories []MiniCategory `json:"categories"`
 
 	UpdatedAt time.Time `json:"updated_at"`
 	CreatedAt time.Time `json:"created_at"`
@@ -37,9 +46,10 @@ type UpdateContact struct {
 	Phone            *string            `json:"phone"`
 	CustomFields     *map[string]string `json:"custom_fields"`
 	Subscribed       *bool              `json:"subscribed"`
-	Campaigns        []string           `json:"campaigns"` // List of campaign IDs to set
-	AddCategories    []string           `json:"add_categories,omitempty"`
-	RemoveCategories []string           `json:"remove_categories,omitempty"`
+	Campaigns        []string           `json:"campaigns"`         // List of campaign IDs to set (nil = leave as-is)
+	Categories       []string           `json:"categories"`        // List of category IDs to set (nil = leave as-is)
+	AddCategories    []string           `json:"add_categories"`    // Diff-style add (ignored when Categories is set)
+	RemoveCategories []string           `json:"remove_categories"` // Diff-style remove (ignored when Categories is set)
 }
 
 type AddContact struct {
@@ -49,7 +59,7 @@ type AddContact struct {
 	Company    string   `json:"company"`
 	Phone      string   `json:"phone"`
 	Campaigns  []string `json:"campaigns"`
-	Categories []string `json:"categories,omitempty"`
+	Categories []string `json:"categories"`
 
 	CustomFields map[string]string `json:"custom_fields"`
 }

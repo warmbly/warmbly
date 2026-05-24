@@ -22,7 +22,9 @@ type ContactRepository interface {
 	Add(ctx context.Context, userID string, contacts []models.AddContact) ([]models.Contact, *errx.Error)
 	GetByID(ctx context.Context, contactID uuid.UUID) (*models.Contact, *errx.Error)
 	GetByEmailAndOrganization(ctx context.Context, organizationID uuid.UUID, email string) (*models.Contact, *errx.Error)
+	GetByEmailsAndUser(ctx context.Context, userID uuid.UUID, emails []string) (map[string]models.Contact, *errx.Error)
 	Search(ctx context.Context, userID string, category, cursor *string, filters models.SearchContacts, limit int32) (*models.ContactsResult, *errx.Error)
+	ExportAll(ctx context.Context, userID string, filters *models.SearchContacts, contactIDs []string, max int) ([]models.Contact, *errx.Error)
 	BulkUpdate(ctx context.Context, userID string, data *models.BulkEditContactsData) ([]models.Contact, *errx.Error)
 	Update(ctx context.Context, userID, contactID string, data *models.UpdateContact) (*models.Contact, *errx.Error)
 	BulkDelete(ctx context.Context, userID string, contactIDs []string) *errx.Error
@@ -41,6 +43,34 @@ func NewContactRepostory(db *db.DB) ContactRepository {
 	}
 }
 
+// parseCategoryIDs accepts string IDs from a JSON body and returns a
+// deduped slice of uuid.UUIDs. Empty strings are skipped silently —
+// they're a normal artifact of clients sending [""] to "clear" a list.
+// A malformed (non-UUID) entry is a client bug worth surfacing as 400.
+func parseCategoryIDs(raw []string) ([]uuid.UUID, *errx.Error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	seen := make(map[uuid.UUID]struct{}, len(raw))
+	out := make([]uuid.UUID, 0, len(raw))
+	for _, s := range raw {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		id, err := uuid.Parse(s)
+		if err != nil {
+			return nil, errx.ErrUuid
+		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out, nil
+}
+
 func (r *contactRepository) Add(ctx context.Context, userID string, contacts []models.AddContact) ([]models.Contact, *errx.Error) {
 	// Validate userID up front. The handler should have caught a
 	// malformed JWT subject, but a defensive check here keeps any
@@ -54,6 +84,7 @@ func (r *contactRepository) Add(ctx context.Context, userID string, contacts []m
 	// pgx fail mid-batch (which used to surface as a generic 500).
 	normalized := make([]models.AddContact, 0, len(contacts))
 	campaignIDs := make([][]uuid.UUID, 0, len(contacts))
+	categoryIDs := make([][]uuid.UUID, 0, len(contacts))
 	for _, lead := range contacts {
 		lead.Email = strings.TrimSpace(lead.Email)
 		if !email.IsValid(lead.Email) {
@@ -105,8 +136,28 @@ func (r *contactRepository) Add(ctx context.Context, userID string, contacts []m
 			cids = append(cids, cid)
 		}
 
+		// Parse + dedupe category IDs. Same rules as campaigns.
+		catSet := make(map[uuid.UUID]struct{}, len(lead.Categories))
+		cats := make([]uuid.UUID, 0, len(lead.Categories))
+		for _, raw := range lead.Categories {
+			raw = strings.TrimSpace(raw)
+			if raw == "" {
+				continue
+			}
+			cid, cerr := uuid.Parse(raw)
+			if cerr != nil {
+				return nil, errx.ErrUuid
+			}
+			if _, dup := catSet[cid]; dup {
+				continue
+			}
+			catSet[cid] = struct{}{}
+			cats = append(cats, cid)
+		}
+
 		normalized = append(normalized, lead)
 		campaignIDs = append(campaignIDs, cids)
+		categoryIDs = append(categoryIDs, cats)
 	}
 
 	tx, err := r.DB.Begin(ctx)
@@ -143,6 +194,7 @@ func (r *contactRepository) Add(ctx context.Context, userID string, contacts []m
 	for range normalized {
 		ncon := models.Contact{
 			Campaigns:  []models.MiniCampaign{},
+			Categories: []models.MiniCategory{},
 			Subscribed: true,
 		}
 		if err := br.QueryRow().Scan(
@@ -212,6 +264,52 @@ func (r *contactRepository) Add(ctx context.Context, userID string, contacts []m
 		ncontacts[i].Campaigns = linked
 	}
 
+	// Link categories. Scoped to the user's own categories so a
+	// malicious or stale ID can't attach foreign data.
+	for i, cats := range categoryIDs {
+		if len(cats) == 0 {
+			continue
+		}
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO contact_categories (contact_id, category_id)
+			SELECT $1, cat.id
+			FROM   categories cat
+			WHERE  cat.id = ANY($2) AND cat.user_id = $3
+			ON CONFLICT (contact_id, category_id) DO NOTHING
+		`, ncontacts[i].ID, cats, userID); err != nil {
+			db.CaptureError(err, "", nil, "contact_categories insert")
+			return nil, errx.InternalError()
+		}
+
+		rows, err := tx.Query(ctx, `
+			SELECT cat.id, cat.title, cat.color
+			FROM   categories cat
+			JOIN   contact_categories cc ON cc.category_id = cat.id
+			WHERE  cc.contact_id = $1 AND cat.user_id = $2
+			ORDER BY cat.position ASC, cat.title ASC
+		`, ncontacts[i].ID, userID)
+		if err != nil {
+			db.CaptureError(err, "", nil, "contact_categories select")
+			return nil, errx.InternalError()
+		}
+		linked := make([]models.MiniCategory, 0)
+		for rows.Next() {
+			var mc models.MiniCategory
+			if err := rows.Scan(&mc.ID, &mc.Title, &mc.Color); err != nil {
+				rows.Close()
+				db.CaptureError(err, "", nil, "category scan")
+				return nil, errx.InternalError()
+			}
+			linked = append(linked, mc)
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			db.CaptureError(err, "", nil, "category rows")
+			return nil, errx.InternalError()
+		}
+		ncontacts[i].Categories = linked
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		db.CaptureError(err, "", nil, "commit")
 		return nil, errx.InternalError()
@@ -245,6 +343,7 @@ func (r *contactRepository) GetByID(ctx context.Context, contactID uuid.UUID) (*
 	}
 
 	contact.Campaigns = []models.MiniCampaign{}
+	contact.Categories = []models.MiniCategory{}
 	return &contact, nil
 }
 
@@ -274,6 +373,7 @@ func (r *contactRepository) GetByEmailAndOrganization(ctx context.Context, organ
 		return nil, errx.InternalError()
 	}
 	contact.Campaigns = []models.MiniCampaign{}
+	contact.Categories = []models.MiniCategory{}
 	return &contact, nil
 }
 
@@ -402,6 +502,28 @@ func (r *contactRepository) Search(
 	}
 
 	// -----------------------------
+	// Category IDs filter (must have ALL specified categories)
+	// -----------------------------
+	if len(filters.CategoryIDs) > 0 {
+		placeholders := make([]string, len(filters.CategoryIDs))
+		for i, id := range filters.CategoryIDs {
+			placeholders[i] = fmt.Sprintf("$%d", argIndex)
+			args = append(args, id)
+			argIndex++
+		}
+		categoryClause := fmt.Sprintf(`
+			c.id IN (
+				SELECT contact_id
+				FROM contact_categories
+				WHERE category_id IN (%s)
+				GROUP BY contact_id
+				HAVING COUNT(DISTINCT category_id) = %d
+			)
+		`, strings.Join(placeholders, ","), len(filters.CategoryIDs))
+		whereClauses = append(whereClauses, categoryClause)
+	}
+
+	// -----------------------------
 	// Sort logic
 	// -----------------------------
 	sortBy := "c.created_at"
@@ -480,9 +602,15 @@ func (r *contactRepository) Search(
 		}
 	}
 
-	// Main query
+	// Main query.
+	//
+	// Both the `campaigns` and `categories` agg subqueries need the
+	// user_id so they can't leak rows from other users that happen to
+	// share a contact id (theoretically impossible thanks to the outer
+	// WHERE, but cheap defence-in-depth). They reuse the same $%d
+	// placeholder so we only append userID once.
 	query := fmt.Sprintf(`
-		SELECT 
+		SELECT
 			c.id, c.first_name, c.last_name, c.email, c.company, c.phone,
 			c.custom_fields, c.subscribed, c.updated_at, c.created_at,
 			COALESCE(cl.campaign_count,0) AS campaign_count,
@@ -494,7 +622,16 @@ func (r *contactRepository) Search(
 					WHERE cl2.contact_id = c.id
 					AND cam.user_id = $%d
 				), '[]'::json
-			) AS campaigns
+			) AS campaigns,
+			COALESCE(
+				(
+					SELECT json_agg(json_build_object('id', cat.id, 'title', cat.title, 'color', cat.color) ORDER BY cat.position ASC, cat.title ASC)
+					FROM contact_categories cc
+					JOIN categories cat ON cc.category_id = cat.id
+					WHERE cc.contact_id = c.id
+					AND cat.user_id = $%d
+				), '[]'::json
+			) AS categories
 		FROM contacts c
 		LEFT JOIN (
 			SELECT contact_id, COUNT(campaign_id) AS campaign_count
@@ -504,7 +641,7 @@ func (r *contactRepository) Search(
 		%s
 		ORDER BY %s %s, c.id ASC
 		LIMIT $%d
-	`, argIndex, whereSQL, sortBy, direction, argIndex+1)
+	`, argIndex, argIndex, whereSQL, sortBy, direction, argIndex+1)
 
 	args = append(args, userID, limit+1)
 
@@ -548,11 +685,12 @@ func (r *contactRepository) Search(
 		var c models.Contact
 		var campaignCount int
 		var campaignsJSON []byte
+		var categoriesJSON []byte
 
 		if err := rows.Scan(
 			&c.ID, &c.FirstName, &c.LastName, &c.Email,
 			&c.Company, &c.Phone, &c.CustomFields, &c.Subscribed,
-			&c.UpdatedAt, &c.CreatedAt, &campaignCount, &campaignsJSON,
+			&c.UpdatedAt, &c.CreatedAt, &campaignCount, &campaignsJSON, &categoriesJSON,
 		); err != nil {
 			db.CaptureError(err, "", nil, "scan")
 			return nil, errx.InternalError()
@@ -573,6 +711,16 @@ func (r *contactRepository) Search(
 			}
 		} else {
 			c.Campaigns = []models.MiniCampaign{}
+		}
+
+		if len(categoriesJSON) > 0 {
+			if err := json.Unmarshal(categoriesJSON, &c.Categories); err != nil {
+				sentry.CaptureException(err)
+				return nil, errx.InternalError()
+			}
+		}
+		if c.Categories == nil {
+			c.Categories = []models.MiniCategory{}
 		}
 
 		contacts = append(contacts, c)
@@ -861,6 +1009,95 @@ func (r *contactRepository) Update(ctx context.Context, userID, contactID string
 		}
 	}
 
+	// Categories. Two modes supported on the request:
+	//   - `categories: [..]` → set absolute (full replace).
+	//   - `add_categories / remove_categories` → diff style.
+	// When the absolute form is non-nil it wins; the diff is ignored.
+	categoriesChanged := false
+	if data.Categories != nil {
+		ids, perr := parseCategoryIDs(data.Categories)
+		if perr != nil {
+			return nil, perr
+		}
+		// Wipe then insert; scoped to user-owned categories.
+		if _, err := tx.Exec(ctx, `DELETE FROM contact_categories WHERE contact_id = $1`, contactID); err != nil {
+			db.CaptureError(err, "", nil, "categories wipe")
+			return nil, errx.InternalError()
+		}
+		if len(ids) > 0 {
+			if _, err := tx.Exec(ctx, `
+				INSERT INTO contact_categories (contact_id, category_id)
+				SELECT $1, cat.id
+				FROM   categories cat
+				WHERE  cat.id = ANY($2) AND cat.user_id = $3
+				ON CONFLICT (contact_id, category_id) DO NOTHING
+			`, contactID, ids, userID); err != nil {
+				db.CaptureError(err, "", nil, "categories insert")
+				return nil, errx.InternalError()
+			}
+		}
+		categoriesChanged = true
+	} else {
+		if len(data.AddCategories) > 0 {
+			ids, perr := parseCategoryIDs(data.AddCategories)
+			if perr != nil {
+				return nil, perr
+			}
+			if _, err := tx.Exec(ctx, `
+				INSERT INTO contact_categories (contact_id, category_id)
+				SELECT $1, cat.id
+				FROM   categories cat
+				WHERE  cat.id = ANY($2) AND cat.user_id = $3
+				ON CONFLICT (contact_id, category_id) DO NOTHING
+			`, contactID, ids, userID); err != nil {
+				db.CaptureError(err, "", nil, "categories add")
+				return nil, errx.InternalError()
+			}
+			categoriesChanged = true
+		}
+		if len(data.RemoveCategories) > 0 {
+			ids, perr := parseCategoryIDs(data.RemoveCategories)
+			if perr != nil {
+				return nil, perr
+			}
+			if _, err := tx.Exec(ctx, `
+				DELETE FROM contact_categories
+				WHERE contact_id = $1 AND category_id = ANY($2)
+			`, contactID, ids); err != nil {
+				db.CaptureError(err, "", nil, "categories remove")
+				return nil, errx.InternalError()
+			}
+			categoriesChanged = true
+		}
+	}
+
+	// Always re-read categories so the response reflects current state
+	// (cheap, indexed lookup).
+	if categoriesChanged || updatedContact.Categories == nil {
+		var catJSON []byte
+		if err := tx.QueryRow(ctx, `
+			SELECT COALESCE(
+				(
+					SELECT json_agg(json_build_object('id', cat.id, 'title', cat.title, 'color', cat.color) ORDER BY cat.position ASC, cat.title ASC)
+					FROM contact_categories cc
+					JOIN categories cat ON cc.category_id = cat.id
+					WHERE cc.contact_id = $1 AND cat.user_id = $2
+				),
+				'[]'::json
+			)
+		`, contactID, userID).Scan(&catJSON); err != nil {
+			db.CaptureError(err, "", nil, "categories reload")
+			return nil, errx.InternalError()
+		}
+		updatedContact.Categories = make([]models.MiniCategory, 0)
+		if len(catJSON) > 0 {
+			if err := json.Unmarshal(catJSON, &updatedContact.Categories); err != nil {
+				sentry.CaptureException(err)
+				return nil, errx.InternalError()
+			}
+		}
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		db.CaptureError(err, "", nil, "commit")
 		return nil, errx.InternalError()
@@ -911,6 +1148,29 @@ func (r *contactRepository) BulkUpdate(ctx context.Context, userID string, data 
 			userID, data.Contacts, data.AddCampaigns)
 	}
 
+	if len(data.RemoveCategories) > 0 {
+		b.Queue(`DELETE FROM contact_categories cc
+		         USING contacts c
+		         WHERE cc.contact_id = c.id
+		           AND c.user_id = $1
+		           AND cc.contact_id = ANY($2)
+		           AND cc.category_id = ANY($3::uuid[])`,
+			userID, data.Contacts, data.RemoveCategories)
+	}
+
+	if len(data.AddCategories) > 0 {
+		b.Queue(`INSERT INTO contact_categories (contact_id, category_id)
+		         SELECT c.id, cat.id
+		         FROM contacts c
+		         CROSS JOIN categories cat
+		         WHERE c.user_id = $1
+		           AND c.id = ANY($2)
+		           AND cat.id = ANY($3::uuid[])
+		           AND cat.user_id = $1
+		         ON CONFLICT DO NOTHING`,
+			userID, data.Contacts, data.AddCategories)
+	}
+
 	for _, p := range data.Fields {
 		switch p.Type {
 		case models.BulkAddField:
@@ -954,7 +1214,7 @@ func (r *contactRepository) BulkUpdate(ctx context.Context, userID string, data 
 	br.Close()
 
 	query := `
-		SELECT 
+		SELECT
 			c.id, c.first_name, c.last_name, c.email, c.company, c.phone,
 			c.custom_fields, c.subscribed, c.updated_at, c.created_at,
 			COALESCE(
@@ -965,7 +1225,16 @@ func (r *contactRepository) BulkUpdate(ctx context.Context, userID string, data 
 					WHERE cl.contact_id =c.id AND cam.user_id = $2
 				),
 				'[]'::json
-			) AS campaigns
+			) AS campaigns,
+			COALESCE(
+				(
+					SELECT json_agg(json_build_object('id', cat.id, 'title', cat.title, 'color', cat.color) ORDER BY cat.position ASC, cat.title ASC)
+					FROM contact_categories cc
+					JOIN categories cat ON cc.category_id = cat.id
+					WHERE cc.contact_id = c.id AND cat.user_id = $2
+				),
+				'[]'::json
+			) AS categories
 		FROM contacts c
 		WHERE c.user_id = $2 AND c.id = ANY($1)
 	`
@@ -990,11 +1259,12 @@ func (r *contactRepository) BulkUpdate(ctx context.Context, userID string, data 
 	for rows.Next() {
 		var c models.Contact
 		var campaignsJSON []byte
+		var categoriesJSON []byte
 
 		err := rows.Scan(
 			&c.ID, &c.FirstName, &c.LastName, &c.Email,
 			&c.Company, &c.Phone, &c.CustomFields, &c.Subscribed,
-			&c.UpdatedAt, &c.CreatedAt, &campaignsJSON,
+			&c.UpdatedAt, &c.CreatedAt, &campaignsJSON, &categoriesJSON,
 		)
 		if err != nil {
 			db.CaptureError(err, "", nil, "scan")
@@ -1020,6 +1290,14 @@ func (r *contactRepository) BulkUpdate(ctx context.Context, userID string, data 
 			}
 		} else {
 			c.Campaigns = make([]models.MiniCampaign, 0)
+		}
+
+		c.Categories = make([]models.MiniCategory, 0)
+		if len(categoriesJSON) > 0 {
+			if err := json.Unmarshal(categoriesJSON, &c.Categories); err != nil {
+				sentry.CaptureException(err)
+				return nil, errx.InternalError()
+			}
 		}
 
 		updatedContacts = append(updatedContacts, c)
@@ -1076,6 +1354,123 @@ func (r *contactRepository) Delete(ctx context.Context, userID, ID string) *errx
 		return errx.ErrNotFound
 	}
 	return nil
+}
+
+// GetByEmailsAndUser returns the contacts whose lowercased email is in
+// the given list, scoped to a single user. Used by the import path to
+// detect collisions before doing the bulk upsert. The map is keyed by
+// lowercased email so the caller doesn't have to normalize again.
+func (r *contactRepository) GetByEmailsAndUser(ctx context.Context, userID uuid.UUID, emails []string) (map[string]models.Contact, *errx.Error) {
+	out := make(map[string]models.Contact, len(emails))
+	if len(emails) == 0 {
+		return out, nil
+	}
+	norm := make([]string, 0, len(emails))
+	for _, e := range emails {
+		e = strings.ToLower(strings.TrimSpace(e))
+		if e == "" {
+			continue
+		}
+		norm = append(norm, e)
+	}
+	if len(norm) == 0 {
+		return out, nil
+	}
+
+	rows, err := r.DB.Query(ctx, `
+		SELECT id, first_name, last_name, email, company, phone, custom_fields, subscribed, updated_at, created_at
+		FROM contacts
+		WHERE user_id = $1 AND LOWER(email) = ANY($2)
+	`, userID, norm)
+	if err != nil {
+		db.CaptureError(err, "", nil, "GetByEmailsAndUser query")
+		return nil, errx.InternalError()
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var c models.Contact
+		if err := rows.Scan(
+			&c.ID, &c.FirstName, &c.LastName, &c.Email,
+			&c.Company, &c.Phone, &c.CustomFields, &c.Subscribed,
+			&c.UpdatedAt, &c.CreatedAt,
+		); err != nil {
+			db.CaptureError(err, "", nil, "GetByEmailsAndUser scan")
+			return nil, errx.InternalError()
+		}
+		c.Campaigns = []models.MiniCampaign{}
+		c.Categories = []models.MiniCategory{}
+		out[strings.ToLower(c.Email)] = c
+	}
+	return out, nil
+}
+
+// ExportAll fetches every contact matching the given selection so it
+// can be streamed out as CSV/XLSX/JSON. There is no pagination — the
+// caller is expected to enforce max upstream (handler does).
+//
+// Three selection modes overlap with the search filter machinery:
+//   - filters != nil  → reuse the SearchContacts WHERE-builder.
+//   - contactIDs > 0  → constrain to just those rows.
+//   - both nil/empty  → "every contact this user owns".
+func (r *contactRepository) ExportAll(ctx context.Context, userID string, filters *models.SearchContacts, contactIDs []string, max int) ([]models.Contact, *errx.Error) {
+	if _, perr := uuid.Parse(userID); perr != nil {
+		return nil, errx.ErrUuid
+	}
+	if max <= 0 {
+		max = models.MaxContactExportRows
+	}
+
+	// Fall back to "everyone" by walking Search in pages. Reuse Search
+	// to keep WHERE-builder logic in one place: a divergent copy here
+	// would drift away from production semantics as filters evolve.
+	var search models.SearchContacts
+	if filters != nil {
+		search = *filters
+	}
+	// If a specific id list is provided, narrow further by pulling
+	// directly. We still pass through Search so we get the same joined
+	// categories/campaigns shape.
+	idSet := make(map[uuid.UUID]struct{}, len(contactIDs))
+	useIDFilter := false
+	for _, raw := range contactIDs {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			continue
+		}
+		id, perr := uuid.Parse(raw)
+		if perr != nil {
+			return nil, errx.ErrUuid
+		}
+		idSet[id] = struct{}{}
+		useIDFilter = true
+	}
+
+	out := make([]models.Contact, 0, 256)
+	var cursor *string
+	pageSize := int32(500)
+	for {
+		page, xerr := r.Search(ctx, userID, nil, cursor, search, pageSize)
+		if xerr != nil {
+			return nil, xerr
+		}
+		for _, c := range page.Data {
+			if useIDFilter {
+				if _, ok := idSet[c.ID]; !ok {
+					continue
+				}
+			}
+			out = append(out, c)
+			if len(out) >= max {
+				return out, nil
+			}
+		}
+		if !page.Pagination.HasMore || page.Pagination.NextCursor == nil {
+			break
+		}
+		s := page.Pagination.NextCursor.String()
+		cursor = &s
+	}
+	return out, nil
 }
 
 func (r *contactRepository) GetContactCount(ctx context.Context, userID string) (int, *errx.Error) {

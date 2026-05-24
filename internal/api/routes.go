@@ -169,6 +169,13 @@ func Run(
 			contacts.POST("", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts), h.AddContacts)
 			contacts.DELETE("", m.RequireAccess(models.PermManageContacts, models.APIPermBulkContacts), h.DeleteContactBulk)
 			contacts.PATCH("", m.RequireAccess(models.PermManageContacts, models.APIPermBulkContacts), h.UpdateContactBulk)
+			// Import + export power-tools. Read-only export gates on
+			// ReadContacts; the import endpoints write and so use the
+			// stricter Write/Bulk scopes that the rest of the contact
+			// write paths already use.
+			contacts.POST("/export", m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts), h.ExportContacts)
+			contacts.POST("/import/preview", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts), h.ImportPreviewContacts)
+			contacts.POST("/import/commit", m.RequireAccess(models.PermManageContacts, models.APIPermBulkContacts), h.ImportCommitContacts)
 			contacts.PATCH("/:id", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts), h.UpdateContact)
 			contacts.DELETE("/:id", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts), h.DeleteContact)
 
