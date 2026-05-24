@@ -31,6 +31,12 @@ func Run(
 	// X-Hub-Signature-256 (HMAC-SHA256 with RELEASES_WEBHOOK_SECRET).
 	r.POST("/webhooks/github/releases", h.GithubReleasesWebhook)
 
+	// Public OAuth-bouncer pages used by the mailbox onboarding popup.
+	// The provider redirects here; the page postMessages the code/state
+	// back to the SPA opener which then calls /emails/onboarding/oauth/finish.
+	r.GET("/addresses/google/callback", h.EmailOAuthCallbackGmail)
+	r.GET("/addresses/outlook/callback", h.EmailOAuthCallbackOutlook)
+
 	corsConfig := cors.Config{
 		AllowMethods:  []string{"POST", "GET", "PATCH", "OPTIONS", "DELETE"},
 		AllowHeaders:  []string{"Origin", "Content-Type", "Authorization"},

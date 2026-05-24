@@ -5,7 +5,7 @@ import type Inbox from "@/lib/api/models/app/emails/Inbox";
 export default async function addEmail(email: AddEmail): Promise<Inbox> {
     return await Request<Inbox>({
         method: "POST",
-        url: `/emails/other`,
+        url: `/emails/onboarding/smtp-imap`,
         data: email,
         authorization: true,
     })
