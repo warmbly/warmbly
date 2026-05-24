@@ -5,6 +5,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/app/cipher"
+	"github.com/warmbly/warmbly/internal/app/feature"
+	warmupapp "github.com/warmbly/warmbly/internal/app/warmup"
 	"github.com/warmbly/warmbly/internal/app/worker"
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
@@ -31,6 +33,8 @@ type EmailService interface {
 type emailService struct {
 	emailRepository  repository.EmailRepository
 	cipherService    cipher.CipherService
+	featureGate      feature.FeatureGateService
+	warmupService    warmupapp.Service
 	publisher        events.Publisher
 	producer         *kafka.Producer
 	r                *cache.Cache
@@ -41,11 +45,15 @@ type emailService struct {
 func NewService(
 	emailRepository repository.EmailRepository,
 	cipherService cipher.CipherService,
+	featureGate feature.FeatureGateService,
+	warmupService warmupapp.Service,
 	publisher events.Publisher,
 ) EmailService {
 	return &emailService{
 		emailRepository: emailRepository,
 		cipherService:   cipherService,
+		featureGate:     featureGate,
+		warmupService:   warmupService,
 		publisher:       publisher,
 	}
 }
@@ -53,6 +61,8 @@ func NewService(
 func NewServiceWithKafka(
 	emailRepository repository.EmailRepository,
 	cipherService cipher.CipherService,
+	featureGate feature.FeatureGateService,
+	warmupService warmupapp.Service,
 	publisher events.Publisher,
 	producer *kafka.Producer,
 	r *cache.Cache,
@@ -62,6 +72,8 @@ func NewServiceWithKafka(
 	return &emailService{
 		emailRepository:  emailRepository,
 		cipherService:    cipherService,
+		featureGate:      featureGate,
+		warmupService:    warmupService,
 		publisher:        publisher,
 		producer:         producer,
 		r:                r,

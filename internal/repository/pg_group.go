@@ -21,6 +21,7 @@ type GroupRepository interface {
 	Delete(ctx context.Context, userID, id uuid.UUID) *errx.Error
 	Move(ctx context.Context, userID, id uuid.UUID, position int32) ([]models.Order, *errx.Error)
 	Update(ctx context.Context, userID, id uuid.UUID, data *models.GroupUpdate) (*models.Group, *errx.Error)
+	List(ctx context.Context, userID uuid.UUID) ([]models.Group, *errx.Error)
 }
 
 type groupRepository struct {
@@ -36,13 +37,35 @@ func NewGroupRepostory(db *db.DB, group models.GroupType) GroupRepository {
 	}
 }
 
+// Default palette for groups (folders / tags / categories) that omit a
+// color in the create request. Picking server-side keeps the API
+// forgiving for clients that just want "any reasonable color" while
+// still allowing clients to set a specific one. The list is rotated
+// per group so two consecutive creates don't end up identical.
+var groupDefaultPalette = []string{
+	"#94a3b8", "#38bdf8", "#10b981", "#f59e0b",
+	"#ef4444", "#a855f7", "#ec4899", "#14b8a6",
+}
+
+func defaultGroupColor(position int32) string {
+	if position < 0 {
+		position = 0
+	}
+	return groupDefaultPalette[int(position)%len(groupDefaultPalette)]
+}
+
 func (r *groupRepository) Create(ctx context.Context, userID uuid.UUID, data *models.GroupCreate) (*models.Group, *errx.Error) {
-	l := len(data.Title)
-	if l < 3 || l > 50 {
+	title := strings.TrimSpace(data.Title)
+	l := len(title)
+	if l < 1 || l > 50 {
 		return nil, errx.ErrGroupTitle
 	}
+	data.Title = title
 
-	if !crypt.IsValidHexColor(data.Color) {
+	// Empty color → pick a sensible default from the palette below
+	// (selected after we know the position). Non-empty but invalid
+	// still 400s — that's a client bug worth surfacing.
+	if data.Color != "" && !crypt.IsValidHexColor(data.Color) {
 		return nil, errx.ErrColor
 	}
 
@@ -77,9 +100,16 @@ func (r *groupRepository) Create(ctx context.Context, userID uuid.UUID, data *mo
 		return nil, errx.ErrGroupMax
 	}
 
+	if data.Color == "" {
+		data.Color = defaultGroupColor(position)
+	}
+
 	t := time.Now()
 	id := uuid.New()
 
+	// INSERT without RETURNING returns zero rows, so tx.Exec is the
+	// right call here. The previous tx.QueryRow + Scan would always
+	// fail with "sql: no rows in result set" once it got this far.
 	query = fmt.Sprintf(`
 		INSERT INTO %s (id, user_id, title, color, position, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $6)
@@ -94,13 +124,13 @@ func (r *groupRepository) Create(ctx context.Context, userID uuid.UUID, data *mo
 		t,
 	}
 
-	err = tx.QueryRow(
+	_, err = tx.Exec(
 		ctx,
 		query,
 		params...,
-	).Scan(&id)
+	)
 	if err != nil {
-		db.CaptureError(err, query, params, "queryrow")
+		db.CaptureError(err, query, params, "exec")
 		return nil, errx.InternalError()
 	}
 
@@ -286,10 +316,12 @@ func (r *groupRepository) Update(ctx context.Context, userID, id uuid.UUID, data
 	args := []any{userID, id}
 	argPos := 3
 	if data.Title != nil {
-		l := len(*data.Title)
-		if l < 3 || l > 50 {
+		trimmed := strings.TrimSpace(*data.Title)
+		l := len(trimmed)
+		if l < 1 || l > 50 {
 			return nil, errx.ErrGroupTitle
 		}
+		*data.Title = trimmed
 		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", "title", argPos))
 		args = append(args, *data.Title)
 		argPos++
@@ -331,4 +363,42 @@ func (r *groupRepository) Update(ctx context.Context, userID, id uuid.UUID, data
 	}
 
 	return &t, nil
+}
+
+// List returns every group of the repository's type belonging to userID,
+// ordered by position. The /auth/me handler calls this once per group
+// type (folders, tags, categories) to populate the User payload so the
+// frontend doesn't have to issue three extra requests on every page
+// load — and so created items still appear after a refresh.
+func (r *groupRepository) List(ctx context.Context, userID uuid.UUID) ([]models.Group, *errx.Error) {
+	query := fmt.Sprintf(
+		`SELECT id, title, color, position, created_at, updated_at
+		   FROM %s
+		  WHERE user_id = $1
+		  ORDER BY position ASC, created_at ASC`,
+		r.Group,
+	)
+
+	rows, err := r.DB.Query(ctx, query, userID)
+	if err != nil {
+		db.CaptureError(err, query, []any{userID}, "query")
+		return nil, errx.InternalError()
+	}
+	defer rows.Close()
+
+	// Non-nil so JSON marshals as [] not null when the user has none.
+	out := make([]models.Group, 0)
+	for rows.Next() {
+		var g models.Group
+		if err := rows.Scan(&g.ID, &g.Title, &g.Color, &g.Position, &g.CreatedAt, &g.UpdatedAt); err != nil {
+			db.CaptureError(err, query, nil, "scan")
+			return nil, errx.InternalError()
+		}
+		out = append(out, g)
+	}
+	if err := rows.Err(); err != nil {
+		db.CaptureError(err, query, nil, "rows")
+		return nil, errx.InternalError()
+	}
+	return out, nil
 }

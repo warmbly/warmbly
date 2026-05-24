@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/notify/templates"
 	"github.com/warmbly/warmbly/internal/pkg/argon2"
 	"github.com/warmbly/warmbly/internal/pkg/crypt"
 )
@@ -16,7 +17,11 @@ import (
 func (s *authService) RegistrationStart(ctx context.Context, data *AuthData, ipaddr string) (*models.AuthSession, *errx.Error) {
 	if xerr := s.captcha.Verify(ctx, data.Turnstile, ipaddr); xerr != nil {
 		sentry.CaptureException(xerr)
-		return nil, errx.InternalError()
+		return nil, xerr
+	}
+
+	if !crypt.ValidatePassword(data.Password) {
+		return nil, errx.ErrPassword
 	}
 
 	if err := s.canSendEmail(ctx, data.Email); err != nil {
@@ -40,6 +45,17 @@ func (s *authService) RegistrationStart(ctx context.Context, data *AuthData, ipa
 
 	code, xerr := crypt.VerificationCode()
 	if xerr != nil {
+		sentry.CaptureException(xerr)
+		return nil, errx.InternalError()
+	}
+
+	text, xerr := templates.GenerateRegistrationCodeHTML(code)
+	if xerr != nil {
+		sentry.CaptureException(xerr)
+		return nil, errx.InternalError()
+	}
+
+	if xerr := s.emailNotificationService.Send(ctx, []string{data.Email}, nil, nil, "Your Verification Code", text); xerr != nil {
 		sentry.CaptureException(xerr)
 		return nil, errx.InternalError()
 	}
@@ -98,6 +114,8 @@ func (s *authService) RegistrationConfirm(ctx context.Context, data *ConfirmData
 	}
 
 	if !v {
+		sess.Tries++
+		_ = s.saveRegistrationSession(ctx, token.SessionID, sess, token.ExpiresAt.Time)
 		return errx.ErrCode
 	}
 
@@ -108,7 +126,7 @@ func (s *authService) RegistrationConfirm(ctx context.Context, data *ConfirmData
 
 	u, xerr := s.userRepository.CreateUser(ctx, email, sess.PasswordHash)
 	if xerr != nil {
-		sentry.CaptureException(err)
+		sentry.CaptureException(xerr)
 		return errx.InternalError()
 	}
 

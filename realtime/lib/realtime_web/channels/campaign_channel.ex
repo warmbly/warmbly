@@ -141,8 +141,25 @@ defmodule RealtimeWeb.CampaignChannel do
       "email_sent" ->
         Auth.has_permission?(%{permissions: permissions}, Auth.permission(:view_campaigns))
 
+      # Task progress events - detailed task updates
+      "task_progress" ->
+        Auth.has_permission?(%{permissions: permissions}, Auth.permission(:view_campaigns))
+
+      # Email tracking events
+      "email_opened" ->
+        Auth.has_permission?(%{permissions: permissions}, Auth.permission(:view_campaigns))
+
+      "email_clicked" ->
+        Auth.has_permission?(%{permissions: permissions}, Auth.permission(:view_campaigns))
+
+      "email_bounced" ->
+        Auth.has_permission?(%{permissions: permissions}, Auth.permission(:view_campaigns))
+
       # Email reply events - requires unibox access
       "email_reply" ->
+        Auth.has_permission?(%{permissions: permissions}, Auth.permission(:access_unibox))
+
+      "email_replied" ->
         Auth.has_permission?(%{permissions: permissions}, Auth.permission(:access_unibox))
 
       # Default: allow if user has view campaigns permission

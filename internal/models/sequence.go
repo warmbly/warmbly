@@ -17,6 +17,7 @@ type Sequence struct {
 	BodyCode  bool   `json:"body_code"`
 
 	WaitAfter int `json:"wait_after"`
+	Position  int `json:"position"`
 
 	UpdatedAt time.Time `json:"updated_at"`
 	CreatedAt time.Time `json:"created_at"`

@@ -57,9 +57,10 @@ func (w *WMail) onGoogleMessageAdd(ctx context.Context, msg *models.EmailMessage
 
 	if err := w.EmailMessageMapRepository.Add(ctx, repository.EmailMessageData{
 		UserID:    w.UserID.String(),
-		EmailID:   w.UserID.String(),
+		EmailID:   w.ID.String(),
 		MessageID: data.MessageID,
-		ID:        w.ID.String(),
+		ID:        msg.ID.String(),
+		ThreadID:  msg.ThreadID,
 	}); err != nil {
 		return err
 	}
@@ -95,7 +96,7 @@ func (w *WMail) onGoogleMessageRemove(ctx context.Context, messageID string) err
 
 	if err := w.onEvent(models.JobEventTypeRemoveEmail, &models.JobEventRemoveEmail{
 		UserID:  w.UserID,
-		EmailID: w.UserID,
+		EmailID: w.ID,
 		ID:      internalID,
 	}); err != nil {
 		return err

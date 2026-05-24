@@ -12,6 +12,7 @@ defmodule Realtime.Subscription do
 
   alias Realtime.Repo
   alias Realtime.Redis
+  alias Realtime.ErrorReporter
 
   import Ecto.Query
 
@@ -61,9 +62,10 @@ defmodule Realtime.Subscription do
   """
   def get_status(user_id) when is_binary(user_id) do
     query =
-      from s in "subscriptions",
+      from(s in "subscriptions",
         where: s.user_id == type(^user_id, :binary_id),
         select: s.status
+      )
 
     case Repo.one(query) do
       nil -> {:error, :no_subscription}
@@ -138,7 +140,7 @@ defmodule Realtime.Subscription do
   rescue
     e ->
       Logger.error("Database error fetching limits: #{inspect(e)}")
-      Sentry.capture_exception(e)
+      ErrorReporter.capture_exception(e)
       @default_limits
   end
 

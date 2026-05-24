@@ -60,6 +60,7 @@ type WMail struct {
 	EmailMessageMapRepository repository.EmailMessageMapRepository
 	CipherService             cipher.CipherService
 
+	Ctx           context.Context
 	Cancel        context.CancelFunc
 	TerminateFunc func()
 
@@ -67,7 +68,6 @@ type WMail struct {
 }
 
 func NewWMail(
-	ctx context.Context,
 	data *models.AddWorkerEmail,
 	OnEvent func(eventType models.JobEventType, key string, body any) error,
 	terminate func(),
@@ -75,20 +75,28 @@ func NewWMail(
 	emailMessageMapRepository repository.EmailMessageMapRepository,
 	cipherService cipher.CipherService,
 ) (*WMail, *errx.MailError) {
-	ctx, cancel := context.WithCancel(ctx)
+	// Use background context so the WMail outlives the AddEmail request handler.
+	mailCtx, cancel := context.WithCancel(context.Background())
 
 	mail := &WMail{
 		ID:        data.ID,
+		UserID:    data.UserID,
 		Email:     data.Email,
+		FirstName: data.FirstName,
+		LastName:  data.LastName,
 		EmailType: data.Type,
 		onEvent: func(jobType models.JobEventType, body any) error {
 			return OnEvent(jobType, data.ID.String(), body)
 		},
 
+		Ctx:           mailCtx,
 		Cancel:        cancel,
 		TerminateFunc: terminate,
 
-		Cache: cache,
+		Cache:                     cache,
+		Storage:                   storage,
+		EmailMessageMapRepository: emailMessageMapRepository,
+		CipherService:             cipherService,
 	}
 
 	switch data.Type {
@@ -108,7 +116,7 @@ func NewWMail(
 			LastHistoryID: data.Google.LastHistoryID,
 		}
 
-		if err := mail.GoogleData.Client.Init(ctx, data.Google.Token, data.Cfg); err != nil {
+		if err := mail.GoogleData.Client.Init(mailCtx, data.Google.Token, data.Cfg); err != nil {
 			return nil, err
 		}
 	default:
@@ -134,7 +142,7 @@ func NewWMail(
 		}
 
 		if data.SmtpImap.Token != nil {
-			ts := data.Cfg.TokenSource(ctx, data.SmtpImap.Token)
+			ts := data.Cfg.TokenSource(mailCtx, data.SmtpImap.Token)
 			ts = oauth2.ReuseTokenSource(data.SmtpImap.Token, ts)
 			ts = stoken.New(ts, func(token *oauth2.Token) error {
 				return mail.onTokenUpdate(token)

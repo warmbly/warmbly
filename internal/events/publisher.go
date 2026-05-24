@@ -21,7 +21,7 @@ import (
 // Publisher handles event publishing to Kafka and S3 storage
 type Publisher interface {
 	// Storage
-	StoreEmailBody(ctx context.Context, taskID uuid.UUID, plainText, htmlBody string) (string, error)
+	StoreEmailBody(ctx context.Context, taskID, userID uuid.UUID, plainText, htmlBody string) (string, error)
 
 	// Email events - sends to worker via Kafka
 	PublishSendEmail(ctx context.Context, workerID uuid.UUID, params *SendEmailParams) error
@@ -29,13 +29,6 @@ type Publisher interface {
 	// Analytics events
 	PublishEmailSent(ctx context.Context, task *repository.Task, account *models.Email, campaign *models.Campaign, contact *models.Contact, sequence *models.Sequence) error
 	PublishWarmupEmailSent(ctx context.Context, task *repository.Task, senderAccount *models.Email, targetAccount *models.Email, isReply bool) error
-
-	// Campaign events
-	PublishCampaignProgress(ctx context.Context, campaignID uuid.UUID, progress *repository.CampaignProgress) error
-
-	// Task events
-	PublishTaskCreated(ctx context.Context, task *repository.Task) error
-	PublishTaskCompleted(ctx context.Context, task *repository.Task) error
 
 	// Warmup action events
 	PublishWarmupAction(ctx context.Context, workerID uuid.UUID, action *models.WarmupEmailAction) error
@@ -47,20 +40,21 @@ type Publisher interface {
 
 // SendEmailParams contains parameters for publishing a send email event
 type SendEmailParams struct {
-	TaskID       uuid.UUID
-	EmailID      uuid.UUID
-	UserID       uuid.UUID
-	To           []string
-	CC           []string
-	BCC          []string
-	InReplyTo    string
-	Subject      string
-	MessageID    string
-	BodyPlain    string
-	BodyHTML     string
-	IsWarmup     bool
-	TrackingInfo *models.TrackingInfo
-	WarmupToken  string
+	TaskID         uuid.UUID
+	EmailID        uuid.UUID
+	UserID         uuid.UUID
+	To             []string
+	CC             []string
+	BCC            []string
+	InReplyTo      string
+	Subject        string
+	MessageID      string
+	BodyPlain      string
+	BodyHTML       string
+	IsWarmup       bool
+	TrackingInfo   *models.TrackingInfo
+	WarmupToken    string
+	UnsubscribeURL string
 }
 
 type publisher struct {
@@ -83,7 +77,7 @@ func NewPublisher(producer *kafka.Producer, storageClient *storage.Client, avrov
 // PublishSendEmail stores email body in S3 and publishes a send email event to the worker
 func (p *publisher) PublishSendEmail(ctx context.Context, workerID uuid.UUID, params *SendEmailParams) error {
 	// Store email body in S3
-	s3Key, err := p.StoreEmailBody(ctx, params.TaskID, params.BodyPlain, params.BodyHTML)
+	s3Key, err := p.StoreEmailBody(ctx, params.TaskID, params.UserID, params.BodyPlain, params.BodyHTML)
 	if err != nil {
 		return fmt.Errorf("failed to store email body: %w", err)
 	}
@@ -104,19 +98,20 @@ func (p *publisher) PublishSendEmail(ctx context.Context, workerID uuid.UUID, pa
 
 	// Create SendEmail message for worker
 	sendEmail := &models.SendEmail{
-		TaskID:       params.TaskID,
-		EmailID:      params.EmailID,
-		UserID:       params.UserID,
-		To:           params.To,
-		Cc:           params.CC,
-		Bcc:          params.BCC,
-		Subject:      subject,
-		BodyS3Key:    s3Key,
-		MessageID:    params.MessageID,
-		InReplyTo:    params.InReplyTo,
-		IsWarmup:     params.IsWarmup,
-		TrackingInfo: params.TrackingInfo,
-		WarmupToken:  params.WarmupToken,
+		TaskID:         params.TaskID,
+		EmailID:        params.EmailID,
+		UserID:         params.UserID,
+		To:             params.To,
+		Cc:             params.CC,
+		Bcc:            params.BCC,
+		Subject:        subject,
+		BodyS3Key:      s3Key,
+		MessageID:      params.MessageID,
+		InReplyTo:      params.InReplyTo,
+		IsWarmup:       params.IsWarmup,
+		TrackingInfo:   params.TrackingInfo,
+		WarmupToken:    params.WarmupToken,
+		UnsubscribeURL: params.UnsubscribeURL,
 	}
 
 	// Publish worker event
@@ -130,15 +125,36 @@ func (p *publisher) PublishSendEmail(ctx context.Context, workerID uuid.UUID, pa
 }
 
 // StoreEmailBody stores email body in S3 and returns the S3 key
-func (p *publisher) StoreEmailBody(ctx context.Context, taskID uuid.UUID, plainText, htmlBody string) (string, error) {
+func (p *publisher) StoreEmailBody(ctx context.Context, taskID, userID uuid.UUID, plainText, htmlBody string) (string, error) {
 	if p.storageClient == nil {
 		return "", nil
 	}
 
+	encPlainText := plainText
+	encHTMLBody := htmlBody
+	if p.cipherService != nil {
+		c, err := p.cipherService.Cipher(ctx, userID)
+		if err != nil {
+			return "", fmt.Errorf("failed to get cipher: %w", err)
+		}
+		if plainText != "" {
+			encPlainText, err = c.Encrypt(ctx, plainText)
+			if err != nil {
+				return "", fmt.Errorf("failed to encrypt plain body: %w", err)
+			}
+		}
+		if htmlBody != "" {
+			encHTMLBody, err = c.Encrypt(ctx, htmlBody)
+			if err != nil {
+				return "", fmt.Errorf("failed to encrypt html body: %w", err)
+			}
+		}
+	}
+
 	// Create email blob
 	blob := &emsg.EmailBlob{
-		PlainText: []byte(plainText),
-		HTMLBody:  []byte(htmlBody),
+		PlainText: []byte(encPlainText),
+		HTMLBody:  []byte(encHTMLBody),
 	}
 
 	data, err := blob.EncodeBinary()
@@ -207,68 +223,6 @@ func (p *publisher) PublishWarmupEmailSent(
 	}
 
 	return p.publish(TopicWarmupEvents, task.ID.String(), event)
-}
-
-// PublishCampaignProgress publishes a campaign progress update
-func (p *publisher) PublishCampaignProgress(
-	ctx context.Context,
-	campaignID uuid.UUID,
-	progress *repository.CampaignProgress,
-) error {
-	event := CampaignProgressEvent{
-		EventType:     EventTypeCampaignProgress,
-		CampaignID:    campaignID,
-		TotalContacts: progress.TotalContacts,
-		EmailsSent:    progress.EmailsSent,
-		EmailsPending: progress.EmailsPending,
-		EmailsOpened:  progress.EmailsOpened,
-		EmailsClicked: progress.EmailsClicked,
-		EmailsReplied: progress.EmailsReplied,
-		EmailsBounced: progress.EmailsBounced,
-		UpdatedAt:     time.Now(),
-	}
-
-	return p.publish(TopicCampaignEvents, campaignID.String(), event)
-}
-
-// PublishTaskCreated publishes a task created event
-func (p *publisher) PublishTaskCreated(ctx context.Context, task *repository.Task) error {
-	scheduledAt := time.Time{}
-	if task.ScheduledAt != nil {
-		scheduledAt = *task.ScheduledAt
-	}
-
-	event := TaskEvent{
-		EventType:      EventTypeTaskCreated,
-		TaskID:         task.ID,
-		TaskType:       task.TaskType,
-		EmailAccountID: task.EmailAccountID,
-		Status:         task.Status,
-		ScheduledAt:    scheduledAt,
-		Timestamp:      time.Now(),
-	}
-
-	return p.publish(TopicTaskEvents, task.ID.String(), event)
-}
-
-// PublishTaskCompleted publishes a task completed event
-func (p *publisher) PublishTaskCompleted(ctx context.Context, task *repository.Task) error {
-	scheduledAt := time.Time{}
-	if task.ScheduledAt != nil {
-		scheduledAt = *task.ScheduledAt
-	}
-
-	event := TaskEvent{
-		EventType:      EventTypeTaskCompleted,
-		TaskID:         task.ID,
-		TaskType:       task.TaskType,
-		EmailAccountID: task.EmailAccountID,
-		Status:         task.Status,
-		ScheduledAt:    scheduledAt,
-		Timestamp:      time.Now(),
-	}
-
-	return p.publish(TopicTaskEvents, task.ID.String(), event)
 }
 
 // PublishWarmupAction publishes a warmup action event to the worker

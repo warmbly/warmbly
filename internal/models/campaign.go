@@ -36,6 +36,10 @@ type Campaign struct {
 	EmailTags []string `json:"email_tags"`
 	Folders   []string `json:"folders"`
 
+	ContactOrderBy    string  `json:"contact_order_by"`
+	ContactOrderDir   string  `json:"contact_order_dir"`
+	ContactOrderField *string `json:"contact_order_field,omitempty"`
+
 	LastStatusChangeAt *time.Time `json:"last_status_change_at,omitempty"`
 
 	UpdatedAt time.Time `json:"updated_at"`
@@ -77,6 +81,10 @@ type UpdateCampaign struct {
 
 	EmailTags []string `json:"email_tags"`
 	Folders   []string `json:"folders"`
+
+	ContactOrderBy    *string `json:"contact_order_by"`
+	ContactOrderDir   *string `json:"contact_order_dir"`
+	ContactOrderField *string `json:"contact_order_field"`
 }
 
 type CreateCampaign struct {

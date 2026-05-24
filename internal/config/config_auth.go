@@ -14,6 +14,7 @@ type AuthConfig struct {
 
 	AuthSecret      string
 	TurnstileSecret string
+	TurnstileBypass string
 }
 
 func (c *Config) LoadAuthConfig(ctx context.Context) (*AuthConfig, error) {
@@ -61,6 +62,7 @@ func (c *Config) LoadAuthConfig(ctx context.Context) (*AuthConfig, error) {
 	if err != nil {
 		return nil, err
 	}
+	turnstileBypass := c.GetSecretOptional(ctx, "TURNSTILE_BYPASS_TOKEN", "turnstile/bypass_token", "")
 
 	return &AuthConfig{
 		GoogleClientID:     googleClientID,
@@ -74,5 +76,6 @@ func (c *Config) LoadAuthConfig(ctx context.Context) (*AuthConfig, error) {
 
 		AuthSecret:      authSecret,
 		TurnstileSecret: turnstileSecret,
+		TurnstileBypass: turnstileBypass,
 	}, nil
 }

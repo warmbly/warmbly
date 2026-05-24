@@ -31,6 +31,11 @@ func (s *JobsService) HandleNewEmail(ctx context.Context, e *models.JobEventNewE
 		return err
 	}
 
+	// Advanced reply-intent automation is best-effort and should not block inbox ingest.
+	if s.AdvancedService != nil {
+		_ = s.AdvancedService.ProcessIncomingReply(ctx, e.Message.EmailID, e.Message)
+	}
+
 	return nil
 }
 
@@ -60,24 +65,20 @@ func (s *JobsService) handleWarmupEmail(ctx context.Context, e *models.JobEventN
 	tokenUUID, err := uuid.Parse(tokenStr)
 	if err != nil {
 		// Invalid format → record attempt
-		s.WarmupRepo.RecordInvalidTokenAttempt(ctx, e.Message.EmailID, tokenStr)
-		s.checkAndAutoBlock(ctx, e.Message.EmailID)
+		s.applyInvalidWarmupAttempt(ctx, e.Message.EmailID, tokenStr, 0)
 		return false, nil // Process as normal email
 	}
 
 	token, err := s.WarmupRepo.GetWarmupToken(ctx, tokenUUID)
 	if err != nil || token == nil {
 		// Token not found/expired → suspicious
-		s.WarmupRepo.RecordInvalidTokenAttempt(ctx, e.Message.EmailID, tokenStr)
-		s.WarmupRepo.IncrementSpamScore(ctx, e.Message.EmailID, 5)
-		s.checkAndAutoBlock(ctx, e.Message.EmailID)
+		s.applyInvalidWarmupAttempt(ctx, e.Message.EmailID, tokenStr, 5)
 		return false, nil
 	}
 
 	// Verify recipient matches
 	if token.RecipientAccountID != e.Message.EmailID {
-		s.WarmupRepo.RecordInvalidTokenAttempt(ctx, e.Message.EmailID, tokenStr)
-		s.checkAndAutoBlock(ctx, e.Message.EmailID)
+		s.applyInvalidWarmupAttempt(ctx, e.Message.EmailID, tokenStr, 0)
 		return false, nil
 	}
 
@@ -112,25 +113,42 @@ func (s *JobsService) performWarmupActions(ctx context.Context, e *models.JobEve
 	}
 }
 
+func (s *JobsService) applyInvalidWarmupAttempt(ctx context.Context, accountID uuid.UUID, attemptedToken string, scoreDelta int) {
+	if s.WarmupService != nil {
+		if _, err := s.WarmupService.ApplyInvalidTokenAttempt(ctx, accountID, attemptedToken, scoreDelta); err == nil {
+			return
+		}
+	}
+
+	if s.WarmupRepo == nil {
+		return
+	}
+
+	_ = s.WarmupRepo.RecordInvalidTokenAttempt(ctx, accountID, attemptedToken)
+	if scoreDelta > 0 {
+		_, _ = s.WarmupRepo.IncrementSpamScore(ctx, accountID, scoreDelta)
+	}
+
+	s.checkAndAutoBlock(ctx, accountID)
+}
+
 // checkAndAutoBlock checks if an account should be auto-blocked based on invalid token attempts or spam score
 func (s *JobsService) checkAndAutoBlock(ctx context.Context, accountID uuid.UUID) {
 	if s.WarmupRepo == nil {
 		return
 	}
 
-	// Check invalid token attempts in last 24h
 	since := time.Now().Add(-24 * time.Hour)
 	attempts, _ := s.WarmupRepo.CountRecentInvalidAttempts(ctx, accountID, since)
 	if attempts >= 3 {
-		s.WarmupRepo.BlockFromPool(ctx, accountID,
+		_ = s.WarmupRepo.BlockFromPool(ctx, accountID,
 			fmt.Sprintf("Auto-blocked: %d invalid warmup token attempts in 24h", attempts))
 		return
 	}
 
-	// Check spam score
 	score, _ := s.WarmupRepo.GetSpamScore(ctx, accountID)
 	if score > 50 {
-		s.WarmupRepo.BlockFromPool(ctx, accountID,
+		_ = s.WarmupRepo.BlockFromPool(ctx, accountID,
 			fmt.Sprintf("Auto-blocked: spam score %d exceeds threshold", score))
 	}
 }

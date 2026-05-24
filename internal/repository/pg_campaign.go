@@ -21,6 +21,7 @@ type CampaignRepository interface {
 	Get(ctx context.Context, userID, id string) (*models.Campaign, error)
 	GetByID(ctx context.Context, campaignID uuid.UUID) (*models.Campaign, error)
 	GetSequenceByID(ctx context.Context, sequenceID uuid.UUID) (*models.Sequence, error)
+	GetSequencesByCampaignID(ctx context.Context, campaignID uuid.UUID) ([]models.Sequence, error)
 	Search(ctx context.Context, userID, query string, cursor, folder *string, limit int32) (*models.CampaignsResult, error)
 	Update(ctx context.Context, userID, query string, data *models.UpdateCampaign) (*models.Campaign, *errx.Error)
 	UpdateStatus(ctx context.Context, campaignID uuid.UUID, status string) error
@@ -50,6 +51,7 @@ const CAMPAIGN_SELECT = `id, name, description, status,
 		  text_only, daily_limit, unsubscribe_header, risky_emails,
 		  cc_addr, bcc_addr, start_date, end_date, timezone, days,
 		  start_time, end_time,
+		  contact_order_by, contact_order_dir, contact_order_field,
 		  updated_at, created_at`
 
 func getCampaign(rows db.Scannable, campaign *models.Campaign, extra ...any) error {
@@ -59,6 +61,7 @@ func getCampaign(rows db.Scannable, campaign *models.Campaign, extra ...any) err
 		&campaign.TextOnly, &campaign.DailyLimit, &campaign.UnsubscribeHeader, &campaign.RiskyEmails,
 		&campaign.CC, &campaign.BCC, &campaign.StartDate, &campaign.EndDate, &campaign.Timezone, &campaign.Days,
 		&campaign.StartTime, &campaign.EndTime,
+		&campaign.ContactOrderBy, &campaign.ContactOrderDir, &campaign.ContactOrderField,
 		&campaign.UpdatedAt, &campaign.CreatedAt,
 	}
 	dest = append(dest, extra...)
@@ -73,9 +76,10 @@ const CAMPAIGN_SELECT_FULL = `
 	c.text_only, c.daily_limit, c.unsubscribe_header, c.risky_emails,
 	c.cc_addr, c.bcc_addr, c.start_date, c.end_date, c.timezone, c.days,
 	c.start_time, c.end_time,
+	c.contact_order_by, c.contact_order_dir, c.contact_order_field,
 	c.updated_at, c.created_at,
-	COALESCE(array_agg(cet.tag_id) FILTER (WHERE cet.tag IS NOT NULL), '{}') AS email_tag_ids,
-	COALESCE(array_agg(cec.folder_id) FILTER (WHERE cec.folder IS NOT NULL), '{}') AS email_folder_ids
+	COALESCE(array_agg(cet.tag_id) FILTER (WHERE cet.tag_id IS NOT NULL), '{}') AS email_tag_ids,
+	COALESCE(array_agg(cec.folder_id) FILTER (WHERE cec.folder_id IS NOT NULL), '{}') AS email_folder_ids
 `
 
 func getCampaignFull(rows db.Scannable, campaign *models.Campaign) error {
@@ -176,6 +180,7 @@ func (r *campaignRepository) Search(ctx context.Context, userID, query string, c
 		db.CaptureError(err, "", nil, "begin")
 		return nil, err
 	}
+	defer tx.Rollback(ctx)
 	campaigns := make([]models.Campaign, 0, limit+1)
 
 	sql := fmt.Sprintf(`
@@ -231,7 +236,10 @@ func (r *campaignRepository) Search(ctx context.Context, userID, query string, c
 	}
 	defer rows.Close()
 
-	var i int
+	// campaigns is a 0-length slice with capacity limit+1 — append (not
+	// index assignment) is required, otherwise the first iteration panics
+	// "index out of range". That bug blanked the Campaigns page for any
+	// user who actually had campaigns.
 	for rows.Next() {
 		var campaign models.Campaign
 		err = getCampaignFull(rows, &campaign)
@@ -239,8 +247,7 @@ func (r *campaignRepository) Search(ctx context.Context, userID, query string, c
 			db.CaptureError(err, "", nil, "scan")
 			return nil, err
 		}
-		campaigns[i] = campaign
-		i++
+		campaigns = append(campaigns, campaign)
 	}
 
 	var total *int64
@@ -442,6 +449,31 @@ func (r *campaignRepository) Update(ctx context.Context, userID, campaignID stri
 		args = append(args, *data.EndTime)
 		argPos++
 	}
+	if data.ContactOrderBy != nil {
+		validOrderBy := map[string]bool{
+			"created_at": true, "email": true, "name": true,
+			"custom_field": true, "manual": true,
+		}
+		if !validOrderBy[*data.ContactOrderBy] {
+			return nil, errx.ErrInvalid
+		}
+		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", "contact_order_by", argPos))
+		args = append(args, *data.ContactOrderBy)
+		argPos++
+	}
+	if data.ContactOrderDir != nil {
+		if *data.ContactOrderDir != "asc" && *data.ContactOrderDir != "desc" {
+			return nil, errx.ErrInvalid
+		}
+		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", "contact_order_dir", argPos))
+		args = append(args, *data.ContactOrderDir)
+		argPos++
+	}
+	if data.ContactOrderField != nil {
+		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", "contact_order_field", argPos))
+		args = append(args, *data.ContactOrderField)
+		argPos++
+	}
 
 	if argPos == 3 && data.EmailTags == nil {
 		return nil, errx.ErrNotEnough
@@ -539,6 +571,7 @@ func (r *campaignRepository) GetByID(ctx context.Context, campaignID uuid.UUID) 
 		&campaign.TextOnly, &campaign.DailyLimit, &campaign.UnsubscribeHeader, &campaign.RiskyEmails,
 		&campaign.CC, &campaign.BCC, &campaign.StartDate, &campaign.EndDate, &campaign.Timezone, &campaign.Days,
 		&campaign.StartTime, &campaign.EndTime,
+		&campaign.ContactOrderBy, &campaign.ContactOrderDir, &campaign.ContactOrderField,
 		&campaign.UpdatedAt, &campaign.CreatedAt,
 		&campaign.EmailTags, &campaign.Folders,
 	)
@@ -577,9 +610,64 @@ func (r *campaignRepository) GetSequenceByID(ctx context.Context, sequenceID uui
 	return &seq, nil
 }
 
-// UpdateStatus updates only the status of a campaign
+// GetSequencesByCampaignID retrieves all sequences for a campaign ordered by position
+func (r *campaignRepository) GetSequencesByCampaignID(ctx context.Context, campaignID uuid.UUID) ([]models.Sequence, error) {
+	query := `
+		SELECT id, name, subject, body_plain, body_html, body_sync, body_code, wait_after, position, updated_at, created_at
+		FROM sequences
+		WHERE campaign_id = $1
+		ORDER BY position ASC, created_at ASC
+	`
+
+	rows, err := r.DB.Query(ctx, query, campaignID)
+	if err != nil {
+		db.CaptureError(err, query, []any{campaignID}, "query")
+		return nil, err
+	}
+	defer rows.Close()
+
+	var sequences []models.Sequence
+	for rows.Next() {
+		var seq models.Sequence
+		err := rows.Scan(
+			&seq.ID, &seq.Name, &seq.Subject, &seq.BodyPlain, &seq.BodyHTML,
+			&seq.BodySync, &seq.BodyCode, &seq.WaitAfter, &seq.Position, &seq.UpdatedAt, &seq.CreatedAt,
+		)
+		if err != nil {
+			db.CaptureError(err, "", nil, "scan")
+			return nil, err
+		}
+		sequences = append(sequences, seq)
+	}
+
+	return sequences, rows.Err()
+}
+
+// validCampaignTransitions defines which status transitions are allowed.
+// Key is the current status, values are the statuses it can transition to.
+var validCampaignTransitions = map[string]map[string]bool{
+	"draft":                {"active": true},
+	"active":               {"paused": true, "completed": true, "paused_no_accounts": true, "paused_trial_expired": true},
+	"paused":               {"active": true, "draft": true},
+	"paused_no_accounts":   {"active": true, "paused": true},
+	"paused_trial_expired": {"active": true, "paused": true},
+	"completed":            {}, // terminal state
+}
+
+// UpdateStatus updates only the status of a campaign with state machine validation
 func (r *campaignRepository) UpdateStatus(ctx context.Context, campaignID uuid.UUID, status string) error {
-	query := `UPDATE campaigns SET status = $1, updated_at = NOW() WHERE id = $2`
+	query := `UPDATE campaigns SET status = $1, updated_at = NOW() WHERE id = $2 AND status != $1`
+
+	// Validate that the transition is allowed
+	var currentStatus string
+	if err := r.DB.QueryRow(ctx, `SELECT status FROM campaigns WHERE id = $1`, campaignID).Scan(&currentStatus); err != nil {
+		return err
+	}
+	allowed, ok := validCampaignTransitions[currentStatus]
+	if !ok || !allowed[status] {
+		return fmt.Errorf("invalid campaign transition from %q to %q", currentStatus, status)
+	}
+
 	_, err := r.DB.Exec(ctx, query, status, campaignID)
 	return err
 }
@@ -619,7 +707,7 @@ func (r *campaignRepository) ValidateCampaignReady(ctx context.Context, campaign
 
 	// Check contacts
 	var contactCount int
-	err = r.DB.QueryRow(ctx, `SELECT COUNT(*) FROM campaign_leads WHERE campaign = $1`, campaignID).Scan(&contactCount)
+	err = r.DB.QueryRow(ctx, `SELECT COUNT(*) FROM campaign_leads WHERE campaign_id = $1`, campaignID).Scan(&contactCount)
 	if err != nil {
 		return err
 	}

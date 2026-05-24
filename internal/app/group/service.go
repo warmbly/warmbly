@@ -14,6 +14,7 @@ type GroupService interface {
 	Delete(ctx context.Context, userID, id uuid.UUID) *errx.Error
 	Move(ctx context.Context, userID, id uuid.UUID, position int32) ([]models.Order, *errx.Error)
 	Update(ctx context.Context, userID, id uuid.UUID, data *models.GroupUpdate) (*models.Group, *errx.Error)
+	List(ctx context.Context, userID uuid.UUID) ([]models.Group, *errx.Error)
 }
 
 type groupService struct {

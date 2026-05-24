@@ -94,9 +94,9 @@ func (c *Client) getOrCreateLabel(ctx context.Context, labelName string) (string
 
 	// Create new label
 	newLabel, err := c.srv.Users.Labels.Create("me", &gmail.Label{
-		Name:                    labelName,
-		LabelListVisibility:     "labelShow",
-		MessageListVisibility:   "show",
+		Name:                  labelName,
+		LabelListVisibility:   "labelShow",
+		MessageListVisibility: "show",
 	}).Context(ctx).Do()
 	if err != nil {
 		return "", err
@@ -104,4 +104,3 @@ func (c *Client) getOrCreateLabel(ctx context.Context, labelName string) (string
 
 	return newLabel.Id, nil
 }
-

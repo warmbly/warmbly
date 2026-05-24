@@ -1,0 +1,94 @@
+---
+title: API Keys
+description: Overview of the API Keys endpoints for managing programmatic access to Warmbly.
+---
+
+# API Keys
+
+The API Keys endpoints allow you to programmatically manage API keys for your organization. This is useful for:
+
+- Creating keys for integrations and automated systems
+- Rotating keys regularly for security
+- Revoking compromised keys
+- Managing access for team members or contractors
+
+## Requirements
+
+To use these endpoints, your API key must have the `API_KEYS` permission (bit 13, value 8192).
+
+## Endpoints Overview
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api-keys` | [Create a new API key](/api-keys/create) |
+| GET | `/api-keys` | [List all API keys](/api-keys/list) |
+| GET | `/api-keys/permissions` | [List available permissions](/api-keys/permissions) |
+| GET | `/api-keys/:id` | [Get a specific API key](/api-keys/get) |
+| PATCH | `/api-keys/:id` | [Update an API key](/api-keys/update) |
+| DELETE | `/api-keys/:id` | [Revoke an API key](/api-keys/revoke) |
+
+## API Key Object
+
+The API key object contains the following fields:
+
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "user_id": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+  "organization_id": "6ba7b811-9dad-11d1-80b4-00c04fd430c8",
+  "name": "Production API Key",
+  "key_prefix": "wmbly_abc",
+  "permissions": 8191,
+  "allowed_ips": ["203.0.113.10"],
+  "allowed_email_accounts": [],
+  "status": "active",
+  "last_used_at": "2024-01-15T10:30:00Z",
+  "expires_at": null,
+  "revoked_at": null,
+  "revoked_reason": null,
+  "created_at": "2024-01-01T00:00:00Z",
+  "updated_at": "2024-01-15T10:30:00Z"
+}
+```
+
+### Field Descriptions
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | UUID | Unique identifier for the API key |
+| `user_id` | UUID | ID of the user who created the key |
+| `organization_id` | UUID | ID of the organization |
+| `name` | string | Human-readable name for the key |
+| `key_prefix` | string | First 10 characters of the key (for identification) |
+| `permissions` | integer | Bitmask of granted permissions |
+| `allowed_ips` | array | IP addresses allowed to use this key (empty = all) |
+| `allowed_email_accounts` | array | Email account IDs this key can access (empty = all) |
+| `status` | string | Key status: `active`, `revoked`, or `expired` |
+| `last_used_at` | timestamp | When the key was last used |
+| `expires_at` | timestamp | When the key expires (null = never) |
+| `revoked_at` | timestamp | When the key was revoked |
+| `revoked_reason` | string | Reason for revocation |
+| `created_at` | timestamp | When the key was created |
+| `updated_at` | timestamp | When the key was last updated |
+
+## Key Statuses
+
+| Status | Description |
+|--------|-------------|
+| `active` | Key is valid and can be used |
+| `revoked` | Key has been manually revoked |
+| `expired` | Key has passed its expiration date |
+
+## Next Steps
+
+<Cards>
+  <Card title="Create API Key" href="/api-keys/create">
+    Create a new API key with specific permissions.
+  </Card>
+  <Card title="List API Keys" href="/api-keys/list">
+    View all API keys in your organization.
+  </Card>
+  <Card title="Permissions Reference" href="/reference/permissions">
+    See all available permissions.
+  </Card>
+</Cards>

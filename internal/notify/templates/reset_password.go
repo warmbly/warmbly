@@ -7,69 +7,43 @@ import (
 	"github.com/getsentry/sentry-go"
 )
 
-const ResetPasswordTemplate = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
- <meta charset="utf-8"/>
- <title>{{.Subject}}</title>
- <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
- <style>
-body,table,td{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;}
-.wrapper{background-color:#f0f4ff;margin:0;padding:24px 0;}
-.content{background-color:#fff;border-radius:8px;max-width:600px;margin:0 auto;padding:32px;border:1px solid #e1e8ff;}
-.btn{background-color:#2563eb;border-radius:4px;color:#fff;display:inline-block;font-size:16px;font-weight:600;line-height:48px;text-align:center;text-decoration:none;width:220px;}
-.btn:hover{background-color:#1e4fd1;}
-.code{font-size:28px;font-weight:700;color:#1e3a8a;letter-spacing:4px;}
-.footer{color:#6b7280;font-size:12px;padding-top:32px;text-align:center;}
-img{border-radius:1em;}
- </style>
-</head>
-<body class="wrapper">
- <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
- <tr>
- <td>
- <div class="content">
- <table role="presentation" width="100%">
- <tr>
- <td style="text-align:center;padding-bottom:24px;">
- <img src="https://warmbly.com/logo.jpg" alt="Warmbly" height="72"/>
- </td>
- </tr>
- </table>
- <p style="font-size:16px;color:#555555;line-height:24px;">
- We received a request to reset your password. Tap the button below to choose a new one.
- </p>
- <p style="text-align:center;margin:32px 0;">
- <a href="{{.ResetURL}}" class="btn">Reset Password</a>
- </p>
- <p style="font-size:14px;color:#888888;">
- If you didn't request this, you can safely ignore this email. The link expires in 4 hours.<br/><a href="{{.ResetURL}}" style="color:#22c55e;">{{.ResetURL}}</a>
- </p>
- <div class="footer">
- Warmbly.com | All rights reserved.<br/>
- </div>
- </div>
- </td>
- </tr>
- </table>
-</body>
-</html>
+const resetPasswordContent = `
+<p style="margin:0 0 4px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:11px;color:#94a3b8;letter-spacing:0.14em;text-transform:uppercase;font-weight:500;">
+Account
+</p>
+<h2 style="margin:0 0 8px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-weight:600;font-size:18px;color:#0f172a;letter-spacing:-0.01em;">
+Reset your password
+</h2>
+<p style="margin:0 0 24px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:13px;color:#475569;line-height:20px;">
+We received a request to reset your password. Click the button to choose a new one. If you didn't request this, you can safely ignore this email.
+</p>
+
+<table cellpadding="0" cellspacing="0" border="0" align="center" role="presentation" style="margin:0 0 24px;">
+<tr>
+<td align="center" style="border-radius:6px;background:#0f172a;">
+<a href="{{.ResetURL}}" target="_blank" style="display:inline-block;padding:10px 22px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:13px;font-weight:600;color:#ffffff;text-decoration:none;letter-spacing:0.01em;">Reset password</a>
+</td>
+</tr>
+</table>
+
+<div style="margin:0 0 16px;height:1px;background:#e2e8f0;"></div>
+
+<p style="margin:0 0 6px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:11px;color:#94a3b8;letter-spacing:0.08em;text-transform:uppercase;font-weight:500;">
+Link expires in 4 hours
+</p>
+<p style="margin:0;font-family:'SF Mono','Fira Mono','Roboto Mono','Courier New',monospace;font-size:11px;color:#64748b;word-break:break-all;line-height:18px;">
+<a href="{{.ResetURL}}" style="color:#0f172a;text-decoration:none;">{{.ResetURL}}</a>
+</p>
 `
 
-var ResetPasswordHTMLTMPL = template.Must(template.New("reset_password").Parse(LoginCodeTemplate))
+var resetPasswordTmpl = template.Must(template.New("reset_password_content").Parse(resetPasswordContent))
 
-func GenerateResetPasswordHTML(first_name, url string) (string, error) {
-	var data struct {
-		ResetURL string
-	}
-	data.ResetURL = url
-
-	var body bytes.Buffer
-	if err := ResetPasswordHTMLTMPL.Execute(&body, data); err != nil {
+func GenerateResetPasswordHTML(firstName, url string) (string, error) {
+	data := struct{ ResetURL string }{ResetURL: url}
+	var buf bytes.Buffer
+	if err := resetPasswordTmpl.Execute(&buf, data); err != nil {
 		sentry.CaptureException(err)
 		return "", err
 	}
-
-	return body.String(), nil
+	return renderEmail("Reset Your Password", buf.String())
 }

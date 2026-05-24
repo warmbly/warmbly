@@ -75,11 +75,13 @@ defmodule RealtimeWeb.UserChannel do
         handle_client_event(event, payload, socket)
 
       {:error, :rate_limited, retry_after_ms} ->
-        {:reply, {:error, %{
-          reason: "rate_limited",
-          category: "ws_event",
-          retry_after_ms: retry_after_ms
-        }}, socket}
+        {:reply,
+         {:error,
+          %{
+            reason: "rate_limited",
+            category: "ws_event",
+            retry_after_ms: retry_after_ms
+          }}, socket}
     end
   end
 

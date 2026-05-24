@@ -13,6 +13,9 @@ CREATE TABLE users (
     admin_granted_by UUID,
     banned_at TIMESTAMPTZ,
 
+    referral_source VARCHAR(50),
+    onboarding_completed_at TIMESTAMPTZ,
+
     created_at TIMESTAMPTZ DEFAULT now (),
     updated_at TIMESTAMPTZ DEFAULT now (),
 

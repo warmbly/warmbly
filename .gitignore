@@ -7,6 +7,10 @@
 *.dll
 *.so
 *.dylib
+/consumer
+/worker
+/backend
+/seed
 
 # Test binary, built with `go test -c`
 *.test
@@ -18,7 +22,7 @@ coverage.*
 profile.cov
 
 # Dependency directories (remove the comment below to include it)
-# vendor/
+vendor/
 
 # Go workspace file
 go.work
@@ -36,3 +40,17 @@ go.work.sum
 
 # Geo Location
 *.mmdb
+
+# MCP servers
+.mcp.json
+
+# Local Go build cache
+.gocache/
+
+# Local pnpm store created by dockerized frontend installs
+web/.pnpm-store/
+
+# Temp/test output directories
+.tmp-tests/
+test-results/
+web/.tmp/

@@ -1,4 +1,4 @@
-defmodule Realtime.PubSub.Subscriber do
+defmodule Realtime.CloudPubSub.Subscriber do
   @moduledoc """
   Broadway pipeline for consuming Google Pub/Sub messages.
 
@@ -9,6 +9,7 @@ defmodule Realtime.PubSub.Subscriber do
   use Broadway
 
   require Logger
+  alias Realtime.ErrorReporter
 
   def start_link(opts) do
     subscription = Keyword.fetch!(opts, :subscription)
@@ -19,8 +20,7 @@ defmodule Realtime.PubSub.Subscriber do
       producer: [
         module: {
           BroadwayCloudPubSub.Producer,
-          subscription: "projects/#{project_id}/subscriptions/#{subscription}",
-          on_failure: :nack
+          subscription: "projects/#{project_id}/subscriptions/#{subscription}", on_failure: :nack
         },
         concurrency: 1
       ],
@@ -47,13 +47,17 @@ defmodule Realtime.PubSub.Subscriber do
 
       {:error, reason} ->
         Logger.error("Failed to decode Pub/Sub message: #{inspect(reason)}")
-        Sentry.capture_message("Pub/Sub decode error", extra: %{reason: reason, data: message.data})
+
+        ErrorReporter.capture_message("Pub/Sub decode error",
+          extra: %{reason: reason, data: message.data}
+        )
+
         Broadway.Message.failed(message, "json_decode_error")
     end
   rescue
     e ->
       Logger.error("Error handling Pub/Sub message: #{inspect(e)}")
-      Sentry.capture_exception(e, extra: %{data: message.data})
+      ErrorReporter.capture_exception(e, extra: %{data: message.data})
       Broadway.Message.failed(message, "processing_error")
   end
 

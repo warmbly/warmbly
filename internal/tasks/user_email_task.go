@@ -2,22 +2,43 @@ package tasks
 
 import (
 	"context"
-	"fmt"
+	"time"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/google/uuid"
+	"github.com/rs/zerolog/log"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/tasks/proto"
 )
 
 func (s *tasksService) HandleUserEmailTask(task *proto.ProcessTask) *errx.Error {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
 
 	// STEP 1: Parse task ID
 	taskID, err := uuid.Parse(task.TaskId)
 	if err != nil {
 		sentry.CaptureException(err)
 		return errx.New(errx.BadRequest, "invalid task ID")
+	}
+
+	executionKey := "user-email:" + taskID.String()
+	executionStatus := "failed"
+	if s.advanced != nil {
+		duplicate, xerr := s.advanced.StartTaskExecution(ctx, taskID, executionKey, map[string]interface{}{
+			"task_type": "user_email",
+		})
+		if xerr != nil {
+			return xerr
+		}
+		if duplicate {
+			return nil
+		}
+		defer func() {
+			_ = s.advanced.CompleteTaskExecution(ctx, taskID, executionKey, executionStatus, map[string]interface{}{
+				"task_type": "user_email",
+			})
+		}()
 	}
 
 	// STEP 2: Load task record
@@ -93,6 +114,13 @@ func (s *tasksService) HandleUserEmailTask(task *proto.ProcessTask) *errx.Error 
 
 	if err := s.emailSender.Send(ctx, taskID, emailMsg, *account); err != nil {
 		s.taskRepo.RecordTaskFailure(ctx, taskID, "Send failed", err.Error())
+		if s.advanced != nil {
+			_ = s.advanced.CaptureTaskDeadLetter(ctx, taskID, "user_email", map[string]interface{}{
+				"account_id": account.ID.String(),
+				"to":         emailTask.To,
+			}, err.Error(), 1)
+			_ = s.taskRepo.UpdateTaskStatus(ctx, taskID, "dead_lettered")
+		}
 		return nil
 	}
 
@@ -107,7 +135,8 @@ func (s *tasksService) HandleUserEmailTask(task *proto.ProcessTask) *errx.Error 
 	}
 
 	// STEP 12: Publish events
-	fmt.Printf("User email sent: task=%s, account=%s\n", task.TaskId, account.ID)
+	log.Info().Str("task_id", task.TaskId).Str("account_id", account.ID.String()).Msg("user email sent")
 
+	executionStatus = "completed"
 	return nil
 }

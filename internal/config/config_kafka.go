@@ -11,15 +11,12 @@ func (c *Config) LoadKafkaBootstrapServers(ctx context.Context) (string, error) 
 }
 
 func (c *Config) LoadKafkaConfigSasl(ctx context.Context) (*kafka.SASLConfig, error) {
-	kafkaSaslUsername, err := c.GetSecretRaw(ctx, "KAFKA_SASL_USERNAME", "kafka/sasl/username")
-	if err != nil {
-		return nil, err
+	kafkaSaslUsername := c.GetSecretOptionalRaw(ctx, "KAFKA_SASL_USERNAME", "kafka/sasl/username", "")
+	if kafkaSaslUsername == "" {
+		return nil, nil
 	}
 
-	kafkaSaslPassword, err := c.GetSecretRaw(ctx, "KAFKA_SASL_PASSWORD", "kafka/sasl/password")
-	if err != nil {
-		return nil, err
-	}
+	kafkaSaslPassword := c.GetSecretOptionalRaw(ctx, "KAFKA_SASL_PASSWORD", "kafka/sasl/password", "")
 
 	return &kafka.SASLConfig{
 		Username: kafkaSaslUsername,
@@ -33,15 +30,8 @@ func (c *Config) LoadSchemaRegistryConfig(ctx context.Context) (endpoint, key, s
 		return "", "", "", err
 	}
 
-	key, err = c.GetSecretRaw(ctx, "SCHEMA_REGISTRY_KEY", "kafka/schema_registry/key")
-	if err != nil {
-		return "", "", "", err
-	}
-
-	secret, err = c.GetSecretRaw(ctx, "SCHEMA_REGISTRY_SECRET", "kafka/schema_registry/secret")
-	if err != nil {
-		return "", "", "", err
-	}
+	key = c.GetSecretOptionalRaw(ctx, "SCHEMA_REGISTRY_KEY", "kafka/schema_registry/key", "")
+	secret = c.GetSecretOptionalRaw(ctx, "SCHEMA_REGISTRY_SECRET", "kafka/schema_registry/secret", "")
 
 	return endpoint, key, secret, nil
 }

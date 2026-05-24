@@ -2,11 +2,14 @@ package jobs
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"time"
 
 	ckf "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/google/uuid"
+	"github.com/rs/zerolog/log"
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/events"
 	"github.com/warmbly/warmbly/internal/infrastructure/kafka"
@@ -96,7 +99,7 @@ func (tc *TrackingConsumer) handleMessage(msg *ckf.Message) error {
 
 	// Deserialize using Confluent Avrov2
 	if err := tc.consumer.Avrov2.Deser.DeserializeInto(tc.topic, msg.Value, &event); err != nil {
-		fmt.Printf("Failed to deserialize tracking event: %v\n", err)
+		log.Warn().Err(err).Msg("failed to deserialize tracking event")
 		return nil // Don't fail - skip invalid events
 	}
 
@@ -123,7 +126,7 @@ func (tc *TrackingConsumer) HandleTrackingEvent(ctx context.Context, event *even
 		processed, err := tc.dedupeRepo.IsProcessed(ctx, taskID, event.EventType, urlHash)
 		if err != nil {
 			// Log but continue - allow processing on dedupe errors
-			fmt.Printf("Dedupe check failed: %v\n", err)
+			log.Warn().Err(err).Str("task_id", event.TaskID).Msg("tracking dedupe check failed")
 		} else if processed {
 			// Already processed, skip
 			return nil
@@ -133,7 +136,7 @@ func (tc *TrackingConsumer) HandleTrackingEvent(ctx context.Context, event *even
 	// Get campaign task to find campaign/contact/sequence IDs
 	campaignTask, err := tc.taskRepo.GetCampaignTask(ctx, taskID)
 	if err != nil {
-		fmt.Printf("Failed to get campaign task: %v\n", err)
+		log.Warn().Err(err).Str("task_id", event.TaskID).Msg("failed to get campaign task for tracking event")
 		return nil
 	}
 
@@ -166,14 +169,14 @@ func (tc *TrackingConsumer) HandleTrackingEvent(ctx context.Context, event *even
 	}
 
 	if err != nil {
-		fmt.Printf("Failed to record %s event: %v\n", event.EventType, err)
+		log.Error().Err(err).Str("task_id", event.TaskID).Str("event_type", string(event.EventType)).Msg("failed to record tracking event")
 		return nil
 	}
 
 	// Mark as processed for deduplication
 	if tc.dedupeRepo != nil {
 		if err := tc.dedupeRepo.MarkProcessed(ctx, taskID, event.EventType, urlHash); err != nil {
-			fmt.Printf("Failed to mark event as processed: %v\n", err)
+			log.Warn().Err(err).Str("task_id", event.TaskID).Msg("failed to mark tracking event as processed")
 		}
 	}
 
@@ -236,13 +239,10 @@ func (tc *TrackingConsumer) publishTrackingEvent(ctx context.Context, task *repo
 }
 
 // hashURL creates a short hash of a URL for deduplication
-func hashURL(url string) string {
-	if url == "" {
+func hashURL(u string) string {
+	if u == "" {
 		return ""
 	}
-	// Simple hash using first 8 chars of URL + length
-	if len(url) > 8 {
-		return fmt.Sprintf("%s_%d", url[:8], len(url))
-	}
-	return url
+	h := sha256.Sum256([]byte(u))
+	return hex.EncodeToString(h[:8])
 }

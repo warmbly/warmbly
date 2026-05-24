@@ -9,6 +9,10 @@ import (
 )
 
 func (w *WMail) Sync(ctx context.Context) *errx.MailError {
+	if w.SmtpImapData == nil || w.SmtpImapData.ImapClient == nil {
+		return nil
+	}
+
 	folders, err := w.SmtpImapData.ImapClient.Folders()
 	if err != nil {
 		return err
@@ -49,8 +53,10 @@ func (w *WMail) Sync(ctx context.Context) *errx.MailError {
 		}
 	}
 
+	// Collect deletions first to avoid modifying the slice during iteration
+	var deleted []uint32
 outer:
-	for i, box := range w.SmtpImapData.Mailboxes {
+	for _, box := range w.SmtpImapData.Mailboxes {
 		for _, f := range folders {
 			if box.UIDValidity == f.UIDValidity {
 				continue outer
@@ -64,8 +70,17 @@ outer:
 		}); err != nil {
 			return nil
 		}
+		deleted = append(deleted, box.UIDValidity)
+	}
 
-		w.SmtpImapData.Mailboxes = append(w.SmtpImapData.Mailboxes[:i], w.SmtpImapData.Mailboxes[i+1:]...)
+	if len(deleted) > 0 {
+		filtered := w.SmtpImapData.Mailboxes[:0]
+		for _, b := range w.SmtpImapData.Mailboxes {
+			if !slices.Contains(deleted, b.UIDValidity) {
+				filtered = append(filtered, b)
+			}
+		}
+		w.SmtpImapData.Mailboxes = filtered
 	}
 
 	return nil

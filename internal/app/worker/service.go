@@ -9,18 +9,20 @@ import (
 	"github.com/warmbly/warmbly/internal/infrastructure/kafka"
 	"github.com/warmbly/warmbly/internal/infrastructure/storage"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/repository"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
 
 type WorkerService struct {
-	ID            string
-	CipherService cipher.CipherService
-	KafkaProducer *kafka.Producer
-	KafkaConsumer *kafka.Consumer
-	QueueURL      string
-	Cache         *cache.Cache
-	Storage       *storage.Client
+	ID                        string
+	CipherService             cipher.CipherService
+	KafkaProducer             *kafka.Producer
+	KafkaConsumer             *kafka.Consumer
+	QueueURL                  string
+	Cache                     *cache.Cache
+	Storage                   *storage.Client
+	EmailMessageMapRepository repository.EmailMessageMapRepository
 
 	mailManager *mailmanager.MailManager
 
@@ -41,6 +43,8 @@ func (s *WorkerService) Init() error {
 		s.Produce,
 		s.Cache,
 		s.Storage,
+		s.EmailMessageMapRepository,
+		s.CipherService,
 	)
 
 	return nil

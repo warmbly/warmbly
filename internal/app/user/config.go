@@ -1,5 +1,7 @@
 package user
 
+import "time"
+
 const (
-	UserTTL = 1800
+	UserTTL = 30 * time.Minute
 )

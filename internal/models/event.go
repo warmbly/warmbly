@@ -34,10 +34,10 @@ const (
 	JobEventTypeEmailFailed JobEventType = "EMAIL_FAILED"
 
 	// Error-specific events for worker -> jobsService
-	JobEventTypeEmailAuthError   JobEventType = "EMAIL_AUTH_ERROR"     // Needs re-auth
-	JobEventTypeEmailDisabled    JobEventType = "EMAIL_DISABLED"       // Account disabled
-	JobEventTypeEmailRateLimited JobEventType = "EMAIL_RATE_LIMITED"   // Rate limit hit
-	JobEventTypeEmailServerError JobEventType = "EMAIL_SERVER_ERROR"   // Temporary server error
+	JobEventTypeEmailAuthError   JobEventType = "EMAIL_AUTH_ERROR"   // Needs re-auth
+	JobEventTypeEmailDisabled    JobEventType = "EMAIL_DISABLED"     // Account disabled
+	JobEventTypeEmailRateLimited JobEventType = "EMAIL_RATE_LIMITED" // Rate limit hit
+	JobEventTypeEmailServerError JobEventType = "EMAIL_SERVER_ERROR" // Temporary server error
 )
 
 type JobEvent struct {

@@ -7,87 +7,69 @@ import (
 	"github.com/getsentry/sentry-go"
 )
 
-const WelcomeTemplate = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
- <meta charset="utf-8"/>
- <title>{{.Subject}}</title>
- <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
- <style>
-body,table,td{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;}
-.wrapper{background-color:#f0f4ff;margin:0;padding:24px 0;}
-.content{background-color:#fff;border-radius:8px;max-width:600px;margin:0 auto;padding:32px;border:1px solid #e1e8ff;}
-.btn{background-color:#2563eb;border-radius:4px;color:#fff;display:inline-block;font-size:16px;font-weight:600;line-height:48px;text-align:center;text-decoration:none;width:220px;}
-.btn:hover{background-color:#1e4fd1;}
-.code{font-size:28px;font-weight:700;color:#1e3a8a;letter-spacing:4px;}
-.footer{color:#6b7280;font-size:12px;padding-top:32px;text-align:center;}
-img{border-radius:1em;}
- </style>
-</head>
-<body class="wrapper">
- <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
- <tr>
- <td>
- <div class="content">
- <table role="presentation" width="100%">
- <tr>
- <td style="text-align:center;padding-bottom:24px;">
- <img src="https://warmbly.com/logo.jpg" alt="Warmbly" height="72"/>
- </td>
- </tr>
- </table>
- <h2 style="margin:0 0 12px;font-size:24px;">Welcome to Warmbly! 🎉</h2>
- <p style="font-size:16px;color:#374151;line-height:24px;">
-We’re thrilled to have you on board! <strong>Warmbly</strong> is your all‑in‑one cold email delivery platform – built for developers, sales teams, and anyone who needs reliable email outreach.
+// Welcome template — also moved onto the shared base shell so it
+// matches the dashboard chrome instead of the old standalone HTML
+// with its blue gradients and big blue button.
+
+const welcomeContent = `
+<p style="margin:0 0 4px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:11px;color:#94a3b8;letter-spacing:0.14em;text-transform:uppercase;font-weight:500;">
+Welcome
+</p>
+<h2 style="margin:0 0 12px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-weight:600;font-size:20px;color:#0f172a;letter-spacing:-0.01em;">
+{{if .FirstName}}Hi {{.FirstName}}, welcome to Warmbly{{else}}Welcome to Warmbly{{end}}
+</h2>
+<p style="margin:0 0 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:13px;color:#475569;line-height:20px;">
+Your account is ready. From here you can connect mailboxes, warm them up, and start outbound campaigns — all in one place.
 </p>
 
-<p style="font-size:16px;color:#374151;line-height:24px;">
-With Warmbly you can:
-</p>
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px;width:100%;">
+<tr><td style="padding:6px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:13px;color:#0f172a;line-height:20px;">
+&middot;&nbsp; Connect Gmail, Outlook, or any SMTP/IMAP inbox
+</td></tr>
+<tr><td style="padding:6px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:13px;color:#0f172a;line-height:20px;">
+&middot;&nbsp; Automated warmup so your mail lands in primary
+</td></tr>
+<tr><td style="padding:6px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:13px;color:#0f172a;line-height:20px;">
+&middot;&nbsp; Sequences with scheduling, replies, opens, clicks
+</td></tr>
+<tr><td style="padding:6px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:13px;color:#0f172a;line-height:20px;">
+&middot;&nbsp; Unified inbox across every mailbox
+</td></tr>
+</table>
 
-<ul style="font-size:16px;color:#374151;line-height:24px;margin:16px 0;padding-left:20px;">
-  <li>📩 <strong>Send cold emails at scale</strong> with a clean, intuitive dashboard</li>
-  <li>🤖 <strong>Automate warmup & deliverability</strong> so your emails actually land</li>
-  <li>📊 <strong>Track performance</strong> — opens, clicks, replies, all in one place</li>
-  <li>🛠️ <strong>Integrate with your apps</strong> via API & SDK if you need full control</li>
-</ul>
+<table cellpadding="0" cellspacing="0" border="0" align="center" role="presentation" style="margin:0 0 24px;">
+<tr>
+<td align="center" style="border-radius:6px;background:#0f172a;">
+<a href="https://app.warmbly.com/" target="_blank" style="display:inline-block;padding:10px 22px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:13px;font-weight:600;color:#ffffff;text-decoration:none;letter-spacing:0.01em;">Open the dashboard</a>
+</td>
+</tr>
+</table>
 
-<p style="font-size:16px;color:#374151;line-height:24px;">
-Whether you’re running outreach campaigns or building on top of our developer tools, Warmbly takes care of the hard stuff — from warmup to deliverability — so you can focus on results.
-</p>
+<div style="margin:0 0 16px;height:1px;background:#e2e8f0;"></div>
 
-<p style="text-align:center;margin:32px 0;">
-<a href="https://app.warmbly.com/" class="btn">Launch Your First Campaign</a>
+<p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;color:#64748b;line-height:18px;">
+Need help? Reply to this email or hit the support channel from your dashboard.
 </p>
-
-<p style="font-size:14px;color:#6b7280;">
-Need help getting started? Check out our <a href="https://warmbly.com/blog/getting-started" style="color:#2563eb;text-decoration:none;">getting started guide</a> or contact us on Discord. (<a href="https://dc.warmbly.com/" style="color:#2563eb;text-decoration:none;">link</a>)
-</p>
- <div class="footer">
- Warmbly.com | All rights reserved.<br/>
- </div>
- </div>
- </td>
- </tr>
- </table>
-</body>
-</html>
 `
 
-var WelcomeHTMLTMPL = template.Must(template.New("welcome").Parse(WelcomeTemplate))
+var welcomeTmpl = template.Must(template.New("welcome_content").Parse(welcomeContent))
 
+// GenerateWelcomeHTML renders the welcome email through the shared
+// base shell so styling stays consistent with the rest of the
+// transactional mail.
 func GenerateWelcomeHTML(firstName string) (string, error) {
-	var data struct {
-		FirstName string
-	}
-	data.FirstName = firstName
-
-	var body bytes.Buffer
-	if err := WelcomeHTMLTMPL.Execute(&body, data); err != nil {
+	data := struct{ FirstName string }{FirstName: firstName}
+	var buf bytes.Buffer
+	if err := welcomeTmpl.Execute(&buf, data); err != nil {
 		sentry.CaptureException(err)
 		return "", err
 	}
-
-	return body.String(), nil
+	return renderEmail("Welcome to Warmbly", buf.String())
 }
+
+// WelcomeTemplate / WelcomeHTMLTMPL retained as deprecated exports so
+// any external caller importing them still compiles. New code should
+// call GenerateWelcomeHTML instead.
+const WelcomeTemplate = welcomeContent
+
+var WelcomeHTMLTMPL = welcomeTmpl

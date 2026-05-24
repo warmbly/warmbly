@@ -2,6 +2,7 @@ package tasks
 
 import (
 	"fmt"
+	"math/rand"
 	"net/url"
 	"regexp"
 	"strings"
@@ -138,16 +139,51 @@ func WrapLinksForTracking(htmlBody string, taskID uuid.UUID, trackingDomain stri
 
 // GenerateConversationEmail generates email content from AI conversation
 func GenerateConversationEmail(conversation Conversation, account models.Email, isReply bool) string {
-	// TODO: Implement AI conversation generation
-	// For now, return a simple placeholder
-
-	if isReply {
-		return fmt.Sprintf("Thanks for your email! I appreciate you reaching out.\n\nBest regards,\n%s", account.Name)
+	signature := account.Name
+	if signature == "" {
+		signature = account.Email
 	}
 
-	return fmt.Sprintf("Hi,\n\n%s\n\nBest regards,\n%s",
-		conversation.Description,
-		account.Name)
+	pickMessage := func() string {
+		if len(conversation.Messages) == 0 {
+			return ""
+		}
+		return conversation.Messages[rand.Intn(len(conversation.Messages))]
+	}
+
+	greetings := []string{"Hi,", "Hey,", "Hi there,", "Hello,", "Hey there,"}
+	greeting := greetings[rand.Intn(len(greetings))]
+
+	signoffs := []string{"Best regards,", "Best,", "Cheers,", "Thanks,", "Talk soon,", "All the best,"}
+	signoff := signoffs[rand.Intn(len(signoffs))]
+
+	description := strings.TrimSpace(conversation.Description)
+	message := strings.TrimSpace(pickMessage())
+
+	if isReply {
+		replyStarters := []string{
+			"Thanks for your message.",
+			"Appreciate you getting back to me.",
+			"Good to hear from you.",
+			"Thanks for the reply.",
+			"Great to hear back.",
+		}
+		replyLine := replyStarters[rand.Intn(len(replyStarters))]
+		if message != "" {
+			replyLine = message
+		}
+		return fmt.Sprintf("%s\n\n%s\n%s", replyLine, signoff, signature)
+	}
+
+	body := description
+	if body == "" {
+		body = "Just checking in with a quick note."
+	}
+	if message != "" {
+		body = body + "\n\n" + message
+	}
+
+	return fmt.Sprintf("%s\n\n%s\n\n%s\n%s", greeting, body, signoff, signature)
 }
 
 // ExtractPlainTextFromHTML converts HTML to plain text (basic implementation)

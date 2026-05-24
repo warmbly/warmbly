@@ -9,9 +9,10 @@ use serde::Serialize;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
-use tracing::{error, info};
+use tracing::info;
 
 use crate::config::Config;
+use crate::observability;
 
 /// Avro schema for tracking events - matches Go events.TrackingEvent
 #[allow(dead_code)]
@@ -98,8 +99,14 @@ impl KafkaProducer {
             client_config
                 .set("security.protocol", "SASL_SSL")
                 .set("sasl.mechanisms", "PLAIN")
-                .set("sasl.username", config.kafka_sasl_username.as_ref().unwrap())
-                .set("sasl.password", config.kafka_sasl_password.as_ref().unwrap());
+                .set(
+                    "sasl.username",
+                    config.kafka_sasl_username.as_ref().unwrap(),
+                )
+                .set(
+                    "sasl.password",
+                    config.kafka_sasl_password.as_ref().unwrap(),
+                );
         }
 
         let producer: FutureProducer = client_config.create()?;
@@ -115,7 +122,10 @@ impl KafkaProducer {
         };
 
         let encoder = AvroEncoder::new(sr_settings);
-        info!("Schema Registry connected to {}", config.schema_registry_url);
+        info!(
+            "Schema Registry connected to {}",
+            config.schema_registry_url
+        );
 
         Ok(Self {
             producer: Arc::new(producer),
@@ -129,7 +139,10 @@ impl KafkaProducer {
         let payload = match self.serialize_avro(&event).await {
             Ok(p) => p,
             Err(e) => {
-                error!("Failed to serialize event with Avro: {}", e);
+                observability::report_issue(
+                    "Failed to serialize tracking event with Avro",
+                    &e.to_string(),
+                );
                 return;
             }
         };
@@ -151,9 +164,12 @@ impl KafkaProducer {
                 );
             }
             Err((e, _)) => {
-                error!(
-                    "Failed to publish {} event for task {}: {}",
-                    event.event_type, event.task_id, e
+                observability::report_issue(
+                    "Failed to publish tracking event to Kafka",
+                    &format!(
+                        "event_type={}, task_id={}, error={}",
+                        event.event_type, event.task_id, e
+                    ),
                 );
             }
         }

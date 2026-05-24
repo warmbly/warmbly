@@ -4,7 +4,8 @@ CREATE TYPE worker_type AS ENUM ('shared', 'dedicated');
 -- Extend workers table
 ALTER TABLE workers
 ADD COLUMN worker_type worker_type NOT NULL DEFAULT 'shared',
-ADD COLUMN account_count INT NOT NULL DEFAULT 0;
+ADD COLUMN account_count INT NOT NULL DEFAULT 0,
+ADD COLUMN free_tier BOOLEAN NOT NULL DEFAULT true;
 
 -- Create index for load balancing queries
 CREATE INDEX idx_workers_shared_load ON workers(account_count)
@@ -51,19 +52,3 @@ CREATE INDEX idx_trial_expiry ON subscriptions(free_trial_ends_at)
 ALTER TABLE email_accounts
 ADD COLUMN warmup_pool_type VARCHAR(20) DEFAULT 'free';
 
--- Default free trial plan (for users who haven't subscribed yet)
-INSERT INTO plans (id, name, max_contacts, daily_emails, ai_generation, account_limit, price, discounted_price, savings, public, dedicated_workers, daily_campaign_limit)
-VALUES (
-    '00000000-0000-0000-0000-000000000001',
-    'Free Trial',
-    100,
-    20,
-    false,
-    1,
-    0,
-    0,
-    0,
-    false,
-    0,
-    20
-) ON CONFLICT DO NOTHING;

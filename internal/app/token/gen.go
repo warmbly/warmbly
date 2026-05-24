@@ -27,6 +27,7 @@ func (s *tokenService) GenerateToken(userID, sessionID uuid.UUID, email, nonce s
 	claims := TokenClaims{
 		UserID:    userID,
 		SessionID: sessionID,
+		Email:     email,
 		Nonce:     nonce,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expiresAt),
@@ -34,7 +35,7 @@ func (s *tokenService) GenerateToken(userID, sessionID uuid.UUID, email, nonce s
 		},
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(s.AuthSecret)
+	return token.SignedString([]byte(s.AuthSecret))
 }
 
 func (s *tokenService) VerifyToken(tokenStr string) (*TokenClaims, *errx.Error) {
@@ -42,7 +43,7 @@ func (s *tokenService) VerifyToken(tokenStr string) (*TokenClaims, *errx.Error) 
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, errx.ErrToken
 		}
-		return s.AuthSecret, nil
+		return []byte(s.AuthSecret), nil
 	})
 
 	if err != nil {
@@ -120,6 +121,7 @@ func (s *tokenService) GenerateSessionWithOrg(ctx context.Context, userID uuid.U
 	}
 
 	refreshTokenExpiresAt := issuedAt.Add(2 * 30 * 24 * time.Hour)
+	session.ExpiresAt = &refreshTokenExpiresAt
 	refreshNonce, err := crypt.Nonce()
 	if err != nil {
 		sentry.CaptureException(err)

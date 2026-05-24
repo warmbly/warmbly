@@ -173,7 +173,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: ./tracking
-          file: deploy/docker/tracking.Dockerfile
+          file: ./tracking/Dockerfile
           push: true
           tags: |
             ${{ env.IMAGE_PREFIX }}/tracking:${{ github.ref_name }}

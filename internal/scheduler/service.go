@@ -2,7 +2,6 @@ package scheduler
 
 import (
 	"context"
-	"math"
 	"math/rand"
 	"time"
 
@@ -104,7 +103,7 @@ func calculateBusinessHoursRemaining(timezone string) float64 {
 	}
 
 	remaining := endOfDay.Sub(now).Hours()
-	return math.Max(0, remaining)
+	return max(0, remaining)
 }
 
 // calculateFirstSlotTomorrow calculates first business hour slot tomorrow
@@ -141,20 +140,4 @@ func roundToNearestMinute(t time.Time, minutes int) time.Time {
 	}
 
 	return rounded
-}
-
-// min returns the minimum of two integers
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-// max returns the maximum of two integers
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }

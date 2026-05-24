@@ -19,18 +19,35 @@ const (
 	AuditActionImport  AuditAction = "import"
 	AuditActionRevoke  AuditAction = "revoke"
 	AuditActionConnect AuditAction = "connect"
+
+	// Worker / fleet operations
+	AuditActionTest          AuditAction = "test"
+	AuditActionInstall       AuditAction = "install"
+	AuditActionRestart       AuditAction = "restart"
+	AuditActionUpgrade       AuditAction = "upgrade"
+	AuditActionUninstall     AuditAction = "uninstall"
+	AuditActionRotateKeys    AuditAction = "rotate_keys"
+	AuditActionApply         AuditAction = "apply"
+	AuditActionAssign        AuditAction = "assign"
+	AuditActionSystemUpdate  AuditAction = "system_update"
+	AuditActionReboot        AuditAction = "reboot"
+	AuditActionCheckReleases AuditAction = "check_releases"
 )
 
 type AuditEntityType string
 
 const (
-	AuditEntityCampaign     AuditEntityType = "campaign"
-	AuditEntityContact      AuditEntityType = "contact"
-	AuditEntityEmailAccount AuditEntityType = "email_account"
-	AuditEntityAPIKey       AuditEntityType = "api_key"
-	AuditEntitySequence     AuditEntityType = "sequence"
-	AuditEntityUser         AuditEntityType = "user"
-	AuditEntitySession      AuditEntityType = "session"
+	AuditEntityCampaign       AuditEntityType = "campaign"
+	AuditEntityContact        AuditEntityType = "contact"
+	AuditEntityEmailAccount   AuditEntityType = "email_account"
+	AuditEntityAPIKey         AuditEntityType = "api_key"
+	AuditEntitySequence       AuditEntityType = "sequence"
+	AuditEntityUser           AuditEntityType = "user"
+	AuditEntitySession        AuditEntityType = "session"
+	AuditEntityWorker         AuditEntityType = "worker"
+	AuditEntityAWSCredentials AuditEntityType = "aws_credentials"
+	AuditEntityWorkerProfile  AuditEntityType = "worker_profile"
+	AuditEntityRelease        AuditEntityType = "release"
 )
 
 type AuditLog struct {

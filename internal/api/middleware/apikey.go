@@ -88,7 +88,7 @@ func (h *Handler) validateAPIKey(c *gin.Context, rawKey string) {
 	c.Set(UserIDKey, apiKey.UserID.String())
 	c.Set(OrganizationIDKey, apiKey.OrganizationID)
 
-	// Update last used (async)
+	// Update last used (already fires async internally with timeout)
 	h.APIKeyService.UpdateLastUsed(c.Request.Context(), apiKey.ID)
 
 	c.Next()

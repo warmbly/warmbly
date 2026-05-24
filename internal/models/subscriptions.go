@@ -78,10 +78,10 @@ type Offer struct {
 }
 
 type Subscription struct {
-	ID             uuid.UUID  `json:"id"`
-	UserID         uuid.UUID  `json:"user_id"`
+	ID             uuid.UUID `json:"id"`
+	UserID         uuid.UUID `json:"user_id"`
 	OrganizationID uuid.UUID `json:"organization_id"`
-	PlanID         uuid.UUID  `json:"plan_id"`
+	PlanID         uuid.UUID `json:"plan_id"`
 
 	// Stripe identifiers
 	StripeCustomerID     string  `json:"stripe_customer_id"`

@@ -9,6 +9,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/token"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/notify/templates"
 	"github.com/warmbly/warmbly/internal/pkg/argon2"
 	"github.com/warmbly/warmbly/internal/pkg/crypt"
 )
@@ -16,7 +17,7 @@ import (
 func (s *authService) LoginStart(ctx context.Context, data *AuthData, ipaddr string) (*models.AuthSession, *errx.Error) {
 	if xerr := s.captcha.Verify(ctx, data.Turnstile, ipaddr); xerr != nil {
 		sentry.CaptureException(xerr)
-		return nil, errx.InternalError()
+		return nil, xerr
 	}
 
 	uid, err := s.authRepository.IsValidCredentials(ctx, data.Email, data.Password)
@@ -40,6 +41,17 @@ func (s *authService) LoginStart(ctx context.Context, data *AuthData, ipaddr str
 
 	code, xerr := crypt.VerificationCode()
 	if xerr != nil {
+		sentry.CaptureException(xerr)
+		return nil, errx.InternalError()
+	}
+
+	text, xerr := templates.GenerateLoginCodeHTML(code)
+	if xerr != nil {
+		sentry.CaptureException(xerr)
+		return nil, errx.InternalError()
+	}
+
+	if xerr := s.emailNotificationService.Send(ctx, []string{data.Email}, nil, nil, "Your Login Code", text); xerr != nil {
 		sentry.CaptureException(xerr)
 		return nil, errx.InternalError()
 	}
@@ -97,6 +109,8 @@ func (s *authService) LoginConfirm(ctx context.Context, data *ConfirmData, sessi
 	}
 
 	if !v {
+		sess.Tries++
+		_ = s.saveLoginSession(ctx, atoken.SessionID, sess, atoken.ExpiresAt.Time)
 		return nil, errx.ErrCode
 	}
 

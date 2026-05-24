@@ -1,0 +1,165 @@
+---
+title: Update API Key
+description: Modify an existing API key's properties.
+---
+
+# Update API Key
+
+Update the properties of an existing API key. Use this to change permissions, update restrictions, or rename keys.
+
+```
+PATCH /api-keys/:id
+```
+
+## Request
+
+### Headers
+
+| Header | Value |
+|--------|-------|
+| `Authorization` | `Bearer wmbly_<your_key>` |
+| `Content-Type` | `application/json` |
+
+### Path Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `id` | UUID | The unique identifier of the API key |
+
+### Body Parameters
+
+All parameters are optional. Only include the fields you want to update.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | string | New name for the key (max 255 chars) |
+| `permissions` | integer | New permissions bitmask |
+| `allowed_ips` | array | New list of allowed IP addresses |
+| `allowed_email_accounts` | array | New list of allowed email account UUIDs |
+
+### Example Request
+
+```bash
+curl -X PATCH "https://api.warmbly.com/api-keys/550e8400-e29b-41d4-a716-446655440000" \
+  -H "Authorization: Bearer wmbly_abc123..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Updated Key Name",
+    "permissions": 127,
+    "allowed_ips": ["203.0.113.10", "203.0.113.11"]
+  }'
+```
+
+## Response
+
+### Success Response (200 OK)
+
+Returns the updated API key object:
+
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "user_id": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+  "organization_id": "6ba7b811-9dad-11d1-80b4-00c04fd430c8",
+  "name": "Updated Key Name",
+  "key_prefix": "wmbly_abc",
+  "permissions": 127,
+  "allowed_ips": ["203.0.113.10", "203.0.113.11"],
+  "allowed_email_accounts": [],
+  "status": "active",
+  "last_used_at": "2024-01-15T10:30:00Z",
+  "expires_at": null,
+  "revoked_at": null,
+  "revoked_reason": null,
+  "created_at": "2024-01-01T00:00:00Z",
+  "updated_at": "2024-01-16T14:00:00Z"
+}
+```
+
+### Error Responses
+
+#### 400 Bad Request
+
+```json
+{
+  "error": "Bad Request",
+  "message": "invalid request body"
+}
+```
+
+#### 404 Not Found
+
+```json
+{
+  "error": "Not Found",
+  "message": "Resource not found."
+}
+```
+
+## Common Updates
+
+### Add Permissions
+
+To add permissions while keeping existing ones:
+
+```javascript
+// Get current key
+const response = await fetch(`https://api.warmbly.com/api-keys/${keyId}`, {
+  headers: { 'Authorization': `Bearer ${API_KEY}` },
+});
+const key = await response.json();
+
+// Add WRITE_CAMPAIGNS (64) to existing permissions
+const newPermissions = key.permissions | 64;
+
+// Update
+await fetch(`https://api.warmbly.com/api-keys/${keyId}`, {
+  method: 'PATCH',
+  headers: {
+    'Authorization': `Bearer ${API_KEY}`,
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({ permissions: newPermissions }),
+});
+```
+
+### Remove Permissions
+
+Use bitwise AND with NOT to remove specific permissions:
+
+```javascript
+const WRITE_CAMPAIGNS = 64;
+
+// Remove WRITE_CAMPAIGNS from existing permissions
+const newPermissions = key.permissions & ~WRITE_CAMPAIGNS;
+```
+
+### Update IP Restrictions
+
+<Callout type="warn">
+  When updating `allowed_ips`, the entire list is replaced. Include all desired IPs in the update.
+</Callout>
+
+```bash
+curl -X PATCH "https://api.warmbly.com/api-keys/${KEY_ID}" \
+  -H "Authorization: Bearer wmbly_abc123..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "allowed_ips": ["203.0.113.10", "203.0.113.11", "203.0.113.12"]
+  }'
+```
+
+## What Cannot Be Updated
+
+- `id` - Immutable identifier
+- `user_id` - Original creator
+- `organization_id` - Organization ownership
+- `key_prefix` - Part of the key
+- `expires_at` - Set at creation only
+- `status` - Use [revoke](/api-keys/revoke) to change
+
+## See Also
+
+- [Get API Key](/api-keys/get)
+- [Revoke API Key](/api-keys/revoke)
+- [Permissions Reference](/reference/permissions)

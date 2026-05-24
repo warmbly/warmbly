@@ -8,6 +8,8 @@ import (
 
 	"github.com/getsentry/sentry-go"
 	"github.com/google/uuid"
+	"github.com/rs/zerolog/log"
+	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/models"
@@ -17,13 +19,33 @@ import (
 )
 
 func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
 
 	// STEP 1: Parse task ID
 	taskID, err := uuid.Parse(task.TaskId)
 	if err != nil {
 		sentry.CaptureException(err)
 		return errx.New(errx.BadRequest, "invalid task ID")
+	}
+
+	executionKey := "campaign:" + taskID.String()
+	executionStatus := "failed"
+	if s.advanced != nil {
+		duplicate, xerr := s.advanced.StartTaskExecution(ctx, taskID, executionKey, map[string]interface{}{
+			"task_type": "campaign",
+		})
+		if xerr != nil {
+			return xerr
+		}
+		if duplicate {
+			return nil
+		}
+		defer func() {
+			_ = s.advanced.CompleteTaskExecution(ctx, taskID, executionKey, executionStatus, map[string]interface{}{
+				"task_type": "campaign",
+			})
+		}()
 	}
 
 	// STEP 2: Load task record
@@ -54,6 +76,14 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 		return errx.ErrNotFound
 	}
 
+	// Get campaign progress for task progress events
+	campaignProgress, _ := s.campaignProgressRepo.GetCampaignProgress(ctx, *campaignTask.CampaignID)
+	var totalContacts, processedCount int
+	if campaignProgress != nil {
+		totalContacts = campaignProgress.TotalContacts
+		processedCount = campaignProgress.EmailsSent
+	}
+
 	// STEP 5: Load campaign
 	campaign, err := s.campaignRepo.GetByID(ctx, *campaignTask.CampaignID)
 	if err != nil {
@@ -64,7 +94,25 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 	// Check if campaign is still active
 	if campaign.Status != "active" {
 		s.taskRepo.UpdateTaskStatus(ctx, taskID, "cancelled")
+		executionStatus = "completed"
 		return nil // Don't create next task
+	}
+
+	// Publish task started progress event
+	if s.streamingPublisher != nil {
+		progress := 0
+		if totalContacts > 0 {
+			progress = (processedCount * 100) / totalContacts
+		}
+		s.streamingPublisher.PublishTaskProgress(ctx, &pubsub.TaskProgressEvent{
+			BaseEvent:      pubsub.BaseEvent{UserID: campaign.UserID},
+			CampaignID:     campaign.ID.String(),
+			TaskID:         taskID.String(),
+			Status:         "active",
+			Progress:       progress,
+			TotalContacts:  totalContacts,
+			ProcessedCount: processedCount,
+		})
 	}
 
 	// STEP 5.5: Check if organization can send campaign emails (trial expired, etc.)
@@ -74,19 +122,39 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 			// Organization cannot send - pause campaign
 			s.campaignRepo.UpdateStatus(ctx, campaign.ID, "paused_trial_expired")
 			s.taskRepo.UpdateTaskStatus(ctx, taskID, "skipped_trial_expired")
+			executionStatus = "completed"
 			return nil
 		}
 
 		// Check daily limit
 		limit, _ := s.featureGate.GetDailyEmailLimit(ctx, *campaign.OrganizationID)
 		if limit >= 0 {
-			// TODO: Check sentToday from stats repository
-			// For now, we'll just track that there's a limit
-			// sentToday, _ := s.statsRepo.GetSentToday(ctx, orgID)
-			// if sentToday >= limit {
-			//     s.taskRepo.UpdateTaskStatus(ctx, taskID, "skipped_daily_limit")
-			//     return nil
-			// }
+			sentToday, err := s.campaignProgressRepo.CountEmailsSentTodayByOrganization(ctx, *campaign.OrganizationID)
+			if err == nil && sentToday >= limit {
+				s.taskRepo.UpdateTaskStatus(ctx, taskID, "skipped_daily_limit")
+				if s.campaignLogRepo != nil {
+					s.campaignLogRepo.CreateLog(ctx, &repository.CampaignLogEntry{
+						CampaignID: campaign.ID,
+						EventType:  "daily_limit_reached",
+						Message:    "Campaign paused for today: organization daily email limit reached",
+						Metadata: map[string]interface{}{
+							"sent_today": sentToday,
+							"limit":      limit,
+						},
+					})
+				}
+
+				// Reschedule to the next day to keep campaign progression alive.
+				nextDay := time.Now().UTC().Truncate(24 * time.Hour).Add(24 * time.Hour).Add(5 * time.Minute)
+				_, _, nextAccountID, calcErr := s.scheduler.CalculateNextCampaignTime(ctx, *campaignTask.CampaignID)
+				if calcErr == nil {
+					if err := s.createCampaignTask(ctx, campaign.ID, nextAccountID, nextDay); err != nil {
+						log.Warn().Err(err).Str("campaign_id", campaign.ID.String()).Str("task_id", taskID.String()).Msg("Failed to create next campaign task after daily limit")
+					}
+				}
+				executionStatus = "completed"
+				return nil
+			}
 		}
 	}
 
@@ -95,6 +163,7 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 	if err != nil {
 		if errors.Is(err, scheduler.ErrNoEmailAccounts) {
 			s.autoPauseCampaign(ctx, *campaignTask.CampaignID, taskID)
+			executionStatus = "completed"
 			return nil
 		}
 		if errors.Is(err, scheduler.ErrCampaignCompleted) {
@@ -108,6 +177,7 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 			}
 		}
 		s.taskRepo.UpdateTaskStatus(ctx, taskID, "completed")
+		executionStatus = "completed"
 		return nil
 	}
 
@@ -115,6 +185,29 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 	contact, xerr := s.contactRepo.GetByID(ctx, nextPair.ContactID)
 	if xerr != nil {
 		return xerr
+	}
+
+	if s.advanced != nil && campaign.OrganizationID != nil {
+		suppressed, reason, sxerr := s.advanced.ShouldSuppressRecipient(ctx, *campaign.OrganizationID, contact.Email)
+		if sxerr != nil {
+			return sxerr
+		}
+		if suppressed {
+			_ = s.taskRepo.UpdateTaskStatusWithLock(ctx, taskID, "skipped_suppressed")
+			if s.campaignLogRepo != nil {
+				_ = s.campaignLogRepo.CreateLog(ctx, &repository.CampaignLogEntry{
+					CampaignID: campaign.ID,
+					EventType:  "suppressed",
+					Message:    fmt.Sprintf("Suppressed recipient skipped: %s", contact.Email),
+					Metadata: map[string]interface{}{
+						"reason": reason,
+					},
+				})
+			}
+			_ = s.createCampaignTask(ctx, campaign.ID, accountID, nextTime)
+			executionStatus = "completed"
+			return nil
+		}
 	}
 
 	sequence, err := s.campaignRepo.GetSequenceByID(ctx, nextPair.SequenceID)
@@ -128,7 +221,7 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 	// processing open/click events from the tracking pixel service
 	if err := s.taskRepo.UpdateCampaignTaskTracking(ctx, taskID, contact.ID, sequence.ID); err != nil {
 		// Log but don't fail - tracking can still work via fallback methods
-		fmt.Printf("Failed to update campaign task tracking: %v\n", err)
+		log.Warn().Err(err).Str("campaign_id", campaign.ID.String()).Str("task_id", taskID.String()).Msg("Failed to update campaign task tracking")
 	}
 
 	// STEP 8: Check stop_on_reply
@@ -138,7 +231,8 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 			// Contact has replied, skip
 			s.taskRepo.UpdateTaskStatus(ctx, taskID, "completed")
 			// Create next task anyway for next contact
-			s.createCampaignTask(ctx, campaign.ID, nextTime)
+			s.createCampaignTask(ctx, campaign.ID, accountID, nextTime)
+			executionStatus = "completed"
 			return nil
 		}
 	}
@@ -157,6 +251,18 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 	// If no plain text provided, extract from HTML
 	if bodyPlain == "" && bodyHTML != "" {
 		bodyPlain = ExtractPlainTextFromHTML(bodyHTML)
+	}
+
+	if s.advanced != nil && campaign.OrganizationID != nil {
+		selection, sxerr := s.advanced.SelectVariant(ctx, *campaign.OrganizationID, campaign.ID, contact.ID, subject, bodyHTML, bodyPlain)
+		if sxerr != nil {
+			return sxerr
+		}
+		if selection != nil {
+			subject = selection.Subject
+			bodyHTML = selection.BodyHTML
+			bodyPlain = selection.BodyPlain
+		}
 	}
 
 	// STEP 11: Add tracking
@@ -216,19 +322,27 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 		}
 	}
 
+	// STEP 15.5: Generate List-Unsubscribe URL if enabled
+	var unsubscribeURL string
+	if campaign.UnsubscribeHeader {
+		unsubscribeURL = fmt.Sprintf("https://%s/unsubscribe?cid=%s&rid=%s",
+			config.Domain, campaign.ID.String(), contact.ID.String())
+	}
+
 	// STEP 16: Send email to worker via Kafka
 	emailMsg := EmailMessage{
-		From:      account.Email,
-		To:        []string{contact.Email},
-		CC:        campaign.CC,
-		BCC:       campaign.BCC,
-		Subject:   subject,
-		BodyHTML:  bodyHTML,
-		BodyPlain: bodyPlain,
-		MessageID: messageID,
-		IsWarmup:  false,
-		Tracking:  tracking,
-		UserID:    userUUID,
+		From:           account.Email,
+		To:             []string{contact.Email},
+		CC:             campaign.CC,
+		BCC:            campaign.BCC,
+		Subject:        subject,
+		BodyHTML:       bodyHTML,
+		BodyPlain:      bodyPlain,
+		MessageID:      messageID,
+		IsWarmup:       false,
+		Tracking:       tracking,
+		UserID:         userUUID,
+		UnsubscribeURL: unsubscribeURL,
 	}
 
 	if err := s.emailSender.Send(ctx, taskID, emailMsg, *account); err != nil {
@@ -252,6 +366,38 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 				"contact_id":  contact.ID.String(),
 				"error":       err.Error(),
 			})
+
+			// Publish detailed task progress event for failure
+			progress := 0
+			if totalContacts > 0 {
+				progress = (processedCount * 100) / totalContacts
+			}
+			contactName := contact.FirstName
+			if contact.LastName != "" {
+				contactName = contactName + " " + contact.LastName
+			}
+			s.streamingPublisher.PublishTaskProgress(ctx, &pubsub.TaskProgressEvent{
+				BaseEvent:      pubsub.BaseEvent{UserID: campaign.UserID},
+				CampaignID:     campaign.ID.String(),
+				TaskID:         taskID.String(),
+				Status:         "failed",
+				ContactID:      contact.ID.String(),
+				ContactEmail:   contact.Email,
+				ContactName:    contactName,
+				SequenceID:     sequence.ID.String(),
+				SequenceName:   sequence.Name,
+				Progress:       progress,
+				TotalContacts:  totalContacts,
+				ProcessedCount: processedCount,
+			})
+		}
+		if s.advanced != nil {
+			_ = s.advanced.CaptureTaskDeadLetter(ctx, taskID, "campaign", map[string]interface{}{
+				"campaign_id": campaign.ID.String(),
+				"contact_id":  contact.ID.String(),
+				"email":       contact.Email,
+			}, err.Error(), 1)
+			_ = s.taskRepo.UpdateTaskStatus(ctx, taskID, "dead_lettered")
 		}
 		return nil
 	}
@@ -264,7 +410,14 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 	// STEP 17: Update campaign progress
 	if err := s.campaignProgressRepo.RecordEmailSent(ctx, campaign.ID, contact.ID, sequence.ID); err != nil {
 		// Log but don't fail
-		fmt.Printf("Failed to record email sent: %v\n", err)
+		log.Warn().Err(err).Str("campaign_id", campaign.ID.String()).Str("task_id", taskID.String()).Msg("Failed to record email sent")
+	}
+
+	// Publish campaign progress summary to Pub/Sub for real-time dashboard updates
+	if s.streamingPublisher != nil {
+		if progress, pErr := s.campaignProgressRepo.GetCampaignProgress(ctx, campaign.ID); pErr == nil && progress != nil {
+			s.streamingPublisher.PublishCampaignProgress(ctx, campaign.UserID, campaign.ID, progress)
+		}
 	}
 
 	// Log email sent
@@ -293,17 +446,60 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 			"campaign_id": campaign.ID.String(),
 			"contact_id":  contact.ID.String(),
 		})
+
+		// Publish detailed task progress event
+		newProcessedCount := processedCount + 1
+		progress := 0
+		if totalContacts > 0 {
+			progress = (newProcessedCount * 100) / totalContacts
+		}
+		contactName := contact.FirstName
+		if contact.LastName != "" {
+			contactName = contactName + " " + contact.LastName
+		}
+		// Get sequence index
+		sequences, _ := s.campaignRepo.GetSequencesByCampaignID(ctx, campaign.ID)
+		seqIndex := 0
+		for i, seq := range sequences {
+			if seq.ID == sequence.ID {
+				seqIndex = i + 1
+				break
+			}
+		}
+		s.streamingPublisher.PublishTaskProgress(ctx, &pubsub.TaskProgressEvent{
+			BaseEvent:      pubsub.BaseEvent{UserID: campaign.UserID},
+			CampaignID:     campaign.ID.String(),
+			TaskID:         taskID.String(),
+			Status:         "completed",
+			ContactID:      contact.ID.String(),
+			ContactEmail:   contact.Email,
+			ContactName:    contactName,
+			SequenceID:     sequence.ID.String(),
+			SequenceName:   sequence.Name,
+			SequenceIndex:  seqIndex,
+			Progress:       progress,
+			TotalContacts:  totalContacts,
+			ProcessedCount: newProcessedCount,
+		})
 	}
 
 	// STEP 19: Publish events to Kafka
-	s.publishEmailSentEvent(ctx, taskRecord, account, campaign)
+	s.publishEmailSentEvent(ctx, taskRecord, account, campaign, contact, sequence)
 
 	// STEP 20: Create next campaign task
-	if err := s.createCampaignTask(ctx, campaign.ID, nextTime); err != nil {
-		// Log but don't fail the current task
-		fmt.Printf("Failed to create next campaign task: %v\n", err)
+	scheduledNext := nextTime
+	if s.advanced != nil && campaign.OrganizationID != nil {
+		if optimized, xerr := s.advanced.OptimizeSendTime(ctx, *campaign.OrganizationID, contact, nextTime); xerr == nil {
+			scheduledNext = optimized
+		}
 	}
 
+	if err := s.createCampaignTask(ctx, campaign.ID, account.ID, scheduledNext); err != nil {
+		// Log but don't fail the current task
+		log.Warn().Err(err).Str("campaign_id", campaign.ID.String()).Str("task_id", taskID.String()).Msg("Failed to create next campaign task")
+	}
+
+	executionStatus = "completed"
 	return nil
 }
 
@@ -322,14 +518,15 @@ func (s *tasksService) autoPauseCampaign(ctx context.Context, campaignID, taskID
 }
 
 // createCampaignTask creates a new campaign task in GCP Cloud Tasks
-func (s *tasksService) createCampaignTask(ctx context.Context, campaignID uuid.UUID, scheduleTime time.Time) error {
+func (s *tasksService) createCampaignTask(ctx context.Context, campaignID, accountID uuid.UUID, scheduleTime time.Time) error {
 	// Create task in database with advisory lock
 	newTaskID := uuid.New()
 	newTask := &Task{
-		ID:          newTaskID,
-		TaskType:    "campaign",
-		Status:      "pending",
-		ScheduledAt: &scheduleTime,
+		ID:             newTaskID,
+		TaskType:       "campaign",
+		EmailAccountID: accountID,
+		Status:         "pending",
+		ScheduledAt:    &scheduleTime,
 	}
 
 	campaignTask := &CampaignTask{
@@ -360,9 +557,19 @@ func (s *tasksService) createCampaignTask(ctx context.Context, campaignID uuid.U
 }
 
 // publishEmailSentEvent publishes email sent event to Kafka
-func (s *tasksService) publishEmailSentEvent(ctx context.Context, task *Task, account *Email, campaign *Campaign) {
-	// TODO: Implement Kafka event publishing
-	// This will be implemented in Phase 5
-	fmt.Printf("Email sent: task=%s, account=%s, campaign=%s\n", task.ID, account.ID, campaign.ID)
-}
+func (s *tasksService) publishEmailSentEvent(
+	ctx context.Context,
+	task *Task,
+	account *Email,
+	campaign *Campaign,
+	contact *Contact,
+	sequence *Sequence,
+) {
+	if s.eventsPublisher == nil {
+		return
+	}
 
+	if err := s.eventsPublisher.PublishEmailSent(ctx, task, account, campaign, contact, sequence); err != nil {
+		log.Warn().Err(err).Str("campaign_id", campaign.ID.String()).Str("task_id", task.ID.String()).Msg("Failed to publish email sent event")
+	}
+}

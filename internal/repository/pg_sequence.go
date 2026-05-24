@@ -41,6 +41,7 @@ var SequenceSelections []string = []string{
 	"body_sync",
 	"body_code",
 	"wait_after",
+	"position",
 	"updated_at",
 	"created_at",
 }
@@ -63,18 +64,18 @@ var (
 func GetSequence(row db.Scannable, seq *models.Sequence) error {
 	return row.Scan(
 		&seq.ID, &seq.Name, &seq.Subject, &seq.BodyPlain, &seq.BodyHTML, &seq.BodySync,
-		&seq.BodyCode, &seq.WaitAfter, &seq.UpdatedAt, &seq.CreatedAt,
+		&seq.BodyCode, &seq.WaitAfter, &seq.Position, &seq.UpdatedAt, &seq.CreatedAt,
 	)
 }
 
 func (r *sequenceRepository) Get(ctx context.Context, userID string, campaignID string) ([]models.Sequence, *errx.Error) {
 	query := fmt.Sprintf(
-		`SELECT %s 
+		`SELECT %s
 		 FROM sequences s
-		 JOIN campaigns c ON s.campaign = c.id
-		 WHERE s.campaign = $1
+		 JOIN campaigns c ON s.campaign_id = c.id
+		 WHERE s.campaign_id = $1
 		  AND c.user_id = $2
-		 ORDER BY created_at DESC`,
+		 ORDER BY s.position ASC, s.created_at ASC`,
 		SequenceSelectJoin,
 	)
 
@@ -114,6 +115,7 @@ func (r *sequenceRepository) Create(ctx context.Context, userID string, campaign
 		db.CaptureError(err, "", nil, "begin")
 		return nil, errx.InternalError()
 	}
+	defer tx.Rollback(ctx)
 
 	query := `
 		SELECT user_id
@@ -142,11 +144,15 @@ func (r *sequenceRepository) Create(ctx context.Context, userID string, campaign
 		return nil, errx.ErrForbidden
 	}
 
+	// Get the next position for this campaign's sequences
+	var nextPos int
+	_ = tx.QueryRow(ctx, `SELECT COALESCE(MAX(position), 0) + 1 FROM sequences WHERE campaign_id = $1`, campaignID).Scan(&nextPos)
+
 	query = fmt.Sprintf(
 		`INSERT INTO sequences (
-			campaign, name, subject, body_plain, body_html
+			campaign_id, name, subject, body_plain, body_html, position
 		 ) VALUES (
-			$1, $2, $3, $4, $5
+			$1, $2, $3, $4, $5, $6
 		 ) RETURNING %s`, SequenceSelect,
 	)
 
@@ -156,6 +162,7 @@ func (r *sequenceRepository) Create(ctx context.Context, userID string, campaign
 		"",
 		"",
 		"<div></div>",
+		nextPos,
 	}
 
 	row := tx.QueryRow(

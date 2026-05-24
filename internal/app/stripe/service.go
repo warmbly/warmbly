@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/getsentry/sentry-go"
+
 	"github.com/google/uuid"
 	"github.com/stripe/stripe-go/v76"
 	portalsession "github.com/stripe/stripe-go/v76/billingportal/session"
@@ -86,7 +88,8 @@ func (s *stripeService) CreateCustomer(ctx context.Context, userID uuid.UUID, em
 
 	cust, err := customer.New(params)
 	if err != nil {
-		return "", errx.New(errx.Internal, fmt.Sprintf("failed to create Stripe customer: %v", err))
+		sentry.CaptureException(fmt.Errorf("stripe customer creation failed: %w", err))
+		return "", errx.New(errx.Internal, "failed to create billing account")
 	}
 
 	return cust.ID, nil
@@ -142,7 +145,8 @@ func (s *stripeService) CreateCheckoutSession(ctx context.Context, userID uuid.U
 
 	sess, err := session.New(params)
 	if err != nil {
-		return nil, errx.New(errx.Internal, fmt.Sprintf("failed to create checkout session: %v", err))
+		sentry.CaptureException(fmt.Errorf("stripe checkout session failed: %w", err))
+		return nil, errx.New(errx.Internal, "failed to create checkout session")
 	}
 
 	return sess, nil
@@ -156,7 +160,8 @@ func (s *stripeService) CreatePortalSession(ctx context.Context, customerID, ret
 
 	sess, err := portalsession.New(params)
 	if err != nil {
-		return "", errx.New(errx.Internal, fmt.Sprintf("failed to create portal session: %v", err))
+		sentry.CaptureException(fmt.Errorf("stripe portal session failed: %w", err))
+		return "", errx.New(errx.Internal, "failed to create billing portal session")
 	}
 
 	return sess.URL, nil
@@ -177,7 +182,8 @@ func (s *stripeService) CancelSubscription(ctx context.Context, subscriptionID s
 
 	_, err := subscription.Update(subscriptionID, params)
 	if err != nil {
-		return errx.New(errx.Internal, fmt.Sprintf("failed to cancel subscription: %v", err))
+		sentry.CaptureException(fmt.Errorf("stripe subscription cancel failed: %w", err))
+		return errx.New(errx.Internal, "failed to update subscription")
 	}
 
 	return nil
@@ -404,12 +410,17 @@ func (s *stripeService) handleCheckoutCompleted(ctx context.Context, event *stri
 		}
 
 		// Create subscription
+		var customerID string
+		if checkoutSession.Customer != nil {
+			customerID = checkoutSession.Customer.ID
+		}
+
 		newSub := &models.Subscription{
 			ID:               uuid.New(),
 			UserID:           userID,
 			OrganizationID:   orgID,
 			PlanID:           plan.ID,
-			StripeCustomerID: checkoutSession.Customer.ID,
+			StripeCustomerID: customerID,
 			Status:           models.SubscriptionStatusIncomplete,
 		}
 
@@ -422,7 +433,9 @@ func (s *stripeService) handleCheckoutCompleted(ctx context.Context, event *stri
 		}
 	} else {
 		// Update existing
-		sub.StripeCustomerID = checkoutSession.Customer.ID
+		if checkoutSession.Customer != nil {
+			sub.StripeCustomerID = checkoutSession.Customer.ID
+		}
 		if checkoutSession.Subscription != nil {
 			sub.StripeSubscriptionID = &checkoutSession.Subscription.ID
 		}
@@ -504,9 +517,14 @@ func (s *stripeService) handleSubscriptionUpdated(ctx context.Context, event *st
 	if s.workerAssignment != nil {
 		isNowPaid := sub.HasPaidSubscription()
 
-		// Trial user converting to paid - migrate to premium workers
+		// Trial user converting to paid - migrate to premium workers.
+		// Use a bounded timeout context since these goroutines outlive the HTTP request.
 		if wasTrialOnly && isNowPaid {
-			go s.workerAssignment.MigrateOrgToPremiumWorkers(ctx, sub.OrganizationID)
+			go func() {
+				bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+				defer cancel()
+				s.workerAssignment.MigrateOrgToPremiumWorkers(bgCtx, sub.OrganizationID)
+			}()
 		}
 
 		// Handle dedicated worker migration on plan change
@@ -515,11 +533,17 @@ func (s *stripeService) handleSubscriptionUpdated(ctx context.Context, event *st
 			needsDedicated := newPlan.DedicatedWorkers > 0
 
 			if !hadDedicated && needsDedicated {
-				// Upgrading to dedicated plan
-				go s.workerAssignment.MigrateOrgToDedicated(ctx, sub.OrganizationID, sub.ID)
+				go func() {
+					bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+					defer cancel()
+					s.workerAssignment.MigrateOrgToDedicated(bgCtx, sub.OrganizationID, sub.ID)
+				}()
 			} else if hadDedicated && !needsDedicated {
-				// Downgrading from dedicated to shared (but still premium)
-				go s.workerAssignment.MigrateOrgToShared(ctx, sub.OrganizationID)
+				go func() {
+					bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+					defer cancel()
+					s.workerAssignment.MigrateOrgToShared(bgCtx, sub.OrganizationID)
+				}()
 			}
 		}
 	}
@@ -550,14 +574,22 @@ func (s *stripeService) handleSubscriptionDeleted(ctx context.Context, event *st
 		return errx.New(errx.Internal, "failed to update subscription")
 	}
 
-	// Handle worker migration - move back to free tier workers
+	// Handle worker migration - move back to free tier workers.
+	// Use bounded timeout context since these goroutines outlive the HTTP request.
 	if s.workerAssignment != nil {
-		// If had dedicated workers, release them first
+		orgID := sub.OrganizationID
 		if hadDedicated {
-			go s.workerAssignment.MigrateOrgToShared(ctx, sub.OrganizationID)
+			go func() {
+				bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+				defer cancel()
+				s.workerAssignment.MigrateOrgToShared(bgCtx, orgID)
+			}()
 		}
-		// Migrate to free tier workers since subscription is cancelled
-		go s.workerAssignment.MigrateOrgToFreeWorkers(ctx, sub.OrganizationID)
+		go func() {
+			bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer cancel()
+			s.workerAssignment.MigrateOrgToFreeWorkers(bgCtx, orgID)
+		}()
 	}
 
 	return nil

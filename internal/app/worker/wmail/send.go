@@ -35,33 +35,52 @@ type SendResult struct {
 	Error         *errx.MailError
 }
 
-// Send attempts to send an email - NO retries, failures returned immediately
-func (w *WMail) Send(ctx context.Context, req *SendRequest) *SendResult {
-	result := &SendResult{
-		Success: false,
-		SentAt:  time.Now(),
-	}
+const maxSendRetries = 3
 
+// Send attempts to send an email with retry for transient failures
+func (w *WMail) Send(ctx context.Context, req *SendRequest) *SendResult {
 	// For warmup emails, ensure HTML is empty
 	bodyHTML := req.BodyHTML
 	if req.IsWarmup {
 		bodyHTML = ""
 	}
 
-	switch w.EmailType {
-	case models.InboxProviderGoogle:
-		result = w.sendViaGmail(ctx, req, bodyHTML)
+	var result *SendResult
+	for attempt := 0; attempt <= maxSendRetries; attempt++ {
+		result = &SendResult{Success: false, SentAt: time.Now()}
 
-	case models.InboxProviderOutlook, models.InboxProviderSMTPIMAP:
-		result = w.sendViaSMTP(ctx, req, bodyHTML)
+		switch w.EmailType {
+		case models.InboxProviderGoogle:
+			result = w.sendViaGmail(ctx, req, bodyHTML)
+		case models.InboxProviderOutlook, models.InboxProviderSMTPIMAP:
+			result = w.sendViaSMTP(ctx, req, bodyHTML)
+		default:
+			result.Error = errx.MError(
+				errx.MailErrorCritical,
+				errx.MailErrorCodeUnsupported,
+				"Unsupported email provider",
+				errx.MailErrorResolveMethodNone,
+			)
+			return result
+		}
 
-	default:
-		result.Error = errx.MError(
-			errx.MailErrorCritical,
-			errx.MailErrorCodeUnsupported,
-			"Unsupported email provider",
-			errx.MailErrorResolveMethodNone,
-		)
+		if result.Success {
+			return result
+		}
+
+		// Don't retry critical/auth errors - only transient ones
+		if result.Error != nil && result.Error.Type == errx.MailErrorCritical {
+			return result
+		}
+
+		if attempt < maxSendRetries {
+			backoff := time.Duration(1<<uint(attempt)) * time.Second // 1s, 2s, 4s
+			select {
+			case <-ctx.Done():
+				return result
+			case <-time.After(backoff):
+			}
+		}
 	}
 
 	return result

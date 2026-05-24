@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"net/url"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -24,8 +25,22 @@ func (h *Handler) GenerateWebsocket(c *gin.Context) {
 		return
 	}
 
+	wsURL := token
+	if h.WebsocketURI != "" {
+		u, err := url.Parse(h.WebsocketURI)
+		if err != nil {
+			errx.Handle(c, errx.InternalError())
+			return
+		}
+
+		q := u.Query()
+		q.Set("token", token)
+		u.RawQuery = q.Encode()
+		wsURL = u.String()
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"url":        token,
+		"url":        wsURL,
 		"expires_in": socket.SocketTTL.Seconds(),
 	})
 }

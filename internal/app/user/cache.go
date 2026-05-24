@@ -17,8 +17,14 @@ func getUserKey(id uuid.UUID) string {
 }
 
 func (s *userService) SaveUser(ctx context.Context, user *models.User) *errx.Error {
+	raw, err := json.Marshal(user)
+	if err != nil {
+		sentry.CaptureException(err)
+		return errx.InternalError()
+	}
+
 	key := getUserKey(user.ID)
-	if err := s.cache.SetEx(ctx, key, user, UserTTL).Err(); err != nil {
+	if err := s.cache.SetEx(ctx, key, raw, UserTTL).Err(); err != nil {
 		sentry.CaptureException(err)
 		return errx.InternalError()
 	}

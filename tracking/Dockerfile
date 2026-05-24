@@ -1,8 +1,8 @@
 # Build stage
-FROM rust:1.75-alpine AS builder
+FROM rust:1.93-alpine AS builder
 
 # Install build dependencies
-RUN apk add --no-cache musl-dev cmake make gcc g++ pkgconfig openssl-dev
+RUN apk add --no-cache musl-dev cmake make gcc g++ pkgconfig openssl-dev openssl-libs-static curl-dev zlib-static
 
 WORKDIR /app
 
@@ -25,7 +25,7 @@ COPY src ./src
 RUN touch src/main.rs && cargo build --release
 
 # Runtime stage
-FROM alpine:3.19
+FROM alpine:3.23
 
 # Install runtime dependencies
 RUN apk add --no-cache ca-certificates libgcc

@@ -1,0 +1,1 @@
+-- task_status enum values are intentionally not removed in down migration.

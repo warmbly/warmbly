@@ -13,5 +13,4 @@ config :realtime,
 config :logger, level: :warning
 
 config :sentry,
-  dsn: nil,
-  included_environments: []
+  dsn: nil

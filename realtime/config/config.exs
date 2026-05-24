@@ -46,7 +46,9 @@ config :realtime, RealtimeWeb.Endpoint,
     port: String.to_integer(System.get_env("PORT") || "4000"),
     transport_options: [socket_opts: [:inet6]]
   ],
-  secret_key_base: System.get_env("SECRET_KEY_BASE") || "dev_secret_key_base_min_64_chars_change_in_production_1234567890",
+  secret_key_base:
+    System.get_env("SECRET_KEY_BASE") ||
+      "dev_secret_key_base_min_64_chars_change_in_production_1234567890",
   pubsub_server: Realtime.PubSub
 
 # Logger configuration
@@ -61,8 +63,7 @@ config :phoenix, :json_library, Jason
 config :sentry,
   environment_name: Mix.env(),
   enable_source_code_context: true,
-  root_source_code_paths: [File.cwd!()],
-  included_environments: [:prod]
+  root_source_code_paths: [File.cwd!()]
 
 # Goth configuration for GCP authentication (if credentials available)
 if System.get_env("GOOGLE_APPLICATION_CREDENTIALS_JSON") do

@@ -7,6 +7,7 @@ type AuthData struct {
 }
 
 type ConfirmData struct {
+	Session   string `json:"session"`
 	Code      string `json:"code"`
 	Turnstile string `json:"turnstile"`
 }
@@ -17,6 +18,7 @@ type ResetPasswordStart struct {
 }
 
 type ResetPasswordConfirm struct {
+	Session   string `json:"session"`
 	Password  string `json:"password"`
 	Turnstile string `json:"turnstile"`
 }

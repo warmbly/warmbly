@@ -31,7 +31,7 @@ func (c *Client) Init(ctx context.Context, token *oauth2.Token, cfg oauth2.Confi
 	ts := cfg.TokenSource(ctx, token)
 	ts = oauth2.ReuseTokenSource(token, ts)
 	ts = stoken.New(ts, func(token *oauth2.Token) error {
-		return c.OnTokenRefresh(context.TODO(), token)
+		return c.OnTokenRefresh(context.Background(), token)
 	})
 
 	httpClient := oauth2.NewClient(ctx, ts)

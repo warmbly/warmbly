@@ -1,0 +1,306 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,100..900&display=swap');
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@layer base {
+  .tiptap :where(p, a, div, h1, h2, h3, h4, h5, h6, ul, ol, li, blockquote) {
+    all: revert;
+  }
+}
+
+:root {
+  --radius: 0.5rem;
+  --foreground: oklch(0.15 0.01 260);
+  --background: oklch(1 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.15 0.01 260);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.15 0.01 260);
+  --primary: oklch(0.45 0.01 260);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.96 0.005 260);
+  --secondary-foreground: oklch(0.25 0.01 260);
+  --muted: oklch(0.97 0.003 260);
+  --muted-foreground: oklch(0.55 0.01 260);
+  --accent: oklch(0.96 0.005 260);
+  --accent-foreground: oklch(0.20 0.01 260);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.92 0.005 260);
+  --input: oklch(0.92 0.005 260);
+  --ring: oklch(0.55 0.01 260);
+  --chart-1: oklch(0.55 0.15 250);
+  --chart-2: oklch(0.60 0.12 160);
+  --chart-3: oklch(0.65 0.10 30);
+  --chart-4: oklch(0.50 0.14 300);
+  --chart-5: oklch(0.58 0.08 200);
+  --sidebar: oklch(0.98 0.002 260);
+  --sidebar-foreground: oklch(0.15 0.01 260);
+  --sidebar-primary: oklch(0.45 0.01 260);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.96 0.005 260);
+  --sidebar-accent-foreground: oklch(0.20 0.01 260);
+  --sidebar-border: oklch(0.92 0.005 260);
+  --sidebar-ring: oklch(0.55 0.01 260);
+}
+
+.dark {
+  --background: oklch(0.13 0.01 260);
+  --foreground: oklch(0.95 0.005 260);
+  --card: oklch(0.16 0.01 260);
+  --card-foreground: oklch(0.95 0.005 260);
+  --popover: oklch(0.16 0.01 260);
+  --popover-foreground: oklch(0.95 0.005 260);
+  --primary: oklch(0.85 0.005 260);
+  --primary-foreground: oklch(0.13 0.01 260);
+  --secondary: oklch(0.22 0.01 260);
+  --secondary-foreground: oklch(0.95 0.005 260);
+  --muted: oklch(0.20 0.01 260);
+  --muted-foreground: oklch(0.60 0.01 260);
+  --accent: oklch(0.22 0.01 260);
+  --accent-foreground: oklch(0.95 0.005 260);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(0.26 0.01 260);
+  --input: oklch(0.26 0.01 260);
+  --ring: oklch(0.60 0.01 260);
+  --chart-1: oklch(0.60 0.15 250);
+  --chart-2: oklch(0.55 0.12 160);
+  --chart-3: oklch(0.58 0.10 30);
+  --chart-4: oklch(0.52 0.14 300);
+  --chart-5: oklch(0.55 0.08 200);
+  --sidebar: oklch(0.14 0.01 260);
+  --sidebar-foreground: oklch(0.95 0.005 260);
+  --sidebar-primary: oklch(0.85 0.005 260);
+  --sidebar-primary-foreground: oklch(0.13 0.01 260);
+  --sidebar-accent: oklch(0.22 0.01 260);
+  --sidebar-accent-foreground: oklch(0.95 0.005 260);
+  --sidebar-border: oklch(0.26 0.01 260);
+  --sidebar-ring: oklch(0.60 0.01 260);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+  --font-display: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-serif: Georgia, 'Times New Roman', serif;
+  --ease-bezier: cubic-bezier(.53,-0.14,.16,1.78);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 16px);
+}
+
+body {
+  color: var(--foreground);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+}
+
+/* ── Loading spinner ─────────────────────── */
+
+svg.loading {
+  width: 3.25em;
+  transform-origin: center;
+  animation: rotate4 2s linear infinite;
+ }
+
+svg.loading circle {
+  fill: none;
+  stroke-width: 2;
+  stroke-dasharray: 1, 200;
+  stroke-dashoffset: 0;
+  stroke-linecap: round;
+  animation: dash4 1.5s ease-in-out infinite;
+}
+
+@keyframes rotate4 {
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes dash4 {
+  0% { stroke-dasharray: 1, 200; stroke-dashoffset: 0; }
+  50% { stroke-dasharray: 90, 200; stroke-dashoffset: -35px; }
+  100% { stroke-dashoffset: -125px; }
+}
+
+/* ── Sky / Auth animations ─────────────────────── */
+
+@keyframes sky-breathe {
+  0%, 100% { opacity: 0; transform: scale(1); }
+  40% { opacity: 0.22; transform: scale(1.03); }
+  70% { opacity: 0.10; transform: scale(0.98); }
+}
+
+@keyframes light-drift {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(3%, -2%) scale(1.05); }
+  50% { transform: translate(-2%, 3%) scale(0.95); }
+  75% { transform: translate(4%, 1%) scale(1.02); }
+}
+
+@keyframes sun-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(1.1); }
+}
+
+@keyframes atmo-drift {
+  0%, 100% { transform: translate(0, 0) scale(1); opacity: 1; }
+  30% { transform: translate(4%, -3%) scale(1.08); opacity: 0.7; }
+  60% { transform: translate(-3%, 2%) scale(0.95); opacity: 1; }
+  80% { transform: translate(2%, -1%) scale(1.03); opacity: 0.8; }
+}
+
+@keyframes atmo-drift-2 {
+  0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.8; }
+  40% { transform: translate(-5%, 3%) scale(1.1); opacity: 1; }
+  70% { transform: translate(3%, -2%) scale(0.92); opacity: 0.6; }
+}
+
+@keyframes cloud-float-1 {
+  0%, 100% { transform: translateX(0) translateY(0); }
+  25% { transform: translateX(35px) translateY(-10px); }
+  50% { transform: translateX(55px) translateY(5px); }
+  75% { transform: translateX(20px) translateY(-6px); }
+}
+
+@keyframes cloud-float-2 {
+  0%, 100% { transform: translateX(0) translateY(0); }
+  33% { transform: translateX(-45px) translateY(8px); }
+  66% { transform: translateX(-20px) translateY(-12px); }
+}
+
+@keyframes cloud-float-3 {
+  0%, 100% { transform: translateX(0) translateY(0); }
+  50% { transform: translateX(30px) translateY(10px); }
+}
+
+@keyframes cloud-float-4 {
+  0%, 100% { transform: translateX(0) translateY(0); }
+  20% { transform: translateX(-20px) translateY(-6px); }
+  60% { transform: translateX(25px) translateY(8px); }
+  80% { transform: translateX(10px) translateY(-4px); }
+}
+
+@keyframes card-float {
+  from { opacity: 0; transform: translateY(30px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes blob-float-1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(30px, -25px) scale(1.05); }
+  66% { transform: translate(-20px, 20px) scale(0.95); }
+}
+
+@keyframes blob-float-2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(-25px, 25px) scale(1.08); }
+  66% { transform: translate(20px, -15px) scale(0.92); }
+}
+
+@keyframes blob-float-3 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(20px, -20px) scale(1.1); }
+}
+
+/* ── Utilities ─────────────────────── */
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .animate-card-float {
+    animation: card-float 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .animate-fade-in {
+    animation: fade-in 0.5s ease both;
+  }
+
+}
+
+.bg-email {
+  background-image: url("data:image/svg+xml;utf8,%3Csvg%20viewBox%3D%220%200%20280%20256%22%20fill%3D%22none%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cpath%20d%3D%22M170.241%2026.7461C173.21%2021.6919%20172.626%2018.8475%20173.784%2015.9756C174.496%2014.2117%20176.829%2014.1236%20177.834%2015.7385C180.648%2020.2595%20180.845%2026.7813%20177.013%2032.9134C173.481%2038.5661%20167.776%2039.8645%20163.614%2040.1136C161.729%2040.2265%20160.289%2038.5329%20161.394%2037.0014C163.36%2034.2764%20167.36%2031.6502%20170.241%2026.7461Z%22%20fill%3D%22%23FA9955%22%2F%3E%3Cpath%20d%3D%22M102.297%2024.6341C100.509%2014.4962%20105.013%208.82327%20109.477%205.22381C111.149%203.87595%20113.354%205.56809%20112.995%207.68538C112.606%209.98423%20112.439%2012.7392%20112.954%2015.6565C114.168%2022.541%20129.311%2032.3976%20130.311%2038.0672C130.907%2041.4479%20129.872%2046.1555%20127.942%2050.0239C126.917%2052.0788%20123.275%2050.5138%20122.889%2048.2502C122.874%2048.1667%20122.86%2048.0825%20122.845%2047.9975C121.872%2042.4782%20104.844%2039.078%20102.297%2024.6341Z%22%20fill%3D%22%23FA9955%22%2F%3E%3Cpath%20d%3D%22M190.692%2035.3663C192.809%2032.8656%20196.747%2033.1772%20197.811%2036.2765C198.721%2038.928%20199.501%2042.171%20199.501%2045.5001C199.5%2052.8707%20195.089%2056.8593%20201.348%2064.7111C202.416%2066.0499%20204.23%2066.5175%20205.859%2065.9894C221.601%2060.8854%20233.732%2052.3052%20236.001%2045.5001C239.068%2036.2981%20249.421%2056.6435%20240.291%2074.5695H148.49C147.967%2074.0823%20147.438%2073.5952%20146.899%2073.1105C145.12%2071.5102%20142.395%2071.617%20140.783%2073.3849C140.428%2073.774%20140.075%2074.1695%20139.723%2074.5695H43.9332C36.546%2060.0341%2029.9746%2042.7756%2035.5006%2045.5001C44.5572%2049.9658%2063.0006%2071.7725%2078.0631%2071.7726C85.5998%2071.7724%2086.173%2067.228%2090.5006%2063.5001C99.6418%2055.6251%2073.3363%2042.5028%2071.9068%2037.4191C71.6139%2036.3754%2073.086%2036.0973%2074.1529%2036.2902C79.7761%2037.3067%2098.1925%2040.9002%20105.001%2045.5001C110.232%2049.0351%20118.762%2056.9295%20124.123%2062.0538C126.481%2064.3068%20130.394%2063.5148%20131.65%2060.505L139.017%2042.8478C140.464%2039.3796%20145.084%2039.1142%20146.842%2042.4357C151.392%2051.0308%20155.783%2058.0803%20167.913%2056.0402C168.132%2056.0032%20168.357%2055.945%20168.568%2055.8741L169.258%2055.6427C178.23%2049.2942%20186.089%2040.8031%20190.692%2035.3663Z%22%20fill%3D%22url%28%23paint0_linear_1_188%29%22%2F%3E%3Cpath%20d%3D%22M124.869%20207.402C136.048%20217.634%20153.243%20217.457%20164.209%20206.997L190.655%20181.768L264.935%20250.395C259.677%20253.934%20253.347%20256%20246.533%20256H33C27.1193%20256%2021.5991%20254.46%2016.8174%20251.764L94.709%20179.798L124.869%20207.402ZM84.3457%20170.312L6.31152%20242.409C2.34327%20236.962%200%20230.255%200%20223V116.803C1.8303e-06%20109.946%202.09091%20103.578%205.66992%2098.3017L84.3457%20170.312ZM275.444%20100.884C278.049%20105.604%20279.533%20111.03%20279.533%20116.803V223C279.533%20229.344%20277.741%20235.269%20274.638%20240.3L200.805%20172.085L275.444%20100.884ZM246.533%2083.8027C253.916%2083.8027%20260.733%2086.2271%20266.23%2090.3232L154.546%20196.867C148.909%20202.245%20140.068%20202.335%20134.321%20197.075L15.8262%2088.6181C20.8292%2085.5631%2026.709%2083.8027%2033%2083.8027H246.533Z%22%20fill%3D%22url%28%23paint1_linear_1_188%29%22%2F%3E%3Cdefs%3E%3ClinearGradient%20id%3D%22paint0_linear_1_188%22%20x1%3D%22142.191%22%20y1%3D%2218.9244%22%20x2%3D%22142.191%22%20y2%3D%22208.992%22%20gradientUnits%3D%22userSpaceOnUse%22%3E%3Cstop%20stop-color%3D%22%23FAA057%22%2F%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%23F03838%22%2F%3E%3C%2FlinearGradient%3E%3ClinearGradient%20id%3D%22paint1_linear_1_188%22%20x1%3D%22139.767%22%20y1%3D%2283.8027%22%20x2%3D%22139.767%22%20y2%3D%22256%22%20gradientUnits%3D%22userSpaceOnUse%22%3E%3Cstop%20stop-color%3D%22%237293FF%22%2F%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%232C3EFF%22%2F%3E%3C%2FlinearGradient%3E%3C%2Fdefs%3E%3C%2Fsvg%3E");
+}
+
+.ripple {
+  position: relative;
+  overflow: hidden;
+}
+
+.ripple-effect-span {
+  position: absolute;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.3;
+  transform: scale(0);
+  transition: .8s ease-out;
+}
+.ripple-effect-span.in{
+  transform: scale(4);
+  opacity: 0.08;
+}
+.ripple-effect-span.out{
+  transition: .3s;
+  opacity: 0;
+}
+
+.tiptap p{
+  margin: 0;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}

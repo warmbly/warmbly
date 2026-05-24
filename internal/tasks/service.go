@@ -1,9 +1,15 @@
 package tasks
 
 import (
+	"context"
+
+	"github.com/google/uuid"
+	"github.com/warmbly/warmbly/internal/app/advanced"
 	"github.com/warmbly/warmbly/internal/app/cipher"
 	"github.com/warmbly/warmbly/internal/app/feature"
+	warmupapp "github.com/warmbly/warmbly/internal/app/warmup"
 	"github.com/warmbly/warmbly/internal/errx"
+	"github.com/warmbly/warmbly/internal/events"
 	"github.com/warmbly/warmbly/internal/infrastructure/gtasks"
 	"github.com/warmbly/warmbly/internal/infrastructure/kafka"
 	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
@@ -34,6 +40,10 @@ type TasksService interface {
 	HandleCampaignTask(task *proto.ProcessTask) *errx.Error
 	HandleEmailTask(task *proto.ProcessTask) *errx.Error
 	HandleUserEmailTask(task *proto.ProcessTask) *errx.Error
+
+	// Test email support
+	SendTestEmail(ctx context.Context, userID string, accountID uuid.UUID, recipient string, campaign *models.Campaign, sequence *models.Sequence) *errx.Error
+	GetCampaignSequences(ctx context.Context, campaignID uuid.UUID) ([]models.Sequence, error)
 }
 
 type tasksService struct {
@@ -42,12 +52,15 @@ type tasksService struct {
 	producerClient     *kafka.Producer
 	generationClient   *generation.GenerationClient
 	streamingPublisher *pubsub.StreamingPublisher
+	eventsPublisher    events.Publisher
 
 	// Services
 	scheduler     scheduler.SchedulerService
 	cipherService cipher.CipherService
 	emailSender   EmailSender
 	featureGate   feature.FeatureGateService
+	advanced      advanced.Service
+	warmupHealth  warmupapp.Service
 
 	// Repositories
 	taskRepo             repository.TaskRepository
@@ -64,10 +77,12 @@ func NewService(
 	producerClient *kafka.Producer,
 	generationClient *generation.GenerationClient,
 	streamingPublisher *pubsub.StreamingPublisher,
+	eventsPublisher events.Publisher,
 	scheduler scheduler.SchedulerService,
 	cipherService cipher.CipherService,
 	emailSender EmailSender,
 	featureGate feature.FeatureGateService,
+	warmupHealth warmupapp.Service,
 	taskRepo repository.TaskRepository,
 	warmupRepo repository.WarmupRepository,
 	campaignProgressRepo repository.CampaignProgressRepository,
@@ -75,16 +90,20 @@ func NewService(
 	campaignRepo repository.CampaignRepository,
 	contactRepo repository.ContactRepository,
 	campaignLogRepo repository.CampaignLogRepository,
+	advanced advanced.Service,
 ) TasksService {
 	return &tasksService{
 		tasksClient:          tasksClient,
 		producerClient:       producerClient,
 		generationClient:     generationClient,
 		streamingPublisher:   streamingPublisher,
+		eventsPublisher:      eventsPublisher,
 		scheduler:            scheduler,
 		cipherService:        cipherService,
 		emailSender:          emailSender,
 		featureGate:          featureGate,
+		advanced:             advanced,
+		warmupHealth:         warmupHealth,
 		taskRepo:             taskRepo,
 		warmupRepo:           warmupRepo,
 		campaignProgressRepo: campaignProgressRepo,
