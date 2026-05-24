@@ -417,7 +417,11 @@ services:
     environment:
       <<: *aws-localstack
       PRIMARY_DB: postgres://warmbly:warmbly@postgres:5432/warmbly_dev?sslmode=disable
+      # SEED_RICH: 3 orgs, 3 workers, 6 mailboxes, 1 campaign, 10 contacts.
+      # SEED_FULL: layers on plans + subscriptions, admin/manager/viewer users,
+      # CRM, API key, audit log, enterprise inquiry. See cmd/seed/main.go.
       SEED_RICH: "true"
+      SEED_FULL: "true"
     depends_on:
       backend:
         condition: service_healthy

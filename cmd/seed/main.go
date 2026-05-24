@@ -4,7 +4,7 @@
 //
 //   - baseline user dev@warmbly.com / password123 with one org
 //
-// And when SEED_RICH=true (default in docker-compose), also loads:
+// When SEED_RICH=true (default in docker-compose), also loads:
 //
 //   - 3 orgs across tiers: Acme (free shared), Beta (premium shared),
 //     Gamma (dedicated)
@@ -12,6 +12,13 @@
 //   - 6 email accounts spread across workers, joined to the right warmup pool
 //   - one Beta campaign with a 2-step sequence and 10 contacts
 //     (2 unsubscribed, so suppression behavior is observable in the UI)
+//
+// When SEED_FULL=true (also default in docker-compose), additionally runs
+// the comprehensive seed in internal/seed: paid plans + Stripe-style
+// subscriptions, admin/manager/viewer team users, reply templates, a full
+// CRM (pipelines/deals/tasks/notes/activity), an API key, admin audit log
+// entries, and an enterprise inquiry. Disjoint from SEED_RICH's IDs, so
+// the two can coexist.
 //
 // Re-running the binary is safe: every insert is guarded by an EXISTS check
 // or an ON CONFLICT clause.
@@ -30,6 +37,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/warmbly/warmbly/internal/pkg/argon2"
+	"github.com/warmbly/warmbly/internal/seed"
 )
 
 // Stable UUIDs so fixture data is referenceable across runs.
@@ -74,6 +82,14 @@ func main() {
 		if err := seedRich(ctx, pool); err != nil {
 			log.Fatalf("rich: %v", err)
 		}
+	}
+
+	if os.Getenv("SEED_FULL") == "true" {
+		result, err := seed.Run(ctx, pool)
+		if err != nil {
+			log.Fatalf("full: %v", err)
+		}
+		result.Print(os.Stdout)
 	}
 
 	fmt.Println("seed complete")

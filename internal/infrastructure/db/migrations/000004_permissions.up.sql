@@ -1,10 +1,11 @@
 CREATE TABLE roles (
-	id UUID PRIMARY KEY NOT NULL DEFAULT gen_random_uuid(),
+	id UUID NOT NULL DEFAULT gen_random_uuid(),
 	permissions BIGINT NOT NULL,
 	name VARCHAR(255) NOT NULL,
 	color VARCHAR(7) NOT NULL,
 	created_at TIMESTAMP NOT NULL DEFAULT now(),
 	updated_at TIMESTAMP NOT NULL DEFAULT now(),
+	PRIMARY KEY (id),
 	CONSTRAINT valid_color CHECK (color ~* '^#[a-f0-9]{6}$')
 );
 
