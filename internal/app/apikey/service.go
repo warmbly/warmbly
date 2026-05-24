@@ -41,6 +41,12 @@ const (
 	// Soft caps on per-key scoping lists. Keep the rows small + cheap to scan.
 	maxAllowedIPs           = 64
 	maxAllowedEmailAccounts = 128
+
+	// Rate limit bounds. The DB default is 60 r/m; we don't allow setting
+	// it absurdly high or to zero (which would lock the key out).
+	minRateLimitPerMinute     = 1
+	maxRateLimitPerMinute     = 10000
+	defaultRateLimitPerMinute = 60
 )
 
 type APIKeyService interface {
@@ -55,9 +61,20 @@ type APIKeyService interface {
 	ValidateKeyIP(key *models.APIKey, ip string) bool
 	ValidateKeyPermission(key *models.APIKey, permission uint64) bool
 
+	// CheckAndIncrementRateLimit enforces the per-key minute-window cap.
+	// Returns the remaining budget for the current window and a retry-after
+	// hint when the cap is hit. Falls open if Redis is unavailable so a
+	// cache outage can't lock customers out of their own API.
+	CheckAndIncrementRateLimit(ctx context.Context, key *models.APIKey) (remaining int, retryAfterSeconds int, allowed bool)
+
 	// Usage tracking
-	UpdateLastUsed(ctx context.Context, keyID uuid.UUID)
+	UpdateLastUsed(ctx context.Context, keyID uuid.UUID, ip string)
 	LogUsage(ctx context.Context, log *models.APIKeyUsageLog)
+
+	// Analytics
+	GetUsageSummary(ctx context.Context, orgID uuid.UUID) (*models.APIKeyUsageSummary, *errx.Error)
+	GetAnalytics(ctx context.Context, orgID uuid.UUID, keyID *uuid.UUID, from, to time.Time, interval string) (*models.APIKeyAnalytics, *errx.Error)
+	ListUsageLogs(ctx context.Context, orgID, keyID uuid.UUID, limit int, cursor *uuid.UUID) (*models.APIKeyUsageLogsResult, *errx.Error)
 }
 
 type apiKeyService struct {
@@ -144,6 +161,11 @@ func (s *apiKeyService) Create(ctx context.Context, orgID, userID uuid.UUID, dat
 	if len(data.AllowedEmailAccounts) > maxAllowedEmailAccounts {
 		return nil, errx.New(errx.BadRequest, fmt.Sprintf("at most %d allowed_email_accounts entries", maxAllowedEmailAccounts))
 	}
+	if data.RateLimitPerMinute != nil {
+		if *data.RateLimitPerMinute < minRateLimitPerMinute || *data.RateLimitPerMinute > maxRateLimitPerMinute {
+			return nil, errx.New(errx.BadRequest, fmt.Sprintf("rate_limit_per_minute must be between %d and %d", minRateLimitPerMinute, maxRateLimitPerMinute))
+		}
+	}
 
 	allowedIPs, xerr := validateAllowedIPs(data.AllowedIPs)
 	if xerr != nil {
@@ -199,6 +221,11 @@ func (s *apiKeyService) Update(ctx context.Context, orgID, keyID uuid.UUID, data
 			return nil, xerr
 		}
 		data.AllowedIPs = allowedIPs
+	}
+	if data.RateLimitPerMinute != nil {
+		if *data.RateLimitPerMinute < minRateLimitPerMinute || *data.RateLimitPerMinute > maxRateLimitPerMinute {
+			return nil, errx.New(errx.BadRequest, fmt.Sprintf("rate_limit_per_minute must be between %d and %d", minRateLimitPerMinute, maxRateLimitPerMinute))
+		}
 	}
 
 	return s.repo.Update(ctx, orgID, keyID, data)
@@ -285,12 +312,12 @@ func (s *apiKeyService) ValidateKeyPermission(key *models.APIKey, permission uin
 	return models.HasAPIPermission(key.Permissions, permission)
 }
 
-func (s *apiKeyService) UpdateLastUsed(ctx context.Context, keyID uuid.UUID) {
+func (s *apiKeyService) UpdateLastUsed(ctx context.Context, keyID uuid.UUID, ip string) {
 	// Fire-and-forget; the request shouldn't wait on a stats update.
 	go func() {
 		bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		_ = s.repo.UpdateLastUsed(bgCtx, keyID)
+		_ = s.repo.UpdateLastUsed(bgCtx, keyID, ip)
 	}()
 }
 
@@ -300,4 +327,130 @@ func (s *apiKeyService) LogUsage(ctx context.Context, log *models.APIKeyUsageLog
 		defer cancel()
 		_ = s.repo.LogUsage(bgCtx, log)
 	}()
+}
+
+// CheckAndIncrementRateLimit enforces the per-key minute-window cap using a
+// Redis Lua script for atomic check-and-increment. Fails open if the cache
+// is unavailable so a Redis outage doesn't take down a customer's integration.
+func (s *apiKeyService) CheckAndIncrementRateLimit(ctx context.Context, key *models.APIKey) (int, int, bool) {
+	limit := key.RateLimitPerMinute
+	if limit <= 0 {
+		limit = defaultRateLimitPerMinute
+	}
+	if s.cache == nil {
+		return limit, 0, true
+	}
+
+	bucket := time.Now().Unix() / 60
+	cacheKey := fmt.Sprintf("apikey:rl:%s:%d", key.ID.String(), bucket)
+
+	script := `
+		local key = KEYS[1]
+		local limit = tonumber(ARGV[1])
+		local window = tonumber(ARGV[2])
+		local current = tonumber(redis.call('GET', key) or '0')
+		if current >= limit then
+			local ttl = redis.call('TTL', key)
+			if ttl < 0 then ttl = window end
+			return {current, ttl, 0}
+		end
+		current = redis.call('INCR', key)
+		if current == 1 then
+			redis.call('EXPIRE', key, window)
+		end
+		local ttl = redis.call('TTL', key)
+		return {current, ttl, 1}
+	`
+
+	res, err := s.cache.Eval(ctx, script, []string{cacheKey}, limit, 60).Slice()
+	if err != nil || len(res) < 3 {
+		// Fail open: a Redis hiccup shouldn't sink the request.
+		return limit, 0, true
+	}
+
+	current, _ := res[0].(int64)
+	ttl, _ := res[1].(int64)
+	allowed, _ := res[2].(int64)
+
+	remaining := limit - int(current)
+	if remaining < 0 {
+		remaining = 0
+	}
+	if allowed == 1 {
+		return remaining, 0, true
+	}
+	return 0, int(ttl), false
+}
+
+func (s *apiKeyService) GetUsageSummary(ctx context.Context, orgID uuid.UUID) (*models.APIKeyUsageSummary, *errx.Error) {
+	return s.repo.GetUsageSummary(ctx, orgID)
+}
+
+// GetAnalytics returns the timeseries + endpoint breakdown for a single key
+// (or the whole org when keyID is nil). The default window is the last 24
+// hours bucketed by hour, which gives a clean ~24-point graph; callers can
+// override interval and date range for deeper looks.
+func (s *apiKeyService) GetAnalytics(ctx context.Context, orgID uuid.UUID, keyID *uuid.UUID, from, to time.Time, interval string) (*models.APIKeyAnalytics, *errx.Error) {
+	if to.IsZero() {
+		to = time.Now()
+	}
+	if from.IsZero() {
+		from = to.Add(-24 * time.Hour)
+	}
+	if !from.Before(to) {
+		return nil, errx.New(errx.BadRequest, "from must be before to")
+	}
+	// Cap analytic windows at 90 days so a single request can't sweep the
+	// whole table.
+	if to.Sub(from) > 90*24*time.Hour {
+		return nil, errx.New(errx.BadRequest, "date range cannot exceed 90 days")
+	}
+
+	switch interval {
+	case "minute", "hour", "day":
+	default:
+		// Pick a sensible default based on the window size.
+		span := to.Sub(from)
+		switch {
+		case span <= 2*time.Hour:
+			interval = "minute"
+		case span <= 7*24*time.Hour:
+			interval = "hour"
+		default:
+			interval = "day"
+		}
+	}
+
+	buckets, xerr := s.repo.GetUsageTimeseries(ctx, orgID, keyID, from, to, interval)
+	if xerr != nil {
+		return nil, xerr
+	}
+	endpoints, xerr := s.repo.GetEndpointBreakdown(ctx, orgID, keyID, from, to, 25)
+	if xerr != nil {
+		return nil, xerr
+	}
+
+	var total, errors int64
+	for _, b := range buckets {
+		total += b.Total
+		errors += b.ClientErrors + b.ServerErrors
+	}
+
+	out := &models.APIKeyAnalytics{
+		From:      from,
+		To:        to,
+		Interval:  interval,
+		Buckets:   buckets,
+		Endpoints: endpoints,
+		Total:     total,
+		Errors:    errors,
+	}
+	if keyID != nil {
+		out.APIKeyID = *keyID
+	}
+	return out, nil
+}
+
+func (s *apiKeyService) ListUsageLogs(ctx context.Context, orgID, keyID uuid.UUID, limit int, cursor *uuid.UUID) (*models.APIKeyUsageLogsResult, *errx.Error) {
+	return s.repo.ListUsageLogs(ctx, orgID, keyID, limit, cursor)
 }

@@ -5,5 +5,6 @@ export default function useAPIPermissions() {
     return useQuery({
         queryKey: ["api-keys", "permissions"],
         queryFn: () => listAPIPermissions(),
-    })
+        staleTime: 60 * 60 * 1000,
+    });
 }

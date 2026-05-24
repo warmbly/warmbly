@@ -3,6 +3,7 @@ package handler
 import (
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -169,4 +170,109 @@ func (h *Handler) ListAPIPermissions(c *gin.Context) {
 			"full_access": models.APIPermFullAccess,
 		},
 	})
+}
+
+// GetAPIKeyUsageSummary returns the org-level usage strip (active key
+// count, 24h request total, last call timestamp, error rate, avg latency).
+// GET /api-keys/usage/summary
+func (h *Handler) GetAPIKeyUsageSummary(c *gin.Context) {
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "no organization selected"))
+		return
+	}
+	summary, xerr := h.APIKeyService.GetUsageSummary(c.Request.Context(), *orgID)
+	if xerr != nil {
+		errx.JSON(c, xerr)
+		return
+	}
+	c.JSON(http.StatusOK, summary)
+}
+
+// GetAPIKeyAnalytics returns the request timeseries + endpoint breakdown
+// for a single key (when :id is set) or the whole org (when :id is "all").
+// GET /api-keys/:id/analytics?from=...&to=...&interval=hour|day|minute
+func (h *Handler) GetAPIKeyAnalytics(c *gin.Context) {
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "no organization selected"))
+		return
+	}
+
+	var keyID *uuid.UUID
+	if id := c.Param("id"); id != "" && id != "all" {
+		parsed, err := uuid.Parse(id)
+		if err != nil {
+			errx.JSON(c, errx.ErrNotFound)
+			return
+		}
+		keyID = &parsed
+	}
+
+	from, to := parseAnalyticsRange(c)
+	interval := c.Query("interval")
+
+	analytics, xerr := h.APIKeyService.GetAnalytics(c.Request.Context(), *orgID, keyID, from, to, interval)
+	if xerr != nil {
+		errx.JSON(c, xerr)
+		return
+	}
+	c.JSON(http.StatusOK, analytics)
+}
+
+// ListAPIKeyUsageLogs returns the recent raw request entries for a single key.
+// GET /api-keys/:id/logs?cursor=...&limit=...
+func (h *Handler) ListAPIKeyUsageLogs(c *gin.Context) {
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "no organization selected"))
+		return
+	}
+
+	keyID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		errx.JSON(c, errx.ErrNotFound)
+		return
+	}
+
+	var cursor *uuid.UUID
+	if cursorStr := c.Query("cursor"); cursorStr != "" {
+		if id, err := uuid.Parse(cursorStr); err == nil {
+			cursor = &id
+		}
+	}
+
+	limit := 50
+	if l, err := strconv.Atoi(c.Query("limit")); err == nil && l > 0 && l <= 200 {
+		limit = l
+	}
+
+	result, xerr := h.APIKeyService.ListUsageLogs(c.Request.Context(), *orgID, keyID, limit, cursor)
+	if xerr != nil {
+		errx.JSON(c, xerr)
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// parseAnalyticsRange pulls ?from / ?to off the query string, defaulting
+// to "last 24 hours" when either is missing. Accepts RFC3339 timestamps.
+func parseAnalyticsRange(c *gin.Context) (from, to time.Time) {
+	if f := c.Query("from"); f != "" {
+		if parsed, err := time.Parse(time.RFC3339, f); err == nil {
+			from = parsed
+		}
+	}
+	if t := c.Query("to"); t != "" {
+		if parsed, err := time.Parse(time.RFC3339, t); err == nil {
+			to = parsed
+		}
+	}
+	if to.IsZero() {
+		to = time.Now()
+	}
+	if from.IsZero() {
+		from = to.Add(-24 * time.Hour)
+	}
+	return from, to
 }
