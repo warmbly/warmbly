@@ -15,7 +15,7 @@ import (
 )
 
 type APIKeyRepository interface {
-	Create(ctx context.Context, orgID, userID uuid.UUID, data *models.CreateAPIKey, keyPrefix, keyHash string) (*models.APIKey, *errx.Error)
+	Create(ctx context.Context, orgID, userID uuid.UUID, data *models.CreateAPIKey, keyPrefix, keySuffix, keyHash string) (*models.APIKey, *errx.Error)
 	GetByHash(ctx context.Context, keyHash string) (*models.APIKey, *errx.Error)
 	GetByID(ctx context.Context, orgID, keyID uuid.UUID) (*models.APIKey, *errx.Error)
 	List(ctx context.Context, orgID uuid.UUID, limit int, cursor *uuid.UUID) (*models.APIKeysResult, *errx.Error)
@@ -33,7 +33,7 @@ func NewAPIKeyRepository(db *db.DB) APIKeyRepository {
 	return &apiKeyRepository{DB: db}
 }
 
-const API_KEY_SELECT = `id, user_id, organization_id, name, key_prefix, permissions,
+const API_KEY_SELECT = `id, user_id, organization_id, name, key_prefix, key_suffix, permissions,
 	allowed_ips, allowed_email_accounts,
 	status, last_used_at, expires_at, revoked_at, revoked_reason,
 	created_at, updated_at`
@@ -41,7 +41,7 @@ const API_KEY_SELECT = `id, user_id, organization_id, name, key_prefix, permissi
 func scanAPIKey(row db.Scannable, key *models.APIKey) error {
 	var allowedIPs, allowedAccounts []string
 	err := row.Scan(
-		&key.ID, &key.UserID, &key.OrganizationID, &key.Name, &key.KeyPrefix, &key.Permissions,
+		&key.ID, &key.UserID, &key.OrganizationID, &key.Name, &key.KeyPrefix, &key.KeySuffix, &key.Permissions,
 		&allowedIPs, &allowedAccounts,
 		&key.Status, &key.LastUsedAt, &key.ExpiresAt, &key.RevokedAt, &key.RevokedReason,
 		&key.CreatedAt, &key.UpdatedAt,
@@ -59,10 +59,10 @@ func scanAPIKey(row db.Scannable, key *models.APIKey) error {
 	return nil
 }
 
-func (r *apiKeyRepository) Create(ctx context.Context, orgID, userID uuid.UUID, data *models.CreateAPIKey, keyPrefix, keyHash string) (*models.APIKey, *errx.Error) {
+func (r *apiKeyRepository) Create(ctx context.Context, orgID, userID uuid.UUID, data *models.CreateAPIKey, keyPrefix, keySuffix, keyHash string) (*models.APIKey, *errx.Error) {
 	query := fmt.Sprintf(`
-		INSERT INTO api_keys (user_id, organization_id, name, key_prefix, key_hash, permissions, allowed_ips, allowed_email_accounts, expires_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		INSERT INTO api_keys (user_id, organization_id, name, key_prefix, key_suffix, key_hash, permissions, allowed_ips, allowed_email_accounts, expires_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		RETURNING %s
 	`, API_KEY_SELECT)
 
@@ -76,6 +76,7 @@ func (r *apiKeyRepository) Create(ctx context.Context, orgID, userID uuid.UUID, 
 		orgID,
 		data.Name,
 		keyPrefix,
+		keySuffix,
 		keyHash,
 		data.Permissions,
 		data.AllowedIPs,

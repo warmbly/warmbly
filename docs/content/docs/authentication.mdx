@@ -12,10 +12,12 @@ The Warmbly API uses API keys for authentication. Each API key has specific perm
 API keys follow this format:
 
 ```
-wmbly_<random_string>
+wmbly_<43-character-random-string>
 ```
 
-The `wmbly_` prefix identifies the key as a Warmbly API key. The remaining characters are a cryptographically secure random string.
+The `wmbly_` prefix identifies the key as a Warmbly key. The remaining 43 characters are 32 random bytes encoded as base64url (no padding) — 256 bits of entropy, so brute-forcing a valid key is computationally infeasible.
+
+Keys are stored as a SHA-256 hash; the plaintext is shown exactly once on creation. To help you spot a key in the dashboard without exposing the secret, we store the first 8 characters (`key_prefix`, e.g. `wmbly_ab`) and the last 4 characters (`key_suffix`, e.g. `wxyz`). Render them as `wmbly_ab…wxyz`.
 
 ## Using Your API Key
 
@@ -82,17 +84,22 @@ Total: 1 + 2 + 4 + 8 + 16 = 31
 
 ## IP Restrictions
 
-You can restrict API keys to specific IP addresses:
+You can restrict API keys to specific IPs or CIDR ranges. Entries can be bare IPs (v4 or v6) or CIDR blocks; an empty list means "any IP".
 
 ```json
 {
   "name": "Production Server",
-  "permissions": 31,
-  "allowed_ips": ["203.0.113.10", "203.0.113.11"]
+  "permissions": 688159,
+  "allowed_ips": [
+    "203.0.113.10",
+    "203.0.113.11",
+    "10.0.0.0/8",
+    "2001:db8::/32"
+  ]
 }
 ```
 
-Requests from other IP addresses will be rejected with a `403 Forbidden` error.
+Requests from outside every listed range are rejected with `403 Forbidden`. There's a soft cap of 64 entries per key.
 
 ## Email Account Restrictions
 

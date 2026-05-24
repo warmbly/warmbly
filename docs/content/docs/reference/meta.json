@@ -2,6 +2,7 @@
   "title": "Reference",
   "pages": [
     "permissions",
+    "endpoints",
     "error-codes"
   ]
 }

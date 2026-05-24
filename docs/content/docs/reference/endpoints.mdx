@@ -1,0 +1,161 @@
+---
+title: Endpoint Scope Map
+description: Every endpoint, which auth types it accepts, and which permission it requires.
+---
+
+# Endpoint Scope Map
+
+This page is the source of truth for what an API key can and cannot reach. Every route in the backend falls into one of three buckets:
+
+- **API key accepted** — works with both a JWT (dashboard user) and an API key with the listed permission.
+- **JWT only** — never reachable via an API key. Used for billing, governance, websocket bootstrap, danger-zone destruction, the OAuth onboarding flow, and admin tools.
+- **Public** — no auth required (webhooks with signature verification, health check, OAuth bouncer pages).
+
+When an endpoint says "JWT permission: X / API permission: Y", the dual-auth middleware checks the relevant one based on which credential the caller used.
+
+## API Key Accepted
+
+### Emails
+
+| Method | Path | API Permission |
+|--------|------|----------------|
+| GET | `/emails` | `READ_EMAILS` |
+| GET | `/emails/:id` | `READ_EMAILS` |
+| PATCH | `/emails/:id` | `WRITE_EMAILS` |
+| PATCH | `/emails/:id/track` | `WRITE_EMAILS` |
+| DELETE | `/emails/:id` | `WRITE_EMAILS` |
+| POST | `/emails/:id/send` | `SEND_CAMPAIGNS` |
+
+### Campaigns and sequences
+
+| Method | Path | API Permission |
+|--------|------|----------------|
+| GET | `/campaigns` | `READ_CAMPAIGNS` |
+| POST | `/campaigns` | `WRITE_CAMPAIGNS` |
+| GET | `/campaigns/:id` | `READ_CAMPAIGNS` |
+| PATCH | `/campaigns/:id` | `WRITE_CAMPAIGNS` |
+| DELETE | `/campaigns/:id` | `WRITE_CAMPAIGNS` |
+| GET | `/campaigns/:id/advanced` | `READ_CAMPAIGNS` |
+| PATCH | `/campaigns/:id/advanced` | `WRITE_CAMPAIGNS` |
+| GET | `/campaigns/:id/ab-variants` | `READ_CAMPAIGNS` |
+| POST | `/campaigns/:id/ab-variants` | `WRITE_CAMPAIGNS` |
+| PATCH | `/campaigns/:id/ab-variants/:variantId` | `WRITE_CAMPAIGNS` |
+| DELETE | `/campaigns/:id/ab-variants/:variantId` | `WRITE_CAMPAIGNS` |
+| GET | `/campaigns/:id/ab-analysis` | `READ_ANALYTICS` |
+| POST | `/campaigns/:id/preflight` | `SEND_CAMPAIGNS` |
+| POST | `/campaigns/:id/test-email` | `SEND_CAMPAIGNS` |
+| POST | `/campaigns/:id/start` | `SEND_CAMPAIGNS` |
+| POST | `/campaigns/:id/stop` | `SEND_CAMPAIGNS` |
+| GET | `/campaigns/:id/logs` | `READ_CAMPAIGNS` |
+| GET/POST/PATCH/DELETE | `/campaigns/:id/sequences[/:sid]` | `READ_CAMPAIGNS` for GET, `WRITE_CAMPAIGNS` otherwise |
+
+### Contacts
+
+| Method | Path | API Permission |
+|--------|------|----------------|
+| POST | `/contacts/search` | `READ_CONTACTS` |
+| POST | `/contacts` | `WRITE_CONTACTS` |
+| DELETE | `/contacts` | `BULK_CONTACTS` |
+| PATCH | `/contacts` | `BULK_CONTACTS` |
+| PATCH | `/contacts/:id` | `WRITE_CONTACTS` |
+| DELETE | `/contacts/:id` | `WRITE_CONTACTS` |
+| GET | `/contacts/:id/notes` | `READ_CONTACTS` |
+| POST | `/contacts/:id/notes` | `WRITE_CONTACTS` |
+| PATCH | `/contacts/:id/notes/:noteId` | `WRITE_CONTACTS` |
+| DELETE | `/contacts/:id/notes/:noteId` | `WRITE_CONTACTS` |
+| GET | `/contacts/:id/activities` | `READ_CONTACTS` |
+| GET | `/contacts/:id/deals` | `READ_CRM` |
+
+### Unibox
+
+| Method | Path | API Permission |
+|--------|------|----------------|
+| GET | `/unibox` | `READ_UNIBOX` |
+| GET | `/unibox/count` | `READ_UNIBOX` |
+| GET | `/unibox/thread` | `READ_UNIBOX` |
+| GET | `/unibox/:id` | `READ_UNIBOX` |
+| PATCH | `/unibox/seen` | `WRITE_UNIBOX` |
+| POST | `/unibox/reply` | `WRITE_UNIBOX` |
+
+### Templates and CRM
+
+| Method | Path | API Permission |
+|--------|------|----------------|
+| GET | `/templates`, `/templates/:id` | `READ_TEMPLATES` |
+| POST/PATCH/DELETE | `/templates[/:id]` | `WRITE_TEMPLATES` |
+| GET | `/crm/pipelines`, `/crm/pipelines/:id` | `READ_CRM` |
+| POST/PATCH/DELETE | `/crm/pipelines[/:id][/stages[/:stageId]]` | `WRITE_CRM` |
+| GET | `/crm/deals`, `/crm/deals/:id` | `READ_CRM` |
+| POST/PATCH/DELETE | `/crm/deals[/:id]` | `WRITE_CRM` |
+| GET | `/crm/tasks`, `/crm/tasks/:id` | `READ_CRM` |
+| POST/PATCH/DELETE | `/crm/tasks[/:id]` | `WRITE_CRM` |
+
+### Analytics and audit
+
+| Method | Path | API Permission |
+|--------|------|----------------|
+| GET | `/analytics/*` (dashboard, deliverability, warmup, campaigns, accounts, usage) | `READ_ANALYTICS` |
+| GET | `/audit-logs` | `READ_AUDIT_LOGS` |
+
+### API key self-service
+
+| Method | Path | API Permission |
+|--------|------|----------------|
+| GET | `/api-keys` | `API_KEYS` |
+| POST | `/api-keys` | `API_KEYS` |
+| GET | `/api-keys/permissions` | `API_KEYS` |
+| GET | `/api-keys/:id` | `API_KEYS` |
+| PATCH | `/api-keys/:id` | `API_KEYS` |
+| DELETE | `/api-keys/:id` | `API_KEYS` |
+
+### Operations
+
+| Method | Path | API Permission |
+|--------|------|----------------|
+| GET/PATCH | `/outreach/settings` | `WRITE_CAMPAIGNS` |
+| POST | `/deliverability/events` | `WRITE_CAMPAIGNS` |
+| GET | `/tasks/dlq` | `SEND_CAMPAIGNS` |
+| POST | `/tasks/dlq/:id/replay` | `SEND_CAMPAIGNS` |
+
+### Reference data
+
+| Method | Path | API Permission |
+|--------|------|----------------|
+| GET | `/plans` | (any authenticated key) |
+| GET | `/timezones` | (any authenticated key) |
+
+## JWT Only
+
+These never accept an API key. They depend on a human-bound session — billing flows, governance, OAuth onboarding, websocket bootstrap, and operational destruction.
+
+- `POST /auth/login`, `/auth/login/confirm`, `/auth/register`, `/auth/register/confirm`, `/auth/refresh`, `/auth/reset-password`, `/auth/reset-password/confirm`
+- `POST /auth/logout`, `POST /auth/logout-all`, `GET /auth/me`, `PATCH /auth/me/onboarding`
+- `POST /auth/me/avatar`, `DELETE /auth/me/avatar`
+- `POST /emails/onboarding/oauth/start`, `POST /emails/onboarding/oauth/finish`, `POST /emails/onboarding/smtp-imap`
+- `POST /getaway` (websocket bootstrap)
+- `GET /realtime/info`
+- `GET /me/danger-zone`, `POST /me/danger-zone/delete`, `DELETE /me/danger-zone/delete`
+- `GET /invitations`, `POST /invitations/accept`
+- All of `/organization/*` (create, switch, members, invitations, transfer ownership, avatar, danger zone)
+- All of `/subscription/*` (checkout, portal, cancel, change-plan, preview-change, enterprise-inquiry, etc.)
+- All of `/admin/*`
+
+## Public
+
+- `GET /health`
+- `POST /webhooks/github/releases` (HMAC-SHA256 signature)
+- `POST /webhook/stripe` (Stripe signature)
+- `POST /webhook/campaign`, `/webhook/email`, `/webhook/user-email` (Google OIDC token from Cloud Tasks)
+- `GET /addresses/google/callback`, `GET /addresses/outlook/callback` (OAuth bouncer pages)
+
+## Notes
+
+- When a route has both a JWT permission and an API permission listed, the dual-auth middleware checks the JWT user's organization role for browser callers and the key's permission bitmask for API key callers. They're independent gates — a user's role doesn't constrain what an API key can do beyond what was granted at creation.
+- Every API key request is logged to `api_key_usage_logs` with the endpoint pattern (e.g. `/campaigns/:id`), method, IP, user-agent, response status, and elapsed milliseconds. JWT requests are not logged here.
+- Rate limit categories (`X-RateLimit-*` headers) are scoped to the underlying user, not the key — every key issued by a user shares the user's quota.
+
+## See Also
+
+- [Authentication](/authentication)
+- [Permissions Reference](/reference/permissions)
+- [Error Codes](/reference/error-codes)

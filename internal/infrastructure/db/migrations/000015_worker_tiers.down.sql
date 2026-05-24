@@ -27,7 +27,8 @@ DROP INDEX IF EXISTS idx_workers_shared_load;
 -- Remove worker extensions
 ALTER TABLE workers
 DROP COLUMN IF EXISTS worker_type,
-DROP COLUMN IF EXISTS account_count;
+DROP COLUMN IF EXISTS account_count,
+DROP COLUMN IF EXISTS free_tier;
 
 -- Remove worker type enum
 DROP TYPE IF EXISTS worker_type;
