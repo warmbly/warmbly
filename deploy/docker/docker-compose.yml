@@ -61,6 +61,23 @@ services:
       SCHEMA_REGISTRY_HOST_NAME: schema-registry
       SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: kafka:29092
 
+  # One-shot data seeder. Runs migrations + inserts a rich fixture set so
+  # every product surface (auth, orgs, billing, mailboxes, warmup, campaigns,
+  # CRM, admin) can be tested without manually clicking through onboarding.
+  # See cmd/seed and internal/seed; safe to re-run, all writes are upserts.
+  seed:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/seed.Dockerfile
+    restart: "no"
+    environment:
+      APP_ENV: dev
+      AWS_CONFIG_ENABLED: "false"
+      PRIMARY_DB: postgres://warmbly:warmbly@postgres:5432/warmbly_dev?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   # Application Services
   backend:
     build:
@@ -135,6 +152,8 @@ services:
         condition: service_started
       schema-registry:
         condition: service_started
+      seed:
+        condition: service_completed_successfully
 
   consumer:
     build:
@@ -170,28 +189,57 @@ services:
       - kafka
       - schema-registry
 
+  # Premium shared worker. Hostname is forced to the UUID the seed inserts
+  # into the workers table so this container identifies as the seeded row.
+  # In dev no real AWS endpoints are reachable, so this worker can start up
+  # and consume from its kafka topic but it cannot decrypt mailbox creds or
+  # actually send mail; that part of the stack still needs real AWS for now.
   worker:
     build:
       context: ../..
       dockerfile: deploy/docker/worker.Dockerfile
+    hostname: "00000000-0000-0000-0000-000000000202"
     environment:
-      # === General ===
       APP_ENV: dev
       AWS_CONFIG_ENABLED: "false"
       AWS_REGION: us-east-1
-
-      # === Database ===
       REDIS: redis://redis:6379
-
-      # === Kafka ===
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
-
-      # === Schema Registry ===
       SCHEMA_REGISTRY_URL: http://schema-registry:8081
     depends_on:
-      - kafka
-      - schema-registry
-      - redis
+      kafka:
+        condition: service_started
+      schema-registry:
+        condition: service_started
+      redis:
+        condition: service_healthy
+      seed:
+        condition: service_completed_successfully
+
+  # Free-tier shared worker, identical to the above but bound to the
+  # free-tier seeded UUID. Lets you exercise the assignment service's
+  # free-vs-paid routing without spinning up extra infra.
+  worker-free:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/worker.Dockerfile
+    hostname: "00000000-0000-0000-0000-000000000201"
+    environment:
+      APP_ENV: dev
+      AWS_CONFIG_ENABLED: "false"
+      AWS_REGION: us-east-1
+      REDIS: redis://redis:6379
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      SCHEMA_REGISTRY_URL: http://schema-registry:8081
+    depends_on:
+      kafka:
+        condition: service_started
+      schema-registry:
+        condition: service_started
+      redis:
+        condition: service_healthy
+      seed:
+        condition: service_completed_successfully
 
   tracking:
     build:

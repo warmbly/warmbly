@@ -4,7 +4,8 @@ CREATE TYPE worker_type AS ENUM ('shared', 'dedicated');
 -- Extend workers table
 ALTER TABLE workers
 ADD COLUMN worker_type worker_type NOT NULL DEFAULT 'shared',
-ADD COLUMN account_count INT NOT NULL DEFAULT 0;
+ADD COLUMN account_count INT NOT NULL DEFAULT 0,
+ADD COLUMN free_tier BOOLEAN NOT NULL DEFAULT FALSE;
 
 -- Create index for load balancing queries
 CREATE INDEX idx_workers_shared_load ON workers(account_count)
@@ -51,8 +52,15 @@ CREATE INDEX idx_trial_expiry ON subscriptions(free_trial_ends_at)
 ALTER TABLE email_accounts
 ADD COLUMN warmup_pool_type VARCHAR(20) DEFAULT 'free';
 
+-- Make sure baseline durations exist before seeding a plan that references one
+INSERT INTO durations (id, title) VALUES
+    ('00000000-0000-0000-0000-0000000000d1', 'month'),
+    ('00000000-0000-0000-0000-0000000000d2', 'year'),
+    ('00000000-0000-0000-0000-0000000000d3', 'lifetime')
+ON CONFLICT (id) DO NOTHING;
+
 -- Default free trial plan (for users who haven't subscribed yet)
-INSERT INTO plans (id, name, max_contacts, daily_emails, ai_generation, account_limit, price, discounted_price, savings, public, dedicated_workers, daily_campaign_limit)
+INSERT INTO plans (id, name, max_contacts, daily_emails, ai_generation, account_limit, price, discounted_price, duration_id, savings, public, dedicated_workers, daily_campaign_limit)
 VALUES (
     '00000000-0000-0000-0000-000000000001',
     'Free Trial',
@@ -62,6 +70,7 @@ VALUES (
     1,
     0,
     0,
+    '00000000-0000-0000-0000-0000000000d1',
     0,
     false,
     0,

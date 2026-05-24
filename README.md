@@ -124,6 +124,7 @@ warmbly/
 
 ## Documentation
 
+- [Dev Seed](docs/seed.md) - One-shot seed that provisions accounts, orgs, mailboxes, campaigns, CRM, and admin data
 - [Deployment Guide](docs/deployment-guide.md) - Step-by-step deployment instructions
 - [CI/CD Pipeline](docs/cicd.md) - CI/CD technical details
 - [Architecture](docs/architecture.md) - System architecture overview
