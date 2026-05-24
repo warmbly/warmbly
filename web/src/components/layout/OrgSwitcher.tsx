@@ -12,8 +12,12 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
 import { ChevronDownIcon, PlusIcon, Settings2Icon } from "lucide-react";
+import toast from "react-hot-toast";
 import { useAppStore } from "@/stores";
+import useSwitchOrganization from "@/lib/api/hooks/app/organizations/useSwitchOrganization";
 import { NewWorkspaceDialog } from "@/components/app/organizations/NewWorkspaceDialog";
+import type { AppError } from "@/lib/api/client/normalizeError";
+import buildError from "@/lib/helper/buildError";
 import {
     PopoverMenu,
     PopoverMenuContent,
@@ -37,10 +41,28 @@ export function OrgSwitcher() {
     const navigate = useNavigate();
     const organizations = useAppStore((s) => s.organizations);
     const currentOrganization = useAppStore((s) => s.currentOrganization);
-    const switchOrganization = useAppStore((s) => s.switchOrganization);
+    const setCurrentOrganization = useAppStore((s) => s.setCurrentOrganization);
+    const switchOrgMutation = useSwitchOrganization();
     const [newOpen, setNewOpen] = React.useState(false);
 
     const name = currentOrganization?.name ?? "Workspace";
+
+    // Picking an org from the sidebar used to call only the local
+    // zustand action, which left the server session's
+    // `current_organization_id` at whatever it was before. Every
+    // org-scoped request would then 4xx with "no organization selected"
+    // while the UI happily showed the org as picked. Now we POST the
+    // switch first; only on success do we move the local pointer.
+    const handleSwitch = async (orgId: string) => {
+        if (orgId === currentOrganization?.id) return;
+        try {
+            await switchOrgMutation.mutateAsync(orgId);
+            const next = organizations.find((o) => o.id === orgId);
+            if (next) setCurrentOrganization(next);
+        } catch (e) {
+            toast.error(buildError(e as AppError));
+        }
+    };
 
     return (
         <>
@@ -82,7 +104,8 @@ export function OrgSwitcher() {
                         return (
                             <PopoverMenuItem
                                 key={org.id}
-                                onSelect={() => switchOrganization(org.id)}
+                                onSelect={() => handleSwitch(org.id)}
+                                disabled={switchOrgMutation.isPending}
                                 selected={org.id === currentOrganization?.id}
                                 icon={
                                     <span className="size-4 rounded bg-slate-900 flex items-center justify-center shrink-0 overflow-hidden">

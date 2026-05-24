@@ -13,6 +13,7 @@ import {
     SettingsIcon,
 } from "lucide-react";
 import { useAppStore } from "@/stores";
+import useLogout from "@/lib/api/hooks/auth/useLogout";
 import {
     PopoverMenu,
     PopoverMenuContent,
@@ -24,14 +25,13 @@ import {
 export function UserNav() {
     const navigate = useNavigate();
     const user = useAppStore((s) => s.user);
-    const logout = useAppStore((s) => s.logout);
+    const logoutMutation = useLogout();
 
     if (!user) return null;
 
-    const handleLogout = () => {
-        logout();
-        localStorage.removeItem("token");
-        navigate("/auth/login");
+    const handleLogout = async () => {
+        await logoutMutation.mutateAsync();
+        navigate("/auth/login", { replace: true });
     };
 
     const initials = user.email.slice(0, 2).toUpperCase();
@@ -91,9 +91,10 @@ export function UserNav() {
                 <PopoverMenuItem
                     onSelect={handleLogout}
                     icon={<LogOutIcon className="w-3 h-3" />}
+                    disabled={logoutMutation.isPending}
                     danger
                 >
-                    Log out
+                    {logoutMutation.isPending ? "Signing out…" : "Log out"}
                 </PopoverMenuItem>
             </PopoverMenuContent>
         </PopoverMenu>
