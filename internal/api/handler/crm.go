@@ -48,6 +48,11 @@ func (h *Handler) CreateContactNote(c *gin.Context) {
 }
 
 func (h *Handler) ListContactNotes(c *gin.Context) {
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.Handle(c, errx.New(errx.BadRequest, "no organization selected"))
+		return
+	}
 	contactID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		errx.Handle(c, errx.ErrUuid)
@@ -66,7 +71,7 @@ func (h *Handler) ListContactNotes(c *gin.Context) {
 		}
 	}
 
-	result, xerr := h.CRMService.ListNotes(c.Request.Context(), contactID, limit, cursor)
+	result, xerr := h.CRMService.ListNotes(c.Request.Context(), *orgID, contactID, limit, cursor)
 	if xerr != nil {
 		errx.Handle(c, xerr)
 		return
@@ -128,6 +133,11 @@ func (h *Handler) DeleteContactNote(c *gin.Context) {
 // =====================
 
 func (h *Handler) ListContactActivities(c *gin.Context) {
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.Handle(c, errx.New(errx.BadRequest, "no organization selected"))
+		return
+	}
 	contactID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		errx.Handle(c, errx.ErrUuid)
@@ -146,7 +156,7 @@ func (h *Handler) ListContactActivities(c *gin.Context) {
 		}
 	}
 
-	result, xerr := h.CRMService.ListActivities(c.Request.Context(), contactID, limit, cursor)
+	result, xerr := h.CRMService.ListActivities(c.Request.Context(), *orgID, contactID, limit, cursor)
 	if xerr != nil {
 		errx.Handle(c, xerr)
 		return

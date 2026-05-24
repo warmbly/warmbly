@@ -1,5 +1,5 @@
 # Build stage
-FROM elixir:1.18-alpine AS builder
+FROM elixir:1.18-otp-26-alpine AS builder
 
 RUN apk add --no-cache git build-base
 
@@ -11,21 +11,21 @@ RUN mix local.hex --force && mix local.rebar --force
 ENV MIX_ENV=prod
 
 # Copy dependency files
-COPY realtime/mix.exs realtime/mix.lock ./
+COPY realtime/mix.exs ./
+COPY realtime/mix.lock ./
 RUN mix deps.get --only prod
 RUN mix deps.compile
 
 # Copy application code
 COPY realtime/config config/
 COPY realtime/lib lib/
-COPY realtime/priv priv/
 
 # Compile and build release
 RUN mix compile
 RUN mix release
 
 # Runtime stage
-FROM alpine:3.19
+FROM alpine:3.20
 
 RUN apk add --no-cache libstdc++ openssl ncurses-libs
 RUN adduser -D -u 1000 warmbly

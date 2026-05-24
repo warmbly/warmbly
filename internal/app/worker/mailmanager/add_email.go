@@ -15,7 +15,6 @@ func (m *MailManager) AddWMail(
 	defer m.Unlock()
 
 	newMail, err := wmail.NewWMail(
-		ctx,
 		data,
 		m.OnEvent,
 		func() {

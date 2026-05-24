@@ -50,7 +50,12 @@ impl AppState {
     }
 
     /// Check if this event was already processed (returns true if duplicate)
-    async fn is_duplicate(&self, event_type: &str, task_id: &str, ip_hash: &Option<String>) -> bool {
+    async fn is_duplicate(
+        &self,
+        event_type: &str,
+        task_id: &str,
+        ip_hash: &Option<String>,
+    ) -> bool {
         let key = format!(
             "{}:{}:{}",
             event_type,

@@ -24,11 +24,11 @@ var (
 	ErrLimit     = New(BadRequest, "Limit must be between 10 and 200.")
 
 	// Authorization
-	ErrToken = New(BadRequest, "Invalid or expired token.")
-	ErrAuth  = New(BadRequest, "Missing or invalid Authorization header.")
+	ErrToken = New(Unauthorized, "Invalid or expired token.")
+	ErrAuth  = New(Unauthorized, "Missing or invalid Authorization header.")
 
 	ErrUser        = New(BadRequest, "User doesn't exists.")
-	ErrPassword    = New(BadRequest, "The password must be between 8 and 50 characters long and contain both uppercase and lowercase letters, as well as a number.")
+	ErrPassword    = New(BadRequest, "Password must be at least 8 characters long.")
 	ErrEmail       = New(BadRequest, "Invalid email address.")
 	ErrCredentials = New(BadRequest, "Invalid email or password.")
 	ErrSession     = New(BadRequest, "Invalid or expired session.")
@@ -46,7 +46,7 @@ var (
 	ErrCaptcha = New(BadRequest, "We couldn’t verify you’re human. Please try the security check again or reload the page.")
 
 	// Group
-	ErrGroupTitle = New(BadRequest, "The title lenght must be between 3 and 50 characters.")
+	ErrGroupTitle = New(BadRequest, "The title length must be between 1 and 50 characters.")
 	ErrGroupMax   = New(BadRequest, "You reached the maximum amount.")
 
 	// Email

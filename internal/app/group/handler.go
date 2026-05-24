@@ -23,3 +23,7 @@ func (s *groupService) Move(ctx context.Context, userID, id uuid.UUID, position 
 func (s *groupService) Update(ctx context.Context, userID, id uuid.UUID, data *models.GroupUpdate) (*models.Group, *errx.Error) {
 	return s.groupRepository.Update(ctx, userID, id, data)
 }
+
+func (s *groupService) List(ctx context.Context, userID uuid.UUID) ([]models.Group, *errx.Error) {
+	return s.groupRepository.List(ctx, userID)
+}

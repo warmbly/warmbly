@@ -1,0 +1,141 @@
+---
+title: Get API Key
+description: Retrieve details of a specific API key by its ID.
+---
+
+# Get API Key
+
+Retrieve the details of a specific API key.
+
+```
+GET /api-keys/:id
+```
+
+## Request
+
+### Headers
+
+| Header | Value |
+|--------|-------|
+| `Authorization` | `Bearer wmbly_<your_key>` |
+
+### Path Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `id` | UUID | The unique identifier of the API key |
+
+### Example Request
+
+```bash
+curl -X GET "https://api.warmbly.com/api-keys/550e8400-e29b-41d4-a716-446655440000" \
+  -H "Authorization: Bearer wmbly_abc123..."
+```
+
+## Response
+
+### Success Response (200 OK)
+
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "user_id": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+  "organization_id": "6ba7b811-9dad-11d1-80b4-00c04fd430c8",
+  "name": "Production API Key",
+  "key_prefix": "wmbly_abc",
+  "permissions": 8191,
+  "allowed_ips": ["203.0.113.10"],
+  "allowed_email_accounts": [],
+  "status": "active",
+  "last_used_at": "2024-01-15T10:30:00Z",
+  "expires_at": null,
+  "revoked_at": null,
+  "revoked_reason": null,
+  "created_at": "2024-01-01T00:00:00Z",
+  "updated_at": "2024-01-15T10:30:00Z"
+}
+```
+
+<Callout type="info">
+  Note that the full API key secret is never returned. Only the `key_prefix` (first 10 characters) is available for identification.
+</Callout>
+
+### Error Responses
+
+#### 401 Unauthorized
+
+```json
+{
+  "error": "Unauthorized",
+  "message": "Token not found."
+}
+```
+
+#### 403 Forbidden
+
+```json
+{
+  "error": "Forbidden",
+  "message": "You doesn't have access to this feature."
+}
+```
+
+#### 404 Not Found
+
+The API key doesn't exist or belongs to a different organization:
+
+```json
+{
+  "error": "Not Found",
+  "message": "Resource not found."
+}
+```
+
+## Use Cases
+
+### Checking Key Status
+
+Verify if a key is still active before critical operations:
+
+```javascript
+async function isKeyActive(keyId) {
+  const response = await fetch(`https://api.warmbly.com/api-keys/${keyId}`, {
+    headers: {
+      'Authorization': `Bearer ${API_KEY}`,
+    },
+  });
+
+  if (!response.ok) {
+    return false;
+  }
+
+  const key = await response.json();
+  return key.status === 'active';
+}
+```
+
+### Verifying Permissions
+
+Check if a key has specific permissions:
+
+```javascript
+async function hasPermission(keyId, permission) {
+  const response = await fetch(`https://api.warmbly.com/api-keys/${keyId}`, {
+    headers: {
+      'Authorization': `Bearer ${API_KEY}`,
+    },
+  });
+
+  const key = await response.json();
+  return (key.permissions & permission) === permission;
+}
+
+// Check for WRITE_CAMPAIGNS (64)
+const canWriteCampaigns = await hasPermission(keyId, 64);
+```
+
+## See Also
+
+- [List API Keys](/api-keys/list)
+- [Update API Key](/api-keys/update)
+- [Revoke API Key](/api-keys/revoke)

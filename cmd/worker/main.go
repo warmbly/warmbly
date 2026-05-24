@@ -8,7 +8,6 @@ import (
 	"syscall"
 
 	awsconf "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/getsentry/sentry-go"
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/app/cipher"
 	"github.com/warmbly/warmbly/internal/app/worker"
@@ -18,6 +17,7 @@ import (
 	"github.com/warmbly/warmbly/internal/infrastructure/kafka"
 	"github.com/warmbly/warmbly/internal/infrastructure/kms"
 	"github.com/warmbly/warmbly/internal/infrastructure/storage"
+	"github.com/warmbly/warmbly/internal/observability"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
@@ -46,17 +46,8 @@ func main() {
 	}
 
 	// Sentry
-	if cfg.Env == "prod" {
-		sentryDsn, err := cfg.LoadSentryDSNBackend(ctx)
-		if err != nil {
-			log.Fatal(err)
-		}
-		if err := sentry.Init(sentry.ClientOptions{
-			Dsn:            sentryDsn,
-			SendDefaultPII: true,
-		}); err != nil {
-			log.Fatal(err)
-		}
+	if err := observability.InitSentry(ctx, cfg, "worker"); err != nil {
+		log.Fatal(err)
 	}
 
 	// AWS config for services that need it (KMS, S3, DynamoDB)
@@ -77,7 +68,7 @@ func main() {
 
 	// KMS + DynamoDB → CipherService
 	var masterKey string = "alias/master-key"
-	if cfg.Env == "prod" {
+	if cfg.Env != "prod" {
 		masterKey += "-dev"
 	}
 
@@ -93,6 +84,7 @@ func main() {
 
 	userEncryptedKeysRepo := repository.NewUserEncryptedKeysRepository(kmsClient, dynamoDB)
 	cipherService := cipher.NewService(kmsClient, redisCache, userEncryptedKeysRepo)
+	emailMessageMapRepo := repository.NewEmailMessageMapRepository(dynamoDB)
 
 	// S3
 	s3Client, err := storage.NewClient(ctx, awscfg, "main")
@@ -122,7 +114,9 @@ func main() {
 
 	// Kafka producer
 	producerConfig := kafka.NewProducer(kafkaBootstrapServers)
-	producerConfig.WithSASL(kafkaSaslConfig)
+	if kafkaSaslConfig != nil {
+		producerConfig.WithSASL(kafkaSaslConfig)
+	}
 	kafkaProducer, err := producerConfig.Connect()
 	if err != nil {
 		log.Fatal(err)
@@ -133,7 +127,9 @@ func main() {
 	// Kafka consumer — subscribe to worker-specific topic
 	workerTopic := kafka.GetWorkerTopic(workerID.String())
 	consumerConfig := kafka.NewConsumer(kafkaBootstrapServers)
-	consumerConfig.WithSASL(kafkaSaslConfig)
+	if kafkaSaslConfig != nil {
+		consumerConfig.WithSASL(kafkaSaslConfig)
+	}
 	consumerConfig.Set("group.id", "worker-"+workerID.String())
 	consumerConfig.Set("auto.offset.reset", "earliest")
 	kafkaConsumer, err := consumerConfig.Connect()
@@ -149,12 +145,13 @@ func main() {
 
 	// WorkerService
 	workerService := &worker.WorkerService{
-		ID:            workerID.String(),
-		CipherService: cipherService,
-		KafkaProducer: kafkaProducer,
-		KafkaConsumer: kafkaConsumer,
-		Cache:         redisCache,
-		Storage:       s3Client,
+		ID:                        workerID.String(),
+		CipherService:             cipherService,
+		KafkaProducer:             kafkaProducer,
+		KafkaConsumer:             kafkaConsumer,
+		Cache:                     redisCache,
+		Storage:                   s3Client,
+		EmailMessageMapRepository: emailMessageMapRepo,
 	}
 
 	if err := workerService.Init(); err != nil {

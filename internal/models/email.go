@@ -46,6 +46,7 @@ type Email struct {
 	WarmupIncrease  int        `json:"warmup_increase"`
 	WarmupReplyRate int        `json:"warmup_reply_rate"`
 	WarmupTag       string     `json:"warmup_tag"`
+	WarmupPoolType  string     `json:"warmup_pool_type"`
 	WarmupStartTime string     `json:"warmup_start_time"`
 	WarmupEndTime   string     `json:"warmup_end_time"`
 	WarmupDays      int        `json:"warmup_days"`
@@ -116,10 +117,10 @@ type UpdateEmail struct {
 	MinWaitTime   *int    `json:"min_wait_time"`
 	ReplyTo       *string `json:"reply_to"`
 
-	Warmup          *bool `json:"warmup"`
-	WarmupBase      *int  `json:"warmup_base"`
-	WarmupMax       *int  `json:"warmup_max"`
-	WarmupIncrease  *int  `json:"warmup_increase"`
+	Warmup          *bool   `json:"warmup"`
+	WarmupBase      *int    `json:"warmup_base"`
+	WarmupMax       *int    `json:"warmup_max"`
+	WarmupIncrease  *int    `json:"warmup_increase"`
 	WarmupReplyRate *int    `json:"warmup_reply_rate"`
 	WarmupStartTime *string `json:"warmup_start_time"`
 	WarmupEndTime   *string `json:"warmup_end_time"`

@@ -2,6 +2,7 @@ mod aws;
 mod config;
 mod handlers;
 mod kafka;
+mod observability;
 
 use axum::{routing::get, Router};
 use std::net::SocketAddr;
@@ -15,6 +16,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use crate::config::Config;
 use crate::handlers::{health, track_click, track_open, AppState};
 use crate::kafka::KafkaProducer;
+use crate::observability::report_error;
 
 #[tokio::main]
 async fn main() {
@@ -31,17 +33,18 @@ async fn main() {
     let config = match Config::load().await {
         Ok(c) => c,
         Err(e) => {
-            tracing::error!("Failed to load config: {}", e);
+            report_error("Failed to load config", e.as_ref());
             std::process::exit(1);
         }
     };
+    observability::init(&config.env);
     info!("Starting tracking service on {}", config.addr());
 
     // Initialize Kafka producer with Avro/Schema Registry
     let kafka = match KafkaProducer::new(&config).await {
         Ok(k) => k,
         Err(e) => {
-            tracing::error!("Failed to create Kafka producer: {}", e);
+            report_error("Failed to create Kafka producer", e.as_ref());
             std::process::exit(1);
         }
     };
@@ -63,9 +66,25 @@ async fn main() {
         .with_state(state);
 
     // Start server
-    let addr: SocketAddr = config.addr().parse().expect("Invalid address");
+    let addr: SocketAddr = match config.addr().parse() {
+        Ok(a) => a,
+        Err(e) => {
+            observability::report_issue("Invalid tracking listen address", &e.to_string());
+            std::process::exit(1);
+        }
+    };
     info!("Tracking service listening on {}", addr);
 
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    let listener = match tokio::net::TcpListener::bind(addr).await {
+        Ok(l) => l,
+        Err(e) => {
+            observability::report_issue("Failed to bind tracking listener", &e.to_string());
+            std::process::exit(1);
+        }
+    };
+
+    if let Err(e) = axum::serve(listener, app).await {
+        observability::report_issue("Tracking server terminated unexpectedly", &e.to_string());
+        std::process::exit(1);
+    }
 }

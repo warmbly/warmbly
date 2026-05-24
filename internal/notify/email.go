@@ -37,7 +37,7 @@ func NewEmailNotficiationService(ctx context.Context, name, address string) (Ema
 }
 
 func (s *emailNotificationService) Send(ctx context.Context, to, cc, bcc []string, subject, message string) error {
-	from := fmt.Sprintf("%s <%s>", s.Name, s.From)
+	from := fmt.Sprintf("%s <%s>", s.Name, s.Address)
 
 	input := &sesv2.SendEmailInput{
 		Destination: &types.Destination{

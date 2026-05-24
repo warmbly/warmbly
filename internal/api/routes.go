@@ -1,6 +1,7 @@
 package api
 
 import (
+	"net/http"
 	"time"
 
 	"github.com/gin-contrib/cors"
@@ -16,42 +17,80 @@ func Run(
 	m *middleware.Handler,
 	oidcm *middleware.OidcHandler,
 	addr, ginMode string,
-) {
+	allowedOrigins []string,
+) *gin.Engine {
 	gin.SetMode(ginMode)
 
 	r := gin.Default()
-	r.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"*"},
-		AllowMethods:     []string{"POST", "GET", "PATCH", "OPTIONS", "DELETE"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
-		ExposeHeaders:    []string{"Content-Length"},
-		AllowCredentials: true,
-		MaxAge:           12 * time.Hour,
-	}))
+
+	r.GET("/health", func(c *gin.Context) {
+		c.JSON(200, gin.H{"status": "ok"})
+	})
+
+	// Public webhook for GitHub release events. Auth comes from
+	// X-Hub-Signature-256 (HMAC-SHA256 with RELEASES_WEBHOOK_SECRET).
+	r.POST("/webhooks/github/releases", h.GithubReleasesWebhook)
+
+	corsConfig := cors.Config{
+		AllowMethods:  []string{"POST", "GET", "PATCH", "OPTIONS", "DELETE"},
+		AllowHeaders:  []string{"Origin", "Content-Type", "Authorization"},
+		ExposeHeaders: []string{"Content-Length"},
+		MaxAge:        12 * time.Hour,
+	}
+	switch {
+	case len(allowedOrigins) == 0 && ginMode != gin.ReleaseMode:
+		corsConfig.AllowOrigins = []string{
+			"http://localhost:3000",
+			"http://127.0.0.1:3000",
+			"http://localhost:4173",
+			"http://127.0.0.1:4173",
+			"http://localhost:5173",
+			"http://127.0.0.1:5173",
+		}
+		corsConfig.AllowCredentials = true
+	case len(allowedOrigins) == 1 && allowedOrigins[0] == "*":
+		corsConfig.AllowAllOrigins = true
+		corsConfig.AllowCredentials = false
+	default:
+		corsConfig.AllowOrigins = allowedOrigins
+		corsConfig.AllowCredentials = true
+	}
+
+	r.Use(cors.New(corsConfig))
+
+	// Limit request body size to 10MB to prevent OOM
+	r.Use(func(c *gin.Context) {
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 10<<20)
+		c.Next()
+	})
 
 	auth := r.Group("/auth")
 	{
-		r.POST("/login/start", h.LoginStart)
-		r.POST("/login/confirm", h.LoginConfirm)
-		r.POST("/register/start", h.RegistrationStart)
-		r.POST("/register/confirm", h.RegistrationConfirm)
-		r.POST("/refresh", h.RefreshToken)
-		r.POST("/reset-password/start", h.ResetPasswordStart)
-		r.POST("/reset-password/confirm", h.ResetPasswordStart)
+		auth.POST("/login", h.LoginStart)
+		auth.POST("/login/confirm", h.LoginConfirm)
+		auth.POST("/register", h.RegistrationStart)
+		auth.POST("/register/confirm", h.RegistrationConfirm)
+		auth.POST("/refresh", h.RefreshToken)
+		auth.POST("/reset-password", h.ResetPasswordStart)
+		auth.POST("/reset-password/confirm", h.ResetPasswordConfirm)
 	}
 
 	protectedAuth := auth.Group("")
 	protectedAuth.Use(m.AuthMiddleware())
 	{
-		r.POST("/logout", h.Logout)
-		r.POST("/logout-all", h.LogoutAll)
-		r.GET("/me", h.GetUser)
+		protectedAuth.POST("/logout", h.Logout)
+		protectedAuth.POST("/logout-all", h.LogoutAll)
+		protectedAuth.GET("/me", h.GetUser)
+		protectedAuth.PATCH("/me/onboarding", h.CompleteOnboarding)
+		protectedAuth.POST("/me/avatar", h.UploadUserAvatar)
+		protectedAuth.DELETE("/me/avatar", h.DeleteUserAvatar)
 	}
 
 	protected := r.Group("")
 	protected.Use(m.AuthMiddleware())
 	{
 		emails := protected.Group("/emails")
+		emails.Use(m.RateLimitMiddleware(models.RateLimitWrite))
 		{
 			emails.GET("", h.EmailsSearch)
 			emails.GET("/:id", h.GetEmail)
@@ -62,12 +101,24 @@ func Run(
 		}
 
 		campaigns := protected.Group("/campaigns")
+		campaigns.Use(m.RateLimitMiddleware(models.RateLimitWrite))
 		{
 			campaigns.GET("", h.SearchCampaigns)
 			campaigns.POST("", h.CreateCampaign)
 			campaigns.GET("/:id", h.GetCampaign)
 			campaigns.PATCH("/:id", h.UpdateCampaign)
 			campaigns.DELETE("/:id", h.DeleteCampaign)
+
+			// Advanced campaign controls
+			campaigns.GET("/:id/advanced", m.RequireOrganization(), h.GetCampaignAdvancedSettings)
+			campaigns.PATCH("/:id/advanced", m.RequireOrganization(), m.RequirePermission(models.PermManageSettings), h.UpdateCampaignAdvancedSettings)
+			campaigns.GET("/:id/ab-variants", m.RequireOrganization(), h.ListCampaignABVariants)
+			campaigns.POST("/:id/ab-variants", m.RequireOrganization(), m.RequirePermission(models.PermManageSettings), h.CreateCampaignABVariant)
+			campaigns.PATCH("/:id/ab-variants/:variantId", m.RequireOrganization(), m.RequirePermission(models.PermManageSettings), h.UpdateCampaignABVariant)
+			campaigns.DELETE("/:id/ab-variants/:variantId", m.RequireOrganization(), m.RequirePermission(models.PermManageSettings), h.DeleteCampaignABVariant)
+			campaigns.POST("/:id/preflight", m.RequireOrganization(), m.RequirePermission(models.PermSendCampaigns), h.RunCampaignPreflight)
+			campaigns.GET("/:id/ab-analysis", m.RequireOrganization(), h.GetCampaignABAnalysis)
+			campaigns.POST("/:id/test-email", m.RequireOrganization(), m.RequirePermission(models.PermSendCampaigns), h.SendTestEmail)
 
 			// Campaign start/stop
 			campaigns.POST("/:id/start", m.RequireOrganization(), m.RequirePermission(models.PermSendCampaigns), h.StartCampaign)
@@ -84,6 +135,7 @@ func Run(
 		}
 
 		contacts := protected.Group("/contacts")
+		contacts.Use(m.RateLimitMiddleware(models.RateLimitWrite))
 		{
 			contacts.POST("/search", h.SearchContacts)
 			contacts.POST("", h.AddContacts)
@@ -106,11 +158,13 @@ func Run(
 		grouph.New(protected, h.CategoryService, "categories")
 
 		unibox := protected.Group("/unibox")
+		unibox.Use(m.RateLimitMiddleware(models.RateLimitRead))
 		{
 			unibox.GET("", h.GetUniboxIncoming)
 			unibox.GET("/count", h.GetUnseenCount)
 			unibox.GET("/thread", h.GetUniboxThread)
 			unibox.PATCH("/seen", h.UniboxMarkSeen)
+			unibox.POST("/reply", m.RequireOrganization(), h.UniboxReply)
 			unibox.GET("/:id", h.GetUniboxEmail)
 		}
 
@@ -135,6 +189,7 @@ func Run(
 		{
 			// Dashboard overview
 			analytics.GET("/dashboard", h.GetDashboardAnalytics)
+			analytics.GET("/deliverability", m.RequireOrganization(), h.GetDeliverabilityDashboard)
 
 			// Warmup analytics
 			analytics.GET("/warmup", h.GetWarmupAnalytics)
@@ -166,8 +221,32 @@ func Run(
 			realtime.GET("/info", h.GetRealtimeInfo)
 		}
 
+		// Advanced outreach controls (org-scoped)
+		outreach := protected.Group("/outreach")
+		outreach.Use(m.RequireOrganization(), m.RequirePermission(models.PermManageSettings))
+		{
+			outreach.GET("/settings", h.GetOutreachSettings)
+			outreach.PATCH("/settings", h.UpdateOutreachSettings)
+		}
+
+		// Deliverability event ingestion (org-scoped)
+		deliverability := protected.Group("/deliverability")
+		deliverability.Use(m.RequireOrganization(), m.RequirePermission(models.PermSendCampaigns))
+		{
+			deliverability.POST("/events", h.IngestDeliverabilityEvent)
+		}
+
+		// Task dead letter operations (org-scoped)
+		taskOps := protected.Group("/tasks")
+		taskOps.Use(m.RequireOrganization(), m.RequirePermission(models.PermSendCampaigns))
+		{
+			taskOps.GET("/dlq", h.ListTaskDeadLetters)
+			taskOps.POST("/dlq/:id/replay", h.ReplayTaskDeadLetter)
+		}
+
 		// Organization management
 		org := protected.Group("/organization")
+		org.Use(m.RateLimitMiddleware(models.RateLimitWrite))
 		{
 			org.POST("", h.CreateOrganization)
 			org.GET("", h.GetUserOrganizations)
@@ -191,6 +270,10 @@ func Run(
 			// Ownership transfer
 			org.POST("/transfer-ownership", m.RequireOrganization(), m.RequirePermission(models.PermTransferOwnership), h.TransferOwnership)
 
+			// Workspace avatar (owner-only — checked inside the handler).
+			org.POST("/avatar", m.RequireOrganization(), h.UploadOrganizationAvatar)
+			org.DELETE("/avatar", m.RequireOrganization(), h.DeleteOrganizationAvatar)
+
 			// Danger zone (delayed organization deletion with 30-day grace)
 			// Owner-only; the service double-checks ownership too.
 			org.GET("/current/danger-zone", m.RequireOrganization(), h.GetOrganizationDangerZone)
@@ -212,6 +295,7 @@ func Run(
 
 		// Subscription & billing
 		subscriptions := protected.Group("/subscription")
+		subscriptions.Use(m.RateLimitMiddleware(models.RateLimitWrite))
 		{
 			subscriptions.GET("", h.GetSubscription)
 			subscriptions.GET("/limits", h.GetSubscriptionLimits)
@@ -231,10 +315,11 @@ func Run(
 
 		// Plans (public info but auth required for consistency)
 		protected.GET("/plans", h.ListPlans)
+		protected.GET("/timezones", h.GetTimezones)
 
 		// Reply templates (org-scoped)
 		templates := protected.Group("/templates")
-		templates.Use(m.RequireOrganization())
+		templates.Use(m.RequireOrganization(), m.RateLimitMiddleware(models.RateLimitWrite))
 		{
 			templates.GET("", h.ListTemplates)
 			templates.POST("", h.CreateTemplate)
@@ -245,7 +330,7 @@ func Run(
 
 		// CRM routes (require org)
 		crmGroup := protected.Group("/crm")
-		crmGroup.Use(m.RequireOrganization())
+		crmGroup.Use(m.RequireOrganization(), m.RateLimitMiddleware(models.RateLimitWrite))
 		{
 			// Pipelines
 			pipelines := crmGroup.Group("/pipelines")
@@ -306,8 +391,54 @@ func Run(
 		adminRoutes.GET("/workers/:id/stats", middleware.RequireAdminPermission(models.AdminPermViewWorkers), h.AdminGetWorkerStats)
 		adminRoutes.POST("/workers/:id/reassign", middleware.RequireAdminPermission(models.AdminPermManageWorkers), h.AdminReassignEmails)
 
+		// SSH-managed worker lifecycle (admin-driven add / install / restart / logs)
+		adminRoutes.GET("/workers/managed", middleware.RequireAdminPermission(models.AdminPermViewWorkers), h.AdminListSSHWorkers)
+		adminRoutes.POST("/workers", middleware.RequireAdminPermission(models.AdminPermManageWorkers), h.AdminCreateWorker)
+		adminRoutes.GET("/workers/:id/managed", middleware.RequireAdminPermission(models.AdminPermViewWorkers), h.AdminGetSSHWorker)
+		adminRoutes.POST("/workers/:id/test", middleware.RequireAdminPermission(models.AdminPermManageWorkers), h.AdminTestWorker)
+		adminRoutes.POST("/workers/:id/install", middleware.RequireAdminPermission(models.AdminPermManageWorkers), h.AdminInstallWorker)
+		adminRoutes.POST("/workers/:id/restart", middleware.RequireAdminPermission(models.AdminPermManageWorkers), h.AdminRestartWorker)
+		adminRoutes.POST("/workers/:id/upgrade", middleware.RequireAdminPermission(models.AdminPermManageWorkers), h.AdminUpdateWorkerImage)
+		adminRoutes.POST("/workers/:id/uninstall", middleware.RequireAdminPermission(models.AdminPermManageWorkers), h.AdminUninstallWorker)
+		adminRoutes.POST("/workers/:id/rotate-keys", middleware.RequireAdminPermission(models.AdminPermManageWorkers), h.AdminRotateWorkerKeys)
+		adminRoutes.GET("/workers/:id/live-status", middleware.RequireAdminPermission(models.AdminPermViewWorkers), h.AdminWorkerStatusLive)
+		adminRoutes.GET("/workers/:id/logs", middleware.RequireAdminPermission(models.AdminPermViewWorkers), h.AdminWorkerLogs)
+		adminRoutes.DELETE("/workers/:id", middleware.RequireAdminPermission(models.AdminPermManageWorkers), h.AdminDeleteSSHWorker)
+		adminRoutes.PUT("/workers/:id/profile", middleware.RequireAdminPermission(models.AdminPermManageWorkers), h.AdminAssignWorkerProfile)
+		adminRoutes.POST("/workers/:id/apply", middleware.RequireAdminPermission(models.AdminPermManageWorkers), h.AdminApplyWorkerConfig)
+		adminRoutes.POST("/workers/:id/system-update", middleware.RequireAdminPermission(models.AdminPermManageWorkers), h.AdminSystemUpdate)
+		adminRoutes.POST("/workers/:id/reboot", middleware.RequireAdminPermission(models.AdminPermManageWorkers), h.AdminRebootWorker)
+		adminRoutes.POST("/workers/:id/convert-to-dedicated", middleware.RequireAdminPermission(models.AdminPermManageWorkers), h.AdminConvertWorkerToDedicated)
+		adminRoutes.PUT("/workers/:id/risk-pool", middleware.RequireAdminPermission(models.AdminPermManageWorkers), h.AdminSetWorkerRiskPool)
+		adminRoutes.POST("/workers/preflight", middleware.RequireAdminPermission(models.AdminPermManageWorkers), h.AdminPreflightWorker)
+		adminRoutes.GET("/workers/tags", middleware.RequireAdminPermission(models.AdminPermViewWorkers), h.AdminListWorkerTags)
+		adminRoutes.PUT("/workers/:id/tags", middleware.RequireAdminPermission(models.AdminPermManageWorkers), h.AdminSetWorkerTags)
+
+		// Reusable AWS credentials (gated under AdminPermManageSettings — these
+		// hold real production secrets, not just worker assignments).
+		adminRoutes.GET("/aws-credentials", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminListAWSCreds)
+		adminRoutes.POST("/aws-credentials", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminCreateAWSCreds)
+		adminRoutes.GET("/aws-credentials/:id", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminGetAWSCreds)
+		adminRoutes.PATCH("/aws-credentials/:id", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminUpdateAWSCreds)
+		adminRoutes.DELETE("/aws-credentials/:id", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminDeleteAWSCreds)
+
+		// Reusable worker profiles
+		adminRoutes.GET("/worker-profiles", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminListProfiles)
+		adminRoutes.POST("/worker-profiles", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminCreateProfile)
+		adminRoutes.GET("/worker-profiles/:id", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminGetProfile)
+		adminRoutes.PATCH("/worker-profiles/:id", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminUpdateProfile)
+		adminRoutes.DELETE("/worker-profiles/:id", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminDeleteProfile)
+		adminRoutes.GET("/worker-profiles/:id/workers", middleware.RequireAdminPermission(models.AdminPermViewWorkers), h.AdminListProfileWorkers)
+		adminRoutes.POST("/worker-profiles/:id/apply", middleware.RequireAdminPermission(models.AdminPermManageWorkers), h.AdminApplyProfile)
+		adminRoutes.PUT("/worker-profiles/:id/release", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminSetProfileRelease)
+
+		// Release auto-update: manual trigger + last-known state for the UI.
+		adminRoutes.POST("/releases/check", middleware.RequireAdminPermission(models.AdminPermManageWorkers), h.AdminCheckReleases)
+		adminRoutes.GET("/releases/state", middleware.RequireAdminPermission(models.AdminPermViewWorkers), h.AdminReleasesState)
+
 		// Warmup Management
 		adminRoutes.GET("/warmup/pools", middleware.RequireAdminPermission(models.AdminPermViewWarmupPool), h.AdminListWarmupPools)
+		adminRoutes.GET("/warmup/health", middleware.RequireAdminPermission(models.AdminPermViewWarmupPool), h.AdminGetWarmupHealthSummary)
 		adminRoutes.GET("/warmup/pools/:type/participants", middleware.RequireAdminPermission(models.AdminPermViewWarmupPool), h.AdminGetPoolParticipants)
 		adminRoutes.GET("/warmup/blocked", middleware.RequireAdminPermission(models.AdminPermViewWarmupPool), h.AdminListBlockedAccounts)
 		adminRoutes.POST("/warmup/block/:accountId", middleware.RequireAdminPermission(models.AdminPermManageWarmupBans), h.AdminBlockAccount)
@@ -368,5 +499,5 @@ func Run(
 	// Stripe webhook (no auth - uses signature verification)
 	r.POST("/webhook/stripe", h.HandleStripeWebhook)
 
-	r.Run(addr)
+	return r
 }

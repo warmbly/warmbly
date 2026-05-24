@@ -180,12 +180,12 @@ type EndpointUsage struct {
 
 // DashboardAnalytics is the main dashboard overview combining multiple stats
 type DashboardAnalytics struct {
-	Period         string                 `json:"period"` // 7d, 30d, 90d
-	OverallStats   DashboardOverallStats  `json:"overall_stats"`
-	RecentActivity []RecentActivityItem   `json:"recent_activity"`
-	TopCampaigns   []TopCampaignStats     `json:"top_campaigns"`
-	AccountHealth  AccountHealthSummary   `json:"account_health"`
-	DailyTrend     []DashboardDailyStats  `json:"daily_trend"`
+	Period         string                `json:"period"` // 7d, 30d, 90d
+	OverallStats   DashboardOverallStats `json:"overall_stats"`
+	RecentActivity []RecentActivityItem  `json:"recent_activity"`
+	TopCampaigns   []TopCampaignStats    `json:"top_campaigns"`
+	AccountHealth  AccountHealthSummary  `json:"account_health"`
+	DailyTrend     []DashboardDailyStats `json:"daily_trend"`
 }
 
 // DashboardOverallStats contains aggregate statistics for the dashboard

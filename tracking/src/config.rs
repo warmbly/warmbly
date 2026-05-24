@@ -21,6 +21,7 @@ impl std::error::Error for ConfigError {}
 
 #[derive(Clone, Debug)]
 pub struct Config {
+    pub env: String,
     pub host: String,
     pub port: u16,
     pub kafka_brokers: String,
@@ -119,6 +120,7 @@ impl Config {
         }
 
         Ok(Self {
+            env: env_name,
             host,
             port,
             kafka_brokers,
@@ -132,6 +134,7 @@ impl Config {
     }
 
     /// Load configuration from AWS only (legacy method for backwards compatibility)
+    #[allow(dead_code)]
     pub async fn from_aws(env: &str) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         info!("Loading configuration from AWS for environment: {}", env);
 
@@ -177,6 +180,7 @@ impl Config {
         }
 
         Ok(Self {
+            env: env.to_string(),
             host,
             port,
             kafka_brokers,

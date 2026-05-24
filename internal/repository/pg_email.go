@@ -323,6 +323,11 @@ func (r *emailRepository) Search(ctx context.Context, userID, search string, cur
 		db.CaptureError(err, "", nil, "begin")
 		return nil, errx.InternalError()
 	}
+	// Read-only transaction — Commit is fine but Rollback at end is the
+	// safety net. Pool only has 4 connections; a single leaked tx here
+	// (under load) is enough to deadlock the whole backend, including
+	// /auth/refresh which blocks waiting for a connection.
+	defer tx.Rollback(ctx)
 
 	query := `
 		SELECT
@@ -332,23 +337,23 @@ func (r *emailRepository) Search(ctx context.Context, userID, search string, cur
 		 ea.warmup_max, ea.warmup_increase, ea.warmup_start_time, ea.warmup_end_time, ea.warmup_days,
 		 ea.created_at, ea.updated_at,
 		 COALESCE(
-			array_agg(eat.tag_id) FILTER (WHERE eat.tag IS NOT NULL), '{}'
+			array_agg(eat.tag_id) FILTER (WHERE eat.tag_id IS NOT NULL), '{}'
 		 ) AS tags
 		FROM email_accounts ea
-		LEFT JOIN email_tags eat ON eat.email = ea.id
+		LEFT JOIN email_tags eat ON eat.email_id = ea.id
 		WHERE ea.user_id = $1
-		 AND ($2::uuid IS NULL OR (c.created_at, c.id) < (
+		 AND ($2::uuid IS NULL OR (ea.created_at, ea.id) < (
 		  SELECT created_at, id
-		  FROM campaigns
+		  FROM email_accounts
 		  WHERE id = $2
 		 ))
 		 AND (ea.name ILIKE $3 OR ea.email ILIKE $3)
 		 AND ($4::uuid IS NULL OR EXISTS (
-		  SELECT 1 FROM email_tags cf WHERE cf.email_id = c.id AND cf.tag_id = $4
+		  SELECT 1 FROM email_tags cf WHERE cf.email_id = ea.id AND cf.tag_id = $4
 		 ))
 		GROUP BY ea.id
-		ORDER BY ea.created_at, ea.id DESC
-		LIMIT $5 OFFSET $2
+		ORDER BY ea.created_at DESC, ea.id DESC
+		LIMIT $5
 	`
 
 	params := []any{
@@ -359,11 +364,12 @@ func (r *emailRepository) Search(ctx context.Context, userID, search string, cur
 		limit + 1,
 	}
 
-	rows, err := tx.Query(ctx, query, params)
+	rows, err := tx.Query(ctx, query, params...)
 	if err != nil {
 		db.CaptureError(err, query, params, "query")
 		return nil, errx.InternalError()
 	}
+	defer rows.Close()
 
 	inboxes := make([]models.Email, 0)
 	for rows.Next() {
@@ -394,13 +400,13 @@ func (r *emailRepository) Search(ctx context.Context, userID, search string, cur
 
 	if cursor == nil {
 		query = `
-			SELECT COUNT(DISTINCT c.id)
-			FROM email_accounts c
-			LEFT JOIN email_tags cec ON cec.email = c.id
-			WHERE user_id = $1
-			  AND ($2 = '' OR c.name ILIKE '%%' || $2 || '%%')
+			SELECT COUNT(DISTINCT ea.id)
+			FROM email_accounts ea
+			LEFT JOIN email_tags et ON et.email_id = ea.id
+			WHERE ea.user_id = $1
+			  AND (ea.name ILIKE $2 OR ea.email ILIKE $2)
 			  AND ($3::uuid IS NULL OR EXISTS (
-				SELECT 1 FROM email_tags cf WHERE cf.email_id = c.id AND cf.tag_id = $3
+				SELECT 1 FROM email_tags cf WHERE cf.email_id = ea.id AND cf.tag_id = $3
 			  ))
 		`
 
@@ -441,9 +447,9 @@ func (r *emailRepository) Get(ctx context.Context, userID, emailAccountID string
 		 ea.min_wait_time, ea.reply_to, ea.tracking_domain, ea.warmup, ea.warmup_base,
 		 ea.warmup_max, ea.warmup_increase, ea.warmup_start_time, ea.warmup_end_time, ea.warmup_days,
 		 ea.created_at, ea.updated_at,
-		 COALESCE(array_agg(eat.tag) FILTER (WHERE eat.tag IS NOT NULL), '{}') AS tags
+		 COALESCE(array_agg(eat.tag_id) FILTER (WHERE eat.tag_id IS NOT NULL), '{}') AS tags
 		FROM email_accounts ea
-		LEFT JOIN email_tags eat ON eat.email = ea.id
+		LEFT JOIN email_tags eat ON eat.email_id = ea.id
 		WHERE ea.user_id = $1 AND ea.id = $2
 		GROUP BY ea.id
 	`
@@ -633,17 +639,17 @@ func (r *emailRepository) Update(ctx context.Context, userID, emailAccountID str
 		UPDATE email_accounts
 		SET %s
 		WHERE user_id = $1 AND id = $2
-		RETURNING id, email, name, signature_plain, signature_html, signature_sync, signature_code, provider, status,
+		RETURNING id, organization_id, email, name, signature_plain, signature_html, signature_sync, signature_code, provider, status,
 		          last_synced_at, last_id, campaign_limit, min_wait_time, reply_to, tracking_domain,
-		          warmup, warmup_base, warmup_max, warmup_increase, warmup_reply_rate, warmup_tag,
+		          warmup, warmup_base, warmup_max, warmup_increase, warmup_reply_rate, warmup_tag, warmup_pool_type,
 		          warmup_start_time, warmup_end_time, warmup_days, created_at, updated_at
 	`, strings.Join(setClauses, ", "))
 
 	var i models.Email
 	err = tx.QueryRow(ctx, query, args...).Scan(
-		&i.ID, &i.Email, &i.Name, &i.SignaturePlain, &i.SignatureHTML, &i.SignatureSync, &i.SignatureCode, &i.Provider, &i.Status,
+		&i.ID, &i.OrganizationID, &i.Email, &i.Name, &i.SignaturePlain, &i.SignatureHTML, &i.SignatureSync, &i.SignatureCode, &i.Provider, &i.Status,
 		&i.LastSyncedAt, &i.LastID, &i.CampaignLimit, &i.MinWaitTime, &i.ReplyTo, &i.TrackingDomain,
-		&i.Warmup, &i.WarmupBase, &i.WarmupMax, &i.WarmupIncrease, &i.WarmupReplyRate, &i.WarmupTag,
+		&i.Warmup, &i.WarmupBase, &i.WarmupMax, &i.WarmupIncrease, &i.WarmupReplyRate, &i.WarmupTag, &i.WarmupPoolType,
 		&i.WarmupStartTime, &i.WarmupEndTime, &i.WarmupDays,
 		&i.CreatedAt, &i.UpdatedAt,
 	)
@@ -729,25 +735,25 @@ func (r *emailRepository) Delete(ctx context.Context, userID, emailAccountID str
 func (r *emailRepository) GetByID(ctx context.Context, emailAccountID uuid.UUID) (*models.Email, *errx.Error) {
 	query := `
 		SELECT
-		 ea.id, ea.user_id, ea.email, ea.name, ea.signature_plain, ea.signature_html, ea.signature_sync, ea.signature_code,
+		 ea.id, ea.user_id, ea.organization_id, ea.email, ea.name, ea.signature_plain, ea.signature_html, ea.signature_sync, ea.signature_code,
 		 ea.provider, ea.status, ea.last_synced_at, ea.last_id, ea.campaign_limit,
 		 ea.min_wait_time, ea.reply_to, ea.tracking_domain, ea.warmup, ea.warmup_base,
-		 ea.warmup_max, ea.warmup_increase, ea.warmup_reply_rate, ea.warmup_tag,
+		 ea.warmup_max, ea.warmup_increase, ea.warmup_reply_rate, ea.warmup_tag, ea.warmup_pool_type,
 		 ea.warmup_start_time, ea.warmup_end_time, ea.warmup_days, ea.timezone,
 		 ea.created_at, ea.updated_at,
-		 COALESCE(array_agg(eat.tag) FILTER (WHERE eat.tag IS NOT NULL), '{}') AS tags
+		 COALESCE(array_agg(eat.tag_id) FILTER (WHERE eat.tag_id IS NOT NULL), '{}') AS tags
 		FROM email_accounts ea
-		LEFT JOIN email_tags eat ON eat.email = ea.id
+		LEFT JOIN email_tags eat ON eat.email_id = ea.id
 		WHERE ea.id = $1
 		GROUP BY ea.id
 	`
 
 	var i models.Email
 	err := r.DB.QueryRow(ctx, query, emailAccountID).Scan(
-		&i.ID, &i.UserID, &i.Email, &i.Name, &i.SignaturePlain, &i.SignatureHTML, &i.SignatureSync, &i.SignatureCode,
+		&i.ID, &i.UserID, &i.OrganizationID, &i.Email, &i.Name, &i.SignaturePlain, &i.SignatureHTML, &i.SignatureSync, &i.SignatureCode,
 		&i.Provider, &i.Status, &i.LastSyncedAt, &i.LastID, &i.CampaignLimit,
 		&i.MinWaitTime, &i.ReplyTo, &i.TrackingDomain, &i.Warmup, &i.WarmupBase,
-		&i.WarmupMax, &i.WarmupIncrease, &i.WarmupReplyRate, &i.WarmupTag,
+		&i.WarmupMax, &i.WarmupIncrease, &i.WarmupReplyRate, &i.WarmupTag, &i.WarmupPoolType,
 		&i.WarmupStartTime, &i.WarmupEndTime, &i.WarmupDays, &i.Timezone,
 		&i.CreatedAt, &i.UpdatedAt, &i.Tags,
 	)
@@ -777,9 +783,9 @@ func (r *emailRepository) GetByTags(ctx context.Context, userID string, tags []s
 		 ea.warmup_start_time, ea.warmup_end_time, ea.warmup_days, ea.timezone,
 		 ea.created_at, ea.updated_at
 		FROM email_accounts ea
-		JOIN email_tags eat ON eat.email = ea.id
+		JOIN email_tags eat ON eat.email_id = ea.id
 		WHERE ea.user_id = $1
-		  AND eat.tag = ANY($2)
+		  AND eat.tag_id = ANY($2)
 		  AND ea.status = 'active'
 		ORDER BY ea.id
 	`

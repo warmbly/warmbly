@@ -136,13 +136,18 @@ type MailSearchResult struct {
 }
 
 type MailSearchParams struct {
-	Sender   *string
-	Unseen   *bool
-	Subject  *string
-	Since    *time.Time
-	Until    *time.Time
-	PageSize int
-	Cursor   string
+	Sender  *string
+	Unseen  *bool
+	Subject *string
+	Since   *time.Time
+	Until   *time.Time
+	// EmailAccountIDs restricts results to messages received by one of
+	// these mailboxes. Empty = no account filter. The frontend tag
+	// filter resolves client-side to the matching account IDs and
+	// passes them here.
+	EmailAccountIDs []uuid.UUID
+	PageSize        int
+	Cursor          string
 }
 
 type MarkSeen struct {

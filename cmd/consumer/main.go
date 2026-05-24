@@ -6,21 +6,25 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	awsconf "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/getsentry/sentry-go"
+	"github.com/warmbly/warmbly/internal/app/advanced"
 	"github.com/warmbly/warmbly/internal/app/cipher"
 	jobs "github.com/warmbly/warmbly/internal/app/consumer"
+	warmupapp "github.com/warmbly/warmbly/internal/app/warmup"
+	workerapp "github.com/warmbly/warmbly/internal/app/worker"
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/events"
 	"github.com/warmbly/warmbly/internal/infrastructure/cache"
-	"github.com/warmbly/warmbly/internal/infrastructure/cdb"
 	"github.com/warmbly/warmbly/internal/infrastructure/db"
 	"github.com/warmbly/warmbly/internal/infrastructure/dynamo"
 	"github.com/warmbly/warmbly/internal/infrastructure/kafka"
 	"github.com/warmbly/warmbly/internal/infrastructure/kms"
 	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/infrastructure/storage"
+	"github.com/warmbly/warmbly/internal/observability"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
@@ -35,17 +39,8 @@ func main() {
 	}
 
 	// Sentry
-	if cfg.Env == "prod" {
-		sentryDsn, err := cfg.LoadSentryDSNBackend(ctx)
-		if err != nil {
-			log.Fatal(err)
-		}
-		if err := sentry.Init(sentry.ClientOptions{
-			Dsn:            sentryDsn,
-			SendDefaultPII: true,
-		}); err != nil {
-			log.Fatal(err)
-		}
+	if err := observability.InitSentry(ctx, cfg, "consumer"); err != nil {
+		log.Fatal(err)
 	}
 
 	// AWS config for services that need it (KMS, S3, DynamoDB)
@@ -64,16 +59,6 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Cassandra
-	astraConfig, err := cfg.LoadAstraConfig(ctx)
-	if err != nil {
-		log.Fatal(err)
-	}
-	cassandraDB, err := cdb.NewClient(astraConfig)
-	if err != nil {
-		log.Fatal(err)
-	}
-
 	// Redis
 	primaryRedis, err := cfg.LoadPrimaryRedisEndpoint(ctx)
 	if err != nil {
@@ -86,7 +71,7 @@ func main() {
 
 	// KMS + DynamoDB → CipherService
 	var masterKey string = "alias/master-key"
-	if cfg.Env == "prod" {
+	if cfg.Env != "prod" {
 		masterKey += "-dev"
 	}
 
@@ -131,7 +116,9 @@ func main() {
 
 	// Kafka producer
 	producerConfig := kafka.NewProducer(kafkaBootstrapServers)
-	producerConfig.WithSASL(kafkaSaslConfig)
+	if kafkaSaslConfig != nil {
+		producerConfig.WithSASL(kafkaSaslConfig)
+	}
 	kafkaProducer, err := producerConfig.Connect()
 	if err != nil {
 		log.Fatal(err)
@@ -141,7 +128,9 @@ func main() {
 
 	// Kafka consumer
 	consumerConfig := kafka.NewConsumer(kafkaBootstrapServers)
-	consumerConfig.WithSASL(kafkaSaslConfig)
+	if kafkaSaslConfig != nil {
+		consumerConfig.WithSASL(kafkaSaslConfig)
+	}
 	consumerConfig.Set("group.id", "consumer-group")
 	consumerConfig.Set("auto.offset.reset", "earliest")
 	kafkaConsumer, err := consumerConfig.Connect()
@@ -170,11 +159,34 @@ func main() {
 
 	// Repositories
 	emailRepo := repository.NewEmailRepostory(primaryDB)
-	uniboxRepo := repository.NewUniboxRepository(cassandraDB)
-	mailboxRepo := repository.NewMailboxRepostory(cassandraDB)
+	uniboxRepo := repository.NewUniboxRepository(primaryDB)
+	mailboxRepo := repository.NewMailboxRepository(primaryDB)
 	emailHistoryIDRepo := repository.NewEmailHistoryIDRepository(dynamoDB)
 	emailAccountErrorRepo := repository.NewEmailAccountErrorRepository(primaryDB)
 	warmupRepo := repository.NewWarmupRepository(primaryDB.Pool)
+	warmupService := warmupapp.NewService(warmupRepo)
+	workerRepo := repository.NewWorkerRepository(primaryDB.Pool)
+	subscriptionRepoConsumer := repository.NewSubscriptionRepository(primaryDB.Pool)
+	planRepoConsumer := repository.NewPlanRepository(primaryDB.Pool)
+	workerAssignmentSvc := workerapp.NewAssignmentService(workerRepo, subscriptionRepoConsumer, planRepoConsumer)
+	campaignRepo := repository.NewCampaignRepostory(primaryDB)
+	taskRepo := repository.NewTaskRepository(primaryDB.Pool)
+	contactRepo := repository.NewContactRepostory(primaryDB)
+	campaignProgressRepo := repository.NewCampaignProgressRepository(primaryDB.Pool)
+	crmRepo := repository.NewCRMRepository(primaryDB.Pool)
+	advancedRepo := repository.NewAdvancedOutreachRepository(primaryDB.Pool)
+
+	advancedService := advanced.NewService(
+		advancedRepo,
+		campaignRepo,
+		emailRepo,
+		taskRepo,
+		contactRepo,
+		campaignProgressRepo,
+		crmRepo,
+		nil,
+		warmupService,
+	)
 
 	// Events publisher
 	eventsPublisher := events.NewPublisher(kafkaProducer, s3Client, avrov2Client, cipherService)
@@ -188,8 +200,14 @@ func main() {
 		EmailHistoryIDRepository:    emailHistoryIDRepo,
 		EmailAccountErrorRepository: emailAccountErrorRepo,
 		WarmupRepo:                  warmupRepo,
+		WarmupService:               warmupService,
+		WorkerRepo:                  workerRepo,
 		Publisher:                   eventsPublisher,
 		StreamingPublisher:          streamingPublisher,
+		AdvancedService:             advancedService,
+		Cache:                       redisCache,
+		AdminRepo:                   repository.NewAdminRepository(primaryDB.Pool),
+		AssignmentService:           workerAssignmentSvc,
 	}
 
 	jobsService.InitEvents()
@@ -203,6 +221,24 @@ func main() {
 		log.Println("Shutting down consumer...")
 		cancel()
 	}()
+
+	// Start DLQ auto-retry loop in background (every 60 seconds)
+	go jobsService.StartDLQRetryLoop(ctx, 60*time.Second)
+
+	// Start warmup health evaluation sweep (every hour)
+	go jobsService.StartWarmupHealthSweep(ctx, 1*time.Hour)
+
+	// Start dead worker detection (every 5 minutes)
+	go jobsService.StartDeadWorkerDetection(ctx, 5*time.Minute)
+
+	// Mirror Redis heartbeats into workers.last_seen_at every 60s
+	// so the admin dashboard can render liveness without touching Redis.
+	go jobsService.StartWorkerHeartbeatSync(ctx, 60*time.Second)
+
+	// Re-evaluate per-mailbox risk bands hourly and migrate to a matching
+	// risk_pool worker when the band changes. Skipped if AssignmentService
+	// or WorkerRepo are nil.
+	go jobsService.StartRiskRebalancer(ctx, 1*time.Hour)
 
 	log.Println("Consumer started, listening on", kafka.TopicWorkerEvents)
 	jobsService.Start(ctx)

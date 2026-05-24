@@ -13,19 +13,20 @@ import (
 
 // EmailMessage represents an email to be sent
 type EmailMessage struct {
-	From        string
-	To          []string
-	CC          []string
-	BCC         []string
-	Subject     string
-	BodyHTML    string
-	BodyPlain   string
-	InReplyTo   string
-	MessageID   string
-	IsWarmup    bool
-	Tracking    *models.TrackingInfo
-	WarmupToken string
-	UserID      uuid.UUID
+	From           string
+	To             []string
+	CC             []string
+	BCC            []string
+	Subject        string
+	BodyHTML       string
+	BodyPlain      string
+	InReplyTo      string
+	MessageID      string
+	IsWarmup       bool
+	Tracking       *models.TrackingInfo
+	WarmupToken    string
+	UserID         uuid.UUID
+	UnsubscribeURL string
 }
 
 // EmailSender interface for sending emails via workers
@@ -62,20 +63,21 @@ func (s *emailSender) Send(ctx context.Context, taskID uuid.UUID, msg EmailMessa
 
 	// Create send email params
 	params := &events.SendEmailParams{
-		TaskID:       taskID,
-		EmailID:      account.ID,
-		UserID:       msg.UserID,
-		To:           msg.To,
-		CC:           msg.CC,
-		BCC:          msg.BCC,
-		InReplyTo:    msg.InReplyTo,
-		Subject:      msg.Subject,
-		MessageID:    msg.MessageID,
-		BodyPlain:    msg.BodyPlain,
-		BodyHTML:     bodyHTML,
-		IsWarmup:     msg.IsWarmup,
-		TrackingInfo: msg.Tracking,
-		WarmupToken:  msg.WarmupToken,
+		TaskID:         taskID,
+		EmailID:        account.ID,
+		UserID:         msg.UserID,
+		To:             msg.To,
+		CC:             msg.CC,
+		BCC:            msg.BCC,
+		InReplyTo:      msg.InReplyTo,
+		Subject:        msg.Subject,
+		MessageID:      msg.MessageID,
+		BodyPlain:      msg.BodyPlain,
+		BodyHTML:       bodyHTML,
+		IsWarmup:       msg.IsWarmup,
+		TrackingInfo:   msg.Tracking,
+		WarmupToken:    msg.WarmupToken,
+		UnsubscribeURL: msg.UnsubscribeURL,
 	}
 
 	// Publish send email event to worker

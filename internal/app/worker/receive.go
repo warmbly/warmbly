@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"time"
 
 	cfk "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/rs/zerolog/log"
@@ -21,5 +22,8 @@ func (w *WorkerService) Receive(msg *cfk.Message) error {
 		return nil
 	}
 
-	return w.HandleEvent(context.TODO(), &event)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	return w.HandleEvent(ctx, &event)
 }

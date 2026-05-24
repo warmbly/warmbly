@@ -11,6 +11,7 @@ type Organization struct {
 	ID          uuid.UUID `json:"id"`
 	Name        string    `json:"name"`
 	Slug        *string   `json:"slug,omitempty"`
+	AvatarURL   *string   `json:"avatar_url,omitempty"`
 	OwnerUserID uuid.UUID `json:"owner_user_id"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
@@ -70,8 +71,8 @@ type OrganizationInvitation struct {
 	CreatedAt      time.Time              `json:"created_at"`
 
 	// Joined data
-	Organization *Organization `json:"organization,omitempty"`
-	InvitedByUser *User        `json:"invited_by_user,omitempty"`
+	Organization  *Organization `json:"organization,omitempty"`
+	InvitedByUser *User         `json:"invited_by_user,omitempty"`
 }
 
 // IsExpired returns true if the invitation has expired
@@ -98,10 +99,10 @@ type EnterpriseInquiry struct {
 type EnterpriseInquiryStatus string
 
 const (
-	EnterpriseInquiryStatusPending    EnterpriseInquiryStatus = "pending"
-	EnterpriseInquiryStatusContacted  EnterpriseInquiryStatus = "contacted"
-	EnterpriseInquiryStatusConverted  EnterpriseInquiryStatus = "converted"
-	EnterpriseInquiryStatusDeclined   EnterpriseInquiryStatus = "declined"
+	EnterpriseInquiryStatusPending   EnterpriseInquiryStatus = "pending"
+	EnterpriseInquiryStatusContacted EnterpriseInquiryStatus = "contacted"
+	EnterpriseInquiryStatusConverted EnterpriseInquiryStatus = "converted"
+	EnterpriseInquiryStatusDeclined  EnterpriseInquiryStatus = "declined"
 )
 
 // CreateOrganizationRequest represents the request to create a new organization
@@ -145,6 +146,7 @@ type OrganizationCounts struct {
 	TotalContacts   int `json:"total_contacts"`
 	TotalMembers    int `json:"total_members"`
 	EmailAccounts   int `json:"email_accounts"`
+	EmailsSentToday int `json:"emails_sent_today"`
 }
 
 // OrganizationLimits represents the limits for an organization based on their plan
@@ -154,6 +156,7 @@ type OrganizationLimits struct {
 	MaxTeamMembers     *int `json:"max_team_members,omitempty"`
 	MaxEmailAccounts   *int `json:"max_email_accounts,omitempty"`
 	MaxContacts        *int `json:"max_contacts,omitempty"`
+	DailyCampaignLimit *int `json:"daily_campaign_limit,omitempty"`
 }
 
 // OrganizationWithLimits combines organization with its limits and counts

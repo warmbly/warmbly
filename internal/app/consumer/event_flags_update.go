@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
+
+	"github.com/google/uuid"
 
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
@@ -18,17 +21,19 @@ func (s *JobsService) HandleFlagsAdd(ctx context.Context, e *models.JobEventFlag
 
 	// Check if a warmup email is being flagged as spam
 	if s.WarmupRepo != nil && containsSpamFlag(e.Flags) {
-		// Check if this email has a warmup token in its flags
-		isWarmupEmail := false
-		for _, f := range email.Flags {
-			if len(f) > len("X-Warmbly-Token:") && f[:len("X-Warmbly-Token:")] == "X-Warmbly-Token:" {
-				isWarmupEmail = true
-				break
+		if tokenStr := warmupTokenFromFlags(email.Flags); tokenStr != "" {
+			tokenID, parseErr := uuid.Parse(tokenStr)
+			if parseErr == nil {
+				token, tokenErr := s.WarmupRepo.FindWarmupToken(ctx, tokenID)
+				if tokenErr == nil && token != nil {
+					if s.WarmupService != nil {
+						_, _ = s.WarmupService.ApplySpamReport(ctx, e.EmailID, token.SenderAccountID, email.MessageID, "spam_folder")
+					} else {
+						_, _ = s.WarmupRepo.IncrementSpamScore(ctx, token.SenderAccountID, 10)
+						s.checkAndAutoBlock(ctx, token.SenderAccountID)
+					}
+				}
 			}
-		}
-		if isWarmupEmail {
-			s.WarmupRepo.IncrementSpamScore(ctx, e.EmailID, 10)
-			s.checkAndAutoBlock(ctx, e.EmailID)
 		}
 	}
 
@@ -54,6 +59,15 @@ func (s *JobsService) HandleFlagsAdd(ctx context.Context, e *models.JobEventFlag
 			Flags: email.Flags,
 		},
 	)
+}
+
+func warmupTokenFromFlags(flags []string) string {
+	for _, flag := range flags {
+		if strings.HasPrefix(flag, "X-Warmbly-Token:") {
+			return strings.TrimPrefix(flag, "X-Warmbly-Token:")
+		}
+	}
+	return ""
 }
 
 func (s *JobsService) HandleFlagsRemove(ctx context.Context, e *models.JobEventFlags) error {

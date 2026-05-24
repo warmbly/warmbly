@@ -88,7 +88,7 @@ func (h *Handler) CreateCheckoutSession(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"session_id":  session.ID,
+		"session_id":   session.ID,
 		"checkout_url": session.URL,
 	})
 }
@@ -135,7 +135,10 @@ func (h *Handler) CancelSubscription(c *gin.Context) {
 	var req struct {
 		CancelAtPeriodEnd bool `json:"cancel_at_period_end"`
 	}
-	c.ShouldBindJSON(&req)
+	if err := c.ShouldBindJSON(&req); err != nil {
+		errx.JSON(c, errx.ErrInvalid)
+		return
+	}
 
 	sub, errX := h.SubscriptionService.Get(c.Request.Context(), *orgID)
 	if errX != nil {

@@ -11,7 +11,10 @@ impl SsmParameterStore {
         }
     }
 
-    pub async fn get(&self, name: &str) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn get(
+        &self,
+        name: &str,
+    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         let output = self
             .client
             .get_parameter()

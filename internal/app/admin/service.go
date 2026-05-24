@@ -78,6 +78,11 @@ type AdminService interface {
 
 	// Audit Logs
 	SearchAuditLogs(ctx context.Context, search *models.AdminAuditLogSearch) (*models.AdminAuditLogsResult, *errx.Error)
+
+	// LogAdminAction writes a row to admin_audit_log. Fire-and-forget; safe
+	// to call from any handler that has the admin's identity and a target.
+	// Used by the new SSH worker / credentials / release / system handlers.
+	LogAdminAction(ctx context.Context, adminID uuid.UUID, action, targetType string, targetID *uuid.UUID, details map[string]any, ipAddress, userAgent string)
 }
 
 type adminService struct {
@@ -105,6 +110,22 @@ func (s *adminService) logAction(ctx context.Context, adminID uuid.UUID, action,
 	if err := s.repo.CreateAuditLog(ctx, log); err != nil {
 		sentry.CaptureException(err)
 	}
+}
+
+// LogAdminAction is the public-facing version of logAction. Goroutine-detached
+// so handlers can call it without taking the request-cycle hit on the audit
+// write. Accepts an optional targetID (uuid.Nil if the action isn't tied to
+// a specific entity, e.g. "check releases").
+func (s *adminService) LogAdminAction(ctx context.Context, adminID uuid.UUID, action, targetType string, targetID *uuid.UUID, details map[string]any, ipAddress, userAgent string) {
+	var tid uuid.UUID
+	if targetID != nil {
+		tid = *targetID
+	}
+	// Capture values into the goroutine; ctx is replaced with Background so
+	// the audit row still lands even if the request context cancels first.
+	go func() {
+		s.logAction(context.Background(), adminID, action, targetType, tid, details, ipAddress, userAgent)
+	}()
 }
 
 // User Management
@@ -221,9 +242,12 @@ func (s *adminService) GetUserCampaigns(ctx context.Context, userID uuid.UUID, c
 }
 
 func (s *adminService) GetUserEmails(ctx context.Context, userID uuid.UUID, cursor *uuid.UUID, limit int) ([]models.AdminWorkerEmail, *models.Pagination, *errx.Error) {
-	// This would need a separate query by user ID
-	// For now, return empty
-	return []models.AdminWorkerEmail{}, &models.Pagination{}, nil
+	emails, pagination, err := s.repo.GetUserEmails(ctx, userID, cursor, limit)
+	if err != nil {
+		sentry.CaptureException(err)
+		return nil, nil, errx.New(errx.Internal, "failed to get user emails")
+	}
+	return emails, pagination, nil
 }
 
 func (s *adminService) GetUserRateLimits(ctx context.Context, userID uuid.UUID) (*models.AdminUserRateLimits, *errx.Error) {

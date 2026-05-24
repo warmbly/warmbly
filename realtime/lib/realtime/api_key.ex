@@ -12,6 +12,7 @@ defmodule Realtime.ApiKey do
   require Logger
 
   alias Realtime.Redis
+  alias Realtime.ErrorReporter
   alias Realtime.Repo
 
   import Ecto.Query
@@ -120,7 +121,7 @@ defmodule Realtime.ApiKey do
 
   defp query_database(key_hash) do
     query =
-      from ak in "api_keys",
+      from(ak in "api_keys",
         where: ak.key_hash == ^key_hash,
         select: %{
           id: ak.id,
@@ -130,6 +131,7 @@ defmodule Realtime.ApiKey do
           allowed_ips: ak.allowed_ips,
           expires_at: ak.expires_at
         }
+      )
 
     case Repo.one(query) do
       nil ->
@@ -141,7 +143,7 @@ defmodule Realtime.ApiKey do
   rescue
     e ->
       Logger.error("Database query failed: #{inspect(e)}")
-      Sentry.capture_exception(e)
+      ErrorReporter.capture_exception(e)
       {:error, :database_error}
   end
 
@@ -149,19 +151,24 @@ defmodule Realtime.ApiKey do
     # Convert expires_at string back to datetime if present
     map =
       case Map.get(map, :expires_at) do
-        nil -> map
+        nil ->
+          map
+
         expires_at when is_binary(expires_at) ->
           case DateTime.from_iso8601(expires_at) do
             {:ok, dt, _} -> Map.put(map, :expires_at, dt)
             _ -> map
           end
-        _ -> map
+
+        _ ->
+          map
       end
 
     map
   end
 
   defp check_status(%{status: "active"}), do: :ok
+
   defp check_status(%{status: status}) do
     Logger.debug("API key status check failed: #{status}")
     {:error, :key_inactive}
@@ -215,7 +222,10 @@ defmodule Realtime.ApiKey do
     if client_ip in allowed_ips do
       :ok
     else
-      Logger.debug("API key IP restriction check failed: #{client_ip} not in #{inspect(allowed_ips)}")
+      Logger.debug(
+        "API key IP restriction check failed: #{client_ip} not in #{inspect(allowed_ips)}"
+      )
+
       {:error, :ip_not_allowed}
     end
   end

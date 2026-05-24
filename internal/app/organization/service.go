@@ -600,6 +600,7 @@ func (s *organizationService) GetOrganizationLimits(ctx context.Context, orgID u
 		MaxActiveCampaigns: sub.Plan.MaxActiveCampaigns,
 		MaxTeamMembers:     sub.Plan.MaxTeamMembers,
 		MaxEmailAccounts:   sub.Plan.MaxEmailAccounts,
+		DailyCampaignLimit: sub.Plan.DailyCampaignLimit,
 	}, nil
 }
 
@@ -629,12 +630,15 @@ func (s *organizationService) GetOrganizationCounts(ctx context.Context, orgID u
 		return nil, errx.New(errx.Internal, "failed to get contact count")
 	}
 
+	sentToday, _ := s.orgRepo.GetEmailsSentTodayCount(ctx, orgID)
+
 	return &models.OrganizationCounts{
 		TotalCampaigns:  total,
 		ActiveCampaigns: active,
 		TotalMembers:    members,
 		EmailAccounts:   emails,
 		TotalContacts:   contacts,
+		EmailsSentToday: sentToday,
 	}, nil
 }
 

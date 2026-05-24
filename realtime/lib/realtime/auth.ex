@@ -10,6 +10,7 @@ defmodule Realtime.Auth do
   require Logger
 
   alias Realtime.ApiKey
+  alias Realtime.ErrorReporter
 
   @doc """
   Verifies a token (JWT or API key) and returns the user_id if valid.
@@ -58,7 +59,7 @@ defmodule Realtime.Auth do
   rescue
     e ->
       Logger.error("JWT verification error: #{inspect(e)}")
-      Sentry.capture_exception(e)
+      ErrorReporter.capture_exception(e)
       {:error, :verification_error}
   end
 
@@ -135,13 +136,14 @@ defmodule Realtime.Auth do
 
     case Realtime.Repo.query(query, [org_id, user_id]) do
       {:ok, %{rows: [[id, role, permissions] | _]}} ->
-        {:ok, %{
-          id: id,
-          role: role,
-          permissions: permissions,
-          organization_id: org_id,
-          user_id: user_id
-        }}
+        {:ok,
+         %{
+           id: id,
+           role: role,
+           permissions: permissions,
+           organization_id: org_id,
+           user_id: user_id
+         }}
 
       {:ok, %{rows: []}} ->
         {:error, :not_a_member}
@@ -196,7 +198,8 @@ defmodule Realtime.Auth do
 
     case Realtime.Repo.query(query, [campaign_id, user_id]) do
       {:ok, %{rows: [_ | _]}} ->
-        {:ok, %{permissions: 65535}} # Full permissions for direct owner
+        # Full permissions for direct owner
+        {:ok, %{permissions: 65535}}
 
       {:ok, %{rows: []}} ->
         {:error, :forbidden}

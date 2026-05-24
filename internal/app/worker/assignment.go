@@ -11,9 +11,9 @@ import (
 )
 
 var (
-	ErrNoAvailableWorkers  = errors.New("no available workers")
-	ErrNoDedicatedWorkers  = errors.New("no dedicated workers available")
-	ErrOrgAlreadyAssigned  = errors.New("organization already has a dedicated worker assigned")
+	ErrNoAvailableWorkers = errors.New("no available workers")
+	ErrNoDedicatedWorkers = errors.New("no dedicated workers available")
+	ErrOrgAlreadyAssigned = errors.New("organization already has a dedicated worker assigned")
 )
 
 type WorkerAssignmentService interface {
@@ -23,6 +23,12 @@ type WorkerAssignmentService interface {
 
 	// SelectSharedWorker selects the least loaded shared worker for the given tier
 	SelectSharedWorker(ctx context.Context, freeTier bool) (*models.Worker, error)
+
+	// SelectSharedWorkerForBand selects the least-loaded shared worker whose
+	// risk_pool matches the mailbox's risk band. Falls back to the clean
+	// pool if no worker exists in the target pool, and to any worker of the
+	// tier as a last resort.
+	SelectSharedWorkerForBand(ctx context.Context, freeTier bool, band models.EmailRiskBand) (*models.Worker, error)
 
 	// Dedicated worker management
 	AssignDedicatedWorker(ctx context.Context, orgID, subscriptionID uuid.UUID) error
@@ -136,18 +142,51 @@ func (s *workerAssignmentService) SelectSharedWorker(ctx context.Context, freeTi
 	return &workers[0], nil
 }
 
-// AssignDedicatedWorker assigns a dedicated worker to an organization
-func (s *workerAssignmentService) AssignDedicatedWorker(ctx context.Context, orgID, subscriptionID uuid.UUID) error {
-	// Check if org already has a dedicated worker
-	existing, err := s.workerRepo.GetActiveDedicatedAssignment(ctx, orgID)
+// SelectSharedWorkerForBand picks the least-loaded shared worker whose
+// risk_pool matches band.MatchingRiskPool(). Fallback chain:
+//
+//  1. Worker in the matching pool of the right tier
+//  2. Worker in the clean pool of the right tier (better to land risky
+//     mailboxes on clean workers than to refuse, but log + audit this
+//     since it dilutes the clean pool — operator should provision a
+//     risky/quarantine worker)
+//  3. Any worker of the right tier (existing SelectSharedWorker behavior)
+//
+// Step 3 maintains backwards compatibility with installations that don't
+// run risk pools yet — they leave everything in risk_pool='clean' and
+// behavior is unchanged.
+func (s *workerAssignmentService) SelectSharedWorkerForBand(ctx context.Context, freeTier bool, band models.EmailRiskBand) (*models.Worker, error) {
+	target := band.MatchingRiskPool()
+
+	workers, err := s.workerRepo.GetSharedWorkersByTierAndPool(ctx, freeTier, target)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if existing != nil {
-		return ErrOrgAlreadyAssigned
+	if len(workers) > 0 {
+		return &workers[0], nil
 	}
 
-	// Find an available dedicated worker
+	// Step 2: fall back to the clean pool. Only kicks in for risky/quarantine
+	// bands when no matching-pool worker exists.
+	if target != models.WorkerRiskPoolClean {
+		workers, err = s.workerRepo.GetSharedWorkersByTierAndPool(ctx, freeTier, models.WorkerRiskPoolClean)
+		if err != nil {
+			return nil, err
+		}
+		if len(workers) > 0 {
+			return &workers[0], nil
+		}
+	}
+
+	// Step 3: last-resort, any tier worker. Same as legacy SelectSharedWorker.
+	return s.SelectSharedWorker(ctx, freeTier)
+}
+
+// AssignDedicatedWorker assigns a dedicated worker to an organization
+func (s *workerAssignmentService) AssignDedicatedWorker(ctx context.Context, orgID, subscriptionID uuid.UUID) error {
+	// Use atomic insert with conflict check to prevent race conditions.
+	// Two concurrent requests could both pass the "check if exists" step and
+	// both attempt to insert, causing duplicate assignments.
 	worker, err := s.workerRepo.GetAvailableDedicatedWorker(ctx)
 	if err != nil {
 		return err
@@ -156,7 +195,6 @@ func (s *workerAssignmentService) AssignDedicatedWorker(ctx context.Context, org
 		return ErrNoDedicatedWorkers
 	}
 
-	// Create assignment
 	assignment := &models.DedicatedWorkerAssignment{
 		ID:             uuid.New(),
 		WorkerID:       worker.ID,
@@ -165,7 +203,14 @@ func (s *workerAssignmentService) AssignDedicatedWorker(ctx context.Context, org
 		AssignedAt:     time.Now(),
 	}
 
-	return s.workerRepo.CreateDedicatedAssignment(ctx, assignment)
+	created, err := s.workerRepo.CreateDedicatedAssignmentIfNotExists(ctx, assignment)
+	if err != nil {
+		return err
+	}
+	if !created {
+		return ErrOrgAlreadyAssigned
+	}
+	return nil
 }
 
 // ReleaseDedicatedWorker releases a dedicated worker assignment

@@ -1,0 +1,81 @@
+---
+title: Introduction
+description: Welcome to the Warmbly API documentation. Learn how to integrate with our platform.
+---
+
+# Warmbly API Documentation
+
+Welcome to the Warmbly API documentation. This guide will help you integrate your applications with Warmbly's powerful email outreach platform.
+
+## Quick Start
+
+### 1. Get an API Key
+
+First, create an API key from your [Warmbly dashboard](https://app.warmbly.com/app/api-keys). You'll need the `API_KEYS` permission to create and manage API keys programmatically.
+
+### 2. Make Your First Request
+
+All API requests require authentication using a Bearer token:
+
+```bash
+curl -X GET "https://api.warmbly.com/api-keys" \
+  -H "Authorization: Bearer wmbly_your_api_key_here" \
+  -H "Content-Type: application/json"
+```
+
+### 3. Handle the Response
+
+API responses are returned in JSON format:
+
+```json
+{
+  "data": [...],
+  "pagination": {
+    "total": 10,
+    "has_more": false,
+    "next_cursor": null
+  }
+}
+```
+
+## Base URL
+
+All API requests should be made to:
+
+```
+https://api.warmbly.com
+```
+
+## Authentication
+
+The Warmbly API uses Bearer token authentication. Include your API key in the `Authorization` header of every request:
+
+```
+Authorization: Bearer wmbly_<your_key>
+```
+
+API keys are prefixed with `wmbly_` and have specific permissions assigned to them. See the [Authentication](/authentication) guide for more details.
+
+## Rate Limits
+
+API requests are rate limited to ensure fair usage:
+
+- **Standard tier**: 100 requests per minute
+- **Professional tier**: 500 requests per minute
+- **Enterprise tier**: Custom limits
+
+When you exceed the rate limit, the API returns a `429 Too Many Requests` response.
+
+## What's Next?
+
+<Cards>
+  <Card title="Authentication" href="/authentication">
+    Learn about API key permissions and security best practices.
+  </Card>
+  <Card title="API Keys" href="/api-keys">
+    Manage your API keys programmatically.
+  </Card>
+  <Card title="Permissions Reference" href="/reference/permissions">
+    Explore all available API permissions.
+  </Card>
+</Cards>

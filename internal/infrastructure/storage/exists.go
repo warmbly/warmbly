@@ -26,4 +26,3 @@ func (c *Client) Exists(ctx context.Context, bucket, key string) (bool, error) {
 	// Object exists
 	return true, nil
 }
-

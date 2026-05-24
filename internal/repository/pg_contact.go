@@ -21,6 +21,7 @@ import (
 type ContactRepository interface {
 	Add(ctx context.Context, userID string, contacts []models.AddContact) ([]models.Contact, *errx.Error)
 	GetByID(ctx context.Context, contactID uuid.UUID) (*models.Contact, *errx.Error)
+	GetByEmailAndOrganization(ctx context.Context, organizationID uuid.UUID, email string) (*models.Contact, *errx.Error)
 	Search(ctx context.Context, userID string, category, cursor *string, filters models.SearchContacts, limit int32) (*models.ContactsResult, *errx.Error)
 	BulkUpdate(ctx context.Context, userID string, data *models.BulkEditContactsData) ([]models.Contact, *errx.Error)
 	Update(ctx context.Context, userID, contactID string, data *models.UpdateContact) (*models.Contact, *errx.Error)
@@ -41,6 +42,73 @@ func NewContactRepostory(db *db.DB) ContactRepository {
 }
 
 func (r *contactRepository) Add(ctx context.Context, userID string, contacts []models.AddContact) ([]models.Contact, *errx.Error) {
+	// Validate userID up front. The handler should have caught a
+	// malformed JWT subject, but a defensive check here keeps any
+	// invalid value from blowing up pgx as "InternalError 500".
+	if _, perr := uuid.Parse(userID); perr != nil {
+		return nil, errx.ErrUuid
+	}
+
+	// Normalize + validate every contact before opening a transaction.
+	// Catching bad input here lets us return 400 instead of letting
+	// pgx fail mid-batch (which used to surface as a generic 500).
+	normalized := make([]models.AddContact, 0, len(contacts))
+	campaignIDs := make([][]uuid.UUID, 0, len(contacts))
+	for _, lead := range contacts {
+		lead.Email = strings.TrimSpace(lead.Email)
+		if !email.IsValid(lead.Email) {
+			return nil, errx.ErrEmail
+		}
+		lead.FirstName = strings.TrimSpace(lead.FirstName)
+		lead.LastName = strings.TrimSpace(lead.LastName)
+		lead.Company = strings.TrimSpace(lead.Company)
+		lead.Phone = strings.TrimSpace(lead.Phone)
+
+		// JSONB column is NOT NULL; encoding a nil map sends NULL.
+		// Replace nil with an empty map so the INSERT can't violate
+		// the constraint.
+		if lead.CustomFields == nil {
+			lead.CustomFields = map[string]string{}
+		}
+		for key := range lead.CustomFields {
+			if !utils.IsValidJSONKey(key) {
+				return nil, errx.ErrJSONKey
+			}
+		}
+
+		// Approximate size check using JSON payload.
+		data, jerr := json.Marshal(lead)
+		if jerr != nil {
+			return nil, errx.ErrContactSerialize
+		}
+		if len(data) > config.MaxContactSize {
+			return nil, errx.ErrContactSize
+		}
+
+		// Parse + dedupe campaign IDs. Skip blanks. Invalid UUIDs are
+		// a user error → 400, not a server crash.
+		cidSet := make(map[uuid.UUID]struct{}, len(lead.Campaigns))
+		cids := make([]uuid.UUID, 0, len(lead.Campaigns))
+		for _, raw := range lead.Campaigns {
+			raw = strings.TrimSpace(raw)
+			if raw == "" {
+				continue
+			}
+			cid, cerr := uuid.Parse(raw)
+			if cerr != nil {
+				return nil, errx.ErrUuid
+			}
+			if _, dup := cidSet[cid]; dup {
+				continue
+			}
+			cidSet[cid] = struct{}{}
+			cids = append(cids, cid)
+		}
+
+		normalized = append(normalized, lead)
+		campaignIDs = append(campaignIDs, cids)
+	}
+
 	tx, err := r.DB.Begin(ctx)
 	if err != nil {
 		db.CaptureError(err, "", nil, "begin")
@@ -48,114 +116,101 @@ func (r *contactRepository) Add(ctx context.Context, userID string, contacts []m
 	}
 	defer tx.Rollback(ctx)
 
-	var ncontacts []models.Contact = make([]models.Contact, len(contacts))
-
-	b := pgx.Batch{}
-
-	for _, lead := range contacts {
-		if !email.IsValid(lead.Email) {
-			return nil, errx.ErrEmail
-		}
-
-		data, err := json.Marshal(lead)
-		if err != nil {
-			return nil, errx.ErrContactSerialize
-		}
-		if len(data) > config.MaxContactSize {
-			return nil, errx.ErrContactSize
-		}
-
-		for key := range lead.CustomFields {
-			if !utils.IsValidJSONKey(key) {
-				return nil, errx.ErrJSONKey
-			}
-		}
-
-		b.Queue(
+	// Upsert contacts in a single batch round-trip.
+	insertBatch := pgx.Batch{}
+	for _, lead := range normalized {
+		insertBatch.Queue(
 			`INSERT INTO contacts (
 			 id, user_id, first_name, last_name, email, company, phone, custom_fields
 			 ) VALUES (
-			  gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7
-			 ) RETURNING id, first_name, last_name, email, company, phone, custom_fields, subscribed, updated_at, created_at`,
+			  gen_random_uuid(), $1, $2, $3, LOWER($4), $5, $6, $7
+			 )
+			 ON CONFLICT (user_id, (LOWER(email))) DO UPDATE SET
+			  first_name = EXCLUDED.first_name,
+			  last_name = EXCLUDED.last_name,
+			  company = EXCLUDED.company,
+			  phone = EXCLUDED.phone,
+			  custom_fields = contacts.custom_fields || EXCLUDED.custom_fields,
+			  updated_at = NOW()
+			 RETURNING id, first_name, last_name, email, company, phone, custom_fields, subscribed, updated_at, created_at`,
 			userID, lead.FirstName, lead.LastName, lead.Email, lead.Company, lead.Phone, lead.CustomFields,
 		)
 	}
 
-	br := tx.SendBatch(ctx, &b)
-	defer br.Close()
+	br := tx.SendBatch(ctx, &insertBatch)
 
-	bc := pgx.Batch{}
-
-	for _, lead := range contacts {
-		var ncon models.Contact = models.Contact{
-			Campaigns:  make([]models.MiniCampaign, 0),
+	ncontacts := make([]models.Contact, 0, len(normalized))
+	for range normalized {
+		ncon := models.Contact{
+			Campaigns:  []models.MiniCampaign{},
 			Subscribed: true,
 		}
-		err := br.QueryRow().Scan(&ncon.ID, &ncon.FirstName, &ncon.LastName, &ncon.Email, &ncon.Company, &ncon.Phone, &ncon.CustomFields, &ncon.Subscribed, &ncon.UpdatedAt, &ncon.CreatedAt)
-		if err != nil {
+		if err := br.QueryRow().Scan(
+			&ncon.ID, &ncon.FirstName, &ncon.LastName, &ncon.Email, &ncon.Company,
+			&ncon.Phone, &ncon.CustomFields, &ncon.Subscribed, &ncon.UpdatedAt, &ncon.CreatedAt,
+		); err != nil {
 			br.Close()
 			db.CaptureError(err, "", nil, "batch queryrow")
 			return nil, errx.InternalError()
 		}
-
-		if len(lead.Campaigns) > 0 {
-			const stmt = `
-			INSERT INTO campaign_leads (contact, campaign)
-			SELECT $1, campaigns.id
-			FROM   campaigns
-			WHERE  campaigns.id = ANY($2)
-			AND  campaigns.user_id = $3
-			ON CONFLICT (campaign, contact) DO NOTHING
-			RETURNING campaigns.id, campaigns.name`
-
-			bc.Queue(
-				stmt,
-				ncon.ID,
-				lead.Campaigns,
-				userID,
-			)
+		// Defensive: backend code occasionally returns nil custom_fields
+		// from older rows. Normalize for the JSON response.
+		if ncon.CustomFields == nil {
+			ncon.CustomFields = map[string]string{}
 		}
 		ncontacts = append(ncontacts, ncon)
 	}
+	if err := br.Close(); err != nil {
+		db.CaptureError(err, "", nil, "batch close")
+		return nil, errx.InternalError()
+	}
 
-	br.Close()
-
-	brc := tx.SendBatch(ctx, &bc)
-
-	for i := range ncontacts {
-		if len(ncontacts[i].Campaigns) == 0 {
+	// Link campaigns. Original code's RETURNING clause referenced a
+	// non-inserted table, which is invalid SQL; resolve by inserting
+	// first, then SELECTing the name back from `campaigns` in a
+	// separate statement. Scoped to the user's own campaigns.
+	for i, cids := range campaignIDs {
+		if len(cids) == 0 {
 			continue
 		}
-		rows, err := brc.Query()
-		if err != nil {
-			brc.Close()
-			db.CaptureError(err, "", nil, "batch query")
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO campaign_leads (contact_id, campaign_id)
+			SELECT $1, c.id
+			FROM   campaigns c
+			WHERE  c.id = ANY($2) AND c.user_id = $3
+			ON CONFLICT (campaign_id, contact_id) DO NOTHING
+		`, ncontacts[i].ID, cids, userID); err != nil {
+			db.CaptureError(err, "", nil, "campaign_leads insert")
 			return nil, errx.InternalError()
 		}
-		var idx int
+
+		rows, err := tx.Query(ctx, `
+			SELECT c.id, c.name
+			FROM   campaigns c
+			JOIN   campaign_leads cl ON cl.campaign_id = c.id
+			WHERE  cl.contact_id = $1 AND c.user_id = $2
+		`, ncontacts[i].ID, userID)
+		if err != nil {
+			db.CaptureError(err, "", nil, "campaign_leads select")
+			return nil, errx.InternalError()
+		}
+		linked := make([]models.MiniCampaign, 0)
 		for rows.Next() {
-			var id, name string
-			err := rows.Scan(&id, &name)
-			if err != nil {
+			var mc models.MiniCampaign
+			if err := rows.Scan(&mc.ID, &mc.Name); err != nil {
 				rows.Close()
-				db.CaptureError(err, "", nil, "batch scan")
+				db.CaptureError(err, "", nil, "campaign scan")
 				return nil, errx.InternalError()
 			}
-			ncontacts[i].Campaigns[idx] = models.MiniCampaign{
-				ID:   id,
-				Name: name,
-			}
-			idx++
+			linked = append(linked, mc)
 		}
 		rows.Close()
 		if err := rows.Err(); err != nil {
-			brc.Close()
-			db.CaptureError(err, "", nil, "rows")
+			db.CaptureError(err, "", nil, "campaign rows")
 			return nil, errx.InternalError()
 		}
+		ncontacts[i].Campaigns = linked
 	}
-
-	brc.Close()
 
 	if err := tx.Commit(ctx); err != nil {
 		db.CaptureError(err, "", nil, "commit")
@@ -189,6 +244,35 @@ func (r *contactRepository) GetByID(ctx context.Context, contactID uuid.UUID) (*
 		return nil, errx.InternalError()
 	}
 
+	contact.Campaigns = []models.MiniCampaign{}
+	return &contact, nil
+}
+
+func (r *contactRepository) GetByEmailAndOrganization(ctx context.Context, organizationID uuid.UUID, email string) (*models.Contact, *errx.Error) {
+	query := `
+		SELECT
+			c.id, c.first_name, c.last_name, c.email, c.company, c.phone,
+			c.custom_fields, c.subscribed, c.updated_at, c.created_at
+		FROM contacts c
+		WHERE c.organization_id = $1
+		  AND LOWER(c.email) = LOWER($2)
+		ORDER BY c.updated_at DESC
+		LIMIT 1
+	`
+
+	var contact models.Contact
+	err := r.DB.QueryRow(ctx, query, organizationID, strings.TrimSpace(email)).Scan(
+		&contact.ID, &contact.FirstName, &contact.LastName, &contact.Email,
+		&contact.Company, &contact.Phone, &contact.CustomFields, &contact.Subscribed,
+		&contact.UpdatedAt, &contact.CreatedAt,
+	)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
+		db.CaptureError(err, query, []any{organizationID, email}, "queryrow")
+		return nil, errx.InternalError()
+	}
 	contact.Campaigns = []models.MiniCampaign{}
 	return &contact, nil
 }
@@ -307,11 +391,11 @@ func (r *contactRepository) Search(
 		}
 		campaignClause := fmt.Sprintf(`
 			c.id IN (
-				SELECT contact
+				SELECT contact_id
 				FROM campaign_leads
-				WHERE campaign IN (%s)
-				GROUP BY contact
-				HAVING COUNT(DISTINCT campaign) = %d
+				WHERE campaign_id IN (%s)
+				GROUP BY contact_id
+				HAVING COUNT(DISTINCT campaign_id) = %d
 			)
 		`, strings.Join(placeholders, ","), len(filters.CampaignIDs))
 		whereClauses = append(whereClauses, campaignClause)
@@ -413,9 +497,9 @@ func (r *contactRepository) Search(
 			) AS campaigns
 		FROM contacts c
 		LEFT JOIN (
-			SELECT contact_id, COUNT(campaign) AS campaign_count
+			SELECT contact_id, COUNT(campaign_id) AS campaign_count
 			FROM campaign_leads
-			GROUP BY contact
+			GROUP BY contact_id
 		) cl ON c.id = cl.contact_id
 		%s
 		ORDER BY %s %s, c.id ASC
@@ -431,10 +515,10 @@ func (r *contactRepository) Search(
 			SELECT COUNT(*)
 			FROM contacts c
 			LEFT JOIN (
-				SELECT contact, COUNT(campaign) AS campaign_count
+				SELECT contact_id, COUNT(campaign_id) AS campaign_count
 				FROM campaign_leads
-				GROUP BY contact
-			) cl ON c.id = cl.contact
+				GROUP BY contact_id
+			) cl ON c.id = cl.contact_id
 			%s
 		`, whereSQL)
 		var tmp int64
@@ -455,7 +539,11 @@ func (r *contactRepository) Search(
 	}
 	defer rows.Close()
 
-	var contacts []models.Contact
+	// Initialize as non-nil so JSON marshals to [] on zero rows. A nil
+	// slice marshals to `null`, and the frontend's flatMap((p) => p.data)
+	// then produces [null], which crashes any downstream `.subscribed`
+	// access. Always return an array.
+	contacts := make([]models.Contact, 0, limit+1)
 	for rows.Next() {
 		var c models.Contact
 		var campaignCount int
@@ -530,8 +618,8 @@ func (r *contactRepository) Update(ctx context.Context, userID, contactID string
 				(
 					SELECT json_agg(json_build_object('id', cam.id, 'name', cam.name))
 					FROM campaign_leads cl2
-					JOIN campaigns cam ON cl2.campaign = cam.id
-					WHERE cl2.contact = c.id AND cam.user_id = $2
+					JOIN campaigns cam ON cl2.campaign_id = cam.id
+					WHERE cl2.contact_id = c.id AND cam.user_id = $2
 				),
 				'[]'::json
 			) AS campaigns
@@ -680,7 +768,7 @@ func (r *contactRepository) Update(ctx context.Context, userID, contactID string
 		// Delete removed campaigns
 		query = `
 			DELETE FROM campaign_leads
-			WHERE contact = $1 AND campaign = $2
+			WHERE contact_id = $1 AND campaign_id = $2
 		`
 		for _, campaignID := range toDelete {
 			params := []any{
@@ -700,11 +788,11 @@ func (r *contactRepository) Update(ctx context.Context, userID, contactID string
 
 		// Insert new campaigns
 		query = `
-			INSERT INTO campaign_leads (contact, campaign)
+			INSERT INTO campaign_leads (contact_id, campaign_id)
 			SELECT $1, id
 			FROM campaigns
 			WHERE id = $2 AND user_id = $3
-			ON CONFLICT (campaign, contact) DO NOTHING
+			ON CONFLICT (campaign_id, contact_id) DO NOTHING
 		`
 		for _, campaignID := range toInsert {
 			params := []any{
@@ -731,8 +819,8 @@ func (r *contactRepository) Update(ctx context.Context, userID, contactID string
 				(
 					SELECT json_agg(json_build_object('id', cam.id, 'name', cam.name))
 					FROM campaign_leads cl
-					JOIN campaigns cam ON cl.campaign = cam.id
-					WHERE cl.contact = $1 AND cam.user_id = $2
+					JOIN campaigns cam ON cl.campaign_id = cam.id
+					WHERE cl.contact_id =$1 AND cam.user_id = $2
 				),
 				'[]'::json
 			)
@@ -787,6 +875,7 @@ func (r *contactRepository) BulkUpdate(ctx context.Context, userID string, data 
 		db.CaptureError(err, "", nil, "begin")
 		return nil, errx.InternalError()
 	}
+	defer tx.Rollback(ctx)
 
 	b := &pgx.Batch{}
 
@@ -799,19 +888,25 @@ func (r *contactRepository) BulkUpdate(ctx context.Context, userID string, data 
 
 	if len(data.RemoveCampaigns) > 0 {
 		b.Queue(`DELETE FROM campaign_leads cl
-		         USING contacts c
-		         WHERE cl.contact = c.id
+		         USING contacts c, campaigns cam
+		         WHERE cl.contact_id = c.id
+		           AND cl.campaign_id = cam.id
 		           AND c.user_id = $1
-		           AND cl.contact = ANY($2)
-		           AND cl.campaign = ANY($3)`,
+		           AND cam.user_id = $1
+		           AND cl.contact_id = ANY($2)
+		           AND cl.campaign_id = ANY($3)`,
 			userID, data.Contacts, data.RemoveCampaigns)
 	}
 
 	if len(data.AddCampaigns) > 0 {
-		b.Queue(`INSERT INTO campaign_leads (contact, campaign)
-		         SELECT c.id, UNNEST($3::uuid[])
+		b.Queue(`INSERT INTO campaign_leads (contact_id, campaign_id)
+		         SELECT c.id, cam.id
 		         FROM contacts c
-		         WHERE c.user_id = $1 AND c.id = ANY($2)
+		         CROSS JOIN campaigns cam
+		         WHERE c.user_id = $1
+		           AND c.id = ANY($2)
+		           AND cam.id = ANY($3::uuid[])
+		           AND cam.user_id = $1
 		         ON CONFLICT DO NOTHING`,
 			userID, data.Contacts, data.AddCampaigns)
 	}
@@ -866,8 +961,8 @@ func (r *contactRepository) BulkUpdate(ctx context.Context, userID string, data 
 				(
 					SELECT json_agg(json_build_object('id', cam.id, 'name', cam.name))
 					FROM campaign_leads cl
-					JOIN campaigns cam ON cl.campaign = cam.id
-					WHERE cl.contact = c.id AND cam.user_id = $2
+					JOIN campaigns cam ON cl.campaign_id = cam.id
+					WHERE cl.contact_id =c.id AND cam.user_id = $2
 				),
 				'[]'::json
 			) AS campaigns

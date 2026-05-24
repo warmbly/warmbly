@@ -13,12 +13,12 @@ import (
 type CRMService interface {
 	// Notes
 	CreateNote(ctx context.Context, orgID, contactID, userID uuid.UUID, data *models.CreateContactNote) (*models.ContactNote, *errx.Error)
-	ListNotes(ctx context.Context, contactID uuid.UUID, limit int, cursor *uuid.UUID) (*models.ContactNotesResult, *errx.Error)
+	ListNotes(ctx context.Context, orgID, contactID uuid.UUID, limit int, cursor *uuid.UUID) (*models.ContactNotesResult, *errx.Error)
 	UpdateNote(ctx context.Context, orgID, noteID uuid.UUID, data *models.UpdateContactNote) (*models.ContactNote, *errx.Error)
 	DeleteNote(ctx context.Context, orgID, noteID uuid.UUID) *errx.Error
 
 	// Activities
-	ListActivities(ctx context.Context, contactID uuid.UUID, limit int, cursor *uuid.UUID) (*models.ContactActivitiesResult, *errx.Error)
+	ListActivities(ctx context.Context, orgID, contactID uuid.UUID, limit int, cursor *uuid.UUID) (*models.ContactActivitiesResult, *errx.Error)
 
 	// Pipelines
 	CreatePipeline(ctx context.Context, orgID uuid.UUID, data *models.CreatePipeline) (*models.Pipeline, *errx.Error)
@@ -92,11 +92,11 @@ func (s *crmService) CreateNote(ctx context.Context, orgID, contactID, userID uu
 	return note, nil
 }
 
-func (s *crmService) ListNotes(ctx context.Context, contactID uuid.UUID, limit int, cursor *uuid.UUID) (*models.ContactNotesResult, *errx.Error) {
+func (s *crmService) ListNotes(ctx context.Context, orgID, contactID uuid.UUID, limit int, cursor *uuid.UUID) (*models.ContactNotesResult, *errx.Error) {
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}
-	result, err := s.repo.ListNotes(ctx, contactID, limit, cursor)
+	result, err := s.repo.ListNotes(ctx, orgID, contactID, limit, cursor)
 	if err != nil {
 		return nil, toErrx(err)
 	}
@@ -135,11 +135,11 @@ func (s *crmService) DeleteNote(ctx context.Context, orgID, noteID uuid.UUID) *e
 // Activities
 // =====================
 
-func (s *crmService) ListActivities(ctx context.Context, contactID uuid.UUID, limit int, cursor *uuid.UUID) (*models.ContactActivitiesResult, *errx.Error) {
+func (s *crmService) ListActivities(ctx context.Context, orgID, contactID uuid.UUID, limit int, cursor *uuid.UUID) (*models.ContactActivitiesResult, *errx.Error) {
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}
-	result, err := s.repo.ListActivities(ctx, contactID, limit, cursor)
+	result, err := s.repo.ListActivities(ctx, orgID, contactID, limit, cursor)
 	if err != nil {
 		return nil, toErrx(err)
 	}

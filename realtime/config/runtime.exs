@@ -40,9 +40,11 @@ if config_env() == :prod do
     # Redis configuration
     redis_url: System.get_env("REDIS_URL") || "redis://localhost:6379/0",
     # Connection limits
-    max_connections_per_user: String.to_integer(System.get_env("MAX_CONNECTIONS_PER_USER") || "10"),
+    max_connections_per_user:
+      String.to_integer(System.get_env("MAX_CONNECTIONS_PER_USER") || "10"),
     max_connections_per_ip: String.to_integer(System.get_env("MAX_CONNECTIONS_PER_IP") || "50"),
-    max_connections_global: String.to_integer(System.get_env("MAX_CONNECTIONS_GLOBAL") || "100000"),
+    max_connections_global:
+      String.to_integer(System.get_env("MAX_CONNECTIONS_GLOBAL") || "100000"),
     # Rate limits (per minute)
     rate_limit_ws_message: String.to_integer(System.get_env("RATE_LIMIT_WS_MESSAGE") || "120"),
     rate_limit_ws_join: String.to_integer(System.get_env("RATE_LIMIT_WS_JOIN") || "30"),
@@ -60,14 +62,15 @@ if config_env() == :prod do
   # Ecto Repo configuration (for API key validation)
   config :realtime, Realtime.Repo,
     url: database_url,
-    pool_size: String.to_integer(System.get_env("DATABASE_POOL_SIZE") || "10")
+    ssl: System.get_env("DATABASE_SSL", "true") == "true",
+    pool_size: String.to_integer(System.get_env("DATABASE_POOL_SIZE") || "10"),
+    show_sensitive_data_on_connection_error: true
 
   # Sentry configuration
   if sentry_dsn = System.get_env("SENTRY_DSN") do
     config :sentry,
       dsn: sentry_dsn,
-      environment_name: :prod,
-      included_environments: [:prod]
+      environment_name: :prod
   end
 
   # Goth for GCP authentication

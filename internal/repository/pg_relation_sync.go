@@ -102,8 +102,8 @@ func SyncEmailTags(ctx context.Context, tx pgx.Tx, emailAccountID string, newTag
 		Tx:         tx,
 		Ctx:        ctx,
 		Table:      "email_tags",
-		ColMain:    "email",
-		ColRelated: "tag",
+		ColMain:    "email_id",
+		ColRelated: "tag_id",
 		MainID:     emailAccountID,
 		NewValues:  newTags,
 	})

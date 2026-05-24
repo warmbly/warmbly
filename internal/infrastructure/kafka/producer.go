@@ -1,10 +1,10 @@
 package kafka
 
 import (
-	"fmt"
 	"time"
 
 	ckf "github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	"github.com/rs/zerolog/log"
 )
 
 type Producer struct {
@@ -58,7 +58,7 @@ func (pr *Producer) WithAvrov2(avrov2 *Avrov2) {
 func (pr *Producer) Close() {
 	undelivered := pr.p.Flush(30_000) // 30 seconds
 	if undelivered > 0 {
-		fmt.Printf("%d messages were not delivered during shutdown", undelivered)
+		log.Warn().Int("count", undelivered).Msg("messages not delivered during shutdown")
 	}
 	pr.p.Close()
 }

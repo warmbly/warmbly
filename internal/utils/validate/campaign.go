@@ -23,7 +23,7 @@ func CampaignDescription(description string) *errx.Error {
 }
 
 func CampaignDailyLimit(val int) *errx.Error {
-	if val < 3 || val > 10_000_000 {
+	if val < 3 || val > 100 {
 		return errx.ErrCampaignDailyLimit
 	}
 	return nil

@@ -3,7 +3,10 @@ package main
 import (
 	"context"
 	"log"
+	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/MicahParks/keyfunc/v3"
@@ -15,6 +18,7 @@ import (
 	"github.com/warmbly/warmbly/internal/api/handler"
 	"github.com/warmbly/warmbly/internal/api/middleware"
 	"github.com/warmbly/warmbly/internal/app/admin"
+	"github.com/warmbly/warmbly/internal/app/advanced"
 	"github.com/warmbly/warmbly/internal/app/apikey"
 	"github.com/warmbly/warmbly/internal/app/auth"
 	"github.com/warmbly/warmbly/internal/app/campaign"
@@ -27,6 +31,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/feature"
 	"github.com/warmbly/warmbly/internal/app/group"
 	"github.com/warmbly/warmbly/internal/app/organization"
+	"github.com/warmbly/warmbly/internal/app/releases"
 	"github.com/warmbly/warmbly/internal/app/sequence"
 	"github.com/warmbly/warmbly/internal/app/socket"
 	"github.com/warmbly/warmbly/internal/app/stripe"
@@ -37,13 +42,15 @@ import (
 	"github.com/warmbly/warmbly/internal/app/tz"
 	"github.com/warmbly/warmbly/internal/app/unibox"
 	"github.com/warmbly/warmbly/internal/app/user"
+	warmupapp "github.com/warmbly/warmbly/internal/app/warmup"
 	"github.com/warmbly/warmbly/internal/app/worker"
+	"github.com/warmbly/warmbly/internal/app/worker_orchestrator"
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/events"
 	"github.com/warmbly/warmbly/internal/infrastructure/cache"
-	"github.com/warmbly/warmbly/internal/infrastructure/cdb"
 	"github.com/warmbly/warmbly/internal/infrastructure/db"
 	"github.com/warmbly/warmbly/internal/infrastructure/dynamo"
+	"github.com/warmbly/warmbly/internal/infrastructure/gtasks"
 	"github.com/warmbly/warmbly/internal/infrastructure/kafka"
 	"github.com/warmbly/warmbly/internal/infrastructure/kms"
 	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
@@ -51,15 +58,19 @@ import (
 	"github.com/warmbly/warmbly/internal/jobs"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/notify"
+	"github.com/warmbly/warmbly/internal/observability"
 	"github.com/warmbly/warmbly/internal/pkg/captcha"
 	"github.com/warmbly/warmbly/internal/pkg/geo"
 	"github.com/warmbly/warmbly/internal/repository"
 	"github.com/warmbly/warmbly/internal/scheduler"
+	"github.com/warmbly/warmbly/internal/tasks"
 )
 
 func main() {
 	var addr string
 	var ginMode string
+	var websocketURI string
+	var allowedOrigins []string
 
 	var tzService tz.TzService
 
@@ -76,6 +87,8 @@ func main() {
 	var socketService socket.SocketService
 	var uniboxService unibox.UniboxService
 	var cipherService cipher.CipherService
+	var tasksService tasks.TasksService
+	var advancedService advanced.Service
 
 	var folderService group.GroupService
 	var tagService group.GroupService
@@ -98,8 +111,17 @@ func main() {
 	// Admin
 	var adminService admin.AdminService
 
+	// Worker orchestrator (SSH-driven admin worker lifecycle)
+	var workerOrchestrator *worker_orchestrator.Orchestrator
+	var workerRepoForHandler repository.WorkerRepository
+	var credentialsRepository repository.CredentialsRepository
+	var releasesService *releases.Service
+
 	// Notifications
 	var emailNotificationService notify.EmailNotificationService
+
+	// Warmup
+	var warmupService warmupapp.Service
 
 	// Danger zone (delayed deletions)
 	var dangerZoneService dangerzone.Service
@@ -107,8 +129,17 @@ func main() {
 	// Pub/Sub for realtime streaming
 	var streamingPublisher *pubsub.StreamingPublisher
 
+	// Surfaced into the handler for avatar uploads and other direct
+	// repository / object-storage needs. Declared up here so they
+	// survive the config block where they're initialized.
+	var s3ForHandler *storage.Client
+	var userRepoForHandler repository.UserRepository
+	var organizationRepoForHandler repository.OrganizationRepository
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	{
-		ctx := context.Background()
 
 		// Load config with env-first approach
 		cfg, err := config.NewConfig(ctx)
@@ -116,19 +147,8 @@ func main() {
 			log.Fatal(err)
 		}
 
-		if cfg.Env == "prod" {
-			sentryDsn, err := cfg.LoadSentryDSNBackend(ctx)
-			if err != nil {
-				log.Fatal(err)
-			}
-
-			err = sentry.Init(sentry.ClientOptions{
-				Dsn:            sentryDsn,
-				SendDefaultPII: true,
-			})
-			if err != nil {
-				log.Fatal(err)
-			}
+		if err := observability.InitSentry(ctx, cfg, "backend"); err != nil {
+			log.Fatal(err)
 		}
 
 		serviceAccount, err = cfg.LoadGoogleServiceAccount(ctx)
@@ -139,8 +159,12 @@ func main() {
 
 		keySet, err = keyfunc.NewDefaultCtx(ctx, []string{"https://www.googleapis.com/oauth2/v3/certs"})
 		if err != nil {
-			sentry.CaptureException(err)
-			log.Fatal(err)
+			if cfg.Env == "dev" {
+				log.Printf("Warning: Failed to fetch Google OIDC keys: %v", err)
+			} else {
+				sentry.CaptureException(err)
+				log.Fatal(err)
+			}
 		}
 
 		apiCfg, err := cfg.LoadApiConfig(ctx)
@@ -157,7 +181,7 @@ func main() {
 		}
 
 		var masterKey string = "alias/master-key"
-		if cfg.Env == "prod" {
+		if cfg.Env != "prod" {
 			masterKey += "-dev"
 		}
 
@@ -173,10 +197,15 @@ func main() {
 			log.Fatal(err)
 		}
 
-		geoloc, err := geo.New(geoPath)
+		var geoloc *geo.Client
+		geoloc, err = geo.New(geoPath)
 		if err != nil {
-			sentry.CaptureException(err)
-			log.Fatal(err)
+			if cfg.Env == "dev" {
+				log.Printf("Warning: GeoIP database not found at %s, geo lookups disabled", geoPath)
+			} else {
+				sentry.CaptureException(err)
+				log.Fatal(err)
+			}
 		}
 
 		s3, err := storage.NewClient(ctx, awscfg, "main")
@@ -184,6 +213,7 @@ func main() {
 			sentry.CaptureException(err)
 			log.Fatal(err)
 		}
+		s3ForHandler = s3
 
 		primaryDBEndpoint, err := cfg.LoadPrimaryDBEndpoint(ctx)
 		if err != nil {
@@ -204,18 +234,6 @@ func main() {
 			log.Fatal("Failed to run migrations: ", err)
 		}
 		log.Println("Database migrations completed")
-
-		astraConfig, err := cfg.LoadAstraConfig(ctx)
-		if err != nil {
-			sentry.CaptureException(err)
-			log.Fatal(err)
-		}
-
-		cassandraDB, err := cdb.NewClient(astraConfig)
-		if err != nil {
-			sentry.CaptureException(err)
-			log.Fatal(err)
-		}
 
 		dynamoDB, err := dynamo.NewClient(ctx, awscfg)
 		if err != nil {
@@ -253,14 +271,24 @@ func main() {
 			log.Fatal(err)
 		}
 
-		emailNotificationService, err = notify.NewEmailNotficiationService(
-			ctx,
-			emailCfg.EmailName,
-			emailCfg.EmailAddress,
-		)
-		if err != nil {
-			sentry.CaptureException(err)
-			log.Fatal(err)
+		smtpCfg := cfg.LoadSMTPConfig(ctx)
+		if smtpCfg != nil {
+			emailNotificationService = notify.NewSMTPEmailNotificationService(
+				emailCfg.EmailName,
+				emailCfg.EmailAddress,
+				smtpCfg.Host,
+				smtpCfg.Port,
+			)
+		} else {
+			emailNotificationService, err = notify.NewEmailNotficiationService(
+				ctx,
+				emailCfg.EmailName,
+				emailCfg.EmailAddress,
+			)
+			if err != nil {
+				sentry.CaptureException(err)
+				log.Fatal(err)
+			}
 		}
 
 		authCfg, err := cfg.LoadAuthConfig(ctx)
@@ -276,15 +304,22 @@ func main() {
 			nil,
 		)
 
-		appleAuth, err := apple.NewB64(
+		var appleAuthClient apple.AppleAuth
+		appleAuthInstance, appleErr := apple.NewB64(
 			authCfg.AppleAppID,
 			authCfg.AppleTeamID,
 			authCfg.AppleKeyID,
 			authCfg.AppleKeySecret,
 		)
-		if err != nil {
-			sentry.CaptureException(err)
-			log.Fatal(err)
+		if appleErr != nil {
+			if cfg.Env == "dev" {
+				log.Printf("Warning: Apple auth initialization failed (expected in dev): %v", appleErr)
+			} else {
+				sentry.CaptureException(appleErr)
+				log.Fatal(appleErr)
+			}
+		} else {
+			appleAuthClient = appleAuthInstance
 		}
 
 		kafkaBootstrapServers, err := cfg.LoadKafkaBootstrapServers(ctx)
@@ -312,7 +347,9 @@ func main() {
 		}
 
 		kafkaProducerConfig := kafka.NewProducer(kafkaBootstrapServers)
-		kafkaProducerConfig.WithSASL(kafkaSaslConfig)
+		if kafkaSaslConfig != nil {
+			kafkaProducerConfig.WithSASL(kafkaSaslConfig)
+		}
 
 		kafkaProducer, err := kafkaProducerConfig.Connect()
 		if err != nil {
@@ -322,16 +359,28 @@ func main() {
 
 		kafkaProducer.WithAvrov2(avrov2Client)
 
-		captcha := captcha.NewTurnstile(authCfg.TurnstileSecret)
+		turnstileBypassToken := ""
+		if cfg.Env == "dev" {
+			turnstileBypassToken = authCfg.TurnstileBypass
+			if turnstileBypassToken == "" {
+				turnstileBypassToken = "warmbly-local-turnstile-bypass"
+			}
+		}
+
+		captcha := captcha.NewTurnstileFromConfig(captcha.TurnstileConfig{
+			Secret:      authCfg.TurnstileSecret,
+			BypassToken: turnstileBypassToken,
+		})
 
 		userRepostory := repository.NewUserRepostory(primaryDB, kms)
+		userRepoForHandler = userRepostory
 		authRepostory := repository.NewAuthRepostory(primaryDB)
 		tokenRepostory := repository.NewTokenRepostory(primaryDB)
 		emailRepostory := repository.NewEmailRepostory(primaryDB)
 		campaignRepostory := repository.NewCampaignRepostory(primaryDB)
 		sequenceRepostory := repository.NewSequenceRepostory(primaryDB)
 		contactRepostory := repository.NewContactRepostory(primaryDB)
-		uniboxRepository := repository.NewUniboxRepository(cassandraDB)
+		uniboxRepository := repository.NewUniboxRepository(primaryDB)
 		userEncryptedKeysRepository := repository.NewUserEncryptedKeysRepository(kms, dynamoDB)
 
 		folderRepostory := repository.NewGroupRepostory(primaryDB, models.Folders)
@@ -343,13 +392,16 @@ func main() {
 		planRepository := repository.NewPlanRepository(primaryDB.Pool)
 		workerRepository := repository.NewWorkerRepository(primaryDB.Pool)
 		organizationRepository := repository.NewOrganizationRepository(primaryDB.Pool)
+		organizationRepoForHandler = organizationRepository
 		taskRepository := repository.NewTaskRepository(primaryDB.Pool)
 		apiKeyRepository := repository.NewAPIKeyRepository(primaryDB)
 		crmRepository := repository.NewCRMRepository(primaryDB.Pool)
+		advancedRepository := repository.NewAdvancedOutreachRepository(primaryDB.Pool)
 		templateRepository := repository.NewTemplateRepository(primaryDB.Pool)
 		warmupRepository := repository.NewWarmupRepository(primaryDB.Pool)
 		campaignProgressRepository := repository.NewCampaignProgressRepository(primaryDB.Pool)
 		campaignLogRepository := repository.NewCampaignLogRepository(primaryDB)
+		warmupService = warmupapp.NewService(warmupRepository)
 
 		tzService = tz.NewService()
 
@@ -369,6 +421,7 @@ func main() {
 		stripeService = stripe.NewService(stripeCfg, subscriptionRepository, planRepository, workerAssignmentService)
 
 		tokenService = token.NewService(primaryDB, tokenRepostory, cache, geoloc, authCfg.AuthSecret)
+		userService = user.NewService(userRepostory, cache)
 		authService = auth.NewService(
 			authRepostory,
 			cache,
@@ -377,15 +430,60 @@ func main() {
 			emailNotificationService,
 			&models.ExternalAuth{
 				GoogleAuth: googleAuth,
-				AppleAuth:  appleAuth,
+				AppleAuth:  appleAuthClient,
 			},
 			trialService,
 			organizationService,
+			userRepostory,
+			userService,
 		)
-		userService = user.NewService(userRepostory, cache)
 		cipherService = cipher.NewService(kms, cache, userEncryptedKeysRepository)
+
+		// Worker orchestrator. The env config below is the FALLBACK that gets
+		// written into /etc/warmbly/worker.env when a worker has no profile
+		// assigned. Production workers should reference a worker_profile row;
+		// dev/sim can rely on the fallback so docker-compose still works.
+		workerRepoForHandler = workerRepository
+		credentialsRepository = repository.NewCredentialsRepository(primaryDB.Pool)
+		workerOrchestrator = worker_orchestrator.New(
+			workerRepository,
+			credentialsRepository,
+			cipherService,
+			worker_orchestrator.WorkerEnvConfig{
+				AppEnv:               os.Getenv("APP_ENV"),
+				WorkerImage:          getenvDefault("WORKER_IMAGE", "ghcr.io/warmbly/worker:latest"),
+				KafkaBootstrap:       os.Getenv("KAFKA_BOOTSTRAP_SERVERS"),
+				KafkaSASLUsername:    os.Getenv("KAFKA_SASL_USERNAME"),
+				KafkaSASLPassword:    os.Getenv("KAFKA_SASL_PASSWORD"),
+				SchemaRegistryURL:    os.Getenv("SCHEMA_REGISTRY_URL"),
+				SchemaRegistryKey:    os.Getenv("SCHEMA_REGISTRY_KEY"),
+				SchemaRegistrySecret: os.Getenv("SCHEMA_REGISTRY_SECRET"),
+				RedisURL:             os.Getenv("REDIS"),
+				AWSRegion:            os.Getenv("AWS_REGION"),
+				AWSAccessKeyID:       os.Getenv("WORKER_AWS_ACCESS_KEY_ID"),
+				AWSSecretAccessKey:   os.Getenv("WORKER_AWS_SECRET_ACCESS_KEY"),
+			},
+			getenvDefault("WORKER_INSTALLER_PATH", "/app/scripts/install-worker.sh"),
+		)
+
+		// Releases service. Env-configurable so self-hosters can point at their
+		// own repo/registry, or disable the feature entirely.
+		releasesService = releases.New(
+			releases.Config{
+				Enabled:         getenvDefault("RELEASES_ENABLED", "true") == "true",
+				GithubRepo:      getenvDefault("RELEASES_GITHUB_REPO", "warmbly/warmbly"),
+				WorkerImageRepo: getenvDefault("RELEASES_WORKER_IMAGE_REPO", "ghcr.io/warmbly/warmbly/worker"),
+				WebhookSecret:   os.Getenv("RELEASES_WEBHOOK_SECRET"),
+				GithubToken:     os.Getenv("RELEASES_GITHUB_TOKEN"),
+			},
+			credentialsRepository,
+			workerRepository,
+			workerOrchestrator,
+		)
+		releasesService.RunBootCheck(ctx)
+
 		eventsPublisher := events.NewPublisher(kafkaProducer, s3, avrov2Client, cipherService)
-		emailService = email.NewServiceWithKafka(emailRepostory, cipherService, eventsPublisher, kafkaProducer, cache)
+		emailService = email.NewServiceWithKafka(emailRepostory, cipherService, featureGateService, warmupService, eventsPublisher, kafkaProducer, cache)
 		campaignService = campaign.NewService(campaignRepostory, taskRepository, emailRepostory, campaignLogRepository, featureGateService, streamingPublisher)
 		sequenceService = sequence.NewService(sequenceRepostory)
 		contactService = contact.NewService(contactRepostory, subscriptionRepository, planRepository)
@@ -394,10 +492,55 @@ func main() {
 		socketService = socket.NewService(cache, tokenService)
 		uniboxService = unibox.NewService(cache, s3, uniboxRepository)
 
+		// Cloud Tasks client
+		cloudTasksCfg, err := cfg.LoadCloudTasksConfig(ctx)
+		if err != nil {
+			sentry.CaptureException(err)
+			log.Fatal(err)
+		}
+
+		tasksClient, err := gtasks.NewClient(ctx, cloudTasksCfg.QueueName, cloudTasksCfg.WebhookURL, serviceAccount, cloudTasksCfg.EmulatorHost)
+		if err != nil {
+			sentry.CaptureException(err)
+			log.Fatal(err)
+		}
+
 		// Template & email send services
 		templateService = template.NewService(templateRepository)
 		schedulerService := scheduler.NewSchedulerService(taskRepository, warmupRepository, campaignProgressRepository, emailRepostory, campaignRepostory)
-		emailSendService = emailsend.NewService(taskRepository, emailRepostory, schedulerService, nil, featureGateService)
+		emailSendService = emailsend.NewService(taskRepository, emailRepostory, schedulerService, tasksClient, featureGateService)
+		advancedService = advanced.NewService(
+			advancedRepository,
+			campaignRepostory,
+			emailRepostory,
+			taskRepository,
+			contactRepostory,
+			campaignProgressRepository,
+			crmRepository,
+			tasksClient,
+			warmupService,
+		)
+		emailSender := tasks.NewEmailSender(emailRepostory, eventsPublisher)
+		tasksService = tasks.NewService(
+			tasksClient,
+			kafkaProducer,
+			nil, // AI generation client is optional for task execution
+			streamingPublisher,
+			eventsPublisher,
+			schedulerService,
+			cipherService,
+			emailSender,
+			featureGateService,
+			warmupService,
+			taskRepository,
+			warmupRepository,
+			campaignProgressRepository,
+			emailRepostory,
+			campaignRepostory,
+			contactRepostory,
+			campaignLogRepository,
+			advancedService,
+		)
 
 		// Admin service
 		adminRepository := repository.NewAdminRepository(primaryDB.Pool)
@@ -427,6 +570,8 @@ func main() {
 
 		addr = apiCfg.Hostname
 		ginMode = apiCfg.GinMode
+		websocketURI = apiCfg.WebsocketURI
+		allowedOrigins = apiCfg.AllowedOrigins
 	}
 
 	h := &handler.Handler{
@@ -445,6 +590,7 @@ func main() {
 
 		TzService:     tzService,
 		SocketService: socketService,
+		TasksService:  tasksService,
 
 		// API Keys
 		APIKeyService: apiKeyService,
@@ -471,8 +617,28 @@ func main() {
 		// Admin
 		AdminService: adminService,
 
+		// SSH-managed worker lifecycle
+		WorkerOrchestrator: workerOrchestrator,
+		WorkerRepo:         workerRepoForHandler,
+		CredentialsRepo:    credentialsRepository,
+		ReleasesService:    releasesService,
+
 		// Notifications
 		EmailNotificationService: emailNotificationService,
+
+		// Advanced outreach controls
+		AdvancedService: advancedService,
+
+		// Warmup health
+		WarmupService: warmupService,
+
+		WebsocketURI: websocketURI,
+
+		// Object storage + direct repository handles for handlers
+		// without a dedicated service layer (avatars, etc.).
+		Storage:  s3ForHandler,
+		UserRepo: userRepoForHandler,
+		OrgRepo:  organizationRepoForHandler,
 
 		// Danger zone
 		DangerZoneService: dangerZoneService,
@@ -487,9 +653,48 @@ func main() {
 	oidcH := &middleware.OidcHandler{
 		ServiceAccount: serviceAccount,
 		KeySet:         keySet,
+		AppEnv:         os.Getenv("APP_ENV"),
 	}
 
 	sentry.CaptureMessage("Starting the backend on " + addr)
 
-	api.Run(h, m, oidcH, addr, ginMode)
+	router := api.Run(h, m, oidcH, addr, ginMode, allowedOrigins)
+
+	srv := &http.Server{
+		Addr:    addr,
+		Handler: router,
+	}
+
+	// Start server in a goroutine
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Server error: %v", err)
+		}
+	}()
+
+	log.Println("Backend started on", addr)
+
+	// Wait for interrupt signal for graceful shutdown
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	<-sigCh
+
+	log.Println("Shutting down backend...")
+	cancel()
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutdownCancel()
+
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Printf("Server shutdown error: %v", err)
+	}
+
+	log.Println("Backend stopped")
+}
+
+func getenvDefault(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
 }

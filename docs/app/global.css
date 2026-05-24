@@ -1,0 +1,19 @@
+@import 'tailwindcss';
+@import 'fumadocs-ui/css/neutral.css';
+@import 'fumadocs-ui/css/preset.css';
+
+:root {
+  --primary: oklch(0.588 0.158 241.966);
+  --primary-foreground: oklch(0.985 0 0);
+  --ring: oklch(0.588 0.158 241.966);
+  --accent: oklch(0.968 0.007 247.858);
+  --accent-foreground: oklch(0.205 0 0);
+}
+
+.dark {
+  --primary: oklch(0.588 0.158 241.966);
+  --primary-foreground: oklch(0.985 0 0);
+  --ring: oklch(0.588 0.158 241.966);
+  --accent: oklch(0.279 0.029 256.848);
+  --accent-foreground: oklch(0.985 0 0);
+}

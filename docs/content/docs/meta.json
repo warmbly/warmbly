@@ -1,0 +1,11 @@
+{
+  "title": "Documentation",
+  "pages": [
+    "index",
+    "authentication",
+    "---API Keys---",
+    "api-keys",
+    "---Reference---",
+    "reference"
+  ]
+}

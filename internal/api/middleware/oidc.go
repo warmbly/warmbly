@@ -17,10 +17,16 @@ const (
 type OidcHandler struct {
 	ServiceAccount string
 	KeySet         keyfunc.Keyfunc
+	AppEnv         string
 }
 
 func (h *OidcHandler) Middleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if h.AppEnv == "dev" {
+			c.Next()
+			return
+		}
+
 		auth := c.GetHeader("Authorization")
 		if auth == "" || !strings.HasPrefix(auth, "Bearer ") {
 			errx.Handle(c, errx.ErrForbidden)

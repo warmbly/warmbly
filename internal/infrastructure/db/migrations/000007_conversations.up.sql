@@ -1,11 +1,11 @@
-CREATE TYPE conversation_theme_status AS ENUM("inactive", "active");
-CREATE TYPE conversation_generation_status AS ENUM("none", "slow", "medium", "fast", "ultra");
+CREATE TYPE conversation_theme_status AS ENUM('inactive', 'active');
+CREATE TYPE conversation_generation_status AS ENUM('none', 'slow', 'medium', 'fast', 'ultra');
 
 CREATE TABLE conversation_themes (
     id UUID NOT NULL DEFAULT gen_random_uuid(),
     name TEXT NOT NULL,
-    status conversation_theme_status NOT NULL DEFAULT "inactive",
-    generation_status conversation_generation_status NOT NULL DEFAULT "none"
+    status conversation_theme_status NOT NULL DEFAULT 'inactive',
+    generation_status conversation_generation_status NOT NULL DEFAULT 'none',
 
     PRIMARY KEY (id)
 );

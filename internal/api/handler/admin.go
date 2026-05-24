@@ -368,6 +368,20 @@ func (h *Handler) AdminListWarmupPools(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"pools": pools})
 }
 
+// AdminGetWarmupHealthSummary returns an aggregate health overview of all warmup pools
+func (h *Handler) AdminGetWarmupHealthSummary(c *gin.Context) {
+	if h.WarmupService == nil {
+		errx.JSON(c, errx.New(errx.Internal, "warmup service not available"))
+		return
+	}
+	summary, xerr := h.WarmupService.GetPoolHealthSummary(c.Request.Context())
+	if xerr != nil {
+		errx.JSON(c, xerr)
+		return
+	}
+	c.JSON(http.StatusOK, summary)
+}
+
 // AdminGetPoolParticipants gets participants in a warmup pool
 func (h *Handler) AdminGetPoolParticipants(c *gin.Context) {
 	poolType := c.Param("type")
@@ -498,7 +512,10 @@ func (h *Handler) AdminApproveAppeal(c *gin.Context) {
 	}
 
 	var req models.ReviewAppealRequest
-	c.ShouldBindJSON(&req)
+	if err := c.ShouldBindJSON(&req); err != nil {
+		errx.JSON(c, errx.ErrInvalid)
+		return
+	}
 
 	xerr := h.AdminService.ReviewAppeal(c.Request.Context(), *adminID, appealID, true, req.Notes, c.ClientIP(), c.GetHeader("User-Agent"))
 	if xerr != nil {
@@ -524,7 +541,10 @@ func (h *Handler) AdminRejectAppeal(c *gin.Context) {
 	}
 
 	var req models.ReviewAppealRequest
-	c.ShouldBindJSON(&req)
+	if err := c.ShouldBindJSON(&req); err != nil {
+		errx.JSON(c, errx.ErrInvalid)
+		return
+	}
 
 	xerr := h.AdminService.ReviewAppeal(c.Request.Context(), *adminID, appealID, false, req.Notes, c.ClientIP(), c.GetHeader("User-Agent"))
 	if xerr != nil {

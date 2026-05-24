@@ -30,7 +30,7 @@ func (s *cipherService) Cipher(ctx context.Context, userID uuid.UUID) (*Cipher, 
 			return nil, err
 		}
 
-		if err := s.userEncryptedKeysRepository.Put(context.TODO(), repository.UserEncryptedKeysItem{
+		if err := s.userEncryptedKeysRepository.Put(ctx, repository.UserEncryptedKeysItem{
 			UserID:           userID.String(),
 			EncryptedDataKey: encryptedDEK,
 		}); err != nil {

@@ -23,19 +23,24 @@ type CampaignContactProgress struct {
 
 // CampaignProgress represents overall campaign progress
 type CampaignProgress struct {
-	TotalContacts   int
-	TotalSequences  int
-	EmailsSent      int
-	EmailsPending   int
-	EmailsOpened    int
-	EmailsClicked   int
-	EmailsReplied   int
-	EmailsBounced   int
+	TotalContacts  int
+	TotalSequences int
+	EmailsSent     int
+	EmailsPending  int
+	EmailsOpened   int
+	EmailsClicked  int
+	EmailsReplied  int
+	EmailsBounced  int
 }
 
 // ContactSequencePair represents a contact and sequence combination
 type ContactSequencePair struct {
 	ContactID  uuid.UUID
+	SequenceID uuid.UUID
+}
+
+type CampaignSequencePair struct {
+	CampaignID uuid.UUID
 	SequenceID uuid.UUID
 }
 
@@ -53,9 +58,11 @@ type CampaignProgressRepository interface {
 	GetContactProgress(ctx context.Context, campaignID, contactID uuid.UUID) ([]CampaignContactProgress, error)
 	GetContactLastSequenceTime(ctx context.Context, contactID, campaignID uuid.UUID) (*time.Time, error)
 	CheckContactHasReplied(ctx context.Context, contactID, campaignID uuid.UUID) (bool, error)
+	CountEmailsSentTodayByOrganization(ctx context.Context, organizationID uuid.UUID) (int, error)
+	GetLatestCampaignSequenceForContact(ctx context.Context, contactID uuid.UUID) (*CampaignSequencePair, error)
 
 	// Find next email to send
-	FindNextContactSequence(ctx context.Context, campaignID uuid.UUID) (*ContactSequencePair, error)
+	FindNextContactSequence(ctx context.Context, campaignID uuid.UUID, orderBy, orderDir, orderField string) (*ContactSequencePair, error)
 }
 
 type campaignProgressRepository struct {
@@ -262,19 +269,97 @@ func (r *campaignProgressRepository) CheckContactHasReplied(ctx context.Context,
 	return hasReplied, err
 }
 
+// CountEmailsSentTodayByOrganization returns how many campaign emails were sent today by an organization.
+func (r *campaignProgressRepository) CountEmailsSentTodayByOrganization(ctx context.Context, organizationID uuid.UUID) (int, error) {
+	query := `
+		SELECT COUNT(*)
+		FROM campaign_contact_progress ccp
+		JOIN campaigns c ON c.id = ccp.campaign_id
+		WHERE c.organization_id = $1
+		  AND ccp.sent_at IS NOT NULL
+		  AND DATE(ccp.sent_at) = CURRENT_DATE
+	`
+
+	var count int
+	err := r.db.QueryRow(ctx, query, organizationID).Scan(&count)
+	return count, err
+}
+
+func (r *campaignProgressRepository) GetLatestCampaignSequenceForContact(ctx context.Context, contactID uuid.UUID) (*CampaignSequencePair, error) {
+	query := `
+		SELECT campaign_id, sequence_id
+		FROM campaign_contact_progress
+		WHERE contact_id = $1
+		  AND sent_at IS NOT NULL
+		ORDER BY sent_at DESC
+		LIMIT 1
+	`
+	out := &CampaignSequencePair{}
+	if err := r.db.QueryRow(ctx, query, contactID).Scan(&out.CampaignID, &out.SequenceID); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return out, nil
+}
+
 // FindNextContactSequence finds the next contact/sequence pair that needs to be sent
-func (r *campaignProgressRepository) FindNextContactSequence(ctx context.Context, campaignID uuid.UUID) (*ContactSequencePair, error) {
+// orderBy: "created_at", "email", "name", "custom_field", "manual"
+// orderDir: "asc", "desc"
+// orderField: custom field name (used when orderBy is "custom_field")
+func (r *campaignProgressRepository) FindNextContactSequence(ctx context.Context, campaignID uuid.UUID, orderBy, orderDir, orderField string) (*ContactSequencePair, error) {
+	// Build the ORDER BY clause based on ordering settings
+	var contactOrder string
+	switch orderBy {
+	case "email":
+		contactOrder = "c.email"
+	case "name":
+		contactOrder = "c.first_name, c.last_name"
+	case "custom_field":
+		if orderField != "" {
+			contactOrder = "c.custom_fields->>'" + orderField + "'"
+		} else {
+			contactOrder = "c.created_at"
+		}
+	case "manual":
+		contactOrder = "cl.position NULLS LAST, c.created_at"
+	default: // created_at
+		contactOrder = "c.created_at"
+	}
+
+	// Apply direction
+	dir := "ASC"
+	if orderDir == "desc" {
+		dir = "DESC"
+	}
+
 	query := `
 		WITH all_pairs AS (
 			-- Generate all possible contact-sequence combinations for this campaign
 			SELECT
 				cl.contact_id,
 				s.id as sequence_id,
-				ROW_NUMBER() OVER (ORDER BY cl.contact_id, s.created_at) as pair_order
+				ROW_NUMBER() OVER (ORDER BY ` + contactOrder + ` ` + dir + `, s.position, s.created_at) as pair_order
 			FROM campaign_leads cl
+			JOIN contacts c ON c.id = cl.contact_id
 			CROSS JOIN sequences s
 			WHERE cl.campaign_id = $1
 			  AND s.campaign_id = $1
+			  -- Skip contacts that bounced in ANY campaign
+			  AND NOT EXISTS (
+			    SELECT 1 FROM campaign_contact_progress ccp2
+			    WHERE ccp2.contact_id = cl.contact_id
+			      AND ccp2.bounced_at IS NOT NULL
+			  )
+			  -- Skip suppressed recipients (bounce, complaint, unsubscribe from deliverability)
+			  AND NOT EXISTS (
+			    SELECT 1 FROM suppressed_recipients sr
+			    JOIN campaigns camp ON camp.organization_id = sr.organization_id
+			    WHERE camp.id = $1
+			      AND LOWER(sr.email) = LOWER(c.email)
+			      AND (sr.expires_at IS NULL OR sr.expires_at > NOW())
+			  )
 		),
 		sent_pairs AS (
 			-- Get all already-sent pairs

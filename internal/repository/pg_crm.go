@@ -17,13 +17,13 @@ type CRMRepository interface {
 	// Notes
 	CreateNote(ctx context.Context, orgID, contactID, userID uuid.UUID, content string) (*models.ContactNote, error)
 	GetNote(ctx context.Context, orgID, noteID uuid.UUID) (*models.ContactNote, error)
-	ListNotes(ctx context.Context, contactID uuid.UUID, limit int, cursor *uuid.UUID) (*models.ContactNotesResult, error)
+	ListNotes(ctx context.Context, orgID, contactID uuid.UUID, limit int, cursor *uuid.UUID) (*models.ContactNotesResult, error)
 	UpdateNote(ctx context.Context, orgID, noteID uuid.UUID, content string) (*models.ContactNote, error)
 	DeleteNote(ctx context.Context, orgID, noteID uuid.UUID) error
 
 	// Activities
 	RecordActivity(ctx context.Context, orgID, contactID uuid.UUID, userID *uuid.UUID, actType models.ActivityType, metadata map[string]interface{}) error
-	ListActivities(ctx context.Context, contactID uuid.UUID, limit int, cursor *uuid.UUID) (*models.ContactActivitiesResult, error)
+	ListActivities(ctx context.Context, orgID, contactID uuid.UUID, limit int, cursor *uuid.UUID) (*models.ContactActivitiesResult, error)
 
 	// Pipelines
 	CreatePipeline(ctx context.Context, orgID uuid.UUID, data *models.CreatePipeline) (*models.Pipeline, error)
@@ -102,18 +102,20 @@ func (r *crmRepository) GetNote(ctx context.Context, orgID, noteID uuid.UUID) (*
 	return &note, nil
 }
 
-func (r *crmRepository) ListNotes(ctx context.Context, contactID uuid.UUID, limit int, cursor *uuid.UUID) (*models.ContactNotesResult, error) {
+func (r *crmRepository) ListNotes(ctx context.Context, orgID, contactID uuid.UUID, limit int, cursor *uuid.UUID) (*models.ContactNotesResult, error) {
 	query := `
-		SELECT id, contact_id, organization_id, user_id, content, created_at, updated_at
-		FROM contact_notes
-		WHERE contact_id = $1
-		  AND ($2::uuid IS NULL OR (created_at, id) < (
+		SELECT cn.id, cn.contact_id, cn.organization_id, cn.user_id, cn.content, cn.created_at, cn.updated_at
+		FROM contact_notes cn
+		JOIN contacts c ON c.id = cn.contact_id
+		WHERE cn.contact_id = $1
+		  AND cn.organization_id = $4
+		  AND ($2::uuid IS NULL OR (cn.created_at, cn.id) < (
 			SELECT created_at, id FROM contact_notes WHERE id = $2
 		  ))
-		ORDER BY created_at DESC, id DESC
+		ORDER BY cn.created_at DESC, cn.id DESC
 		LIMIT $3
 	`
-	rows, err := r.db.Query(ctx, query, contactID, cursor, limit+1)
+	rows, err := r.db.Query(ctx, query, contactID, cursor, limit+1, orgID)
 	if err != nil {
 		return nil, err
 	}
@@ -140,7 +142,7 @@ func (r *crmRepository) ListNotes(ctx context.Context, contactID uuid.UUID, limi
 	}
 
 	return &models.ContactNotesResult{
-		Data: notes,
+		Data:       notes,
 		Pagination: models.Pagination{NextCursor: nextCursor, HasMore: hasMore},
 	}, nil
 }
@@ -193,18 +195,19 @@ func (r *crmRepository) RecordActivity(ctx context.Context, orgID, contactID uui
 	return err
 }
 
-func (r *crmRepository) ListActivities(ctx context.Context, contactID uuid.UUID, limit int, cursor *uuid.UUID) (*models.ContactActivitiesResult, error) {
+func (r *crmRepository) ListActivities(ctx context.Context, orgID, contactID uuid.UUID, limit int, cursor *uuid.UUID) (*models.ContactActivitiesResult, error) {
 	query := `
 		SELECT id, contact_id, organization_id, user_id, activity_type, metadata, created_at
 		FROM contact_activities
 		WHERE contact_id = $1
+		  AND organization_id = $4
 		  AND ($2::uuid IS NULL OR (created_at, id) < (
 			SELECT created_at, id FROM contact_activities WHERE id = $2
 		  ))
 		ORDER BY created_at DESC, id DESC
 		LIMIT $3
 	`
-	rows, err := r.db.Query(ctx, query, contactID, cursor, limit+1)
+	rows, err := r.db.Query(ctx, query, contactID, cursor, limit+1, orgID)
 	if err != nil {
 		return nil, err
 	}
@@ -346,6 +349,7 @@ func (r *crmRepository) ListPipelines(ctx context.Context, orgID uuid.UUID) ([]m
 		FROM pipelines
 		WHERE organization_id = $1
 		ORDER BY position ASC
+		LIMIT 100
 	`
 	rows, err := r.db.Query(ctx, query, orgID)
 	if err != nil {

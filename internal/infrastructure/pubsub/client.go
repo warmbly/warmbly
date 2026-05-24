@@ -92,11 +92,11 @@ func NewStreamingPublisher(client *Client) *StreamingPublisher {
 
 // Topic names for real-time updates
 const (
-	TopicTaskStatus      = "task-status"
-	TopicCampaignUpdate  = "campaign-update"
-	TopicWarmupUpdate    = "warmup-update"
-	TopicEmailError      = "email-error"
-	TopicEmailWarning    = "email-warning"
+	TopicTaskStatus     = "task-status"
+	TopicCampaignUpdate = "campaign-update"
+	TopicWarmupUpdate   = "warmup-update"
+	TopicEmailError     = "email-error"
+	TopicEmailWarning   = "email-warning"
 )
 
 // Event types

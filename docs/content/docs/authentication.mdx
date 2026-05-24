@@ -1,0 +1,161 @@
+---
+title: Authentication
+description: Learn how to authenticate with the Warmbly API using API keys.
+---
+
+# Authentication
+
+The Warmbly API uses API keys for authentication. Each API key has specific permissions that control what operations it can perform.
+
+## API Key Format
+
+API keys follow this format:
+
+```
+wmbly_<random_string>
+```
+
+The `wmbly_` prefix identifies the key as a Warmbly API key. The remaining characters are a cryptographically secure random string.
+
+## Using Your API Key
+
+Include your API key in the `Authorization` header of every request:
+
+```bash
+curl -X GET "https://api.warmbly.com/api-keys" \
+  -H "Authorization: Bearer wmbly_abc123..." \
+  -H "Content-Type: application/json"
+```
+
+## Key Security Best Practices
+
+<Callout type="warn" title="Keep Your Keys Secret">
+  Never expose API keys in client-side code, public repositories, or logs. Treat them like passwords.
+</Callout>
+
+### Do's
+
+- Store API keys in environment variables or secure secret managers
+- Use different keys for development and production
+- Restrict keys to only the permissions they need
+- Set expiration dates for keys when possible
+- Use IP allowlists to restrict key usage
+
+### Don'ts
+
+- Commit API keys to version control
+- Share API keys via email or chat
+- Use production keys in development
+- Give keys more permissions than necessary
+
+## Permissions
+
+Each API key has a permissions bitmask that controls its capabilities. See the [Permissions Reference](/reference/permissions) for a complete list.
+
+### Permission Categories
+
+| Category | Description |
+|----------|-------------|
+| **Read** | View resources (emails, campaigns, contacts, etc.) |
+| **Write** | Create and modify resources |
+| **Bulk** | Perform bulk operations |
+| **Special** | Advanced features (realtime, webhooks, API key management) |
+
+### Example: Read-Only Key
+
+A read-only API key might have these permissions:
+
+```json
+{
+  "permissions": 31
+}
+```
+
+This combines:
+- `READ_EMAILS` (1)
+- `READ_CAMPAIGNS` (2)
+- `READ_CONTACTS` (4)
+- `READ_UNIBOX` (8)
+- `READ_ANALYTICS` (16)
+
+Total: 1 + 2 + 4 + 8 + 16 = 31
+
+## IP Restrictions
+
+You can restrict API keys to specific IP addresses:
+
+```json
+{
+  "name": "Production Server",
+  "permissions": 31,
+  "allowed_ips": ["203.0.113.10", "203.0.113.11"]
+}
+```
+
+Requests from other IP addresses will be rejected with a `403 Forbidden` error.
+
+## Email Account Restrictions
+
+Limit API keys to specific email accounts:
+
+```json
+{
+  "name": "Marketing Team",
+  "permissions": 127,
+  "allowed_email_accounts": [
+    "550e8400-e29b-41d4-a716-446655440000",
+    "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
+  ]
+}
+```
+
+## Key Expiration
+
+Set an expiration date for temporary access:
+
+```json
+{
+  "name": "Contractor Access",
+  "permissions": 31,
+  "expires_at": "2024-12-31T23:59:59Z"
+}
+```
+
+After expiration, the key returns `401 Unauthorized`.
+
+## Error Responses
+
+### 401 Unauthorized
+
+Returned when:
+- API key is missing
+- API key is invalid
+- API key has expired
+- API key has been revoked
+
+```json
+{
+  "error": "Unauthorized",
+  "message": "Token not found."
+}
+```
+
+### 403 Forbidden
+
+Returned when:
+- API key lacks required permissions
+- Request IP is not in allowlist
+- Email account is not in allowlist
+
+```json
+{
+  "error": "Forbidden",
+  "message": "You doesn't have access to this feature."
+}
+```
+
+## Next Steps
+
+- [Create an API key](/api-keys/create)
+- [View all permissions](/reference/permissions)
+- [Handle errors](/reference/error-codes)

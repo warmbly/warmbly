@@ -51,6 +51,9 @@ const (
 	// Tracking events (from Rust tracking service)
 	EventEmailOpened  EventType = "EMAIL_OPENED"
 	EventEmailClicked EventType = "EMAIL_CLICKED"
+
+	// Task progress events
+	EventTaskProgress EventType = "TASK_PROGRESS"
 )
 
 // BaseEvent contains common fields for all events
@@ -140,6 +143,23 @@ type TrackingEventPayload struct {
 	ContactEmail string `json:"contact_email,omitempty"`
 	SequenceID   string `json:"sequence_id,omitempty"`
 	OriginalURL  string `json:"original_url,omitempty"` // For click events
+}
+
+// TaskProgressEvent for detailed campaign task progress
+type TaskProgressEvent struct {
+	BaseEvent
+	CampaignID     string `json:"campaign_id"`
+	TaskID         string `json:"task_id"`
+	Status         string `json:"status"` // pending, active, completed, failed
+	ContactID      string `json:"contact_id"`
+	ContactEmail   string `json:"contact_email"`
+	ContactName    string `json:"contact_name"`
+	SequenceID     string `json:"sequence_id"`
+	SequenceName   string `json:"sequence_name"`
+	SequenceIndex  int    `json:"sequence_index"`
+	Progress       int    `json:"progress"` // Percentage 0-100
+	TotalContacts  int    `json:"total_contacts"`
+	ProcessedCount int    `json:"processed_count"`
 }
 
 // New publish methods
@@ -279,6 +299,27 @@ func (p *StreamingPublisher) PublishTrackingEvent(ctx context.Context, event *Tr
 		"user_id":     event.UserID,
 		"campaign_id": event.CampaignID,
 		"event_type":  string(event.EventType),
+	}
+
+	if err := p.client.Publish(ctx, TopicCampaignUpdate, event, attrs); err != nil {
+		// Log error but don't fail
+	}
+}
+
+// PublishTaskProgress publishes a detailed task progress event
+func (p *StreamingPublisher) PublishTaskProgress(ctx context.Context, event *TaskProgressEvent) {
+	if p.client == nil {
+		return
+	}
+
+	event.EventType = EventTaskProgress
+	event.Timestamp = time.Now()
+
+	attrs := map[string]string{
+		"user_id":     event.UserID,
+		"campaign_id": event.CampaignID,
+		"task_id":     event.TaskID,
+		"event_type":  string(EventTaskProgress),
 	}
 
 	if err := p.client.Publish(ctx, TopicCampaignUpdate, event, attrs); err != nil {

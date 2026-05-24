@@ -23,6 +23,7 @@ type AdminRepository interface {
 	BanUser(ctx context.Context, userID, bannedBy uuid.UUID, reason string) error
 	UnbanUser(ctx context.Context, userID, unbannedBy uuid.UUID, reason string) error
 	GetUserBans(ctx context.Context, userID uuid.UUID) ([]models.UserBan, error)
+	GetUserEmails(ctx context.Context, userID uuid.UUID, cursor *uuid.UUID, limit int) ([]models.AdminWorkerEmail, *models.Pagination, error)
 	ListAdmins(ctx context.Context, cursor *uuid.UUID, limit int) (*models.AdminsResult, error)
 
 	// Worker Management
@@ -446,6 +447,59 @@ func (r *adminRepository) GetUserBans(ctx context.Context, userID uuid.UUID) ([]
 	return bans, nil
 }
 
+// GetUserEmails gets email accounts belonging to a user
+func (r *adminRepository) GetUserEmails(ctx context.Context, userID uuid.UUID, cursor *uuid.UUID, limit int) ([]models.AdminWorkerEmail, *models.Pagination, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+
+	args := []interface{}{userID, limit + 1}
+	whereClause := "WHERE ea.user_id = $1::text"
+	if cursor != nil {
+		whereClause += " AND ea.id < $3"
+		args = append(args, *cursor)
+	}
+
+	query := `
+		SELECT ea.id, ea.email, ea.user_id::uuid, ea.organization_id,
+			ea.status, ea.provider, ea.warmup IS NOT NULL, ea.last_synced_at
+		FROM email_accounts ea
+		` + whereClause + `
+		ORDER BY ea.created_at DESC
+		LIMIT $2
+	`
+
+	rows, err := r.db.Query(ctx, query, args...)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+
+	var emails []models.AdminWorkerEmail
+	for rows.Next() {
+		var e models.AdminWorkerEmail
+		err := rows.Scan(
+			&e.ID, &e.Email, &e.UserID, &e.OrganizationID,
+			&e.Status, &e.Provider, &e.WarmupEnabled, &e.LastSyncedAt,
+		)
+		if err != nil {
+			return nil, nil, err
+		}
+		emails = append(emails, e)
+	}
+
+	pagination := &models.Pagination{
+		HasMore: len(emails) > limit,
+	}
+
+	if len(emails) > limit {
+		emails = emails[:limit]
+		pagination.NextCursor = &emails[limit-1].ID
+	}
+
+	return emails, pagination, nil
+}
+
 // ListAdmins lists all admin users
 func (r *adminRepository) ListAdmins(ctx context.Context, cursor *uuid.UUID, limit int) (*models.AdminsResult, error) {
 	if limit <= 0 || limit > 100 {
@@ -695,17 +749,39 @@ func (r *adminRepository) GetWorkerEmails(ctx context.Context, workerID uuid.UUI
 
 // GetWorkerStats gets statistics for a worker
 func (r *adminRepository) GetWorkerStats(ctx context.Context, workerID uuid.UUID) (*models.WorkerStats, error) {
-	// This would need to query actual task/email statistics tables
-	// For now, return a basic implementation
 	stats := &models.WorkerStats{
 		WorkerID: workerID,
 	}
 
-	// Get emails sent today
-	r.db.QueryRow(ctx, `
-		SELECT COUNT(*) FROM tasks t
-		WHERE t.worker_id = $1 AND t.created_at >= CURRENT_DATE
-	`, workerID).Scan(&stats.EmailsSentToday)
+	query := `
+		SELECT
+			COUNT(*) FILTER (WHERE t.status = 'completed') AS total_sent,
+			COUNT(*) FILTER (WHERE t.status = 'completed' AND t.completed_at >= CURRENT_DATE) AS sent_today,
+			COUNT(*) FILTER (WHERE t.status = 'completed' AND t.completed_at >= date_trunc('week', CURRENT_DATE)) AS sent_this_week,
+			COALESCE(AVG(EXTRACT(EPOCH FROM (t.completed_at - t.scheduled_at)) * 1000)
+				FILTER (WHERE t.status = 'completed' AND t.completed_at IS NOT NULL AND t.scheduled_at IS NOT NULL), 0) AS avg_delivery_ms,
+			CASE
+				WHEN COUNT(*) FILTER (WHERE t.status IN ('completed', 'failed', 'dead_lettered')) > 0
+				THEN COUNT(*) FILTER (WHERE t.status = 'completed')::float / COUNT(*) FILTER (WHERE t.status IN ('completed', 'failed', 'dead_lettered'))::float * 100
+				ELSE 100
+			END AS success_rate,
+			COUNT(*) FILTER (WHERE t.status = 'pending') AS queue_depth
+		FROM tasks t
+		JOIN email_accounts ea ON ea.id = t.email_account_id
+		WHERE ea.worker_id = $1
+	`
+
+	err := r.db.QueryRow(ctx, query, workerID).Scan(
+		&stats.TotalEmailsSent,
+		&stats.EmailsSentToday,
+		&stats.EmailsSentThisWeek,
+		&stats.AverageDeliveryTime,
+		&stats.SuccessRate,
+		&stats.QueueDepth,
+	)
+	if err != nil {
+		return nil, err
+	}
 
 	return stats, nil
 }
@@ -719,23 +795,103 @@ func (r *adminRepository) ReassignEmails(ctx context.Context, emailIDs []uuid.UU
 	return err
 }
 
-// ListWarmupPools lists all warmup pools
+// ListWarmupPools lists all warmup pools with participant counts
 func (r *adminRepository) ListWarmupPools(ctx context.Context) ([]models.WarmupPoolInfo, error) {
-	// This would query the warmup pools table
-	// Implementation depends on the actual warmup pool structure
-	return []models.WarmupPoolInfo{
-		{Type: "standard", TotalParticipants: 0, ActiveParticipants: 0, BlockedCount: 0},
-		{Type: "premium", TotalParticipants: 0, ActiveParticipants: 0, BlockedCount: 0},
-	}, nil
+	query := `
+		SELECT
+			wp.pool_type::text,
+			COUNT(wpp.email_account_id) AS total,
+			COUNT(wpp.email_account_id) FILTER (
+				WHERE wpp.health_state IN ('healthy', 'watch', 'throttled')
+				AND wpp.blocked_at IS NULL
+			) AS active,
+			COUNT(wpp.email_account_id) FILTER (
+				WHERE wpp.health_state IN ('quarantined', 'blocked')
+				OR wpp.blocked_at IS NOT NULL
+			) AS blocked
+		FROM warmup_pools wp
+		LEFT JOIN warmup_pool_participants wpp ON wpp.pool_id = wp.id
+		GROUP BY wp.pool_type
+		ORDER BY wp.pool_type
+	`
+	rows, err := r.db.Query(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var pools []models.WarmupPoolInfo
+	for rows.Next() {
+		var p models.WarmupPoolInfo
+		if err := rows.Scan(&p.Type, &p.TotalParticipants, &p.ActiveParticipants, &p.BlockedCount); err != nil {
+			return nil, err
+		}
+		pools = append(pools, p)
+	}
+	return pools, rows.Err()
 }
 
 // GetPoolParticipants gets participants in a warmup pool
 func (r *adminRepository) GetPoolParticipants(ctx context.Context, poolType string, cursor *uuid.UUID, limit int) (*models.WarmupPoolParticipantsResult, error) {
-	// Implementation depends on actual warmup pool structure
-	return &models.WarmupPoolParticipantsResult{
-		Data:       []models.WarmupPoolParticipant{},
-		Pagination: models.Pagination{HasMore: false},
-	}, nil
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+
+	args := []interface{}{poolType, limit + 1}
+	whereClause := "WHERE wp.pool_type = $1::warmup_pool_type"
+	if cursor != nil {
+		whereClause += " AND wpp.email_account_id < $3"
+		args = append(args, *cursor)
+	}
+
+	query := `
+		SELECT
+			wpp.email_account_id, ea.email, ea.user_id::uuid,
+			wpp.joined_at, wpp.spam_score,
+			wpp.blocked_at IS NOT NULL OR wpp.health_state IN ('quarantined', 'blocked'),
+			wpp.blocked_at,
+			COALESCE((SELECT SUM(ws.emails_sent) FROM warmup_statistics ws WHERE ws.email_account_id = wpp.email_account_id), 0),
+			COALESCE((SELECT COUNT(*) FROM warmup_tokens wt WHERE wt.recipient_account_id = wpp.email_account_id AND wt.consumed_at IS NOT NULL), 0)
+		FROM warmup_pool_participants wpp
+		JOIN warmup_pools wp ON wpp.pool_id = wp.id
+		JOIN email_accounts ea ON ea.id = wpp.email_account_id
+		` + whereClause + `
+		ORDER BY wpp.joined_at DESC
+		LIMIT $2
+	`
+
+	rows, err := r.db.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var participants []models.WarmupPoolParticipant
+	for rows.Next() {
+		var p models.WarmupPoolParticipant
+		if err := rows.Scan(
+			&p.ID, &p.Email, &p.UserID,
+			&p.JoinedAt, &p.ReputationScore,
+			&p.IsBlocked, &p.BlockedAt,
+			&p.EmailsSent, &p.EmailsReceived,
+		); err != nil {
+			return nil, err
+		}
+		participants = append(participants, p)
+	}
+
+	result := &models.WarmupPoolParticipantsResult{
+		Data: participants,
+		Pagination: models.Pagination{
+			HasMore: len(participants) > limit,
+		},
+	}
+	if len(participants) > limit {
+		result.Data = participants[:limit]
+		result.Pagination.NextCursor = &participants[limit-1].ID
+	}
+
+	return result, nil
 }
 
 // ListBlockedAccounts lists blocked warmup accounts
@@ -744,25 +900,121 @@ func (r *adminRepository) ListBlockedAccounts(ctx context.Context, cursor *uuid.
 		limit = 50
 	}
 
-	// Query blocked accounts from email_accounts where warmup_blocked = true or similar
-	// This is a placeholder - actual implementation depends on how blocking is tracked
-	return &models.AdminBlockedAccountsResult{
-		Data:       []models.AdminBlockedAccount{},
-		Pagination: models.Pagination{HasMore: false},
-	}, nil
+	args := []interface{}{limit + 1}
+	whereClause := `WHERE (wpp.health_state IN ('quarantined', 'blocked') OR wpp.blocked_at IS NOT NULL)`
+	if cursor != nil {
+		whereClause += " AND wpp.email_account_id < $2"
+		args = append(args, *cursor)
+	}
+
+	query := `
+		SELECT
+			wpp.email_account_id, ea.email, ea.user_id::uuid,
+			COALESCE(wpp.blocked_at, wpp.last_health_evaluated_at, wpp.joined_at) AS blocked_at,
+			COALESCE(wpp.blocked_reason, wpp.last_health_reason, '') AS block_reason,
+			EXISTS(SELECT 1 FROM warmup_appeals wa WHERE wa.email_account_id = wpp.email_account_id AND wa.status = 'pending') AS has_appeal,
+			(SELECT wa.status FROM warmup_appeals wa WHERE wa.email_account_id = wpp.email_account_id ORDER BY wa.created_at DESC LIMIT 1) AS appeal_status,
+			u.id, u.first_name, u.last_name, u.email
+		FROM warmup_pool_participants wpp
+		JOIN email_accounts ea ON ea.id = wpp.email_account_id
+		JOIN users u ON u.id = ea.user_id::uuid
+		` + whereClause + `
+		ORDER BY blocked_at DESC
+		LIMIT $1
+	`
+
+	rows, err := r.db.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var accounts []models.AdminBlockedAccount
+	for rows.Next() {
+		var a models.AdminBlockedAccount
+		var user models.AdminUserSummary
+		var appealStatus *string
+
+		if err := rows.Scan(
+			&a.ID, &a.Email, &a.UserID,
+			&a.BlockedAt, &a.BlockReason,
+			&a.HasAppeal, &appealStatus,
+			&user.ID, &user.FirstName, &user.LastName, &user.Email,
+		); err != nil {
+			return nil, err
+		}
+		a.User = &user
+		if appealStatus != nil {
+			status := models.WarmupAppealStatus(*appealStatus)
+			a.AppealStatus = &status
+		}
+		accounts = append(accounts, a)
+	}
+
+	result := &models.AdminBlockedAccountsResult{
+		Data: accounts,
+		Pagination: models.Pagination{
+			HasMore: len(accounts) > limit,
+		},
+	}
+	if len(accounts) > limit {
+		result.Data = accounts[:limit]
+		result.Pagination.NextCursor = &accounts[limit-1].ID
+	}
+
+	return result, nil
 }
 
-// BlockAccount blocks an account from warmup
+// BlockAccount blocks an account from warmup pools
 func (r *adminRepository) BlockAccount(ctx context.Context, accountID uuid.UUID, blockedBy uuid.UUID, reason string) error {
-	// Implementation depends on how blocking is tracked
-	// Could be a column on email_accounts or a separate table
-	return nil
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	// Update health state to blocked in warmup_pool_participants
+	_, err = tx.Exec(ctx, `
+		UPDATE warmup_pool_participants
+		SET blocked_at = NOW(),
+		    blocked_reason = $2,
+		    health_state = 'blocked',
+		    blocked_until = NOW() + INTERVAL '30 days',
+		    last_health_reason = $2,
+		    last_health_evaluated_at = NOW()
+		WHERE email_account_id = $1
+	`, accountID, reason)
+	if err != nil {
+		return err
+	}
+
+	// Record the admin action
+	_, err = tx.Exec(ctx, `
+		INSERT INTO warmup_admin_actions (admin_user_id, email_account_id, action, reason)
+		VALUES ($1, $2, 'block', $3)
+	`, blockedBy, accountID, reason)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
 }
 
-// UnblockAccount unblocks an account from warmup
+// UnblockAccount unblocks an account from warmup pools
 func (r *adminRepository) UnblockAccount(ctx context.Context, accountID uuid.UUID) error {
-	// Implementation depends on how blocking is tracked
-	return nil
+	_, err := r.db.Exec(ctx, `
+		UPDATE warmup_pool_participants
+		SET blocked_at = NULL,
+		    blocked_reason = NULL,
+		    health_state = 'healthy',
+		    blocked_until = NULL,
+		    last_health_reason = 'unblocked by admin',
+		    last_health_evaluated_at = NOW(),
+		    last_health_score = 0,
+		    spam_score = 0
+		WHERE email_account_id = $1
+	`, accountID)
+	return err
 }
 
 // ListAppeals lists warmup appeals
@@ -895,8 +1147,26 @@ func (r *adminRepository) ReviewAppeal(ctx context.Context, appealID uuid.UUID, 
 		var accountID uuid.UUID
 		err = tx.QueryRow(ctx, `SELECT email_account_id FROM warmup_appeals WHERE id = $1`, appealID).Scan(&accountID)
 		if err == nil {
-			// Unblock the account (implementation depends on how blocking is tracked)
-			// This is a placeholder
+			_, err = tx.Exec(ctx, `
+				UPDATE warmup_pool_participants
+				SET blocked_at = NULL,
+				    blocked_reason = NULL,
+				    health_state = 'healthy',
+				    blocked_until = NULL,
+				    last_health_reason = 'appeal approved',
+				    last_health_evaluated_at = NOW(),
+				    last_health_score = 0,
+				    spam_score = 0
+				WHERE email_account_id = $1
+			`, accountID)
+			if err != nil {
+				return err
+			}
+
+			_, _ = tx.Exec(ctx, `
+				INSERT INTO warmup_admin_actions (admin_user_id, email_account_id, action, reason)
+				VALUES ($1, $2, 'unblock', 'appeal approved')
+			`, reviewedBy, accountID)
 		}
 	}
 

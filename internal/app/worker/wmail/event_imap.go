@@ -73,9 +73,10 @@ func (w *WMail) onImapEmailUpdate(ctx context.Context, msg *models.EmailMessageD
 
 		if err := w.EmailMessageMapRepository.Add(ctx, repository.EmailMessageData{
 			UserID:    w.UserID.String(),
-			EmailID:   w.UserID.String(),
+			EmailID:   w.ID.String(),
 			MessageID: data.MessageID,
-			ID:        w.ID.String(),
+			ID:        msg.ID.String(),
+			ThreadID:  threadID,
 		}); err != nil {
 			return err
 		}

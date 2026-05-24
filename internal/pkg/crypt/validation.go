@@ -13,3 +13,8 @@ func IsValidUUID(u string) bool {
 func IsValidHexColor(s string) bool {
 	return regexp.MustCompile(`^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$`).MatchString(s)
 }
+
+func ValidatePassword(password string) bool {
+	n := len([]rune(password))
+	return n >= 8 && n <= 128
+}

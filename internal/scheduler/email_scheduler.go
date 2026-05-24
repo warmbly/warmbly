@@ -58,4 +58,3 @@ func (s *schedulerService) CalculateNextEmailTime(ctx context.Context, accountID
 
 	return candidateTime, nil
 }
-

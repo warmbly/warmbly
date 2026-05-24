@@ -48,6 +48,8 @@ func NewService(
 	externalAuthData *models.ExternalAuth,
 	trialService trial.TrialService,
 	organizationService organization.OrganizationService,
+	userRepository repository.UserRepository,
+	userService user.UserService,
 ) AuthService {
 	return &authService{
 		authRepository:           authRepository,
@@ -58,5 +60,7 @@ func NewService(
 		externalAuth:             externalAuthData,
 		trialService:             trialService,
 		organizationService:      organizationService,
+		userRepository:           userRepository,
+		userService:              userService,
 	}
 }

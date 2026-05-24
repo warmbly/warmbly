@@ -13,24 +13,24 @@ type AdminUserSearch struct {
 	IsAdmin  *bool      `form:"is_admin"`
 	Cursor   *uuid.UUID `form:"cursor"`
 	Limit    int        `form:"limit"`
-	SortBy   string     `form:"sort_by"`   // created_at, email, name
+	SortBy   string     `form:"sort_by"` // created_at, email, name
 	SortDesc bool       `form:"sort_desc"`
 }
 
 // AdminUserDetail represents a user with admin-relevant statistics
 type AdminUserDetail struct {
-	ID               uuid.UUID        `json:"id"`
-	FirstName        string           `json:"first_name"`
-	LastName         string           `json:"last_name"`
-	Email            string           `json:"email"`
-	MaxOrganizations int              `json:"max_organizations"`
-	FreeTrialUsed    bool             `json:"free_trial_used"`
-	AdminPermissions AdminPermission  `json:"admin_permissions"`
-	AdminGrantedAt   *time.Time       `json:"admin_granted_at,omitempty"`
-	AdminGrantedBy   *uuid.UUID       `json:"admin_granted_by,omitempty"`
-	BannedAt         *time.Time       `json:"banned_at,omitempty"`
-	CreatedAt        time.Time        `json:"created_at"`
-	UpdatedAt        time.Time        `json:"updated_at"`
+	ID               uuid.UUID       `json:"id"`
+	FirstName        string          `json:"first_name"`
+	LastName         string          `json:"last_name"`
+	Email            string          `json:"email"`
+	MaxOrganizations int             `json:"max_organizations"`
+	FreeTrialUsed    bool            `json:"free_trial_used"`
+	AdminPermissions AdminPermission `json:"admin_permissions"`
+	AdminGrantedAt   *time.Time      `json:"admin_granted_at,omitempty"`
+	AdminGrantedBy   *uuid.UUID      `json:"admin_granted_by,omitempty"`
+	BannedAt         *time.Time      `json:"banned_at,omitempty"`
+	CreatedAt        time.Time       `json:"created_at"`
+	UpdatedAt        time.Time       `json:"updated_at"`
 
 	// Statistics
 	OrganizationCount int `json:"organization_count"`
@@ -92,11 +92,11 @@ type AdminWorkerDetail struct {
 	UpdatedAt    time.Time  `json:"updated_at"`
 
 	// Statistics
-	EmailsSentToday  int `json:"emails_sent_today"`
-	EmailsSentTotal  int `json:"emails_sent_total"`
-	ActiveCampaigns  int `json:"active_campaigns"`
-	ConnectedEmails  int `json:"connected_emails"`
-	WarmupEmails     int `json:"warmup_emails"`
+	EmailsSentToday int `json:"emails_sent_today"`
+	EmailsSentTotal int `json:"emails_sent_total"`
+	ActiveCampaigns int `json:"active_campaigns"`
+	ConnectedEmails int `json:"connected_emails"`
+	WarmupEmails    int `json:"warmup_emails"`
 }
 
 // AdminWorkersResult represents paginated worker listing
@@ -127,8 +127,8 @@ type AdminWorkerEmail struct {
 
 // ReassignEmailsRequest represents the request to reassign emails
 type ReassignEmailsRequest struct {
-	EmailIDs     []uuid.UUID `json:"email_ids" binding:"required"`
-	NewWorkerID  uuid.UUID   `json:"new_worker_id" binding:"required"`
+	EmailIDs    []uuid.UUID `json:"email_ids" binding:"required"`
+	NewWorkerID uuid.UUID   `json:"new_worker_id" binding:"required"`
 }
 
 // WarmupAppealStatus represents the status of a warmup appeal
@@ -153,8 +153,8 @@ type WarmupAppeal struct {
 	CreatedAt      time.Time          `json:"created_at"`
 
 	// Joined data
-	User         *AdminUserSummary `json:"user,omitempty"`
-	EmailAccount *AdminWorkerEmail `json:"email_account,omitempty"`
+	User           *AdminUserSummary `json:"user,omitempty"`
+	EmailAccount   *AdminWorkerEmail `json:"email_account,omitempty"`
 	ReviewedByUser *AdminUserSummary `json:"reviewed_by_user,omitempty"`
 }
 
@@ -172,13 +172,13 @@ type ReviewAppealRequest struct {
 
 // AdminBlockedAccount represents a blocked warmup account
 type AdminBlockedAccount struct {
-	ID           uuid.UUID        `json:"id"`
-	Email        string           `json:"email"`
-	UserID       uuid.UUID        `json:"user_id"`
-	BlockedAt    time.Time        `json:"blocked_at"`
-	BlockedBy    *uuid.UUID       `json:"blocked_by,omitempty"`
-	BlockReason  string           `json:"block_reason"`
-	HasAppeal    bool             `json:"has_appeal"`
+	ID           uuid.UUID           `json:"id"`
+	Email        string              `json:"email"`
+	UserID       uuid.UUID           `json:"user_id"`
+	BlockedAt    time.Time           `json:"blocked_at"`
+	BlockedBy    *uuid.UUID          `json:"blocked_by,omitempty"`
+	BlockReason  string              `json:"block_reason"`
+	HasAppeal    bool                `json:"has_appeal"`
 	AppealStatus *WarmupAppealStatus `json:"appeal_status,omitempty"`
 
 	// Joined data
@@ -240,15 +240,15 @@ type AdminCampaignSearch struct {
 
 // AdminAuditLog represents an audit log entry for admin actions
 type AdminAuditLog struct {
-	ID          uuid.UUID         `json:"id"`
-	AdminUserID uuid.UUID         `json:"admin_user_id"`
-	Action      string            `json:"action"`
-	TargetType  string            `json:"target_type"`
-	TargetID    uuid.UUID         `json:"target_id"`
-	Details     map[string]any    `json:"details,omitempty"`
-	IPAddress   string            `json:"ip_address"`
-	UserAgent   string            `json:"user_agent"`
-	CreatedAt   time.Time         `json:"created_at"`
+	ID          uuid.UUID      `json:"id"`
+	AdminUserID uuid.UUID      `json:"admin_user_id"`
+	Action      string         `json:"action"`
+	TargetType  string         `json:"target_type"`
+	TargetID    uuid.UUID      `json:"target_id"`
+	Details     map[string]any `json:"details,omitempty"`
+	IPAddress   string         `json:"ip_address"`
+	UserAgent   string         `json:"user_agent"`
+	CreatedAt   time.Time      `json:"created_at"`
 
 	// Joined data
 	AdminUser *AdminUserSummary `json:"admin_user,omitempty"`
@@ -274,22 +274,22 @@ type AdminAuditLogSearch struct {
 
 // PlatformOverview represents high-level platform statistics
 type PlatformOverview struct {
-	TotalUsers        int64   `json:"total_users"`
-	ActiveUsers       int64   `json:"active_users"`      // Active in last 30 days
-	NewUsersToday     int64   `json:"new_users_today"`
-	NewUsersThisWeek  int64   `json:"new_users_this_week"`
+	TotalUsers       int64 `json:"total_users"`
+	ActiveUsers      int64 `json:"active_users"` // Active in last 30 days
+	NewUsersToday    int64 `json:"new_users_today"`
+	NewUsersThisWeek int64 `json:"new_users_this_week"`
 
-	TotalCampaigns    int64   `json:"total_campaigns"`
-	ActiveCampaigns   int64   `json:"active_campaigns"`
+	TotalCampaigns  int64 `json:"total_campaigns"`
+	ActiveCampaigns int64 `json:"active_campaigns"`
 
-	TotalEmailsSent   int64   `json:"total_emails_sent"`
-	EmailsSentToday   int64   `json:"emails_sent_today"`
+	TotalEmailsSent int64 `json:"total_emails_sent"`
+	EmailsSentToday int64 `json:"emails_sent_today"`
 
-	TotalWorkers      int64   `json:"total_workers"`
-	ActiveWorkers     int64   `json:"active_workers"`
+	TotalWorkers  int64 `json:"total_workers"`
+	ActiveWorkers int64 `json:"active_workers"`
 
-	WarmupBlockedCount int64  `json:"warmup_blocked_count"`
-	PendingAppeals    int64   `json:"pending_appeals"`
+	WarmupBlockedCount int64 `json:"warmup_blocked_count"`
+	PendingAppeals     int64 `json:"pending_appeals"`
 
 	ActiveSubscriptions int64 `json:"active_subscriptions"`
 	TrialingUsers       int64 `json:"trialing_users"`
@@ -297,13 +297,13 @@ type PlatformOverview struct {
 
 // DailyEmailStats represents daily email statistics for graphs
 type DailyEmailStats struct {
-	Date          time.Time `json:"date"`
-	TotalSent     int64     `json:"total_sent"`
-	TotalDelivered int64    `json:"total_delivered"`
-	TotalBounced  int64     `json:"total_bounced"`
-	TotalOpened   int64     `json:"total_opened"`
-	TotalClicked  int64     `json:"total_clicked"`
-	TotalReplied  int64     `json:"total_replied"`
+	Date           time.Time `json:"date"`
+	TotalSent      int64     `json:"total_sent"`
+	TotalDelivered int64     `json:"total_delivered"`
+	TotalBounced   int64     `json:"total_bounced"`
+	TotalOpened    int64     `json:"total_opened"`
+	TotalClicked   int64     `json:"total_clicked"`
+	TotalReplied   int64     `json:"total_replied"`
 }
 
 // HourlyEmailStats represents hourly email statistics
@@ -325,9 +325,9 @@ type WorkerLoadStats struct {
 
 // UserGrowthStats represents user growth statistics
 type UserGrowthStats struct {
-	Date      time.Time `json:"date"`
-	NewUsers  int64     `json:"new_users"`
-	TotalUsers int64    `json:"total_users"`
+	Date       time.Time `json:"date"`
+	NewUsers   int64     `json:"new_users"`
+	TotalUsers int64     `json:"total_users"`
 }
 
 // AnalyticsTrends represents trend data for analytics
@@ -394,7 +394,7 @@ type AdminEnterpriseInquiry struct {
 	UpdatedAt          time.Time  `json:"updated_at"`
 
 	// Joined data
-	User       *AdminUserSummary `json:"user,omitempty"`
+	User          *AdminUserSummary `json:"user,omitempty"`
 	AssignedAdmin *AdminUserSummary `json:"assigned_admin,omitempty"`
 }
 
@@ -458,33 +458,33 @@ type UpdateUserRateLimitsRequest struct {
 
 // AdminUserPreview represents a full preview of a user's account
 type AdminUserPreview struct {
-	User          AdminUserDetail       `json:"user"`
-	Organizations []Organization        `json:"organizations"`
-	Subscriptions []Subscription        `json:"subscriptions"`
-	EmailAccounts []AdminWorkerEmail    `json:"email_accounts"`
-	RecentBans    []UserBan             `json:"recent_bans"`
-	RateLimits    *AdminUserRateLimits  `json:"rate_limits,omitempty"`
+	User          AdminUserDetail      `json:"user"`
+	Organizations []Organization       `json:"organizations"`
+	Subscriptions []Subscription       `json:"subscriptions"`
+	EmailAccounts []AdminWorkerEmail   `json:"email_accounts"`
+	RecentBans    []UserBan            `json:"recent_bans"`
+	RateLimits    *AdminUserRateLimits `json:"rate_limits,omitempty"`
 }
 
 // WarmupPoolInfo represents information about a warmup pool
 type WarmupPoolInfo struct {
-	Type             string `json:"type"`
-	TotalParticipants int64 `json:"total_participants"`
-	ActiveParticipants int64 `json:"active_participants"`
-	BlockedCount      int64 `json:"blocked_count"`
+	Type               string `json:"type"`
+	TotalParticipants  int64  `json:"total_participants"`
+	ActiveParticipants int64  `json:"active_participants"`
+	BlockedCount       int64  `json:"blocked_count"`
 }
 
 // WarmupPoolParticipant represents a participant in a warmup pool
 type WarmupPoolParticipant struct {
-	ID            uuid.UUID  `json:"id"`
-	Email         string     `json:"email"`
-	UserID        uuid.UUID  `json:"user_id"`
-	JoinedAt      time.Time  `json:"joined_at"`
-	EmailsSent    int64      `json:"emails_sent"`
-	EmailsReceived int64     `json:"emails_received"`
-	ReputationScore float64  `json:"reputation_score"`
-	IsBlocked     bool       `json:"is_blocked"`
-	BlockedAt     *time.Time `json:"blocked_at,omitempty"`
+	ID              uuid.UUID  `json:"id"`
+	Email           string     `json:"email"`
+	UserID          uuid.UUID  `json:"user_id"`
+	JoinedAt        time.Time  `json:"joined_at"`
+	EmailsSent      int64      `json:"emails_sent"`
+	EmailsReceived  int64      `json:"emails_received"`
+	ReputationScore float64    `json:"reputation_score"`
+	IsBlocked       bool       `json:"is_blocked"`
+	BlockedAt       *time.Time `json:"blocked_at,omitempty"`
 
 	// Joined data
 	User *AdminUserSummary `json:"user,omitempty"`
@@ -498,19 +498,19 @@ type WarmupPoolParticipantsResult struct {
 
 // WorkerStats represents statistics for a specific worker
 type WorkerStats struct {
-	WorkerID          uuid.UUID `json:"worker_id"`
-	TotalEmailsSent   int64     `json:"total_emails_sent"`
-	EmailsSentToday   int64     `json:"emails_sent_today"`
-	EmailsSentThisWeek int64    `json:"emails_sent_this_week"`
-	AverageDeliveryTime float64 `json:"average_delivery_time_ms"`
-	SuccessRate       float64   `json:"success_rate"`
-	QueueDepth        int64     `json:"queue_depth"`
+	WorkerID            uuid.UUID `json:"worker_id"`
+	TotalEmailsSent     int64     `json:"total_emails_sent"`
+	EmailsSentToday     int64     `json:"emails_sent_today"`
+	EmailsSentThisWeek  int64     `json:"emails_sent_this_week"`
+	AverageDeliveryTime float64   `json:"average_delivery_time_ms"`
+	SuccessRate         float64   `json:"success_rate"`
+	QueueDepth          int64     `json:"queue_depth"`
 }
 
 // EmailDistribution represents email distribution across workers
 type EmailDistribution struct {
-	WorkerID       uuid.UUID `json:"worker_id"`
-	WorkerName     string    `json:"worker_name"`
-	EmailCount     int64     `json:"email_count"`
-	Percentage     float64   `json:"percentage"`
+	WorkerID   uuid.UUID `json:"worker_id"`
+	WorkerName string    `json:"worker_name"`
+	EmailCount int64     `json:"email_count"`
+	Percentage float64   `json:"percentage"`
 }

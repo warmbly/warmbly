@@ -2,12 +2,13 @@ package worker
 
 import (
 	"context"
+	"fmt"
+	"time"
 )
 
-func (s *WorkerService) heartbeat(ctx context.Context) error {
-	if err := s.Cache.Publish(ctx, "worker:heartbeat", s.ID).Err(); err != nil {
-		return err
-	}
+const heartbeatTTL = 3 * time.Minute // Workers heartbeat every 90s, so 3min TTL means 1 missed beat is OK
 
-	return nil
+func (s *WorkerService) heartbeat(ctx context.Context) error {
+	key := fmt.Sprintf("worker:heartbeat:%s", s.ID)
+	return s.Cache.Set(ctx, key, time.Now().UTC().Format(time.RFC3339), heartbeatTTL).Err()
 }

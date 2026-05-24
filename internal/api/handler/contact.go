@@ -7,9 +7,12 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/api/middleware"
+	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 )
+
+const maxBulkOperationSize = 1000
 
 func (h *Handler) AddContacts(c *gin.Context) {
 	userIDStr := middleware.GetUserID(c)
@@ -18,6 +21,15 @@ func (h *Handler) AddContacts(c *gin.Context) {
 
 	if err := c.ShouldBindJSON(&data); err != nil {
 		errx.Handle(c, errx.ErrInvalid)
+		return
+	}
+
+	if len(data) == 0 {
+		errx.Handle(c, errx.New(errx.BadRequest, "no contacts provided"))
+		return
+	}
+	if len(data) > config.MaxContactSize {
+		errx.Handle(c, errx.New(errx.BadRequest, fmt.Sprintf("too many contacts, maximum is %d", config.MaxContactSize)))
 		return
 	}
 
@@ -65,6 +77,15 @@ func (h *Handler) UpdateContactBulk(c *gin.Context) {
 
 	if err := c.ShouldBindJSON(&data); err != nil {
 		errx.Handle(c, errx.ErrInvalid)
+		return
+	}
+
+	if len(data.Contacts) == 0 {
+		errx.Handle(c, errx.New(errx.BadRequest, "no contacts provided"))
+		return
+	}
+	if len(data.Contacts) > maxBulkOperationSize {
+		errx.Handle(c, errx.New(errx.BadRequest, fmt.Sprintf("too many contacts, maximum is %d per batch", maxBulkOperationSize)))
 		return
 	}
 
@@ -117,6 +138,15 @@ func (h *Handler) DeleteContactBulk(c *gin.Context) {
 
 	if err := c.ShouldBindJSON(&data); err != nil {
 		errx.Handle(c, errx.ErrInvalid)
+		return
+	}
+
+	if len(data) == 0 {
+		errx.Handle(c, errx.New(errx.BadRequest, "no contacts provided"))
+		return
+	}
+	if len(data) > maxBulkOperationSize {
+		errx.Handle(c, errx.New(errx.BadRequest, fmt.Sprintf("too many contacts, maximum is %d per batch", maxBulkOperationSize)))
 		return
 	}
 

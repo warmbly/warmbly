@@ -54,10 +54,10 @@ const (
 
 // CriticalEvents are events that should be persisted for catch-up
 var CriticalEvents = map[RealtimeEventType]bool{
-	EventEmailError:    true,
-	EventEmailStatus:   true,
+	EventEmailError:     true,
+	EventEmailStatus:    true,
 	EventCampaignStatus: true,
-	EventWarmupBlocked: true,
+	EventWarmupBlocked:  true,
 }
 
 // RealtimeMessage is the base message format sent over WebSocket
@@ -159,14 +159,14 @@ type ContactChangedPayload struct {
 
 // WarmupProgressPayload for warmup progress events
 type WarmupProgressPayload struct {
-	AccountID    uuid.UUID `json:"account_id"`
-	DailySent    int       `json:"daily_sent"`
-	DailyTarget  int       `json:"daily_target"`
-	TotalSent    int       `json:"total_sent"`
-	WarmupDays   int       `json:"warmup_days"`
-	HealthScore  int       `json:"health_score"`
-	ReplyRate    float64   `json:"reply_rate"`
-	Timestamp    time.Time `json:"timestamp"`
+	AccountID   uuid.UUID `json:"account_id"`
+	DailySent   int       `json:"daily_sent"`
+	DailyTarget int       `json:"daily_target"`
+	TotalSent   int       `json:"total_sent"`
+	WarmupDays  int       `json:"warmup_days"`
+	HealthScore int       `json:"health_score"`
+	ReplyRate   float64   `json:"reply_rate"`
+	Timestamp   time.Time `json:"timestamp"`
 }
 
 // WarmupBlockedPayload for warmup blocked events
@@ -208,8 +208,8 @@ type AnalyticsEventPayload struct {
 	CampaignID uuid.UUID  `json:"campaign_id"`
 	ContactID  uuid.UUID  `json:"contact_id"`
 	EmailID    *uuid.UUID `json:"email_id,omitempty"`
-	Link       string     `json:"link,omitempty"`    // For click events
-	Reason     string     `json:"reason,omitempty"`  // For bounce events
+	Link       string     `json:"link,omitempty"`   // For click events
+	Reason     string     `json:"reason,omitempty"` // For bounce events
 	Timestamp  time.Time  `json:"timestamp"`
 }
 
