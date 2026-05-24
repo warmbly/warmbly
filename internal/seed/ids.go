@@ -42,9 +42,9 @@ var (
 	SubGlobexID = uuid.MustParse("00000000-0000-0000-0000-000000000502")
 
 	// Email accounts (00000000-0000-0000-0000-0000000006xx).
-	EmailAcmeAliceID   = uuid.MustParse("00000000-0000-0000-0000-000000000601")
-	EmailAcmeBobID     = uuid.MustParse("00000000-0000-0000-0000-000000000602")
-	EmailGlobexHansID  = uuid.MustParse("00000000-0000-0000-0000-000000000603")
+	EmailAcmeAliceID  = uuid.MustParse("00000000-0000-0000-0000-000000000601")
+	EmailAcmeBobID    = uuid.MustParse("00000000-0000-0000-0000-000000000602")
+	EmailGlobexHansID = uuid.MustParse("00000000-0000-0000-0000-000000000603")
 
 	// Campaigns (00000000-0000-0000-0000-0000000007xx).
 	CampaignAcmeActiveID = uuid.MustParse("00000000-0000-0000-0000-000000000701")

@@ -9,36 +9,36 @@ import (
 
 func seedEmailAccounts(ctx context.Context, pool *pgxpool.Pool, r *Result) error {
 	type account struct {
-		id         uuid.UUID
-		userID     uuid.UUID
-		orgID      uuid.UUID
-		workerID   uuid.UUID
-		email      string
-		name       string
-		provider   string
-		warmupTag  string
-		warmupOn   bool
-		poolType   string
+		id        uuid.UUID
+		userID    uuid.UUID
+		orgID     uuid.UUID
+		workerID  uuid.UUID
+		email     string
+		name      string
+		provider  string
+		warmupTag string
+		warmupOn  bool
+		poolType  string
 	}
 	accounts := []account{
 		{
 			id: EmailAcmeAliceID, userID: UserOwnerID, orgID: OrgAcmeID,
 			workerID: WorkerDedicatedID,
-			email: "alice@acme.test", name: "Alice from Acme",
+			email:    "alice@acme.test", name: "Alice from Acme",
 			provider: "gmail", warmupTag: "seed-warmup-acme-alice",
 			warmupOn: true, poolType: "premium",
 		},
 		{
 			id: EmailAcmeBobID, userID: UserOwnerID, orgID: OrgAcmeID,
 			workerID: WorkerSharedID,
-			email: "bob@acme.test", name: "Bob from Acme",
+			email:    "bob@acme.test", name: "Bob from Acme",
 			provider: "smtp_imap", warmupTag: "seed-warmup-acme-bob",
 			warmupOn: true, poolType: "premium",
 		},
 		{
 			id: EmailGlobexHansID, userID: UserFounderID, orgID: OrgGlobexID,
 			workerID: WorkerFreeID,
-			email: "hans@globex.test", name: "Hans Globex",
+			email:    "hans@globex.test", name: "Hans Globex",
 			provider: "gmail", warmupTag: "seed-warmup-globex-hans",
 			warmupOn: false, poolType: "free",
 		},
