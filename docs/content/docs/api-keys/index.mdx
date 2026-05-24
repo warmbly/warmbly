@@ -37,9 +37,10 @@ The API key object contains the following fields:
   "user_id": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
   "organization_id": "6ba7b811-9dad-11d1-80b4-00c04fd430c8",
   "name": "Production API Key",
-  "key_prefix": "wmbly_abc",
-  "permissions": 8191,
-  "allowed_ips": ["203.0.113.10"],
+  "key_prefix": "wmbly_ab",
+  "key_suffix": "wxyz",
+  "permissions": 688159,
+  "allowed_ips": ["203.0.113.10", "10.0.0.0/8"],
   "allowed_email_accounts": [],
   "status": "active",
   "last_used_at": "2024-01-15T10:30:00Z",
@@ -59,10 +60,11 @@ The API key object contains the following fields:
 | `user_id` | UUID | ID of the user who created the key |
 | `organization_id` | UUID | ID of the organization |
 | `name` | string | Human-readable name for the key |
-| `key_prefix` | string | First 10 characters of the key (for identification) |
+| `key_prefix` | string | First 8 characters of the key, including the `wmbly_` brand |
+| `key_suffix` | string | Last 4 characters of the key — display as `wmbly_ab...wxyz` |
 | `permissions` | integer | Bitmask of granted permissions |
-| `allowed_ips` | array | IP addresses allowed to use this key (empty = all) |
-| `allowed_email_accounts` | array | Email account IDs this key can access (empty = all) |
+| `allowed_ips` | array | IPs or CIDR blocks allowed to use this key (empty = all). Accepts `10.0.0.1`, `192.168.0.0/16`, `2001:db8::/32` |
+| `allowed_email_accounts` | array | Email account UUIDs this key can access (empty = all) |
 | `status` | string | Key status: `active`, `revoked`, or `expired` |
 | `last_used_at` | timestamp | When the key was last used |
 | `expires_at` | timestamp | When the key expires (null = never) |

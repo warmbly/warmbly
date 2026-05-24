@@ -20,6 +20,7 @@ type APIKey struct {
 	OrganizationID uuid.UUID `json:"organization_id"`
 	Name           string    `json:"name"`
 	KeyPrefix      string    `json:"key_prefix"`
+	KeySuffix      string    `json:"key_suffix"`
 	Permissions    uint64    `json:"permissions"`
 
 	AllowedIPs           []string    `json:"allowed_ips,omitempty"`
