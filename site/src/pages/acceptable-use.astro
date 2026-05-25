@@ -1,0 +1,76 @@
+---
+import Legal from '../layouts/Legal.astro';
+---
+<Legal
+  title="Acceptable Use Policy"
+  description="The conduct Warmbly expects from customers and the conduct that puts shared infrastructure — and your account — at risk."
+  effective="2026-05-01"
+>
+  <p>
+    Cold email is a privilege. The Warmbly platform shares infrastructure across thousands of senders, and one misbehaving sender can hurt placement for every other paying customer in the same warmup pool. This Acceptable Use Policy ("AUP") sets out the conduct we require.
+  </p>
+
+  <h2>1. Prohibited content</h2>
+  <p>You may not use the service to send mail that:</p>
+  <ul>
+    <li>Is fraudulent, deceptive, or promotes phishing, money mules, or payment scams.</li>
+    <li>Impersonates a person, brand or organisation you have no authority to represent.</li>
+    <li>Promotes illegal activity, including controlled substances, illegal gambling, illegal weapons, malware or hacking services.</li>
+    <li>Targets minors with marketing.</li>
+    <li>Contains sexually explicit content or solicits sexual services.</li>
+    <li>Promotes hate, violence, or discrimination on the basis of protected characteristics.</li>
+    <li>Distributes copyrighted material without the rights holder's permission.</li>
+    <li>Contains malware, exploit code, or links to known phishing sites.</li>
+  </ul>
+
+  <h2>2. Prohibited sending behaviour</h2>
+  <ul>
+    <li>Sending to purchased or scraped lists where you have no documented basis to contact the recipient.</li>
+    <li>Sending to recipients who have asked you to stop.</li>
+    <li>Sending bulk consumer marketing without consent in jurisdictions where consent is required.</li>
+    <li>Forging sender identity, bypassing authentication, or sending from a domain you don't own.</li>
+    <li>Sending high-volume mail from a single mailbox in violation of platform caps.</li>
+    <li>Attempting to evade reputation enforcement by churning mailboxes after quarantine.</li>
+    <li>Aggregating multiple customer workspaces under one account to bypass billing.</li>
+  </ul>
+
+  <h2>3. Required practices</h2>
+  <ul>
+    <li>Configure SPF, DKIM and DMARC correctly for every sending domain.</li>
+    <li>Include a real physical address in your sender profile.</li>
+    <li>Provide a clear opt-out mechanism (reply or one-click) in every message that requires one.</li>
+    <li>Honour opt-outs immediately, not "within 10 days".</li>
+    <li>Maintain a documented basis for contacting each recipient (legitimate interest, consent, existing relationship).</li>
+    <li>Use plain text or minimal HTML; avoid image-only bodies and tracking-pixel-only campaigns.</li>
+    <li>Send at sensible volumes within platform caps; do not attempt to override them.</li>
+  </ul>
+
+  <h2>4. Platform safety</h2>
+  <ul>
+    <li>Do not probe, scan, stress-test or attempt to penetrate the platform without our written consent.</li>
+    <li>Do not interfere with other customers' use of the service.</li>
+    <li>Do not use the API to scrape data you would not otherwise be entitled to access.</li>
+    <li>Do not attempt to identify other customers' contacts, workspaces or accounts.</li>
+  </ul>
+
+  <h2>5. Enforcement</h2>
+  <p>
+    Violations of this AUP may result in:
+  </p>
+  <ul>
+    <li>Increased monitoring of the relevant mailbox or workspace.</li>
+    <li>Throttling of send rate.</li>
+    <li>Quarantine of mailboxes from shared pools.</li>
+    <li>Suspension of the workspace pending review.</li>
+    <li>Termination of the account.</li>
+    <li>In serious cases, reporting to law enforcement or affected third parties.</li>
+  </ul>
+  <p>
+    Where reasonable, we will give notice and an opportunity to cure. Where the behaviour threatens shared infrastructure (high complaint rates, fraud, abuse signals), we may act immediately.
+  </p>
+
+  <h2>6. Report a violation</h2>
+  <p>
+    To report suspected abuse, email <a href="mailto:abuse@warmbly.com">abuse@warmbly.com</a>. Include the relevant message headers if you can.
+  </p>
+</Legal>

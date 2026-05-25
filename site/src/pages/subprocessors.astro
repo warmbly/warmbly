@@ -1,0 +1,50 @@
+---
+import Legal from '../layouts/Legal.astro';
+
+const rows = [
+  ['AWS',          'Compute, storage, KMS, DynamoDB, S3, Kafka (MSK), Postgres (RDS)', 'us-east-1, eu-west-1', 'United States, Ireland'],
+  ['Cloudflare',   'CDN, edge security, Turnstile CAPTCHA, DDoS protection',           'Global',                'Global'],
+  ['Stripe',       'Payments, billing, tax',                                           'us-east-1',             'United States'],
+  ['PostHog',      'Product analytics (workspace-owner-disable-able)',                 'eu-central-1',          'Germany'],
+  ['Slack',        'Customer support escalations',                                     'us-east-1',             'United States'],
+  ['Linear',       'Internal issue tracking referenced in support replies',            'us-east-1',             'United States'],
+  ['Sentry',       'Error reporting, scrubbed of customer content',                    'us-east-1',             'United States'],
+  ['Postmark',     'Transactional account email (receipts, security alerts)',          'us-east-1',             'United States'],
+  ['HubSpot',      'Marketing-website forms (sales contact only)',                     'us-east-1',             'United States'],
+];
+---
+<Legal
+  title="Subprocessors"
+  description="The third parties Warmbly engages to deliver the service. Updated whenever a subprocessor is added or changed."
+  effective="2026-05-01"
+>
+  <p>
+    Warmbly engages the third parties listed below to deliver the service. We give 30 days' notice (via this page and an in-app notice) before adding a new subprocessor that processes customer Personal Data.
+  </p>
+
+  <h2>Active subprocessors</h2>
+  <div class="overflow-x-auto rounded-xl border border-border bg-card -mx-1">
+    <table class="w-full text-[14px] min-w-[600px]">
+      <thead class="bg-surface-2/70 text-[12px] uppercase tracking-wider text-muted-foreground">
+        <tr>
+          <th class="text-left font-semibold px-5 py-3">Subprocessor</th>
+          <th class="text-left font-semibold px-5 py-3">Purpose</th>
+          <th class="text-left font-semibold px-5 py-3">Region</th>
+          <th class="text-left font-semibold px-5 py-3">Country</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-border">
+        {rows.map((r) => (
+          <tr>
+            {r.map((c, i) => <td class={`px-5 py-3 ${i === 0 ? 'font-medium' : 'text-muted-foreground'}`}>{c}</td>)}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+
+  <h2>Subscribe to changes</h2>
+  <p>
+    Email <a href="mailto:legal@warmbly.com?subject=Subprocessor%20updates">legal@warmbly.com</a> to be notified of subprocessor changes by email. We send a notice at least 30 days before any change that affects customer data processing.
+  </p>
+</Legal>

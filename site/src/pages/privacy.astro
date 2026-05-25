@@ -1,0 +1,107 @@
+---
+import Legal from '../layouts/Legal.astro';
+---
+<Legal
+  title="Privacy Policy"
+  description="What data Warmbly collects, why we collect it, and how we handle it."
+  effective="2026-05-01"
+>
+  <p>
+    This Privacy Policy describes how Warmbly Labs, Inc. ("Warmbly", "we", "us") collects, uses and shares personal information when you visit our websites, create an account, or use our services.
+  </p>
+
+  <h2>1. The data we collect</h2>
+  <h3>Account data</h3>
+  <ul>
+    <li>Name, email address, password hash, profile photo (if uploaded).</li>
+    <li>Workspace name, billing address, payment method (handled by Stripe).</li>
+    <li>Team-member emails and roles you add to the workspace.</li>
+  </ul>
+
+  <h3>Mailbox connection data</h3>
+  <ul>
+    <li>Mailbox provider, mailbox address, OAuth tokens or SMTP credentials.</li>
+    <li>Display name, signature, send rate configuration.</li>
+    <li>Encrypted credentials are stored using envelope encryption with AWS KMS.</li>
+  </ul>
+
+  <h3>Customer content</h3>
+  <ul>
+    <li>Contacts, sequences, message templates, sent and received message metadata, replies, suppression entries.</li>
+    <li>Files you upload (e.g. CSV imports).</li>
+  </ul>
+
+  <h3>Telemetry</h3>
+  <ul>
+    <li>Server-side logs (IP, user agent, timestamps, request paths) used for security, billing, and abuse prevention.</li>
+    <li>Product analytics for feature usage and stability (workspace owner can disable for the workspace).</li>
+    <li>Error reports (Sentry) — scrubbed of customer content.</li>
+  </ul>
+
+  <h2>2. How we use it</h2>
+  <ul>
+    <li>To provide the service: connect mailboxes, send mail, surface replies, run analytics you can read.</li>
+    <li>To bill you accurately.</li>
+    <li>To detect and prevent abuse, fraud, and platform misuse.</li>
+    <li>To send transactional emails (account activity, security alerts, billing receipts).</li>
+    <li>To improve the product based on aggregated usage patterns.</li>
+    <li>To respond to support requests.</li>
+  </ul>
+  <p>
+    We do not sell personal information to advertisers.
+  </p>
+
+  <h2>3. Legal bases (GDPR)</h2>
+  <ul>
+    <li>Performance of a contract — almost all account and service use.</li>
+    <li>Legitimate interest — security, fraud prevention, product improvement.</li>
+    <li>Consent — optional product analytics, optional marketing email subscriptions.</li>
+    <li>Compliance with legal obligations — invoicing, tax records.</li>
+  </ul>
+
+  <h2>4. Sharing</h2>
+  <p>
+    We share data with vetted subprocessors as needed to deliver the service. The complete list is published at <a href="/subprocessors/">/subprocessors</a>. We do not share customer content with third parties for their own marketing.
+  </p>
+  <p>
+    We may disclose data if required by law, court order, or to protect our rights or the safety of users.
+  </p>
+
+  <h2>5. International transfers</h2>
+  <p>
+    Customer content can be stored in the United States or the European Union depending on the data-residency setting on your plan. Transfers from the EU are subject to Standard Contractual Clauses.
+  </p>
+
+  <h2>6. Retention</h2>
+  <ul>
+    <li>Account data: while your account is active, plus a wind-down period of up to 30 days after closure.</li>
+    <li>Customer content: while your account is active. On closure, we delete or anonymise within 30 days unless retention is required by law.</li>
+    <li>Backups: rolling encrypted backups retained for up to 35 days.</li>
+    <li>Telemetry: aggregated indefinitely; raw logs retained 30 days unless flagged for incident investigation.</li>
+  </ul>
+
+  <h2>7. Your rights</h2>
+  <p>
+    Depending on your jurisdiction, you may have the right to access, correct, delete, restrict or export your personal information, and to object to certain processing. Email <a href="mailto:privacy@warmbly.com">privacy@warmbly.com</a> and we will respond within 30 days.
+  </p>
+
+  <h2>8. Security</h2>
+  <p>
+    We protect customer data with envelope encryption (AES-256-GCM with KMS-derived data keys), TLS in transit, strict access controls, audit logging, and ongoing security review. Details at <a href="/security/">/security</a>.
+  </p>
+
+  <h2>9. Children</h2>
+  <p>
+    The service is not intended for children under 16. We do not knowingly collect data from children. If you believe a child has provided us data, contact us and we will delete it.
+  </p>
+
+  <h2>10. Changes</h2>
+  <p>
+    We may update this policy. Material changes will be announced via email or in-app notice at least 30 days in advance.
+  </p>
+
+  <h2>11. Contact</h2>
+  <p>
+    Warmbly Labs, Inc. — 1209 N. Orange Street, Wilmington, DE 19801, USA. Privacy contact: <a href="mailto:privacy@warmbly.com">privacy@warmbly.com</a>.
+  </p>
+</Legal>

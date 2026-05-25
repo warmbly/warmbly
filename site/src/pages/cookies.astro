@@ -1,0 +1,49 @@
+---
+import Legal from '../layouts/Legal.astro';
+---
+<Legal
+  title="Cookies"
+  description="The cookies and similar technologies Warmbly uses on its websites and applications."
+  effective="2026-05-01"
+>
+  <p>
+    Warmbly uses a small number of cookies. We don't run third-party advertising trackers, and we don't sell cookie data.
+  </p>
+
+  <h2>Essential cookies</h2>
+  <ul>
+    <li><code>warmbly_session</code> — your authenticated session for the application. Expires when you log out or after 30 days of inactivity.</li>
+    <li><code>warmbly_csrf</code> — protects against cross-site request forgery on form submissions.</li>
+    <li><code>warmbly_theme</code> — remembers your light/dark theme choice.</li>
+  </ul>
+
+  <h2>Functional cookies</h2>
+  <ul>
+    <li><code>warmbly_workspace</code> — last selected workspace, so you land in the right place after login.</li>
+    <li><code>warmbly_dismissed_notice_*</code> — remembers which one-time notices you've dismissed.</li>
+  </ul>
+
+  <h2>Analytics</h2>
+  <p>
+    We use PostHog for product analytics (workspace-owner-disable-able). PostHog uses a first-party cookie named <code>ph_*</code> to attribute events to a session. We don't share PostHog data with third parties.
+  </p>
+
+  <h2>Third-party cookies</h2>
+  <p>
+    The Warmbly application embeds the following third-party services, each of which may set its own cookies in your browser:
+  </p>
+  <ul>
+    <li><strong>Stripe</strong> — when you visit billing pages or enter card details. Required to complete payment.</li>
+    <li><strong>Cloudflare Turnstile</strong> — bot-protection CAPTCHA on login, signup and password reset.</li>
+  </ul>
+
+  <h2>Managing cookies</h2>
+  <p>
+    Most browsers let you block or delete cookies. Blocking essential cookies will prevent you from staying logged in. You can disable PostHog analytics on a per-workspace basis in workspace settings.
+  </p>
+
+  <h2>Do Not Track</h2>
+  <p>
+    Our application surfaces the same product whether or not your browser sends a Do Not Track signal. We don't use targeted advertising trackers either way.
+  </p>
+</Legal>
