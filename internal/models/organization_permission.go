@@ -1,7 +1,43 @@
 package models
 
-// OrganizationPermission represents a bitmask of permissions for organization members
+import (
+	"database/sql/driver"
+	"fmt"
+)
+
+// OrganizationPermission represents a bitmask of permissions for organization members.
+//
+// The DB column is SMALLINT (signed int16), but this type is uint16 so the
+// full 16-bit space is usable (RoleOwner == 0xFFFF). The Value/Scan pair
+// reinterprets the bits between int16 and uint16 so a high-bit-set value
+// like 0xFFFF round-trips as -1 on disk and back, without pgx rejecting
+// either direction.
 type OrganizationPermission uint16
+
+// Value implements driver.Valuer. Reinterpret the uint16 bits as int16 so
+// pgx accepts values > 32767 when writing into a SMALLINT column.
+func (p OrganizationPermission) Value() (driver.Value, error) {
+	return int64(int16(p)), nil
+}
+
+// Scan implements sql.Scanner. The SMALLINT column comes back as int (any
+// width depending on driver); reinterpret the low 16 bits as uint16 so a
+// stored -1 reads as 0xFFFF.
+func (p *OrganizationPermission) Scan(src any) error {
+	switch v := src.(type) {
+	case nil:
+		*p = 0
+	case int64:
+		*p = OrganizationPermission(uint16(v))
+	case int32:
+		*p = OrganizationPermission(uint16(v))
+	case int16:
+		*p = OrganizationPermission(uint16(v))
+	default:
+		return fmt.Errorf("OrganizationPermission.Scan: unsupported type %T", src)
+	}
+	return nil
+}
 
 const (
 	// PermManageTeam allows inviting/removing members
