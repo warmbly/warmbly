@@ -20,6 +20,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/admin"
 	"github.com/warmbly/warmbly/internal/app/advanced"
 	"github.com/warmbly/warmbly/internal/app/apikey"
+	"github.com/warmbly/warmbly/internal/app/audit"
 	"github.com/warmbly/warmbly/internal/app/auth"
 	"github.com/warmbly/warmbly/internal/app/campaign"
 	"github.com/warmbly/warmbly/internal/app/cipher"
@@ -654,6 +655,12 @@ func main() {
 
 		// Danger zone
 		DangerZoneService: dangerZoneService,
+
+		// Audit logs aren't persisted yet; install a no-op so the
+		// many h.AuditService.LogAction sites don't panic on a nil
+		// interface. Swap for audit.NewService(repo) when wiring the
+		// real repository.
+		AuditService: audit.NewNoOpService(),
 	}
 
 	m := &middleware.Handler{

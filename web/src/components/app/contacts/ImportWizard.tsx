@@ -108,7 +108,6 @@ export default function ImportWizard({ open, onClose }: Props) {
     const [previewBusy, setPreviewBusy] = React.useState<boolean>(false);
     const [commitBusy, setCommitBusy] = React.useState<boolean>(false);
     const [result, setResult] = React.useState<ImportResult | null>(null);
-    const [commitError, setCommitError] = React.useState<string | null>(null);
     const queryClient = useQueryClient();
 
     function reset() {
@@ -120,7 +119,6 @@ export default function ImportWizard({ open, onClose }: Props) {
         setDedup("skip");
         setCategoryIds([]);
         setResult(null);
-        setCommitError(null);
     }
 
     React.useEffect(() => {
@@ -148,7 +146,6 @@ export default function ImportWizard({ open, onClose }: Props) {
     async function commit() {
         if (!file || !preview) return;
         setCommitBusy(true);
-        setCommitError(null);
         try {
             const res = await importCommitContacts(file, {
                 mapping,
@@ -165,9 +162,7 @@ export default function ImportWizard({ open, onClose }: Props) {
                 toast(`Done with ${res.failed} errors`, { icon: "⚠️" });
             }
         } catch (err) {
-            const msg = describeError(err, "Import failed.");
-            setCommitError(msg);
-            toast.error(msg);
+            toast.error(describeError(err, "Import failed."));
         } finally {
             setCommitBusy(false);
         }
@@ -243,7 +238,6 @@ export default function ImportWizard({ open, onClose }: Props) {
                                     setDedup={setDedup}
                                     categoryIds={categoryIds}
                                     setCategoryIds={setCategoryIds}
-                                    error={commitError}
                                 />
                             )}
                             {step === "result" && result && (
@@ -619,29 +613,14 @@ function OptionsStep({
     setDedup,
     categoryIds,
     setCategoryIds,
-    error,
 }: {
     dedup: ImportDedupStrategy;
     setDedup: (v: ImportDedupStrategy) => void;
     categoryIds: string[];
     setCategoryIds: (v: string[]) => void;
-    error: string | null;
 }) {
     return (
         <div className="space-y-5">
-            {error && (
-                <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2.5 flex items-start gap-2">
-                    <AlertTriangleIcon className="w-3.5 h-3.5 text-red-600 mt-0.5 shrink-0" />
-                    <div className="min-w-0 flex-1">
-                        <div className="text-[11px] uppercase tracking-[0.14em] font-medium text-red-700">
-                            Import failed
-                        </div>
-                        <div className="text-[12px] text-red-900 leading-snug mt-0.5 whitespace-pre-wrap break-words">
-                            {error}
-                        </div>
-                    </div>
-                </div>
-            )}
             <section>
                 <h2 className="text-[10px] uppercase tracking-[0.14em] font-semibold text-slate-500 mb-2">
                     Duplicate handling
