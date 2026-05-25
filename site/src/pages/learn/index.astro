@@ -1,0 +1,44 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import PageHero from '../../components/PageHero.astro';
+import Section from '../../components/Section.astro';
+import Card from '../../components/Card.astro';
+import Icon from '../../components/Icon.astro';
+
+const articles = [
+  { href: '/learn/email-warmup/',         title: 'Email warmup, properly explained',     read: '11 min', body: 'Why warmup exists, how providers read it, and how to do it without faking signals.' },
+  { href: '/learn/deliverability/',       title: 'The deliverability handbook',          read: '14 min', body: 'A full mental model for getting cold mail into the inbox and keeping it there.' },
+  { href: '/learn/spf-dkim-dmarc/',       title: 'SPF, DKIM and DMARC, end to end',     read: '12 min', body: 'The three authentication records and the alignment rules that actually matter.' },
+  { href: '/learn/inbox-placement/',      title: 'Inbox placement, not just delivery',  read: '8 min',  body: 'Delivery is a 200 OK. Placement is whether the recipient actually sees the message.' },
+  { href: '/learn/cold-email-rules/',     title: 'Cold email rules across regions',     read: '10 min', body: 'CAN-SPAM, GDPR, CASL, PECR — what each says and how to comply without lawyering up.' },
+  { href: '/learn/warmup-pools/',         title: 'Warmup pools: free, premium, dedicated', read: '7 min', body: 'How shared warmup pools work, why pool quality matters more than pool size.' },
+  { href: '/learn/reputation-recovery/',  title: 'Recovering a burned mailbox',          read: '9 min',  body: 'A step-by-step plan to bring a quarantined mailbox back to healthy.' },
+  { href: '/learn/glossary/',             title: 'Glossary',                              read: '5 min',  body: 'Deliverability vocabulary, defined plainly.' },
+];
+---
+<Layout
+  title="Learn — Warmbly"
+  description="Long-form guides on email warmup, deliverability, authentication, cold email rules and reputation recovery."
+>
+  <PageHero
+    eyebrow="Learn"
+    title="The cold-email knowledge base we wished we had."
+    description="Plain-language explanations of warmup, deliverability, SPF/DKIM/DMARC, cold-mail rules and reputation recovery. Written by the people who built our pool-quarantine logic."
+  />
+  <Section>
+    <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      {articles.map((a) => (
+        <a href={a.href} class="group">
+          <Card class="h-full hover:border-border-strong transition-colors">
+            <div class="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">{a.read}</div>
+            <h3 class="mt-2 text-[16.5px] font-semibold leading-snug group-hover:text-brand-strong transition-colors">{a.title}</h3>
+            <p class="mt-2 text-[13.5px] text-muted-foreground leading-relaxed">{a.body}</p>
+            <span class="mt-4 inline-flex items-center gap-1.5 text-[13px] font-medium text-brand group-hover:text-brand-strong">
+              Read <Icon name="arrowRight" size={13} />
+            </span>
+          </Card>
+        </a>
+      ))}
+    </div>
+  </Section>
+</Layout>

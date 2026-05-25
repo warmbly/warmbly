@@ -1,0 +1,92 @@
+---
+import Layout from './Layout.astro';
+import Icon from '../components/Icon.astro';
+
+interface Props {
+  title: string;
+  description?: string;
+  eyebrow?: string;
+  reading?: string;
+  updated?: string;
+}
+const {
+  title,
+  description,
+  eyebrow = 'Learn',
+  reading = '6 min read',
+  updated,
+} = Astro.props;
+
+const sidebar: { title: string; links: { label: string; href: string }[] }[] = [
+  {
+    title: 'Foundations',
+    links: [
+      { label: 'Email warmup',            href: '/learn/email-warmup/' },
+      { label: 'Deliverability handbook', href: '/learn/deliverability/' },
+      { label: 'SPF, DKIM, DMARC',        href: '/learn/spf-dkim-dmarc/' },
+      { label: 'Inbox placement',         href: '/learn/inbox-placement/' },
+    ],
+  },
+  {
+    title: 'Sending well',
+    links: [
+      { label: 'Cold email rules',        href: '/learn/cold-email-rules/' },
+      { label: 'Warmup pools',            href: '/learn/warmup-pools/' },
+      { label: 'Reputation recovery',     href: '/learn/reputation-recovery/' },
+    ],
+  },
+  {
+    title: 'Reference',
+    links: [
+      { label: 'Glossary',                href: '/learn/glossary/' },
+    ],
+  },
+];
+
+const path = Astro.url.pathname;
+---
+<Layout title={title} description={description ?? title}>
+  <div class="container-page py-10 md:py-14 grid grid-cols-1 lg:grid-cols-[220px_minmax(0,1fr)] gap-10 lg:gap-14">
+    <aside class="lg:sticky lg:top-20 self-start">
+      <div class="text-[12px] uppercase tracking-wider font-semibold text-muted-foreground mb-4">{eyebrow}</div>
+      {sidebar.map((g) => (
+        <div class="mb-6">
+          <div class="text-[11px] uppercase tracking-wider font-semibold text-foreground/60 mb-2">{g.title}</div>
+          <ul class="space-y-1">
+            {g.links.map((l) => (
+              <li>
+                <a
+                  href={l.href}
+                  class={
+                    'block text-[13.5px] -mx-2 px-2 py-1.5 rounded-md transition-colors ' +
+                    (path === l.href
+                      ? 'bg-surface-2 text-foreground font-medium'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-surface-2/60')
+                  }
+                >
+                  {l.label}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </aside>
+
+    <article class="max-w-3xl prose-warmbly">
+      <a href="/learn/" class="inline-flex items-center gap-1.5 text-[13px] text-muted-foreground hover:text-foreground">
+        <Icon name="arrowRight" size={12} class="rotate-180" />
+        Back to Learn
+      </a>
+      <h1 class="mt-3 text-4xl md:text-5xl font-extrabold tracking-tight leading-[1.05]">{title}</h1>
+      <div class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12.5px] text-muted-foreground">
+        <span>{reading}</span>
+        {updated && <span>· Updated {updated}</span>}
+      </div>
+      {description && <p class="mt-5 text-lg text-muted-foreground leading-relaxed">{description}</p>}
+      <div class="mt-8 space-y-6 [&_h2]:text-2xl [&_h2]:font-bold [&_h2]:tracking-tight [&_h2]:mt-12 [&_h2]:mb-3 [&_h3]:text-lg [&_h3]:font-semibold [&_h3]:mt-8 [&_h3]:mb-2 [&_p]:text-[15.5px] [&_p]:leading-relaxed [&_p]:text-foreground/90 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:space-y-1.5 [&_ul]:text-[15px] [&_ul]:text-foreground/85 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:space-y-1.5 [&_ol]:text-[15px] [&_ol]:text-foreground/85 [&_a]:text-brand [&_a:hover]:text-brand-strong [&_code]:font-mono [&_code]:text-[0.92em] [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded [&_code]:bg-surface-2 [&_code]:border [&_code]:border-border [&_blockquote]:border-l-2 [&_blockquote]:border-border-strong [&_blockquote]:pl-4 [&_blockquote]:text-muted-foreground [&_blockquote]:text-[15px]">
+        <slot />
+      </div>
+    </article>
+  </div>
+</Layout>

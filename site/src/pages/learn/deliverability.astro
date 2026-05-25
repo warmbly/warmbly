@@ -1,0 +1,104 @@
+---
+import Learn from '../../layouts/Learn.astro';
+---
+<Learn
+  title="The deliverability handbook"
+  description="A full mental model for getting cold mail into the inbox, and keeping it there."
+  reading="14 min read"
+  updated="2026-05-08"
+>
+  <h2>What "deliverability" actually means</h2>
+  <p>
+    Deliverability is whether your message lands in the recipient's primary inbox — not whether the SMTP transaction returned 250. The latter is "delivery"; the former is "placement". Almost every conversation about deliverability conflates the two.
+  </p>
+  <p>
+    A mailbox provider can accept your message (delivery) and then immediately drop it into the Spam folder, the Promotions tab, or filter it out of the inbox entirely. None of that fails the SMTP transaction. Most cold-mail tools only see the green check.
+  </p>
+
+  <h2>The signals that decide placement</h2>
+  <h3>Authentication</h3>
+  <p>
+    SPF, DKIM and DMARC are not "extras". They are the baseline. A misaligned DMARC record can cap an otherwise healthy mailbox at 60% inbox placement. See our <a href="/learn/spf-dkim-dmarc/">SPF, DKIM, DMARC guide</a>.
+  </p>
+
+  <h3>Sender reputation</h3>
+  <p>
+    Mailbox providers maintain a moving reputation score per sending IP, per sending domain, and per "from" mailbox. Three vectors, all watched. A clean domain on a bad shared IP still suffers.
+  </p>
+
+  <h3>Recipient engagement</h3>
+  <p>
+    Did the recipient open? Reply? Move to Inbox from Spam? Add to address book? Each of those is a positive signal. Delete-without-reading and mark-as-spam are the negative ones.
+  </p>
+
+  <h3>Content</h3>
+  <p>
+    Cold mail with link-heavy HTML, image-only bodies, suspicious link patterns ("bit.ly to a .top domain"), or aggressive personalisation tokens raises flags. Plain text is the safest medium.
+  </p>
+
+  <h3>Volume and pattern</h3>
+  <p>
+    Sudden bursts. Big day-over-day spikes. Mail outside business hours from a mailbox that historically only sends 9–5. Mailbox providers model "normal" and flag deviation.
+  </p>
+
+  <h2>The thresholds you must respect</h2>
+  <ul>
+    <li><strong>Google bulk sender guidance:</strong> keep spam rate &lt; 0.10%. Never reach 0.30%.</li>
+    <li><strong>Amazon SES complaints:</strong> below 0.10% for best results. At 0.10% the account is auto-reviewed; at 0.50% it can be paused.</li>
+    <li><strong>Amazon SES bounces:</strong> below 5%. At 5% the account is reviewed; at 10% sending may pause.</li>
+    <li><strong>Microsoft Exchange Online:</strong> their own documentation says to use a specialised bulk provider for legitimate bulk commercial email.</li>
+  </ul>
+
+  <h2>Why mailbox-first beats worker-first</h2>
+  <p>
+    Plenty of cold-email platforms reason about volume as a worker-level number ("worker X can do 5,000 sends/day"). That breaks the moment you scale, because reputation lives at the mailbox and IP level.
+  </p>
+  <p>
+    The correct framing: each mailbox has a safe budget (the platform default is 50/day for cold). A worker's safe outbound volume is the sum of its mailboxes' budgets — never an independent ceiling. To send more, add more healthy mailboxes, not more pressure to existing ones.
+  </p>
+
+  <h2>The cold-email send recipe</h2>
+  <ol>
+    <li>Use a sub-domain for cold sending (<code>outreach.acme.com</code>). Reputation issues stay scoped.</li>
+    <li>Configure SPF, DKIM and DMARC on the sub-domain. Start at <code>p=none</code>; move to <code>p=quarantine</code> after you've watched DMARC reports for two weeks.</li>
+    <li>Warm every cold sending mailbox for at least 3 weeks before campaigns start.</li>
+    <li>Cap each mailbox at the platform default: 50 cold emails/day with a 10-minute minimum gap.</li>
+    <li>Spread campaign sends across multiple mailboxes; don't concentrate volume.</li>
+    <li>Plain text by default. No tracking pixels unless you absolutely need opens. No image-only bodies.</li>
+    <li>Two or three follow-ups, not eight. Each follow-up below the previous reply rate.</li>
+    <li>Suppression-aware. Bounces, complaints and unsubscribes suppress across all sequences.</li>
+    <li>Monitor placement weekly. Act on the watch band, not the catastrophic band.</li>
+    <li>Keep warmup running in parallel with cold campaigns.</li>
+  </ol>
+
+  <h2>What to measure</h2>
+  <ul>
+    <li><strong>Inbox placement rate</strong> per mailbox (probed via warmup partners and seed lists).</li>
+    <li><strong>Complaint rate</strong> per mailbox and per workspace.</li>
+    <li><strong>Bounce rate</strong> per mailbox, broken into hard vs soft.</li>
+    <li><strong>Reply rate</strong> per sequence, per step, per variant.</li>
+    <li><strong>Positive-reply rate</strong> — replies classified as positive vs OOO, negative, unsubscribe.</li>
+    <li><strong>Suppression growth</strong> as a percentage of contacted recipients.</li>
+  </ul>
+
+  <h2>What not to measure (or measure with skepticism)</h2>
+  <ul>
+    <li><strong>Open rate</strong> — Apple Mail Privacy proxies opens, Gmail caches images. The number is noise.</li>
+    <li><strong>Click-through on cold first-touch</strong> — most cold mail has no links, and "click anything" is itself a spam-folder signal.</li>
+    <li><strong>"Deliverability score"</strong> from vendors who won't tell you the formula.</li>
+  </ul>
+
+  <h2>When you spot a problem</h2>
+  <ol>
+    <li>Pause campaigns from the affected mailbox immediately.</li>
+    <li>Check the mailbox health band. If "watch" or worse, do not resume yet.</li>
+    <li>Verify SPF, DKIM, DMARC alignment hasn't drifted.</li>
+    <li>Drop warmup volume on the mailbox back to 5–10/day for a week.</li>
+    <li>If quarantined, expect a 7-day cooldown. If blocked, expect 30 days plus manual review.</li>
+    <li>Run <a href="/learn/reputation-recovery/">the recovery playbook</a>.</li>
+  </ol>
+
+  <blockquote>
+    The right time to fix deliverability is before you have a deliverability problem. The next-best time is the day the watch band trips, not the week you notice replies dropped.
+  </blockquote>
+</Learn>
