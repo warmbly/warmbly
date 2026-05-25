@@ -159,26 +159,11 @@ func (s *tasksService) HandleEmailTask(task *proto.ProcessTask) *errx.Error {
 		emailBody = GenerateConversationEmail(conversation, *account, false)
 	}
 
-	// STEP 8: Encrypt content
+	// STEP 8: Parse sender user ID for the outbound message.
+	// Warmup mail is not stored at rest, so we no longer call the cipher
+	// service here — the previous Encrypt() pair discarded its ciphertext
+	// and only served to warm the user's DEK in cache.
 	userUUID, err := uuid.Parse(account.UserID)
-	if err != nil {
-		sentry.CaptureException(err)
-		return errx.InternalError()
-	}
-
-	cipher, err := s.cipherService.Cipher(ctx, userUUID)
-	if err != nil {
-		sentry.CaptureException(err)
-		return errx.InternalError()
-	}
-
-	_, err = cipher.Encrypt(ctx, subject)
-	if err != nil {
-		sentry.CaptureException(err)
-		return errx.InternalError()
-	}
-
-	_, err = cipher.Encrypt(ctx, emailBody)
 	if err != nil {
 		sentry.CaptureException(err)
 		return errx.InternalError()
