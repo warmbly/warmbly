@@ -78,6 +78,25 @@ const DEDUP_OPTIONS: { id: ImportDedupStrategy; label: string; hint: string }[] 
 
 type Step = "upload" | "map" | "options" | "result";
 
+// Extract a human-readable message from whatever the API client throws.
+// Client.ts rethrows AppError (a plain object), not an Error instance —
+// so `err instanceof Error` silently fails and you lose the real reason.
+function describeError(err: unknown, fallback: string): string {
+    if (err && typeof err === "object") {
+        const e = err as { message?: unknown; error?: unknown; status?: unknown };
+        const msg = typeof e.message === "string" ? e.message.trim() : "";
+        const title = typeof e.error === "string" ? e.error.trim() : "";
+        const status = typeof e.status === "number" ? e.status : undefined;
+        if (msg && title && msg !== title) {
+            return status ? `${status} ${title}: ${msg}` : `${title}: ${msg}`;
+        }
+        if (msg) return status ? `${status}: ${msg}` : msg;
+        if (title) return status ? `${status} ${title}` : title;
+    }
+    if (err instanceof Error && err.message) return err.message;
+    return fallback;
+}
+
 export default function ImportWizard({ open, onClose }: Props) {
     const [step, setStep] = React.useState<Step>("upload");
     const [file, setFile] = React.useState<File | null>(null);
@@ -89,6 +108,7 @@ export default function ImportWizard({ open, onClose }: Props) {
     const [previewBusy, setPreviewBusy] = React.useState<boolean>(false);
     const [commitBusy, setCommitBusy] = React.useState<boolean>(false);
     const [result, setResult] = React.useState<ImportResult | null>(null);
+    const [commitError, setCommitError] = React.useState<string | null>(null);
     const queryClient = useQueryClient();
 
     function reset() {
@@ -100,6 +120,7 @@ export default function ImportWizard({ open, onClose }: Props) {
         setDedup("skip");
         setCategoryIds([]);
         setResult(null);
+        setCommitError(null);
     }
 
     React.useEffect(() => {
@@ -116,7 +137,7 @@ export default function ImportWizard({ open, onClose }: Props) {
             setHasHeader(p.has_header);
             setStep("map");
         } catch (err) {
-            const msg = err instanceof Error ? err.message : "Failed to read file.";
+            const msg = describeError(err, "Failed to read file.");
             toast.error(msg);
             setFile(null);
         } finally {
@@ -127,6 +148,7 @@ export default function ImportWizard({ open, onClose }: Props) {
     async function commit() {
         if (!file || !preview) return;
         setCommitBusy(true);
+        setCommitError(null);
         try {
             const res = await importCommitContacts(file, {
                 mapping,
@@ -143,7 +165,8 @@ export default function ImportWizard({ open, onClose }: Props) {
                 toast(`Done with ${res.failed} errors`, { icon: "⚠️" });
             }
         } catch (err) {
-            const msg = err instanceof Error ? err.message : "Import failed.";
+            const msg = describeError(err, "Import failed.");
+            setCommitError(msg);
             toast.error(msg);
         } finally {
             setCommitBusy(false);
@@ -220,6 +243,7 @@ export default function ImportWizard({ open, onClose }: Props) {
                                     setDedup={setDedup}
                                     categoryIds={categoryIds}
                                     setCategoryIds={setCategoryIds}
+                                    error={commitError}
                                 />
                             )}
                             {step === "result" && result && (
@@ -595,14 +619,29 @@ function OptionsStep({
     setDedup,
     categoryIds,
     setCategoryIds,
+    error,
 }: {
     dedup: ImportDedupStrategy;
     setDedup: (v: ImportDedupStrategy) => void;
     categoryIds: string[];
     setCategoryIds: (v: string[]) => void;
+    error: string | null;
 }) {
     return (
         <div className="space-y-5">
+            {error && (
+                <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2.5 flex items-start gap-2">
+                    <AlertTriangleIcon className="w-3.5 h-3.5 text-red-600 mt-0.5 shrink-0" />
+                    <div className="min-w-0 flex-1">
+                        <div className="text-[11px] uppercase tracking-[0.14em] font-medium text-red-700">
+                            Import failed
+                        </div>
+                        <div className="text-[12px] text-red-900 leading-snug mt-0.5 whitespace-pre-wrap break-words">
+                            {error}
+                        </div>
+                    </div>
+                </div>
+            )}
             <section>
                 <h2 className="text-[10px] uppercase tracking-[0.14em] font-semibold text-slate-500 mb-2">
                     Duplicate handling
