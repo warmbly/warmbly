@@ -467,7 +467,6 @@ func buildAddContact(
 		case models.ContactImportTargetPhone:
 			ac.Phone = val
 		case models.ContactImportTargetSubscribed:
-			ac.CustomFields = ac.CustomFields // no-op; placeholder for clarity
 			subscribedSet = true
 			b, perr := parseBoolish(val)
 			if perr != "" {

@@ -385,4 +385,3 @@ func sanitizeFilename(name string) string {
 	}
 	return name
 }
-

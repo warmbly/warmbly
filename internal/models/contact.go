@@ -43,11 +43,11 @@ type ContactsResult struct {
 // single contact. It's denormalised on read so the contact 360 view
 // can render counts and "last X" timestamps in a single round-trip.
 type ContactEngagement struct {
-	TotalSent     int `json:"total_sent"`
-	TotalOpened   int `json:"total_opened"`
-	TotalClicked  int `json:"total_clicked"`
-	TotalReplied  int `json:"total_replied"`
-	TotalBounced  int `json:"total_bounced"`
+	TotalSent       int `json:"total_sent"`
+	TotalOpened     int `json:"total_opened"`
+	TotalClicked    int `json:"total_clicked"`
+	TotalReplied    int `json:"total_replied"`
+	TotalBounced    int `json:"total_bounced"`
 	TotalComplained int `json:"total_complained"`
 
 	LastSentAt    *time.Time `json:"last_sent_at,omitempty"`
@@ -80,11 +80,11 @@ type ContactDetail struct {
 // task. Engagement timestamps come from campaign_contact_progress
 // when present; some legacy rows may have nil progress.
 type ContactSentEmail struct {
-	TaskID       uuid.UUID `json:"task_id"`
-	Status       string    `json:"status"`
-	MessageID    string    `json:"message_id"`
-	Subject      string    `json:"subject"`
-	SentAt       time.Time `json:"sent_at"`
+	TaskID    uuid.UUID `json:"task_id"`
+	Status    string    `json:"status"`
+	MessageID string    `json:"message_id"`
+	Subject   string    `json:"subject"`
+	SentAt    time.Time `json:"sent_at"`
 
 	// Sender mailbox
 	EmailAccountID    *uuid.UUID `json:"email_account_id,omitempty"`
