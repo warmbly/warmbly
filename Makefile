@@ -54,9 +54,29 @@ up:
 sim:
 	docker compose --profile sim up
 
-# Load rich fixture data. Backend must already be healthy.
+# Load rich fixture data.
+#
+# Two-step on purpose:
+#
+#   1. `up -d backend` forces compose to reconcile backend against the
+#      current dev spec. If the running container was created from an
+#      older spec (e.g. healthcheck definition changed), compose
+#      recreates it; if the spec matches, this is a near-no-op. This
+#      is the step that fixes the "dependency backend failed to start"
+#      failure when an older backend container had no healthcheck and
+#      seed's `service_healthy` could therefore never be satisfied.
+#
+#   2. `run --rm seed` then runs the one-shot seeder. With backend now
+#      guaranteed to be the current spec (lenient dev healthcheck),
+#      service_healthy resolves cleanly.
+#
+# Goes through DEV_COMPOSE so that the spec compose sees matches what
+# `make dev` would start; running `make seed` after `make up` still
+# works because `docker compose run` doesn't recreate already-running
+# deps. DEV_COMPOSE is defined further down (Make evaluates lazily).
 seed:
-	docker compose --profile seed run --rm seed
+	$(DOCKER_ENV) $(DEV_COMPOSE) up -d backend
+	$(DEV_COMPOSE) --profile seed run --rm seed
 
 # Spin up debugging UIs (kafka-ui).
 tools:
