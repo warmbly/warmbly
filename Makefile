@@ -56,27 +56,30 @@ sim:
 
 # Load rich fixture data.
 #
-# Two-step on purpose:
+# Three-step on purpose:
 #
-#   1. `up -d backend` forces compose to reconcile backend against the
-#      current dev spec. If the running container was created from an
-#      older spec (e.g. healthcheck definition changed), compose
-#      recreates it; if the spec matches, this is a near-no-op. This
-#      is the step that fixes the "dependency backend failed to start"
-#      failure when an older backend container had no healthcheck and
-#      seed's `service_healthy` could therefore never be satisfied.
+#   1. `up -d backend` reconciles backend against the current dev spec
+#      (recreates if the running container has an older healthcheck
+#      definition baked in, so seed's `service_healthy` dep can be
+#      satisfied).
 #
-#   2. `run --rm seed` then runs the one-shot seeder. With backend now
-#      guaranteed to be the current spec (lenient dev healthcheck),
-#      service_healthy resolves cleanly.
+#   2. `build seed` builds the seed image up-front, with BuildKit
+#      cache mounts active, so build output is visible. Without this,
+#      `run` silently auto-builds and the terminal looks frozen.
 #
-# Goes through DEV_COMPOSE so that the spec compose sees matches what
-# `make dev` would start; running `make seed` after `make up` still
-# works because `docker compose run` doesn't recreate already-running
-# deps. DEV_COMPOSE is defined further down (Make evaluates lazily).
+#   3. `run --rm -T seed` runs the one-shot seeder. `-T` disables TTY
+#      allocation — `docker compose run` otherwise tries to attach
+#      one, which interacts badly with non-interactive Make output
+#      and can silently drop the seed's stdout.
+#
+# Goes through DEV_COMPOSE so the spec matches what `make dev` would
+# start; running `make seed` after `make up` still works because
+# `docker compose run` doesn't recreate already-running deps.
+# DEV_COMPOSE is defined further down (Make evaluates lazily).
 seed:
 	$(DOCKER_ENV) $(DEV_COMPOSE) up -d backend
-	$(DEV_COMPOSE) --profile seed run --rm seed
+	$(DOCKER_ENV) $(DEV_COMPOSE) build seed
+	$(DEV_COMPOSE) --profile seed run --rm -T seed
 
 # Spin up debugging UIs (kafka-ui).
 tools:
