@@ -222,9 +222,13 @@ func Run(
 			apiKeys.GET("", h.ListAPIKeys)
 			apiKeys.POST("", h.CreateAPIKey)
 			apiKeys.GET("/permissions", h.ListAPIPermissions)
+			apiKeys.GET("/usage/summary", h.GetAPIKeyUsageSummary)
+			apiKeys.GET("/usage/analytics", h.GetAPIKeyAnalytics)
 			apiKeys.GET("/:id", h.GetAPIKey)
 			apiKeys.PATCH("/:id", h.UpdateAPIKey)
 			apiKeys.DELETE("/:id", h.RevokeAPIKey)
+			apiKeys.GET("/:id/analytics", h.GetAPIKeyAnalytics)
+			apiKeys.GET("/:id/logs", h.ListAPIKeyUsageLogs)
 		}
 
 		// Analytics endpoints

@@ -1,6 +1,8 @@
 package middleware
 
 import (
+	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -78,14 +80,36 @@ func (h *Handler) validateAPIKey(c *gin.Context, rawKey string) {
 		return
 	}
 
+	// Per-key minute-window rate limit. Surfaces rate-limit headers on
+	// every API-key request so well-behaved clients can self-throttle
+	// before hitting 429. Fails open on cache errors.
+	remaining, retryAfter, allowed := h.APIKeyService.CheckAndIncrementRateLimit(c.Request.Context(), key)
+	limit := key.RateLimitPerMinute
+	if limit <= 0 {
+		limit = 60
+	}
+	c.Header("X-RateLimit-Limit", fmt.Sprintf("%d", limit))
+	c.Header("X-RateLimit-Remaining", fmt.Sprintf("%d", remaining))
+	c.Header("X-RateLimit-Policy", fmt.Sprintf("%d;w=60", limit))
+	if !allowed {
+		c.Header("Retry-After", fmt.Sprintf("%d", retryAfter))
+		c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
+			"error":       "rate_limit_exceeded",
+			"message":     fmt.Sprintf("API key exceeded %d requests per minute", limit),
+			"retry_after": retryAfter,
+		})
+		return
+	}
+
 	c.Set(AuthTypeKey, AuthTypeAPIKey)
 	c.Set(APIKeyIDKey, key.ID.String())
 	c.Set(APIKeyPermissionsKey, key.Permissions)
 	c.Set(UserIDKey, key.UserID.String())
 	c.Set(OrganizationIDKey, key.OrganizationID)
 
-	// UpdateLastUsed is itself fire-and-forget.
-	h.APIKeyService.UpdateLastUsed(c.Request.Context(), key.ID)
+	// UpdateLastUsed is itself fire-and-forget; also remembers the caller
+	// IP so the dashboard can show "last called from".
+	h.APIKeyService.UpdateLastUsed(c.Request.Context(), key.ID, c.ClientIP())
 
 	c.Next()
 }

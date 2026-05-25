@@ -4,6 +4,7 @@ import listAPIKeys from "@/lib/api/client/app/api-keys/listAPIKeys";
 export default function useAPIKeys() {
     return useQuery({
         queryKey: ["api-keys", "list"],
-        queryFn: () => listAPIKeys(),
-    })
+        queryFn: () => listAPIKeys({ limit: 100 }),
+        staleTime: 5_000,
+    });
 }

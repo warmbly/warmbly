@@ -5,11 +5,9 @@ export default function useRevokeAPIKey() {
     const queryClient = useQueryClient();
 
     return useMutation({
-        mutationFn: (id: string) => revokeAPIKey(id),
+        mutationFn: ({ id, reason }: { id: string; reason?: string }) => revokeAPIKey(id, reason),
         onSuccess: () => {
-            queryClient.invalidateQueries({
-                queryKey: ["api-keys"],
-            })
-        }
-    })
+            queryClient.invalidateQueries({ queryKey: ["api-keys"] });
+        },
+    });
 }
