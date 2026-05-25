@@ -1,18 +1,37 @@
-# Build stage
+# syntax=docker/dockerfile:1.7
+#
+# Cache mounts below are keyed by a stable `id=warmbly-go*` so every
+# build on this Docker daemon shares them — across `make restart`,
+# across services (backend/worker/consumer/seed), and across worktrees.
+# Switching to a fresh worktree no longer re-downloads modules.
+
 FROM golang:1.25-alpine AS builder
 
 RUN apk add --no-cache git ca-certificates gcc musl-dev librdkafka-dev
 
-ENV GOCACHE=/tmp/go-cache
+ENV GOMODCACHE=/go/pkg/mod
+ENV GOCACHE=/root/.cache/go-build
 ENV GOTMPDIR=/tmp
 
 WORKDIR /app
-COPY go.mod go.sum ./
-RUN go mod download
 
+# Modules layer. Only re-runs when go.mod / go.sum change; even then
+# the cache mount makes the download incremental.
+COPY go.mod go.sum ./
+RUN --mount=type=cache,id=warmbly-gomodcache,target=/go/pkg/mod \
+    go mod download
+
+# Source layer.
 COPY . .
-RUN CGO_ENABLED=1 GOOS=linux go build -tags musl -ldflags="-s -w" -o /backend ./cmd/backend
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /seed ./cmd/seed
+
+# Build both binaries. Build cache survives between runs via the
+# GOCACHE mount, so an unchanged subtree compiles in seconds.
+RUN --mount=type=cache,id=warmbly-gomodcache,target=/go/pkg/mod \
+    --mount=type=cache,id=warmbly-gocache,target=/root/.cache/go-build \
+    CGO_ENABLED=1 GOOS=linux go build -tags musl -ldflags="-s -w" -o /backend ./cmd/backend
+RUN --mount=type=cache,id=warmbly-gomodcache,target=/go/pkg/mod \
+    --mount=type=cache,id=warmbly-gocache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /seed ./cmd/seed
 
 # Runtime stage
 FROM alpine:3.23

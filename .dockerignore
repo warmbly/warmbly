@@ -1,0 +1,51 @@
+# Keep the build context small.
+#
+# Without this, every `docker compose build` ships the entire worktree
+# (incl. node_modules and the Vite cache) to BuildKit before the first
+# layer runs. The Go images don't need any of it.
+
+.git
+.github
+.gitignore
+.idea
+.vscode
+.agentd
+
+# Frontend bits — the web service bind-mounts ./web directly, so we
+# never want the heavyweight frontend tree to land in the Go build
+# context.
+web/node_modules
+web/.vite
+web/dist
+web/build
+web/coverage
+
+# Compiled host binaries that would shadow / inflate the context.
+bin
+dist
+build
+
+# Editor / OS noise
+.DS_Store
+*.swp
+*~
+.envrc
+
+# Test + coverage artifacts
+*.test
+*.out
+coverage.txt
+coverage.html
+
+# Local dev secrets (we use envsample in repo).
+*.env
+!cmd/*/envsample
+
+# Logs
+*.log
+logs/
+
+# Docs/markdown aren't needed inside the image.
+docs
+*.md
+!README.md

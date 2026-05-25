@@ -14,7 +14,7 @@ PROTO_GEN_FILES := $(PROTO_DIR)/tasks.pb.go
 
 .PHONY: setup-tools lint proto check-proto \
         dev sim seed reset logs status stop down tools test-seed \
-        restart restart-go restart-all
+        restart restart-go restart-all cache-clean
 
 setup-tools:
 	@echo "Installing required Go tools into $(GO_BIN)"
@@ -92,24 +92,48 @@ status:
 #
 # The positional form works via the trick at the bottom of the file that
 # captures extra goals as $(RUN_ARGS) and makes them no-op targets.
+#
+# DOCKER_BUILDKIT=1 + COMPOSE_DOCKER_CLI_BUILD=1 ensures BuildKit is
+# active so the `--mount=type=cache,id=warmbly-go*` directives in the
+# Go Dockerfiles actually attach. Without BuildKit those mounts are
+# silently ignored and every build re-downloads the module graph.
+DOCKER_ENV := DOCKER_BUILDKIT=1 COMPOSE_DOCKER_CLI_BUILD=1
+
 restart:
 	@svc="$(RUN_ARGS)"; \
 	if [ -z "$$svc" ]; then svc="$(SVC)"; fi; \
 	if [ -z "$$svc" ]; then echo "Usage: make restart <service>"; exit 1; fi; \
-	docker compose build $$svc && docker compose up -d $$svc
+	$(DOCKER_ENV) docker compose build $$svc && docker compose up -d $$svc
 
 # Rebuild + restart every Go service in one shot. Use when you've touched
 # something in internal/ and don't want to think about which service uses
 # it.
+#
+# `--parallel` runs the three Go builds concurrently. Because the Go
+# Dockerfiles share `id=warmbly-go*` cache mounts, the second and third
+# builds hit a warm module + build cache and finish in a fraction of
+# the first build's time.
 restart-go:
-	docker compose build backend consumer worker-shared-1
+	$(DOCKER_ENV) docker compose build --parallel backend consumer worker-shared-1
 	docker compose up -d backend consumer worker-shared-1
 
 # Same but including Rust (tracking) and Elixir (realtime). Slower; the
 # safe choice when you've touched things across stacks.
 restart-all:
-	docker compose build backend consumer worker-shared-1 tracking realtime
+	$(DOCKER_ENV) docker compose build --parallel backend consumer worker-shared-1 tracking realtime
 	docker compose up -d backend consumer worker-shared-1 tracking realtime
+
+# Force-drop the BuildKit cache. Useful when something's gone weird
+# (corrupted cache, debugging a "works on a clean build but not after
+# a rebuild" issue). The shared Go module + build caches will rebuild
+# on the next `make restart-go`.
+#
+# We prune everything because `docker builder prune` doesn't expose a
+# filter for our `id=warmbly-*` cache mounts. The cost of an aggressive
+# prune is one slow build afterwards — small price for an escape hatch.
+cache-clean:
+	docker builder prune -af
+	@echo "BuildKit cache cleared. Next make restart-go will repopulate the warmbly Go caches."
 
 # Positional-args plumbing. When the first goal is `restart` or `logs`,
 # capture every following word as RUN_ARGS and declare those words as
