@@ -4,11 +4,23 @@
 //
 // Order matches the visible tab strip in the slide-over header.
 
+import {
+    ActivityIcon,
+    LayoutGridIcon,
+    SettingsIcon,
+    StickyNoteIcon,
+    type LucideIcon,
+} from "lucide-react";
+
 export type ContactSlideTab = "overview" | "activity" | "notes" | "details";
 
-export const CONTACT_SLIDE_TABS: { id: ContactSlideTab; label: string }[] = [
-    { id: "overview", label: "Overview" },
-    { id: "activity", label: "Activity" },
-    { id: "notes", label: "Notes" },
-    { id: "details", label: "Details" },
+export const CONTACT_SLIDE_TABS: {
+    id: ContactSlideTab;
+    label: string;
+    icon: LucideIcon;
+}[] = [
+    { id: "overview", label: "Overview", icon: LayoutGridIcon },
+    { id: "activity", label: "Activity", icon: ActivityIcon },
+    { id: "notes", label: "Notes", icon: StickyNoteIcon },
+    { id: "details", label: "Details", icon: SettingsIcon },
 ];
