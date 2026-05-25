@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://warmbly.com/sitemap-index.xml
