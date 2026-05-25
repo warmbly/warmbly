@@ -58,6 +58,7 @@ func openTestDB(t *testing.T) (*pgxpool.Pool, context.Context) {
 		`DELETE FROM sequences WHERE id::text LIKE '55555555-%'`,
 		`DELETE FROM campaigns WHERE id::text LIKE '44444444-%'`,
 		`DELETE FROM contacts WHERE id::text LIKE '66666666-%'`,
+		`DELETE FROM webhook_endpoints WHERE id::text LIKE '77777777-%'`,
 		`DELETE FROM warmup_pool_participants WHERE email_account_id::text LIKE '33333333-%'`,
 		`DELETE FROM email_accounts WHERE id::text LIKE '33333333-%'`,
 		`DELETE FROM workers WHERE id IN ($1, $2, $3)`,
@@ -96,6 +97,17 @@ func TestSeedBaseline_FreshAndIdempotent(t *testing.T) {
 		t.Fatalf("expected 1 dev user, got %d", usersBefore)
 	}
 
+	// Baseline should also connect dev email accounts and seed a sample
+	// webhook endpoint so a fresh `make seed` is functional out of the box.
+	devAccounts := countRows(t, pool, ctx, `SELECT COUNT(*) FROM email_accounts WHERE organization_id::text = $1`, orgDev.String())
+	if devAccounts != 2 {
+		t.Errorf("expected 2 dev email accounts, got %d", devAccounts)
+	}
+	devEndpoints := countRows(t, pool, ctx, `SELECT COUNT(*) FROM webhook_endpoints WHERE organization_id::text = $1`, orgDev.String())
+	if devEndpoints != 1 {
+		t.Errorf("expected 1 dev webhook endpoint, got %d", devEndpoints)
+	}
+
 	// Second run should not error and should not duplicate.
 	if err := seedBaseline(ctx, pool); err != nil {
 		t.Fatalf("second seedBaseline: %v", err)
@@ -103,6 +115,10 @@ func TestSeedBaseline_FreshAndIdempotent(t *testing.T) {
 	usersAfter := countRows(t, pool, ctx, `SELECT COUNT(*) FROM users WHERE id::text LIKE '11111111-%'`)
 	if usersAfter != usersBefore {
 		t.Fatalf("seedBaseline not idempotent: %d → %d", usersBefore, usersAfter)
+	}
+	devAccountsAfter := countRows(t, pool, ctx, `SELECT COUNT(*) FROM email_accounts WHERE organization_id::text = $1`, orgDev.String())
+	if devAccountsAfter != devAccounts {
+		t.Fatalf("dev account seeding not idempotent: %d → %d", devAccounts, devAccountsAfter)
 	}
 }
 
@@ -126,7 +142,7 @@ func TestSeedRich_FreshAndIdempotent(t *testing.T) {
 		{"dev + 3 rich users", `SELECT COUNT(*) FROM users WHERE id::text LIKE '11111111-%'`, 4},
 		{"4 orgs (dev + 3)", `SELECT COUNT(*) FROM organizations WHERE id::text LIKE '22222222-%'`, 4},
 		{"3 workers", `SELECT COUNT(*) FROM workers WHERE id IN ($1, $2, $3)`, 3},
-		{"6 email accounts", `SELECT COUNT(*) FROM email_accounts WHERE id::text LIKE '33333333-%'`, 6},
+		{"8 email accounts (2 dev + 6 rich)", `SELECT COUNT(*) FROM email_accounts WHERE id::text LIKE '33333333-%'`, 8},
 		{"1 campaign", `SELECT COUNT(*) FROM campaigns WHERE id::text LIKE '44444444-%'`, 1},
 		{"2 sequences", `SELECT COUNT(*) FROM sequences WHERE id::text LIKE '55555555-%'`, 2},
 		{"10 contacts", `SELECT COUNT(*) FROM contacts WHERE id::text LIKE '66666666-%'`, 10},
@@ -186,7 +202,7 @@ func TestSeedRich_WarmupPoolMembership(t *testing.T) {
 		want int64
 	}{
 		{"free", 2},
-		{"premium", 4},
+		{"premium", 6}, // 4 from rich (Beta + Gamma) + 2 from dev baseline
 	}
 	for _, c := range cases {
 		var got int64
@@ -231,10 +247,10 @@ func assertOrgExists(t *testing.T, pool *pgxpool.Pool, ctx context.Context, slug
 	}
 }
 
-func countRows(t *testing.T, pool *pgxpool.Pool, ctx context.Context, sql string) int64 {
+func countRows(t *testing.T, pool *pgxpool.Pool, ctx context.Context, sql string, args ...any) int64 {
 	t.Helper()
 	var n int64
-	if err := pool.QueryRow(ctx, sql).Scan(&n); err != nil {
+	if err := pool.QueryRow(ctx, sql, args...).Scan(&n); err != nil {
 		t.Fatalf("count query %q: %v", sql, err)
 	}
 	return n
