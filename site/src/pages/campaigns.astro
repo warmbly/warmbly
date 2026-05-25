@@ -1,0 +1,71 @@
+---
+import Layout from '../layouts/Layout.astro';
+import PageHero from '../components/PageHero.astro';
+import Section from '../components/Section.astro';
+import SectionHead from '../components/SectionHead.astro';
+import Card from '../components/Card.astro';
+import Icon from '../components/Icon.astro';
+import CTA from '../components/CTA.astro';
+---
+<Layout
+  title="Campaigns & sequences — Warmbly"
+  description="Multi-step sequences with branching, A/B variants, business-hour scheduling and per-mailbox distribution."
+>
+  <PageHero
+    eyebrow="Campaigns"
+    title="Sequences that respect mailbox health."
+    description="A campaign in Warmbly is a sequence, a contact list, and a sender pool. We balance sends across the pool so no one mailbox does the work of ten."
+  />
+
+  <Section>
+    <SectionHead
+      eyebrow="What a sequence does"
+      title="Steps, conditions, and the time it took to plan them."
+    />
+    <div class="mt-10 grid md:grid-cols-2 gap-4">
+      {[
+        { icon: 'workflow', title: 'Up to 12 steps',           body: 'Initial outreach + 11 follow-ups. Each step has its own delay, variants and conditions.' },
+        { icon: 'clock',    title: 'Business-hour delays',    body: 'Step delays count business days in the recipient time zone. Weekends and holidays don’t count.' },
+        { icon: 'spark',    title: 'A/B variants',            body: 'Up to four subject and body variants per step. We track which variant earned the reply.' },
+        { icon: 'reply',    title: 'Reply-aware branching',   body: 'If replied: pause. If opened twice: send the follow-up earlier. If bounced: suppress automatically.' },
+        { icon: 'users',    title: 'Sender pool',             body: 'Pick the mailboxes that can send for the campaign. Sends distribute round-robin with budget awareness.' },
+        { icon: 'list',     title: 'Plain text first',        body: 'Default plain-text. Opt into minimal HTML if you need it. No tracking pixels by default.' },
+        { icon: 'shield',   title: 'Suppression aware',       body: 'Skips suppressed recipients, paused mailboxes and over-budget senders automatically.' },
+        { icon: 'filter',   title: 'Segments',                body: 'Target by contact category, opens, replies, custom fields or CRM stage.' },
+      ].map((s) => (
+        <Card>
+          <div class="flex items-start gap-4">
+            <div class="w-9 h-9 rounded-lg bg-brand-soft text-brand inline-flex items-center justify-center shrink-0">
+              <Icon name={s.icon} size={18} />
+            </div>
+            <div>
+              <h3 class="text-[15px] font-semibold">{s.title}</h3>
+              <p class="mt-1 text-[13.5px] text-muted-foreground leading-relaxed">{s.body}</p>
+            </div>
+          </div>
+        </Card>
+      ))}
+    </div>
+  </Section>
+
+  <Section variant="muted">
+    <SectionHead
+      eyebrow="Variables & personalisation"
+      title="Real personalisation, not first-name token theatre."
+      description="Variables can pull from any contact field, including custom ones. Fall-back chains are explicit, so a missing field never embarrasses you."
+    />
+    <div class="mt-10">
+      <Card>
+        <pre class="overflow-x-auto text-[12.5px] font-mono leading-relaxed text-foreground/85"><code>{`Hi {{first_name | fallback: "there"}},
+
+Saw {{company}} just {{news.summary | fallback: "raised your seed round"}}.
+Quick question — how are you handling {{custom.pain | fallback: "outbound"}}
+since you took over as {{title}}?
+
+— {{sender.first_name}}`}</code></pre>
+      </Card>
+    </div>
+  </Section>
+
+  <CTA primaryLabel="Build your first sequence" />
+</Layout>

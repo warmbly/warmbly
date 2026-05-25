@@ -1,0 +1,44 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import PageHero from '../../components/PageHero.astro';
+import Section from '../../components/Section.astro';
+import Card from '../../components/Card.astro';
+import Icon from '../../components/Icon.astro';
+import CTA from '../../components/CTA.astro';
+
+const cases = [
+  { icon: 'rocket',  href: '/use-cases/founders/',    title: 'Founders',    body: 'Run intro sequences from your domain without burning your only mailbox.' },
+  { icon: 'users',   href: '/use-cases/agencies/',    title: 'Agencies',    body: 'Outbound for many clients on many domains, without spreadsheet triage.' },
+  { icon: 'chart',   href: '/use-cases/sales/',       title: 'Sales teams', body: 'Distribute sends across reps, surface positive replies fast.' },
+  { icon: 'contact', href: '/use-cases/recruiters/',  title: 'Recruiters',  body: 'Personalised outreach to candidates from multiple sender mailboxes.' },
+  { icon: 'star',    href: '/use-cases/fundraising/', title: 'Fundraising', body: 'Plan a focused VC sequence that lands in the inbox, not promotions.' },
+];
+---
+<Layout
+  title="Use cases — Warmbly"
+  description="How founders, agencies, sales teams, recruiters and fundraisers use Warmbly."
+>
+  <PageHero
+    eyebrow="Use cases"
+    title="Who Warmbly is built for."
+  />
+  <Section>
+    <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      {cases.map((c) => (
+        <a href={c.href} class="group">
+          <Card class="h-full hover:border-border-strong transition-colors">
+            <div class="w-9 h-9 rounded-lg bg-brand-soft text-brand inline-flex items-center justify-center mb-4">
+              <Icon name={c.icon} size={18} />
+            </div>
+            <h3 class="text-[15.5px] font-semibold">{c.title}</h3>
+            <p class="mt-1.5 text-[13.5px] text-muted-foreground leading-relaxed">{c.body}</p>
+            <span class="mt-4 inline-flex items-center gap-1.5 text-[13px] font-medium text-brand group-hover:text-brand-strong">
+              Read playbook <Icon name="arrowRight" size={13} />
+            </span>
+          </Card>
+        </a>
+      ))}
+    </div>
+  </Section>
+  <CTA />
+</Layout>

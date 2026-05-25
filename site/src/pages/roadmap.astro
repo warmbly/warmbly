@@ -1,0 +1,87 @@
+---
+import Layout from '../layouts/Layout.astro';
+import PageHero from '../components/PageHero.astro';
+import Section from '../components/Section.astro';
+import Card from '../components/Card.astro';
+import Icon from '../components/Icon.astro';
+import CTA from '../components/CTA.astro';
+
+const cols: { title: string; tone: string; items: string[] }[] = [
+  {
+    title: 'Shipped recently',
+    tone: 'success',
+    items: [
+      'Per-key API scopes & rotation',
+      'CSV/XLSX/JSON contact export with field picker',
+      'Contact import wizard with column mapping',
+      'Categories on contacts (deprecates Tags)',
+      'Recovery pool for quarantined mailboxes',
+      'Per-worker concentration warnings',
+      'Worker rebalancing without downtime',
+    ],
+  },
+  {
+    title: 'In progress',
+    tone: 'warn',
+    items: [
+      'SOC 2 Type II audit',
+      'Customer-managed KMS keys (BYOK)',
+      'SSO / SAML on Business plan',
+      'Tenant-scoped IP allowlist for the API',
+      'Multi-workspace switcher in the inbox',
+      'Attio + Folk integrations',
+    ],
+  },
+  {
+    title: 'Researching',
+    tone: 'muted',
+    items: [
+      'AI reply triage suggestions (opt-in)',
+      'Predictive placement scores from warmup probes',
+      'Seed-list inbox placement testing on demand',
+      'Per-region dedicated workers (APAC)',
+      'BIMI + VMC support docs and tooling',
+    ],
+  },
+];
+---
+<Layout
+  title="Roadmap — Warmbly"
+  description="What we just shipped, what we’re building, and what we’re researching for the next quarters."
+>
+  <PageHero
+    eyebrow="Roadmap"
+    title="Public roadmap, on purpose."
+    description="No sales-driven secrecy. If we’re working on it, you can see it. Vote with the request links on each card."
+  />
+
+  <Section>
+    <div class="grid lg:grid-cols-3 gap-4">
+      {cols.map((c) => (
+        <Card>
+          <div class="flex items-center gap-2 mb-4">
+            <span class={`w-2 h-2 rounded-full bg-${c.tone}`} />
+            <h3 class="text-[14.5px] font-semibold">{c.title}</h3>
+          </div>
+          <ul class="space-y-2">
+            {c.items.map((it) => (
+              <li class="text-[13.5px] text-foreground/85 flex items-start gap-2">
+                <Icon name="arrowRight" size={13} class="text-muted-foreground mt-1 shrink-0" />
+                <span>{it}</span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      ))}
+    </div>
+  </Section>
+
+  <CTA
+    title="Missing something?"
+    description="Tell us what to build. We pick the next quarter’s big-rock projects from this inbox."
+    primaryLabel="Request a feature"
+    primaryHref="/contact/?topic=feature-request"
+    secondaryLabel="See the changelog"
+    secondaryHref="/changelog/"
+  />
+</Layout>

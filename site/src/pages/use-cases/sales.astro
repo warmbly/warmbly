@@ -1,0 +1,28 @@
+---
+import UseCasePage from '../../components/UseCasePage.astro';
+---
+<UseCasePage
+  pageTitle="Sales teams — Warmbly"
+  description="Distribute sends across reps, surface positive replies fast."
+  title="Sales outbound that keeps reps and reputation healthy."
+  intro="When the team grows past a handful of BDRs, the math of cold mail changes. Volume should come from more healthy mailboxes, not forcing each rep’s inbox to send more."
+  challenges={[
+    { title: 'BDRs hit the per-mailbox ceiling', body: 'A single rep crammed against the 50/day ceiling will burn out their mailbox by quarter end.' },
+    { title: 'Replies lost between consoles', body: 'Reps switch between their mailbox, the SDR tool, the CRM and Slack. Positive replies sit unanswered for hours.' },
+    { title: 'No team-level deliverability view', body: 'Without per-rep mailbox health, ops only knows there’s a problem when the pipeline slows.' },
+    { title: 'Manual round-robin assignment', body: 'Spreadsheets to assign replies to AEs go stale within a week.' },
+  ]}
+  recipe={[
+    { title: 'Two mailboxes per BDR', body: 'Distribute cold volume across two mailboxes per BDR, both warmed. Cap each at 40/day to leave headroom.' },
+    { title: 'Sequences send across the pool', body: 'A single sequence assigned to a group of mailboxes round-robins sends, never overloads one rep’s inbox.' },
+    { title: 'Positive-reply routing', body: 'Webhook fires on positive replies into Slack. AE assignment happens by territory rule.' },
+    { title: 'Inbox roles', body: 'BDR sees their replies. AE sees the meeting-booked threads they own. Ops sees everything.' },
+    { title: 'Quarterly deliverability review', body: 'Growth and Business plans include a quarterly review with a Warmbly customer engineer.' },
+  ]}
+  caps={[
+    { value: '20+',    label: 'BDRs' },
+    { value: '40/40',  label: 'Cold + warmup per mailbox' },
+    { value: '<1h',    label: 'Positive-reply response time' },
+    { value: '99.5%',  label: 'Reply detection accuracy' },
+  ]}
+/>

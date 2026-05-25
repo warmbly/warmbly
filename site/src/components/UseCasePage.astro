@@ -1,0 +1,70 @@
+---
+import Layout from '../layouts/Layout.astro';
+import PageHero from './PageHero.astro';
+import Section from './Section.astro';
+import SectionHead from './SectionHead.astro';
+import Card from './Card.astro';
+import Icon from './Icon.astro';
+import CTA from './CTA.astro';
+
+interface Props {
+  title: string;
+  description: string;
+  pageTitle: string;
+  intro: string;
+  challenges: { title: string; body: string }[];
+  recipe: { title: string; body: string }[];
+  caps: { value: string; label: string }[];
+}
+
+const { title, description, pageTitle, intro, challenges, recipe, caps } = Astro.props;
+---
+<Layout title={pageTitle} description={description}>
+  <PageHero
+    eyebrow="Use case"
+    title={title}
+    description={intro}
+  />
+
+  <Section>
+    <SectionHead eyebrow="What usually goes wrong" title="The pattern we see." />
+    <div class="mt-10 grid md:grid-cols-2 gap-4">
+      {challenges.map((c) => (
+        <Card>
+          <h3 class="text-[15px] font-semibold">{c.title}</h3>
+          <p class="mt-1.5 text-[13.5px] text-muted-foreground leading-relaxed">{c.body}</p>
+        </Card>
+      ))}
+    </div>
+  </Section>
+
+  <Section variant="muted">
+    <SectionHead eyebrow="Recipe" title="How to set this up in Warmbly." />
+    <div class="mt-10 grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+      {recipe.map((r, i) => (
+        <Card>
+          <div class="flex items-center justify-between mb-3">
+            <span class="text-[12px] font-mono text-muted-foreground">{String(i + 1).padStart(2, '0')}</span>
+            <Icon name="arrowRight" class="text-muted-foreground" />
+          </div>
+          <h3 class="text-[15px] font-semibold">{r.title}</h3>
+          <p class="mt-1.5 text-[13.5px] text-muted-foreground leading-relaxed">{r.body}</p>
+        </Card>
+      ))}
+    </div>
+  </Section>
+
+  <Section>
+    <SectionHead eyebrow="At a glance" title="Numbers people in this seat care about." />
+    <div class="mt-10 grid grid-cols-2 md:grid-cols-4 gap-4">
+      {caps.map((c) => (
+        <Card>
+          <div class="text-2xl font-extrabold">{c.value}</div>
+          <div class="text-[12.5px] text-muted-foreground mt-1">{c.label}</div>
+        </Card>
+      ))}
+    </div>
+  </Section>
+
+  <CTA />
+</Layout>

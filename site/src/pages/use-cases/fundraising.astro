@@ -1,0 +1,28 @@
+---
+import UseCasePage from '../../components/UseCasePage.astro';
+---
+<UseCasePage
+  pageTitle="Fundraising — Warmbly"
+  description="Plan a focused VC sequence that lands in the inbox, not promotions."
+  title="A fundraising sequence that lands in the inbox."
+  intro="Cold mail to investors is small-volume, high-stakes. The mailbox you send from should be warmed weeks before, not the night before."
+  challenges={[
+    { title: 'Wrong mailbox at the wrong time', body: 'Founders send to investors from a fresh mailbox set up the same week. It lands in spam; they assume the partner ghosted.' },
+    { title: 'CC-the-team patterns', body: 'CC’ing co-founders on every send normalises a behaviour Gmail treats as bulk.' },
+    { title: 'Reusing the deck-share mailbox', body: 'Using the same address that hosts the data room means transactional and cold sending mingle.' },
+    { title: 'Send-all-Tuesday-9am bursts', body: 'Sending to 80 partners in the same minute is the loudest possible spam signal.' },
+  ]}
+  recipe={[
+    { title: 'Warm one or two mailboxes weeks ahead', body: 'Start warmup 4–6 weeks before the raise. Aim for the 40/day warmup ceiling on each mailbox.' },
+    { title: 'Plain text, three sentences', body: 'Subject + three sentences + a sentence about traction. No deck attached. Deck link only after reply.' },
+    { title: 'Stagger the sequence', body: 'Spread sends across business hours by recipient TZ. Default 10-min gap keeps the send pattern natural.' },
+    { title: 'Step 2 only after no-reply + 6 business days', body: 'A single follow-up doubles reply rate; more risks looking pushy and trips reputation heuristics.' },
+    { title: 'Forward warm intros separately', body: 'Warm intros and cold sequences live in different sequences with different sender mailboxes.' },
+  ]}
+  caps={[
+    { value: '4-6 wk',  label: 'Warmup lead time' },
+    { value: '40/day',  label: 'Warmup ceiling target' },
+    { value: '2 steps', label: 'Sequence depth' },
+    { value: '~22%',    label: 'Founder-letter reply rate' },
+  ]}
+/>

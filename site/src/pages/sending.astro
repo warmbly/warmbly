@@ -1,0 +1,70 @@
+---
+import Layout from '../layouts/Layout.astro';
+import PageHero from '../components/PageHero.astro';
+import Section from '../components/Section.astro';
+import SectionHead from '../components/SectionHead.astro';
+import Card from '../components/Card.astro';
+import Icon from '../components/Icon.astro';
+import CTA from '../components/CTA.astro';
+---
+<Layout
+  title="Sending engine — Warmbly"
+  description="A distributed sending engine that spreads cold mail across mailboxes, workers and IPs — with per-mailbox safety caps baked in."
+>
+  <PageHero
+    eyebrow="Sending engine"
+    title="A distributed send plane — not a glorified SMTP relay."
+    description="Sending in Warmbly is many machines, many IPs, many mailboxes — never one big sender. We let the math of mailbox budgets cap the worker, not the other way around."
+  />
+
+  <Section>
+    <SectionHead
+      eyebrow="Architecture"
+      title="Control plane decides. Execution plane sends."
+      description="Backend orchestrates: campaign math, mailbox assignment, sequencing. Workers execute: send, sync, track. Kafka carries every command and result."
+    />
+    <div class="mt-12 grid md:grid-cols-2 gap-4">
+      {[
+        { icon: 'cpu',       title: 'One worker per machine',  body: 'Each worker has its own machine-level network identity. No NAT-induced IP concentration.' },
+        { icon: 'workflow',  title: 'Per-worker Kafka topics', body: 'Commands and results route through worker-scoped topics. Migrations are transparent.' },
+        { icon: 'database',  title: 'Stateless workers',       body: 'Workers boot Kafka, Redis, KMS, DynamoDB, S3. They do not open a Postgres connection.' },
+        { icon: 'layers',    title: 'Per-mailbox budgets',     body: 'Default 50/day cold cap per mailbox, 10-min minimum gap. Override per mailbox, per campaign, per recipient TZ.' },
+        { icon: 'shield',    title: 'Worker concentration cap', body: 'A shared worker should hold ~10 actively-sending cold mailboxes at default settings. We surface concentration warnings before they hurt.' },
+        { icon: 'clock',     title: 'Business hours respect',  body: 'Sends honour the recipient time zone, weekends, holidays. You set the window once.' },
+      ].map((s) => (
+        <Card>
+          <div class="flex items-start gap-4">
+            <div class="w-9 h-9 rounded-lg bg-brand-soft text-brand inline-flex items-center justify-center shrink-0">
+              <Icon name={s.icon} size={18} />
+            </div>
+            <div>
+              <h3 class="text-[15px] font-semibold">{s.title}</h3>
+              <p class="mt-1 text-[13.5px] text-muted-foreground leading-relaxed">{s.body}</p>
+            </div>
+          </div>
+        </Card>
+      ))}
+    </div>
+  </Section>
+
+  <Section variant="muted">
+    <SectionHead
+      eyebrow="Providers"
+      title="Native Gmail. Native Outlook. SMTP/IMAP for the rest."
+    />
+    <div class="mt-10 grid md:grid-cols-3 gap-4">
+      {[
+        { title: 'Google Workspace & Gmail', body: 'OAuth 2.0 with refresh tokens. We use Gmail API for send + Gmail FBL signals when available.' },
+        { title: 'Microsoft 365 & Outlook',  body: 'OAuth with shared mailbox support. Graph API for send and IMAP/EWS for sync.' },
+        { title: 'Custom SMTP / IMAP',       body: 'Bring your own SMTP. We support TLS, STARTTLS, app passwords, and OAuth where the provider supports it.' },
+      ].map((p) => (
+        <Card>
+          <h3 class="text-[15px] font-semibold">{p.title}</h3>
+          <p class="mt-1.5 text-[13.5px] text-muted-foreground leading-relaxed">{p.body}</p>
+        </Card>
+      ))}
+    </div>
+  </Section>
+
+  <CTA primaryLabel="Connect a mailbox" />
+</Layout>

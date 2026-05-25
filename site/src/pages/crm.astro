@@ -1,0 +1,67 @@
+---
+import Layout from '../layouts/Layout.astro';
+import PageHero from '../components/PageHero.astro';
+import Section from '../components/Section.astro';
+import SectionHead from '../components/SectionHead.astro';
+import Card from '../components/Card.astro';
+import Icon from '../components/Icon.astro';
+import CTA from '../components/CTA.astro';
+---
+<Layout
+  title="CRM — Warmbly"
+  description="A light CRM that doesn’t pretend to be Salesforce: pipelines, deals, tasks, contacts and templates that live next to your sending."
+>
+  <PageHero
+    eyebrow="CRM"
+    title="A CRM that lives next to your sending."
+    description="Contacts, pipelines, deals and tasks — without the four-week implementation. Designed for cold-outbound teams who need just enough structure to ship the meeting."
+  />
+
+  <Section>
+    <SectionHead
+      eyebrow="What’s inside"
+      title="Built around the actual cold-outbound workflow."
+    />
+    <div class="mt-10 grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+      {[
+        { icon: 'contact',  title: 'Contacts',  body: 'Imported, deduped, categorised. Suppression-aware everywhere they appear.' },
+        { icon: 'list',     title: 'Categories',body: 'Reuse the existing category group table — no parallel “tags” system to drift.' },
+        { icon: 'workflow', title: 'Pipelines', body: 'Pick a pipeline template or build your own. Drag-and-drop stages.' },
+        { icon: 'star',     title: 'Deals',     body: 'Value, close date, owner, custom fields, activity log.' },
+        { icon: 'check',    title: 'Tasks',     body: 'Reminder tasks tied to a contact, deal, or sequence step.' },
+        { icon: 'spark',    title: 'Templates', body: 'Saved templates for replies, intros and sequence steps. Variable-aware.' },
+      ].map((s) => (
+        <Card>
+          <div class="w-9 h-9 rounded-lg bg-brand-soft text-brand inline-flex items-center justify-center mb-4">
+            <Icon name={s.icon} size={18} />
+          </div>
+          <h3 class="text-[15px] font-semibold">{s.title}</h3>
+          <p class="mt-1.5 text-[13.5px] text-muted-foreground leading-relaxed">{s.body}</p>
+        </Card>
+      ))}
+    </div>
+  </Section>
+
+  <Section variant="muted">
+    <SectionHead
+      eyebrow="Contacts power tools"
+      title="Import. Export. Dedup. Update."
+      description="Contacts is where the spreadsheet usually wins. Not here."
+    />
+    <div class="mt-10 grid md:grid-cols-2 gap-4">
+      {[
+        ['Import wizard', 'CSV / XLSX import with column mapping, custom field detection, and a dedup pass before a single row hits the table.'],
+        ['Export', 'CSV / XLSX / JSON export with a field picker. Scope: current view, current segment, or the whole workspace.'],
+        ['Dedup', 'Dedup by email, domain or custom key. Merge conflicting fields with a clear winner per attribute.'],
+        ['Bulk update', 'Bulk update categories, owners, custom fields, or suppression state from a saved view.'],
+      ].map(([k, v]) => (
+        <Card>
+          <h3 class="text-[15px] font-semibold">{k}</h3>
+          <p class="mt-1.5 text-[13.5px] text-muted-foreground leading-relaxed">{v}</p>
+        </Card>
+      ))}
+    </div>
+  </Section>
+
+  <CTA />
+</Layout>

@@ -1,0 +1,49 @@
+---
+import Layout from '../layouts/Layout.astro';
+import PageHero from '../components/PageHero.astro';
+import Section from '../components/Section.astro';
+import SectionHead from '../components/SectionHead.astro';
+import Card from '../components/Card.astro';
+import Icon from '../components/Icon.astro';
+import CTA from '../components/CTA.astro';
+---
+<Layout
+  title="Unified inbox — Warmbly"
+  description="Every reply, bounce, OOO and click across every mailbox in one console. Assign, snooze, label and search across senders."
+>
+  <PageHero
+    eyebrow="Unified inbox"
+    title="One inbox for every mailbox you send from."
+    description="No more bouncing between Gmail tabs to handle replies from your eight cold mailboxes. Warmbly’s inbox shows every conversation, classified and assignable."
+  />
+
+  <Section>
+    <SectionHead
+      eyebrow="What you get"
+      title="Inbox features built for cold-email reply triage."
+    />
+    <div class="mt-10 grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      {[
+        { icon: 'reply',   title: 'Reply classification', body: 'Positive / negative / referral / OOO / unsubscribe / bounce, classified on arrival so you know what to triage.' },
+        { icon: 'users',   title: 'Assignment',           body: 'Assign threads to teammates. Round-robin, by domain, or manual.' },
+        { icon: 'clock',   title: 'Snooze & reminders',   body: 'Push a thread to next week. Get a reminder if the prospect doesn’t respond.' },
+        { icon: 'filter',  title: 'Saved views',          body: 'Filter by mailbox, sequence, classification, assignee, sentiment or domain.' },
+        { icon: 'search',  title: 'Cross-mailbox search', body: 'Search every connected mailbox at once. Conversations stay tied to the original recipient and campaign.' },
+        { icon: 'bell',    title: 'Notifications that don’t lie', body: 'Realtime push for replies, not for opens. Pixel opens are unreliable; we don’t pretend otherwise.' },
+        { icon: 'inbox',   title: 'Auto-suppress',        body: 'OOO and unsubscribe replies auto-suppress the recipient from the sequence.' },
+        { icon: 'spark',   title: 'Suggested replies',    body: 'Suggested reply variants based on your past wins. Optional, off by default.' },
+        { icon: 'check',   title: 'Bulk actions',         body: 'Mark, label, suppress, assign or archive in bulk.' },
+      ].map((s) => (
+        <Card>
+          <div class="w-9 h-9 rounded-lg bg-brand-soft text-brand inline-flex items-center justify-center mb-4">
+            <Icon name={s.icon} size={18} />
+          </div>
+          <h3 class="text-[15px] font-semibold">{s.title}</h3>
+          <p class="mt-1.5 text-[13px] text-muted-foreground leading-relaxed">{s.body}</p>
+        </Card>
+      ))}
+    </div>
+  </Section>
+
+  <CTA />
+</Layout>

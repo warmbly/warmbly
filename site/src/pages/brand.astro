@@ -1,0 +1,81 @@
+---
+import Layout from '../layouts/Layout.astro';
+import PageHero from '../components/PageHero.astro';
+import Section from '../components/Section.astro';
+import SectionHead from '../components/SectionHead.astro';
+import Card from '../components/Card.astro';
+import Logo from '../components/Logo.astro';
+---
+<Layout
+  title="Brand — Warmbly"
+  description="The Warmbly wordmark, mark, palette and typography."
+>
+  <PageHero
+    eyebrow="Brand"
+    title="The marks, the colours, the rules."
+    description="Please don’t imply partnership without permission. Apart from that, the assets below are free to use in customer announcements, press, and integrations."
+  />
+
+  <Section>
+    <SectionHead eyebrow="Marks" title="Wordmark and standalone mark." />
+    <div class="mt-10 grid md:grid-cols-2 gap-4">
+      <Card class="flex items-center justify-center h-48">
+        <div class="flex items-center gap-3">
+          <Logo class="w-9 h-9 text-foreground" />
+          <span class="text-3xl font-extrabold tracking-tight">Warmbly</span>
+        </div>
+      </Card>
+      <Card class="flex items-center justify-center h-48 bg-foreground">
+        <div class="flex items-center gap-3 text-background">
+          <Logo class="w-9 h-9 text-background" />
+          <span class="text-3xl font-extrabold tracking-tight">Warmbly</span>
+        </div>
+      </Card>
+      <Card class="flex items-center justify-center h-48">
+        <Logo class="w-12 h-12 text-foreground" />
+      </Card>
+      <Card class="flex items-center justify-center h-48 bg-foreground">
+        <Logo class="w-12 h-12 text-background" />
+      </Card>
+    </div>
+  </Section>
+
+  <Section variant="muted">
+    <SectionHead eyebrow="Colour" title="Neutral system, brand sky accent." />
+    <div class="mt-10 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      {[
+        { name: 'Foreground', value: 'oklch(0.15 0.01 260)', cls: 'bg-foreground text-background' },
+        { name: 'Surface',    value: 'oklch(0.985 0.002 260)', cls: 'bg-surface border border-border' },
+        { name: 'Surface-2',  value: 'oklch(0.97 0.003 260)',  cls: 'bg-surface-2 border border-border' },
+        { name: 'Brand',      value: 'oklch(0.55 0.18 252)',   cls: 'bg-brand text-brand-foreground' },
+        { name: 'Brand soft', value: 'oklch(0.93 0.05 252)',   cls: 'bg-brand-soft text-brand' },
+        { name: 'Success',    value: 'oklch(0.65 0.15 152)',   cls: 'bg-success text-white' },
+      ].map((c) => (
+        <div class={`rounded-xl ${c.cls} h-28 p-3 flex flex-col justify-between`}>
+          <div class="text-[12px] font-semibold">{c.name}</div>
+          <div class="text-[10.5px] font-mono opacity-80">{c.value}</div>
+        </div>
+      ))}
+    </div>
+  </Section>
+
+  <Section>
+    <SectionHead eyebrow="Typography" title="Inter, everywhere." />
+    <div class="mt-10 space-y-4">
+      <Card>
+        <div class="text-5xl font-extrabold tracking-tight">Cold email that lands.</div>
+        <div class="mt-2 text-[12px] uppercase tracking-wider text-muted-foreground font-semibold">Display · Inter Extra Bold · 800</div>
+      </Card>
+      <Card>
+        <div class="text-2xl font-semibold">A platform built so the inbox is the default outcome.</div>
+        <div class="mt-2 text-[12px] uppercase tracking-wider text-muted-foreground font-semibold">Heading · Inter Semibold · 600</div>
+      </Card>
+      <Card>
+        <div class="text-[15px] leading-relaxed">
+          Most cold-email platforms reward you for sending more. We reward you for sending well. Mailbox caps default to 50/day. Workers are capped by the sum of their mailbox budgets — not an arbitrary global number.
+        </div>
+        <div class="mt-2 text-[12px] uppercase tracking-wider text-muted-foreground font-semibold">Body · Inter Regular · 400</div>
+      </Card>
+    </div>
+  </Section>
+</Layout>

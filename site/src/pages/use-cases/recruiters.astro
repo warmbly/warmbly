@@ -1,0 +1,28 @@
+---
+import UseCasePage from '../../components/UseCasePage.astro';
+---
+<UseCasePage
+  pageTitle="Recruiters — Warmbly"
+  description="Personalised outreach to candidates from multiple sender mailboxes."
+  title="Candidate outreach that doesn’t end up in Promotions."
+  intro="Talent outreach is high-personalisation, low-volume per recipient — but high aggregate volume per recruiter. The same mailbox-first discipline applies."
+  challenges={[
+    { title: 'Templated personalisation', body: 'Recruiters hit save-as-template on a single message and blast it. Reply rate craters within weeks.' },
+    { title: 'Promotions tab placement', body: 'Heavy HTML, image-heavy job descriptions, “unsubscribe” footers — they all push candidate mail into Promotions.' },
+    { title: 'Shared inboxes', body: 'When several recruiters share one mailbox, reputation depends on the noisiest sender.' },
+    { title: 'No way to track placement', body: 'Recruiters guess about deliverability. Real candidates ghost; recruiters blame the candidate.' },
+  ]}
+  recipe={[
+    { title: 'Personal mailbox per recruiter', body: 'Every recruiter has their own warmed mailbox. Cold candidate outreach goes from their face, not a shared mailbox.' },
+    { title: 'Plain text', body: 'No HTML job descriptions. Link to a hosted JD instead. Reply rate jumps.' },
+    { title: 'Variable-rich personalisation', body: 'Variables for first name, current company, current role, common connections, and a “why now” snippet.' },
+    { title: 'Short sequences', body: 'Three steps maximum. Candidates respond fastest to the first or second.' },
+    { title: 'Suppression hygiene', body: 'OOO and unsubscribe replies auto-suppress. Bounce-on-reply suppresses across the whole agency workspace.' },
+  ]}
+  caps={[
+    { value: '30 / day', label: 'Recommended cold cap per recruiter' },
+    { value: '+18%',     label: 'Avg reply rate vs templated' },
+    { value: '3 steps',  label: 'Optimal sequence depth' },
+    { value: '~7 days',  label: 'Avg time to first reply' },
+  ]}
+/>

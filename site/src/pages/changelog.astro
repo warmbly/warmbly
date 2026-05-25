@@ -1,0 +1,94 @@
+---
+import Layout from '../layouts/Layout.astro';
+import PageHero from '../components/PageHero.astro';
+import Section from '../components/Section.astro';
+import Card from '../components/Card.astro';
+
+const entries = [
+  {
+    date: '2026-05-20',
+    title: 'API keys dashboard',
+    tag: 'shipped',
+    body: 'New API keys page in Settings. Per-key scopes, last-used timestamps, and one-click rotation. Existing keys auto-migrated to “full access” scopes; rotate when you can.',
+  },
+  {
+    date: '2026-05-15',
+    title: 'Per-mailbox health bands',
+    tag: 'shipped',
+    body: 'Mailboxes now show a health band — healthy / watch / quarantined / blocked — based on placement, complaint and bounce signals. Pool selection skips anything not in healthy.',
+  },
+  {
+    date: '2026-05-05',
+    title: 'Contacts power tools',
+    tag: 'shipped',
+    body: 'CSV / XLSX / JSON export with field picker. CSV / XLSX import wizard with column mapping and dedup. Categories replace Tags.',
+  },
+  {
+    date: '2026-04-25',
+    title: 'Recovery pool',
+    tag: 'shipped',
+    body: 'Quarantined mailboxes move to a separate recovery pool isolated from the main paid pool. They serve a 7-day cooldown plus a 20-delivery probation before re-entry.',
+  },
+  {
+    date: '2026-04-12',
+    title: 'Worker concentration warnings',
+    tag: 'shipped',
+    body: 'Workspace now surfaces a warning when a shared worker is carrying too much active cold volume. We add workers and rebalance before forcing any one machine to do more.',
+  },
+  {
+    date: '2026-04-01',
+    title: 'Plain-text default',
+    tag: 'changed',
+    body: 'New sequences default to plain text. HTML is opt-in. Existing sequences are untouched.',
+  },
+  {
+    date: '2026-03-22',
+    title: 'Microsoft 365 OAuth refresh',
+    tag: 'fixed',
+    body: 'Resolved an intermittent token refresh failure for Microsoft mailboxes with mandatory MFA.',
+  },
+  {
+    date: '2026-03-10',
+    title: 'Sequence A/B variants',
+    tag: 'shipped',
+    body: 'Up to four subject and body variants per step. Per-variant reply-rate reporting.',
+  },
+  {
+    date: '2026-03-01',
+    title: 'Tracking edge upgrade',
+    tag: 'changed',
+    body: 'Tracking edge now dedupes by task + IP at the edge and again in the consumer, dropping a class of replay-driven noise from analytics.',
+  },
+];
+
+const tagClass = (t: string) =>
+  t === 'shipped' ? 'text-success bg-success/10 border-success/20'
+  : t === 'changed' ? 'text-warn bg-warn/10 border-warn/20'
+  : 'text-muted-foreground bg-surface-2 border-border';
+---
+<Layout
+  title="Changelog — Warmbly"
+  description="What we shipped, what we changed, and what we fixed."
+>
+  <PageHero
+    eyebrow="Changelog"
+    title="The actual history of what we ship."
+  />
+
+  <Section>
+    <div class="grid gap-4">
+      {entries.map((e) => (
+        <Card class="md:grid md:grid-cols-12 md:gap-6">
+          <div class="md:col-span-3">
+            <div class="text-[12px] font-mono text-muted-foreground">{e.date}</div>
+            <span class={`mt-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider border ${tagClass(e.tag)}`}>{e.tag}</span>
+          </div>
+          <div class="md:col-span-9 mt-3 md:mt-0">
+            <h3 class="text-[15.5px] font-semibold">{e.title}</h3>
+            <p class="mt-1.5 text-[13.5px] text-muted-foreground leading-relaxed">{e.body}</p>
+          </div>
+        </Card>
+      ))}
+    </div>
+  </Section>
+</Layout>

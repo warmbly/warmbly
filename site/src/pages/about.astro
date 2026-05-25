@@ -1,0 +1,84 @@
+---
+import Layout from '../layouts/Layout.astro';
+import PageHero from '../components/PageHero.astro';
+import Section from '../components/Section.astro';
+import SectionHead from '../components/SectionHead.astro';
+import Card from '../components/Card.astro';
+import Icon from '../components/Icon.astro';
+import CTA from '../components/CTA.astro';
+---
+<Layout
+  title="About — Warmbly"
+  description="Warmbly is a small team building the deliverability platform we wished existed when we ran cold email at our previous companies."
+>
+  <PageHero
+    eyebrow="About"
+    title="We’re building the cold-email platform we wished existed."
+    description="Warmbly was started after one too many quarters watching deliverability collapse on tools that rewarded sending more, not sending well."
+  />
+
+  <Section>
+    <div class="grid md:grid-cols-2 gap-12 items-start">
+      <div>
+        <h2 class="text-2xl font-bold tracking-tight">Why we built this</h2>
+        <p class="mt-4 text-muted-foreground leading-relaxed">
+          We ran outbound at agencies, growth teams and founder-led startups. Every six months we’d hit the same wall: a tool that started healthy, then quietly started landing 30%, 50%, 80% of mail in spam.
+        </p>
+        <p class="mt-3 text-muted-foreground leading-relaxed">
+          The tools wouldn’t tell us until things were catastrophic. Their warmup pools were silently mixed with trial mailboxes. Their workers concentrated too much volume on one IP. We rebuilt the pieces ourselves — warmup, sending, the inbox, the analytics — and shipped them as one product so the signals couldn’t be ignored.
+        </p>
+        <p class="mt-3 text-muted-foreground leading-relaxed">
+          That product is Warmbly.
+        </p>
+      </div>
+
+      <div>
+        <h2 class="text-2xl font-bold tracking-tight">What we believe</h2>
+        <ul class="mt-4 space-y-3">
+          {[
+            'Cold mail is a privilege. We treat shared reputation infrastructure as exactly that.',
+            'Mailbox-first, not worker-first. Caps belong on mailboxes; workers respect their mailbox sum.',
+            'Defaults should keep you safe even if you never change them.',
+            'No black boxes. Every score, suppression, and quarantine has a reason you can read.',
+            'You should be able to read the same metrics we’d ask about in an incident.',
+          ].map((l) => (
+            <li class="flex items-start gap-2 text-[14px] text-foreground/85">
+              <Icon name="check" size={14} class="text-success mt-1 shrink-0" />
+              <span>{l}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  </Section>
+
+  <Section variant="muted">
+    <SectionHead
+      eyebrow="Team"
+      title="Small on purpose."
+      description="Eleven people across engineering, deliverability research, design and customer engineering. No outsourced support. No growth team."
+    />
+    <div class="mt-10 grid md:grid-cols-3 gap-4">
+      {[
+        { name: 'Engineering',           body: 'Built the worker plane, sending engine, analytics and inbox.' },
+        { name: 'Deliverability research', body: 'Tracks provider policy changes, runs placement probes, tunes pool thresholds.' },
+        { name: 'Customer engineering',  body: 'Onboards new accounts, handles deliverability reviews, ships docs.' },
+      ].map((t) => (
+        <Card>
+          <h3 class="text-[15px] font-semibold">{t.name}</h3>
+          <p class="mt-1.5 text-[13.5px] text-muted-foreground leading-relaxed">{t.body}</p>
+        </Card>
+      ))}
+    </div>
+  </Section>
+
+  <Section>
+    <SectionHead
+      eyebrow="Backed by"
+      title="Independent and well-capitalised."
+      description="Backed by a small group of founders, deliverability operators and seed funds. We don’t need to make the kind of growth-team choices that wreck sender reputation."
+    />
+  </Section>
+
+  <CTA />
+</Layout>

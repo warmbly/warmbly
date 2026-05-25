@@ -1,0 +1,98 @@
+---
+import Layout from '../layouts/Layout.astro';
+import PageHero from '../components/PageHero.astro';
+import Section from '../components/Section.astro';
+import SectionHead from '../components/SectionHead.astro';
+import Card from '../components/Card.astro';
+import Icon from '../components/Icon.astro';
+import CTA from '../components/CTA.astro';
+
+const groups: { title: string; items: { name: string; body: string; status?: 'live'|'beta'|'soon' }[] }[] = [
+  {
+    title: 'Mailbox providers',
+    items: [
+      { name: 'Google Workspace',  body: 'OAuth, Gmail API, FBL signals.' },
+      { name: 'Microsoft 365',     body: 'OAuth, Graph API send + IMAP/EWS sync.' },
+      { name: 'Custom SMTP / IMAP',body: 'Any provider that speaks SMTP/IMAP.' },
+      { name: 'Apple iCloud',      body: 'Password-app + IMAP/SMTP.' },
+      { name: 'Zoho Mail',         body: 'OAuth + IMAP/SMTP.' },
+    ],
+  },
+  {
+    title: 'CRMs',
+    items: [
+      { name: 'HubSpot',    body: 'Two-way contact + activity sync.' },
+      { name: 'Salesforce', body: 'Leads, contacts, opportunities, custom fields.' },
+      { name: 'Pipedrive',  body: 'Persons, deals, activities.' },
+      { name: 'Attio',      body: 'People, companies, lists.', status: 'beta' },
+      { name: 'Folk',       body: 'Contacts, groups, custom fields.', status: 'beta' },
+    ],
+  },
+  {
+    title: 'Data & enrichment',
+    items: [
+      { name: 'Apollo',    body: 'Lead lists pulled directly into Warmbly contacts.' },
+      { name: 'Clay',      body: 'Push enriched lists from Clay tables.' },
+      { name: 'Clearbit',  body: 'Enrich contacts on import.' },
+      { name: 'Dropcontact', body: 'Email finder + verifier.' },
+      { name: 'NeverBounce',body: 'Verifier integration on import.' },
+    ],
+  },
+  {
+    title: 'Workflow & alerting',
+    items: [
+      { name: 'Slack',    body: 'Channel notifications for positive replies, bounces, quarantines.' },
+      { name: 'Zapier',   body: '70+ triggers and actions.' },
+      { name: 'Make',     body: 'Triggers and actions in scenarios.' },
+      { name: 'n8n',      body: 'Self-hosted workflow integration.', status: 'beta' },
+      { name: 'Linear',   body: 'Create tickets from negative replies.' , status: 'soon'},
+    ],
+  },
+];
+---
+<Layout
+  title="Integrations — Warmbly"
+  description="Mailbox providers, CRMs, data enrichment, and workflow tools that plug into Warmbly."
+>
+  <PageHero
+    eyebrow="Integrations"
+    title="Connect what you already use."
+  />
+
+  <Section>
+    {groups.map((g, i) => (
+      <div class={i === 0 ? '' : 'mt-14'}>
+        <h2 class="text-[13px] uppercase tracking-wider text-muted-foreground font-semibold mb-5">{g.title}</h2>
+        <div class="grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+          {g.items.map((it) => (
+            <Card class="flex flex-col">
+              <div class="flex items-center justify-between">
+                <div class="w-9 h-9 rounded-lg bg-surface-2 border border-border inline-flex items-center justify-center text-foreground/70 font-semibold text-[14px]">
+                  {it.name.charAt(0)}
+                </div>
+                {it.status && (
+                  <span class={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider border
+                    ${it.status === 'live' ? 'text-success bg-success/10 border-success/20' : ''}
+                    ${it.status === 'beta' ? 'text-warn bg-warn/10 border-warn/20' : ''}
+                    ${it.status === 'soon' ? 'text-muted-foreground bg-surface-2 border-border' : ''}
+                  `}>{it.status}</span>
+                )}
+              </div>
+              <h3 class="mt-4 text-[14.5px] font-semibold">{it.name}</h3>
+              <p class="mt-1 text-[13px] text-muted-foreground leading-relaxed">{it.body}</p>
+            </Card>
+          ))}
+        </div>
+      </div>
+    ))}
+  </Section>
+
+  <CTA
+    title="Need an integration we don’t list?"
+    description="We ship the most-requested integrations every quarter. Tell us which one matters."
+    primaryLabel="Request integration"
+    primaryHref="/contact/?topic=integrations"
+    secondaryLabel="See the API"
+    secondaryHref="/developers/"
+  />
+</Layout>

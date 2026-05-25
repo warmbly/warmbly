@@ -1,0 +1,19 @@
+---
+import Layout from '../layouts/Layout.astro';
+import Icon from '../components/Icon.astro';
+---
+<Layout title="Not found — Warmbly" description="The page you’re looking for doesn’t exist." noIndex>
+  <section class="container-page py-24 md:py-32 text-center">
+    <div class="inline-flex items-center justify-center w-12 h-12 rounded-lg bg-surface-2 border border-border mb-6">
+      <Icon name="search" size={20} class="text-muted-foreground" />
+    </div>
+    <h1 class="text-4xl md:text-5xl font-extrabold tracking-tight">Page not found</h1>
+    <p class="mt-3 text-muted-foreground max-w-md mx-auto">
+      The page you’re looking for doesn’t exist, was moved, or never made it out of the changelog.
+    </p>
+    <div class="mt-7 flex flex-wrap items-center justify-center gap-3">
+      <a href="/" class="inline-flex h-10 px-4 items-center rounded-md text-sm font-medium bg-foreground text-background hover:bg-foreground/85">Go home</a>
+      <a href="/learn/" class="inline-flex h-10 px-4 items-center rounded-md text-sm font-medium border border-border hover:bg-surface-2">Browse learn</a>
+    </div>
+  </section>
+</Layout>

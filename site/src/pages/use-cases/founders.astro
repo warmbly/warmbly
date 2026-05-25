@@ -1,0 +1,35 @@
+---
+import UseCasePage from '../../components/UseCasePage.astro';
+
+const challenges = [
+  { title: 'One mailbox to rule them all', body: 'Founders try to run every sequence through founder@. By month three it’s landing in promotions. By month six it’s landing in spam.' },
+  { title: 'No deliverability instrumentation', body: 'Without per-mailbox placement, the first hint of a problem is a quiet inbox — usually a month after reputation broke.' },
+  { title: 'Cold and transactional from the same address', body: 'Mixing transactional and cold sending from a single mailbox poisons the well for both.' },
+  { title: 'Tracking-pixel theatre', body: 'Open-rate dashboards lie. Founders chase opens; reply rate quietly drops.' },
+];
+
+const recipe = [
+  { title: 'Add 2–4 mailboxes on the same domain', body: 'team@, hello@, intro@, your founder@. Distribute cold across them; keep one for transactional only.' },
+  { title: 'Turn on premium warmup', body: 'Each mailbox starts at 10/day and ramps +1/day to a 40/day ceiling. Quarantine kicks in automatically if reputation slips.' },
+  { title: 'Plain text by default', body: 'Cold mail is a person talking to a person. Skip the HTML and the pixels.' },
+  { title: 'Distribute campaign sends', body: 'A single sequence sends across all four mailboxes round-robin — never burns out one inbox.' },
+  { title: 'Watch reply rate, not opens', body: 'Pin the reply-rate dashboard. Ignore opens; they’re noisy with Apple Mail Privacy.' },
+  { title: 'Forward replies to one inbox', body: 'Unified inbox aggregates replies across all four mailboxes into one console.' },
+];
+
+const caps = [
+  { value: '4 mailboxes', label: 'Recommended starter setup' },
+  { value: '50 / day',    label: 'Default cap per mailbox' },
+  { value: '200 / day',   label: 'Safe campaign volume' },
+  { value: '3-6 weeks',   label: 'Warmup to stable' },
+];
+---
+<UseCasePage
+  pageTitle="Founders — Warmbly"
+  description="Run intro sequences from your domain without burning your only mailbox."
+  title="Cold outreach without burning your founder@ address."
+  intro="Founders almost always start with one mailbox doing everything. This is the recipe to grow into a multi-mailbox sender without losing the inbox you actually run the company from."
+  challenges={challenges}
+  recipe={recipe}
+  caps={caps}
+/>

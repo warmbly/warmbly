@@ -1,0 +1,63 @@
+---
+import Layout from '../layouts/Layout.astro';
+import PageHero from '../components/PageHero.astro';
+import Section from '../components/Section.astro';
+import SectionHead from '../components/SectionHead.astro';
+import Card from '../components/Card.astro';
+import Icon from '../components/Icon.astro';
+import CTA from '../components/CTA.astro';
+---
+<Layout
+  title="Workers & infrastructure — Warmbly"
+  description="Distributed worker plane that sends, syncs and tracks. Shared free, shared premium, or dedicated to your organisation."
+>
+  <PageHero
+    eyebrow="Workers"
+    title="Many workers. Many IPs. By design."
+    description="Cold mail concentrated through one big sender is asking for trouble. Warmbly fans out: one worker per machine, each with its own network identity."
+  />
+
+  <Section>
+    <SectionHead
+      eyebrow="Tiers"
+      title="Three ways your mail moves."
+    />
+    <div class="mt-10 grid md:grid-cols-3 gap-4">
+      {[
+        { tier: 'Shared free',    plan: 'Free plan',   body: 'Pooled across free senders. Lower per-mailbox caps, conservative ramps.' },
+        { tier: 'Shared premium', plan: 'Starter, Growth', body: 'Pooled across paid senders. Stricter quarantine policy than free.' },
+        { tier: 'Dedicated',      plan: 'Business plan', body: 'A worker process and IP allocated to your organisation. Still respects per-mailbox health.' },
+      ].map((t) => (
+        <Card>
+          <h3 class="text-[15.5px] font-semibold">{t.tier}</h3>
+          <p class="text-[12.5px] text-muted-foreground mt-0.5">{t.plan}</p>
+          <p class="mt-3 text-[13.5px] text-muted-foreground leading-relaxed">{t.body}</p>
+        </Card>
+      ))}
+    </div>
+  </Section>
+
+  <Section variant="muted">
+    <SectionHead
+      eyebrow="Worker properties"
+      title="Why we treat them as cattle, not pets."
+    />
+    <div class="mt-10 grid md:grid-cols-2 gap-4">
+      {[
+        ['Per-machine identity',  'One worker process per machine. Each has its own IP. No shared NAT.'],
+        ['Disposable state',      'Workers store nothing locally that can’t be rebuilt from a Kafka replay.'],
+        ['Kafka-driven',          'Commands and results flow through worker-specific topics for traceability.'],
+        ['No SQL',                'Workers don’t open a Postgres connection. They talk to Kafka, KMS, DynamoDB, S3 and Redis.'],
+        ['Migrable mailboxes',    'A mailbox can be reassigned between workers transparently.'],
+        ['Concentration caps',    'A shared worker should not be a concentration point. We add workers before forcing each one to do more.'],
+      ].map(([k, v]) => (
+        <Card>
+          <h3 class="text-[14.5px] font-semibold">{k}</h3>
+          <p class="mt-1.5 text-[13.5px] text-muted-foreground leading-relaxed">{v}</p>
+        </Card>
+      ))}
+    </div>
+  </Section>
+
+  <CTA primaryLabel="Talk to sales about dedicated workers" primaryHref="/contact/?topic=dedicated" secondaryLabel="See pricing" />
+</Layout>

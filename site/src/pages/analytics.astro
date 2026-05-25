@@ -1,0 +1,62 @@
+---
+import Layout from '../layouts/Layout.astro';
+import PageHero from '../components/PageHero.astro';
+import Section from '../components/Section.astro';
+import SectionHead from '../components/SectionHead.astro';
+import Card from '../components/Card.astro';
+import Icon from '../components/Icon.astro';
+import CTA from '../components/CTA.astro';
+---
+<Layout
+  title="Analytics — Warmbly"
+  description="Deliverability-aware analytics: per-mailbox placement, complaint and bounce rates, warmup health, sequence conversion."
+>
+  <PageHero
+    eyebrow="Analytics"
+    title="Analytics that lead with deliverability, not vanity opens."
+    description="We don’t open-shame you with a number we can’t trust. We show placement, complaint rate, bounce rate, reply rate and revenue — by mailbox, pool, worker and sequence."
+  />
+
+  <Section>
+    <SectionHead
+      eyebrow="What you see"
+      title="Five layers of view."
+    />
+    <div class="mt-10 grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+      {[
+        { title: 'Workspace', body: 'Big-picture: complaint rate, bounce rate, placement by sender pool, suppressed contacts trend.' },
+        { title: 'Pool',      body: 'Warmup pool health, member count, quarantine queue, recovery cohort, spam score histogram.' },
+        { title: 'Worker',    body: 'Per-worker volume, mailbox concentration, IP reputation signals, throttle events.' },
+        { title: 'Mailbox',   body: 'Inbox vs spam placement, daily send / warmup volume, complaint rate, bounce rate, OOO rate.' },
+        { title: 'Sequence',  body: 'Step-by-step open / reply / positive-reply rates, A/B variant performance, drop-off curves.' },
+        { title: 'Contact',   body: 'Per-recipient timeline of every send, open, click, reply, bounce, and classification.' },
+      ].map((s) => (
+        <Card>
+          <h3 class="text-[15px] font-semibold">{s.title}</h3>
+          <p class="mt-1.5 text-[13.5px] text-muted-foreground leading-relaxed">{s.body}</p>
+        </Card>
+      ))}
+    </div>
+  </Section>
+
+  <Section variant="muted">
+    <SectionHead
+      eyebrow="Exports"
+      title="Your data is yours. Export it any time."
+    />
+    <div class="mt-10 grid md:grid-cols-3 gap-4">
+      {[
+        ['CSV / XLSX',  'Every report exports to CSV or XLSX with column selection.'],
+        ['Scheduled', 'Schedule a weekly digest by email or to S3.'],
+        ['API & webhooks',  'Pull events into your warehouse via API or push them as webhooks.'],
+      ].map(([t, b]) => (
+        <Card>
+          <h3 class="text-[15px] font-semibold">{t}</h3>
+          <p class="mt-1.5 text-[13.5px] text-muted-foreground leading-relaxed">{b}</p>
+        </Card>
+      ))}
+    </div>
+  </Section>
+
+  <CTA />
+</Layout>

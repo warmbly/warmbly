@@ -1,0 +1,29 @@
+---
+import UseCasePage from '../../components/UseCasePage.astro';
+---
+<UseCasePage
+  pageTitle="Agencies — Warmbly"
+  description="Outbound for many clients on many domains, without spreadsheet triage."
+  title="One platform for every client domain."
+  intro="Agencies juggle 5–50 client domains, each with their own mailboxes, sequences and reply triage. Warmbly’s workspace-per-client model and unified inbox stop the spreadsheet escape hatch."
+  challenges={[
+    { title: 'One client’s bad mailbox affects another’s reputation', body: 'In shared single-tenant tools, a misbehaving client mailbox raises everyone’s spam score. Quarantine logic is opaque.' },
+    { title: 'Spreadsheet triage', body: 'Replies for 14 clients land in 14 inboxes. Ops staff spend hours copy-pasting into the agency CRM.' },
+    { title: 'No per-client deliverability view', body: 'When a client asks “how are we doing?” the answer is a screenshot of opens — not placement.' },
+    { title: 'Reseller pricing', body: 'Other tools charge per email or per workspace, making per-client P&L impossible to read.' },
+  ]}
+  recipe={[
+    { title: 'One workspace per client', body: 'Isolate sender pools, contacts, and analytics by client. No cross-contamination.' },
+    { title: 'Premium warmup for every domain', body: 'Each client’s mailboxes warm in the premium pool — never silently mixed with free traffic.' },
+    { title: 'Unified inbox per workspace', body: 'Reply triage stays inside the client’s workspace. Assign threads to the recruiter or BDR who owns the relationship.' },
+    { title: 'Use roles & assignment', body: 'On Growth and Business, roles let your team manage delivery without giving clients access to billing.' },
+    { title: 'Whitelabel reporting', body: 'Export per-client reports as CSV or PDF with the agency brand applied.' },
+    { title: 'Webhooks → agency CRM', body: 'Pipe positive-reply events into your agency CRM so account managers know the second a meeting books.' },
+  ]}
+  caps={[
+    { value: '50+',     label: 'Active client workspaces' },
+    { value: '600+',    label: 'Connected mailboxes' },
+    { value: '12k/day', label: 'Aggregate cold volume' },
+    { value: '<3%',     label: 'Mean spam placement' },
+  ]}
+/>

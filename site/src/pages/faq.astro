@@ -1,0 +1,81 @@
+---
+import Layout from '../layouts/Layout.astro';
+import PageHero from '../components/PageHero.astro';
+import Section from '../components/Section.astro';
+import Card from '../components/Card.astro';
+import CTA from '../components/CTA.astro';
+
+const groups = [
+  {
+    title: 'Warmup',
+    items: [
+      ['How long does warmup take?', 'Plan on 3–6 weeks for a brand-new mailbox to reach a stable warmed state. We ramp +1 email/day from a 10/day start with a 40/day ceiling.'],
+      ['Do free and premium pools mix?', 'No. Free-pool mailboxes never silently appear in the premium pool. Dedicated workers still participate in the premium pool by default.'],
+      ['What gets a mailbox quarantined?', '≥3 invalid warmup tokens in 24h, spam score above 50, complaint rate over 0.10%, or spam-folder placement over 20% on a sufficient sample.'],
+      ['Can I keep warming after I start cold sending?', 'Yes — and you should. Warmup should keep running even after campaigns begin.'],
+    ],
+  },
+  {
+    title: 'Sending',
+    items: [
+      ['What is the per-mailbox cap?', 'Default 50 cold emails/day with a 10-minute minimum gap. You can lower it. You can raise it, but anything above 50/day requires positive reputation signals.'],
+      ['How do you spread sending across IPs?', 'One worker per machine, each with its own IP. We distribute mailboxes across workers and assign campaign sends round-robin across the chosen sender pool.'],
+      ['Do you offer dedicated IPs?', 'Yes, on Business. A dedicated worker comes with its own IP and is allocated to a single organisation.'],
+      ['What providers do you support?', 'Google Workspace / Gmail, Microsoft 365 / Outlook, and any SMTP/IMAP provider. iCloud and Zoho are first-class too.'],
+    ],
+  },
+  {
+    title: 'Inbox & replies',
+    items: [
+      ['How accurate is reply detection?', 'Reply detection survives quoted text, signatures, “sent from” footers, and forwarded threads. OOO and unsubscribe replies are classified separately.'],
+      ['Can I unify several mailboxes in one view?', 'Yes — that’s the whole point. Filters, search and assignment span every connected mailbox.'],
+      ['Are open and click trackers reliable?', 'Honestly: opens are noisy because of Apple Mail Privacy and image proxies. We surface opens but never use them for deliverability decisions.'],
+    ],
+  },
+  {
+    title: 'Security',
+    items: [
+      ['Where is data stored?', 'AWS regions — us-east-1 by default, eu-west-1 on Growth and Business. Custom residency on Business.'],
+      ['How is mailbox auth stored?', 'Refresh tokens are envelope-encrypted with per-user KMS-derived data keys. Decrypted keys are cached briefly in Redis, never persisted to disk.'],
+      ['Do you have SOC 2?', 'SOC 2 Type II audit is in progress. We can share the bridge letter once the report is issued.'],
+      ['Do you sign DPAs?', 'Yes. Email security@warmbly.com and we’ll turn it around within 48 hours.'],
+    ],
+  },
+  {
+    title: 'Billing',
+    items: [
+      ['Do you charge per email?', 'No. We charge per connected mailbox. Within each mailbox you can send up to its safe daily cap.'],
+      ['What if I disconnect a mailbox mid-month?', 'Charges are prorated. Reconnecting the same mailbox in the same period doesn’t double-bill you.'],
+      ['Refund policy?', 'Full refund within 14 days of a paid purchase if the platform didn’t work for you.'],
+      ['Startup discount?', '50% off Growth for one year for pre-seed and seed companies on YC, Antler, EF, Techstars or similar.'],
+    ],
+  },
+];
+---
+<Layout
+  title="FAQ — Warmbly"
+  description="The most common questions we get about warmup, sending, the inbox, security and billing."
+>
+  <PageHero
+    eyebrow="FAQ"
+    title="Questions we hear the most."
+  />
+
+  <Section>
+    {groups.map((g, i) => (
+      <div class={i === 0 ? '' : 'mt-12'}>
+        <h2 class="text-[13px] uppercase tracking-wider text-muted-foreground font-semibold mb-4">{g.title}</h2>
+        <div class="grid md:grid-cols-2 gap-4">
+          {g.items.map(([q, a]) => (
+            <Card>
+              <h3 class="text-[14.5px] font-semibold">{q}</h3>
+              <p class="mt-1.5 text-[13.5px] text-muted-foreground leading-relaxed">{a}</p>
+            </Card>
+          ))}
+        </div>
+      </div>
+    ))}
+  </Section>
+
+  <CTA />
+</Layout>

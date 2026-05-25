@@ -1,0 +1,51 @@
+---
+import Layout from '../layouts/Layout.astro';
+import PageHero from '../components/PageHero.astro';
+import Section from '../components/Section.astro';
+import Card from '../components/Card.astro';
+import Icon from '../components/Icon.astro';
+
+const channels = [
+  { icon: 'mail',  title: 'General',   value: 'hello@warmbly.com',    body: 'Anything that doesn’t fit below.' },
+  { icon: 'send',  title: 'Sales',     value: 'sales@warmbly.com',    body: 'Custom plans, dedicated workers, BYOK, SSO.' },
+  { icon: 'shield',title: 'Security',  value: 'security@warmbly.com', body: 'Reports, disclosures, security pack requests.' },
+  { icon: 'cog',   title: 'Support',   value: 'support@warmbly.com',  body: 'Account issues. Existing customers please email from your workspace owner address.' },
+  { icon: 'webhook',title: 'API',      value: 'api@warmbly.com',      body: 'API quotas, integration partnerships, SDK contributions.' },
+  { icon: 'star',  title: 'Press',     value: 'press@warmbly.com',    body: 'Media inquiries, brand assets, founder availability.' },
+];
+---
+<Layout
+  title="Contact — Warmbly"
+  description="Get in touch with sales, support, security or the team. Real humans, real response times."
+>
+  <PageHero
+    eyebrow="Contact"
+    title="We pick the inbox. You pick the topic."
+    description="No support black hole. Each address lands with a small group of people who actually own the answer."
+  />
+
+  <Section>
+    <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      {channels.map((c) => (
+        <Card>
+          <div class="w-9 h-9 rounded-lg bg-brand-soft text-brand inline-flex items-center justify-center mb-4">
+            <Icon name={c.icon} size={18} />
+          </div>
+          <h3 class="text-[15px] font-semibold">{c.title}</h3>
+          <a class="block mt-1 text-[14px] font-medium text-brand hover:text-brand-strong" href={`mailto:${c.value}`}>{c.value}</a>
+          <p class="mt-2 text-[13px] text-muted-foreground leading-relaxed">{c.body}</p>
+        </Card>
+      ))}
+    </div>
+
+    <div class="mt-16 max-w-2xl">
+      <h2 class="text-2xl font-bold tracking-tight">Office</h2>
+      <p class="mt-2 text-muted-foreground">
+        Warmbly Labs, Inc. — registered in Delaware, with team members across New York, Berlin and Lisbon. We’re an async-first team; meetings are by appointment.
+      </p>
+      <p class="mt-3 text-muted-foreground">
+        Mail: 1209 N. Orange Street, Wilmington, DE 19801, USA.
+      </p>
+    </div>
+  </Section>
+</Layout>
