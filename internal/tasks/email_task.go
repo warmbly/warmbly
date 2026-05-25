@@ -263,11 +263,27 @@ func (s *tasksService) HandleEmailTask(task *proto.ProcessTask) *errx.Error {
 	return nil
 }
 
-// selectWarmupPartner selects a warmup partner from the pool
+// recentPartnerWindow controls how long a partner stays excluded from
+// re-selection after being used. Bumped from 24h to 72h so a small pool
+// does not rotate through the same handful of mailboxes every day.
+const recentPartnerWindow = 72 * time.Hour
+
+// recentDomainWindow controls the lookback for the domain-distribution
+// histogram. A week is long enough to smooth out daily randomness while
+// still reflecting current behaviour.
+const recentDomainWindow = 7 * 24 * time.Hour
+
+// smallPoolWarnThreshold defines the participant count below which we log
+// a warning. Tiny pools force partner reuse and create obvious patterns
+// that mailbox providers can cluster on.
+const smallPoolWarnThreshold = 8
+
+// selectWarmupPartner selects a warmup partner from the pool, preferring
+// partners on under-represented recipient domains to avoid concentrating
+// traffic on a single provider (e.g. all-Gmail warmup loops).
 func (s *tasksService) selectWarmupPartner(ctx context.Context, account Email) (*Email, error) {
 	poolType := s.resolveWarmupPoolType(ctx, &account)
 
-	// Get all participants in the pool
 	participantIDs, err := s.warmupRepo.GetPoolParticipants(ctx, poolType, true)
 	if err != nil {
 		return nil, err
@@ -277,23 +293,42 @@ func (s *tasksService) selectWarmupPartner(ctx context.Context, account Email) (
 		return nil, fmt.Errorf("no warmup partners available")
 	}
 
-	// Filter out sender's own account and recently used partners.
+	if len(participantIDs) < smallPoolWarnThreshold {
+		log.Warn().
+			Int("participants", len(participantIDs)).
+			Str("pool", poolType).
+			Str("email_account_id", account.ID.String()).
+			Msg("Warmup pool below diversity threshold; partner reuse likely")
+	}
+
+	domainsByID, err := s.warmupRepo.GetPoolParticipantDomains(ctx, poolType, true)
+	if err != nil {
+		// Diversity weighting is best-effort. Fall back to uniform on lookup error.
+		domainsByID = nil
+	}
+
 	recentPartnerSet := map[uuid.UUID]struct{}{}
-	recentPartnerIDs, err := s.warmupRepo.GetRecentlyUsedPartners(ctx, account.ID, time.Now().Add(-24*time.Hour))
+	recentPartnerIDs, err := s.warmupRepo.GetRecentlyUsedPartners(ctx, account.ID, time.Now().Add(-recentPartnerWindow))
 	if err == nil {
 		for _, pid := range recentPartnerIDs {
 			recentPartnerSet[pid] = struct{}{}
 		}
 	}
 
+	domainCounts, err := s.warmupRepo.GetRecentPartnerDomainCounts(ctx, account.ID, time.Now().Add(-recentDomainWindow))
+	if err != nil {
+		domainCounts = nil
+	}
+
 	var availablePartners []uuid.UUID
 	var fallbackPartners []uuid.UUID
 	for _, id := range participantIDs {
-		if id != account.ID {
-			fallbackPartners = append(fallbackPartners, id)
-			if _, recentlyUsed := recentPartnerSet[id]; !recentlyUsed {
-				availablePartners = append(availablePartners, id)
-			}
+		if id == account.ID {
+			continue
+		}
+		fallbackPartners = append(fallbackPartners, id)
+		if _, recentlyUsed := recentPartnerSet[id]; !recentlyUsed {
+			availablePartners = append(availablePartners, id)
 		}
 	}
 
@@ -305,16 +340,50 @@ func (s *tasksService) selectWarmupPartner(ctx context.Context, account Email) (
 		return nil, fmt.Errorf("no available warmup partners")
 	}
 
-	// Select random partner
-	partnerID := availablePartners[rand.Intn(len(availablePartners))]
+	partnerID := pickWeightedPartner(availablePartners, domainsByID, domainCounts)
 
-	// Load partner account
 	partner, err := s.emailRepo.GetByID(ctx, partnerID)
 	if err != nil {
 		return nil, err
 	}
 
 	return partner, nil
+}
+
+// pickWeightedPartner picks a partner ID using inverse-frequency weights on
+// the partner's recipient domain. Partners whose domain we have not hit
+// recently get a higher weight; partners on saturated domains drop toward 0.
+// If domain data is unavailable, falls back to uniform random selection.
+func pickWeightedPartner(candidates []uuid.UUID, domainsByID map[uuid.UUID]string, domainCounts map[string]int) uuid.UUID {
+	if len(candidates) == 1 || len(domainsByID) == 0 {
+		return candidates[rand.Intn(len(candidates))]
+	}
+
+	weights := make([]float64, len(candidates))
+	var total float64
+	for i, id := range candidates {
+		domain := domainsByID[id]
+		// 1.0 / (1 + count). Untouched domain → 1.0, hit once → 0.5,
+		// hit 4× → 0.2. Keeps every partner reachable but biases away
+		// from saturated buckets.
+		w := 1.0 / float64(1+domainCounts[domain])
+		weights[i] = w
+		total += w
+	}
+
+	if total <= 0 {
+		return candidates[rand.Intn(len(candidates))]
+	}
+
+	r := rand.Float64() * total
+	var cum float64
+	for i, w := range weights {
+		cum += w
+		if r <= cum {
+			return candidates[i]
+		}
+	}
+	return candidates[len(candidates)-1]
 }
 
 func (s *tasksService) resolveWarmupPoolType(ctx context.Context, account *Email) string {
