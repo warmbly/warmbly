@@ -37,8 +37,9 @@ GitHub Actions publishes these to GHCR automatically. See [../resources/cicd.md]
 ## Local development
 
 ```bash
-make dev    # infra + app + one worker
-make sim    # adds premium + dedicated workers
+make infra  # postgres, redis, kafka, etc. (leave running, shared across worktrees)
+make app    # backend, consumer, worker, tracking, realtime, web (hot reload)
+make sim    # adds premium + dedicated workers (prod-image flow)
 make seed   # rich fixture
 make tools  # kafka-ui at :18090
 make reset  # nuke volumes

@@ -210,7 +210,8 @@ Check GitHub repo → Settings → Webhooks → Recent Deliveries. If the webhoo
 
 ```bash
 # control plane: locally
-make dev
+make infra      # postgres / redis / kafka / etc. (leave running)
+make app        # backend / consumer / worker / tracking / realtime / web
 
 # load fixtures
 make seed

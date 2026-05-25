@@ -43,18 +43,54 @@ The frontend (React) talks to three control-plane services: the **Backend API** 
 
 There's a single `docker-compose.yml` at the repo root that runs everything for local development, including LocalStack for KMS/DynamoDB/S3, stripe-mock, mailpit, and the optional kafka-ui debugger.
 
+The stack is split into **infra** (postgres, redis, kafka, etc.: stateful, slow to start, identical across branches) and **app** (the language services you actually iterate on). Every `make` target pins `-p warmbly` as the compose project, so multiple git worktrees share the same infra and only the app containers churn per branch.
+
+### Daily workflow
+
 ```bash
-# Default: infra + app + one worker
-make dev
+# 1. Once, from any worktree (usually root). Brings up postgres, redis,
+#    zookeeper, kafka, schema-registry, mailpit, localstack, stripe-mock,
+#    and cloud-tasks-emulator. Leave running.
+make infra
 
-# Full simulation: adds premium + dedicated workers
-make sim
+# 2. In the worktree you're iterating on. Brings up backend, consumer,
+#    worker, tracking, realtime, web with hot reload (air / cargo-watch
+#    / Phoenix / Vite). Bind-mounted source means saves rebuild in place.
+make app
 
-# Load rich fixtures (3 orgs, 6 mailboxes, a campaign, suppressed contacts)
-make seed
+# 3. Switching worktrees:
+cd /path/to/other-worktree
+make app          # recreates app containers against the new source;
+                  # infra is untouched, caches stay warm.
+```
 
-# Optional debugging UIs (kafka-ui at :18090)
-make tools
+### Stopping and logs
+
+```bash
+make app-logs     # stream logs from the hot-reload services
+make logs         # stream logs from everything (infra + app)
+make logs backend # one or more named services
+
+make app-down     # stop app services, keep infra running
+make infra-down   # stop infra too (volumes preserved)
+make stop         # full teardown (everything, all profiles)
+make reset        # nuke everything including volumes (start over)
+```
+
+### Other targets
+
+```bash
+make up           # production-style images (no hot reload); smoke test
+                  # "does the release binary boot?"
+make sim          # adds premium + dedicated workers (prod-image flow)
+make seed         # load rich fixtures (3 orgs, 6 mailboxes, a campaign,
+                  # suppressed contacts). Requires `make app` or `make up`.
+make tools        # debugging UIs (kafka-ui at :18090)
+make status       # docker compose ps
+make restart <svc>    # rebuild + restart one service (prod-image flow only;
+                      # under `make app` air handles this automatically)
+make restart-go       # rebuild + restart all Go services (prod-image flow)
+make restart-all      # rebuild + restart Go + Rust + Elixir (prod-image flow)
 ```
 
 Service URLs (all ports offset to avoid clashes with locally-installed daemons):

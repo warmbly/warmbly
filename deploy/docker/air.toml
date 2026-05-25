@@ -21,8 +21,11 @@ testdata_dir = "testdata"
 [build]
   # Built with the same flags as the production Dockerfiles so the
   # behavior under watch matches what ships. -tags musl is required
-  # because we're on alpine.
-  cmd = "go build -tags musl -o ./tmp/main ./cmd/${WARMBLY_CMD}"
+  # because we're on alpine. -buildvcs=false skips git stamping:
+  # the bind-mounted .git is owned by the host user and the container
+  # runs as root, so git refuses ("dubious ownership") and the build
+  # aborts. Dev binaries don't need VCS info.
+  cmd = "go build -tags musl -buildvcs=false -o ./tmp/main ./cmd/${WARMBLY_CMD}"
   bin = "./tmp/main"
   full_bin = ""
   include_ext = ["go", "tpl", "tmpl", "html"]

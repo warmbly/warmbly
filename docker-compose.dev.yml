@@ -3,7 +3,7 @@
 # triggers an in-container recompile/restart — no docker image
 # rebuild, no container recreate.
 #
-# Activated via `make dev` (or `docker compose -f docker-compose.yml
+# Activated via `make app` (or `docker compose -f docker-compose.yml
 # -f docker-compose.dev.yml up`).
 #
 # Covers:

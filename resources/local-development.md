@@ -19,49 +19,58 @@ For native development (running services outside Docker against the containerize
 Day-one:
 
 ```bash
-make dev        # infra + app + one worker (the everyday default)
-make sim        # adds premium + dedicated workers; full simulation
+make infra      # postgres, redis, kafka, mailpit, localstack, etc. (leave running)
+make app        # backend, consumer, worker, tracking, realtime, web (hot reload)
+make sim        # adds premium + dedicated workers; full simulation (prod-image flow)
 make seed       # load rich fixtures (3 orgs, 6 mailboxes, a campaign)
 make tools      # debugging UIs (kafka-ui at :18090)
 make reset      # nuke everything including volumes — start over
 ```
 
+The split lets multiple git worktrees share the stateful stuff. `make infra`
+is a "start once and forget"; every worktree uses the same project name
+(`-p warmbly`), so a second worktree's `make app` recreates the language
+containers in place against its source without touching infra.
+
 Iterating on code:
 
 ```bash
-# Web has Vite HMR — save a file in web/src/, browser updates instantly.
-# No need to restart anything for web changes.
-
-# Everything else needs a rebuild because the binary is compiled into
-# the image. One target, takes the service name positionally:
-make restart backend
-make restart-go                    # all Go services in one shot
-make restart-all                   # Go + Rust + Elixir
+# Hot reload is on by default under `make app`:
+#   - Go saves       → air rebuilds the binary in-container (~2-5s)
+#   - Rust saves     → cargo-watch rebuilds (~2-10s debug build)
+#   - Elixir saves   → Phoenix reloads modules in-process
+#   - Web saves      → Vite HMR (browser updates instantly)
+#
+# So normally you don't restart anything manually.
 
 # Tail logs:
-make logs                          # everything
+make app-logs                      # all hot-reload services
+make logs                          # everything including infra
 make logs backend                  # one service
 make logs backend consumer         # multiple
 ```
 
-There's no "restart without rebuild" target because in this setup that
-never does what you want — the container would come back with the same
-old binary. If you ever genuinely need that (env var change only, etc.),
-use `docker compose restart <service>` directly.
+If you're on the prod-image flow (`make up` / `make sim`) instead of `make app`,
+binaries are baked into the image and you need `make restart <svc>` /
+`make restart-go` / `make restart-all` to pick up code changes.
 
-All targets shell out to `docker compose`. If you don't have Make, the equivalents are:
+All targets shell out to `docker compose -p warmbly`. If you don't have Make, the equivalents are:
 
 ```bash
-docker compose up                                            # dev
-docker compose --profile sim up                              # sim
-docker compose --profile seed run --rm seed                  # seed
-docker compose --profile tools up -d kafka-ui                # tools
-docker compose --profile sim --profile seed --profile tools down -v   # reset
+docker compose -p warmbly -f docker-compose.yml -f docker-compose.dev.yml up -d \
+    postgres redis zookeeper kafka schema-registry mailpit \
+    localstack stripe-mock cloud-tasks-emulator                # infra
+docker compose -p warmbly -f docker-compose.yml -f docker-compose.dev.yml up -d --build \
+    backend consumer worker-shared-1 tracking realtime web     # app
+docker compose -p warmbly --profile sim up                     # sim
+docker compose -p warmbly --profile seed run --rm seed         # seed
+docker compose -p warmbly --profile tools up -d kafka-ui       # tools
+docker compose -p warmbly --profile sim --profile seed --profile tools down -v   # reset
 ```
 
 ## What's running
 
-In default profile (`make dev`):
+After `make infra && make app`:
 
 - **postgres**, **redis**, **zookeeper**, **kafka**, **schema-registry** — infra
 - **localstack** — KMS + DynamoDB + S3 emulation
@@ -145,7 +154,7 @@ If you want hot reload, run a service natively and point it at the docker infra.
 ### Backend (Go)
 
 ```bash
-make dev  # in another terminal, leave running for infra
+make infra && make app  # in another terminal, leave running
 
 # Install air for hot reload
 go install github.com/cosmtrek/air@latest
@@ -199,7 +208,7 @@ All outbound mail is captured by Mailpit. The backend uses plain SMTP (`mailpit:
 - SMTP from inside docker: `mailpit:1025`
 - SMTP from host: `localhost:11025`
 
-Note: Mailpit speaks SMTP only, not IMAP. The worker's IMAP sync path is not exercised in `make dev` — for that, add a real IMAP server (e.g. GreenMail) to the stack.
+Note: Mailpit speaks SMTP only, not IMAP. The worker's IMAP sync path is not exercised by the default stack; for that, add a real IMAP server (e.g. GreenMail) to the stack.
 
 ## Email templates
 
@@ -265,7 +274,7 @@ curl http://localhost:8081/subjects/tracking-events-value/versions/latest | jq
 
 **Schema registry "incompatible schema"** — happens if you tweaked an Avro schema and the registry already has an older version. In dev: `make reset` to nuke volumes.
 
-**LocalStack init failed** — check `docker compose logs localstack-init`. Usually means LocalStack itself isn't ready yet; the dependency wait should handle it, but re-running `make dev` works.
+**LocalStack init failed:** check `docker compose logs localstack-init`. Usually means LocalStack itself isn't ready yet; the dependency wait should handle it, but re-running `make infra` works.
 
 ## Next steps
 
