@@ -152,15 +152,25 @@ func (s *Subscription) CanSendEmails() bool {
 	return false
 }
 
-// CanUseWarmup returns true if user can use warmup feature
+// CanUseWarmup returns true if user can use warmup feature.
+// Free-trial orgs get warmup access during their 14-day window so they can
+// try the product; once the trial expires they need a paid subscription.
 func (s *Subscription) CanUseWarmup() bool {
-	return s.HasPaidSubscription()
+	return s.HasPaidSubscription() || s.IsInFreeTrial()
 }
 
-// CanUseUnibox returns true if user can use unibox feature
+// CanUseUnibox returns true if user can use unibox feature.
+// Same trial allowance as warmup so a free-trial user can interact with
+// their connected mailbox while evaluating Warmbly.
 func (s *Subscription) CanUseUnibox() bool {
-	return s.HasPaidSubscription()
+	return s.HasPaidSubscription() || s.IsInFreeTrial()
 }
+
+// FreeTrialInboxLimit caps how many email accounts a free-trial org may
+// connect. Paid orgs have no inbox-count cap (their plan governs sending,
+// not connections). Free-trial users get exactly one inbox so the product
+// can be evaluated without seeding the warmup pool with throwaway accounts.
+const FreeTrialInboxLimit = 1
 
 // SubscriptionWithLimits includes rate limits for the subscription
 type SubscriptionWithLimits struct {

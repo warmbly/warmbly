@@ -58,6 +58,10 @@ type EmailRepository interface {
 
 	// ExistsForUser checks whether the given (user_id, email) pair is already connected.
 	ExistsForUser(ctx context.Context, userID, email string) (bool, *errx.Error)
+
+	// CountForOrganization returns the number of email accounts attached to the
+	// given organization. Used by the free-trial inbox cap.
+	CountForOrganization(ctx context.Context, orgID uuid.UUID) (int, *errx.Error)
 }
 
 type emailRepository struct {
@@ -79,6 +83,16 @@ func (r *emailRepository) ExistsForUser(ctx context.Context, userID, email strin
 		return false, errx.InternalError()
 	}
 	return exists, nil
+}
+
+func (r *emailRepository) CountForOrganization(ctx context.Context, orgID uuid.UUID) (int, *errx.Error) {
+	var count int
+	query := `SELECT COUNT(*) FROM email_accounts WHERE organization_id = $1`
+	if err := r.DB.QueryRow(ctx, query, orgID).Scan(&count); err != nil {
+		db.CaptureError(err, query, []any{orgID}, "queryrow")
+		return 0, errx.InternalError()
+	}
+	return count, nil
 }
 
 func (r *emailRepository) NewOauthAccount(ctx context.Context, userID string, data models.NewOauthAccount) (*models.Email, *errx.Error) {
