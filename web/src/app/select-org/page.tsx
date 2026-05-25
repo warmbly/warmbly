@@ -24,6 +24,7 @@ import useMyInvitations from "@/lib/api/hooks/app/organizations/useMyInvitations
 import useAcceptInvitation from "@/lib/api/hooks/app/organizations/useAcceptInvitation";
 import useSwitchOrganization from "@/lib/api/hooks/app/organizations/useSwitchOrganization";
 import useLogout from "@/lib/api/hooks/auth/useLogout";
+import useUser from "@/lib/api/hooks/auth/useUser";
 import { useAppStore } from "@/stores";
 import { Logo } from "@/components/svg";
 import { NewWorkspaceDialog } from "@/components/app/organizations/NewWorkspaceDialog";
@@ -60,7 +61,13 @@ export default function SelectOrgPage() {
     const setOrganizations = useAppStore((s) => s.setOrganizations);
     const setCurrentOrganization = useAppStore((s) => s.setCurrentOrganization);
     const currentOrg = useAppStore((s) => s.currentOrganization);
-    const user = useAppStore((s) => s.user);
+    // Read identity directly from the /auth/me query. The zustand
+    // user slice is only populated inside RootAppLayout (via
+    // DataSyncProvider), and this page sits *above* that layout in
+    // the route tree, so useAppStore(s => s.user) is always null here
+    // and the footer would never render.
+    const userQuery = useUser();
+    const user = userQuery.data ?? null;
 
     const accept = useAcceptInvitation();
     const switchOrg = useSwitchOrganization();
