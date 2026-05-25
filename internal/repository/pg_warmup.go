@@ -75,6 +75,8 @@ type WarmupRepository interface {
 	GetParticipantHealth(ctx context.Context, accountID uuid.UUID, poolType string) (*models.WarmupParticipantHealth, error)
 	UpdateParticipantHealth(ctx context.Context, accountID uuid.UUID, state models.WarmupHealthState, blockedUntil *time.Time, reason string, score float64) error
 	CountSpamReportsSince(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error)
+	CountUserComplaintsSince(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error)
+	CountSpamPlacementsSince(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error)
 	SumWarmupSentSince(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error)
 	CountDeliverabilityEventsByAccount(ctx context.Context, accountID uuid.UUID, eventType string, since time.Time) (int, error)
 	CountDeliveredByAccount(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error)
@@ -388,13 +390,50 @@ func (r *warmupRepository) UpdateParticipantHealth(ctx context.Context, accountI
 	return err
 }
 
+// CountSpamReportsSince returns the total count of any warmup spam-related
+// event against the account. Retained for backward compatibility with code
+// that wants the combined signal; new code should prefer the split
+// CountUserComplaintsSince / CountSpamPlacementsSince methods so the two
+// fundamentally different signals can be threshold-checked independently.
 func (r *warmupRepository) CountSpamReportsSince(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error) {
 	query := `
 		SELECT COUNT(*)
 		FROM warmup_spam_reports
 		WHERE reported_account_id = $1
 		  AND created_at >= $2
-		  AND report_type IN ('spam', 'spam_folder')
+		  AND report_type IN ('spam', 'spam_folder', 'user_complaint', 'spam_placement')
+	`
+	var count int
+	err := r.db.QueryRow(ctx, query, accountID, since).Scan(&count)
+	return count, err
+}
+
+// CountUserComplaintsSince counts warmup events where the recipient
+// explicitly marked the message as spam. Strong negative signal because
+// the user actively rejected the content.
+func (r *warmupRepository) CountUserComplaintsSince(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error) {
+	query := `
+		SELECT COUNT(*)
+		FROM warmup_spam_reports
+		WHERE reported_account_id = $1
+		  AND created_at >= $2
+		  AND report_type IN ('user_complaint', 'spam', 'spam_folder')
+	`
+	var count int
+	err := r.db.QueryRow(ctx, query, accountID, since).Scan(&count)
+	return count, err
+}
+
+// CountSpamPlacementsSince counts warmup events where the message landed
+// in the recipient's Junk/Spam folder on delivery. Distinct from a user
+// complaint — the user took no action; provider classifier put it there.
+func (r *warmupRepository) CountSpamPlacementsSince(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error) {
+	query := `
+		SELECT COUNT(*)
+		FROM warmup_spam_reports
+		WHERE reported_account_id = $1
+		  AND created_at >= $2
+		  AND report_type = 'spam_placement'
 	`
 	var count int
 	err := r.db.QueryRow(ctx, query, accountID, since).Scan(&count)

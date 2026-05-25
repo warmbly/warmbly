@@ -24,6 +24,14 @@ const (
 	complaintRateQuarantinePct = 0.10
 	complaintRateBlockPct      = 0.30
 
+	// Warmup-internal user complaints are a strong negative content signal
+	// (recipient actively rejected the message inside the pool). They are
+	// rarer than placement events so the thresholds sit between external
+	// complaint rates (0.03 / 0.10 / 0.30) and placement rates (10 / 20 / 40).
+	warmupComplaintWatchPct      = 0.5
+	warmupComplaintQuarantinePct = 1.5
+	warmupComplaintBlockPct      = 3.0
+
 	bounceRateQuarantinePct = 5.0
 	bounceRateBlockPct      = 10.0
 
@@ -42,6 +50,10 @@ type Service interface {
 	RemovePoolMembership(ctx context.Context, accountID uuid.UUID, poolType string) *errx.Error
 	CanParticipate(ctx context.Context, accountID uuid.UUID, poolType string) (bool, string, *errx.Error)
 	ApplySpamReport(ctx context.Context, reporterAccountID, reportedAccountID uuid.UUID, messageID, reportType string) (*models.WarmupParticipantHealth, *errx.Error)
+	// RecordSpamPlacement records that a warmup message landed in the
+	// recipient's Junk/Spam folder on arrival. Counted separately from
+	// user complaints so the two signals can drive distinct thresholds.
+	RecordSpamPlacement(ctx context.Context, reporterAccountID, reportedAccountID uuid.UUID, messageID string) (*models.WarmupParticipantHealth, *errx.Error)
 	ApplyInvalidTokenAttempt(ctx context.Context, accountID uuid.UUID, attemptedToken string, scoreDelta int) (*models.WarmupParticipantHealth, *errx.Error)
 	ApplyRateLimitExceeded(ctx context.Context, accountID uuid.UUID, reason string) (*models.WarmupParticipantHealth, *errx.Error)
 
@@ -138,6 +150,30 @@ func (s *service) CanParticipate(ctx context.Context, accountID uuid.UUID, poolT
 	return true, "", nil
 }
 
+// RecordSpamPlacement is a thin wrapper that fires ApplySpamReport with the
+// 'spam_placement' type and a smaller spam-score delta (placement is a
+// weaker individual signal than a user complaint — it is more likely to
+// reflect content rather than malice).
+func (s *service) RecordSpamPlacement(ctx context.Context, reporterAccountID, reportedAccountID uuid.UUID, messageID string) (*models.WarmupParticipantHealth, *errx.Error) {
+	inserted, err := s.repo.RecordSpamReport(ctx, &repository.SpamReport{
+		ID:                uuid.New(),
+		ReporterAccountID: reporterAccountID,
+		ReportedAccountID: reportedAccountID,
+		MessageID:         messageID,
+		ReportType:        "spam_placement",
+	})
+	if err != nil {
+		return nil, errx.InternalError()
+	}
+	if !inserted {
+		return s.getParticipantForAnyPool(ctx, reportedAccountID)
+	}
+	if _, err := s.repo.IncrementSpamScore(ctx, reportedAccountID, 5); err != nil {
+		return nil, errx.InternalError()
+	}
+	return s.evaluateAndPersistAnyPool(ctx, reportedAccountID)
+}
+
 func (s *service) ApplySpamReport(ctx context.Context, reporterAccountID, reportedAccountID uuid.UUID, messageID, reportType string) (*models.WarmupParticipantHealth, *errx.Error) {
 	inserted, err := s.repo.RecordSpamReport(ctx, &repository.SpamReport{
 		ID:                uuid.New(),
@@ -232,7 +268,15 @@ func (s *service) loadMetrics(ctx context.Context, accountID uuid.UUID) (*models
 		return nil, err
 	}
 
-	spamReportsLast7d, err := s.repo.CountSpamReportsSince(ctx, accountID, now.Add(-7*24*time.Hour))
+	// Split the warmup spam signal into placement (provider classifier put
+	// the mail in Junk) vs user complaint (recipient actively flagged it).
+	// These have very different remediation paths so they earn separate
+	// rates instead of one combined ratio.
+	spamPlacementsLast7d, err := s.repo.CountSpamPlacementsSince(ctx, accountID, now.Add(-7*24*time.Hour))
+	if err != nil {
+		return nil, err
+	}
+	userComplaintsLast7d, err := s.repo.CountUserComplaintsSince(ctx, accountID, now.Add(-7*24*time.Hour))
 	if err != nil {
 		return nil, err
 	}
@@ -247,12 +291,15 @@ func (s *service) loadMetrics(ctx context.Context, accountID uuid.UUID) (*models
 		return nil, err
 	}
 
-	rate := 0.0
+	placementRate := 0.0
+	warmupComplaintRate := 0.0
 	if sentLast7d > 0 {
-		rate = float64(spamReportsLast7d) / float64(sentLast7d) * 100
+		placementRate = float64(spamPlacementsLast7d) / float64(sentLast7d) * 100
+		warmupComplaintRate = float64(userComplaintsLast7d) / float64(sentLast7d) * 100
 	}
 
-	// Load complaint and bounce counts from deliverability events (last 30 days)
+	// Load complaint and bounce counts from deliverability events (last 30 days).
+	// These cover external (non-warmup) sends and remain on a separate axis.
 	since30d := now.Add(-30 * 24 * time.Hour)
 	complaintsLast30d, err := s.repo.CountDeliverabilityEventsByAccount(ctx, accountID, "complaint", since30d)
 	if err != nil {
@@ -278,8 +325,11 @@ func (s *service) loadMetrics(ctx context.Context, accountID uuid.UUID) (*models
 
 	return &models.WarmupHealthMetrics{
 		SentLast7d:            sentLast7d,
-		SpamReportsLast7d:     spamReportsLast7d,
-		SpamPlacementRate:     rate,
+		SpamReportsLast7d:     spamPlacementsLast7d + userComplaintsLast7d,
+		SpamPlacementsLast7d:  spamPlacementsLast7d,
+		SpamPlacementRate:     placementRate,
+		UserComplaintsLast7d:  userComplaintsLast7d,
+		WarmupComplaintRate:   warmupComplaintRate,
 		InvalidAttemptsLast24: invalidAttemptsLast24h,
 		SpamScore:             spamScore,
 		ComplaintsLast30d:     complaintsLast30d,
@@ -359,6 +409,39 @@ func evaluateMetrics(metrics *models.WarmupHealthMetrics, now time.Time) evaluat
 				BlockedUntil: &until,
 				Reason:       fmt.Sprintf("bounce rate %.1f%% exceeded quarantine threshold", metrics.BounceRate),
 				Score:        maxFloat(metrics.BounceRate, metrics.SpamPlacementRate),
+			}
+		}
+	}
+
+	// Evaluate warmup-internal user-complaint rate. These signals come from
+	// recipients actively flagging the warmup mail as spam and warrant their
+	// own thresholds — separate from external-recipient complaint rates and
+	// from passive folder-placement signals.
+	if metrics.SentLast7d >= minSpamPlacementSample {
+		switch {
+		case metrics.WarmupComplaintRate >= warmupComplaintBlockPct:
+			until := now.Add(warmupBlockDuration)
+			return evaluationDecision{
+				State:        models.WarmupHealthBlocked,
+				BlockedUntil: &until,
+				Reason:       fmt.Sprintf("warmup user-complaint rate %.2f%% exceeded block threshold", metrics.WarmupComplaintRate),
+				Score:        maxFloat(metrics.WarmupComplaintRate*10, metrics.SpamPlacementRate),
+			}
+		case metrics.WarmupComplaintRate >= warmupComplaintQuarantinePct:
+			until := now.Add(warmupQuarantineDuration)
+			return evaluationDecision{
+				State:        models.WarmupHealthQuarantined,
+				BlockedUntil: &until,
+				Reason:       fmt.Sprintf("warmup user-complaint rate %.2f%% exceeded quarantine threshold", metrics.WarmupComplaintRate),
+				Score:        maxFloat(metrics.WarmupComplaintRate*10, metrics.SpamPlacementRate),
+			}
+		case metrics.WarmupComplaintRate >= warmupComplaintWatchPct:
+			if decision.State == models.WarmupHealthHealthy {
+				decision = evaluationDecision{
+					State:  models.WarmupHealthWatch,
+					Reason: fmt.Sprintf("warmup user-complaint rate %.2f%% in watch band", metrics.WarmupComplaintRate),
+					Score:  maxFloat(metrics.WarmupComplaintRate*10, metrics.SpamPlacementRate),
+				}
 			}
 		}
 	}

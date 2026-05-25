@@ -67,9 +67,25 @@ type WarmupPoolHealthSummary struct {
 }
 
 type WarmupHealthMetrics struct {
-	SentLast7d            int     `json:"sent_last_7d"`
-	SpamReportsLast7d     int     `json:"spam_reports_last_7d"`
-	SpamPlacementRate     float64 `json:"spam_placement_rate"`
+	SentLast7d int `json:"sent_last_7d"`
+
+	// SpamReportsLast7d is the combined warmup-pool spam signal (placement +
+	// user complaints). Retained for callers that want a single number.
+	SpamReportsLast7d int `json:"spam_reports_last_7d"`
+
+	// SpamPlacementsLast7d counts warmup messages that landed in the
+	// recipient's Junk/Spam folder on delivery. SpamPlacementRate is the
+	// ratio against SentLast7d.
+	SpamPlacementsLast7d int     `json:"spam_placements_last_7d"`
+	SpamPlacementRate    float64 `json:"spam_placement_rate"`
+
+	// UserComplaintsLast7d counts warmup messages the recipient explicitly
+	// flagged as spam. WarmupComplaintRate is the ratio against SentLast7d.
+	// This is distinct from external-recipient complaints captured in
+	// deliverability_events (ComplaintsLast30d / ComplaintRate below).
+	UserComplaintsLast7d int     `json:"user_complaints_last_7d"`
+	WarmupComplaintRate  float64 `json:"warmup_complaint_rate"`
+
 	InvalidAttemptsLast24 int     `json:"invalid_attempts_last_24h"`
 	SpamScore             int     `json:"spam_score"`
 	ComplaintsLast30d     int     `json:"complaints_last_30d"`

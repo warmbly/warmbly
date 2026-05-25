@@ -91,6 +91,15 @@ func (s *JobsService) handleWarmupEmail(ctx context.Context, e *models.JobEventN
 	// Valid! Consume the token
 	s.WarmupRepo.ConsumeWarmupToken(ctx, tokenUUID)
 
+	// If the warmup mail arrived in a Junk/Spam state, record a
+	// spam_placement event against the sender. This is distinct from a
+	// user_complaint (which fires later via HandleFlagsAdd when a recipient
+	// flags an already-delivered message) because nobody actively rejected
+	// it — the provider classifier placed it there on arrival.
+	if containsSpamFlag(e.Message.Flags) && s.WarmupService != nil {
+		_, _ = s.WarmupService.RecordSpamPlacement(ctx, e.Message.EmailID, token.SenderAccountID, e.Message.MessageID)
+	}
+
 	// Perform warmup actions
 	s.performWarmupActions(ctx, e)
 	return true, nil
