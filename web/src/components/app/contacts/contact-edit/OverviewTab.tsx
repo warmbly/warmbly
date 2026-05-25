@@ -1,20 +1,17 @@
 // Overview tab — at-a-glance contact 360.
 //
-// Density rules match the rest of the slide-over: 32rem wide, slate
-// palette, 12px body text. We render five stat tiles for the
-// engagement breakdown, a suppression banner when present, and a
-// compact "last touch" timeline strip.
-//
-// Data sources:
-//   - ContactDetail (engagement counts + suppression)
-//   - Contact (categories, campaigns, custom fields summary)
+// Composition:
+//   - Suppression card (only when suppressed)
+//   - Engagement: six flat stat tiles with a thin ratio bar where
+//     a ratio over Sent makes sense
+//   - Latest activity rail
+//   - Profile rows for the fields not already in the panel header
 
 import {
     AlertOctagonIcon,
     BanIcon,
     MailIcon,
     MailOpenIcon,
-    MailQuestionIcon,
     MailWarningIcon,
     MousePointerClickIcon,
     ReplyIcon,
@@ -34,11 +31,12 @@ export default function OverviewTab({
 }) {
     const eng = detail?.engagement;
     const supp = detail?.suppression;
+    const sent = eng?.total_sent ?? 0;
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-5">
             {supp && (
-                <div className="rounded-md border border-red-200 bg-red-50/50 px-3 py-2.5 flex items-start gap-2">
+                <div className="rounded-md border border-red-200 bg-red-50/60 px-3 py-2.5 flex items-start gap-2">
                     <BanIcon className="w-3.5 h-3.5 text-red-600 mt-px shrink-0" />
                     <div className="min-w-0 flex-1">
                         <div className="text-[12px] font-medium text-red-900 leading-tight">
@@ -57,7 +55,7 @@ export default function OverviewTab({
                     <StatTile
                         icon={<MailIcon className="w-3 h-3" />}
                         label="Sent"
-                        value={eng?.total_sent ?? 0}
+                        value={sent}
                         loading={detailLoading}
                     />
                     <StatTile
@@ -65,20 +63,21 @@ export default function OverviewTab({
                         label="Opened"
                         value={eng?.total_opened ?? 0}
                         loading={detailLoading}
-                        ratioOf={eng?.total_sent}
+                        ratioOf={sent}
                     />
                     <StatTile
                         icon={<MousePointerClickIcon className="w-3 h-3" />}
                         label="Clicked"
                         value={eng?.total_clicked ?? 0}
                         loading={detailLoading}
-                        ratioOf={eng?.total_sent}
+                        ratioOf={sent}
                     />
                     <StatTile
                         icon={<ReplyIcon className="w-3 h-3" />}
                         label="Replied"
                         value={eng?.total_replied ?? 0}
                         loading={detailLoading}
+                        ratioOf={sent}
                         accent={
                             eng && eng.total_replied > 0 ? "positive" : undefined
                         }
@@ -88,6 +87,7 @@ export default function OverviewTab({
                         label="Bounced"
                         value={eng?.total_bounced ?? 0}
                         loading={detailLoading}
+                        ratioOf={sent}
                         accent={
                             eng && eng.total_bounced > 0 ? "negative" : undefined
                         }
@@ -97,6 +97,7 @@ export default function OverviewTab({
                         label="Complained"
                         value={eng?.total_complained ?? 0}
                         loading={detailLoading}
+                        ratioOf={sent}
                         accent={
                             eng && eng.total_complained > 0
                                 ? "negative"
@@ -107,52 +108,42 @@ export default function OverviewTab({
             </Section>
 
             <Section title="Latest activity">
-                <div className="rounded-md border border-slate-200 bg-white divide-y divide-slate-100">
+                <div className="rounded-md border border-slate-200 bg-white overflow-hidden">
                     <LatestRow
                         label="Last sent"
                         ts={eng?.last_sent_at}
-                        icon={<MailIcon className="w-3 h-3 text-slate-400" />}
+                        icon={<MailIcon className="w-3 h-3" />}
                     />
                     <LatestRow
                         label="Last opened"
                         ts={eng?.last_opened_at}
-                        icon={<MailOpenIcon className="w-3 h-3 text-slate-400" />}
+                        icon={<MailOpenIcon className="w-3 h-3" />}
                     />
                     <LatestRow
                         label="Last clicked"
                         ts={eng?.last_clicked_at}
-                        icon={
-                            <MousePointerClickIcon className="w-3 h-3 text-slate-400" />
-                        }
+                        icon={<MousePointerClickIcon className="w-3 h-3" />}
                     />
                     <LatestRow
                         label="Last replied"
                         ts={eng?.last_replied_at}
-                        icon={<ReplyIcon className="w-3 h-3 text-slate-400" />}
+                        icon={<ReplyIcon className="w-3 h-3" />}
                     />
                     <LatestRow
                         label="Last bounced"
                         ts={eng?.last_bounced_at}
-                        icon={
-                            <MailWarningIcon className="w-3 h-3 text-slate-400" />
-                        }
+                        icon={<MailWarningIcon className="w-3 h-3" />}
                     />
                 </div>
             </Section>
 
             <Section title="Profile">
-                <div className="rounded-md border border-slate-200 bg-white">
-                    <ProfileRow label="Email" value={contact.email} mono />
+                <div className="rounded-md border border-slate-200 bg-white overflow-hidden">
                     <ProfileRow
                         label="Company"
                         value={contact.company || "—"}
                     />
                     <ProfileRow label="Phone" value={contact.phone || "—"} />
-                    <ProfileRow
-                        label="Subscribed"
-                        value={contact.subscribed ? "Yes" : "No"}
-                        accent={contact.subscribed ? undefined : "negative"}
-                    />
                     <ProfileRow
                         label="Categories"
                         value={
@@ -189,12 +180,10 @@ export default function OverviewTab({
 
             {Object.keys(contact.custom_fields || {}).length > 0 && (
                 <Section title="Custom fields">
-                    <div className="rounded-md border border-slate-200 bg-white">
-                        {Object.entries(contact.custom_fields).map(
-                            ([k, v]) => (
-                                <ProfileRow key={k} label={k} value={v} mono />
-                            ),
-                        )}
+                    <div className="rounded-md border border-slate-200 bg-white overflow-hidden">
+                        {Object.entries(contact.custom_fields).map(([k, v]) => (
+                            <ProfileRow key={k} label={k} value={v} mono />
+                        ))}
                     </div>
                 </Section>
             )}
@@ -211,12 +200,9 @@ function Section({
 }) {
     return (
         <section>
-            <div className="flex items-center gap-2 mb-2">
-                <h2 className="text-[10px] uppercase tracking-[0.14em] font-semibold text-slate-500">
-                    {title}
-                </h2>
-                <div className="flex-1 h-px bg-slate-200" />
-            </div>
+            <h2 className="text-[10px] uppercase tracking-[0.14em] font-semibold text-slate-500 mb-2">
+                {title}
+            </h2>
             {children}
         </section>
     );
@@ -238,33 +224,48 @@ function StatTile({
     accent?: "positive" | "negative";
 }) {
     const pct =
-        ratioOf && ratioOf > 0
-            ? Math.round((value / ratioOf) * 100)
-            : null;
-
-    const accentClasses =
-        accent === "positive"
-            ? "text-emerald-700 bg-emerald-50/60 border-emerald-100"
-            : accent === "negative"
-              ? "text-red-700 bg-red-50/60 border-red-100"
-              : "text-slate-900 bg-white border-slate-200";
+        ratioOf && ratioOf > 0 ? Math.round((value / ratioOf) * 100) : null;
+    const valueTone =
+        accent === "negative"
+            ? "text-red-700"
+            : accent === "positive"
+              ? "text-emerald-700"
+              : "text-slate-900";
+    const barTone =
+        accent === "negative"
+            ? "bg-red-500/80"
+            : accent === "positive"
+              ? "bg-emerald-500/80"
+              : "bg-slate-900/70";
 
     return (
-        <div className={`rounded-md border px-2.5 py-2 ${accentClasses}`}>
-            <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500 font-medium flex items-center gap-1">
-                {icon}
+        <div className="rounded-md border border-slate-200 bg-white px-2.5 py-2">
+            <div className="text-[10px] uppercase tracking-[0.12em] text-slate-500 font-medium flex items-center gap-1">
+                <span className="text-slate-400">{icon}</span>
                 {label}
             </div>
-            <div className="text-[16px] font-semibold tabular-nums mt-0.5 leading-tight">
-                {loading ? (
-                    <span className="inline-block w-6 h-3 rounded bg-slate-100 animate-pulse align-middle" />
-                ) : (
-                    value.toLocaleString()
+            <div className="mt-1 flex items-baseline justify-between gap-1.5">
+                <span
+                    className={`text-[15px] font-semibold tabular-nums leading-none ${valueTone}`}
+                >
+                    {loading ? (
+                        <span className="inline-block w-6 h-3.5 rounded bg-slate-100 animate-pulse align-middle" />
+                    ) : (
+                        value.toLocaleString()
+                    )}
+                </span>
+                {pct !== null && (
+                    <span className="text-[10px] text-slate-400 tabular-nums">
+                        {pct}%
+                    </span>
                 )}
             </div>
             {pct !== null && (
-                <div className="text-[10px] text-slate-400 tabular-nums mt-0.5">
-                    {pct}% of sent
+                <div className="mt-1.5 h-0.5 rounded-full bg-slate-100 overflow-hidden">
+                    <div
+                        className={`h-full ${barTone} transition-all`}
+                        style={{ width: `${Math.min(100, pct)}%` }}
+                    />
                 </div>
             )}
         </div>
@@ -281,10 +282,16 @@ function LatestRow({
     icon: React.ReactNode;
 }) {
     return (
-        <div className="flex items-center gap-2 px-3 py-1.5">
-            {icon}
+        <div className="flex items-center gap-2 px-3 py-1.5 border-b last:border-b-0 border-slate-100">
+            <span className={ts ? "text-slate-500" : "text-slate-300"}>
+                {icon}
+            </span>
             <div className="text-[11.5px] text-slate-700 flex-1">{label}</div>
-            <div className="text-[11.5px] text-slate-500 tabular-nums">
+            <div
+                className={`text-[11.5px] tabular-nums ${
+                    ts ? "text-slate-600" : "text-slate-300"
+                }`}
+            >
                 {ts ? fmtRelative(ts) : "never"}
             </div>
         </div>
@@ -295,20 +302,20 @@ function ProfileRow({
     label,
     value,
     mono,
-    accent,
 }: {
     label: string;
     value: React.ReactNode;
     mono?: boolean;
-    accent?: "negative";
 }) {
     return (
         <div className="flex items-start gap-2 px-3 py-1.5 border-b last:border-b-0 border-slate-100">
-            <div className="text-[11px] text-slate-500 w-24 shrink-0">{label}</div>
+            <div className="text-[11px] text-slate-500 w-24 shrink-0">
+                {label}
+            </div>
             <div
-                className={`text-[12px] flex-1 text-right break-words ${
-                    accent === "negative" ? "text-red-700" : "text-slate-900"
-                } ${mono ? "font-mono" : ""}`}
+                className={`text-[12px] flex-1 text-right break-words text-slate-900 ${
+                    mono ? "font-mono" : ""
+                }`}
             >
                 {value}
             </div>

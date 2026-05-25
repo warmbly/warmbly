@@ -1,14 +1,13 @@
 // Contact 360 slide-over.
 //
 // Panel chrome:
-//   - 34rem wide right-side panel with a hairline-bordered card feel
-//   - Hero header: gradient avatar, display name, email + copy,
-//     subscribed/suppressed status chip, company chip, close
-//   - Segmented tab strip with icons + animated indicator
-//     (framer-motion layoutId)
+//   - 32rem wide right-side panel
+//   - Header: solid round avatar, display name, email + copy, single
+//     status pill when something is off (suppressed/unsubscribed),
+//     close button
+//   - Segmented tab strip with animated indicator
 //   - One scroll container per tab
-//   - Footer (Discard / Save) is only attached on the Details tab,
-//     since the other tabs are read-only or have their own affordances
+//   - Footer (Discard / Save) only on Details tab
 //
 // Tabs:
 //   - Overview  → engagement stats + suppression + profile snapshot
@@ -18,14 +17,7 @@
 
 import React from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import {
-    BanIcon,
-    BuildingIcon,
-    CheckIcon,
-    CopyIcon,
-    Loader2Icon,
-    XIcon,
-} from "lucide-react";
+import { CheckIcon, CopyIcon, Loader2Icon, XIcon } from "lucide-react";
 import toast from "react-hot-toast";
 import useUpdateContact from "@/lib/api/hooks/app/contacts/useUpdateContact";
 import useContact from "@/lib/api/hooks/app/contacts/useContact";
@@ -77,10 +69,6 @@ function ContactEditPanel({
     onClose: () => void;
 }) {
     const update = useUpdateContact(contact.id);
-
-    // Hydrated detail used by Overview. Fetched on open; the Details
-    // tab still works off the list-row Contact so it's editable
-    // immediately even before /detail resolves.
     const detail = useContact(contact.id);
 
     const [tab, setTab] = React.useState<ContactSlideTab>("overview");
@@ -196,7 +184,7 @@ function ContactEditPanel({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.15 }}
-            className="fixed inset-0 z-[110] flex justify-end bg-slate-900/40 backdrop-blur-[3px]"
+            className="fixed inset-0 z-[110] flex justify-end bg-slate-900/30 backdrop-blur-[2px]"
             onMouseDown={onClose}
         >
             <motion.aside
@@ -204,9 +192,9 @@ function ContactEditPanel({
                 initial={{ x: 32, opacity: 0 }}
                 animate={{ x: 0, opacity: 1 }}
                 exit={{ x: 32, opacity: 0 }}
-                transition={{ duration: 0.22, ease: [0.32, 0.72, 0, 1] }}
+                transition={{ duration: 0.2, ease: [0.32, 0.72, 0, 1] }}
                 onMouseDown={(e) => e.stopPropagation()}
-                className="flex flex-col w-[34rem] max-w-[95%] h-full bg-white border-l border-slate-200 shadow-[-16px_0_32px_-16px_rgba(15,23,42,0.18)]"
+                className="flex flex-col w-[32rem] max-w-[95%] h-full bg-white border-l border-slate-200 shadow-[-12px_0_24px_-12px_rgba(15,23,42,0.08)]"
             >
                 <ContactHeader
                     contact={contact}
@@ -223,7 +211,7 @@ function ContactEditPanel({
 
                 <TabStrip tab={tab} setTab={setTab} />
 
-                <div className="flex-1 min-h-0 overflow-y-auto px-5 py-5 bg-slate-50/30">
+                <div className="flex-1 min-h-0 overflow-y-auto px-5 py-5">
                     {tab === "overview" && (
                         <OverviewTab
                             contact={contact}
@@ -259,15 +247,12 @@ function ContactEditPanel({
                 </div>
 
                 {tab === "details" && (
-                    <footer className="h-14 px-4 border-t border-slate-200 flex items-center gap-2 shrink-0 bg-white">
-                        <span className="text-[11px] text-slate-400">
-                            {dirty ? "You have unsaved changes" : "All changes saved"}
-                        </span>
+                    <footer className="h-12 px-3 border-t border-slate-200 flex items-center gap-1.5 shrink-0 bg-white">
                         <button
                             type="button"
                             onClick={reset}
                             disabled={!dirty}
-                            className="ml-auto h-8 px-3 rounded-md text-[12px] text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-colors disabled:opacity-40 disabled:hover:bg-transparent"
+                            className="h-7 px-2.5 rounded-md text-[12px] text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-colors disabled:opacity-40 disabled:hover:bg-transparent"
                         >
                             Discard
                         </button>
@@ -275,12 +260,12 @@ function ContactEditPanel({
                             type="button"
                             onClick={save}
                             disabled={!dirty || update.isPending}
-                            className="h-8 px-3.5 rounded-md bg-slate-900 hover:bg-slate-800 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors disabled:opacity-50 shadow-sm"
+                            className="ml-auto h-7 px-3 rounded-md bg-slate-900 hover:bg-slate-800 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors disabled:opacity-50"
                         >
                             {update.isPending ? (
-                                <Loader2Icon className="w-3.5 h-3.5 animate-spin" />
+                                <Loader2Icon className="w-3 h-3 animate-spin" />
                             ) : (
-                                <CheckIcon className="w-3.5 h-3.5" />
+                                <CheckIcon className="w-3 h-3" />
                             )}
                             Save changes
                         </button>
@@ -313,97 +298,68 @@ function ContactHeader({
             setTimeout(() => setCopied(false), 1200);
         });
     }
-    const grad = gradientFor(contact.email);
     const initials = initialsFrom(contact, displayName);
 
+    // Only show a status pill when something is wrong; subscribed-and-OK
+    // is the default and doesn't need a chip in the chrome.
+    let statusPill: React.ReactNode = null;
+    if (suppressed) {
+        statusPill = (
+            <span className="inline-flex h-5 items-center px-1.5 rounded text-[10px] font-medium text-red-700 bg-red-50 border border-red-200">
+                Suppressed
+            </span>
+        );
+    } else if (!subscribed) {
+        statusPill = (
+            <span className="inline-flex h-5 items-center px-1.5 rounded text-[10px] font-medium text-slate-600 bg-slate-100 border border-slate-200">
+                Unsubscribed
+            </span>
+        );
+    }
+
     return (
-        <header className="relative shrink-0 bg-white border-b border-slate-200">
-            <div
-                className="absolute inset-x-0 top-0 h-12 opacity-[0.07]"
-                style={{ background: grad }}
-            />
-            <div className="relative px-5 pt-4 pb-3 flex items-start gap-3.5">
-                <div
-                    className="size-11 rounded-xl flex items-center justify-center text-[13px] font-semibold text-white shrink-0 shadow-sm ring-1 ring-black/5"
-                    style={{ backgroundImage: grad }}
-                >
-                    {initials}
-                </div>
-                <div className="min-w-0 flex-1 pt-0.5">
-                    <div className="flex items-center gap-2">
-                        <h2 className="text-[14.5px] font-semibold text-slate-900 truncate leading-tight">
-                            {displayName}
-                        </h2>
-                        {dirty && (
-                            <span className="text-[9.5px] uppercase tracking-[0.14em] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded font-semibold border border-amber-200/80 shrink-0">
-                                Unsaved
-                            </span>
-                        )}
-                    </div>
-                    <div className="flex items-center gap-1.5 mt-1 min-w-0">
-                        <span className="text-[11.5px] text-slate-500 font-mono truncate">
-                            {contact.email}
-                        </span>
-                        <button
-                            type="button"
-                            onClick={copy}
-                            aria-label="Copy email"
-                            className="shrink-0 size-5 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 inline-flex items-center justify-center transition-colors"
-                        >
-                            {copied ? (
-                                <CheckIcon className="w-3 h-3 text-emerald-600" />
-                            ) : (
-                                <CopyIcon className="w-3 h-3" />
-                            )}
-                        </button>
-                    </div>
-                    <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-                        {suppressed ? (
-                            <Chip tone="red" icon={<BanIcon className="w-2.5 h-2.5" />}>
-                                Suppressed
-                            </Chip>
-                        ) : subscribed ? (
-                            <Chip tone="emerald" dot>
-                                Subscribed
-                            </Chip>
-                        ) : (
-                            <Chip tone="slate" dot>
-                                Unsubscribed
-                            </Chip>
-                        )}
-                        {contact.company && (
-                            <Chip tone="slate" icon={<BuildingIcon className="w-2.5 h-2.5" />}>
-                                {contact.company}
-                            </Chip>
-                        )}
-                        {contact.categories?.slice(0, 2).map((c) => (
-                            <span
-                                key={c.id}
-                                className="inline-flex h-5 items-center px-1.5 rounded text-[10.5px] font-medium"
-                                style={{
-                                    backgroundColor: `${c.color}1a`,
-                                    color: c.color,
-                                }}
-                            >
-                                {c.title}
-                            </span>
-                        ))}
-                        {contact.categories && contact.categories.length > 2 && (
-                            <span className="text-[10.5px] text-slate-400">
-                                +{contact.categories.length - 2}
-                            </span>
-                        )}
-                    </div>
-                </div>
-                <button
-                    type="button"
-                    onClick={onClose}
-                    aria-label="Close"
-                    className="size-7 rounded-md text-slate-400 hover:text-slate-900 hover:bg-slate-100 inline-flex items-center justify-center transition-colors shrink-0"
-                >
-                    <XIcon className="w-3.5 h-3.5" />
-                </button>
+        <header className="px-4 pt-4 pb-3 border-b border-slate-200 flex items-start gap-3 shrink-0">
+            <div className="size-9 rounded-full bg-slate-100 flex items-center justify-center text-[12px] font-semibold text-slate-700 shrink-0">
+                {initials}
             </div>
+            <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 min-w-0">
+                    <h2 className="text-[14px] font-semibold text-slate-900 truncate leading-tight">
+                        {displayName}
+                    </h2>
+                    {statusPill}
+                    {dirty && (
+                        <span className="inline-flex h-5 items-center px-1.5 rounded text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200">
+                            Unsaved
+                        </span>
+                    )}
+                </div>
+                <div className="flex items-center gap-1.5 mt-1 min-w-0">
+                    <span className="text-[11.5px] text-slate-500 font-mono truncate">
+                        {contact.email}
+                    </span>
+                    <button
+                        type="button"
+                        onClick={copy}
+                        aria-label="Copy email"
+                        className="shrink-0 size-5 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 inline-flex items-center justify-center transition-colors"
+                    >
+                        {copied ? (
+                            <CheckIcon className="w-3 h-3 text-emerald-600" />
+                        ) : (
+                            <CopyIcon className="w-3 h-3" />
+                        )}
+                    </button>
+                </div>
+            </div>
+            <button
+                type="button"
+                onClick={onClose}
+                aria-label="Close"
+                className="size-7 rounded-md text-slate-400 hover:text-slate-900 hover:bg-slate-100 inline-flex items-center justify-center transition-colors shrink-0"
+            >
+                <XIcon className="w-3.5 h-3.5" />
+            </button>
         </header>
     );
 }
@@ -416,33 +372,35 @@ function TabStrip({
     setTab: (t: ContactSlideTab) => void;
 }) {
     return (
-        <nav className="px-4 py-2 border-b border-slate-200 shrink-0 bg-white">
-            <div className="inline-flex bg-slate-100/80 rounded-lg p-0.5 gap-0.5">
+        <nav className="px-4 py-2 border-b border-slate-200 shrink-0">
+            <div className="inline-flex bg-slate-100 rounded-md p-0.5">
                 {CONTACT_SLIDE_TABS.map((t) => {
                     const isActive = tab === t.id;
-                    const Icon = t.icon;
                     return (
                         <button
                             key={t.id}
                             type="button"
                             onClick={() => setTab(t.id)}
-                            className="relative h-7 px-2.5 rounded-md text-[11.5px] font-medium inline-flex items-center gap-1.5 outline-none"
+                            className="relative h-6 px-3 rounded text-[11.5px] font-medium outline-none"
                         >
                             {isActive && (
                                 <motion.div
                                     layoutId="contact-tab-bg"
-                                    className="absolute inset-0 rounded-md bg-white shadow-sm border border-slate-200/90"
-                                    transition={{ type: "spring", duration: 0.35, bounce: 0.15 }}
+                                    className="absolute inset-0 rounded bg-white shadow-sm"
+                                    transition={{
+                                        type: "spring",
+                                        duration: 0.3,
+                                        bounce: 0.15,
+                                    }}
                                 />
                             )}
                             <span
-                                className={`relative z-10 inline-flex items-center gap-1.5 transition-colors ${
+                                className={`relative z-10 transition-colors ${
                                     isActive
                                         ? "text-slate-900"
                                         : "text-slate-500 hover:text-slate-800"
                                 }`}
                             >
-                                <Icon className="w-3.5 h-3.5" />
                                 {t.label}
                             </span>
                         </button>
@@ -451,59 +409,6 @@ function TabStrip({
             </div>
         </nav>
     );
-}
-
-function Chip({
-    tone,
-    icon,
-    dot,
-    children,
-}: {
-    tone: "emerald" | "red" | "slate";
-    icon?: React.ReactNode;
-    dot?: boolean;
-    children: React.ReactNode;
-}) {
-    const tones = {
-        emerald: "bg-emerald-50 text-emerald-700 border-emerald-200/80",
-        red: "bg-red-50 text-red-700 border-red-200/80",
-        slate: "bg-slate-50 text-slate-600 border-slate-200/80",
-    } as const;
-    const dotTone = {
-        emerald: "bg-emerald-500",
-        red: "bg-red-500",
-        slate: "bg-slate-400",
-    } as const;
-    return (
-        <span
-            className={`inline-flex items-center gap-1 h-5 px-1.5 rounded text-[10.5px] font-medium border ${tones[tone]}`}
-        >
-            {dot && (
-                <span className={`size-1.5 rounded-full ${dotTone[tone]}`} />
-            )}
-            {icon}
-            {children}
-        </span>
-    );
-}
-
-// Deterministic gradient avatar — same email always renders the same
-// background so the avatar reads as identity, not noise.
-function gradientFor(seed: string): string {
-    const palette: [string, string][] = [
-        ["#0ea5e9", "#6366f1"], // sky → indigo
-        ["#8b5cf6", "#ec4899"], // violet → pink
-        ["#10b981", "#0ea5e9"], // emerald → sky
-        ["#f59e0b", "#ef4444"], // amber → red
-        ["#06b6d4", "#3b82f6"], // cyan → blue
-        ["#ec4899", "#f43f5e"], // pink → rose
-        ["#6366f1", "#8b5cf6"], // indigo → violet
-        ["#14b8a6", "#22c55e"], // teal → green
-    ];
-    let h = 0;
-    for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
-    const [a, b] = palette[h % palette.length];
-    return `linear-gradient(135deg, ${a} 0%, ${b} 100%)`;
 }
 
 function initialsFrom(contact: Contact, displayName: string): string {
