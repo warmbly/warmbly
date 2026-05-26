@@ -13,51 +13,45 @@
 ---------------------------------------------------------------- */
 
 :root {
-  --radius: 0.625rem;
+  --radius: 8px;
 
-  /* Adora palette */
-  --background: #ffffff;          /* Canvas White */
-  --foreground: #353241;          /* Slate Text */
-  --heading: #21164c;             /* Rich Violet — headings + brand presence */
+  /* Cursor + Air unified palette */
+  --background: #f7f7f4;           /* Canvas Parchment (Cursor) */
+  --foreground: #1b1b1b;           /* Midnight Ink (Air) */
+  --heading: #1b1b1b;              /* same as foreground — confident dark */
 
-  --surface: #ffffff;              /* Card White */
-  --surface-2: #eeeeee;            /* Soft Gray Fill */
-  --surface-3: #e0e0db;            /* Cloud Mist */
+  --surface: #ffffff;              /* white elevated card on parchment */
+  --surface-2: #efeeea;            /* Pebble Gray-ish, lighter section bg */
+  --surface-3: #e6e5e0;            /* Pebble Gray for borders / dividers */
 
-  --muted: #eeeeee;
-  --muted-foreground: #6b6878;     /* derived: slightly lighter than slate text */
+  --muted: #efeeea;
+  --muted-foreground: #7a7974;     /* Muted Stone (Cursor) */
 
-  --border: #e0e0db;               /* Cloud Mist */
+  --border: #e6e5e0;
   --border-strong: #cdcdc9;
-  --input: #e0e0db;
-  --ring: #592eff;                 /* Action Violet */
+  --input: #e6e5e0;
+  --ring: #2b7fff;                 /* Vivid Azure (Air) */
 
   --card: #ffffff;
-  --card-foreground: #353241;
+  --card-foreground: #1b1b1b;
 
-  /* Adora accent system */
-  --brand: #592eff;                /* Action Violet — primary CTA fill */
-  --brand-soft: #efeaff;           /* very light violet for chips */
-  --brand-strong: #4422d6;
+  /* One single accent — Air's Vivid Azure */
+  --brand: #2b7fff;
+  --brand-soft: #eaf2ff;
+  --brand-strong: #1a64da;
   --brand-foreground: #ffffff;
 
-  /* Decorative gradient-accent-card palette */
-  --air-blue:    #bcf2ff;
-  --lush-green:  #dfff9d;
-  --sunset-pink: #ffaae6;
-  --neon-pink:   #f843c2;
-  --aqua-blue:   #2ed6ff;
-  --electric-green: #a2ea13;
-
-  --accent: #efeaff;
-  --accent-foreground: #21164c;
-
-  --success: oklch(0.65 0.15 152);
-  --warn:    oklch(0.78 0.15 80);
+  /* Functional only (used in dashboard mock, not for decoration) */
+  --success: #34785c;              /* Cursor Forest Green */
+  --warn:    #c08532;              /* Cursor Goldenrod */
   --danger:  oklch(0.60 0.22 27);
 
-  --primary: #21164c;              /* Rich Violet for primary text emphasis */
+  --primary: #1b1b1b;              /* Inkwell as primary surface */
   --primary-foreground: #ffffff;
+
+  /* Cursor multi-layer elevation */
+  --shadow-xl: rgba(0, 0, 0, 0.14) 0 28px 70px 0, rgba(0, 0, 0, 0.10) 0 14px 32px 0, oklab(0.263 -0.002 0.012 / 0.10) 0 0 0 1px;
+  --shadow-md: rgba(0, 0, 0, 0.10) 0 18px 40px -16px, oklab(0.263 -0.002 0.012 / 0.10) 0 0 0 1px;
 }
 
 .dark {
@@ -114,12 +108,6 @@
   --color-brand-soft: var(--brand-soft);
   --color-brand-strong: var(--brand-strong);
   --color-brand-foreground: var(--brand-foreground);
-  --color-air-blue: var(--air-blue);
-  --color-lush-green: var(--lush-green);
-  --color-sunset-pink: var(--sunset-pink);
-  --color-neon-pink: var(--neon-pink);
-  --color-aqua-blue: var(--aqua-blue);
-  --color-electric-green: var(--electric-green);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-success: var(--success);
