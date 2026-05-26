@@ -1,0 +1,46 @@
+---
+/** Mock of a warmup health panel — ramp chart + KPIs + pool health. */
+const ramp = [10, 11, 12, 14, 16, 18, 21, 24, 27, 30, 33, 36, 38, 40, 40];
+---
+<div class="bg-white">
+  <!-- Topbar -->
+  <div class="h-12 px-5 border-b border-slate-200 flex items-center gap-3">
+    <span class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">Warmup</span>
+    <div class="h-4 w-px bg-slate-200"></div>
+    <span class="text-[12.5px] text-slate-600">Premium pool · 124 mailboxes</span>
+    <div class="ml-auto">
+      <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-100">
+        <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse-soft"></span>healthy
+      </span>
+    </div>
+  </div>
+
+  <!-- StatStrip -->
+  <div class="grid grid-cols-2 md:grid-cols-4 border-b border-slate-200">
+    {[
+      { label: 'Complaint rate', value: '0.02%', sub: '< 0.03 warn',     last: false },
+      { label: 'Bounce rate',    value: '0.7%',  sub: '< 1.0 warn',     last: false },
+      { label: 'Spam placement', value: '3.1%',  sub: '< 10 watch',     last: false },
+      { label: 'Inbox placement',value: '96%',   sub: 'rolling 14d',    last: true  },
+    ].map((s) => (
+      <div class={`px-5 py-4 ${!s.last ? 'border-r border-slate-200' : ''}`}>
+        <div class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">{s.label}</div>
+        <div class="text-[24px] text-slate-900 font-light leading-none mt-2 tabular-nums">{s.value}</div>
+        <div class="text-[10px] text-slate-400 mt-1.5 font-mono">{s.sub}</div>
+      </div>
+    ))}
+  </div>
+
+  <!-- Chart -->
+  <div class="px-5 py-5">
+    <div class="flex items-center justify-between mb-3">
+      <span class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">Warmup ramp · 15 days</span>
+      <span class="text-[11px] font-mono text-slate-400">10 → 40 / day</span>
+    </div>
+    <div class="grid grid-cols-15 items-end gap-1.5 h-36">
+      {ramp.map((v) => (
+        <div class="rounded-t-md bg-gradient-to-t from-sky-500 to-sky-300" style={`height:${(v / 40) * 100}%`}></div>
+      ))}
+    </div>
+  </div>
+</div>

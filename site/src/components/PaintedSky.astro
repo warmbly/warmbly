@@ -1,0 +1,26 @@
+---
+/**
+ * Painted-sky backdrop component.
+ *
+ * Place inside a `relative` parent. The sky fills the parent edge to
+ * edge (border-radius is inherited). Pass `flavor` to pick the palette
+ * and `clouds` to enable a couple of soft cloud puffs on top.
+ */
+interface Props {
+  flavor?: 'dawn' | 'bright' | 'dusk';
+  clouds?: boolean;
+  horizon?: boolean;
+  class?: string;
+}
+const { flavor = 'dawn', clouds = true, horizon = true, class: className = '' } = Astro.props;
+---
+<div class={`painted-sky ${flavor} ${className}`} aria-hidden="true">
+  {clouds && (
+    <>
+      <span class="cloud-puff" style="top: 12%; left: 18%; width: 220px; height: 100px; opacity: 0.75;"></span>
+      <span class="cloud-puff" style="top: 26%; right: 14%; width: 280px; height: 110px; opacity: 0.55;"></span>
+      <span class="cloud-puff" style="top: 38%; left: 42%; width: 190px; height: 90px; opacity: 0.45;"></span>
+    </>
+  )}
+  {horizon && <div class="painted-horizon"></div>}
+</div>

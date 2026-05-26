@@ -1,0 +1,171 @@
+---
+/**
+ * Pixel-faithful mock of /app/emails in the Warmbly dashboard.
+ *
+ * Mirrors web/src/components/layout/Page.tsx primitives and the actual
+ * /app/emails table so visitors recognise it as the real app:
+ *   - Sky-chrome sidebar (off-white #f5f6f8 with cloud blurs)
+ *   - White content panel
+ *   - PageTopbar h-12 with eyebrow + subtitle + sky CTA
+ *   - StatStrip with 4 cells, light 26px values
+ *   - SectionBar with search + filter
+ *   - Account table with sky-100 avatar circles, status dots, font-mono numbers
+ */
+const rows = [
+  { email: 'founder@acme.co',     sent: 37, warm: 22, status: 'healthy' },
+  { email: 'hello@acme.co',       sent: 24, warm: 18, status: 'healthy' },
+  { email: 'team@northwind.dev',  sent: 46, warm: 34, status: 'healthy' },
+  { email: 'intro@northwind.dev', sent: 42, warm: 30, status: 'healthy' },
+  { email: 'ml@helio.gen',        sent: 18, warm: 12, status: 'warming' },
+  { email: 'founder@spruce.bio',  sent: 12, warm:  8, status: 'healthy' },
+];
+
+const statusStyle = (s: string) => {
+  if (s === 'healthy') return { dot: 'bg-emerald-500', text: 'text-emerald-600' };
+  if (s === 'warming') return { dot: 'bg-amber-500',   text: 'text-amber-600'   };
+  return { dot: 'bg-red-500', text: 'text-red-500' };
+};
+---
+<div class="grid grid-cols-12 min-h-[460px] bg-white">
+  <!-- ── Sidebar with sky chrome (matches web/src/components/layout/SkyChrome.tsx) ── -->
+  <aside class="hidden md:flex md:col-span-3 lg:col-span-2 flex-col relative" style="background:#f5f6f8;">
+    <!-- cloud blurs -->
+    <span aria-hidden="true" style="position:absolute; top:-80px; left:-60px; width:300px; height:150px; background:rgba(255,255,255,0.95); border-radius:50% 50% 18% 18%; filter:blur(60px); opacity:0.7;"></span>
+    <span aria-hidden="true" style="position:absolute; top:30%; right:8%; width:220px; height:120px; background:rgba(255,255,255,0.85); border-radius:50% 50% 18% 18%; filter:blur(70px); opacity:0.55;"></span>
+
+    <!-- top bar inside sidebar -->
+    <div class="relative h-12 px-3 flex items-center gap-2 border-b border-slate-200/60">
+      <div class="w-6 h-6 rounded-md bg-slate-900 grid place-items-center">
+        <svg viewBox="0 0 746 764" class="w-3 h-3" fill="white"><path d="M222.805 644.772L186.274 108.881L704.5 451.158L484.5 451.158L245.5 196.158L444 463.5L222.805 644.772Z"/></svg>
+      </div>
+      <span class="text-[13px] font-extrabold tracking-tight text-slate-900">Acme</span>
+      <svg class="ml-auto w-3 h-3 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+    </div>
+
+    <!-- nav -->
+    <nav class="relative flex-1 px-2 pt-3 space-y-0.5">
+      <div class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium px-2 mb-1.5">Workspace</div>
+      {[
+        ['Home',      false, null],
+        ['Accounts',  true,  null],
+        ['Inbox',     false, '12'],
+        ['Campaigns', false, null],
+        ['Contacts',  false, null],
+        ['Analytics', false, null],
+        ['CRM',       false, null],
+        ['Templates', false, null],
+        ['Settings',  false, null],
+      ].map(([label, active, badge]) => (
+        <div class={`h-7 px-2 rounded-md flex items-center gap-2 text-[12.5px] ${active ? 'bg-white text-slate-900 shadow-[0_1px_0_rgba(0,0,0,0.04)] font-medium' : 'text-slate-500'}`}>
+          <span class={`w-1.5 h-1.5 rounded-full ${active ? 'bg-sky-500' : 'bg-slate-300'}`}></span>
+          <span>{label}</span>
+          {badge && <span class="ml-auto inline-flex items-center h-4 px-1.5 rounded text-[10px] font-semibold bg-slate-900 text-white">{badge}</span>}
+        </div>
+      ))}
+    </nav>
+
+    <!-- user footer -->
+    <div class="relative px-3 py-3 border-t border-slate-200/60 flex items-center gap-2">
+      <div class="w-6 h-6 rounded-full bg-gradient-to-br from-violet-400 to-indigo-500"></div>
+      <div class="flex-1 min-w-0">
+        <div class="text-[12px] font-medium text-slate-900 truncate">Maya O.</div>
+        <div class="text-[10.5px] text-slate-500 truncate">Owner</div>
+      </div>
+      <svg class="w-3 h-3 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+    </div>
+  </aside>
+
+  <!-- ── White content panel — mirrors emails page exactly ── -->
+  <section class="col-span-12 md:col-span-9 lg:col-span-10 bg-white flex flex-col">
+    <!-- PageTopbar -->
+    <div class="h-12 px-5 border-b border-slate-200 flex items-center gap-3 shrink-0 bg-white">
+      <span class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">Accounts</span>
+      <div class="h-4 w-px bg-slate-200"></div>
+      <span class="text-[12.5px] text-slate-600 truncate">128 mailboxes</span>
+      <div class="ml-auto flex items-center gap-1.5">
+        <button class="h-7 px-2.5 rounded-md inline-flex items-center gap-1.5 text-[12px] font-medium bg-sky-600 hover:bg-sky-700 text-white transition-colors">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Add account
+        </button>
+      </div>
+    </div>
+
+    <!-- StatStrip -->
+    <div class="grid grid-cols-2 md:grid-cols-4 border-b border-slate-200 shrink-0 bg-white">
+      {[
+        { label: 'Total',           value: '128', sub: 'connected',     accent: false, last: false },
+        { label: 'Healthy',         value: '122', sub: 'sending now',   accent: true,  last: false },
+        { label: 'Warming',         value: '6',   sub: 'ramping up',    accent: false, last: false },
+        { label: 'Needs attention', value: '0',   sub: 'paused / fail', accent: false, last: true  },
+      ].map((s) => (
+        <div class={`px-5 py-4 ${!s.last ? 'border-r border-slate-200' : ''}`}>
+          <div class="flex items-center gap-2">
+            <span class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">{s.label}</span>
+            {s.accent && <span class="w-1.5 h-1.5 rounded-full bg-sky-500 animate-pulse-soft"></span>}
+          </div>
+          <div class="text-[26px] text-slate-900 font-light leading-none mt-2 tabular-nums">{s.value}</div>
+          <div class="text-[10px] text-slate-400 mt-1.5 font-mono truncate">{s.sub}</div>
+        </div>
+      ))}
+    </div>
+
+    <!-- SectionBar -->
+    <div class="h-9 px-5 border-b border-slate-200/60 flex items-center gap-2.5 shrink-0">
+      <span class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">Mailboxes</span>
+      <span class="font-mono text-[10.5px] text-slate-400 tabular-nums">128</span>
+      <div class="ml-auto flex items-center gap-2">
+        <div class="inline-flex items-center gap-2 h-7 px-2.5 rounded-md border border-slate-200 bg-white text-[12px] text-slate-500 w-56">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          <span class="text-slate-400">Search by email…</span>
+        </div>
+        <button class="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border border-slate-200 bg-white text-[12px] font-medium text-slate-700">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+          All accounts
+        </button>
+      </div>
+    </div>
+
+    <!-- Table -->
+    <div class="flex-1 min-h-0 overflow-hidden">
+      <table class="w-full text-left">
+        <thead class="bg-white">
+          <tr class="border-b border-slate-200">
+            <th class="pl-5 pr-2 py-2 w-9"><span class="w-3.5 h-3.5 rounded border border-slate-300 inline-block"></span></th>
+            <th class="px-3 py-2 text-[10px] font-medium text-slate-400 uppercase tracking-[0.14em]">Account</th>
+            <th class="px-3 py-2 text-[10px] font-medium text-slate-400 uppercase tracking-[0.14em] w-20 text-right">Sent</th>
+            <th class="px-3 py-2 text-[10px] font-medium text-slate-400 uppercase tracking-[0.14em] w-24 text-right">Warmup</th>
+            <th class="px-3 py-2 text-[10px] font-medium text-slate-400 uppercase tracking-[0.14em] w-28">Status</th>
+            <th class="px-3 py-2 w-16"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => {
+            const s = statusStyle(r.status);
+            return (
+              <tr class="border-b border-slate-200/60 h-11 hover:bg-slate-50/80 transition-colors">
+                <td class="pl-5 pr-2"><span class="w-3.5 h-3.5 rounded border border-slate-300 inline-block"></span></td>
+                <td class="px-3">
+                  <div class="flex items-center gap-2.5">
+                    <div class="w-6 h-6 rounded-full bg-sky-100 flex items-center justify-center shrink-0">
+                      <span class="text-[9.5px] font-semibold text-sky-700">{r.email.slice(0, 2).toUpperCase()}</span>
+                    </div>
+                    <span class="text-[12.5px] font-medium text-slate-900 truncate">{r.email}</span>
+                  </div>
+                </td>
+                <td class="px-3 text-[12px] text-slate-500 tabular-nums text-right font-mono">{r.sent}</td>
+                <td class="px-3 text-[12px] text-slate-500 tabular-nums text-right font-mono">{r.warm}</td>
+                <td class="px-3">
+                  <span class={`inline-flex items-center gap-1.5 text-[11px] font-medium ${s.text}`}>
+                    <span class={`w-1.5 h-1.5 rounded-full ${s.dot}`}></span>
+                    <span class="uppercase tracking-[0.08em]">{r.status}</span>
+                  </span>
+                </td>
+                <td class="px-3"></td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>

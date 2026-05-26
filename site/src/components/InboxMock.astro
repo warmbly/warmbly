@@ -1,0 +1,79 @@
+---
+/**
+ * Mock of /app/unibox — sidebar of conversation threads on left,
+ * thread preview pane on right. Matches the dashboard chrome style.
+ */
+const threads = [
+  { who: 'Jenna Carter',  domain: 'northwind.dev',  sub: 'Re: quick question on outbound',  time: '2m',  tag: 'positive', active: true  },
+  { who: 'Aman Patel',    domain: 'spruce.bio',     sub: 'Re: intro from Maya',             time: '14m', tag: 'positive', active: false },
+  { who: 'Out of office', domain: 'helia.co',       sub: 'I’m away until Monday',           time: '1h',  tag: 'OOO',      active: false },
+  { who: 'Karim S.',      domain: 'foundry.io',     sub: 'Re: not the right time',          time: '2h',  tag: 'negative', active: false },
+  { who: 'Lina Park',     domain: 'cinder.app',     sub: 'Re: pricing tier?',               time: '3h',  tag: 'positive', active: false },
+  { who: 'unsubscribe',   domain: 'mosaic.co',      sub: 'Please remove me from your list', time: '4h',  tag: 'unsub',    active: false },
+  { who: 'Daniel L.',     domain: 'trellis.dev',    sub: 'Re: looking at this thursday',    time: '5h',  tag: 'positive', active: false },
+];
+
+const tagClass = (t: string) => {
+  if (t === 'positive') return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+  if (t === 'negative') return 'bg-rose-50 text-rose-700 border-rose-200';
+  if (t === 'OOO')      return 'bg-amber-50 text-amber-700 border-amber-200';
+  return 'bg-slate-100 text-slate-500 border-slate-200';
+};
+---
+<div class="grid grid-cols-12 min-h-[440px] bg-white">
+  <!-- Topbar -->
+  <div class="col-span-12 h-12 px-5 border-b border-slate-200 flex items-center gap-3 bg-white">
+    <span class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">Inbox</span>
+    <div class="h-4 w-px bg-slate-200"></div>
+    <span class="text-[12.5px] text-slate-600">12 unread across 8 mailboxes</span>
+    <div class="ml-auto flex items-center gap-2">
+      <div class="inline-flex items-center gap-2 h-7 px-2.5 rounded-md border border-slate-200 bg-white text-[12px] text-slate-500 w-56">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        <span class="text-slate-400">Search threads…</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Thread list -->
+  <div class="col-span-12 md:col-span-5 border-r border-slate-200">
+    {threads.map((t) => (
+      <div class={`px-4 py-3 border-b border-slate-200/60 ${t.active ? 'bg-sky-50/50 border-l-2 border-l-sky-500' : ''}`}>
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-[12.5px] font-semibold text-slate-900 truncate">{t.who}</span>
+          <span class="text-[10.5px] text-slate-400 font-mono shrink-0">{t.time}</span>
+        </div>
+        <div class="text-[11.5px] text-slate-500 truncate font-mono mt-0.5">{t.domain}</div>
+        <div class="text-[12.5px] text-slate-600 truncate mt-1">{t.sub}</div>
+        <span class={`mt-2 inline-flex items-center px-1.5 py-0.5 rounded text-[9.5px] font-semibold uppercase tracking-[0.08em] border ${tagClass(t.tag)}`}>{t.tag}</span>
+      </div>
+    ))}
+  </div>
+
+  <!-- Preview pane -->
+  <div class="hidden md:flex md:col-span-7 flex-col">
+    <div class="px-5 py-3 border-b border-slate-200 flex items-center gap-3">
+      <div class="w-8 h-8 rounded-full bg-gradient-to-br from-rose-400 to-amber-400"></div>
+      <div class="flex-1 min-w-0">
+        <div class="text-[13px] font-semibold text-slate-900 truncate">Jenna Carter</div>
+        <div class="text-[11px] text-slate-500 truncate font-mono">jenna@northwind.dev · to founder@acme.co</div>
+      </div>
+      <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10.5px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">positive</span>
+    </div>
+    <div class="px-5 py-4 text-[12.5px] text-slate-500 border-b border-slate-200/60 flex items-center gap-4 font-mono">
+      <span>Re: quick question on outbound</span>
+      <span class="ml-auto">2 messages · 1 mailbox</span>
+    </div>
+    <div class="p-5 space-y-4 text-[13.5px] leading-relaxed text-slate-800">
+      <p>Hi Maya —</p>
+      <p>Sure, happy to chat. Thursday 10am ET works for me, send a calendar invite to this address.</p>
+      <p>One question: do you support shared mailboxes on Microsoft 365? We want the BDR team writing from a single address for some of these.</p>
+      <p class="text-slate-500">— Jenna</p>
+    </div>
+    <div class="mt-auto border-t border-slate-200 p-3 flex items-center gap-2">
+      <button class="inline-flex h-8 px-3 items-center rounded-md text-[12.5px] font-medium bg-sky-600 text-white">Reply</button>
+      <button class="inline-flex h-8 px-3 items-center rounded-md text-[12.5px] border border-slate-200 bg-white text-slate-700">Snooze</button>
+      <button class="inline-flex h-8 px-3 items-center rounded-md text-[12.5px] border border-slate-200 bg-white text-slate-700">Assign</button>
+      <div class="ml-auto text-[11px] text-slate-400 font-mono">⌘E to reply</div>
+    </div>
+  </div>
+</div>

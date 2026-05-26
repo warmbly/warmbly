@@ -198,12 +198,118 @@ body {
 }
 
 /* ----------------------------------------------------------------
-   Auth-style sky — deep blue with cloud blurs, sun glow.
-   Same palette as web/src/app/auth/layout.tsx but flattened to
-   pure CSS (no SVG turbulence filters) so it's light to load.
-   The hero owns its own sky; the bottom of the hero masks to white
-   so the white page picks up below.
+   Painted-sky backdrop — Cursor-style soft pastel scene that sits
+   behind app-mock cards. Pure CSS gradients + a couple of blurred
+   cloud puffs, so it's GPU-cheap and ~0KB extra bytes.
+   Two flavours: `dawn` (peach + lavender + blue) and `bright`
+   (lavender + sky-blue + mint) for variety across sections.
 ---------------------------------------------------------------- */
+
+.painted-sky {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  border-radius: inherit;
+}
+
+.painted-sky.dawn {
+  background:
+    radial-gradient(40% 60% at 78% 14%,
+      rgba(255, 192, 158, 0.78) 0%,
+      rgba(255, 192, 158, 0.32) 30%,
+      transparent 70%),
+    radial-gradient(50% 60% at 18% 22%,
+      rgba(196, 184, 232, 0.70) 0%,
+      rgba(196, 184, 232, 0.25) 32%,
+      transparent 70%),
+    radial-gradient(80% 60% at 50% 78%,
+      rgba(214, 224, 233, 0.60) 0%,
+      rgba(214, 224, 233, 0.20) 40%,
+      transparent 80%),
+    linear-gradient(180deg,
+      #f0dccb 0%,
+      #dccfe4 32%,
+      #c4d4e6 58%,
+      #d8e2ec 78%,
+      #efe7df 100%);
+}
+
+.painted-sky.bright {
+  background:
+    radial-gradient(40% 60% at 18% 14%,
+      rgba(255, 224, 176, 0.55) 0%,
+      transparent 70%),
+    radial-gradient(50% 60% at 78% 22%,
+      rgba(173, 200, 230, 0.70) 0%,
+      transparent 70%),
+    radial-gradient(80% 50% at 50% 78%,
+      rgba(225, 220, 240, 0.40) 0%,
+      transparent 80%),
+    linear-gradient(180deg,
+      #dde7f2 0%,
+      #c6d6ea 30%,
+      #b9cee6 55%,
+      #d6e0ee 80%,
+      #ece5f0 100%);
+}
+
+.painted-sky.dusk {
+  background:
+    radial-gradient(45% 55% at 75% 18%,
+      rgba(255, 168, 145, 0.65) 0%,
+      transparent 70%),
+    radial-gradient(60% 60% at 22% 28%,
+      rgba(168, 156, 215, 0.65) 0%,
+      transparent 70%),
+    radial-gradient(80% 45% at 50% 82%,
+      rgba(210, 196, 220, 0.55) 0%,
+      transparent 80%),
+    linear-gradient(180deg,
+      #e0c8b4 0%,
+      #c8b9d8 28%,
+      #ad9fcc 55%,
+      #c1aac4 78%,
+      #e2c8c0 100%);
+}
+
+/* Soft white cloud puffs to layer on top of `.painted-sky` */
+.cloud-puff {
+  position: absolute;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.85);
+  filter: blur(28px);
+  pointer-events: none;
+}
+
+/* Mountain silhouette curve — a simple SVG-less wave */
+.painted-horizon {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 36%;
+  pointer-events: none;
+  background:
+    radial-gradient(60% 100% at 35% 100%,
+      rgba(110, 100, 130, 0.40) 0%,
+      transparent 70%),
+    radial-gradient(50% 100% at 78% 100%,
+      rgba(140, 122, 150, 0.45) 0%,
+      transparent 70%);
+  mask-image: linear-gradient(to bottom, transparent 0%, black 60%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 60%);
+}
+
+/* App-window mock chrome — used everywhere */
+.app-window {
+  background: var(--card);
+  border-radius: 14px;
+  border: 1px solid color-mix(in oklab, var(--foreground) 14%, transparent);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.8) inset,
+    0 24px 60px -28px rgba(15, 23, 42, 0.35),
+    0 4px 12px -6px rgba(15, 23, 42, 0.10);
+  overflow: hidden;
+}
 
 .hero-sky {
   position: absolute;
