@@ -1,0 +1,81 @@
+---
+/**
+ * Mock of /app/campaigns/[id] sequence builder — shows the multi-step
+ * sequence layout with branching, A/B variants and TZ-aware delays.
+ */
+const steps = [
+  { n: 1, kind: 'send', title: 'Intro · plain text', meta: '2 variants', open: true },
+  { n: 2, kind: 'wait', title: 'Wait · 3 business days', meta: 'if no reply' },
+  { n: 3, kind: 'send', title: 'Follow-up · context line', meta: '4 variants' },
+  { n: 4, kind: 'branch', title: 'If opened twice', meta: 'send earlier' },
+  { n: 5, kind: 'send', title: 'Soft close · short ask', meta: '2 variants' },
+  { n: 6, kind: 'wait', title: 'Break · 7 business days', meta: 'silence' },
+];
+---
+<div class="bg-white">
+  <!-- Topbar -->
+  <div class="h-12 px-5 border-b border-slate-200 flex items-center gap-3">
+    <span class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">Campaign</span>
+    <div class="h-4 w-px bg-slate-200"></div>
+    <span class="text-[12.5px] text-slate-700 font-medium truncate">Q2 outbound · enterprise</span>
+    <span class="inline-flex items-center gap-1.5 px-2 h-5 rounded-full text-[10.5px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-100">
+      <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>active
+    </span>
+    <div class="ml-auto flex items-center gap-2">
+      <span class="text-[11px] font-mono text-slate-500">6 steps · 4 mailboxes</span>
+      <button class="h-7 px-2.5 rounded-md inline-flex items-center gap-1.5 text-[12px] font-medium bg-sky-600 text-white">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Add step
+      </button>
+    </div>
+  </div>
+
+  <!-- Sequence body -->
+  <div class="px-6 py-6 bg-[#fafafa] min-h-[360px]">
+    <div class="max-w-[640px] mx-auto">
+      {steps.map((s, i) => (
+        <>
+          <div class={`relative rounded-[10px] bg-white ring-1 ${s.open ? 'ring-sky-300' : 'ring-slate-200'} px-4 py-3 ${s.open ? 'shadow-[0_8px_24px_-8px_rgba(2,132,199,0.25)]' : 'shadow-[0_2px_6px_-2px_rgba(15,23,42,0.06)]'}`}>
+            <div class="flex items-center gap-3">
+              <div class={`w-7 h-7 rounded-md grid place-items-center text-[11.5px] font-mono font-semibold ${
+                s.kind === 'send'   ? 'bg-sky-100 text-sky-700' :
+                s.kind === 'wait'   ? 'bg-slate-100 text-slate-500' :
+                                       'bg-violet-100 text-violet-700'
+              }`}>
+                {String(s.n).padStart(2, '0')}
+              </div>
+              <div class="flex-1 min-w-0">
+                <div class="text-[12.5px] font-medium text-slate-900 truncate">{s.title}</div>
+                <div class="text-[11px] font-mono text-slate-500 mt-0.5">
+                  {s.kind === 'send' ? 'SEND' : s.kind === 'wait' ? 'WAIT' : 'BRANCH'} · {s.meta}
+                </div>
+              </div>
+              {s.open && (
+                <span class="text-[10.5px] font-mono text-sky-600 shrink-0">editing</span>
+              )}
+            </div>
+            {s.open && (
+              <div class="mt-3 pt-3 border-t border-slate-100">
+                <div class="grid grid-cols-2 gap-2">
+                  <div class="rounded-md ring-1 ring-slate-200 bg-white p-2.5">
+                    <div class="text-[10px] font-mono text-slate-400 mb-1">VARIANT A · 52% reply</div>
+                    <div class="text-[11.5px] text-slate-700 leading-snug line-clamp-2">Hi {`{{first_name}}`}, noticed {`{{company}}`} just shipped {`{{news.summary}}`}…</div>
+                  </div>
+                  <div class="rounded-md ring-1 ring-slate-200 bg-white p-2.5">
+                    <div class="text-[10px] font-mono text-slate-400 mb-1">VARIANT B · 48% reply</div>
+                    <div class="text-[11.5px] text-slate-700 leading-snug line-clamp-2">{`{{first_name}}`} — quick question on {`{{custom.pain}}`} since you took over…</div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+          {i < steps.length - 1 && (
+            <div class="flex justify-center py-1.5">
+              <div class="w-px h-4 bg-slate-300"></div>
+            </div>
+          )}
+        </>
+      ))}
+    </div>
+  </div>
+</div>

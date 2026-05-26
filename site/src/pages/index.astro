@@ -5,6 +5,7 @@ import DashboardMock from '../components/DashboardMock.astro';
 import InboxMock from '../components/InboxMock.astro';
 import WarmupMock from '../components/WarmupMock.astro';
 import HeroAtmosphere from '../components/HeroAtmosphere.astro';
+import SequenceMock from '../components/SequenceMock.astro';
 import SectionSky from '../components/SectionSky.astro';
 
 const compare = [
@@ -91,7 +92,7 @@ const plans = [
 ];
 ---
 <Layout
-  title="Warmbly — cold email that actually lands"
+  title="Warmbly · cold email that actually lands"
   description="Warmbly is the deliverability platform for cold email. Warm your mailboxes, send at scale, keep your reputation clean across hundreds of mailboxes."
 >
   <!-- ============================================================
@@ -103,11 +104,11 @@ const plans = [
 
     <div class="container-page relative pt-16 md:pt-24 pb-8 md:pb-12 text-center">
       <a href="https://github.com/warmbly/warmbly" target="_blank" rel="noopener noreferrer" class="group inline-flex items-center gap-2 h-7 pl-1 pr-3 rounded-full bg-white/15 backdrop-blur border border-white/25 text-[12px] text-white/95 shadow-[0_4px_14px_-4px_rgba(0,0,0,0.25)]">
-        <span class="inline-flex items-center h-5 px-2 rounded-full text-[10.5px] font-semibold uppercase tracking-[0.06em] bg-white text-[color:var(--sky-6)]">
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" class="mr-1"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.8 10.9.6.1.8-.2.8-.5v-2c-3.2.7-3.9-1.4-3.9-1.4-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.4-2.3 1.2-3.2-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2 1-.3 2-.4 3-.4s2 .1 3 .4c2.3-1.5 3.3-1.2 3.3-1.2.7 1.6.2 2.9.1 3.1.8.8 1.2 1.9 1.2 3.2 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.5 4.6-1.5 7.8-5.8 7.8-10.9C23.5 5.7 18.3.5 12 .5z"/></svg>
-          Open
+        <span class="inline-flex items-center gap-1 h-5 px-1.5 rounded-full text-[10.5px] font-semibold uppercase tracking-[0.06em] bg-white text-[color:var(--sky-6)]">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.8 10.9.6.1.8-.2.8-.5v-2c-3.2.7-3.9-1.4-3.9-1.4-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.4-2.3 1.2-3.2-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2 1-.3 2-.4 3-.4s2 .1 3 .4c2.3-1.5 3.3-1.2 3.3-1.2.7 1.6.2 2.9.1 3.1.8.8 1.2 1.9 1.2 3.2 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.5 4.6-1.5 7.8-5.8 7.8-10.9C23.5 5.7 18.3.5 12 .5z"/></svg>
+          Open source
         </span>
-        The biggest open-source cold-email platform on GitHub
+        Self-host the platform · Apache 2.0
         <Icon name="arrowUpRight" size={12} class="text-white/80 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
       </a>
 
@@ -116,7 +117,7 @@ const plans = [
       </h1>
 
       <p class="mt-6 text-[17px] md:text-[19px] text-white/80 max-w-2xl mx-auto leading-relaxed">
-        Warmbly warms your mailboxes, distributes sending across workers and IPs, and watches reputation in real time — so the cold campaign you run on Monday is still landing on Friday.
+        Warmbly warms your mailboxes, distributes sending across workers and IPs, and watches reputation in real time, so the cold campaign you run on Monday is still landing on Friday.
       </p>
 
       <div class="mt-9 flex flex-wrap items-center justify-center gap-3">
@@ -155,7 +156,7 @@ const plans = [
                 <span class="text-[11.5px] font-semibold text-slate-900">Positive reply</span>
                 <span class="text-[10px] text-slate-400 font-mono">just now</span>
               </div>
-              <p class="text-[11.5px] text-slate-500 truncate mt-0.5">jenna@northwind.dev — Thursday 10am works for me…</p>
+              <p class="text-[11.5px] text-slate-500 truncate mt-0.5">jenna@northwind.dev · Thursday 10am works for me…</p>
               <div class="mt-1.5 flex items-center gap-1">
                 <span class="inline-flex items-center h-4 px-1.5 rounded text-[9px] font-semibold uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-100">positive</span>
                 <span class="text-[10px] text-slate-400 font-mono">· assigned to AE</span>
@@ -172,170 +173,85 @@ const plans = [
   ============================================================ -->
   <div class="bg-white" style="padding-top: 160px;">
 
-    <!-- ============================================================
-         ACTIVITY RIBBON — continuous, scrolling forever
-    ============================================================ -->
-    <section class="relative overflow-hidden bg-white border-y border-[color:var(--border)]">
-      <div class="marquee-mask py-4">
-        <div class="marquee-track inline-flex items-center gap-12 whitespace-nowrap">
-          {Array.from({ length: 2 }).map(() => (
-            <>
-              <span class="inline-flex items-center gap-2 text-[12.5px] text-foreground/80">
-                <span class="relative inline-flex w-1.5 h-1.5"><span class="absolute inset-0 rounded-full bg-emerald-500 animate-ping opacity-60"></span><span class="relative inline-block w-1.5 h-1.5 rounded-full bg-emerald-500"></span></span>
-                <span class="font-mono text-foreground/60">12,420</span> mailboxes warming
-              </span>
-              <span class="text-[color:var(--border-strong)]">·</span>
-              <span class="inline-flex items-center gap-2 text-[12.5px] text-foreground/80">
-                <span class="w-1.5 h-1.5 rounded-full bg-[color:var(--brand)]"></span>
-                <span class="font-mono text-foreground/60">142</span> orgs sending now
-              </span>
-              <span class="text-[color:var(--border-strong)]">·</span>
-              <span class="inline-flex items-center gap-2 text-[12.5px] text-foreground/80">
-                <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-                <span class="font-mono text-foreground/60">0.02%</span> mean complaint rate
-              </span>
-              <span class="text-[color:var(--border-strong)]">·</span>
-              <span class="inline-flex items-center gap-2 text-[12.5px] text-foreground/80">
-                <span class="w-1.5 h-1.5 rounded-full bg-[color:var(--brand)]"></span>
-                <span class="font-mono text-foreground/60">96.4%</span> mean inbox placement
-              </span>
-              <span class="text-[color:var(--border-strong)]">·</span>
-              <span class="inline-flex items-center gap-2 text-[12.5px] text-foreground/80">
-                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                <span class="font-mono text-foreground/60">99.99%</span> tracking edge uptime
-              </span>
-              <span class="text-[color:var(--border-strong)]">·</span>
-              <span class="inline-flex items-center gap-2 text-[12.5px] text-foreground/80">
-                <span class="w-1.5 h-1.5 rounded-full bg-[color:var(--brand)]"></span>
-                <span class="font-mono text-foreground/60">8</span> dedicated worker regions
-              </span>
-              <span class="text-[color:var(--border-strong)]">·</span>
-            </>
-          ))}
-        </div>
-      </div>
-    </section>
 
     <!-- ============================================================
-         WARMUP — full-bleed dark panel with continuously
-         animating ramp chart (loops forever)
+         WARMUP — dark-sky panel, text left + visual right
     ============================================================ -->
-    <section class="relative isolate overflow-hidden text-white" style="background: linear-gradient(180deg, #0c4a6e 0%, #075985 50%, #0c4a6e 100%);">
-      <!-- decorative clouds in the panel -->
-      <img src="/backdrops/cloud-3.webp" alt="" aria-hidden="true" class="absolute -top-10 -left-10 w-[420px] opacity-30 pointer-events-none select-none cloud-drift cloud-1" loading="lazy" decoding="async"/>
-      <img src="/backdrops/cloud-4.webp" alt="" aria-hidden="true" class="absolute -bottom-10 right-0 w-[360px] opacity-25 pointer-events-none select-none cloud-drift cloud-2" loading="lazy" decoding="async"/>
+    <section class="relative isolate overflow-hidden text-white border-t border-[color:var(--border)]" style="background: linear-gradient(180deg, #0c4a6e 0%, #075985 50%, #0c4a6e 100%);">
+      <img src="/backdrops/cloud-3.webp" alt="" aria-hidden="true" class="absolute -top-10 -left-10 w-[420px] opacity-25 pointer-events-none select-none cloud-drift cloud-1" loading="lazy" decoding="async"/>
+      <img src="/backdrops/cloud-4.webp" alt="" aria-hidden="true" class="absolute -bottom-10 right-0 w-[360px] opacity-20 pointer-events-none select-none cloud-drift cloud-2" loading="lazy" decoding="async"/>
 
       <div class="container-page py-24 md:py-32 relative">
-        <div class="grid lg:grid-cols-12 gap-12 items-center">
-          <div class="lg:col-span-5 feature-card">
-            <div class="inline-flex items-center gap-2 h-7 px-3 rounded-full bg-white/10 backdrop-blur border border-white/20 mb-6">
-              <span class="relative inline-flex w-1.5 h-1.5">
-                <span class="absolute inset-0 rounded-full bg-white animate-ping opacity-70"></span>
-                <span class="relative inline-block w-1.5 h-1.5 rounded-full bg-white"></span>
-              </span>
-              <span class="text-[11px] uppercase tracking-[0.16em] text-white/90 font-semibold">Live · warmup</span>
-            </div>
-            <h2 class="text-[36px] md:text-[56px] font-semibold tracking-[-0.035em] leading-[1.02]">
-              Warmup that <span class="italic text-sky-200">never sleeps</span>.
+        <div class="grid lg:grid-cols-12 gap-12 lg:gap-16 items-center">
+          <div class="lg:col-span-5">
+            <div class="text-[11px] uppercase tracking-[0.16em] text-white/55 font-medium mb-4">Warmup</div>
+            <h2 class="text-[36px] md:text-[52px] font-semibold tracking-[-0.035em] leading-[1.04]">
+              Warmup that runs itself.
             </h2>
-            <p class="mt-6 text-[16.5px] text-white/75 leading-relaxed max-w-md">
-              Every mailbox in the premium pool ramps independently, 24/7. Pool selects new partners every cycle; spam-score tracking, verification tokens and recent-partner avoidance keep traffic looking human.
+            <p class="mt-5 text-[16.5px] text-white/75 leading-relaxed max-w-md">
+              Pool selection, gradual ramps, conversational behavior, health monitoring. All shipped on every paid plan, no setup required.
             </p>
-            <div class="mt-8 grid grid-cols-2 gap-3 max-w-md">
-              {[
-                { v: '10 → 40', l: 'Per-day ramp / mailbox' },
-                { v: '< 0.03%',  l: 'Premium pool complaints' },
-                { v: '7 days',  l: 'Quarantine cooldown' },
-                { v: '24 / 7',  l: 'Pool active, always' },
-              ].map((s) => (
-                <div class="rounded-[10px] bg-white/8 backdrop-blur ring-1 ring-white/15 px-4 py-3.5">
-                  <div class="text-[19px] font-semibold tracking-[-0.02em] text-white leading-none">{s.v}</div>
-                  <div class="text-[11.5px] text-white/65 mt-1.5">{s.l}</div>
-                </div>
-              ))}
-            </div>
-            <a href="/warmup/" class="mt-8 inline-flex items-center gap-1.5 text-[14px] font-medium text-white hover:text-white/80 group">
-              See how warmup works
+            <a href="/warmup/" class="mt-7 inline-flex items-center gap-1.5 text-[14px] font-medium text-white hover:text-white/80 group">
+              Learn more
               <Icon name="arrowRight" size={13} class="group-hover:translate-x-0.5 transition-transform" />
             </a>
           </div>
 
-          <div class="lg:col-span-7 feature-card">
-            <!-- Animated ramp chart with continuously traveling spark -->
-            <div class="relative rounded-[16px] bg-white/[0.04] ring-1 ring-white/12 backdrop-blur p-6 md:p-8">
-              <div class="flex items-center justify-between mb-5">
-                <div>
-                  <div class="text-[10.5px] uppercase tracking-[0.14em] text-white/55 font-medium">Live volume · all premium-pool mailboxes</div>
-                  <div class="mt-1 text-[26px] font-semibold tracking-[-0.025em] text-white">
-                    <span data-live-counter data-from="487122" data-to="999999" data-tick-min="700" data-tick-max="1800" data-step-min="2" data-step-max="6">487,122</span>
-                    <span class="text-[14px] text-white/55 font-normal ml-1">sent today</span>
-                  </div>
-                </div>
-                <div class="inline-flex items-center gap-1.5 px-2.5 h-6 rounded-full text-[10.5px] font-semibold bg-emerald-400/20 text-emerald-300 border border-emerald-400/30">
-                  <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse-soft"></span>healthy
-                </div>
+          <div class="lg:col-span-7 grid grid-cols-2 gap-3">
+            <!-- Ramp visualization, full row -->
+            <div class="col-span-2 rounded-[14px] bg-white/[0.04] ring-1 ring-white/12 backdrop-blur p-6">
+              <div class="flex items-center justify-between mb-4">
+                <span class="text-[10.5px] uppercase tracking-[0.14em] text-white/55 font-semibold">Per-mailbox ramp</span>
+                <span class="text-[11px] font-mono text-sky-200">10 → 40 / day</span>
               </div>
-              <!-- The chart -->
-              <svg viewBox="0 0 720 220" class="w-full h-52" preserveAspectRatio="none">
-                <defs>
-                  <linearGradient id="warmup-area-dark" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%"   stop-color="rgba(125,211,252,0.55)"/>
-                    <stop offset="100%" stop-color="rgba(125,211,252,0)"/>
-                  </linearGradient>
-                  <linearGradient id="warmup-stroke" x1="0" y1="0" x2="1" y2="0">
-                    <stop offset="0%"   stop-color="#7dd3fc"/>
-                    <stop offset="100%" stop-color="#ffffff"/>
-                  </linearGradient>
-                </defs>
-                <!-- gridlines -->
-                {[44, 88, 132, 176].map((y) => (
-                  <line x1="0" x2="720" y1={y} y2={y} stroke="rgba(255,255,255,0.08)" stroke-dasharray="3 4"/>
-                ))}
-                {(() => {
-                  // Generate a smooth wavy ramp curve
-                  const N = 36;
-                  const series = Array.from({ length: N }, (_, i) => {
-                    const t = i / (N - 1);
-                    const base = 15 + t * 75;
-                    const wiggle = Math.sin(i * 0.6) * 4 + Math.sin(i * 0.21) * 6;
-                    return Math.max(8, Math.min(100, base + wiggle));
-                  });
-                  const pts = series.map((v, i) => [
-                    Math.round((i / (series.length - 1)) * 720),
-                    Math.round(220 - ((v - 0) / 110) * 200),
-                  ]);
-                  const line = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p[0]} ${p[1]}`).join(' ');
-                  const area = `${line} L 720 220 L 0 220 Z`;
+              <div class="flex items-end gap-1 h-28">
+                {Array.from({ length: 31 }).map((_, i) => {
+                  const v = Math.min(40, 10 + i);
+                  const h = (v / 40) * 100;
                   return (
-                    <>
-                      <path d={area} fill="url(#warmup-area-dark)"/>
-                      <path id="warmup-curve" d={line} fill="none" stroke="url(#warmup-stroke)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
-                      <!-- continuously traveling spark along the curve -->
-                      <circle r="5" fill="#fff" filter="drop-shadow(0 0 8px #7dd3fc)">
-                        <animateMotion dur="6s" repeatCount="indefinite">
-                          <mpath href="#warmup-curve"/>
-                        </animateMotion>
-                      </circle>
-                    </>
+                    <div class="flex-1 rounded-t-md bg-gradient-to-t from-sky-500/70 to-sky-300/90 ring-1 ring-sky-300/10" style={`height:${h}%`}></div>
                   );
-                })()}
-              </svg>
-              <!-- Health bands row -->
-              <div class="mt-6 grid grid-cols-4 gap-2">
+                })}
+              </div>
+              <div class="mt-2 flex items-center justify-between text-[10.5px] font-mono text-white/45">
+                <span>day 1</span><span>day 31</span>
+              </div>
+            </div>
+
+            <!-- Health bands -->
+            <div class="rounded-[14px] bg-white/[0.04] ring-1 ring-white/12 backdrop-blur p-5">
+              <span class="text-[10.5px] uppercase tracking-[0.14em] text-white/55 font-semibold">Health bands</span>
+              <div class="mt-4 space-y-2">
                 {[
-                  { name: 'Healthy',     v: '12,308', c: 'text-emerald-300', dot: 'bg-emerald-400' },
-                  { name: 'Watch',       v: '92',     c: 'text-amber-300',   dot: 'bg-amber-400' },
-                  { name: 'Quarantined', v: '14',     c: 'text-orange-300',  dot: 'bg-orange-400' },
-                  { name: 'Blocked',     v: '4',      c: 'text-rose-300',    dot: 'bg-rose-400' },
+                  { name: 'Healthy',     color: 'bg-emerald-400', range: '< 10% spam' },
+                  { name: 'Watch',       color: 'bg-amber-400',   range: '10–20% spam' },
+                  { name: 'Quarantine',  color: 'bg-orange-400',  range: '20–40% spam' },
+                  { name: 'Block',       color: 'bg-rose-400',    range: '40–80% spam' },
+                  { name: 'Reset',       color: 'bg-rose-500',    range: '≥ 80% spam' },
                 ].map((b) => (
-                  <div class="rounded-[8px] bg-white/5 ring-1 ring-white/10 px-3 py-2.5">
-                    <div class="flex items-center gap-1.5">
-                      <span class={`w-1.5 h-1.5 rounded-full ${b.dot}`}></span>
-                      <span class={`text-[10.5px] uppercase tracking-[0.14em] font-medium ${b.c}`}>{b.name}</span>
-                    </div>
-                    <div class={`mt-1 text-[16px] font-semibold tabular-nums text-white`}>{b.v}</div>
+                  <div class="flex items-center gap-2">
+                    <span class={`w-2 h-2 rounded-full ${b.color}`}></span>
+                    <span class="text-[12px] text-white/85 flex-1">{b.name}</span>
+                    <span class="text-[11px] font-mono text-white/45">{b.range}</span>
                   </div>
                 ))}
+              </div>
+            </div>
+
+            <!-- Pool diversity -->
+            <div class="rounded-[14px] bg-white/[0.04] ring-1 ring-white/12 backdrop-blur p-5">
+              <span class="text-[10.5px] uppercase tracking-[0.14em] text-white/55 font-semibold">Pool diversity</span>
+              <div class="mt-4 grid grid-cols-10 gap-1.5">
+                {Array.from({ length: 50 }).map((_, i) => {
+                  const cls = i < 23 ? 'bg-rose-400/85' : i < 35 ? 'bg-sky-400/85' : i < 41 ? 'bg-violet-400/85' : i < 46 ? 'bg-zinc-400/85' : 'bg-emerald-400/85';
+                  return <span class={`w-2 h-2 rounded-full ${cls}`}></span>;
+                })}
+              </div>
+              <div class="mt-4 grid grid-cols-2 gap-x-3 gap-y-1.5 text-[11px]">
+                <div class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span><span class="text-white/75">Gmail</span></div>
+                <div class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-sky-400"></span><span class="text-white/75">Outlook</span></div>
+                <div class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-violet-400"></span><span class="text-white/75">Yahoo</span></div>
+                <div class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span><span class="text-white/75">Self-IMAP</span></div>
               </div>
             </div>
           </div>
@@ -369,12 +285,12 @@ const plans = [
                   {Array.from({ length: 2 }).map(() => (
                     <>
                       {[
-                        { who: 'Jenna · Northwind',  domain: 'jenna@northwind.dev', sub: 'Re: quick question on outbound',  body: 'Sure — happy to chat. Thursday 10am ET works for me, send a calendar invite to this address.', tag: 'positive', time: '2s', avatar: 'from-rose-400 to-amber-400' },
-                        { who: 'Aman · Spruce',      domain: 'aman@spruce.bio',     sub: 'Re: intro from Maya',             body: 'Maya mentioned you might reach out — let’s set up a call next week.', tag: 'positive', time: '18s', avatar: 'from-violet-400 to-fuchsia-500' },
+                        { who: 'Jenna · Northwind',  domain: 'jenna@northwind.dev', sub: 'Re: quick question on outbound',  body: 'Sure, happy to chat. Thursday 10am ET works for me, send a calendar invite to this address.', tag: 'positive', time: '2s', avatar: 'from-rose-400 to-amber-400' },
+                        { who: 'Aman · Spruce',      domain: 'aman@spruce.bio',     sub: 'Re: intro from Maya',             body: 'Maya mentioned you might reach out. Let’s set up a call next week.', tag: 'positive', time: '18s', avatar: 'from-violet-400 to-fuchsia-500' },
                         { who: 'Out of office',      domain: 'auto-reply@helia.co', sub: 'OOO until Monday',                body: 'I’m away until Monday. For urgent items contact ops@helia.co.', tag: 'OOO', time: '34s', avatar: 'from-slate-400 to-slate-600' },
                         { who: 'Karim · Foundry',    domain: 'karim@foundry.io',    sub: 'Re: not the right time',          body: 'Thanks for reaching out, not a fit right now. Try us in Q2.', tag: 'negative', time: '1m', avatar: 'from-rose-500 to-pink-600' },
                         { who: 'Lina · Cinder',      domain: 'lina@cinder.app',     sub: 'Re: pricing tier?',               body: 'What does the Grow plan get me on warmup pool size? Quick numbers please.', tag: 'positive', time: '2m', avatar: 'from-emerald-400 to-teal-500' },
-                        { who: 'unsubscribe',        domain: 'sam@mosaic.co',       sub: 'Remove me',                       body: 'Please take me off this list — auto-suppressed.', tag: 'unsub', time: '3m', avatar: 'from-zinc-400 to-zinc-600' },
+                        { who: 'unsubscribe',        domain: 'sam@mosaic.co',       sub: 'Remove me',                       body: 'Please take me off this list. Auto-suppressed.', tag: 'unsub', time: '3m', avatar: 'from-zinc-400 to-zinc-600' },
                       ].map((r) => (
                         <div class="rounded-[12px] bg-white ring-1 ring-[color:var(--border)] p-4" style="box-shadow: var(--shadow-sm);">
                           <div class="flex items-start gap-3">
@@ -419,10 +335,10 @@ const plans = [
               <span class="text-[11px] uppercase tracking-[0.16em] text-[color:var(--brand)] font-semibold">Unified inbox</span>
             </div>
             <h2 class="text-[36px] md:text-[56px] font-semibold tracking-[-0.035em] leading-[1.02] text-heading">
-              Every reply, <span class="italic font-medium" style="color: var(--brand)">classified</span> the second it lands.
+              Every reply, classified the second it lands.
             </h2>
             <p class="mt-6 text-[16.5px] text-foreground/75 leading-relaxed max-w-md">
-              Positive, negative, OOO, unsubscribe, bounce — tagged on arrival. Cross-mailbox search, round-robin assignment, snooze with reminders. No more bouncing between Gmail tabs.
+              Positive, negative, OOO, unsubscribe, bounce. Tagged on arrival. Cross-mailbox search, round-robin assignment, snooze with reminders. No more bouncing between Gmail tabs.
             </p>
             <a href="/inbox/" class="mt-8 inline-flex items-center gap-1.5 text-[14px] font-medium text-[color:var(--brand)] hover:text-[color:var(--brand-strong)] group">
               Explore the inbox
@@ -434,101 +350,29 @@ const plans = [
     </section>
 
     <!-- ============================================================
-         SENDING — worker grid with continuously traveling
-         send events (CSS-only)
+         CAMPAIGNS — sequence builder mockup
     ============================================================ -->
-    <section class="relative overflow-hidden" style="background: var(--surface-2);">
+    <section class="relative overflow-hidden border-t border-[color:var(--border)] bg-white">
       <div class="container-page py-24 md:py-32 relative">
-        <div class="grid lg:grid-cols-12 gap-12 items-center">
-          <div class="lg:col-span-5 feature-card">
-            <div class="inline-flex items-center gap-2 h-7 px-3 rounded-full bg-[color:var(--brand-soft)] ring-1 ring-[color:var(--brand)]/15 mb-6">
-              <span class="relative inline-flex w-1.5 h-1.5">
-                <span class="absolute inset-0 rounded-full bg-[color:var(--brand)] animate-ping opacity-60"></span>
-                <span class="relative inline-block w-1.5 h-1.5 rounded-full bg-[color:var(--brand)]"></span>
-              </span>
-              <span class="text-[11px] uppercase tracking-[0.16em] text-[color:var(--brand)] font-semibold">Sending engine</span>
-            </div>
-            <h2 class="text-[36px] md:text-[56px] font-semibold tracking-[-0.035em] leading-[1.02] text-heading">
-              Distributed <span class="italic font-medium" style="color: var(--brand)">by design</span>.
+        <div class="grid lg:grid-cols-12 gap-12 lg:gap-16 items-center">
+          <div class="lg:col-span-5">
+            <div class="text-[11px] uppercase tracking-[0.16em] text-muted-foreground font-medium mb-4">Campaigns</div>
+            <h2 class="text-[34px] md:text-[48px] font-semibold tracking-[-0.03em] leading-[1.04] text-heading">
+              Sequences that adapt as people reply.
             </h2>
-            <p class="mt-6 text-[16.5px] text-foreground/75 leading-relaxed max-w-md">
-              One worker per machine. Each with its own IP. Mailboxes spread across workers and rebalance on the fly. Volume scales with more healthy mailboxes — never by overloading one inbox.
+            <p class="mt-5 text-[16px] text-foreground/75 leading-relaxed max-w-md">
+              Up to 12 steps with A/B variants, business-hour delays, and conditions that branch on opens, replies and bounces. Drop sends across multiple mailboxes from one campaign.
             </p>
-            <div class="mt-8 grid grid-cols-2 gap-3 max-w-md">
-              {[
-                { v: '50 / day',  l: 'Per-mailbox cold cap' },
-                { v: '10 min',    l: 'Min gap between sends' },
-                { v: '8 regions', l: 'us · eu · apac · sa · …' },
-                { v: 'Kafka',     l: 'Per-worker command stream' },
-              ].map((s) => (
-                <div class="rounded-[10px] bg-white ring-1 ring-[color:var(--border)] px-4 py-3.5">
-                  <div class="text-[19px] font-semibold tracking-[-0.02em] text-heading leading-none">{s.v}</div>
-                  <div class="text-[11.5px] text-muted-foreground mt-1.5">{s.l}</div>
-                </div>
-              ))}
-            </div>
+            <a href="/campaigns/" class="mt-7 inline-flex items-center gap-1.5 text-[14px] font-medium text-foreground hover:text-foreground/70 group">
+              Learn more
+              <Icon name="arrowRight" size={13} class="group-hover:translate-x-0.5 transition-transform" />
+            </a>
           </div>
 
-          <div class="lg:col-span-7 feature-card">
-            <!-- Worker grid with continuously traveling send events -->
-            <div class="relative rounded-[18px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden"
+          <div class="lg:col-span-7">
+            <div class="relative rounded-[14px] overflow-hidden ring-1 ring-[color:var(--border)]"
                  style="box-shadow: var(--shadow-xl);">
-              <div class="px-5 h-12 border-b border-[color:var(--border)] flex items-center gap-3">
-                <span class="text-[10px] uppercase tracking-[0.14em] text-muted-foreground font-medium">Workers · live</span>
-                <div class="h-4 w-px bg-[color:var(--border)]"></div>
-                <span class="text-[12.5px] text-foreground/70">8 workers · 328 mailboxes ·
-                  <span class="font-semibold text-heading" data-live-counter data-from="14380" data-to="98000" data-tick-min="500" data-tick-max="1400" data-step-min="2" data-step-max="5">14,420</span>
-                  sent today
-                </span>
-              </div>
-
-              <div class="p-6 grid grid-cols-2 gap-3">
-                {[
-                  { name: 'eu-worker-3', region: 'eu-west-1', mb: 48, sends: 92, delay: '0s' },
-                  { name: 'us-worker-7', region: 'us-east-1', mb: 42, sends: 78, delay: '0.6s' },
-                  { name: 'eu-worker-1', region: 'eu-west-1', mb: 40, sends: 70, delay: '1.2s' },
-                  { name: 'us-worker-2', region: 'us-east-1', mb: 38, sends: 64, delay: '1.8s' },
-                  { name: 'ap-worker-1', region: 'ap-sydney',  mb: 32, sends: 54, delay: '2.4s' },
-                  { name: 'sa-worker-1', region: 'sa-east-1',  mb: 26, sends: 42, delay: '3.0s' },
-                ].map((w, idx) => (
-                  <div class="relative rounded-[12px] bg-[color:var(--surface-2)]/60 ring-1 ring-[color:var(--border)] p-4 overflow-hidden">
-                    <div class="flex items-center justify-between mb-3">
-                      <div class="flex items-center gap-2">
-                        <span class="relative inline-flex">
-                          <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                          <span class="absolute inset-0 rounded-full bg-emerald-500/40 animate-ping"></span>
-                        </span>
-                        <span class="font-mono text-[12px] font-semibold text-heading">{w.name}</span>
-                      </div>
-                      <span class="font-mono text-[10.5px] text-muted-foreground">{w.region}</span>
-                    </div>
-                    <div class="flex items-baseline gap-1.5">
-                      <span class="text-[20px] font-semibold tracking-[-0.02em] text-heading tabular-nums">{w.sends}</span>
-                      <span class="text-[10.5px] text-muted-foreground">sends/min · {w.mb} mailboxes</span>
-                    </div>
-                    <!-- Travelling spark / send event -->
-                    <div class="mt-3 relative h-1.5 rounded-full bg-white overflow-hidden ring-1 ring-[color:var(--border)]">
-                      <div class="absolute inset-y-0 left-0 bg-gradient-to-r from-transparent via-[color:var(--brand)] to-transparent w-1/3 rounded-full send-spark" style={`animation-delay: ${w.delay}`}></div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <!-- Pool diversity strip -->
-              <div class="grid grid-cols-5 border-t border-[color:var(--border)] text-[11px]">
-                {[
-                  { p: 'Gmail',     pct: 46, dot: 'bg-rose-500' },
-                  { p: 'Outlook',   pct: 24, dot: 'bg-sky-500' },
-                  { p: 'Yahoo',     pct: 12, dot: 'bg-violet-500' },
-                  { p: 'iCloud',    pct:  9, dot: 'bg-zinc-500' },
-                  { p: 'Self-IMAP', pct:  9, dot: 'bg-emerald-500' },
-                ].map((it, i) => (
-                  <div class={`px-3 py-3 ${i < 4 ? 'border-r border-[color:var(--border)]' : ''}`}>
-                    <div class="flex items-center gap-1.5"><span class={`w-1.5 h-1.5 rounded-full ${it.dot}`}></span><span class="font-medium text-heading">{it.p}</span></div>
-                    <div class="mt-1.5 text-muted-foreground font-mono">{it.pct}% pool</div>
-                  </div>
-                ))}
-              </div>
+              <SequenceMock />
             </div>
           </div>
         </div>
@@ -557,10 +401,10 @@ const plans = [
           </div>
           <ul class="mt-4 space-y-4">
             {[
-              { k: 'Per-mailbox cold cap',    v: '50 / day default — raised only with positive reputation' },
+              { k: 'Per-mailbox cold cap',    v: '50 / day default. Raised only with positive reputation.' },
               { k: 'Warmup pool',             v: 'Vetted, monitored, quarantined on warning bands' },
               { k: 'Reputation response',     v: 'Acts at 10% spam placement (months before providers)' },
-              { k: 'Worker concentration',    v: 'Capped at the sum of mailbox budgets — never one big sender' },
+              { k: 'Worker concentration',    v: 'Capped at the sum of mailbox budgets, never one big sender' },
               { k: 'Compliance signals',      v: 'SPF / DKIM / DMARC validated on every connect' },
             ].map((it) => (
               <li class="flex items-start gap-3">
@@ -584,10 +428,10 @@ const plans = [
           </div>
           <ul class="mt-4 space-y-4">
             {[
-              { k: 'Per-mailbox cold cap',    v: '200+ / day if you ask — sells you "more volume"' },
+              { k: 'Per-mailbox cold cap',    v: '200+ / day if you ask. Sells you "more volume"' },
               { k: 'Warmup pool',             v: 'Mixed with trial mailboxes; same pool for everyone' },
-              { k: 'Reputation response',     v: 'Acts at 80%+ spam placement — by then it’s too late' },
-              { k: 'Worker concentration',    v: 'Flat per-worker ceiling — one IP carries the load' },
+              { k: 'Reputation response',     v: 'Acts at 80%+ spam placement. By then it’s too late' },
+              { k: 'Worker concentration',    v: 'Flat per-worker ceiling. One IP carries the load.' },
               { k: 'Compliance signals',      v: 'You configure DNS, they assume it worked' },
             ].map((it) => (
               <li class="flex items-start gap-3">
@@ -613,7 +457,7 @@ const plans = [
       <div class="max-w-3xl">
         <div class="text-[11px] uppercase tracking-[0.16em] text-[color:var(--brand)] font-semibold mb-4">One platform</div>
         <h2 class="text-[32px] md:text-[48px] font-semibold tracking-[-0.03em] leading-[1.04] text-heading">
-          Warmup, sending, inbox — engineered together.
+          Warmup, sending, inbox, engineered together.
         </h2>
         <p class="mt-4 text-foreground/75 leading-relaxed max-w-2xl">
           The signal one part collects is the signal the next part acts on.
@@ -625,7 +469,7 @@ const plans = [
           <Icon name="shield" class="text-[color:var(--brand)]" />
           <h3 class="mt-4 text-[16px] font-semibold tracking-[-0.01em] text-heading">Quarantines on warning, not catastrophe</h3>
           <p class="mt-2 text-[13.5px] text-foreground/70 leading-relaxed">
-            Watch band kicks in at 10% spam placement — months before mailbox providers act.
+            Watch band kicks in at 10% spam placement, months before mailbox providers act.
           </p>
           <div class="mt-auto pt-5 grid grid-cols-4 gap-1.5">
             {['Healthy','Watch','Quarantined','Blocked'].map((b, i) => (
@@ -742,20 +586,18 @@ const plans = [
             <span class="text-[11px] uppercase tracking-[0.16em] text-[color:var(--brand)] font-semibold">Pricing</span>
           </div>
           <h2 class="text-[36px] md:text-[58px] font-semibold tracking-[-0.035em] leading-[1.02] text-heading">
-            Per mailbox. <span class="italic font-medium" style="color: var(--brand)">Predictable.</span>
+            Per mailbox. Predictable.
           </h2>
           <p class="mt-5 text-[16.5px] text-foreground/75 leading-relaxed">
-            Warmup, sending, the inbox, analytics and CRM aren't separate line items. You pay for the mailboxes you connect.
+            Every paid plan starts with a 14-day free trial. No credit card, no charge, full access.
           </p>
 
-          <!-- Premium segmented billing toggle — annual is the default -->
+          <!-- Segmented billing toggle, annual default -->
           <div class="mt-9 inline-flex items-center gap-3" id="billing-toggle">
             <div class="relative inline-flex items-center p-1 rounded-full bg-white ring-1 ring-[color:var(--border)] text-[13px] font-medium" style="box-shadow: var(--shadow-sm);">
               <span id="toggle-thumb" class="absolute top-1 bottom-1 rounded-full bg-[color:var(--brand)] transition-all duration-[350ms] ease-[cubic-bezier(0.22,1,0.36,1)]" style="box-shadow: 0 6px 18px -4px rgba(2,132,199,0.5);"></span>
               <button data-billing="monthly" class="relative h-9 px-5 rounded-full text-foreground/70 transition-colors min-w-[112px]">Monthly</button>
-              <button data-billing="annual"  class="relative h-9 px-5 rounded-full text-white transition-colors min-w-[112px]">
-                <span class="inline-flex items-center gap-1.5">Annual</span>
-              </button>
+              <button data-billing="annual"  class="relative h-9 px-5 rounded-full text-white transition-colors min-w-[112px]">Annual</button>
             </div>
             <span class="inline-flex items-center gap-1.5 px-2.5 h-7 rounded-full text-[11.5px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
               Save 20%
