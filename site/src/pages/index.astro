@@ -174,35 +174,20 @@ const plans = [
   <div class="bg-white" style="padding-top: 160px;">
 
     <!-- ============================================================
-         SELF-HOST BAR — fills the white gap between hero and warmup
+         Minimal facts strip — fills the white gap, low-key
     ============================================================ -->
-    <section class="container-page pb-16 md:pb-24">
-      <div class="grid lg:grid-cols-12 gap-10 lg:gap-16 items-center">
-        <div class="lg:col-span-5">
-          <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Self-host</div>
-          <h3 class="text-[24px] md:text-[30px] font-semibold tracking-[-0.02em] leading-[1.1] text-heading">
-            One command on your own infra.
-          </h3>
-          <p class="mt-3 text-[14.5px] text-foreground/70 leading-relaxed max-w-md">
-            Apache 2.0. Go backend, Rust tracking, Elixir realtime, React frontend. Run the whole stack with Docker Compose.
-          </p>
-        </div>
-        <div class="lg:col-span-7">
-          <div class="rounded-[10px] overflow-hidden ring-1 ring-[color:var(--border)] bg-[#0c1224]">
-            <div class="flex items-center gap-2 px-4 h-9 border-b border-white/10 bg-[#0a0f1e]">
-              <span class="w-2.5 h-2.5 rounded-full bg-[#ff5f57]"></span>
-              <span class="w-2.5 h-2.5 rounded-full bg-[#febc2e]"></span>
-              <span class="w-2.5 h-2.5 rounded-full bg-[#28c840]"></span>
-              <span class="ml-3 text-[11px] font-mono text-white/45">~ / warmbly</span>
-              <span class="ml-auto text-[10px] font-mono text-white/35 uppercase tracking-[0.16em]">terminal</span>
-            </div>
-            <pre class="text-[13px] leading-[1.7] font-mono text-white/85 p-5 overflow-x-auto"><code><span style="color:#64748b">$</span> <span style="color:#7dd3fc">git</span> clone https://github.com/warmbly/warmbly
-<span style="color:#64748b">$</span> <span style="color:#7dd3fc">cd</span> warmbly
-<span style="color:#64748b">$</span> <span style="color:#7dd3fc">docker</span> compose up
-<span style="color:#34d399"># Backend, consumer, workers, realtime, tracking, web</span>
-<span style="color:#34d399"># All running locally on http://localhost:3000</span></code></pre>
-          </div>
-        </div>
+    <section class="container-page pb-14 md:pb-20">
+      <div class="flex flex-wrap items-center justify-center gap-x-8 gap-y-3 text-[12.5px] text-muted-foreground">
+        <span class="inline-flex items-center gap-2">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" class="text-foreground/70"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.8 10.9.6.1.8-.2.8-.5v-2c-3.2.7-3.9-1.4-3.9-1.4-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.4-2.3 1.2-3.2-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2 1-.3 2-.4 3-.4s2 .1 3 .4c2.3-1.5 3.3-1.2 3.3-1.2.7 1.6.2 2.9.1 3.1.8.8 1.2 1.9 1.2 3.2 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.5 4.6-1.5 7.8-5.8 7.8-10.9C23.5 5.7 18.3.5 12 .5z"/></svg>
+          <span>github.com/warmbly/warmbly</span>
+        </span>
+        <span class="text-foreground/20">·</span>
+        <span class="font-mono">Apache 2.0</span>
+        <span class="text-foreground/20">·</span>
+        <span>Self-hostable with Docker Compose</span>
+        <span class="text-foreground/20">·</span>
+        <span>Go · Rust · Elixir · React</span>
       </div>
     </section>
 
@@ -351,11 +336,11 @@ const plans = [
 
           <svg viewBox="0 0 1400 540" class="relative w-full h-auto" preserveAspectRatio="xMidYMid meet">
             <defs>
-              <linearGradient id="flow-in" x1="0" y1="0" x2="1" y2="0">
+              <linearGradient id="flow-in" x1="360" y1="0" x2="620" y2="0" gradientUnits="userSpaceOnUse">
                 <stop offset="0%" stop-color="#7dd3fc"/>
                 <stop offset="100%" stop-color="#0284c7"/>
               </linearGradient>
-              <linearGradient id="flow-out" x1="0" y1="0" x2="1" y2="0">
+              <linearGradient id="flow-out" x1="840" y1="0" x2="1080" y2="0" gradientUnits="userSpaceOnUse">
                 <stop offset="0%" stop-color="#0284c7"/>
                 <stop offset="100%" stop-color="#7dd3fc"/>
               </linearGradient>
@@ -379,13 +364,13 @@ const plans = [
             <path id="in-2" d="M 360 165 C 500 165, 560 270, 620 270" stroke="url(#flow-in)" stroke-width="2" fill="none"/>
             <path id="in-4" d="M 360 375 C 500 375, 560 270, 620 270" stroke="url(#flow-in)" stroke-width="2" fill="none"/>
             <path id="in-5" d="M 360 480 C 500 480, 560 270, 620 270" stroke="url(#flow-in)" stroke-width="2" fill="none"/>
-            <path id="in-3" d="M 360 270 L 620 270" stroke="#0284c7" stroke-width="2.5" fill="none"/>
+            <path id="in-3" d="M 360 270 L 620 270" stroke="url(#flow-in)" stroke-width="2" fill="none"/>
 
             <path id="out-1" d="M 840 270 C 900 270, 940 60,  1080 60"  stroke="url(#flow-out)" stroke-width="2" fill="none"/>
             <path id="out-2" d="M 840 270 C 900 270, 940 165, 1080 165" stroke="url(#flow-out)" stroke-width="2" fill="none"/>
             <path id="out-4" d="M 840 270 C 900 270, 940 375, 1080 375" stroke="url(#flow-out)" stroke-width="2" fill="none"/>
             <path id="out-5" d="M 840 270 C 900 270, 940 480, 1080 480" stroke="url(#flow-out)" stroke-width="2" fill="none"/>
-            <path id="out-3" d="M 840 270 L 1080 270" stroke="#0284c7" stroke-width="2.5" fill="none"/>
+            <path id="out-3" d="M 840 270 L 1080 270" stroke="url(#flow-out)" stroke-width="2" fill="none"/>
 
             <!-- Mailbox pills (left) -->
             {(() => {
