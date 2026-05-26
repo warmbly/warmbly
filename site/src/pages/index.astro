@@ -177,12 +177,27 @@ const plans = [
     <!-- ============================================================
          WARMUP — airy sky panel with clouds (Air-style feel)
     ============================================================ -->
-    <section class="relative isolate overflow-hidden text-white border-t border-[color:var(--border)]" style="background: radial-gradient(ellipse 140% 140% at 72% 25%, #7dd3fc 0%, #38bdf8 18%, #0ea5e9 36%, #0284c7 58%, #075985 82%);">
-      <img src="/backdrops/cloud-3.webp" alt="" aria-hidden="true" class="absolute -top-10 -left-10 w-[460px] opacity-50 pointer-events-none select-none cloud-drift cloud-1" loading="lazy" decoding="async"/>
-      <img src="/backdrops/cloud-5.webp" alt="" aria-hidden="true" class="absolute top-10 right-0 w-[520px] opacity-40 pointer-events-none select-none cloud-drift cloud-2" loading="lazy" decoding="async"/>
-      <img src="/backdrops/cloud-4.webp" alt="" aria-hidden="true" class="absolute -bottom-12 left-1/4 w-[420px] opacity-35 pointer-events-none select-none cloud-drift cloud-3" loading="lazy" decoding="async"/>
+    <section class="relative isolate overflow-hidden text-white border-t border-[color:var(--border)]" style="background: radial-gradient(ellipse 130% 140% at 72% 28%, #0284c7 0%, #0369a1 25%, #075985 50%, #0c4a6e 80%, #0a3d5c 100%);">
+      <img src="/backdrops/cloud-3.webp" alt="" aria-hidden="true" class="absolute -top-10 -left-10 w-[460px] opacity-30 pointer-events-none select-none cloud-drift cloud-1" loading="lazy" decoding="async" style="mix-blend-mode: screen;"/>
+      <img src="/backdrops/cloud-5.webp" alt="" aria-hidden="true" class="absolute top-10 right-0 w-[520px] opacity-22 pointer-events-none select-none cloud-drift cloud-2" loading="lazy" decoding="async" style="mix-blend-mode: screen;"/>
+      <img src="/backdrops/cloud-4.webp" alt="" aria-hidden="true" class="absolute -bottom-12 left-1/4 w-[420px] opacity-18 pointer-events-none select-none cloud-drift cloud-3" loading="lazy" decoding="async" style="mix-blend-mode: screen;"/>
 
       <div class="container-page py-20 md:py-28 relative">
+        <!-- Top strip: quick warmup facts -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-px bg-white/10 ring-1 ring-white/15 rounded-[10px] overflow-hidden mb-12">
+          {[
+            { v: '+1 / day',  l: 'Ramp rate' },
+            { v: '40 / day',  l: 'Ceiling per mailbox' },
+            { v: '5',         l: 'Health bands' },
+            { v: '7 days',    l: 'Quarantine cooldown' },
+          ].map((s) => (
+            <div class="px-5 py-4 backdrop-blur" style="background: rgba(8, 47, 73, 0.55);">
+              <div class="text-[24px] font-semibold tracking-[-0.02em] text-white leading-none">{s.v}</div>
+              <div class="mt-1.5 text-[10.5px] uppercase tracking-[0.14em] font-mono text-white/55">{s.l}</div>
+            </div>
+          ))}
+        </div>
+
         <div class="grid lg:grid-cols-12 gap-12 lg:gap-16 items-start">
           <div class="lg:col-span-5">
             <div class="text-[11px] uppercase tracking-[0.18em] text-white/55 font-mono mb-3">Warmup</div>
@@ -265,111 +280,156 @@ const plans = [
     ============================================================ -->
     <section class="relative bg-white border-t border-[color:var(--border)] overflow-hidden">
       <div class="container-page py-20 md:py-28">
-        <div class="max-w-3xl">
-          <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Inbox</div>
-          <h2 class="text-[34px] md:text-[44px] font-semibold tracking-[-0.025em] leading-[1.08] text-heading">
-            Every reply, one queue, five labels.
-          </h2>
-          <p class="mt-5 text-[15.5px] text-foreground/75 leading-relaxed max-w-2xl">
-            Replies stream in from every connected mailbox. The classifier tags each one before it lands.
-          </p>
-        </div>
+        <div class="grid lg:grid-cols-12 gap-10 items-end">
+          <div class="lg:col-span-7">
+            <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Inbox</div>
+            <h2 class="text-[34px] md:text-[48px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
+              Every reply, one queue, five labels.
+            </h2>
+            <p class="mt-5 text-[15.5px] text-foreground/75 leading-relaxed max-w-lg">
+              Replies stream in from every connected mailbox. The classifier tags each one before it lands so triage stays on the labels you care about.
+            </p>
+          </div>
 
-        <!-- Flow diagram: mailboxes left → classifier middle → labels right -->
-        <div class="mt-14 relative">
-          <svg viewBox="0 0 1200 460" class="w-full h-auto" preserveAspectRatio="xMidYMid meet">
-            <defs>
-              <linearGradient id="flow-line" x1="0" y1="0" x2="1" y2="0">
-                <stop offset="0%" stop-color="#cbd5e1"/>
-                <stop offset="100%" stop-color="#0284c7"/>
-              </linearGradient>
-              <linearGradient id="flow-line-out" x1="0" y1="0" x2="1" y2="0">
-                <stop offset="0%" stop-color="#0284c7"/>
-                <stop offset="100%" stop-color="#cbd5e1"/>
-              </linearGradient>
-            </defs>
-
-            <!-- Connector lines: mailboxes → classifier -->
-            <path d="M 230 60 C 360 60, 420 230, 540 230" stroke="url(#flow-line)" stroke-width="1.5" fill="none"/>
-            <path d="M 230 150 C 360 150, 420 230, 540 230" stroke="url(#flow-line)" stroke-width="1.5" fill="none"/>
-            <path d="M 230 240 C 360 240, 420 240, 540 240" stroke="url(#flow-line)" stroke-width="1.5" fill="none"/>
-            <path d="M 230 330 C 360 330, 420 240, 540 240" stroke="url(#flow-line)" stroke-width="1.5" fill="none"/>
-            <path d="M 230 420 C 360 420, 420 240, 540 250" stroke="url(#flow-line)" stroke-width="1.5" fill="none"/>
-
-            <!-- Connector lines: classifier → labels -->
-            <path d="M 760 230 C 880 230, 940 60,  1060 60"  stroke="url(#flow-line-out)" stroke-width="1.5" fill="none"/>
-            <path d="M 760 235 C 880 235, 940 150, 1060 150" stroke="url(#flow-line-out)" stroke-width="1.5" fill="none"/>
-            <path d="M 760 240 C 880 240, 940 240, 1060 240" stroke="url(#flow-line-out)" stroke-width="1.5" fill="none"/>
-            <path d="M 760 245 C 880 245, 940 330, 1060 330" stroke="url(#flow-line-out)" stroke-width="1.5" fill="none"/>
-            <path d="M 760 250 C 880 250, 940 420, 1060 420" stroke="url(#flow-line-out)" stroke-width="1.5" fill="none"/>
-
-            <!-- Traveling dots showing live flow -->
-            <circle r="4" fill="#0284c7"><animateMotion dur="3s" repeatCount="indefinite" path="M 230 60 C 360 60, 420 230, 540 230"/></circle>
-            <circle r="4" fill="#0284c7"><animateMotion dur="3.5s" repeatCount="indefinite" begin="0.4s" path="M 230 240 C 360 240, 420 240, 540 240"/></circle>
-            <circle r="4" fill="#0284c7"><animateMotion dur="4s" repeatCount="indefinite" begin="1s" path="M 230 420 C 360 420, 420 240, 540 250"/></circle>
-            <circle r="4" fill="#0284c7"><animateMotion dur="3.2s" repeatCount="indefinite" begin="1.6s" path="M 760 230 C 880 230, 940 60, 1060 60"/></circle>
-            <circle r="4" fill="#0284c7"><animateMotion dur="3.6s" repeatCount="indefinite" begin="2s" path="M 760 240 C 880 240, 940 240, 1060 240"/></circle>
-          </svg>
-
-          <!-- Mailbox source cards (positioned absolutely over the SVG) -->
-          <div class="absolute inset-0 grid grid-cols-12">
-            <!-- Left column: source mailboxes -->
-            <div class="col-span-3 relative">
+          <!-- Stats fills the empty top-right space -->
+          <div class="lg:col-span-5">
+            <div class="grid grid-cols-3 gap-px bg-[color:var(--border)] ring-1 ring-[color:var(--border)] rounded-[10px] overflow-hidden">
               {[
-                { e: 'founder@acme.co',     y: '5%' },
-                { e: 'team@northwind.dev',  y: '24%' },
-                { e: 'hello@spruce.bio',    y: '44%' },
-                { e: 'intro@helio.gen',     y: '64%' },
-                { e: 'maya@cinder.app',     y: '84%' },
-              ].map((m) => (
-                <div class="absolute right-4 inline-flex items-center gap-2 h-9 pl-2 pr-3 rounded-full bg-white ring-1 ring-[color:var(--border)] text-[12px] font-mono text-foreground"
-                     style={`top: ${m.y}; box-shadow: var(--shadow-sm);`}>
-                  <span class="w-5 h-5 rounded-full bg-sky-100 grid place-items-center text-[9px] font-semibold text-sky-700">{m.e.slice(0, 2).toUpperCase()}</span>
-                  {m.e}
+                { v: '5', l: 'labels' },
+                { v: '< 1s', l: 'tag latency' },
+                { v: '∞', l: 'mailboxes per queue' },
+              ].map((s) => (
+                <div class="bg-white px-4 py-4">
+                  <div class="text-[26px] font-semibold tracking-[-0.025em] text-heading leading-none">{s.v}</div>
+                  <div class="mt-1.5 text-[11px] uppercase tracking-[0.14em] font-mono text-muted-foreground">{s.l}</div>
                 </div>
               ))}
             </div>
-
-            <!-- Center: the classifier card -->
-            <div class="col-span-6 relative">
-              <div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[260px] rounded-[14px] bg-foreground text-background p-5 ring-1 ring-foreground"
-                   style="box-shadow: 0 24px 60px -20px rgba(15,23,42,0.35);">
-                <div class="flex items-center gap-2">
-                  <span class="relative inline-flex w-2 h-2">
-                    <span class="absolute inset-0 rounded-full bg-emerald-400 animate-ping opacity-70"></span>
-                    <span class="relative inline-block w-2 h-2 rounded-full bg-emerald-400"></span>
-                  </span>
-                  <span class="text-[10.5px] uppercase tracking-[0.16em] font-mono text-background/70">Classifier</span>
-                </div>
-                <div class="mt-3 text-[18px] font-semibold tracking-[-0.02em] leading-tight">
-                  Tags every reply on arrival
-                </div>
-                <div class="mt-4 grid grid-cols-2 gap-1.5 text-[10.5px] font-mono text-background/70">
-                  <div>quoted-text aware</div>
-                  <div>OOO detection</div>
-                  <div>auto-suppress</div>
-                  <div>round-robin</div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Right column: classified labels -->
-            <div class="col-span-3 relative">
-              {[
-                { name: 'Positive',     dot: 'bg-emerald-500', y: '5%' },
-                { name: 'Negative',     dot: 'bg-rose-500',    y: '24%' },
-                { name: 'Out of office', dot: 'bg-amber-500',  y: '44%' },
-                { name: 'Unsubscribe',  dot: 'bg-zinc-500',    y: '64%' },
-                { name: 'Bounce',       dot: 'bg-orange-500',  y: '84%' },
-              ].map((l) => (
-                <div class="absolute left-4 inline-flex items-center gap-2 h-9 px-3 rounded-full bg-white ring-1 ring-[color:var(--border)] text-[12px] font-medium text-foreground"
-                     style={`top: ${l.y}; box-shadow: var(--shadow-sm);`}>
-                  <span class={`w-1.5 h-1.5 rounded-full ${l.dot}`}></span>
-                  {l.name}
-                </div>
-              ))}
+            <div class="mt-3 flex items-center justify-between text-[12px] text-muted-foreground">
+              <span>Quoted-text aware. OOO + unsubscribe auto-handled.</span>
+              <a href="/inbox/" class="font-medium text-foreground border-b border-foreground/30 hover:border-foreground pb-px inline-flex items-center gap-1">See more <Icon name="arrowUpRight" size={11} /></a>
             </div>
           </div>
+        </div>
+
+        <!-- Flow diagram — pure SVG so dots track lines perfectly -->
+        <div class="mt-12 relative rounded-[14px] ring-1 ring-[color:var(--border)] bg-[color:var(--surface-2)]/30 px-4 py-6 md:px-10 md:py-10 overflow-hidden">
+          <!-- Subtle background grid -->
+          <div class="absolute inset-0 pointer-events-none opacity-[0.6]" style="background-image: linear-gradient(rgba(15,23,42,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(15,23,42,0.05) 1px, transparent 1px); background-size: 32px 32px;"></div>
+
+          <svg viewBox="0 0 1400 540" class="relative w-full h-auto" preserveAspectRatio="xMidYMid meet">
+            <defs>
+              <linearGradient id="flow-in" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stop-color="#7dd3fc"/>
+                <stop offset="100%" stop-color="#0284c7"/>
+              </linearGradient>
+              <linearGradient id="flow-out" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stop-color="#0284c7"/>
+                <stop offset="100%" stop-color="#7dd3fc"/>
+              </linearGradient>
+              <filter id="card-shadow" x="-10%" y="-30%" width="120%" height="160%">
+                <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#0f172a" flood-opacity="0.07"/>
+              </filter>
+              <filter id="classifier-shadow" x="-25%" y="-25%" width="150%" height="150%">
+                <feDropShadow dx="0" dy="20" stdDeviation="28" flood-color="#0f172a" flood-opacity="0.30"/>
+              </filter>
+              <filter id="dot-glow" x="-100%" y="-100%" width="300%" height="300%">
+                <feGaussianBlur stdDeviation="3" result="blur"/>
+                <feMerge>
+                  <feMergeNode in="blur"/>
+                  <feMergeNode in="SourceGraphic"/>
+                </feMerge>
+              </filter>
+            </defs>
+
+            <!-- Connector paths (IDs for animateMotion mpath) -->
+            <path id="in-1" d="M 360 60  C 500 60,  560 270, 620 270" stroke="url(#flow-in)" stroke-width="2" fill="none"/>
+            <path id="in-2" d="M 360 165 C 500 165, 560 270, 620 270" stroke="url(#flow-in)" stroke-width="2" fill="none"/>
+            <path id="in-4" d="M 360 375 C 500 375, 560 270, 620 270" stroke="url(#flow-in)" stroke-width="2" fill="none"/>
+            <path id="in-5" d="M 360 480 C 500 480, 560 270, 620 270" stroke="url(#flow-in)" stroke-width="2" fill="none"/>
+            <path id="in-3" d="M 360 270 L 620 270" stroke="url(#flow-in)" stroke-width="2.5" fill="none"/>
+
+            <path id="out-1" d="M 840 270 C 900 270, 940 60,  1080 60"  stroke="url(#flow-out)" stroke-width="2" fill="none"/>
+            <path id="out-2" d="M 840 270 C 900 270, 940 165, 1080 165" stroke="url(#flow-out)" stroke-width="2" fill="none"/>
+            <path id="out-4" d="M 840 270 C 900 270, 940 375, 1080 375" stroke="url(#flow-out)" stroke-width="2" fill="none"/>
+            <path id="out-5" d="M 840 270 C 900 270, 940 480, 1080 480" stroke="url(#flow-out)" stroke-width="2" fill="none"/>
+            <path id="out-3" d="M 840 270 L 1080 270" stroke="url(#flow-out)" stroke-width="2.5" fill="none"/>
+
+            <!-- Mailbox pills (left) -->
+            {(() => {
+              const mb = [
+                { e: 'founder@acme.co',     y: 60 },
+                { e: 'team@northwind.dev',  y: 165 },
+                { e: 'hello@spruce.bio',    y: 270 },
+                { e: 'intro@helio.gen',     y: 375 },
+                { e: 'maya@cinder.app',     y: 480 },
+              ];
+              return mb.map((m) => (
+                <g filter="url(#card-shadow)">
+                  <rect x="20" y={m.y - 22} rx="22" ry="22" width="340" height="44" fill="#ffffff" stroke="#e2e8f0" stroke-width="1"/>
+                  <rect x="32" y={m.y - 12} rx="6" ry="6" width="24" height="24" fill="#e0f2fe"/>
+                  <text x="44" y={m.y + 4} font-family="ui-sans-serif, system-ui" font-size="11" font-weight="700" fill="#0369a1" text-anchor="middle">{m.e.slice(0, 2).toUpperCase()}</text>
+                  <text x="68" y={m.y + 5} font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14" fill="#0f172a">{m.e}</text>
+                </g>
+              ));
+            })()}
+
+            <!-- Classifier card (center, larger + more prominent) -->
+            <g filter="url(#classifier-shadow)">
+              <rect x="620" y="150" rx="16" ry="16" width="220" height="240" fill="#0f172a"/>
+              <!-- Top status row -->
+              <circle cx="644" cy="184" r="5" fill="#34d399">
+                <animate attributeName="opacity" values="1;0.3;1" dur="2s" repeatCount="indefinite"/>
+              </circle>
+              <text x="660" y="189" font-family="ui-monospace" font-size="11" font-weight="600" letter-spacing="2" fill="#cbd5e1">CLASSIFIER</text>
+              <!-- Headline -->
+              <text x="644" y="232" font-family="ui-sans-serif, system-ui" font-size="18" font-weight="600" fill="#ffffff" letter-spacing="-0.4">Tags every reply</text>
+              <text x="644" y="254" font-family="ui-sans-serif, system-ui" font-size="18" font-weight="600" fill="#ffffff" letter-spacing="-0.4">on arrival.</text>
+              <!-- Divider line -->
+              <line x1="644" y1="280" x2="816" y2="280" stroke="#1e293b" stroke-width="1"/>
+              <!-- Capability list -->
+              <text x="644" y="304" font-family="ui-monospace" font-size="11.5" fill="#94a3b8">quoted-text aware</text>
+              <text x="644" y="324" font-family="ui-monospace" font-size="11.5" fill="#94a3b8">OOO detection</text>
+              <text x="644" y="344" font-family="ui-monospace" font-size="11.5" fill="#94a3b8">auto-suppress</text>
+              <text x="644" y="364" font-family="ui-monospace" font-size="11.5" fill="#94a3b8">round-robin assign</text>
+            </g>
+
+            <!-- Label pills (right) -->
+            {(() => {
+              const lb = [
+                { t: 'Positive',     dot: '#10b981', y: 60 },
+                { t: 'Negative',     dot: '#f43f5e', y: 165 },
+                { t: 'Out of office',dot: '#f59e0b', y: 270 },
+                { t: 'Unsubscribe',  dot: '#64748b', y: 375 },
+                { t: 'Bounce',       dot: '#fb923c', y: 480 },
+              ];
+              return lb.map((l) => (
+                <g filter="url(#card-shadow)">
+                  <rect x="1080" y={l.y - 22} rx="22" ry="22" width="300" height="44" fill="#ffffff" stroke="#e2e8f0" stroke-width="1"/>
+                  <circle cx="1100" cy={l.y} r="4.5" fill={l.dot}/>
+                  <text x="1116" y={l.y + 5} font-family="ui-sans-serif, system-ui" font-size="14" font-weight="500" fill="#0f172a">{l.t}</text>
+                </g>
+              ));
+            })()}
+
+            <!-- Traveling dots — bigger, glowing, on every path -->
+            {[
+              { id: 'in-1',  dur: '3.2s', begin: '0s',   color: '#0ea5e9' },
+              { id: 'in-2',  dur: '3.6s', begin: '0.5s', color: '#0ea5e9' },
+              { id: 'in-3',  dur: '3.0s', begin: '1.0s', color: '#0ea5e9' },
+              { id: 'in-4',  dur: '3.8s', begin: '1.5s', color: '#0ea5e9' },
+              { id: 'in-5',  dur: '3.4s', begin: '2.0s', color: '#0ea5e9' },
+              { id: 'out-1', dur: '3.2s', begin: '2.6s', color: '#10b981' },
+              { id: 'out-2', dur: '3.6s', begin: '3.0s', color: '#f43f5e' },
+              { id: 'out-3', dur: '3.0s', begin: '3.4s', color: '#f59e0b' },
+              { id: 'out-4', dur: '3.8s', begin: '3.8s', color: '#64748b' },
+              { id: 'out-5', dur: '3.4s', begin: '4.2s', color: '#fb923c' },
+            ].map((d) => (
+              <circle r="6" fill={d.color} filter="url(#dot-glow)">
+                <animateMotion dur={d.dur} repeatCount="indefinite" begin={d.begin}><mpath href={`#${d.id}`}/></animateMotion>
+              </circle>
+            ))}
+          </svg>
         </div>
 
         <div class="mt-12 flex items-center gap-3">
@@ -401,44 +461,44 @@ const plans = [
           </div>
         </div>
 
-        <!-- Horizontal step timeline -->
-        <div class="relative">
-          <div class="overflow-x-auto -mx-5 px-5 pb-3 [scrollbar-width:thin]">
-            <ol class="flex items-stretch gap-3 min-w-max">
-              {[
-                { n: 1, k: 'SEND',   t: 'Intro · plain text',            m: '2 variants' },
-                { n: 2, k: 'WAIT',   t: '3 business days',                m: 'if no reply' },
-                { n: 3, k: 'SEND',   t: 'Follow-up · context line',       m: '4 variants' },
-                { n: 4, k: 'BRANCH', t: 'If opened twice',                m: 'send earlier' },
-                { n: 5, k: 'SEND',   t: 'Soft close · short ask',          m: '2 variants' },
-                { n: 6, k: 'WAIT',   t: '7 business days',                m: 'silence' },
-                { n: 7, k: 'SEND',   t: 'Final · breakup note',           m: '1 variant' },
-                { n: 8, k: 'END',    t: 'Stop · mark contact done',       m: '' },
-              ].map((s, i, arr) => (
-                <>
-                  <li class={`relative shrink-0 w-[240px] rounded-[10px] bg-white ring-1 ring-[color:var(--border)] p-4 ${s.k === 'SEND' ? 'ring-[color:var(--border-strong)]' : ''}`}
-                       style="box-shadow: var(--shadow-sm);">
-                    <div class="flex items-center gap-2">
-                      <span class={`text-[9.5px] font-mono font-semibold uppercase tracking-[0.16em] ${
-                        s.k === 'SEND'   ? 'text-[color:var(--brand)]' :
-                        s.k === 'WAIT'   ? 'text-muted-foreground' :
-                        s.k === 'BRANCH' ? 'text-violet-700' :
-                                            'text-rose-700'
-                      }`}>{s.k}</span>
-                      <span class="ml-auto text-[10.5px] font-mono text-muted-foreground">step {String(s.n).padStart(2, '0')}</span>
-                    </div>
-                    <div class="mt-3 text-[13.5px] font-medium text-heading leading-snug">{s.t}</div>
-                    {s.m && <div class="mt-1 text-[11px] font-mono text-muted-foreground">{s.m}</div>}
-                  </li>
-                  {i < arr.length - 1 && (
+        <!-- Auto-scrolling step timeline (no scrollbar, loops forever) -->
+        <div class="relative marquee-mask overflow-hidden">
+          <ol class="flex items-stretch gap-3 w-max marquee-track-slow">
+            {Array.from({ length: 2 }).map(() => (
+              <>
+                {[
+                  { n: 1, k: 'SEND',   t: 'Intro · plain text',            m: '2 variants' },
+                  { n: 2, k: 'WAIT',   t: '3 business days',                m: 'if no reply' },
+                  { n: 3, k: 'SEND',   t: 'Follow-up · context line',       m: '4 variants' },
+                  { n: 4, k: 'BRANCH', t: 'If opened twice',                m: 'send earlier' },
+                  { n: 5, k: 'SEND',   t: 'Soft close · short ask',          m: '2 variants' },
+                  { n: 6, k: 'WAIT',   t: '7 business days',                m: 'silence' },
+                  { n: 7, k: 'SEND',   t: 'Final · breakup note',           m: '1 variant' },
+                  { n: 8, k: 'END',    t: 'Stop · mark contact done',       m: '' },
+                ].map((s, i, arr) => (
+                  <>
+                    <li class={`relative shrink-0 w-[240px] rounded-[10px] bg-white ring-1 ring-[color:var(--border)] p-4 ${s.k === 'SEND' ? 'ring-[color:var(--border-strong)]' : ''}`}
+                         style="box-shadow: var(--shadow-sm);">
+                      <div class="flex items-center gap-2">
+                        <span class={`text-[9.5px] font-mono font-semibold uppercase tracking-[0.16em] ${
+                          s.k === 'SEND'   ? 'text-[color:var(--brand)]' :
+                          s.k === 'WAIT'   ? 'text-muted-foreground' :
+                          s.k === 'BRANCH' ? 'text-violet-700' :
+                                              'text-rose-700'
+                        }`}>{s.k}</span>
+                        <span class="ml-auto text-[10.5px] font-mono text-muted-foreground">step {String(s.n).padStart(2, '0')}</span>
+                      </div>
+                      <div class="mt-3 text-[13.5px] font-medium text-heading leading-snug">{s.t}</div>
+                      {s.m && <div class="mt-1 text-[11px] font-mono text-muted-foreground">{s.m}</div>}
+                    </li>
                     <li class="shrink-0 flex items-center text-muted-foreground" aria-hidden="true">
                       <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 7h8M7.5 3.5L11 7l-3.5 3.5"/></svg>
                     </li>
-                  )}
-                </>
-              ))}
-            </ol>
-          </div>
+                  </>
+                ))}
+              </>
+            ))}
+          </ol>
         </div>
 
         <!-- Config block -->
@@ -821,6 +881,11 @@ const plans = [
     }
     .reply-track {
       animation: reply-scroll 50s linear infinite;
+    }
+
+    /* Slower marquee — used by the campaign step timeline */
+    .marquee-track-slow {
+      animation: marquee-loop 60s linear infinite;
     }
 
     /* Worker send spark — slides across bar forever */
