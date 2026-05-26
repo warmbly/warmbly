@@ -119,83 +119,44 @@ for (let wk = 0; wk < 5; wk++) {
   </section>
 
   <!-- ============================================================
-       THE RAMP · editorial typography, no chart
+       THE RAMP · clean editorial inline section
   ============================================================ -->
-  <section class="relative -mt-32 md:-mt-40 pb-16 md:pb-24 z-10">
+  <section class="border-b border-[color:var(--border)] py-20 md:py-28">
     <div class="container-page">
-      <div class="rounded-[18px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden shadow-[0_30px_60px_-20px_rgba(2,32,71,0.25),0_8px_24px_-10px_rgba(15,23,42,0.06)]">
-        <div class="px-8 md:px-12 py-12 md:py-16">
-          <div class="text-[10.5px] uppercase tracking-[0.22em] font-mono text-[#0284c7] mb-6">The ramp</div>
-
-          <!-- Three milestones, big typography -->
-          <div class="grid md:grid-cols-3 gap-8 md:gap-4">
-            <div>
-              <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-muted-foreground">Day 1</div>
-              <div class="mt-2 flex items-baseline gap-1.5">
-                <span class="text-[80px] md:text-[96px] font-semibold tracking-[-0.045em] leading-[0.85] text-heading font-mono">10</span>
-                <span class="text-[14px] text-foreground/55">/ day</span>
-              </div>
-              <p class="mt-3 text-[13.5px] text-foreground/65 leading-relaxed max-w-xs">
-                The first send. Low enough to read as normal individual activity to any provider.
-              </p>
-            </div>
-            <div class="md:border-l md:border-[color:var(--border)] md:pl-8">
-              <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-muted-foreground">Each day after</div>
-              <div class="mt-2 flex items-baseline gap-1.5">
-                <span class="text-[80px] md:text-[96px] font-semibold tracking-[-0.045em] leading-[0.85] text-heading font-mono">+1</span>
-                <span class="text-[14px] text-foreground/55">/ day</span>
-              </div>
-              <p class="mt-3 text-[13.5px] text-foreground/65 leading-relaxed max-w-xs">
-                One additional message each day. Aggressive ramps trip volume-anomaly heuristics on the receiver.
-              </p>
-            </div>
-            <div class="md:border-l md:border-[color:var(--border)] md:pl-8">
-              <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7]">Day 30 · ceiling</div>
-              <div class="mt-2 flex items-baseline gap-1.5">
-                <span class="text-[80px] md:text-[96px] font-semibold tracking-[-0.045em] leading-[0.85] text-[#0369a1] font-mono">40</span>
-                <span class="text-[14px] text-[#0284c7]/70">/ day</span>
-              </div>
-              <p class="mt-3 text-[13.5px] text-foreground/65 leading-relaxed max-w-xs">
-                The hold point. Maintains reputation without crowding cold-campaign budget on the same mailbox.
-              </p>
-            </div>
-          </div>
-
-          <!-- Single elegant horizontal ramp bar -->
-          <div class="mt-12 md:mt-14">
-            <div class="relative h-2 rounded-full overflow-hidden" style="background: linear-gradient(90deg, #e0f2fe 0%, #7dd3fc 40%, #0284c7 80%, #075985 100%);">
-              <!-- Milestone dots overlay -->
-            </div>
-            <div class="mt-3 grid grid-cols-4 text-[10.5px] font-mono text-muted-foreground">
-              <div>
-                <div class="font-semibold text-heading text-[13px] font-mono">Day 1</div>
-                <div>10 / day</div>
-              </div>
-              <div class="text-center">
-                <div class="font-semibold text-heading text-[13px] font-mono">Day 10</div>
-                <div>19 / day</div>
-              </div>
-              <div class="text-center">
-                <div class="font-semibold text-heading text-[13px] font-mono">Day 20</div>
-                <div>29 / day</div>
-              </div>
-              <div class="text-right">
-                <div class="font-semibold text-[#0369a1] text-[13px] font-mono">Day 30</div>
-                <div>40 / day</div>
-              </div>
-            </div>
-          </div>
+      <div class="grid lg:grid-cols-[1fr_1.4fr] gap-12 lg:gap-20 items-start">
+        <div class="lg:sticky lg:top-24" style="align-self: start;">
+          <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-muted-foreground mb-3">The ramp</div>
+          <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
+            10 emails on day 1.<br/>40 emails on day 30.
+          </h2>
+          <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed max-w-md">
+            One additional warmup message each business day, until the mailbox reaches the 40 / day ceiling and holds. Aggressive ramps trip volume-anomaly heuristics on the receiver, so we keep it boring.
+          </p>
         </div>
 
-        <!-- Footer rule -->
-        <div class="px-8 md:px-12 py-4 border-t border-[color:var(--border)] bg-[color:var(--surface-1)]/60 flex flex-wrap items-center gap-x-6 gap-y-1 text-[11.5px] font-mono text-muted-foreground">
-          <span>~10m average gap between sends</span>
-          <span class="w-1 h-1 rounded-full bg-[color:var(--border)]"></span>
-          <span>Business hours by recipient TZ</span>
-          <span class="w-1 h-1 rounded-full bg-[color:var(--border)]"></span>
-          <span>Weekends skipped</span>
-          <span class="w-1 h-1 rounded-full bg-[color:var(--border)]"></span>
-          <span>Plain text only</span>
+        <div class="space-y-px">
+          {[
+            { stage: 'Day 1',     value: '10', unit: '/ day', note: 'First warmup send. Normal individual activity to any provider.' },
+            { stage: 'Each day',  value: '+1', unit: '/ day', note: 'Volume grows by one each business day. Weekends skipped.' },
+            { stage: 'Day 30',    value: '40', unit: '/ day', note: 'Ceiling reached. Mailbox holds at 40 / day indefinitely.',   featured: true },
+          ].map((r) => (
+            <div class={`grid grid-cols-[120px_auto_1fr] gap-6 items-baseline py-5 border-b border-[color:var(--border)] last:border-b-0 ${r.featured ? 'text-[#0369a1]' : 'text-foreground'}`}>
+              <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-muted-foreground">{r.stage}</div>
+              <div class="flex items-baseline gap-1.5">
+                <span class={`text-[44px] md:text-[56px] font-semibold tracking-[-0.035em] leading-none font-mono ${r.featured ? 'text-[#0369a1]' : 'text-heading'}`}>{r.value}</span>
+                <span class="text-[13px] text-foreground/55">{r.unit}</span>
+              </div>
+              <p class="text-[13.5px] text-foreground/65 leading-relaxed">{r.note}</p>
+            </div>
+          ))}
+
+          <div class="pt-6 flex flex-wrap items-center gap-x-6 gap-y-1 text-[11.5px] font-mono text-muted-foreground">
+            <span>~10m average gap between sends</span>
+            <span class="w-1 h-1 rounded-full bg-[color:var(--border)]"></span>
+            <span>Business hours by recipient TZ</span>
+            <span class="w-1 h-1 rounded-full bg-[color:var(--border)]"></span>
+            <span>Plain text only</span>
+          </div>
         </div>
       </div>
     </div>
