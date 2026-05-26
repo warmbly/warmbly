@@ -1,216 +1,425 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import Cloud from '../components/Cloud.astro';
+import HeroAtmosphere from '../components/HeroAtmosphere.astro';
 import Icon from '../components/Icon.astro';
 import CTA from '../components/CTA.astro';
 
-const steps = [
-  { n: 1, delay: 'Day 0',     label: 'Initial outreach',  variants: 'A · B · C',      action: 'send',      tone: 'sky' },
-  { n: 2, delay: '+3 days',   label: 'Soft follow-up',    variants: 'A · B',          action: 'send',      tone: 'sky' },
-  { n: 3, delay: '+5 days',   label: 'Branch · opened?',  variants: '—',              action: 'branch',    tone: 'amber' },
-  { n: 4, delay: '+1 day',    label: 'Send referral ask', variants: 'A',              action: 'send',      tone: 'sky' },
-  { n: 5, delay: '+7 days',   label: 'Final break-up',    variants: 'A · B',          action: 'send',      tone: 'sky' },
-  { n: 6, delay: 'On reply',  label: 'Auto-pause',        variants: '—',              action: 'system',    tone: 'emerald' },
+// The numbers below come from the Warmbly codebase / CLAUDE.md
+// (internal/scheduler/campaign_scheduler.go, internal/models/email.go).
+
+const limits = [
+  { k: 'Steps per sequence',  v: '12',          why: '1 initial outreach + 11 follow-ups. Beyond that, reply rate drops below the harm threshold.' },
+  { k: 'Variants per step',   v: '4',           why: 'Up to four subject and body variants. We track which variant earned each reply.' },
+  { k: 'Minimum step delay',  v: '1 business day', why: 'Same-day follow-ups read as bot behaviour to receivers. We enforce ≥1 day.' },
+  { k: 'Per-mailbox cap',     v: '100 / day',   why: 'Default cold send budget per mailbox. Hard cap before content scoring kicks in.' },
+  { k: 'Send spacing',        v: '~10 min',     why: 'Minimum gap between sends from the same mailbox. Matches human typing cadence.' },
+  { k: 'Business hours',      v: 'Recipient TZ', why: 'Sends scheduled in the recipient\'s working window, not the sender\'s.' },
 ];
 
-const features = [
-  { icon: 'workflow', title: 'Up to 12 steps',         body: 'Initial outreach + 11 follow-ups. Each step has its own delay, variants and conditions.' },
-  { icon: 'clock',    title: 'Business-hour delays',   body: 'Step delays count business days in the recipient time zone. Weekends and holidays do not count.' },
-  { icon: 'spark',    title: 'A/B variants',            body: 'Up to four subject and body variants per step. We track which variant earned the reply.' },
-  { icon: 'reply',    title: 'Reply-aware branching',   body: 'If replied: pause. If opened twice: send the follow-up earlier. If bounced: suppress automatically.' },
-  { icon: 'users',    title: 'Sender pool',             body: 'Pick the mailboxes that can send. Distributes round-robin with budget awareness.' },
-  { icon: 'list',     title: 'Plain text first',        body: 'Default plain-text. Opt into minimal HTML if you need it. No tracking pixels by default.' },
-  { icon: 'shield',   title: 'Suppression aware',       body: 'Skips suppressed recipients, paused mailboxes and over-budget senders automatically.' },
-  { icon: 'filter',   title: 'Segments',                body: 'Target by category, opens, replies, custom fields or CRM stage.' },
+// Demo sequence used in the hero mock + flow diagram
+const sequence = [
+  { idx: 1, kind: 'send',    delay: 'D0',    label: 'Initial outreach',     variants: 3, note: 'Plain text · 4 sentences' },
+  { idx: 2, kind: 'wait',    delay: '+3d',   label: 'Wait',                  variants: 0, note: 'Business days, recipient TZ' },
+  { idx: 3, kind: 'send',    delay: 'D3',    label: 'Soft follow-up',       variants: 2, note: 'Reply prompts top quoted' },
+  { idx: 4, kind: 'branch',  delay: '+2d',   label: 'Branch · opened ≥ 2?', variants: 0, note: 'Take fast lane if engaged' },
+  { idx: 5, kind: 'send',    delay: 'D5',    label: 'Referral ask',          variants: 1, note: 'Asks for the right person' },
+  { idx: 6, kind: 'send',    delay: 'D12',   label: 'Final break-up',       variants: 2, note: 'Last touch · permission close' },
+  { idx: 7, kind: 'event',   delay: 'on reply',  label: 'Auto-pause',       variants: 0, note: 'Sequence halts for this contact' },
+];
+
+const kindStyle = (k: string) => {
+  if (k === 'send')   return { dot: 'bg-[#0284c7]',  chip: 'bg-[color:var(--sky-1)] text-[#0369a1]', label: 'SEND' };
+  if (k === 'wait')   return { dot: 'bg-slate-400',  chip: 'bg-slate-100 text-slate-700',            label: 'WAIT' };
+  if (k === 'branch') return { dot: 'bg-amber-500',  chip: 'bg-amber-50 text-amber-700',              label: 'BRANCH' };
+  return                       { dot: 'bg-emerald-500', chip: 'bg-emerald-50 text-emerald-700',       label: 'EVENT' };
+};
+
+const senderPool = [
+  { addr: 'ben@acme.com',   role: 'AE',  cap: 100, today: 47 },
+  { addr: 'sara@acme.com',  role: 'AE',  cap: 100, today: 51 },
+  { addr: 'mark@acme.com',  role: 'BDR', cap: 100, today: 49 },
+  { addr: 'kai@acme.com',   role: 'BDR', cap: 100, today: 53 },
+];
+
+const autoStop = [
+  ['Replied',          'Recipient stopped, sequence pauses for them. Other recipients unaffected.'],
+  ['Hard bounce',      'Recipient suppressed across the workspace. No further sends.'],
+  ['Soft bounce x3',   'Recipient suppressed after the third soft bounce on the same domain.'],
+  ['Unsubscribed',     'One-click unsubscribe via list-unsubscribe header. Suppression applied immediately.'],
+  ['OOO classified',   'Sequence pauses until the OOO end date parsed from the body.'],
+  ['Manual suppress',  'Operator-added suppressions apply across all sequences in the workspace.'],
+];
+
+const faq = [
+  ['Can a sequence have parallel paths?', 'Yes. A branch step evaluates a condition (opened, clicked, replied, custom field) and selects which following step to run next. Branches do not fan out in parallel; one path is chosen per recipient.'],
+  ['How do A/B variants get picked?',     'Variants are assigned per-recipient at sequence start using a stable hash so the same recipient always sees the same variant across retries. We report which variant earned the reply.'],
+  ['What if a sender mailbox goes over its cap mid-day?', 'The scheduler skips it for the rest of the day and round-robins the remaining sends across the other healthy mailboxes in the pool. The sequence does not stall.'],
+  ['Are sequences versioned?',            'Yes. Saving a sequence creates a new version. In-flight recipients continue on the version they started on; new recipients join the latest version.'],
 ];
 ---
 <Layout
-  title="Campaigns & sequences · Warmbly"
+  title="Campaigns · Warmbly"
   description="Multi-step sequences with branching, A/B variants, business-hour scheduling and per-mailbox distribution."
 >
-  <!-- HERO: title left, live step-list mock right -->
-  <section class="relative isolate overflow-hidden text-white" style="background: radial-gradient(ellipse 130% 140% at 72% 28%, #0284c7 0%, #0369a1 25%, #075985 50%, #0c4a6e 80%, #0a3d5c 100%);">
-    <div class="absolute top-0 right-0 w-[420px] opacity-30 pointer-events-none cloud-drift cloud-1" style="mix-blend-mode: screen;">
-      <Cloud variant={5} opacity={1} />
-    </div>
+  <!-- ============================================================
+       HERO · HeroAtmosphere, same as home / pricing / warmup
+  ============================================================ -->
+  <section class="relative isolate overflow-hidden">
+    <HeroAtmosphere />
 
-    <div class="container-page relative pt-16 md:pt-20 pb-20 md:pb-24 grid lg:grid-cols-[1fr_1.1fr] gap-12 items-center">
-      <div>
-        <div class="text-[11px] uppercase tracking-[0.18em] text-white/55 font-mono mb-4">Campaigns</div>
-        <h1 class="text-[36px] sm:text-[52px] md:text-[60px] font-semibold tracking-[-0.03em] leading-[1.02] text-white">
-          Sequences as configuration.
-        </h1>
-        <p class="mt-5 text-[15.5px] md:text-[17px] text-white/75 leading-relaxed max-w-xl">
-          A campaign is a sequence, a contact list and a sender pool. Define it once. We balance sends across the pool so no mailbox does the work of ten.
-        </p>
+    <div class="container-page relative pt-16 md:pt-24 pb-44 md:pb-56 text-center">
+      <div class="inline-flex items-center gap-2 h-7 pl-1 pr-3 rounded-full bg-white/15 backdrop-blur ring-1 ring-white/25 text-[12px] text-white/95 shadow-[0_4px_14px_-4px_rgba(0,0,0,0.25)]">
+        <span class="inline-flex items-center h-5 px-1.5 rounded-full text-[10.5px] font-semibold uppercase tracking-[0.06em] bg-white" style="color:#0369a1;">
+          Campaigns
+        </span>
+        Sequences as configuration, not a builder UI
       </div>
 
-      <!-- Step list -->
-      <div class="rounded-[14px] bg-white/[0.06] backdrop-blur ring-1 ring-white/15 p-4 md:p-5">
-        <div class="flex items-center justify-between mb-3 px-2">
-          <div class="text-[10.5px] uppercase tracking-[0.16em] font-mono text-white/55">Sequence · acme-fy26-q2</div>
-          <div class="inline-flex items-center gap-1.5 text-[11px] text-emerald-300">
-            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-            running
+      <h1 class="mt-8 md:mt-10 text-[44px] sm:text-6xl md:text-[72px] lg:text-[80px] font-semibold tracking-[-0.04em] leading-[0.98] text-white max-w-4xl mx-auto">
+        12 steps. 4 variants.<br/>One source of truth.
+      </h1>
+      <p class="mt-6 text-[17px] md:text-[19px] text-white/80 max-w-2xl mx-auto leading-relaxed">
+        Multi-step sequences with reply-aware branching, A/B variants, and business-hour delays in the recipient time zone. Edit in the visual builder or commit the YAML.
+      </p>
+
+      <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
+        <a href="https://app.warmbly.com/register" class="inline-flex h-11 px-5 items-center gap-2 rounded-[10px] text-[14.5px] font-semibold bg-white hover:bg-white hover:-translate-y-0.5 hover:shadow-[0_12px_28px_-6px_rgba(0,0,0,0.3)] transition-all duration-200 ease-out shadow-[0_4px_14px_-2px_rgba(0,0,0,0.18)]">
+          <span style="color:#075985;">Build your first sequence</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#075985" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>
+          </svg>
+        </a>
+        <a href="/learn/cold-email-rules/" class="inline-flex h-11 px-5 items-center rounded-[10px] text-[14.5px] font-medium bg-white/10 backdrop-blur ring-1 ring-white/40 text-white hover:bg-white/20 hover:-translate-y-0.5 transition-all duration-200 ease-out">
+          Read the cold-email rules
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       LIVE SEQUENCE · floating card with the real step list
+  ============================================================ -->
+  <section class="relative -mt-36 md:-mt-44 pb-16 md:pb-24 z-10">
+    <div class="container-page">
+      <div class="rounded-[18px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden shadow-[0_40px_90px_-30px_rgba(2,32,71,0.35),0_12px_30px_-12px_rgba(15,23,42,0.12)]">
+
+        <!-- Header strip -->
+        <div class="px-7 py-4 border-b border-[color:var(--border)] bg-[color:var(--surface-1)]/70 flex flex-wrap items-baseline justify-between gap-3">
+          <div class="flex items-baseline gap-3">
+            <div class="text-[13px] font-semibold text-heading">acme-fy26-q2</div>
+            <span class="inline-flex items-center gap-1.5 h-5 px-2 rounded-full bg-emerald-50 text-emerald-700 text-[10.5px] font-medium font-mono uppercase tracking-[0.08em]">
+              <span class="w-1 h-1 rounded-full bg-emerald-500"></span>
+              Running
+            </span>
+            <span class="text-[10.5px] font-mono uppercase tracking-[0.14em] text-muted-foreground">v3 · 412 recipients</span>
+          </div>
+          <div class="flex items-center gap-4 text-[10.5px] font-mono text-muted-foreground">
+            <span>6 steps</span>
+            <span class="w-1 h-1 rounded-full bg-[color:var(--border)]"></span>
+            <span>8 active variants</span>
+            <span class="w-1 h-1 rounded-full bg-[color:var(--border)]"></span>
+            <span>4 sender mailboxes</span>
           </div>
         </div>
-        <div class="space-y-1.5">
-          {steps.map((s) => (
-            <div class="grid grid-cols-[40px_auto_1fr_auto] gap-3 items-center px-3 py-2.5 rounded-[10px] bg-white/[0.05] ring-1 ring-white/10 text-white">
-              <div class="text-[11px] font-mono text-white/45">{String(s.n).padStart(2, '0')}</div>
-              <div class={`text-[10.5px] font-mono px-1.5 py-0.5 rounded ${s.tone === 'amber' ? 'bg-amber-400/15 text-amber-200' : s.tone === 'emerald' ? 'bg-emerald-400/15 text-emerald-200' : 'bg-sky-400/15 text-sky-200'}`}>
-                {s.delay}
-              </div>
-              <div class="text-[13px] font-medium truncate">{s.label}</div>
-              <div class="text-[10.5px] font-mono text-white/55">{s.variants}</div>
-            </div>
-          ))}
+
+        <!-- Step list with relations -->
+        <div class="px-7 py-6">
+          <ol class="space-y-1.5">
+            {sequence.map((s, i) => {
+              const st = kindStyle(s.kind);
+              return (
+                <li class="relative grid grid-cols-[40px_70px_120px_1fr_auto] gap-4 items-center px-4 py-3 rounded-[10px] hover:bg-[color:var(--surface-1)] transition-colors">
+                  <!-- Index + spine -->
+                  <div class="relative">
+                    {i > 0 && <div class="absolute left-1/2 -translate-x-1/2 -top-[14px] bottom-1/2 w-px bg-[color:var(--border)]"></div>}
+                    <div class={`relative w-6 h-6 rounded-full ${st.dot} text-white text-[10px] font-mono font-semibold inline-flex items-center justify-center mx-auto`}>
+                      {s.idx}
+                    </div>
+                  </div>
+                  <div class="text-[10.5px] font-mono text-muted-foreground">{s.delay}</div>
+                  <span class={`inline-flex items-center h-5 px-1.5 rounded text-[10px] font-mono font-semibold tracking-[0.08em] ${st.chip}`}>
+                    {st.label}
+                  </span>
+                  <div>
+                    <div class="text-[14px] font-medium text-heading">{s.label}</div>
+                    <div class="mt-0.5 text-[11.5px] text-foreground/55">{s.note}</div>
+                  </div>
+                  <div class="text-right">
+                    {s.variants > 0
+                      ? <span class="font-mono text-[11px] text-muted-foreground">{s.variants} {s.variants === 1 ? 'variant' : 'variants'}</span>
+                      : <span class="font-mono text-[11px] text-muted-foreground/55">—</span>
+                    }
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- CONFIG: YAML-style preview + side description -->
-  <section class="py-16 md:py-24">
-    <div class="container-page grid lg:grid-cols-[1fr_1.2fr] gap-12 lg:gap-16 items-start">
-      <div class="lg:sticky lg:top-24 self-start">
-        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Sequence config</div>
+  <!-- ============================================================
+       VARIABLES + FALLBACKS · the real template engine
+  ============================================================ -->
+  <section class="border-y border-[color:var(--border)] bg-[color:var(--surface-1)]/40 py-20 md:py-28">
+    <div class="container-page grid lg:grid-cols-[1fr_1.3fr] gap-12 lg:gap-16 items-start">
+      <div class="lg:sticky lg:top-24" style="align-self: start;">
+        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Variables · fallbacks</div>
         <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
-          Declarative. Versionable. Diffable.
+          Real personalisation. Explicit fallbacks.
         </h2>
-        <p class="mt-5 text-[15.5px] text-foreground/75 leading-relaxed max-w-md">
-          Sequences are real configuration. You can edit them in the visual builder, or open the YAML and commit it. Same source of truth either way.
+        <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed max-w-md">
+          Variables pull from any contact field, including custom ones and CRM enrichment. Fallback chains are explicit so a missing field never embarrasses you.
         </p>
-        <ul class="mt-6 space-y-2.5">
-          {[
-            'Plain text first · HTML opt-in',
-            'Variables with explicit fallback chains',
-            'Branching on opened · clicked · replied',
-            'Business-hour delays in recipient TZ',
-          ].map((b) => (
-            <li class="flex items-start gap-2 text-[14px] text-foreground/85">
-              <Icon name="check" size={13} class="text-[color:var(--sky-6)] mt-1 shrink-0" />
-              <span>{b}</span>
-            </li>
-          ))}
+        <ul class="mt-6 space-y-2.5 text-[14px] text-foreground/85">
+          <li class="flex items-start gap-2"><Icon name="check" size={13} class="text-[#0284c7] mt-1 shrink-0"/><span>Pipe syntax chains multiple fallbacks.</span></li>
+          <li class="flex items-start gap-2"><Icon name="check" size={13} class="text-[#0284c7] mt-1 shrink-0"/><span>Conditional blocks for sender-specific signatures.</span></li>
+          <li class="flex items-start gap-2"><Icon name="check" size={13} class="text-[#0284c7] mt-1 shrink-0"/><span>Linter flags any token that has no fallback.</span></li>
         </ul>
       </div>
 
-      <div class="rounded-[14px] overflow-hidden ring-1 ring-[color:var(--border)]" style="box-shadow: var(--shadow-sm);">
+      <div class="rounded-[14px] overflow-hidden ring-1 ring-[color:var(--border)]">
         <div class="flex items-center gap-2 px-4 py-2.5 bg-[#0c1224] border-b border-white/10">
           <span class="w-2.5 h-2.5 rounded-full bg-[#ff5f56]/80"></span>
           <span class="w-2.5 h-2.5 rounded-full bg-[#ffbd2e]/80"></span>
           <span class="w-2.5 h-2.5 rounded-full bg-[#27c93f]/80"></span>
-          <span class="ml-3 text-[11.5px] font-mono text-white/60">acme-fy26-q2.yaml</span>
+          <span class="ml-3 text-[11.5px] font-mono text-white/60">step-01.body.txt</span>
         </div>
-        <pre class="bg-[#0c1224] text-white/85 p-5 text-[12.5px] leading-[1.65] font-mono overflow-x-auto"><code><span style="color:#94a3b8"># Plain-text sequence. No pixels. Real fallbacks.</span>
-<span style="color:#7dd3fc">campaign</span>: acme-fy26-q2
-<span style="color:#7dd3fc">pool</span>:
-  - ben@acme.com
-  - sara@acme.com
-  - mark@acme.com
+        <pre class="bg-[#0c1224] text-white/85 p-5 text-[12.5px] leading-[1.7] font-mono overflow-x-auto"><code>Hi &#123;&#123; first_name | fallback: <span style="color:#fde68a">"there"</span> &#125;&#125;,
 
-<span style="color:#7dd3fc">steps</span>:
-  <span style="color:#f472b6">- send</span>:
-      delay: <span style="color:#fde68a">0d</span>
-      subject: <span style="color:#fde68a">"thought you'd find this useful"</span>
-      body: <span style="color:#fde68a">|</span>
-        Hi &#123;&#123; first_name | fallback: <span style="color:#fde68a">"there"</span> &#125;&#125;,
+Saw &#123;&#123; company.name &#125;&#125; just &#123;&#123;
+  news.summary | fallback: news.last_round
+              | fallback: <span style="color:#fde68a">"raised your seed round"</span>
+&#125;&#125;.
 
-        Saw &#123;&#123; company &#125;&#125; just &#123;&#123; news.summary
-          | fallback: <span style="color:#fde68a">"raised your seed"</span> &#125;&#125;.
+Quick question on &#123;&#123;
+  custom.pain | fallback: custom.title_pain
+              | fallback: <span style="color:#fde68a">"outbound"</span>
+&#125;&#125; since you took over as &#123;&#123; title &#125;&#125;?
 
-        Quick question on &#123;&#123; custom.pain
-          | fallback: <span style="color:#fde68a">"outbound"</span> &#125;&#125;?
+&#123;<span style="color:#7dd3fc">% if sender.role == <span style="color:#fde68a">"founder"</span> %</span>&#125;
+Happy to share the way we approached this for our team.
+&#123;<span style="color:#7dd3fc">% else %</span>&#125;
+Happy to share a quick walkthrough if useful.
+&#123;<span style="color:#7dd3fc">% endif %</span>&#125;
 
-  <span style="color:#f472b6">- send</span>:
-      delay: <span style="color:#fde68a">3d</span>
-      variants: [<span style="color:#fde68a">A</span>, <span style="color:#fde68a">B</span>]
-
-  <span style="color:#f472b6">- branch</span>:
-      <span style="color:#f472b6">if</span>: opened &gt;= <span style="color:#fde68a">2</span>
-      <span style="color:#f472b6">then</span>: send_now
-      <span style="color:#f472b6">else</span>: wait <span style="color:#fde68a">5d</span>
-
-<span style="color:#7dd3fc">on_reply</span>: pause
-<span style="color:#7dd3fc">on_bounce</span>: suppress
-<span style="color:#7dd3fc">business_hours</span>: recipient_tz</code></pre>
+— &#123;&#123; sender.first_name &#125;&#125;</code></pre>
       </div>
     </div>
   </section>
 
-  <!-- TIMELINE: visual day-by-day strip -->
-  <section class="bg-[color:var(--surface-1)] border-y border-[color:var(--border)] py-16 md:py-24 overflow-hidden">
+  <!-- ============================================================
+       SENDER POOL DISTRIBUTION · unique fan-out diagram
+  ============================================================ -->
+  <section class="border-b border-[color:var(--border)] py-20 md:py-28">
     <div class="container-page">
-      <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Timeline</div>
-      <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading max-w-2xl">
-        Steps spaced by business days in the recipient time zone.
-      </h2>
-      <p class="mt-4 text-[15.5px] text-foreground/75 max-w-xl">
-        Weekends don't count. Holidays don't count. You set the window once; we send when their inbox is open.
-      </p>
+      <div class="max-w-2xl mb-12">
+        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Sender pool</div>
+        <h2 class="text-[32px] md:text-[44px] font-semibold tracking-[-0.03em] leading-[1.05] text-heading">
+          One campaign, many mailboxes.
+        </h2>
+        <p class="mt-4 text-[15.5px] text-foreground/70 leading-relaxed">
+          A sequence sends through a pool of mailboxes, not one. The scheduler round-robins recipients across the pool with awareness of each mailbox's daily cap and current health band. No single mailbox carries the campaign.
+        </p>
+      </div>
 
-      <div class="mt-12 relative">
-        <div class="absolute left-0 right-0 top-[36px] h-px bg-[color:var(--border)]"></div>
-        <div class="grid grid-cols-14 gap-0">
-          {Array.from({ length: 14 }).map((_, i) => {
-            const isWeekend = i % 7 === 5 || i % 7 === 6;
-            const isSendDay = [0, 3, 9].includes(i);
-            const isBranchDay = i === 6;
+      <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden">
+        <!-- Diagram strip -->
+        <div class="relative p-8 md:p-10">
+          <svg viewBox="0 0 900 220" class="w-full h-auto max-h-[260px]" aria-label="One campaign distributing sends to four mailboxes">
+            <defs>
+              <linearGradient id="flowLine" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stop-color="#0284c7" stop-opacity="0.4"/>
+                <stop offset="100%" stop-color="#0284c7" stop-opacity="0.15"/>
+              </linearGradient>
+            </defs>
+
+            <!-- Campaign source on the left -->
+            <g>
+              <rect x="20" y="80" width="180" height="60" rx="12" fill="#0c4a6e"/>
+              <text x="110" y="103" text-anchor="middle" fill="#7dd3fc" font-size="9" font-family="ui-monospace,monospace" letter-spacing="2">CAMPAIGN</text>
+              <text x="110" y="122" text-anchor="middle" fill="#ffffff" font-size="13" font-weight="600">acme-fy26-q2</text>
+            </g>
+
+            <!-- 4 mailbox cards on the right -->
+            {senderPool.map((m, i) => {
+              const yTop = 10 + i * 50;
+              return (
+                <g>
+                  <rect x="640" y={yTop} width="240" height="40" rx="8" fill="#f8fafc" stroke="#e6ebf2"/>
+                  <text x="656" y={yTop + 18} fill="#0f172a" font-size="11.5" font-family="ui-monospace,monospace" font-weight="600">{m.addr}</text>
+                  <text x="656" y={yTop + 32} fill="#64748b" font-size="10" font-family="ui-monospace,monospace">{m.role} · {m.today}/{m.cap} today</text>
+                  <line x1="200" y1="110" x2="640" y2={yTop + 20} stroke="url(#flowLine)" stroke-width="1.5"/>
+                  <!-- Moving dot -->
+                  <circle r="3" fill="#0284c7" opacity="0.95">
+                    <animateMotion dur={`${4 + i * 0.4}s`} repeatCount="indefinite" begin={`${i * 0.5}s`}
+                      path={`M 200 110 L 640 ${yTop + 20}`}/>
+                  </circle>
+                </g>
+              );
+            })}
+          </svg>
+        </div>
+
+        <!-- Pool stats table -->
+        <div class="border-t border-[color:var(--border)]">
+          <div class="grid grid-cols-[1.4fr_60px_1fr_80px_80px] px-7 py-2.5 bg-[color:var(--surface-1)] border-b border-[color:var(--border)] text-[10px] uppercase tracking-[0.16em] font-mono text-muted-foreground">
+            <div>Mailbox</div>
+            <div>Role</div>
+            <div>Today</div>
+            <div class="text-right">Cap</div>
+            <div class="text-right">Headroom</div>
+          </div>
+          {senderPool.map((m) => {
+            const pct = Math.round((m.today / m.cap) * 100);
             return (
-              <div class="relative flex flex-col items-center pt-2">
-                <div class={`text-[10.5px] font-mono ${isWeekend ? 'text-muted-foreground/40' : 'text-muted-foreground'}`}>
-                  D{i}
+              <div class="grid grid-cols-[1.4fr_60px_1fr_80px_80px] px-7 py-3 border-b border-[color:var(--border)] last:border-b-0 items-center text-[12.5px]">
+                <div class="font-mono text-foreground/85">{m.addr}</div>
+                <div class="text-foreground/55 text-[11px] font-mono">{m.role}</div>
+                <div class="pr-4">
+                  <div class="h-1.5 rounded-full overflow-hidden bg-[color:var(--surface-1)]">
+                    <div class="h-full bg-[#0284c7]" style={`width: ${pct}%`}></div>
+                  </div>
                 </div>
-                <div class="h-5 flex items-end">
-                  {isSendDay && <div class="w-2.5 h-2.5 rounded-full bg-[color:var(--sky-6)] ring-2 ring-white"></div>}
-                  {isBranchDay && <div class="w-2.5 h-2.5 rounded-full bg-amber-500 ring-2 ring-white"></div>}
-                  {!isSendDay && !isBranchDay && <div class={`w-1 h-1 rounded-full ${isWeekend ? 'bg-muted-foreground/20' : 'bg-muted-foreground/40'}`}></div>}
-                </div>
-                <div class="mt-2 text-[10px] text-muted-foreground/80 leading-tight text-center">
-                  {isSendDay && (i === 0 ? 'Send' : i === 3 ? 'Follow-up' : 'Break-up')}
-                  {isBranchDay && 'Branch'}
-                </div>
+                <div class="text-right font-mono text-foreground/75">{m.cap}</div>
+                <div class="text-right font-mono text-[#0284c7] font-semibold">{m.cap - m.today}</div>
               </div>
             );
           })}
         </div>
 
-        <div class="mt-8 flex flex-wrap gap-4 text-[12px] text-muted-foreground">
-          <span class="inline-flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-[color:var(--sky-6)]"></span> Send step</span>
-          <span class="inline-flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-amber-500"></span> Branch evaluation</span>
-          <span class="inline-flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-muted-foreground/40"></span> Quiet day</span>
-          <span class="inline-flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-muted-foreground/20"></span> Weekend · skipped</span>
+        <div class="px-7 py-3 border-t border-[color:var(--border)] bg-[color:var(--surface-1)]/60 flex items-center justify-between text-[11.5px] font-mono text-muted-foreground">
+          <span>Round-robin · health-aware · cap-aware</span>
+          <span>Pool headroom: 200 sends today</span>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- FEATURES: 4x2 plain grid -->
-  <section class="py-16 md:py-24">
+  <!-- ============================================================
+       AUTO-STOP RULES · what halts a sequence (real)
+  ============================================================ -->
+  <section class="border-b border-[color:var(--border)] bg-[color:var(--surface-1)]/40 py-20 md:py-24">
     <div class="container-page">
-      <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">What a sequence does</div>
-      <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading max-w-2xl">
-        Steps, conditions, and the time it took to plan them.
-      </h2>
+      <div class="max-w-2xl mb-12">
+        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Auto-stop rules</div>
+        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
+          Six reasons we stop sending to a recipient.
+        </h2>
+        <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed">
+          Suppression is propagated across every sequence in the workspace. A bounced contact never gets retried by another sequence by accident.
+        </p>
+      </div>
 
-      <div class="mt-12 grid sm:grid-cols-2 lg:grid-cols-4 gap-px bg-[color:var(--border)] rounded-[14px] overflow-hidden ring-1 ring-[color:var(--border)]" style="box-shadow: var(--shadow-sm);">
-        {features.map((f) => (
-          <div class="bg-white p-5">
-            <div class="w-9 h-9 rounded-[8px] bg-[color:var(--sky-1)] text-[color:var(--sky-6)] inline-flex items-center justify-center mb-3">
-              <Icon name={f.icon} size={16} />
+      <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-px bg-[color:var(--border)] rounded-[12px] overflow-hidden ring-1 ring-[color:var(--border)]">
+        {autoStop.map(([k, v], i) => (
+          <div class="bg-white p-6">
+            <div class="flex items-baseline justify-between mb-2">
+              <span class="text-[10.5px] font-mono uppercase tracking-[0.18em] text-muted-foreground">Rule {String(i + 1).padStart(2, '0')}</span>
+              <span class="inline-flex items-center gap-1 text-[10.5px] font-mono text-rose-600">
+                <span class="w-1 h-1 rounded-full bg-rose-500"></span>
+                stop
+              </span>
             </div>
-            <div class="text-[14.5px] font-semibold text-heading">{f.title}</div>
-            <p class="mt-1.5 text-[12.5px] text-foreground/70 leading-relaxed">{f.body}</p>
+            <div class="text-[15px] font-semibold text-heading">{k}</div>
+            <p class="mt-1.5 text-[13px] text-foreground/65 leading-relaxed">{v}</p>
           </div>
         ))}
       </div>
     </div>
   </section>
 
-  <CTA primaryLabel="Build your first sequence" />
+  <!-- ============================================================
+       LIMITS · clean 2-col spec sheet
+  ============================================================ -->
+  <section class="py-20 md:py-28">
+    <div class="container-page">
+      <div class="max-w-2xl mb-12">
+        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Limits</div>
+        <h2 class="text-[32px] md:text-[44px] font-semibold tracking-[-0.03em] leading-[1.05] text-heading">
+          The numbers a sequence respects.
+        </h2>
+        <p class="mt-4 text-[15.5px] text-foreground/70 leading-relaxed">
+          Hard limits in the codebase. Override what you can in settings, but the per-mailbox cap is enforced server-side regardless.
+        </p>
+      </div>
 
-  <style>
-    .grid-cols-14 { grid-template-columns: repeat(14, minmax(0, 1fr)); }
-  </style>
+      <div class="grid md:grid-cols-2 gap-x-12 gap-y-px">
+        {limits.map((d, i) => (
+          <div class="grid grid-cols-[1fr_auto] gap-6 py-6 border-b border-[color:var(--border)] items-baseline hover:bg-[color:var(--surface-1)]/40 -mx-3 px-3 rounded-[6px] transition-colors">
+            <div>
+              <div class="text-[10.5px] uppercase tracking-[0.22em] font-mono text-muted-foreground">
+                {String(i + 1).padStart(2, '0')} · {d.k}
+              </div>
+              <p class="mt-2 text-[13.5px] text-foreground/65 leading-relaxed max-w-md">{d.why}</p>
+            </div>
+            <div class="text-right">
+              <div class="text-[22px] md:text-[26px] font-semibold tracking-[-0.02em] text-heading font-mono whitespace-nowrap">{d.v}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div class="mt-8 text-[11.5px] font-mono text-muted-foreground">
+        Source: <span class="text-foreground/75">internal/scheduler/campaign_scheduler.go</span> · <span class="text-foreground/75">internal/config/constants.go</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       FAQ · same animated pattern as pricing / warmup
+  ============================================================ -->
+  <section class="bg-[color:var(--surface-1)]/40 border-t border-[color:var(--border)] py-20 md:py-24">
+    <div class="container-page grid lg:grid-cols-[1fr_1.8fr] gap-12 lg:gap-20 items-start">
+      <div class="lg:sticky lg:top-24" style="align-self: start;">
+        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">FAQ</div>
+        <h2 class="text-[28px] md:text-[36px] font-semibold tracking-[-0.025em] leading-[1.08] text-heading">
+          Four operational questions.
+        </h2>
+      </div>
+      <div class="divide-y divide-[color:var(--border)]" data-faq>
+        {faq.map(([q, a]) => (
+          <div class="faq-row py-2">
+            <button type="button" class="faq-trigger group w-full flex items-start justify-between gap-4 py-3 text-left" aria-expanded="false">
+              <span class="text-[15.5px] font-medium text-heading group-hover:text-[#0369a1] transition-colors">{q}</span>
+              <span class="faq-icon shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-full bg-white ring-1 ring-[color:var(--border)] text-foreground/60 transition-transform duration-300 ease-out">
+                <Icon name="plus" size={12} />
+              </span>
+            </button>
+            <div class="faq-panel grid grid-rows-[0fr] transition-[grid-template-rows] duration-300 ease-out">
+              <div class="overflow-hidden">
+                <p class="pb-4 pr-12 text-[14px] text-foreground/75 leading-relaxed max-w-2xl">{a}</p>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <script is:inline>
+        (function () {
+          const faq = document.querySelector('[data-faq]');
+          if (!faq) return;
+          faq.querySelectorAll('.faq-trigger').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+              const row   = btn.closest('.faq-row');
+              const panel = row.querySelector('.faq-panel');
+              const icon  = btn.querySelector('.faq-icon');
+              const open  = btn.getAttribute('aria-expanded') === 'true';
+              btn.setAttribute('aria-expanded', String(!open));
+              panel.style.gridTemplateRows = open ? '0fr' : '1fr';
+              if (icon) icon.style.transform = open ? 'rotate(0deg)' : 'rotate(45deg)';
+            });
+          });
+        })();
+      </script>
+    </div>
+  </section>
+
+  <CTA
+    title="Build your first sequence in five minutes."
+    description="Connect a mailbox, pick a contact list, write the first step."
+    primaryLabel="Start free trial"
+    primaryHref="https://app.warmbly.com/register"
+  />
 </Layout>
