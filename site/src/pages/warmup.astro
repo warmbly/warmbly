@@ -1,280 +1,377 @@
 ---
 import Layout from '../layouts/Layout.astro';
+import HeroAtmosphere from '../components/HeroAtmosphere.astro';
 import Icon from '../components/Icon.astro';
+import CTA from '../components/CTA.astro';
 
-// Mailbox rows for the dashboard mock
-const mailboxes = [
-  { addr: 'ben@acme.com',    day: 14, ramp: [10,11,12,13,14,15,16,17,18,19,20,21,22,23,24], today: 24, cap: 40, state: 'healthy' },
-  { addr: 'sara@acme.com',   day:  9, ramp: [10,11,12,13,14,15,16,17,18,19],                today: 19, cap: 40, state: 'healthy' },
-  { addr: 'mark@acme.com',   day: 22, ramp: [10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32], today: 32, cap: 40, state: 'watch' },
-  { addr: 'kai@acme.com',    day: 31, ramp: [10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,40], today: 40, cap: 40, state: 'healthy' },
-  { addr: 'rae@acme.com',    day:  4, ramp: [10,11,12,13,14],  today: 14, cap: 40, state: 'healthy' },
-  { addr: 'jules@acme.com',  day: 18, ramp: [10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28], today: 28, cap: 40, state: 'healthy' },
-];
-
-const stateChip = (s: string) => {
-  if (s === 'healthy')     return { dot: 'bg-emerald-500', chip: 'bg-emerald-50 text-emerald-700', label: 'Healthy' };
-  if (s === 'watch')       return { dot: 'bg-amber-500',   chip: 'bg-amber-50 text-amber-700',     label: 'Watch' };
-  if (s === 'quarantined') return { dot: 'bg-rose-500',    chip: 'bg-rose-50 text-rose-700',       label: 'Quarantined' };
-  return { dot: 'bg-slate-500', chip: 'bg-slate-100 text-slate-700', label: 'Blocked' };
-};
-
-const cycle = [
-  { n: '01', label: 'Pool match',          body: 'A partner mailbox is chosen from the premium pool with recent-partner avoidance.' },
-  { n: '02', label: 'Token issue',         body: 'A verification token is minted and embedded into the outbound message.' },
-  { n: '03', label: 'Send',                body: 'The message is dispatched through the assigned worker on the mailbox\'s schedule.' },
-  { n: '04', label: 'Partner receives',    body: 'The receiving mailbox classifies the message and reports inbox / spam / Promotions.' },
-  { n: '05', label: 'Score update',        body: 'Placement and token validity feed the per-mailbox spam score and health band.' },
-  { n: '06', label: 'Ramp + repeat',       body: 'Daily volume increases by 1 if health is good. The loop runs again tomorrow.' },
-];
-
-const transitions = [
-  { from: 'Healthy',     to: 'Watch',       trigger: 'spam ≥ 10% (20-delivery sample)',  action: 'Lower volume, increase spacing' },
-  { from: 'Watch',       to: 'Quarantined', trigger: 'spam ≥ 20% or complaints ≥ 0.10%', action: 'Removed from pool for 7 days' },
-  { from: 'Quarantined', to: 'Blocked',     trigger: 'spam ≥ 40% or 3 invalid tokens',   action: '30-day block, manual review' },
-  { from: 'Quarantined', to: 'Healthy',     trigger: '7-day cooldown + 20-delivery probation', action: 'Re-entry to pool' },
-];
+// All numbers below come from the Warmbly codebase / CLAUDE.md
+// (internal/scheduler/warmup_scheduler.go, internal/repository/pg_warmup.go,
+// internal/infrastructure/db/migrations/000010_warmup_pools.up.sql).
 
 const defaults = [
-  ['Starting volume',     '10 / day'],
-  ['Daily ramp',          '+1 / day'],
-  ['Volume ceiling',      '40 / day'],
-  ['Reply rate target',   '30%'],
-  ['Recent-partner gap',  '7 days'],
-  ['Spam-score block',    '> 50'],
-  ['Invalid token block', '≥ 3 / 24h'],
-  ['Re-entry probation',  '20 deliveries'],
+  { k: 'Starting volume',     v: '10 / day',       why: 'Low enough to read as normal individual activity to any provider.' },
+  { k: 'Daily ramp',          v: '+1 / day',       why: 'Aggressive ramps trip volume-anomaly heuristics on the receiver.' },
+  { k: 'Volume ceiling',      v: '40 / day',       why: 'Maintains reputation without crowding the cold-campaign budget.' },
+  { k: 'Recent-partner gap',  v: '7 days',         why: 'Stops two mailboxes from forming a degenerate warmup pair.' },
+  { k: 'Spam-score block',    v: '> 50',           why: 'Removes proactively, before mailbox providers act.' },
+  { k: 'Invalid token block', v: '≥ 3 / 24h',      why: 'A flurry of malformed tokens is the token-forgery signature.' },
+  { k: 'Re-entry probation',  v: '20 deliveries',  why: 'Enough fresh data to confirm health, not just dormancy.' },
+];
+
+// Bands from CLAUDE.md "Recommended internal policy for shared paid pools".
+const bands = [
+  { name: 'Healthy',     tone: 'emerald', spam: '< 10%',  complaint: '< 0.03%', bounce: '< 1%',   action: 'Default state. Continue ramp.' },
+  { name: 'Watch',       tone: 'amber',   spam: '≥ 10%',  complaint: '≥ 0.03%', bounce: '—',      action: 'Lower volume, increase spacing.' },
+  { name: 'Quarantined', tone: 'rose',    spam: '≥ 20%',  complaint: '≥ 0.10%', bounce: '≥ 5%',   action: 'Removed from shared paid pool for 7 days.' },
+  { name: 'Blocked',     tone: 'rose',    spam: '≥ 40%',  complaint: '≥ 0.30%', bounce: '≥ 10%',  action: '30-day block. Review required for re-entry.' },
+];
+
+const toneClass = (t: string) => {
+  if (t === 'emerald') return { dot: 'bg-emerald-500', chip: 'bg-emerald-50 text-emerald-700' };
+  if (t === 'amber')   return { dot: 'bg-amber-500',   chip: 'bg-amber-50 text-amber-700' };
+  return { dot: 'bg-rose-500', chip: 'bg-rose-50 text-rose-700' };
+};
+
+// Pool model from migration 000010 + pg_warmup.go.
+const pools = [
+  { name: 'Free pool',     when: 'Free trial',           features: ['Trial mailboxes only', 'Same quarantine thresholds', 'Lower starting volume'] },
+  { name: 'Premium pool',  when: 'Starter, Grow, Business', features: ['Vetted mailboxes only', 'Stricter quarantine policy', 'Recovery pool for cooldown senders'], featured: true },
+  { name: 'Dedicated',     when: 'Enterprise',           features: ['Isolated worker + IP', 'Still participates in premium pool', 'Per-mailbox reputation, not infrastructure shortcut'] },
+];
+
+const faq = [
+  ['How long does warmup take?', 'Plan on 3 to 6 weeks for a brand new mailbox to reach a stable warmed state. We ramp +1 / day from a 10 / day start with a 40 / day ceiling.'],
+  ['Do free and premium pools mix?', 'No. Free pool mailboxes never silently appear in the premium pool. Dedicated workers still participate in the premium pool by default.'],
+  ['What triggers quarantine?', '3 or more invalid warmup tokens in 24h, spam score above 50, complaint rate over 0.10%, or spam-folder placement over 20% on at least 20 deliveries in 7 days.'],
+  ['Can I keep warming after campaigns start?', 'Yes, and you should. Warmup runs in parallel with cold sending so any reputation dip is caught and offset before campaigns hit it.'],
 ];
 ---
 <Layout
   title="Warmup · Warmbly"
-  description="Reputation-safe warmup pools with gradual ramps, verification tokens, and quarantine bands stricter than provider enforcement."
+  description="Reputation-safe warmup pools. Verification tokens, gradual ramps, and quarantine bands stricter than provider enforcement."
 >
   <!-- ============================================================
-       HERO — editorial split, dashboard mock dominates the right
+       HERO — HeroAtmosphere, same as home and pricing
   ============================================================ -->
-  <section class="border-b border-[color:var(--border)] bg-white">
-    <div class="container-page py-12 md:py-20 grid lg:grid-cols-[1fr_1.3fr] gap-12 lg:gap-16 items-start">
-      <div>
-        <div class="text-[10.5px] uppercase tracking-[0.22em] font-mono text-[#0284c7] mb-4">Warmup</div>
-        <h1 class="text-[44px] sm:text-[60px] md:text-[72px] font-semibold tracking-[-0.035em] leading-[0.98] text-heading">
-          Warmup that earns reputation.
-        </h1>
-        <p class="mt-6 text-[16.5px] md:text-[18px] text-foreground/70 leading-relaxed max-w-xl">
-          Mailboxes ramp gradually from 10 to 40 sends per day in the premium pool. Verification tokens distinguish real warmup from forged traffic. Bands trigger quarantine before providers act.
+  <section class="relative isolate overflow-hidden">
+    <HeroAtmosphere />
+
+    <div class="container-page relative pt-16 md:pt-24 pb-40 md:pb-52 text-center">
+      <div class="inline-flex items-center gap-2 h-7 pl-1 pr-3 rounded-full bg-white/15 backdrop-blur ring-1 ring-white/25 text-[12px] text-white/95 shadow-[0_4px_14px_-4px_rgba(0,0,0,0.25)]">
+        <span class="inline-flex items-center h-5 px-1.5 rounded-full text-[10.5px] font-semibold uppercase tracking-[0.06em] bg-white" style="color:#0369a1;">
+          Warmup
+        </span>
+        Reputation-safe pools, on every paid plan
+      </div>
+
+      <h1 class="mt-8 md:mt-10 text-[44px] sm:text-6xl md:text-[72px] lg:text-[80px] font-semibold tracking-[-0.04em] leading-[0.98] text-white max-w-4xl mx-auto">
+        Warmup that earns<br/>reputation.
+      </h1>
+      <p class="mt-6 text-[17px] md:text-[19px] text-white/80 max-w-2xl mx-auto leading-relaxed">
+        Mailboxes ramp gradually inside the premium pool. Verification tokens distinguish real warmup from forged traffic. Bands quarantine before mailbox providers act.
+      </p>
+
+      <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
+        <a href="https://app.warmbly.com/register" class="inline-flex h-11 px-5 items-center gap-2 rounded-[10px] text-[14.5px] font-semibold bg-white hover:bg-white hover:-translate-y-0.5 hover:shadow-[0_12px_28px_-6px_rgba(0,0,0,0.3)] transition-all duration-200 ease-out shadow-[0_4px_14px_-2px_rgba(0,0,0,0.18)]">
+          <span style="color:#075985;">Start warming</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#075985" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>
+          </svg>
+        </a>
+        <a href="/learn/email-warmup/" class="inline-flex h-11 px-5 items-center rounded-[10px] text-[14.5px] font-medium bg-white/10 backdrop-blur ring-1 ring-white/40 text-white hover:bg-white/20 hover:-translate-y-0.5 transition-all duration-200 ease-out">
+          How warmup works
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       THE RAMP CURVE · unique to warmup
+       A real SVG line chart showing the actual 30-day ramp.
+  ============================================================ -->
+  <section class="relative -mt-32 md:-mt-40 pb-16 md:pb-24 z-10">
+    <div class="container-page">
+      <div class="rounded-[18px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden shadow-[0_30px_60px_-20px_rgba(2,32,71,0.25),0_8px_24px_-10px_rgba(15,23,42,0.06)]">
+        <div class="px-7 py-5 border-b border-[color:var(--border)] flex flex-wrap items-baseline justify-between gap-3">
+          <div>
+            <div class="text-[10.5px] uppercase tracking-[0.18em] font-mono text-[#0284c7]">The ramp</div>
+            <div class="mt-1 text-[16px] font-semibold text-heading">Day 1 to ceiling, one mailbox.</div>
+          </div>
+          <div class="flex items-center gap-6 text-[11.5px] font-mono text-muted-foreground">
+            <span class="inline-flex items-center gap-1.5"><span class="w-2 h-px bg-[#0284c7]"></span>volume / day</span>
+            <span class="inline-flex items-center gap-1.5"><span class="w-2 h-px bg-foreground/30" style="border-top:1px dashed"></span>ceiling</span>
+          </div>
+        </div>
+
+        <div class="px-7 pt-6 pb-5">
+          <svg viewBox="0 0 720 220" class="w-full h-[220px]" preserveAspectRatio="none" aria-label="Ramp curve from 10/day to 40/day over 30 days">
+            <defs>
+              <linearGradient id="rampFill" x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" stop-color="#0284c7" stop-opacity="0.18"/>
+                <stop offset="100%" stop-color="#0284c7" stop-opacity="0"/>
+              </linearGradient>
+            </defs>
+
+            <!-- Horizontal grid -->
+            {[10, 20, 30, 40].map((v) => (
+              <g>
+                <line x1="40" x2="700" y1={200 - (v / 50) * 180} y2={200 - (v / 50) * 180} stroke="#e6ebf2" stroke-width="1"/>
+                <text x="32" y={200 - (v / 50) * 180 + 4} text-anchor="end" fill="#94a3b8" font-size="10" font-family="ui-monospace,monospace">{v}</text>
+              </g>
+            ))}
+
+            <!-- Ceiling line (dashed) -->
+            <line x1="40" x2="700" y1={200 - (40 / 50) * 180} y2={200 - (40 / 50) * 180} stroke="#0c4a6e" stroke-width="1" stroke-dasharray="4 4" opacity="0.4"/>
+
+            <!-- Ramp polygon -->
+            {(() => {
+              const pts = [];
+              for (let day = 0; day <= 30; day++) {
+                const v = Math.min(10 + day, 40);
+                const x = 40 + (day / 30) * 660;
+                const y = 200 - (v / 50) * 180;
+                pts.push(`${x},${y}`);
+              }
+              return (
+                <>
+                  <polygon points={`40,200 ${pts.join(' ')} 700,200`} fill="url(#rampFill)"/>
+                  <polyline points={pts.join(' ')} fill="none" stroke="#0284c7" stroke-width="2"/>
+                </>
+              );
+            })()}
+
+            <!-- Day-1 marker -->
+            <g>
+              <circle cx="40" cy={200 - (10 / 50) * 180} r="4" fill="#0284c7" stroke="white" stroke-width="2"/>
+              <text x="48" y={200 - (10 / 50) * 180 - 8} fill="#0369a1" font-size="11" font-family="ui-monospace,monospace" font-weight="600">Day 1 · 10</text>
+            </g>
+
+            <!-- Ceiling reached marker -->
+            <g>
+              <circle cx={40 + (30 / 30) * 660} cy={200 - (40 / 50) * 180} r="4" fill="#0284c7" stroke="white" stroke-width="2"/>
+              <text x={40 + (30 / 30) * 660 - 8} y={200 - (40 / 50) * 180 - 8} text-anchor="end" fill="#0369a1" font-size="11" font-family="ui-monospace,monospace" font-weight="600">Day 30 · 40</text>
+            </g>
+
+            <!-- X-axis labels -->
+            {[0, 7, 14, 21, 30].map((d) => (
+              <text x={40 + (d / 30) * 660} y="218" text-anchor="middle" fill="#94a3b8" font-size="10" font-family="ui-monospace,monospace">D{d}</text>
+            ))}
+          </svg>
+        </div>
+
+        <div class="px-7 py-3 border-t border-[color:var(--border)] bg-[color:var(--surface-1)]/60 flex flex-wrap items-center justify-between gap-x-6 gap-y-1 text-[11.5px] font-mono text-muted-foreground">
+          <div class="flex items-center gap-5">
+            <span><span class="text-heading font-semibold text-[13px] mr-1">10/d</span>start</span>
+            <span><span class="text-heading font-semibold text-[13px] mr-1">+1/d</span>ramp</span>
+            <span><span class="text-heading font-semibold text-[13px] mr-1">40/d</span>ceiling</span>
+            <span><span class="text-heading font-semibold text-[13px] mr-1">30d</span>to ceiling</span>
+          </div>
+          <span>Business-hour scheduling · recipient TZ</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       WHAT WARMUP DOES — editorial split, real product behavior
+  ============================================================ -->
+  <section class="border-y border-[color:var(--border)] bg-[color:var(--surface-1)]/40 py-20 md:py-28">
+    <div class="container-page grid lg:grid-cols-[1fr_2fr] gap-12 lg:gap-20 items-start">
+      <div class="lg:sticky lg:top-24" style="align-self: start;">
+        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">What warmup does</div>
+        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
+          One loop. One mailbox. One day.
+        </h2>
+        <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed max-w-md">
+          Warmup is not a black box. Every step has a defined input and output, and every quarantine has a reason you can read.
         </p>
-        <div class="mt-8 flex flex-wrap items-center gap-3">
-          <a href="https://app.warmbly.com/register" class="inline-flex h-11 px-5 items-center gap-2 rounded-[10px] text-[14.5px] font-semibold bg-foreground text-background hover:bg-[#1f2937] hover:-translate-y-0.5 hover:shadow-[0_10px_24px_-6px_rgba(15,23,42,0.25)] transition-all duration-200 ease-out shadow-[0_4px_14px_-2px_rgba(15,23,42,0.18)]">
-            Start warming
-            <Icon name="arrowRight" size={13} />
-          </a>
-          <a href="/learn/email-warmup/" class="inline-flex h-11 px-5 items-center rounded-[10px] text-[14.5px] font-medium ring-1 ring-[color:var(--border)] text-foreground hover:bg-[color:var(--surface-1)] transition-colors">
-            How warmup works
-          </a>
-        </div>
-
-        <!-- Inline mono summary -->
-        <div class="mt-10 grid grid-cols-3 gap-6 max-w-md">
-          <div>
-            <div class="text-[22px] font-semibold tracking-[-0.02em] text-heading font-mono">10</div>
-            <div class="mt-1 text-[10.5px] uppercase tracking-[0.16em] font-mono text-muted-foreground">Day 1 send</div>
-          </div>
-          <div>
-            <div class="text-[22px] font-semibold tracking-[-0.02em] text-heading font-mono">+1<span class="text-[12px] text-muted-foreground ml-0.5">/d</span></div>
-            <div class="mt-1 text-[10.5px] uppercase tracking-[0.16em] font-mono text-muted-foreground">Daily ramp</div>
-          </div>
-          <div>
-            <div class="text-[22px] font-semibold tracking-[-0.02em] text-heading font-mono">40</div>
-            <div class="mt-1 text-[10.5px] uppercase tracking-[0.16em] font-mono text-muted-foreground">Ceiling</div>
-          </div>
-        </div>
+        <a href="/learn/warmup-pools/" class="mt-6 inline-flex items-center gap-1.5 text-[13.5px] font-medium text-[#0369a1] hover:text-[#075985]">
+          Read about warmup pools
+          <Icon name="arrowRight" size={12} />
+        </a>
       </div>
 
-      <!-- Dashboard mock -->
-      <div class="rounded-[12px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden" style="box-shadow: 0 30px 60px -25px rgba(2,32,71,0.2), 0 8px 24px -10px rgba(15,23,42,0.06);">
-        <div class="px-5 py-3.5 border-b border-[color:var(--border)] bg-[color:var(--surface-1)]/70 flex items-center justify-between">
-          <div class="flex items-center gap-2.5">
-            <div class="text-[12px] font-semibold text-heading">Warmup · 6 mailboxes</div>
-            <span class="inline-flex items-center gap-1.5 h-5 px-2 rounded-full bg-emerald-50 text-emerald-700 text-[10.5px] font-medium">
-              <span class="w-1 h-1 rounded-full bg-emerald-500"></span>
-              Running
-            </span>
-          </div>
-          <div class="text-[10.5px] font-mono text-muted-foreground">premium pool</div>
-        </div>
-
-        <div class="grid grid-cols-[1.4fr_60px_1fr_70px_90px] px-5 py-2 bg-[color:var(--surface-1)]/40 border-b border-[color:var(--border)] text-[10px] uppercase tracking-[0.14em] font-mono text-muted-foreground">
-          <div>Mailbox</div>
-          <div>Day</div>
-          <div>Ramp</div>
-          <div class="text-right">Today</div>
-          <div class="text-right">Status</div>
-        </div>
-
-        <div class="divide-y divide-[color:var(--border)]">
-          {mailboxes.map((m) => {
-            const s = stateChip(m.state);
-            const pct = Math.round((m.today / m.cap) * 100);
-            return (
-              <div class="grid grid-cols-[1.4fr_60px_1fr_70px_90px] px-5 py-3 items-center text-[12.5px]">
-                <div class="font-mono text-foreground/85 truncate">{m.addr}</div>
-                <div class="font-mono text-foreground/55">D{m.day}</div>
-                <!-- Tiny sparkline -->
-                <div class="pr-3">
-                  <svg viewBox="0 0 100 24" class="w-full h-5" preserveAspectRatio="none">
-                    <polyline
-                      points={m.ramp.map((v, i) => `${(i / (m.ramp.length - 1 || 1)) * 100},${24 - (v / 40) * 22}`).join(' ')}
-                      fill="none"
-                      stroke={m.state === 'watch' ? '#f59e0b' : '#0284c7'}
-                      stroke-width="1.4"
-                    />
-                  </svg>
-                </div>
-                <div class="text-right">
-                  <span class="font-mono text-[12.5px] text-heading font-semibold">{m.today}</span>
-                  <span class="text-[10.5px] text-muted-foreground">/{m.cap}</span>
-                </div>
-                <div class="flex justify-end">
-                  <span class={`inline-flex items-center gap-1 h-5 px-1.5 rounded text-[10.5px] font-medium ${s.chip}`}>
-                    <span class={`w-1 h-1 rounded-full ${s.dot}`}></span>
-                    {s.label}
-                  </span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        <div class="px-5 py-3 border-t border-[color:var(--border)] bg-[color:var(--surface-1)]/40 flex items-center justify-between text-[11px] font-mono text-muted-foreground">
-          <span>5 healthy · 1 watch</span>
-          <span class="inline-flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-[#0284c7] animate-pulse"></span> Next send in 12m</span>
-        </div>
-      </div>
+      <ol class="divide-y divide-[color:var(--border)] border-y border-[color:var(--border)]">
+        {[
+          { n: '01', t: 'Pool member selection',  b: 'A partner mailbox is drawn from the same pool the sender belongs to. Recent partners are excluded for 7 days to prevent degenerate pairs.' },
+          { n: '02', t: 'Verification token',     b: 'A signed token is embedded in the message body. Receivers extract and validate it on classification. Missing or replayed tokens count as suspicious.' },
+          { n: '03', t: 'Send through worker',    b: 'The mailbox\'s assigned worker dispatches the message during the recipient\'s business hours, with spacing that matches human typing cadence.' },
+          { n: '04', t: 'Partner classification', b: 'The receiving mailbox classifies the message as inbox, Promotions, or spam and reports the result back along with the token.' },
+          { n: '05', t: 'Score update',           b: 'Placement, token validity, and any complaint signals feed the per-mailbox rolling spam score. Bands transition on the resulting score.' },
+        ].map((s) => (
+          <li class="grid grid-cols-[44px_1fr] gap-4 py-5 items-baseline">
+            <span class="font-mono text-[12px] text-[#0284c7] font-semibold">{s.n}</span>
+            <div>
+              <div class="text-[15.5px] font-semibold text-heading">{s.t}</div>
+              <p class="mt-1.5 text-[14px] text-foreground/70 leading-relaxed">{s.b}</p>
+            </div>
+          </li>
+        ))}
+      </ol>
     </div>
   </section>
 
   <!-- ============================================================
-       THE LOOP — horizontal cycle visualization
+       HEALTH BANDS — full comparison table (pricing matrix pattern)
   ============================================================ -->
-  <section class="border-b border-[color:var(--border)] bg-[color:var(--surface-1)]/40 py-16 md:py-20">
+  <section class="py-20 md:py-28">
     <div class="container-page">
-      <div class="text-[10.5px] uppercase tracking-[0.22em] font-mono text-[#0284c7] mb-4">The daily loop</div>
-      <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.03em] leading-[1.04] text-heading max-w-2xl">
-        Six steps. Every mailbox. Every day.
-      </h2>
-
-      <div class="mt-12 relative">
-        <!-- Connecting rail -->
-        <div class="hidden lg:block absolute top-[22px] left-[40px] right-[40px] h-px bg-[color:var(--border)]"></div>
-
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-6 lg:gap-4 relative">
-          {cycle.map((c) => (
-            <div class="relative">
-              <div class="flex lg:justify-center mb-4">
-                <div class="relative w-11 h-11 rounded-full bg-white ring-1 ring-[color:var(--sky-3)] text-[#0369a1] inline-flex items-center justify-center font-mono text-[12px] font-semibold shadow-[0_2px_8px_-2px_rgba(2,132,199,0.25)]">
-                  {c.n}
-                </div>
-              </div>
-              <div class="lg:text-center">
-                <div class="text-[14px] font-semibold text-heading">{c.label}</div>
-                <p class="mt-1.5 text-[12.5px] text-foreground/65 leading-relaxed">{c.body}</p>
-              </div>
-            </div>
-          ))}
-        </div>
+      <div class="max-w-2xl mb-12">
+        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Health bands</div>
+        <h2 class="text-[32px] md:text-[44px] font-semibold tracking-[-0.03em] leading-[1.05] text-heading">
+          Bands that act before providers do.
+        </h2>
+        <p class="mt-4 text-[15.5px] text-foreground/70 leading-relaxed">
+          These thresholds are stricter than Google's and Amazon SES's published enforcement points. We pull a mailbox out of the shared pool weeks before it would get a public complaint.
+        </p>
       </div>
+
+      <div class="overflow-x-auto rounded-[14px] ring-1 ring-[color:var(--border)] bg-white shadow-[0_24px_48px_-20px_rgba(15,23,42,0.12),0_4px_12px_-6px_rgba(15,23,42,0.05)]">
+        <table class="w-full min-w-[820px] text-[13.5px] border-separate border-spacing-0">
+          <thead>
+            <tr class="bg-[color:var(--surface-1)] border-b border-[color:var(--border)]">
+              <th class="text-left px-5 py-4">
+                <span class="text-[10.5px] uppercase tracking-[0.16em] font-mono text-muted-foreground font-medium">Band</span>
+              </th>
+              <th class="text-left px-5 py-4">
+                <span class="text-[10.5px] uppercase tracking-[0.16em] font-mono text-muted-foreground font-medium">Spam placement</span>
+              </th>
+              <th class="text-left px-5 py-4">
+                <span class="text-[10.5px] uppercase tracking-[0.16em] font-mono text-muted-foreground font-medium">Complaint rate</span>
+              </th>
+              <th class="text-left px-5 py-4">
+                <span class="text-[10.5px] uppercase tracking-[0.16em] font-mono text-muted-foreground font-medium">Bounce rate</span>
+              </th>
+              <th class="text-left px-5 py-4">
+                <span class="text-[10.5px] uppercase tracking-[0.16em] font-mono text-muted-foreground font-medium">Action</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {bands.map((b) => {
+              const t = toneClass(b.tone);
+              return (
+                <tr class="border-t border-[color:var(--border)]">
+                  <td class="px-5 py-4">
+                    <span class={`inline-flex items-center gap-1.5 h-6 px-2 rounded text-[12px] font-medium font-mono ${t.chip}`}>
+                      <span class={`w-1.5 h-1.5 rounded-full ${t.dot}`}></span>
+                      {b.name}
+                    </span>
+                  </td>
+                  <td class="px-5 py-4 font-mono text-foreground/85">{b.spam}</td>
+                  <td class="px-5 py-4 font-mono text-foreground/85">{b.complaint}</td>
+                  <td class="px-5 py-4 font-mono text-foreground/85">{b.bounce}</td>
+                  <td class="px-5 py-4 text-foreground/75">{b.action}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <p class="mt-4 text-[12.5px] text-muted-foreground italic">
+        Spam-placement band requires at least 20 warmup deliveries in the past 7 days; complaint band requires at least 100 delivered messages in the past 30 days.
+      </p>
     </div>
   </section>
 
   <!-- ============================================================
-       HEALTH STATE MACHINE — transitions table
+       POOL ISOLATION · unique to warmup
+       A single horizontal "rings of trust" diagram with the three
+       pool layers stacked, plus a one-line rule for each.
   ============================================================ -->
-  <section class="border-b border-[color:var(--border)] py-16 md:py-24">
+  <section class="border-y border-[color:var(--border)] bg-[color:var(--surface-1)]/40 py-20 md:py-28">
     <div class="container-page">
-      <div class="grid lg:grid-cols-[1fr_1.4fr] gap-12 lg:gap-16">
-        <div>
-          <div class="text-[10.5px] uppercase tracking-[0.22em] font-mono text-[#0284c7] mb-4">Health bands</div>
-          <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.03em] leading-[1.04] text-heading">
-            A real state machine, not a vibe check.
-          </h2>
-          <p class="mt-5 text-[15px] text-foreground/70 leading-relaxed max-w-md">
-            Every mailbox sits in one of four states. Transitions are deterministic from observed signals. No human judgement in the loop.
-          </p>
+      <div class="max-w-2xl mb-12">
+        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Pool isolation</div>
+        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
+          Same engine. Three isolation surfaces.
+        </h2>
+        <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed">
+          Free pool mailboxes never silently appear in the premium pool. Recovery pool is for paid mailboxes serving a cooldown. Dedicated infrastructure is isolation at the worker layer, not a reputation shortcut.
+        </p>
+      </div>
 
-          <!-- State chips -->
-          <div class="mt-8 grid grid-cols-2 gap-3 max-w-sm">
-            <div class="rounded-[8px] ring-1 ring-emerald-100 bg-emerald-50/40 px-3 py-2.5">
-              <div class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span><span class="text-[13px] font-semibold text-heading">Healthy</span></div>
-              <div class="mt-1 text-[10.5px] font-mono text-foreground/55">Default state</div>
-            </div>
-            <div class="rounded-[8px] ring-1 ring-amber-100 bg-amber-50/40 px-3 py-2.5">
-              <div class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span><span class="text-[13px] font-semibold text-heading">Watch</span></div>
-              <div class="mt-1 text-[10.5px] font-mono text-foreground/55">Lower volume</div>
-            </div>
-            <div class="rounded-[8px] ring-1 ring-rose-100 bg-rose-50/40 px-3 py-2.5">
-              <div class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span><span class="text-[13px] font-semibold text-heading">Quarantined</span></div>
-              <div class="mt-1 text-[10.5px] font-mono text-foreground/55">7-day pool removal</div>
-            </div>
-            <div class="rounded-[8px] ring-1 ring-slate-200 bg-slate-100/40 px-3 py-2.5">
-              <div class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-slate-500"></span><span class="text-[13px] font-semibold text-heading">Blocked</span></div>
-              <div class="mt-1 text-[10.5px] font-mono text-foreground/55">30-day block</div>
-            </div>
+      <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden">
+        <!-- Row: Free pool -->
+        <div class="grid grid-cols-[160px_1fr_auto] gap-6 px-7 py-6 items-center border-b border-[color:var(--border)]">
+          <div class="flex items-center gap-3">
+            <span class="w-3 h-3 rounded-full bg-slate-400"></span>
+            <span class="text-[14px] font-semibold text-heading">Free pool</span>
           </div>
+          <div class="text-[13.5px] text-foreground/70">
+            Trial mailboxes only. Recipients are drawn exclusively from other free-plan mailboxes. Same auto-quarantine thresholds.
+          </div>
+          <div class="text-[10.5px] font-mono uppercase tracking-[0.16em] text-muted-foreground text-right whitespace-nowrap">Free trial</div>
         </div>
 
-        <!-- Transitions -->
-        <div class="rounded-[10px] ring-1 ring-[color:var(--border)] overflow-hidden bg-white">
-          <div class="grid grid-cols-[auto_1fr_auto] gap-3 px-5 py-2.5 bg-[color:var(--surface-1)] border-b border-[color:var(--border)] text-[10.5px] uppercase tracking-[0.16em] font-mono text-muted-foreground">
-            <div>Transition</div>
-            <div>Trigger</div>
-            <div>Action</div>
+        <!-- Row: Premium pool · featured -->
+        <div class="grid grid-cols-[160px_1fr_auto] gap-6 px-7 py-6 items-center border-b border-[color:var(--border)] bg-[color:var(--sky-1)]/40">
+          <div class="flex items-center gap-3">
+            <span class="w-3 h-3 rounded-full bg-[#0284c7]"></span>
+            <span class="text-[14px] font-semibold text-[#0369a1]">Premium pool</span>
           </div>
-          {transitions.map((t) => {
-            const fs = stateChip(t.from.toLowerCase());
-            const ts = stateChip(t.to.toLowerCase());
-            return (
-              <div class="grid grid-cols-[auto_1fr_auto] gap-4 px-5 py-3.5 border-b border-[color:var(--border)] last:border-b-0 items-center text-[12.5px]">
-                <div class="flex items-center gap-2">
-                  <span class={`inline-flex items-center gap-1 h-5 px-1.5 rounded text-[10.5px] font-medium ${fs.chip}`}>
-                    <span class={`w-1 h-1 rounded-full ${fs.dot}`}></span>
-                    {t.from}
-                  </span>
-                  <svg width="10" height="10" viewBox="0 0 12 12" fill="none" class="text-muted-foreground"><path d="M3.5 3l3 3-3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                  <span class={`inline-flex items-center gap-1 h-5 px-1.5 rounded text-[10.5px] font-medium ${ts.chip}`}>
-                    <span class={`w-1 h-1 rounded-full ${ts.dot}`}></span>
-                    {t.to}
-                  </span>
-                </div>
-                <div class="font-mono text-foreground/70 text-[12px]">{t.trigger}</div>
-                <div class="text-foreground/65 text-right">{t.action}</div>
-              </div>
-            );
-          })}
+          <div class="text-[13.5px] text-foreground/80">
+            Vetted paid mailboxes only. Stricter quarantine bands than free. Quarantined senders move to the recovery pool, not back to the main premium pool.
+          </div>
+          <div class="text-[10.5px] font-mono uppercase tracking-[0.16em] text-[#0284c7] text-right whitespace-nowrap">Starter · Grow · Business</div>
+        </div>
+
+        <!-- Row: Recovery pool -->
+        <div class="grid grid-cols-[160px_1fr_auto] gap-6 px-7 py-6 items-center border-b border-[color:var(--border)]">
+          <div class="flex items-center gap-3">
+            <span class="w-3 h-3 rounded-full bg-amber-500"></span>
+            <span class="text-[14px] font-semibold text-heading">Recovery pool</span>
+          </div>
+          <div class="text-[13.5px] text-foreground/70">
+            Quarantined paid mailboxes during their 7-day cooldown. Isolated from healthy premium senders. Must pass 20-delivery probation before re-entry.
+          </div>
+          <div class="text-[10.5px] font-mono uppercase tracking-[0.16em] text-muted-foreground text-right whitespace-nowrap">Automatic</div>
+        </div>
+
+        <!-- Row: Dedicated -->
+        <div class="grid grid-cols-[160px_1fr_auto] gap-6 px-7 py-6 items-center">
+          <div class="flex items-center gap-3">
+            <span class="w-3 h-3 rounded-full bg-foreground"></span>
+            <span class="text-[14px] font-semibold text-heading">Dedicated</span>
+          </div>
+          <div class="text-[13.5px] text-foreground/70">
+            Isolated worker process and IP for one organisation. Still participates in the premium pool. Infrastructure isolation, not a reputation shortcut.
+          </div>
+          <div class="text-[10.5px] font-mono uppercase tracking-[0.16em] text-muted-foreground text-right whitespace-nowrap">Enterprise</div>
         </div>
       </div>
     </div>
   </section>
 
   <!-- ============================================================
-       DEFAULTS — clean spec table
+       DEFAULTS SPEC — full data with rationale
   ============================================================ -->
-  <section class="border-b border-[color:var(--border)] bg-[color:var(--surface-1)]/40 py-16 md:py-20">
-    <div class="container-page grid lg:grid-cols-[1fr_1.6fr] gap-12 lg:gap-16 items-start">
+  <section class="py-20 md:py-24">
+    <div class="container-page grid lg:grid-cols-[1fr_1.8fr] gap-12 lg:gap-16 items-start">
       <div>
-        <div class="text-[10.5px] uppercase tracking-[0.22em] font-mono text-[#0284c7] mb-4">Defaults</div>
+        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Defaults</div>
         <h2 class="text-[28px] md:text-[36px] font-semibold tracking-[-0.025em] leading-[1.08] text-heading">
           The numbers we ship with.
         </h2>
         <p class="mt-4 text-[14.5px] text-foreground/70 leading-relaxed max-w-md">
-          Defaults that work for the median sender. Override per mailbox if you have a real reason.
+          Defaults that work for the median sender. Override per mailbox if you have a real reason. The "why" column is the reasoning we will defend in an incident.
         </p>
       </div>
 
-      <div class="rounded-[10px] ring-1 ring-[color:var(--border)] bg-white overflow-hidden">
-        {defaults.map(([k, v]) => (
-          <div class="grid grid-cols-[1fr_auto] gap-4 px-5 py-3 border-b border-[color:var(--border)] last:border-b-0 items-baseline">
-            <div class="text-[13.5px] text-foreground/85">{k}</div>
-            <div class="font-mono text-[13px] text-heading font-semibold">{v}</div>
+      <div class="rounded-[12px] ring-1 ring-[color:var(--border)] bg-white overflow-hidden">
+        <div class="grid grid-cols-[1fr_120px_1.6fr] px-5 py-3 bg-[color:var(--surface-1)] border-b border-[color:var(--border)] text-[10.5px] uppercase tracking-[0.16em] font-mono text-muted-foreground">
+          <div>Setting</div>
+          <div>Default</div>
+          <div>Why</div>
+        </div>
+        {defaults.map((d) => (
+          <div class="grid grid-cols-[1fr_120px_1.6fr] gap-4 px-5 py-3.5 border-b border-[color:var(--border)] last:border-b-0 items-baseline text-[13px]">
+            <div class="font-medium text-heading">{d.k}</div>
+            <div>
+              <span class="inline-flex items-center px-1.5 py-0.5 rounded font-mono text-[12px] bg-[color:var(--sky-1)] text-[#075985] ring-1 ring-[color:var(--sky-2)]">{d.v}</span>
+            </div>
+            <div class="text-foreground/70 text-[12.5px]">{d.why}</div>
           </div>
         ))}
       </div>
@@ -282,30 +379,39 @@ const defaults = [
   </section>
 
   <!-- ============================================================
-       FINAL CTA · in our theme, distinct from hero
+       FAQ — split sticky title (pricing pattern)
   ============================================================ -->
-  <section class="relative isolate overflow-hidden text-white">
-    <div class="absolute inset-0 pointer-events-none" style="background: radial-gradient(ellipse 140% 90% at 50% 0%, #0ea5e9 0%, #0284c7 35%, #075985 70%, #0c4a6e 100%);"></div>
-    <div class="absolute top-[30%] left-1/2 -translate-x-1/2 w-[720px] h-[400px] pointer-events-none" style="background: radial-gradient(ellipse, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0) 65%);"></div>
-
-    <div class="container-page relative py-20 md:py-24 text-center">
-      <h2 class="text-[32px] md:text-[48px] font-semibold tracking-[-0.03em] leading-[1.04] text-white mx-auto max-w-2xl">
-        Connect a mailbox. Start warming today.
-      </h2>
-      <p class="mt-4 text-[15px] md:text-[16px] text-white/80 max-w-md mx-auto">
-        OAuth in 30 seconds. First warmup send in under a minute.
-      </p>
-      <div class="mt-9 flex flex-wrap items-center justify-center gap-3">
-        <a href="https://app.warmbly.com/register" class="inline-flex h-11 px-5 items-center gap-2 rounded-[10px] text-[14.5px] font-semibold bg-white hover:bg-white hover:-translate-y-0.5 hover:shadow-[0_12px_28px_-6px_rgba(0,0,0,0.3)] transition-all duration-200 ease-out shadow-[0_4px_14px_-2px_rgba(0,0,0,0.18)]">
-          <span style="color:#075985;">Start free trial</span>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#075985" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>
-          </svg>
-        </a>
-        <a href="/pricing/" class="inline-flex h-11 px-5 items-center rounded-[10px] text-[14.5px] font-medium bg-white/10 backdrop-blur ring-1 ring-white/40 text-white hover:bg-white/20 hover:-translate-y-0.5 transition-all duration-200 ease-out">
-          See pricing
-        </a>
+  <section class="bg-[color:var(--surface-1)]/40 border-t border-[color:var(--border)] py-20 md:py-24">
+    <div class="container-page grid lg:grid-cols-[1fr_1.8fr] gap-12 lg:gap-20 items-start">
+      <div class="lg:sticky lg:top-24" style="align-self: start;">
+        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Warmup FAQ</div>
+        <h2 class="text-[28px] md:text-[36px] font-semibold tracking-[-0.025em] leading-[1.08] text-heading">
+          Four questions we get most.
+        </h2>
+        <p class="mt-4 text-[14.5px] text-foreground/70 leading-relaxed">
+          Want the full mental model? Read the <a class="text-[#0369a1] hover:text-[#075985] font-medium" href="/learn/email-warmup/">warmup guide</a>.
+        </p>
+      </div>
+      <div class="divide-y divide-[color:var(--border)]">
+        {faq.map(([q, a]) => (
+          <details class="group py-5">
+            <summary class="flex items-start justify-between gap-4 cursor-pointer list-none">
+              <span class="text-[15.5px] font-medium text-heading group-hover:text-[#0369a1] transition-colors">{q}</span>
+              <span class="shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-full bg-white ring-1 ring-[color:var(--border)] text-foreground/60 group-open:rotate-45 transition-transform">
+                <Icon name="plus" size={12} />
+              </span>
+            </summary>
+            <p class="mt-3 text-[14px] text-foreground/75 leading-relaxed max-w-2xl">{a}</p>
+          </details>
+        ))}
       </div>
     </div>
   </section>
+
+  <CTA
+    title="Connect a mailbox. Start warming today."
+    description="OAuth in 30 seconds. First warmup send in under a minute."
+    primaryLabel="Start free trial"
+    primaryHref="https://app.warmbly.com/register"
+  />
 </Layout>
