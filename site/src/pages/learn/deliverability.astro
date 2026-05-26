@@ -12,6 +12,18 @@ const chapters = [
   { num: '07', id: 'noise',         title: 'Ignore' },
   { num: '08', id: 'problem',       title: 'Incident' },
 ];
+
+// All learn essays (kept in sync with Learn.astro)
+const related = [
+  { href: '/learn/email-warmup/',         title: 'Email warmup, properly explained',         read: '11 min' },
+  { href: '/learn/deliverability/',       title: 'The deliverability handbook',              read: '14 min' },
+  { href: '/learn/spf-dkim-dmarc/',       title: 'SPF, DKIM and DMARC, end to end',          read: '12 min' },
+  { href: '/learn/inbox-placement/',      title: 'Inbox placement, not just delivery',       read: '8 min' },
+  { href: '/learn/cold-email-rules/',     title: 'Cold email rules across regions',          read: '10 min' },
+  { href: '/learn/warmup-pools/',         title: 'Warmup pools: free, premium, dedicated',   read: '7 min' },
+  { href: '/learn/reputation-recovery/',  title: 'Recovering a burned mailbox',              read: '9 min' },
+];
+const path = Astro.url.pathname;
 ---
 <Layout
   title="The deliverability handbook · Warmbly"
@@ -41,22 +53,117 @@ const chapters = [
   ============================================================ -->
   <div class="grid lg:grid-cols-[200px_minmax(0,1fr)] xl:grid-cols-[220px_minmax(0,1fr)]">
 
-    <!-- LEFT RAIL: sticky chapter nav -->
+    <!-- LEFT RAIL: chapter nav + article switcher -->
     <aside class="hidden lg:block border-r border-[color:var(--border)] bg-[color:var(--surface-1)]/40">
-      <div class="sticky top-0 max-h-screen overflow-y-auto py-8 px-6">
-        <div class="text-[10.5px] uppercase tracking-[0.22em] font-mono text-muted-foreground mb-4">Handbook</div>
-        <ol class="space-y-px text-[13px]">
-          {chapters.map((c) => (
-            <li>
-              <a href={`#${c.id}`} class="group flex items-baseline gap-3 py-1.5 px-2 -mx-2 rounded-md text-foreground/70 hover:bg-white hover:text-[#0369a1] transition-colors">
-                <span class="font-mono text-[10.5px] text-muted-foreground/70 w-5 shrink-0">{c.num}</span>
-                <span class="leading-snug">{c.title}</span>
-              </a>
-            </li>
-          ))}
-        </ol>
+      <div class="sticky top-0 max-h-screen overflow-y-auto py-8 px-6 flex flex-col gap-7">
+        <!-- On this page -->
+        <div>
+          <div class="text-[10.5px] uppercase tracking-[0.22em] font-mono text-muted-foreground mb-4">On this page</div>
+          <ol class="space-y-px text-[13px]" data-chapter-rail>
+            {chapters.map((c) => (
+              <li>
+                <a href={`#${c.id}`} data-target-id={c.id} class="chapter-link group flex items-baseline gap-3 py-1.5 px-2 -mx-2 rounded-md text-foreground/60 hover:text-[#0369a1] transition-colors duration-300 ease-out">
+                  <span class="font-mono text-[10.5px] text-muted-foreground/55 w-5 shrink-0 chapter-num transition-colors duration-300">{c.num}</span>
+                  <span class="leading-snug">{c.title}</span>
+                </a>
+              </li>
+            ))}
+          </ol>
+        </div>
+
+        <!-- All essays -->
+        <div class="pt-6 border-t border-[color:var(--border)]">
+          <div class="text-[10.5px] uppercase tracking-[0.22em] font-mono text-muted-foreground mb-4 flex items-center justify-between">
+            <span>All essays</span>
+            <span class="font-mono text-[10.5px] text-muted-foreground/70">{related.length}</span>
+          </div>
+          <ol class="space-y-px text-[13px]">
+            {related.map((r, i) => {
+              const isCurrent = r.href === path;
+              return (
+                <li>
+                  <a
+                    href={r.href}
+                    aria-current={isCurrent ? 'page' : undefined}
+                    class={`group flex items-baseline gap-3 py-1.5 px-2 -mx-2 rounded-md transition-colors duration-300 ease-out ${
+                      isCurrent
+                        ? 'text-[#0369a1] font-semibold'
+                        : 'text-foreground/60 hover:text-[#0369a1]'
+                    }`}
+                  >
+                    <span class={`font-mono text-[10.5px] w-5 shrink-0 transition-colors duration-300 ${isCurrent ? 'text-[#0284c7]' : 'text-muted-foreground/55'}`}>{String(i + 1).padStart(2, '0')}</span>
+                    <span class="leading-snug flex-1 truncate">{r.title}</span>
+                    {isCurrent ? (
+                      <span class="w-1.5 h-1.5 rounded-full bg-[#0284c7] shrink-0"></span>
+                    ) : (
+                      <span class="font-mono text-[10px] text-muted-foreground/55 shrink-0">{r.read.replace(' min', 'm')}</span>
+                    )}
+                  </a>
+                </li>
+              );
+            })}
+          </ol>
+          <a href="/learn/" class="mt-4 inline-flex items-center gap-1.5 text-[11.5px] font-mono text-[#0369a1] hover:text-[#075985]">
+            Library home
+            <Icon name="arrowRight" size={10} />
+          </a>
+        </div>
       </div>
     </aside>
+
+    <script is:inline>
+      // Scroll-spy for the handbook chapter rail
+      (function () {
+        const links = Array.from(document.querySelectorAll('.chapter-link'));
+        if (!links.length) return;
+        const sections = links
+          .map((a) => ({ link: a, el: document.getElementById(a.getAttribute('data-target-id')) }))
+          .filter((s) => s.el);
+        if (!sections.length) return;
+
+        const inactiveText = 'text-foreground/60 hover:text-[#0369a1]';
+        const activeText   = 'text-[#0369a1] font-semibold';
+        const inactiveNum  = 'text-muted-foreground/55';
+        const activeNum    = 'text-[#0284c7]';
+
+        let currentId = null;
+        function setActive(id) {
+          if (id === currentId) return;
+          currentId = id;
+          sections.forEach(({ link, el }) => {
+            const num = link.querySelector('.chapter-num');
+            if (el.id === id) {
+              link.classList.remove(...inactiveText.split(' '));
+              link.classList.add(...activeText.split(' '));
+              num && num.classList.remove(...inactiveNum.split(' '));
+              num && num.classList.add(...activeNum.split(' '));
+            } else {
+              link.classList.remove(...activeText.split(' '));
+              link.classList.add(...inactiveText.split(' '));
+              num && num.classList.remove(...activeNum.split(' '));
+              num && num.classList.add(...inactiveNum.split(' '));
+            }
+          });
+        }
+
+        function onScroll() {
+          const probe = window.innerHeight * 0.35;
+          let active = sections[0].el.id;
+          for (const { el } of sections) {
+            const rect = el.getBoundingClientRect();
+            if (rect.top - probe <= 0) active = el.id; else break;
+          }
+          setActive(active);
+        }
+
+        onScroll();
+        let raf = 0;
+        window.addEventListener('scroll', () => {
+          if (raf) return;
+          raf = requestAnimationFrame(() => { raf = 0; onScroll(); });
+        }, { passive: true });
+      })();
+    </script>
 
     <!-- RIGHT: page header + 2-col doc rows -->
     <main class="bg-white">
