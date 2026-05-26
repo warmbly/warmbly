@@ -1,5 +1,6 @@
 ---
 import Layout from '../layouts/Layout.astro';
+import HeroAtmosphere from '../components/HeroAtmosphere.astro';
 import Icon from '../components/Icon.astro';
 import CTA from '../components/CTA.astro';
 
@@ -73,91 +74,90 @@ const tones = (s: string) => {
   description="A distributed sending engine that spreads cold mail across many mailboxes, many workers and many IPs. Per-mailbox safety caps baked in."
 >
   <!-- ============================================================
-       HERO · datacenter / ops-dashboard treatment (NOT HeroAtmosphere)
+       HERO · HeroAtmosphere, matches home / pricing / warmup / campaigns
   ============================================================ -->
-  <section class="relative isolate overflow-hidden text-white" style="background: linear-gradient(180deg, #0a0f1e 0%, #0c1224 60%, #0a0f1e 100%);">
-    <!-- subtle grid backdrop -->
-    <div class="absolute inset-0 pointer-events-none opacity-[0.07]" style="background-image: linear-gradient(rgba(125,211,252,0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(125,211,252,0.5) 1px, transparent 1px); background-size: 56px 56px; mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 30%, transparent 75%);"></div>
-    <!-- soft sky glow -->
-    <div class="absolute top-[-200px] left-1/2 -translate-x-1/2 w-[900px] h-[600px] rounded-full pointer-events-none" style="background: radial-gradient(circle, rgba(56,189,248,0.15) 0%, transparent 60%);"></div>
+  <section class="relative isolate overflow-hidden">
+    <HeroAtmosphere />
 
-    <div class="container-page relative py-14 md:py-20 grid lg:grid-cols-[1.1fr_1fr] gap-12 lg:gap-16 items-center">
-      <!-- LEFT: title block -->
-      <div>
-        <div class="inline-flex items-center gap-2 h-7 px-3 rounded-full bg-white/[0.08] ring-1 ring-white/15 text-[11.5px] font-medium text-white/85">
-          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-          <span class="font-mono uppercase tracking-[0.14em] text-[10.5px]">Sending engine</span>
-          <span class="text-white/40">·</span>
-          <span class="font-mono text-[10.5px] text-white/70">live</span>
-        </div>
-
-        <h1 class="mt-6 text-[44px] md:text-[60px] lg:text-[72px] font-semibold tracking-[-0.035em] leading-[1.0] text-white">
-          Distributed by design.
-        </h1>
-        <p class="mt-5 text-[16px] md:text-[18px] text-white/65 max-w-xl leading-relaxed">
-          Not a glorified SMTP relay. The control plane decides what to send. Workers spread sends across machines and IPs so no single point becomes a reputation liability.
-        </p>
-
-        <!-- compact stats row -->
-        <div class="mt-8 grid grid-cols-3 gap-6 max-w-md">
-          <div>
-            <div class="text-[10.5px] uppercase tracking-[0.2em] font-mono text-white/45">Workers / machine</div>
-            <div class="mt-1 text-[22px] font-semibold tracking-[-0.02em] text-white font-mono">1</div>
-          </div>
-          <div>
-            <div class="text-[10.5px] uppercase tracking-[0.2em] font-mono text-white/45">IPs / worker</div>
-            <div class="mt-1 text-[22px] font-semibold tracking-[-0.02em] text-white font-mono">1</div>
-          </div>
-          <div>
-            <div class="text-[10.5px] uppercase tracking-[0.2em] font-mono text-white/45">SQL on workers</div>
-            <div class="mt-1 text-[22px] font-semibold tracking-[-0.02em] text-white font-mono">0</div>
-          </div>
-        </div>
-
-        <div class="mt-8 flex flex-wrap items-center gap-3">
-          <a href="https://app.warmbly.com/register" class="inline-flex h-11 px-5 items-center gap-2 rounded-[10px] text-[14px] font-semibold bg-white text-[#0a0f1e] hover:bg-white/95 hover:-translate-y-0.5 transition-all duration-200 ease-out">
-            Connect a mailbox
-            <Icon name="arrowRight" size={13} />
-          </a>
-          <a href="#anatomy" class="inline-flex h-11 px-5 items-center rounded-[10px] text-[14px] font-medium bg-white/[0.06] ring-1 ring-white/15 text-white/85 hover:bg-white/[0.12] transition-colors">
-            See the architecture
-          </a>
-        </div>
+    <div class="container-page relative pt-16 md:pt-24 pb-44 md:pb-56 text-center">
+      <div class="inline-flex items-center gap-2 h-7 pl-1 pr-3 rounded-full bg-white/15 backdrop-blur ring-1 ring-white/25 text-[12px] text-white/95 shadow-[0_4px_14px_-4px_rgba(0,0,0,0.25)]">
+        <span class="inline-flex items-center h-5 px-1.5 rounded-full text-[10.5px] font-semibold uppercase tracking-[0.06em] bg-white" style="color:#0369a1;">
+          Sending engine
+        </span>
+        Distributed across many machines, many IPs
       </div>
 
-      <!-- RIGHT: live fleet board (ops-dashboard style) -->
-      <div class="rounded-[14px] bg-white/[0.04] backdrop-blur ring-1 ring-white/10 overflow-hidden">
-        <div class="px-5 py-3 border-b border-white/10 flex items-center justify-between text-[11px] font-mono">
-          <div class="flex items-center gap-2 text-white/65">
-            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-            fleet · 6 workers
+      <h1 class="mt-8 md:mt-10 text-[44px] sm:text-6xl md:text-[72px] lg:text-[80px] font-semibold tracking-[-0.04em] leading-[0.98] text-white max-w-4xl mx-auto">
+        Many mailboxes.<br/>Many workers. Many IPs.
+      </h1>
+      <p class="mt-6 text-[17px] md:text-[19px] text-white/80 max-w-2xl mx-auto leading-relaxed">
+        Not a glorified SMTP relay. The control plane decides what to send. Workers spread sends across machines and IPs so no single point becomes a reputation liability.
+      </p>
+
+      <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
+        <a href="https://app.warmbly.com/register" class="inline-flex h-11 px-5 items-center gap-2 rounded-[10px] text-[14.5px] font-semibold bg-white hover:bg-white hover:-translate-y-0.5 hover:shadow-[0_12px_28px_-6px_rgba(0,0,0,0.3)] transition-all duration-200 ease-out shadow-[0_4px_14px_-2px_rgba(0,0,0,0.18)]">
+          <span style="color:#075985;">Connect a mailbox</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#075985" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>
+          </svg>
+        </a>
+        <a href="#anatomy" class="inline-flex h-11 px-5 items-center rounded-[10px] text-[14.5px] font-medium bg-white/10 backdrop-blur ring-1 ring-white/40 text-white hover:bg-white/20 hover:-translate-y-0.5 transition-all duration-200 ease-out">
+          See the architecture
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       LIVE WORKER FLEET · floats below the hero
+  ============================================================ -->
+  <section class="relative -mt-36 md:-mt-44 pb-16 md:pb-24 z-10">
+    <div class="container-page">
+      <div class="rounded-[18px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden shadow-[0_40px_90px_-30px_rgba(2,32,71,0.35),0_12px_30px_-12px_rgba(15,23,42,0.12)]">
+        <div class="px-7 py-4 border-b border-[color:var(--border)] bg-[color:var(--surface-1)]/70 flex flex-wrap items-center justify-between gap-3">
+          <div class="flex items-center gap-3">
+            <div class="text-[13px] font-semibold text-heading">Worker fleet</div>
+            <span class="inline-flex items-center gap-1.5 h-5 px-2 rounded-full bg-emerald-50 text-emerald-700 text-[10.5px] font-medium font-mono uppercase tracking-[0.08em]">
+              <span class="w-1 h-1 rounded-full bg-emerald-500 animate-pulse"></span>
+              6 active
+            </span>
           </div>
-          <div class="text-white/45">eu·us·ap · 3 regions</div>
+          <div class="flex items-center gap-4 text-[10.5px] font-mono text-muted-foreground">
+            <span>eu · us · ap</span>
+            <span class="w-1 h-1 rounded-full bg-[color:var(--border)]"></span>
+            <span>3 regions</span>
+          </div>
         </div>
 
-        <div class="divide-y divide-white/5">
+        <div class="divide-y divide-[color:var(--border)]">
           {fleet.map((w) => {
             const t = tones(w.status);
             return (
-              <div class="grid grid-cols-[40px_1fr_70px_70px] gap-3 px-5 py-2.5 items-center text-[11.5px]">
-                <div class="font-mono text-white/85">{w.id}</div>
+              <div class="grid grid-cols-[60px_1fr_90px_1fr_80px] gap-3 px-7 py-3 items-center text-[12.5px]">
+                <div class="font-mono text-foreground/85">{w.id}</div>
                 <div>
-                  <div class="font-mono text-[11.5px] text-white/85">{w.ip}</div>
-                  <div class="font-mono text-[10px] text-white/45">{w.region}</div>
+                  <div class="font-mono text-[12px] text-foreground/85">{w.ip}</div>
+                  <div class="font-mono text-[10.5px] text-muted-foreground">{w.region}</div>
                 </div>
-                <div class="relative h-1.5 rounded-full overflow-hidden bg-white/10">
-                  <div class="absolute inset-y-0 left-0" style={`width: ${w.load}%; background: ${w.status === 'healthy' ? '#22d3ee' : w.status === 'watch' ? '#f59e0b' : '#ef4444'};`}></div>
+                <div>
+                  <span class={`inline-flex items-center gap-1 h-5 px-1.5 rounded text-[10.5px] font-medium ${t.chip}`}>
+                    <span class="w-1 h-1 rounded-full" style={`background:${t.dot}`}></span>
+                    {w.status}
+                  </span>
                 </div>
-                <div class="text-right font-mono text-white/65">{w.load}<span class="text-white/35">/{w.max}</span></div>
+                <div class="relative h-1.5 rounded-full overflow-hidden bg-[color:var(--surface-1)]">
+                  <div class="absolute inset-y-0 left-0" style={`width: ${w.load}%; background: ${t.dot};`}></div>
+                </div>
+                <div class="text-right font-mono text-foreground/85">{w.load}<span class="text-muted-foreground">/{w.max}</span></div>
               </div>
             );
           })}
         </div>
 
-        <div class="px-5 py-3 border-t border-white/10 text-[10.5px] font-mono text-white/55 flex items-center justify-between">
-          <span>concentration warning · &gt; 10 mailboxes / worker</span>
-          <span class="inline-flex items-center gap-1.5 text-amber-300">
-            <span class="w-1 h-1 rounded-full bg-amber-400"></span>
+        <div class="px-7 py-3 border-t border-[color:var(--border)] bg-[color:var(--surface-1)]/60 flex items-center justify-between text-[11.5px] font-mono text-muted-foreground">
+          <span>concentration warning fires above 10 mailboxes / worker</span>
+          <span class="inline-flex items-center gap-1.5 text-amber-700">
+            <span class="w-1 h-1 rounded-full bg-amber-500"></span>
             w-03 approaching
           </span>
         </div>
