@@ -22,16 +22,47 @@ const plans = [
     summary: 'For founders kicking the tires.',
     cta: 'Start free',
     href: 'https://app.warmbly.com/register?plan=free',
-    features: ['1 mailbox', 'Free warmup pool', '1 active sequence', '500 contacts'],
+    highlight: false,
+    features: [
+      '1 connected mailbox',
+      'Free warmup pool',
+      '1 active sequence',
+      '500 contacts',
+      'Community support',
+    ],
   },
   {
     name: 'Starter',
     price: '$39',
-    cadence: '/ mailbox / month',
+    cadence: '/ mailbox · mo',
     summary: 'Small teams sending 1–3k cold a month.',
     cta: 'Start trial',
     href: 'https://app.warmbly.com/register?plan=starter',
-    features: ['Unlimited mailboxes', 'Premium warmup', 'Unified inbox', '10k contacts'],
+    highlight: false,
+    features: [
+      'Unlimited mailboxes',
+      'Premium warmup pool',
+      'Unified inbox',
+      'Sequences with branching',
+      '10,000 contacts',
+    ],
+  },
+  {
+    name: 'Growth',
+    price: '$79',
+    cadence: '/ mailbox · mo',
+    summary: 'Sales teams running multi-sender campaigns.',
+    cta: 'Start Growth trial',
+    href: 'https://app.warmbly.com/register?plan=growth',
+    highlight: true,
+    features: [
+      'Everything in Starter',
+      'CRM · pipelines · deals · tasks',
+      'API & signed webhooks',
+      'Team roles & assignment',
+      '100,000 contacts',
+      'Priority support',
+    ],
   },
   {
     name: 'Business',
@@ -40,7 +71,14 @@ const plans = [
     summary: 'Agencies and high-volume teams.',
     cta: 'Talk to sales',
     href: '/contact/?topic=sales',
-    features: ['Dedicated workers + IPs', 'Up to 15k sends/day', 'BYOK, SSO, SCIM', 'Dedicated CSM'],
+    highlight: false,
+    features: [
+      'Dedicated workers + IPs',
+      'Up to 15,000 sends / day',
+      'BYOK encryption',
+      'SSO / SAML / SCIM',
+      'Dedicated CSM',
+    ],
   },
 ];
 ---
@@ -450,108 +488,88 @@ const plans = [
     </section>
 
     <!-- ============================================================
-         PRICING BENTO — 4 plans, Growth as wide highlighted hero
+         PRICING — 4 equal premium cards, Growth glows
     ============================================================ -->
     <section class="border-y border-[color:var(--border)]" style="background: var(--surface-2);">
       <div class="container-page py-24 md:py-32">
-        <div class="max-w-2xl">
+        <div class="text-center max-w-2xl mx-auto">
           <div class="text-[11px] uppercase tracking-[0.16em] text-[color:var(--brand)] font-semibold mb-4">Pricing</div>
           <h2 class="text-[32px] md:text-[52px] font-semibold tracking-[-0.03em] leading-[1.04] text-heading">
             Per mailbox. Predictable.
           </h2>
           <p class="mt-4 text-foreground/75 leading-relaxed">
-            Warmup, sending, the inbox, analytics and CRM are not separate line items. You pay for the mailboxes you connect.
+            Warmup, sending, the inbox, analytics and CRM aren’t separate line items. You pay for the mailboxes you connect.
           </p>
-        </div>
 
-        <!-- Growth — wide hero card, takes full row -->
-        <div class="mt-12 relative rounded-[20px] overflow-hidden ring-2 ring-[color:var(--brand)] bg-white" style="box-shadow: var(--shadow-xl);">
-          <!-- decorative sky inside the Growth card -->
-          <div class="absolute inset-0 pointer-events-none" aria-hidden="true">
-            <div class="absolute -top-20 -right-20 w-[420px] h-[420px] rounded-full" style="background: radial-gradient(circle, rgba(125,211,252,0.45) 0%, transparent 70%); filter: blur(40px);"></div>
-            <span class="absolute top-2 right-12 w-[200px] h-[80px] rounded-full bg-white/85" style="filter:blur(36px); opacity:0.65;"></span>
-          </div>
-          <div class="relative grid md:grid-cols-12 gap-0">
-            <div class="md:col-span-6 p-7 md:p-10 border-b md:border-b-0 md:border-r border-[color:var(--border)]">
-              <div class="flex items-center justify-between mb-4">
-                <h3 class="text-[18px] font-semibold text-[color:var(--brand)]">Growth</h3>
-                <span class="inline-flex items-center h-6 px-2.5 rounded-full text-[10.5px] font-semibold uppercase tracking-[0.08em] bg-[color:var(--brand)] text-white">
-                  Most popular
-                </span>
-              </div>
-              <p class="text-[14px] text-foreground/75 leading-relaxed">For sales teams running multi-sender campaigns and ops who don’t want to be paged about reputation.</p>
-
-              <div class="mt-7 flex items-baseline gap-2">
-                <span class="text-[56px] font-semibold tracking-[-0.04em] text-heading leading-none">$79</span>
-                <span class="text-[13.5px] text-muted-foreground">/ mailbox / month</span>
-              </div>
-              <p class="mt-2 text-[12.5px] text-muted-foreground font-mono">14-day trial · no credit card</p>
-
-              <a href="https://app.warmbly.com/register?plan=growth"
-                 class="mt-7 inline-flex h-11 px-5 items-center gap-2 rounded-[10px] text-[14.5px] font-medium text-white bg-[color:var(--brand)] hover:bg-[color:var(--brand-strong)] transition-colors shadow-[0_10px_24px_-10px_rgba(2,132,199,0.55)]">
-                Start Growth trial <Icon name="arrowRight" size={14} />
-              </a>
-            </div>
-
-            <div class="md:col-span-6 p-7 md:p-10 grid grid-cols-2 gap-x-4 gap-y-3 text-[13.5px]">
-              {[
-                'Unlimited mailboxes',
-                'Premium warmup pool',
-                'Unified inbox',
-                'Reply detection + classification',
-                'Sequences with branching',
-                'A/B variants per step',
-                'CRM · pipelines · deals · tasks',
-                'API & HMAC-signed webhooks',
-                'Team roles & assignment',
-                '100,000 contacts',
-                'Quarterly deliverability review',
-                'Priority support',
-              ].map((f) => (
-                <div class="flex items-start gap-2">
-                  <Icon name="check" size={13} class="text-[color:var(--brand)] mt-1 shrink-0" />
-                  <span>{f}</span>
-                </div>
-              ))}
-            </div>
+          <!-- Billing toggle (visual only — annual is a 20% nod) -->
+          <div class="mt-7 inline-flex items-center gap-1 p-1 rounded-full bg-white ring-1 ring-[color:var(--border)] text-[12.5px] font-medium">
+            <button class="h-7 px-3 rounded-full bg-[color:var(--brand)] text-white">Monthly</button>
+            <button class="h-7 px-3 rounded-full text-foreground/70 hover:text-foreground">Annual <span class="text-[10px] text-[color:var(--brand)] ml-0.5">−20%</span></button>
           </div>
         </div>
 
-        <!-- Free / Starter / Business — three smaller cards below -->
-        <div class="mt-4 grid md:grid-cols-3 gap-4">
+        <div class="mt-14 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-5 items-stretch">
           {plans.map((p) => (
-            <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] p-6 flex flex-col lift-on-hover" style="box-shadow: var(--shadow-sm);">
-              <h3 class="text-[15px] font-semibold text-heading">{p.name}</h3>
-              <p class="mt-1.5 text-[12.5px] text-muted-foreground leading-relaxed">{p.summary}</p>
+            <div class={`relative flex flex-col rounded-[16px] bg-white p-7 overflow-hidden lift-on-hover ${
+              p.highlight ? 'ring-2 ring-[color:var(--brand)]' : 'ring-1 ring-[color:var(--border)]'
+            }`} style={p.highlight ? 'box-shadow: var(--shadow-xl);' : 'box-shadow: var(--shadow-sm);'}>
 
-              <div class="mt-5 flex items-baseline gap-1.5">
-                <span class="text-[28px] font-semibold tracking-[-0.02em] text-heading">{p.price}</span>
-                <span class="text-[12px] text-muted-foreground">{p.cadence}</span>
+              {/* Decorative sky cloud bloom inside Growth card */}
+              {p.highlight && (
+                <div class="absolute inset-0 pointer-events-none" aria-hidden="true">
+                  <div class="absolute -top-24 -right-24 w-[280px] h-[280px] rounded-full" style="background: radial-gradient(circle, rgba(125,211,252,0.55) 0%, transparent 70%); filter: blur(34px);"></div>
+                  <span class="absolute -top-3 right-6 w-[140px] h-[60px] rounded-full bg-white/85" style="filter:blur(28px); opacity:0.75;"></span>
+                  <svg class="absolute top-3 right-8 cloud-drift cloud-3 opacity-50" style="width: 90px; height: 44px;" viewBox="0 0 90 44" fill="none" stroke="rgba(2, 132, 199, 0.4)" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M10 32 Q10 20 24 20 Q30 10 46 12 Q60 6 70 20 Q82 22 84 32 Q88 40 74 40 L24 40 Q10 40 10 32 Z" />
+                  </svg>
+                </div>
+              )}
+
+              <div class="relative">
+                {p.highlight && (
+                  <span class="absolute -top-1 right-0 inline-flex items-center h-5 px-2 rounded-full text-[10px] font-semibold uppercase tracking-[0.08em] bg-[color:var(--brand)] text-white">
+                    Popular
+                  </span>
+                )}
+                <h3 class={`text-[15px] font-semibold ${p.highlight ? 'text-[color:var(--brand)]' : 'text-heading'}`}>{p.name}</h3>
+                <p class="mt-1.5 text-[12.5px] text-muted-foreground leading-snug min-h-[34px]">{p.summary}</p>
+
+                <div class="mt-6 flex items-baseline gap-1.5">
+                  <span class="text-[44px] font-semibold tracking-[-0.04em] text-heading leading-none">{p.price}</span>
+                </div>
+                <p class="mt-1.5 text-[11.5px] text-muted-foreground">{p.cadence}</p>
+
+                <a
+                  href={p.href}
+                  class={`mt-6 inline-flex h-10 px-4 items-center justify-center w-full rounded-[8px] text-[13.5px] font-medium transition-colors ${
+                    p.highlight
+                      ? 'bg-[color:var(--brand)] text-white hover:bg-[color:var(--brand-strong)] shadow-[0_10px_24px_-10px_rgba(2,132,199,0.55)]'
+                      : 'bg-foreground text-background hover:bg-foreground/85'
+                  }`}
+                >
+                  {p.cta}
+                </a>
+
+                <div class="my-6 h-px bg-[color:var(--border)]"></div>
+                <ul class="space-y-2.5 text-[13px] text-foreground/90">
+                  {p.features.map((f) => (
+                    <li class="flex items-start gap-2">
+                      <span class={`mt-1 shrink-0 w-3.5 h-3.5 rounded-full inline-flex items-center justify-center ${p.highlight ? 'bg-[color:var(--brand-soft)] text-[color:var(--brand)]' : 'bg-[color:var(--surface-2)] text-foreground/55'}`}>
+                        <Icon name="check" size={9} />
+                      </span>
+                      <span>{f}</span>
+                    </li>
+                  ))}
+                </ul>
               </div>
-
-              <a
-                href={p.href}
-                class="mt-5 inline-flex h-10 px-4 items-center justify-center rounded-[8px] text-[13.5px] font-medium bg-foreground text-background hover:bg-foreground/85"
-              >
-                {p.cta}
-              </a>
-
-              <div class="my-5 h-px bg-[color:var(--border)]"></div>
-              <ul class="space-y-2 text-[13px] text-foreground/85">
-                {p.features.map((f) => (
-                  <li class="flex items-start gap-2">
-                    <Icon name="check" size={12} class="text-foreground/45 mt-1 shrink-0" />
-                    <span>{f}</span>
-                  </li>
-                ))}
-              </ul>
             </div>
           ))}
         </div>
 
-        <div class="mt-10 text-center">
-          <a href="/pricing/" class="inline-flex items-center gap-1.5 text-[13.5px] font-medium text-[color:var(--brand)] hover:text-[color:var(--brand-strong)]">
-            See the full comparison <Icon name="arrowRight" size={13} />
+        <div class="mt-10 flex flex-wrap items-center justify-center gap-2 text-[13px] text-muted-foreground">
+          <span>All plans include warmup, sending, inbox, analytics and CRM.</span>
+          <a href="/pricing/" class="inline-flex items-center gap-1 font-medium text-[color:var(--brand)] hover:text-[color:var(--brand-strong)]">
+            See the full comparison <Icon name="arrowRight" size={12} />
           </a>
         </div>
       </div>
