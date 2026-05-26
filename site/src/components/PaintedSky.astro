@@ -1,19 +1,42 @@
 ---
 /**
- * Painted-sky backdrop component.
+ * Painted-sky backdrop with graceful degradation.
  *
- * Place inside a `relative` parent. The sky fills the parent edge to
- * edge (border-radius is inherited). Pass `flavor` to pick the palette
- * and `clouds` to enable a couple of soft cloud puffs on top.
+ * The CSS-painted gradient renders behind, and the <img> overlays it
+ * when present. If the image fails to load (file not yet generated,
+ * 404, etc.), `onerror` hides the <img> so the CSS gradient shows
+ * through — no broken-image icon, ever.
+ *
+ *   <div class="relative rounded-2xl overflow-hidden">
+ *     <PaintedSky src="/backdrops/hero.webp" eager />
+ *     <div class="relative">…content…</div>
+ *   </div>
  */
 interface Props {
+  /** Path to the painted image under /public. Missing files fall back to the CSS gradient. */
+  src?: string;
+  /** Fallback CSS palette used both as a background and on image error. */
   flavor?: 'dawn' | 'bright' | 'dusk';
+  /** Prioritise loading — hero only. */
+  eager?: boolean;
+  /** Decorative cloud puffs on top. */
   clouds?: boolean;
+  /** Soft horizon shadow at the bottom. */
   horizon?: boolean;
+  alt?: string;
   class?: string;
 }
-const { flavor = 'dawn', clouds = true, horizon = true, class: className = '' } = Astro.props;
+const {
+  src,
+  flavor = 'dawn',
+  eager = false,
+  clouds = false,
+  horizon = false,
+  alt = '',
+  class: className = '',
+} = Astro.props;
 ---
+<!-- CSS-painted fallback always rendered first, behind everything -->
 <div class={`painted-sky ${flavor} ${className}`} aria-hidden="true">
   {clouds && (
     <>
@@ -24,3 +47,16 @@ const { flavor = 'dawn', clouds = true, horizon = true, class: className = '' } 
   )}
   {horizon && <div class="painted-horizon"></div>}
 </div>
+
+{src && (
+  <img
+    src={src}
+    alt={alt}
+    aria-hidden={alt === '' ? 'true' : undefined}
+    loading={eager ? 'eager' : 'lazy'}
+    fetchpriority={eager ? 'high' : 'auto'}
+    decoding="async"
+    onerror="this.style.display='none'"
+    class={`absolute inset-0 w-full h-full object-cover pointer-events-none select-none ${className}`}
+  />
+)}
