@@ -375,6 +375,73 @@ const faq = [
   </section>
 
   <!-- ============================================================
+       WHAT WARMUP CHANGES · qualitative side-by-side
+  ============================================================ -->
+  <section class="border-b border-[color:var(--border)] bg-[color:var(--surface-1)]/40 py-20 md:py-24">
+    <div class="container-page">
+      <div class="max-w-2xl mb-10">
+        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Why warmup matters</div>
+        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
+          A fresh mailbox is suspicious by default.
+        </h2>
+        <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed">
+          Gmail and Microsoft treat new senders cautiously. Without a behaviour history, a brand-new domain that immediately starts cold outreach looks like the worst-case sender. Warmup is the only way to build that history without a complaint event.
+        </p>
+      </div>
+
+      <div class="grid lg:grid-cols-2 gap-4">
+        <!-- Without warmup -->
+        <div class="rounded-[14px] bg-white ring-1 ring-rose-100 overflow-hidden">
+          <div class="px-6 py-3.5 bg-rose-50/60 border-b border-rose-100 flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-rose-500"></span>
+            <span class="text-[12px] uppercase tracking-[0.18em] font-mono text-rose-700 font-semibold">Without warmup</span>
+          </div>
+          <ul class="divide-y divide-[color:var(--border)]">
+            {[
+              'No sending history. Providers default to suspicion on first volume spike.',
+              'Inbox vs spam classification has no positive signal to lean on.',
+              'Any complaint or hard bounce moves reputation faster because the baseline is empty.',
+              'Engagement signals (replies, moves from spam) take longer to accrue.',
+              'First catastrophic event can hit within days of starting cold sends.',
+            ].map((b) => (
+              <li class="px-6 py-3 flex items-start gap-3">
+                <Icon name="warning" size={12} class="text-rose-500 mt-1 shrink-0" />
+                <span class="text-[13.5px] text-foreground/80 leading-snug">{b}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <!-- With warmup -->
+        <div class="rounded-[14px] bg-white ring-1 ring-emerald-100 overflow-hidden">
+          <div class="px-6 py-3.5 bg-emerald-50/60 border-b border-emerald-100 flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+            <span class="text-[12px] uppercase tracking-[0.18em] font-mono text-emerald-700 font-semibold">With Warmbly warmup</span>
+          </div>
+          <ul class="divide-y divide-[color:var(--border)]">
+            {[
+              'Gradual volume ramp matches what a real mailbox usage looks like.',
+              'Inbox arrivals at vetted partners build a positive placement signal.',
+              'Replies in the pool produce real engagement history at the receiver.',
+              'Verification tokens prove the activity is genuine, not self-replied noise.',
+              'Per-mailbox bands quarantine drift weeks before providers would act.',
+            ].map((b) => (
+              <li class="px-6 py-3 flex items-start gap-3">
+                <Icon name="check" size={12} class="text-emerald-600 mt-1 shrink-0" />
+                <span class="text-[13.5px] text-foreground/80 leading-snug">{b}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+
+      <p class="mt-5 text-[12px] text-muted-foreground italic max-w-3xl">
+        Reputation is per-mailbox, per-IP, and per-domain. Warmup builds all three simultaneously. We do not publish placement-improvement percentages because the answer depends on your domain age, content quality, list hygiene, and DMARC posture more than anything we control.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============================================================
        HEALTH BANDS — full comparison table (pricing matrix pattern)
   ============================================================ -->
   <section class="py-20 md:py-28">
