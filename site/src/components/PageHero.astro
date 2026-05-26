@@ -1,4 +1,6 @@
 ---
+import Cloud from './Cloud.astro';
+
 interface Props {
   eyebrow?: string;
   title: string;
@@ -6,17 +8,27 @@ interface Props {
 }
 const { eyebrow, title, description } = Astro.props;
 ---
-<section class="relative overflow-hidden border-b border-border">
-  <div class="absolute inset-0 bg-linegrid opacity-[0.30] dark:opacity-[0.20] pointer-events-none" />
-  <div class="container-page relative pt-20 md:pt-24 pb-16">
+<!--
+  Compressed deep-sky hero used on every non-home page. Same palette
+  as the home hero but a single band, no overlapping mock below.
+-->
+<section class="relative isolate overflow-hidden text-white" style="background: radial-gradient(ellipse 130% 140% at 72% 28%, #0284c7 0%, #0369a1 25%, #075985 50%, #0c4a6e 80%, #0a3d5c 100%);">
+  <div class="absolute top-0 right-0 w-[440px] opacity-30 pointer-events-none cloud-drift cloud-1" style="mix-blend-mode: screen;">
+    <Cloud variant={5} opacity={1} />
+  </div>
+  <div class="absolute -bottom-10 left-10 w-[360px] opacity-22 pointer-events-none cloud-drift cloud-2" style="mix-blend-mode: screen;">
+    <Cloud variant={3} opacity={1} />
+  </div>
+
+  <div class="container-page relative pt-16 md:pt-20 pb-16 md:pb-20">
     {eyebrow && (
-      <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold uppercase tracking-wider text-brand bg-brand-soft border border-brand/15 mb-5">
-        {eyebrow}
-      </span>
+      <div class="text-[11px] uppercase tracking-[0.18em] text-white/55 font-mono mb-3">{eyebrow}</div>
     )}
-    <h1 class="text-4xl md:text-5xl font-extrabold tracking-tight leading-[1.05] max-w-3xl">{title}</h1>
+    <h1 class="text-[34px] md:text-[52px] lg:text-[60px] font-semibold tracking-[-0.03em] leading-[1.04] text-white max-w-3xl">
+      {title}
+    </h1>
     {description && (
-      <p class="mt-5 text-lg text-muted-foreground max-w-2xl leading-relaxed">{description}</p>
+      <p class="mt-5 text-[16px] md:text-[17px] text-white/75 max-w-2xl leading-relaxed">{description}</p>
     )}
     <slot />
   </div>

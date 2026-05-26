@@ -1,44 +1,361 @@
 ---
 import Layout from '../../layouts/Layout.astro';
-import PageHero from '../../components/PageHero.astro';
-import Section from '../../components/Section.astro';
-import Card from '../../components/Card.astro';
+import HeroAtmosphere from '../../components/HeroAtmosphere.astro';
+import Cloud from '../../components/Cloud.astro';
 import Icon from '../../components/Icon.astro';
 
+// All articles with topic + level + read time
 const articles = [
-  { href: '/learn/email-warmup/',         title: 'Email warmup, properly explained',     read: '11 min', body: 'Why warmup exists, how providers read it, and how to do it without faking signals.' },
-  { href: '/learn/deliverability/',       title: 'The deliverability handbook',          read: '14 min', body: 'A full mental model for getting cold mail into the inbox and keeping it there.' },
-  { href: '/learn/spf-dkim-dmarc/',       title: 'SPF, DKIM and DMARC, end to end',     read: '12 min', body: 'The three authentication records and the alignment rules that actually matter.' },
-  { href: '/learn/inbox-placement/',      title: 'Inbox placement, not just delivery',  read: '8 min',  body: 'Delivery is a 200 OK. Placement is whether the recipient actually sees the message.' },
-  { href: '/learn/cold-email-rules/',     title: 'Cold email rules across regions',     read: '10 min', body: 'CAN-SPAM, GDPR, CASL, PECR — what each says and how to comply without lawyering up.' },
-  { href: '/learn/warmup-pools/',         title: 'Warmup pools: free, premium, dedicated', read: '7 min', body: 'How shared warmup pools work, why pool quality matters more than pool size.' },
-  { href: '/learn/reputation-recovery/',  title: 'Recovering a burned mailbox',          read: '9 min',  body: 'A step-by-step plan to bring a quarantined mailbox back to healthy.' },
-  { href: '/learn/glossary/',             title: 'Glossary',                              read: '5 min',  body: 'Deliverability vocabulary, defined plainly.' },
+  {
+    href: '/learn/deliverability/',
+    title: 'The deliverability handbook',
+    topic: 'Foundations',
+    level: 'Essential',
+    read: 14,
+    body: 'A full mental model for getting cold mail into the inbox and keeping it there. Authentication, warmup, volume discipline and reputation, in one place.',
+    icon: 'shield',
+    featured: true,
+  },
+  {
+    href: '/learn/email-warmup/',
+    title: 'Email warmup, properly explained',
+    topic: 'Foundations',
+    level: 'Beginner',
+    read: 11,
+    body: 'Why warmup exists, how providers read it, and how to do it without faking signals.',
+    icon: 'flame',
+  },
+  {
+    href: '/learn/spf-dkim-dmarc/',
+    title: 'SPF, DKIM and DMARC, end to end',
+    topic: 'Foundations',
+    level: 'Beginner',
+    read: 12,
+    body: 'The three authentication records and the alignment rules that actually matter for cold mail.',
+    icon: 'key',
+  },
+  {
+    href: '/learn/inbox-placement/',
+    title: 'Inbox placement, not just delivery',
+    topic: 'Foundations',
+    level: 'Beginner',
+    read: 8,
+    body: 'Delivery is a 200 OK. Placement is whether the recipient actually sees the message.',
+    icon: 'inbox',
+  },
+  {
+    href: '/learn/cold-email-rules/',
+    title: 'Cold email rules across regions',
+    topic: 'Sending well',
+    level: 'Practical',
+    read: 10,
+    body: 'CAN-SPAM, GDPR, CASL, PECR. What each says and how to comply without lawyering up.',
+    icon: 'list',
+  },
+  {
+    href: '/learn/warmup-pools/',
+    title: 'Warmup pools: free, premium, dedicated',
+    topic: 'Sending well',
+    level: 'Practical',
+    read: 7,
+    body: 'How shared warmup pools work and why pool quality matters more than pool size.',
+    icon: 'users',
+  },
+  {
+    href: '/learn/reputation-recovery/',
+    title: 'Recovering a burned mailbox',
+    topic: 'Sending well',
+    level: 'Advanced',
+    read: 9,
+    body: 'A step-by-step plan to bring a quarantined mailbox back to healthy.',
+    icon: 'workflow',
+  },
 ];
+
+const featured = articles.find((a) => a.featured)!;
+const rest     = articles.filter((a) => !a.featured);
+
+const topics = ['All', 'Foundations', 'Sending well'];
+const counts: Record<string, number> = {
+  'All': articles.length,
+  'Foundations': articles.filter(a => a.topic === 'Foundations').length,
+  'Sending well': articles.filter(a => a.topic === 'Sending well').length,
+};
+
+const levelTone = (l: string) => {
+  if (l === 'Essential') return { dot: 'bg-amber-500',   chip: 'bg-amber-50 text-amber-700' };
+  if (l === 'Beginner')  return { dot: 'bg-emerald-500', chip: 'bg-emerald-50 text-emerald-700' };
+  if (l === 'Practical') return { dot: 'bg-sky-500',     chip: 'bg-sky-50 text-sky-700' };
+  return { dot: 'bg-violet-500', chip: 'bg-violet-50 text-violet-700' };
+};
 ---
 <Layout
-  title="Learn — Warmbly"
-  description="Long-form guides on email warmup, deliverability, authentication, cold email rules and reputation recovery."
+  title="Learn · Warmbly"
+  description="Long-form guides on email warmup, deliverability, authentication, cold email rules and reputation recovery. Written by the team."
 >
-  <PageHero
-    eyebrow="Learn"
-    title="The cold-email knowledge base we wished we had."
-    description="Plain-language explanations of warmup, deliverability, SPF/DKIM/DMARC, cold-mail rules and reputation recovery. Written by the people who built our pool-quarantine logic."
-  />
-  <Section>
-    <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-      {articles.map((a) => (
-        <a href={a.href} class="group">
-          <Card class="h-full hover:border-border-strong transition-colors">
-            <div class="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">{a.read}</div>
-            <h3 class="mt-2 text-[16.5px] font-semibold leading-snug group-hover:text-brand-strong transition-colors">{a.title}</h3>
-            <p class="mt-2 text-[13.5px] text-muted-foreground leading-relaxed">{a.body}</p>
-            <span class="mt-4 inline-flex items-center gap-1.5 text-[13px] font-medium text-brand group-hover:text-brand-strong">
-              Read <Icon name="arrowRight" size={13} />
-            </span>
-          </Card>
-        </a>
-      ))}
+  <!-- ============================================================
+       HERO — HeroAtmosphere, editorial framing.
+              Featured article overlaps into the white below.
+  ============================================================ -->
+  <section class="relative isolate overflow-hidden">
+    <HeroAtmosphere />
+
+    <div class="container-page relative pt-16 md:pt-24 pb-44 md:pb-56 text-center">
+      <div class="inline-flex items-center gap-2 h-7 px-3 rounded-full bg-white/15 backdrop-blur ring-1 ring-white/25 text-[12px] text-white/95 shadow-[0_4px_14px_-4px_rgba(0,0,0,0.25)]">
+        <span class="inline-flex items-center h-5 px-1.5 rounded-full text-[10.5px] font-semibold uppercase tracking-[0.06em] bg-white !text-[#0369a1]" style="color:#0369a1;">
+          Learn
+        </span>
+        Plain-English guides, no jargon
+      </div>
+
+      <h1 class="mt-8 md:mt-10 text-[44px] sm:text-6xl md:text-[72px] lg:text-[80px] font-semibold tracking-[-0.04em] leading-[0.98] text-white max-w-4xl mx-auto">
+        The cold-email handbook<br/>we wished existed.
+      </h1>
+      <p class="mt-6 text-[17px] md:text-[19px] text-white/80 max-w-2xl mx-auto leading-relaxed">
+        Long-form essays on warmup, deliverability, authentication and reputation. Written by the people who built our quarantine logic.
+      </p>
     </div>
-  </Section>
+  </section>
+
+  <!-- ============================================================
+       FEATURED ARTICLE — overlaps the sky, big magazine-style card
+  ============================================================ -->
+  <section class="relative -mt-36 md:-mt-44 pb-16 md:pb-24 z-10">
+    <div class="container-page">
+      <a href={featured.href} class="group block rounded-[20px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden shadow-[0_40px_90px_-30px_rgba(2,32,71,0.35),0_12px_30px_-12px_rgba(15,23,42,0.12)] hover:shadow-[0_50px_100px_-30px_rgba(2,32,71,0.4),0_18px_40px_-12px_rgba(15,23,42,0.18)] transition-shadow">
+        <div class="grid lg:grid-cols-[1.4fr_1fr]">
+          <!-- Text side -->
+          <div class="p-8 md:p-12 lg:p-14 flex flex-col">
+            <div class="flex items-center gap-3 flex-wrap">
+              <span class="inline-flex items-center gap-1.5 h-6 px-2.5 rounded-full text-[10.5px] font-semibold uppercase tracking-[0.12em] font-mono bg-amber-50 text-amber-700">
+                <span class="w-1 h-1 rounded-full bg-amber-500"></span>
+                {featured.level} · featured
+              </span>
+              <span class="text-[10.5px] uppercase tracking-[0.16em] font-mono text-muted-foreground">{featured.topic}</span>
+              <span class="text-[10.5px] uppercase tracking-[0.16em] font-mono text-muted-foreground">{featured.read} min read</span>
+            </div>
+
+            <h2 class="mt-6 text-[32px] md:text-[44px] lg:text-[52px] font-semibold tracking-[-0.03em] leading-[1.04] text-heading group-hover:text-[#0369a1] transition-colors">
+              {featured.title}
+            </h2>
+            <p class="mt-5 text-[15.5px] md:text-[17px] text-foreground/75 leading-relaxed max-w-xl">
+              {featured.body}
+            </p>
+
+            <div class="mt-auto pt-8">
+              <span class="inline-flex items-center gap-2 h-11 px-5 rounded-[10px] text-[14px] font-semibold bg-foreground text-background group-hover:bg-[#1f2937] group-hover:-translate-y-0.5 transition-all shadow-[0_4px_14px_-2px_rgba(15,23,42,0.2)]">
+                Read the handbook <Icon name="arrowRight" size={13} />
+              </span>
+            </div>
+          </div>
+
+          <!-- Visual side: layered sky with reading-time tile -->
+          <div class="relative min-h-[280px] lg:min-h-full overflow-hidden" style="background: radial-gradient(ellipse 130% 100% at 50% 0%, #38bdf8 0%, #0284c7 50%, #075985 100%);">
+            <div class="absolute -top-6 right-[-40px] w-[280px] opacity-65 pointer-events-none cloud-drift cloud-1" style="mix-blend-mode: screen;">
+              <Cloud variant={5} opacity={0.95} />
+            </div>
+            <div class="absolute bottom-[-40px] left-[-30px] w-[240px] opacity-55 pointer-events-none cloud-drift cloud-2" style="mix-blend-mode: screen;">
+              <Cloud variant={3} opacity={0.85} />
+            </div>
+
+            <div class="absolute inset-0 flex flex-col items-center justify-center text-center px-6">
+              <div class="w-16 h-16 rounded-[16px] bg-white/20 backdrop-blur ring-1 ring-white/30 inline-flex items-center justify-center mb-5">
+                <Icon name={featured.icon} size={26} class="text-white" />
+              </div>
+              <div class="text-[60px] md:text-[80px] font-semibold text-white tracking-[-0.04em] leading-none drop-shadow-[0_2px_8px_rgba(2,32,71,0.3)]">{featured.read}</div>
+              <div class="mt-1 text-[10.5px] uppercase tracking-[0.2em] font-mono text-white/75">minutes</div>
+              <div class="mt-5 text-[12.5px] font-mono text-white/85">7 sections · 1 worked example</div>
+            </div>
+          </div>
+        </div>
+      </a>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       LIBRARY — sky atmosphere band with floating article cards
+  ============================================================ -->
+  <section class="relative isolate overflow-hidden py-20 md:py-28">
+    <!-- Sky atmosphere bg -->
+    <div class="absolute inset-0 pointer-events-none" style="background: linear-gradient(180deg, #ffffff 0%, #f0f9ff 22%, #e0f2fe 60%, #bae6fd 100%);"></div>
+    <!-- Floating clouds -->
+    <div class="absolute top-[8%] left-[-80px] w-[420px] opacity-50 pointer-events-none cloud-drift cloud-1" style="mix-blend-mode: multiply;">
+      <Cloud variant={5} opacity={0.7} />
+    </div>
+    <div class="absolute top-[28%] right-[-100px] w-[380px] opacity-45 pointer-events-none cloud-drift cloud-2" style="mix-blend-mode: multiply;">
+      <Cloud variant={2} opacity={0.65} />
+    </div>
+    <div class="absolute bottom-[12%] left-[18%] w-[280px] opacity-30 pointer-events-none cloud-drift cloud-3" style="mix-blend-mode: multiply;">
+      <Cloud variant={3} opacity={0.55} />
+    </div>
+
+    <div class="container-page relative">
+      <div class="mb-14 max-w-3xl">
+        <div class="text-[11px] uppercase tracking-[0.18em] text-[#075985] font-mono mb-3">The library</div>
+        <h2 class="text-[32px] md:text-[48px] font-semibold tracking-[-0.03em] leading-[1.04] text-heading">
+          Six essays. One handbook.
+        </h2>
+        <p class="mt-4 text-[15.5px] md:text-[17px] text-foreground/70">
+          Written by the people who built the warmup pool. Read in any order.
+        </p>
+      </div>
+
+      <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-5">
+        {rest.map((a, i) => {
+          const sky = i % 3 === 0
+            ? 'linear-gradient(180deg, #38bdf8 0%, #0284c7 100%)'
+            : i % 3 === 1
+            ? 'linear-gradient(180deg, #0284c7 0%, #075985 100%)'
+            : 'linear-gradient(180deg, #075985 0%, #0c4a6e 100%)';
+          return (
+            <a href={a.href} class="article-card group relative flex flex-col rounded-[16px] bg-white overflow-hidden ring-1 ring-[color:var(--border)] hover:-translate-y-1 hover:shadow-[0_30px_60px_-25px_rgba(2,32,71,0.25),0_8px_24px_-10px_rgba(15,23,42,0.08)] transition-all" style="box-shadow: 0 4px 16px -6px rgba(15,23,42,0.06);">
+              <!-- Vertical sky accent stripe -->
+              <div class="absolute left-0 top-0 bottom-0 w-[6px] transition-all group-hover:w-[8px]" style={`background: ${sky}`}></div>
+
+              <div class="pl-7 pr-6 pt-7 pb-6 flex flex-col flex-1">
+                <!-- Top: number + read time -->
+                <div class="flex items-baseline justify-between mb-5">
+                  <span class="text-[11px] font-mono text-foreground/45 tracking-[0.12em]">
+                    No. {String(i + 1).padStart(2, '0')}
+                  </span>
+                  <span class="text-[10.5px] font-mono uppercase tracking-[0.16em] text-foreground/55">
+                    {a.read} min
+                  </span>
+                </div>
+
+                <!-- Title -->
+                <h3 class="text-[20px] md:text-[22px] font-semibold tracking-[-0.02em] leading-[1.2] text-heading group-hover:text-[#0369a1] transition-colors">
+                  {a.title}
+                </h3>
+
+                <!-- Excerpt -->
+                <p class="mt-3 text-[13.5px] text-foreground/65 leading-relaxed flex-1">
+                  {a.body}
+                </p>
+
+                <!-- Footer: topic + arrow -->
+                <div class="mt-6 pt-4 border-t border-[color:var(--border)] flex items-center justify-between">
+                  <span class="text-[10.5px] uppercase tracking-[0.16em] font-mono text-foreground/55">{a.topic}</span>
+                  <Icon name="arrowRight" size={14} class="text-foreground/40 group-hover:text-[#0369a1] group-hover:translate-x-1 transition-all" />
+                </div>
+              </div>
+            </a>
+          );
+        })}
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       GLOSSARY — deep-sky atmospheric panel, distinct from library
+  ============================================================ -->
+  <section class="relative isolate overflow-hidden text-white">
+    <!-- Deep sky background -->
+    <div class="absolute inset-0 pointer-events-none" style="background: radial-gradient(ellipse 130% 100% at 50% 0%, #0c4a6e 0%, #075985 40%, #0a3d5c 100%);"></div>
+    <div class="absolute top-0 right-[-60px] w-[440px] opacity-25 pointer-events-none cloud-drift cloud-1" style="mix-blend-mode: screen;">
+      <Cloud variant={5} opacity={0.8} />
+    </div>
+    <div class="absolute bottom-[-40px] left-[-60px] w-[320px] opacity-20 pointer-events-none cloud-drift cloud-2" style="mix-blend-mode: screen;">
+      <Cloud variant={3} opacity={0.7} />
+    </div>
+
+    <div class="container-page relative py-20 md:py-28">
+      <div class="grid lg:grid-cols-[1fr_1.4fr] gap-12 lg:gap-20 items-start">
+        <!-- Left: title block -->
+        <div>
+          <div class="text-[11px] uppercase tracking-[0.18em] text-white/55 font-mono mb-3">Reference</div>
+          <h2 class="text-[32px] md:text-[48px] font-semibold tracking-[-0.03em] leading-[1.04] text-white">
+            The vocabulary,<br/>defined plainly.
+          </h2>
+          <p class="mt-5 text-[15.5px] md:text-[17px] text-white/75 max-w-md leading-relaxed">
+            Every deliverability term we use across the platform. Short, definitive, no jargon.
+          </p>
+
+          <div class="mt-8 grid grid-cols-3 gap-6 max-w-sm">
+            <div>
+              <div class="text-[28px] font-semibold text-white tracking-[-0.02em] font-mono">42</div>
+              <div class="mt-1 text-[10.5px] uppercase tracking-[0.16em] font-mono text-white/55">Terms</div>
+            </div>
+            <div>
+              <div class="text-[28px] font-semibold text-white tracking-[-0.02em] font-mono">5</div>
+              <div class="mt-1 text-[10.5px] uppercase tracking-[0.16em] font-mono text-white/55">Min read</div>
+            </div>
+            <div>
+              <div class="text-[28px] font-semibold text-white tracking-[-0.02em] font-mono">12</div>
+              <div class="mt-1 text-[10.5px] uppercase tracking-[0.16em] font-mono text-white/55">Cross-links</div>
+            </div>
+          </div>
+
+          <a href="/learn/glossary/" class="mt-10 inline-flex h-11 px-5 items-center gap-2 rounded-[10px] text-[14px] font-semibold bg-white hover:bg-white hover:-translate-y-0.5 hover:shadow-[0_12px_28px_-6px_rgba(0,0,0,0.3)] transition-all duration-200 ease-out shadow-[0_4px_14px_-2px_rgba(0,0,0,0.18)]">
+            <span style="color:#075985;">Open the glossary</span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#075985" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>
+            </svg>
+          </a>
+        </div>
+
+        <!-- Right: sample entries as a glass card -->
+        <div class="rounded-[16px] bg-white/[0.06] backdrop-blur ring-1 ring-white/15 p-7 md:p-8">
+          <div class="text-[10.5px] uppercase tracking-[0.18em] font-mono text-white/55 mb-5">Sample entries</div>
+          <div class="divide-y divide-white/10">
+            {[
+              { term: 'SPF',            defn: 'Sender Policy Framework. Authorises which servers can send for a domain.' },
+              { term: 'DKIM',           defn: 'Cryptographic signature proving a message was not altered in transit.' },
+              { term: 'DMARC',          defn: 'Policy that tells receivers what to do when SPF or DKIM fails.' },
+              { term: 'Placement',      defn: 'Whether accepted mail lands in inbox, Promotions or spam.' },
+              { term: 'Complaint rate', defn: 'Share of delivered messages recipients mark as spam.' },
+              { term: 'ARF',            defn: 'Abuse Reporting Format. Standardised feedback loop messages from providers.' },
+            ].map((t) => (
+              <div class="grid grid-cols-[130px_1fr] gap-4 py-3 items-baseline">
+                <span class="inline-flex items-center h-6 px-2 rounded-md bg-white/15 ring-1 ring-white/25 text-[12px] font-mono font-semibold text-white w-fit">{t.term}</span>
+                <span class="text-[13px] text-white/80 leading-snug">{t.defn}</span>
+              </div>
+            ))}
+          </div>
+          <div class="mt-5 text-[11.5px] font-mono text-white/55">+ 36 more inside</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       FINAL CTA — deep sky, distinct from hero
+  ============================================================ -->
+  <section class="relative isolate overflow-hidden text-white">
+    <div class="absolute inset-0 pointer-events-none" style="background: radial-gradient(ellipse 140% 90% at 50% 0%, #0ea5e9 0%, #0284c7 35%, #075985 70%, #0c4a6e 100%);"></div>
+    <div class="absolute top-[30%] left-1/2 -translate-x-1/2 w-[720px] h-[400px] pointer-events-none" style="background: radial-gradient(ellipse, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0) 65%);"></div>
+    <div class="absolute top-[10%] left-[-100px] w-[380px] opacity-50 pointer-events-none cloud-drift cloud-1" style="mix-blend-mode: screen;">
+      <Cloud variant={5} opacity={0.85} />
+    </div>
+    <div class="absolute top-[14%] right-[-90px] w-[340px] opacity-45 pointer-events-none cloud-drift cloud-2" style="mix-blend-mode: screen;">
+      <Cloud variant={2} opacity={0.8} />
+    </div>
+    <div class="absolute bottom-[-60px] left-[12%] w-[260px] opacity-35 pointer-events-none cloud-drift cloud-3" style="mix-blend-mode: screen;">
+      <Cloud variant={3} opacity={0.7} />
+    </div>
+    <div class="absolute bottom-[-40px] right-[8%] w-[300px] opacity-35 pointer-events-none cloud-drift cloud-1" style="mix-blend-mode: screen;">
+      <Cloud variant={4} opacity={0.7} />
+    </div>
+
+    <div class="container-page relative py-24 md:py-32 text-center">
+      <h2 class="text-[36px] md:text-[56px] font-semibold tracking-[-0.03em] leading-[1.04] text-white mx-auto max-w-2xl">
+        Now put it into practice.
+      </h2>
+      <p class="mt-5 text-[15.5px] md:text-[17px] text-white/80 max-w-md mx-auto">
+        Start a 14-day free trial. One mailbox. Real warmup pool.
+      </p>
+      <div class="mt-10 flex flex-wrap items-center justify-center gap-3">
+        <a href="https://app.warmbly.com/register" class="inline-flex h-11 px-5 items-center gap-2 rounded-[10px] text-[14.5px] font-semibold bg-white hover:bg-white hover:-translate-y-0.5 hover:shadow-[0_12px_28px_-6px_rgba(0,0,0,0.3)] transition-all duration-200 ease-out shadow-[0_4px_14px_-2px_rgba(0,0,0,0.18)]">
+          <span style="color:#075985;">Start free trial</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#075985" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>
+          </svg>
+        </a>
+        <a href="/pricing/" class="inline-flex h-11 px-5 items-center rounded-[10px] text-[14.5px] font-medium bg-white/10 backdrop-blur ring-1 ring-white/40 text-white hover:bg-white/20 hover:-translate-y-0.5 transition-all duration-200 ease-out">
+          See pricing
+        </a>
+      </div>
+    </div>
+  </section>
+
 </Layout>

@@ -1,129 +1,141 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import PageHero from '../components/PageHero.astro';
-import Section from '../components/Section.astro';
-import SectionHead from '../components/SectionHead.astro';
-import Card from '../components/Card.astro';
+import Cloud from '../components/Cloud.astro';
 import Icon from '../components/Icon.astro';
 import CTA from '../components/CTA.astro';
 
 const bands = [
-  { provider: 'Google',           threshold: '< 0.10% spam rate',  detail: 'Avoid ever reaching 0.30%. We alert above 0.03%.' },
-  { provider: 'Amazon SES',       threshold: '< 0.10% complaints', detail: 'At 0.10% SES auto-reviews; at 0.50% it can pause sending.' },
-  { provider: 'Amazon SES bounces', threshold: '< 5% bounces',     detail: 'At 5% the account is reviewed; at 10% sending may pause.' },
-  { provider: 'Microsoft 365',    threshold: 'Use a bulk provider', detail: 'Exchange Online docs explicitly say to use specialists for bulk mail.' },
+  { provider: 'Google · bulk sender',     us: '0.03%',  warn: '0.10%', kill: '0.30%' },
+  { provider: 'Amazon SES · complaints',  us: '0.03%',  warn: '0.10%', kill: '0.50%' },
+  { provider: 'Amazon SES · bounces',     us: '1.0%',   warn: '5.0%',  kill: '10%' },
+  { provider: 'Microsoft 365',            us: '0.03%',  warn: '0.10%', kill: 'Bulk use disallowed' },
+];
+
+const auth = [
+  { name: 'SPF',   body: 'We verify the sender domain SPF record authorises both the mailbox provider and any third-party services you use to send.' },
+  { name: 'DKIM',  body: 'We check that DKIM is published, the selector resolves, and the key length is at least 1024 bits.' },
+  { name: 'DMARC', body: 'We surface DMARC policy, alignment mode, and the rua reporting address. We warn loudly on p=none.' },
+];
+
+const signals = [
+  ['Inbox vs spam placement', 'Per-mailbox placement tracked through warmup probes and recipient feedback.'],
+  ['Complaint rate',           'ARF complaints, Gmail FBLs, and "mark as spam" signals from connected mailboxes.'],
+  ['Bounce rate',              'Hard and soft bounces by mailbox and domain, with reason classification.'],
+  ['Warmup token health',      'Missing, malformed, or replayed verification tokens count as suspicion.'],
+  ['Reply detection',          'Recipients replying is the strongest positive deliverability signal we have.'],
+  ['OOO + auto-replies',       'Classified so they do not pollute reply rate or trigger sequence steps.'],
+  ['Provider throttling',      '4xx and rate-limit responses tracked per mailbox and exposed as health signals.'],
+  ['Connection abuse',         'Burst syncs (>100 in 5min) and hourly (>500) rate-limit the mailbox automatically.'],
 ];
 ---
 <Layout
-  title="Deliverability — Warmbly"
+  title="Deliverability · Warmbly"
   description="A platform built around inbox placement: per-mailbox health, real-time complaint and bounce signals, automatic quarantine before providers act."
 >
-  <PageHero
-    eyebrow="Deliverability"
-    title="A platform built so the inbox is the default outcome."
-    description="Inbox placement isn’t a setting you toggle on. It’s the cumulative result of authentication, warmup, volume discipline, content quality and provider-side reputation. We instrument every one of those."
-  />
+  <!-- HERO -->
+  <section class="relative isolate overflow-hidden text-white" style="background: radial-gradient(ellipse 130% 140% at 72% 28%, #0284c7 0%, #0369a1 25%, #075985 50%, #0c4a6e 80%, #0a3d5c 100%);">
+    <div class="absolute top-0 right-0 w-[420px] opacity-30 pointer-events-none cloud-drift cloud-1" style="mix-blend-mode: screen;">
+      <Cloud variant={5} opacity={1} />
+    </div>
 
-  <!-- Authentication -->
-  <Section>
-    <SectionHead
-      eyebrow="Authentication"
-      title="SPF, DKIM and DMARC — checked, not assumed."
-      description="The platform inspects DNS for every connected mailbox and surfaces alignment issues before you send the first campaign."
-    />
-    <div class="mt-10 grid md:grid-cols-3 gap-4">
-      {[
-        { name: 'SPF',   icon: 'cloud', body: 'We verify the sender domain’s SPF record authorises both the mailbox provider and any third-party services you use to send.' },
-        { name: 'DKIM',  icon: 'key',   body: 'We check that DKIM is published, the selector resolves, and the key length is at least 1024 bits.' },
-        { name: 'DMARC', icon: 'shield',body: 'We surface DMARC policy (none/quarantine/reject), alignment mode, and the rua reporting address — and warn on `p=none`.' },
-      ].map((a) => (
-        <Card>
-          <div class="w-9 h-9 rounded-lg bg-brand-soft text-brand inline-flex items-center justify-center mb-4">
-            <Icon name={a.icon} size={18} />
+    <div class="container-page relative pt-16 md:pt-20 pb-16 md:pb-20">
+      <div class="text-[11px] uppercase tracking-[0.18em] text-white/55 font-mono mb-4">Deliverability</div>
+      <h1 class="text-[36px] sm:text-[52px] md:text-[60px] font-semibold tracking-[-0.03em] leading-[1.02] text-white max-w-3xl">
+        Built so the inbox is the default outcome.
+      </h1>
+      <p class="mt-5 text-[15.5px] md:text-[17px] text-white/75 max-w-2xl leading-relaxed">
+        Inbox placement is not a setting you toggle on. It is the cumulative result of authentication, warmup, volume discipline, content quality and provider-side reputation. We instrument every one of them.
+      </p>
+    </div>
+  </section>
+
+  <!-- AUTH STRIP -->
+  <section class="py-16 md:py-20">
+    <div class="container-page">
+      <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Authentication</div>
+      <h2 class="text-[26px] md:text-[34px] font-semibold tracking-[-0.025em] text-heading max-w-2xl">SPF, DKIM, DMARC. Checked, not assumed.</h2>
+
+      <div class="mt-10 grid md:grid-cols-3 gap-px bg-[color:var(--border)] rounded-[14px] overflow-hidden ring-1 ring-[color:var(--border)]" style="box-shadow: var(--shadow-sm);">
+        {auth.map((a) => (
+          <div class="bg-white p-6">
+            <div class="text-[10.5px] uppercase tracking-[0.18em] font-mono text-[color:var(--sky-6)] mb-3">DNS check</div>
+            <div class="text-[18px] font-semibold text-heading">{a.name}</div>
+            <p class="mt-2 text-[13.5px] text-foreground/70 leading-relaxed">{a.body}</p>
           </div>
-          <h3 class="text-[15.5px] font-semibold">{a.name}</h3>
-          <p class="mt-1.5 text-[13.5px] text-muted-foreground leading-relaxed">{a.body}</p>
-        </Card>
-      ))}
+        ))}
+      </div>
     </div>
-  </Section>
+  </section>
 
-  <!-- Provider thresholds -->
-  <Section variant="muted">
-    <SectionHead
-      eyebrow="What we measure against"
-      title="Provider thresholds you can verify."
-      description="We chose the platform-wide bands so you trip them weeks before mailbox providers do. Here are the public thresholds we benchmark against."
-    />
-    <div class="mt-10 overflow-hidden rounded-xl border border-border bg-card">
-      <table class="w-full text-[14px]">
-        <thead class="bg-surface-2/70 text-[12px] uppercase tracking-wider text-muted-foreground">
-          <tr>
-            <th class="text-left font-semibold px-5 py-3">Provider</th>
-            <th class="text-left font-semibold px-5 py-3">Threshold</th>
-            <th class="text-left font-semibold px-5 py-3">What we do</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-border">
-          {bands.map((b) => (
-            <tr>
-              <td class="px-5 py-3 font-medium">{b.provider}</td>
-              <td class="px-5 py-3"><span class="kbd">{b.threshold}</span></td>
-              <td class="px-5 py-3 text-muted-foreground">{b.detail}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  </Section>
+  <!-- THRESHOLDS COMPARISON -->
+  <section class="bg-[color:var(--surface-1)] border-y border-[color:var(--border)] py-16 md:py-20">
+    <div class="container-page">
+      <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Thresholds</div>
+      <h2 class="text-[26px] md:text-[34px] font-semibold tracking-[-0.025em] text-heading max-w-2xl">We act weeks before providers do.</h2>
+      <p class="mt-4 text-[15.5px] text-foreground/75 max-w-xl">
+        Public thresholds vs. the bands we trigger on internally.
+      </p>
 
-  <!-- Signals we track -->
-  <Section>
-    <SectionHead
-      eyebrow="Signals"
-      title="What we watch, in real time."
-    />
-    <div class="mt-10 grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-      {[
-        { title: 'Inbox vs spam placement', body: 'Per-mailbox placement tracked through warmup probes and recipient feedback.' },
-        { title: 'Complaint rate',          body: 'ARF complaints, Gmail FBLs, and explicit “mark as spam” signals from connected mailboxes.' },
-        { title: 'Bounce rate',             body: 'Hard and soft bounces by mailbox and domain, with reason classification.' },
-        { title: 'Warmup token health',     body: 'Missing, malformed, or replayed verification tokens count as suspicion.' },
-        { title: 'Reply detection',         body: 'Recipients replying is the strongest positive deliverability signal we have.' },
-        { title: 'OOO and auto-replies',    body: 'Classified so they don’t pollute reply rate or trigger sequence steps.' },
-        { title: 'Provider throttling',     body: '4xx and rate-limit responses tracked per mailbox and exposed as health signals.' },
-        { title: 'Connection abuse',        body: 'Burst syncs (>100 in 5 min) and hourly syncs (>500) rate-limit the mailbox automatically.' },
-      ].map((s) => (
-        <Card>
-          <h3 class="text-[14.5px] font-semibold">{s.title}</h3>
-          <p class="mt-1.5 text-[13px] text-muted-foreground leading-relaxed">{s.body}</p>
-        </Card>
-      ))}
+      <div class="mt-10 rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden" style="box-shadow: var(--shadow-sm);">
+        <div class="grid grid-cols-[1.5fr_1fr_1fr_1fr] px-5 py-3 bg-[color:var(--surface-1)] border-b border-[color:var(--border)] text-[10.5px] uppercase tracking-[0.16em] font-mono text-muted-foreground">
+          <div>Provider</div>
+          <div class="text-[color:var(--sky-7)]">We act at</div>
+          <div>Warning</div>
+          <div>Provider acts</div>
+        </div>
+        {bands.map((b) => (
+          <div class="grid grid-cols-[1.5fr_1fr_1fr_1fr] px-5 py-3.5 border-b border-[color:var(--border)] last:border-b-0 text-[13.5px] items-baseline">
+            <div class="font-medium text-heading">{b.provider}</div>
+            <div><span class="inline-flex items-center px-1.5 py-0.5 rounded font-mono text-[12px] bg-emerald-50 text-emerald-700">{b.us}</span></div>
+            <div><span class="inline-flex items-center px-1.5 py-0.5 rounded font-mono text-[12px] bg-amber-50 text-amber-700">{b.warn}</span></div>
+            <div><span class="inline-flex items-center px-1.5 py-0.5 rounded font-mono text-[12px] bg-rose-50 text-rose-700">{b.kill}</span></div>
+          </div>
+        ))}
+      </div>
     </div>
-  </Section>
+  </section>
 
-  <!-- Sending posture -->
-  <Section variant="muted">
-    <SectionHead
-      eyebrow="Sending posture"
-      title="Conservative by default. Tunable on purpose."
-    />
-    <div class="mt-10 grid md:grid-cols-2 gap-4">
-      {[
-        ['Fresh mailbox', 'Start cold outreach around 10–20/day. Ramp slowly while reputation holds.'],
-        ['Stable mailbox', 'Normal safe band is 30–50/day. Default cap is 50/day.'],
-        ['Above 50/day', 'Requires positive reputation signals, low complaint rates, and explicit review.'],
-        ['Never burst', 'Maintain spacing between sends. Avoid bursty patterns from the same mailbox.'],
-        ['Worker concentration', 'A shared worker shouldn’t carry more than ~10 actively-sending cold mailboxes at default settings.'],
-        ['Dedicated workers', 'Scale volume by adding healthy mailboxes, not by forcing a few inboxes to send more.'],
-      ].map(([k, v]) => (
-        <Card>
-          <h3 class="text-[15px] font-semibold">{k}</h3>
-          <p class="mt-1.5 text-[13.5px] text-muted-foreground leading-relaxed">{v}</p>
-        </Card>
-      ))}
+  <!-- SIGNALS GRID -->
+  <section class="py-16 md:py-20">
+    <div class="container-page">
+      <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Signals</div>
+      <h2 class="text-[26px] md:text-[34px] font-semibold tracking-[-0.025em] text-heading max-w-2xl">What we watch, in real time.</h2>
+
+      <div class="mt-10 grid sm:grid-cols-2 lg:grid-cols-4 gap-px bg-[color:var(--border)] rounded-[14px] overflow-hidden ring-1 ring-[color:var(--border)]" style="box-shadow: var(--shadow-sm);">
+        {signals.map(([t, b]) => (
+          <div class="bg-white p-5">
+            <div class="text-[14.5px] font-semibold text-heading">{t}</div>
+            <p class="mt-1.5 text-[12.5px] text-foreground/70 leading-relaxed">{b}</p>
+          </div>
+        ))}
+      </div>
     </div>
-  </Section>
+  </section>
+
+  <!-- LEARN POINTERS -->
+  <section class="bg-[color:var(--surface-1)] border-y border-[color:var(--border)] py-14 md:py-16">
+    <div class="container-page grid lg:grid-cols-[1fr_2fr] gap-10">
+      <div>
+        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Go deeper</div>
+        <h2 class="text-[24px] md:text-[30px] font-semibold tracking-[-0.025em] text-heading leading-[1.1]">Full deliverability handbook.</h2>
+      </div>
+      <div class="grid sm:grid-cols-2 gap-3">
+        {[
+          { l: 'Email warmup explained', h: '/learn/email-warmup/' },
+          { l: 'Deliverability handbook', h: '/learn/deliverability/' },
+          { l: 'SPF, DKIM, DMARC', h: '/learn/spf-dkim-dmarc/' },
+          { l: 'Inbox placement', h: '/learn/inbox-placement/' },
+          { l: 'Cold email rules', h: '/learn/cold-email-rules/' },
+          { l: 'Reputation recovery', h: '/learn/reputation-recovery/' },
+        ].map((p) => (
+          <a href={p.h} class="group flex items-center justify-between p-4 rounded-[10px] bg-white ring-1 ring-[color:var(--border)] hover:ring-[color:var(--sky-6)]/40 transition-colors">
+            <span class="text-[14px] font-medium text-foreground">{p.l}</span>
+            <Icon name="arrowRight" size={13} class="text-muted-foreground group-hover:text-[color:var(--brand)] group-hover:translate-x-0.5 transition-all" />
+          </a>
+        ))}
+      </div>
+    </div>
+  </section>
 
   <CTA
     title="Audit your sending health today."

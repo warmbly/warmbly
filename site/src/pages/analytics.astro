@@ -1,62 +1,195 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import PageHero from '../components/PageHero.astro';
-import Section from '../components/Section.astro';
-import SectionHead from '../components/SectionHead.astro';
-import Card from '../components/Card.astro';
+import Cloud from '../components/Cloud.astro';
 import Icon from '../components/Icon.astro';
 import CTA from '../components/CTA.astro';
+
+const kpis = [
+  { label: 'Placement · inbox',  value: '93.4%',  delta: '+1.2 pts',  ok: true },
+  { label: 'Complaint rate',     value: '0.04%',  delta: 'within band', ok: true },
+  { label: 'Bounce rate',        value: '1.8%',   delta: '−0.3 pts',  ok: true },
+  { label: 'Reply rate · cold',  value: '6.1%',   delta: '+0.4 pts',  ok: true },
+];
+
+// Simple SVG line points
+const trend = [42, 48, 52, 49, 56, 61, 66, 64, 71, 75, 73, 80, 84, 86];
+
+const layers = [
+  { tier: 'Workspace', icon: 'chart',    body: 'Big-picture complaint rate, bounce rate, placement by sender pool, suppression trend.' },
+  { tier: 'Pool',      icon: 'flame',    body: 'Warmup pool health, member count, quarantine queue, spam-score histogram.' },
+  { tier: 'Worker',    icon: 'cpu',      body: 'Per-worker volume, mailbox concentration, IP reputation, throttle events.' },
+  { tier: 'Mailbox',   icon: 'inbox',    body: 'Inbox vs spam placement, daily send + warmup volume, complaint and bounce rates.' },
+  { tier: 'Sequence',  icon: 'workflow', body: 'Step-by-step open / reply / positive-reply rates, A/B variants, drop-off curves.' },
+  { tier: 'Contact',   icon: 'contact',  body: 'Per-recipient timeline of every send, open, click, reply, bounce, classification.' },
+];
 ---
 <Layout
-  title="Analytics — Warmbly"
-  description="Deliverability-aware analytics: per-mailbox placement, complaint and bounce rates, warmup health, sequence conversion."
+  title="Analytics · Warmbly"
+  description="Deliverability-aware analytics: per-mailbox placement, complaint and bounce rates, warmup health, sequence conversion. No vanity opens."
 >
-  <PageHero
-    eyebrow="Analytics"
-    title="Analytics that lead with deliverability, not vanity opens."
-    description="We don’t open-shame you with a number we can’t trust. We show placement, complaint rate, bounce rate, reply rate and revenue — by mailbox, pool, worker and sequence."
-  />
-
-  <Section>
-    <SectionHead
-      eyebrow="What you see"
-      title="Five layers of view."
-    />
-    <div class="mt-10 grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-      {[
-        { title: 'Workspace', body: 'Big-picture: complaint rate, bounce rate, placement by sender pool, suppressed contacts trend.' },
-        { title: 'Pool',      body: 'Warmup pool health, member count, quarantine queue, recovery cohort, spam score histogram.' },
-        { title: 'Worker',    body: 'Per-worker volume, mailbox concentration, IP reputation signals, throttle events.' },
-        { title: 'Mailbox',   body: 'Inbox vs spam placement, daily send / warmup volume, complaint rate, bounce rate, OOO rate.' },
-        { title: 'Sequence',  body: 'Step-by-step open / reply / positive-reply rates, A/B variant performance, drop-off curves.' },
-        { title: 'Contact',   body: 'Per-recipient timeline of every send, open, click, reply, bounce, and classification.' },
-      ].map((s) => (
-        <Card>
-          <h3 class="text-[15px] font-semibold">{s.title}</h3>
-          <p class="mt-1.5 text-[13.5px] text-muted-foreground leading-relaxed">{s.body}</p>
-        </Card>
-      ))}
+  <!-- HERO: KPI tile row floats below the headline -->
+  <section class="relative isolate overflow-hidden text-white" style="background: radial-gradient(ellipse 130% 140% at 72% 28%, #0284c7 0%, #0369a1 25%, #075985 50%, #0c4a6e 80%, #0a3d5c 100%);">
+    <div class="absolute top-0 right-0 w-[440px] opacity-30 pointer-events-none cloud-drift cloud-1" style="mix-blend-mode: screen;">
+      <Cloud variant={5} opacity={1} />
     </div>
-  </Section>
 
-  <Section variant="muted">
-    <SectionHead
-      eyebrow="Exports"
-      title="Your data is yours. Export it any time."
-    />
-    <div class="mt-10 grid md:grid-cols-3 gap-4">
-      {[
-        ['CSV / XLSX',  'Every report exports to CSV or XLSX with column selection.'],
-        ['Scheduled', 'Schedule a weekly digest by email or to S3.'],
-        ['API & webhooks',  'Pull events into your warehouse via API or push them as webhooks.'],
-      ].map(([t, b]) => (
-        <Card>
-          <h3 class="text-[15px] font-semibold">{t}</h3>
-          <p class="mt-1.5 text-[13.5px] text-muted-foreground leading-relaxed">{b}</p>
-        </Card>
-      ))}
+    <div class="container-page relative pt-16 md:pt-20 pb-24 md:pb-32 text-center">
+      <div class="text-[11px] uppercase tracking-[0.18em] text-white/55 font-mono mb-4">Analytics</div>
+      <h1 class="text-[36px] sm:text-[52px] md:text-[64px] font-semibold tracking-[-0.03em] leading-[1.02] text-white max-w-3xl mx-auto">
+        Numbers we trust.<br/>Not vanity opens.
+      </h1>
+      <p class="mt-5 text-[15.5px] md:text-[17px] text-white/75 max-w-xl mx-auto leading-relaxed">
+        Placement, complaint rate, bounce rate, reply rate, revenue. By mailbox, pool, worker and sequence.
+      </p>
     </div>
-  </Section>
+  </section>
+
+  <!-- KPI ROW: overlaps into white -->
+  <section class="relative -mt-16 md:-mt-20 pb-16 md:pb-24">
+    <div class="container-page">
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-px bg-[color:var(--border)] rounded-[14px] overflow-hidden ring-1 ring-[color:var(--border)] bg-white" style="box-shadow: 0 30px 60px -30px rgba(2,32,71,0.3), var(--shadow-sm);">
+        {kpis.map((k) => (
+          <div class="bg-white p-6">
+            <div class="text-[10.5px] uppercase tracking-[0.16em] font-mono text-muted-foreground">{k.label}</div>
+            <div class="mt-2 text-[32px] font-semibold tracking-[-0.025em] text-heading leading-none">{k.value}</div>
+            <div class="mt-2 inline-flex items-center gap-1 text-[11.5px] font-mono text-emerald-600">
+              <span class="w-1 h-1 rounded-full bg-emerald-500"></span>
+              {k.delta}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- DASHBOARD MOCK: chart + per-mailbox table -->
+  <section class="bg-[color:var(--surface-1)] border-y border-[color:var(--border)] py-16 md:py-24">
+    <div class="container-page">
+      <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Workspace view</div>
+      <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading max-w-2xl">
+        One dashboard. Every layer you need.
+      </h2>
+
+      <div class="mt-12 grid lg:grid-cols-[1.5fr_1fr] gap-5">
+        <!-- Inbox placement chart -->
+        <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] p-6" style="box-shadow: var(--shadow-sm);">
+          <div class="flex items-baseline justify-between mb-2">
+            <div>
+              <div class="text-[10.5px] uppercase tracking-[0.16em] font-mono text-muted-foreground">Inbox placement</div>
+              <div class="text-[24px] font-semibold tracking-[-0.02em] text-heading leading-none mt-1">93.4%</div>
+            </div>
+            <div class="inline-flex items-center gap-1.5 text-[12px] text-emerald-600 font-mono">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+              Last 14d
+            </div>
+          </div>
+          <svg viewBox="0 0 600 200" class="w-full h-40 mt-4" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="chartFill" x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" stop-color="#0ea5e9" stop-opacity="0.18"/>
+                <stop offset="100%" stop-color="#0ea5e9" stop-opacity="0"/>
+              </linearGradient>
+            </defs>
+            {[40, 80, 120, 160].map((y) => (
+              <line x1="0" x2="600" y1={y} y2={y} stroke="#e2e8f0" stroke-width="0.5"/>
+            ))}
+            {(() => {
+              const pts = trend.map((v, i) => `${(i / (trend.length - 1)) * 600},${200 - v * 1.7}`).join(' ');
+              const fillPts = `0,200 ${pts} 600,200`;
+              return (
+                <>
+                  <polygon points={fillPts} fill="url(#chartFill)"/>
+                  <polyline points={pts} fill="none" stroke="#0ea5e9" stroke-width="2"/>
+                  {trend.map((v, i) => (
+                    <circle cx={(i / (trend.length - 1)) * 600} cy={200 - v * 1.7} r="2.5" fill="#0ea5e9"/>
+                  ))}
+                </>
+              );
+            })()}
+          </svg>
+          <div class="mt-3 grid grid-cols-7 text-[10px] font-mono text-muted-foreground/70">
+            {['D-13', 'D-11', 'D-9', 'D-7', 'D-5', 'D-3', 'D-1'].map((d) => <div>{d}</div>)}
+          </div>
+        </div>
+
+        <!-- Per-mailbox table -->
+        <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden" style="box-shadow: var(--shadow-sm);">
+          <div class="px-5 py-4 border-b border-[color:var(--border)]">
+            <div class="text-[10.5px] uppercase tracking-[0.16em] font-mono text-muted-foreground">Mailbox health</div>
+            <div class="mt-1 text-[15px] font-semibold text-heading">12 active</div>
+          </div>
+          <div class="divide-y divide-[color:var(--border)]">
+            {[
+              { mb: 'ben@acme.com',  band: 'Healthy',     dot: 'bg-emerald-500', sub: '94.8% inbox · 0.02% spam' },
+              { mb: 'sara@acme.com', band: 'Healthy',     dot: 'bg-emerald-500', sub: '92.1% inbox · 0.04% spam' },
+              { mb: 'mark@acme.com', band: 'Watch',       dot: 'bg-amber-500',   sub: '88.3% inbox · 0.09% spam' },
+              { mb: 'kai@acme.com',  band: 'Healthy',     dot: 'bg-emerald-500', sub: '95.6% inbox · 0.01% spam' },
+              { mb: 'rae@acme.com',  band: 'Quarantined', dot: 'bg-rose-500',    sub: '67.4% inbox · 0.21% spam' },
+            ].map((r) => (
+              <div class="px-5 py-3 grid grid-cols-[1fr_auto] gap-2">
+                <div class="min-w-0">
+                  <div class="text-[12.5px] font-mono text-foreground/85 truncate">{r.mb}</div>
+                  <div class="text-[11px] text-muted-foreground">{r.sub}</div>
+                </div>
+                <div class="inline-flex items-center gap-1.5 text-[11px] font-medium text-foreground/80">
+                  <span class={`w-1.5 h-1.5 rounded-full ${r.dot}`}></span>
+                  {r.band}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- LAYERS: 6 view cards -->
+  <section class="py-16 md:py-24">
+    <div class="container-page">
+      <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Six layers</div>
+      <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading max-w-2xl">
+        Workspace → pool → worker → mailbox → sequence → contact.
+      </h2>
+      <p class="mt-4 text-[15.5px] text-foreground/75 max-w-2xl">
+        Drill down from a workspace KPI to the exact mailbox and recipient behind it.
+      </p>
+
+      <div class="mt-12 grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {layers.map((l, i) => (
+          <div class="rounded-[12px] bg-white ring-1 ring-[color:var(--border)] p-5 relative overflow-hidden" style="box-shadow: var(--shadow-sm);">
+            <div class="absolute -top-3 -right-3 text-[64px] font-semibold text-[color:var(--sky-1)] leading-none select-none">
+              {String(i + 1).padStart(2, '0')}
+            </div>
+            <div class="relative">
+              <div class="w-9 h-9 rounded-[8px] bg-[color:var(--sky-1)] text-[color:var(--sky-6)] ring-1 ring-[color:var(--sky-2)] inline-flex items-center justify-center mb-3">
+                <Icon name={l.icon} size={16} />
+              </div>
+              <div class="text-[15px] font-semibold text-heading">{l.tier}</div>
+              <p class="mt-1.5 text-[13px] text-foreground/70 leading-relaxed">{l.body}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- EXPORTS: thin band, 3 inline pills -->
+  <section class="bg-[color:var(--surface-1)] border-y border-[color:var(--border)] py-12 md:py-16">
+    <div class="container-page flex flex-wrap gap-6 items-center justify-between">
+      <div>
+        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-2">Exports</div>
+        <div class="text-[20px] md:text-[24px] font-semibold tracking-[-0.02em] text-heading">Your data is yours. Export it any time.</div>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        {['CSV · XLSX · JSON', 'Weekly digest email', 'Webhooks · S3 push', 'API access'].map((t) => (
+          <span class="inline-flex items-center gap-1.5 h-8 px-3 rounded-full bg-white text-[12.5px] font-medium text-foreground/80 ring-1 ring-[color:var(--border)]">
+            <Icon name="check" size={11} class="text-[color:var(--sky-6)]" />
+            {t}
+          </span>
+        ))}
+      </div>
+    </div>
+  </section>
 
   <CTA />
 </Layout>

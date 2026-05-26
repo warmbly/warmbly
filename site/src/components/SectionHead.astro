@@ -10,12 +10,10 @@ const alignCls = align === 'center' ? 'text-center mx-auto' : 'text-left';
 ---
 <div class={`max-w-3xl ${alignCls}`}>
   {eyebrow && (
-    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold uppercase tracking-wider text-brand bg-brand-soft border border-brand/15 mb-4">
-      {eyebrow}
-    </span>
+    <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">{eyebrow}</div>
   )}
-  <h2 class="text-3xl md:text-4xl font-extrabold tracking-tight text-foreground leading-[1.1]">{title}</h2>
+  <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.08] text-heading">{title}</h2>
   {description && (
-    <p class="mt-4 text-base md:text-[17px] text-muted-foreground leading-relaxed">{description}</p>
+    <p class="mt-4 text-[15.5px] md:text-[16.5px] text-foreground/75 leading-relaxed">{description}</p>
   )}
 </div>

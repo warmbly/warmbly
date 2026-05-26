@@ -1,19 +1,50 @@
 ---
 import Layout from '../layouts/Layout.astro';
+import Cloud from '../components/Cloud.astro';
 import Icon from '../components/Icon.astro';
 ---
-<Layout title="Not found — Warmbly" description="The page you’re looking for doesn’t exist." noIndex>
-  <section class="container-page py-24 md:py-32 text-center">
-    <div class="inline-flex items-center justify-center w-12 h-12 rounded-lg bg-surface-2 border border-border mb-6">
-      <Icon name="search" size={20} class="text-muted-foreground" />
+<Layout title="Not found · Warmbly" description="The page you are looking for does not exist." noIndex>
+  <section class="relative isolate overflow-hidden text-white min-h-[80vh] flex items-center" style="background: radial-gradient(ellipse 130% 140% at 50% 35%, #0284c7 0%, #0369a1 25%, #075985 50%, #0c4a6e 80%, #0a3d5c 100%);">
+    <div class="absolute -top-10 right-[-40px] w-[480px] opacity-35 pointer-events-none cloud-drift cloud-1" style="mix-blend-mode: screen;">
+      <Cloud variant={5} opacity={1} />
     </div>
-    <h1 class="text-4xl md:text-5xl font-extrabold tracking-tight">Page not found</h1>
-    <p class="mt-3 text-muted-foreground max-w-md mx-auto">
-      The page you’re looking for doesn’t exist, was moved, or never made it out of the changelog.
-    </p>
-    <div class="mt-7 flex flex-wrap items-center justify-center gap-3">
-      <a href="/" class="inline-flex h-10 px-4 items-center rounded-md text-sm font-medium bg-foreground text-background hover:bg-foreground/85">Go home</a>
-      <a href="/learn/" class="inline-flex h-10 px-4 items-center rounded-md text-sm font-medium border border-border hover:bg-surface-2">Browse learn</a>
+    <div class="absolute -bottom-16 left-[-80px] w-[420px] opacity-30 pointer-events-none cloud-drift cloud-2" style="mix-blend-mode: screen;">
+      <Cloud variant={3} opacity={1} />
+    </div>
+    <div class="absolute top-1/4 left-1/4 w-[300px] opacity-22 pointer-events-none cloud-drift cloud-3" style="mix-blend-mode: screen;">
+      <Cloud variant={2} opacity={1} />
+    </div>
+
+    <div class="container-page relative text-center py-16">
+      <div class="text-[10.5px] uppercase tracking-[0.18em] text-white/55 font-mono mb-4">Error 404</div>
+      <div class="text-[120px] md:text-[180px] font-semibold tracking-[-0.05em] leading-[0.85] text-white/95 select-none">404</div>
+      <h1 class="mt-8 text-[24px] md:text-[32px] font-semibold tracking-[-0.02em] leading-[1.1] text-white">
+        We could not find that page.
+      </h1>
+      <p class="mt-3 text-[14.5px] text-white/70 max-w-md mx-auto">
+        It was moved, never shipped, or got quarantined by the deliverability layer. We are sorry about that.
+      </p>
+
+      <div class="mt-9 flex flex-wrap items-center justify-center gap-3">
+        <a href="/" class="inline-flex h-11 px-5 items-center gap-2 rounded-[10px] text-[14.5px] font-medium bg-white text-[color:var(--sky-7)] hover:bg-white/95">
+          <Icon name="arrowRight" size={14} class="rotate-180" /> Back to home
+        </a>
+        <a href="/learn/" class="inline-flex h-11 px-5 items-center rounded-[10px] text-[14.5px] font-medium bg-white/10 backdrop-blur ring-1 ring-white/30 text-white hover:bg-white/20">
+          Browse learn
+        </a>
+      </div>
+
+      <div class="mt-12 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-[12px] font-mono text-white/55">
+        {[
+          ['Product', '/product/'],
+          ['Pricing', '/pricing/'],
+          ['Changelog', '/changelog/'],
+          ['Contact', '/contact/'],
+          ['Status', 'https://status.warmbly.com'],
+        ].map(([l, h]) => (
+          <a href={h} class="hover:text-white">{l}</a>
+        ))}
+      </div>
     </div>
   </section>
 </Layout>

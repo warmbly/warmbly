@@ -1,23 +1,24 @@
 ---
 interface Props {
   href: string;
-  variant?: 'primary' | 'secondary' | 'ghost';
+  variant?: 'primary' | 'secondary' | 'ghost' | 'sky';
   size?: 'sm' | 'md' | 'lg';
   external?: boolean;
   class?: string;
 }
 const { href, variant = 'primary', size = 'md', external = false, class: className = '' } = Astro.props;
 
-const base = 'inline-flex items-center justify-center gap-2 rounded-md font-medium transition-colors whitespace-nowrap';
+const base = 'inline-flex items-center justify-center gap-2 rounded-[10px] font-medium transition-colors whitespace-nowrap';
 const sizes = {
-  sm: 'h-8 px-3 text-[13px]',
-  md: 'h-10 px-4 text-sm',
-  lg: 'h-11 px-5 text-[15px]',
+  sm: 'h-8 px-3 text-[12.5px]',
+  md: 'h-10 px-4 text-[14px]',
+  lg: 'h-11 px-5 text-[14.5px]',
 };
 const variants = {
-  primary: 'bg-foreground text-background hover:bg-foreground/85 ring-1 ring-foreground/10',
-  secondary: 'bg-surface-2 text-foreground border border-border hover:bg-surface-3',
-  ghost: 'text-foreground hover:bg-surface-2',
+  primary:   'bg-foreground text-background hover:bg-foreground/85',
+  secondary: 'bg-[color:var(--surface-2)] text-foreground ring-1 ring-[color:var(--border)] hover:bg-[color:var(--surface-3)]',
+  ghost:     'text-foreground hover:bg-[color:var(--surface-2)]',
+  sky:       'bg-[color:var(--brand)] text-white hover:bg-[color:var(--brand-strong)] shadow-[0_10px_24px_-10px_rgba(2,132,199,0.55)]',
 };
 ---
 <a

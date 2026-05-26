@@ -1,81 +1,142 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import PageHero from '../components/PageHero.astro';
-import Section from '../components/Section.astro';
-import SectionHead from '../components/SectionHead.astro';
-import Card from '../components/Card.astro';
+import Cloud from '../components/Cloud.astro';
 import Logo from '../components/Logo.astro';
+import Icon from '../components/Icon.astro';
+
+const palette = [
+  { name: 'sky-1',  hex: '#f0f9ff', text: 'dark' },
+  { name: 'sky-2',  hex: '#e0f2fe', text: 'dark' },
+  { name: 'sky-3',  hex: '#bae6fd', text: 'dark' },
+  { name: 'sky-4',  hex: '#7dd3fc', text: 'dark' },
+  { name: 'sky-5',  hex: '#38bdf8', text: 'light' },
+  { name: 'sky-6',  hex: '#0284c7', text: 'light' },
+  { name: 'sky-7',  hex: '#0369a1', text: 'light' },
+  { name: 'sky-8',  hex: '#075985', text: 'light' },
+  { name: 'sky-9',  hex: '#0c4a6e', text: 'light' },
+  { name: 'sky-10', hex: '#0a3d5c', text: 'light' },
+];
 ---
 <Layout
-  title="Brand — Warmbly"
+  title="Brand · Warmbly"
   description="The Warmbly wordmark, mark, palette and typography."
 >
-  <PageHero
-    eyebrow="Brand"
-    title="The marks, the colours, the rules."
-    description="Please don’t imply partnership without permission. Apart from that, the assets below are free to use in customer announcements, press, and integrations."
-  />
-
-  <Section>
-    <SectionHead eyebrow="Marks" title="Wordmark and standalone mark." />
-    <div class="mt-10 grid md:grid-cols-2 gap-4">
-      <Card class="flex items-center justify-center h-48">
-        <div class="flex items-center gap-3">
-          <Logo class="w-9 h-9 text-foreground" />
-          <span class="text-3xl font-extrabold tracking-tight">Warmbly</span>
-        </div>
-      </Card>
-      <Card class="flex items-center justify-center h-48 bg-foreground">
-        <div class="flex items-center gap-3 text-background">
-          <Logo class="w-9 h-9 text-background" />
-          <span class="text-3xl font-extrabold tracking-tight">Warmbly</span>
-        </div>
-      </Card>
-      <Card class="flex items-center justify-center h-48">
-        <Logo class="w-12 h-12 text-foreground" />
-      </Card>
-      <Card class="flex items-center justify-center h-48 bg-foreground">
-        <Logo class="w-12 h-12 text-background" />
-      </Card>
+  <!-- HERO: brand-themed pure visual + minimal text -->
+  <section class="relative isolate overflow-hidden text-white" style="background: radial-gradient(ellipse 130% 140% at 72% 28%, #0284c7 0%, #0369a1 25%, #075985 50%, #0c4a6e 80%, #0a3d5c 100%);">
+    <div class="absolute top-0 right-0 w-[440px] opacity-30 pointer-events-none cloud-drift cloud-1" style="mix-blend-mode: screen;">
+      <Cloud variant={5} opacity={1} />
     </div>
-  </Section>
 
-  <Section variant="muted">
-    <SectionHead eyebrow="Colour" title="Neutral system, brand sky accent." />
-    <div class="mt-10 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-      {[
-        { name: 'Foreground', value: 'oklch(0.15 0.01 260)', cls: 'bg-foreground text-background' },
-        { name: 'Surface',    value: 'oklch(0.985 0.002 260)', cls: 'bg-surface border border-border' },
-        { name: 'Surface-2',  value: 'oklch(0.97 0.003 260)',  cls: 'bg-surface-2 border border-border' },
-        { name: 'Brand',      value: 'oklch(0.55 0.18 252)',   cls: 'bg-brand text-brand-foreground' },
-        { name: 'Brand soft', value: 'oklch(0.93 0.05 252)',   cls: 'bg-brand-soft text-brand' },
-        { name: 'Success',    value: 'oklch(0.65 0.15 152)',   cls: 'bg-success text-white' },
-      ].map((c) => (
-        <div class={`rounded-xl ${c.cls} h-28 p-3 flex flex-col justify-between`}>
-          <div class="text-[12px] font-semibold">{c.name}</div>
-          <div class="text-[10.5px] font-mono opacity-80">{c.value}</div>
-        </div>
-      ))}
+    <div class="container-page relative pt-14 pb-12">
+      <div class="text-[11px] uppercase tracking-[0.18em] text-white/55 font-mono mb-3">Brand</div>
+      <h1 class="text-[32px] md:text-[48px] font-semibold tracking-[-0.025em] leading-[1.06] text-white max-w-3xl">
+        Marks, colors, type.
+      </h1>
+      <p class="mt-4 text-[15.5px] text-white/75 max-w-xl">
+        Please do not imply partnership without permission. Otherwise these assets are free for press, announcements and integrations.
+      </p>
+      <div class="mt-6">
+        <a href="/brand.zip" class="inline-flex h-10 px-4 items-center gap-2 rounded-[10px] text-[13.5px] font-medium bg-white text-[color:var(--sky-7)] hover:bg-white/95">
+          <Icon name="arrowRight" size={13} class="rotate-90" /> Download brand kit
+        </a>
+      </div>
     </div>
-  </Section>
+  </section>
 
-  <Section>
-    <SectionHead eyebrow="Typography" title="Inter, everywhere." />
-    <div class="mt-10 space-y-4">
-      <Card>
-        <div class="text-5xl font-extrabold tracking-tight">Cold email that lands.</div>
-        <div class="mt-2 text-[12px] uppercase tracking-wider text-muted-foreground font-semibold">Display · Inter Extra Bold · 800</div>
-      </Card>
-      <Card>
-        <div class="text-2xl font-semibold">A platform built so the inbox is the default outcome.</div>
-        <div class="mt-2 text-[12px] uppercase tracking-wider text-muted-foreground font-semibold">Heading · Inter Semibold · 600</div>
-      </Card>
-      <Card>
-        <div class="text-[15px] leading-relaxed">
-          Most cold-email platforms reward you for sending more. We reward you for sending well. Mailbox caps default to 50/day. Workers are capped by the sum of their mailbox budgets — not an arbitrary global number.
+  <!-- MARKS: 2x2 grid with caption strip -->
+  <section class="py-16 md:py-20">
+    <div class="container-page">
+      <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Marks</div>
+      <h2 class="text-[26px] md:text-[34px] font-semibold tracking-[-0.025em] text-heading max-w-2xl">Wordmark and standalone mark.</h2>
+
+      <div class="mt-10 grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div class="aspect-square rounded-[14px] bg-white ring-1 ring-[color:var(--border)] flex items-center justify-center" style="box-shadow: var(--shadow-sm);">
+          <div class="flex items-center gap-3">
+            <Logo class="w-9 h-9 text-foreground" />
+            <span class="text-[28px] font-semibold tracking-[-0.025em] text-heading">Warmbly</span>
+          </div>
         </div>
-        <div class="mt-2 text-[12px] uppercase tracking-wider text-muted-foreground font-semibold">Body · Inter Regular · 400</div>
-      </Card>
+        <div class="aspect-square rounded-[14px] bg-[#0c4a6e] flex items-center justify-center">
+          <div class="flex items-center gap-3 text-white">
+            <Logo class="w-9 h-9 text-white" />
+            <span class="text-[28px] font-semibold tracking-[-0.025em]">Warmbly</span>
+          </div>
+        </div>
+        <div class="aspect-square rounded-[14px] bg-white ring-1 ring-[color:var(--border)] flex items-center justify-center" style="box-shadow: var(--shadow-sm);">
+          <Logo class="w-14 h-14 text-foreground" />
+        </div>
+        <div class="aspect-square rounded-[14px] bg-[#0c4a6e] flex items-center justify-center">
+          <Logo class="w-14 h-14 text-white" />
+        </div>
+      </div>
+
+      <div class="mt-6 grid sm:grid-cols-2 lg:grid-cols-4 gap-3 text-[11px] font-mono uppercase tracking-[0.14em] text-muted-foreground">
+        <div>Wordmark · light</div>
+        <div>Wordmark · dark</div>
+        <div>Mark · light</div>
+        <div>Mark · dark</div>
+      </div>
     </div>
-  </Section>
+  </section>
+
+  <!-- PALETTE: long horizontal swatch strip -->
+  <section class="bg-[color:var(--surface-1)] border-y border-[color:var(--border)] py-16 md:py-20">
+    <div class="container-page">
+      <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Palette</div>
+      <h2 class="text-[26px] md:text-[34px] font-semibold tracking-[-0.025em] text-heading max-w-2xl">Sky ramp. Neutral system.</h2>
+      <p class="mt-3 text-[14.5px] text-foreground/70 max-w-xl">10 steps from atmosphere to deep sea. Plus a small neutral system.</p>
+
+      <div class="mt-10 grid grid-cols-5 lg:grid-cols-10 gap-1 rounded-[14px] overflow-hidden ring-1 ring-[color:var(--border)]">
+        {palette.map((c) => (
+          <div class="aspect-[2/3] p-2.5 flex flex-col justify-between" style={`background: ${c.hex}; color: ${c.text === 'light' ? '#fff' : '#0c4a6e'}`}>
+            <div class="text-[11px] font-mono font-semibold">{c.name}</div>
+            <div class="text-[10px] font-mono opacity-80 uppercase">{c.hex}</div>
+          </div>
+        ))}
+      </div>
+
+      <div class="mt-6 grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          { name: 'Foreground', hex: '#0a0f1e', cls: 'text-white' },
+          { name: 'Surface',    hex: '#ffffff', cls: 'text-foreground ring-1 ring-[color:var(--border)]' },
+          { name: 'Muted',      hex: '#f6f8fc', cls: 'text-foreground ring-1 ring-[color:var(--border)]' },
+          { name: 'Border',     hex: '#e6ebf2', cls: 'text-foreground ring-1 ring-[color:var(--border)]' },
+        ].map((n) => (
+          <div class={`rounded-[10px] p-4 ${n.cls}`} style={`background: ${n.hex}`}>
+            <div class="text-[12px] font-semibold">{n.name}</div>
+            <div class="mt-1 text-[10.5px] font-mono opacity-80 uppercase">{n.hex}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- TYPE -->
+  <section class="py-16 md:py-20">
+    <div class="container-page">
+      <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Type</div>
+      <h2 class="text-[26px] md:text-[34px] font-semibold tracking-[-0.025em] text-heading max-w-2xl">Inter for UI. JetBrains Mono for code.</h2>
+
+      <div class="mt-10 space-y-3">
+        <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] p-8" style="box-shadow: var(--shadow-sm);">
+          <div class="text-[10.5px] uppercase tracking-[0.16em] font-mono text-muted-foreground mb-3">Display · Inter Semibold · 600 · −0.03em</div>
+          <div class="text-[56px] md:text-[72px] font-semibold tracking-[-0.03em] leading-[1] text-heading">Cold email that lands.</div>
+        </div>
+        <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] p-8" style="box-shadow: var(--shadow-sm);">
+          <div class="text-[10.5px] uppercase tracking-[0.16em] font-mono text-muted-foreground mb-3">Heading · Inter Semibold · 600 · −0.025em</div>
+          <div class="text-[28px] md:text-[36px] font-semibold tracking-[-0.025em] leading-[1.08] text-heading">A platform built so the inbox is the default outcome.</div>
+        </div>
+        <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] p-8" style="box-shadow: var(--shadow-sm);">
+          <div class="text-[10.5px] uppercase tracking-[0.16em] font-mono text-muted-foreground mb-3">Body · Inter Regular · 400</div>
+          <p class="text-[15.5px] leading-relaxed text-foreground/85 max-w-2xl">
+            Most cold-email platforms reward you for sending more. We reward you for sending well. Mailbox caps default to 50 / day. Workers are capped by the sum of their mailbox budgets, not an arbitrary global number.
+          </p>
+        </div>
+        <div class="rounded-[14px] bg-[#0c1224] text-white/85 p-8" style="box-shadow: var(--shadow-sm);">
+          <div class="text-[10.5px] uppercase tracking-[0.16em] font-mono text-white/55 mb-3">Mono · JetBrains Mono · 500</div>
+          <pre class="text-[14px] font-mono leading-relaxed"><code>scheduler.<span style="color:#a78bfa">setWorkerCap</span>(worker.id, dailyBudget)</code></pre>
+        </div>
+      </div>
+    </div>
+  </section>
 </Layout>

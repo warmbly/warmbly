@@ -1,94 +1,101 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import PageHero from '../components/PageHero.astro';
-import Section from '../components/Section.astro';
-import Card from '../components/Card.astro';
+import Cloud from '../components/Cloud.astro';
+import Icon from '../components/Icon.astro';
 
 const entries = [
-  {
-    date: '2026-05-20',
-    title: 'API keys dashboard',
-    tag: 'shipped',
-    body: 'New API keys page in Settings. Per-key scopes, last-used timestamps, and one-click rotation. Existing keys auto-migrated to “full access” scopes; rotate when you can.',
-  },
-  {
-    date: '2026-05-15',
-    title: 'Per-mailbox health bands',
-    tag: 'shipped',
-    body: 'Mailboxes now show a health band — healthy / watch / quarantined / blocked — based on placement, complaint and bounce signals. Pool selection skips anything not in healthy.',
-  },
-  {
-    date: '2026-05-05',
-    title: 'Contacts power tools',
-    tag: 'shipped',
-    body: 'CSV / XLSX / JSON export with field picker. CSV / XLSX import wizard with column mapping and dedup. Categories replace Tags.',
-  },
-  {
-    date: '2026-04-25',
-    title: 'Recovery pool',
-    tag: 'shipped',
-    body: 'Quarantined mailboxes move to a separate recovery pool isolated from the main paid pool. They serve a 7-day cooldown plus a 20-delivery probation before re-entry.',
-  },
-  {
-    date: '2026-04-12',
-    title: 'Worker concentration warnings',
-    tag: 'shipped',
-    body: 'Workspace now surfaces a warning when a shared worker is carrying too much active cold volume. We add workers and rebalance before forcing any one machine to do more.',
-  },
-  {
-    date: '2026-04-01',
-    title: 'Plain-text default',
-    tag: 'changed',
-    body: 'New sequences default to plain text. HTML is opt-in. Existing sequences are untouched.',
-  },
-  {
-    date: '2026-03-22',
-    title: 'Microsoft 365 OAuth refresh',
-    tag: 'fixed',
-    body: 'Resolved an intermittent token refresh failure for Microsoft mailboxes with mandatory MFA.',
-  },
-  {
-    date: '2026-03-10',
-    title: 'Sequence A/B variants',
-    tag: 'shipped',
-    body: 'Up to four subject and body variants per step. Per-variant reply-rate reporting.',
-  },
-  {
-    date: '2026-03-01',
-    title: 'Tracking edge upgrade',
-    tag: 'changed',
-    body: 'Tracking edge now dedupes by task + IP at the edge and again in the consumer, dropping a class of replay-driven noise from analytics.',
-  },
+  { date: '2026-05-20', title: 'API keys dashboard',          tag: 'shipped',  body: 'New API keys page in Settings. Per-key scopes, last-used timestamps, one-click rotation. Existing keys auto-migrated to full-access scope. Rotate when you can.' },
+  { date: '2026-05-15', title: 'Per-mailbox health bands',     tag: 'shipped',  body: 'Mailboxes show a health band: healthy · watch · quarantined · blocked. Based on placement, complaint and bounce signals. Pool selection skips anything not healthy.' },
+  { date: '2026-05-05', title: 'Contacts power tools',         tag: 'shipped',  body: 'CSV / XLSX / JSON export with field picker. CSV / XLSX import wizard with column mapping and dedup. Categories replace Tags.' },
+  { date: '2026-04-25', title: 'Recovery pool',                tag: 'shipped',  body: 'Quarantined mailboxes move to a separate recovery pool, isolated from the main paid pool. 7-day cooldown plus 20-delivery probation before re-entry.' },
+  { date: '2026-04-12', title: 'Worker concentration warnings', tag: 'shipped',  body: 'Workspace surfaces a warning when a shared worker is carrying too much active cold volume. We add workers and rebalance before forcing any one machine to do more.' },
+  { date: '2026-04-01', title: 'Plain-text default',           tag: 'changed',  body: 'New sequences default to plain text. HTML is opt-in. Existing sequences are untouched.' },
+  { date: '2026-03-22', title: 'Microsoft 365 OAuth refresh',  tag: 'fixed',    body: 'Resolved intermittent token refresh failure for Microsoft mailboxes with mandatory MFA.' },
+  { date: '2026-03-10', title: 'Sequence A/B variants',        tag: 'shipped',  body: 'Up to four subject and body variants per step. Per-variant reply-rate reporting.' },
+  { date: '2026-03-01', title: 'Tracking edge upgrade',        tag: 'changed',  body: 'Tracking edge dedupes by task + IP at the edge and again in the consumer. Drops a class of replay-driven noise from analytics.' },
 ];
 
-const tagClass = (t: string) =>
-  t === 'shipped' ? 'text-success bg-success/10 border-success/20'
-  : t === 'changed' ? 'text-warn bg-warn/10 border-warn/20'
-  : 'text-muted-foreground bg-surface-2 border-border';
+const tagStyle = (t) => {
+  if (t === 'shipped')  return { dot: 'bg-emerald-500', cls: 'bg-emerald-50 text-emerald-700' };
+  if (t === 'changed')  return { dot: 'bg-amber-500',   cls: 'bg-amber-50 text-amber-700' };
+  return { dot: 'bg-sky-500', cls: 'bg-sky-50 text-sky-700' };
+};
+
+const counts = {
+  shipped: entries.filter(e => e.tag === 'shipped').length,
+  changed: entries.filter(e => e.tag === 'changed').length,
+  fixed:   entries.filter(e => e.tag === 'fixed').length,
+};
 ---
 <Layout
-  title="Changelog — Warmbly"
+  title="Changelog · Warmbly"
   description="What we shipped, what we changed, and what we fixed."
 >
-  <PageHero
-    eyebrow="Changelog"
-    title="The actual history of what we ship."
-  />
-
-  <Section>
-    <div class="grid gap-4">
-      {entries.map((e) => (
-        <Card class="md:grid md:grid-cols-12 md:gap-6">
-          <div class="md:col-span-3">
-            <div class="text-[12px] font-mono text-muted-foreground">{e.date}</div>
-            <span class={`mt-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider border ${tagClass(e.tag)}`}>{e.tag}</span>
-          </div>
-          <div class="md:col-span-9 mt-3 md:mt-0">
-            <h3 class="text-[15.5px] font-semibold">{e.title}</h3>
-            <p class="mt-1.5 text-[13.5px] text-muted-foreground leading-relaxed">{e.body}</p>
-          </div>
-        </Card>
-      ))}
+  <!-- HERO: compact + counts strip -->
+  <section class="relative isolate overflow-hidden text-white" style="background: radial-gradient(ellipse 130% 140% at 72% 28%, #0284c7 0%, #0369a1 25%, #075985 50%, #0c4a6e 80%, #0a3d5c 100%);">
+    <div class="absolute top-0 right-0 w-[420px] opacity-30 pointer-events-none cloud-drift cloud-1" style="mix-blend-mode: screen;">
+      <Cloud variant={5} opacity={1} />
     </div>
-  </Section>
+
+    <div class="container-page relative pt-14 pb-12">
+      <div class="text-[11px] uppercase tracking-[0.18em] text-white/55 font-mono mb-3">Changelog</div>
+      <h1 class="text-[32px] md:text-[48px] font-semibold tracking-[-0.025em] leading-[1.06] text-white max-w-3xl">
+        The actual history of what we ship.
+      </h1>
+
+      <div class="mt-8 flex flex-wrap gap-2">
+        <span class="inline-flex items-center gap-2 h-7 px-3 rounded-full bg-white/10 backdrop-blur ring-1 ring-white/20 text-[12px] text-white/90">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> {counts.shipped} shipped
+        </span>
+        <span class="inline-flex items-center gap-2 h-7 px-3 rounded-full bg-white/10 backdrop-blur ring-1 ring-white/20 text-[12px] text-white/90">
+          <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span> {counts.changed} changed
+        </span>
+        <span class="inline-flex items-center gap-2 h-7 px-3 rounded-full bg-white/10 backdrop-blur ring-1 ring-white/20 text-[12px] text-white/90">
+          <span class="w-1.5 h-1.5 rounded-full bg-sky-400"></span> {counts.fixed} fixed
+        </span>
+      </div>
+    </div>
+  </section>
+
+  <!-- TIMELINE: vertical with date rail -->
+  <section class="py-16 md:py-20">
+    <div class="container-page max-w-4xl">
+      <div class="relative">
+        <!-- vertical line -->
+        <div class="absolute left-[112px] md:left-[148px] top-2 bottom-2 w-px bg-[color:var(--border)] hidden sm:block"></div>
+
+        <div class="space-y-6">
+          {entries.map((e) => {
+            const t = tagStyle(e.tag);
+            return (
+              <article class="grid grid-cols-1 sm:grid-cols-[96px_24px_1fr] md:grid-cols-[132px_24px_1fr] gap-x-4 gap-y-3 items-start">
+                <div class="text-[11.5px] font-mono uppercase tracking-[0.14em] text-muted-foreground sm:text-right sm:pt-1.5">
+                  {e.date}
+                </div>
+                <div class="hidden sm:flex justify-center pt-2">
+                  <span class={`relative w-2.5 h-2.5 rounded-full ${t.dot} ring-4 ring-white`}></span>
+                </div>
+                <div class="rounded-[12px] bg-white ring-1 ring-[color:var(--border)] p-5" style="box-shadow: var(--shadow-sm);">
+                  <div class="flex items-baseline gap-3 flex-wrap">
+                    <h3 class="text-[15.5px] font-semibold text-heading tracking-[-0.01em]">{e.title}</h3>
+                    <span class={`inline-flex items-center gap-1 h-5 px-1.5 rounded text-[10.5px] font-medium font-mono uppercase tracking-[0.08em] ${t.cls}`}>
+                      <span class={`w-1 h-1 rounded-full ${t.dot}`}></span>
+                      {e.tag}
+                    </span>
+                  </div>
+                  <p class="mt-2 text-[13.5px] text-foreground/75 leading-relaxed">{e.body}</p>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      </div>
+
+      <div class="mt-14 flex items-center gap-3 text-[13px] text-muted-foreground">
+        <Icon name="bell" size={13} />
+        Subscribe to the changelog feed at
+        <a class="text-[color:var(--brand)] hover:text-[color:var(--brand-strong)] font-mono" href="/changelog/feed.xml">/changelog/feed.xml</a>
+      </div>
+    </div>
+  </section>
 </Layout>

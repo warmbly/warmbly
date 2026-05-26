@@ -1,67 +1,197 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import PageHero from '../components/PageHero.astro';
-import Section from '../components/Section.astro';
-import SectionHead from '../components/SectionHead.astro';
-import Card from '../components/Card.astro';
+import Cloud from '../components/Cloud.astro';
 import Icon from '../components/Icon.astro';
 import CTA from '../components/CTA.astro';
+
+const stages = [
+  { name: 'New',         color: 'bg-slate-400',   count: 28, deals: [
+    { co: 'Lumen Robotics',    val: '$24k', owner: 'BC' },
+    { co: 'Northwind Co.',     val: '$12k', owner: 'BC' },
+    { co: 'Vela Logistics',    val: '$8k',  owner: 'SR' },
+  ]},
+  { name: 'Reached',     color: 'bg-sky-500',     count: 14, deals: [
+    { co: 'Glasshouse Labs',   val: '$18k', owner: 'MR' },
+    { co: 'Stratech',          val: '$45k', owner: 'BC' },
+  ]},
+  { name: 'Demoed',      color: 'bg-violet-500',  count: 9,  deals: [
+    { co: 'Acme Inc.',         val: '$36k', owner: 'SR' },
+    { co: 'Nimbus Ops',        val: '$22k', owner: 'BC' },
+  ]},
+  { name: 'Negotiation', color: 'bg-amber-500',   count: 4,  deals: [
+    { co: 'Stratech',          val: '$45k', owner: 'BC' },
+  ]},
+  { name: 'Closed',      color: 'bg-emerald-500', count: 6,  deals: [
+    { co: 'Penna Health',      val: '$30k', owner: 'MR' },
+  ]},
+];
+
+const inside = [
+  { icon: 'contact',  title: 'Contacts',  body: 'Imported, deduped, categorised. Suppression-aware everywhere they appear.' },
+  { icon: 'list',     title: 'Categories',body: 'Reuse the existing category group table. No parallel "tags" system to drift.' },
+  { icon: 'workflow', title: 'Pipelines', body: 'Pick a pipeline template or build your own. Drag-and-drop stages.' },
+  { icon: 'star',     title: 'Deals',     body: 'Value, close date, owner, custom fields, activity log.' },
+  { icon: 'check',    title: 'Tasks',     body: 'Reminder tasks tied to a contact, deal, or sequence step.' },
+  { icon: 'spark',    title: 'Templates', body: 'Saved templates for replies, intros and sequence steps. Variable-aware.' },
+];
+
+const power = [
+  ['Import wizard', 'CSV / XLSX import with column mapping, custom field detection, and a dedup pass before a single row hits the table.'],
+  ['Export',        'CSV / XLSX / JSON export with a field picker. Scope: current view, current segment, or the whole workspace.'],
+  ['Dedup',         'Dedup by email, domain or custom key. Merge conflicting fields with a clear winner per attribute.'],
+  ['Bulk update',   'Bulk update categories, owners, custom fields, or suppression state from a saved view.'],
+];
 ---
 <Layout
-  title="CRM — Warmbly"
-  description="A light CRM that doesn’t pretend to be Salesforce: pipelines, deals, tasks, contacts and templates that live next to your sending."
+  title="CRM · Warmbly"
+  description="A light CRM that does not pretend to be Salesforce. Pipelines, deals, tasks, contacts and templates that live next to your sending."
 >
-  <PageHero
-    eyebrow="CRM"
-    title="A CRM that lives next to your sending."
-    description="Contacts, pipelines, deals and tasks — without the four-week implementation. Designed for cold-outbound teams who need just enough structure to ship the meeting."
-  />
+  <!-- HERO -->
+  <section class="relative isolate overflow-hidden text-white" style="background: radial-gradient(ellipse 130% 140% at 72% 28%, #0284c7 0%, #0369a1 25%, #075985 50%, #0c4a6e 80%, #0a3d5c 100%);">
+    <div class="absolute top-0 right-0 w-[440px] opacity-30 pointer-events-none cloud-drift cloud-1" style="mix-blend-mode: screen;">
+      <Cloud variant={5} opacity={1} />
+    </div>
 
-  <Section>
-    <SectionHead
-      eyebrow="What’s inside"
-      title="Built around the actual cold-outbound workflow."
-    />
-    <div class="mt-10 grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-      {[
-        { icon: 'contact',  title: 'Contacts',  body: 'Imported, deduped, categorised. Suppression-aware everywhere they appear.' },
-        { icon: 'list',     title: 'Categories',body: 'Reuse the existing category group table — no parallel “tags” system to drift.' },
-        { icon: 'workflow', title: 'Pipelines', body: 'Pick a pipeline template or build your own. Drag-and-drop stages.' },
-        { icon: 'star',     title: 'Deals',     body: 'Value, close date, owner, custom fields, activity log.' },
-        { icon: 'check',    title: 'Tasks',     body: 'Reminder tasks tied to a contact, deal, or sequence step.' },
-        { icon: 'spark',    title: 'Templates', body: 'Saved templates for replies, intros and sequence steps. Variable-aware.' },
-      ].map((s) => (
-        <Card>
-          <div class="w-9 h-9 rounded-lg bg-brand-soft text-brand inline-flex items-center justify-center mb-4">
-            <Icon name={s.icon} size={18} />
+    <div class="container-page relative pt-16 md:pt-20 pb-12 md:pb-16">
+      <div class="text-[11px] uppercase tracking-[0.18em] text-white/55 font-mono mb-4">CRM</div>
+      <h1 class="text-[36px] sm:text-[52px] md:text-[60px] font-semibold tracking-[-0.03em] leading-[1.02] text-white max-w-3xl">
+        A CRM that lives next to your sending.
+      </h1>
+      <p class="mt-5 text-[15.5px] md:text-[17px] text-white/75 max-w-2xl leading-relaxed">
+        Contacts, pipelines, deals and tasks. Without the four-week implementation. Just enough structure to ship the meeting and remember the follow-up.
+      </p>
+    </div>
+  </section>
+
+  <!-- KANBAN BOARD MOCK: overlaps the sky band -->
+  <section class="relative -mt-4 pb-16 md:pb-24">
+    <div class="container-page">
+      <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] p-5 md:p-6 overflow-hidden" style="box-shadow: 0 30px 60px -30px rgba(2,32,71,0.3), var(--shadow-sm);">
+        <div class="flex items-center justify-between mb-5">
+          <div>
+            <div class="text-[10.5px] uppercase tracking-[0.16em] font-mono text-muted-foreground">Pipeline · Q2 outbound</div>
+            <div class="mt-1 text-[16px] font-semibold text-heading">61 active deals · $312k weighted</div>
           </div>
-          <h3 class="text-[15px] font-semibold">{s.title}</h3>
-          <p class="mt-1.5 text-[13.5px] text-muted-foreground leading-relaxed">{s.body}</p>
-        </Card>
-      ))}
-    </div>
-  </Section>
+          <div class="flex items-center gap-2 text-[11.5px] text-muted-foreground">
+            <Icon name="filter" size={12} /> All owners
+            <span class="mx-2 w-px h-3 bg-[color:var(--border)]"></span>
+            <Icon name="search" size={12} />
+          </div>
+        </div>
 
-  <Section variant="muted">
-    <SectionHead
-      eyebrow="Contacts power tools"
-      title="Import. Export. Dedup. Update."
-      description="Contacts is where the spreadsheet usually wins. Not here."
-    />
-    <div class="mt-10 grid md:grid-cols-2 gap-4">
-      {[
-        ['Import wizard', 'CSV / XLSX import with column mapping, custom field detection, and a dedup pass before a single row hits the table.'],
-        ['Export', 'CSV / XLSX / JSON export with a field picker. Scope: current view, current segment, or the whole workspace.'],
-        ['Dedup', 'Dedup by email, domain or custom key. Merge conflicting fields with a clear winner per attribute.'],
-        ['Bulk update', 'Bulk update categories, owners, custom fields, or suppression state from a saved view.'],
-      ].map(([k, v]) => (
-        <Card>
-          <h3 class="text-[15px] font-semibold">{k}</h3>
-          <p class="mt-1.5 text-[13.5px] text-muted-foreground leading-relaxed">{v}</p>
-        </Card>
-      ))}
+        <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+          {stages.map((st) => (
+            <div class="rounded-[10px] bg-[color:var(--surface-1)] p-3">
+              <div class="flex items-center justify-between mb-3 px-1">
+                <div class="flex items-center gap-2">
+                  <span class={`w-1.5 h-1.5 rounded-full ${st.color}`}></span>
+                  <span class="text-[12px] font-semibold text-heading">{st.name}</span>
+                </div>
+                <span class="text-[10.5px] font-mono text-muted-foreground">{st.count}</span>
+              </div>
+              <div class="space-y-2">
+                {st.deals.map((d) => (
+                  <div class="rounded-[8px] bg-white ring-1 ring-[color:var(--border)] p-2.5">
+                    <div class="text-[12.5px] font-medium text-heading truncate">{d.co}</div>
+                    <div class="mt-1 flex items-center justify-between">
+                      <span class="text-[11px] font-mono text-[color:var(--sky-6)]">{d.val}</span>
+                      <span class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-[color:var(--sky-1)] text-[9px] font-semibold text-[color:var(--sky-7)]">{d.owner}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
-  </Section>
+  </section>
+
+  <!-- WHAT'S INSIDE: 2-col rows -->
+  <section class="bg-[color:var(--surface-1)] border-y border-[color:var(--border)] py-16 md:py-24">
+    <div class="container-page">
+      <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">What is inside</div>
+      <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading max-w-2xl">
+        Built around the actual cold-outbound workflow.
+      </h2>
+
+      <div class="mt-12 grid md:grid-cols-2 lg:grid-cols-3 gap-px bg-[color:var(--border)] rounded-[14px] overflow-hidden ring-1 ring-[color:var(--border)]" style="box-shadow: var(--shadow-sm);">
+        {inside.map((s) => (
+          <div class="bg-white p-5">
+            <div class="w-10 h-10 rounded-[10px] bg-[color:var(--sky-1)] text-[color:var(--sky-6)] ring-1 ring-[color:var(--sky-2)] inline-flex items-center justify-center mb-4">
+              <Icon name={s.icon} size={18} />
+            </div>
+            <div class="text-[15px] font-semibold text-heading">{s.title}</div>
+            <p class="mt-1.5 text-[13px] text-foreground/70 leading-relaxed">{s.body}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- CONTACTS POWER TOOLS: split with screen-mock spreadsheet feel -->
+  <section class="py-16 md:py-24">
+    <div class="container-page grid lg:grid-cols-[1fr_1.2fr] gap-12 lg:gap-16 items-start">
+      <div class="lg:sticky lg:top-24 self-start">
+        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Contacts power tools</div>
+        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
+          Import. Export. Dedup. Bulk update.
+        </h2>
+        <p class="mt-5 text-[15.5px] text-foreground/75 leading-relaxed max-w-md">
+          Contacts is where the spreadsheet usually wins. Not here. CSV / XLSX import with a column-mapping wizard. JSON export with a field picker. Dedup before rows ever land.
+        </p>
+        <ul class="mt-6 space-y-2.5">
+          {power.map(([k, v]) => (
+            <li>
+              <div class="text-[14.5px] font-semibold text-heading">{k}</div>
+              <p class="mt-1 text-[13px] text-foreground/70 leading-relaxed">{v}</p>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <!-- Mini contacts table -->
+      <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden" style="box-shadow: var(--shadow-sm);">
+        <div class="flex items-center justify-between px-5 py-3 border-b border-[color:var(--border)]">
+          <div class="text-[10.5px] uppercase tracking-[0.16em] font-mono text-muted-foreground">Contacts</div>
+          <div class="flex items-center gap-2 text-[11.5px] text-muted-foreground">
+            <span class="inline-flex items-center gap-1 text-[color:var(--sky-6)]"><Icon name="check" size={11}/> 2,431 rows · 0 dupes</span>
+          </div>
+        </div>
+        <div class="grid grid-cols-[1.5fr_1.2fr_1fr_auto] text-[11px] font-mono uppercase tracking-[0.14em] text-muted-foreground px-5 py-2.5 bg-[color:var(--surface-1)]/60 border-b border-[color:var(--border)]">
+          <div>Name</div><div>Email</div><div>Company</div><div>Stage</div>
+        </div>
+        <div class="divide-y divide-[color:var(--border)]">
+          {[
+            { name: 'Maya Chen',     email: 'maya@lumenrobotics.io',  co: 'Lumen Robotics', stage: 'Demoed',      tone: 'violet' },
+            { name: 'Theo Park',     email: 'theo@northwind.co',      co: 'Northwind Co.',  stage: 'Reached',     tone: 'sky' },
+            { name: 'Eli Soriano',   email: 'eli@vela.cargo',         co: 'Vela Logistics', stage: 'New',         tone: 'slate' },
+            { name: 'Priya Bhatt',   email: 'priya@glasshouse.dev',   co: 'Glasshouse Labs', stage: 'Demoed',     tone: 'violet' },
+            { name: 'Rowan Cole',    email: 'rowan@stratech.io',      co: 'Stratech',       stage: 'Negotiation', tone: 'amber' },
+            { name: 'Dana Kowalski', email: 'dana.k@stratech.io',     co: 'Stratech',       stage: 'Reached',     tone: 'sky' },
+            { name: 'Lena Park',     email: 'lena@pennahealth.com',   co: 'Penna Health',   stage: 'Closed',      tone: 'emerald' },
+          ].map((r) => (
+            <div class="grid grid-cols-[1.5fr_1.2fr_1fr_auto] gap-3 px-5 py-2.5 items-center hover:bg-[color:var(--sky-1)]/30 transition-colors">
+              <div class="text-[13px] font-medium text-foreground truncate">{r.name}</div>
+              <div class="text-[12px] font-mono text-foreground/70 truncate">{r.email}</div>
+              <div class="text-[12.5px] text-foreground/85 truncate">{r.co}</div>
+              <div>
+                <span class={`inline-flex items-center gap-1 h-5 px-1.5 rounded text-[10.5px] font-medium ${
+                  r.tone === 'emerald' ? 'bg-emerald-50 text-emerald-700' :
+                  r.tone === 'violet'  ? 'bg-violet-50 text-violet-700' :
+                  r.tone === 'amber'   ? 'bg-amber-50 text-amber-700' :
+                  r.tone === 'slate'   ? 'bg-slate-100 text-slate-600' :
+                  'bg-sky-50 text-sky-700'
+                }`}>
+                  {r.stage}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  </section>
 
   <CTA />
 </Layout>

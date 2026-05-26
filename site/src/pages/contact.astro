@@ -1,51 +1,83 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import PageHero from '../components/PageHero.astro';
-import Section from '../components/Section.astro';
-import Card from '../components/Card.astro';
+import Cloud from '../components/Cloud.astro';
 import Icon from '../components/Icon.astro';
 
 const channels = [
-  { icon: 'mail',  title: 'General',   value: 'hello@warmbly.com',    body: 'Anything that doesn’t fit below.' },
-  { icon: 'send',  title: 'Sales',     value: 'sales@warmbly.com',    body: 'Custom plans, dedicated workers, BYOK, SSO.' },
-  { icon: 'shield',title: 'Security',  value: 'security@warmbly.com', body: 'Reports, disclosures, security pack requests.' },
-  { icon: 'cog',   title: 'Support',   value: 'support@warmbly.com',  body: 'Account issues. Existing customers please email from your workspace owner address.' },
-  { icon: 'webhook',title: 'API',      value: 'api@warmbly.com',      body: 'API quotas, integration partnerships, SDK contributions.' },
-  { icon: 'star',  title: 'Press',     value: 'press@warmbly.com',    body: 'Media inquiries, brand assets, founder availability.' },
+  { icon: 'mail',    title: 'General',  email: 'hello@warmbly.com',    body: 'Anything that does not fit below.',         sla: 'within 1 business day' },
+  { icon: 'send',    title: 'Sales',    email: 'sales@warmbly.com',    body: 'Custom plans, dedicated workers, BYOK, SSO.', sla: 'within 4 business hours' },
+  { icon: 'shield',  title: 'Security', email: 'security@warmbly.com', body: 'Reports, disclosures, security pack requests.', sla: 'within 24 hours' },
+  { icon: 'cog',     title: 'Support',  email: 'support@warmbly.com',  body: 'Existing customers, please email from your workspace owner address.', sla: 'within 1 business day' },
+  { icon: 'webhook', title: 'API',      email: 'api@warmbly.com',      body: 'API quotas, integration partnerships, SDK contributions.', sla: 'within 2 business days' },
+  { icon: 'star',    title: 'Press',    email: 'press@warmbly.com',    body: 'Media inquiries, brand assets, founder availability.', sla: 'within 2 business days' },
 ];
 ---
 <Layout
-  title="Contact — Warmbly"
+  title="Contact · Warmbly"
   description="Get in touch with sales, support, security or the team. Real humans, real response times."
 >
-  <PageHero
-    eyebrow="Contact"
-    title="We pick the inbox. You pick the topic."
-    description="No support black hole. Each address lands with a small group of people who actually own the answer."
-  />
-
-  <Section>
-    <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-      {channels.map((c) => (
-        <Card>
-          <div class="w-9 h-9 rounded-lg bg-brand-soft text-brand inline-flex items-center justify-center mb-4">
-            <Icon name={c.icon} size={18} />
-          </div>
-          <h3 class="text-[15px] font-semibold">{c.title}</h3>
-          <a class="block mt-1 text-[14px] font-medium text-brand hover:text-brand-strong" href={`mailto:${c.value}`}>{c.value}</a>
-          <p class="mt-2 text-[13px] text-muted-foreground leading-relaxed">{c.body}</p>
-        </Card>
-      ))}
+  <!-- HERO: short -->
+  <section class="relative isolate overflow-hidden text-white" style="background: radial-gradient(ellipse 130% 140% at 72% 28%, #0284c7 0%, #0369a1 25%, #075985 50%, #0c4a6e 80%, #0a3d5c 100%);">
+    <div class="absolute top-0 right-0 w-[420px] opacity-30 pointer-events-none cloud-drift cloud-1" style="mix-blend-mode: screen;">
+      <Cloud variant={5} opacity={1} />
     </div>
-
-    <div class="mt-16 max-w-2xl">
-      <h2 class="text-2xl font-bold tracking-tight">Office</h2>
-      <p class="mt-2 text-muted-foreground">
-        Warmbly Labs, Inc. — registered in Delaware, with team members across New York, Berlin and Lisbon. We’re an async-first team; meetings are by appointment.
-      </p>
-      <p class="mt-3 text-muted-foreground">
-        Mail: 1209 N. Orange Street, Wilmington, DE 19801, USA.
+    <div class="container-page relative pt-14 pb-12">
+      <div class="text-[11px] uppercase tracking-[0.18em] text-white/55 font-mono mb-3">Contact</div>
+      <h1 class="text-[32px] md:text-[48px] font-semibold tracking-[-0.025em] leading-[1.06] text-white max-w-3xl">
+        We pick the inbox. You pick the topic.
+      </h1>
+      <p class="mt-4 text-[15.5px] text-white/75 max-w-xl">
+        No support black hole. Each address lands with a small group of people who actually own the answer.
       </p>
     </div>
-  </Section>
+  </section>
+
+  <!-- CHANNELS: 2-col list with explicit SLAs -->
+  <section class="py-16 md:py-20">
+    <div class="container-page">
+      <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden" style="box-shadow: var(--shadow-sm);">
+        <div class="grid md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-[color:var(--border)]">
+          {channels.map((c, i) => (
+            <a href={`mailto:${c.email}`} class={`group p-6 flex items-start gap-5 hover:bg-[color:var(--sky-1)]/30 transition-colors ${i >= 2 ? 'border-t border-[color:var(--border)]' : ''}`}>
+              <div class="w-11 h-11 rounded-[10px] bg-[color:var(--sky-1)] text-[color:var(--sky-6)] ring-1 ring-[color:var(--sky-2)] inline-flex items-center justify-center shrink-0">
+                <Icon name={c.icon} size={18} />
+              </div>
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center justify-between gap-3">
+                  <div class="text-[15.5px] font-semibold text-heading">{c.title}</div>
+                  <div class="text-[10.5px] font-mono uppercase tracking-[0.14em] text-muted-foreground">{c.sla}</div>
+                </div>
+                <div class="mt-1 text-[13.5px] font-mono text-[color:var(--brand)] group-hover:text-[color:var(--brand-strong)] truncate">{c.email}</div>
+                <p class="mt-2 text-[13px] text-foreground/70 leading-relaxed">{c.body}</p>
+              </div>
+            </a>
+          ))}
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- OFFICE -->
+  <section class="bg-[color:var(--surface-1)] border-t border-[color:var(--border)] py-14 md:py-20">
+    <div class="container-page grid md:grid-cols-2 gap-10">
+      <div>
+        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Office</div>
+        <h2 class="text-[24px] md:text-[32px] font-semibold tracking-[-0.025em] text-heading leading-[1.1]">
+          Async-first, distributed.
+        </h2>
+        <p class="mt-4 text-[14.5px] text-foreground/75 leading-relaxed max-w-md">
+          Warmbly Labs, Inc. is registered in Delaware. Team across New York, Berlin and Lisbon. Meetings are by appointment.
+        </p>
+      </div>
+      <div class="rounded-[12px] bg-white ring-1 ring-[color:var(--border)] p-6 self-start" style="box-shadow: var(--shadow-sm);">
+        <div class="text-[10.5px] uppercase tracking-[0.16em] font-mono text-muted-foreground mb-3">Postal mail</div>
+        <div class="text-[14px] text-foreground/85 leading-relaxed font-mono">
+          Warmbly Labs, Inc.<br/>
+          1209 N. Orange Street<br/>
+          Wilmington, DE 19801<br/>
+          USA
+        </div>
+      </div>
+    </div>
+  </section>
 </Layout>

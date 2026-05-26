@@ -2,6 +2,6 @@
 interface Props { class?: string; padded?: boolean }
 const { class: className = '', padded = true } = Astro.props;
 ---
-<div class={`rounded-xl border border-border bg-card text-card-foreground ${padded ? 'p-6' : ''} ${className}`}>
+<div class={`rounded-[12px] bg-white ring-1 ring-[color:var(--border)] ${padded ? 'p-6' : ''} ${className}`} style="box-shadow: var(--shadow-sm);">
   <slot />
 </div>

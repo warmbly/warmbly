@@ -1,94 +1,134 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import PageHero from '../components/PageHero.astro';
-import Section from '../components/Section.astro';
-import SectionHead from '../components/SectionHead.astro';
-import Card from '../components/Card.astro';
+import Cloud from '../components/Cloud.astro';
 import Icon from '../components/Icon.astro';
 import CTA from '../components/CTA.astro';
 
-const groups: { title: string; items: { name: string; body: string; status?: 'live'|'beta'|'soon' }[] }[] = [
+const groups = [
   {
+    id: 'mailbox',
     title: 'Mailbox providers',
+    sub: 'Where mail enters and leaves',
     items: [
-      { name: 'Google Workspace',  body: 'OAuth, Gmail API, FBL signals.' },
-      { name: 'Microsoft 365',     body: 'OAuth, Graph API send + IMAP/EWS sync.' },
-      { name: 'Custom SMTP / IMAP',body: 'Any provider that speaks SMTP/IMAP.' },
-      { name: 'Apple iCloud',      body: 'Password-app + IMAP/SMTP.' },
-      { name: 'Zoho Mail',         body: 'OAuth + IMAP/SMTP.' },
+      { name: 'Google Workspace',   body: 'OAuth · Gmail API · FBL signals.',           status: 'live' },
+      { name: 'Microsoft 365',      body: 'OAuth · Graph send · IMAP / EWS sync.',      status: 'live' },
+      { name: 'Custom SMTP / IMAP', body: 'Any provider that speaks SMTP / IMAP.',     status: 'live' },
+      { name: 'Apple iCloud',       body: 'App-specific password + IMAP / SMTP.',      status: 'live' },
+      { name: 'Zoho Mail',          body: 'OAuth + IMAP / SMTP.',                       status: 'live' },
     ],
   },
   {
+    id: 'crm',
     title: 'CRMs',
+    sub: 'Two-way sync with your system of record',
     items: [
-      { name: 'HubSpot',    body: 'Two-way contact + activity sync.' },
-      { name: 'Salesforce', body: 'Leads, contacts, opportunities, custom fields.' },
-      { name: 'Pipedrive',  body: 'Persons, deals, activities.' },
-      { name: 'Attio',      body: 'People, companies, lists.', status: 'beta' },
-      { name: 'Folk',       body: 'Contacts, groups, custom fields.', status: 'beta' },
+      { name: 'HubSpot',    body: 'Two-way contact and activity sync.',         status: 'live' },
+      { name: 'Salesforce', body: 'Leads, contacts, opportunities, custom fields.', status: 'live' },
+      { name: 'Pipedrive',  body: 'Persons, deals, activities.',                 status: 'live' },
+      { name: 'Attio',      body: 'People, companies, lists.',                   status: 'beta' },
+      { name: 'Folk',       body: 'Contacts, groups, custom fields.',            status: 'beta' },
     ],
   },
   {
+    id: 'data',
     title: 'Data & enrichment',
+    sub: 'Find, verify, append',
     items: [
-      { name: 'Apollo',    body: 'Lead lists pulled directly into Warmbly contacts.' },
-      { name: 'Clay',      body: 'Push enriched lists from Clay tables.' },
-      { name: 'Clearbit',  body: 'Enrich contacts on import.' },
-      { name: 'Dropcontact', body: 'Email finder + verifier.' },
-      { name: 'NeverBounce',body: 'Verifier integration on import.' },
+      { name: 'Apollo',      body: 'Lead lists pulled directly into Warmbly.',  status: 'live' },
+      { name: 'Clay',        body: 'Push enriched lists from Clay tables.',     status: 'live' },
+      { name: 'Clearbit',    body: 'Enrich contacts on import.',                status: 'live' },
+      { name: 'Dropcontact', body: 'Email finder and verifier.',                status: 'live' },
+      { name: 'NeverBounce', body: 'Verifier integration on import.',           status: 'live' },
     ],
   },
   {
+    id: 'workflow',
     title: 'Workflow & alerting',
+    sub: 'Push events into the rest of your stack',
     items: [
-      { name: 'Slack',    body: 'Channel notifications for positive replies, bounces, quarantines.' },
-      { name: 'Zapier',   body: '70+ triggers and actions.' },
-      { name: 'Make',     body: 'Triggers and actions in scenarios.' },
-      { name: 'n8n',      body: 'Self-hosted workflow integration.', status: 'beta' },
-      { name: 'Linear',   body: 'Create tickets from negative replies.' , status: 'soon'},
+      { name: 'Slack',    body: 'Channels for positive replies, bounces, quarantines.', status: 'live' },
+      { name: 'Zapier',   body: '70+ triggers and actions.',                            status: 'live' },
+      { name: 'Make',     body: 'Triggers and actions in scenarios.',                   status: 'live' },
+      { name: 'n8n',      body: 'Self-hosted workflow integration.',                    status: 'beta' },
+      { name: 'Linear',   body: 'Create tickets from negative replies.',                status: 'soon' },
     ],
   },
 ];
+
+const statusChip = (s: string) => {
+  if (s === 'live') return 'bg-emerald-50 text-emerald-700';
+  if (s === 'beta') return 'bg-amber-50 text-amber-700';
+  return 'bg-slate-100 text-slate-600';
+};
+const statusDot = (s: string) => {
+  if (s === 'live') return 'bg-emerald-500';
+  if (s === 'beta') return 'bg-amber-500';
+  return 'bg-slate-400';
+};
 ---
 <Layout
-  title="Integrations — Warmbly"
+  title="Integrations · Warmbly"
   description="Mailbox providers, CRMs, data enrichment, and workflow tools that plug into Warmbly."
 >
-  <PageHero
-    eyebrow="Integrations"
-    title="Connect what you already use."
-  />
+  <!-- HERO: with category nav -->
+  <section class="relative isolate overflow-hidden text-white" style="background: radial-gradient(ellipse 130% 140% at 72% 28%, #0284c7 0%, #0369a1 25%, #075985 50%, #0c4a6e 80%, #0a3d5c 100%);">
+    <div class="absolute top-0 right-0 w-[420px] opacity-30 pointer-events-none cloud-drift cloud-1" style="mix-blend-mode: screen;">
+      <Cloud variant={5} opacity={1} />
+    </div>
 
-  <Section>
-    {groups.map((g, i) => (
-      <div class={i === 0 ? '' : 'mt-14'}>
-        <h2 class="text-[13px] uppercase tracking-wider text-muted-foreground font-semibold mb-5">{g.title}</h2>
-        <div class="grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-          {g.items.map((it) => (
-            <Card class="flex flex-col">
-              <div class="flex items-center justify-between">
-                <div class="w-9 h-9 rounded-lg bg-surface-2 border border-border inline-flex items-center justify-center text-foreground/70 font-semibold text-[14px]">
-                  {it.name.charAt(0)}
-                </div>
-                {it.status && (
-                  <span class={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider border
-                    ${it.status === 'live' ? 'text-success bg-success/10 border-success/20' : ''}
-                    ${it.status === 'beta' ? 'text-warn bg-warn/10 border-warn/20' : ''}
-                    ${it.status === 'soon' ? 'text-muted-foreground bg-surface-2 border-border' : ''}
-                  `}>{it.status}</span>
-                )}
-              </div>
-              <h3 class="mt-4 text-[14.5px] font-semibold">{it.name}</h3>
-              <p class="mt-1 text-[13px] text-muted-foreground leading-relaxed">{it.body}</p>
-            </Card>
-          ))}
-        </div>
+    <div class="container-page relative pt-14 pb-12">
+      <div class="text-[11px] uppercase tracking-[0.18em] text-white/55 font-mono mb-3">Integrations</div>
+      <h1 class="text-[32px] md:text-[48px] font-semibold tracking-[-0.025em] leading-[1.06] text-white max-w-3xl">
+        Connect what you already use.
+      </h1>
+      <div class="mt-8 flex flex-wrap gap-2">
+        {groups.map((g) => (
+          <a href={`#${g.id}`} class="inline-flex items-center gap-2 h-8 px-3 rounded-full bg-white/10 backdrop-blur ring-1 ring-white/20 text-[12.5px] text-white/90 hover:bg-white/20">
+            {g.title}
+            <span class="font-mono text-[10.5px] text-white/55">{g.items.length}</span>
+          </a>
+        ))}
       </div>
-    ))}
-  </Section>
+    </div>
+  </section>
+
+  <!-- GROUPED INTEGRATION GRIDS -->
+  <section class="py-16 md:py-20">
+    <div class="container-page space-y-16">
+      {groups.map((g) => (
+        <div id={g.id} class="scroll-mt-24">
+          <div class="flex items-end justify-between mb-6">
+            <div>
+              <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-2">{g.title}</div>
+              <h2 class="text-[22px] md:text-[28px] font-semibold tracking-[-0.02em] text-heading">{g.sub}</h2>
+            </div>
+            <div class="text-[12px] font-mono text-muted-foreground">{g.items.length} · integrations</div>
+          </div>
+
+          <div class="grid sm:grid-cols-2 lg:grid-cols-5 gap-px bg-[color:var(--border)] rounded-[14px] overflow-hidden ring-1 ring-[color:var(--border)]" style="box-shadow: var(--shadow-sm);">
+            {g.items.map((it) => (
+              <div class="bg-white p-5 flex flex-col">
+                <div class="flex items-start justify-between">
+                  <div class="w-10 h-10 rounded-[10px] bg-[color:var(--sky-1)] text-[color:var(--sky-7)] ring-1 ring-[color:var(--sky-2)] inline-flex items-center justify-center text-[15px] font-semibold">
+                    {it.name.charAt(0)}
+                  </div>
+                  <span class={`inline-flex items-center gap-1 h-5 px-1.5 rounded text-[10px] font-medium font-mono uppercase tracking-[0.08em] ${statusChip(it.status)}`}>
+                    <span class={`w-1 h-1 rounded-full ${statusDot(it.status)}`}></span>
+                    {it.status}
+                  </span>
+                </div>
+                <div class="mt-4 text-[14px] font-semibold text-heading">{it.name}</div>
+                <p class="mt-1 text-[12.5px] text-foreground/70 leading-relaxed">{it.body}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  </section>
 
   <CTA
-    title="Need an integration we don’t list?"
+    title="Need an integration we do not list?"
     description="We ship the most-requested integrations every quarter. Tell us which one matters."
     primaryLabel="Request integration"
     primaryHref="/contact/?topic=integrations"

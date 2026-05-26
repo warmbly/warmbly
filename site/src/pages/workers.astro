@@ -1,63 +1,142 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import PageHero from '../components/PageHero.astro';
-import Section from '../components/Section.astro';
-import SectionHead from '../components/SectionHead.astro';
-import Card from '../components/Card.astro';
+import Cloud from '../components/Cloud.astro';
 import Icon from '../components/Icon.astro';
 import CTA from '../components/CTA.astro';
+
+const tiers = [
+  {
+    tier: 'Shared free',
+    plan: 'Free trial',
+    body: 'Pooled across free senders. Lower per-mailbox caps and conservative ramps.',
+    bullets: ['Free warmup pool', 'Strict per-mailbox caps', 'Shared IPs'],
+  },
+  {
+    tier: 'Shared premium',
+    plan: 'Starter · Grow',
+    body: 'Pooled across paid senders. Stricter quarantine policy than free.',
+    bullets: ['Premium warmup pool', 'Default 50 / day cap', 'Shared paid IPs'],
+    featured: true,
+  },
+  {
+    tier: 'Dedicated',
+    plan: 'Business · Enterprise',
+    body: 'A worker process and IP allocated to your organisation. Still mailbox-first.',
+    bullets: ['Dedicated worker process', 'Dedicated IP(s) · warmed', 'Custom data residency'],
+  },
+];
+
+const props = [
+  { icon: 'cpu',      title: 'Per-machine identity',  body: 'One worker process per machine. Each has its own IP. No shared NAT.' },
+  { icon: 'database', title: 'Disposable state',      body: 'Workers store nothing locally that cannot be rebuilt from a Kafka replay.' },
+  { icon: 'workflow', title: 'Kafka-driven',          body: 'Commands and results flow through worker-specific topics for traceability.' },
+  { icon: 'shield',   title: 'No SQL on workers',     body: 'Workers do not open Postgres. They talk to Kafka, KMS, DynamoDB, S3, Redis.' },
+  { icon: 'send',     title: 'Migrable mailboxes',    body: 'A mailbox can be reassigned between workers transparently.' },
+  { icon: 'layers',   title: 'Concentration caps',    body: 'A shared worker should not be a concentration point. Add more before each does more.' },
+];
 ---
 <Layout
-  title="Workers & infrastructure — Warmbly"
+  title="Workers · Warmbly"
   description="Distributed worker plane that sends, syncs and tracks. Shared free, shared premium, or dedicated to your organisation."
 >
-  <PageHero
-    eyebrow="Workers"
-    title="Many workers. Many IPs. By design."
-    description="Cold mail concentrated through one big sender is asking for trouble. Warmbly fans out: one worker per machine, each with its own network identity."
+  <!-- HERO: split with worker fleet visualization -->
+  <section class="relative isolate overflow-hidden text-white" style="background: radial-gradient(ellipse 130% 140% at 72% 28%, #0284c7 0%, #0369a1 25%, #075985 50%, #0c4a6e 80%, #0a3d5c 100%);">
+    <div class="absolute top-0 right-0 w-[440px] opacity-30 pointer-events-none cloud-drift cloud-1" style="mix-blend-mode: screen;">
+      <Cloud variant={5} opacity={1} />
+    </div>
+
+    <div class="container-page relative pt-16 md:pt-20 pb-16 md:pb-20 grid lg:grid-cols-[1.1fr_1fr] gap-12 items-center">
+      <div>
+        <div class="text-[11px] uppercase tracking-[0.18em] text-white/55 font-mono mb-4">Workers</div>
+        <h1 class="text-[36px] sm:text-[52px] md:text-[60px] font-semibold tracking-[-0.03em] leading-[1.02] text-white">
+          Many workers.<br/>Many IPs.<br/>By design.
+        </h1>
+        <p class="mt-5 text-[15.5px] md:text-[17px] text-white/75 leading-relaxed max-w-xl">
+          Cold mail concentrated through one big sender is asking for trouble. Warmbly fans out: one worker per machine, each with its own network identity.
+        </p>
+      </div>
+
+      <!-- Worker fleet grid mock -->
+      <div class="relative">
+        <div class="grid grid-cols-5 gap-2 max-w-md mx-auto">
+          {Array.from({ length: 20 }).map((_, i) => {
+            const isYours = [6, 7, 11, 12].includes(i);
+            const isPremium = [0, 1, 2, 3, 4, 5, 8, 9, 10, 13, 14, 15, 16, 17, 18, 19].includes(i);
+            return (
+              <div class={`relative rounded-[8px] p-2.5 ${isYours ? 'bg-white/15 ring-1 ring-white/45' : 'bg-white/[0.06] ring-1 ring-white/15'}`}>
+                <div class="text-[9.5px] font-mono text-white/75">w-{String(i + 1).padStart(2, '0')}</div>
+                <div class="mt-1.5 flex gap-0.5">
+                  {Array.from({ length: 6 }).map((_, j) => (
+                    <span class={`w-1 h-1 rounded-full ${isYours ? 'bg-emerald-300' : 'bg-sky-300/60'}`} style={`opacity: ${0.4 + (j % 3) * 0.2}`}></span>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div class="mt-4 flex justify-center gap-4 text-[11px] text-white/70">
+          <span class="inline-flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-emerald-300"></span> Your dedicated</span>
+          <span class="inline-flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-sky-300/60"></span> Shared premium</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- TIERS: 3-up with featured middle -->
+  <section class="py-16 md:py-24">
+    <div class="container-page">
+      <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Three tiers</div>
+      <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading max-w-2xl">
+        Three ways your mail moves.
+      </h2>
+
+      <div class="mt-12 grid md:grid-cols-3 gap-5">
+        {tiers.map((t) => (
+          <div class={`relative rounded-[14px] bg-white p-6 ${t.featured ? 'ring-1 ring-[color:var(--sky-6)]/35 shadow-[0_30px_60px_-30px_rgba(2,132,199,0.4)]' : 'ring-1 ring-[color:var(--border)]'}`} style={t.featured ? '' : 'box-shadow: var(--shadow-sm);'}>
+            <div class="text-[10.5px] uppercase tracking-[0.18em] font-mono text-[color:var(--sky-6)] mb-2">{t.plan}</div>
+            <div class="text-[20px] font-semibold tracking-[-0.02em] text-heading">{t.tier}</div>
+            <p class="mt-2 text-[13.5px] text-foreground/70 leading-relaxed">{t.body}</p>
+            <ul class="mt-5 pt-5 border-t border-[color:var(--border)] space-y-2">
+              {t.bullets.map((b) => (
+                <li class="flex items-start gap-2 text-[13px] text-foreground/80">
+                  <Icon name="check" size={12} class="text-[color:var(--sky-6)] mt-1 shrink-0" />
+                  <span>{b}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- WORKER PROPERTIES: dense feature grid -->
+  <section class="bg-[color:var(--surface-1)] border-y border-[color:var(--border)] py-16 md:py-24">
+    <div class="container-page">
+      <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Why workers, not one big sender</div>
+      <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading max-w-2xl">
+        We treat workers as cattle, not pets.
+      </h2>
+
+      <div class="mt-12 grid md:grid-cols-2 lg:grid-cols-3 gap-px bg-[color:var(--border)] rounded-[14px] overflow-hidden ring-1 ring-[color:var(--border)]" style="box-shadow: var(--shadow-sm);">
+        {props.map((s) => (
+          <div class="bg-white p-5">
+            <div class="w-9 h-9 rounded-[8px] bg-[color:var(--sky-1)] text-[color:var(--sky-6)] inline-flex items-center justify-center mb-3">
+              <Icon name={s.icon} size={16} />
+            </div>
+            <div class="text-[14.5px] font-semibold text-heading">{s.title}</div>
+            <p class="mt-1.5 text-[13px] text-foreground/70 leading-relaxed">{s.body}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <CTA
+    title="Want dedicated workers for your org?"
+    description="Dedicated worker process and IP, plus monthly deliverability review."
+    primaryLabel="Talk to sales"
+    primaryHref="/contact/?topic=dedicated"
+    secondaryLabel="See pricing"
   />
-
-  <Section>
-    <SectionHead
-      eyebrow="Tiers"
-      title="Three ways your mail moves."
-    />
-    <div class="mt-10 grid md:grid-cols-3 gap-4">
-      {[
-        { tier: 'Shared free',    plan: 'Free plan',   body: 'Pooled across free senders. Lower per-mailbox caps, conservative ramps.' },
-        { tier: 'Shared premium', plan: 'Starter, Growth', body: 'Pooled across paid senders. Stricter quarantine policy than free.' },
-        { tier: 'Dedicated',      plan: 'Business plan', body: 'A worker process and IP allocated to your organisation. Still respects per-mailbox health.' },
-      ].map((t) => (
-        <Card>
-          <h3 class="text-[15.5px] font-semibold">{t.tier}</h3>
-          <p class="text-[12.5px] text-muted-foreground mt-0.5">{t.plan}</p>
-          <p class="mt-3 text-[13.5px] text-muted-foreground leading-relaxed">{t.body}</p>
-        </Card>
-      ))}
-    </div>
-  </Section>
-
-  <Section variant="muted">
-    <SectionHead
-      eyebrow="Worker properties"
-      title="Why we treat them as cattle, not pets."
-    />
-    <div class="mt-10 grid md:grid-cols-2 gap-4">
-      {[
-        ['Per-machine identity',  'One worker process per machine. Each has its own IP. No shared NAT.'],
-        ['Disposable state',      'Workers store nothing locally that can’t be rebuilt from a Kafka replay.'],
-        ['Kafka-driven',          'Commands and results flow through worker-specific topics for traceability.'],
-        ['No SQL',                'Workers don’t open a Postgres connection. They talk to Kafka, KMS, DynamoDB, S3 and Redis.'],
-        ['Migrable mailboxes',    'A mailbox can be reassigned between workers transparently.'],
-        ['Concentration caps',    'A shared worker should not be a concentration point. We add workers before forcing each one to do more.'],
-      ].map(([k, v]) => (
-        <Card>
-          <h3 class="text-[14.5px] font-semibold">{k}</h3>
-          <p class="mt-1.5 text-[13.5px] text-muted-foreground leading-relaxed">{v}</p>
-        </Card>
-      ))}
-    </div>
-  </Section>
-
-  <CTA primaryLabel="Talk to sales about dedicated workers" primaryHref="/contact/?topic=dedicated" secondaryLabel="See pricing" />
 </Layout>

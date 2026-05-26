@@ -1,4 +1,7 @@
 ---
+import Cloud from './Cloud.astro';
+import Icon from './Icon.astro';
+
 interface Props {
   title?: string;
   description?: string;
@@ -8,23 +11,31 @@ interface Props {
   secondaryHref?: string;
 }
 const {
-  title = 'Start sending cold email that lands.',
-  description = 'Connect a mailbox in a minute, warm it up automatically, then send your first sequence today.',
-  primaryLabel = 'Start free',
+  title = 'Send cold email people actually open.',
+  description = 'Connect a mailbox, warm it up, send your first campaign today.',
+  primaryLabel = 'Start the trial',
   primaryHref = 'https://app.warmbly.com/register',
   secondaryLabel = 'See pricing',
   secondaryHref = '/pricing/',
 } = Astro.props;
 ---
-<section class="border-t border-border bg-foreground text-background">
-  <div class="container-page py-16 md:py-20 flex flex-col md:flex-row md:items-center md:justify-between gap-6">
-    <div>
-      <h2 class="text-2xl md:text-3xl font-extrabold tracking-tight leading-tight max-w-2xl">{title}</h2>
-      <p class="mt-2 text-background/70 max-w-2xl">{description}</p>
-    </div>
-    <div class="flex flex-wrap gap-3 shrink-0">
-      <a href={primaryHref} class="inline-flex h-11 px-5 items-center rounded-md text-[14.5px] font-medium bg-background text-foreground hover:bg-background/90 transition-colors">{primaryLabel}</a>
-      <a href={secondaryHref} class="inline-flex h-11 px-5 items-center rounded-md text-[14.5px] font-medium border border-background/20 hover:bg-background/10 transition-colors">{secondaryLabel}</a>
+<section class="relative isolate overflow-hidden text-white" style="background: radial-gradient(ellipse 130% 140% at 72% 28%, #0284c7 0%, #0369a1 25%, #075985 50%, #0c4a6e 80%, #0a3d5c 100%);">
+  <div class="absolute top-0 right-0 w-[420px] opacity-25 pointer-events-none cloud-drift cloud-1" style="mix-blend-mode: screen;">
+    <Cloud variant={5} opacity={1} />
+  </div>
+
+  <div class="container-page relative py-16 md:py-20 text-center">
+    <h2 class="text-[32px] md:text-[48px] lg:text-[56px] font-semibold tracking-[-0.03em] leading-[1.04] text-white mx-auto max-w-3xl">
+      {title}
+    </h2>
+    <p class="mt-5 text-[15.5px] text-white/75 max-w-xl mx-auto">{description}</p>
+    <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
+      <a href={primaryHref} class="inline-flex h-11 px-5 items-center gap-2 rounded-[10px] text-[14.5px] font-medium bg-white text-[color:var(--sky-6)] hover:bg-white/95">
+        {primaryLabel} <Icon name="arrowRight" size={14} />
+      </a>
+      <a href={secondaryHref} class="inline-flex h-11 px-5 items-center rounded-[10px] text-[14.5px] font-medium bg-white/10 backdrop-blur border-2 border-white/40 text-white hover:bg-white/20">
+        {secondaryLabel}
+      </a>
     </div>
   </div>
 </section>

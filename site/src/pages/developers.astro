@@ -1,107 +1,175 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import PageHero from '../components/PageHero.astro';
-import Section from '../components/Section.astro';
-import SectionHead from '../components/SectionHead.astro';
-import Card from '../components/Card.astro';
+import Cloud from '../components/Cloud.astro';
 import Icon from '../components/Icon.astro';
 import CTA from '../components/CTA.astro';
+
+const capabilities = [
+  ['Mailboxes',         'GET · POST · PATCH · DELETE',  'List, create, update, pause, delete. Trigger warmup re-evaluation.'],
+  ['Sequences',         'GET · POST · PATCH',           'CRUD sequences, steps, variants. Trigger campaign starts.'],
+  ['Contacts',          'GET · POST · PATCH · DELETE',  'CRUD contacts. Bulk import. Suppression list management.'],
+  ['Events',            'GET',                           'Replay-able event stream. Filter by type or campaign.'],
+  ['Pipelines & deals', 'GET · POST · PATCH',           'Read and write pipelines, deals, stages, tasks.'],
+  ['Health',            'GET',                           'Read mailbox, pool and worker health snapshots.'],
+];
+
+const sdks = [
+  { lang: 'TypeScript', pkg: '@warmbly/sdk',                  body: 'Type-safe client generated from the same OpenAPI spec the docs render from.' },
+  { lang: 'Python',     pkg: 'warmbly',                       body: 'Async-first. Built on httpx. Same API surface as TypeScript.' },
+  { lang: 'Go',         pkg: 'github.com/warmbly/warmbly-go', body: 'Idiomatic Go client. Context-aware. No reflection magic.' },
+];
 ---
 <Layout
-  title="API & Webhooks — Warmbly"
+  title="API & Webhooks · Warmbly"
   description="Programmatic control over mailboxes, campaigns and contacts. HMAC-signed webhooks for every meaningful event."
 >
-  <PageHero
-    eyebrow="Developers"
-    title="A boring, predictable API. The way you want it."
-    description="REST, JSON, idempotency keys, HMAC-signed webhooks. Rate limits surfaced in headers. Per-key scopes and rotation built in."
-  />
-
-  <Section>
-    <SectionHead
-      eyebrow="API"
-      title="Capabilities"
-    />
-    <div class="mt-10 grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-      {[
-        ['Mailboxes', 'List, create, update, pause, delete. Trigger warmup re-evaluation.'],
-        ['Sequences', 'CRUD sequences, steps, variants. Trigger campaign starts.'],
-        ['Contacts',  'CRUD contacts. Bulk import. Suppression list management.'],
-        ['Events',    'Replay-able event stream. Filter by type or campaign.'],
-        ['Pipelines & deals', 'Read and write pipelines, deals, stages, tasks.'],
-        ['Health',    'Read mailbox, pool and worker health snapshots.'],
-      ].map(([t, b]) => (
-        <Card>
-          <h3 class="text-[15px] font-semibold">{t}</h3>
-          <p class="mt-1.5 text-[13.5px] text-muted-foreground leading-relaxed">{b}</p>
-        </Card>
-      ))}
+  <!-- HERO: terminal-style starter on the right -->
+  <section class="relative isolate overflow-hidden text-white" style="background: radial-gradient(ellipse 130% 140% at 72% 28%, #0284c7 0%, #0369a1 25%, #075985 50%, #0c4a6e 80%, #0a3d5c 100%);">
+    <div class="absolute top-0 right-0 w-[420px] opacity-30 pointer-events-none cloud-drift cloud-1" style="mix-blend-mode: screen;">
+      <Cloud variant={5} opacity={1} />
     </div>
-  </Section>
 
-  <Section variant="muted">
-    <SectionHead
-      eyebrow="Webhooks"
-      title="HMAC-signed. Replay-safe. Per-key scopes."
-    />
-    <div class="mt-10 grid md:grid-cols-2 gap-4">
-      <Card padded={false}>
-        <div class="px-5 py-3 border-b border-border text-[12.5px] uppercase tracking-wider text-muted-foreground font-semibold">Sample event payload</div>
-        <pre class="overflow-x-auto text-[12.5px] font-mono leading-relaxed text-foreground/85 p-5"><code>{`{
-  "id": "evt_01HQX9...",
-  "type": "reply.received",
-  "created_at": "2026-05-25T16:01:33Z",
-  "workspace_id": "ws_acme",
-  "data": {
-    "mailbox_id": "mbx_01HQX...",
-    "sequence_id": "seq_01HQX...",
-    "contact_id":  "ct_01HQX...",
-    "classification": "positive",
-    "thread_id": "th_01HQX...",
-    "preview": "Sure, send over a calendar invite for Thursday."
-  },
-  "idempotency_key": "reply:th_01HQX..."
-}`}</code></pre>
-      </Card>
-      <Card>
-        <h3 class="text-[15px] font-semibold">Why our webhooks are different</h3>
-        <ul class="mt-3 space-y-2">
+    <div class="container-page relative pt-16 md:pt-20 pb-16 md:pb-20 grid lg:grid-cols-[1fr_1.1fr] gap-12 items-center">
+      <div>
+        <div class="text-[11px] uppercase tracking-[0.18em] text-white/55 font-mono mb-4">Developers</div>
+        <h1 class="text-[36px] sm:text-[52px] md:text-[60px] font-semibold tracking-[-0.03em] leading-[1.02] text-white">
+          A boring, predictable API.
+        </h1>
+        <p class="mt-5 text-[15.5px] md:text-[17px] text-white/75 leading-relaxed max-w-xl">
+          REST. JSON. Idempotency keys. HMAC-signed webhooks. Rate limits surfaced in headers. Per-key scopes and rotation built in.
+        </p>
+        <div class="mt-7 flex flex-wrap gap-3">
+          <a href="https://docs.warmbly.com" class="inline-flex h-11 px-5 items-center gap-2 rounded-[10px] text-[14.5px] font-medium bg-white text-[color:var(--sky-7)] hover:bg-white/95">
+            Read the docs <Icon name="arrowUpRight" size={13} />
+          </a>
+          <a href="https://app.warmbly.com/settings/api-keys" class="inline-flex h-11 px-5 items-center rounded-[10px] text-[14.5px] font-medium bg-white/10 backdrop-blur ring-1 ring-white/30 text-white hover:bg-white/20">
+            Get an API key
+          </a>
+        </div>
+      </div>
+
+      <!-- Terminal mock -->
+      <div class="rounded-[14px] overflow-hidden ring-1 ring-white/15" style="box-shadow: 0 30px 60px -30px rgba(0,0,0,0.4);">
+        <div class="flex items-center gap-2 px-4 py-2.5 bg-[#0c1224] border-b border-white/10">
+          <span class="w-2.5 h-2.5 rounded-full bg-[#ff5f56]/80"></span>
+          <span class="w-2.5 h-2.5 rounded-full bg-[#ffbd2e]/80"></span>
+          <span class="w-2.5 h-2.5 rounded-full bg-[#27c93f]/80"></span>
+          <span class="ml-3 text-[11.5px] font-mono text-white/60">~ · zsh</span>
+        </div>
+        <pre class="bg-[#0c1224] text-white/85 p-5 text-[12.5px] leading-[1.65] font-mono overflow-x-auto"><code><span style="color:#94a3b8">$</span> curl <span style="color:#fde68a">https://api.warmbly.com/v1/mailboxes</span> \
+    -H <span style="color:#fde68a">"Authorization: Bearer $WARMBLY_KEY"</span> \
+    -H <span style="color:#fde68a">"Idempotency-Key: $(uuidgen)"</span>
+
+<span style="color:#a78bfa">HTTP/2 200</span>
+<span style="color:#7dd3fc">x-ratelimit-limit</span>: 600
+<span style="color:#7dd3fc">x-ratelimit-remaining</span>: 599
+<span style="color:#7dd3fc">x-ratelimit-reset</span>: 1746820392
+
+&#123;
+  <span style="color:#7dd3fc">"data"</span>: [
+    &#123;
+      <span style="color:#7dd3fc">"id"</span>: <span style="color:#fde68a">"mbx_01HQX..."</span>,
+      <span style="color:#7dd3fc">"address"</span>: <span style="color:#fde68a">"ben@acme.com"</span>,
+      <span style="color:#7dd3fc">"health"</span>: <span style="color:#fde68a">"healthy"</span>,
+      <span style="color:#7dd3fc">"cold_cap_per_day"</span>: <span style="color:#a78bfa">50</span>
+    &#125;
+  ]
+&#125;</code></pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- CAPABILITIES TABLE -->
+  <section class="py-16 md:py-20">
+    <div class="container-page">
+      <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">API capabilities</div>
+      <h2 class="text-[26px] md:text-[34px] font-semibold tracking-[-0.025em] text-heading max-w-2xl">Everything the UI does, scriptable.</h2>
+
+      <div class="mt-10 rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden" style="box-shadow: var(--shadow-sm);">
+        <div class="grid grid-cols-[1fr_1fr_2fr] px-5 py-3 bg-[color:var(--surface-1)] border-b border-[color:var(--border)] text-[10.5px] uppercase tracking-[0.16em] font-mono text-muted-foreground">
+          <div>Resource</div>
+          <div>Methods</div>
+          <div>What it does</div>
+        </div>
+        {capabilities.map(([r, m, b]) => (
+          <div class="grid grid-cols-[1fr_1fr_2fr] px-5 py-3.5 border-b border-[color:var(--border)] last:border-b-0 text-[13.5px] items-baseline">
+            <div class="font-semibold text-heading">{r}</div>
+            <div class="text-[12px] font-mono text-[color:var(--sky-7)]">{m}</div>
+            <div class="text-foreground/75">{b}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- WEBHOOKS: split with payload sample -->
+  <section class="bg-[color:var(--surface-1)] border-y border-[color:var(--border)] py-16 md:py-20">
+    <div class="container-page grid lg:grid-cols-[1fr_1.2fr] gap-12 items-start">
+      <div class="lg:sticky lg:top-24 self-start">
+        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Webhooks</div>
+        <h2 class="text-[26px] md:text-[34px] font-semibold tracking-[-0.025em] text-heading">HMAC-signed. Replay-safe.</h2>
+        <ul class="mt-6 space-y-2.5">
           {[
-            'Every event has an idempotency key — duplicate deliveries are safe to drop.',
-            'Per-endpoint HMAC secret with rotation through the dashboard.',
-            'Configurable retry: 5 attempts with exponential backoff, dead-letter on the dashboard.',
-            'Filter what you receive by event type, sequence, or mailbox.',
-            'Signed query parameter on every URL for path-level verification.',
+            'Every event has an idempotency key',
+            'Per-endpoint HMAC secret with rotation',
+            '5 retries with exponential backoff · dead-letter view',
+            'Filter by event type, sequence, or mailbox',
+            'Signed query parameter for path-level verification',
           ].map((l) => (
-            <li class="flex items-start gap-2 text-[13.5px] text-foreground/85">
-              <Icon name="check" size={13} class="text-success mt-1 shrink-0" />
+            <li class="flex items-start gap-2 text-[14px] text-foreground/85">
+              <Icon name="check" size={13} class="text-[color:var(--sky-6)] mt-1 shrink-0" />
               <span>{l}</span>
             </li>
           ))}
         </ul>
-      </Card>
-    </div>
-  </Section>
+      </div>
 
-  <Section>
-    <SectionHead
-      eyebrow="SDKs"
-      title="Officially supported, lazily generated."
-    />
-    <div class="mt-10 grid md:grid-cols-3 gap-4">
-      {[
-        ['TypeScript', '@warmbly/sdk', 'Type-safe client generated from the same OpenAPI spec the docs render from.'],
-        ['Python', 'warmbly', 'Async-first. Built on httpx. Same API surface as TypeScript.'],
-        ['Go', 'github.com/warmbly/warmbly-go', 'Idiomatic Go client. Context-aware. No reflection magic.'],
-      ].map(([lang, pkg, body]) => (
-        <Card>
-          <h3 class="text-[15px] font-semibold">{lang}</h3>
-          <p class="text-[12.5px] text-muted-foreground mt-1"><span class="kbd">{pkg}</span></p>
-          <p class="mt-3 text-[13.5px] text-muted-foreground leading-relaxed">{body}</p>
-        </Card>
-      ))}
+      <div class="rounded-[14px] overflow-hidden ring-1 ring-[color:var(--border)]" style="box-shadow: var(--shadow-sm);">
+        <div class="flex items-center gap-2 px-4 py-2.5 bg-[#0c1224] border-b border-white/10">
+          <span class="w-2.5 h-2.5 rounded-full bg-[#ff5f56]/80"></span>
+          <span class="w-2.5 h-2.5 rounded-full bg-[#ffbd2e]/80"></span>
+          <span class="w-2.5 h-2.5 rounded-full bg-[#27c93f]/80"></span>
+          <span class="ml-3 text-[11.5px] font-mono text-white/60">reply.received · evt_01HQX9</span>
+        </div>
+        <pre class="bg-[#0c1224] text-white/85 p-5 text-[12px] leading-[1.65] font-mono overflow-x-auto"><code>&#123;
+  <span style="color:#7dd3fc">"id"</span>: <span style="color:#fde68a">"evt_01HQX9..."</span>,
+  <span style="color:#7dd3fc">"type"</span>: <span style="color:#fde68a">"reply.received"</span>,
+  <span style="color:#7dd3fc">"created_at"</span>: <span style="color:#fde68a">"2026-05-25T16:01:33Z"</span>,
+  <span style="color:#7dd3fc">"workspace_id"</span>: <span style="color:#fde68a">"ws_acme"</span>,
+  <span style="color:#7dd3fc">"data"</span>: &#123;
+    <span style="color:#7dd3fc">"mailbox_id"</span>: <span style="color:#fde68a">"mbx_01HQX..."</span>,
+    <span style="color:#7dd3fc">"sequence_id"</span>: <span style="color:#fde68a">"seq_01HQX..."</span>,
+    <span style="color:#7dd3fc">"contact_id"</span>:  <span style="color:#fde68a">"ct_01HQX..."</span>,
+    <span style="color:#7dd3fc">"classification"</span>: <span style="color:#fde68a">"positive"</span>,
+    <span style="color:#7dd3fc">"thread_id"</span>: <span style="color:#fde68a">"th_01HQX..."</span>,
+    <span style="color:#7dd3fc">"preview"</span>: <span style="color:#fde68a">"Sure, send a calendar invite for Thursday."</span>
+  &#125;,
+  <span style="color:#7dd3fc">"idempotency_key"</span>: <span style="color:#fde68a">"reply:th_01HQX..."</span>
+&#125;
+
+<span style="color:#94a3b8"># Verify the signature:</span>
+<span style="color:#94a3b8"># HMAC-SHA256(body, endpoint_secret) == X-Warmbly-Signature</span></code></pre>
+      </div>
     </div>
-  </Section>
+  </section>
+
+  <!-- SDKs -->
+  <section class="py-16 md:py-20">
+    <div class="container-page">
+      <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">SDKs</div>
+      <h2 class="text-[26px] md:text-[34px] font-semibold tracking-[-0.025em] text-heading max-w-2xl">Officially supported.</h2>
+
+      <div class="mt-10 grid md:grid-cols-3 gap-4">
+        {sdks.map((s) => (
+          <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] p-5" style="box-shadow: var(--shadow-sm);">
+            <div class="text-[14.5px] font-semibold text-heading">{s.lang}</div>
+            <div class="mt-1 inline-block px-1.5 py-0.5 rounded font-mono text-[11.5px] bg-[color:var(--surface-2)] text-foreground/80 ring-1 ring-[color:var(--border)]">{s.pkg}</div>
+            <p class="mt-3 text-[13px] text-foreground/70 leading-relaxed">{s.body}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
 
   <CTA primaryLabel="Get an API key" primaryHref="https://app.warmbly.com/settings/api-keys" />
 </Layout>

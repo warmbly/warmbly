@@ -1,9 +1,6 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import PageHero from './PageHero.astro';
-import Section from './Section.astro';
-import SectionHead from './SectionHead.astro';
-import Card from './Card.astro';
+import Cloud from './Cloud.astro';
 import Icon from './Icon.astro';
 import CTA from './CTA.astro';
 
@@ -13,58 +10,99 @@ interface Props {
   pageTitle: string;
   intro: string;
   challenges: { title: string; body: string }[];
-  recipe: { title: string; body: string }[];
-  caps: { value: string; label: string }[];
+  recipe:     { title: string; body: string }[];
+  caps:       { value: string; label: string }[];
+  eyebrow?: string;
 }
 
-const { title, description, pageTitle, intro, challenges, recipe, caps } = Astro.props;
+const { title, description, pageTitle, intro, challenges, recipe, caps, eyebrow = 'Use case' } = Astro.props;
 ---
 <Layout title={pageTitle} description={description}>
-  <PageHero
-    eyebrow="Use case"
-    title={title}
-    description={intro}
-  />
-
-  <Section>
-    <SectionHead eyebrow="What usually goes wrong" title="The pattern we see." />
-    <div class="mt-10 grid md:grid-cols-2 gap-4">
-      {challenges.map((c) => (
-        <Card>
-          <h3 class="text-[15px] font-semibold">{c.title}</h3>
-          <p class="mt-1.5 text-[13.5px] text-muted-foreground leading-relaxed">{c.body}</p>
-        </Card>
-      ))}
+  <!-- HERO with playbook caps inline -->
+  <section class="relative isolate overflow-hidden text-white" style="background: radial-gradient(ellipse 130% 140% at 72% 28%, #0284c7 0%, #0369a1 25%, #075985 50%, #0c4a6e 80%, #0a3d5c 100%);">
+    <div class="absolute top-0 right-0 w-[420px] opacity-30 pointer-events-none cloud-drift cloud-1" style="mix-blend-mode: screen;">
+      <Cloud variant={5} opacity={1} />
     </div>
-  </Section>
 
-  <Section variant="muted">
-    <SectionHead eyebrow="Recipe" title="How to set this up in Warmbly." />
-    <div class="mt-10 grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-      {recipe.map((r, i) => (
-        <Card>
-          <div class="flex items-center justify-between mb-3">
-            <span class="text-[12px] font-mono text-muted-foreground">{String(i + 1).padStart(2, '0')}</span>
-            <Icon name="arrowRight" class="text-muted-foreground" />
+    <div class="container-page relative pt-16 md:pt-20 pb-20">
+      <a href="/use-cases/" class="inline-flex items-center gap-1.5 text-[12px] text-white/65 hover:text-white">
+        <Icon name="arrowRight" size={12} class="rotate-180" />
+        {eyebrow}
+      </a>
+      <h1 class="mt-4 text-[36px] sm:text-[48px] md:text-[60px] font-semibold tracking-[-0.03em] leading-[1.02] text-white max-w-3xl">
+        {title}
+      </h1>
+      <p class="mt-5 text-[15.5px] md:text-[17px] text-white/75 max-w-2xl leading-relaxed">
+        {intro}
+      </p>
+    </div>
+  </section>
+
+  <!-- CAPS ROW: overlapping into white -->
+  <section class="relative -mt-10 pb-16">
+    <div class="container-page">
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-px bg-[color:var(--border)] rounded-[14px] overflow-hidden ring-1 ring-[color:var(--border)]" style="box-shadow: 0 30px 60px -30px rgba(2,32,71,0.3), var(--shadow-sm);">
+        {caps.map((c) => (
+          <div class="bg-white p-5 md:p-6">
+            <div class="text-[10.5px] uppercase tracking-[0.16em] font-mono text-muted-foreground">{c.label}</div>
+            <div class="mt-2 text-[24px] md:text-[28px] font-semibold tracking-[-0.025em] text-heading leading-none">{c.value}</div>
           </div>
-          <h3 class="text-[15px] font-semibold">{r.title}</h3>
-          <p class="mt-1.5 text-[13.5px] text-muted-foreground leading-relaxed">{r.body}</p>
-        </Card>
-      ))}
+        ))}
+      </div>
     </div>
-  </Section>
+  </section>
 
-  <Section>
-    <SectionHead eyebrow="At a glance" title="Numbers people in this seat care about." />
-    <div class="mt-10 grid grid-cols-2 md:grid-cols-4 gap-4">
-      {caps.map((c) => (
-        <Card>
-          <div class="text-2xl font-extrabold">{c.value}</div>
-          <div class="text-[12.5px] text-muted-foreground mt-1">{c.label}</div>
-        </Card>
-      ))}
+  <!-- CHALLENGES: split layout, sticky title -->
+  <section class="bg-[color:var(--surface-1)] border-y border-[color:var(--border)] py-16 md:py-20">
+    <div class="container-page grid lg:grid-cols-[1fr_2fr] gap-12 lg:gap-20">
+      <div class="lg:sticky lg:top-24 self-start">
+        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">The pattern</div>
+        <h2 class="text-[26px] md:text-[32px] font-semibold tracking-[-0.025em] text-heading leading-[1.1]">
+          What usually goes wrong.
+        </h2>
+      </div>
+      <div class="divide-y divide-[color:var(--border)]">
+        {challenges.map((c, i) => (
+          <div class="py-5 grid grid-cols-[40px_1fr] gap-4 first:pt-0">
+            <div class="text-[11px] font-mono text-rose-500 pt-1">×{String(i + 1).padStart(2, '0')}</div>
+            <div>
+              <div class="text-[15.5px] font-semibold text-heading">{c.title}</div>
+              <p class="mt-1.5 text-[14px] text-foreground/75 leading-relaxed">{c.body}</p>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
-  </Section>
+  </section>
+
+  <!-- RECIPE: numbered steps in a clean stepper -->
+  <section class="py-16 md:py-20">
+    <div class="container-page">
+      <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Recipe</div>
+      <h2 class="text-[26px] md:text-[34px] font-semibold tracking-[-0.025em] text-heading max-w-2xl">
+        How to set this up in Warmbly.
+      </h2>
+
+      <div class="mt-12 relative">
+        <div class="absolute left-[18px] md:left-[20px] top-2 bottom-2 w-px bg-[color:var(--border)]"></div>
+        <div class="space-y-4">
+          {recipe.map((r, i) => (
+            <div class="grid grid-cols-[44px_1fr] gap-4 items-start">
+              <div class="relative">
+                <div class="w-9 h-9 rounded-full bg-white ring-1 ring-[color:var(--sky-2)] text-[12px] font-mono text-[color:var(--sky-7)] inline-flex items-center justify-center font-semibold">
+                  {String(i + 1).padStart(2, '0')}
+                </div>
+              </div>
+              <div class="rounded-[12px] bg-white ring-1 ring-[color:var(--border)] p-5" style="box-shadow: var(--shadow-sm);">
+                <div class="text-[15px] font-semibold text-heading">{r.title}</div>
+                <p class="mt-1.5 text-[13.5px] text-foreground/75 leading-relaxed">{r.body}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  </section>
 
   <CTA />
 </Layout>

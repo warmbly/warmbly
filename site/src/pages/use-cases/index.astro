@@ -1,44 +1,100 @@
 ---
 import Layout from '../../layouts/Layout.astro';
-import PageHero from '../../components/PageHero.astro';
-import Section from '../../components/Section.astro';
-import Card from '../../components/Card.astro';
+import Cloud from '../../components/Cloud.astro';
 import Icon from '../../components/Icon.astro';
 import CTA from '../../components/CTA.astro';
 
 const cases = [
-  { icon: 'rocket',  href: '/use-cases/founders/',    title: 'Founders',    body: 'Run intro sequences from your domain without burning your only mailbox.' },
-  { icon: 'users',   href: '/use-cases/agencies/',    title: 'Agencies',    body: 'Outbound for many clients on many domains, without spreadsheet triage.' },
-  { icon: 'chart',   href: '/use-cases/sales/',       title: 'Sales teams', body: 'Distribute sends across reps, surface positive replies fast.' },
-  { icon: 'contact', href: '/use-cases/recruiters/',  title: 'Recruiters',  body: 'Personalised outreach to candidates from multiple sender mailboxes.' },
-  { icon: 'star',    href: '/use-cases/fundraising/', title: 'Fundraising', body: 'Plan a focused VC sequence that lands in the inbox, not promotions.' },
+  {
+    icon: 'rocket',
+    href: '/use-cases/founders/',
+    title: 'Founders',
+    body: 'Run intro sequences from your domain without burning your only mailbox.',
+    setup: '4 mailboxes · plain text · founder@ stays clean',
+  },
+  {
+    icon: 'users',
+    href: '/use-cases/agencies/',
+    title: 'Agencies',
+    body: 'Outbound for many clients on many domains, without spreadsheet triage.',
+    setup: 'Workspace per client · whitelabel exports · webhooks → CRM',
+  },
+  {
+    icon: 'chart',
+    href: '/use-cases/sales/',
+    title: 'Sales teams',
+    body: 'Distribute sends across reps. Surface positive replies fast.',
+    setup: 'Sender pool · roles + assignment · CRM sync',
+  },
+  {
+    icon: 'contact',
+    href: '/use-cases/recruiters/',
+    title: 'Recruiters',
+    body: 'Personalised outreach to candidates from multiple sender mailboxes.',
+    setup: 'Per-recruiter mailboxes · category-based pipelines',
+  },
+  {
+    icon: 'star',
+    href: '/use-cases/fundraising/',
+    title: 'Fundraising',
+    body: 'Plan a focused VC sequence that lands in the inbox, not promotions.',
+    setup: 'Plain text · referral branching · founder@ reputation watch',
+  },
 ];
 ---
 <Layout
-  title="Use cases — Warmbly"
+  title="Use cases · Warmbly"
   description="How founders, agencies, sales teams, recruiters and fundraisers use Warmbly."
 >
-  <PageHero
-    eyebrow="Use cases"
-    title="Who Warmbly is built for."
-  />
-  <Section>
-    <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-      {cases.map((c) => (
-        <a href={c.href} class="group">
-          <Card class="h-full hover:border-border-strong transition-colors">
-            <div class="w-9 h-9 rounded-lg bg-brand-soft text-brand inline-flex items-center justify-center mb-4">
-              <Icon name={c.icon} size={18} />
-            </div>
-            <h3 class="text-[15.5px] font-semibold">{c.title}</h3>
-            <p class="mt-1.5 text-[13.5px] text-muted-foreground leading-relaxed">{c.body}</p>
-            <span class="mt-4 inline-flex items-center gap-1.5 text-[13px] font-medium text-brand group-hover:text-brand-strong">
-              Read playbook <Icon name="arrowRight" size={13} />
-            </span>
-          </Card>
-        </a>
-      ))}
+  <!-- HERO -->
+  <section class="relative isolate overflow-hidden text-white" style="background: radial-gradient(ellipse 130% 140% at 72% 28%, #0284c7 0%, #0369a1 25%, #075985 50%, #0c4a6e 80%, #0a3d5c 100%);">
+    <div class="absolute top-0 right-0 w-[420px] opacity-30 pointer-events-none cloud-drift cloud-1" style="mix-blend-mode: screen;">
+      <Cloud variant={5} opacity={1} />
     </div>
-  </Section>
+
+    <div class="container-page relative pt-14 pb-12">
+      <div class="text-[11px] uppercase tracking-[0.18em] text-white/55 font-mono mb-3">Use cases</div>
+      <h1 class="text-[32px] md:text-[48px] font-semibold tracking-[-0.025em] leading-[1.06] text-white max-w-3xl">
+        Who Warmbly is built for.
+      </h1>
+      <p class="mt-4 text-[15.5px] text-white/75 max-w-xl">
+        Five playbooks for five seats. Each one is a real recipe you can copy.
+      </p>
+    </div>
+  </section>
+
+  <!-- CASE LIST: numbered rows -->
+  <section class="py-16 md:py-20">
+    <div class="container-page">
+      <div class="space-y-px bg-[color:var(--border)] rounded-[14px] overflow-hidden ring-1 ring-[color:var(--border)]" style="box-shadow: var(--shadow-sm);">
+        {cases.map((c, i) => (
+          <a href={c.href} class="group block bg-white hover:bg-[color:var(--sky-1)]/40 transition-colors">
+            <div class="grid grid-cols-12 gap-4 md:gap-8 p-6 md:p-7 items-start md:items-center">
+              <div class="col-span-1 hidden md:block text-[11px] font-mono text-muted-foreground pt-1">{String(i + 1).padStart(2, '0')}</div>
+              <div class="col-span-12 md:col-span-1">
+                <div class="w-10 h-10 rounded-[10px] bg-[color:var(--sky-1)] text-[color:var(--sky-6)] ring-1 ring-[color:var(--sky-2)] inline-flex items-center justify-center">
+                  <Icon name={c.icon} size={18} />
+                </div>
+              </div>
+              <div class="col-span-12 md:col-span-4">
+                <h3 class="text-[17px] font-semibold tracking-[-0.01em] text-heading">{c.title}</h3>
+                <p class="mt-1.5 text-[13.5px] text-foreground/75 leading-relaxed">{c.body}</p>
+              </div>
+              <div class="col-span-12 md:col-span-5">
+                <div class="text-[10.5px] uppercase tracking-[0.16em] font-mono text-muted-foreground mb-1">Setup recipe</div>
+                <div class="text-[13px] text-foreground/85 font-mono">{c.setup}</div>
+              </div>
+              <div class="col-span-12 md:col-span-1 md:text-right">
+                <span class="inline-flex items-center gap-1 text-[13px] font-medium text-[color:var(--brand)] group-hover:translate-x-0.5 transition-transform">
+                  Open <Icon name="arrowRight" size={12} />
+                </span>
+              </div>
+            </div>
+          </a>
+        ))}
+      </div>
+    </div>
+  </section>
+
   <CTA />
 </Layout>

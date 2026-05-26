@@ -1,18 +1,18 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import PageHero from '../components/PageHero.astro';
-import Section from '../components/Section.astro';
-import Card from '../components/Card.astro';
+import Cloud from '../components/Cloud.astro';
 import Icon from '../components/Icon.astro';
 import CTA from '../components/CTA.astro';
 
-const cols: { title: string; tone: string; items: string[] }[] = [
+const columns = [
   {
-    title: 'Shipped recently',
-    tone: 'success',
+    title: 'Shipped',
+    sub: 'Past 90 days',
+    dot: 'bg-emerald-500',
+    chip: 'bg-emerald-50 text-emerald-700',
     items: [
       'Per-key API scopes & rotation',
-      'CSV/XLSX/JSON contact export with field picker',
+      'CSV · XLSX · JSON contact export',
       'Contact import wizard with column mapping',
       'Categories on contacts (deprecates Tags)',
       'Recovery pool for quarantined mailboxes',
@@ -22,7 +22,9 @@ const cols: { title: string; tone: string; items: string[] }[] = [
   },
   {
     title: 'In progress',
-    tone: 'warn',
+    sub: 'Active build · Q2–Q3 2026',
+    dot: 'bg-amber-500',
+    chip: 'bg-amber-50 text-amber-700',
     items: [
       'SOC 2 Type II audit',
       'Customer-managed KMS keys (BYOK)',
@@ -34,51 +36,70 @@ const cols: { title: string; tone: string; items: string[] }[] = [
   },
   {
     title: 'Researching',
-    tone: 'muted',
+    sub: 'Targeting H2 2026',
+    dot: 'bg-sky-500',
+    chip: 'bg-sky-50 text-sky-700',
     items: [
       'AI reply triage suggestions (opt-in)',
       'Predictive placement scores from warmup probes',
       'Seed-list inbox placement testing on demand',
-      'Per-region dedicated workers (APAC)',
+      'Per-region dedicated workers · APAC',
       'BIMI + VMC support docs and tooling',
     ],
   },
 ];
 ---
 <Layout
-  title="Roadmap — Warmbly"
-  description="What we just shipped, what we’re building, and what we’re researching for the next quarters."
+  title="Roadmap · Warmbly"
+  description="What we just shipped, what we are building, and what we are researching for the coming quarters."
 >
-  <PageHero
-    eyebrow="Roadmap"
-    title="Public roadmap, on purpose."
-    description="No sales-driven secrecy. If we’re working on it, you can see it. Vote with the request links on each card."
-  />
-
-  <Section>
-    <div class="grid lg:grid-cols-3 gap-4">
-      {cols.map((c) => (
-        <Card>
-          <div class="flex items-center gap-2 mb-4">
-            <span class={`w-2 h-2 rounded-full bg-${c.tone}`} />
-            <h3 class="text-[14.5px] font-semibold">{c.title}</h3>
-          </div>
-          <ul class="space-y-2">
-            {c.items.map((it) => (
-              <li class="text-[13.5px] text-foreground/85 flex items-start gap-2">
-                <Icon name="arrowRight" size={13} class="text-muted-foreground mt-1 shrink-0" />
-                <span>{it}</span>
-              </li>
-            ))}
-          </ul>
-        </Card>
-      ))}
+  <!-- HERO -->
+  <section class="relative isolate overflow-hidden text-white" style="background: radial-gradient(ellipse 130% 140% at 72% 28%, #0284c7 0%, #0369a1 25%, #075985 50%, #0c4a6e 80%, #0a3d5c 100%);">
+    <div class="absolute top-0 right-0 w-[420px] opacity-30 pointer-events-none cloud-drift cloud-1" style="mix-blend-mode: screen;">
+      <Cloud variant={5} opacity={1} />
     </div>
-  </Section>
+
+    <div class="container-page relative pt-14 pb-12">
+      <div class="text-[11px] uppercase tracking-[0.18em] text-white/55 font-mono mb-3">Roadmap</div>
+      <h1 class="text-[32px] md:text-[48px] font-semibold tracking-[-0.025em] leading-[1.06] text-white max-w-3xl">
+        Public roadmap, on purpose.
+      </h1>
+      <p class="mt-4 text-[15.5px] text-white/75 max-w-xl">
+        No sales-driven secrecy. If we are working on it, you can see it.
+      </p>
+    </div>
+  </section>
+
+  <!-- KANBAN COLUMNS -->
+  <section class="py-16 md:py-20">
+    <div class="container-page">
+      <div class="grid lg:grid-cols-3 gap-5">
+        {columns.map((c) => (
+          <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] p-5" style="box-shadow: var(--shadow-sm);">
+            <div class="flex items-start justify-between mb-1">
+              <div class="flex items-center gap-2">
+                <span class={`w-2 h-2 rounded-full ${c.dot}`}></span>
+                <div class="text-[15.5px] font-semibold text-heading">{c.title}</div>
+              </div>
+              <span class={`inline-flex items-center h-5 px-1.5 rounded text-[10.5px] font-medium font-mono uppercase tracking-[0.08em] ${c.chip}`}>{c.items.length}</span>
+            </div>
+            <div class="text-[11.5px] font-mono text-muted-foreground mb-4">{c.sub}</div>
+            <ul class="space-y-2">
+              {c.items.map((it) => (
+                <li class="rounded-[8px] bg-[color:var(--surface-1)] ring-1 ring-[color:var(--border)] px-3 py-2.5 text-[13px] text-foreground/85 leading-snug">
+                  {it}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
 
   <CTA
     title="Missing something?"
-    description="Tell us what to build. We pick the next quarter’s big-rock projects from this inbox."
+    description="Tell us what to build. We pick the next quarter's big-rock projects from this inbox."
     primaryLabel="Request a feature"
     primaryHref="/contact/?topic=feature-request"
     secondaryLabel="See the changelog"

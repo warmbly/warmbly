@@ -1,181 +1,244 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import PageHero from '../components/PageHero.astro';
-import Section from '../components/Section.astro';
-import SectionHead from '../components/SectionHead.astro';
-import Card from '../components/Card.astro';
+import Cloud from '../components/Cloud.astro';
 import Icon from '../components/Icon.astro';
 import CTA from '../components/CTA.astro';
-import Eyebrow from '../components/Eyebrow.astro';
+
+const steps = [
+  { n: '01', title: 'Pool placement',      body: 'Mailbox is slotted into the premium pool. Free and premium never share recipients.' },
+  { n: '02', title: 'Gradual ramp',         body: 'Starts at 10 / day. +1 / day until the ceiling of 40. Business hours by recipient TZ.' },
+  { n: '03', title: 'Partner rotation',     body: 'Recipient drawn from the pool with recent-partner avoidance. No degenerate pairs.' },
+  { n: '04', title: 'Conversational replies', body: 'A share of warmup mail replies to existing threads. Real mailboxes talk back.' },
+  { n: '05', title: 'Verification tokens',  body: 'Every message carries a token. Missing or replayed tokens count as suspicious.' },
+  { n: '06', title: 'Spam-score tracking',  body: 'Junk classification, invalid tokens and complaints feed a rolling per-mailbox score.' },
+  { n: '07', title: 'Auto-quarantine',      body: '≥ 3 invalid tokens in 24h, or score above 50, removes the mailbox from the pool.' },
+  { n: '08', title: 'Recovery & re-entry',  body: 'Fresh probation: healthy auth, no recent complaints, spam placement below 10%.' },
+];
+
+const defaults = [
+  ['Starting volume',     '10 / day',         'Low enough to read as normal individual activity to any provider.'],
+  ['Daily ramp',          '+1 / day',         'Aggressive ramps trigger volume-anomaly heuristics on the receiving side.'],
+  ['Volume ceiling',      '40 / day',         'Maintains reputation without crowding cold-campaign budget on the same mailbox.'],
+  ['Reply rate',          '30%',              'Conversations look normal. Push too high and warmup looks synthetic.'],
+  ['Recent-partner gap',  '7 days',           'Stops two mailboxes from forming a degenerate warmup pair.'],
+  ['Spam-score block',    '> 50',             'Enough warning signals to remove proactively, before providers act.'],
+  ['Invalid token block', '≥ 3 / 24h',        'A handful of malformed tokens is normal; a flurry is not.'],
+  ['Re-entry probation',  '20 deliveries',    'Enough fresh data to confirm health, not just dormancy.'],
+];
+
+const bands = [
+  { name: 'Healthy',     dot: '#10b981', sub: 'Default state',           bullets: ['Spam placement < 10%', 'Complaint rate < 0.03%', 'Bounce rate < 1%'] },
+  { name: 'Watch',       dot: '#f59e0b', sub: 'Lower volume',            bullets: ['Spam placement ≥ 10%', 'Complaint rate ≥ 0.03%', 'Increase spacing'] },
+  { name: 'Quarantined', dot: '#ef4444', sub: '7-day pool removal',      bullets: ['Spam placement ≥ 20%', 'Complaint rate ≥ 0.10%', 'Bounce rate ≥ 5%'] },
+  { name: 'Blocked',     dot: '#7f1d1d', sub: '30-day block · review',   bullets: ['Spam placement ≥ 40%', 'Complaint rate ≥ 0.30%', 'Bounce rate ≥ 10%'] },
+];
 ---
 <Layout
-  title="Warmup — Warmbly"
-  description="Reputation-safe email warmup pools with gradual ramps, conversational behavior, and automatic quarantine for misbehaving senders."
+  title="Warmup · Warmbly"
+  description="Reputation-safe warmup pools with gradual ramps, verification tokens, and quarantine bands stricter than provider enforcement."
 >
-  <PageHero
-    eyebrow="Warmup"
-    title="Warmup that earns reputation, not just inflates it."
-    description="Warmbly’s warmup pools generate low-volume, conversational traffic between warmed mailboxes. Senders ramp gradually. Risky mailboxes are quarantined before mailbox providers ever flag them."
-  />
-
-  <!-- How warmup actually works -->
-  <Section>
-    <SectionHead
-      eyebrow="The mechanics"
-      title="What happens when a mailbox enters the pool."
-      description="No magic. Just well-spaced, plain-text mail between vetted mailboxes — with verification tokens so the system can tell warmup traffic from spam."
-    />
-
-    <div class="mt-12 grid lg:grid-cols-2 gap-4">
-      {[
-        { icon: 'mail',     title: '1. Pool placement',     body: 'Mailboxes are slotted into a pool — free or premium — based on plan. Free and premium pools never share recipients.' },
-        { icon: 'clock',    title: '2. Gradual ramp',       body: 'Start at 10 emails/day, +1/day until the ceiling (default 40). Skipped on weekends and outside business hours by recipient TZ.' },
-        { icon: 'users',    title: '3. Partner rotation',   body: 'A recipient is picked from the pool with recent-partner avoidance so the same two mailboxes don’t pair up over and over.' },
-        { icon: 'reply',    title: '4. Conversational replies', body: 'A configurable share of warmup mail is sent as a reply to an existing thread, not a new message. Real mailboxes have conversations.' },
-        { icon: 'key',      title: '5. Verification tokens', body: 'Every warmup message carries a token. Missing, malformed or replayed tokens count as suspicious activity.' },
-        { icon: 'shield',   title: '6. Spam-score tracking', body: 'Junk classification, invalid tokens, and complaints feed into a rolling spam score per mailbox.' },
-        { icon: 'warning',  title: '7. Auto-quarantine',     body: '≥3 invalid tokens in 24h, or a score above 50, removes the mailbox from the pool until it requalifies.' },
-        { icon: 'rocket',   title: '8. Recovery & re-entry', body: 'Re-entry requires fresh probation: healthy SPF/DKIM/DMARC, no recent complaints, spam placement under 10%.' },
-      ].map((s) => (
-        <Card>
-          <div class="flex items-start gap-4">
-            <div class="w-9 h-9 rounded-lg bg-brand-soft text-brand inline-flex items-center justify-center shrink-0">
-              <Icon name={s.icon} size={18} />
-            </div>
-            <div>
-              <h3 class="text-[15px] font-semibold">{s.title}</h3>
-              <p class="mt-1 text-[13.5px] text-muted-foreground leading-relaxed">{s.body}</p>
-            </div>
-          </div>
-        </Card>
-      ))}
+  <!-- HERO: dark sky · pool-ring visualization -->
+  <section class="relative isolate overflow-hidden text-white" style="background: radial-gradient(ellipse 130% 140% at 72% 28%, #0c4a6e 0%, #0a3d5c 30%, #082f47 60%, #061f30 100%);">
+    <div class="absolute top-0 right-0 w-[440px] opacity-25 pointer-events-none cloud-drift cloud-1" style="mix-blend-mode: screen;">
+      <Cloud variant={4} opacity={1} />
     </div>
-  </Section>
+    <div class="absolute -bottom-20 left-[-80px] w-[360px] opacity-20 pointer-events-none cloud-drift cloud-2" style="mix-blend-mode: screen;">
+      <Cloud variant={2} opacity={1} />
+    </div>
 
-  <!-- Defaults table -->
-  <Section variant="muted">
-    <SectionHead
-      eyebrow="Defaults"
-      title="The numbers we ship with — and why."
-      description="Defaults that work for the median sender. You can change them, but you’ll see what we think first."
-    />
-    <div class="mt-10 overflow-hidden rounded-xl border border-border bg-card">
-      <table class="w-full text-[14px]">
-        <thead class="bg-surface-2/70 text-[12px] uppercase tracking-wider text-muted-foreground">
-          <tr>
-            <th class="text-left font-semibold px-5 py-3">Setting</th>
-            <th class="text-left font-semibold px-5 py-3">Default</th>
-            <th class="text-left font-semibold px-5 py-3">Why</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-border">
-          {[
-            ['Starting volume',   '10 / day',  'Low enough that any provider will treat it as normal individual mailbox activity.'],
-            ['Daily ramp',        '+1 / day',  'Slow enough to let provider reputation stabilise. Aggressive ramps trigger volume-anomaly heuristics.'],
-            ['Volume ceiling',    '40 / day',  'High enough to maintain reputation without crowding out cold campaign budget.'],
-            ['Reply rate',        '30%',       'Conversations make mailbox behavior look normal. Push too high and warmup looks unnatural.'],
-            ['Recent-partner gap','7 days',    'Stops the same two mailboxes from forming a degenerate warmup pair.'],
-            ['Spam-score block',  '> 50',      'Threshold where a mailbox has shown enough warning signals to remove proactively.'],
-            ['Invalid token block', '≥ 3 / 24h', 'A handful of malformed tokens is normal; a flurry isn’t.'],
-            ['Re-entry probation','20 deliveries', 'Enough data to confirm the mailbox is genuinely healthy, not just dormant.'],
-          ].map(([k, v, why]) => (
-            <tr>
-              <td class="px-5 py-3 font-medium">{k}</td>
-              <td class="px-5 py-3 text-foreground/90"><span class="kbd">{v}</span></td>
-              <td class="px-5 py-3 text-muted-foreground">{why}</td>
-            </tr>
+    <div class="container-page relative pt-16 md:pt-20 pb-20 md:pb-24 grid lg:grid-cols-[1.1fr_1fr] gap-12 lg:gap-16 items-center">
+      <div>
+        <div class="text-[11px] uppercase tracking-[0.18em] text-white/55 font-mono mb-4">Warmup</div>
+        <h1 class="text-[36px] sm:text-[52px] md:text-[60px] font-semibold tracking-[-0.03em] leading-[1.02] text-white">
+          Warmup that earns reputation.
+        </h1>
+        <p class="mt-5 text-[15.5px] md:text-[17px] text-white/75 leading-relaxed max-w-xl">
+          Low-volume, conversational mail between vetted mailboxes. Verification tokens distinguish real warmup from forged traffic. Quarantine bands act before mailbox providers do.
+        </p>
+        <div class="mt-8 flex flex-wrap gap-3">
+          <a href="https://app.warmbly.com/register" class="inline-flex h-11 px-5 items-center gap-2 rounded-[10px] text-[14.5px] font-medium bg-white text-[color:var(--sky-7)] hover:bg-white/95">
+            Start warming <Icon name="arrowRight" size={14} />
+          </a>
+          <a href="/learn/email-warmup/" class="inline-flex h-11 px-5 items-center rounded-[10px] text-[14.5px] font-medium bg-white/10 backdrop-blur ring-1 ring-white/30 text-white hover:bg-white/20">
+            How warmup works
+          </a>
+        </div>
+      </div>
+
+      <!-- Pool ring visualization -->
+      <div class="relative aspect-square max-w-md mx-auto w-full">
+        <svg viewBox="0 0 400 400" class="w-full h-full">
+          <defs>
+            <radialGradient id="poolGlow" cx="50%" cy="50%">
+              <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.4"/>
+              <stop offset="60%" stop-color="#38bdf8" stop-opacity="0.05"/>
+              <stop offset="100%" stop-color="#38bdf8" stop-opacity="0"/>
+            </radialGradient>
+            <linearGradient id="ringStroke" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#7dd3fc" stop-opacity="0.6"/>
+              <stop offset="100%" stop-color="#7dd3fc" stop-opacity="0.1"/>
+            </linearGradient>
+          </defs>
+          <circle cx="200" cy="200" r="190" fill="url(#poolGlow)"/>
+          <circle cx="200" cy="200" r="170" fill="none" stroke="url(#ringStroke)" stroke-width="1" stroke-dasharray="2 4"/>
+          <circle cx="200" cy="200" r="130" fill="none" stroke="url(#ringStroke)" stroke-width="1" stroke-dasharray="2 4"/>
+          <circle cx="200" cy="200" r="90"  fill="none" stroke="url(#ringStroke)" stroke-width="1" stroke-dasharray="2 4"/>
+
+          <!-- Mailbox nodes around outer ring -->
+          {Array.from({ length: 18 }).map((_, i) => {
+            const angle = (i * Math.PI * 2) / 18 - Math.PI / 2;
+            const r = 170;
+            const x = 200 + Math.cos(angle) * r;
+            const y = 200 + Math.sin(angle) * r;
+            return <circle cx={x} cy={y} r="4.5" fill="#7dd3fc" opacity={0.6 + (i % 3) * 0.13}/>;
+          })}
+          <!-- Inner mailbox nodes -->
+          {Array.from({ length: 10 }).map((_, i) => {
+            const angle = (i * Math.PI * 2) / 10 - Math.PI / 2;
+            const r = 130;
+            const x = 200 + Math.cos(angle) * r;
+            const y = 200 + Math.sin(angle) * r;
+            return <circle cx={x} cy={y} r="3.5" fill="#bae6fd" opacity="0.55"/>;
+          })}
+          {Array.from({ length: 6 }).map((_, i) => {
+            const angle = (i * Math.PI * 2) / 6 - Math.PI / 2;
+            const r = 90;
+            const x = 200 + Math.cos(angle) * r;
+            const y = 200 + Math.sin(angle) * r;
+            return <circle cx={x} cy={y} r="3" fill="#e0f2fe" opacity="0.5"/>;
+          })}
+
+          <!-- Animated pair lines -->
+          <g stroke="#7dd3fc" stroke-width="0.8" opacity="0.5">
+            <line x1="200" y1="30" x2="285" y2="285" class="warmup-pair w-1"/>
+            <line x1="370" y1="200" x2="115" y2="285" class="warmup-pair w-2"/>
+            <line x1="200" y1="370" x2="115" y2="115" class="warmup-pair w-3"/>
+            <line x1="30" y1="200" x2="285" y2="115" class="warmup-pair w-4"/>
+          </g>
+
+          <!-- Center -->
+          <circle cx="200" cy="200" r="34" fill="#0c4a6e" stroke="#38bdf8" stroke-opacity="0.3"/>
+          <text x="200" y="195" text-anchor="middle" fill="#7dd3fc" font-size="9" font-family="ui-monospace,monospace" letter-spacing="2">POOL</text>
+          <text x="200" y="212" text-anchor="middle" fill="#fff" font-size="13" font-weight="600">premium</text>
+        </svg>
+      </div>
+    </div>
+  </section>
+
+  <!-- THE CYCLE: 8 numbered steps in a two-row strip -->
+  <section class="py-16 md:py-24">
+    <div class="container-page">
+      <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">The cycle</div>
+      <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading max-w-2xl">
+        Eight steps. The same loop, every day.
+      </h2>
+      <p class="mt-4 text-[15.5px] text-foreground/75 max-w-xl">No magic. Just well-spaced, plain-text mail with auditable verification tokens.</p>
+
+      <div class="mt-12 grid sm:grid-cols-2 lg:grid-cols-4 gap-px bg-[color:var(--border)] rounded-[14px] overflow-hidden ring-1 ring-[color:var(--border)]">
+        {steps.map((s) => (
+          <div class="bg-white p-5">
+            <div class="text-[11px] font-mono text-[color:var(--sky-6)]">{s.n}</div>
+            <div class="mt-2 text-[14.5px] font-semibold text-heading">{s.title}</div>
+            <p class="mt-1.5 text-[13px] text-foreground/70 leading-relaxed">{s.body}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- DEFAULTS: spec-sheet feel -->
+  <section class="bg-[color:var(--surface-1)] border-y border-[color:var(--border)] py-16 md:py-24">
+    <div class="container-page">
+      <div class="grid lg:grid-cols-[1fr_2fr] gap-12 lg:gap-20">
+        <div class="lg:sticky lg:top-24 self-start">
+          <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Defaults</div>
+          <h2 class="text-[28px] md:text-[36px] font-semibold tracking-[-0.025em] leading-[1.08] text-heading">
+            The numbers we ship with.
+          </h2>
+          <p class="mt-4 text-[14.5px] text-foreground/75 leading-relaxed">
+            Defaults that work for the median sender. Change them in settings, but we will show you what we think first.
+          </p>
+        </div>
+        <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden" style="box-shadow: var(--shadow-sm);">
+          <div class="grid grid-cols-12 px-5 py-3 bg-[color:var(--surface-1)]/70 border-b border-[color:var(--border)] text-[10.5px] uppercase tracking-[0.16em] font-mono text-muted-foreground">
+            <div class="col-span-4">Setting</div>
+            <div class="col-span-3">Default</div>
+            <div class="col-span-5">Why</div>
+          </div>
+          {defaults.map(([k, v, why]) => (
+            <div class="grid grid-cols-12 px-5 py-3.5 border-b border-[color:var(--border)] last:border-b-0 text-[13px] items-baseline">
+              <div class="col-span-4 font-medium text-foreground/90">{k}</div>
+              <div class="col-span-3">
+                <span class="inline-flex items-center px-1.5 py-0.5 rounded font-mono text-[12px] bg-[color:var(--sky-1)] text-[color:var(--sky-7)] ring-1 ring-[color:var(--sky-2)]">{v}</span>
+              </div>
+              <div class="col-span-5 text-foreground/70 text-[12.5px]">{why}</div>
+            </div>
           ))}
-        </tbody>
-      </table>
+        </div>
+      </div>
     </div>
-  </Section>
+  </section>
 
-  <!-- Health bands -->
-  <Section>
-    <SectionHead
-      eyebrow="Health bands"
-      title="We act on warning, not catastrophe."
-      description="Most platforms wait until a mailbox is landing in spam 80% of the time before they pull it. By then your reputation is gone. Our bands trigger weeks earlier."
-    />
+  <!-- HEALTH BANDS: traffic-light card row -->
+  <section class="py-16 md:py-24">
+    <div class="container-page">
+      <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Health bands</div>
+      <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading max-w-2xl">
+        We act on warning, not catastrophe.
+      </h2>
+      <p class="mt-4 text-[15.5px] text-foreground/75 max-w-2xl">
+        Most platforms wait until a mailbox is landing in spam 80% of the time before they pull it. By then reputation is gone. Our bands trigger weeks earlier.
+      </p>
 
-    <div class="mt-10 grid md:grid-cols-2 lg:grid-cols-4 gap-4">
-      {[
-        { name: 'Healthy',     color: 'success', bullets: ['Spam placement < 10%', 'Complaint rate < 0.03%', 'Bounce rate < 1%'] },
-        { name: 'Watch',       color: 'warn',    bullets: ['Spam placement ≥ 10%', 'Complaint rate ≥ 0.03%', 'Lower volume, increase spacing'] },
-        { name: 'Quarantined', color: 'warn',    bullets: ['Spam placement ≥ 20%', 'Complaint rate ≥ 0.10%', 'Removed from shared paid pool for 7 days'] },
-        { name: 'Blocked',     color: 'danger',  bullets: ['Spam placement ≥ 40%', 'Complaint rate ≥ 0.30%', '30-day block, manual review to re-enter'] },
-      ].map((band) => (
-        <Card>
-          <div class="flex items-center gap-2 mb-4">
-            <span class={`w-2 h-2 rounded-full bg-${band.color}`} />
-            <h3 class="text-[14.5px] font-semibold">{band.name}</h3>
+      <div class="mt-12 grid md:grid-cols-2 lg:grid-cols-4 gap-4">
+        {bands.map((band) => (
+          <div class="rounded-[12px] bg-white ring-1 ring-[color:var(--border)] p-5" style="box-shadow: var(--shadow-sm);">
+            <div class="flex items-center gap-2.5">
+              <span class="w-2.5 h-2.5 rounded-full" style={`background: ${band.dot}`}></span>
+              <div class="text-[14.5px] font-semibold text-heading">{band.name}</div>
+            </div>
+            <div class="mt-1 text-[11.5px] font-mono text-muted-foreground">{band.sub}</div>
+            <ul class="mt-4 pt-4 border-t border-[color:var(--border)] space-y-2">
+              {band.bullets.map((b) => (
+                <li class="text-[12.5px] text-foreground/75 flex items-start gap-2">
+                  <span class="mt-1.5 w-1 h-1 rounded-full bg-[color:var(--sky-5)] shrink-0"></span>
+                  <span>{b}</span>
+                </li>
+              ))}
+            </ul>
           </div>
-          <ul class="space-y-2">
-            {band.bullets.map((b) => (
-              <li class="text-[13px] text-muted-foreground flex items-start gap-2">
-                <Icon name="check" size={12} class="mt-1 shrink-0 text-foreground/40" />
-                <span>{b}</span>
-              </li>
-            ))}
-          </ul>
-        </Card>
-      ))}
-    </div>
+        ))}
+      </div>
 
-    <div class="mt-8 rounded-xl border border-warn/30 bg-warn/5 p-5 text-[13.5px] text-foreground/85 leading-relaxed">
-      <div class="flex items-start gap-3">
-        <Icon name="warning" class="text-warn shrink-0 mt-0.5" />
+      <div class="mt-8 rounded-[12px] ring-1 ring-[#f59e0b]/30 bg-[#fef3c7]/40 p-5 flex items-start gap-3 text-[13.5px] text-foreground/85 leading-relaxed max-w-3xl">
+        <Icon name="warning" size={16} class="text-[#b45309] shrink-0 mt-0.5" />
         <p>
           Catastrophic band (spam placement ≥ 80%) triggers an immediate long-duration block and a full reputation reset workflow. The mailbox does not automatically rejoin the shared paid pool.
         </p>
       </div>
     </div>
-  </Section>
-
-  <!-- Free vs premium -->
-  <Section variant="muted">
-    <SectionHead
-      eyebrow="Pools"
-      title="Free, premium, dedicated."
-      description="Same warmup engine, different reputation surface. We never silently mix trial mailboxes into paid pools."
-    />
-    <div class="mt-10 grid md:grid-cols-3 gap-4">
-      {[
-        {
-          name: 'Free pool',
-          when: 'Free plan',
-          features: ['Shared with other free senders', 'Lower starting volume', 'Same auto-quarantine thresholds'],
-        },
-        {
-          name: 'Premium pool',
-          when: 'Starter, Growth, Business',
-          features: ['Vetted mailboxes only', 'Stricter quarantine policy', 'Recovery pool for cooldown senders'],
-        },
-        {
-          name: 'Dedicated worker',
-          when: 'Business plan',
-          features: ['Isolated worker process & IP', 'Still participates in premium pool', 'Per-mailbox reputation, not infrastructure shortcut'],
-        },
-      ].map((p) => (
-        <Card>
-          <Eyebrow class="mb-4">{p.when}</Eyebrow>
-          <h3 class="text-[15.5px] font-semibold">{p.name}</h3>
-          <ul class="mt-4 space-y-1.5">
-            {p.features.map((f) => (
-              <li class="text-[13.5px] text-muted-foreground flex items-start gap-2">
-                <Icon name="check" size={13} class="text-success mt-1 shrink-0" />
-                <span>{f}</span>
-              </li>
-            ))}
-          </ul>
-        </Card>
-      ))}
-    </div>
-  </Section>
+  </section>
 
   <CTA
     title="Warm a new mailbox today."
     description="Connect Gmail or Outlook, pick a pool, hit start. We handle the rest."
     primaryLabel="Start warming"
+    primaryHref="https://app.warmbly.com/register"
   />
+
+  <style>
+    .warmup-pair { stroke-dasharray: 6 200; animation: warmup-flow 6s linear infinite; }
+    .warmup-pair.w-2 { animation-delay: 1.5s; }
+    .warmup-pair.w-3 { animation-delay: 3s; }
+    .warmup-pair.w-4 { animation-delay: 4.5s; }
+    @keyframes warmup-flow {
+      0%   { stroke-dashoffset: 200; opacity: 0; }
+      15%  { opacity: 0.7; }
+      85%  { opacity: 0.7; }
+      100% { stroke-dashoffset: -200; opacity: 0; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .warmup-pair { animation: none; opacity: 0.4; stroke-dasharray: none; }
+    }
+  </style>
 </Layout>

@@ -1,49 +1,158 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import PageHero from '../components/PageHero.astro';
-import Section from '../components/Section.astro';
-import SectionHead from '../components/SectionHead.astro';
-import Card from '../components/Card.astro';
+import Cloud from '../components/Cloud.astro';
 import Icon from '../components/Icon.astro';
 import CTA from '../components/CTA.astro';
+
+const classes = [
+  { label: 'Positive',    bg: 'bg-emerald-50',  text: 'text-emerald-700',  dot: 'bg-emerald-500' },
+  { label: 'Negative',    bg: 'bg-rose-50',     text: 'text-rose-700',     dot: 'bg-rose-500' },
+  { label: 'Referral',    bg: 'bg-violet-50',   text: 'text-violet-700',   dot: 'bg-violet-500' },
+  { label: 'OOO',         bg: 'bg-amber-50',    text: 'text-amber-700',    dot: 'bg-amber-500' },
+  { label: 'Unsubscribe', bg: 'bg-slate-100',   text: 'text-slate-700',    dot: 'bg-slate-500' },
+  { label: 'Bounce',      bg: 'bg-stone-100',   text: 'text-stone-700',    dot: 'bg-stone-400' },
+];
+
+const threads = [
+  { from: 'Maya Chen', sub: 'Re: Saw your demo last week — quick question on pricing', mailbox: 'ben@acme.com', cls: 0, time: '2m', preview: 'This actually maps to what we were looking at. Could you send over a proposal for ~30 seats?' },
+  { from: 'Theo Park', sub: 'Out of office: Re: 15 min next Tuesday?', mailbox: 'ben@acme.com', cls: 3, time: '14m', preview: 'I will be out until June 3rd with limited email access. For urgent items contact…' },
+  { from: 'Auto-mailer', sub: 'Undeliverable: mail to lena@deletedcorp.io', mailbox: 'sara@acme.com', cls: 5, time: '32m', preview: 'Address rejected: 550 5.1.1 The email account that you tried to reach does not exist.' },
+  { from: 'Eli Soriano', sub: 'Not me — try Dana on our infra team', mailbox: 'sara@acme.com', cls: 2, time: '1h', preview: 'I am no longer the right person for this. Reach out to dana.k@stratech.io who runs platform.' },
+  { from: 'Priya Bhatt', sub: 'Re: thought you would find this useful', mailbox: 'mark@acme.com', cls: 0, time: '2h', preview: 'Yes! Booked time on your calendar for Thursday. Looking forward to it.' },
+  { from: 'Rowan Cole', sub: 'Re: a question about your sequence cadence', mailbox: 'mark@acme.com', cls: 1, time: '3h', preview: 'Please stop emailing me. We picked another vendor six months ago.' },
+  { from: 'Mailer-Daemon', sub: 'Unsubscribe confirmed — kai@nimbusops.dev', mailbox: 'ben@acme.com', cls: 4, time: '5h', preview: 'You have unsubscribed kai@nimbusops.dev from all sequences in this workspace.' },
+];
+
+const features = [
+  { icon: 'reply',   title: 'Reply classification', body: 'Positive · negative · referral · OOO · unsubscribe · bounce. Classified on arrival.' },
+  { icon: 'users',   title: 'Assignment',           body: 'Assign threads to teammates. Round-robin, by domain, or manual.' },
+  { icon: 'clock',   title: 'Snooze + reminders',   body: 'Push a thread to next week. Reminders fire if the prospect goes silent.' },
+  { icon: 'filter',  title: 'Saved views',          body: 'Mailbox, sequence, classification, assignee, sentiment, domain.' },
+  { icon: 'search',  title: 'Cross-mailbox search', body: 'Search every connected mailbox at once. Threads stay tied to the campaign.' },
+  { icon: 'bell',    title: 'Honest notifications', body: 'Realtime push for replies. Not for opens. Pixel opens are unreliable.' },
+  { icon: 'inbox',   title: 'Auto-suppress',        body: 'OOO and unsubscribe replies auto-suppress the recipient from the sequence.' },
+  { icon: 'check',   title: 'Bulk actions',         body: 'Mark, label, suppress, assign or archive across hundreds of threads.' },
+];
 ---
 <Layout
-  title="Unified inbox — Warmbly"
-  description="Every reply, bounce, OOO and click across every mailbox in one console. Assign, snooze, label and search across senders."
+  title="Unified inbox · Warmbly"
+  description="Every reply, bounce, OOO and click across every mailbox in one console. Classified on arrival. Assignable. Searchable."
 >
-  <PageHero
-    eyebrow="Unified inbox"
-    title="One inbox for every mailbox you send from."
-    description="No more bouncing between Gmail tabs to handle replies from your eight cold mailboxes. Warmbly’s inbox shows every conversation, classified and assignable."
-  />
-
-  <Section>
-    <SectionHead
-      eyebrow="What you get"
-      title="Inbox features built for cold-email reply triage."
-    />
-    <div class="mt-10 grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-      {[
-        { icon: 'reply',   title: 'Reply classification', body: 'Positive / negative / referral / OOO / unsubscribe / bounce, classified on arrival so you know what to triage.' },
-        { icon: 'users',   title: 'Assignment',           body: 'Assign threads to teammates. Round-robin, by domain, or manual.' },
-        { icon: 'clock',   title: 'Snooze & reminders',   body: 'Push a thread to next week. Get a reminder if the prospect doesn’t respond.' },
-        { icon: 'filter',  title: 'Saved views',          body: 'Filter by mailbox, sequence, classification, assignee, sentiment or domain.' },
-        { icon: 'search',  title: 'Cross-mailbox search', body: 'Search every connected mailbox at once. Conversations stay tied to the original recipient and campaign.' },
-        { icon: 'bell',    title: 'Notifications that don’t lie', body: 'Realtime push for replies, not for opens. Pixel opens are unreliable; we don’t pretend otherwise.' },
-        { icon: 'inbox',   title: 'Auto-suppress',        body: 'OOO and unsubscribe replies auto-suppress the recipient from the sequence.' },
-        { icon: 'spark',   title: 'Suggested replies',    body: 'Suggested reply variants based on your past wins. Optional, off by default.' },
-        { icon: 'check',   title: 'Bulk actions',         body: 'Mark, label, suppress, assign or archive in bulk.' },
-      ].map((s) => (
-        <Card>
-          <div class="w-9 h-9 rounded-lg bg-brand-soft text-brand inline-flex items-center justify-center mb-4">
-            <Icon name={s.icon} size={18} />
-          </div>
-          <h3 class="text-[15px] font-semibold">{s.title}</h3>
-          <p class="mt-1.5 text-[13px] text-muted-foreground leading-relaxed">{s.body}</p>
-        </Card>
-      ))}
+  <!-- HERO: classification chips floating, mock dropping in below -->
+  <section class="relative isolate overflow-hidden text-white" style="background: radial-gradient(ellipse 130% 140% at 72% 28%, #0284c7 0%, #0369a1 25%, #075985 50%, #0c4a6e 80%, #0a3d5c 100%);">
+    <div class="absolute top-0 right-0 w-[460px] opacity-30 pointer-events-none cloud-drift cloud-1" style="mix-blend-mode: screen;">
+      <Cloud variant={5} opacity={1} />
     </div>
-  </Section>
+    <div class="absolute -top-10 left-[-60px] w-[320px] opacity-25 pointer-events-none cloud-drift cloud-2" style="mix-blend-mode: screen;">
+      <Cloud variant={2} opacity={1} />
+    </div>
 
-  <CTA />
+    <div class="container-page relative pt-16 md:pt-20 pb-28 md:pb-36 text-center">
+      <div class="text-[11px] uppercase tracking-[0.18em] text-white/55 font-mono mb-4">Unified inbox</div>
+      <h1 class="text-[36px] sm:text-[52px] md:text-[64px] font-semibold tracking-[-0.03em] leading-[1.02] text-white max-w-3xl mx-auto">
+        Every reply.<br/>One console.
+      </h1>
+      <p class="mt-5 text-[15.5px] md:text-[17px] text-white/75 max-w-xl mx-auto leading-relaxed">
+        Stop bouncing between Gmail tabs to triage eight cold mailboxes. Every conversation, classified on arrival, lands in one place.
+      </p>
+
+      <div class="mt-9 flex flex-wrap justify-center gap-2">
+        {classes.map((c) => (
+          <span class={`inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full text-[12px] font-medium bg-white/10 backdrop-blur ring-1 ring-white/20 text-white/90`}>
+            <span class={`w-1.5 h-1.5 rounded-full ${c.dot}`}></span>
+            {c.label}
+          </span>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- INBOX MOCK: drops in over the sky band -->
+  <section class="relative -mt-20 md:-mt-28 pb-16 md:pb-24">
+    <div class="container-page">
+      <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden" style="box-shadow: 0 40px 80px -30px rgba(2,32,71,0.35), var(--shadow-sm);">
+        <!-- Toolbar -->
+        <div class="flex items-center gap-2 px-5 py-3 border-b border-[color:var(--border)] bg-[color:var(--surface-1)]/60">
+          <div class="text-[11px] font-mono uppercase tracking-[0.16em] text-muted-foreground">Inbox</div>
+          <span class="ml-2 inline-flex items-center h-5 px-2 rounded-full bg-[color:var(--sky-1)] text-[color:var(--sky-7)] text-[10.5px] font-semibold">7 new</span>
+          <div class="ml-auto flex items-center gap-1.5 text-[12px] text-muted-foreground">
+            <Icon name="search" size={12} />
+            <span>All mailboxes</span>
+            <span class="mx-2 w-px h-3 bg-[color:var(--border)]"></span>
+            <span>This week</span>
+          </div>
+        </div>
+
+        <!-- Thread list -->
+        <ul class="divide-y divide-[color:var(--border)]">
+          {threads.map((t, i) => {
+            const c = classes[t.cls];
+            return (
+              <li class="grid grid-cols-[auto_minmax(0,1fr)_auto] gap-4 px-5 py-3.5 hover:bg-[color:var(--sky-1)]/30 transition-colors">
+                <div class="flex items-center gap-3 min-w-0">
+                  <div class={`w-8 h-8 rounded-full ${c.bg} ${c.text} inline-flex items-center justify-center text-[12px] font-semibold shrink-0`}>
+                    {t.from.split(' ').map((w) => w[0]).join('').slice(0, 2)}
+                  </div>
+                </div>
+                <div class="min-w-0">
+                  <div class="flex items-center gap-2">
+                    <span class="text-[13.5px] font-semibold text-heading truncate">{t.from}</span>
+                    <span class={`inline-flex items-center gap-1 h-4.5 px-1.5 rounded text-[10px] font-medium ${c.bg} ${c.text}`}>
+                      <span class={`w-1 h-1 rounded-full ${c.dot}`}></span>
+                      {c.label}
+                    </span>
+                    <span class="text-[10.5px] font-mono text-muted-foreground ml-auto md:ml-2 hidden md:inline">{t.mailbox}</span>
+                  </div>
+                  <div class="mt-0.5 text-[13px] text-foreground/85 truncate">{t.sub}</div>
+                  <div class="mt-0.5 text-[12px] text-muted-foreground truncate">{t.preview}</div>
+                </div>
+                <div class="text-[11px] text-muted-foreground self-start pt-1 font-mono">{t.time}</div>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- FEATURES: 2-col list with icon rows -->
+  <section class="bg-[color:var(--surface-1)] border-y border-[color:var(--border)] py-16 md:py-24">
+    <div class="container-page">
+      <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Capabilities</div>
+      <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading max-w-2xl">
+        Built for cold-email reply triage. Not a generic helpdesk.
+      </h2>
+
+      <div class="mt-12 grid md:grid-cols-2 gap-x-12 gap-y-px md:divide-x divide-[color:var(--border)]">
+        <div class="divide-y divide-[color:var(--border)]">
+          {features.slice(0, 4).map((f) => (
+            <div class="py-5 flex items-start gap-4 first:pt-0">
+              <div class="w-10 h-10 rounded-[10px] bg-white ring-1 ring-[color:var(--border)] text-[color:var(--sky-6)] inline-flex items-center justify-center shrink-0">
+                <Icon name={f.icon} size={18} />
+              </div>
+              <div>
+                <div class="text-[15px] font-semibold text-heading">{f.title}</div>
+                <p class="mt-1 text-[13.5px] text-foreground/70 leading-relaxed">{f.body}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div class="divide-y divide-[color:var(--border)] md:pl-12">
+          {features.slice(4).map((f) => (
+            <div class="py-5 flex items-start gap-4 first:pt-0">
+              <div class="w-10 h-10 rounded-[10px] bg-white ring-1 ring-[color:var(--border)] text-[color:var(--sky-6)] inline-flex items-center justify-center shrink-0">
+                <Icon name={f.icon} size={18} />
+              </div>
+              <div>
+                <div class="text-[15px] font-semibold text-heading">{f.title}</div>
+                <p class="mt-1 text-[13.5px] text-foreground/70 leading-relaxed">{f.body}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <CTA primaryLabel="Try the inbox" />
 </Layout>

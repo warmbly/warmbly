@@ -2,13 +2,23 @@
 interface Props {
   id?: string;
   class?: string;
-  variant?: 'default' | 'muted' | 'bordered';
+  variant?: 'default' | 'muted' | 'sky';
 }
 const { id, class: className = '', variant = 'default' } = Astro.props;
-const bg = variant === 'muted' ? 'bg-surface' : variant === 'bordered' ? 'bg-background border-y border-border' : 'bg-background';
+
+let outer = '';
+let inner = '';
+if (variant === 'muted') {
+  outer = '';
+  inner = 'bg-[color:var(--surface-2)]/40 border-y border-[color:var(--border)]';
+}
+if (variant === 'sky') {
+  outer = 'text-white';
+  inner = '';
+}
 ---
-<section id={id} class={`${bg} ${className}`}>
-  <div class="container-page py-20 md:py-24">
+<section id={id} class={`${variant === 'muted' ? '' : 'bg-white'} ${inner} ${className} ${outer}`} style={variant === 'sky' ? 'background: radial-gradient(ellipse 130% 140% at 72% 28%, #0284c7 0%, #0369a1 25%, #075985 50%, #0c4a6e 80%, #0a3d5c 100%);' : ''}>
+  <div class="container-page py-16 md:py-24">
     <slot />
   </div>
 </section>
