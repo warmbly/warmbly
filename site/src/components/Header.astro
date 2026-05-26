@@ -64,77 +64,49 @@ function active(match?: string) {
               </svg>
             </a>
 
-            <!-- Mega-menu panel · serious editorial layout -->
-            <div class="mega-panel absolute left-0 top-full pt-2 pointer-events-none opacity-0 transition-all duration-200 ease-out" style="width: 720px; max-width: 94vw;">
-              <div class="rounded-[10px] bg-white ring-1 ring-foreground/15 overflow-hidden" style="box-shadow: 0 30px 70px -22px rgba(2,32,71,0.32), 0 12px 28px -10px rgba(15,23,42,0.10);">
-                <!-- Top accent rule -->
-                <div class="h-[3px] bg-foreground"></div>
-
-                <div class="grid grid-cols-[1.3fr_1fr]">
-                  <!-- LEFT: editorial product index -->
-                  <div class="px-7 py-7 border-r border-foreground/10">
-                    <div class="flex items-baseline justify-between mb-5">
-                      <div class="text-[10.5px] uppercase tracking-[0.24em] font-mono text-foreground/55">The platform</div>
-                      <div class="text-[10.5px] font-mono text-foreground/40">{products.length} systems</div>
-                    </div>
-                    <ol class="divide-y divide-foreground/10">
-                      {products.map((it, i) => {
-                        const isCurrent = path === it.href || path.startsWith(it.href);
-                        return (
-                          <li>
-                            <a
-                              href={it.href}
-                              aria-current={isCurrent ? 'page' : undefined}
-                              class={`mega-row group grid grid-cols-[28px_1fr_auto] items-baseline gap-3 py-3 transition-colors ${isCurrent ? 'text-[#0369a1]' : 'text-foreground hover:text-[#0369a1]'}`}
-                            >
-                              <span class={`font-mono text-[11px] ${isCurrent ? 'text-[#0284c7]' : 'text-foreground/40'}`}>{String(i + 1).padStart(2, '0')}</span>
-                              <span class="leading-snug">
-                                <span class={`text-[15px] tracking-[-0.01em] block ${isCurrent ? 'font-semibold' : 'font-medium'}`}>{it.title}</span>
-                                <span class="text-[11.5px] font-mono text-foreground/50 uppercase tracking-[0.12em] mt-0.5 block">{it.tag}</span>
-                              </span>
-                              {isCurrent
-                                ? <span class="w-1.5 h-1.5 rounded-full bg-[#0284c7]"></span>
-                                : <svg width="10" height="10" viewBox="0 0 12 12" fill="none" class="opacity-0 group-hover:opacity-100 transition-opacity" aria-hidden="true"><path d="M3.5 3l3 3-3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                              }
-                            </a>
-                          </li>
-                        );
-                      })}
-                    </ol>
-                  </div>
-
-                  <!-- RIGHT: featured callout -->
-                  <div class="bg-[color:var(--surface-1)]/60 px-7 py-7 flex flex-col">
-                    <div class="text-[10.5px] uppercase tracking-[0.24em] font-mono text-foreground/55 mb-5">From the handbook</div>
-
-                    <a href="/learn/deliverability/" class="group flex flex-col flex-1">
-                      <div class="inline-flex items-center gap-1.5 h-5 px-2 rounded text-[10px] font-semibold uppercase tracking-[0.14em] font-mono bg-amber-50 text-amber-700 self-start">
-                        <span class="w-1 h-1 rounded-full bg-amber-500"></span>
-                        Essential read
-                      </div>
-                      <h4 class="mt-3 text-[18px] font-semibold tracking-[-0.02em] leading-[1.2] text-heading group-hover:text-[#0369a1] transition-colors">
-                        The deliverability handbook.
-                      </h4>
-                      <p class="mt-2 text-[12.5px] text-foreground/70 leading-relaxed">
-                        Authentication, warmup, volume, reputation. The full mental model in eight chapters.
-                      </p>
-                      <div class="mt-auto pt-5 flex items-center justify-between text-[11.5px]">
-                        <span class="font-mono text-foreground/55">14 min · 8 chapters</span>
-                        <span class="inline-flex items-center gap-1 font-semibold text-[#0369a1] group-hover:translate-x-0.5 transition-transform">
-                          Read
-                          <svg width="10" height="10" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M3.5 3l3 3-3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                        </span>
-                      </div>
-                    </a>
+            <!-- Mega-menu · sky-themed compact panel -->
+            <div class="mega-panel absolute left-0 top-full pt-2 pointer-events-none opacity-0 transition-all duration-200 ease-out" style="width: 340px; max-width: 92vw;">
+              <div class="rounded-[14px] overflow-hidden ring-1 ring-[color:var(--border)] bg-white" style="box-shadow: 0 24px 56px -20px rgba(2,32,71,0.28), 0 8px 22px -8px rgba(15,23,42,0.08);">
+                <!-- Sky atmosphere strip with cloud accent -->
+                <div class="relative h-14 overflow-hidden" style="background: linear-gradient(135deg, #0284c7 0%, #075985 100%);">
+                  <svg viewBox="0 0 340 56" class="absolute inset-0 w-full h-full opacity-50 mix-blend-screen pointer-events-none" aria-hidden="true">
+                    <defs>
+                      <radialGradient id="hdrCloud1" cx="50%" cy="50%" r="50%">
+                        <stop offset="0%" stop-color="white" stop-opacity="0.7"/>
+                        <stop offset="60%" stop-color="white" stop-opacity="0.1"/>
+                        <stop offset="100%" stop-color="white" stop-opacity="0"/>
+                      </radialGradient>
+                    </defs>
+                    <ellipse cx="280" cy="20" rx="85" ry="22" fill="url(#hdrCloud1)"/>
+                    <ellipse cx="60" cy="40" rx="60" ry="16" fill="url(#hdrCloud1)" opacity="0.6"/>
+                  </svg>
+                  <div class="relative h-full flex items-center justify-between px-5 text-white">
+                    <div class="text-[10.5px] uppercase tracking-[0.22em] font-mono">Choose a product</div>
+                    <div class="text-[10.5px] font-mono text-white/70">{products.length}</div>
                   </div>
                 </div>
 
-                <!-- Footer: tiny utility row -->
-                <div class="border-t border-foreground/10 px-7 py-2.5 flex items-center justify-between text-[11px] font-mono text-foreground/55">
-                  <a href="https://github.com/warmbly/warmbly" target="_blank" rel="noopener" class="hover:text-foreground transition-colors">
-                    github.com/warmbly/warmbly
-                  </a>
-                  <a href="/pricing/" class="hover:text-foreground transition-colors">/pricing →</a>
+                <!-- Product rows -->
+                <div class="p-1.5">
+                  {products.map((it) => {
+                    const isCurrent = path === it.href || path.startsWith(it.href);
+                    return (
+                      <a
+                        href={it.href}
+                        aria-current={isCurrent ? 'page' : undefined}
+                        class={`mega-row group flex items-baseline justify-between px-3.5 py-2.5 rounded-[8px] transition-colors duration-150 ${isCurrent ? 'bg-[color:var(--sky-1)]/60' : 'hover:bg-[color:var(--surface-1)]'}`}
+                      >
+                        <div class="flex items-baseline gap-3 min-w-0">
+                          <span class={`text-[14px] tracking-[-0.01em] ${isCurrent ? 'font-semibold text-[#0369a1]' : 'font-medium text-foreground'}`}>{it.title}</span>
+                          <span class={`text-[10.5px] font-mono uppercase tracking-[0.14em] ${isCurrent ? 'text-[#0284c7]/80' : 'text-foreground/40'}`}>{it.tag}</span>
+                        </div>
+                        {isCurrent
+                          ? <span class="w-1.5 h-1.5 rounded-full bg-[#0284c7] shrink-0"></span>
+                          : <svg width="10" height="10" viewBox="0 0 12 12" fill="none" class="text-foreground/30 opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all shrink-0" aria-hidden="true"><path d="M3.5 3l3 3-3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        }
+                      </a>
+                    );
+                  })}
                 </div>
               </div>
             </div>
