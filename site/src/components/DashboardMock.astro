@@ -17,9 +17,7 @@ const rows = [
   { email: 'founder@acme.co',     sent: 37, warm: 22, status: 'healthy' },
   { email: 'hello@acme.co',       sent: 24, warm: 18, status: 'healthy' },
   { email: 'team@northwind.dev',  sent: 46, warm: 34, status: 'healthy' },
-  { email: 'intro@northwind.dev', sent: 42, warm: 30, status: 'healthy' },
   { email: 'ml@helio.gen',        sent: 18, warm: 12, status: 'warming' },
-  { email: 'founder@spruce.bio',  sent: 12, warm:  8, status: 'healthy' },
 ];
 
 const statusStyle = (s: string) => {
@@ -55,12 +53,6 @@ const sidebarSections: { label: string; items: { title: string; active?: boolean
   { label: 'CRM', items: [
     { title: 'Pipelines' },
     { title: 'Deals' },
-    { title: 'Tasks' },
-  ]},
-  { label: 'Resources', items: [
-    { title: 'Templates' },
-    { title: 'API Keys' },
-    { title: 'Audit log' },
   ]},
 ];
 ---
@@ -114,7 +106,7 @@ const sidebarSections: { label: string; items: { title: string; active?: boolean
   </div>
 
   <!-- ── Body: sidebar + white content panel ── -->
-  <div class="relative z-10 flex min-h-[520px]">
+  <div class="relative z-10 flex min-h-[380px]">
     <!-- AppNav sidebar (w-64) sits on SkyChrome -->
     <aside class="w-64 shrink-0 flex flex-col text-slate-900">
       <!-- LivePanel -->

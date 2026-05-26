@@ -1,97 +1,75 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" role="img" aria-label="">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 700" preserveAspectRatio="xMidYMid slice" role="img" aria-label="">
   <defs>
-    <!-- Warm parchment-toned painted backdrop — single palette, no rainbow -->
+    <!-- Abstract atmospheric backdrop — sky + clouds + sun, no mountains -->
     <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%"   stop-color="#efd9c4"/>
-      <stop offset="32%"  stop-color="#e5cdc0"/>
-      <stop offset="62%"  stop-color="#d6c4c0"/>
-      <stop offset="100%" stop-color="#cbbcb4"/>
+      <stop offset="0%"   stop-color="#eedfd0"/>
+      <stop offset="30%"  stop-color="#e6d3c8"/>
+      <stop offset="60%"  stop-color="#dcc7c1"/>
+      <stop offset="100%" stop-color="#cdbab4"/>
     </linearGradient>
 
-    <radialGradient id="sun" cx="76%" cy="22%" r="50%">
+    <radialGradient id="sun" cx="78%" cy="28%" r="55%">
       <stop offset="0%"   stop-color="#fff3d4" stop-opacity="0.80"/>
-      <stop offset="38%"  stop-color="#fadeb4" stop-opacity="0.36"/>
-      <stop offset="100%" stop-color="#fadeb4" stop-opacity="0"/>
+      <stop offset="38%"  stop-color="#fbdcb0" stop-opacity="0.32"/>
+      <stop offset="100%" stop-color="#fbdcb0" stop-opacity="0"/>
+    </radialGradient>
+
+    <radialGradient id="cool" cx="18%" cy="22%" r="55%">
+      <stop offset="0%"   stop-color="#cfc6d8" stop-opacity="0.45"/>
+      <stop offset="100%" stop-color="#cfc6d8" stop-opacity="0"/>
     </radialGradient>
 
     <radialGradient id="cloud" cx="50%" cy="50%" r="55%">
-      <stop offset="0%"   stop-color="#ffffff" stop-opacity="0.92"/>
+      <stop offset="0%"   stop-color="#ffffff" stop-opacity="0.95"/>
       <stop offset="48%"  stop-color="#fbeedd" stop-opacity="0.55"/>
       <stop offset="100%" stop-color="#e8d2c2" stop-opacity="0"/>
     </radialGradient>
 
-    <linearGradient id="ridge-far" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%"  stop-color="#a7958c" stop-opacity="0.45"/>
-      <stop offset="100%" stop-color="#7c6a64" stop-opacity="0.85"/>
-    </linearGradient>
-
-    <linearGradient id="ridge-near" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%"  stop-color="#6b5852" stop-opacity="0.70"/>
-      <stop offset="100%" stop-color="#3f322e" stop-opacity="0.92"/>
-    </linearGradient>
-
     <linearGradient id="wash" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%"  stop-color="#f7f7f4" stop-opacity="0"/>
-      <stop offset="100%" stop-color="#f7f7f4" stop-opacity="0.32"/>
+      <stop offset="100%" stop-color="#f7f7f4" stop-opacity="0.55"/>
     </linearGradient>
 
     <filter id="paint" x="-30%" y="-30%" width="160%" height="160%" color-interpolation-filters="sRGB">
       <feTurbulence type="fractalNoise" baseFrequency="0.014" numOctaves="3" seed="3" result="n"/>
-      <feDisplacementMap in="SourceGraphic" in2="n" scale="110"/>
-      <feGaussianBlur stdDeviation="14"/>
+      <feDisplacementMap in="SourceGraphic" in2="n" scale="120"/>
+      <feGaussianBlur stdDeviation="16"/>
     </filter>
 
     <filter id="paint-soft" x="-30%" y="-30%" width="160%" height="160%" color-interpolation-filters="sRGB">
       <feTurbulence type="fractalNoise" baseFrequency="0.010" numOctaves="2" seed="11" result="n"/>
       <feDisplacementMap in="SourceGraphic" in2="n" scale="80"/>
-      <feGaussianBlur stdDeviation="24"/>
-    </filter>
-
-    <filter id="ridge-rough" x="-10%" y="-10%" width="120%" height="120%" color-interpolation-filters="sRGB">
-      <feTurbulence type="fractalNoise" baseFrequency="0.006" numOctaves="2" seed="7" result="n"/>
-      <feDisplacementMap in="SourceGraphic" in2="n" scale="18"/>
-      <feGaussianBlur stdDeviation="2"/>
+      <feGaussianBlur stdDeviation="28"/>
     </filter>
 
     <filter id="grain" x="0" y="0" width="100%" height="100%">
       <feTurbulence type="fractalNoise" baseFrequency="2.4" numOctaves="2" stitchTiles="stitch"/>
-      <feColorMatrix type="matrix" values="0 0 0 0 0.35  0 0 0 0 0.30  0 0 0 0 0.26  0 0 0 0.08 0"/>
+      <feColorMatrix type="matrix" values="0 0 0 0 0.35  0 0 0 0 0.30  0 0 0 0 0.26  0 0 0 0.07 0"/>
       <feComposite operator="in" in2="SourceGraphic"/>
     </filter>
   </defs>
 
-  <rect width="1600" height="900" fill="url(#sky)"/>
-  <rect width="1600" height="900" fill="url(#sun)"/>
+  <rect width="1600" height="700" fill="url(#sky)"/>
+  <rect width="1600" height="700" fill="url(#cool)"/>
+  <rect width="1600" height="700" fill="url(#sun)"/>
 
-  <g filter="url(#paint-soft)" opacity="0.80">
-    <ellipse cx="320"  cy="240" rx="440" ry="130" fill="url(#cloud)"/>
-    <ellipse cx="1240" cy="200" rx="380" ry="115" fill="url(#cloud)"/>
-    <ellipse cx="820"  cy="340" rx="460" ry="120" fill="url(#cloud)"/>
+  <!-- Distant soft band -->
+  <g filter="url(#paint-soft)" opacity="0.85">
+    <ellipse cx="320"  cy="200" rx="460" ry="120" fill="url(#cloud)"/>
+    <ellipse cx="1240" cy="180" rx="420" ry="110" fill="url(#cloud)"/>
+    <ellipse cx="820"  cy="300" rx="500" ry="120" fill="url(#cloud)"/>
   </g>
 
+  <!-- Foreground definition -->
   <g filter="url(#paint)" opacity="0.92">
-    <ellipse cx="180"  cy="180" rx="280" ry="95" fill="url(#cloud)"/>
-    <ellipse cx="1340" cy="160" rx="260" ry="90" fill="url(#cloud)"/>
-    <ellipse cx="980"  cy="280" rx="320" ry="100" fill="url(#cloud)"/>
+    <ellipse cx="180"  cy="160" rx="300" ry="95"  fill="url(#cloud)"/>
+    <ellipse cx="1340" cy="140" rx="280" ry="90"  fill="url(#cloud)"/>
+    <ellipse cx="980"  cy="260" rx="340" ry="105" fill="url(#cloud)"/>
+    <ellipse cx="540"  cy="430" rx="380" ry="100" fill="url(#cloud)"/>
+    <ellipse cx="1280" cy="460" rx="330" ry="90"  fill="url(#cloud)"/>
   </g>
 
-  <!-- Far ridge -->
-  <path filter="url(#ridge-rough)" fill="url(#ridge-far)"
-    d="M 0 640
-       L 100 600 L 220 625 L 340 590 L 460 615 L 580 580
-       L 700 605 L 820 575 L 940 600 L 1060 580 L 1180 605
-       L 1300 575 L 1420 600 L 1540 580 L 1600 600
-       L 1600 900 L 0 900 Z"/>
+  <rect x="0" y="420" width="1600" height="280" fill="url(#wash)"/>
 
-  <!-- Near ridge -->
-  <path filter="url(#ridge-rough)" fill="url(#ridge-near)" opacity="0.85"
-    d="M 0 740
-       L 140 710 L 280 735 L 420 700 L 560 730 L 700 705
-       L 840 735 L 980 705 L 1120 730 L 1260 710 L 1400 735
-       L 1540 715 L 1600 730
-       L 1600 900 L 0 900 Z"/>
-
-  <rect x="0" y="580" width="1600" height="320" fill="url(#wash)"/>
-
-  <rect width="1600" height="900" fill="white" filter="url(#grain)" opacity="0.45"/>
+  <rect width="1600" height="700" fill="white" filter="url(#grain)" opacity="0.45"/>
 </svg>

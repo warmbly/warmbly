@@ -51,19 +51,15 @@ import CTA from '../components/CTA.astro';
   </Section>
 
   <Section variant="muted">
-    <SectionHead eyebrow="Uptime" title="Last 90 days." />
-    <div class="mt-10 grid grid-cols-2 md:grid-cols-4 gap-4">
-      {[
-        ['Backend API',  '99.97%'],
-        ['Workers',      '99.97%'],
-        ['Tracking edge','99.99%'],
-        ['Realtime',     '99.95%'],
-      ].map(([k, v]) => (
-        <Card>
-          <div class="text-[12px] uppercase tracking-wider text-muted-foreground font-semibold">{k}</div>
-          <div class="text-2xl font-extrabold mt-1">{v}</div>
-        </Card>
-      ))}
+    <SectionHead
+      eyebrow="Uptime"
+      title="Tracked publicly."
+      description="Live and historical uptime numbers for every component are on the status page — not screenshots from a marketing deck."
+    />
+    <div class="mt-8">
+      <a href="https://status.warmbly.com" class="inline-flex items-center gap-1.5 text-[14px] font-medium text-foreground hover:text-foreground/70">
+        Open status.warmbly.com →
+      </a>
     </div>
   </Section>
 

@@ -52,33 +52,5 @@ import CTA from '../components/CTA.astro';
     </div>
   </Section>
 
-  <Section variant="muted">
-    <SectionHead
-      eyebrow="Team"
-      title="Small on purpose."
-      description="Eleven people across engineering, deliverability research, design and customer engineering. No outsourced support. No growth team."
-    />
-    <div class="mt-10 grid md:grid-cols-3 gap-4">
-      {[
-        { name: 'Engineering',           body: 'Built the worker plane, sending engine, analytics and inbox.' },
-        { name: 'Deliverability research', body: 'Tracks provider policy changes, runs placement probes, tunes pool thresholds.' },
-        { name: 'Customer engineering',  body: 'Onboards new accounts, handles deliverability reviews, ships docs.' },
-      ].map((t) => (
-        <Card>
-          <h3 class="text-[15px] font-semibold">{t.name}</h3>
-          <p class="mt-1.5 text-[13.5px] text-muted-foreground leading-relaxed">{t.body}</p>
-        </Card>
-      ))}
-    </div>
-  </Section>
-
-  <Section>
-    <SectionHead
-      eyebrow="Backed by"
-      title="Independent and well-capitalised."
-      description="Backed by a small group of founders, deliverability operators and seed funds. We don’t need to make the kind of growth-team choices that wreck sender reputation."
-    />
-  </Section>
-
   <CTA />
 </Layout>

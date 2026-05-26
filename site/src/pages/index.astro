@@ -37,22 +37,22 @@ const compare = [
     <div class="mt-8 flex flex-wrap items-center gap-3">
       <a href="https://app.warmbly.com/register"
          class="inline-flex h-10 px-4 items-center gap-2 rounded-[8px] text-[14px] font-medium text-background bg-foreground hover:bg-foreground/85 transition-colors">
-        Download for free
+        Start free
         <Icon name="arrowRight" size={14} />
       </a>
       <a href="/product/"
          class="inline-flex h-10 px-4 items-center gap-2 rounded-[8px] text-[14px] font-medium text-foreground bg-surface-2 hover:bg-surface-3 transition-colors">
-        Request a demo
+        Tour the product
         <Icon name="arrowUpRight" size={13} />
       </a>
     </div>
   </section>
 
   <!-- ============================================================
-       HERO MOCK — single warm painted backdrop, no rainbow
+       HERO MOCK — wide, short app shell on warm backdrop
   ============================================================ -->
   <section class="container-page pb-20 md:pb-28">
-    <div class="relative rounded-[14px] overflow-hidden p-5 sm:p-8 md:p-12 lg:p-16">
+    <div class="relative rounded-[14px] overflow-hidden p-4 sm:p-6 md:p-8 lg:p-10">
       <img
         src="/backdrops/hero.svg"
         alt=""
@@ -63,7 +63,7 @@ const compare = [
         class="absolute inset-0 w-full h-full object-cover pointer-events-none select-none"
       />
       <div
-        class="relative rounded-[10px] overflow-hidden ring-1 ring-black/[0.08]"
+        class="relative rounded-[10px] overflow-hidden ring-1 ring-black/[0.08] max-w-[1180px] mx-auto"
         style="box-shadow: var(--shadow-xl);"
       >
         <DashboardMock />
@@ -383,41 +383,6 @@ const compare = [
     </div>
   </section>
 
-  <!-- ============================================================
-       QUOTE BAND
-  ============================================================ -->
-  <section class="border-y border-border bg-surface-2/60">
-    <div class="container-page py-20 md:py-24">
-      <div class="grid lg:grid-cols-12 gap-10 items-center">
-        <div class="lg:col-span-7">
-          <Icon name="star" size={20} class="text-foreground/30 mb-4" />
-          <blockquote class="text-[26px] md:text-[34px] font-medium tracking-[-0.02em] leading-snug text-heading">
-            “We had eight mailboxes burning out a week with our old tool. Switched to Warmbly, rebuilt pool placement, dropped to one mailbox a quarter. Reply rate doubled because half our mail used to land in spam.”
-          </blockquote>
-          <div class="mt-6 inline-flex items-center gap-3">
-            <div class="w-9 h-9 rounded-full bg-foreground/15"></div>
-            <div>
-              <div class="text-sm font-semibold text-heading">Maya Okonkwo</div>
-              <div class="text-[12.5px] text-muted-foreground">Head of GTM · Northwind</div>
-            </div>
-          </div>
-        </div>
-        <div class="lg:col-span-5 grid grid-cols-2 gap-3">
-          {[
-            ['2.4 → 5.1%', 'Reply rate'],
-            ['1 / quarter', 'Mailbox burnouts'],
-            ['98.4%',      'Inbox placement'],
-            ['6 hrs / wk', 'Saved per BDR'],
-          ].map(([v, k]) => (
-            <div class="rounded-[10px] bg-white ring-1 ring-border p-5">
-              <div class="text-[28px] font-semibold tracking-[-0.02em] text-heading">{v}</div>
-              <div class="text-[12.5px] text-muted-foreground mt-1">{k}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  </section>
 
   <!-- ============================================================
        PRICING TEASER
