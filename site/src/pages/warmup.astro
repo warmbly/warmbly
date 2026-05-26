@@ -86,92 +86,180 @@ const faq = [
   </section>
 
   <!-- ============================================================
-       THE RAMP CURVE · unique to warmup
-       A real SVG line chart showing the actual 30-day ramp.
+       THE RAMP · chart + week breakdown + day-by-day data
   ============================================================ -->
   <section class="relative -mt-32 md:-mt-40 pb-16 md:pb-24 z-10">
     <div class="container-page">
       <div class="rounded-[18px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden shadow-[0_30px_60px_-20px_rgba(2,32,71,0.25),0_8px_24px_-10px_rgba(15,23,42,0.06)]">
-        <div class="px-7 py-5 border-b border-[color:var(--border)] flex flex-wrap items-baseline justify-between gap-3">
+        <!-- Header -->
+        <div class="px-7 py-5 border-b border-[color:var(--border)] grid md:grid-cols-[1fr_auto] gap-3 items-baseline">
           <div>
-            <div class="text-[10.5px] uppercase tracking-[0.18em] font-mono text-[#0284c7]">The ramp</div>
-            <div class="mt-1 text-[16px] font-semibold text-heading">Day 1 to ceiling, one mailbox.</div>
+            <div class="text-[10.5px] uppercase tracking-[0.18em] font-mono text-[#0284c7]">The ramp · 30 days</div>
+            <div class="mt-1 text-[18px] font-semibold tracking-[-0.01em] text-heading">One mailbox, day 1 to ceiling.</div>
+            <p class="mt-2 text-[13px] text-foreground/65 max-w-2xl">
+              Each day the mailbox sends one more warmup message than yesterday. After 30 days at +1/day from a 10/day floor, it reaches the 40/day ceiling and holds. Total: 775 warmup sends in 30 days.
+            </p>
           </div>
-          <div class="flex items-center gap-6 text-[11.5px] font-mono text-muted-foreground">
-            <span class="inline-flex items-center gap-1.5"><span class="w-2 h-px bg-[#0284c7]"></span>volume / day</span>
-            <span class="inline-flex items-center gap-1.5"><span class="w-2 h-px bg-foreground/30" style="border-top:1px dashed"></span>ceiling</span>
+          <div class="flex items-center gap-5 text-[11.5px] font-mono text-muted-foreground">
+            <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-[2px] bg-[#0284c7]"></span>volume / day</span>
+            <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-[2px] bg-foreground/30" style="border-top:1px dashed"></span>ceiling</span>
           </div>
         </div>
 
-        <div class="px-7 pt-6 pb-5">
-          <svg viewBox="0 0 720 220" class="w-full h-[220px]" preserveAspectRatio="none" aria-label="Ramp curve from 10/day to 40/day over 30 days">
-            <defs>
-              <linearGradient id="rampFill" x1="0%" y1="0%" x2="0%" y2="100%">
-                <stop offset="0%" stop-color="#0284c7" stop-opacity="0.18"/>
-                <stop offset="100%" stop-color="#0284c7" stop-opacity="0"/>
-              </linearGradient>
-            </defs>
+        <!-- Two-column body: chart left, week breakdown right -->
+        <div class="grid lg:grid-cols-[1.6fr_1fr]">
+          <!-- LEFT: bigger chart with milestones -->
+          <div class="px-7 pt-6 pb-5 border-b lg:border-b-0 lg:border-r border-[color:var(--border)]">
+            <svg viewBox="0 0 720 340" class="w-full h-[340px]" preserveAspectRatio="none" aria-label="Ramp curve from 10/day to 40/day over 30 days">
+              <defs>
+                <linearGradient id="rampFill" x1="0%" y1="0%" x2="0%" y2="100%">
+                  <stop offset="0%" stop-color="#0284c7" stop-opacity="0.18"/>
+                  <stop offset="100%" stop-color="#0284c7" stop-opacity="0"/>
+                </linearGradient>
+              </defs>
 
-            <!-- Horizontal grid -->
-            {[10, 20, 30, 40].map((v) => (
+              <!-- Horizontal grid + y labels -->
+              {[10, 20, 30, 40].map((v) => (
+                <g>
+                  <line x1="40" x2="700" y1={300 - (v / 50) * 280} y2={300 - (v / 50) * 280} stroke="#e6ebf2" stroke-width="1"/>
+                  <text x="32" y={300 - (v / 50) * 280 + 4} text-anchor="end" fill="#94a3b8" font-size="10" font-family="ui-monospace,monospace">{v}</text>
+                </g>
+              ))}
+
+              <!-- Week dividers (vertical) -->
+              {[7, 14, 21].map((d) => (
+                <line x1={40 + (d / 30) * 660} x2={40 + (d / 30) * 660} y1="20" y2="300" stroke="#e6ebf2" stroke-width="1" stroke-dasharray="2 4"/>
+              ))}
+
+              <!-- Ceiling line (dashed) -->
+              <line x1="40" x2="700" y1={300 - (40 / 50) * 280} y2={300 - (40 / 50) * 280} stroke="#0c4a6e" stroke-width="1" stroke-dasharray="4 4" opacity="0.4"/>
+              <text x="700" y={300 - (40 / 50) * 280 - 6} text-anchor="end" fill="#0c4a6e" font-size="10" font-family="ui-monospace,monospace" opacity="0.6">ceiling · 40 / day</text>
+
+              <!-- Ramp polygon + line -->
+              <polygon
+                points={'40,300 ' + Array.from({ length: 31 }, (_, day) => {
+                  const v = Math.min(10 + day, 40);
+                  const x = 40 + (day / 30) * 660;
+                  const y = 300 - (v / 50) * 280;
+                  return x + ',' + y;
+                }).join(' ') + ' 700,300'}
+                fill="url(#rampFill)"
+              />
+              <polyline
+                points={Array.from({ length: 31 }, (_, day) => {
+                  const v = Math.min(10 + day, 40);
+                  const x = 40 + (day / 30) * 660;
+                  const y = 300 - (v / 50) * 280;
+                  return x + ',' + y;
+                }).join(' ')}
+                fill="none"
+                stroke="#0284c7"
+                stroke-width="2"
+              />
+
+              <!-- Daily dots -->
+              {Array.from({ length: 31 }, (_, day) => {
+                const v = Math.min(10 + day, 40);
+                const x = 40 + (day / 30) * 660;
+                const y = 300 - (v / 50) * 280;
+                return <circle cx={x} cy={y} r="2" fill="#0284c7"/>;
+              })}
+
+              <!-- Milestone markers -->
               <g>
-                <line x1="40" x2="700" y1={200 - (v / 50) * 180} y2={200 - (v / 50) * 180} stroke="#e6ebf2" stroke-width="1"/>
-                <text x="32" y={200 - (v / 50) * 180 + 4} text-anchor="end" fill="#94a3b8" font-size="10" font-family="ui-monospace,monospace">{v}</text>
+                <circle cx="40" cy={300 - (10 / 50) * 280} r="5" fill="white" stroke="#0284c7" stroke-width="2"/>
+                <text x="50" y={300 - (10 / 50) * 280 - 8} fill="#0369a1" font-size="11" font-family="ui-monospace,monospace" font-weight="600">Day 1 · 10/d</text>
               </g>
-            ))}
+              <g>
+                <circle cx={40 + (7 / 30) * 660} cy={300 - (17 / 50) * 280} r="5" fill="white" stroke="#0284c7" stroke-width="2"/>
+                <text x={40 + (7 / 30) * 660 + 8} y={300 - (17 / 50) * 280 - 8} fill="#0369a1" font-size="11" font-family="ui-monospace,monospace" font-weight="600">Wk 1 · 17/d</text>
+              </g>
+              <g>
+                <circle cx={40 + (30 / 30) * 660} cy={300 - (40 / 50) * 280} r="5" fill="white" stroke="#0284c7" stroke-width="2"/>
+                <text x={40 + (30 / 30) * 660 - 8} y={300 - (40 / 50) * 280 - 8} text-anchor="end" fill="#0369a1" font-size="11" font-family="ui-monospace,monospace" font-weight="600">Day 30 · 40/d</text>
+              </g>
 
-            <!-- Ceiling line (dashed) -->
-            <line x1="40" x2="700" y1={200 - (40 / 50) * 180} y2={200 - (40 / 50) * 180} stroke="#0c4a6e" stroke-width="1" stroke-dasharray="4 4" opacity="0.4"/>
+              <!-- X-axis labels -->
+              {[0, 7, 14, 21, 30].map((d) => (
+                <text x={40 + (d / 30) * 660} y="320" text-anchor="middle" fill="#94a3b8" font-size="10" font-family="ui-monospace,monospace">D{d}</text>
+              ))}
+            </svg>
+          </div>
 
-            <!-- Ramp polygon -->
-            <polygon
-              points={'40,200 ' + Array.from({ length: 31 }, (_, day) => {
-                const v = Math.min(10 + day, 40);
-                const x = 40 + (day / 30) * 660;
-                const y = 200 - (v / 50) * 180;
-                return x + ',' + y;
-              }).join(' ') + ' 700,200'}
-              fill="url(#rampFill)"
-            />
-            <polyline
-              points={Array.from({ length: 31 }, (_, day) => {
-                const v = Math.min(10 + day, 40);
-                const x = 40 + (day / 30) * 660;
-                const y = 200 - (v / 50) * 180;
-                return x + ',' + y;
-              }).join(' ')}
-              fill="none"
-              stroke="#0284c7"
-              stroke-width="2"
-            />
+          <!-- RIGHT: week-by-week breakdown -->
+          <div class="px-7 py-6">
+            <div class="text-[10.5px] uppercase tracking-[0.18em] font-mono text-muted-foreground mb-4">Week by week</div>
+            <div class="space-y-px">
+              {[
+                { wk: 'Week 1', range: 'D1–D7',   start: 10, end: 16, total: 91,  status: 'Initial ramp' },
+                { wk: 'Week 2', range: 'D8–D14',  start: 17, end: 23, total: 140, status: 'Building reputation' },
+                { wk: 'Week 3', range: 'D15–D21', start: 24, end: 30, total: 189, status: 'Provider learning' },
+                { wk: 'Week 4', range: 'D22–D28', start: 31, end: 37, total: 238, status: 'Approaching ceiling' },
+                { wk: 'Week 5', range: 'D29–D30', start: 38, end: 40, total: 117, status: 'At ceiling',     featured: true },
+              ].map((w) => (
+                <div class={`grid grid-cols-[auto_1fr_auto] gap-3 px-3 py-2.5 rounded-[6px] items-baseline ${w.featured ? 'bg-[color:var(--sky-1)]/60' : 'hover:bg-[color:var(--surface-1)]'}`}>
+                  <div>
+                    <div class={`text-[12.5px] font-semibold ${w.featured ? 'text-[#0369a1]' : 'text-heading'}`}>{w.wk}</div>
+                    <div class="text-[10.5px] font-mono text-muted-foreground mt-0.5">{w.range}</div>
+                  </div>
+                  <div class="text-[11.5px] font-mono text-foreground/65 text-center">
+                    {w.start}<span class="text-muted-foreground/60 mx-0.5">→</span>{w.end}<span class="text-muted-foreground/55"> /d</span>
+                  </div>
+                  <div class="text-right">
+                    <div class={`text-[14px] font-semibold font-mono ${w.featured ? 'text-[#0369a1]' : 'text-heading'}`}>{w.total}</div>
+                    <div class="text-[10px] font-mono text-muted-foreground">total sends</div>
+                  </div>
+                </div>
+              ))}
+            </div>
 
-            <!-- Day-1 marker -->
-            <g>
-              <circle cx="40" cy={200 - (10 / 50) * 180} r="4" fill="#0284c7" stroke="white" stroke-width="2"/>
-              <text x="48" y={200 - (10 / 50) * 180 - 8} fill="#0369a1" font-size="11" font-family="ui-monospace,monospace" font-weight="600">Day 1 · 10</text>
-            </g>
-
-            <!-- Ceiling reached marker -->
-            <g>
-              <circle cx={40 + (30 / 30) * 660} cy={200 - (40 / 50) * 180} r="4" fill="#0284c7" stroke="white" stroke-width="2"/>
-              <text x={40 + (30 / 30) * 660 - 8} y={200 - (40 / 50) * 180 - 8} text-anchor="end" fill="#0369a1" font-size="11" font-family="ui-monospace,monospace" font-weight="600">Day 30 · 40</text>
-            </g>
-
-            <!-- X-axis labels -->
-            {[0, 7, 14, 21, 30].map((d) => (
-              <text x={40 + (d / 30) * 660} y="218" text-anchor="middle" fill="#94a3b8" font-size="10" font-family="ui-monospace,monospace">D{d}</text>
-            ))}
-          </svg>
+            <div class="mt-5 pt-5 border-t border-[color:var(--border)] grid grid-cols-2 gap-x-4 gap-y-3 text-[11.5px] font-mono">
+              <div>
+                <div class="text-[18px] font-semibold tracking-[-0.02em] text-heading">775</div>
+                <div class="uppercase tracking-[0.16em] text-muted-foreground">Total sends · 30d</div>
+              </div>
+              <div>
+                <div class="text-[18px] font-semibold tracking-[-0.02em] text-heading">30%</div>
+                <div class="uppercase tracking-[0.16em] text-muted-foreground">Reply rate target</div>
+              </div>
+              <div>
+                <div class="text-[18px] font-semibold tracking-[-0.02em] text-heading">~10m</div>
+                <div class="uppercase tracking-[0.16em] text-muted-foreground">Avg send gap</div>
+              </div>
+              <div>
+                <div class="text-[18px] font-semibold tracking-[-0.02em] text-heading">9–5</div>
+                <div class="uppercase tracking-[0.16em] text-muted-foreground">Window · recipient TZ</div>
+              </div>
+            </div>
+          </div>
         </div>
 
-        <div class="px-7 py-3 border-t border-[color:var(--border)] bg-[color:var(--surface-1)]/60 flex flex-wrap items-center justify-between gap-x-6 gap-y-1 text-[11.5px] font-mono text-muted-foreground">
-          <div class="flex items-center gap-5">
-            <span><span class="text-heading font-semibold text-[13px] mr-1">10/d</span>start</span>
-            <span><span class="text-heading font-semibold text-[13px] mr-1">+1/d</span>ramp</span>
-            <span><span class="text-heading font-semibold text-[13px] mr-1">40/d</span>ceiling</span>
-            <span><span class="text-heading font-semibold text-[13px] mr-1">30d</span>to ceiling</span>
+        <!-- Bottom: day-by-day mini table -->
+        <div class="border-t border-[color:var(--border)] bg-[color:var(--surface-1)]/40">
+          <div class="px-7 py-3 flex items-center justify-between text-[10.5px] uppercase tracking-[0.18em] font-mono text-muted-foreground">
+            <span>Day-by-day volume</span>
+            <span class="normal-case tracking-normal text-[11px]">Each cell = sends scheduled that day</span>
           </div>
-          <span>Business-hour scheduling · recipient TZ</span>
+          <div class="px-7 pb-5 overflow-x-auto">
+            <div class="grid grid-cols-[repeat(30,minmax(28px,1fr))] gap-1 min-w-[820px]">
+              {Array.from({ length: 30 }, (_, i) => {
+                const day = i + 1;
+                const v = Math.min(9 + day, 40);
+                const pct = (v - 10) / 30;
+                const atCeiling = v >= 40;
+                return (
+                  <div class="flex flex-col items-center gap-1">
+                    <div
+                      class="w-full rounded-sm"
+                      style={`height: ${6 + pct * 36}px; background: ${atCeiling ? '#0c4a6e' : '#0284c7'}; opacity: ${0.45 + pct * 0.5};`}
+                      title={`Day ${day} · ${v}/d`}
+                    ></div>
+                    <div class="text-[9px] font-mono text-muted-foreground">{day}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
       </div>
     </div>
