@@ -185,7 +185,7 @@ const plans = [
         <span class="text-foreground/20">·</span>
         <span class="font-mono">Apache 2.0</span>
         <span class="text-foreground/20">·</span>
-        <span>Self-hostable with Docker Compose</span>
+        <span>Run it on our cloud or your own infra</span>
         <span class="text-foreground/20">·</span>
         <span>Go · Rust · Elixir · React</span>
       </div>
@@ -200,93 +200,107 @@ const plans = [
       <img src="/backdrops/cloud-4.webp" alt="" aria-hidden="true" class="absolute -bottom-12 left-1/4 w-[420px] opacity-18 pointer-events-none select-none cloud-drift cloud-3" loading="lazy" decoding="async" style="mix-blend-mode: screen;"/>
 
       <div class="container-page py-20 md:py-28 relative">
-        <!-- Top strip: quick warmup facts -->
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-px bg-white/10 ring-1 ring-white/15 rounded-[10px] overflow-hidden mb-12">
-          {[
-            { v: '+1 / day',  l: 'Ramp rate' },
-            { v: '40 / day',  l: 'Ceiling per mailbox' },
-            { v: '5',         l: 'Health bands' },
-            { v: '7 days',    l: 'Quarantine cooldown' },
-          ].map((s) => (
-            <div class="px-5 py-4 backdrop-blur" style="background: rgba(8, 47, 73, 0.55);">
-              <div class="text-[24px] font-semibold tracking-[-0.02em] text-white leading-none">{s.v}</div>
-              <div class="mt-1.5 text-[10.5px] uppercase tracking-[0.14em] font-mono text-white/55">{s.l}</div>
-            </div>
-          ))}
-        </div>
-
-        <div class="grid lg:grid-cols-12 gap-12 lg:gap-16 items-start">
-          <div class="lg:col-span-5">
+        <div class="grid lg:grid-cols-12 gap-10 items-end mb-12">
+          <div class="lg:col-span-7">
             <div class="text-[11px] uppercase tracking-[0.18em] text-white/55 font-mono mb-3">Warmup</div>
-            <h2 class="text-[34px] md:text-[48px] font-semibold tracking-[-0.025em] leading-[1.06]">
+            <h2 class="text-[34px] md:text-[52px] font-semibold tracking-[-0.025em] leading-[1.04]">
               Mailbox warmup, built&nbsp;in.
             </h2>
-            <p class="mt-5 text-[15.5px] text-white/80 leading-relaxed max-w-md">
+          </div>
+          <div class="lg:col-span-5">
+            <p class="text-[15.5px] text-white/75 leading-relaxed">
               Pool placement, daily ramps, conversational replies, and per-mailbox health monitoring run automatically on every paid mailbox. The same code that warms also quarantines.
             </p>
-            <a href="/warmup/" class="mt-8 inline-flex items-center gap-1.5 text-[13.5px] font-medium text-white border-b border-white/30 hover:border-white pb-px">
+            <a href="/warmup/" class="mt-5 inline-flex items-center gap-1.5 text-[13.5px] font-medium text-white border-b border-white/30 hover:border-white pb-px">
               Read the full doc
               <Icon name="arrowUpRight" size={13} />
             </a>
           </div>
+        </div>
 
-          <div class="lg:col-span-7 grid grid-cols-2 gap-3">
-            <!-- Ramp visualization, full row -->
-            <div class="col-span-2 rounded-[12px] bg-white/[0.04] ring-1 ring-white/12 p-6">
-              <div class="flex items-center justify-between mb-4">
-                <span class="text-[10.5px] uppercase tracking-[0.16em] text-white/55 font-mono">Per-mailbox ramp</span>
-                <span class="text-[11px] font-mono text-sky-200">10 → 40 / day</span>
+        <!-- Warmup dashboard panel — individual mailbox rows -->
+        <div class="rounded-[14px] bg-white/[0.04] ring-1 ring-white/12 backdrop-blur overflow-hidden">
+          <!-- Header bar -->
+          <div class="flex items-center gap-3 px-6 h-12 border-b border-white/10">
+            <span class="text-[10.5px] uppercase tracking-[0.16em] text-white/55 font-mono">Warmup</span>
+            <span class="text-white/30">/</span>
+            <span class="text-[12.5px] text-white/80">Acme · 6 mailboxes</span>
+            <span class="ml-auto inline-flex items-center gap-1.5 px-2 h-5 rounded-full text-[10.5px] font-semibold bg-emerald-400/15 text-emerald-300 border border-emerald-400/25">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>pool active
+            </span>
+          </div>
+
+          <!-- Table header -->
+          <div class="grid grid-cols-12 px-6 py-2.5 text-[10px] uppercase tracking-[0.14em] text-white/40 font-mono border-b border-white/10">
+            <div class="col-span-4">Mailbox</div>
+            <div class="col-span-1 text-right">Day</div>
+            <div class="col-span-4">Ramp</div>
+            <div class="col-span-1 text-right">Today</div>
+            <div class="col-span-2 text-right">Status</div>
+          </div>
+
+          <!-- Mailbox rows -->
+          {[
+            { e: 'founder@acme.co',     day: 28, today: 38, cap: 40, status: 'healthy',  tone: 'emerald' },
+            { e: 'hello@acme.co',       day: 22, today: 32, cap: 40, status: 'healthy',  tone: 'emerald' },
+            { e: 'team@acme.co',        day: 16, today: 24, cap: 40, status: 'healthy',  tone: 'emerald' },
+            { e: 'intro@acme.co',       day: 11, today: 19, cap: 40, status: 'healthy',  tone: 'emerald' },
+            { e: 'partnerships@acme.co',day:  7, today: 15, cap: 40, status: 'watch',    tone: 'amber' },
+            { e: 'support@acme.co',     day:  3, today: 11, cap: 40, status: 'healthy',  tone: 'emerald' },
+          ].map((m) => (
+            <div class="grid grid-cols-12 items-center px-6 py-3 border-b border-white/5 last:border-b-0">
+              <div class="col-span-4 flex items-center gap-2 min-w-0">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"></span>
+                <span class="text-[13px] font-mono text-white truncate">{m.e}</span>
               </div>
-              <div class="flex items-end gap-1 h-28">
-                {Array.from({ length: 31 }).map((_, i) => {
-                  const v = Math.min(40, 10 + i);
-                  const h = (v / 40) * 100;
-                  return (
-                    <div class="flex-1 rounded-t-sm bg-gradient-to-t from-sky-500/70 to-sky-300/90" style={`height:${h}%`}></div>
-                  );
-                })}
+              <div class="col-span-1 text-right text-[11.5px] font-mono text-white/55">{m.day}</div>
+              <div class="col-span-4 pr-3">
+                <div class="flex items-end gap-[2px] h-7">
+                  {Array.from({ length: 21 }).map((_, i) => {
+                    const visible = i < Math.min(21, m.day);
+                    const v = Math.min(40, 10 + i);
+                    const h = (v / 40) * 100;
+                    return (
+                      <div
+                        class={`flex-1 rounded-t-[1px] ${visible ? 'bg-gradient-to-t from-sky-500/60 to-sky-300' : 'bg-white/8'}`}
+                        style={`height:${visible ? h : 12}%`}
+                      ></div>
+                    );
+                  })}
+                </div>
               </div>
-              <div class="mt-2 flex items-center justify-between text-[10.5px] font-mono text-white/45">
-                <span>day 1</span><span>day 31</span>
+              <div class="col-span-1 text-right text-[12.5px] font-mono text-white tabular-nums">
+                {m.today}<span class="text-white/35">/{m.cap}</span>
+              </div>
+              <div class="col-span-2 flex justify-end">
+                {m.tone === 'emerald' && (
+                  <span class="inline-flex items-center gap-1.5 px-2 h-5 rounded-full text-[10px] font-semibold uppercase tracking-[0.10em] bg-emerald-400/10 text-emerald-300 border border-emerald-400/20">
+                    <span class="w-1 h-1 rounded-full bg-emerald-400"></span>{m.status}
+                  </span>
+                )}
+                {m.tone === 'amber' && (
+                  <span class="inline-flex items-center gap-1.5 px-2 h-5 rounded-full text-[10px] font-semibold uppercase tracking-[0.10em] bg-amber-400/10 text-amber-300 border border-amber-400/20">
+                    <span class="w-1 h-1 rounded-full bg-amber-400"></span>{m.status}
+                  </span>
+                )}
               </div>
             </div>
+          ))}
 
-            <!-- Health bands -->
-            <div class="rounded-[12px] bg-white/[0.04] ring-1 ring-white/12 p-5">
-              <span class="text-[10.5px] uppercase tracking-[0.16em] text-white/55 font-mono">Health bands</span>
-              <div class="mt-4 space-y-2">
-                {[
-                  { name: 'Healthy',     color: 'bg-emerald-400', range: '< 10% spam' },
-                  { name: 'Watch',       color: 'bg-amber-400',   range: '10–20% spam' },
-                  { name: 'Quarantine',  color: 'bg-orange-400',  range: '20–40% spam' },
-                  { name: 'Block',       color: 'bg-rose-400',    range: '40–80% spam' },
-                  { name: 'Reset',       color: 'bg-rose-500',    range: '≥ 80% spam' },
-                ].map((b) => (
-                  <div class="flex items-center gap-2">
-                    <span class={`w-2 h-2 rounded-full ${b.color}`}></span>
-                    <span class="text-[12.5px] text-white/85 flex-1">{b.name}</span>
-                    <span class="text-[11px] font-mono text-white/45">{b.range}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <!-- Pool diversity -->
-            <div class="rounded-[12px] bg-white/[0.04] ring-1 ring-white/12 p-5">
-              <span class="text-[10.5px] uppercase tracking-[0.16em] text-white/55 font-mono">Pool diversity</span>
-              <div class="mt-4 grid grid-cols-10 gap-1.5">
-                {Array.from({ length: 50 }).map((_, i) => {
-                  const cls = i < 23 ? 'bg-rose-400/85' : i < 35 ? 'bg-sky-400/85' : i < 41 ? 'bg-violet-400/85' : i < 46 ? 'bg-zinc-400/85' : 'bg-emerald-400/85';
-                  return <span class={`w-2 h-2 rounded-full ${cls}`}></span>;
-                })}
-              </div>
-              <div class="mt-4 grid grid-cols-2 gap-x-3 gap-y-1.5 text-[11px]">
-                <div class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span><span class="text-white/75">Gmail</span></div>
-                <div class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-sky-400"></span><span class="text-white/75">Outlook</span></div>
-                <div class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-violet-400"></span><span class="text-white/75">Yahoo</span></div>
-                <div class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span><span class="text-white/75">Self-IMAP</span></div>
-              </div>
-            </div>
+          <!-- Footer band: pool providers -->
+          <div class="px-6 py-4 border-t border-white/10 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11.5px]">
+            <span class="text-[10.5px] uppercase tracking-[0.16em] text-white/55 font-mono mr-2">Pool</span>
+            {[
+              { name: 'Gmail 46%',    color: 'bg-rose-400' },
+              { name: 'Outlook 24%',  color: 'bg-sky-400' },
+              { name: 'Yahoo 12%',    color: 'bg-violet-400' },
+              { name: 'iCloud 9%',    color: 'bg-zinc-400' },
+              { name: 'Self-IMAP 9%', color: 'bg-emerald-400' },
+            ].map((p) => (
+              <span class="inline-flex items-center gap-1.5 text-white/75">
+                <span class={`w-1.5 h-1.5 rounded-full ${p.color}`}></span>{p.name}
+              </span>
+            ))}
           </div>
         </div>
       </div>
