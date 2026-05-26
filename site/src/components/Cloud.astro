@@ -1,111 +1,30 @@
 ---
 /**
- * Realistic painterly cloud.
+ * Realistic painterly cloud — pre-generated PNG via Perlin noise.
  *
- * Built from hand-drawn bezier paths layered with linear gradients —
- * NOT SVG filter chains (which break on Safari). Cross-browser perfect.
+ * Source: site/scripts/gen-clouds.mjs creates 5 webp variants in
+ * site/public/backdrops/cloud-{1..5}.webp. Regenerate with:
  *
- * Each cloud has:
- *   - Soft outer halo (radial gradient)
- *   - Main body — multi-puff bezier curve with top-to-bottom shading
- *   - Underbelly shadow path with low-opacity blue-gray gradient
- *   - Highlight crescent at the top catching the sun
+ *   node scripts/gen-clouds.mjs
  *
- * Five variants give silhouette variety so they don't look repeated.
+ * Browser-perfect (it's just an <img>), zero filter / displacement-map
+ * surface area, no Safari quirks.
  */
 interface Props {
   variant?: 1 | 2 | 3 | 4 | 5;
   opacity?: number;
   class?: string;
+  eager?: boolean;
 }
-const { variant = 1, opacity = 1, class: className = '' } = Astro.props;
-
-const id = `c${Math.random().toString(36).slice(2, 8)}`;
-
-// Each variant ships its own viewBox + paths so we can hand-tune silhouettes.
-const variants = {
-  1: {
-    vb: '0 0 360 180',
-    body: 'M30,140 C30,96 64,80 100,86 C112,50 168,42 196,76 C214,52 270,52 290,86 C322,84 348,108 340,140 C346,160 320,170 296,168 L66,168 C38,170 18,158 30,140 Z',
-    shadow: 'M50,142 C70,156 110,156 140,150 C170,160 220,160 260,148 C290,156 320,154 326,144 C336,160 314,168 296,166 L66,166 C42,166 30,158 50,142 Z',
-    highlight: 'M76,82 C100,68 140,66 168,80 C200,68 230,68 252,82',
-  },
-  2: {
-    vb: '0 0 420 200',
-    body: 'M22,162 C22,114 56,96 92,102 C100,66 156,58 184,90 C198,64 256,62 280,96 C310,86 362,98 358,140 C390,142 408,164 388,180 L60,182 C30,184 14,176 22,162 Z',
-    shadow: 'M40,166 C70,180 110,182 150,176 C190,184 250,184 296,174 C326,180 360,176 376,166 C394,178 374,184 358,184 L60,184 C36,184 24,178 40,166 Z',
-    highlight: 'M72,98 C100,84 140,82 170,96 C200,82 240,84 264,100',
-  },
-  3: {
-    vb: '0 0 300 160',
-    body: 'M28,118 C28,80 56,68 86,72 C96,42 142,38 166,66 C186,42 234,46 250,76 C278,76 296,98 286,118 C292,134 270,144 248,142 L58,144 C32,144 18,134 28,118 Z',
-    shadow: 'M48,128 C70,140 100,140 130,134 C160,142 200,142 230,132 C254,138 278,134 282,124 C290,138 270,142 252,142 L58,144 C38,144 30,138 48,128 Z',
-    highlight: 'M66,76 C92,64 124,62 148,76 C172,64 200,66 220,78',
-  },
-  4: {
-    vb: '0 0 260 140',
-    body: 'M24,102 C24,72 48,60 74,64 C82,42 120,38 142,58 C158,40 196,42 212,66 C234,66 246,86 240,104 C246,118 228,128 208,126 L52,126 C28,126 16,118 24,102 Z',
-    shadow: 'M42,112 C58,122 80,122 102,118 C124,124 158,124 184,116 C200,122 222,118 228,112 C234,124 218,124 208,126 L52,126 C36,126 26,120 42,112 Z',
-    highlight: 'M58,66 C78,56 104,54 122,66 C142,56 168,58 184,68',
-  },
-  5: {
-    vb: '0 0 480 220',
-    body: 'M28,180 C28,124 70,108 110,114 C120,72 184,62 214,98 C236,68 296,70 324,108 C358,108 416,128 412,170 C440,170 468,194 432,206 L62,208 C32,210 14,196 28,180 Z',
-    shadow: 'M50,186 C80,202 132,206 178,196 C218,204 286,206 332,194 C370,202 406,196 422,184 C442,200 410,210 392,210 L60,212 C32,212 18,200 50,186 Z',
-    highlight: 'M80,108 C112,92 158,90 196,106 C232,92 280,94 308,110',
-  },
-};
-
-const v = variants[variant];
+const { variant = 1, opacity = 1, class: className = '', eager = false } = Astro.props;
 ---
-<svg
-  viewBox={v.vb}
-  xmlns="http://www.w3.org/2000/svg"
-  class={className}
-  style={`opacity:${opacity}; overflow:visible;`}
+<img
+  src={`/backdrops/cloud-${variant}.webp`}
+  alt=""
   aria-hidden="true"
->
-  <defs>
-    <!-- Outer atmospheric halo -->
-    <radialGradient id={`${id}-halo`} cx="50%" cy="55%" r="62%">
-      <stop offset="0%"   stop-color="#ffffff" stop-opacity="0.85"/>
-      <stop offset="55%"  stop-color="#ffffff" stop-opacity="0.30"/>
-      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
-    </radialGradient>
-    <!-- Main body — soft white top, slightly cooler bottom -->
-    <linearGradient id={`${id}-body`} x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%"   stop-color="#ffffff"/>
-      <stop offset="48%"  stop-color="#f6faff"/>
-      <stop offset="100%" stop-color="#d4dfee"/>
-    </linearGradient>
-    <!-- Underbelly shadow — cool blue-gray, fades up to transparent -->
-    <linearGradient id={`${id}-shadow`} x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%"   stop-color="#a8b6cf" stop-opacity="0"/>
-      <stop offset="55%"  stop-color="#8d9dba" stop-opacity="0.30"/>
-      <stop offset="100%" stop-color="#5d6e8e" stop-opacity="0.55"/>
-    </linearGradient>
-    <!-- Specular highlight — soft warm-white catching the sun -->
-    <linearGradient id={`${id}-highlight`} x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%"   stop-color="#fff8e0" stop-opacity="0.65"/>
-      <stop offset="100%" stop-color="#fff8e0" stop-opacity="0"/>
-    </linearGradient>
-  </defs>
-
-  <!-- 1. soft halo behind everything -->
-  <ellipse
-    cx={v.vb.split(' ')[2] / 2}
-    cy={v.vb.split(' ')[3] / 2 + 10}
-    rx={v.vb.split(' ')[2] / 2}
-    ry={v.vb.split(' ')[3] / 2}
-    fill={`url(#${id}-halo)`}
-  />
-
-  <!-- 2. main puffy body -->
-  <path d={v.body} fill={`url(#${id}-body)`} />
-
-  <!-- 3. underbelly shadow -->
-  <path d={v.shadow} fill={`url(#${id}-shadow)`} />
-
-  <!-- 4. top highlight catching the sun -->
-  <path d={v.highlight} fill="none" stroke={`url(#${id}-highlight)`} stroke-width="6" stroke-linecap="round" />
-</svg>
+  decoding="async"
+  loading={eager ? 'eager' : 'lazy'}
+  fetchpriority={eager ? 'high' : 'auto'}
+  class={`pointer-events-none select-none ${className}`}
+  style={`opacity:${opacity}; width:100%; height:auto;`}
+/>
