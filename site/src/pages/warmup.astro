@@ -119,98 +119,83 @@ for (let wk = 0; wk < 5; wk++) {
   </section>
 
   <!-- ============================================================
-       THE RAMP · 30-day calendar grid (GitHub-style intensity)
+       THE RAMP · editorial typography, no chart
   ============================================================ -->
   <section class="relative -mt-32 md:-mt-40 pb-16 md:pb-24 z-10">
     <div class="container-page">
       <div class="rounded-[18px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden shadow-[0_30px_60px_-20px_rgba(2,32,71,0.25),0_8px_24px_-10px_rgba(15,23,42,0.06)]">
+        <div class="px-8 md:px-12 py-12 md:py-16">
+          <div class="text-[10.5px] uppercase tracking-[0.22em] font-mono text-[#0284c7] mb-6">The ramp</div>
 
-        <!-- Header -->
-        <div class="px-7 py-5 border-b border-[color:var(--border)] flex flex-wrap items-baseline justify-between gap-3">
-          <div>
-            <div class="text-[10.5px] uppercase tracking-[0.18em] font-mono text-[#0284c7]">First 30 days · one mailbox</div>
-            <div class="mt-1 text-[18px] font-semibold tracking-[-0.01em] text-heading">Day 1 sends 10. Day 30 sends 40. Every day in between is +1.</div>
-          </div>
-          <!-- Intensity legend -->
-          <div class="flex items-center gap-2 text-[10.5px] font-mono text-muted-foreground">
-            <span>Less</span>
-            <div class="flex gap-0.5">
-              <span class="w-4 h-4 rounded-[3px]" style="background:#e0f2fe"></span>
-              <span class="w-4 h-4 rounded-[3px]" style="background:#7dd3fc"></span>
-              <span class="w-4 h-4 rounded-[3px]" style="background:#38bdf8"></span>
-              <span class="w-4 h-4 rounded-[3px]" style="background:#0284c7"></span>
-              <span class="w-4 h-4 rounded-[3px]" style="background:#075985"></span>
-            </div>
-            <span>More</span>
-          </div>
-        </div>
-
-        <!-- 30-day calendar grid -->
-        <div class="px-7 py-8">
-          <div class="grid lg:grid-cols-[1fr_auto] gap-10 items-start">
-            <!-- LEFT: 5 weeks × 7 days grid (with weekend skipping illustrated by greying out) -->
+          <!-- Three milestones, big typography -->
+          <div class="grid md:grid-cols-3 gap-8 md:gap-4">
             <div>
-              <!-- Day-of-week column headers -->
-              <div class="grid grid-cols-[40px_repeat(7,minmax(0,1fr))] gap-1.5 mb-1.5">
-                <div></div>
-                {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => (
-                  <div class={`text-[10px] font-mono uppercase tracking-[0.14em] text-center pb-1 ${i >= 5 ? 'text-muted-foreground/40' : 'text-muted-foreground/70'}`}>{d}</div>
-                ))}
+              <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-muted-foreground">Day 1</div>
+              <div class="mt-2 flex items-baseline gap-1.5">
+                <span class="text-[80px] md:text-[96px] font-semibold tracking-[-0.045em] leading-[0.85] text-heading font-mono">10</span>
+                <span class="text-[14px] text-foreground/55">/ day</span>
               </div>
-
-              <!-- 5 weeks, each row -->
-              {calendar.map((row, wk) => (
-                <div class="grid grid-cols-[40px_repeat(7,minmax(0,1fr))] gap-1.5 mb-1.5">
-                  <div class="text-[10.5px] font-mono text-muted-foreground/70 flex items-center">W{wk + 1}</div>
-                  {row.map((cell) => (
-                    <div class="relative aspect-square">
-                      <div class="absolute inset-0 rounded-[6px] flex flex-col items-center justify-center" style={`background:${cell.bg}`}>
-                        {cell.visible && (
-                          <div class="text-[9px] font-mono uppercase tracking-[0.1em]" style={`color:${cell.textColor};opacity:0.7`}>D{cell.calDay}</div>
-                        )}
-                        {cell.visible && (
-                          <div class="text-[14px] font-semibold font-mono" style={`color:${cell.textColor}`}>
-                            {cell.isWeekend ? '—' : cell.volume}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ))}
-
-              <div class="mt-4 flex flex-wrap items-center gap-x-5 gap-y-1 text-[11px] font-mono text-muted-foreground">
-                <span class="inline-flex items-center gap-1.5"><span class="w-3 h-3 rounded-sm" style="background:#f8fafc"></span>Weekend · no send</span>
-                <span class="inline-flex items-center gap-1.5"><span class="w-3 h-3 rounded-sm" style="background:#0284c7"></span>Active warmup day</span>
-                <span class="inline-flex items-center gap-1.5"><span class="w-3 h-3 rounded-sm" style="background:#075985"></span>At ceiling</span>
-              </div>
+              <p class="mt-3 text-[13.5px] text-foreground/65 leading-relaxed max-w-xs">
+                The first send. Low enough to read as normal individual activity to any provider.
+              </p>
             </div>
+            <div class="md:border-l md:border-[color:var(--border)] md:pl-8">
+              <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-muted-foreground">Each day after</div>
+              <div class="mt-2 flex items-baseline gap-1.5">
+                <span class="text-[80px] md:text-[96px] font-semibold tracking-[-0.045em] leading-[0.85] text-heading font-mono">+1</span>
+                <span class="text-[14px] text-foreground/55">/ day</span>
+              </div>
+              <p class="mt-3 text-[13.5px] text-foreground/65 leading-relaxed max-w-xs">
+                One additional message each day. Aggressive ramps trip volume-anomaly heuristics on the receiver.
+              </p>
+            </div>
+            <div class="md:border-l md:border-[color:var(--border)] md:pl-8">
+              <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7]">Day 30 · ceiling</div>
+              <div class="mt-2 flex items-baseline gap-1.5">
+                <span class="text-[80px] md:text-[96px] font-semibold tracking-[-0.045em] leading-[0.85] text-[#0369a1] font-mono">40</span>
+                <span class="text-[14px] text-[#0284c7]/70">/ day</span>
+              </div>
+              <p class="mt-3 text-[13.5px] text-foreground/65 leading-relaxed max-w-xs">
+                The hold point. Maintains reputation without crowding cold-campaign budget on the same mailbox.
+              </p>
+            </div>
+          </div>
 
-            <!-- RIGHT: stat strip -->
-            <div class="lg:w-[220px] grid grid-cols-2 lg:grid-cols-1 gap-3 lg:gap-2">
-              <div class="rounded-[10px] bg-[color:var(--surface-1)] ring-1 ring-[color:var(--border)] p-4">
-                <div class="text-[10.5px] uppercase tracking-[0.18em] font-mono text-muted-foreground">Day 1 send</div>
-                <div class="mt-1 text-[24px] font-semibold tracking-[-0.02em] text-heading font-mono">10<span class="text-[12px] text-muted-foreground ml-1">/d</span></div>
+          <!-- Single elegant horizontal ramp bar -->
+          <div class="mt-12 md:mt-14">
+            <div class="relative h-2 rounded-full overflow-hidden" style="background: linear-gradient(90deg, #e0f2fe 0%, #7dd3fc 40%, #0284c7 80%, #075985 100%);">
+              <!-- Milestone dots overlay -->
+            </div>
+            <div class="mt-3 grid grid-cols-4 text-[10.5px] font-mono text-muted-foreground">
+              <div>
+                <div class="font-semibold text-heading text-[13px] font-mono">Day 1</div>
+                <div>10 / day</div>
               </div>
-              <div class="rounded-[10px] bg-[color:var(--surface-1)] ring-1 ring-[color:var(--border)] p-4">
-                <div class="text-[10.5px] uppercase tracking-[0.18em] font-mono text-muted-foreground">Daily ramp</div>
-                <div class="mt-1 text-[24px] font-semibold tracking-[-0.02em] text-heading font-mono">+1<span class="text-[12px] text-muted-foreground ml-1">/d</span></div>
+              <div class="text-center">
+                <div class="font-semibold text-heading text-[13px] font-mono">Day 10</div>
+                <div>19 / day</div>
               </div>
-              <div class="rounded-[10px] bg-[color:var(--sky-1)]/70 ring-1 ring-[color:var(--sky-2)] p-4">
-                <div class="text-[10.5px] uppercase tracking-[0.18em] font-mono text-[#0284c7]">Ceiling reached</div>
-                <div class="mt-1 text-[24px] font-semibold tracking-[-0.02em] text-[#0369a1] font-mono">Day 30</div>
+              <div class="text-center">
+                <div class="font-semibold text-heading text-[13px] font-mono">Day 20</div>
+                <div>29 / day</div>
               </div>
-              <div class="rounded-[10px] bg-[color:var(--surface-1)] ring-1 ring-[color:var(--border)] p-4">
-                <div class="text-[10.5px] uppercase tracking-[0.18em] font-mono text-muted-foreground">Total sends</div>
-                <div class="mt-1 text-[24px] font-semibold tracking-[-0.02em] text-heading font-mono">~550</div>
+              <div class="text-right">
+                <div class="font-semibold text-[#0369a1] text-[13px] font-mono">Day 30</div>
+                <div>40 / day</div>
               </div>
             </div>
           </div>
         </div>
 
         <!-- Footer rule -->
-        <div class="px-7 py-3 border-t border-[color:var(--border)] bg-[color:var(--surface-1)]/60 text-[11.5px] font-mono text-muted-foreground">
-          Weekends are skipped. Business-hour scheduling by recipient time zone. ~10 minute average gap between sends from the same mailbox.
+        <div class="px-8 md:px-12 py-4 border-t border-[color:var(--border)] bg-[color:var(--surface-1)]/60 flex flex-wrap items-center gap-x-6 gap-y-1 text-[11.5px] font-mono text-muted-foreground">
+          <span>~10m average gap between sends</span>
+          <span class="w-1 h-1 rounded-full bg-[color:var(--border)]"></span>
+          <span>Business hours by recipient TZ</span>
+          <span class="w-1 h-1 rounded-full bg-[color:var(--border)]"></span>
+          <span>Weekends skipped</span>
+          <span class="w-1 h-1 rounded-full bg-[color:var(--border)]"></span>
+          <span>Plain text only</span>
         </div>
       </div>
     </div>
