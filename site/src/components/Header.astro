@@ -10,16 +10,14 @@ const { onSky = false } = Astro.props;
 
 const path = Astro.url.pathname;
 
-// Product mega-menu items
+// Product mega-menu items (6 meaningful products)
 const products = [
-  { icon: 'flame',    href: '/warmup/',    title: 'Warmup',         desc: 'Reputation-safe pools, gradual ramps.' },
-  { icon: 'send',     href: '/sending/',   title: 'Sending engine', desc: 'Distributed across mailboxes and IPs.' },
-  { icon: 'inbox',    href: '/inbox/',     title: 'Unified inbox',  desc: 'Every reply, classified on arrival.' },
-  { icon: 'workflow', href: '/campaigns/', title: 'Campaigns',      desc: 'Sequences with branching and variants.' },
-  { icon: 'chart',    href: '/analytics/', title: 'Analytics',      desc: 'Placement, complaints, bounces per mailbox.' },
-  { icon: 'contact',  href: '/crm/',       title: 'CRM',            desc: 'Pipelines, deals and tasks next to sending.' },
-  { icon: 'cpu',      href: '/workers/',   title: 'Workers',        desc: 'One worker per machine, isolated IPs.' },
-  { icon: 'shield',   href: '/security/',  title: 'Security',       desc: 'KMS envelope encryption, audit log.' },
+  { icon: 'flame',    href: '/warmup/',    title: 'Warmup',         desc: 'Reputation-safe pools and gradual ramps that earn placement, not just inflate it.', tag: 'Deliverability' },
+  { icon: 'send',     href: '/sending/',   title: 'Sending engine', desc: 'Distributed send plane across many mailboxes, many workers and many IPs.',          tag: 'Infrastructure' },
+  { icon: 'inbox',    href: '/inbox/',     title: 'Unified inbox',  desc: 'Every reply, bounce, OOO and click across every connected mailbox, classified.',     tag: 'Triage' },
+  { icon: 'workflow', href: '/campaigns/', title: 'Campaigns',      desc: 'Multi-step sequences with branching, A/B variants and business-hour scheduling.',    tag: 'Outreach' },
+  { icon: 'chart',    href: '/analytics/', title: 'Analytics',      desc: 'Placement, complaints, bounces and warmup health, by mailbox and by worker.',        tag: 'Reporting' },
+  { icon: 'contact',  href: '/crm/',       title: 'CRM',            desc: 'Pipelines, deals, tasks and a contacts table built around cold-outbound workflow.',  tag: 'Workflow' },
 ];
 
 const nav: { label: string; href: string; match?: string; mega?: boolean }[] = [
@@ -66,49 +64,45 @@ function active(match?: string) {
               </svg>
             </a>
 
-            <!-- Mega-menu panel -->
-            <div class="mega-panel absolute left-0 top-full pt-2 pointer-events-none opacity-0 transition-all duration-200 ease-out" style="width: 620px; max-width: 92vw;">
-              <div class="rounded-[16px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden" style="box-shadow: 0 28px 70px -22px rgba(2,32,71,0.32), 0 10px 28px -10px rgba(15,23,42,0.10);">
-                <!-- Subtle sky gradient header strip -->
-                <div class="relative px-4 py-2.5 border-b border-[color:var(--border)] overflow-hidden">
-                  <div class="absolute inset-0 pointer-events-none" style="background: linear-gradient(180deg, rgba(186,230,253,0.55) 0%, rgba(186,230,253,0) 100%);"></div>
-                  <div class="relative flex items-center justify-between">
-                    <div class="text-[10px] uppercase tracking-[0.22em] font-mono text-[#075985]">The platform</div>
-                    <div class="text-[10px] uppercase tracking-[0.22em] font-mono text-muted-foreground">{products.length} systems</div>
-                  </div>
-                </div>
-
-                <!-- 2-column product grid -->
-                <div class="p-3 grid grid-cols-2 gap-1.5">
-                  {products.map((it) => {
-                    const isCurrent = path === it.href || path.startsWith(it.href);
-                    return (
-                      <a href={it.href} aria-current={isCurrent ? 'page' : undefined} class={`mega-item group relative flex items-start gap-3.5 p-3.5 rounded-[12px] transition-all ${isCurrent ? 'bg-[color:var(--sky-1)]/70 ring-1 ring-[color:var(--sky-3)]' : 'hover:bg-[color:var(--sky-1)]/60 ring-1 ring-transparent hover:ring-[color:var(--border)]'}`}>
-                        <div class={`w-10 h-10 rounded-[10px] inline-flex items-center justify-center shrink-0 transition-all ${isCurrent ? 'bg-gradient-to-br from-[#0284c7] to-[#075985] text-white shadow-[0_4px_12px_-2px_rgba(2,132,199,0.4)]' : 'bg-[color:var(--surface-1)] text-[#0284c7] ring-1 ring-[color:var(--border)] group-hover:bg-gradient-to-br group-hover:from-[#0284c7] group-hover:to-[#075985] group-hover:text-white group-hover:ring-transparent group-hover:shadow-[0_4px_12px_-2px_rgba(2,132,199,0.4)]'}`}>
-                          <Icon name={it.icon} size={17} />
-                        </div>
-                        <div class="min-w-0 flex-1">
-                          <div class="flex items-center gap-1.5">
-                            <span class={`text-[13.5px] font-semibold transition-colors ${isCurrent ? 'text-[#0369a1]' : 'text-heading group-hover:text-[#0369a1]'}`}>{it.title}</span>
+            <!-- Mega-menu panel · list + preview pattern -->
+            <div class="mega-panel absolute left-0 top-full pt-2 pointer-events-none opacity-0 transition-all duration-200 ease-out" style="width: 580px; max-width: 92vw;">
+              <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden" style="box-shadow: 0 28px 70px -22px rgba(2,32,71,0.28), 0 10px 28px -10px rgba(15,23,42,0.10);">
+                <div class="grid grid-cols-[210px_1fr]">
+                  <!-- LEFT: bare product list -->
+                  <ol class="bg-[color:var(--surface-1)]/60 border-r border-[color:var(--border)] py-2 mega-list" data-mega-list>
+                    {products.map((it, i) => {
+                      const isCurrent = path === it.href || path.startsWith(it.href);
+                      return (
+                        <li>
+                          <a
+                            href={it.href}
+                            data-preview={String(i)}
+                            aria-current={isCurrent ? 'page' : undefined}
+                            class={`mega-row group flex items-baseline gap-3 px-4 py-2.5 text-[13.5px] transition-colors duration-150 ${isCurrent ? 'text-[#0369a1] font-semibold' : 'text-foreground/75 hover:text-[#0369a1]'}`}
+                          >
+                            <span class={`font-mono text-[10.5px] w-5 shrink-0 transition-colors ${isCurrent ? 'text-[#0284c7]' : 'text-muted-foreground/55'}`}>{String(i + 1).padStart(2, '0')}</span>
+                            <span class="flex-1">{it.title}</span>
                             {isCurrent && <span class="w-1.5 h-1.5 rounded-full bg-[#0284c7]"></span>}
-                          </div>
-                          <div class="mt-0.5 text-[11.5px] text-foreground/60 leading-snug">{it.desc}</div>
-                        </div>
-                        <Icon name="arrowRight" size={11} class={`absolute right-3 top-1/2 -translate-y-1/2 transition-all ${isCurrent ? 'text-[#0369a1]' : 'text-foreground/0 group-hover:text-[#0369a1] group-hover:translate-x-0'}`} />
-                      </a>
-                    );
-                  })}
-                </div>
+                          </a>
+                        </li>
+                      );
+                    })}
+                  </ol>
 
-                <!-- Footer band -->
-                <div class="bg-[color:var(--surface-1)] px-4 py-3 border-t border-[color:var(--border)] flex items-center justify-between text-[11.5px]">
-                  <a href="https://github.com/warmbly/warmbly" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 font-mono text-foreground/70 hover:text-foreground transition-colors">
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.8 10.9.6.1.8-.2.8-.5v-2c-3.2.7-3.9-1.4-3.9-1.4-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.4-2.3 1.2-3.2-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2 1-.3 2-.4 3-.4s2 .1 3 .4c2.3-1.5 3.3-1.2 3.3-1.2.7 1.6.2 2.9.1 3.1.8.8 1.2 1.9 1.2 3.2 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.5 4.6-1.5 7.8-5.8 7.8-10.9C23.5 5.7 18.3.5 12 .5z"/></svg>
-                    Open source · Apache 2.0
-                  </a>
-                  <a href="/pricing/" class="inline-flex items-center gap-1 font-semibold text-[#0369a1] hover:text-[#075985]">
-                    See pricing <Icon name="arrowRight" size={11} />
-                  </a>
+                  <!-- RIGHT: live preview pane -->
+                  <div class="relative bg-white p-6" data-mega-preview>
+                    {products.map((it, i) => (
+                      <div data-preview-pane={String(i)} class={`preview-pane absolute inset-0 p-6 flex flex-col transition-opacity duration-200 ${i === 0 ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+                        <div class="text-[10px] uppercase tracking-[0.22em] font-mono text-[#0284c7]">{it.tag}</div>
+                        <h3 class="mt-2 text-[22px] font-semibold tracking-[-0.02em] text-heading leading-[1.1]">{it.title}</h3>
+                        <p class="mt-3 text-[13.5px] text-foreground/70 leading-relaxed flex-1">{it.desc}</p>
+                        <a href={it.href} class="mt-4 inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-[#0369a1] hover:text-[#075985] self-start">
+                          Open {it.title}
+                          <Icon name="arrowRight" size={11} />
+                        </a>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
@@ -240,6 +234,26 @@ function active(match?: string) {
       wrapper.addEventListener('focusin', open);
       wrapper.addEventListener('focusout', function (e) {
         if (!wrapper.contains(e.relatedTarget)) scheduleClose();
+      });
+
+      // Hover-preview: swap the right pane to follow the hovered list row
+      var rows = panel.querySelectorAll('[data-preview]');
+      var panes = panel.querySelectorAll('[data-preview-pane]');
+      function showPane(idx) {
+        panes.forEach(function (p) {
+          var i = p.getAttribute('data-preview-pane');
+          if (i === idx) {
+            p.classList.remove('opacity-0', 'pointer-events-none');
+            p.classList.add('opacity-100');
+          } else {
+            p.classList.add('opacity-0', 'pointer-events-none');
+            p.classList.remove('opacity-100');
+          }
+        });
+      }
+      rows.forEach(function (row) {
+        row.addEventListener('mouseenter', function () { showPane(row.getAttribute('data-preview')); });
+        row.addEventListener('focus', function () { showPane(row.getAttribute('data-preview')); });
       });
     });
 
