@@ -62,25 +62,40 @@ const next = related.filter((r) => r.href !== path).slice(0, 2);
           </ol>
         </div>
 
-        <!-- Other articles in the library -->
+        <!-- All articles in the library, with current one highlighted -->
         <div class="pt-6 border-t border-[color:var(--border)]">
           <div class="text-[10.5px] uppercase tracking-[0.22em] font-mono text-muted-foreground mb-4 flex items-center justify-between">
-            <span>Other essays</span>
-            <span class="font-mono text-[10.5px] text-muted-foreground/70">{related.length - 1}</span>
+            <span>All essays</span>
+            <span class="font-mono text-[10.5px] text-muted-foreground/70">{related.length}</span>
           </div>
           <ol class="space-y-px text-[13px]">
-            {related.filter((r) => r.href !== path).map((r, i) => (
-              <li>
-                <a href={r.href} class="group flex items-baseline gap-3 py-1.5 px-2 -mx-2 rounded-md text-foreground/65 hover:bg-white hover:text-[#0369a1] transition-colors">
-                  <span class="font-mono text-[10.5px] text-muted-foreground/60 w-5 shrink-0">{String(i + 1).padStart(2, '0')}</span>
-                  <span class="leading-snug flex-1 truncate">{r.title}</span>
-                  <span class="font-mono text-[10px] text-muted-foreground/55 shrink-0">{r.read.replace(' read', '').replace(' min', 'm')}</span>
-                </a>
-              </li>
-            ))}
+            {related.map((r, i) => {
+              const isCurrent = r.href === path;
+              return (
+                <li>
+                  <a
+                    href={r.href}
+                    aria-current={isCurrent ? 'page' : undefined}
+                    class={`group flex items-baseline gap-3 py-1.5 px-2 -mx-2 rounded-md transition-colors duration-300 ease-out ${
+                      isCurrent
+                        ? 'text-[#0369a1] font-semibold'
+                        : 'text-foreground/60 hover:text-[#0369a1]'
+                    }`}
+                  >
+                    <span class={`font-mono text-[10.5px] w-5 shrink-0 transition-colors duration-300 ${isCurrent ? 'text-[#0284c7]' : 'text-muted-foreground/55'}`}>{String(i + 1).padStart(2, '0')}</span>
+                    <span class="leading-snug flex-1 truncate">{r.title}</span>
+                    {isCurrent ? (
+                      <span class="w-1.5 h-1.5 rounded-full bg-[#0284c7] shrink-0"></span>
+                    ) : (
+                      <span class="font-mono text-[10px] text-muted-foreground/55 shrink-0">{r.read.replace(' read', '').replace(' min', 'm')}</span>
+                    )}
+                  </a>
+                </li>
+              );
+            })}
           </ol>
           <a href="/learn/" class="mt-4 inline-flex items-center gap-1.5 text-[11.5px] font-mono text-[#0369a1] hover:text-[#075985]">
-            All articles
+            Library home
             <Icon name="arrowRight" size={10} />
           </a>
         </div>
@@ -148,9 +163,9 @@ const next = related.filter((r) => r.href !== path).slice(0, 2);
       const h2s = Array.from(main.querySelectorAll('h2'));
       if (!h2s.length) return;
 
-      const baseClass    = 'group flex items-baseline gap-3 py-1.5 px-2 -mx-2 rounded-md transition-colors';
-      const inactiveClass = ' text-foreground/70 hover:bg-white hover:text-[#0369a1]';
-      const activeClass   = ' bg-white text-[#0369a1] font-semibold ring-1 ring-[color:var(--sky-2)]';
+      const baseClass    = 'group flex items-baseline gap-3 py-1.5 px-2 -mx-2 rounded-md transition-colors duration-300 ease-out';
+      const inactiveClass = ' text-foreground/60 hover:text-[#0369a1]';
+      const activeClass   = ' text-[#0369a1] font-semibold';
 
       // Build rail
       rail.innerHTML = '';
