@@ -1,0 +1,135 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Painted landscape backdrop">
+  <defs>
+    <!-- ── Sky gradient: warm peach → soft pink → lavender → muted blue ── -->
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#f3d6bd"/>
+      <stop offset="22%"  stop-color="#ecc4c4"/>
+      <stop offset="48%"  stop-color="#cebcd6"/>
+      <stop offset="72%"  stop-color="#aac1da"/>
+      <stop offset="100%" stop-color="#94adc8"/>
+    </linearGradient>
+
+    <!-- ── Sun glow ── -->
+    <radialGradient id="sun" cx="72%" cy="26%" r="42%">
+      <stop offset="0%"   stop-color="#fff1cf" stop-opacity="0.85"/>
+      <stop offset="32%"  stop-color="#ffdaa6" stop-opacity="0.42"/>
+      <stop offset="65%"  stop-color="#ffc78a" stop-opacity="0.14"/>
+      <stop offset="100%" stop-color="#ffc78a" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- ── Cloud body gradient (warm white core, peach undertone) ── -->
+    <radialGradient id="cloud" cx="50%" cy="45%" r="55%">
+      <stop offset="0%"   stop-color="#ffffff" stop-opacity="0.95"/>
+      <stop offset="42%"  stop-color="#fff2e2" stop-opacity="0.70"/>
+      <stop offset="78%"  stop-color="#ead4cc" stop-opacity="0.28"/>
+      <stop offset="100%" stop-color="#c8aeae" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- ── Cloud underbelly (cool shadow for depth) ── -->
+    <radialGradient id="cloud-shadow" cx="50%" cy="68%" r="55%">
+      <stop offset="0%"   stop-color="#9a9fb8" stop-opacity="0.42"/>
+      <stop offset="60%"  stop-color="#9a9fb8" stop-opacity="0.10"/>
+      <stop offset="100%" stop-color="#9a9fb8" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- ── Distant mountain (cool blue-gray) ── -->
+    <linearGradient id="mountain-far" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#8d99b3" stop-opacity="0.55"/>
+      <stop offset="60%" stop-color="#6f7c9a" stop-opacity="0.80"/>
+      <stop offset="100%" stop-color="#5e6b89" stop-opacity="0.95"/>
+    </linearGradient>
+
+    <!-- ── Near mountain (deeper, with warm undertone) ── -->
+    <linearGradient id="mountain-near" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#736384" stop-opacity="0.75"/>
+      <stop offset="100%" stop-color="#4a405c" stop-opacity="0.92"/>
+    </linearGradient>
+
+    <!-- ── Bottom horizon haze (warm fog) ── -->
+    <linearGradient id="horizon-haze" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#f4d8c8" stop-opacity="0"/>
+      <stop offset="55%"  stop-color="#f0c8b8" stop-opacity="0.32"/>
+      <stop offset="100%" stop-color="#ecb8a6" stop-opacity="0.55"/>
+    </linearGradient>
+
+    <!-- ── SVG painterly filters — same technique the /web auth page uses ── -->
+    <filter id="paint-cloud" x="-30%" y="-30%" width="160%" height="160%" color-interpolation-filters="sRGB">
+      <feTurbulence type="fractalNoise" baseFrequency="0.014" numOctaves="3" seed="2" result="noise"/>
+      <feDisplacementMap in="SourceGraphic" in2="noise" scale="120"/>
+      <feGaussianBlur stdDeviation="14"/>
+    </filter>
+
+    <filter id="paint-cloud-soft" x="-30%" y="-30%" width="160%" height="160%" color-interpolation-filters="sRGB">
+      <feTurbulence type="fractalNoise" baseFrequency="0.011" numOctaves="2" seed="19" result="noise"/>
+      <feDisplacementMap in="SourceGraphic" in2="noise" scale="90"/>
+      <feGaussianBlur stdDeviation="22"/>
+    </filter>
+
+    <filter id="paint-mountain" x="-10%" y="-10%" width="120%" height="120%" color-interpolation-filters="sRGB">
+      <feTurbulence type="fractalNoise" baseFrequency="0.006" numOctaves="2" seed="7" result="noise"/>
+      <feDisplacementMap in="SourceGraphic" in2="noise" scale="22"/>
+      <feGaussianBlur stdDeviation="2"/>
+    </filter>
+
+    <!-- ── Subtle grain to add canvas texture ── -->
+    <filter id="canvas-grain" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="2.2" numOctaves="2" stitchTiles="stitch"/>
+      <feColorMatrix type="matrix" values="0 0 0 0 0.4  0 0 0 0 0.4  0 0 0 0 0.4  0 0 0 0.10 0"/>
+      <feComposite operator="in" in2="SourceGraphic"/>
+    </filter>
+  </defs>
+
+  <!-- ── Sky base ── -->
+  <rect width="1600" height="900" fill="url(#sky)"/>
+
+  <!-- ── Sun ── -->
+  <rect width="1600" height="900" fill="url(#sun)"/>
+
+  <!-- ── Distant cloud layer ── -->
+  <g filter="url(#paint-cloud-soft)" opacity="0.85">
+    <ellipse cx="280"  cy="220" rx="360" ry="120" fill="url(#cloud)"/>
+    <ellipse cx="1180" cy="180" rx="320" ry="100" fill="url(#cloud)"/>
+    <ellipse cx="800"  cy="320" rx="420" ry="110" fill="url(#cloud)"/>
+  </g>
+
+  <!-- ── Mid cloud layer (more defined) ── -->
+  <g filter="url(#paint-cloud)" opacity="0.92">
+    <ellipse cx="170"  cy="170" rx="280" ry="105" fill="url(#cloud)"/>
+    <ellipse cx="200"  cy="230" rx="220" ry="55"  fill="url(#cloud-shadow)"/>
+
+    <ellipse cx="1340" cy="140" rx="260" ry="95"  fill="url(#cloud)"/>
+    <ellipse cx="1360" cy="200" rx="200" ry="48"  fill="url(#cloud-shadow)"/>
+
+    <ellipse cx="950"  cy="280" rx="320" ry="100" fill="url(#cloud)"/>
+    <ellipse cx="970"  cy="345" rx="240" ry="50"  fill="url(#cloud-shadow)"/>
+  </g>
+
+  <!-- ── Near cloud cluster (right-of-center, biggest, sunlit) ── -->
+  <g filter="url(#paint-cloud)" opacity="0.95">
+    <ellipse cx="1100" cy="380" rx="380" ry="120" fill="url(#cloud)"/>
+    <ellipse cx="1120" cy="450" rx="290" ry="60"  fill="url(#cloud-shadow)"/>
+  </g>
+
+  <!-- ── Far mountain silhouette ── -->
+  <path filter="url(#paint-mountain)" fill="url(#mountain-far)"
+    d="M 0 620
+       L 80 590 L 160 605 L 240 575 L 320 595 L 400 560
+       L 500 585 L 580 555 L 660 580 L 760 545 L 840 575
+       L 940 550 L 1040 580 L 1140 555 L 1240 585 L 1340 560
+       L 1440 590 L 1520 565 L 1600 595
+       L 1600 900 L 0 900 Z"/>
+
+  <!-- ── Mid mountain silhouette ── -->
+  <path filter="url(#paint-mountain)" fill="url(#mountain-near)" opacity="0.85"
+    d="M 0 720
+       L 100 690 L 200 715 L 300 685 L 420 720 L 540 695
+       L 660 725 L 800 690 L 920 720 L 1040 700 L 1180 730
+       L 1320 705 L 1460 730 L 1600 710
+       L 1600 900 L 0 900 Z"/>
+
+  <!-- ── Soft horizon haze pulling everything together ── -->
+  <rect x="0" y="540" width="1600" height="360" fill="url(#horizon-haze)"/>
+
+  <!-- ── Canvas grain on top (very faint) ── -->
+  <rect width="1600" height="900" fill="white" filter="url(#canvas-grain)" opacity="0.55"/>
+</svg>
