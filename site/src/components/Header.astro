@@ -64,88 +64,94 @@ function active(match?: string) {
               </svg>
             </a>
 
-            <!-- Mega-menu · big wide platform panel -->
-            <div class="mega-panel absolute left-[-180px] top-full pt-2 pointer-events-none opacity-0 transition-all duration-200 ease-out" style="width: 960px; max-width: 94vw;">
-              <div class="rounded-[18px] overflow-hidden bg-white ring-1 ring-[color:var(--border)]" style="box-shadow: 0 40px 90px -30px rgba(2,32,71,0.3), 0 12px 36px -10px rgba(15,23,42,0.1);">
-                <div class="grid lg:grid-cols-[260px_1fr]">
-                  <!-- LEFT: brand block on a soft sky wash -->
-                  <div class="relative p-8 lg:p-10 overflow-hidden border-b lg:border-b-0 lg:border-r border-[color:var(--border)]">
-                    <div class="absolute inset-0 pointer-events-none" style="background: linear-gradient(160deg, #f0f9ff 0%, #e0f2fe 60%, #bae6fd 100%);"></div>
-                    <svg viewBox="0 0 260 200" class="absolute -top-6 -right-10 w-[260px] opacity-50 pointer-events-none" aria-hidden="true">
-                      <defs>
-                        <radialGradient id="hdrPanelCloud" cx="50%" cy="50%" r="50%">
-                          <stop offset="0%" stop-color="white" stop-opacity="0.95"/>
-                          <stop offset="55%" stop-color="white" stop-opacity="0.15"/>
-                          <stop offset="100%" stop-color="white" stop-opacity="0"/>
-                        </radialGradient>
-                      </defs>
-                      <ellipse cx="180" cy="60" rx="90" ry="32" fill="url(#hdrPanelCloud)"/>
-                      <ellipse cx="90"  cy="130" rx="70" ry="22" fill="url(#hdrPanelCloud)" opacity="0.6"/>
-                    </svg>
-                    <div class="relative">
-                      <div class="text-[10.5px] uppercase tracking-[0.22em] font-mono text-[#075985]">The platform</div>
-                      <h3 class="mt-4 text-[28px] md:text-[32px] font-semibold tracking-[-0.025em] leading-[1.05] text-heading">
-                        The cold-email platform.
-                      </h3>
-                      <p class="mt-3 text-[13.5px] text-foreground/70 leading-relaxed">
-                        Six systems designed to work together. Warmup that earns reputation, sending that respects it.
-                      </p>
-                      <div class="mt-6 flex items-center gap-5 text-[11px] font-mono">
-                        <div>
-                          <div class="text-[20px] font-semibold tracking-[-0.02em] text-heading">{products.length}</div>
-                          <div class="uppercase tracking-[0.18em] text-foreground/55">Systems</div>
-                        </div>
-                        <div>
-                          <div class="text-[20px] font-semibold tracking-[-0.02em] text-heading">100<span class="text-[12px] text-foreground/55 ml-0.5">/d</span></div>
-                          <div class="uppercase tracking-[0.18em] text-foreground/55">Cold cap</div>
-                        </div>
-                        <div>
-                          <div class="text-[20px] font-semibold tracking-[-0.02em] text-heading">Apache</div>
-                          <div class="uppercase tracking-[0.18em] text-foreground/55">Open source</div>
+            <!-- Mega-menu · full container-width platform panel -->
+            <div class="mega-panel pointer-events-none opacity-0 transition-opacity duration-200 ease-out" style="position: fixed; top: 56px; left: 0; right: 0;">
+              <div class="container-page">
+                <div class="overflow-hidden bg-white ring-1 ring-[color:var(--border)]" style="box-shadow: 0 40px 90px -30px rgba(2,32,71,0.3), 0 12px 36px -10px rgba(15,23,42,0.1);">
+                  <div class="grid lg:grid-cols-[320px_1fr]">
+                    <!-- LEFT: brand block on a soft sky wash -->
+                    <div class="relative p-10 overflow-hidden border-b lg:border-b-0 lg:border-r border-[color:var(--border)]">
+                      <div class="absolute inset-0 pointer-events-none" style="background: linear-gradient(160deg, #f0f9ff 0%, #e0f2fe 60%, #bae6fd 100%);"></div>
+                      <svg viewBox="0 0 320 240" class="absolute -top-6 -right-10 w-[320px] opacity-50 pointer-events-none" aria-hidden="true">
+                        <defs>
+                          <radialGradient id="hdrPanelCloud2" cx="50%" cy="50%" r="50%">
+                            <stop offset="0%" stop-color="white" stop-opacity="0.95"/>
+                            <stop offset="55%" stop-color="white" stop-opacity="0.15"/>
+                            <stop offset="100%" stop-color="white" stop-opacity="0"/>
+                          </radialGradient>
+                        </defs>
+                        <ellipse cx="220" cy="70"  rx="110" ry="38" fill="url(#hdrPanelCloud2)"/>
+                        <ellipse cx="110" cy="160" rx="80"  ry="26" fill="url(#hdrPanelCloud2)" opacity="0.6"/>
+                      </svg>
+                      <div class="relative">
+                        <div class="text-[10.5px] uppercase tracking-[0.22em] font-mono text-[#075985]">The platform</div>
+                        <h3 class="mt-4 text-[30px] md:text-[36px] font-semibold tracking-[-0.025em] leading-[1.05] text-heading">
+                          The cold-email platform.
+                        </h3>
+                        <p class="mt-3 text-[14px] text-foreground/70 leading-relaxed max-w-xs">
+                          Six systems designed to work together. Warmup that earns reputation, sending that respects it.
+                        </p>
+                        <div class="mt-7 flex items-center gap-6 text-[11px] font-mono">
+                          <div>
+                            <div class="text-[22px] font-semibold tracking-[-0.02em] text-heading">{products.length}</div>
+                            <div class="uppercase tracking-[0.18em] text-foreground/55">Systems</div>
+                          </div>
+                          <div>
+                            <div class="text-[22px] font-semibold tracking-[-0.02em] text-heading">100<span class="text-[12px] text-foreground/55 ml-0.5">/d</span></div>
+                            <div class="uppercase tracking-[0.18em] text-foreground/55">Cold cap</div>
+                          </div>
+                          <div>
+                            <div class="text-[22px] font-semibold tracking-[-0.02em] text-heading">Apache</div>
+                            <div class="uppercase tracking-[0.18em] text-foreground/55">Open source</div>
+                          </div>
                         </div>
                       </div>
                     </div>
+
+                    <!-- RIGHT: 3x2 product grid -->
+                    <div class="grid grid-cols-2 lg:grid-cols-3">
+                      {products.map((it, i) => {
+                        const isCurrent = path === it.href || path.startsWith(it.href);
+                        const colBreak = (i + 1) % 3 !== 0;
+                        const rowBreak = i < 3;
+                        return (
+                          <a
+                            href={it.href}
+                            aria-current={isCurrent ? 'page' : undefined}
+                            class={`mega-card group flex flex-col p-7 ${colBreak ? 'lg:border-r border-[color:var(--border)]' : ''} ${rowBreak ? 'border-b border-[color:var(--border)]' : ''} ${isCurrent ? 'bg-[color:var(--sky-1)]/70' : 'hover:bg-[color:var(--surface-1)]'}`}
+                            style="transition: background-color 140ms ease-out;"
+                          >
+                            <div class="flex items-baseline justify-between mb-3">
+                              <span class="font-mono text-[10.5px] text-foreground/45 tracking-[0.14em]">{String(i + 1).padStart(2, '0')}</span>
+                              <span class={`text-[9.5px] font-mono uppercase tracking-[0.18em] ${isCurrent ? 'text-[#0284c7]' : 'text-foreground/45'}`}>{it.tag}</span>
+                            </div>
+                            <div class={`text-[18px] font-semibold tracking-[-0.015em] ${isCurrent ? 'text-[#0369a1]' : 'text-heading group-hover:text-[#0369a1]'}`} style="transition: color 140ms ease-out;">
+                              {it.title}
+                              {isCurrent && <span class="inline-block ml-1.5 w-1.5 h-1.5 rounded-full bg-[#0284c7] align-middle"></span>}
+                            </div>
+                            <p class="mt-2 text-[13px] text-foreground/60 leading-relaxed flex-1">{it.desc.split('.')[0]}.</p>
+                            <div class="mt-4 inline-flex items-center gap-1 text-[11.5px] font-medium text-foreground/45 group-hover:text-[#0369a1]" style="transition: color 140ms ease-out;">
+                              Open
+                              <svg width="9" height="9" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M3.5 3l3 3-3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            </div>
+                          </a>
+                        );
+                      })}
+                    </div>
                   </div>
 
-                  <!-- RIGHT: 3x2 product grid -->
-                  <div class="p-3 lg:p-4 grid grid-cols-2 lg:grid-cols-3 gap-1.5">
-                    {products.map((it, i) => {
-                      const isCurrent = path === it.href || path.startsWith(it.href);
-                      return (
-                        <a
-                          href={it.href}
-                          aria-current={isCurrent ? 'page' : undefined}
-                          class={`mega-card group flex flex-col rounded-[12px] p-5 transition-colors duration-150 ${isCurrent ? 'bg-[color:var(--sky-1)]/70' : 'hover:bg-[color:var(--surface-1)]'}`}
-                        >
-                          <div class="flex items-baseline justify-between mb-3">
-                            <span class="font-mono text-[10.5px] text-foreground/45 tracking-[0.14em]">{String(i + 1).padStart(2, '0')}</span>
-                            <span class={`text-[9.5px] font-mono uppercase tracking-[0.18em] ${isCurrent ? 'text-[#0284c7]' : 'text-foreground/45'}`}>{it.tag}</span>
-                          </div>
-                          <div class={`text-[17px] font-semibold tracking-[-0.015em] transition-colors ${isCurrent ? 'text-[#0369a1]' : 'text-heading group-hover:text-[#0369a1]'}`}>
-                            {it.title}
-                            {isCurrent && <span class="inline-block ml-1.5 w-1.5 h-1.5 rounded-full bg-[#0284c7] align-middle"></span>}
-                          </div>
-                          <p class="mt-1.5 text-[12.5px] text-foreground/60 leading-relaxed flex-1">{it.desc.split('.')[0]}.</p>
-                          <div class="mt-3 inline-flex items-center gap-1 text-[11.5px] font-medium text-foreground/45 group-hover:text-[#0369a1] transition-colors">
-                            Open
-                            <svg width="9" height="9" viewBox="0 0 12 12" fill="none" class="group-hover:translate-x-0.5 transition-transform" aria-hidden="true"><path d="M3.5 3l3 3-3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                          </div>
-                        </a>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <!-- Footer band -->
-                <div class="border-t border-[color:var(--border)] bg-[color:var(--surface-1)]/50 px-6 py-3 flex items-center justify-between text-[11.5px] font-mono">
-                  <a href="https://github.com/warmbly/warmbly" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 text-foreground/65 hover:text-foreground transition-colors">
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.8 10.9.6.1.8-.2.8-.5v-2c-3.2.7-3.9-1.4-3.9-1.4-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.4-2.3 1.2-3.2-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2 1-.3 2-.4 3-.4s2 .1 3 .4c2.3-1.5 3.3-1.2 3.3-1.2.7 1.6.2 2.9.1 3.1.8.8 1.2 1.9 1.2 3.2 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.5 4.6-1.5 7.8-5.8 7.8-10.9C23.5 5.7 18.3.5 12 .5z"/></svg>
-                    github.com/warmbly/warmbly
-                  </a>
-                  <div class="flex items-center gap-4 text-foreground/55">
-                    <a href="/deliverability/" class="hover:text-foreground transition-colors">Deliverability</a>
-                    <a href="/integrations/" class="hover:text-foreground transition-colors">Integrations</a>
-                    <a href="/pricing/" class="hover:text-foreground transition-colors font-semibold text-[#0369a1]">See pricing →</a>
+                  <!-- Footer band -->
+                  <div class="border-t border-[color:var(--border)] bg-[color:var(--surface-1)]/60 px-7 py-3 flex items-center justify-between text-[11.5px] font-mono">
+                    <a href="https://github.com/warmbly/warmbly" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 text-foreground/65 hover:text-foreground transition-colors">
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.8 10.9.6.1.8-.2.8-.5v-2c-3.2.7-3.9-1.4-3.9-1.4-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.4-2.3 1.2-3.2-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2 1-.3 2-.4 3-.4s2 .1 3 .4c2.3-1.5 3.3-1.2 3.3-1.2.7 1.6.2 2.9.1 3.1.8.8 1.2 1.9 1.2 3.2 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.5 4.6-1.5 7.8-5.8 7.8-10.9C23.5 5.7 18.3.5 12 .5z"/></svg>
+                      github.com/warmbly/warmbly
+                    </a>
+                    <div class="flex items-center gap-5 text-foreground/55">
+                      <a href="/deliverability/" class="hover:text-foreground transition-colors">Deliverability</a>
+                      <a href="/integrations/" class="hover:text-foreground transition-colors">Integrations</a>
+                      <a href="/learn/" class="hover:text-foreground transition-colors">Learn</a>
+                      <a href="/pricing/" class="hover:text-foreground transition-colors font-semibold text-[#0369a1]">See pricing →</a>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -227,13 +233,20 @@ function active(match?: string) {
 </header>
 
 <style>
-  .mega-panel {
-    transform: translateY(-4px);
-  }
+  /* Mega panel: only fade opacity to keep bounds stable while open */
   .mega-panel.open {
     opacity: 1;
-    transform: translateY(0);
     pointer-events: auto;
+  }
+  /* Invisible hover-bridge above the panel so cursor can travel
+     from the trigger without crossing a dead gap. */
+  .mega-panel.open::before {
+    content: '';
+    position: absolute;
+    top: -24px;
+    left: 0;
+    right: 0;
+    height: 24px;
   }
   .mega-wrapper.open .mega-caret { transform: rotate(180deg); }
 </style>
