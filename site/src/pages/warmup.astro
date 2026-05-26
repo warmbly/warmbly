@@ -45,6 +45,39 @@ const faq = [
   ['What triggers quarantine?', '3 or more invalid warmup tokens in 24h, spam score above 50, complaint rate over 0.10%, or spam-folder placement over 20% on at least 20 deliveries in 7 days.'],
   ['Can I keep warming after campaigns start?', 'Yes, and you should. Warmup runs in parallel with cold sending so any reputation dip is caught and offset before campaigns hit it.'],
 ];
+
+// Pre-compute the calendar grid in the frontmatter so JSX stays simple.
+// 5 weeks * 7 days. Business days (Mon-Fri) get a warmup volume that
+// ramps from 10 by +1 each business day. Weekends are no-send.
+const calendar = [];
+let bizDay = 0;
+for (let wk = 0; wk < 5; wk++) {
+  const row = [];
+  for (let dow = 0; dow < 7; dow++) {
+    const calDay = wk * 7 + dow + 1;
+    const isWeekend = dow >= 5;
+    const visible = calDay <= 30;
+    let volume = 0;
+    if (visible && !isWeekend) {
+      bizDay += 1;
+      volume = Math.min(9 + bizDay, 40);
+    }
+    let bg = '#f1f5f9';
+    let textColor = '#94a3b8';
+    if (visible && !isWeekend) {
+      if (volume >= 40)      { bg = '#075985'; textColor = '#ffffff'; }
+      else if (volume >= 30) { bg = '#0284c7'; textColor = '#ffffff'; }
+      else if (volume >= 20) { bg = '#38bdf8'; textColor = '#0c4a6e'; }
+      else if (volume >= 15) { bg = '#7dd3fc'; textColor = '#0c4a6e'; }
+      else                   { bg = '#e0f2fe'; textColor = '#075985'; }
+    } else if (visible && isWeekend) {
+      bg = '#f8fafc';
+      textColor = '#cbd5e1';
+    }
+    row.push({ calDay, isWeekend, visible, volume, bg, textColor });
+  }
+  calendar.push(row);
+}
 ---
 <Layout
   title="Warmup · Warmbly"
@@ -126,49 +159,23 @@ const faq = [
               </div>
 
               <!-- 5 weeks, each row -->
-              {[0, 1, 2, 3, 4].map((wk) => (
+              {calendar.map((row, wk) => (
                 <div class="grid grid-cols-[40px_repeat(7,minmax(0,1fr))] gap-1.5 mb-1.5">
                   <div class="text-[10.5px] font-mono text-muted-foreground/70 flex items-center">W{wk + 1}</div>
-                  {[0, 1, 2, 3, 4, 5, 6].map((dow) => {
-                    const calDay = wk * 7 + dow + 1; // 1..35
-                    const isWeekend = dow >= 5;
-                    // Map calendar day → business day (skip weekends), business day → volume
-                    const bizDayCount = Array.from({ length: calDay }, (_, i) => i).filter((d) => {
-                      const dDow = d % 7;
-                      return dDow < 5;
-                    }).length;
-                    const volume = Math.min(9 + bizDayCount, 40);
-                    const inactive = calDay > 30 || isWeekend;
-
-                    // Color tier
-                    let bg = '#f1f5f9';
-                    let textColor = '#94a3b8';
-                    if (!inactive) {
-                      if (volume >= 40)      { bg = '#075985'; textColor = '#ffffff'; }
-                      else if (volume >= 30) { bg = '#0284c7'; textColor = '#ffffff'; }
-                      else if (volume >= 20) { bg = '#38bdf8'; textColor = '#0c4a6e'; }
-                      else if (volume >= 15) { bg = '#7dd3fc'; textColor = '#0c4a6e'; }
-                      else                   { bg = '#e0f2fe'; textColor = '#075985'; }
-                    } else if (isWeekend && calDay <= 30) {
-                      bg = '#f8fafc';
-                      textColor = '#cbd5e1';
-                    }
-
-                    return (
-                      <div class="relative aspect-square">
-                        <div class="absolute inset-0 rounded-[6px] flex flex-col items-center justify-center" style={`background:${bg}`}>
-                          {calDay <= 30 ? (
-                            <>
-                              <div class="text-[9px] font-mono uppercase tracking-[0.1em]" style={`color:${textColor};opacity:0.7`}>D{calDay}</div>
-                              <div class="text-[14px] font-semibold font-mono" style={`color:${textColor}`}>
-                                {isWeekend ? '—' : volume}
-                              </div>
-                            </>
-                          ) : null}
-                        </div>
+                  {row.map((cell) => (
+                    <div class="relative aspect-square">
+                      <div class="absolute inset-0 rounded-[6px] flex flex-col items-center justify-center" style={`background:${cell.bg}`}>
+                        {cell.visible && (
+                          <div class="text-[9px] font-mono uppercase tracking-[0.1em]" style={`color:${cell.textColor};opacity:0.7`}>D{cell.calDay}</div>
+                        )}
+                        {cell.visible && (
+                          <div class="text-[14px] font-semibold font-mono" style={`color:${cell.textColor}`}>
+                            {cell.isWeekend ? '—' : cell.volume}
+                          </div>
+                        )}
                       </div>
-                    );
-                  })}
+                    </div>
+                  ))}
                 </div>
               ))}
 
