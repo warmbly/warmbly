@@ -266,12 +266,81 @@ const faq = [
   </section>
 
   <!-- ============================================================
+       VERIFICATION TOKEN ANATOMY · unique technical detail
+  ============================================================ -->
+  <section class="border-y border-[color:var(--border)] bg-[color:var(--surface-1)]/40 py-20 md:py-24">
+    <div class="container-page">
+      <div class="max-w-3xl mb-12">
+        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Verification token</div>
+        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
+          Every warmup message carries proof it is real.
+        </h2>
+        <p class="mt-4 text-[15.5px] text-foreground/70 leading-relaxed">
+          The single biggest threat to a shared warmup pool is a sender pretending to receive its own warmup. A signed HMAC token embedded in the body, validated on classification, makes that impossible.
+        </p>
+      </div>
+
+      <div class="grid lg:grid-cols-[1.2fr_1fr] gap-6">
+        <!-- Token anatomy code -->
+        <div class="rounded-[12px] overflow-hidden ring-1 ring-[color:var(--border)]">
+          <div class="px-5 py-3 bg-[#0c1224] border-b border-white/10 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span class="w-2.5 h-2.5 rounded-full bg-[#ff5f56]/80"></span>
+              <span class="w-2.5 h-2.5 rounded-full bg-[#ffbd2e]/80"></span>
+              <span class="w-2.5 h-2.5 rounded-full bg-[#27c93f]/80"></span>
+            </div>
+            <span class="text-[11px] font-mono text-white/55">warmup token · embedded in body</span>
+          </div>
+          <pre class="bg-[#0c1224] text-white/85 p-5 text-[12.5px] leading-[1.65] font-mono overflow-x-auto"><code><span style="color:#94a3b8"># Token format · plain text, base64url</span>
+<span style="color:#7dd3fc">wbly</span>:<span style="color:#fde68a">01HQX9F7P3A8KY2NJM4R6BWT0S</span>:<span style="color:#fde68a">1746820392</span>:<span style="color:#a78bfa">3f9c2a8b5e1d740a</span>
+   <span style="color:#64748b">└ pool id            └ ulid msg id</span>
+                                       <span style="color:#64748b">└ expires            └ hmac-sha256</span>
+
+<span style="color:#94a3b8"># Embedded as a normal-looking footer line:</span>
+<span style="color:#cbd5e1">Hey, just wanted to follow up on the project we discussed.</span>
+<span style="color:#cbd5e1">Let me know when you have a chance.</span>
+
+<span style="color:#cbd5e1">— Ben</span>
+<span style="color:#64748b">ref: wbly:01HQX9F7P3A8KY2NJM4R6BWT0S:1746820392:3f9c2a8b</span>
+
+<span style="color:#94a3b8"># Receiver classification → verify (HMAC + expiry + msg-id)</span>
+<span style="color:#7dd3fc">if</span> token.valid() &amp;&amp; <span style="color:#f472b6">!seen</span>(token.id) <span style="color:#7dd3fc">then</span> credit_signal
+<span style="color:#7dd3fc">else</span> increment_invalid_count(sender)</code></pre>
+        </div>
+
+        <!-- Token verification rules -->
+        <div class="rounded-[12px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden">
+          <div class="px-5 py-3 border-b border-[color:var(--border)] text-[10.5px] uppercase tracking-[0.18em] font-mono text-muted-foreground">Validation rules</div>
+          <div class="divide-y divide-[color:var(--border)]">
+            {[
+              { rule: 'HMAC signature',       why: 'Tokens are signed with a per-pool key. Forged tokens fail verification.' },
+              { rule: 'Expiry window',        why: 'Tokens expire 48 hours after issue. Late replies do not count.' },
+              { rule: 'Single-use ID',        why: 'Each token ULID is recorded on first valid use. Replays count as invalid.' },
+              { rule: 'Pool membership',      why: 'Token pool ID must match the receiver\'s pool. Cross-pool tokens are rejected.' },
+              { rule: 'Sender / recipient',   why: 'Token sender and recipient mailbox IDs must match the message routing.' },
+            ].map((r) => (
+              <div class="px-5 py-3">
+                <div class="text-[13px] font-semibold text-heading">{r.rule}</div>
+                <p class="mt-1 text-[12.5px] text-foreground/65 leading-snug">{r.why}</p>
+              </div>
+            ))}
+          </div>
+          <div class="px-5 py-3 border-t border-[color:var(--border)] bg-[color:var(--surface-1)]/60 flex items-center justify-between text-[11.5px] font-mono">
+            <span class="text-muted-foreground">≥ 3 invalid tokens / 24h →</span>
+            <span class="inline-flex items-center gap-1 text-rose-700"><span class="w-1 h-1 rounded-full bg-rose-500"></span> mailbox quarantine</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
        WHAT WARMUP DOES — editorial split, real product behavior
   ============================================================ -->
-  <section class="border-y border-[color:var(--border)] bg-[color:var(--surface-1)]/40 py-20 md:py-28">
+  <section class="border-b border-[color:var(--border)] py-20 md:py-28">
     <div class="container-page grid lg:grid-cols-[1fr_2fr] gap-12 lg:gap-20 items-start">
       <div class="lg:sticky lg:top-24" style="align-self: start;">
-        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">What warmup does</div>
+        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">The daily loop</div>
         <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
           One loop. One mailbox. One day.
         </h2>
@@ -286,17 +355,18 @@ const faq = [
 
       <ol class="divide-y divide-[color:var(--border)] border-y border-[color:var(--border)]">
         {[
-          { n: '01', t: 'Pool member selection',  b: 'A partner mailbox is drawn from the same pool the sender belongs to. Recent partners are excluded for 7 days to prevent degenerate pairs.' },
-          { n: '02', t: 'Verification token',     b: 'A signed token is embedded in the message body. Receivers extract and validate it on classification. Missing or replayed tokens count as suspicious.' },
-          { n: '03', t: 'Send through worker',    b: 'The mailbox\'s assigned worker dispatches the message during the recipient\'s business hours, with spacing that matches human typing cadence.' },
-          { n: '04', t: 'Partner classification', b: 'The receiving mailbox classifies the message as inbox, Promotions, or spam and reports the result back along with the token.' },
-          { n: '05', t: 'Score update',           b: 'Placement, token validity, and any complaint signals feed the per-mailbox rolling spam score. Bands transition on the resulting score.' },
+          { n: '01', t: 'Pool member selection',  k: 'partner = pool.draw(exclude_recent: 7d)',  b: 'A partner mailbox is drawn from the same pool the sender belongs to. Recent partners are excluded for 7 days to prevent degenerate pairs.' },
+          { n: '02', t: 'Token issue + embed',     k: 'token = hmac(pool_key, sender:recipient:ulid:exp)',  b: 'A signed token is generated for this pair and inlined as a `ref:` footer in the body. Receivers extract and validate it on classification.' },
+          { n: '03', t: 'Send through worker',     k: 'worker.send(msg, schedule: business_hours(recipient_tz))', b: 'The mailbox\'s assigned worker dispatches the message during the recipient\'s business hours, with spacing that matches human typing cadence.' },
+          { n: '04', t: 'Partner classification',  k: 'receiver.classify(msg) → {inbox|promotions|spam}',  b: 'The receiving mailbox classifies the message and reports the result back along with the token. Inbox arrivals are credited as positive placement signals.' },
+          { n: '05', t: 'Score update + band',     k: 'score = rolling_sum(placement, complaints, tokens)',  b: 'The per-mailbox rolling score is updated. If thresholds are crossed, the mailbox transitions to Watch, Quarantined, or Blocked.' },
         ].map((s) => (
           <li class="grid grid-cols-[44px_1fr] gap-4 py-5 items-baseline">
             <span class="font-mono text-[12px] text-[#0284c7] font-semibold">{s.n}</span>
             <div>
               <div class="text-[15.5px] font-semibold text-heading">{s.t}</div>
-              <p class="mt-1.5 text-[14px] text-foreground/70 leading-relaxed">{s.b}</p>
+              <div class="mt-1 font-mono text-[12px] text-[#0369a1] bg-[color:var(--sky-1)]/60 px-2 py-1 rounded inline-block">{s.k}</div>
+              <p class="mt-2 text-[14px] text-foreground/70 leading-relaxed">{s.b}</p>
             </div>
           </li>
         ))}
