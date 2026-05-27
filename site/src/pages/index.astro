@@ -15,18 +15,17 @@ const compare = [
   ['Worker concentration',     'Capped by sum of mailbox budgets', 'Flat per-worker ceiling'],
 ];
 
-// Mirrors web/src/lib/plans.ts — single source of truth.
+// Mirrors web/src/lib/plans.ts and /pricing.
 const plans = [
   {
     name: 'Starter',
-    price: '$29',
-    annual: '$23',
-    cadence: '/ month',
+    price: 29,
+    annual: 23,
     summary: 'Great for small businesses with a small budget.',
-    cta: 'Start free trial',
-    href: 'https://app.warmbly.com/register?plan=starter',
-    highlight: false,
     sendsPerDay: 150,
+    href: 'https://app.warmbly.com/register?plan=starter',
+    cta: 'Start free trial',
+    highlight: false,
     features: [
       'Unlimited warmup',
       'Unlimited mailboxes',
@@ -37,14 +36,13 @@ const plans = [
   },
   {
     name: 'Grow',
-    price: '$89',
-    annual: '$71',
-    cadence: '/ month',
+    price: 89,
+    annual: 71,
     summary: 'Ideal for growing businesses scaling their outreach.',
-    cta: 'Start free trial',
-    href: 'https://app.warmbly.com/register?plan=grow',
-    highlight: false,
     sendsPerDay: 3000,
+    href: 'https://app.warmbly.com/register?plan=grow',
+    cta: 'Start free trial',
+    highlight: false,
     features: [
       'Unlimited warmup',
       'Unlimited mailboxes',
@@ -55,14 +53,13 @@ const plans = [
   },
   {
     name: 'Business',
-    price: '$329',
-    annual: '$263',
-    cadence: '/ month',
+    price: 329,
+    annual: 263,
     summary: 'For established teams that need higher limits and advanced features.',
-    cta: 'Start free trial',
-    href: 'https://app.warmbly.com/register?plan=business',
-    highlight: true,
     sendsPerDay: 15000,
+    href: 'https://app.warmbly.com/register?plan=business',
+    cta: 'Start free trial',
+    highlight: true,
     features: [
       'Everything in Grow',
       '15,000 emails / day',
@@ -73,14 +70,13 @@ const plans = [
   },
   {
     name: 'Enterprise',
-    price: 'Custom',
-    annual: 'Custom',
-    cadence: 'volume-based',
+    price: null,
+    annual: null,
     summary: 'Large orgs with custom volume and dedicated support.',
-    cta: 'Talk to sales',
-    href: '/contact/?topic=sales',
-    highlight: false,
     sendsPerDay: Infinity,
+    href: '/contact/?topic=sales',
+    cta: 'Talk to sales',
+    highlight: false,
     features: [
       'Everything in Business',
       '15,000+ emails / day',
@@ -780,59 +776,76 @@ const plans = [
           </div>
         </div>
 
-        <!-- Premium pricing cards: separated, ringed, featured card glows with sweep + cloud bloom. -->
-        <div class="mt-16 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-5 items-stretch">
-          {plans.map((p, idx) => (
-            <div class={`pricing-card relative flex flex-col rounded-[18px] bg-white p-7 overflow-hidden ${
-              p.highlight ? 'ring-2 ring-[color:var(--brand)] lg:scale-[1.02] z-10' : 'ring-1 ring-[color:var(--border)]'
-            }`} style={p.highlight ? 'box-shadow: var(--shadow-xl);' : 'box-shadow: var(--shadow-sm);'} data-card-idx={idx}>
+        <!-- Plan grid · same layout as /pricing -->
+        <div class="mt-16 grid md:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-5 items-stretch">
+          {plans.map((p) => (
+            <div class={`relative rounded-[18px] flex flex-col p-7 lg:p-8 bg-white transition-all ${
+              p.highlight
+                ? ''
+                : 'ring-1 ring-[color:var(--border)] shadow-[0_24px_48px_-20px_rgba(15,23,42,0.18),0_4px_12px_-6px_rgba(15,23,42,0.06)]'
+            }`}
+            style={p.highlight ? 'box-shadow: 0 0 0 2px #0284c7, 0 30px 60px -25px rgba(2,132,199,0.35), 0 8px 24px -12px rgba(2,132,199,0.15);' : ''}>
 
               {p.highlight && (
-                <div class="pricing-sweep absolute inset-0 pointer-events-none rounded-[18px] overflow-hidden" aria-hidden="true"></div>
+                <>
+                  <div class="absolute inset-0 rounded-[18px] overflow-hidden pointer-events-none">
+                    <div class="absolute inset-x-0 top-0 h-[160px]" style="background: linear-gradient(180deg, rgba(186,230,253,0.6) 0%, rgba(240,249,255,0) 100%);"></div>
+                  </div>
+                  <div class="absolute -top-3 left-1/2 -translate-x-1/2 inline-flex items-center h-6 px-3 rounded-full text-[10px] font-semibold uppercase tracking-[0.14em] font-mono bg-[color:var(--sky-6)] text-white shadow-[0_4px_14px_-2px_rgba(2,132,199,0.5)] z-10">
+                    Most popular
+                  </div>
+                </>
               )}
 
-              <div class="relative flex flex-col h-full">
-                {p.highlight && (
-                  <span class="absolute -top-2 right-0 inline-flex items-center h-6 px-2.5 rounded-full text-[10px] font-semibold uppercase tracking-[0.10em] bg-[color:var(--brand)] text-white shadow-[0_4px_12px_-2px_rgba(2,132,199,0.55)]">
-                    Most popular
+              <div class="relative text-[11px] uppercase tracking-[0.18em] font-mono font-semibold mb-2 text-[color:var(--sky-6)]">
+                {p.name}
+              </div>
+              <p class="text-[13.5px] leading-relaxed h-[42px] text-foreground/70">
+                {p.summary}
+              </p>
+
+              <div class="mt-6 h-[62px] flex items-baseline gap-1.5">
+                {p.price !== null ? (
+                  <>
+                    <span class="text-[48px] font-semibold tracking-[-0.035em] leading-none text-heading flex items-baseline">
+                      <span class="text-[28px] mr-0.5 text-foreground/55 font-medium">$</span>
+                      <span class="plan-price relative inline-block overflow-hidden h-[44px] align-baseline" data-monthly={p.price} data-annual={p.annual}>
+                        <span class="plan-price-inner block leading-[44px] transition-transform duration-[350ms] ease-[cubic-bezier(0.34,1.56,0.64,1)]" style="transform: translateY(0)">{p.annual}</span>
+                      </span>
+                    </span>
+                    <span class="text-[13.5px] text-foreground/60 ml-1">/ mo</span>
+                  </>
+                ) : (
+                  <span class="text-[44px] font-semibold tracking-[-0.035em] leading-none text-heading">
+                    Custom
                   </span>
                 )}
-                <h3 class={`text-[16px] font-semibold ${p.highlight ? 'text-[color:var(--brand)]' : 'text-heading'}`}>{p.name}</h3>
-                <p class="mt-1.5 text-[12.5px] text-muted-foreground leading-snug min-h-[40px]">{p.summary}</p>
+              </div>
+              <div class="mt-1 text-[11.5px] font-mono text-foreground/50">
+                {p.price !== null ? (
+                  <span class="plan-note" data-monthly-note="billed monthly · cancel anytime" data-annual-note="billed annually · 20% off">billed annually · 20% off</span>
+                ) : (
+                  'volume-based · contact sales'
+                )}
+              </div>
 
-                <div class="mt-6 flex items-baseline gap-1.5">
-                  <span class="text-[48px] font-semibold tracking-[-0.04em] text-heading leading-none flex items-baseline">
-                    <span class="plan-price relative inline-block overflow-hidden h-[48px] align-baseline" data-monthly={p.price} data-annual={p.annual}>
-                      <span class="plan-price-inner block leading-[48px]" style="transform: translateY(0)">{p.annual}</span>
-                    </span>
-                  </span>
-                </div>
-                <p class="mt-2 text-[11.5px] text-muted-foreground">
-                  <span class="plan-note" data-monthly-note="/ month · billed monthly" data-annual-note="/ month · billed yearly">/ month · billed yearly</span>
-                </p>
+              <a
+                href={p.href}
+                class={`plan-cta mt-7 inline-flex h-11 px-4 items-center justify-center w-full rounded-[10px] text-[14px] font-semibold transition-all duration-200 ease-out ${
+                  p.highlight
+                    ? 'bg-[color:var(--sky-6)] text-white shadow-[0_4px_14px_-2px_rgba(2,132,199,0.4)] hover:bg-[#075985] hover:shadow-[0_8px_22px_-4px_rgba(2,132,199,0.55)] hover:-translate-y-0.5'
+                    : 'bg-foreground text-background hover:bg-[#1f2937] hover:-translate-y-0.5 hover:shadow-[0_6px_18px_-4px_rgba(15,23,42,0.25)]'
+                }`}
+              >
+                {p.cta}
+              </a>
 
-                <div class="mt-4 inline-flex items-center gap-1.5 text-[11px] font-mono text-muted-foreground self-start">
-                  <Icon name="zap" size={10} class="text-[color:var(--brand)]" />
-                  <span>{p.sendsPerDay === Infinity ? '15,000+' : p.sendsPerDay.toLocaleString()} sends / day</span>
-                </div>
-
-                <a
-                  href={p.href}
-                  class={`mt-7 inline-flex h-11 px-4 items-center justify-center w-full rounded-[10px] text-[14px] font-medium transition-colors ${
-                    p.highlight
-                      ? 'bg-[color:var(--brand)] text-white hover:bg-[color:var(--brand-strong)] shadow-[0_10px_24px_-10px_rgba(2,132,199,0.65)]'
-                      : 'bg-foreground text-background hover:bg-foreground/85'
-                  }`}
-                >
-                  {p.cta}
-                </a>
-
-                <div class="my-6 h-px bg-[color:var(--border)]"></div>
-                <ul class="space-y-2.5 text-[13px] text-foreground/90">
+              <div class="mt-7 pt-7 border-t border-[color:var(--border)] flex-1">
+                <ul class="space-y-3">
                   {p.features.map((f) => (
-                    <li class="flex items-start gap-2">
-                      <span class={`mt-1 shrink-0 w-3.5 h-3.5 rounded-full inline-flex items-center justify-center ${p.highlight ? 'bg-[color:var(--brand-soft)] text-[color:var(--brand)]' : 'bg-[color:var(--surface-2)] text-foreground/55'}`}>
-                        <Icon name="check" size={9} />
+                    <li class="text-[13.5px] flex items-start gap-2.5 text-foreground/85">
+                      <span class="shrink-0 mt-0.5 inline-flex items-center justify-center w-4 h-4 rounded-full bg-[color:var(--sky-1)] text-[color:var(--sky-6)]">
+                        <svg width="9" height="9" viewBox="0 0 12 12" fill="none"><path d="M2 6l2.5 2.5L10 3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                       </span>
                       <span>{f}</span>
                     </li>
