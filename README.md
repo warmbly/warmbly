@@ -153,7 +153,7 @@ For production: see [Self-hosting](#self-hosting) below.
 
 ## Admin UI
 
-The admin app lives at `web-admin/`, separate from the user dashboard, with a
+The admin app lives at `admin/`, separate from the user dashboard, with a
 clear amber accent so admins never confuse the two.
 
 <p align="center">
@@ -374,7 +374,7 @@ warmbly/
 ├── tracking/           # Rust open/click service
 ├── realtime/           # Elixir WebSocket gateway
 ├── web/                # User dashboard (Vite + React)
-├── web-admin/          # Admin UI (Vite + React)
+├── admin/          # Admin UI (Vite + React)
 ├── scripts/
 │   └── install-worker.sh   # single-IP + multi-IP installer
 ├── docs/               # operator docs (auth, lock-in, multi-IP)
@@ -391,7 +391,7 @@ go build -o bin/worker   ./cmd/worker
 cd tracking    && cargo build --release
 cd realtime    && mix deps.get && mix release
 cd web         && pnpm install && pnpm build
-cd web-admin   && pnpm install && pnpm build
+cd admin   && pnpm install && pnpm build
 ```
 
 ## Testing
@@ -399,7 +399,7 @@ cd web-admin   && pnpm install && pnpm build
 ```bash
 go test ./...
 cd web         && pnpm typecheck && pnpm lint
-cd web-admin   && pnpm typecheck && pnpm lint
+cd admin   && pnpm typecheck && pnpm lint
 cd tracking    && cargo test
 cd realtime    && mix test
 ```

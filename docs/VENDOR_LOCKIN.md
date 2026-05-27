@@ -188,7 +188,7 @@ CODEC_PROVIDER=json   # if you don't want Schema Registry
 | Worker (Go) | ✅ yes | No DB, just outbound HTTPS + SMTP/IMAP |
 | Tracking (Rust) | ✅ yes | Standalone HTTP service |
 | Realtime (Elixir) | ✅ yes | Standalone Phoenix service |
-| Admin UI (`web-admin/`) | ✅ yes | Vite build, deploy as static files |
+| Admin UI (`admin/`) | ✅ yes | Vite build, deploy as static files |
 | Dashboard (`web/`) | ✅ yes | Same |
 | Postgres | ✅ yes | Any 14+ install |
 | Redis | ✅ yes | Or Valkey, KeyDB |

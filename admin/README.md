@@ -1,4 +1,4 @@
-# web-admin
+# admin
 
 Warmbly's internal admin control plane. Separate Vite + React app, parallel to `web/`, that drives the `/admin/*` endpoints on the same backend.
 
@@ -74,7 +74,7 @@ These signals are layered on purpose. A single one (e.g. just the badge) is easy
 ## Layout
 
 ```
-web-admin/
+admin/
 ├── index.html
 ├── package.json
 ├── vite.config.ts
