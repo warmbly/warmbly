@@ -218,182 +218,139 @@ const plans = [
           </div>
         </div>
 
-        <!-- Product detail mock · one mailbox in focus.
-             Chart on the left, KPIs on the right, activity feed below. -->
-        <div class="rounded-[16px] bg-[#071427]/55 ring-1 ring-white/10 backdrop-blur-sm overflow-hidden" style="box-shadow: 0 40px 90px -30px rgba(0,0,0,0.45), 0 12px 30px -12px rgba(0,0,0,0.25);">
+        <!-- Clean warmup visual: row of mailbox rings up top, live activity
+             stream below. No big chart, no panels, no white borders.
+             Everything sits directly on the sky background. -->
+        <div class="relative">
 
-          <!-- App-shell top bar -->
-          <div class="flex items-center gap-3 px-5 md:px-6 h-12 border-b border-white/8 bg-white/[0.03]">
-            <span class="flex items-center gap-1.5">
-              <span class="w-2 h-2 rounded-full bg-[#ff5f57]/80"></span>
-              <span class="w-2 h-2 rounded-full bg-[#febc2e]/80"></span>
-              <span class="w-2 h-2 rounded-full bg-[#28c840]/80"></span>
-            </span>
-            <span class="text-[10.5px] uppercase tracking-[0.18em] text-white/45 font-mono ml-2">Warmup</span>
-            <span class="text-white/25">/</span>
-            <span class="text-[12.5px] font-mono text-white/80">founder@acme.co</span>
-            <span class="ml-auto inline-flex items-center gap-1.5 text-[10.5px] uppercase tracking-[0.18em] font-mono text-emerald-300">
+          <!-- Mailbox warmup rings · each mailbox shown as a circular ramp
+               with email + day count. Hovering brightens the ring. -->
+          <div class="flex items-baseline justify-between flex-wrap gap-3 mb-6">
+            <span class="text-[10.5px] uppercase tracking-[0.22em] font-mono text-white/55">Mailboxes in warmup · acme.co</span>
+            <span class="text-[10.5px] uppercase tracking-[0.22em] font-mono text-emerald-300/80 inline-flex items-center gap-1.5">
               <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse-soft"></span>
-              healthy
+              pool active
             </span>
           </div>
 
-          <!-- Body: chart left, KPI rail right -->
-          <div class="grid lg:grid-cols-[1.55fr_1fr] divide-y lg:divide-y-0 lg:divide-x divide-white/8">
-
-            <!-- LEFT: line chart -->
-            <div class="px-5 md:px-7 pt-6 pb-5">
-              <div class="flex items-baseline justify-between gap-3 mb-5 flex-wrap">
-                <div>
-                  <div class="text-[10.5px] uppercase tracking-[0.18em] text-white/45 font-mono mb-1">Warmup ramp</div>
-                  <div class="text-[15px] text-white/85">Day 22 of 30 · +1 / day</div>
-                </div>
-                <div class="text-right">
-                  <div class="text-[34px] md:text-[40px] font-semibold tracking-[-0.03em] text-white leading-none tabular-nums">
-                    32<span class="text-white/35 text-[20px] md:text-[22px] font-mono ml-1">/ 40</span>
-                  </div>
-                  <div class="text-[10.5px] uppercase tracking-[0.18em] text-white/45 font-mono mt-1">today</div>
-                </div>
-              </div>
-
-              <!-- Line chart -->
-              {(() => {
-                const W = 720;
-                const H = 180;
-                const PAD_L = 28;
-                const PAD_R = 12;
-                const PAD_T = 8;
-                const PAD_B = 26;
-                const startVal = 10;
-                const ramp = [];
-                for (let i = 0; i < 30; i++) ramp.push(Math.min(40, startVal + i));
-                const today = 22; // 0-indexed day 21 -> show as day 22
-                const plotW = W - PAD_L - PAD_R;
-                const plotH = H - PAD_T - PAD_B;
-                const x = (i) => PAD_L + (i / (ramp.length - 1)) * plotW;
-                const y = (v) => PAD_T + (1 - v / 50) * plotH;
-                const points = ramp.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
-                const areaPath = `M ${x(0).toFixed(1)},${(PAD_T + plotH).toFixed(1)} L ${points.replace(/ /g, ' L ')} L ${x(ramp.length - 1).toFixed(1)},${(PAD_T + plotH).toFixed(1)} Z`;
-                const lineD = `M ${points.replace(/ /g, ' L ')}`;
-                const todayX = x(today - 1);
-                const todayY = y(ramp[today - 1]);
-                const yTicks = [0, 10, 20, 30, 40];
-                const xTicks = [1, 8, 15, 22, 30];
-                return (
-                  <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" class="w-full h-[200px] md:h-[220px]" role="img" aria-label="Warmup ramp from day 1 to day 30">
-                    <defs>
-                      <linearGradient id="rampFill" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stop-color="#7dd3fc" stop-opacity="0.55" />
-                        <stop offset="100%" stop-color="#0284c7" stop-opacity="0" />
-                      </linearGradient>
-                      <linearGradient id="rampStroke" x1="0" y1="0" x2="1" y2="0">
-                        <stop offset="0%" stop-color="#bae6fd" />
-                        <stop offset="100%" stop-color="#0ea5e9" />
-                      </linearGradient>
-                      <filter id="dotGlow" x="-50%" y="-50%" width="200%" height="200%">
-                        <feGaussianBlur stdDeviation="3" result="b" />
-                        <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
-                      </filter>
-                    </defs>
-
-                    <!-- horizontal gridlines + y-tick labels -->
-                    {yTicks.map((t) => (
-                      <g>
-                        <line x1={PAD_L} x2={W - PAD_R} y1={y(t)} y2={y(t)} stroke="rgba(255,255,255,0.06)" stroke-dasharray="2 4" />
-                        <text x={PAD_L - 6} y={y(t) + 3} text-anchor="end" fill="rgba(255,255,255,0.35)" font-size="9" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">{t}</text>
-                      </g>
-                    ))}
-
-                    <!-- x-tick labels -->
-                    {xTicks.map((d) => (
-                      <text x={x(d - 1)} y={H - 8} text-anchor="middle" fill="rgba(255,255,255,0.35)" font-size="9" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">d{d}</text>
-                    ))}
-
-                    <!-- area + line -->
-                    <path d={areaPath} fill="url(#rampFill)" />
-                    <path d={lineD} fill="none" stroke="url(#rampStroke)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-
-                    <!-- vertical guide at today -->
-                    <line x1={todayX} x2={todayX} y1={PAD_T} y2={H - PAD_B} stroke="rgba(125,211,252,0.45)" stroke-dasharray="2 3" />
-
-                    <!-- today dot -->
-                    <circle cx={todayX} cy={todayY} r="6" fill="#7dd3fc" opacity="0.25" filter="url(#dotGlow)" />
-                    <circle cx={todayX} cy={todayY} r="4" fill="#ffffff" stroke="#0284c7" stroke-width="2" />
-
-                    <!-- today label badge -->
-                    <g transform={`translate(${todayX - 22}, ${PAD_T - 2})`}>
-                      <rect x="0" y="-2" width="44" height="14" rx="3" fill="#0c1322" stroke="rgba(125,211,252,0.6)" />
-                      <text x="22" y="8" text-anchor="middle" fill="#bae6fd" font-size="9" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">today</text>
-                    </g>
+          <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-y-8 gap-x-6">
+            {[
+              { e: 'founder',      day: 28 },
+              { e: 'hello',        day: 22 },
+              { e: 'team',         day: 16 },
+              { e: 'intro',        day: 11 },
+              { e: 'partnerships', day:  7 },
+              { e: 'support',      day:  3 },
+            ].map((m) => {
+              const r = 26;
+              const C = 2 * Math.PI * r;
+              const pct = Math.min(1, m.day / 30);
+              const dash = (C * pct).toFixed(2);
+              const gap  = (C - C * pct).toFixed(2);
+              return (
+                <div class="flex flex-col items-center text-center group">
+                  <svg viewBox="0 0 64 64" class="w-[68px] h-[68px] -rotate-90 transition-transform duration-300 group-hover:scale-[1.05]" role="img" aria-label={`${m.e} warmup day ${m.day} of 30`}>
+                    <circle cx="32" cy="32" r={r} fill="none" stroke="rgba(186,230,253,0.12)" stroke-width="3" />
+                    <circle
+                      cx="32" cy="32" r={r}
+                      fill="none"
+                      stroke="url(#ringStroke)"
+                      stroke-width="3"
+                      stroke-linecap="round"
+                      stroke-dasharray={`${dash} ${gap}`}
+                    />
                   </svg>
-                );
-              })()}
-            </div>
-
-            <!-- RIGHT: KPI rail -->
-            <div class="px-5 md:px-7 pt-6 pb-5 grid grid-cols-2 lg:grid-cols-1 gap-y-5 gap-x-5">
-              {[
-                { k: 'Pool peers', v: '142',    sub: 'active in last 24h' },
-                { k: 'Replies in', v: '11',     sub: 'rate 34%' },
-                { k: 'Inbox',      v: '96.4%',  sub: 'rolling 14d' },
-                { k: 'Spam',       v: '1.8%',   sub: 'well under 10%' },
-              ].map((s) => (
-                <div>
-                  <div class="text-[10.5px] uppercase tracking-[0.18em] text-white/40 font-mono">{s.k}</div>
-                  <div class="mt-1.5 text-[26px] md:text-[28px] font-semibold tracking-[-0.025em] text-white leading-none tabular-nums">{s.v}</div>
-                  <div class="mt-1.5 text-[11px] text-white/45 font-mono">{s.sub}</div>
+                  <div class="-mt-[46px] mb-[20px] text-[15px] font-semibold text-white tabular-nums">{m.day}</div>
+                  <div class="font-mono text-[12px] text-white/85">{m.e}<span class="text-white/40">@acme.co</span></div>
+                  <div class="mt-1 font-mono text-[10.5px] text-white/40 uppercase tracking-[0.16em]">day {m.day} / 30</div>
                 </div>
-              ))}
-            </div>
+              );
+            })}
           </div>
 
-          <!-- Activity feed: recent warmup interactions, scrolls forever -->
-          <div class="border-t border-white/8 bg-white/[0.02]">
-            <div class="flex items-baseline justify-between px-5 md:px-7 py-3 border-b border-white/6">
-              <div class="text-[10.5px] uppercase tracking-[0.18em] text-white/45 font-mono">Recent pool activity</div>
-              <div class="text-[10.5px] uppercase tracking-[0.18em] font-mono text-emerald-300/80">
-                <span class="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 align-middle mr-1 animate-pulse-soft"></span>
-                streaming
+          <!-- Shared gradient for all rings -->
+          <svg width="0" height="0" class="absolute" aria-hidden="true">
+            <defs>
+              <linearGradient id="ringStroke" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#bae6fd" />
+                <stop offset="100%" stop-color="#0ea5e9" />
+              </linearGradient>
+            </defs>
+          </svg>
+
+          <!-- Subtle horizontal divider made of the sky color, not white -->
+          <div class="mt-14 h-px" style="background: linear-gradient(90deg, transparent 0%, rgba(186,230,253,0.22) 50%, transparent 100%);"></div>
+
+          <!-- Live pool activity stream: the focal "live" element. -->
+          <div class="mt-10">
+            <div class="flex items-baseline justify-between mb-5">
+              <div class="flex items-baseline gap-3">
+                <span class="text-[10.5px] uppercase tracking-[0.22em] font-mono text-white/55">Pool activity</span>
+                <span class="text-[11px] font-mono text-white/40">last hour</span>
               </div>
+              <span class="text-[10.5px] uppercase tracking-[0.22em] font-mono text-emerald-300/80 inline-flex items-center gap-1.5">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse-soft"></span>
+                streaming
+              </span>
             </div>
-            <div class="overflow-hidden">
-              <div class="warmup-feed-track">
-                {[...Array(2)].map(() => (
-                  <ul class="divide-y divide-white/5">
-                    {[
-                      { t: '00:00:04', kind: 'reply',  who: 'priya@stripe.com',   action: 'replied to thread',                       tone: 'emerald' },
-                      { t: '00:00:11', kind: 'send',   who: 'ben@mercury.com',    action: 'sent warmup',                              tone: 'sky'     },
-                      { t: '00:00:18', kind: 'rescue', who: 'lin@notion.so',      action: 'moved from spam to inbox',                tone: 'amber'   },
-                      { t: '00:00:24', kind: 'star',   who: 'amir@vercel.com',    action: 'starred thread',                           tone: 'sky'     },
-                      { t: '00:00:31', kind: 'send',   who: 'ari@linear.app',     action: 'sent warmup',                              tone: 'sky'     },
-                      { t: '00:00:38', kind: 'reply',  who: 'tom@plain.com',      action: 'replied to thread',                       tone: 'emerald' },
-                      { t: '00:00:45', kind: 'rescue', who: 'sasha@cal.com',      action: 'moved from spam to inbox',                tone: 'amber'   },
-                      { t: '00:00:52', kind: 'send',   who: 'kara@resend.com',    action: 'sent warmup',                              tone: 'sky'     },
-                    ].map((r) => (
-                      <li class="grid grid-cols-[64px_18px_minmax(0,1fr)_auto] gap-3 items-center px-5 md:px-7 py-2.5 text-[12.5px]">
-                        <span class="font-mono text-white/35 text-[11px] tabular-nums">{r.t}</span>
-                        <span class={`w-1.5 h-1.5 rounded-full justify-self-center ${r.tone === 'emerald' ? 'bg-emerald-400' : r.tone === 'amber' ? 'bg-amber-400' : 'bg-sky-400'}`}></span>
-                        <span class="text-white/85 truncate">
-                          <span class="font-mono text-white/95">{r.who}</span>
-                          <span class="text-white/55"> {r.action}</span>
-                        </span>
-                        <span class="text-[10px] uppercase tracking-[0.14em] font-mono text-white/40">{r.kind}</span>
-                      </li>
-                    ))}
-                  </ul>
+
+            <div class="grid lg:grid-cols-[1.6fr_1fr] gap-x-12 gap-y-8 items-start">
+              <!-- Scrolling feed -->
+              <div class="relative overflow-hidden h-[220px] md:h-[260px]" style="mask-image: linear-gradient(180deg, transparent 0%, black 10%, black 90%, transparent 100%); -webkit-mask-image: linear-gradient(180deg, transparent 0%, black 10%, black 90%, transparent 100%);">
+                <div class="warmup-feed-track">
+                  {[...Array(2)].map(() => (
+                    <ul>
+                      {[
+                        { t: '00:04', who: 'priya@stripe.com',   action: 'replied to thread',         kind: 'reply',  tone: 'emerald' },
+                        { t: '00:11', who: 'ben@mercury.com',    action: 'warmup sent',               kind: 'send',   tone: 'sky'     },
+                        { t: '00:18', who: 'lin@notion.so',      action: 'moved spam to inbox',       kind: 'rescue', tone: 'amber'   },
+                        { t: '00:24', who: 'amir@vercel.com',    action: 'starred thread',            kind: 'star',   tone: 'sky'     },
+                        { t: '00:31', who: 'ari@linear.app',     action: 'warmup sent',               kind: 'send',   tone: 'sky'     },
+                        { t: '00:38', who: 'tom@plain.com',      action: 'replied to thread',         kind: 'reply',  tone: 'emerald' },
+                        { t: '00:45', who: 'sasha@cal.com',      action: 'moved spam to inbox',       kind: 'rescue', tone: 'amber'   },
+                        { t: '00:52', who: 'kara@resend.com',    action: 'warmup sent',               kind: 'send',   tone: 'sky'     },
+                      ].map((r) => (
+                        <li class="grid grid-cols-[48px_14px_minmax(0,1fr)_auto] gap-3 items-center py-2 text-[13px]">
+                          <span class="font-mono text-white/40 text-[11px] tabular-nums">{r.t}</span>
+                          <span class={`w-1.5 h-1.5 rounded-full justify-self-center ${r.tone === 'emerald' ? 'bg-emerald-400' : r.tone === 'amber' ? 'bg-amber-400' : 'bg-sky-400'}`}></span>
+                          <span class="text-white/90 truncate">
+                            <span class="font-mono">{r.who}</span>
+                            <span class="text-white/55"> {r.action}</span>
+                          </span>
+                          <span class="text-[10.5px] uppercase tracking-[0.18em] font-mono text-white/40">{r.kind}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ))}
+                </div>
+              </div>
+
+              <!-- KPI column -->
+              <div class="grid grid-cols-2 gap-y-6 gap-x-6">
+                {[
+                  { k: 'Peers',     v: '142',    sub: 'active 24h' },
+                  { k: 'Replies',   v: '11',     sub: '34% rate' },
+                  { k: 'Inbox',     v: '96.4%',  sub: 'rolling 14d' },
+                  { k: 'Spam',      v: '1.8%',   sub: 'under 10%' },
+                ].map((s) => (
+                  <div>
+                    <div class="text-[10.5px] uppercase tracking-[0.22em] text-white/45 font-mono">{s.k}</div>
+                    <div class="mt-2 text-[28px] md:text-[32px] font-semibold tracking-[-0.025em] text-white leading-none tabular-nums">{s.v}</div>
+                    <div class="mt-1.5 text-[11px] text-white/45 font-mono">{s.sub}</div>
+                  </div>
                 ))}
               </div>
             </div>
+          </div>
 
-            <!-- Pool composition footer -->
-            <div class="border-t border-white/6 px-5 md:px-7 py-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11.5px]">
-              <span class="text-[10.5px] uppercase tracking-[0.18em] text-white/45 font-mono mr-2">Pool</span>
-              <span class="inline-flex items-center gap-1.5 text-white/75"><span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span>Gmail 46%</span>
-              <span class="inline-flex items-center gap-1.5 text-white/75"><span class="w-1.5 h-1.5 rounded-full bg-sky-400"></span>Outlook 24%</span>
-              <span class="inline-flex items-center gap-1.5 text-white/75"><span class="w-1.5 h-1.5 rounded-full bg-violet-400"></span>Yahoo 12%</span>
-              <span class="inline-flex items-center gap-1.5 text-white/75"><span class="w-1.5 h-1.5 rounded-full bg-zinc-400"></span>iCloud 9%</span>
-              <span class="inline-flex items-center gap-1.5 text-white/75"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>Self-IMAP 9%</span>
-            </div>
+          <!-- Pool composition strip, quiet, no box -->
+          <div class="mt-10 flex flex-wrap items-center gap-x-5 gap-y-2 text-[11.5px]">
+            <span class="text-[10.5px] uppercase tracking-[0.22em] text-white/45 font-mono mr-2">Pool</span>
+            <span class="inline-flex items-center gap-1.5 text-white/70"><span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span>Gmail <span class="font-mono text-white/45">46%</span></span>
+            <span class="inline-flex items-center gap-1.5 text-white/70"><span class="w-1.5 h-1.5 rounded-full bg-sky-400"></span>Outlook <span class="font-mono text-white/45">24%</span></span>
+            <span class="inline-flex items-center gap-1.5 text-white/70"><span class="w-1.5 h-1.5 rounded-full bg-violet-400"></span>Yahoo <span class="font-mono text-white/45">12%</span></span>
+            <span class="inline-flex items-center gap-1.5 text-white/70"><span class="w-1.5 h-1.5 rounded-full bg-zinc-300"></span>iCloud <span class="font-mono text-white/45">9%</span></span>
+            <span class="inline-flex items-center gap-1.5 text-white/70"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>Self-IMAP <span class="font-mono text-white/45">9%</span></span>
           </div>
         </div>
       </div>
