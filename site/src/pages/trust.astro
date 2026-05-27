@@ -44,7 +44,7 @@ const posture = [
   },
   {
     label: 'GDPR-aligned data handling',
-    note: 'DPA on request. Subprocessor notice via /subprocessors/.',
+    note: 'Plain-English privacy policy and data processing terms on request.',
     state: 'shipped',
   },
   {
@@ -107,7 +107,7 @@ const neverCollect = [
   'Cross-customer data sharing. Tenancy is enforced at the query layer.',
 ];
 
-// Subprocessor summary. Full list lives at /subprocessors/.
+// Subprocessor summary. The infrastructure Warmbly relies on to run.
 const subs = [
   { name: 'AWS',         use: 'Compute, KMS, DynamoDB, S3, MSK, RDS',     region: 'us-east-1, eu-west-1' },
   { name: 'Cloudflare',  use: 'Edge, DDoS, Turnstile CAPTCHA',            region: 'Global' },
@@ -196,7 +196,7 @@ const disclosure = [
       </p>
 
       <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
-        <a href="mailto:security@warmbly.com" class="inline-flex h-11 px-5 items-center gap-2 rounded-[10px] text-[14.5px] font-semibold bg-white hover:-translate-y-0.5 hover:shadow-[0_12px_28px_-6px_rgba(0,0,0,0.3)] transition-all duration-200 ease-out shadow-[0_4px_14px_-2px_rgba(0,0,0,0.18)]">
+        <a href="mailto:hello@warmbly.com" class="inline-flex h-11 px-5 items-center gap-2 rounded-[10px] text-[14.5px] font-semibold bg-white hover:-translate-y-0.5 hover:shadow-[0_12px_28px_-6px_rgba(0,0,0,0.3)] transition-all duration-200 ease-out shadow-[0_4px_14px_-2px_rgba(0,0,0,0.18)]">
           <span style="color:#075985;">Report a vulnerability</span>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#075985" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>
@@ -223,8 +223,8 @@ const disclosure = [
             <div class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">Posture</div>
             <div class="mt-0.5 text-[13px] text-slate-900 font-medium">What we have shipped, and what is on the roadmap.</div>
           </div>
-          <a href="/subprocessors/" class="ml-auto text-[12px] font-medium text-[color:var(--brand)] hover:text-[color:var(--brand-strong)] inline-flex items-center gap-1">
-            Subprocessors <Icon name="arrowUpRight" size={11} />
+          <a href="/changelog/" class="ml-auto text-[12px] font-medium text-[color:var(--brand)] hover:text-[color:var(--brand-strong)] inline-flex items-center gap-1">
+            Changelog <Icon name="arrowUpRight" size={11} />
           </a>
         </div>
 
@@ -462,12 +462,9 @@ const disclosure = [
           <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Subprocessors</div>
           <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.03em] leading-[1.05] text-heading">Who else touches your data.</h2>
           <p class="mt-4 text-[15px] text-foreground/75 leading-relaxed">
-            A short summary of the third parties Warmbly engages. The full list, with regions and country of processing, lives at /subprocessors/.
+            The infrastructure and operational providers Warmbly relies on to run.
           </p>
         </div>
-        <a href="/subprocessors/" class="inline-flex h-10 px-4 items-center gap-2 rounded-[10px] text-[13px] font-medium bg-white ring-1 ring-[color:var(--border)] text-heading hover:bg-[color:var(--surface-2)]">
-          Full subprocessor list <Icon name="arrowUpRight" size={12} />
-        </a>
       </div>
 
       <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden" style="box-shadow: var(--shadow-sm);">
@@ -502,7 +499,7 @@ const disclosure = [
           Found something. Tell us first.
         </h2>
         <p class="mt-4 text-[15px] text-foreground/75 leading-relaxed">
-          We welcome reports from security researchers and operators. Send a description, a proof of concept, and any logs to <span class="font-mono text-heading">security@warmbly.com</span>. We will acknowledge quickly, triage in the open, and keep you posted until the fix ships.
+          We welcome reports from security researchers and operators. Send a description, a proof of concept, and any logs to <span class="font-mono text-heading">hello@warmbly.com</span>. We will acknowledge quickly, triage in the open, and keep you posted until the fix ships.
         </p>
         <p class="mt-3 text-[14.5px] text-foreground/70 leading-relaxed">
           Please avoid testing that degrades service for other customers, accesses data that is not your own, or relies on social engineering of employees or contractors. Good faith research is welcome.
@@ -510,7 +507,7 @@ const disclosure = [
 
         <div class="mt-6 inline-flex items-center gap-2 px-3 py-2 rounded-[10px] bg-white ring-1 ring-[color:var(--border)]">
           <Icon name="mail" size={14} class="text-[color:var(--sky-5)]" />
-          <a href="mailto:security@warmbly.com" class="font-mono text-[13px] text-heading hover:text-[color:var(--brand-strong)]">security@warmbly.com</a>
+          <a href="mailto:hello@warmbly.com" class="font-mono text-[13px] text-heading hover:text-[color:var(--brand-strong)]">hello@warmbly.com</a>
         </div>
       </div>
 
@@ -561,11 +558,11 @@ const disclosure = [
 
   <CTA
     title="Want the full security package?"
-    description="DPA, security questionnaire, and architecture deep dive on request. Replies from a human within one business day."
-    primaryLabel="Email security@warmbly.com"
-    primaryHref="mailto:security@warmbly.com"
-    secondaryLabel="See subprocessors"
-    secondaryHref="/subprocessors/"
+    description="Data processing terms, security questionnaire, and architecture deep dive on request. Replies from a human within one business day."
+    primaryLabel="Email hello@warmbly.com"
+    primaryHref="mailto:hello@warmbly.com"
+    secondaryLabel="Read the privacy policy"
+    secondaryHref="/privacy/"
   />
 </Layout>
 </content>

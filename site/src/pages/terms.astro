@@ -1,421 +1,203 @@
 ---
-import Layout from '../layouts/Layout.astro';
-import HeroAtmosphere from '../components/HeroAtmosphere.astro';
-
-const lastUpdated = '2026-05-27';
-const effectiveFrom = '2026-05-27';
+import Legal from '../layouts/Legal.astro';
 
 const sections = [
-  { id: 'acceptance',       num: '01', label: 'Acceptance of terms' },
-  { id: 'definitions',      num: '02', label: 'Definitions' },
-  { id: 'account',          num: '03', label: 'Account registration and security' },
-  { id: 'acceptable-use',   num: '04', label: 'Acceptable use' },
-  { id: 'availability',     num: '05', label: 'Service availability and changes' },
-  { id: 'billing',          num: '06', label: 'Subscription, billing, refunds' },
-  { id: 'ip',               num: '07', label: 'Intellectual property' },
-  { id: 'user-content',     num: '08', label: 'User content and your data' },
-  { id: 'confidentiality',  num: '09', label: 'Confidentiality' },
-  { id: 'third-party',      num: '10', label: 'Third-party services' },
-  { id: 'disclaimers',      num: '11', label: 'Disclaimers' },
-  { id: 'liability',        num: '12', label: 'Limitation of liability' },
-  { id: 'indemnification',  num: '13', label: 'Indemnification' },
-  { id: 'termination',      num: '14', label: 'Termination' },
-  { id: 'governing-law',    num: '15', label: 'Governing law and jurisdiction' },
-  { id: 'changes',          num: '16', label: 'Changes to these terms' },
-  { id: 'contact',          num: '17', label: 'Contact' },
-];
-
-const legalDocs = [
-  { label: 'Terms of service',         href: '/terms/' },
-  { label: 'Privacy policy',           href: '/privacy/' },
-  { label: 'Acceptable use',           href: '/acceptable-use/' },
-  { label: 'Data processing addendum', href: '/dpa/' },
-  { label: 'Subprocessors',            href: '/subprocessors/' },
-  { label: 'Cookies',                  href: '/cookies/' },
+  { id: 'acceptance',         num: '01', title: 'Acceptance of terms' },
+  { id: 'who-we-are',         num: '02', title: 'Who we are' },
+  { id: 'definitions',        num: '03', title: 'Definitions' },
+  { id: 'account',            num: '04', title: 'Your account' },
+  { id: 'use',                num: '05', title: 'Acceptable use' },
+  { id: 'plans',              num: '06', title: 'Plans, billing, refunds' },
+  { id: 'service',            num: '07', title: 'Service availability' },
+  { id: 'data',               num: '08', title: 'Your content and data' },
+  { id: 'ip',                 num: '09', title: 'Intellectual property' },
+  { id: 'third-party',        num: '10', title: 'Third-party services' },
+  { id: 'warranties',         num: '11', title: 'Disclaimers' },
+  { id: 'liability',          num: '12', title: 'Limitation of liability' },
+  { id: 'indemnity',          num: '13', title: 'Indemnification' },
+  { id: 'termination',        num: '14', title: 'Termination' },
+  { id: 'law',                num: '15', title: 'Governing law' },
+  { id: 'changes',            num: '16', title: 'Changes to these terms' },
+  { id: 'contact',            num: '17', title: 'Contact' },
 ];
 ---
-<Layout
-  title="Terms of service · Warmbly"
-  description="The terms that govern your use of Warmbly. Plain English, scannable, with clearly numbered sections."
+<Legal
+  title="Terms of service"
+  description="The agreement between you and Mindroot Ltd, the company behind Warmbly."
+  effective="2026-05-27"
+  updated="2026-05-27"
+  sections={sections}
 >
-  <!-- ============================================================
-       HERO · HeroAtmosphere (shorter than product heroes)
-  ============================================================ -->
-  <section class="relative isolate overflow-hidden">
-    <HeroAtmosphere />
 
-    <div class="container-page relative pt-14 md:pt-20 pb-16 md:pb-20">
-      <div class="inline-flex items-center gap-2 h-7 pl-1 pr-3 rounded-full bg-white/15 backdrop-blur ring-1 ring-white/25 text-[12px] text-white/95 shadow-[0_4px_14px_-4px_rgba(0,0,0,0.25)]">
-        <span class="inline-flex items-center h-5 px-1.5 rounded-full text-[10.5px] font-semibold uppercase tracking-[0.06em] bg-white" style="color:#0369a1;">
-          Legal
-        </span>
-        The agreement between you and Warmbly
-      </div>
+<section id="acceptance" class="scroll-mt-24">
+  <h2>01. Acceptance of terms</h2>
+  <p>
+    These terms of service (the "Terms") govern your access to and use of Warmbly, an open-source cold outreach and email warmup platform operated by Mindroot Ltd. By creating an account, accessing the service, or using the platform in any way, you agree to be bound by these Terms. If you do not agree, do not use the service.
+  </p>
+  <p>
+    If you are using the service on behalf of an organisation, you confirm that you have authority to bind that organisation, and "you" in these Terms refers to both you and that organisation.
+  </p>
+</section>
 
-      <h1 class="mt-6 md:mt-8 text-[40px] sm:text-5xl md:text-[60px] font-semibold tracking-[-0.035em] leading-[1.02] text-white max-w-3xl">
-        Terms of service.
-      </h1>
+<section id="who-we-are" class="scroll-mt-24">
+  <h2>02. Who we are</h2>
+  <p>
+    Warmbly is operated by Mindroot Ltd, a company registered in England and Wales with company number 16543299. Our registered office is at 71-75 Shelton Street, London, England, WC2H 9JQ.
+  </p>
+  <p>
+    You can reach us at <a href="mailto:hello@warmbly.com">hello@warmbly.com</a> for any matter arising under these Terms.
+  </p>
+</section>
 
-      <p class="mt-5 text-[16px] md:text-[17px] text-white/80 max-w-2xl leading-relaxed">
-        These terms govern how you use Warmbly. We have written them in plain English so you can read them in one sitting. Read them.
-      </p>
+<section id="definitions" class="scroll-mt-24">
+  <h2>03. Definitions</h2>
+  <ul>
+    <li><strong>Service</strong> means the Warmbly platform, including the web application, APIs, workers, and any related software or content we make available.</li>
+    <li><strong>Account</strong> means the credentials and workspace associated with your use of the Service.</li>
+    <li><strong>Customer content</strong> means recipients, message bodies, contact lists, and other data you upload, send, or generate through the Service.</li>
+    <li><strong>Connected mailbox</strong> means any email account you connect to Warmbly for sending, syncing, or warmup.</li>
+  </ul>
+</section>
 
-      <div class="mt-8 flex flex-wrap items-center gap-x-6 gap-y-3 text-[12.5px] font-mono text-white/85">
-        <div class="flex items-center gap-2">
-          <span class="inline-flex h-1.5 w-1.5 rounded-full bg-white/80"></span>
-          <span class="uppercase tracking-[0.14em] text-white/55">Last updated</span>
-          <span class="text-white">{lastUpdated}</span>
-        </div>
-        <div class="flex items-center gap-2">
-          <span class="inline-flex h-1.5 w-1.5 rounded-full bg-white/80"></span>
-          <span class="uppercase tracking-[0.14em] text-white/55">Effective from</span>
-          <span class="text-white">{effectiveFrom}</span>
-        </div>
-      </div>
-    </div>
-  </section>
+<section id="account" class="scroll-mt-24">
+  <h2>04. Your account</h2>
+  <p>
+    You are responsible for keeping your login credentials confidential and for all activity that happens under your account. You must provide accurate registration information, keep it up to date, and notify us promptly if you suspect unauthorised access.
+  </p>
+  <p>
+    You may not share an account across multiple individuals. Each named user in your workspace must use their own credentials.
+  </p>
+</section>
 
-  <!-- ============================================================
-       BODY · Sticky sidebar TOC + numbered sections
-  ============================================================ -->
-  <section class="relative bg-white">
-    <div class="container-page py-14 md:py-20">
-      <div class="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-14">
+<section id="use" class="scroll-mt-24">
+  <h2>05. Acceptable use</h2>
+  <p>
+    Warmbly is built for legitimate business-to-business cold outreach, mailbox warmup, and reply handling. You agree to use the Service in compliance with all applicable laws, including but not limited to GDPR, CAN-SPAM, CASL, and ePrivacy where they apply to you.
+  </p>
+  <p>You agree not to use the Service to:</p>
+  <ul>
+    <li>Send unlawful, harassing, defamatory, or fraudulent content.</li>
+    <li>Send unsolicited commercial email to consumer addresses or to addresses sourced from purchased or scraped lists without lawful basis.</li>
+    <li>Impersonate any person or organisation, including impersonating Warmbly or Mindroot Ltd.</li>
+    <li>Distribute malware, phishing content, sextortion, romance scams, crypto pump-and-dump schemes, multi-level marketing recruitment, or content sexualising minors.</li>
+    <li>Probe, scan, or test the vulnerability of the Service, or attempt to bypass authentication or rate limits.</li>
+    <li>Use the Service to coordinate distributed bulk sending across accounts you do not control, or to circumvent per-mailbox sending budgets, warmup pool safety controls, or suppression rules.</li>
+    <li>Forge warmup verification tokens, abuse the shared warmup pool, or otherwise undermine pool integrity.</li>
+  </ul>
+  <p>
+    We may suspend, throttle, quarantine, or terminate accounts that breach these rules. We may also remove or block any content or sending activity that we reasonably believe violates them.
+  </p>
+</section>
 
-        <!-- Sticky sidebar TOC -->
-        <aside class="lg:col-span-3 print:hidden">
-          <div class="lg:sticky lg:top-24">
+<section id="plans" class="scroll-mt-24">
+  <h2>06. Plans, billing, and refunds</h2>
+  <p>
+    Paid plans are billed in advance on a recurring basis through Stripe. Fees, included usage, and billing cadence are shown on the pricing page and reflected in your invoice at the time of purchase.
+  </p>
+  <p>
+    Subscriptions renew automatically until cancelled. You can cancel at any time from the billing area of your workspace, and your plan will remain active until the end of the current billing period. Except where required by law, fees already paid are non-refundable.
+  </p>
+  <p>
+    We may change pricing, plans, or feature inclusions with reasonable notice. Continued use of the Service after the effective date of a price change constitutes acceptance of the new price.
+  </p>
+</section>
 
-            <div class="text-[10.5px] uppercase tracking-[0.18em] font-mono text-muted-foreground mb-3">
-              On this page
-            </div>
+<section id="service" class="scroll-mt-24">
+  <h2>07. Service availability and changes</h2>
+  <p>
+    We work hard to keep Warmbly available and reliable, but the Service is provided without uptime guarantees beyond what is described in any separate service-level agreement we agree with you in writing.
+  </p>
+  <p>
+    We may add, modify, or discontinue features. If we materially reduce a paid feature you depend on, we will give reasonable notice and offer a prorated refund where appropriate.
+  </p>
+</section>
 
-            <nav aria-label="Table of contents" class="border-l border-[color:var(--border)]">
-              <ul class="space-y-0.5">
-                {sections.map((s) => (
-                  <li>
-                    <a
-                      href={`#${s.id}`}
-                      class="group flex items-baseline gap-3 -ml-px pl-4 pr-2 py-1.5 border-l border-transparent hover:border-[color:var(--brand)] hover:bg-[color:var(--surface-2)]/60 transition-colors rounded-r-md"
-                    >
-                      <span class="text-[10.5px] font-mono text-muted-foreground/70 group-hover:text-[color:var(--brand)] tabular-nums">{s.num}</span>
-                      <span class="text-[13px] text-foreground/80 group-hover:text-[color:var(--brand-strong)] leading-snug">{s.label}</span>
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </nav>
+<section id="data" class="scroll-mt-24">
+  <h2>08. Your content and data</h2>
+  <p>
+    You retain ownership of Customer content. You grant us a limited, non-exclusive licence to host, process, transmit, and display that content solely to operate the Service for you, to enforce these Terms, and to comply with law.
+  </p>
+  <p>
+    For details on what we collect, why, and how it is protected, see our <a href="/privacy/">privacy policy</a>. Sensitive credentials, including OAuth tokens and mailbox passwords, are encrypted at the application layer using envelope encryption.
+  </p>
+</section>
 
-            <div class="mt-8 pt-6 border-t border-[color:var(--border)]">
-              <div class="text-[10.5px] uppercase tracking-[0.18em] font-mono text-muted-foreground mb-3">
-                Related
-              </div>
-              <ul class="space-y-1">
-                {legalDocs.map((d) => (
-                  <li>
-                    <a
-                      href={d.href}
-                      class={
-                        'block text-[13px] py-1 rounded-md transition-colors ' +
-                        (d.href === '/terms/'
-                          ? 'text-foreground font-medium'
-                          : 'text-muted-foreground hover:text-[color:var(--brand-strong)]')
-                      }
-                    >
-                      {d.label}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </div>
+<section id="ip" class="scroll-mt-24">
+  <h2>09. Intellectual property</h2>
+  <p>
+    Warmbly and Mindroot Ltd retain all rights in the Service, including the brand, the trademarks, the visual identity, the documentation, and the proprietary parts of the platform. Open-source components are licensed under their respective licences and are not subject to this clause.
+  </p>
+  <p>
+    Nothing in these Terms transfers any of your intellectual property to us, except for the limited operational licence in Section 08.
+  </p>
+</section>
 
-          </div>
-        </aside>
+<section id="third-party" class="scroll-mt-24">
+  <h2>10. Third-party services</h2>
+  <p>
+    Warmbly integrates with third-party services, including email providers, OAuth identity providers, payment processors such as Stripe, and infrastructure providers. Your use of those third-party services is governed by their own terms, and we are not responsible for their availability, content, or actions.
+  </p>
+</section>
 
-        <!-- Main content column -->
-        <article class="lg:col-span-9 max-w-3xl">
+<section id="warranties" class="scroll-mt-24">
+  <h2>11. Disclaimers</h2>
+  <p>
+    Except where prohibited by mandatory law, the Service is provided on an "as is" and "as available" basis without warranties of any kind, whether express or implied, including warranties of merchantability, fitness for a particular purpose, non-infringement, accuracy, or uninterrupted operation.
+  </p>
+  <p>
+    Email deliverability is influenced by many factors outside our control, including the behaviour of recipients, mailbox providers, blocklists, and your own sending practices. We make no guarantee that any specific email will reach a recipient's inbox.
+  </p>
+</section>
 
-          <!-- Intro card -->
-          <div class="rounded-[14px] bg-[color:var(--surface-2)] ring-1 ring-[color:var(--border)] p-6 md:p-7 mb-12 print:bg-white print:ring-0 print:p-0 print:mb-8">
-            <div class="text-[10.5px] uppercase tracking-[0.18em] font-mono text-[color:var(--brand-strong)] mb-2">
-              Summary
-            </div>
-            <p class="text-[15px] leading-relaxed text-foreground/85">
-              Warmbly is a software service. You bring your mailboxes, your contacts, and your campaigns. We run the infrastructure that warms inboxes, sends mail, and reports on what happened. You agree not to use Warmbly for spam or anything illegal. We agree to keep the lights on, treat your data with care, and tell you before we change anything important.
-            </p>
-          </div>
+<section id="liability" class="scroll-mt-24">
+  <h2>12. Limitation of liability</h2>
+  <p>
+    To the maximum extent permitted by law, neither party will be liable to the other for any indirect, incidental, special, consequential, or punitive damages, or for any loss of profits, revenue, goodwill, or data, even if advised of the possibility of such damages.
+  </p>
+  <p>
+    Each party's total aggregate liability arising out of or relating to these Terms, whether in contract, tort, or otherwise, is limited to the fees you actually paid to Warmbly for the Service during the twelve months preceding the event giving rise to the claim.
+  </p>
+  <p>
+    Nothing in these Terms limits liability for fraud, gross negligence, or for any liability that cannot lawfully be limited.
+  </p>
+</section>
 
-          <!-- Reusable type rules for all sections -->
-          <div class="
-            [&_h2]:scroll-mt-28 [&_h2]:text-[24px] [&_h2]:md:text-[28px] [&_h2]:font-semibold [&_h2]:tracking-[-0.022em] [&_h2]:text-heading [&_h2]:mt-14 [&_h2]:mb-4 [&_h2]:first:mt-0 [&_h2]:flex [&_h2]:items-baseline [&_h2]:gap-3
-            [&_h3]:text-[15.5px] [&_h3]:font-semibold [&_h3]:tracking-[-0.01em] [&_h3]:text-heading [&_h3]:mt-7 [&_h3]:mb-2
-            [&_p]:text-[15px] [&_p]:leading-[1.7] [&_p]:text-foreground/85 [&_p]:mt-3
-            [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:mt-3 [&_ul]:space-y-1.5 [&_ul]:text-[14.5px] [&_ul]:text-foreground/85
-            [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:mt-3 [&_ol]:space-y-1.5 [&_ol]:text-[14.5px] [&_ol]:text-foreground/85
-            [&_a]:text-[color:var(--brand)] [&_a]:underline [&_a]:underline-offset-[3px] [&_a]:decoration-[color:var(--brand)]/30 hover:[&_a]:decoration-[color:var(--brand)] hover:[&_a]:text-[color:var(--brand-strong)]
-            [&_code]:font-mono [&_code]:text-[0.92em] [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded [&_code]:bg-[color:var(--surface-2)] [&_code]:ring-1 [&_code]:ring-[color:var(--border)]
-          ">
+<section id="indemnity" class="scroll-mt-24">
+  <h2>13. Indemnification</h2>
+  <p>
+    You agree to defend, indemnify, and hold harmless Mindroot Ltd, its officers, employees, and affiliates from and against any claims, damages, liabilities, and reasonable legal costs arising from your Customer content, your use of the Service in breach of these Terms, or your violation of any law or third-party right.
+  </p>
+</section>
 
-            <!-- 01 Acceptance -->
-            <h2 id="acceptance">
-              <span class="font-mono text-[14px] text-muted-foreground tabular-nums pt-1">01</span>
-              <span>Acceptance of terms</span>
-            </h2>
-            <p>
-              These Terms of Service ("Terms") form a binding agreement between you and Warmbly ("Warmbly", "we", "us"). By creating an account, signing in, or using any part of the Warmbly platform, websites, APIs, dashboards, or worker software (together, the "Service"), you agree to these Terms.
-            </p>
-            <p>
-              If you are accepting on behalf of a company, you confirm that you have authority to bind that company, and "you" then refers to that company. If you do not agree to these Terms, do not use the Service.
-            </p>
-            <p>
-              You must be at least 18 years old and legally able to enter into a contract.
-            </p>
+<section id="termination" class="scroll-mt-24">
+  <h2>14. Termination</h2>
+  <p>
+    You may cancel your account at any time from the billing area of your workspace. We may suspend or terminate your access if you breach these Terms, if your use of the Service creates a security or deliverability risk to other users, or if we are required to do so by law.
+  </p>
+  <p>
+    On termination, your right to use the Service ends immediately. We will retain or delete Customer content as described in our <a href="/privacy/">privacy policy</a>.
+  </p>
+</section>
 
-            <!-- 02 Definitions -->
-            <h2 id="definitions">
-              <span class="font-mono text-[14px] text-muted-foreground tabular-nums pt-1">02</span>
-              <span>Definitions</span>
-            </h2>
-            <ul>
-              <li><strong class="text-heading font-semibold">Account</strong>. The login and workspace you create on Warmbly.</li>
-              <li><strong class="text-heading font-semibold">Service</strong>. The hosted Warmbly product, including the dashboard, API, worker software, and supporting infrastructure.</li>
-              <li><strong class="text-heading font-semibold">Customer content</strong>. The data you upload or connect, such as contacts, mailbox credentials, campaigns, replies, and message bodies.</li>
-              <li><strong class="text-heading font-semibold">Subscription</strong>. A paid plan billed on a recurring basis through our payment processor.</li>
-              <li><strong class="text-heading font-semibold">Mailbox</strong>. An email account you connect to Warmbly for warmup or sending.</li>
-            </ul>
+<section id="law" class="scroll-mt-24">
+  <h2>15. Governing law and jurisdiction</h2>
+  <p>
+    These Terms are governed by and construed in accordance with the laws of England and Wales. You and Mindroot Ltd agree to submit to the exclusive jurisdiction of the courts of London, United Kingdom, for any dispute arising out of or relating to these Terms or your use of the Service.
+  </p>
+</section>
 
-            <!-- 03 Account -->
-            <h2 id="account">
-              <span class="font-mono text-[14px] text-muted-foreground tabular-nums pt-1">03</span>
-              <span>Account registration and security</span>
-            </h2>
-            <p>
-              You agree to provide accurate information when you register, and to keep that information current. You are responsible for everything that happens under your account, including actions taken by team members or API clients you authorize.
-            </p>
-            <p>
-              You agree to protect your credentials, use a strong password, and enable available account-security features. Notify us promptly at <a href="mailto:security@warmbly.com">security@warmbly.com</a> if you suspect unauthorized access.
-            </p>
-            <p>
-              We may suspend access to your account if we reasonably believe it has been compromised, until you can confirm it is secure.
-            </p>
+<section id="changes" class="scroll-mt-24">
+  <h2>16. Changes to these terms</h2>
+  <p>
+    We may update these Terms from time to time. If we make material changes, we will notify you by email or through the Service before the changes take effect. Your continued use of the Service after the effective date constitutes acceptance of the updated Terms.
+  </p>
+</section>
 
-            <!-- 04 Acceptable use -->
-            <h2 id="acceptable-use">
-              <span class="font-mono text-[14px] text-muted-foreground tabular-nums pt-1">04</span>
-              <span>Acceptable use</span>
-            </h2>
-            <p>
-              Your use of the Service must follow our <a href="/acceptable-use/">Acceptable Use Policy</a>. In short, do not use Warmbly to send unsolicited bulk mail outside what is permitted by the law in the relevant jurisdiction, do not forge sender identity, do not attempt to bypass authentication, and do not send content that is fraudulent, deceptive, or illegal.
-            </p>
-            <p>
-              You are also responsible for keeping your sender domain configured correctly, including SPF, DKIM, and DMARC alignment where relevant.
-            </p>
-            <p>
-              We may remove content, throttle traffic, or suspend the account if your use threatens the platform's shared infrastructure or recipient trust. Where it is reasonable, we will tell you what is wrong and give you a chance to fix it before we act.
-            </p>
+<section id="contact" class="scroll-mt-24">
+  <h2>17. Contact</h2>
+  <p>
+    Questions or concerns about these Terms can be sent to <a href="mailto:hello@warmbly.com">hello@warmbly.com</a> or by post to Mindroot Ltd, 71-75 Shelton Street, London, England, WC2H 9JQ.
+  </p>
+</section>
 
-            <!-- 05 Service availability -->
-            <h2 id="availability">
-              <span class="font-mono text-[14px] text-muted-foreground tabular-nums pt-1">05</span>
-              <span>Service availability and changes</span>
-            </h2>
-            <p>
-              We work to keep the Service available, but we do not guarantee uninterrupted access. Maintenance windows, third-party outages, and unexpected incidents will happen. We try to communicate planned downtime in advance through the status page or in-app notice.
-            </p>
-            <p>
-              We may add, change, deprecate, or remove features over time. If a change materially reduces functionality you depend on, we will give reasonable notice through email or an in-app notice before the change takes effect.
-            </p>
-
-            <!-- 06 Billing -->
-            <h2 id="billing">
-              <span class="font-mono text-[14px] text-muted-foreground tabular-nums pt-1">06</span>
-              <span>Subscription, billing, refunds</span>
-            </h2>
-            <h3>Subscriptions</h3>
-            <p>
-              Paid plans are billed in advance on a recurring basis (monthly or annual, depending on the plan you choose). Subscriptions automatically renew at the end of each billing period until you cancel.
-            </p>
-            <h3>Payment processor</h3>
-            <p>
-              Payments are processed by Stripe. By providing a payment method, you authorize us, through Stripe, to charge the fees due for your plan. We do not store full card numbers. The complete list of providers that handle data on our behalf is at <a href="/subprocessors/">/subprocessors</a>.
-            </p>
-            <h3>Cancellation</h3>
-            <p>
-              You can cancel at any time from the dashboard. Cancellation takes effect at the end of the current billing period. You keep access to the paid plan until then.
-            </p>
-            <h3>Refunds</h3>
-            <p>
-              We offer a 14-day refund on a new paid subscription if the Service has not worked for you. After 14 days, fees are non-refundable except where required by law. Usage-based or overage charges are not refundable.
-            </p>
-            <h3>Taxes</h3>
-            <p>
-              Prices do not include taxes unless stated. You are responsible for any sales tax, VAT, GST, or similar charges, except for taxes based on our net income.
-            </p>
-
-            <!-- 07 IP -->
-            <h2 id="ip">
-              <span class="font-mono text-[14px] text-muted-foreground tabular-nums pt-1">07</span>
-              <span>Intellectual property</span>
-            </h2>
-            <p>
-              Warmbly and its licensors own the Service, including its software, design, documentation, trademarks, and the trademarks "Warmbly" and the Warmbly logo. We grant you a limited, non-exclusive, non-transferable, revocable right to access and use the Service during the term of your subscription.
-            </p>
-            <p>
-              You are not granted any other rights, including the right to copy, redistribute, sublicense, or create derivative works from the Service, except where permitted by an open-source license that applies to a specific component.
-            </p>
-            <p>
-              If you send us feedback or suggestions, you grant us a perpetual, worldwide, royalty-free right to use that feedback to improve the Service. We will not identify you as the source without your permission.
-            </p>
-
-            <!-- 08 User content -->
-            <h2 id="user-content">
-              <span class="font-mono text-[14px] text-muted-foreground tabular-nums pt-1">08</span>
-              <span>User content and your data</span>
-            </h2>
-            <p>
-              You retain all rights in your customer content. You grant Warmbly a limited license to host, transmit, process, and store that content as needed to deliver the Service, support your account, prevent abuse, and meet our legal obligations.
-            </p>
-            <p>
-              You confirm that you have the right to use the customer content you upload (including contact lists), that recipients are in scope for the law that applies to your sending, and that you will honor opt-outs and unsubscribe requests promptly.
-            </p>
-            <p>
-              How we handle personal data is explained in our <a href="/privacy/">Privacy Policy</a>. If you are a controller of personal data processed through the Service, our <a href="/dpa/">Data Processing Addendum</a> applies.
-            </p>
-
-            <!-- 09 Confidentiality -->
-            <h2 id="confidentiality">
-              <span class="font-mono text-[14px] text-muted-foreground tabular-nums pt-1">09</span>
-              <span>Confidentiality</span>
-            </h2>
-            <p>
-              Each party may receive information from the other that is marked confidential, or that a reasonable person would treat as confidential. Each party will protect the other's confidential information with the same care it uses for its own, and will not disclose it except as needed to perform under these Terms or as required by law.
-            </p>
-            <p>
-              Confidential information does not include information that is public through no fault of the receiving party, that the receiving party already had without confidentiality obligations, or that is independently developed.
-            </p>
-
-            <!-- 10 Third party -->
-            <h2 id="third-party">
-              <span class="font-mono text-[14px] text-muted-foreground tabular-nums pt-1">10</span>
-              <span>Third-party services</span>
-            </h2>
-            <p>
-              The Service connects to third-party providers, such as email providers (Google, Microsoft, custom SMTP), payment processors, and analytics platforms. Your use of those providers is governed by their own terms and policies, which you accept when you connect them.
-            </p>
-            <p>
-              We are not responsible for the availability, accuracy, or behavior of third-party services. If a third-party provider changes its API or pricing, we will adapt as quickly as we reasonably can.
-            </p>
-
-            <!-- 11 Disclaimers -->
-            <h2 id="disclaimers">
-              <span class="font-mono text-[14px] text-muted-foreground tabular-nums pt-1">11</span>
-              <span>Disclaimers</span>
-            </h2>
-            <p>
-              The Service is provided "as is" and "as available". To the maximum extent permitted by law, Warmbly disclaims all warranties, express or implied, including warranties of merchantability, fitness for a particular purpose, non-infringement, and any warranty that arises from a course of dealing or usage of trade.
-            </p>
-            <p>
-              We do not guarantee a specific deliverability outcome, inbox placement rate, reply rate, or revenue result. Email deliverability depends on authentication, content, recipient behavior, and provider-side reputation, much of which is outside our direct control.
-            </p>
-            <p>
-              Nothing in these Terms limits any warranty or right that cannot be limited under applicable law.
-            </p>
-
-            <!-- 12 Liability -->
-            <h2 id="liability">
-              <span class="font-mono text-[14px] text-muted-foreground tabular-nums pt-1">12</span>
-              <span>Limitation of liability</span>
-            </h2>
-            <p>
-              To the maximum extent permitted by law, Warmbly's total liability for any claim arising out of or related to these Terms or the Service will not exceed the fees you paid to Warmbly in the 12 months before the event that gave rise to the claim.
-            </p>
-            <p>
-              Neither party will be liable for indirect, incidental, consequential, special, exemplary, or punitive damages, or for loss of profits, revenue, goodwill, or data, even if advised of the possibility.
-            </p>
-            <p>
-              These limits do not apply to liability that cannot be limited under applicable law, including liability for gross negligence or willful misconduct where the law does not allow exclusion.
-            </p>
-
-            <!-- 13 Indemnification -->
-            <h2 id="indemnification">
-              <span class="font-mono text-[14px] text-muted-foreground tabular-nums pt-1">13</span>
-              <span>Indemnification</span>
-            </h2>
-            <p>
-              You agree to defend, indemnify, and hold harmless Warmbly, its affiliates, and its employees from any third-party claim, loss, or expense (including reasonable legal fees) arising from your customer content, your use of the Service in breach of these Terms, or your violation of applicable law.
-            </p>
-            <p>
-              We will tell you promptly about any claim, give you reasonable control of the defense, and cooperate with you at your expense. You may not settle a claim that imposes any obligation on us without our prior written consent.
-            </p>
-
-            <!-- 14 Termination -->
-            <h2 id="termination">
-              <span class="font-mono text-[14px] text-muted-foreground tabular-nums pt-1">14</span>
-              <span>Termination</span>
-            </h2>
-            <p>
-              You may stop using the Service at any time and cancel your subscription from the dashboard.
-            </p>
-            <p>
-              We may suspend or terminate your access if you breach these Terms or the Acceptable Use Policy, if your use generates complaint, bounce, or abuse signals that threaten the platform's shared infrastructure, or if we are required to do so by law. Where it is reasonable, we will tell you the reason and give you a chance to fix it first.
-            </p>
-            <p>
-              On termination, your right to use the Service ends. We will keep customer content for a reasonable wind-down period (typically up to 30 days) so you can export it, after which we may delete it. Provisions that by their nature should survive termination will survive, including the sections on intellectual property, confidentiality, disclaimers, limitation of liability, indemnification, and governing law.
-            </p>
-
-            <!-- 15 Governing law -->
-            <h2 id="governing-law">
-              <span class="font-mono text-[14px] text-muted-foreground tabular-nums pt-1">15</span>
-              <span>Governing law and jurisdiction</span>
-            </h2>
-            <p>
-              These Terms are governed by the laws of the jurisdiction of Warmbly's principal place of business, without regard to its conflict-of-laws rules. The courts located in that jurisdiction have exclusive jurisdiction over any dispute arising out of or related to these Terms or the Service, except where local consumer-protection law gives you the right to bring a claim in your own jurisdiction.
-            </p>
-            <p>
-              Nothing in this section limits either party's right to seek injunctive relief in any court of competent jurisdiction to protect intellectual-property or confidential information.
-            </p>
-
-            <!-- 16 Changes -->
-            <h2 id="changes">
-              <span class="font-mono text-[14px] text-muted-foreground tabular-nums pt-1">16</span>
-              <span>Changes to these terms</span>
-            </h2>
-            <p>
-              We may update these Terms over time. When we make a material change, we will give at least 30 days notice through email or an in-app notice before the change takes effect. The "Last updated" date at the top of this page always reflects the most recent version.
-            </p>
-            <p>
-              If you keep using the Service after the change takes effect, you accept the updated Terms. If you do not agree, you can stop using the Service and cancel your subscription before the effective date.
-            </p>
-
-            <!-- 17 Contact -->
-            <h2 id="contact">
-              <span class="font-mono text-[14px] text-muted-foreground tabular-nums pt-1">17</span>
-              <span>Contact</span>
-            </h2>
-            <p>
-              Questions about these Terms? Email <a href="mailto:legal@warmbly.com">legal@warmbly.com</a> and we will get back to you.
-            </p>
-          </div>
-
-          <!-- Footer note -->
-          <div class="mt-16 pt-6 border-t border-[color:var(--border)] flex flex-wrap items-baseline justify-between gap-3 text-[12.5px] text-muted-foreground">
-            <div>
-              Last updated <span class="font-mono text-foreground/80">{lastUpdated}</span>. Effective <span class="font-mono text-foreground/80">{effectiveFrom}</span>.
-            </div>
-            <a href="#" class="text-[color:var(--brand)] hover:text-[color:var(--brand-strong)] print:hidden">Back to top</a>
-          </div>
-
-        </article>
-      </div>
-    </div>
-  </section>
-
-  <style>
-    @media print {
-      aside { display: none !important; }
-      section { padding: 0 !important; }
-      h2 { break-after: avoid; page-break-after: avoid; }
-      p, li { orphans: 3; widows: 3; }
-    }
-  </style>
-</Layout>
+</Legal>

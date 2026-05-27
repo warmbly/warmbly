@@ -1,473 +1,163 @@
 ---
-import Layout from '../layouts/Layout.astro';
-import HeroAtmosphere from '../components/HeroAtmosphere.astro';
-
-const lastUpdated = '2026-05-27';
+import Legal from '../layouts/Legal.astro';
 
 const sections = [
-  { id: 'who-we-are',          n: '01', label: 'Who we are' },
-  { id: 'data-we-collect',     n: '02', label: 'Data we collect' },
-  { id: 'how-we-use-data',     n: '03', label: 'How we use your data' },
-  { id: 'legal-bases',         n: '04', label: 'Legal bases' },
-  { id: 'encryption-storage',  n: '05', label: 'Encryption and storage' },
-  { id: 'subprocessors',       n: '06', label: 'Subprocessors' },
-  { id: 'retention',           n: '07', label: 'Data retention' },
-  { id: 'your-rights',         n: '08', label: 'Your rights' },
-  { id: 'international',       n: '09', label: 'International transfers' },
-  { id: 'cookies',             n: '10', label: 'Cookies' },
-  { id: 'children',            n: '11', label: "Children's data" },
-  { id: 'changes',             n: '12', label: 'Changes to this policy' },
-  { id: 'contact',             n: '13', label: 'Contact' },
+  { id: 'who',          num: '01', title: 'Who we are' },
+  { id: 'scope',        num: '02', title: 'Scope of this policy' },
+  { id: 'data',         num: '03', title: 'Data we collect' },
+  { id: 'use',          num: '04', title: 'How we use your data' },
+  { id: 'legal-basis',  num: '05', title: 'Legal bases' },
+  { id: 'encryption',   num: '06', title: 'Encryption and storage' },
+  { id: 'sharing',      num: '07', title: 'Sharing with third parties' },
+  { id: 'retention',    num: '08', title: 'Data retention' },
+  { id: 'rights',       num: '09', title: 'Your rights' },
+  { id: 'transfers',    num: '10', title: 'International transfers' },
+  { id: 'children',     num: '11', title: 'Children' },
+  { id: 'changes',      num: '12', title: 'Changes to this policy' },
+  { id: 'contact',      num: '13', title: 'Contact' },
 ];
-
-const docs = [
-  { label: 'Terms of Service',         href: '/terms/' },
-  { label: 'Privacy Policy',           href: '/privacy/' },
-  { label: 'Data Processing Addendum', href: '/dpa/' },
-  { label: 'Acceptable Use',           href: '/acceptable-use/' },
-  { label: 'Subprocessors',            href: '/subprocessors/' },
-  { label: 'Cookies',                  href: '/cookies/' },
-];
-
-const path = Astro.url.pathname;
 ---
-<Layout
-  title="Privacy Policy · Warmbly"
-  description="What data Warmbly collects, why we collect it, where we store it, and the controls you have over your information."
+<Legal
+  title="Privacy policy"
+  description="What Warmbly collects, why, how it is protected, and the choices you have."
+  effective="2026-05-27"
+  updated="2026-05-27"
+  sections={sections}
 >
-  <!-- ============================================================
-       HERO · HeroAtmosphere (shared)
-  ============================================================ -->
-  <section class="relative isolate overflow-hidden print:hidden">
-    <HeroAtmosphere />
 
-    <div class="container-page relative pt-14 md:pt-20 pb-28 md:pb-36">
-      <div class="inline-flex items-center gap-2 h-7 pl-1 pr-3 rounded-full bg-white/15 backdrop-blur ring-1 ring-white/25 text-[12px] text-white/95 shadow-[0_4px_14px_-4px_rgba(0,0,0,0.25)]">
-        <span class="inline-flex items-center h-5 px-1.5 rounded-full text-[10.5px] font-semibold uppercase tracking-[0.06em] bg-white" style="color:#0369a1;">
-          Legal
-        </span>
-        Privacy Policy
-      </div>
+<section id="who" class="scroll-mt-24">
+  <h2>01. Who we are</h2>
+  <p>
+    Warmbly is operated by Mindroot Ltd, a company registered in England and Wales with company number 16543299. Our registered office is at 71-75 Shelton Street, London, England, WC2H 9JQ. We are the data controller for the personal data we collect about you as a user of Warmbly.
+  </p>
+  <p>
+    For your customers' data that you process through Warmbly, you are the controller and we act as a processor on your behalf, governed by the data processing terms we agree with you.
+  </p>
+</section>
 
-      <h1 class="mt-7 md:mt-9 text-[44px] sm:text-6xl md:text-[72px] font-semibold tracking-[-0.04em] leading-[0.98] text-white max-w-3xl">
-        Privacy.
-      </h1>
+<section id="scope" class="scroll-mt-24">
+  <h2>02. Scope of this policy</h2>
+  <p>
+    This policy describes how Mindroot Ltd handles personal data through the Warmbly platform, including the marketing website, the web application, the APIs, the workers, and any related services. It does not cover third-party services that you connect to Warmbly, which are governed by their own privacy policies.
+  </p>
+</section>
 
-      <p class="mt-6 text-[17px] md:text-[19px] text-white/80 max-w-2xl leading-relaxed">
-        What we collect, why we need it, where it lives, and what you can ask us to do with it. Plain English, no dark patterns.
-      </p>
+<section id="data" class="scroll-mt-24">
+  <h2>03. Data we collect</h2>
+  <h3>Account data</h3>
+  <ul>
+    <li>Name and email address you sign up with.</li>
+    <li>Workspace name and role assignments.</li>
+    <li>Billing identifiers provided by our payment processor Stripe. We do not see or store full card numbers.</li>
+  </ul>
+  <h3>Mailbox data</h3>
+  <ul>
+    <li>OAuth refresh and access tokens, or encrypted IMAP and SMTP credentials, for mailboxes you connect.</li>
+    <li>Mailbox metadata such as folder structure, authentication status, and sender identity.</li>
+  </ul>
+  <h3>Message data</h3>
+  <ul>
+    <li>Cold outreach messages, warmup messages, and replies that pass through Warmbly.</li>
+    <li>Recipient addresses and contact records you upload or import.</li>
+    <li>Tracking events such as opens, clicks, bounces, complaints, and unsubscribes.</li>
+  </ul>
+  <h3>Usage data</h3>
+  <ul>
+    <li>Logs, error reports, and session events generated by your use of the Service.</li>
+    <li>Limited diagnostic information such as user agent, IP address, and request timing, retained for security and abuse prevention.</li>
+  </ul>
+</section>
 
-      <div class="mt-8 flex flex-wrap items-center gap-3">
-        <div class="inline-flex items-center gap-2 h-9 px-3 rounded-full bg-white/12 backdrop-blur ring-1 ring-white/20 text-[12.5px] font-mono text-white/85">
-          <span class="inline-block w-1.5 h-1.5 rounded-full bg-emerald-300"></span>
-          Last updated {lastUpdated}
-        </div>
-        <a href="#data-we-collect" class="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-full bg-white/10 hover:bg-white/15 ring-1 ring-white/20 text-[12.5px] text-white/90 transition-colors">
-          Jump to data we collect
-          <span aria-hidden="true">&darr;</span>
-        </a>
-      </div>
-    </div>
-  </section>
+<section id="use" class="scroll-mt-24">
+  <h2>04. How we use your data</h2>
+  <ul>
+    <li>To operate, maintain, and improve the Service.</li>
+    <li>To send mail and warmup traffic on your behalf through your connected mailboxes.</li>
+    <li>To compute deliverability and mailbox health signals such as warmup spam scores, suppression lists, and per-mailbox health states.</li>
+    <li>To prevent abuse, fraud, and breach of our acceptable use rules.</li>
+    <li>To bill you and to keep accurate financial records.</li>
+    <li>To respond to support requests and to communicate service updates.</li>
+    <li>To comply with legal obligations.</li>
+  </ul>
+</section>
 
-  <!-- ============================================================
-       PRINT HEADER · only visible when printed
-  ============================================================ -->
-  <header class="hidden print:block px-6 pt-8 pb-4 border-b border-[color:var(--border)]">
-    <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-muted-foreground mb-2">Warmbly Legal</div>
-    <h1 class="text-[28px] font-semibold tracking-[-0.02em] text-heading">Privacy Policy</h1>
-    <div class="mt-1 text-[12px] font-mono text-muted-foreground">Last updated {lastUpdated}</div>
-  </header>
+<section id="legal-basis" class="scroll-mt-24">
+  <h2>05. Legal bases for processing</h2>
+  <ul>
+    <li><strong>Contract.</strong> Processing necessary to deliver the Service you have signed up for.</li>
+    <li><strong>Legitimate interest.</strong> Processing necessary to keep the platform secure, to prevent abuse, and to improve our product.</li>
+    <li><strong>Consent.</strong> Where required, for optional features such as product analytics or marketing emails.</li>
+    <li><strong>Legal obligation.</strong> Processing required to comply with applicable law, including tax, accounting, and lawful requests from authorities.</li>
+  </ul>
+</section>
 
-  <!-- ============================================================
-       BODY · sticky TOC + numbered sections
-  ============================================================ -->
-  <section class="container-page py-14 md:py-20">
-    <div class="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-14">
+<section id="encryption" class="scroll-mt-24">
+  <h2>06. Encryption and storage</h2>
+  <p>
+    Sensitive credentials and message payloads are protected using envelope encryption. AWS Key Management Service is the root of trust. Each user gets a 32-byte data encryption key (DEK), generated by KMS. The encrypted DEK ciphertext is stored in DynamoDB. The plaintext DEK is held only in memory, cached briefly in Redis with a short time-to-live, and used to encrypt and decrypt fields at the application layer with AES-256-GCM.
+  </p>
+  <p>
+    Control-plane state lives in PostgreSQL. Object storage uses S3. Workers do not hold a PostgreSQL connection and operate over Kafka, KMS, DynamoDB, S3, and Redis only. All traffic between you and Warmbly is protected in transit by TLS 1.2 or higher.
+  </p>
+</section>
 
-      <!-- TOC sidebar -->
-      <aside class="lg:col-span-3 print:hidden">
-        <div class="lg:sticky lg:top-24">
-          <div class="text-[10.5px] uppercase tracking-[0.18em] font-mono text-muted-foreground mb-3">On this page</div>
-          <nav aria-label="Privacy Policy sections">
-            <ol class="space-y-0.5">
-              {sections.map((s) => (
-                <li>
-                  <a
-                    href={`#${s.id}`}
-                    class="group flex items-baseline gap-2.5 text-[13px] -mx-2 px-2 py-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-[color:var(--surface-2)]/60 transition-colors"
-                  >
-                    <span class="font-mono text-[10.5px] text-muted-foreground/70 group-hover:text-foreground/70 tabular-nums">{s.n}</span>
-                    <span>{s.label}</span>
-                  </a>
-                </li>
-              ))}
-            </ol>
-          </nav>
+<section id="sharing" class="scroll-mt-24">
+  <h2>07. Sharing with third parties</h2>
+  <p>
+    We share personal data with infrastructure and operational providers that we depend on to run Warmbly. These include AWS for compute, storage, encryption, and queues, Cloudflare for edge security and bot protection, Stripe for billing, and the email providers you connect to Warmbly.
+  </p>
+  <p>
+    We do not sell personal data. We do not share personal data with advertisers. We will disclose personal data when required by law, when we have your consent, or when necessary to investigate or stop abuse.
+  </p>
+</section>
 
-          <div class="mt-8 pt-6 border-t border-[color:var(--border)]">
-            <div class="text-[10.5px] uppercase tracking-[0.18em] font-mono text-muted-foreground mb-3">Related</div>
-            <ul class="space-y-0.5">
-              {docs.map((d) => (
-                <li>
-                  <a
-                    href={d.href}
-                    class={
-                      'block text-[13px] -mx-2 px-2 py-1.5 rounded-md transition-colors ' +
-                      (path === d.href
-                        ? 'bg-[color:var(--surface-2)] text-foreground font-medium'
-                        : 'text-muted-foreground hover:text-foreground hover:bg-[color:var(--surface-2)]/60')
-                    }
-                  >
-                    {d.label}
-                  </a>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      </aside>
+<section id="retention" class="scroll-mt-24">
+  <h2>08. Data retention</h2>
+  <ul>
+    <li>Account data is retained while your account is active and for a reasonable period after closure to allow recovery and to comply with our legal obligations.</li>
+    <li>Mailbox credentials are deleted promptly when you disconnect a mailbox or close your account.</li>
+    <li>Message and tracking data are deleted on a defined schedule after account closure, except where retention is required by law.</li>
+    <li>Suppression lists are retained for as long as needed to honour unsubscribe and complaint requests on your behalf.</li>
+    <li>Billing records are retained for the period required by applicable accounting and tax law.</li>
+  </ul>
+</section>
 
-      <!-- Main content -->
-      <article class="lg:col-span-9 max-w-3xl">
-        <!-- Lead -->
-        <div class="pb-8 mb-10 border-b border-[color:var(--border)]">
-          <p class="text-[16px] md:text-[17px] leading-relaxed text-foreground/85">
-            Warmbly is an open-source email warmup and cold outreach platform. Running the service means we handle account information, mailbox credentials, message bodies, and recipient lists on your behalf. This page explains how that works, where the data goes, and what you can ask us to do with it.
-          </p>
-          <p class="mt-4 text-[14px] text-muted-foreground">
-            We use simple language on purpose. If anything here is unclear, write to <a class="text-[color:var(--brand)] hover:text-[color:var(--brand-strong)]" href="mailto:privacy@warmbly.com">privacy@warmbly.com</a> and we will rewrite it.
-          </p>
-        </div>
+<section id="rights" class="scroll-mt-24">
+  <h2>09. Your rights</h2>
+  <p>
+    Subject to applicable law, you have the right to access, rectify, delete, restrict, port, and object to processing of your personal data. You also have the right to withdraw consent where consent is the basis for processing, and the right to lodge a complaint with a supervisory authority.
+  </p>
+  <p>
+    The UK supervisory authority is the Information Commissioner's Office. You can exercise your rights by emailing <a href="mailto:hello@warmbly.com">hello@warmbly.com</a>.
+  </p>
+</section>
 
-        <!-- ============================================================ -->
-        <section id="who-we-are" class="scroll-mt-24 mt-12 first:mt-0">
-          <div class="flex items-baseline gap-3 mb-3">
-            <span class="font-mono text-[11px] tracking-[0.12em] text-muted-foreground tabular-nums">01</span>
-            <h2 class="text-[22px] md:text-[26px] font-semibold tracking-[-0.02em] text-heading">Who we are</h2>
-          </div>
-          <p class="text-[15px] leading-relaxed text-foreground/85">
-            Warmbly is the operator of the Warmbly email warmup and cold outreach platform. When you use the service we are the controller of the personal data we collect from you about your account, and we are the processor of the data you bring into the platform about your contacts and recipients.
-          </p>
-          <p class="mt-4 text-[15px] leading-relaxed text-foreground/85">
-            Privacy questions, data subject requests, and security reports all go to <a class="text-[color:var(--brand)] hover:text-[color:var(--brand-strong)] underline-offset-2 hover:underline" href="mailto:privacy@warmbly.com">privacy@warmbly.com</a>. We try to acknowledge within two business days.
-          </p>
-        </section>
+<section id="transfers" class="scroll-mt-24">
+  <h2>10. International transfers</h2>
+  <p>
+    Warmbly is operated from the United Kingdom and processes data through infrastructure providers that operate globally. Where personal data is transferred outside the UK or the European Economic Area, we rely on appropriate safeguards such as the UK International Data Transfer Agreement, the EU Standard Contractual Clauses, or adequacy decisions where they apply.
+  </p>
+</section>
 
-        <!-- ============================================================ -->
-        <section id="data-we-collect" class="scroll-mt-24 mt-14">
-          <div class="flex items-baseline gap-3 mb-3">
-            <span class="font-mono text-[11px] tracking-[0.12em] text-muted-foreground tabular-nums">02</span>
-            <h2 class="text-[22px] md:text-[26px] font-semibold tracking-[-0.02em] text-heading">Data we collect</h2>
-          </div>
-          <p class="text-[15px] leading-relaxed text-foreground/85">
-            We collect the smallest set of information we need to run the product, bill it, and keep it safe to use. Roughly four buckets.
-          </p>
+<section id="children" class="scroll-mt-24">
+  <h2>11. Children</h2>
+  <p>
+    Warmbly is a business tool and is not intended for use by children. We do not knowingly collect personal data from anyone under 16. If you believe a child has provided personal data to Warmbly, please contact us and we will remove it.
+  </p>
+</section>
 
-          <div class="mt-6 grid gap-4">
-            <div class="rounded-xl ring-1 ring-[color:var(--border)] bg-[color:var(--surface-1)] p-5">
-              <div class="flex items-baseline justify-between gap-3">
-                <h3 class="text-[15.5px] font-semibold text-heading">Account data</h3>
-                <span class="text-[10.5px] font-mono uppercase tracking-[0.12em] text-muted-foreground">Controller</span>
-              </div>
-              <p class="mt-2 text-[14.5px] leading-relaxed text-foreground/85">
-                Your email address, name, workspace name, password hash, role, and team membership. If you pay us, Stripe handles the card details and gives us back a customer identifier, the country we should charge tax in, and the last four digits for receipts.
-              </p>
-            </div>
+<section id="changes" class="scroll-mt-24">
+  <h2>12. Changes to this policy</h2>
+  <p>
+    We may update this privacy policy from time to time. The "Last updated" date at the top of this page reflects the most recent change. If we make material changes, we will notify you by email or through the Service before they take effect.
+  </p>
+</section>
 
-            <div class="rounded-xl ring-1 ring-[color:var(--border)] bg-[color:var(--surface-1)] p-5">
-              <div class="flex items-baseline justify-between gap-3">
-                <h3 class="text-[15.5px] font-semibold text-heading">Mailbox data</h3>
-                <span class="text-[10.5px] font-mono uppercase tracking-[0.12em] text-muted-foreground">Processor</span>
-              </div>
-              <p class="mt-2 text-[14.5px] leading-relaxed text-foreground/85">
-                The mailboxes you connect, and the credentials needed to send and receive on your behalf. For Google and Microsoft, that is an OAuth refresh token scoped to the permissions you grant during sign-in. For generic providers, it is the IMAP and SMTP host, port, and username, plus an encrypted copy of the password. Credentials are sealed with envelope encryption before they touch persistent storage.
-              </p>
-            </div>
+<section id="contact" class="scroll-mt-24">
+  <h2>13. Contact</h2>
+  <p>
+    For privacy questions, data subject requests, or any other matter arising under this policy, email <a href="mailto:hello@warmbly.com">hello@warmbly.com</a> or write to Mindroot Ltd, 71-75 Shelton Street, London, England, WC2H 9JQ.
+  </p>
+</section>
 
-            <div class="rounded-xl ring-1 ring-[color:var(--border)] bg-[color:var(--surface-1)] p-5">
-              <div class="flex items-baseline justify-between gap-3">
-                <h3 class="text-[15.5px] font-semibold text-heading">Message data</h3>
-                <span class="text-[10.5px] font-mono uppercase tracking-[0.12em] text-muted-foreground">Processor</span>
-              </div>
-              <p class="mt-2 text-[14.5px] leading-relaxed text-foreground/85">
-                The campaigns you send, the warmup mail the platform generates on your behalf, replies and bounces synced back from the mailbox, attachments where you choose to use them, and the tracking events we record when a recipient opens an email or clicks a link. Message bodies are stored encrypted where the design calls for it, and message content is not used to train models.
-              </p>
-            </div>
-
-            <div class="rounded-xl ring-1 ring-[color:var(--border)] bg-[color:var(--surface-1)] p-5">
-              <div class="flex items-baseline justify-between gap-3">
-                <h3 class="text-[15.5px] font-semibold text-heading">Usage data</h3>
-                <span class="text-[10.5px] font-mono uppercase tracking-[0.12em] text-muted-foreground">Controller</span>
-              </div>
-              <p class="mt-2 text-[14.5px] leading-relaxed text-foreground/85">
-                Server logs, request paths, IP addresses, user agent strings, error reports, and session events. We need this to operate the service, debug problems, rate limit abusive clients, and investigate security incidents. We do not use it to build advertising profiles.
-              </p>
-            </div>
-          </div>
-        </section>
-
-        <!-- ============================================================ -->
-        <section id="how-we-use-data" class="scroll-mt-24 mt-14">
-          <div class="flex items-baseline gap-3 mb-3">
-            <span class="font-mono text-[11px] tracking-[0.12em] text-muted-foreground tabular-nums">03</span>
-            <h2 class="text-[22px] md:text-[26px] font-semibold tracking-[-0.02em] text-heading">How we use your data</h2>
-          </div>
-          <p class="text-[15px] leading-relaxed text-foreground/85">
-            We use the data above to do the things you actually signed up for, and a small number of things you would reasonably expect a sending platform to do.
-          </p>
-
-          <ul class="mt-5 space-y-3">
-            {[
-              ['Operate the service', 'Send the campaigns and warmup mail you scheduled, sync replies, classify them, and surface the results in your inbox and dashboards.'],
-              ['Prevent abuse', 'Detect spammy patterns, throttle bad actors, enforce per-mailbox rate limits, and protect shared warmup pools from accounts that damage everyone else\'s reputation.'],
-              ['Deliverability analytics', 'Aggregate signals like bounces, complaints, opens, and reply sentiment so you can see how a mailbox is doing and so we can spot platform-wide issues early.'],
-              ['Billing', 'Track plan, seats, and connected mailboxes, generate invoices through Stripe, and apply any tax we are required to collect.'],
-              ['Support', 'Respond to your messages, debug your account when you ask us to, and follow up on incidents.'],
-              ['Compliance', 'Keep the records the law requires us to keep, respond to lawful requests, and document our security and privacy controls.'],
-            ].map(([k, v]) => (
-              <li class="flex gap-3">
-                <span class="mt-1.5 inline-block w-1.5 h-1.5 rounded-full bg-[color:var(--brand)] shrink-0" aria-hidden="true"></span>
-                <div>
-                  <span class="text-[14.5px] font-semibold text-heading">{k}.</span>
-                  <span class="text-[14.5px] text-foreground/85 leading-relaxed"> {v}</span>
-                </div>
-              </li>
-            ))}
-          </ul>
-
-          <p class="mt-5 text-[14.5px] text-foreground/85 leading-relaxed">
-            We do not sell personal information. We do not rent contact lists. We do not share message content with advertisers.
-          </p>
-        </section>
-
-        <!-- ============================================================ -->
-        <section id="legal-bases" class="scroll-mt-24 mt-14">
-          <div class="flex items-baseline gap-3 mb-3">
-            <span class="font-mono text-[11px] tracking-[0.12em] text-muted-foreground tabular-nums">04</span>
-            <h2 class="text-[22px] md:text-[26px] font-semibold tracking-[-0.02em] text-heading">Legal bases for processing</h2>
-          </div>
-          <p class="text-[15px] leading-relaxed text-foreground/85">
-            Where data protection law requires a legal basis, we rely on one of the four below. Most of what we do sits under contract or legitimate interest.
-          </p>
-
-          <div class="mt-6 divide-y divide-[color:var(--border)] rounded-xl ring-1 ring-[color:var(--border)] bg-[color:var(--surface-1)] overflow-hidden">
-            <div class="p-5 grid grid-cols-1 sm:grid-cols-[160px_1fr] gap-3 sm:gap-6">
-              <div class="text-[12.5px] font-mono uppercase tracking-[0.1em] text-muted-foreground">Contract</div>
-              <p class="text-[14.5px] leading-relaxed text-foreground/85">We process the data you give us in order to deliver the product you signed up for. Without it we cannot send the mail or show you the results.</p>
-            </div>
-            <div class="p-5 grid grid-cols-1 sm:grid-cols-[160px_1fr] gap-3 sm:gap-6">
-              <div class="text-[12.5px] font-mono uppercase tracking-[0.1em] text-muted-foreground">Legitimate interest</div>
-              <p class="text-[14.5px] leading-relaxed text-foreground/85">We have a legitimate interest in keeping the platform safe and reliable. That covers abuse prevention, security monitoring, deliverability analytics, and core product improvement.</p>
-            </div>
-            <div class="p-5 grid grid-cols-1 sm:grid-cols-[160px_1fr] gap-3 sm:gap-6">
-              <div class="text-[12.5px] font-mono uppercase tracking-[0.1em] text-muted-foreground">Consent</div>
-              <p class="text-[14.5px] leading-relaxed text-foreground/85">For optional features such as product analytics opt-in and non-essential marketing email, we rely on your consent. You can withdraw it at any time without losing access to the service.</p>
-            </div>
-            <div class="p-5 grid grid-cols-1 sm:grid-cols-[160px_1fr] gap-3 sm:gap-6">
-              <div class="text-[12.5px] font-mono uppercase tracking-[0.1em] text-muted-foreground">Legal obligation</div>
-              <p class="text-[14.5px] leading-relaxed text-foreground/85">Some data, like billing records and tax invoices, we have to keep for a period set by law. We also retain the minimum needed to respond to lawful requests.</p>
-            </div>
-          </div>
-        </section>
-
-        <!-- ============================================================ -->
-        <section id="encryption-storage" class="scroll-mt-24 mt-14">
-          <div class="flex items-baseline gap-3 mb-3">
-            <span class="font-mono text-[11px] tracking-[0.12em] text-muted-foreground tabular-nums">05</span>
-            <h2 class="text-[22px] md:text-[26px] font-semibold tracking-[-0.02em] text-heading">Encryption and storage</h2>
-          </div>
-          <p class="text-[15px] leading-relaxed text-foreground/85">
-            Sensitive material is encrypted with an envelope scheme. The root of trust lives in a managed key service, application data is sealed per user with a unique key, and the control plane only ever sees ciphertext for those fields.
-          </p>
-
-          <div class="mt-6 grid gap-4">
-            <div class="rounded-xl ring-1 ring-[color:var(--border)] bg-[color:var(--surface-1)] p-5">
-              <h3 class="text-[14.5px] font-semibold text-heading">Root of trust</h3>
-              <p class="mt-1.5 text-[14px] leading-relaxed text-foreground/85">AWS KMS holds the customer master key. Plaintext data keys are never written to disk and never leave the encryption boundary in clear form.</p>
-            </div>
-            <div class="rounded-xl ring-1 ring-[color:var(--border)] bg-[color:var(--surface-1)] p-5">
-              <h3 class="text-[14.5px] font-semibold text-heading">Per-user data key</h3>
-              <p class="mt-1.5 text-[14px] leading-relaxed text-foreground/85">Every user gets a 32 byte data encryption key (DEK) generated by KMS. Application-level fields such as mailbox credentials are sealed with AES-256-GCM using that key.</p>
-            </div>
-            <div class="rounded-xl ring-1 ring-[color:var(--border)] bg-[color:var(--surface-1)] p-5">
-              <h3 class="text-[14.5px] font-semibold text-heading">Key ciphertext</h3>
-              <p class="mt-1.5 text-[14px] leading-relaxed text-foreground/85">The encrypted (wrapped) DEK is stored in DynamoDB. The plaintext DEK is only obtained by calling KMS to unwrap it, and only when an operation actually needs to decrypt a payload.</p>
-            </div>
-            <div class="rounded-xl ring-1 ring-[color:var(--border)] bg-[color:var(--surface-1)] p-5">
-              <h3 class="text-[14.5px] font-semibold text-heading">Hot key cache</h3>
-              <p class="mt-1.5 text-[14px] leading-relaxed text-foreground/85">To avoid hitting KMS on every send, unwrapped DEKs are held in Redis with a short time-to-live. They expire automatically and can be evicted on demand if a key needs to be rotated.</p>
-            </div>
-            <div class="rounded-xl ring-1 ring-[color:var(--border)] bg-[color:var(--surface-1)] p-5">
-              <h3 class="text-[14.5px] font-semibold text-heading">Control plane</h3>
-              <p class="mt-1.5 text-[14px] leading-relaxed text-foreground/85">PostgreSQL holds operational state such as your account, your mailboxes, campaign configuration, and aggregate analytics. Fields marked as encrypted are stored only as ciphertext. Larger message payloads are encrypted where the design calls for it before they are persisted.</p>
-            </div>
-          </div>
-
-          <p class="mt-6 text-[14px] text-muted-foreground leading-relaxed">
-            Encryption boundaries are documented in the codebase under <code class="font-mono text-[0.92em] px-1.5 py-0.5 rounded bg-[color:var(--surface-2)] ring-1 ring-[color:var(--border)]">internal/app/cipher</code> and <code class="font-mono text-[0.92em] px-1.5 py-0.5 rounded bg-[color:var(--surface-2)] ring-1 ring-[color:var(--border)]">internal/infrastructure/kms</code>. Warmbly is open source, so the implementation can be inspected.
-          </p>
-        </section>
-
-        <!-- ============================================================ -->
-        <section id="subprocessors" class="scroll-mt-24 mt-14">
-          <div class="flex items-baseline gap-3 mb-3">
-            <span class="font-mono text-[11px] tracking-[0.12em] text-muted-foreground tabular-nums">06</span>
-            <h2 class="text-[22px] md:text-[26px] font-semibold tracking-[-0.02em] text-heading">Subprocessors</h2>
-          </div>
-          <p class="text-[15px] leading-relaxed text-foreground/85">
-            We use a small set of vetted vendors to run the service: cloud infrastructure, the payment processor, transactional email for account notices, and error reporting. The current list, what each one does, and where it operates is published at <a class="text-[color:var(--brand)] hover:text-[color:var(--brand-strong)] underline-offset-2 hover:underline" href="/subprocessors/">/subprocessors</a>.
-          </p>
-          <p class="mt-4 text-[14.5px] leading-relaxed text-foreground/85">
-            If you need notice of changes, customers on paid plans are notified by email when a new subprocessor is added with reasonable lead time before it begins processing data.
-          </p>
-        </section>
-
-        <!-- ============================================================ -->
-        <section id="retention" class="scroll-mt-24 mt-14">
-          <div class="flex items-baseline gap-3 mb-3">
-            <span class="font-mono text-[11px] tracking-[0.12em] text-muted-foreground tabular-nums">07</span>
-            <h2 class="text-[22px] md:text-[26px] font-semibold tracking-[-0.02em] text-heading">Data retention</h2>
-          </div>
-          <p class="text-[15px] leading-relaxed text-foreground/85">
-            We keep data for as long as you have an account, and then only as long as we need to wind things down cleanly or as the law requires.
-          </p>
-
-          <div class="mt-6 grid gap-3">
-            <div class="grid grid-cols-1 sm:grid-cols-[200px_1fr] gap-3 sm:gap-6 p-4 rounded-lg ring-1 ring-[color:var(--border)]">
-              <div class="text-[12.5px] font-mono uppercase tracking-[0.1em] text-muted-foreground">While the account is active</div>
-              <p class="text-[14.5px] leading-relaxed text-foreground/85">Account data, mailbox credentials, message data, and analytics live in the platform so the product can do its job.</p>
-            </div>
-            <div class="grid grid-cols-1 sm:grid-cols-[200px_1fr] gap-3 sm:gap-6 p-4 rounded-lg ring-1 ring-[color:var(--border)]">
-              <div class="text-[12.5px] font-mono uppercase tracking-[0.1em] text-muted-foreground">After account deletion</div>
-              <p class="text-[14.5px] leading-relaxed text-foreground/85">Account data and message content are deleted within 30 days. Encrypted backups roll off on their own schedule (up to 35 days). Connected mailbox tokens are revoked and the credentials are erased.</p>
-            </div>
-            <div class="grid grid-cols-1 sm:grid-cols-[200px_1fr] gap-3 sm:gap-6 p-4 rounded-lg ring-1 ring-[color:var(--border)]">
-              <div class="text-[12.5px] font-mono uppercase tracking-[0.1em] text-muted-foreground">Billing records</div>
-              <p class="text-[14.5px] leading-relaxed text-foreground/85">Invoices and tax records are kept for the period required by applicable tax and accounting law, typically seven years.</p>
-            </div>
-            <div class="grid grid-cols-1 sm:grid-cols-[200px_1fr] gap-3 sm:gap-6 p-4 rounded-lg ring-1 ring-[color:var(--border)]">
-              <div class="text-[12.5px] font-mono uppercase tracking-[0.1em] text-muted-foreground">Suppression lists</div>
-              <p class="text-[14.5px] leading-relaxed text-foreground/85">If a recipient has unsubscribed, bounced hard, or complained, we keep a minimal record (a hashed address and the suppression reason) so the platform does not send to them again. This is required to honor the unsubscribe.</p>
-            </div>
-          </div>
-        </section>
-
-        <!-- ============================================================ -->
-        <section id="your-rights" class="scroll-mt-24 mt-14">
-          <div class="flex items-baseline gap-3 mb-3">
-            <span class="font-mono text-[11px] tracking-[0.12em] text-muted-foreground tabular-nums">08</span>
-            <h2 class="text-[22px] md:text-[26px] font-semibold tracking-[-0.02em] text-heading">Your rights</h2>
-          </div>
-          <p class="text-[15px] leading-relaxed text-foreground/85">
-            Depending on where you live, you may have some or all of the rights below over your personal data. We honor them regardless of jurisdiction whenever the request is reasonable to fulfill.
-          </p>
-
-          <ul class="mt-5 grid sm:grid-cols-2 gap-3">
-            {[
-              ['Access',        'Get a copy of the personal data we hold about you.'],
-              ['Rectification', 'Ask us to correct anything that is inaccurate or out of date.'],
-              ['Deletion',      'Ask us to erase your personal data. We will, unless we are required to keep it.'],
-              ['Portability',   'Receive your data in a structured, machine-readable format.'],
-              ['Restriction',   'Ask us to pause processing while a dispute or correction is resolved.'],
-              ['Objection',     'Object to processing that is based on legitimate interest.'],
-              ['Withdraw consent', 'Withdraw consent for anything you opted into (such as product analytics) at any time.'],
-              ['Complaint',     'Lodge a complaint with the supervisory authority in your country.'],
-            ].map(([k, v]) => (
-              <li class="p-4 rounded-lg ring-1 ring-[color:var(--border)] bg-[color:var(--surface-1)]">
-                <div class="text-[13.5px] font-semibold text-heading">{k}</div>
-                <p class="mt-1 text-[13.5px] leading-relaxed text-foreground/85">{v}</p>
-              </li>
-            ))}
-          </ul>
-
-          <p class="mt-6 text-[14.5px] leading-relaxed text-foreground/85">
-            To exercise any of these, email <a class="text-[color:var(--brand)] hover:text-[color:var(--brand-strong)] underline-offset-2 hover:underline" href="mailto:privacy@warmbly.com">privacy@warmbly.com</a>. We will verify the request comes from you and respond within 30 days. If we cannot complete the request we will tell you why.
-          </p>
-        </section>
-
-        <!-- ============================================================ -->
-        <section id="international" class="scroll-mt-24 mt-14">
-          <div class="flex items-baseline gap-3 mb-3">
-            <span class="font-mono text-[11px] tracking-[0.12em] text-muted-foreground tabular-nums">09</span>
-            <h2 class="text-[22px] md:text-[26px] font-semibold tracking-[-0.02em] text-heading">International transfers</h2>
-          </div>
-          <p class="text-[15px] leading-relaxed text-foreground/85">
-            Warmbly is operated from data centers in the United States and the European Union. Depending on your plan and region, your data may be stored in either region. Some subprocessors operate globally, which can mean data is transmitted across borders.
-          </p>
-          <p class="mt-4 text-[15px] leading-relaxed text-foreground/85">
-            For transfers out of the European Economic Area, the United Kingdom, or Switzerland to a country without an adequacy decision, we rely on the European Commission Standard Contractual Clauses, the UK International Data Transfer Addendum, or an equivalent mechanism. These commitments are incorporated by reference into our Data Processing Addendum.
-          </p>
-        </section>
-
-        <!-- ============================================================ -->
-        <section id="cookies" class="scroll-mt-24 mt-14">
-          <div class="flex items-baseline gap-3 mb-3">
-            <span class="font-mono text-[11px] tracking-[0.12em] text-muted-foreground tabular-nums">10</span>
-            <h2 class="text-[22px] md:text-[26px] font-semibold tracking-[-0.02em] text-heading">Cookies</h2>
-          </div>
-          <p class="text-[15px] leading-relaxed text-foreground/85">
-            Warmbly uses a small number of first-party cookies for things like keeping you logged in, remembering your workspace, and protecting forms from cross-site request forgery. We do not run advertising trackers.
-          </p>
-          <p class="mt-4 text-[15px] leading-relaxed text-foreground/85">
-            The full list, including third-party cookies set by Stripe and the CAPTCHA provider on relevant pages, is at <a class="text-[color:var(--brand)] hover:text-[color:var(--brand-strong)] underline-offset-2 hover:underline" href="/cookies/">/cookies</a>.
-          </p>
-        </section>
-
-        <!-- ============================================================ -->
-        <section id="children" class="scroll-mt-24 mt-14">
-          <div class="flex items-baseline gap-3 mb-3">
-            <span class="font-mono text-[11px] tracking-[0.12em] text-muted-foreground tabular-nums">11</span>
-            <h2 class="text-[22px] md:text-[26px] font-semibold tracking-[-0.02em] text-heading">Children's data</h2>
-          </div>
-          <p class="text-[15px] leading-relaxed text-foreground/85">
-            Warmbly is a business tool. It is not intended for use by anyone under 16, or under 18 in jurisdictions where that is the threshold for digital services. We do not knowingly collect personal data from children. If you believe a child has signed up, contact us and we will delete the account.
-          </p>
-        </section>
-
-        <!-- ============================================================ -->
-        <section id="changes" class="scroll-mt-24 mt-14">
-          <div class="flex items-baseline gap-3 mb-3">
-            <span class="font-mono text-[11px] tracking-[0.12em] text-muted-foreground tabular-nums">12</span>
-            <h2 class="text-[22px] md:text-[26px] font-semibold tracking-[-0.02em] text-heading">Changes to this policy</h2>
-          </div>
-          <p class="text-[15px] leading-relaxed text-foreground/85">
-            We update this policy when the product changes, when the law changes, or when we find a clearer way to say something. Material changes are announced by email or in-app notice at least 30 days before they take effect, and the "Last updated" date at the top of this page always reflects the most recent revision.
-          </p>
-        </section>
-
-        <!-- ============================================================ -->
-        <section id="contact" class="scroll-mt-24 mt-14">
-          <div class="flex items-baseline gap-3 mb-3">
-            <span class="font-mono text-[11px] tracking-[0.12em] text-muted-foreground tabular-nums">13</span>
-            <h2 class="text-[22px] md:text-[26px] font-semibold tracking-[-0.02em] text-heading">Contact</h2>
-          </div>
-          <p class="text-[15px] leading-relaxed text-foreground/85">
-            Privacy questions, data subject requests, breach reports, and supervisory authority correspondence all go to <a class="text-[color:var(--brand)] hover:text-[color:var(--brand-strong)] underline-offset-2 hover:underline" href="mailto:privacy@warmbly.com">privacy@warmbly.com</a>. For general legal matters, write to <a class="text-[color:var(--brand)] hover:text-[color:var(--brand-strong)] underline-offset-2 hover:underline" href="mailto:legal@warmbly.com">legal@warmbly.com</a>.
-          </p>
-        </section>
-
-        <!-- Footer note -->
-        <div class="mt-16 pt-6 border-t border-[color:var(--border)] flex flex-wrap items-center justify-between gap-3 text-[12.5px] text-muted-foreground">
-          <div>Last updated {lastUpdated}</div>
-          <div class="flex items-center gap-4">
-            <a class="hover:text-foreground transition-colors" href="/terms/">Terms</a>
-            <a class="hover:text-foreground transition-colors" href="/dpa/">DPA</a>
-            <a class="hover:text-foreground transition-colors" href="/subprocessors/">Subprocessors</a>
-          </div>
-        </div>
-      </article>
-    </div>
-  </section>
-
-  <style>
-    @media print {
-      :global(header), :global(footer), :global(nav) { display: none !important; }
-      :global(body) { background: white !important; color: #000 !important; }
-      article { max-width: none !important; }
-      a { color: inherit !important; text-decoration: underline; }
-      section[id] { break-inside: avoid; }
-      h2 { break-after: avoid; }
-    }
-  </style>
-</Layout>
+</Legal>

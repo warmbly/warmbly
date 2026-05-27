@@ -1,66 +1,199 @@
 ---
 import Layout from './Layout.astro';
-import Cloud from '../components/Cloud.astro';
+import HeroAtmosphere from '../components/HeroAtmosphere.astro';
 
+interface Section {
+  id: string;
+  num: string;
+  title: string;
+}
 interface Props {
   title: string;
   description?: string;
   effective?: string;
+  updated?: string;
+  sections: Section[];
 }
-const { title, description, effective = '2026-05-01' } = Astro.props;
+const {
+  title,
+  description,
+  effective = '2026-05-27',
+  updated = '2026-05-27',
+  sections,
+} = Astro.props;
 
 const docs = [
-  { label: 'Terms of Service',         href: '/terms/' },
-  { label: 'Privacy Policy',           href: '/privacy/' },
-  { label: 'Data Processing Addendum', href: '/dpa/' },
-  { label: 'Acceptable Use',           href: '/acceptable-use/' },
-  { label: 'Subprocessors',            href: '/subprocessors/' },
-  { label: 'Cookies',                  href: '/cookies/' },
+  { label: 'Terms of Service', href: '/terms/' },
+  { label: 'Privacy Policy',   href: '/privacy/' },
 ];
 
 const path = Astro.url.pathname;
 ---
 <Layout title={title} description={description ?? title}>
-  <section class="relative isolate overflow-hidden text-white" style="background: radial-gradient(ellipse 130% 140% at 72% 28%, #0284c7 0%, #0369a1 25%, #075985 50%, #0c4a6e 80%, #0a3d5c 100%);">
-    <div class="absolute top-0 right-0 w-[360px] opacity-25 pointer-events-none cloud-drift cloud-2" style="mix-blend-mode: screen;">
-      <Cloud variant={3} opacity={1} />
-    </div>
-    <div class="container-page relative pt-14 pb-12">
-      <div class="text-[11px] uppercase tracking-[0.18em] text-white/55 font-mono mb-3">Legal</div>
-      <h1 class="text-[32px] md:text-[44px] font-semibold tracking-[-0.025em] leading-[1.06] text-white max-w-3xl">{title}</h1>
-      <div class="mt-3 text-[11.5px] font-mono text-white/55">Effective {effective}</div>
+
+  <!-- HERO -->
+  <section class="relative isolate overflow-hidden" id="legal-hero">
+    <HeroAtmosphere />
+    <div class="container-page relative pt-14 md:pt-20 pb-14 md:pb-20">
+      <div class="text-[10.5px] uppercase tracking-[0.22em] font-mono text-white/75 mb-3">Legal</div>
+      <h1 class="text-[36px] md:text-[48px] font-semibold tracking-[-0.025em] leading-[1.06] text-white max-w-3xl">
+        {title}
+      </h1>
+      <div class="mt-4 flex flex-wrap items-center gap-x-5 gap-y-1.5 text-[11.5px] font-mono text-white/75">
+        <span>Effective {effective}</span>
+        <span class="w-1 h-1 rounded-full bg-white/40"></span>
+        <span>Last updated {updated}</span>
+      </div>
     </div>
   </section>
 
-  <div class="container-page py-12 md:py-16 grid grid-cols-1 lg:grid-cols-[220px_minmax(0,1fr)] gap-10 lg:gap-16">
-    <aside class="lg:sticky lg:top-20 self-start">
-      <div class="text-[10.5px] uppercase tracking-[0.18em] font-mono text-muted-foreground mb-3">Documents</div>
-      <ul class="space-y-0.5">
-        {docs.map((d) => (
+  <!-- BODY -->
+  <div class="container-page py-12 md:py-16 grid grid-cols-1 lg:grid-cols-[240px_minmax(0,1fr)] gap-10 lg:gap-16">
+
+    <!-- STICKY SIDEBAR -->
+    <aside class="lg:sticky lg:top-24 self-start hidden lg:block">
+      <div class="text-[10.5px] uppercase tracking-[0.22em] font-mono text-muted-foreground mb-4">On this page</div>
+      <ol class="space-y-px text-[13px] relative" data-legal-rail>
+        <span
+          data-legal-indicator
+          aria-hidden="true"
+          class="absolute left-0 w-[2px] rounded-full bg-[#0284c7] pointer-events-none opacity-0 transition-all duration-300 ease-out"
+          style="top:0;height:0;"
+        ></span>
+        {sections.map((s) => (
           <li>
             <a
-              href={d.href}
-              class={
-                'block text-[13.5px] -mx-2 px-2 py-1.5 rounded-md transition-colors ' +
-                (path === d.href
-                  ? 'bg-[color:var(--surface-2)] text-foreground font-medium'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-[color:var(--surface-2)]/60')
-              }
+              href={`#${s.id}`}
+              data-target-id={s.id}
+              class="legal-link group flex items-baseline gap-3 py-1.5 pl-3 pr-2 -ml-px rounded-md text-foreground/60 hover:text-[#0369a1] transition-colors duration-300 ease-out"
             >
-              {d.label}
+              <span class="legal-num font-mono text-[10.5px] text-muted-foreground/55 w-5 shrink-0 transition-colors duration-300">{s.num}</span>
+              <span class="leading-snug">{s.title}</span>
             </a>
           </li>
         ))}
-      </ul>
+      </ol>
+
+      <div class="mt-8 pt-6 border-t border-[color:var(--border)]">
+        <div class="text-[10.5px] uppercase tracking-[0.22em] font-mono text-muted-foreground mb-3">Documents</div>
+        <ul class="space-y-0.5">
+          {docs.map((d) => {
+            const isCurrent = path === d.href;
+            return (
+              <li>
+                <a
+                  href={d.href}
+                  aria-current={isCurrent ? 'page' : undefined}
+                  class={
+                    'block text-[13px] -mx-2 px-2 py-1.5 rounded-md transition-colors duration-200 ' +
+                    (isCurrent
+                      ? 'text-[#0369a1] font-semibold'
+                      : 'text-muted-foreground hover:text-[#0369a1]')
+                  }
+                >
+                  {d.label}
+                </a>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
     </aside>
 
+    <!-- MAIN -->
     <article class="max-w-3xl">
       <div class="space-y-6 [&_h2]:text-[22px] [&_h2]:md:text-[26px] [&_h2]:font-semibold [&_h2]:tracking-[-0.02em] [&_h2]:mt-12 [&_h2]:mb-3 [&_h2]:text-heading [&_h3]:text-[16px] [&_h3]:font-semibold [&_h3]:mt-8 [&_h3]:mb-2 [&_h3]:text-heading [&_p]:text-[15px] [&_p]:leading-relaxed [&_p]:text-foreground/85 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:space-y-1.5 [&_ul]:text-[14.5px] [&_ul]:text-foreground/85 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:space-y-1.5 [&_ol]:text-[14.5px] [&_ol]:text-foreground/85 [&_a]:text-[color:var(--brand)] [&_a:hover]:text-[color:var(--brand-strong)] [&_code]:font-mono [&_code]:text-[0.92em] [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded [&_code]:bg-[color:var(--surface-2)] [&_code]:ring-1 [&_code]:ring-[color:var(--border)]">
         <slot />
       </div>
       <div class="mt-16 text-[12.5px] text-muted-foreground border-t border-[color:var(--border)] pt-6">
-        Questions about this document? Email <a class="text-[color:var(--brand)] hover:text-[color:var(--brand-strong)]" href="mailto:legal@warmbly.com">legal@warmbly.com</a>.
+        Questions about this document? Email <a class="text-[color:var(--brand)] hover:text-[color:var(--brand-strong)]" href="mailto:hello@warmbly.com">hello@warmbly.com</a>.
       </div>
     </article>
   </div>
+
+  <!-- Scrollspy + animated active indicator -->
+  <script is:inline>
+    (function () {
+      var links = Array.prototype.slice.call(document.querySelectorAll('.legal-link'));
+      if (!links.length) return;
+      var sections = links
+        .map(function (a) {
+          return { link: a, el: document.getElementById(a.getAttribute('data-target-id')) };
+        })
+        .filter(function (s) { return s.el; });
+      if (!sections.length) return;
+
+      var indicator = document.querySelector('[data-legal-indicator]');
+
+      var inactiveText = ['text-foreground/60', 'hover:text-[#0369a1]'];
+      var activeText   = ['text-[#0369a1]', 'font-semibold'];
+      var inactiveNum  = ['text-muted-foreground/55'];
+      var activeNum    = ['text-[#0284c7]'];
+
+      var currentId = null;
+      function setActive(id) {
+        if (id === currentId) return;
+        currentId = id;
+        var activeLink = null;
+        sections.forEach(function (s) {
+          var num = s.link.querySelector('.legal-num');
+          if (s.el.id === id) {
+            activeLink = s.link;
+            s.link.classList.remove.apply(s.link.classList, inactiveText);
+            s.link.classList.add.apply(s.link.classList, activeText);
+            if (num) {
+              num.classList.remove.apply(num.classList, inactiveNum);
+              num.classList.add.apply(num.classList, activeNum);
+            }
+          } else {
+            s.link.classList.remove.apply(s.link.classList, activeText);
+            s.link.classList.add.apply(s.link.classList, inactiveText);
+            if (num) {
+              num.classList.remove.apply(num.classList, activeNum);
+              num.classList.add.apply(num.classList, inactiveNum);
+            }
+          }
+        });
+        if (indicator && activeLink) {
+          var railParent = indicator.parentElement;
+          var railRect = railParent.getBoundingClientRect();
+          var linkRect = activeLink.getBoundingClientRect();
+          indicator.style.opacity = '1';
+          indicator.style.top = (linkRect.top - railRect.top) + 'px';
+          indicator.style.height = linkRect.height + 'px';
+        }
+      }
+
+      function onScroll() {
+        var probe = window.innerHeight * 0.30;
+        var active = sections[0].el.id;
+        for (var i = 0; i < sections.length; i++) {
+          var rect = sections[i].el.getBoundingClientRect();
+          if (rect.top - probe <= 0) active = sections[i].el.id; else break;
+        }
+        setActive(active);
+      }
+
+      onScroll();
+      var raf = 0;
+      window.addEventListener('scroll', function () {
+        if (raf) return;
+        raf = requestAnimationFrame(function () { raf = 0; onScroll(); });
+      }, { passive: true });
+      window.addEventListener('resize', function () {
+        var id = currentId;
+        currentId = null;
+        if (id) setActive(id);
+      });
+    })();
+  </script>
+
+  <style is:global>
+    @media print {
+      header, footer, aside { display: none !important; }
+      #legal-hero { height: auto !important; padding: 1.5rem 0 !important; background: none !important; color: #111 !important; }
+      #legal-hero * { color: #111 !important; }
+      article { max-width: 100% !important; }
+    }
+  </style>
 </Layout>
