@@ -785,7 +785,11 @@ const plans = [
                 <p class="mt-1.5 text-[12.5px] text-muted-foreground leading-snug min-h-[40px]">{p.summary}</p>
 
                 <div class="mt-6 flex items-baseline gap-1.5">
-                  <span class="text-[48px] font-semibold tracking-[-0.04em] text-heading leading-none price-amount" data-monthly={p.price} data-annual={p.annual}>{p.annual}</span>
+                  <span class="text-[48px] font-semibold tracking-[-0.04em] text-heading leading-none flex items-baseline">
+                    <span class="plan-price relative inline-block overflow-hidden h-[48px] align-baseline" data-monthly={p.price} data-annual={p.annual}>
+                      <span class="plan-price-inner block leading-[48px]" style="transform: translateY(0)">{p.annual}</span>
+                    </span>
+                  </span>
                 </div>
                 <p class="mt-2 text-[11.5px] text-muted-foreground">
                   <span class="cadence" data-monthly="/ month · billed monthly" data-annual="/ month · billed yearly">/ month · billed yearly</span>
@@ -1052,10 +1056,34 @@ const plans = [
     });
 
     // ── Pricing billing toggle (Monthly ↔ Annual, annual default) ───
+    //    Thumb still slides with motion.dev. Prices swap with the same
+    //    slide-up rebound animation /pricing uses on its plan numbers.
     const toggle = document.getElementById('billing-toggle');
     const thumb  = document.getElementById('toggle-thumb');
     if (toggle && thumb) {
       const btns = toggle.querySelectorAll('button[data-billing]');
+
+      // Slide-up swap on a single price number. Phase 1 lifts and fades
+      // the old value out; phase 2 drops the new value in from below with
+      // a subtle overshoot.
+      const animatePrice = (el, newValue) => {
+        const inner = el.querySelector('.plan-price-inner');
+        if (!inner) return;
+        if (inner.textContent === newValue) return;
+        inner.style.transition = 'transform 220ms cubic-bezier(0.4,0,0.2,1), opacity 220ms cubic-bezier(0.4,0,0.2,1)';
+        inner.style.transform  = 'translateY(-100%)';
+        inner.style.opacity    = '0';
+        setTimeout(() => {
+          inner.style.transition = 'none';
+          inner.style.transform  = 'translateY(100%)';
+          inner.textContent      = newValue;
+          inner.offsetHeight; // reflow
+          inner.style.transition = 'transform 320ms cubic-bezier(0.34,1.56,0.64,1), opacity 220ms ease-out';
+          inner.style.transform  = 'translateY(0)';
+          inner.style.opacity    = '1';
+        }, 220);
+      };
+
       const apply = (mode, animated = true) => {
         const btn = toggle.querySelector(`button[data-billing="${mode}"]`);
         if (!btn) return;
@@ -1076,17 +1104,27 @@ const plans = [
             b.classList.remove('text-white');
           }
         });
-        document.querySelectorAll('.price-amount').forEach((el) => {
+        document.querySelectorAll('.plan-price').forEach((el) => {
+          const next = el.getAttribute(`data-${mode}`) || '';
+          if (!next) return;
+          if (!animated) {
+            const inner = el.querySelector('.plan-price-inner');
+            if (inner) inner.textContent = next;
+            return;
+          }
+          animatePrice(el, next);
+        });
+        // Cadence text gets a soft fade-swap so it never just snaps.
+        document.querySelectorAll('.cadence').forEach((el) => {
           const next = el.getAttribute(`data-${mode}`) || '';
           if (!next) return;
           if (!animated) { el.textContent = next; return; }
-          animate(el, { opacity: [1, 0] }, { duration: 0.12 }).then(() => {
+          el.style.transition = 'opacity 180ms ease-out';
+          el.style.opacity    = '0';
+          setTimeout(() => {
             el.textContent = next;
-            animate(el, { opacity: [0, 1] }, { duration: 0.18 });
-          });
-        });
-        document.querySelectorAll('.cadence').forEach((el) => {
-          el.textContent = el.getAttribute(`data-${mode}`) || '';
+            el.style.opacity = '1';
+          }, 180);
         });
       };
       btns.forEach((b) => b.addEventListener('click', () => apply(b.getAttribute('data-billing'))));
