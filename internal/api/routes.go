@@ -37,6 +37,23 @@ func Run(
 	r.GET("/addresses/google/callback", h.EmailOAuthCallbackGmail)
 	r.GET("/addresses/outlook/callback", h.EmailOAuthCallbackOutlook)
 
+	// Internal backend-to-backend endpoints. Workers call these instead of
+	// touching Postgres / DynamoDB directly, per the no-direct-data-services
+	// rule in CLAUDE.md. Auth: shared bearer token (INTERNAL_API_TOKEN).
+	internal := r.Group("/api/v1/internal")
+	internal.Use(m.InternalAuthMiddleware())
+	{
+		internal.GET("/dek/:userID", h.InternalGetDEK)
+		internal.PUT("/dek/:userID", h.InternalPutDEK)
+		internal.DELETE("/dek/:userID", h.InternalDeleteDEK)
+
+		// Worker bootstrap config + heartbeat. Workers POST their identity
+		// on boot (worker_id + bind_ip + tag) and pull their runtime config
+		// instead of carrying it all in the install-time env file.
+		internal.GET("/worker/config", h.InternalWorkerConfig)
+		internal.POST("/worker/heartbeat", h.InternalWorkerHeartbeat)
+	}
+
 	corsConfig := cors.Config{
 		AllowMethods:  []string{"POST", "GET", "PATCH", "OPTIONS", "DELETE"},
 		AllowHeaders:  []string{"Origin", "Content-Type", "Authorization"},
@@ -410,6 +427,11 @@ func Run(
 	adminRoutes := r.Group("/admin")
 	adminRoutes.Use(m.AuthMiddleware(), m.AdminMiddleware())
 	{
+		// Settings → Storage backends (pluggable infrastructure registry)
+		adminRoutes.GET("/settings/backends", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminListStorageBackends)
+		adminRoutes.GET("/settings/backends/active/:kind", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminGetActiveStorageBackend)
+		adminRoutes.POST("/settings/backends/:id/activate", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminActivateStorageBackend)
+
 		// User Management
 		adminRoutes.GET("/users", middleware.RequireAdminPermission(models.AdminPermViewUsers), h.AdminSearchUsers)
 		adminRoutes.GET("/users/:id", middleware.RequireAdminPermission(models.AdminPermViewUsers), h.AdminGetUser)
