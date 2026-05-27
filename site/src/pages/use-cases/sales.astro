@@ -107,10 +107,10 @@ const fanMailboxes = reps.flatMap((r) => r.mailboxes.map((m) => ({
 
 // ===================== REPLY ROUTING POLICIES =====================
 const routingPolicies = [
-  { name: 'Round-robin', body: 'Reply assigned to the next AE in the rotation, skipping those at quota.', code: 'route: round_robin(team: ae_us)', tone: 'bg-sky-50 text-sky-700' },
-  { name: 'By territory', body: 'Reply assigned by the recipient domain or contact territory field on file.', code: 'route: by_territory(field: account.region)', tone: 'bg-violet-50 text-violet-700' },
-  { name: 'By account owner', body: 'Reply assigned to the named owner in HubSpot or Salesforce.', code: 'route: crm.account_owner', tone: 'bg-emerald-50 text-emerald-700' },
-  { name: 'Manual', body: 'Reply enters the team inbox triage queue. Manager assigns from there.', code: 'route: manual(queue: triage)', tone: 'bg-slate-100 text-slate-700' },
+  { name: 'Round-robin',     body: 'Reply assigned to the next AE in the rotation, skipping those at quota.',  tone: 'bg-sky-50 text-sky-700' },
+  { name: 'By territory',    body: 'Reply assigned by the recipient domain or contact territory field on file.', tone: 'bg-violet-50 text-violet-700' },
+  { name: 'By account owner',body: 'Reply assigned to the named owner in HubSpot or Salesforce.',                tone: 'bg-emerald-50 text-emerald-700' },
+  { name: 'Manual',          body: 'Reply enters the team inbox triage queue. Manager assigns from there.',      tone: 'bg-slate-100 text-slate-700' },
 ];
 
 const autoActions = [
@@ -427,7 +427,7 @@ const capRatio = (today: number, cap: number) => Math.min(100, Math.round((today
               <li class="flex items-center justify-between"><span class="text-foreground/70">OOO</span><span class="font-mono text-slate-600 bg-slate-100 px-2 py-0.5 rounded">false</span></li>
               <li class="flex items-center justify-between"><span class="text-foreground/70">Unsubscribe</span><span class="font-mono text-slate-600 bg-slate-100 px-2 py-0.5 rounded">false</span></li>
             </ul>
-            <div class="mt-3 text-[11px] font-mono text-muted-foreground">routing: by_territory(field: account.region)</div>
+            <div class="mt-3 text-[11px] font-mono text-muted-foreground">Routed by territory</div>
           </div>
 
           <!-- Arrow -->
@@ -476,10 +476,7 @@ const capRatio = (today: number, cap: number) => Math.min(100, Math.round((today
             {routingPolicies.map((p) => (
               <div class="px-6 py-4 grid grid-cols-[140px_1fr] gap-4 items-start">
                 <span class={`inline-flex items-center h-6 px-2.5 rounded-full text-[11px] font-mono font-semibold ${p.tone}`}>{p.name}</span>
-                <div>
-                  <p class="text-[13px] text-foreground/80 leading-snug">{p.body}</p>
-                  <div class="mt-1.5 font-mono text-[11.5px] text-[#0369a1] bg-[color:var(--sky-1)]/60 px-2 py-1 rounded inline-block">{p.code}</div>
-                </div>
+                <p class="text-[13px] text-foreground/80 leading-snug">{p.body}</p>
               </div>
             ))}
           </div>

@@ -4,63 +4,56 @@ import HeroAtmosphere from '../../components/HeroAtmosphere.astro';
 import Icon from '../../components/Icon.astro';
 import CTA from '../../components/CTA.astro';
 
-// Recruiter-specific 3-step candidate sequence preview.
-// Variables expanded for one real-looking candidate. Plain text, no HTML.
-const candidate = {
-  first_name: 'Priya',
-  current_company: 'Stripe',
-  current_role: 'Staff Platform Engineer',
-  why_now: 'the new payments orchestration team you joined last quarter',
-};
-
+// Three-step candidate sequence preview. Plain text, no HTML.
+// Uses variables rather than fictional company specifics.
 const sequence = [
   {
     day: 'Day 0',
     label: 'First touch',
-    subject: 'Priya, quick question about your platform work',
+    subject: '{{ first_name }}, quick question about your work',
     body:
-`Hi Priya,
+`Hi {{ first_name }},
 
-I came across your work at Stripe and the new payments orchestration team you joined last quarter. The way your team is rebuilding the platform layer is exactly the problem we are hiring for at a Series B fintech (mid-stage, profitable, ~80 eng).
+I came across your work at {{ current_company }} and what you have been shipping recently. The role I am hiring for lines up closely with what you are doing today.
 
-The role is Staff Platform Engineer reporting straight to the VP Eng. Compensation is in the top quartile for the Bay Area and they are remote-friendly across NA.
+It is a {{ open_role }} reporting to the {{ reports_to }}. Remote-friendly, compensation in band for the role.
 
-Would you be open to a 20-minute intro call next week to hear the details? No pitch, just context.
+Would you be open to a 20-minute intro call next week?
 
-Ben`,
+{{ sender.first_name }}`,
   },
   {
     day: 'Day 5',
     label: 'Soft follow-up',
-    subject: 're: Priya, quick question about your platform work',
+    subject: 're: {{ first_name }}, quick question about your work',
     body:
-`Hi Priya,
+`Hi {{ first_name }},
 
-Looping back on this one. I know inbox volume from recruiters is heavy, so I will keep it short:
+Looping back on this. Keeping it short, here is the relevant context:
 
-- Staff Platform Engineer, Series B fintech, ~80 eng
-- Cash + equity at the top quartile of the Bay Area band
-- Remote across NA, optional hub days in SF
-- The hiring manager wrote the original payments routing layer at a company you would recognise
+- {{ open_role }}, {{ company_stage }}, {{ team_size }}
+- Compensation in band for the role
+- Remote across {{ work_region }}
+- The hiring manager came up through the same problem space you are in now
 
-If the timing is off, totally fine. A quick "not now" works and I will not chase.
+If the timing is off, a one-line "not now" works. I will not chase.
 
-Ben`,
+{{ sender.first_name }}`,
   },
   {
     day: 'Day 12',
     label: 'Permission close',
-    subject: 're: Priya, quick question about your platform work',
+    subject: 're: {{ first_name }}, quick question about your work',
     body:
-`Hi Priya,
+`Hi {{ first_name }},
 
 Last note from me on this. If now is not the moment, I will close the loop and stop reaching out.
 
-If it is worth a 20-minute conversation later in the year, reply with a month that works and I will set a reminder.
+If it is worth a 20-minute conversation later, reply with a month that works and I will set a reminder.
 
 Either way, thanks for the read.
 
-Ben`,
+{{ sender.first_name }}`,
   },
 ];
 
@@ -325,7 +318,7 @@ const tipsForRecruiters = [
           <span class="w-2.5 h-2.5 rounded-full bg-[#ff5f56]/80"></span>
           <span class="w-2.5 h-2.5 rounded-full bg-[#ffbd2e]/80"></span>
           <span class="w-2.5 h-2.5 rounded-full bg-[#27c93f]/80"></span>
-          <span class="ml-3 text-[11.5px] font-mono text-white/60">candidate-step-01.body.txt</span>
+          <span class="ml-3 text-[11.5px] font-mono text-white/60">First touch · body</span>
         </div>
         <pre class="bg-[#0c1224] text-white/85 p-5 text-[12.5px] leading-[1.65] font-mono overflow-x-auto"><code>Hi &#123;&#123; first_name | fallback: <span style="color:#fde68a">"there"</span> &#125;&#125;,
 

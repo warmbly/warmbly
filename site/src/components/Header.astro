@@ -55,8 +55,8 @@ const nav: NavItem[] = [
     href: '/use-cases/founders/',
     match: '/use-cases',
     mega: true,
-    megaTitle: 'Built for five seats.',
-    megaTagline: 'One platform, five concrete playbooks. Founders, agencies, sales teams, recruiters, fundraising.',
+    megaTitle: 'Who uses Warmbly.',
+    megaTagline: 'Founders, agencies, sales teams, recruiters, fundraising. Pick the closest one.',
     megaItems: useCases,
   },
   { label: 'Deliverability',href: '/deliverability/',match: '/deliverability' },
@@ -386,6 +386,16 @@ function active(match?: string) {
     document.addEventListener('keydown', function (e) {
       if (e.key !== 'Escape') return;
       bag.forEach(function (entry) { entry.forceClose(); });
+    });
+
+    // Hovering any non-mega nav item instantly closes any open mega panel.
+    // Picks up the desktop nav links that are not inside a [data-mega] wrapper.
+    var siblingNavLinks = document.querySelectorAll('#site-header nav .nav-link');
+    siblingNavLinks.forEach(function (link) {
+      if (link.closest('[data-mega]')) return;
+      link.addEventListener('mouseenter', function () {
+        bag.forEach(function (entry) { entry.forceClose(); });
+      });
     });
 
     // If the header is rendered "on sky", flip it to solid once the hero's
