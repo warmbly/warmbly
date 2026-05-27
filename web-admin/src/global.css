@@ -1,0 +1,198 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Admin app design tokens.
+ *
+ * The base palette is intentionally identical to web/src/global.css so
+ * the two surfaces feel like one product. The differentiation comes from
+ * a small set of admin-only tokens layered on top:
+ *
+ *   --admin-accent       — amber/red used for the ADMIN badge, sidebar
+ *                          active nav, primary admin buttons, and the
+ *                          top page stripe. Picked to read as "elevated
+ *                          privilege" without screaming destructive.
+ *   --admin-stripe       — solid color for the 3px stripe that runs
+ *                          along the top of the app shell.
+ *   --admin-sidebar-tint — a faint slate-warmer tone for the sidebar
+ *                          background so it reads as a distinct surface
+ *                          versus the dashboard's near-white sidebar.
+ *
+ * Keep the dashboard tokens in sync — copy them across when web/
+ * changes its design system.
+ */
+
+:root {
+  --radius: 0.5rem;
+  --foreground: oklch(0.15 0.01 260);
+  --background: oklch(1 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.15 0.01 260);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.15 0.01 260);
+  --primary: oklch(0.45 0.01 260);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.96 0.005 260);
+  --secondary-foreground: oklch(0.25 0.01 260);
+  --muted: oklch(0.97 0.003 260);
+  --muted-foreground: oklch(0.55 0.01 260);
+  --accent: oklch(0.96 0.005 260);
+  --accent-foreground: oklch(0.20 0.01 260);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.92 0.005 260);
+  --input: oklch(0.92 0.005 260);
+  --ring: oklch(0.55 0.01 260);
+  --chart-1: oklch(0.55 0.15 250);
+  --chart-2: oklch(0.60 0.12 160);
+  --chart-3: oklch(0.65 0.10 30);
+  --chart-4: oklch(0.50 0.14 300);
+  --chart-5: oklch(0.58 0.08 200);
+  --sidebar: oklch(0.97 0.006 75);
+  --sidebar-foreground: oklch(0.15 0.01 260);
+  --sidebar-primary: oklch(0.45 0.01 260);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.94 0.02 75);
+  --sidebar-accent-foreground: oklch(0.20 0.01 260);
+  --sidebar-border: oklch(0.90 0.01 75);
+  --sidebar-ring: oklch(0.55 0.01 260);
+
+  /* Admin-specific differentiators */
+  --admin-accent: #d97706;          /* amber-600 */
+  --admin-accent-foreground: #ffffff;
+  --admin-accent-soft: #fef3c7;     /* amber-100 */
+  --admin-accent-strong: #b45309;   /* amber-700 */
+  --admin-stripe: #d97706;
+  --admin-danger: #dc2626;          /* red-600, for hard admin actions */
+}
+
+.dark {
+  --background: oklch(0.13 0.01 260);
+  --foreground: oklch(0.95 0.005 260);
+  --card: oklch(0.16 0.01 260);
+  --card-foreground: oklch(0.95 0.005 260);
+  --popover: oklch(0.16 0.01 260);
+  --popover-foreground: oklch(0.95 0.005 260);
+  --primary: oklch(0.85 0.005 260);
+  --primary-foreground: oklch(0.13 0.01 260);
+  --secondary: oklch(0.22 0.01 260);
+  --secondary-foreground: oklch(0.95 0.005 260);
+  --muted: oklch(0.20 0.01 260);
+  --muted-foreground: oklch(0.60 0.01 260);
+  --accent: oklch(0.22 0.01 260);
+  --accent-foreground: oklch(0.95 0.005 260);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(0.26 0.01 260);
+  --input: oklch(0.26 0.01 260);
+  --ring: oklch(0.60 0.01 260);
+  --sidebar: oklch(0.15 0.012 80);
+  --sidebar-foreground: oklch(0.95 0.005 260);
+  --sidebar-primary: oklch(0.85 0.005 260);
+  --sidebar-primary-foreground: oklch(0.13 0.01 260);
+  --sidebar-accent: oklch(0.22 0.015 80);
+  --sidebar-accent-foreground: oklch(0.95 0.005 260);
+  --sidebar-border: oklch(0.26 0.01 80);
+  --sidebar-ring: oklch(0.60 0.01 260);
+
+  --admin-accent: #f59e0b;          /* amber-500 — slightly brighter on dark */
+  --admin-accent-foreground: #1c1917;
+  --admin-accent-soft: oklch(0.30 0.08 75);
+  --admin-accent-strong: #fbbf24;
+  --admin-stripe: #f59e0b;
+  --admin-danger: #ef4444;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+  --font-display: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+
+  --color-admin: var(--admin-accent);
+  --color-admin-foreground: var(--admin-accent-foreground);
+  --color-admin-soft: var(--admin-accent-soft);
+  --color-admin-strong: var(--admin-accent-strong);
+  --color-admin-stripe: var(--admin-stripe);
+  --color-admin-danger: var(--admin-danger);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+}
+
+body {
+  color: var(--foreground);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+  /* The 3px stripe along the top of the admin shell. Makes it instantly
+     visible — even peripherally — that this isn't the dashboard. */
+  .admin-stripe {
+    background: linear-gradient(90deg,
+      var(--admin-accent) 0%,
+      var(--admin-accent-strong) 50%,
+      var(--admin-accent) 100%);
+  }
+}
+
+/* Subtle diagonal warning pattern for the sidebar header background.
+   Kept very faint so it reads as texture, not noise. */
+.admin-sidebar-pattern {
+  background-image:
+    repeating-linear-gradient(
+      45deg,
+      transparent 0,
+      transparent 8px,
+      rgba(217, 119, 6, 0.04) 8px,
+      rgba(217, 119, 6, 0.04) 9px
+    );
+}

@@ -1,0 +1,11 @@
+# pnpm 11+ moved settings out of package.json. Mirrors web/pnpm-workspace.yaml.
+#
+# Trust the install-time build scripts of these packages so pnpm doesn't
+# refuse to run them. esbuild is pulled in transitively by vite and
+# needs to compile its native binary at install time.
+allowBuilds:
+  esbuild: true
+
+# Match the dashboard's overrides so transitive deps don't drift.
+overrides:
+  picomatch: ^4.0.4
