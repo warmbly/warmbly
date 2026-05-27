@@ -191,10 +191,11 @@ const faqs = [
   </section>
 
   <!-- =====================================================
-       CHANNEL DIRECTORY · clean table-like grid
-       Rows are real <a> elements that mailto: the channel.
-       4-col grid on lg: icon + title, email, topic, SLA.
-       Collapses gracefully on smaller breakpoints.
+       CHANNEL DIRECTORY · two prominent cards.
+       Each card is a real <a> that mailto:s the channel.
+       2-col grid on md+, stacks on mobile. Larger surface,
+       larger icon, larger email so the page does not feel
+       sparse with only two entries.
        ===================================================== -->
   <section id="channels" class="py-16 md:py-24">
     <div class="container-page">
@@ -204,7 +205,7 @@ const faqs = [
             Channels
           </div>
           <h2 class="text-[26px] md:text-[34px] font-semibold tracking-[-0.025em] leading-[1.1] text-heading max-w-2xl">
-            Six inboxes. One owner each.
+            Two inboxes. One owner each.
           </h2>
         </div>
         <p class="text-[13.5px] text-muted-foreground max-w-xs md:text-right">
@@ -212,52 +213,47 @@ const faqs = [
         </p>
       </div>
 
-      <div
-        class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden"
-        style="box-shadow: var(--shadow-sm);"
-      >
-        <!-- column header row, visible from md up -->
-        <div class="hidden md:grid grid-cols-[1.1fr_1.1fr_1.6fr_0.9fr] gap-6 px-6 py-3 text-[10.5px] uppercase tracking-[0.16em] font-mono text-muted-foreground bg-[color:var(--surface-2)]/60 border-b border-[color:var(--border)]">
-          <div>Channel</div>
-          <div>Email</div>
-          <div>Best for</div>
-          <div>Response</div>
-        </div>
+      <div class="grid md:grid-cols-2 gap-5 md:gap-6">
+        {channels.map((c) => (
+          <a
+            href={`mailto:${c.email}`}
+            class="group relative flex flex-col rounded-[16px] bg-white ring-1 ring-[color:var(--border)] p-7 md:p-9 hover:ring-[color:var(--brand)]/40 hover:-translate-y-0.5 transition-all"
+            style="box-shadow: var(--shadow-sm);"
+          >
+            <div class="flex items-start justify-between gap-4">
+              <div class="w-12 h-12 rounded-[12px] bg-[color:var(--brand-soft)] text-[color:var(--brand)] ring-1 ring-[color:var(--brand)]/15 inline-flex items-center justify-center shrink-0">
+                <Icon name={c.icon} size={22} />
+              </div>
+              <div class="inline-flex items-center gap-2 text-[11px] font-mono uppercase tracking-[0.14em] text-muted-foreground">
+                <span class="w-1.5 h-1.5 rounded-full bg-[color:var(--brand)]"></span>
+                {c.sla}
+              </div>
+            </div>
 
-        <ul class="divide-y divide-[color:var(--border)]">
-          {channels.map((c) => (
-            <li>
-              <a
-                href={`mailto:${c.email}`}
-                class="group grid md:grid-cols-[1.1fr_1.1fr_1.6fr_0.9fr] gap-x-6 gap-y-3 px-6 py-5 md:py-6 hover:bg-[color:var(--surface-2)]/50 transition-colors"
-              >
-                <!-- channel name + icon -->
-                <div class="flex items-center gap-3 min-w-0">
-                  <div class="w-9 h-9 rounded-[9px] bg-[color:var(--brand-soft)] text-[color:var(--brand)] ring-1 ring-[color:var(--brand)]/15 inline-flex items-center justify-center shrink-0">
-                    <Icon name={c.icon} size={16} />
-                  </div>
-                  <div class="text-[15px] font-semibold text-heading tracking-[-0.005em]">{c.title}</div>
-                </div>
+            <div class="mt-6">
+              <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-2">
+                {c.title}
+              </div>
+              <div class="text-[20px] md:text-[22px] font-mono text-[color:var(--brand)] group-hover:text-[color:var(--brand-strong)] tracking-[-0.01em] break-all">
+                {c.email}
+              </div>
+            </div>
 
-                <!-- email address -->
-                <div class="text-[13.5px] font-mono text-[color:var(--brand)] group-hover:text-[color:var(--brand-strong)] truncate self-center">
-                  {c.email}
-                </div>
+            <p class="mt-5 text-[14px] text-foreground/75 leading-relaxed">
+              {c.topic}
+            </p>
 
-                <!-- topic -->
-                <div class="text-[13.5px] text-foreground/75 leading-relaxed self-center">
-                  {c.topic}
-                </div>
-
-                <!-- SLA -->
-                <div class="flex items-center gap-2 self-center">
-                  <span class="w-1.5 h-1.5 rounded-full bg-[color:var(--brand)]"></span>
-                  <span class="text-[12px] font-mono uppercase tracking-[0.12em] text-muted-foreground">{c.sla}</span>
-                </div>
-              </a>
-            </li>
-          ))}
-        </ul>
+            <div class="mt-7 pt-5 border-t border-[color:var(--border)] flex items-center justify-between text-[13px]">
+              <span class="inline-flex items-center gap-1.5 font-semibold text-[color:var(--brand)] group-hover:text-[color:var(--brand-strong)]">
+                Open in mail
+                <Icon name="arrowRight" size={13} />
+              </span>
+              <span class="text-muted-foreground font-mono text-[11px] uppercase tracking-[0.12em]">
+                One owner
+              </span>
+            </div>
+          </a>
+        ))}
       </div>
     </div>
   </section>
