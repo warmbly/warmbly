@@ -744,64 +744,27 @@ const plans = [
     ============================================================ -->
     <section class="relative overflow-hidden border-y border-[color:var(--border)]" style="background: linear-gradient(180deg, var(--surface-2) 0%, #ffffff 100%);">
       <div class="container-page py-24 md:py-32 relative">
-        <div class="max-w-5xl mx-auto grid lg:grid-cols-[1.15fr_1fr] gap-10 lg:gap-16 items-end">
-
-          <!-- LEFT: editorial headline + short subhead -->
-          <div>
-            <div class="text-[10.5px] uppercase tracking-[0.22em] font-mono text-[#0284c7]">
-              Pricing
-            </div>
-            <h2 class="mt-4 text-[44px] sm:text-[56px] md:text-[68px] font-semibold tracking-[-0.035em] leading-[1.0] text-heading">
-              Same product.<br/>Four sizes.
-            </h2>
-            <p class="mt-6 text-[16.5px] md:text-[17px] text-foreground/75 leading-relaxed max-w-md">
-              Every paid plan ships with every feature. Pick the daily send volume that fits, and that is the number you pay.
-            </p>
+        <!-- Minimal centered header: small eyebrow, one big line, toggle.
+             Nothing else. The cards below carry the rest. -->
+        <div class="text-center max-w-2xl mx-auto">
+          <div class="text-[10.5px] uppercase tracking-[0.22em] font-mono text-[#0284c7]">
+            Pricing
           </div>
+          <h2 class="mt-4 text-[44px] sm:text-[56px] md:text-[64px] font-semibold tracking-[-0.035em] leading-[1.02] text-heading">
+            Same product. Four sizes.
+          </h2>
 
-          <!-- RIGHT: control panel — toggle + facts that apply to PAID plans only -->
-          <div class="rounded-[16px] bg-white ring-1 ring-[color:var(--border)] p-6 lg:p-7" style="box-shadow: 0 24px 48px -28px rgba(15,23,42,0.18), 0 4px 12px -6px rgba(15,23,42,0.06);">
-            <div class="text-[10.5px] uppercase tracking-[0.22em] font-mono text-muted-foreground">
-              Billing
+          <div class="mt-9 inline-flex items-center gap-3" id="billing-toggle">
+            <div class="relative inline-flex items-center p-1 rounded-full bg-white ring-1 ring-[color:var(--border)] text-[13px] font-medium" style="box-shadow: var(--shadow-sm);">
+              <span id="toggle-thumb" class="absolute top-1 bottom-1 rounded-full bg-[color:var(--brand)] transition-all duration-[350ms] ease-[cubic-bezier(0.22,1,0.36,1)]" style="left: 116px; width: 112px; box-shadow: 0 6px 18px -4px rgba(2,132,199,0.5);"></span>
+              <button data-billing="monthly" class="relative h-9 px-5 rounded-full text-foreground/70 transition-colors min-w-[112px]">Monthly</button>
+              <button data-billing="annual"  class="relative h-9 px-5 rounded-full text-white transition-colors min-w-[112px]">
+                <span class="inline-flex items-center gap-1.5">Annual</span>
+              </button>
             </div>
-
-            <div class="mt-4 flex items-center gap-3 flex-wrap" id="billing-toggle">
-              <div class="relative inline-flex items-center p-1 rounded-full bg-[color:var(--surface-2)] ring-1 ring-[color:var(--border)] text-[13px] font-medium">
-                <span id="toggle-thumb" class="absolute top-1 bottom-1 rounded-full bg-[color:var(--brand)] transition-all duration-[350ms] ease-[cubic-bezier(0.22,1,0.36,1)]" style="left: 116px; width: 112px; box-shadow: 0 6px 18px -4px rgba(2,132,199,0.5);"></span>
-                <button data-billing="monthly" class="relative h-9 px-5 rounded-full text-foreground/70 transition-colors min-w-[112px]">Monthly</button>
-                <button data-billing="annual"  class="relative h-9 px-5 rounded-full text-white transition-colors min-w-[112px]">
-                  <span class="inline-flex items-center gap-1.5">Annual</span>
-                </button>
-              </div>
-              <span class="inline-flex items-center gap-1.5 px-2.5 h-7 rounded-full text-[11.5px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                Save 20%
-              </span>
-            </div>
-
-            <div class="mt-5 pt-5 border-t border-[color:var(--border)] grid grid-cols-2 gap-x-5 gap-y-2.5 text-[12.5px] text-foreground/75">
-              <span class="inline-flex items-center gap-2">
-                <Icon name="check" size={12} class="text-[color:var(--brand)] shrink-0" />
-                Unlimited mailboxes
-              </span>
-              <span class="inline-flex items-center gap-2">
-                <Icon name="check" size={12} class="text-[color:var(--brand)] shrink-0" />
-                Unlimited warmup
-              </span>
-              <span class="inline-flex items-center gap-2">
-                <Icon name="check" size={12} class="text-[color:var(--brand)] shrink-0" />
-                Cancel any time
-              </span>
-              <span class="inline-flex items-center gap-2">
-                <Icon name="check" size={12} class="text-[color:var(--brand)] shrink-0" />
-                Self-host on Apache 2.0
-              </span>
-            </div>
-
-            <!-- Honest trial scope. Stated separately so it does not get
-                 mixed up with the paid-plan facts above. -->
-            <p class="mt-5 pt-4 border-t border-[color:var(--border)] text-[11.5px] text-muted-foreground leading-relaxed">
-              Free trial: 14 days, 1 connected mailbox, no card. Pick a plan from below to unlock everything in this list.
-            </p>
+            <span class="inline-flex items-center gap-1.5 px-2.5 h-7 rounded-full text-[11.5px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+              Save 20%
+            </span>
           </div>
         </div>
 
