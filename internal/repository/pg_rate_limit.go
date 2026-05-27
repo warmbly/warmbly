@@ -30,13 +30,13 @@ func NewRateLimitRepository(db *db.DB) RateLimitRepository {
 
 const USER_RATE_LIMITS_SELECT = `user_id, limit_read_pm, limit_write_pm, limit_bulk_pm,
 	limit_unibox_pm, limit_analytics_pm, limit_api_calls_daily, limit_bulk_ops_daily,
-	burst_multiplier, notes, updated_by, created_at, updated_at`
+	notes, updated_by, created_at, updated_at`
 
 func scanUserRateLimits(row db.Scannable, limits *models.UserRateLimits) error {
 	return row.Scan(
 		&limits.UserID, &limits.LimitReadPM, &limits.LimitWritePM, &limits.LimitBulkPM,
 		&limits.LimitUniboxPM, &limits.LimitAnalyticsPM, &limits.LimitAPICallsDaily, &limits.LimitBulkOpsDaily,
-		&limits.BurstMultiplier, &limits.Notes, &limits.UpdatedBy, &limits.CreatedAt, &limits.UpdatedAt,
+		&limits.Notes, &limits.UpdatedBy, &limits.CreatedAt, &limits.UpdatedAt,
 	)
 }
 
@@ -65,7 +65,7 @@ func (r *rateLimitRepository) GetPlanLimits(ctx context.Context, planID uuid.UUI
 	query := `
 		SELECT plan_id, limit_read_pm, limit_write_pm, limit_bulk_pm,
 			limit_unibox_pm, limit_analytics_pm, limit_api_calls_daily, limit_bulk_ops_daily,
-			burst_multiplier, created_at, updated_at
+			created_at, updated_at
 		FROM plan_rate_limits WHERE plan_id = $1
 	`
 
@@ -74,7 +74,7 @@ func (r *rateLimitRepository) GetPlanLimits(ctx context.Context, planID uuid.UUI
 	err := row.Scan(
 		&limits.PlanID, &limits.LimitReadPM, &limits.LimitWritePM, &limits.LimitBulkPM,
 		&limits.LimitUniboxPM, &limits.LimitAnalyticsPM, &limits.LimitAPICallsDaily, &limits.LimitBulkOpsDaily,
-		&limits.BurstMultiplier, &limits.CreatedAt, &limits.UpdatedAt,
+		&limits.CreatedAt, &limits.UpdatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -149,11 +149,6 @@ func (r *rateLimitRepository) UpdateUserLimits(ctx context.Context, userID, admi
 	if data.LimitBulkOpsDaily != nil {
 		setClauses = append(setClauses, fmt.Sprintf("limit_bulk_ops_daily = $%d", argPos))
 		args = append(args, *data.LimitBulkOpsDaily)
-		argPos++
-	}
-	if data.BurstMultiplier != nil {
-		setClauses = append(setClauses, fmt.Sprintf("burst_multiplier = $%d", argPos))
-		args = append(args, *data.BurstMultiplier)
 		argPos++
 	}
 	if data.Notes != nil {

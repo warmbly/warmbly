@@ -34,8 +34,6 @@ type UserRateLimits struct {
 	LimitWSEventPM   int `json:"limit_ws_event_pm"`
 	MaxConnections   int `json:"max_connections"`
 
-	BurstMultiplier float64 `json:"burst_multiplier"`
-
 	Notes     *string    `json:"notes,omitempty"`
 	UpdatedBy *uuid.UUID `json:"updated_by,omitempty"`
 
@@ -61,8 +59,6 @@ type PlanRateLimits struct {
 	LimitWSEventPM   int `json:"limit_ws_event_pm"`
 	MaxConnections   int `json:"max_connections"`
 
-	BurstMultiplier float64 `json:"burst_multiplier"`
-
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -77,8 +73,7 @@ type UpdateUserRateLimits struct {
 	LimitAPICallsDaily *int `json:"limit_api_calls_daily,omitempty"`
 	LimitBulkOpsDaily  *int `json:"limit_bulk_ops_daily,omitempty"`
 
-	BurstMultiplier *float64 `json:"burst_multiplier,omitempty"`
-	Notes           *string  `json:"notes,omitempty"`
+	Notes *string `json:"notes,omitempty"`
 }
 
 type RateLimitStatus struct {
@@ -92,9 +87,9 @@ type RateLimitStatus struct {
 // DefaultRateLimits returns the default rate limits. Sized to allow paid
 // customers to sustain ~100 req/s on read and write categories, matching
 // the API throughput competitors (Instantly) advertise as of mid-2026.
-// 100 req/s = 6000 req/min. BurstMultiplier stays at 1.0 — we want a
-// predictable ceiling, not a peak that lets clients double-tap during
-// short windows.
+// 100 req/s = 6000 req/min. Each Limit*PM value *is* the ceiling — there
+// is no burst multiplier. Enterprise customers get bumped by raising the
+// limit fields directly on user_rate_limits.
 func DefaultRateLimits() *UserRateLimits {
 	return &UserRateLimits{
 		LimitReadPM:        6000,
@@ -108,7 +103,6 @@ func DefaultRateLimits() *UserRateLimits {
 		LimitWSJoinPM:      30,
 		LimitWSEventPM:     60,
 		MaxConnections:     10,
-		BurstMultiplier:    1.0,
 	}
 }
 
