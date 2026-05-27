@@ -15,17 +15,18 @@ const compare = [
   ['Worker concentration',     'Capped by sum of mailbox budgets', 'Flat per-worker ceiling'],
 ];
 
-// Mirrors web/src/lib/plans.ts and /pricing.
+// Mirrors web/src/lib/plans.ts — single source of truth.
 const plans = [
   {
     name: 'Starter',
-    price: 29,
-    annual: 23,
+    price: '$29',
+    annual: '$23',
+    cadence: '/ month',
     summary: 'Great for small businesses with a small budget.',
-    sendsPerDay: 150,
-    href: 'https://app.warmbly.com/register?plan=starter',
     cta: 'Start free trial',
+    href: 'https://app.warmbly.com/register?plan=starter',
     highlight: false,
+    sendsPerDay: 150,
     features: [
       'Unlimited warmup',
       'Unlimited mailboxes',
@@ -36,13 +37,14 @@ const plans = [
   },
   {
     name: 'Grow',
-    price: 89,
-    annual: 71,
+    price: '$89',
+    annual: '$71',
+    cadence: '/ month',
     summary: 'Ideal for growing businesses scaling their outreach.',
-    sendsPerDay: 3000,
-    href: 'https://app.warmbly.com/register?plan=grow',
     cta: 'Start free trial',
+    href: 'https://app.warmbly.com/register?plan=grow',
     highlight: false,
+    sendsPerDay: 3000,
     features: [
       'Unlimited warmup',
       'Unlimited mailboxes',
@@ -53,13 +55,14 @@ const plans = [
   },
   {
     name: 'Business',
-    price: 329,
-    annual: 263,
+    price: '$329',
+    annual: '$263',
+    cadence: '/ month',
     summary: 'For established teams that need higher limits and advanced features.',
-    sendsPerDay: 15000,
-    href: 'https://app.warmbly.com/register?plan=business',
     cta: 'Start free trial',
+    href: 'https://app.warmbly.com/register?plan=business',
     highlight: true,
+    sendsPerDay: 15000,
     features: [
       'Everything in Grow',
       '15,000 emails / day',
@@ -70,13 +73,14 @@ const plans = [
   },
   {
     name: 'Enterprise',
-    price: null,
-    annual: null,
+    price: 'Custom',
+    annual: 'Custom',
+    cadence: 'volume-based',
     summary: 'Large orgs with custom volume and dedicated support.',
-    sendsPerDay: Infinity,
-    href: '/contact/?topic=sales',
     cta: 'Talk to sales',
+    href: '/contact/?topic=sales',
     highlight: false,
+    sendsPerDay: Infinity,
     features: [
       'Everything in Business',
       '15,000+ emails / day',
@@ -739,113 +743,86 @@ const plans = [
          PRICING — annual default, premium segmented toggle
     ============================================================ -->
     <section class="relative overflow-hidden border-y border-[color:var(--border)]" style="background: linear-gradient(180deg, var(--surface-2) 0%, #ffffff 100%);">
-      <div class="container-page py-16 md:py-20 relative">
+      <div class="container-page py-24 md:py-32 relative">
         <div class="text-center max-w-2xl mx-auto">
-          <h2 class="text-[36px] md:text-[56px] font-semibold tracking-[-0.035em] leading-[1.04] text-heading">
-            Pick a plan when the trial ends.
+          <div class="inline-flex items-center gap-2 h-7 px-3 rounded-full bg-[color:var(--brand-soft)] ring-1 ring-[color:var(--brand)]/15 mb-4">
+            <span class="text-[11px] uppercase tracking-[0.16em] text-[color:var(--brand)] font-semibold">Pricing</span>
+          </div>
+          <h2 class="text-[36px] md:text-[58px] font-semibold tracking-[-0.035em] leading-[1.02] text-heading">
+            Per mailbox. <span class="italic font-medium" style="color: var(--brand)">Predictable.</span>
           </h2>
           <p class="mt-5 text-[16.5px] text-foreground/75 leading-relaxed">
-            Trials run 14 days with one mailbox. After that, pick the plan that fits the volume you actually send. No credit card to start.
+            Warmup, sending, the inbox, analytics and CRM aren't separate line items. You pay for the mailboxes you connect.
           </p>
 
-          <!-- Same sliding-indicator switcher as /pricing.
-               No motion.dev dependency, getBoundingClientRect drives it. -->
-          <div
-            class="mt-9 relative inline-flex items-center p-1 rounded-full bg-[color:var(--surface-2)] ring-1 ring-[color:var(--border)] shadow-[0_4px_14px_-4px_rgba(15,23,42,0.08)]"
-            data-billing-toggle
-          >
-            <span
-              class="billing-indicator absolute top-1 bottom-1 rounded-full bg-white shadow-[0_2px_8px_-2px_rgba(15,23,42,0.18)] ring-1 ring-[color:var(--border)] transition-all duration-[400ms] ease-[cubic-bezier(0.4,0,0.2,1)] pointer-events-none"
-              style="width: 0; opacity: 0;"
-            ></span>
-            <button
-              type="button"
-              data-billing="monthly"
-              class="billing-btn relative z-10 h-9 px-5 rounded-full text-[13px] font-medium transition-colors duration-200 text-foreground/60 hover:text-heading"
-            >
-              Monthly
-            </button>
-            <button
-              type="button"
-              data-billing="annual"
-              class="billing-btn relative z-10 h-9 px-5 rounded-full text-[13px] font-medium transition-colors duration-200 text-[color:var(--sky-7)]"
-              aria-pressed="true"
-            >
-              Annual <span class="ml-1 text-[10.5px] font-semibold opacity-85">−20%</span>
-            </button>
+          <!-- Premium segmented billing toggle — annual is the default -->
+          <div class="mt-9 inline-flex items-center gap-3" id="billing-toggle">
+            <div class="relative inline-flex items-center p-1 rounded-full bg-white ring-1 ring-[color:var(--border)] text-[13px] font-medium" style="box-shadow: var(--shadow-sm);">
+              <span id="toggle-thumb" class="absolute top-1 bottom-1 rounded-full bg-[color:var(--brand)] transition-all duration-[350ms] ease-[cubic-bezier(0.22,1,0.36,1)]" style="left: 116px; width: 112px; box-shadow: 0 6px 18px -4px rgba(2,132,199,0.5);"></span>
+              <button data-billing="monthly" class="relative h-9 px-5 rounded-full text-foreground/70 transition-colors min-w-[112px]">Monthly</button>
+              <button data-billing="annual"  class="relative h-9 px-5 rounded-full text-white transition-colors min-w-[112px]">
+                <span class="inline-flex items-center gap-1.5">Annual</span>
+              </button>
+            </div>
+            <span class="inline-flex items-center gap-1.5 px-2.5 h-7 rounded-full text-[11.5px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+              Save 20%
+            </span>
           </div>
         </div>
 
-        <!-- Plan grid · same layout as /pricing -->
-        <div class="mt-16 grid md:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-5 items-stretch">
-          {plans.map((p) => (
-            <div class={`relative rounded-[18px] flex flex-col p-7 lg:p-8 bg-white transition-all ${
-              p.highlight
-                ? ''
-                : 'ring-1 ring-[color:var(--border)] shadow-[0_24px_48px_-20px_rgba(15,23,42,0.18),0_4px_12px_-6px_rgba(15,23,42,0.06)]'
-            }`}
-            style={p.highlight ? 'box-shadow: 0 0 0 2px #0284c7, 0 30px 60px -25px rgba(2,132,199,0.35), 0 8px 24px -12px rgba(2,132,199,0.15);' : ''}>
+        <div class="mt-16 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-5 items-stretch">
+          {plans.map((p, idx) => (
+            <div class={`pricing-card relative flex flex-col rounded-[18px] bg-white p-7 overflow-hidden ${
+              p.highlight ? 'ring-2 ring-[color:var(--brand)] lg:scale-[1.02] z-10' : 'ring-1 ring-[color:var(--border)]'
+            }`} style={p.highlight ? 'box-shadow: var(--shadow-xl);' : 'box-shadow: var(--shadow-sm);'} data-card-idx={idx}>
 
+              {/* Continuously sweeping gradient ring on the featured card */}
               {p.highlight && (
-                <>
-                  <div class="absolute inset-0 rounded-[18px] overflow-hidden pointer-events-none">
-                    <div class="absolute inset-x-0 top-0 h-[160px]" style="background: linear-gradient(180deg, rgba(186,230,253,0.6) 0%, rgba(240,249,255,0) 100%);"></div>
-                  </div>
-                  <div class="absolute -top-3 left-1/2 -translate-x-1/2 inline-flex items-center h-6 px-3 rounded-full text-[10px] font-semibold uppercase tracking-[0.14em] font-mono bg-[color:var(--sky-6)] text-white shadow-[0_4px_14px_-2px_rgba(2,132,199,0.5)] z-10">
-                    Most popular
-                  </div>
-                </>
+                <div class="absolute inset-0 pointer-events-none rounded-[18px] overflow-hidden" aria-hidden="true">
+                  <div class="absolute -top-20 -right-16 w-[260px] h-[260px] rounded-full" style="background: radial-gradient(circle, rgba(125,211,252,0.55) 0%, transparent 70%); filter: blur(34px);"></div>
+                  <div class="pricing-sweep absolute inset-0 rounded-[18px]"></div>
+                </div>
               )}
 
-              <div class="relative text-[11px] uppercase tracking-[0.18em] font-mono font-semibold mb-2 text-[color:var(--sky-6)]">
-                {p.name}
-              </div>
-              <p class="text-[13.5px] leading-relaxed h-[42px] text-foreground/70">
-                {p.summary}
-              </p>
-
-              <div class="mt-6 h-[62px] flex items-baseline gap-1.5">
-                {p.price !== null ? (
-                  <>
-                    <span class="text-[48px] font-semibold tracking-[-0.035em] leading-none text-heading flex items-baseline">
-                      <span class="text-[28px] mr-0.5 text-foreground/55 font-medium">$</span>
-                      <span class="plan-price relative inline-block overflow-hidden h-[44px] align-baseline" data-monthly={p.price} data-annual={p.annual}>
-                        <span class="plan-price-inner block leading-[44px] transition-transform duration-[350ms] ease-[cubic-bezier(0.34,1.56,0.64,1)]" style="transform: translateY(0)">{p.annual}</span>
-                      </span>
-                    </span>
-                    <span class="text-[13.5px] text-foreground/60 ml-1">/ mo</span>
-                  </>
-                ) : (
-                  <span class="text-[44px] font-semibold tracking-[-0.035em] leading-none text-heading">
-                    Custom
+              <div class="relative flex flex-col h-full">
+                {p.highlight && (
+                  <span class="absolute -top-2 right-0 inline-flex items-center h-6 px-2.5 rounded-full text-[10px] font-semibold uppercase tracking-[0.10em] bg-[color:var(--brand)] text-white shadow-[0_4px_12px_-2px_rgba(2,132,199,0.55)]">
+                    Most popular
                   </span>
                 )}
-              </div>
-              <div class="mt-1 text-[11.5px] font-mono text-foreground/50">
-                {p.price !== null ? (
-                  <span class="plan-note" data-monthly-note="billed monthly · cancel anytime" data-annual-note="billed annually · 20% off">billed annually · 20% off</span>
-                ) : (
-                  'volume-based · contact sales'
-                )}
-              </div>
+                <h3 class={`text-[16px] font-semibold ${p.highlight ? 'text-[color:var(--brand)]' : 'text-heading'}`}>{p.name}</h3>
+                <p class="mt-1.5 text-[12.5px] text-muted-foreground leading-snug min-h-[40px]">{p.summary}</p>
 
-              <a
-                href={p.href}
-                class={`plan-cta mt-7 inline-flex h-11 px-4 items-center justify-center w-full rounded-[10px] text-[14px] font-semibold transition-all duration-200 ease-out ${
-                  p.highlight
-                    ? 'bg-[color:var(--sky-6)] text-white shadow-[0_4px_14px_-2px_rgba(2,132,199,0.4)] hover:bg-[#075985] hover:shadow-[0_8px_22px_-4px_rgba(2,132,199,0.55)] hover:-translate-y-0.5'
-                    : 'bg-foreground text-background hover:bg-[#1f2937] hover:-translate-y-0.5 hover:shadow-[0_6px_18px_-4px_rgba(15,23,42,0.25)]'
-                }`}
-              >
-                {p.cta}
-              </a>
+                <div class="mt-6 flex items-baseline gap-1.5">
+                  <span class="text-[48px] font-semibold tracking-[-0.04em] text-heading leading-none price-amount" data-monthly={p.price} data-annual={p.annual}>{p.annual}</span>
+                </div>
+                <p class="mt-2 text-[11.5px] text-muted-foreground">
+                  <span class="cadence" data-monthly="/ month · billed monthly" data-annual="/ month · billed yearly">/ month · billed yearly</span>
+                </p>
 
-              <div class="mt-7 pt-7 border-t border-[color:var(--border)] flex-1">
-                <ul class="space-y-3">
+                {/* sends per day visual chip */}
+                <div class="mt-4 inline-flex items-center gap-1.5 text-[11px] font-mono text-muted-foreground self-start">
+                  <Icon name="zap" size={10} class="text-[color:var(--brand)]" />
+                  <span>{p.sendsPerDay === Infinity ? '15,000+' : p.sendsPerDay.toLocaleString()} sends / day</span>
+                </div>
+
+                <a
+                  href={p.href}
+                  class={`mt-7 inline-flex h-11 px-4 items-center justify-center w-full rounded-[10px] text-[14px] font-medium transition-colors ${
+                    p.highlight
+                      ? 'bg-[color:var(--brand)] text-white hover:bg-[color:var(--brand-strong)] shadow-[0_10px_24px_-10px_rgba(2,132,199,0.65)]'
+                      : 'bg-foreground text-background hover:bg-foreground/85'
+                  }`}
+                >
+                  {p.cta}
+                </a>
+
+                <div class="my-6 h-px bg-[color:var(--border)]"></div>
+                <ul class="space-y-2.5 text-[13px] text-foreground/90">
                   {p.features.map((f) => (
-                    <li class="text-[13.5px] flex items-start gap-2.5 text-foreground/85">
-                      <span class="shrink-0 mt-0.5 inline-flex items-center justify-center w-4 h-4 rounded-full bg-[color:var(--sky-1)] text-[color:var(--sky-6)]">
-                        <svg width="9" height="9" viewBox="0 0 12 12" fill="none"><path d="M2 6l2.5 2.5L10 3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    <li class="flex items-start gap-2">
+                      <span class={`mt-1 shrink-0 w-3.5 h-3.5 rounded-full inline-flex items-center justify-center ${p.highlight ? 'bg-[color:var(--brand-soft)] text-[color:var(--brand)]' : 'bg-[color:var(--surface-2)] text-foreground/55'}`}>
+                        <Icon name="check" size={9} />
                       </span>
                       <span>{f}</span>
                     </li>
@@ -1083,87 +1060,47 @@ const plans = [
       }, { amount: 0.4 });
     });
 
-    // ── Pricing billing toggle (sliding indicator + slide-up price swap).
-    //    Same implementation as /pricing so behavior matches everywhere.
-    (function () {
-      const toggle = document.querySelector('[data-billing-toggle]');
-      if (!toggle) return;
-      const buttons   = toggle.querySelectorAll('.billing-btn');
-      const indicator = toggle.querySelector('.billing-indicator');
-      const prices    = document.querySelectorAll('.plan-price');
-      let current = 'annual';
-
-      function moveIndicator(mode, withAnim = true) {
-        const btn = toggle.querySelector(`[data-billing="${mode}"]`);
-        if (!btn || !indicator) return;
-        if (!withAnim) indicator.style.transition = 'none';
-        const rect = btn.getBoundingClientRect();
-        const parentRect = toggle.getBoundingClientRect();
-        indicator.style.width   = rect.width + 'px';
-        indicator.style.left    = (rect.left - parentRect.left) + 'px';
-        indicator.style.opacity = '1';
-        if (!withAnim) {
-          requestAnimationFrame(() => { indicator.style.transition = ''; });
+    // ── Pricing billing toggle (Monthly ↔ Annual, annual default) ───
+    const toggle = document.getElementById('billing-toggle');
+    const thumb  = document.getElementById('toggle-thumb');
+    if (toggle && thumb) {
+      const btns = toggle.querySelectorAll('button[data-billing]');
+      const apply = (mode, animated = true) => {
+        const btn = toggle.querySelector(`button[data-billing="${mode}"]`);
+        if (!btn) return;
+        const left  = btn.offsetLeft;
+        const width = btn.offsetWidth;
+        if (animated) {
+          animate(thumb, { left: `${left}px`, width: `${width}px` }, { duration: 0.35, ease: [0.22, 1, 0.36, 1] });
+        } else {
+          thumb.style.left = `${left}px`;
+          thumb.style.width = `${width}px`;
         }
-      }
-
-      function animatePrice(el, newValue) {
-        const inner = el.querySelector('.plan-price-inner');
-        if (!inner) return;
-        if (inner.textContent === newValue) return;
-        // Phase 1: slide current value up and out, fade
-        inner.style.transition = 'transform 220ms cubic-bezier(0.4,0,0.2,1), opacity 220ms cubic-bezier(0.4,0,0.2,1)';
-        inner.style.transform  = 'translateY(-100%)';
-        inner.style.opacity    = '0';
-        setTimeout(() => {
-          // Swap text and drop the new value in from below
-          inner.style.transition = 'none';
-          inner.style.transform  = 'translateY(100%)';
-          inner.textContent      = newValue;
-          inner.offsetHeight; // reflow
-          inner.style.transition = 'transform 320ms cubic-bezier(0.34,1.56,0.64,1), opacity 220ms ease-out';
-          inner.style.transform  = 'translateY(0)';
-          inner.style.opacity    = '1';
-        }, 220);
-      }
-
-      function apply(mode) {
-        if (mode === current) return;
-        current = mode;
-        buttons.forEach((b) => {
-          const active = b.getAttribute('data-billing') === mode;
-          if (active) {
-            b.classList.add('text-[color:var(--sky-7)]');
-            b.classList.remove('text-foreground/60', 'hover:text-heading');
-            b.setAttribute('aria-pressed', 'true');
+        btns.forEach((b) => {
+          if (b.getAttribute('data-billing') === mode) {
+            b.classList.remove('text-foreground/70');
+            b.classList.add('text-white');
           } else {
-            b.classList.remove('text-[color:var(--sky-7)]');
-            b.classList.add('text-foreground/60', 'hover:text-heading');
-            b.removeAttribute('aria-pressed');
+            b.classList.add('text-foreground/70');
+            b.classList.remove('text-white');
           }
         });
-        moveIndicator(mode);
-        prices.forEach((p) => {
-          const m = p.getAttribute('data-monthly');
-          const a = p.getAttribute('data-annual');
-          animatePrice(p, mode === 'annual' ? a : m);
+        document.querySelectorAll('.price-amount').forEach((el) => {
+          const next = el.getAttribute(`data-${mode}`) || '';
+          if (!next) return;
+          if (!animated) { el.textContent = next; return; }
+          animate(el, { opacity: [1, 0] }, { duration: 0.12 }).then(() => {
+            el.textContent = next;
+            animate(el, { opacity: [0, 1] }, { duration: 0.18 });
+          });
         });
-        document.querySelectorAll('.plan-note').forEach((n) => {
-          const m = n.getAttribute('data-monthly-note');
-          const a = n.getAttribute('data-annual-note');
-          if (!m || !a) return;
-          n.style.transition = 'opacity 180ms ease-out';
-          n.style.opacity    = '0';
-          setTimeout(() => {
-            n.textContent  = mode === 'annual' ? a : m;
-            n.style.opacity = '1';
-          }, 180);
+        document.querySelectorAll('.cadence').forEach((el) => {
+          el.textContent = el.getAttribute(`data-${mode}`) || '';
         });
-      }
-
-      buttons.forEach((b) => b.addEventListener('click', () => apply(b.getAttribute('data-billing'))));
-      requestAnimationFrame(() => moveIndicator('annual', false));
-      window.addEventListener('resize', () => moveIndicator(current, false));
-    })();
+      };
+      btns.forEach((b) => b.addEventListener('click', () => apply(b.getAttribute('data-billing'))));
+      // Default selection — annual, no animation on initial paint
+      requestAnimationFrame(() => apply('annual', false));
+    }
   </script>
 </Layout>
