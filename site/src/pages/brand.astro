@@ -92,6 +92,7 @@ const assets = [
   { label: 'Mark · PNG · 2x',        href: '/brand/warmbly-mark@2x.png',          size: 'PNG' },
   { label: 'Wordmark · white · SVG', href: '/brand/warmbly-wordmark-white.svg',   size: 'SVG' },
   { label: 'Mark · white · SVG',     href: '/brand/warmbly-mark-white.svg',       size: 'SVG' },
+  { label: 'Social avatar · 1024',   href: '/brand/social-avatar.jpg',            size: 'JPG' },
 ];
 ---
 <Layout
@@ -326,6 +327,81 @@ const assets = [
                 </a>
               ))}
             </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       SOCIAL AVATAR · primary profile picture for social channels
+  ============================================================ -->
+  <section id="avatar" class="bg-[color:var(--surface-1)]/40 border-b border-[color:var(--border)] py-20 md:py-28 scroll-mt-4">
+    <div class="container-page">
+      <div class="grid lg:grid-cols-[1fr_1.4fr] gap-12 lg:gap-16 items-start">
+        <div>
+          <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7] mb-3">Social avatar</div>
+          <h2 class="text-[32px] md:text-[44px] font-semibold tracking-[-0.03em] leading-[1.05] text-heading">
+            The profile picture.
+          </h2>
+          <p class="mt-4 text-[15.5px] text-foreground/70 leading-relaxed max-w-md">
+            The Warmbly profile image used across X, LinkedIn, GitHub, Product Hunt, and other social surfaces. Square crop, sky background, mark centered. Use this exact file rather than recreating it at runtime.
+          </p>
+          <ul class="mt-6 space-y-2 text-[13.5px] text-foreground/80 max-w-md">
+            <li class="flex items-start gap-2"><Icon name="check" size={13} class="text-[#0284c7] mt-1 shrink-0" /><span>Source resolution is 1024 by 1024.</span></li>
+            <li class="flex items-start gap-2"><Icon name="check" size={13} class="text-[#0284c7] mt-1 shrink-0" /><span>Safe for round and square crops. The mark stays inside the inner 70 percent.</span></li>
+            <li class="flex items-start gap-2"><Icon name="check" size={13} class="text-[#0284c7] mt-1 shrink-0" /><span>Do not overlay text. Do not recolor the sky.</span></li>
+          </ul>
+          <div class="mt-7 flex flex-wrap items-center gap-3">
+            <a
+              href="/brand/social-avatar.jpg"
+              download
+              class="inline-flex h-10 px-4 items-center gap-2 rounded-[10px] text-[13.5px] font-semibold bg-foreground text-background hover:bg-foreground/85 transition-colors"
+            >
+              <Icon name="arrowRight" size={13} class="rotate-90" />
+              Download JPG
+            </a>
+            <span class="text-[11.5px] font-mono text-muted-foreground">/brand/social-avatar.jpg</span>
+          </div>
+        </div>
+
+        <div class="space-y-4">
+          <!-- Full bleed avatar canvas -->
+          <div class="rounded-[18px] overflow-hidden ring-1 ring-[color:var(--border)]" style="box-shadow: var(--shadow-md);">
+            <img
+              src="/brand/social-avatar.jpg"
+              alt="Warmbly social avatar: a white paper-plane mark on a sky background with soft clouds."
+              width="1024"
+              height="1024"
+              class="block w-full h-auto"
+              loading="lazy"
+            />
+          </div>
+
+          <!-- Crop previews -->
+          <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] p-6" style="box-shadow: var(--shadow-sm);">
+            <div class="text-[10.5px] uppercase tracking-[0.16em] font-mono text-muted-foreground mb-4">Crop preview</div>
+            <div class="flex items-end gap-6 md:gap-10 flex-wrap">
+              <div class="flex flex-col items-center gap-2">
+                <img src="/brand/social-avatar.jpg" alt="" width="48" height="48" class="w-12 h-12 rounded-full ring-1 ring-[color:var(--border)] object-cover" />
+                <span class="text-[10.5px] font-mono text-muted-foreground">round · 48</span>
+              </div>
+              <div class="flex flex-col items-center gap-2">
+                <img src="/brand/social-avatar.jpg" alt="" width="64" height="64" class="w-16 h-16 rounded-full ring-1 ring-[color:var(--border)] object-cover" />
+                <span class="text-[10.5px] font-mono text-muted-foreground">round · 64</span>
+              </div>
+              <div class="flex flex-col items-center gap-2">
+                <img src="/brand/social-avatar.jpg" alt="" width="80" height="80" class="w-20 h-20 rounded-[14px] ring-1 ring-[color:var(--border)] object-cover" />
+                <span class="text-[10.5px] font-mono text-muted-foreground">square · 80</span>
+              </div>
+              <div class="flex flex-col items-center gap-2">
+                <img src="/brand/social-avatar.jpg" alt="" width="112" height="112" class="w-28 h-28 rounded-[18px] ring-1 ring-[color:var(--border)] object-cover" />
+                <span class="text-[10.5px] font-mono text-muted-foreground">square · 112</span>
+              </div>
+            </div>
+            <p class="mt-5 text-[12.5px] text-foreground/65 leading-relaxed">
+              The mark sits within the inner 70 percent of the canvas, so the silhouette survives circular masks on profile chips.
+            </p>
           </div>
         </div>
       </div>

@@ -20,7 +20,12 @@ The backend API is the control plane. Workers are the execution plane.
 - `cmd/worker`: execution worker for send/sync operations
 - `tracking/`: open and click tracking service
 - `realtime/`: websocket fanout service
-- `web/`: frontend
+- `web/`: in-product frontend (dashboard)
+- `site/`: public marketing site (Astro 5 + Tailwind v4)
+- `deploy/`: production deploy manifests, infrastructure, and runtime config
+- `docs/`: engineering documentation and operational runbooks
+- `resources/`: architecture notes and longform design context
+- `scripts/`: one-off tooling (codegen, migrations, local dev utilities)
 
 ## Worker Topology
 

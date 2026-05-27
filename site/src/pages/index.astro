@@ -755,10 +755,16 @@ const plans = [
             Trials run 14 days with one mailbox. After that, pick the plan that fits the volume you actually send. No credit card to start.
           </p>
 
-          <!-- Segmented billing toggle, annual default -->
+          <!-- Segmented billing toggle, annual default.
+               Thumb has an inline width/left so it stays visible even
+               if motion.dev hasn't booted yet; JS upgrades to animated. -->
           <div class="mt-9 inline-flex items-center gap-3" id="billing-toggle">
             <div class="relative inline-flex items-center p-1 rounded-full bg-white ring-1 ring-[color:var(--border)] text-[13px] font-medium" style="box-shadow: var(--shadow-sm);">
-              <span id="toggle-thumb" class="absolute top-1 bottom-1 rounded-full bg-[color:var(--brand)] transition-all duration-[350ms] ease-[cubic-bezier(0.22,1,0.36,1)]" style="box-shadow: 0 6px 18px -4px rgba(2,132,199,0.5);"></span>
+              <span
+                id="toggle-thumb"
+                class="absolute top-1 bottom-1 rounded-full bg-[color:var(--brand)] transition-all duration-[350ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
+                style="left: 116px; width: 112px; box-shadow: 0 6px 18px -4px rgba(2,132,199,0.5);"
+              ></span>
               <button data-billing="monthly" class="relative h-9 px-5 rounded-full text-foreground/70 transition-colors min-w-[112px]">Monthly</button>
               <button data-billing="annual"  class="relative h-9 px-5 rounded-full text-white transition-colors min-w-[112px]">Annual</button>
             </div>
@@ -768,13 +774,28 @@ const plans = [
           </div>
         </div>
 
-        <div class="mt-12 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-px bg-[color:var(--border)] ring-1 ring-[color:var(--border)] rounded-[10px] overflow-hidden">
+        <!-- Premium pricing cards: separated, ringed, featured card glows with sweep + cloud bloom. -->
+        <div class="mt-16 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-5 items-stretch">
           {plans.map((p, idx) => (
-            <div class={`pricing-card relative flex flex-col bg-white p-7 ${
-              p.highlight ? '' : ''
-            }`} data-card-idx={idx}>
+            <div class={`pricing-card relative flex flex-col rounded-[18px] bg-white p-7 overflow-hidden ${
+              p.highlight ? 'ring-2 ring-[color:var(--brand)] lg:scale-[1.02] z-10' : 'ring-1 ring-[color:var(--border)]'
+            }`} style={p.highlight ? 'box-shadow: var(--shadow-xl);' : 'box-shadow: var(--shadow-sm);'} data-card-idx={idx}>
+
+              {p.highlight && (
+                <div class="absolute inset-0 pointer-events-none rounded-[18px] overflow-hidden" aria-hidden="true">
+                  <div class="absolute -top-20 -right-16 w-[260px] h-[260px] rounded-full" style="background: radial-gradient(circle, rgba(125,211,252,0.55) 0%, transparent 70%); filter: blur(34px);"></div>
+                  <img src="/backdrops/cloud-4.webp" alt="" class="absolute -top-6 -right-6 w-[180px] opacity-55 pointer-events-none select-none" loading="lazy" decoding="async" />
+                  <div class="pricing-sweep absolute inset-0 rounded-[18px]"></div>
+                </div>
+              )}
+
               <div class="relative flex flex-col h-full">
-                <h3 class={`text-[14px] font-semibold uppercase tracking-[0.12em] ${p.highlight ? 'text-[color:var(--brand)]' : 'text-heading'}`}>{p.name}</h3>
+                {p.highlight && (
+                  <span class="absolute -top-2 right-0 inline-flex items-center h-6 px-2.5 rounded-full text-[10px] font-semibold uppercase tracking-[0.10em] bg-[color:var(--brand)] text-white shadow-[0_4px_12px_-2px_rgba(2,132,199,0.55)]">
+                    Most popular
+                  </span>
+                )}
+                <h3 class={`text-[16px] font-semibold ${p.highlight ? 'text-[color:var(--brand)]' : 'text-heading'}`}>{p.name}</h3>
                 <p class="mt-1.5 text-[12.5px] text-muted-foreground leading-snug min-h-[40px]">{p.summary}</p>
 
                 <div class="mt-6 flex items-baseline gap-1.5">
@@ -784,7 +805,6 @@ const plans = [
                   <span class="cadence" data-monthly="/ month · billed monthly" data-annual="/ month · billed yearly">/ month · billed yearly</span>
                 </p>
 
-                {/* sends per day visual chip */}
                 <div class="mt-4 inline-flex items-center gap-1.5 text-[11px] font-mono text-muted-foreground self-start">
                   <Icon name="zap" size={10} class="text-[color:var(--brand)]" />
                   <span>{p.sendsPerDay === Infinity ? '15,000+' : p.sendsPerDay.toLocaleString()} sends / day</span>
