@@ -13,7 +13,10 @@ import (
 	"github.com/warmbly/warmbly/internal/app/worker"
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/infrastructure/cache"
+	"github.com/warmbly/warmbly/internal/infrastructure/codec"
 	"github.com/warmbly/warmbly/internal/infrastructure/dynamo"
+	"github.com/warmbly/warmbly/internal/infrastructure/encryptedkeys"
+	"github.com/warmbly/warmbly/internal/infrastructure/eventbus"
 	"github.com/warmbly/warmbly/internal/infrastructure/kafka"
 	"github.com/warmbly/warmbly/internal/infrastructure/kms"
 	"github.com/warmbly/warmbly/internal/infrastructure/storage"
@@ -25,19 +28,14 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Worker ID from hostname (UUID set by Terraform)
-	hostname, err := os.Hostname()
-	if err != nil {
-		log.Fatal("failed to get hostname:", err)
-	}
-	workerID, err := uuid.Parse(hostname)
-	if err != nil {
-		// If hostname isn't a UUID, generate one for local dev
-		workerID = uuid.New()
-		log.Printf("Hostname %q is not a UUID, using generated ID: %s", hostname, workerID)
-	} else {
-		log.Printf("Worker ID from hostname: %s", workerID)
-	}
+	// Resolve worker identity. Precedence:
+	//   1. WORKER_ID:        explicit UUID, used as-is
+	//   2. WORKER_BIND_IP:   derive UUIDv5 from the bound egress IP so each
+	//                        IP on a multi-IP box becomes its own worker
+	//   3. hostname:         UUID set by Terraform on legacy single-IP VPS
+	//   4. generated UUID:   local dev fallback
+	workerID, bindIP := resolveWorkerID()
+	log.Printf("Worker ID: %s, Bind IP: %s", workerID, bindIP)
 
 	// Load config with env-first approach
 	cfg, err := config.NewConfig(ctx)
@@ -72,7 +70,7 @@ func main() {
 		masterKey += "-dev"
 	}
 
-	kmsClient, err := kms.New(ctx, awscfg, masterKey)
+	kmsClient, err := kms.FromEnv(ctx, awscfg, masterKey)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -82,8 +80,14 @@ func main() {
 		log.Fatal(err)
 	}
 
-	userEncryptedKeysRepo := repository.NewUserEncryptedKeysRepository(kmsClient, dynamoDB)
-	cipherService := cipher.NewService(kmsClient, redisCache, userEncryptedKeysRepo)
+	encryptedKeys, err := encryptedkeys.FromEnv(
+		encryptedkeys.Deps{Dynamo: dynamoDB},
+		"http",
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+	cipherService := cipher.NewService(kmsClient, redisCache, encryptedKeys)
 	emailMessageMapRepo := repository.NewEmailMessageMapRepository(dynamoDB)
 
 	// S3
@@ -92,17 +96,26 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Schema Registry → Avro v2
-	schemaEndpoint, schemaKey, schemaSecret, err := cfg.LoadSchemaRegistryConfig(ctx)
-	if err != nil {
-		log.Fatal(err)
+	// Codec (Avro by default, JSON when CODEC_PROVIDER=json).
+	// Avro inputs come from the existing AWS Secrets Manager config so deploys
+	// using Schema Registry don't need to duplicate them as env vars.
+	var codecImpl codec.Codec
+	if os.Getenv("CODEC_PROVIDER") == "json" {
+		codecImpl = codec.NewJSON()
+	} else {
+		schemaEndpoint, schemaKey, schemaSecret, cerr := cfg.LoadSchemaRegistryConfig(ctx)
+		if cerr != nil {
+			log.Fatal(cerr)
+		}
+		avro, cerr := codec.NewAvro(schemaEndpoint, schemaKey, schemaSecret)
+		if cerr != nil {
+			log.Fatal(cerr)
+		}
+		codecImpl = avro
 	}
-	avrov2Client, err := kafka.NewAvrov2Client(schemaEndpoint, schemaKey, schemaSecret)
-	if err != nil {
-		log.Fatal(err)
-	}
+	log.Printf("Codec: %s", codecImpl.Name())
 
-	// Kafka bootstrap
+	// Event bus (Kafka by default, NATS when EVENTBUS_PROVIDER=nats).
 	kafkaBootstrapServers, err := cfg.LoadKafkaBootstrapServers(ctx)
 	if err != nil {
 		log.Fatal(err)
@@ -111,44 +124,30 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	// Kafka producer
-	producerConfig := kafka.NewProducer(kafkaBootstrapServers)
-	if kafkaSaslConfig != nil {
-		producerConfig.WithSASL(kafkaSaslConfig)
-	}
-	kafkaProducer, err := producerConfig.Connect()
+	bus, err := eventbus.FromEnv(kafkaBootstrapServers, kafkaSaslConfig)
 	if err != nil {
 		log.Fatal(err)
 	}
-	kafkaProducer.WithAvrov2(avrov2Client)
-	defer kafkaProducer.Close()
+	defer bus.Close()
+	log.Printf("Event bus: %s", bus.Name())
 
-	// Kafka consumer — subscribe to worker-specific topic
+	// When the bus is Kafka-backed and the codec is Avro-backed, also wire
+	// the underlying Avrov2 client into the Kafka producer so the existing
+	// Avro wire format on Kafka topics is preserved.
+	if kbus, ok := bus.(*eventbus.KafkaBus); ok {
+		if ac, ok := codecImpl.(*codec.AvroCodec); ok {
+			kbus.Producer().WithAvrov2(ac.Underlying())
+		}
+	}
+
 	workerTopic := kafka.GetWorkerTopic(workerID.String())
-	consumerConfig := kafka.NewConsumer(kafkaBootstrapServers)
-	if kafkaSaslConfig != nil {
-		consumerConfig.WithSASL(kafkaSaslConfig)
-	}
-	consumerConfig.Set("group.id", "worker-"+workerID.String())
-	consumerConfig.Set("auto.offset.reset", "earliest")
-	kafkaConsumer, err := consumerConfig.Connect()
-	if err != nil {
-		log.Fatal(err)
-	}
-	kafkaConsumer.WithAvrov2(avrov2Client)
-	defer kafkaConsumer.Close()
-
-	if err := kafkaConsumer.SubscribeTopics([]string{workerTopic}); err != nil {
-		log.Fatal(err)
-	}
 
 	// WorkerService
 	workerService := &worker.WorkerService{
 		ID:                        workerID.String(),
 		CipherService:             cipherService,
-		KafkaProducer:             kafkaProducer,
-		KafkaConsumer:             kafkaConsumer,
+		Bus:                       bus,
+		Codec:                     codecImpl,
 		Cache:                     redisCache,
 		Storage:                   s3Client,
 		EmailMessageMapRepository: emailMessageMapRepo,
@@ -174,6 +173,51 @@ func main() {
 	}()
 
 	log.Printf("Worker %s started, listening on topic %s", workerID, workerTopic)
-	kafkaConsumer.Consume(ctx, workerService.Receive)
+	if err := bus.Subscribe(ctx, []string{workerTopic}, "worker-"+workerID.String(), workerService.Receive); err != nil {
+		log.Println("event bus subscribe ended:", err)
+	}
 	log.Println("Worker stopped")
+}
+
+// uuidNamespaceURL is the RFC 4122 URL namespace, matching the value used by
+// scripts/install-worker.sh when deriving the per-IP worker ID. Keep these in
+// sync: the installer and the worker must agree on the derivation.
+var uuidNamespaceURL = uuid.MustParse("6ba7b811-9dad-11d1-80b4-00c04fd430c8")
+
+// workerIDFromIP returns the deterministic UUIDv5 for the given IPv4 string.
+// Same IP always maps to the same UUID, which is what lets us treat each IP
+// on a multi-IP box as its own stable sending identity (egress).
+func workerIDFromIP(ip string) uuid.UUID {
+	return uuid.NewSHA1(uuidNamespaceURL, []byte(ip))
+}
+
+// resolveWorkerID applies the boot-time precedence rules and returns the
+// chosen worker UUID together with a human-readable bind-IP label for logs.
+func resolveWorkerID() (uuid.UUID, string) {
+	if raw := os.Getenv("WORKER_ID"); raw != "" {
+		id, err := uuid.Parse(raw)
+		if err != nil {
+			log.Fatalf("WORKER_ID %q is not a valid UUID: %v", raw, err)
+		}
+		bind := os.Getenv("WORKER_BIND_IP")
+		if bind == "" {
+			bind = "default route"
+		}
+		return id, bind
+	}
+
+	if bind := os.Getenv("WORKER_BIND_IP"); bind != "" {
+		return workerIDFromIP(bind), bind
+	}
+
+	hostname, err := os.Hostname()
+	if err != nil {
+		log.Fatal("failed to get hostname:", err)
+	}
+	if id, err := uuid.Parse(hostname); err == nil {
+		return id, "default route"
+	}
+	id := uuid.New()
+	log.Printf("Hostname %q is not a UUID, using generated ID: %s", hostname, id)
+	return id, "default route"
 }
