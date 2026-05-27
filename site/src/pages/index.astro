@@ -281,66 +281,20 @@ const plans = [
           <!-- Subtle horizontal divider made of the sky color, not white -->
           <div class="mt-14 h-px" style="background: linear-gradient(90deg, transparent 0%, rgba(186,230,253,0.22) 50%, transparent 100%);"></div>
 
-          <!-- Live pool activity stream: the focal "live" element. -->
-          <div class="mt-10">
-            <div class="flex items-baseline justify-between mb-5">
-              <div class="flex items-baseline gap-3">
-                <span class="text-[10.5px] uppercase tracking-[0.22em] font-mono text-white/55">Pool activity</span>
-                <span class="text-[11px] font-mono text-white/40">last hour</span>
+          <!-- KPI row directly below divider, clean and short -->
+          <div class="mt-10 grid grid-cols-2 md:grid-cols-4 gap-y-6 gap-x-10">
+            {[
+              { k: 'Peers',   v: '142',    sub: 'active last 24h' },
+              { k: 'Replies', v: '11',     sub: 'reply rate 34%' },
+              { k: 'Inbox',   v: '96.4%',  sub: 'rolling 14 day' },
+              { k: 'Spam',    v: '1.8%',   sub: 'well under 10%' },
+            ].map((s) => (
+              <div>
+                <div class="text-[10.5px] uppercase tracking-[0.22em] text-white/45 font-mono">{s.k}</div>
+                <div class="mt-2 text-[32px] md:text-[36px] font-semibold tracking-[-0.025em] text-white leading-none tabular-nums">{s.v}</div>
+                <div class="mt-1.5 text-[11.5px] text-white/45 font-mono">{s.sub}</div>
               </div>
-              <span class="text-[10.5px] uppercase tracking-[0.22em] font-mono text-emerald-300/80 inline-flex items-center gap-1.5">
-                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse-soft"></span>
-                streaming
-              </span>
-            </div>
-
-            <div class="grid lg:grid-cols-[1.6fr_1fr] gap-x-12 gap-y-8 items-start">
-              <!-- Scrolling feed -->
-              <div class="relative overflow-hidden h-[220px] md:h-[260px]" style="mask-image: linear-gradient(180deg, transparent 0%, black 10%, black 90%, transparent 100%); -webkit-mask-image: linear-gradient(180deg, transparent 0%, black 10%, black 90%, transparent 100%);">
-                <div class="warmup-feed-track">
-                  {[...Array(2)].map(() => (
-                    <ul>
-                      {[
-                        { t: '00:04', who: 'priya@stripe.com',   action: 'replied to thread',         kind: 'reply',  tone: 'emerald' },
-                        { t: '00:11', who: 'ben@mercury.com',    action: 'warmup sent',               kind: 'send',   tone: 'sky'     },
-                        { t: '00:18', who: 'lin@notion.so',      action: 'moved spam to inbox',       kind: 'rescue', tone: 'amber'   },
-                        { t: '00:24', who: 'amir@vercel.com',    action: 'starred thread',            kind: 'star',   tone: 'sky'     },
-                        { t: '00:31', who: 'ari@linear.app',     action: 'warmup sent',               kind: 'send',   tone: 'sky'     },
-                        { t: '00:38', who: 'tom@plain.com',      action: 'replied to thread',         kind: 'reply',  tone: 'emerald' },
-                        { t: '00:45', who: 'sasha@cal.com',      action: 'moved spam to inbox',       kind: 'rescue', tone: 'amber'   },
-                        { t: '00:52', who: 'kara@resend.com',    action: 'warmup sent',               kind: 'send',   tone: 'sky'     },
-                      ].map((r) => (
-                        <li class="grid grid-cols-[48px_14px_minmax(0,1fr)_auto] gap-3 items-center py-2 text-[13px]">
-                          <span class="font-mono text-white/40 text-[11px] tabular-nums">{r.t}</span>
-                          <span class={`w-1.5 h-1.5 rounded-full justify-self-center ${r.tone === 'emerald' ? 'bg-emerald-400' : r.tone === 'amber' ? 'bg-amber-400' : 'bg-sky-400'}`}></span>
-                          <span class="text-white/90 truncate">
-                            <span class="font-mono">{r.who}</span>
-                            <span class="text-white/55"> {r.action}</span>
-                          </span>
-                          <span class="text-[10.5px] uppercase tracking-[0.18em] font-mono text-white/40">{r.kind}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  ))}
-                </div>
-              </div>
-
-              <!-- KPI column -->
-              <div class="grid grid-cols-2 gap-y-6 gap-x-6">
-                {[
-                  { k: 'Peers',     v: '142',    sub: 'active 24h' },
-                  { k: 'Replies',   v: '11',     sub: '34% rate' },
-                  { k: 'Inbox',     v: '96.4%',  sub: 'rolling 14d' },
-                  { k: 'Spam',      v: '1.8%',   sub: 'under 10%' },
-                ].map((s) => (
-                  <div>
-                    <div class="text-[10.5px] uppercase tracking-[0.22em] text-white/45 font-mono">{s.k}</div>
-                    <div class="mt-2 text-[28px] md:text-[32px] font-semibold tracking-[-0.025em] text-white leading-none tabular-nums">{s.v}</div>
-                    <div class="mt-1.5 text-[11px] text-white/45 font-mono">{s.sub}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
+            ))}
           </div>
 
           <!-- Pool composition strip, quiet, no box -->
