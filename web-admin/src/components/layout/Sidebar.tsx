@@ -8,6 +8,7 @@ import {
     Activity,
     BarChart3,
     Building2,
+    Cloud,
     Cog,
     CreditCard,
     Database,
@@ -21,8 +22,10 @@ import {
     Megaphone,
     Network,
     Radio,
+    Rocket,
     Send,
     Server,
+    ServerCog,
     Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -45,7 +48,12 @@ const GROUPS: NavGroup[] = [
         label: "Operations",
         items: [
             { to: "/", label: "Overview", icon: LayoutDashboard, end: true },
-            { to: "/workers", label: "Workers", icon: Server },
+            { to: "/workers", label: "Workers", icon: Server, end: true },
+            {
+                to: "/workers/provisioning-jobs",
+                label: "Provisioning Jobs",
+                icon: Rocket,
+            },
             { to: "/egresses", label: "Egresses", icon: Network },
             { to: "/mailboxes", label: "Mailboxes", icon: Mailbox },
             { to: "/warmup", label: "Warmup", icon: Flame },
@@ -75,6 +83,12 @@ const GROUPS: NavGroup[] = [
             { to: "/settings/messaging", label: "Messaging (EventBus)", icon: Radio },
             { to: "/settings/cache", label: "Cache", icon: Database },
             { to: "/settings/transports", label: "Transports (SMTP/OAuth)", icon: Send },
+            { to: "/settings/cloud-providers", label: "Cloud Providers", icon: Cloud },
+            {
+                to: "/settings/provisioning-templates",
+                label: "Provisioning Templates",
+                icon: ServerCog,
+            },
         ],
     },
 ];

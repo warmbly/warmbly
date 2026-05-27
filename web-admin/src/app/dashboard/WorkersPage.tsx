@@ -4,10 +4,12 @@
 // reuses the dashboard's online/stale/offline windows.
 
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
+import { Rocket } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { listManagedWorkers } from "@/lib/api/client/admin/workers";
@@ -15,6 +17,7 @@ import type {
     ManagedWorker,
     WorkerInstallState,
 } from "@/lib/api/models/admin";
+import { ProvisionModal } from "./ProvisionModal";
 
 const OFFLINE_MS = 5 * 60_000;
 
@@ -36,12 +39,14 @@ const STATE_TONE: Record<WorkerInstallState, string> = {
 };
 
 export default function WorkersPage() {
+    const qc = useQueryClient();
     const { data, isLoading, error } = useQuery({
         queryKey: ["admin", "workers", "managed"],
         queryFn: listManagedWorkers,
         refetchInterval: 15_000,
     });
     const [filter, setFilter] = useState("");
+    const [provisionOpen, setProvisionOpen] = useState(false);
 
     const rows = useMemo(() => {
         const all = data?.data ?? [];
@@ -66,7 +71,31 @@ export default function WorkersPage() {
                     onChange={(e) => setFilter(e.target.value)}
                     className="w-72"
                 />
+                <Link
+                    to="/workers/provisioning-jobs"
+                    className="text-xs text-muted-foreground hover:text-foreground underline"
+                >
+                    View provisioning jobs
+                </Link>
+                <Button
+                    size="sm"
+                    onClick={() => setProvisionOpen(true)}
+                    className="bg-[var(--admin-accent)] hover:bg-[var(--admin-accent-strong)] text-white"
+                >
+                    <Rocket className="size-4" />
+                    Provision new
+                </Button>
             </PageHeader>
+
+            <ProvisionModal
+                open={provisionOpen}
+                onOpenChange={setProvisionOpen}
+                onJobCreated={() => {
+                    qc.invalidateQueries({
+                        queryKey: ["admin", "provisioning-jobs"],
+                    });
+                }}
+            />
 
             {isLoading && <SkeletonTable />}
             {error && (

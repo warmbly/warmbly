@@ -30,6 +30,9 @@ import StoragePage from "@/app/settings/StoragePage";
 import MessagingPage from "@/app/settings/MessagingPage";
 import CachePage from "@/app/settings/CachePage";
 import TransportsPage from "@/app/settings/TransportsPage";
+import CloudProvidersPage from "@/app/settings/CloudProvidersPage";
+import ProvisioningTemplatesPage from "@/app/settings/ProvisioningTemplatesPage";
+import ProvisioningJobsPage from "@/app/dashboard/ProvisioningJobsPage";
 import {
     AnalyticsPage,
     CampaignsPage,
@@ -75,6 +78,7 @@ const router = createBrowserRouter([
                 children: [
                     { index: true, element: <OverviewPage /> },
                     { path: "workers", element: <WorkersPage /> },
+                    { path: "workers/provisioning-jobs", element: <ProvisioningJobsPage /> },
                     { path: "workers/:id", element: <WorkerDetailPage /> },
                     { path: "egresses", element: <EgressesPage /> },
                     { path: "mailboxes", element: <MailboxesPage /> },
@@ -94,6 +98,8 @@ const router = createBrowserRouter([
                             { path: "messaging", element: <MessagingPage /> },
                             { path: "cache", element: <CachePage /> },
                             { path: "transports", element: <TransportsPage /> },
+                            { path: "cloud-providers", element: <CloudProvidersPage /> },
+                            { path: "provisioning-templates", element: <ProvisioningTemplatesPage /> },
                         ],
                     },
                     { path: "*", element: <NotFoundPage /> },
