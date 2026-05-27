@@ -65,6 +65,7 @@ type tasksService struct {
 	// Repositories
 	taskRepo             repository.TaskRepository
 	warmupRepo           repository.WarmupRepository
+	warmupRoutingRepo    repository.WarmupRoutingRepository
 	campaignProgressRepo repository.CampaignProgressRepository
 	emailRepo            repository.EmailRepository
 	campaignRepo         repository.CampaignRepository
@@ -85,6 +86,7 @@ func NewService(
 	warmupHealth warmupapp.Service,
 	taskRepo repository.TaskRepository,
 	warmupRepo repository.WarmupRepository,
+	warmupRoutingRepo repository.WarmupRoutingRepository,
 	campaignProgressRepo repository.CampaignProgressRepository,
 	emailRepo repository.EmailRepository,
 	campaignRepo repository.CampaignRepository,
@@ -106,6 +108,7 @@ func NewService(
 		warmupHealth:         warmupHealth,
 		taskRepo:             taskRepo,
 		warmupRepo:           warmupRepo,
+		warmupRoutingRepo:    warmupRoutingRepo,
 		campaignProgressRepo: campaignProgressRepo,
 		emailRepo:            emailRepo,
 		campaignRepo:         campaignRepo,

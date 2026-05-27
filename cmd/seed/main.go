@@ -2,7 +2,10 @@
 //
 // Idempotent fixture loader for the local dev/sim stack. Always loads:
 //
-//   - baseline user dev@warmbly.com / password123 with one org
+//   - baseline user dev@warmbly.com / password123 with one org, one
+//     shared worker, two connected email accounts (warmup-pooled), and
+//     a sample webhook endpoint pointing at the docker-compose
+//     webhook-sink service for end-to-end testing
 //
 // When SEED_RICH=true (default in docker-compose), also loads:
 //
@@ -104,7 +107,52 @@ func seedBaseline(ctx context.Context, pool *pgxpool.Pool) error {
 	if err := upsertOrg(ctx, pool, orgDev, "Dev's Organization", "dev", userDev); err != nil {
 		return err
 	}
+
+	// Worker for dev accounts. Matches the docker-compose shared worker
+	// hostname so the running worker container can pick the assignments up.
+	if err := upsertWorker(ctx, pool, workerShared, "shared-1", "10.0.0.11", "shared", true, true); err != nil {
+		return fmt.Errorf("dev worker: %w", err)
+	}
+
+	// Connect two email accounts on the dev org. Without these a fresh
+	// stack has no mailboxes to test campaigns or warmup against, which
+	// is what `make seed` users hit immediately after `make up`.
+	devAccounts := []struct {
+		id        uuid.UUID
+		email     string
+		name      string
+		warmupTag string
+		poolType  string
+	}{
+		{uuid.MustParse("33333333-0000-0000-0000-0000dddd0001"), "dev.send@warmbly.test", "Dev Sender", "dev-warmup-a", "premium"},
+		{uuid.MustParse("33333333-0000-0000-0000-0000dddd0002"), "dev.outbound@warmbly.test", "Dev Outbound", "dev-warmup-b", "premium"},
+	}
+	for _, a := range devAccounts {
+		if err := upsertEmailAccount(ctx, pool, a.id, userDev, orgDev, workerShared, a.email, a.name, a.warmupTag, a.poolType); err != nil {
+			return fmt.Errorf("dev email_account %s: %w", a.email, err)
+		}
+		if err := joinWarmupPool(ctx, pool, a.id, a.poolType); err != nil {
+			return fmt.Errorf("dev pool join %s: %w", a.email, err)
+		}
+	}
+
+	// Sample webhook endpoint. The URL targets a local sink (e.g. an
+	// ngrok-style capture or webhook-sink container) so devs can observe
+	// outbound deliveries without external setup. Disabled by default so a
+	// fresh stack never accidentally retries a nonexistent endpoint forever.
+	if err := upsertWebhookEndpoint(ctx, pool,
+		uuid.MustParse("77777777-0000-0000-0000-000000000001"),
+		orgDev,
+		"http://webhook-sink:8080/in",
+		"Local dev sink (disabled — enable in /webhooks UI)",
+		false,
+	); err != nil {
+		return fmt.Errorf("dev webhook endpoint: %w", err)
+	}
+
 	fmt.Println("baseline ok: dev@warmbly.com / password123")
+	fmt.Println("  dev accounts: dev.send@warmbly.test, dev.outbound@warmbly.test (premium pool)")
+	fmt.Println("  dev webhook : sample endpoint at http://webhook-sink:8080/in (disabled by default)")
 	return nil
 }
 
@@ -369,6 +417,21 @@ func upsertContact(ctx context.Context, pool *pgxpool.Pool, id, userID, orgID uu
 		)
 		ON CONFLICT (id) DO NOTHING`,
 		id, userID, orgID, first, last, email, company, custom, subscribed)
+	return err
+}
+
+// upsertWebhookEndpoint inserts a sample webhook subscription. Uses a
+// deterministic UUID so re-running the seed is idempotent. The secret is
+// fixed in dev — never use this value in production.
+func upsertWebhookEndpoint(ctx context.Context, pool *pgxpool.Pool, id, orgID uuid.UUID, url, description string, enabled bool) error {
+	_, err := pool.Exec(ctx, `
+		INSERT INTO webhook_endpoints (
+			id, organization_id, url, description, secret, event_types, enabled
+		) VALUES (
+			$1, $2, $3, $4, 'whsec_dev_seed_do_not_use_in_prod', '{}', $5
+		)
+		ON CONFLICT (id) DO NOTHING`,
+		id, orgID, url, description, enabled)
 	return err
 }
 

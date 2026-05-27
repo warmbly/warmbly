@@ -44,6 +44,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/unibox"
 	"github.com/warmbly/warmbly/internal/app/user"
 	warmupapp "github.com/warmbly/warmbly/internal/app/warmup"
+	"github.com/warmbly/warmbly/internal/app/webhook"
 	"github.com/warmbly/warmbly/internal/app/worker"
 	"github.com/warmbly/warmbly/internal/app/worker_orchestrator"
 	"github.com/warmbly/warmbly/internal/config"
@@ -136,6 +137,8 @@ func main() {
 	var s3ForHandler *storage.Client
 	var userRepoForHandler repository.UserRepository
 	var organizationRepoForHandler repository.OrganizationRepository
+	var warmupRoutingRepoForHandler repository.WarmupRoutingRepository
+	var webhookServiceForHandler webhook.Service
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -400,9 +403,21 @@ func main() {
 		advancedRepository := repository.NewAdvancedOutreachRepository(primaryDB.Pool)
 		templateRepository := repository.NewTemplateRepository(primaryDB.Pool)
 		warmupRepository := repository.NewWarmupRepository(primaryDB.Pool)
+		warmupRoutingRepository := repository.NewWarmupRoutingRepository(primaryDB.Pool)
+		warmupRoutingRepoForHandler = warmupRoutingRepository
+		webhookRepository := repository.NewWebhookRepository(primaryDB.Pool)
+		webhookService := webhook.NewService(webhookRepository)
+		webhookServiceForHandler = webhookService
+
+		// Drain the webhook delivery queue in-process. Multiple replicas are
+		// safe because ClaimDueDeliveries uses SELECT … FOR UPDATE SKIP LOCKED.
+		webhookWorker := webhook.NewDeliveryWorker(webhookRepository, webhook.DeliveryWorkerOptions{})
+		go webhookWorker.Run(ctx)
 		campaignProgressRepository := repository.NewCampaignProgressRepository(primaryDB.Pool)
 		campaignLogRepository := repository.NewCampaignLogRepository(primaryDB)
 		warmupService = warmupapp.NewService(warmupRepository)
+		// Fan out warmup health transitions to customer webhooks.
+		warmupService.WireWebhooks(webhookService, emailRepostory)
 
 		tzService = tz.NewService()
 
@@ -497,6 +512,8 @@ func main() {
 			&oauth2Cfg.InboxAuthorization,
 			workerAssignmentService,
 		)
+		// Fan out email-account lifecycle events to customer webhooks.
+		emailService.WireWebhooks(webhookService)
 		campaignService = campaign.NewService(campaignRepostory, taskRepository, emailRepostory, campaignLogRepository, featureGateService, streamingPublisher)
 		sequenceService = sequence.NewService(sequenceRepostory)
 		contactService = contact.NewService(contactRepostory, subscriptionRepository, planRepository)
@@ -547,6 +564,7 @@ func main() {
 			warmupService,
 			taskRepository,
 			warmupRepository,
+			warmupRoutingRepository,
 			campaignProgressRepository,
 			emailRepostory,
 			campaignRepostory,
@@ -643,7 +661,9 @@ func main() {
 		AdvancedService: advancedService,
 
 		// Warmup health
-		WarmupService: warmupService,
+		WarmupService:     warmupService,
+		WarmupRoutingRepo: warmupRoutingRepoForHandler,
+		WebhookService:    webhookServiceForHandler,
 
 		WebsocketURI: websocketURI,
 

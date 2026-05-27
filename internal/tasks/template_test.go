@@ -138,6 +138,27 @@ func TestRandomWarmupConversation_HasContent(t *testing.T) {
 	}
 }
 
+func TestConversationForTheme_MatchesKnownTheme(t *testing.T) {
+	conv := conversationForTheme("productivity")
+	if conv.Theme != "productivity" {
+		t.Errorf("expected theme productivity, got %q", conv.Theme)
+	}
+}
+
+func TestConversationForTheme_FallsBackOnUnknown(t *testing.T) {
+	conv := conversationForTheme("not-a-real-theme")
+	if conv.Theme == "" {
+		t.Error("fallback conversation should still have a theme")
+	}
+}
+
+func TestConversationForTheme_EmptyReturnsRandom(t *testing.T) {
+	conv := conversationForTheme("")
+	if conv.Theme == "" {
+		t.Error("empty theme should return a random conversation with a theme")
+	}
+}
+
 func TestGenerateMessageID_Format(t *testing.T) {
 	mid := generateMessageID("user@example.com")
 	if !strings.HasSuffix(mid, "@example.com>") {

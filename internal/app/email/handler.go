@@ -59,6 +59,14 @@ func (s *emailService) Delete(ctx context.Context, userID, emailAccountID string
 	}
 
 	s.removeFromAllWarmupPools(ctx, account)
+
+	if s.webhookService != nil && account != nil && account.OrganizationID != nil {
+		_, _ = s.webhookService.Dispatch(ctx, *account.OrganizationID, models.WebhookEventEmailAccountRemoved, map[string]any{
+			"email_account_id": account.ID,
+			"email":            account.Email,
+			"provider":         account.Provider,
+		})
+	}
 	return nil
 }
 

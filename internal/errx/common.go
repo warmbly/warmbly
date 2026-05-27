@@ -59,6 +59,8 @@ var (
 	ErrEmailOnboardUserInfo      = New(BadRequest, "Could not read account details from the provider.")
 	ErrEmailOnboardAlreadyExists = New(Conflict, "This email account is already connected.")
 	ErrEmailOnboardNoWorker      = New(ServiceUnavailable, "No mailbox workers are available right now. Please try again shortly.")
+	ErrEmailOnboardInboxLimit    = New(Forbidden, "Your free trial includes one connected inbox. Upgrade to add more.")
+	ErrEmailOnboardTrialExpired  = New(Forbidden, "Your free trial has ended. Upgrade to connect inboxes.")
 	ErrEmailSMTPHost             = New(BadRequest, "SMTP host is required.")
 	ErrEmailSMTPPort             = New(BadRequest, "SMTP port must be 465 or 587.")
 	ErrEmailIMAPHost             = New(BadRequest, "IMAP host is required.")

@@ -11,18 +11,25 @@ type WarmupToken struct {
 	TaskID             uuid.UUID  `json:"task_id"`
 	SenderAccountID    uuid.UUID  `json:"sender_account_id"`
 	RecipientAccountID uuid.UUID  `json:"recipient_account_id"`
+	ConversationTheme  string     `json:"conversation_theme"`
 	CreatedAt          time.Time  `json:"created_at"`
 	ConsumedAt         *time.Time `json:"consumed_at,omitempty"`
 	ExpiresAt          time.Time  `json:"expires_at"`
 }
 
-// WarmupEmailAction represents actions to perform on a detected warmup email
+// WarmupEmailAction represents actions to perform on a detected warmup email.
+//
+// For Gmail accounts the worker uses GmailID to issue Users.Messages.Modify
+// requests. For IMAP-backed accounts (Outlook + custom SMTP/IMAP) the worker
+// needs UID + the source mailbox's UIDValidity to locate the message; the
+// mailbox name is then resolved against the worker's cached folder list.
 type WarmupEmailAction struct {
-	UserID  uuid.UUID `json:"user_id"`
-	EmailID uuid.UUID `json:"email_id"`
-	GmailID string    `json:"gmail_id"`
-	UID     uint32    `json:"uid"`
-	Actions []string  `json:"actions"` // "move_to_warmbly", "mark_read", "remove_from_spam", "mark_important"
+	UserID             uuid.UUID `json:"user_id"`
+	EmailID            uuid.UUID `json:"email_id"`
+	GmailID            string    `json:"gmail_id"`
+	UID                uint32    `json:"uid"`
+	MailboxUIDValidity uint32    `json:"mailbox_uid_validity"`
+	Actions            []string  `json:"actions"` // "move_to_warmbly", "mark_read", "remove_from_spam", "mark_important"
 }
 
 type WarmupHealthState string
@@ -60,9 +67,25 @@ type WarmupPoolHealthSummary struct {
 }
 
 type WarmupHealthMetrics struct {
-	SentLast7d            int     `json:"sent_last_7d"`
-	SpamReportsLast7d     int     `json:"spam_reports_last_7d"`
-	SpamPlacementRate     float64 `json:"spam_placement_rate"`
+	SentLast7d int `json:"sent_last_7d"`
+
+	// SpamReportsLast7d is the combined warmup-pool spam signal (placement +
+	// user complaints). Retained for callers that want a single number.
+	SpamReportsLast7d int `json:"spam_reports_last_7d"`
+
+	// SpamPlacementsLast7d counts warmup messages that landed in the
+	// recipient's Junk/Spam folder on delivery. SpamPlacementRate is the
+	// ratio against SentLast7d.
+	SpamPlacementsLast7d int     `json:"spam_placements_last_7d"`
+	SpamPlacementRate    float64 `json:"spam_placement_rate"`
+
+	// UserComplaintsLast7d counts warmup messages the recipient explicitly
+	// flagged as spam. WarmupComplaintRate is the ratio against SentLast7d.
+	// This is distinct from external-recipient complaints captured in
+	// deliverability_events (ComplaintsLast30d / ComplaintRate below).
+	UserComplaintsLast7d int     `json:"user_complaints_last_7d"`
+	WarmupComplaintRate  float64 `json:"warmup_complaint_rate"`
+
 	InvalidAttemptsLast24 int     `json:"invalid_attempts_last_24h"`
 	SpamScore             int     `json:"spam_score"`
 	ComplaintsLast30d     int     `json:"complaints_last_30d"`

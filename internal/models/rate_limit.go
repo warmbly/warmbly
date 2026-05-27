@@ -34,8 +34,6 @@ type UserRateLimits struct {
 	LimitWSEventPM   int `json:"limit_ws_event_pm"`
 	MaxConnections   int `json:"max_connections"`
 
-	BurstMultiplier float64 `json:"burst_multiplier"`
-
 	Notes     *string    `json:"notes,omitempty"`
 	UpdatedBy *uuid.UUID `json:"updated_by,omitempty"`
 
@@ -61,8 +59,6 @@ type PlanRateLimits struct {
 	LimitWSEventPM   int `json:"limit_ws_event_pm"`
 	MaxConnections   int `json:"max_connections"`
 
-	BurstMultiplier float64 `json:"burst_multiplier"`
-
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -77,8 +73,7 @@ type UpdateUserRateLimits struct {
 	LimitAPICallsDaily *int `json:"limit_api_calls_daily,omitempty"`
 	LimitBulkOpsDaily  *int `json:"limit_bulk_ops_daily,omitempty"`
 
-	BurstMultiplier *float64 `json:"burst_multiplier,omitempty"`
-	Notes           *string  `json:"notes,omitempty"`
+	Notes *string `json:"notes,omitempty"`
 }
 
 type RateLimitStatus struct {
@@ -89,21 +84,25 @@ type RateLimitStatus struct {
 	RetryAfterMs *int64            `json:"retry_after_ms,omitempty"`
 }
 
-// DefaultRateLimits returns the default rate limits
+// DefaultRateLimits returns the default rate limits. Sized to allow paid
+// customers to sustain ~100 req/s on read and write categories, matching
+// the API throughput competitors (Instantly) advertise as of mid-2026.
+// 100 req/s = 6000 req/min. Each Limit*PM value *is* the ceiling — there
+// is no burst multiplier. Enterprise customers get bumped by raising the
+// limit fields directly on user_rate_limits.
 func DefaultRateLimits() *UserRateLimits {
 	return &UserRateLimits{
-		LimitReadPM:        300,
-		LimitWritePM:       60,
-		LimitBulkPM:        10,
-		LimitUniboxPM:      120,
-		LimitAnalyticsPM:   60,
-		LimitAPICallsDaily: 50000,
-		LimitBulkOpsDaily:  100,
+		LimitReadPM:        6000,
+		LimitWritePM:       6000,
+		LimitBulkPM:        600,
+		LimitUniboxPM:      1200,
+		LimitAnalyticsPM:   600,
+		LimitAPICallsDaily: 500000,
+		LimitBulkOpsDaily:  1000,
 		LimitWSMessagePM:   120,
 		LimitWSJoinPM:      30,
 		LimitWSEventPM:     60,
 		MaxConnections:     10,
-		BurstMultiplier:    1.5,
 	}
 }
 

@@ -25,4 +25,10 @@ const (
 	UniboxLimitMin     = 1
 	UniboxLimitMax     = 100
 	UniboxLimitDefault = 50
+
+	// WarmupVerifyHeader is the custom header carrying the warmup
+	// verification token on outbound warmup mail. The name is intentionally
+	// generic (not "X-Warmbly-*") so anti-spam vendors cannot trivially
+	// cluster on the header name to fingerprint warmup traffic.
+	WarmupVerifyHeader = "X-Mailtrace-Verify"
 )

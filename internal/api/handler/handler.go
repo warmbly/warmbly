@@ -29,6 +29,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/unibox"
 	"github.com/warmbly/warmbly/internal/app/user"
 	"github.com/warmbly/warmbly/internal/app/warmup"
+	"github.com/warmbly/warmbly/internal/app/webhook"
 	"github.com/warmbly/warmbly/internal/app/worker"
 	"github.com/warmbly/warmbly/internal/app/worker_orchestrator"
 	"github.com/warmbly/warmbly/internal/infrastructure/storage"
@@ -97,6 +98,13 @@ type Handler struct {
 
 	// Warmup health
 	WarmupService warmup.Service
+
+	// Warmup routing rules — customer-defined preferences for premium-pool
+	// partner selection (e.g. Gmail recipients from Google Workspace senders).
+	WarmupRoutingRepo repository.WarmupRoutingRepository
+
+	// Customer-facing webhooks (subscribe → HMAC-signed delivery).
+	WebhookService webhook.Service
 
 	// Public websocket URL used by frontend clients
 	WebsocketURI string

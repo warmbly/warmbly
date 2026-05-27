@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/client/goog"
+	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 )
@@ -116,7 +117,7 @@ func (w *WMail) sendViaGmail(ctx context.Context, req *SendRequest, bodyHTML str
 	var customHeaders map[string]string
 	if req.WarmupToken != "" {
 		customHeaders = map[string]string{
-			"X-Warmbly-Token": req.WarmupToken,
+			config.WarmupVerifyHeader: req.WarmupToken,
 		}
 	}
 
@@ -176,7 +177,7 @@ func (w *WMail) sendViaSMTP(ctx context.Context, req *SendRequest, bodyHTML stri
 	var smtpCustomHeaders map[string]string
 	if req.WarmupToken != "" {
 		smtpCustomHeaders = map[string]string{
-			"X-Warmbly-Token": req.WarmupToken,
+			config.WarmupVerifyHeader: req.WarmupToken,
 		}
 	}
 

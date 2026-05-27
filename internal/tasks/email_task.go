@@ -124,10 +124,12 @@ func (s *tasksService) HandleEmailTask(task *proto.ProcessTask) *errx.Error {
 		return nil
 	}
 
-	// STEP 6: Determine if this should be a reply or a new warmup email
+	// STEP 6: Determine if this should be a reply or a new warmup email.
+	// When replying, the body is drawn from the same conversation theme as
+	// the original send so the thread stays topically coherent.
 	replyRate := account.WarmupReplyRate
 	shouldReply := rand.Float64()*100 < float64(replyRate)
-	var subject, emailBody string
+	var subject, emailBody, conversationTheme string
 	var inReplyTo string
 
 	if shouldReply {
@@ -141,7 +143,9 @@ func (s *tasksService) HandleEmailTask(task *proto.ProcessTask) *errx.Error {
 			if !strings.HasPrefix(strings.ToLower(subject), "re:") {
 				subject = "Re: " + subject
 			}
-			emailBody = GenerateConversationEmail(randomWarmupConversation(), *account, true)
+			conv := conversationForTheme(candidate.ConversationTheme)
+			conversationTheme = conv.Theme
+			emailBody = GenerateConversationEmail(conv, *account, true)
 		} else {
 			shouldReply = false
 		}
@@ -150,30 +154,16 @@ func (s *tasksService) HandleEmailTask(task *proto.ProcessTask) *errx.Error {
 	// STEP 7: Build a new warmup message when not replying
 	if !shouldReply {
 		conversation := randomWarmupConversation()
+		conversationTheme = conversation.Theme
 		subject = generateWarmupSubject()
 		emailBody = GenerateConversationEmail(conversation, *account, false)
 	}
 
-	// STEP 8: Encrypt content
+	// STEP 8: Parse sender user ID for the outbound message.
+	// Warmup mail is not stored at rest, so we no longer call the cipher
+	// service here — the previous Encrypt() pair discarded its ciphertext
+	// and only served to warm the user's DEK in cache.
 	userUUID, err := uuid.Parse(account.UserID)
-	if err != nil {
-		sentry.CaptureException(err)
-		return errx.InternalError()
-	}
-
-	cipher, err := s.cipherService.Cipher(ctx, userUUID)
-	if err != nil {
-		sentry.CaptureException(err)
-		return errx.InternalError()
-	}
-
-	_, err = cipher.Encrypt(ctx, subject)
-	if err != nil {
-		sentry.CaptureException(err)
-		return errx.InternalError()
-	}
-
-	_, err = cipher.Encrypt(ctx, emailBody)
 	if err != nil {
 		sentry.CaptureException(err)
 		return errx.InternalError()
@@ -190,6 +180,7 @@ func (s *tasksService) HandleEmailTask(task *proto.ProcessTask) *errx.Error {
 		TaskID:             taskID,
 		SenderAccountID:    account.ID,
 		RecipientAccountID: partner.ID,
+		ConversationTheme:  conversationTheme,
 		ExpiresAt:          time.Now().Add(7 * 24 * time.Hour),
 	}
 	if err := s.warmupRepo.CreateWarmupToken(ctx, tokenRecord); err != nil {
@@ -257,11 +248,27 @@ func (s *tasksService) HandleEmailTask(task *proto.ProcessTask) *errx.Error {
 	return nil
 }
 
-// selectWarmupPartner selects a warmup partner from the pool
+// recentPartnerWindow controls how long a partner stays excluded from
+// re-selection after being used. Bumped from 24h to 72h so a small pool
+// does not rotate through the same handful of mailboxes every day.
+const recentPartnerWindow = 72 * time.Hour
+
+// recentDomainWindow controls the lookback for the domain-distribution
+// histogram. A week is long enough to smooth out daily randomness while
+// still reflecting current behaviour.
+const recentDomainWindow = 7 * 24 * time.Hour
+
+// smallPoolWarnThreshold defines the participant count below which we log
+// a warning. Tiny pools force partner reuse and create obvious patterns
+// that mailbox providers can cluster on.
+const smallPoolWarnThreshold = 8
+
+// selectWarmupPartner selects a warmup partner from the pool, preferring
+// partners on under-represented recipient domains to avoid concentrating
+// traffic on a single provider (e.g. all-Gmail warmup loops).
 func (s *tasksService) selectWarmupPartner(ctx context.Context, account Email) (*Email, error) {
 	poolType := s.resolveWarmupPoolType(ctx, &account)
 
-	// Get all participants in the pool
 	participantIDs, err := s.warmupRepo.GetPoolParticipants(ctx, poolType, true)
 	if err != nil {
 		return nil, err
@@ -271,23 +278,56 @@ func (s *tasksService) selectWarmupPartner(ctx context.Context, account Email) (
 		return nil, fmt.Errorf("no warmup partners available")
 	}
 
-	// Filter out sender's own account and recently used partners.
+	if len(participantIDs) < smallPoolWarnThreshold {
+		log.Warn().
+			Int("participants", len(participantIDs)).
+			Str("pool", poolType).
+			Str("email_account_id", account.ID.String()).
+			Msg("Warmup pool below diversity threshold; partner reuse likely")
+	}
+
+	domainsByID, err := s.warmupRepo.GetPoolParticipantDomains(ctx, poolType, true)
+	if err != nil {
+		// Diversity weighting is best-effort. Fall back to uniform on lookup error.
+		domainsByID = nil
+	}
+
+	// Load customer routing rules (premium pool only — free pool ignores
+	// rules since trial mailboxes don't need provider-shape preferences).
+	var routingRules []models.WarmupRoutingRule
+	var emailsByID map[uuid.UUID]string
+	if poolType == "premium" && s.warmupRoutingRepo != nil && account.OrganizationID != nil {
+		rules, ruleErr := s.warmupRoutingRepo.ListForOrganization(ctx, *account.OrganizationID)
+		if ruleErr == nil && len(rules) > 0 {
+			routingRules = rules
+			if e, eErr := s.warmupRepo.GetPoolParticipantEmails(ctx, poolType, true); eErr == nil {
+				emailsByID = e
+			}
+		}
+	}
+
 	recentPartnerSet := map[uuid.UUID]struct{}{}
-	recentPartnerIDs, err := s.warmupRepo.GetRecentlyUsedPartners(ctx, account.ID, time.Now().Add(-24*time.Hour))
+	recentPartnerIDs, err := s.warmupRepo.GetRecentlyUsedPartners(ctx, account.ID, time.Now().Add(-recentPartnerWindow))
 	if err == nil {
 		for _, pid := range recentPartnerIDs {
 			recentPartnerSet[pid] = struct{}{}
 		}
 	}
 
+	domainCounts, err := s.warmupRepo.GetRecentPartnerDomainCounts(ctx, account.ID, time.Now().Add(-recentDomainWindow))
+	if err != nil {
+		domainCounts = nil
+	}
+
 	var availablePartners []uuid.UUID
 	var fallbackPartners []uuid.UUID
 	for _, id := range participantIDs {
-		if id != account.ID {
-			fallbackPartners = append(fallbackPartners, id)
-			if _, recentlyUsed := recentPartnerSet[id]; !recentlyUsed {
-				availablePartners = append(availablePartners, id)
-			}
+		if id == account.ID {
+			continue
+		}
+		fallbackPartners = append(fallbackPartners, id)
+		if _, recentlyUsed := recentPartnerSet[id]; !recentlyUsed {
+			availablePartners = append(availablePartners, id)
 		}
 	}
 
@@ -299,16 +339,84 @@ func (s *tasksService) selectWarmupPartner(ctx context.Context, account Email) (
 		return nil, fmt.Errorf("no available warmup partners")
 	}
 
-	// Select random partner
-	partnerID := availablePartners[rand.Intn(len(availablePartners))]
+	partnerID := pickWeightedPartner(availablePartners, domainsByID, domainCounts, routingRules, account.Email, emailsByID)
 
-	// Load partner account
 	partner, err := s.emailRepo.GetByID(ctx, partnerID)
 	if err != nil {
 		return nil, err
 	}
 
 	return partner, nil
+}
+
+// pickWeightedPartner picks a partner ID using a composite weight:
+//   - inverse-frequency on the partner's recipient domain (diversity)
+//   - customer-defined routing rule multipliers (preference)
+//
+// Rules are evaluated in priority order; the first matching rule for a
+// (sender, recipient) pair applies its weight multiplier. A rule with
+// weight=0 hard-excludes the pair. Falls back to uniform when no signals
+// are available.
+func pickWeightedPartner(
+	candidates []uuid.UUID,
+	domainsByID map[uuid.UUID]string,
+	domainCounts map[string]int,
+	rules []models.WarmupRoutingRule,
+	senderEmail string,
+	emailsByID map[uuid.UUID]string,
+) uuid.UUID {
+	if len(candidates) == 1 {
+		return candidates[0]
+	}
+	if len(domainsByID) == 0 && len(rules) == 0 {
+		return candidates[rand.Intn(len(candidates))]
+	}
+
+	weights := make([]float64, len(candidates))
+	var total float64
+	for i, id := range candidates {
+		domain := domainsByID[id]
+		// Diversity base weight.
+		w := 1.0 / float64(1+domainCounts[domain])
+
+		// Routing rule multiplier (premium pool only, when configured).
+		if len(rules) > 0 && len(emailsByID) > 0 {
+			if recipientEmail, ok := emailsByID[id]; ok {
+				w *= routingMultiplier(rules, senderEmail, recipientEmail)
+			}
+		}
+
+		weights[i] = w
+		total += w
+	}
+
+	if total <= 0 {
+		// All candidates hard-excluded by rules. Fall back to uniform so
+		// the system still warms up rather than stalling on misconfigured rules.
+		return candidates[rand.Intn(len(candidates))]
+	}
+
+	r := rand.Float64() * total
+	var cum float64
+	for i, w := range weights {
+		cum += w
+		if r <= cum {
+			return candidates[i]
+		}
+	}
+	return candidates[len(candidates)-1]
+}
+
+// routingMultiplier returns the weight multiplier from the first matching
+// rule in priority order (lowest priority value wins). 1.0 when no rule
+// matches — neutral, so unmatched pairs neither preferred nor penalized.
+func routingMultiplier(rules []models.WarmupRoutingRule, senderEmail, recipientEmail string) float64 {
+	for i := range rules {
+		if rules[i].Matches(senderEmail, recipientEmail) {
+			return rules[i].Weight
+		}
+	}
+	return 1.0
 }
 
 func (s *tasksService) resolveWarmupPoolType(ctx context.Context, account *Email) string {
@@ -399,9 +507,60 @@ func (s *tasksService) publishWarmupEmailSentEvent(ctx context.Context, task *Ta
 	}
 }
 
-// generateWarmupSubject generates a random warmup email subject
+// generateWarmupSubject picks a warmup subject. To reduce content
+// fingerprinting risk, ~40% of the time we synthesize a subject from
+// slot templates (yielding thousands of unique strings) instead of
+// returning a literal from the static set.
 func generateWarmupSubject() string {
-	subjects := []string{
+	if rand.Float64() < 0.4 {
+		if s := synthesizeWarmupSubject(); s != "" {
+			return s
+		}
+	}
+	subjects := warmupSubjectLiterals()
+	return subjects[rand.Intn(len(subjects))]
+}
+
+// synthesizeWarmupSubject composes a subject from slot fragments. With
+// the current slot dictionaries this yields several thousand distinct
+// strings, which is harder for a vendor corpus-classifier to fingerprint.
+func synthesizeWarmupSubject() string {
+	templates := []string{
+		"{adj} {noun}",
+		"{adj} {noun} {timeRef}",
+		"{verb} {noun}",
+		"{verb} on {noun}",
+		"{question} about {noun}",
+		"{timeRef} {noun}",
+		"{noun} {timeRef}",
+		"Re: {noun}",
+	}
+	adj := []string{"quick", "small", "short", "tiny", "casual", "friendly", "useful", "interesting", "brief", "minor"}
+	noun := []string{"check-in", "follow up", "note", "ping", "thought", "update", "idea", "heads up", "favor", "question", "nudge", "share"}
+	verb := []string{"Following up", "Circling back", "Wanted your take", "Touching base", "Picking up", "Adding"}
+	question := []string{"Quick question", "Curious", "Wanted your view", "Thought"}
+	timeRef := []string{"this week", "before EOD", "when free", "this morning", "today", "later", "if useful"}
+
+	tpl := templates[rand.Intn(len(templates))]
+	r := strings.NewReplacer(
+		"{adj}", capitalize(adj[rand.Intn(len(adj))]),
+		"{noun}", noun[rand.Intn(len(noun))],
+		"{verb}", verb[rand.Intn(len(verb))],
+		"{question}", question[rand.Intn(len(question))],
+		"{timeRef}", timeRef[rand.Intn(len(timeRef))],
+	)
+	return strings.TrimSpace(r.Replace(tpl))
+}
+
+func capitalize(s string) string {
+	if s == "" {
+		return ""
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
+}
+
+func warmupSubjectLiterals() []string {
+	return []string{
 		// Casual check-ins
 		"Quick question",
 		"Following up",
@@ -459,10 +618,34 @@ func generateWarmupSubject() string {
 		"Quick tip I picked up",
 		"Thought this was insightful",
 	}
-	return subjects[rand.Intn(len(subjects))]
+}
+
+// conversationForTheme returns a conversation matching the requested theme,
+// falling back to a random conversation if the theme is empty or unknown.
+// Use this when replying so the reply body stays on-topic with the original
+// thread instead of jumping subjects mid-conversation.
+func conversationForTheme(theme string) Conversation {
+	if theme == "" {
+		return randomWarmupConversation()
+	}
+	var matches []Conversation
+	for _, c := range warmupConversations() {
+		if c.Theme == theme {
+			matches = append(matches, c)
+		}
+	}
+	if len(matches) == 0 {
+		return randomWarmupConversation()
+	}
+	return matches[rand.Intn(len(matches))]
 }
 
 func randomWarmupConversation() Conversation {
+	conversations := warmupConversations()
+	return conversations[rand.Intn(len(conversations))]
+}
+
+func warmupConversations() []Conversation {
 	conversations := []Conversation{
 		// Productivity & workflow
 		{ID: uuid.New(), Theme: "productivity", Description: "I have been trying a few workflow changes and wondered what worked best for your week.", Messages: []string{"How do you structure focused work blocks?", "Do you batch similar tasks or tackle them as they come?"}},
@@ -523,5 +706,5 @@ func randomWarmupConversation() Conversation {
 		{ID: uuid.New(), Theme: "gratitude", Description: "I was thinking about the people who have been helpful to me this year and you came to mind.", Messages: []string{"Just wanted to say thanks for being a great connection.", "Appreciate you always being willing to share your perspective."}},
 	}
 
-	return conversations[rand.Intn(len(conversations))]
+	return conversations
 }

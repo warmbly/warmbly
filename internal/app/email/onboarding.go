@@ -25,6 +25,12 @@ func (s *emailService) OAuthStart(ctx context.Context, userID string, orgID *uui
 		return nil, xerr
 	}
 
+	// Refuse early so we don't waste an OAuth round-trip on a request
+	// that the inbox-limit guard would reject after callback.
+	if xerr := s.guardInboxLimit(ctx, orgID); xerr != nil {
+		return nil, xerr
+	}
+
 	state, err := crypt.Nonce()
 	if err != nil {
 		sentry.CaptureException(err)
@@ -48,6 +54,35 @@ func (s *emailService) OAuthStart(ctx context.Context, userID string, orgID *uui
 	return &models.EmailOnboardingStartResponse{URL: url, State: state}, nil
 }
 
+// guardInboxLimit enforces the per-org inbox cap for free-trial users.
+// Returns nil (allowed) for paid orgs and for trial orgs under the cap.
+// Trial orgs that have already connected one inbox get
+// ErrEmailOnboardInboxLimit; orgs without an active subscription or trial
+// get ErrEmailOnboardTrialExpired.
+func (s *emailService) guardInboxLimit(ctx context.Context, orgID *uuid.UUID) *errx.Error {
+	if s.featureGate == nil || orgID == nil {
+		return nil
+	}
+	count, xerr := s.emailRepository.CountForOrganization(ctx, *orgID)
+	if xerr != nil {
+		return xerr
+	}
+	allowed, xerr := s.featureGate.CanAddInbox(ctx, *orgID, count)
+	if xerr != nil {
+		return xerr
+	}
+	if allowed {
+		return nil
+	}
+	// Disambiguate the message: if they're past the cap during trial, say so;
+	// if their trial is over (or they never had one), say that.
+	status, xerr := s.featureGate.GetSubscriptionStatus(ctx, *orgID)
+	if xerr == nil && status != nil && status.IsInFreeTrial && !status.IsPaidSubscriber {
+		return errx.ErrEmailOnboardInboxLimit
+	}
+	return errx.ErrEmailOnboardTrialExpired
+}
+
 // OAuthFinish validates the state, exchanges the code for tokens, fetches the inbox owner,
 // and persists a new email account.
 func (s *emailService) OAuthFinish(ctx context.Context, userID, code, state string) (*models.Email, *errx.Error) {
@@ -64,6 +99,10 @@ func (s *emailService) OAuthFinish(ctx context.Context, userID, code, state stri
 	}
 	if sess.UserID != userID {
 		return nil, errx.ErrEmailOnboardState
+	}
+
+	if xerr := s.guardInboxLimit(ctx, sess.OrganizationID); xerr != nil {
+		return nil, xerr
 	}
 
 	provider := models.InboxProvider(sess.Provider)
@@ -93,7 +132,7 @@ func (s *emailService) OAuthFinish(ctx context.Context, userID, code, state stri
 		name = deriveNameFromEmail(owner.Email)
 	}
 
-	return s.emailRepository.NewOauthAccount(ctx, userID, models.NewOauthAccount{
+	acc, xerr := s.emailRepository.NewOauthAccount(ctx, userID, models.NewOauthAccount{
 		OrganizationID: sess.OrganizationID,
 		Provider:       provider,
 		Name:           name,
@@ -102,12 +141,20 @@ func (s *emailService) OAuthFinish(ctx context.Context, userID, code, state stri
 		RefreshToken:   tok.RefreshToken,
 		ExpiresAt:      tok.Expiry,
 	})
+	if xerr == nil && acc != nil {
+		s.dispatchAccountConnected(ctx, sess.OrganizationID, acc)
+	}
+	return acc, xerr
 }
 
 // OnboardSMTPIMAP validates the supplied SMTP/IMAP credentials against a live worker, then
 // persists the email account on success. Returns ErrEmailCredentials if the worker reports failure.
 func (s *emailService) OnboardSMTPIMAP(ctx context.Context, userID string, orgID *uuid.UUID, data *models.NewSMTPIMAPAccount) (*models.Email, *errx.Error) {
 	if xerr := validateSMTPIMAPInput(data); xerr != nil {
+		return nil, xerr
+	}
+
+	if xerr := s.guardInboxLimit(ctx, orgID); xerr != nil {
 		return nil, xerr
 	}
 
@@ -152,7 +199,27 @@ func (s *emailService) OnboardSMTPIMAP(ctx context.Context, userID string, orgID
 		}
 	}
 
+	s.dispatchAccountConnected(ctx, orgID, acc)
 	return acc, nil
+}
+
+// dispatchAccountConnected fires an email_account.connected webhook event
+// to any subscribed endpoints. Failures here are best-effort and never
+// block the onboarding flow.
+func (s *emailService) dispatchAccountConnected(ctx context.Context, orgID *uuid.UUID, acc *models.Email) {
+	if s.webhookService == nil || orgID == nil || acc == nil {
+		return
+	}
+	payload := map[string]any{
+		"email_account_id": acc.ID,
+		"email":            acc.Email,
+		"provider":         acc.Provider,
+		"name":             acc.Name,
+		"created_at":       acc.CreatedAt,
+	}
+	if _, err := s.webhookService.Dispatch(ctx, *orgID, models.WebhookEventEmailAccountConnected, payload); err != nil {
+		sentry.CaptureException(err)
+	}
 }
 
 func (s *emailService) oauthConfigFor(provider models.InboxProvider) (*oauth2.Config, *errx.Error) {

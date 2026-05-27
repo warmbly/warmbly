@@ -73,7 +73,6 @@ func (s *rateLimitService) CheckLimit(ctx context.Context, userID uuid.UUID, cat
 	}
 
 	limit := limits.GetLimitForCategory(category)
-	burstLimit := int(float64(limit) * limits.BurstMultiplier)
 
 	// Get current count from Redis
 	key := s.getMinuteKey(userID, category)
@@ -91,7 +90,7 @@ func (s *rateLimitService) CheckLimit(ctx context.Context, userID uuid.UUID, cat
 	}
 
 	// Calculate remaining and reset time
-	remaining := burstLimit - count
+	remaining := limit - count
 	if remaining < 0 {
 		remaining = 0
 	}
@@ -146,7 +145,6 @@ func (s *rateLimitService) CheckAndRecord(ctx context.Context, userID uuid.UUID,
 	}
 
 	limit := limits.GetLimitForCategory(category)
-	burstLimit := int(float64(limit) * limits.BurstMultiplier)
 
 	key := s.getMinuteKey(userID, category)
 
@@ -173,7 +171,7 @@ func (s *rateLimitService) CheckAndRecord(ctx context.Context, userID uuid.UUID,
 		return {current, ttl, 1}
 	`)
 
-	result, err := script.Run(ctx, s.cache.Client, []string{key}, burstLimit, int(WindowMinute.Seconds())).Slice()
+	result, err := script.Run(ctx, s.cache.Client, []string{key}, limit, int(WindowMinute.Seconds())).Slice()
 	if err != nil {
 		// Lua script failed, fall back to simple record
 		s.RecordRequest(ctx, userID, category)
@@ -189,7 +187,7 @@ func (s *rateLimitService) CheckAndRecord(ctx context.Context, userID uuid.UUID,
 	ttl := time.Duration(result[1].(int64)) * time.Second
 	allowed := result[2].(int64) == 1
 
-	remaining := burstLimit - current
+	remaining := limit - current
 	if remaining < 0 {
 		remaining = 0
 	}

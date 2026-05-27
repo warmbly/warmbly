@@ -191,7 +191,6 @@ func (r *planRepository) GetRateLimits(ctx context.Context, planID uuid.UUID) (*
 		&limits.LimitUniboxPM, &limits.LimitAnalyticsPM,
 		&limits.LimitAPICallsDaily, &limits.LimitBulkOpsDaily,
 		&limits.LimitWSMessagePM, &limits.LimitWSJoinPM, &limits.LimitWSEventPM, &limits.MaxConnections,
-		&limits.BurstMultiplier,
 		&limits.CreatedAt, &limits.UpdatedAt,
 	)
 	if err == pgx.ErrNoRows {
@@ -209,9 +208,9 @@ func (r *planRepository) SetRateLimits(ctx context.Context, limits *models.PlanR
 			plan_id, limit_read_pm, limit_write_pm, limit_bulk_pm,
 			limit_unibox_pm, limit_analytics_pm, limit_api_calls_daily, limit_bulk_ops_daily,
 			limit_ws_message_pm, limit_ws_join_pm, limit_ws_event_pm, max_connections,
-			burst_multiplier, created_at, updated_at
+			created_at, updated_at
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
 		)
 		ON CONFLICT (plan_id) DO UPDATE SET
 			limit_read_pm = EXCLUDED.limit_read_pm,
@@ -225,7 +224,6 @@ func (r *planRepository) SetRateLimits(ctx context.Context, limits *models.PlanR
 			limit_ws_join_pm = EXCLUDED.limit_ws_join_pm,
 			limit_ws_event_pm = EXCLUDED.limit_ws_event_pm,
 			max_connections = EXCLUDED.max_connections,
-			burst_multiplier = EXCLUDED.burst_multiplier,
 			updated_at = EXCLUDED.updated_at
 	`
 
@@ -235,7 +233,7 @@ func (r *planRepository) SetRateLimits(ctx context.Context, limits *models.PlanR
 		limits.LimitReadPM, limits.LimitWritePM, limits.LimitBulkPM,
 		limits.LimitUniboxPM, limits.LimitAnalyticsPM, limits.LimitAPICallsDaily, limits.LimitBulkOpsDaily,
 		limits.LimitWSMessagePM, limits.LimitWSJoinPM, limits.LimitWSEventPM, limits.MaxConnections,
-		limits.BurstMultiplier, now, now,
+		now, now,
 	)
 	return err
 }

@@ -21,11 +21,18 @@ type FeatureGateService interface {
 	// CanSendCampaignEmail checks if an organization can send campaign emails
 	CanSendCampaignEmail(ctx context.Context, orgID uuid.UUID) (bool, *errx.Error)
 
-	// CanUseWarmup checks if an organization can use the warmup feature
+	// CanUseWarmup checks if an organization can use the warmup feature.
+	// Free-trial orgs may use warmup during their 14-day window.
 	CanUseWarmup(ctx context.Context, orgID uuid.UUID) (bool, *errx.Error)
 
-	// CanUseUnibox checks if an organization can use the unibox feature
+	// CanUseUnibox checks if an organization can use the unibox feature.
+	// Free-trial orgs may use unibox during their 14-day window.
 	CanUseUnibox(ctx context.Context, orgID uuid.UUID) (bool, *errx.Error)
+
+	// CanAddInbox returns whether the org may connect another email account.
+	// Free-trial orgs are capped at FreeTrialInboxLimit connected inboxes.
+	// Paid orgs are not gated here (plan limits govern sending volume).
+	CanAddInbox(ctx context.Context, orgID uuid.UUID, currentCount int) (bool, *errx.Error)
 
 	// GetDailyEmailLimit returns the daily email limit for an organization
 	// Returns -1 for unlimited, 0 for blocked
@@ -86,34 +93,52 @@ func (s *featureGateService) CanSendCampaignEmail(ctx context.Context, orgID uui
 	return false, nil
 }
 
-// CanUseWarmup checks if an organization can use the warmup feature
+// CanUseWarmup checks if an organization can use the warmup feature.
+// Free-trial users get warmup access for the 14-day window via the
+// `free` pool; once the trial expires they must upgrade.
 func (s *featureGateService) CanUseWarmup(ctx context.Context, orgID uuid.UUID) (bool, *errx.Error) {
 	sub, err := s.subRepo.GetByOrganizationID(ctx, orgID)
 	if err != nil {
 		return false, errx.New(errx.Internal, "failed to get subscription")
 	}
-
 	if sub == nil {
 		return false, nil
 	}
-
-	// Only paid subscribers can use warmup
-	return sub.HasPaidSubscription(), nil
+	return sub.CanUseWarmup(), nil
 }
 
-// CanUseUnibox checks if an organization can use the unibox feature
+// CanUseUnibox checks if an organization can use the unibox feature.
+// Same trial allowance as warmup.
 func (s *featureGateService) CanUseUnibox(ctx context.Context, orgID uuid.UUID) (bool, *errx.Error) {
 	sub, err := s.subRepo.GetByOrganizationID(ctx, orgID)
 	if err != nil {
 		return false, errx.New(errx.Internal, "failed to get subscription")
 	}
-
 	if sub == nil {
 		return false, nil
 	}
+	return sub.CanUseUnibox(), nil
+}
 
-	// Only paid subscribers can use unibox
-	return sub.HasPaidSubscription(), nil
+// CanAddInbox enforces the free-trial inbox cap. Paid orgs are never
+// blocked here. Trial orgs may connect up to models.FreeTrialInboxLimit
+// inboxes; once that cap is reached we refuse so the warmup pool is not
+// seeded with throwaway trial accounts.
+func (s *featureGateService) CanAddInbox(ctx context.Context, orgID uuid.UUID, currentCount int) (bool, *errx.Error) {
+	sub, err := s.subRepo.GetByOrganizationID(ctx, orgID)
+	if err != nil {
+		return false, errx.New(errx.Internal, "failed to get subscription")
+	}
+	if sub == nil {
+		return false, nil
+	}
+	if sub.HasPaidSubscription() {
+		return true, nil
+	}
+	if sub.IsInFreeTrial() {
+		return currentCount < models.FreeTrialInboxLimit, nil
+	}
+	return false, nil
 }
 
 // GetDailyEmailLimit returns the daily email limit for an organization

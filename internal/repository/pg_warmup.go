@@ -56,9 +56,10 @@ type WarmupStatistic struct {
 
 // WarmupReplyCandidate describes a previously sent warmup message that can be replied to.
 type WarmupReplyCandidate struct {
-	MessageID string
-	Subject   string
-	ThreadID  *string
+	MessageID         string
+	Subject           string
+	ThreadID          *string
+	ConversationTheme string
 }
 
 // WarmupRepository defines methods for warmup data access
@@ -74,6 +75,8 @@ type WarmupRepository interface {
 	GetParticipantHealth(ctx context.Context, accountID uuid.UUID, poolType string) (*models.WarmupParticipantHealth, error)
 	UpdateParticipantHealth(ctx context.Context, accountID uuid.UUID, state models.WarmupHealthState, blockedUntil *time.Time, reason string, score float64) error
 	CountSpamReportsSince(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error)
+	CountUserComplaintsSince(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error)
+	CountSpamPlacementsSince(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error)
 	SumWarmupSentSince(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error)
 	CountDeliverabilityEventsByAccount(ctx context.Context, accountID uuid.UUID, eventType string, since time.Time) (int, error)
 	CountDeliveredByAccount(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error)
@@ -104,6 +107,11 @@ type WarmupRepository interface {
 	// Warmup conversation support
 	GetRecentlyUsedPartners(ctx context.Context, accountID uuid.UUID, since time.Time) ([]uuid.UUID, error)
 	GetLatestReplyCandidate(ctx context.Context, senderAccountID, recipientAccountID uuid.UUID) (*WarmupReplyCandidate, error)
+
+	// Partner diversity support
+	GetPoolParticipantDomains(ctx context.Context, poolType string, excludeBlocked bool) (map[uuid.UUID]string, error)
+	GetPoolParticipantEmails(ctx context.Context, poolType string, excludeBlocked bool) (map[uuid.UUID]string, error)
+	GetRecentPartnerDomainCounts(ctx context.Context, accountID uuid.UUID, since time.Time) (map[string]int, error)
 }
 
 type warmupRepository struct {
@@ -383,13 +391,50 @@ func (r *warmupRepository) UpdateParticipantHealth(ctx context.Context, accountI
 	return err
 }
 
+// CountSpamReportsSince returns the total count of any warmup spam-related
+// event against the account. Retained for backward compatibility with code
+// that wants the combined signal; new code should prefer the split
+// CountUserComplaintsSince / CountSpamPlacementsSince methods so the two
+// fundamentally different signals can be threshold-checked independently.
 func (r *warmupRepository) CountSpamReportsSince(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error) {
 	query := `
 		SELECT COUNT(*)
 		FROM warmup_spam_reports
 		WHERE reported_account_id = $1
 		  AND created_at >= $2
-		  AND report_type IN ('spam', 'spam_folder')
+		  AND report_type IN ('spam', 'spam_folder', 'user_complaint', 'spam_placement')
+	`
+	var count int
+	err := r.db.QueryRow(ctx, query, accountID, since).Scan(&count)
+	return count, err
+}
+
+// CountUserComplaintsSince counts warmup events where the recipient
+// explicitly marked the message as spam. Strong negative signal because
+// the user actively rejected the content.
+func (r *warmupRepository) CountUserComplaintsSince(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error) {
+	query := `
+		SELECT COUNT(*)
+		FROM warmup_spam_reports
+		WHERE reported_account_id = $1
+		  AND created_at >= $2
+		  AND report_type IN ('user_complaint', 'spam', 'spam_folder')
+	`
+	var count int
+	err := r.db.QueryRow(ctx, query, accountID, since).Scan(&count)
+	return count, err
+}
+
+// CountSpamPlacementsSince counts warmup events where the message landed
+// in the recipient's Junk/Spam folder on delivery. Distinct from a user
+// complaint — the user took no action; provider classifier put it there.
+func (r *warmupRepository) CountSpamPlacementsSince(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error) {
+	query := `
+		SELECT COUNT(*)
+		FROM warmup_spam_reports
+		WHERE reported_account_id = $1
+		  AND created_at >= $2
+		  AND report_type = 'spam_placement'
 	`
 	var count int
 	err := r.db.QueryRow(ctx, query, accountID, since).Scan(&count)
@@ -538,14 +583,15 @@ func (r *warmupRepository) GetOrCreateDailyStats(ctx context.Context, accountID 
 // CreateWarmupToken creates a warmup verification token
 func (r *warmupRepository) CreateWarmupToken(ctx context.Context, token *models.WarmupToken) error {
 	query := `
-		INSERT INTO warmup_tokens (token, task_id, sender_account_id, recipient_account_id, expires_at)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO warmup_tokens (token, task_id, sender_account_id, recipient_account_id, conversation_theme, expires_at)
+		VALUES ($1, $2, $3, $4, $5, $6)
 	`
 	_, err := r.db.Exec(ctx, query,
 		token.Token,
 		token.TaskID,
 		token.SenderAccountID,
 		token.RecipientAccountID,
+		token.ConversationTheme,
 		token.ExpiresAt,
 	)
 	return err
@@ -554,7 +600,7 @@ func (r *warmupRepository) CreateWarmupToken(ctx context.Context, token *models.
 // GetWarmupToken retrieves a valid (unconsumed, unexpired) warmup token
 func (r *warmupRepository) GetWarmupToken(ctx context.Context, tokenID uuid.UUID) (*models.WarmupToken, error) {
 	query := `
-		SELECT token, task_id, sender_account_id, recipient_account_id, created_at, consumed_at, expires_at
+		SELECT token, task_id, sender_account_id, recipient_account_id, COALESCE(conversation_theme, ''), created_at, consumed_at, expires_at
 		FROM warmup_tokens
 		WHERE token = $1 AND consumed_at IS NULL AND expires_at > NOW()
 	`
@@ -565,6 +611,7 @@ func (r *warmupRepository) GetWarmupToken(ctx context.Context, tokenID uuid.UUID
 		&t.TaskID,
 		&t.SenderAccountID,
 		&t.RecipientAccountID,
+		&t.ConversationTheme,
 		&t.CreatedAt,
 		&t.ConsumedAt,
 		&t.ExpiresAt,
@@ -579,7 +626,7 @@ func (r *warmupRepository) GetWarmupToken(ctx context.Context, tokenID uuid.UUID
 
 func (r *warmupRepository) FindWarmupToken(ctx context.Context, tokenID uuid.UUID) (*models.WarmupToken, error) {
 	query := `
-		SELECT token, task_id, sender_account_id, recipient_account_id, created_at, consumed_at, expires_at
+		SELECT token, task_id, sender_account_id, recipient_account_id, COALESCE(conversation_theme, ''), created_at, consumed_at, expires_at
 		FROM warmup_tokens
 		WHERE token = $1
 	`
@@ -590,6 +637,7 @@ func (r *warmupRepository) FindWarmupToken(ctx context.Context, tokenID uuid.UUI
 		&t.TaskID,
 		&t.SenderAccountID,
 		&t.RecipientAccountID,
+		&t.ConversationTheme,
 		&t.CreatedAt,
 		&t.ConsumedAt,
 		&t.ExpiresAt,
@@ -659,10 +707,111 @@ func (r *warmupRepository) GetRecentlyUsedPartners(ctx context.Context, accountI
 	return partnerIDs, rows.Err()
 }
 
+// GetPoolParticipantDomains returns a map from email_account_id to lowercased
+// domain (the part after '@') for every active participant in the given pool.
+// Used by the partner selector to weight selection toward under-represented
+// recipient domains so a single mailbox provider does not dominate warmup
+// traffic from a sender.
+func (r *warmupRepository) GetPoolParticipantDomains(ctx context.Context, poolType string, excludeBlocked bool) (map[uuid.UUID]string, error) {
+	query := `
+		SELECT wpp.email_account_id, lower(split_part(ea.email, '@', 2))
+		FROM warmup_pool_participants wpp
+		JOIN warmup_pools wp ON wpp.pool_id = wp.id
+		JOIN email_accounts ea ON ea.id = wpp.email_account_id
+		WHERE wp.pool_type = $1
+	`
+	if excludeBlocked {
+		query += " AND wpp.health_state IN ('healthy', 'watch', 'throttled')"
+	}
+
+	rows, err := r.db.Query(ctx, query, poolType)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make(map[uuid.UUID]string)
+	for rows.Next() {
+		var id uuid.UUID
+		var domain string
+		if err := rows.Scan(&id, &domain); err != nil {
+			return nil, err
+		}
+		out[id] = domain
+	}
+	return out, rows.Err()
+}
+
+// GetPoolParticipantEmails returns a map from email_account_id to full
+// email address for every active participant in the given pool. Used by
+// the routing-rule evaluator which needs the full address to classify
+// providers and apply customer-defined rules.
+func (r *warmupRepository) GetPoolParticipantEmails(ctx context.Context, poolType string, excludeBlocked bool) (map[uuid.UUID]string, error) {
+	query := `
+		SELECT wpp.email_account_id, ea.email
+		FROM warmup_pool_participants wpp
+		JOIN warmup_pools wp ON wpp.pool_id = wp.id
+		JOIN email_accounts ea ON ea.id = wpp.email_account_id
+		WHERE wp.pool_type = $1
+	`
+	if excludeBlocked {
+		query += " AND wpp.health_state IN ('healthy', 'watch', 'throttled')"
+	}
+
+	rows, err := r.db.Query(ctx, query, poolType)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make(map[uuid.UUID]string)
+	for rows.Next() {
+		var id uuid.UUID
+		var email string
+		if err := rows.Scan(&id, &email); err != nil {
+			return nil, err
+		}
+		out[id] = email
+	}
+	return out, rows.Err()
+}
+
+// GetRecentPartnerDomainCounts returns a histogram of recipient domains the
+// sender has targeted since the given timestamp. The selector uses this to
+// downweight partners whose domain is over-represented in recent traffic.
+func (r *warmupRepository) GetRecentPartnerDomainCounts(ctx context.Context, accountID uuid.UUID, since time.Time) (map[string]int, error) {
+	query := `
+		SELECT lower(split_part(ea.email, '@', 2)) AS domain, COUNT(*)
+		FROM warmup_tokens wt
+		JOIN email_accounts ea ON ea.id = wt.recipient_account_id
+		WHERE wt.sender_account_id = $1
+		  AND wt.created_at >= $2
+		GROUP BY domain
+	`
+	rows, err := r.db.Query(ctx, query, accountID, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make(map[string]int)
+	for rows.Next() {
+		var domain string
+		var count int
+		if err := rows.Scan(&domain, &count); err != nil {
+			return nil, err
+		}
+		out[domain] = count
+	}
+	return out, rows.Err()
+}
+
 // GetLatestReplyCandidate finds the latest completed warmup email from sender to recipient.
+// It also returns the original message's conversation_theme so the reply body can
+// be drawn from the same topical bucket instead of a random conversation.
 func (r *warmupRepository) GetLatestReplyCandidate(ctx context.Context, senderAccountID, recipientAccountID uuid.UUID) (*WarmupReplyCandidate, error) {
 	query := `
-		SELECT t.message_id, COALESCE(et.subject, ''), et.thread_id
+		SELECT t.message_id, COALESCE(et.subject, ''), et.thread_id, COALESCE(wt.conversation_theme, '')
 		FROM warmup_tokens wt
 		JOIN tasks t ON t.id = wt.task_id
 		LEFT JOIN email_tasks et ON et.task_id = t.id
@@ -680,6 +829,7 @@ func (r *warmupRepository) GetLatestReplyCandidate(ctx context.Context, senderAc
 		&candidate.MessageID,
 		&candidate.Subject,
 		&candidate.ThreadID,
+		&candidate.ConversationTheme,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil

@@ -8,12 +8,18 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/models"
 )
 
 func (s *JobsService) HandleNewEmail(ctx context.Context, e *models.JobEventNewEmail) error {
-	// Check for warmup token header in message headers
-	warmupToken := extractHeaderValue(e.Message, "X-Warmbly-Token")
+	// Check for warmup token header in message headers.
+	// Try the current header name first, then the legacy "X-Warmbly-Token"
+	// so messages in flight during the rollout continue to verify.
+	warmupToken := extractHeaderValue(e.Message, config.WarmupVerifyHeader)
+	if warmupToken == "" {
+		warmupToken = extractHeaderValue(e.Message, "X-Warmbly-Token")
+	}
 	if warmupToken != "" {
 		handled, err := s.handleWarmupEmail(ctx, e, warmupToken)
 		if err != nil {
@@ -85,6 +91,15 @@ func (s *JobsService) handleWarmupEmail(ctx context.Context, e *models.JobEventN
 	// Valid! Consume the token
 	s.WarmupRepo.ConsumeWarmupToken(ctx, tokenUUID)
 
+	// If the warmup mail arrived in a Junk/Spam state, record a
+	// spam_placement event against the sender. This is distinct from a
+	// user_complaint (which fires later via HandleFlagsAdd when a recipient
+	// flags an already-delivered message) because nobody actively rejected
+	// it — the provider classifier placed it there on arrival.
+	if containsSpamFlag(e.Message.Flags) && s.WarmupService != nil {
+		_, _ = s.WarmupService.RecordSpamPlacement(ctx, e.Message.EmailID, token.SenderAccountID, e.Message.MessageID)
+	}
+
 	// Perform warmup actions
 	s.performWarmupActions(ctx, e)
 	return true, nil
@@ -97,11 +112,12 @@ func (s *JobsService) performWarmupActions(ctx context.Context, e *models.JobEve
 	}
 
 	action := &models.WarmupEmailAction{
-		UserID:  e.UserID,
-		EmailID: e.Message.EmailID,
-		GmailID: e.Message.GmailID,
-		UID:     e.Message.UID,
-		Actions: []string{"move_to_warmbly", "mark_read", "remove_from_spam", "mark_important"},
+		UserID:             e.UserID,
+		EmailID:            e.Message.EmailID,
+		GmailID:            e.Message.GmailID,
+		UID:                e.Message.UID,
+		MailboxUIDValidity: e.Message.Mailbox,
+		Actions:            []string{"move_to_warmbly", "mark_read", "remove_from_spam", "mark_important"},
 	}
 
 	// Look up the worker ID from the email account

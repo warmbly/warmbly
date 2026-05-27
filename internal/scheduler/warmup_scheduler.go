@@ -5,7 +5,54 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/warmbly/warmbly/internal/models"
 )
+
+// poolTypesForHealthLookup lists the pools a participant could be in, in
+// priority order. Premium first so paid orgs apply premium-pool health.
+var poolTypesForHealthLookup = []string{"premium", "free"}
+
+// healthAdjustment captures how the throttled/watch health state should
+// dampen warmup throughput. The scheduler reads this off the participant's
+// current state instead of carrying it on the task payload, so a state
+// change takes effect on the next reschedule without any plumbing.
+type healthAdjustment struct {
+	volumeMultiplier  float64 // applied to target_volume
+	minWaitMultiplier float64 // applied to MinWaitTime between sends
+}
+
+func adjustmentFor(state models.WarmupHealthState) healthAdjustment {
+	switch state {
+	case models.WarmupHealthThrottled:
+		// Probation / spam-placement throttle band: cut volume in half and
+		// double minimum spacing so the mailbox gets a much lighter day.
+		return healthAdjustment{volumeMultiplier: 0.5, minWaitMultiplier: 2.0}
+	case models.WarmupHealthWatch:
+		// Watch band: lighter dampening — keep volume close to normal but
+		// stretch spacing modestly so we are not bursting.
+		return healthAdjustment{volumeMultiplier: 0.7, minWaitMultiplier: 1.5}
+	default:
+		return healthAdjustment{volumeMultiplier: 1.0, minWaitMultiplier: 1.0}
+	}
+}
+
+// resolveHealthState looks up the participant's current health state across
+// the warmup pools they may belong to. Returns Healthy if the account is not
+// in any pool or the lookup fails — failing open keeps warmup running rather
+// than silently halting on a transient DB error.
+func (s *schedulerService) resolveHealthState(ctx context.Context, accountID uuid.UUID) models.WarmupHealthState {
+	if s.warmupRepo == nil {
+		return models.WarmupHealthHealthy
+	}
+	for _, poolType := range poolTypesForHealthLookup {
+		health, err := s.warmupRepo.GetParticipantHealth(ctx, accountID, poolType)
+		if err != nil || health == nil {
+			continue
+		}
+		return health.HealthState
+	}
+	return models.WarmupHealthHealthy
+}
 
 // CalculateNextWarmupTime calculates the next best time to send a warmup email
 // This implements the progressive warmup algorithm with anti-spam patterns
@@ -46,6 +93,26 @@ func (s *schedulerService) CalculateNextWarmupTime(ctx context.Context, accountI
 		account.WarmupMax,
 	)
 
+	// STEP 2.5: Apply health-state adjustments. Throttled/watch participants
+	// run at reduced volume and wider spacing until the health sweep clears
+	// them back to healthy. We never zero out volume — even degraded mailboxes
+	// keep a small heartbeat so the sweep has fresh sample data to evaluate.
+	adj := adjustmentFor(s.resolveHealthState(ctx, accountID))
+	if adj.volumeMultiplier < 1.0 {
+		adjusted := int(float64(targetVolume)*adj.volumeMultiplier + 0.5)
+		if adjusted < account.WarmupBase {
+			adjusted = account.WarmupBase
+		}
+		if adjusted < 1 {
+			adjusted = 1
+		}
+		targetVolume = adjusted
+	}
+	minWaitSeconds := account.MinWaitTime
+	if adj.minWaitMultiplier > 1.0 {
+		minWaitSeconds = int(float64(account.MinWaitTime)*adj.minWaitMultiplier + 0.5)
+	}
+
 	// STEP 3: Count emails already sent today
 	emailsSentToday, err := s.taskRepo.CountEmailsSentToday(ctx, accountID)
 	if err != nil {
@@ -80,7 +147,7 @@ func (s *schedulerService) CalculateNextWarmupTime(ctx context.Context, accountI
 	earliestNext := now
 
 	if lastEmailTime != nil {
-		minWait := time.Second * time.Duration(account.MinWaitTime)
+		minWait := time.Second * time.Duration(minWaitSeconds)
 		earliestNext = lastEmailTime.Add(minWait)
 	}
 
@@ -113,7 +180,7 @@ func (s *schedulerService) CalculateNextWarmupTime(ctx context.Context, accountI
 		return time.Time{}, err
 	}
 
-	candidateTime = resolveConflicts(candidateTime, scheduledTasks, account.MinWaitTime)
+	candidateTime = resolveConflicts(candidateTime, scheduledTasks, minWaitSeconds)
 
 	// STEP 12: Apply human-like distribution curve
 	loc := loadLocation(account.Timezone)
