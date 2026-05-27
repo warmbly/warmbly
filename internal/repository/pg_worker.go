@@ -19,6 +19,15 @@ type EmailAccountWorkerInfo struct {
 	FreeTier       *bool
 }
 
+// EmailAccountPlacementHint carries the small slice of mailbox metadata the
+// assignment service needs to compute a mailbox weight (provider +
+// warmup-only flag). Fetched once per assignment so we don't have to thread
+// the data through every caller.
+type EmailAccountPlacementHint struct {
+	Provider string
+	IsWarmup bool
+}
+
 type WorkerRepository interface {
 	// Worker queries
 	GetByID(ctx context.Context, id uuid.UUID) (*models.Worker, error)
@@ -73,6 +82,19 @@ type WorkerRepository interface {
 	SetWorkerTags(ctx context.Context, workerID uuid.UUID, tags []string) error
 	ListAllWorkerTags(ctx context.Context) ([]string, error)
 	HydrateWorkerTags(ctx context.Context, workers []*models.Worker) error
+
+	// Heartbeat (auto-registers new workers on first contact)
+	UpsertOnHeartbeat(ctx context.Context, id uuid.UUID, ipAddr, tier, egressKind string) error
+
+	// Health and capacity
+	InsertWorkerHealthSample(ctx context.Context, sample *models.WorkerHealthSample) error
+	ListCapacityCandidates(ctx context.Context, freeTier bool, allowedStates []models.WorkerHealthState) ([]WorkerCapacityRowDB, error)
+	GetCapacityRow(ctx context.Context, workerID uuid.UUID) (*WorkerCapacityRowDB, error)
+	AddLoadScore(ctx context.Context, workerID uuid.UUID, delta float64) error
+	SetWorkerHealthState(ctx context.Context, workerID uuid.UUID, state models.WorkerHealthState) error
+	SetWorkerEgressKind(ctx context.Context, workerID uuid.UUID, kind models.WorkerEgressKind) error
+	RefreshWorkerCapacityView(ctx context.Context) error
+	GetEmailAccountPlacementHint(ctx context.Context, emailAccountID uuid.UUID) (*EmailAccountPlacementHint, error)
 }
 
 type workerRepository struct {

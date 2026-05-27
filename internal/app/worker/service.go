@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"sync"
 
 	"github.com/warmbly/warmbly/internal/app/cipher"
 	"github.com/warmbly/warmbly/internal/app/worker/mailmanager"
@@ -26,6 +27,13 @@ type WorkerService struct {
 	EmailMessageMapRepository repository.EmailMessageMapRepository
 
 	mailManager *mailmanager.MailManager
+
+	// HealthCounters tracks the per-window send-side telemetry the worker
+	// reports via JobEventTypeWorkerHealth. Lazily initialised by
+	// ensureCounters so accessors are safe to call before RunHealth has
+	// started.
+	HealthCounters *HealthCounters
+	healthOnce     sync.Once
 
 	errorEvents   chan zapcore.Entry
 	logger        *zap.Logger

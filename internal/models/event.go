@@ -38,6 +38,10 @@ const (
 	JobEventTypeEmailDisabled    JobEventType = "EMAIL_DISABLED"     // Account disabled
 	JobEventTypeEmailRateLimited JobEventType = "EMAIL_RATE_LIMITED" // Rate limit hit
 	JobEventTypeEmailServerError JobEventType = "EMAIL_SERVER_ERROR" // Temporary server error
+
+	// Per-worker health telemetry. Emitted every 30s by every worker;
+	// consumer writes it into worker_health_samples for the capacity view.
+	JobEventTypeWorkerHealth JobEventType = "WORKER_HEALTH"
 )
 
 type JobEvent struct {

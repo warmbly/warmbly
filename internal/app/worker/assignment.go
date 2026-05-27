@@ -3,12 +3,20 @@ package worker
 import (
 	"context"
 	"errors"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
 )
+
+// defaultMailboxWeight is the weight applied when AssignWorkerToEmail
+// can't or won't fetch placement hints (e.g. the email account row was
+// just deleted, or the lookup fails). 1.0 lines up with cold_smtp, which
+// is the conservative assumption: better to over-account for the
+// placement than to silently under-count and let a worker over-commit.
+const defaultMailboxWeight = 1.0
 
 var (
 	ErrNoAvailableWorkers = errors.New("no available workers")
@@ -72,7 +80,13 @@ func (s *workerAssignmentService) AssignWorkerToEmail(ctx context.Context, email
 	// 2. Determine if free tier or paid
 	isPaidOrg := sub != nil && sub.HasPaidSubscription()
 
-	// 3. Check if paid org has dedicated worker plan
+	// 3. Compute mailbox weight once - reused for whichever worker we
+	// land on (dedicated or shared). 0 is a sentinel that means
+	// "couldn't look it up, use default" and is handled by
+	// resolveMailboxWeight below.
+	weight := s.resolveMailboxWeight(ctx, emailAccountID)
+
+	// 4. Check if paid org has dedicated worker plan
 	if isPaidOrg {
 		plan, err := s.planRepo.GetByID(ctx, sub.PlanID)
 		if err != nil {
@@ -92,29 +106,42 @@ func (s *workerAssignmentService) AssignWorkerToEmail(ctx context.Context, email
 				if err := s.workerRepo.IncrementAccountCount(ctx, dedicatedWorker.ID); err != nil {
 					return nil, err
 				}
+				// Best-effort load_score bump. Non-fatal: dedicated workers
+				// don't use load_score for placement (one customer per
+				// worker), but keeping the column accurate makes the
+				// capacity view useful for ops dashboards.
+				_ = s.workerRepo.AddLoadScore(ctx, dedicatedWorker.ID, weight)
 				return &dedicatedWorker.ID, nil
 			}
 		}
 	}
 
-	// 4. Assign to shared worker (strict tier separation)
+	// 5. Assign to shared worker (strict tier separation)
 	freeTier := !isPaidOrg // Free trial = free workers, Paid = premium workers
-	worker, err := s.SelectSharedWorker(ctx, freeTier)
+	worker, err := s.selectSharedWorkerForWeight(ctx, freeTier, weight)
 	if err != nil {
 		return nil, err
 	}
 
-	// 5. Update database
+	// 6. Update database
 	if err := s.workerRepo.UpdateEmailAccountWorker(ctx, emailAccountID, worker.ID); err != nil {
 		return nil, err
 	}
 
-	// 6. Update worker account count
+	// 7. Update worker account count
 	if err := s.workerRepo.IncrementAccountCount(ctx, worker.ID); err != nil {
 		return nil, err
 	}
 
-	// 7. Update warmup pool type
+	// 8. Bump load_score so the next selection sees this worker as
+	// proportionally more loaded. Non-fatal so a transient DB hiccup
+	// doesn't strand the mailbox; the next capacity-view refresh
+	// will correct any drift.
+	if err := s.workerRepo.AddLoadScore(ctx, worker.ID, weight); err != nil {
+		// log but don't fail
+	}
+
+	// 9. Update warmup pool type
 	poolType := "free"
 	if !freeTier {
 		poolType = "premium"
@@ -126,19 +153,139 @@ func (s *workerAssignmentService) AssignWorkerToEmail(ctx context.Context, email
 	return &worker.ID, nil
 }
 
-// SelectSharedWorker selects the least loaded shared worker for the given tier
+// resolveMailboxWeight asks the repository for the mailbox's provider +
+// warmup flag, then turns that into a load weight via MailboxWeight.
+// Any error or missing row falls back to defaultMailboxWeight so a
+// transient DB blip doesn't break placement.
+func (s *workerAssignmentService) resolveMailboxWeight(ctx context.Context, emailAccountID uuid.UUID) float64 {
+	hint, err := s.workerRepo.GetEmailAccountPlacementHint(ctx, emailAccountID)
+	if err != nil || hint == nil {
+		return defaultMailboxWeight
+	}
+	return MailboxWeight(hint.Provider, hint.IsWarmup)
+}
+
+// UnassignWorkerFromEmail removes the worker assignment for an email
+// account and refunds the load_score by the mailbox's weight. Decrement
+// is best-effort and clamped at zero by the repository so a duplicate
+// unassign never makes the score go negative.
+func (s *workerAssignmentService) UnassignWorkerFromEmail(ctx context.Context, emailAccountID uuid.UUID) error {
+	info, err := s.workerRepo.GetEmailAccountWorkerInfo(ctx, emailAccountID)
+	if err != nil || info == nil || info.WorkerID == nil {
+		return err
+	}
+	weight := s.resolveMailboxWeight(ctx, emailAccountID)
+
+	if err := s.workerRepo.ClearEmailAccountWorker(ctx, emailAccountID); err != nil {
+		return err
+	}
+	if err := s.workerRepo.DecrementAccountCount(ctx, *info.WorkerID); err != nil {
+		// log but don't fail
+	}
+	if err := s.workerRepo.AddLoadScore(ctx, *info.WorkerID, -weight); err != nil {
+		// log but don't fail
+	}
+	return nil
+}
+
+// selectSharedWorkerForWeight picks the least-utilised worker that still
+// has at least `weight` headroom. Falls back to the legacy
+// account-count path if the capacity view returns nothing (test
+// environments, fresh deployments before the first health sample lands).
+func (s *workerAssignmentService) selectSharedWorkerForWeight(ctx context.Context, freeTier bool, weight float64) (*models.Worker, error) {
+	rows, err := s.workerRepo.ListCapacityCandidates(ctx, freeTier, nil)
+	if err != nil {
+		// Falling back here means a broken capacity view doesn't take
+		// the whole onboarding flow down. The legacy path uses
+		// account_count, which is always up to date.
+		return s.selectSharedWorkerLegacy(ctx, freeTier)
+	}
+	if len(rows) == 0 {
+		return s.selectSharedWorkerLegacy(ctx, freeTier)
+	}
+
+	type scored struct {
+		WorkerID    uuid.UUID
+		Utilization float64
+		Headroom    float64
+	}
+	candidates := make([]scored, 0, len(rows))
+	for _, row := range rows {
+		cap := ComputeCapacity(WorkerCapacityRow{
+			WorkerID:         row.WorkerID,
+			WorkerType:       row.WorkerType,
+			FreeTier:         row.FreeTier,
+			EgressKind:       row.EgressKind,
+			HealthState:      row.HealthState,
+			LoadScore:        row.LoadScore,
+			BaseCapacity:     row.BaseCapacity,
+			HealthMultiplier: row.HealthMultiplier,
+			AgeMultiplier:    row.AgeMultiplier,
+			SendsAttempted1h: row.SendsAttempted1h,
+			SendsSucceeded1h: row.SendsSucceeded1h,
+			BouncesHard1h:    row.BouncesHard1h,
+			BouncesSoft1h:    row.BouncesSoft1h,
+			Complaints1h:     row.Complaints1h,
+			AuthErrors1h:     row.AuthErrors1h,
+		})
+		headroom := cap.Effective - cap.Load
+		if headroom < weight {
+			continue
+		}
+		candidates = append(candidates, scored{
+			WorkerID:    row.WorkerID,
+			Utilization: cap.Utilization,
+			Headroom:    headroom,
+		})
+	}
+	if len(candidates) == 0 {
+		// Every healthy worker is full. The legacy path will at least
+		// pick the least-loaded one and the operator can react to the
+		// alert this throws via the saturated load_score values.
+		return s.selectSharedWorkerLegacy(ctx, freeTier)
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].Utilization < candidates[j].Utilization
+	})
+	best := candidates[0]
+	worker, err := s.workerRepo.GetByID(ctx, best.WorkerID)
+	if err != nil {
+		return nil, err
+	}
+	if worker == nil {
+		return nil, ErrNoAvailableWorkers
+	}
+	return worker, nil
+}
+
+// SelectSharedWorker selects the least-utilised healthy shared worker for
+// the given tier. Capacity-aware:
+//
+//   - candidates come from worker_capacity_view (filtered to
+//     health_state IN ('healthy', 'watch'))
+//   - workers without enough headroom for one cold-SMTP-equivalent
+//     mailbox are filtered out
+//   - sorted ASC by utilization ratio (Load / Effective) so the
+//     least-loaded healthy worker wins
+//
+// Falls back to selectSharedWorkerLegacy (sort by account_count ASC) if
+// the capacity view returns nothing.
 func (s *workerAssignmentService) SelectSharedWorker(ctx context.Context, freeTier bool) (*models.Worker, error) {
-	// Get all workers for the tier, sorted by account_count ASC
+	return s.selectSharedWorkerForWeight(ctx, freeTier, defaultMailboxWeight)
+}
+
+// selectSharedWorkerLegacy is the pre-capacity-view selection path. Kept
+// as a separate function so the fallback in selectSharedWorkerForWeight
+// is explicit and the migration to capacity-aware placement can be
+// reversed without rewriting the call site.
+func (s *workerAssignmentService) selectSharedWorkerLegacy(ctx context.Context, freeTier bool) (*models.Worker, error) {
 	workers, err := s.workerRepo.GetSharedWorkersByTier(ctx, freeTier)
 	if err != nil {
 		return nil, err
 	}
-
 	if len(workers) == 0 {
 		return nil, ErrNoAvailableWorkers
 	}
-
-	// Return the least loaded worker (first one since sorted ASC)
 	return &workers[0], nil
 }
 

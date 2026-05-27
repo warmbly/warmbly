@@ -26,16 +26,44 @@ const (
 	WorkerRiskPoolQuarantine WorkerRiskPool = "quarantine"
 )
 
+// WorkerEgressKind describes how a worker is wired up to actually send mail.
+// Different egress profiles ship with very different safe capacities, which
+// is why the capacity view branches on this column to derive base_capacity.
+type WorkerEgressKind string
+
+const (
+	WorkerEgressColdSMTP   WorkerEgressKind = "cold_smtp"
+	WorkerEgressOAuthAPI   WorkerEgressKind = "oauth_api"
+	WorkerEgressWarmupOnly WorkerEgressKind = "warmup_only"
+)
+
+// WorkerHealthState is the rolled-up health label maintained by the
+// assignment loop. Authoritative for "can this worker accept new
+// mailboxes" placement decisions. Mirrors the warmup health vocabulary
+// but applies to whole workers, not per-mailbox warmup state.
+type WorkerHealthState string
+
+const (
+	WorkerHealthHealthy     WorkerHealthState = "healthy"
+	WorkerHealthWatch       WorkerHealthState = "watch"
+	WorkerHealthThrottled   WorkerHealthState = "throttled"
+	WorkerHealthQuarantined WorkerHealthState = "quarantined"
+	WorkerHealthBlocked     WorkerHealthState = "blocked"
+)
+
 type Worker struct {
-	ID           uuid.UUID      `json:"id"`
-	Name         string         `json:"name"`
-	Notes        string         `json:"notes"`
-	IPAddr       string         `json:"ip_addr"`
-	Active       bool           `json:"active"`
-	FreeTier     bool           `json:"free_tier"`
-	WorkerType   WorkerType     `json:"worker_type"`
-	AccountCount int            `json:"account_count"`
-	RiskPool     WorkerRiskPool `json:"risk_pool"`
+	ID           uuid.UUID         `json:"id"`
+	Name         string            `json:"name"`
+	Notes        string            `json:"notes"`
+	IPAddr       string            `json:"ip_addr"`
+	Active       bool              `json:"active"`
+	FreeTier     bool              `json:"free_tier"`
+	WorkerType   WorkerType        `json:"worker_type"`
+	AccountCount int               `json:"account_count"`
+	RiskPool     WorkerRiskPool    `json:"risk_pool"`
+	EgressKind   WorkerEgressKind  `json:"egress_kind"`
+	HealthState  WorkerHealthState `json:"health_state"`
+	LoadScore    float64           `json:"load_score"`
 
 	// SSH management (none of these expose secret material — the encrypted
 	// private key is fetched separately via GetWorkerSSHCredentials).
