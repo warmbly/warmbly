@@ -31,15 +31,15 @@ import (
 // ---------------------------------------------------------------------------
 
 type CloudCredentialResponse struct {
-	ID             uuid.UUID  `json:"id"`
-	Provider       string     `json:"provider"`
-	Name           string     `json:"name"`
-	TokenMasked    string     `json:"token_masked"`
-	LastUsedAt     *time.Time `json:"last_used_at,omitempty"`
-	LastTestAt     *time.Time `json:"last_test_at,omitempty"`
-	LastTestOK     *bool      `json:"last_test_ok,omitempty"`
-	LastTestError  *string    `json:"last_test_error,omitempty"`
-	CreatedAt      time.Time  `json:"created_at"`
+	ID            uuid.UUID  `json:"id"`
+	Provider      string     `json:"provider"`
+	Name          string     `json:"name"`
+	TokenMasked   string     `json:"token_masked"`
+	LastUsedAt    *time.Time `json:"last_used_at,omitempty"`
+	LastTestAt    *time.Time `json:"last_test_at,omitempty"`
+	LastTestOK    *bool      `json:"last_test_ok,omitempty"`
+	LastTestError *string    `json:"last_test_error,omitempty"`
+	CreatedAt     time.Time  `json:"created_at"`
 }
 
 func toCredResponse(c *repository.CloudCredential) CloudCredentialResponse {
@@ -361,9 +361,9 @@ func (h *Handler) AdminDeleteProvisioningTemplate(c *gin.Context) {
 // ---------------------------------------------------------------------------
 
 type CreateProvisioningJobRequest struct {
-	TemplateID *uuid.UUID      `json:"template_id,omitempty"`
-	Custom     json.RawMessage `json:"custom,omitempty"`
-	TriggeredBy string         `json:"triggered_by,omitempty"`
+	TemplateID  *uuid.UUID      `json:"template_id,omitempty"`
+	Custom      json.RawMessage `json:"custom,omitempty"`
+	TriggeredBy string          `json:"triggered_by,omitempty"`
 }
 
 func (h *Handler) AdminListProvisioningJobs(c *gin.Context) {

@@ -30,10 +30,12 @@ import (
 	"github.com/warmbly/warmbly/internal/app/email"
 	"github.com/warmbly/warmbly/internal/app/emailsend"
 	"github.com/warmbly/warmbly/internal/app/feature"
+	"github.com/warmbly/warmbly/internal/app/fleet"
 	"github.com/warmbly/warmbly/internal/app/group"
 	"github.com/warmbly/warmbly/internal/app/organization"
 	"github.com/warmbly/warmbly/internal/app/releases"
 	"github.com/warmbly/warmbly/internal/app/sequence"
+	"github.com/warmbly/warmbly/internal/app/settings"
 	"github.com/warmbly/warmbly/internal/app/socket"
 	"github.com/warmbly/warmbly/internal/app/stripe"
 	"github.com/warmbly/warmbly/internal/app/subscription"
@@ -46,14 +48,12 @@ import (
 	warmupapp "github.com/warmbly/warmbly/internal/app/warmup"
 	"github.com/warmbly/warmbly/internal/app/webhook"
 	"github.com/warmbly/warmbly/internal/app/worker"
-	"github.com/warmbly/warmbly/internal/app/fleet"
-	"github.com/warmbly/warmbly/internal/app/settings"
 	"github.com/warmbly/warmbly/internal/app/worker_orchestrator"
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/events"
 	"github.com/warmbly/warmbly/internal/infrastructure/cache"
-	"github.com/warmbly/warmbly/internal/infrastructure/db"
 	"github.com/warmbly/warmbly/internal/infrastructure/codec"
+	"github.com/warmbly/warmbly/internal/infrastructure/db"
 	"github.com/warmbly/warmbly/internal/infrastructure/dynamo"
 	"github.com/warmbly/warmbly/internal/infrastructure/encryptedkeys"
 	"github.com/warmbly/warmbly/internal/infrastructure/eventbus"
@@ -765,10 +765,10 @@ func main() {
 
 		// Object storage + direct repository handles for handlers
 		// without a dedicated service layer (avatars, etc.).
-		Storage:            s3ForHandler,
-		EncryptedKeys:      encryptedKeys,
-		UserRepo:           userRepoForHandler,
-		OrgRepo:            organizationRepoForHandler,
+		Storage:                  s3ForHandler,
+		EncryptedKeys:            encryptedKeys,
+		UserRepo:                 userRepoForHandler,
+		OrgRepo:                  organizationRepoForHandler,
 		StorageBackendRepo:       storageBackendRepo,
 		CloudCredentialRepo:      cloudCredentialRepo,
 		ProvisioningTemplateRepo: provisioningTemplateRepo,

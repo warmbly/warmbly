@@ -46,16 +46,16 @@ type Location struct {
 
 // ServerType is one purchasable VPS shape.
 type ServerType struct {
-	Name             string  // "cx22", "cpx11"
-	Description      string
-	Cores            int
-	Memory           float64 // GiB
-	Disk             int     // GiB
-	StorageType      string  // "local" / "network"
-	CPUType          string  // "shared" / "dedicated"
-	Architecture     string  // "x86" / "arm"
-	PriceMonthlyEUR  float64
-	PriceMonthlyUSD  float64
+	Name              string // "cx22", "cpx11"
+	Description       string
+	Cores             int
+	Memory            float64 // GiB
+	Disk              int     // GiB
+	StorageType       string  // "local" / "network"
+	CPUType           string  // "shared" / "dedicated"
+	Architecture      string  // "x86" / "arm"
+	PriceMonthlyEUR   float64
+	PriceMonthlyUSD   float64
 	IncludedTrafficTB float64
 }
 
@@ -69,17 +69,17 @@ type Image struct {
 
 // CreateServerRequest is what the state machine passes to CreateServer.
 type CreateServerRequest struct {
-	Name           string
-	ServerType     string
-	Image          string
-	Location       string
-	Datacenter     string // overrides Location when set
-	SSHKeyIDs      []string
-	UserData       string // cloud-init
-	Labels         map[string]string
-	PlacementGroup string
-	PrivateNetwork string
-	Firewall       string
+	Name             string
+	ServerType       string
+	Image            string
+	Location         string
+	Datacenter       string // overrides Location when set
+	SSHKeyIDs        []string
+	UserData         string // cloud-init
+	Labels           map[string]string
+	PlacementGroup   string
+	PrivateNetwork   string
+	Firewall         string
 	StartAfterCreate bool
 }
 
@@ -103,8 +103,8 @@ type CreatePrimaryIPRequest struct {
 
 // PrimaryIP is what CreatePrimaryIP returns.
 type PrimaryIP struct {
-	ID       string
-	Type     string
-	IP       string
+	ID                 string
+	Type               string
+	IP                 string
 	AssignedToServerID string // empty when unassigned
 }

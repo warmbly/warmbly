@@ -168,10 +168,10 @@ func (r *Rebalancer) tickTier(ctx context.Context, freeTier bool) error {
 		_ = r.WorkerRepo.AddLoadScore(ctx, hot.WorkerID, -1.0)
 		_ = r.WorkerRepo.AddLoadScore(ctx, cold.WorkerID, 1.0)
 		_ = r.Decisions.Insert(ctx, &repository.DecisionLog{
-			Kind:       "rebalance",
-			WorkerID:   &hot.WorkerID,
-			MailboxID:  &mbID,
-			Reason:     fmt.Sprintf("hot %.0f%% -> cold %.0f%% (tier free=%v)", hot.Utilization*100, cold.Utilization*100, freeTier),
+			Kind:        "rebalance",
+			WorkerID:    &hot.WorkerID,
+			MailboxID:   &mbID,
+			Reason:      fmt.Sprintf("hot %.0f%% -> cold %.0f%% (tier free=%v)", hot.Utilization*100, cold.Utilization*100, freeTier),
 			TriggeredBy: "auto:rebalance",
 		})
 		moved++

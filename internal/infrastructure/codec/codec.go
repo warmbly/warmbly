@@ -2,9 +2,9 @@
 //
 // Two implementations:
 //   - AvroCodec  (Confluent Schema Registry + Avro v2 — historical default,
-//                 wraps internal/infrastructure/kafka.Avrov2)
+//     wraps internal/infrastructure/kafka.Avrov2)
 //   - JSONCodec  (encoding/json — self-hostable alternative with no external
-//                 schema registry dependency)
+//     schema registry dependency)
 //
 // The interface is intentionally small so the EventBus abstraction in
 // internal/infrastructure/eventbus can stay transport-agnostic: the bus

@@ -16,11 +16,11 @@ import (
 const testToken = "test-bearer-token"
 
 type fakeBackend struct {
-	t        *testing.T
-	keys     map[string]string
-	gotAuth  string
-	failPut  bool
-	failGet  bool
+	t         *testing.T
+	keys      map[string]string
+	gotAuth   string
+	failPut   bool
+	failGet   bool
 	getStatus int
 	putStatus int
 	delStatus int

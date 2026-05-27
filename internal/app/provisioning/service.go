@@ -41,27 +41,27 @@ func WorkerIDForIP(ip string) uuid.UUID {
 // asked for. Mirrors the relevant subset of provisioning_templates plus the
 // rendered worker env that the installer needs.
 type JobConfig struct {
-	Provider        string            `json:"provider"`
-	Location        string            `json:"location"`
-	Datacenter      string            `json:"datacenter,omitempty"`
-	ServerType      string            `json:"server_type"`
-	Image           string            `json:"image"`
-	ServerCount     int               `json:"server_count"`
-	IPv4PerServer   int               `json:"ipv4_per_server"`
-	IPv6PerServer   int               `json:"ipv6_per_server"`
-	Tier            string            `json:"tier"`
-	EgressKind      string            `json:"egress_kind"`
-	Labels          map[string]string `json:"labels,omitempty"`
-	PlacementGroup  string            `json:"placement_group,omitempty"`
-	PrivateNetwork  string            `json:"private_network,omitempty"`
-	Firewall        string            `json:"firewall,omitempty"`
-	ImageTag        string            `json:"image_tag"`
-	WorkerEnv       string            `json:"worker_env"`
-	SSHKeyID        string            `json:"ssh_key_id"`      // pre-uploaded to provider
-	SSHPrivKeyPEM   []byte            `json:"ssh_priv_key_pem"` // encrypted at rest in config blob
-	SSHPort         int               `json:"ssh_port,omitempty"`
-	SSHUser         string            `json:"ssh_user,omitempty"`
-	RDNSPattern     string            `json:"rdns_pattern,omitempty"` // e.g. "w-{{ip}}.workers.example.com"
+	Provider       string            `json:"provider"`
+	Location       string            `json:"location"`
+	Datacenter     string            `json:"datacenter,omitempty"`
+	ServerType     string            `json:"server_type"`
+	Image          string            `json:"image"`
+	ServerCount    int               `json:"server_count"`
+	IPv4PerServer  int               `json:"ipv4_per_server"`
+	IPv6PerServer  int               `json:"ipv6_per_server"`
+	Tier           string            `json:"tier"`
+	EgressKind     string            `json:"egress_kind"`
+	Labels         map[string]string `json:"labels,omitempty"`
+	PlacementGroup string            `json:"placement_group,omitempty"`
+	PrivateNetwork string            `json:"private_network,omitempty"`
+	Firewall       string            `json:"firewall,omitempty"`
+	ImageTag       string            `json:"image_tag"`
+	WorkerEnv      string            `json:"worker_env"`
+	SSHKeyID       string            `json:"ssh_key_id"`       // pre-uploaded to provider
+	SSHPrivKeyPEM  []byte            `json:"ssh_priv_key_pem"` // encrypted at rest in config blob
+	SSHPort        int               `json:"ssh_port,omitempty"`
+	SSHUser        string            `json:"ssh_user,omitempty"`
+	RDNSPattern    string            `json:"rdns_pattern,omitempty"` // e.g. "w-{{ip}}.workers.example.com"
 }
 
 // Service is the orchestrator.

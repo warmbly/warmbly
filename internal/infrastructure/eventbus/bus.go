@@ -2,9 +2,9 @@
 //
 // Two implementations:
 //   - KafkaBus  (Confluent / Apache Kafka — historical default, wraps the
-//                existing internal/infrastructure/kafka producer + consumer)
+//     existing internal/infrastructure/kafka producer + consumer)
 //   - NATSBus   (NATS JetStream — self-hostable alternative for single-binary
-//                or small-cluster deployments)
+//     or small-cluster deployments)
 //
 // The interface is intentionally small. It exposes only what the rest of the
 // codebase needs today (publish-by-key, consumer-group subscribe with manual

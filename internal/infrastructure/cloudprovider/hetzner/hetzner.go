@@ -35,7 +35,7 @@ type Client struct {
 // for tests against httptest.Server.
 type Option func(*Client)
 
-func WithBaseURL(u string) Option   { return func(c *Client) { c.baseURL = u } }
+func WithBaseURL(u string) Option          { return func(c *Client) { c.baseURL = u } }
 func WithHTTPClient(h *http.Client) Option { return func(c *Client) { c.http = h } }
 
 // New returns a Client authenticated with the given Hetzner project token.
@@ -155,7 +155,7 @@ func (c *Client) Locations(ctx context.Context) ([]cloudprovider.Location, error
 }
 
 type apiPrice struct {
-	Location string `json:"location"`
+	Location     string `json:"location"`
 	PriceMonthly struct {
 		Gross string `json:"gross"`
 		Net   string `json:"net"`
@@ -163,15 +163,15 @@ type apiPrice struct {
 }
 
 type apiServerType struct {
-	ID           int     `json:"id"`
-	Name         string  `json:"name"`
-	Description  string  `json:"description"`
-	Cores        int     `json:"cores"`
-	Memory       float64 `json:"memory"`
-	Disk         int     `json:"disk"`
-	StorageType  string  `json:"storage_type"`
-	CPUType      string  `json:"cpu_type"`
-	Architecture string  `json:"architecture"`
+	ID           int        `json:"id"`
+	Name         string     `json:"name"`
+	Description  string     `json:"description"`
+	Cores        int        `json:"cores"`
+	Memory       float64    `json:"memory"`
+	Disk         int        `json:"disk"`
+	StorageType  string     `json:"storage_type"`
+	CPUType      string     `json:"cpu_type"`
+	Architecture string     `json:"architecture"`
 	Prices       []apiPrice `json:"prices"`
 }
 
@@ -258,10 +258,10 @@ type firewallRef struct {
 }
 
 type apiServer struct {
-	ID         int    `json:"id"`
-	Name       string `json:"name"`
-	Status     string `json:"status"`
-	PublicNet  struct {
+	ID        int    `json:"id"`
+	Name      string `json:"name"`
+	Status    string `json:"status"`
+	PublicNet struct {
 		IPv4 struct {
 			IP string `json:"ip"`
 		} `json:"ipv4"`
@@ -325,12 +325,12 @@ type createPrimaryIPReq struct {
 }
 
 type apiPrimaryIP struct {
-	ID                  int    `json:"id"`
-	Type                string `json:"type"`
-	IP                  string `json:"ip"`
-	AssigneeID          *int   `json:"assignee_id"`
-	AssigneeType        string `json:"assignee_type"`
-	AutoDelete          bool   `json:"auto_delete"`
+	ID           int    `json:"id"`
+	Type         string `json:"type"`
+	IP           string `json:"ip"`
+	AssigneeID   *int   `json:"assignee_id"`
+	AssigneeType string `json:"assignee_type"`
+	AutoDelete   bool   `json:"auto_delete"`
 }
 
 func (c *Client) CreatePrimaryIP(ctx context.Context, req cloudprovider.CreatePrimaryIPRequest) (*cloudprovider.PrimaryIP, error) {
@@ -376,8 +376,8 @@ func (c *Client) DeletePrimaryIP(ctx context.Context, ipID string) error {
 
 func (c *Client) SetReverseDNS(ctx context.Context, ipID, hostname string) error {
 	body := struct {
-		IP       string `json:"ip"`
-		DNSPtr   string `json:"dns_ptr"`
+		IP     string `json:"ip"`
+		DNSPtr string `json:"dns_ptr"`
 	}{DNSPtr: hostname}
 	return c.do(ctx, http.MethodPost, "/primary_ips/"+ipID+"/actions/change_dns_ptr", body, nil)
 }

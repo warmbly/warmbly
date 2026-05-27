@@ -17,18 +17,19 @@ import (
 // the active auto-template for the relevant tier.
 //
 // Thresholds:
-//   info     -> fleet < 50% utilization (nothing to do)
-//   warning  -> fleet >= 70% sustained, alert
-//   critical -> fleet >= 85% sustained, alert + (if AUTO_PROVISION) provision
+//
+//	info     -> fleet < 50% utilization (nothing to do)
+//	warning  -> fleet >= 70% sustained, alert
+//	critical -> fleet >= 85% sustained, alert + (if AUTO_PROVISION) provision
 type Scaler struct {
-	WorkerRepo      repository.WorkerRepository
-	PolicyRepo      repository.ProvisioningPolicyRepository
-	TemplateRepo    repository.ProvisioningTemplateRepository
-	JobRepo         repository.ProvisioningJobRepository
-	Decisions       repository.DecisionLogRepository
-	Interval        time.Duration // default 1h
-	CriticalThresh  float64       // default 0.85
-	WarningThresh   float64       // default 0.70
+	WorkerRepo     repository.WorkerRepository
+	PolicyRepo     repository.ProvisioningPolicyRepository
+	TemplateRepo   repository.ProvisioningTemplateRepository
+	JobRepo        repository.ProvisioningJobRepository
+	Decisions      repository.DecisionLogRepository
+	Interval       time.Duration // default 1h
+	CriticalThresh float64       // default 0.85
+	WarningThresh  float64       // default 0.70
 }
 
 func (s *Scaler) defaults() {

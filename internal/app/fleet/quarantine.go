@@ -18,10 +18,10 @@ import (
 //
 // Thresholds match the docs:
 //
-//   watch       complaint_1h_rate >= 0.03% OR bounce_1h_rate >= 2%
-//   throttled   complaint >= 0.10% OR bounce >= 5%
-//   quarantined complaint >= 0.30% OR bounce >= 10%
-//   blocked     complaint >= 1.00% OR bounce >= 20%
+//	watch       complaint_1h_rate >= 0.03% OR bounce_1h_rate >= 2%
+//	throttled   complaint >= 0.10% OR bounce >= 5%
+//	quarantined complaint >= 0.30% OR bounce >= 10%
+//	blocked     complaint >= 1.00% OR bounce >= 20%
 //
 // We need a minimum sample size before applying these so a freshly-booted
 // worker that sends 1 email and bounces isn't immediately quarantined.

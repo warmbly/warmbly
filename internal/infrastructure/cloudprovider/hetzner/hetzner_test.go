@@ -126,13 +126,13 @@ func TestCreateServer_PostsAndParsesResponse(t *testing.T) {
 	})
 
 	req := cloudprovider.CreateServerRequest{
-		Name:           "warmbly-fsn1-001",
-		ServerType:     "cx22",
-		Image:          "ubuntu-22.04",
-		Location:       "fsn1",
-		SSHKeyIDs:      []string{"key-1"},
-		UserData:       "#cloud-config\nrunmd: []",
-		Labels:         map[string]string{"warmbly": "true"},
+		Name:             "warmbly-fsn1-001",
+		ServerType:       "cx22",
+		Image:            "ubuntu-22.04",
+		Location:         "fsn1",
+		SSHKeyIDs:        []string{"key-1"},
+		UserData:         "#cloud-config\nrunmd: []",
+		Labels:           map[string]string{"warmbly": "true"},
 		StartAfterCreate: true,
 	}
 	s, err := c.CreateServer(context.Background(), req)

@@ -151,10 +151,10 @@ func (c *HealthCounters) snapshotWindow() healthWindow {
 
 // healthWindow is the per-tick delta carried out of the counters.
 type healthWindow struct {
-	sendsAttempted, sendsSucceeded                int32
-	bouncesHard, bouncesSoft                      int32
-	complaints, authErrors, rateLimitErrors       int32
-	p50, p99                                      int32
+	sendsAttempted, sendsSucceeded          int32
+	bouncesHard, bouncesSoft                int32
+	complaints, authErrors, rateLimitErrors int32
+	p50, p99                                int32
 }
 
 // latencyPercentile returns the upper bucket bound (in ms) covering the

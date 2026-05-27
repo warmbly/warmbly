@@ -23,13 +23,13 @@ type Installer interface {
 
 // InstallRequest is what Install takes.
 type InstallRequest struct {
-	Host        string   // public IP or hostname the SSH session connects to
-	SSHPort     int      // default 22
-	SSHUser     string   // default root
-	SSHKeyPEM   []byte   // private key bytes (PEM-encoded ed25519)
-	IPs         []string // dotted-quad strings, will be passed to --ips
-	WorkerEnv   string   // rendered /etc/warmbly/worker.env contents
-	ImageTag    string   // e.g. ghcr.io/warmbly/worker:v1.2.3
+	Host        string      // public IP or hostname the SSH session connects to
+	SSHPort     int         // default 22
+	SSHUser     string      // default root
+	SSHKeyPEM   []byte      // private key bytes (PEM-encoded ed25519)
+	IPs         []string    // dotted-quad strings, will be passed to --ips
+	WorkerEnv   string      // rendered /etc/warmbly/worker.env contents
+	ImageTag    string      // e.g. ghcr.io/warmbly/worker:v1.2.3
 	ExpectedIDs []uuid.UUID // workers that should heartbeat after install
 }
 

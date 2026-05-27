@@ -102,8 +102,8 @@ func (h *Handler) InternalWorkerConfig(c *gin.Context) {
 type HeartbeatPayload struct {
 	WorkerID   string `json:"worker_id"`
 	BindIP     string `json:"bind_ip"`
-	Tier       string `json:"tier,omitempty"`         // shared_free | shared_premium | dedicated
-	EgressKind string `json:"egress_kind,omitempty"`  // cold_smtp | oauth_api | warmup_only
+	Tier       string `json:"tier,omitempty"`        // shared_free | shared_premium | dedicated
+	EgressKind string `json:"egress_kind,omitempty"` // cold_smtp | oauth_api | warmup_only
 }
 
 func (h *Handler) InternalWorkerHeartbeat(c *gin.Context) {
