@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	awsconf "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/google/uuid"
@@ -159,8 +160,11 @@ func main() {
 
 	workerService.InitEvents()
 
-	// Start heartbeat
+	// Start heartbeat + health sampler. RunHealth ticks every 30s, snapshots
+	// the rolling 1m counters into a WorkerHealth event, publishes via the
+	// event bus so the consumer can write a row into worker_health_samples.
 	go workerService.Heartbeat(ctx)
+	go workerService.RunHealth(ctx, 30*time.Second)
 
 	// Graceful shutdown
 	sigCh := make(chan os.Signal, 1)

@@ -61,6 +61,8 @@ func (w *WorkerService) HandleSendEmail(ctx context.Context, body any) error {
 	}
 
 	// Use unified Send method
+	w.recordSendAttempt()
+	sendStart := time.Now()
 	result := mail.Send(ctx, &wmail.SendRequest{
 		TaskID:      sendEmail.TaskID,
 		To:          sendEmail.To,
@@ -75,6 +77,8 @@ func (w *WorkerService) HandleSendEmail(ctx context.Context, body any) error {
 		IsWarmup:    sendEmail.IsWarmup,
 		WarmupToken: sendEmail.WarmupToken,
 	})
+	w.recordSendLatency(time.Since(sendStart))
+	w.recordSendOutcome(result)
 
 	if result.Success {
 		log.Info().

@@ -500,6 +500,26 @@ func main() {
 		// interval and writes every action to decision_log. Cancel them via
 		// the root context on shutdown.
 		decisionLogRepo := repository.NewDecisionLogRepository(primaryDB)
+
+		// Refresh worker_capacity_view every minute so the assignment loop +
+		// rebalance + scale + quarantine evaluators see fresh rolling
+		// metrics. The materialized view is what aggregates the 1h windows
+		// across all workers.
+		go func() {
+			tick := time.NewTicker(time.Minute)
+			defer tick.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-tick.C:
+					if err := workerRepository.RefreshWorkerCapacityView(ctx); err != nil {
+						log.Printf("worker_capacity_view refresh: %v", err)
+					}
+				}
+			}
+		}()
+
 		go (&fleet.Rebalancer{
 			WorkerRepo: workerRepository,
 			Decisions:  decisionLogRepo,
