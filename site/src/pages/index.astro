@@ -744,54 +744,58 @@ const plans = [
     ============================================================ -->
     <section class="relative overflow-hidden border-y border-[color:var(--border)]" style="background: linear-gradient(180deg, var(--surface-2) 0%, #ffffff 100%);">
       <div class="container-page py-24 md:py-32 relative">
-        <div class="text-center max-w-3xl mx-auto">
-          <div class="text-[10.5px] uppercase tracking-[0.22em] font-mono text-[#0284c7]">
-            Plans · billed per mailbox
-          </div>
+        <div class="max-w-5xl mx-auto grid lg:grid-cols-[1.15fr_1fr] gap-10 lg:gap-16 items-end">
 
-          <h2 class="mt-4 text-[40px] sm:text-[52px] md:text-[64px] font-semibold tracking-[-0.035em] leading-[1.02] text-heading">
-            Pick a volume.<br class="hidden sm:inline" /> Get every feature.
-          </h2>
-
-          <p class="mt-6 text-[16.5px] md:text-[17.5px] text-foreground/75 leading-relaxed max-w-xl mx-auto">
-            Warmup, sending, the unified inbox, analytics, CRM and the API are in every paid plan. What you pay reflects daily send volume only.
-          </p>
-
-          <!-- Premium segmented billing toggle — annual is the default -->
-          <div class="mt-9 inline-flex items-center gap-3" id="billing-toggle">
-            <div class="relative inline-flex items-center p-1 rounded-full bg-white ring-1 ring-[color:var(--border)] text-[13px] font-medium" style="box-shadow: var(--shadow-sm);">
-              <span id="toggle-thumb" class="absolute top-1 bottom-1 rounded-full bg-[color:var(--brand)] transition-all duration-[350ms] ease-[cubic-bezier(0.22,1,0.36,1)]" style="left: 116px; width: 112px; box-shadow: 0 6px 18px -4px rgba(2,132,199,0.5);"></span>
-              <button data-billing="monthly" class="relative h-9 px-5 rounded-full text-foreground/70 transition-colors min-w-[112px]">Monthly</button>
-              <button data-billing="annual"  class="relative h-9 px-5 rounded-full text-white transition-colors min-w-[112px]">
-                <span class="inline-flex items-center gap-1.5">Annual</span>
-              </button>
+          <!-- LEFT: editorial headline + short subhead -->
+          <div>
+            <div class="text-[10.5px] uppercase tracking-[0.22em] font-mono text-[#0284c7]">
+              Pricing
             </div>
-            <span class="inline-flex items-center gap-1.5 px-2.5 h-7 rounded-full text-[11.5px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-              Save 20%
-            </span>
+            <h2 class="mt-4 text-[44px] sm:text-[56px] md:text-[68px] font-semibold tracking-[-0.035em] leading-[1.0] text-heading">
+              Same product.<br/>Four sizes.
+            </h2>
+            <p class="mt-6 text-[16.5px] md:text-[17px] text-foreground/75 leading-relaxed max-w-md">
+              Every paid plan ships with every feature. Pick the daily send volume that fits, and that is the number you pay.
+            </p>
           </div>
 
-          <!-- Trust strip under the toggle: reassurance without theater. -->
-          <div class="mt-7 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-[12.5px] text-foreground/70">
-            <span class="inline-flex items-center gap-1.5">
-              <Icon name="check" size={12} class="text-[color:var(--brand)]" />
-              14-day trial
-            </span>
-            <span class="text-foreground/30">·</span>
-            <span class="inline-flex items-center gap-1.5">
-              <Icon name="check" size={12} class="text-[color:var(--brand)]" />
-              One mailbox to start
-            </span>
-            <span class="text-foreground/30">·</span>
-            <span class="inline-flex items-center gap-1.5">
-              <Icon name="check" size={12} class="text-[color:var(--brand)]" />
-              No credit card
-            </span>
-            <span class="text-foreground/30">·</span>
-            <span class="inline-flex items-center gap-1.5">
-              <Icon name="check" size={12} class="text-[color:var(--brand)]" />
-              Cancel any time
-            </span>
+          <!-- RIGHT: control panel — toggle + trust facts -->
+          <div class="rounded-[16px] bg-white ring-1 ring-[color:var(--border)] p-6 lg:p-7" style="box-shadow: 0 24px 48px -28px rgba(15,23,42,0.18), 0 4px 12px -6px rgba(15,23,42,0.06);">
+            <div class="text-[10.5px] uppercase tracking-[0.22em] font-mono text-muted-foreground">
+              Billing
+            </div>
+
+            <div class="mt-4 flex items-center gap-3 flex-wrap" id="billing-toggle">
+              <div class="relative inline-flex items-center p-1 rounded-full bg-[color:var(--surface-2)] ring-1 ring-[color:var(--border)] text-[13px] font-medium">
+                <span id="toggle-thumb" class="absolute top-1 bottom-1 rounded-full bg-[color:var(--brand)] transition-all duration-[350ms] ease-[cubic-bezier(0.22,1,0.36,1)]" style="left: 116px; width: 112px; box-shadow: 0 6px 18px -4px rgba(2,132,199,0.5);"></span>
+                <button data-billing="monthly" class="relative h-9 px-5 rounded-full text-foreground/70 transition-colors min-w-[112px]">Monthly</button>
+                <button data-billing="annual"  class="relative h-9 px-5 rounded-full text-white transition-colors min-w-[112px]">
+                  <span class="inline-flex items-center gap-1.5">Annual</span>
+                </button>
+              </div>
+              <span class="inline-flex items-center gap-1.5 px-2.5 h-7 rounded-full text-[11.5px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                Save 20%
+              </span>
+            </div>
+
+            <div class="mt-5 pt-5 border-t border-[color:var(--border)] grid grid-cols-2 gap-x-5 gap-y-2.5 text-[12.5px] text-foreground/75">
+              <span class="inline-flex items-center gap-2">
+                <Icon name="check" size={12} class="text-[color:var(--brand)] shrink-0" />
+                14-day trial
+              </span>
+              <span class="inline-flex items-center gap-2">
+                <Icon name="check" size={12} class="text-[color:var(--brand)] shrink-0" />
+                No credit card
+              </span>
+              <span class="inline-flex items-center gap-2">
+                <Icon name="check" size={12} class="text-[color:var(--brand)] shrink-0" />
+                Cancel any time
+              </span>
+              <span class="inline-flex items-center gap-2">
+                <Icon name="check" size={12} class="text-[color:var(--brand)] shrink-0" />
+                Self-host on Apache 2.0
+              </span>
+            </div>
           </div>
         </div>
 
