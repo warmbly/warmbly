@@ -41,6 +41,7 @@ import WarmupPage from "@/app/dashboard/WarmupPage";
 import CampaignsPage from "@/app/dashboard/CampaignsPage";
 import EnterprisePage from "@/app/dashboard/EnterprisePage";
 import PlansPage from "@/app/dashboard/PlansPage";
+import LimitRequestsPage from "@/app/dashboard/LimitRequestsPage";
 import {
     AnalyticsPage,
     MailboxesPage,
@@ -93,6 +94,7 @@ const router = createBrowserRouter([
                     { path: "warmup", element: <WarmupPage /> },
                     { path: "campaigns", element: <CampaignsPage /> },
                     { path: "enterprise", element: <EnterprisePage /> },
+                    { path: "limit-requests", element: <LimitRequestsPage /> },
                     { path: "analytics", element: <AnalyticsPage /> },
                     { path: "audit", element: <AuditPage /> },
                     {

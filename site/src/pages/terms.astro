@@ -8,17 +8,18 @@ const sections = [
   { id: 'account',            num: '04', title: 'Your account' },
   { id: 'use',                num: '05', title: 'Acceptable use' },
   { id: 'plans',              num: '06', title: 'Plans, billing, refunds' },
-  { id: 'service',            num: '07', title: 'Service availability' },
-  { id: 'data',               num: '08', title: 'Your content and data' },
-  { id: 'ip',                 num: '09', title: 'Intellectual property' },
-  { id: 'third-party',        num: '10', title: 'Third-party services' },
-  { id: 'warranties',         num: '11', title: 'Disclaimers' },
-  { id: 'liability',          num: '12', title: 'Limitation of liability' },
-  { id: 'indemnity',          num: '13', title: 'Indemnification' },
-  { id: 'termination',        num: '14', title: 'Termination' },
-  { id: 'law',                num: '15', title: 'Governing law' },
-  { id: 'changes',            num: '16', title: 'Changes to these terms' },
-  { id: 'contact',            num: '17', title: 'Contact' },
+  { id: 'limits',             num: '07', title: 'Usage limits and increase requests' },
+  { id: 'service',            num: '08', title: 'Service availability' },
+  { id: 'data',               num: '09', title: 'Your content and data' },
+  { id: 'ip',                 num: '10', title: 'Intellectual property' },
+  { id: 'third-party',        num: '11', title: 'Third-party services' },
+  { id: 'warranties',         num: '12', title: 'Disclaimers' },
+  { id: 'liability',          num: '13', title: 'Limitation of liability' },
+  { id: 'indemnity',          num: '14', title: 'Indemnification' },
+  { id: 'termination',        num: '15', title: 'Termination' },
+  { id: 'law',                num: '16', title: 'Governing law' },
+  { id: 'changes',            num: '17', title: 'Changes to these terms' },
+  { id: 'contact',            num: '18', title: 'Contact' },
 ];
 ---
 <Legal
@@ -102,8 +103,24 @@ const sections = [
   </p>
 </section>
 
+<section id="limits" class="scroll-mt-24">
+  <h2>07. Usage limits and increase requests</h2>
+  <p>
+    Every plan operates under usage limits — mailboxes, campaigns, team members, contacts, daily sending volume, and other capacity controls described in the workspace's billing area. Where marketing language describes a resource as "unlimited," that means there is no plan-tier cap, but a product-wide hard ceiling still applies. Hard ceilings exist to protect shared infrastructure, deliverability for other customers, and our compliance with mailbox-provider policies, and are necessary even on premium and enterprise tiers.
+  </p>
+  <p>
+    You may request an increase to any limit through the in-app limit-request form in your workspace settings. Each request is reviewed by our team. We may approve, partially approve, decline, or defer any request <strong>at our sole discretion</strong>, with or without further explanation, and we are under no obligation to grant any particular increase regardless of plan tier or contractual commitment. Reasons we may decline include, without limitation: insufficient sending reputation, prior abuse signals, deliverability risk to shared pools, fraud-prevention concerns, infrastructure capacity, and compliance considerations.
+  </p>
+  <p>
+    Approved increases take effect when the override is applied to your workspace. We may revoke, reduce, or condition any previously granted increase at any time, including but not limited to circumstances where a workspace's bounce rate, spam-complaint rate, warmup-pool behaviour, or reported abuse signals materially worsen. Such adjustments are operational responses to risk, not modifications to these terms.
+  </p>
+  <p>
+    Nothing in this section creates an entitlement to any particular volume or capacity beyond the limits in effect on your workspace at a given moment. If a hard ceiling materially limits your intended use, contact us at <a href="mailto:legal@warmbly.com">legal@warmbly.com</a> before purchasing so we can assess whether the Service is the right fit.
+  </p>
+</section>
+
 <section id="service" class="scroll-mt-24">
-  <h2>07. Service availability and changes</h2>
+  <h2>08. Service availability and changes</h2>
   <p>
     We work hard to keep Warmbly available and reliable, but the Service is provided without uptime guarantees beyond what is described in any separate service-level agreement we agree with you in writing.
   </p>
@@ -113,7 +130,7 @@ const sections = [
 </section>
 
 <section id="data" class="scroll-mt-24">
-  <h2>08. Your content and data</h2>
+  <h2>09. Your content and data</h2>
   <p>
     You retain ownership of Customer content. You grant us a limited, non-exclusive licence to host, process, transmit, and display that content solely to operate the Service for you, to enforce these Terms, and to comply with law.
   </p>
@@ -123,7 +140,7 @@ const sections = [
 </section>
 
 <section id="ip" class="scroll-mt-24">
-  <h2>09. Intellectual property</h2>
+  <h2>10. Intellectual property</h2>
   <p>
     Warmbly and Mindroot Ltd retain all rights in the Service, including the brand, the trademarks, the visual identity, the documentation, and the proprietary parts of the platform. Open-source components are licensed under their respective licences and are not subject to this clause.
   </p>
@@ -133,14 +150,14 @@ const sections = [
 </section>
 
 <section id="third-party" class="scroll-mt-24">
-  <h2>10. Third-party services</h2>
+  <h2>11. Third-party services</h2>
   <p>
     Warmbly integrates with third-party services, including email providers, OAuth identity providers, payment processors such as Stripe, and infrastructure providers. Your use of those third-party services is governed by their own terms, and we are not responsible for their availability, content, or actions.
   </p>
 </section>
 
 <section id="warranties" class="scroll-mt-24">
-  <h2>11. Disclaimers</h2>
+  <h2>12. Disclaimers</h2>
   <p>
     Except where prohibited by mandatory law, the Service is provided on an "as is" and "as available" basis without warranties of any kind, whether express or implied, including warranties of merchantability, fitness for a particular purpose, non-infringement, accuracy, or uninterrupted operation.
   </p>
@@ -150,7 +167,7 @@ const sections = [
 </section>
 
 <section id="liability" class="scroll-mt-24">
-  <h2>12. Limitation of liability</h2>
+  <h2>13. Limitation of liability</h2>
   <p>
     To the maximum extent permitted by law, neither party will be liable to the other for any indirect, incidental, special, consequential, or punitive damages, or for any loss of profits, revenue, goodwill, or data, even if advised of the possibility of such damages.
   </p>
@@ -163,14 +180,14 @@ const sections = [
 </section>
 
 <section id="indemnity" class="scroll-mt-24">
-  <h2>13. Indemnification</h2>
+  <h2>14. Indemnification</h2>
   <p>
     You agree to defend, indemnify, and hold harmless Mindroot Ltd, its officers, employees, and affiliates from and against any claims, damages, liabilities, and reasonable legal costs arising from your Customer content, your use of the Service in breach of these Terms, or your violation of any law or third-party right.
   </p>
 </section>
 
 <section id="termination" class="scroll-mt-24">
-  <h2>14. Termination</h2>
+  <h2>15. Termination</h2>
   <p>
     You may cancel your account at any time from the billing area of your workspace. We may suspend or terminate your access if you breach these Terms, if your use of the Service creates a security or deliverability risk to other users, or if we are required to do so by law.
   </p>
@@ -180,21 +197,21 @@ const sections = [
 </section>
 
 <section id="law" class="scroll-mt-24">
-  <h2>15. Governing law and jurisdiction</h2>
+  <h2>16. Governing law and jurisdiction</h2>
   <p>
     These Terms are governed by and construed in accordance with the laws of England and Wales. You and Mindroot Ltd agree to submit to the exclusive jurisdiction of the courts of London, United Kingdom, for any dispute arising out of or relating to these Terms or your use of the Service.
   </p>
 </section>
 
 <section id="changes" class="scroll-mt-24">
-  <h2>16. Changes to these terms</h2>
+  <h2>17. Changes to these terms</h2>
   <p>
     We may update these Terms from time to time. If we make material changes, we will notify you by email or through the Service before the changes take effect. Your continued use of the Service after the effective date constitutes acceptance of the updated Terms.
   </p>
 </section>
 
 <section id="contact" class="scroll-mt-24">
-  <h2>17. Contact</h2>
+  <h2>18. Contact</h2>
   <p>
     Questions or concerns about these Terms can be sent to <a href="mailto:hello@warmbly.com">hello@warmbly.com</a> or by post to Mindroot Ltd, 71-75 Shelton Street, London, England, WC2H 9JQ.
   </p>

@@ -20,6 +20,7 @@ import {
     BellIcon,
     BriefcaseIcon,
     CreditCardIcon,
+    GaugeIcon,
     ShieldCheckIcon,
     ShieldIcon,
     UserIcon,
@@ -44,6 +45,7 @@ const SECTIONS: SectionDef[] = [
     { path: "roles",         label: "Roles & access", icon: ShieldCheckIcon,  description: "Who can do what.", ownerOnly: true },
     { path: "workspace",     label: "Workspace",     icon: BriefcaseIcon,    description: "Org-wide settings.", ownerOnly: true },
     { path: "billing",       label: "Billing",       icon: CreditCardIcon,   description: "Plan, payment, invoices.", ownerOnly: true },
+    { path: "limits",        label: "Limits",        icon: GaugeIcon,        description: "Request more capacity than your plan allows.", ownerOnly: true },
     { path: "danger",        label: "Danger zone",   icon: AlertOctagonIcon, description: "Irreversible actions." },
 ];
 

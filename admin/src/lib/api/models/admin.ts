@@ -323,6 +323,40 @@ export interface ProvisioningJobCreate {
     };
 }
 
+// /admin/limit-requests — limit-increase request queue.
+
+export type LimitRequestStatus =
+    | "pending"
+    | "approved"
+    | "rejected"
+    | "cancelled";
+
+export interface LimitIncreaseRequest {
+    id: string;
+    organization_id: string;
+    field: string;
+    current_effective: number;
+    requested: number;
+    reason: string;
+    status: LimitRequestStatus;
+    submitted_by: string;
+    submitted_at: string;
+    reviewed_by?: string | null;
+    reviewed_at?: string | null;
+    review_notes: string;
+    organization?: {
+        id: string;
+        name: string;
+        slug?: string | null;
+    };
+    submitted_by_user?: {
+        id: string;
+        first_name: string;
+        last_name: string;
+        email: string;
+    };
+}
+
 // /admin/plans — plan catalog and custom-plan management.
 
 export interface Plan {
