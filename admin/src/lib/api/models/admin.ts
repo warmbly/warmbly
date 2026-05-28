@@ -323,6 +323,123 @@ export interface ProvisioningJobCreate {
     };
 }
 
+// /admin/users/* — platform user admin.
+
+export interface AdminUserSummary {
+    id: string;
+    first_name: string;
+    last_name: string;
+    email: string;
+}
+
+export interface AdminUserDetail {
+    id: string;
+    first_name: string;
+    last_name: string;
+    email: string;
+    max_organizations: number;
+    free_trial_used: boolean;
+    admin_permissions: number;
+    admin_granted_at?: string | null;
+    admin_granted_by?: string | null;
+    banned_at?: string | null;
+    created_at: string;
+    updated_at: string;
+    organization_count: number;
+    email_account_count: number;
+    campaign_count: number;
+}
+
+export interface AdminUsersResult {
+    data: AdminUserDetail[];
+    pagination: {
+        total?: number | null;
+        next_cursor?: string | null;
+        has_more: boolean;
+    };
+}
+
+export interface AdminUserSearchParams {
+    q?: string;
+    status?: "active" | "banned" | "all" | "";
+    is_admin?: boolean;
+    cursor?: string;
+    limit?: number;
+    sort_by?: "created_at" | "email" | "name";
+    sort_desc?: boolean;
+}
+
+export interface UserBan {
+    id: string;
+    user_id: string;
+    banned_by: string;
+    reason: string;
+    banned_at: string;
+    unbanned_at?: string | null;
+    unbanned_by?: string | null;
+    unban_reason?: string | null;
+    banned_by_user?: AdminUserSummary;
+    unbanned_by_user?: AdminUserSummary | null;
+}
+
+export interface AdminUserRateLimits {
+    user_id: string;
+    limit_ws_message_pm?: number | null;
+    limit_ws_join_pm?: number | null;
+    limit_ws_event_pm?: number | null;
+    max_connections?: number | null;
+    daily_email_limit?: number | null;
+    updated_at: string;
+}
+
+export interface UpdateUserRateLimitsRequest {
+    limit_ws_message_pm?: number;
+    limit_ws_join_pm?: number;
+    limit_ws_event_pm?: number;
+    max_connections?: number;
+    daily_email_limit?: number;
+}
+
+export interface BanUserRequest {
+    reason: string;
+}
+
+export interface UnbanUserRequest {
+    reason: string;
+}
+
+export interface AdminUserPreview {
+    user: AdminUserDetail;
+    organizations: Array<{
+        id: string;
+        name: string;
+        slug?: string | null;
+        owner_user_id: string;
+        created_at: string;
+        updated_at: string;
+    }>;
+    subscriptions: Array<{
+        id: string;
+        organization_id: string;
+        plan_id: string;
+        status: string;
+        is_enterprise: boolean;
+        current_period_end?: string | null;
+        trial_end?: string | null;
+    }>;
+    email_accounts: Array<{
+        id: string;
+        email: string;
+        organization_id?: string | null;
+        status: string;
+        provider: string;
+        warmup_enabled: boolean;
+        last_synced_at: string;
+    }>;
+    recent_bans: UserBan[];
+    rate_limits?: AdminUserRateLimits | null;
+}
+
 // /admin/organizations* — workspace admin (read-only slice).
 
 export interface AdminOrgListItem {

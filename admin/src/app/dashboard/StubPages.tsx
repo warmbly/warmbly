@@ -29,16 +29,6 @@ export function MailboxesPage() {
     );
 }
 
-export function UsersPage() {
-    return (
-        <Stub
-            title="Users"
-            description="Platform-wide user search. Ban, unban, view subscription, override rate limits."
-            coming="Search + detail pages backed by /admin/users coming in the next iteration."
-        />
-    );
-}
-
 export function PlansPage() {
     return (
         <Stub

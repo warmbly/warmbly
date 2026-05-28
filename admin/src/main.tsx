@@ -35,13 +35,13 @@ import ProvisioningTemplatesPage from "@/app/settings/ProvisioningTemplatesPage"
 import ProvisioningJobsPage from "@/app/dashboard/ProvisioningJobsPage";
 import OrganizationsPage from "@/app/dashboard/OrganizationsPage";
 import OrganizationDetailPage from "@/app/dashboard/OrganizationDetailPage";
+import UsersPage from "@/app/dashboard/UsersPage";
 import {
     AnalyticsPage,
     CampaignsPage,
     MailboxesPage,
     NotFoundPage,
     PlansPage,
-    UsersPage,
     WarmupPage,
 } from "@/app/dashboard/StubPages";
 
