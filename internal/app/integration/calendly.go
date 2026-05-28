@@ -45,8 +45,8 @@ type CalendlyPayload struct {
 type CalComPayload struct {
 	TriggerEvent string `json:"triggerEvent"`
 	Payload      struct {
-		Type     string    `json:"type"`
-		Title    string    `json:"title"`
+		Type      string    `json:"type"`
+		Title     string    `json:"title"`
 		StartTime time.Time `json:"startTime"`
 		Attendees []struct {
 			Email string `json:"email"`
