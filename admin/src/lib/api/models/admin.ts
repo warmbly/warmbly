@@ -360,10 +360,36 @@ export interface OrganizationCounts {
     emails_sent_today: number;
 }
 
+export interface OrganizationLimitOverrides {
+    organization_id: string;
+    max_campaigns: number;
+    max_active_campaigns: number;
+    max_team_members: number;
+    max_email_accounts: number;
+    max_contacts: number;
+    daily_campaign_limit: number;
+    granted_by?: string | null;
+    granted_at: string;
+    updated_at: string;
+    notes: string;
+}
+
+export interface UpdateOrgOverridesRequest {
+    max_campaigns?: number;
+    max_active_campaigns?: number;
+    max_team_members?: number;
+    max_email_accounts?: number;
+    max_contacts?: number;
+    daily_campaign_limit?: number;
+    notes?: string;
+}
+
 export interface AdminOrgDetail extends AdminOrgListItem {
     updated_at: string;
     deletion_scheduled_at?: string | null;
     limits?: OrganizationLimits | null;
+    overrides?: OrganizationLimitOverrides | null;
+    effective_limits?: OrganizationLimits | null;
     counts?: OrganizationCounts | null;
     plan_name?: string | null;
     subscription_status?: string | null;

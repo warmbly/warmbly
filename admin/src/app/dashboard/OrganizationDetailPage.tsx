@@ -3,11 +3,13 @@
 // owner + plan + lifecycle; the body shows usage-vs-limits side-by-side
 // and the members table.
 
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Crown, Shield } from "lucide-react";
+import { ArrowLeft, Crown, Shield, SlidersHorizontal } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
     getOrganization,
@@ -18,10 +20,13 @@ import type {
     AdminOrgMember,
     OrganizationCounts,
     OrganizationLimits,
+    OrganizationLimitOverrides,
 } from "@/lib/api/models/admin";
+import { OrganizationOverridesDialog } from "./OrganizationOverridesDialog";
 
 export default function OrganizationDetailPage() {
     const { id = "" } = useParams<{ id: string }>();
+    const [overridesOpen, setOverridesOpen] = useState(false);
 
     const orgQuery = useQuery({
         queryKey: ["admin", "organizations", id],
@@ -123,9 +128,39 @@ export default function OrganizationDetailPage() {
             </div>
 
             <section className="mt-6">
-                <h2 className="text-sm font-semibold mb-2">Usage vs. plan limits</h2>
-                <UsageTable counts={org.counts ?? null} limits={org.limits ?? null} />
+                <div className="flex items-center justify-between mb-2">
+                    <h2 className="text-sm font-semibold">Usage vs. effective limits</h2>
+                    <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setOverridesOpen(true)}
+                    >
+                        <SlidersHorizontal className="size-3.5" />
+                        Edit overrides
+                    </Button>
+                </div>
+                <UsageTable
+                    counts={org.counts ?? null}
+                    planLimits={org.limits ?? null}
+                    effectiveLimits={org.effective_limits ?? null}
+                    overrides={org.overrides ?? null}
+                />
+                {org.overrides && (
+                    <p className="text-[10px] text-muted-foreground mt-2">
+                        Overrides last set{" "}
+                        {new Date(org.overrides.updated_at).toLocaleString()}
+                        {org.overrides.notes && (
+                            <> · "{org.overrides.notes}"</>
+                        )}
+                    </p>
+                )}
             </section>
+
+            <OrganizationOverridesDialog
+                org={org}
+                open={overridesOpen}
+                onOpenChange={setOverridesOpen}
+            />
 
             <section className="mt-6">
                 <h2 className="text-sm font-semibold mb-2">
@@ -208,52 +243,41 @@ function SummaryCard({
     );
 }
 
+type LimitField =
+    | "max_active_campaigns"
+    | "max_campaigns"
+    | "max_email_accounts"
+    | "max_team_members"
+    | "max_contacts"
+    | "daily_campaign_limit";
+
 type UsageRow = {
     label: string;
+    field: LimitField;
     current: number;
-    limit: number | null | undefined;
+    countField: keyof OrganizationCounts;
 };
+
+const USAGE_ROWS: UsageRow[] = [
+    { label: "Active campaigns", field: "max_active_campaigns", current: 0, countField: "active_campaigns" },
+    { label: "Total campaigns", field: "max_campaigns", current: 0, countField: "total_campaigns" },
+    { label: "Email accounts (mailboxes)", field: "max_email_accounts", current: 0, countField: "email_accounts" },
+    { label: "Team members", field: "max_team_members", current: 0, countField: "total_members" },
+    { label: "Contacts", field: "max_contacts", current: 0, countField: "total_contacts" },
+    { label: "Emails sent today", field: "daily_campaign_limit", current: 0, countField: "emails_sent_today" },
+];
 
 function UsageTable({
     counts,
-    limits,
+    planLimits,
+    effectiveLimits,
+    overrides,
 }: {
     counts: OrganizationCounts | null;
-    limits: OrganizationLimits | null;
+    planLimits: OrganizationLimits | null;
+    effectiveLimits: OrganizationLimits | null;
+    overrides: OrganizationLimitOverrides | null;
 }) {
-    const rows: UsageRow[] = [
-        {
-            label: "Active campaigns",
-            current: counts?.active_campaigns ?? 0,
-            limit: limits?.max_active_campaigns,
-        },
-        {
-            label: "Total campaigns",
-            current: counts?.total_campaigns ?? 0,
-            limit: limits?.max_campaigns,
-        },
-        {
-            label: "Email accounts",
-            current: counts?.email_accounts ?? 0,
-            limit: limits?.max_email_accounts,
-        },
-        {
-            label: "Team members",
-            current: counts?.total_members ?? 0,
-            limit: limits?.max_team_members,
-        },
-        {
-            label: "Contacts",
-            current: counts?.total_contacts ?? 0,
-            limit: limits?.max_contacts,
-        },
-        {
-            label: "Emails sent today",
-            current: counts?.emails_sent_today ?? 0,
-            limit: limits?.daily_campaign_limit,
-        },
-    ];
-
     return (
         <div className="border border-border rounded-lg overflow-hidden bg-card">
             <table className="w-full text-sm">
@@ -261,33 +285,51 @@ function UsageTable({
                     <tr>
                         <th className="text-left px-3 py-2 font-medium">Resource</th>
                         <th className="text-right px-3 py-2 font-medium">Used</th>
-                        <th className="text-right px-3 py-2 font-medium">Plan limit</th>
+                        <th className="text-right px-3 py-2 font-medium">Plan</th>
+                        <th className="text-right px-3 py-2 font-medium">Override</th>
+                        <th className="text-right px-3 py-2 font-medium">Effective</th>
                         <th className="text-left px-3 py-2 font-medium">Headroom</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {rows.map((r) => {
-                        const noLimit = r.limit == null;
-                        const pct = noLimit
-                            ? 0
-                            : Math.min(100, (r.current / Math.max(1, r.limit ?? 1)) * 100);
-                        const over = !noLimit && r.current > (r.limit ?? 0);
+                    {USAGE_ROWS.map((r) => {
+                        const current = counts?.[r.countField] ?? 0;
+                        const plan = planLimits?.[r.field] ?? null;
+                        const override = overrides?.[r.field as keyof OrganizationLimitOverrides] as number | undefined;
+                        const overrideActive = !!override && override > 0;
+                        const effective = effectiveLimits?.[r.field] ?? null;
+
+                        const pct =
+                            effective != null && effective > 0
+                                ? Math.min(100, (current / effective) * 100)
+                                : 0;
+                        const over = effective != null && current > effective;
+
                         return (
-                            <tr
-                                key={r.label}
-                                className="border-t border-border"
-                            >
+                            <tr key={r.label} className="border-t border-border">
                                 <td className="px-3 py-2">{r.label}</td>
                                 <td className="px-3 py-2 text-right tabular-nums">
-                                    {r.current.toLocaleString()}
+                                    {current.toLocaleString()}
                                 </td>
                                 <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
-                                    {noLimit ? "unlimited" : r.limit?.toLocaleString()}
+                                    {plan != null ? plan.toLocaleString() : "—"}
                                 </td>
-                                <td className="px-3 py-2 w-56">
-                                    {noLimit ? (
+                                <td
+                                    className={`px-3 py-2 text-right tabular-nums ${
+                                        overrideActive
+                                            ? "text-[var(--admin-accent-strong)] font-medium"
+                                            : "text-muted-foreground"
+                                    }`}
+                                >
+                                    {overrideActive ? override!.toLocaleString() : "—"}
+                                </td>
+                                <td className="px-3 py-2 text-right tabular-nums font-medium">
+                                    {effective != null ? effective.toLocaleString() : "—"}
+                                </td>
+                                <td className="px-3 py-2 w-48">
+                                    {effective == null ? (
                                         <span className="text-xs text-muted-foreground">
-                                            no cap
+                                            unbounded
                                         </span>
                                     ) : (
                                         <div className="flex items-center gap-2">

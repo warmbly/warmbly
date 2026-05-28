@@ -7,6 +7,8 @@ import type {
     AdminOrgMembersResult,
     AdminOrgSearch,
     AdminOrgsResult,
+    OrganizationLimitOverrides,
+    UpdateOrgOverridesRequest,
 } from "@/lib/api/models/admin";
 
 function toQuery(params: AdminOrgSearch): string {
@@ -46,5 +48,27 @@ export function getOrganizationMembers(
         method: "GET",
         url: `/admin/organizations/${id}/members`,
         authorization: true,
+    });
+}
+
+export function getOrganizationOverrides(
+    id: string,
+): Promise<OrganizationLimitOverrides | null> {
+    return Request({
+        method: "GET",
+        url: `/admin/organizations/${id}/overrides`,
+        authorization: true,
+    });
+}
+
+export function updateOrganizationOverrides(
+    id: string,
+    body: UpdateOrgOverridesRequest,
+): Promise<OrganizationLimitOverrides> {
+    return Request({
+        method: "PUT",
+        url: `/admin/organizations/${id}/overrides`,
+        authorization: true,
+        data: body,
     });
 }
