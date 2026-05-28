@@ -29,16 +29,6 @@ export function MailboxesPage() {
     );
 }
 
-export function PlansPage() {
-    return (
-        <Stub
-            title="Plans & Billing"
-            description="Catalog of pricing tiers and the active subscriptions on each."
-            coming="CRUD over /admin/plans coming in the next iteration."
-        />
-    );
-}
-
 export function AnalyticsPage() {
     return (
         <Stub

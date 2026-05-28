@@ -40,11 +40,11 @@ import UserDetailPage from "@/app/dashboard/UserDetailPage";
 import WarmupPage from "@/app/dashboard/WarmupPage";
 import CampaignsPage from "@/app/dashboard/CampaignsPage";
 import EnterprisePage from "@/app/dashboard/EnterprisePage";
+import PlansPage from "@/app/dashboard/PlansPage";
 import {
     AnalyticsPage,
     MailboxesPage,
     NotFoundPage,
-    PlansPage,
 } from "@/app/dashboard/StubPages";
 
 // Mirror of web/src/main.tsx's tuned defaults. The admin app sees less

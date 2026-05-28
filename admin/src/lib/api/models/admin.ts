@@ -323,6 +323,49 @@ export interface ProvisioningJobCreate {
     };
 }
 
+// /admin/plans — plan catalog and custom-plan management.
+
+export interface Plan {
+    id: string;
+    name?: string | null;
+    max_contacts: number;
+    daily_emails: number;
+    ai_generation: boolean;
+    account_limit: number;
+    price: number;
+    discounted_price: number;
+    duration: { id: string; title: string } | string;
+    savings: number;
+    public: boolean;
+    stripe_price_id?: string | null;
+    stripe_product_id?: string | null;
+    dedicated_workers: number;
+    daily_campaign_limit?: number | null;
+    max_campaigns?: number | null;
+    max_active_campaigns?: number | null;
+    max_team_members?: number | null;
+    max_email_accounts?: number | null;
+    updated_at: string;
+    created_at: string;
+}
+
+export interface UpdatePlanRequest {
+    name?: string;
+    max_contacts?: number;
+    daily_emails?: number;
+    ai_generation?: boolean;
+    account_limit?: number;
+    price?: number;
+    discounted_price?: number;
+    dedicated_workers?: number;
+    daily_campaign_limit?: number;
+    max_campaigns?: number;
+    max_active_campaigns?: number;
+    max_team_members?: number;
+    max_email_accounts?: number;
+    public?: boolean;
+}
+
 // /admin/enterprise/inquiries — sales pipeline for "talk to us"
 // requests submitted from the marketing site.
 
