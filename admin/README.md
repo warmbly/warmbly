@@ -23,7 +23,31 @@ pnpm typecheck    # tsc -b
 pnpm lint
 ```
 
+From the repo root you can also use `make admin`, which is a shortcut for
+`cd admin && pnpm dev`. `make app` does **not** start this app — admin lives
+outside the docker compose stack so it can ship on its own cadence.
+
 The dev server defaults to port `5174` so it coexists with the dashboard's `5173`.
+
+## First admin (local dev)
+
+Admin access is gated by `users.admin_permissions` (bitmask) on the backend.
+Nothing in the codebase seeds the first admin — sign up through the dashboard
+as normal, then promote yourself from the repo root:
+
+```sh
+make grant-admin EMAIL=you@example.com               # super-admin
+make grant-admin EMAIL=you@example.com ROLE=support  # or ops, analyst
+make revoke-admin EMAIL=you@example.com              # drop back to 0
+```
+
+Role bitmasks mirror `AdminRolePermissions` in
+`internal/models/admin_permission.go`. For one-off permission combinations,
+pass a raw `BITMASK=N` instead of `ROLE`.
+
+Once a super-admin exists they can grant the rest through the in-app user
+management screen, which goes through the audited `GrantAdminPermissions`
+path instead of raw SQL.
 
 Set up `.env.local` from `.env.example`:
 

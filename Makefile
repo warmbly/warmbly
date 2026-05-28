@@ -24,7 +24,8 @@ PROTO_GEN_FILES := $(PROTO_DIR)/tasks.pb.go
 
 .PHONY: setup-tools lint proto check-proto \
         up sim seed reset logs status stop down tools test-seed \
-        restart restart-go restart-all infra infra-down app app-down app-logs
+        restart restart-go restart-all infra infra-down app app-down app-logs \
+        admin site grant-admin revoke-admin
 
 setup-tools:
 	@echo "Installing required Go tools into $(GO_BIN)"
@@ -189,6 +190,75 @@ app-down:
 
 app-logs:
 	$(DEV_COMPOSE) logs -f --tail=200 $(APP_SVCS)
+
+# ─── standalone frontends (admin + marketing site) ──────────────────────
+#
+# `admin/` and `site/` are pnpm workspaces that live outside the docker
+# compose stack. They have no backing service in docker-compose.yml, so
+# `make app` does not start them. Run each in its own terminal:
+#
+#   make admin    # Vite dev server on http://localhost:5174
+#   make site     # Astro dev server on http://localhost:4321
+#
+# Both targets foreground the dev server (Ctrl-C to stop) and assume
+# `pnpm install` has already run in the respective directory.
+
+admin:
+	cd admin && pnpm dev
+
+site:
+	cd site && pnpm dev
+
+# ─── admin bootstrap (local/test only) ──────────────────────────────────
+#
+# Grant a registered user platform admin access by flipping
+# users.admin_permissions. There is no other way to seed the first admin —
+# the in-app GrantAdminPermissions endpoint requires you to already be one.
+#
+#   make grant-admin EMAIL=you@example.com               # super (all perms)
+#   make grant-admin EMAIL=you@example.com ROLE=support
+#   make grant-admin EMAIL=you@example.com ROLE=ops
+#   make grant-admin EMAIL=you@example.com ROLE=analyst
+#   make grant-admin EMAIL=you@example.com BITMASK=1     # raw bitmask
+#   make revoke-admin EMAIL=you@example.com              # back to 0
+#
+# Role bitmasks mirror AdminRolePermissions in
+# internal/models/admin_permission.go. Keep them in sync with that file
+# (this is a dev helper; production grants go through the admin UI).
+#
+# Requires `make infra` (or `make app` / `make up`) to be running so the
+# postgres container is up. Sign up the user through the dashboard first
+# so the row exists with a real password hash.
+ROLE ?= super
+grant-admin:
+	@if [ -z "$(EMAIL)" ]; then \
+		echo "Usage: make grant-admin EMAIL=<email> [ROLE=super|support|ops|analyst] [BITMASK=N]"; \
+		exit 1; \
+	fi
+	@bits="$(BITMASK)"; \
+	if [ -z "$$bits" ]; then \
+		case "$(ROLE)" in \
+			super)   bits=1048575 ;; \
+			support) bits=37825 ;; \
+			ops)     bits=14384 ;; \
+			analyst) bits=6657 ;; \
+			*) echo "Unknown ROLE='$(ROLE)'. Use super|support|ops|analyst or pass BITMASK=N."; exit 1 ;; \
+		esac; \
+	fi; \
+	echo "Granting admin_permissions=$$bits to $(EMAIL)..."; \
+	out=$$($(COMPOSE) exec -T postgres psql -U warmbly -d warmbly_dev -tA \
+		-v ON_ERROR_STOP=1 \
+		-c "UPDATE users SET admin_permissions = $$bits, admin_granted_at = NOW() WHERE email = '$(EMAIL)' RETURNING id;"); \
+	if [ -z "$$out" ]; then \
+		echo "No user with email $(EMAIL). Sign up at http://localhost:5173 first."; \
+		exit 1; \
+	fi; \
+	echo "OK. user_id=$$out — open http://localhost:5174 and sign in."
+
+revoke-admin:
+	@if [ -z "$(EMAIL)" ]; then echo "Usage: make revoke-admin EMAIL=<email>"; exit 1; fi
+	@$(COMPOSE) exec -T postgres psql -U warmbly -d warmbly_dev -v ON_ERROR_STOP=1 \
+		-c "UPDATE users SET admin_permissions = 0 WHERE email = '$(EMAIL)';"
 
 # Positional-args plumbing. When the first goal is `restart` or `logs`,
 # capture every following word as RUN_ARGS and declare those words as

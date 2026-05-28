@@ -141,9 +141,24 @@ make app     # backend, consumer, worker, tracking, realtime, dashboard (~30s)
 
 # Open the dashboard
 open http://localhost:5173
+```
 
-# Open the admin app
-open http://localhost:5174
+The admin app and marketing site live outside the compose stack and run
+on demand from their own terminals:
+
+```bash
+make admin   # Vite dev server  → http://localhost:5174
+make site    # Astro dev server → http://localhost:4321
+```
+
+To open the admin app you need an account with `admin_permissions > 0`.
+There is no way to bootstrap the first admin from inside the UI, so sign
+up normally through the dashboard, then promote yourself from the host:
+
+```bash
+make grant-admin EMAIL=you@example.com               # super (all perms)
+make grant-admin EMAIL=you@example.com ROLE=support  # support|ops|analyst
+make revoke-admin EMAIL=you@example.com              # back to 0
 ```
 
 That's it. Hot reload is wired for every language service (Go, Rust, Elixir,
