@@ -37,13 +37,13 @@ import OrganizationsPage from "@/app/dashboard/OrganizationsPage";
 import OrganizationDetailPage from "@/app/dashboard/OrganizationDetailPage";
 import UsersPage from "@/app/dashboard/UsersPage";
 import UserDetailPage from "@/app/dashboard/UserDetailPage";
+import WarmupPage from "@/app/dashboard/WarmupPage";
 import {
     AnalyticsPage,
     CampaignsPage,
     MailboxesPage,
     NotFoundPage,
     PlansPage,
-    WarmupPage,
 } from "@/app/dashboard/StubPages";
 
 // Mirror of web/src/main.tsx's tuned defaults. The admin app sees less

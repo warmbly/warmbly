@@ -323,6 +323,85 @@ export interface ProvisioningJobCreate {
     };
 }
 
+// /admin/warmup/* — warmup pool admin (the platform's most critical
+// safety surface — keeps shared paid pools clean by quarantining
+// risky mailboxes early).
+
+export type WarmupAppealStatus = "pending" | "approved" | "rejected";
+
+export interface WarmupPoolHealthSummary {
+    total_participants: number;
+    by_state: Record<string, number>;
+    avg_spam_score: number;
+    avg_spam_placement_rate: number;
+    blocked_count: number;
+    at_risk_count: number;
+}
+
+export interface WarmupPoolInfo {
+    type: string;
+    total_participants: number;
+    active_participants: number;
+    blocked_count: number;
+}
+
+export interface AdminBlockedAccount {
+    id: string;
+    email: string;
+    user_id: string;
+    blocked_at: string;
+    blocked_by?: string | null;
+    block_reason: string;
+    has_appeal: boolean;
+    appeal_status?: WarmupAppealStatus | null;
+    user?: AdminUserSummary;
+}
+
+export interface WarmupAppeal {
+    id: string;
+    email_account_id: string;
+    user_id: string;
+    reason: string;
+    status: WarmupAppealStatus;
+    reviewed_by?: string | null;
+    reviewed_at?: string | null;
+    review_notes?: string | null;
+    created_at: string;
+    user?: AdminUserSummary;
+    email_account?: {
+        id: string;
+        email: string;
+    };
+    reviewed_by_user?: AdminUserSummary;
+}
+
+export interface WarmupAppealsResult {
+    data: WarmupAppeal[];
+    pagination: {
+        total?: number | null;
+        next_cursor?: string | null;
+        has_more: boolean;
+    };
+}
+
+export interface AdminBlockedAccountsResult {
+    data: AdminBlockedAccount[];
+    pagination: {
+        total?: number | null;
+        next_cursor?: string | null;
+        has_more: boolean;
+    };
+}
+
+export interface BlockAccountRequest {
+    reason: string;
+}
+
+export interface ReviewAppealRequest {
+    approved: boolean;
+    notes: string;
+}
+
 // /admin/users/* — platform user admin.
 
 export interface AdminUserSummary {

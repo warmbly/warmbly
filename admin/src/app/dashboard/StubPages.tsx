@@ -39,16 +39,6 @@ export function PlansPage() {
     );
 }
 
-export function WarmupPage() {
-    return (
-        <Stub
-            title="Warmup pools"
-            description="Health of the warmup pools, blocked accounts, appeal queue. Per CLAUDE.md, free and premium pools stay isolated."
-            coming="Pools + appeals view backed by /admin/warmup/* coming in the next iteration."
-        />
-    );
-}
-
 export function CampaignsPage() {
     return (
         <Stub
