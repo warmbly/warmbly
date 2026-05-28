@@ -39,10 +39,15 @@ const (
 
 	// Super Admin (bit 19)
 	AdminPermGrantAdminAccess // Grant/revoke admin permissions
+
+	// Organization (Workspace) Management (bits 20-21)
+	AdminPermViewOrganizations   // View workspaces and their plan/usage
+	AdminPermManageOrganizations // Set per-org limit overrides, ban scope, etc.
 )
 
-// AllAdminPermissions contains all admin permissions
-const AllAdminPermissions AdminPermission = (1 << 20) - 1
+// AllAdminPermissions contains all admin permissions. Bump the shift
+// whenever a new bit is added above.
+const AllAdminPermissions AdminPermission = (1 << 22) - 1
 
 // HasPermission checks if the permission bitmask contains the specified permission
 func (p AdminPermission) HasPermission(perm AdminPermission) bool {
@@ -84,11 +89,11 @@ var AdminRolePermissions = map[AdminRoleName]AdminPermission{
 	AdminRoleSuper: AllAdminPermissions,
 	AdminRoleSupport: AdminPermViewUsers | AdminPermViewCampaigns | AdminPermViewWarmupPool |
 		AdminPermManageWarmupBans | AdminPermReviewAppeals | AdminPermViewAuditLogs |
-		AdminPermViewEnterpriseInquiries,
+		AdminPermViewEnterpriseInquiries | AdminPermViewOrganizations,
 	AdminRoleOps: AdminPermViewWorkers | AdminPermManageWorkers | AdminPermViewAnalytics |
-		AdminPermViewAuditLogs | AdminPermManageRateLimits,
+		AdminPermViewAuditLogs | AdminPermManageRateLimits | AdminPermViewOrganizations,
 	AdminRoleAnalyst: AdminPermViewUsers | AdminPermViewCampaigns | AdminPermViewAnalytics |
-		AdminPermViewAuditLogs,
+		AdminPermViewAuditLogs | AdminPermViewOrganizations,
 }
 
 // GetAdminRolePermissions returns the permissions for a predefined admin role
@@ -145,5 +150,9 @@ func GetAllPermissionInfos() []PermissionInfo {
 
 		// Super Admin
 		{Name: "grant_admin_access", Permission: AdminPermGrantAdminAccess, Description: "Grant or revoke admin permissions", Category: "Super Admin"},
+
+		// Organization Management
+		{Name: "view_organizations", Permission: AdminPermViewOrganizations, Description: "View workspaces and their plan/usage", Category: "Organization Management"},
+		{Name: "manage_organizations", Permission: AdminPermManageOrganizations, Description: "Set per-org limit overrides and ban scope", Category: "Organization Management"},
 	}
 }

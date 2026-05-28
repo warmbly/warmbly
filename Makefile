@@ -238,10 +238,10 @@ grant-admin:
 	@bits="$(BITMASK)"; \
 	if [ -z "$$bits" ]; then \
 		case "$(ROLE)" in \
-			super)   bits=1048575 ;; \
-			support) bits=37825 ;; \
-			ops)     bits=14384 ;; \
-			analyst) bits=6657 ;; \
+			super)   bits=4194303 ;; \
+			support) bits=1086401 ;; \
+			ops)     bits=1062960 ;; \
+			analyst) bits=1055233 ;; \
 			*) echo "Unknown ROLE='$(ROLE)'. Use super|support|ops|analyst or pass BITMASK=N."; exit 1 ;; \
 		esac; \
 	fi; \

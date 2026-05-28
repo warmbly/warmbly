@@ -495,13 +495,10 @@ func Run(
 		adminRoutes.GET("/users/:id/rate-limits", middleware.RequireAdminPermission(models.AdminPermManageRateLimits), h.AdminGetUserRateLimits)
 		adminRoutes.PATCH("/users/:id/rate-limits", middleware.RequireAdminPermission(models.AdminPermManageRateLimits), h.AdminUpdateUserRateLimits)
 
-		// Organization (Workspace) Management — read-only in slice 1.
-		// Reuses AdminPermViewUsers since orgs are tightly coupled to user
-		// admin context today. A dedicated ViewOrganizations / ManageOrganizations
-		// pair will land alongside the write paths in slice 2.
-		adminRoutes.GET("/organizations", middleware.RequireAdminPermission(models.AdminPermViewUsers), h.AdminListOrganizations)
-		adminRoutes.GET("/organizations/:id", middleware.RequireAdminPermission(models.AdminPermViewUsers), h.AdminGetOrganization)
-		adminRoutes.GET("/organizations/:id/members", middleware.RequireAdminPermission(models.AdminPermViewUsers), h.AdminGetOrganizationMembers)
+		// Organization (Workspace) Management
+		adminRoutes.GET("/organizations", middleware.RequireAdminPermission(models.AdminPermViewOrganizations), h.AdminListOrganizations)
+		adminRoutes.GET("/organizations/:id", middleware.RequireAdminPermission(models.AdminPermViewOrganizations), h.AdminGetOrganization)
+		adminRoutes.GET("/organizations/:id/members", middleware.RequireAdminPermission(models.AdminPermViewOrganizations), h.AdminGetOrganizationMembers)
 
 		// Worker Management
 		adminRoutes.GET("/workers", middleware.RequireAdminPermission(models.AdminPermViewWorkers), h.AdminListWorkers)
