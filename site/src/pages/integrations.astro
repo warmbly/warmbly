@@ -1,137 +1,629 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import Cloud from '../components/Cloud.astro';
+import HeroAtmosphere from '../components/HeroAtmosphere.astro';
 import Icon from '../components/Icon.astro';
 import CTA from '../components/CTA.astro';
 
-const groups = [
+// =========================================================================
+// All providers wired in the backend's integration catalog. Keep parity
+// with internal/app/integration/catalog.go — the API exposes the same
+// list, so listing a provider here that doesn't exist there is a 1:1
+// promise of a broken connect button.
+// =========================================================================
+
+// Floating dashboard mock: live connection state for the hero. Numbers
+// reflect the per-tier story we tell on the deliverability page.
+const mockConnections = [
+  { name: 'Cloudflare',       cat: 'dns',            state: 'connected',   detail: 'acme.com · zone live',         age: '2m ago' },
+  { name: 'Google Postmaster', cat: 'deliverability', state: 'connected',   detail: 'acme.com · pulled daily',      age: '4h ago' },
+  { name: 'Calendly',         cat: 'meetings',       state: 'connected',   detail: '3 bookings attributed',        age: '12m ago' },
+  { name: 'DMARC reports',    cat: 'deliverability', state: 'connected',   detail: 'rua= forwarder live',          age: '1h ago' },
+  { name: 'Microsoft SNDS',   cat: 'deliverability', state: 'connected',   detail: '198.51.100.4 · green',         age: '6h ago' },
+  { name: 'Google Sheets',    cat: 'data',           state: 'pending',     detail: 'Q2 outbound list · awaiting OAuth', age: '—' },
+];
+
+const catTone = (c: string) => {
+  if (c === 'deliverability') return { dot: 'bg-emerald-500', chip: 'bg-emerald-50 text-emerald-700' };
+  if (c === 'dns')            return { dot: 'bg-sky-500',     chip: 'bg-sky-50 text-sky-700' };
+  if (c === 'meetings')       return { dot: 'bg-rose-400',    chip: 'bg-rose-50 text-rose-700' };
+  return { dot: 'bg-amber-500', chip: 'bg-amber-50 text-amber-700' };
+};
+
+const stateTone = (s: string) => {
+  if (s === 'connected') return { dot: 'bg-emerald-500', chip: 'bg-emerald-50 text-emerald-700' };
+  if (s === 'pending')   return { dot: 'bg-sky-500',     chip: 'bg-sky-50 text-sky-700' };
+  if (s === 'degraded')  return { dot: 'bg-amber-500',   chip: 'bg-amber-50 text-amber-700' };
+  return { dot: 'bg-slate-400', chip: 'bg-slate-100 text-slate-600' };
+};
+
+// =========================================================================
+// The categories themselves. Each one is a section on the page.
+// =========================================================================
+const categories = [
   {
-    id: 'mailbox',
-    title: 'Mailbox providers',
-    sub: 'Where mail enters and leaves',
+    id: 'deliverability',
+    eyebrow: 'Deliverability moat',
+    headline: 'Provider truth, in the same dashboard you already live in.',
+    body: 'Most outreach tools stop at "we send mail." Warmbly pulls reputation, complaint, and authentication data straight from the providers and surfaces it next to each mailbox\'s health state.',
     items: [
-      { name: 'Google Workspace',   body: 'OAuth · Gmail API · FBL signals.',           status: 'live' },
-      { name: 'Microsoft 365',      body: 'OAuth · Graph send · IMAP / EWS sync.',      status: 'live' },
-      { name: 'Custom SMTP / IMAP', body: 'Any provider that speaks SMTP / IMAP.',     status: 'live' },
-      { name: 'Apple iCloud',       body: 'App-specific password + IMAP / SMTP.',      status: 'live' },
-      { name: 'Zoho Mail',          body: 'OAuth + IMAP / SMTP.',                       status: 'live' },
+      {
+        name: 'Google Postmaster',
+        tagline: 'Domain reputation, spam-rate, and authentication ratios pulled daily.',
+        body: 'OAuth into Google Postmaster Tools and we pull domain reputation, IP reputation, SPF / DKIM / DMARC success ratios, and user-reported spam rate as one snapshot per day. The data joins the per-mailbox health state so a domain reputation drop downgrades all mailboxes sending on it.',
+        auth: 'OAuth',
+        beta: false,
+      },
+      {
+        name: 'Microsoft SNDS',
+        tagline: 'IP reputation + complaint-rate bucket for Outlook + Hotmail.',
+        body: 'Paste your SNDS data-access key. We poll the CSV daily, parse the filter-result and complaint-rate columns, and translate them into the same green / yellow / red reputation tier the Postmaster integration uses, so the two providers are comparable on the same axis.',
+        auth: 'API key',
+        beta: false,
+      },
+      {
+        name: 'DMARC reports',
+        tagline: 'Ingest aggregate (RUA) reports and flag misaligned senders.',
+        body: 'We mint a per-org URL you point your rua= forwarder at. Every XML report is parsed, deduped, and broken out per source IP, so an unexpected forwarder breaking SPF alignment surfaces with a hostname, not just a percentage. No third-party DMARC service required.',
+        auth: 'Webhook',
+        beta: false,
+      },
     ],
   },
   {
-    id: 'crm',
-    title: 'CRMs',
-    sub: 'Two-way sync with your system of record',
+    id: 'dns',
+    eyebrow: 'One-click DNS',
+    headline: 'SPF, DKIM, DMARC, and the tracking CNAME, written for you.',
+    body: 'A new mailbox should take a minute to configure, not an afternoon of DNS console wrangling. Connect a DNS provider once and the records publish from inside the dashboard.',
     items: [
-      { name: 'HubSpot',    body: 'Two-way contact and activity sync.',         status: 'live' },
-      { name: 'Salesforce', body: 'Leads, contacts, opportunities, custom fields.', status: 'live' },
-      { name: 'Pipedrive',  body: 'Persons, deals, activities.',                 status: 'live' },
-      { name: 'Attio',      body: 'People, companies, lists.',                   status: 'beta' },
-      { name: 'Folk',       body: 'Contacts, groups, custom fields.',            status: 'beta' },
+      {
+        name: 'Cloudflare',
+        tagline: 'Zone-scoped API token. We verify before saving.',
+        body: 'Paste a token scoped to Zone:DNS:Edit. We verify it round-trips before we persist it, look up your zone ID, and publish the three records we recommend. If a record already exists, we surface the diff before overwriting.',
+        auth: 'API token',
+        beta: false,
+      },
+      {
+        name: 'GoDaddy',
+        tagline: 'Write records from the dashboard with your API key:secret pair.',
+        body: 'GoDaddy\'s developer portal mints a key:secret. We accept both, persist them encrypted, and publish the three records on save. Reads are batched so a GoDaddy-side rate limit never partially-applies a record set.',
+        auth: 'API key:secret',
+        beta: true,
+      },
+      {
+        name: 'Namecheap',
+        tagline: 'Same one-click setup, Namecheap API edition.',
+        body: 'Namecheap requires an IP allowlist on their API endpoint — we surface the egress IP you need to allow inside the connect drawer so you do not have to read their docs. Once saved, record writes round-trip in seconds.',
+        auth: 'API token',
+        beta: true,
+      },
+    ],
+  },
+  {
+    id: 'meetings',
+    eyebrow: 'Meeting attribution',
+    headline: 'Stop reporting on replies. Start reporting on meetings.',
+    body: 'A reply is a hint. A meeting on the calendar is the real conversion event. We close the loop by accepting booking webhooks and joining them to the campaign that triggered the contact.',
+    items: [
+      {
+        name: 'Calendly',
+        tagline: 'invitee.created webhook, joined to the campaign that surfaced the lead.',
+        body: 'Paste the URL we mint into Calendly\'s webhook UI. When a recipient books, we record the booking, look up the campaign that triggered them, and fire a campaign.reply_received webhook to your stack with trigger=meeting_booked so downstream dashboards know which campaign earned the meeting.',
+        auth: 'Webhook',
+        beta: false,
+      },
+      {
+        name: 'Cal.com',
+        tagline: 'Same attribution path. Open-source booking edition.',
+        body: 'Cal.com\'s BOOKING_CREATED event uses a different JSON shape than Calendly. We normalize both into one MeetingBooking record so reporting code does not branch by source. Self-hosted Cal.com works the same way.',
+        auth: 'Webhook',
+        beta: false,
+      },
     ],
   },
   {
     id: 'data',
-    title: 'Data & enrichment',
-    sub: 'Find, verify, append',
+    eyebrow: 'Data + sheets',
+    headline: 'Where your operators already keep the lists.',
+    body: 'Lead lists do not live in your dashboard — they live in a spreadsheet. Warmbly\'s sheets integration is two-way: we pull lead rows in for a campaign and write the status of each row back as it sends, replies, bounces, or books.',
     items: [
-      { name: 'Apollo',      body: 'Lead lists pulled directly into Warmbly.',  status: 'live' },
-      { name: 'Clay',        body: 'Push enriched lists from Clay tables.',     status: 'live' },
-      { name: 'Clearbit',    body: 'Enrich contacts on import.',                status: 'live' },
-      { name: 'Dropcontact', body: 'Email finder and verifier.',                status: 'live' },
-      { name: 'NeverBounce', body: 'Verifier integration on import.',           status: 'live' },
-    ],
-  },
-  {
-    id: 'workflow',
-    title: 'Workflow & alerting',
-    sub: 'Push events into the rest of your stack',
-    items: [
-      { name: 'Slack',    body: 'Channels for positive replies, bounces, quarantines.', status: 'live' },
-      { name: 'Zapier',   body: '70+ triggers and actions.',                            status: 'live' },
-      { name: 'Make',     body: 'Triggers and actions in scenarios.',                   status: 'live' },
-      { name: 'n8n',      body: 'Self-hosted workflow integration.',                    status: 'beta' },
-      { name: 'Linear',   body: 'Create tickets from negative replies.',                status: 'soon' },
+      {
+        name: 'Google Sheets',
+        tagline: 'Pull leads in. Push send / reply / bounce / booked events back.',
+        body: 'OAuth a Google account with Sheets scope. Point us at a sheet ID — we read rows starting from row 2 (header convention) and append a status column to the right. The same sheet becomes both your lead source and your real-time report.',
+        auth: 'OAuth',
+        beta: true,
+      },
     ],
   },
 ];
 
-const statusChip = (s: string) => {
-  if (s === 'live') return 'bg-emerald-50 text-emerald-700';
-  if (s === 'beta') return 'bg-amber-50 text-amber-700';
-  return 'bg-slate-100 text-slate-600';
-};
-const statusDot = (s: string) => {
-  if (s === 'live') return 'bg-emerald-500';
-  if (s === 'beta') return 'bg-amber-500';
-  return 'bg-slate-400';
-};
+// =========================================================================
+// Webhook events we emit. Real event types from internal/models/webhook.go.
+// =========================================================================
+const webhookEvents = [
+  { name: 'campaign.email_sent',         desc: 'A campaign step dispatched to a recipient.' },
+  { name: 'campaign.email_delivered',    desc: 'Receiver acknowledged delivery (250 OK or DSN-equivalent).' },
+  { name: 'campaign.email_opened',       desc: 'Open pixel resolved. Note: open data is unreliable at major receivers.' },
+  { name: 'campaign.email_clicked',      desc: 'Tracked link clicked. Dedupe applied per recipient.' },
+  { name: 'campaign.email_bounced',      desc: 'Hard or soft bounce. Suppression follows automatically.' },
+  { name: 'campaign.reply_received',     desc: 'Recipient replied, or a meeting was booked via Calendly/Cal.com.' },
+  { name: 'campaign.unsubscribed',       desc: 'One-click unsubscribe or inbound STOP/REMOVE reply.' },
+  { name: 'campaign.started',            desc: 'Campaign moved into the running state.' },
+  { name: 'campaign.paused',             desc: 'Campaign auto-paused on bounce/complaint spike or manual pause.' },
+  { name: 'campaign.completed',          desc: 'Last sequence step dispatched for the last recipient.' },
+  { name: 'warmup.health_changed',       desc: 'A mailbox transitioned between healthy / watch / throttled / quarantined / blocked.' },
+  { name: 'warmup.placement_in_spam',    desc: 'A warmup probe landed in junk on a recipient mailbox.' },
+  { name: 'warmup.quarantined',          desc: 'Mailbox dropped to the recovery pool. 7-day cooldown.' },
+  { name: 'warmup.blocked',              desc: 'Mailbox hard-blocked from the shared pool. 30-day cooldown.' },
+  { name: 'deliverability.bounce',       desc: 'External deliverability event ingested (SES, Postmark, etc.).' },
+  { name: 'deliverability.complaint',    desc: 'External complaint event ingested (FBL, ARF, in-product reports).' },
+  { name: 'email_account.connected',     desc: 'A new mailbox finished onboarding.' },
+  { name: 'email_account.removed',       desc: 'A mailbox was removed from the workspace.' },
+];
+
+// =========================================================================
+// "How it connects" three-step diagram source. Visual story for the hero.
+// =========================================================================
+const steps = [
+  { n: '01', t: 'Authenticate', d: 'OAuth, paste an API token, or copy a webhook URL we mint per-org. Inbound providers like Calendly need nothing else.' },
+  { n: '02', t: 'Route',        d: 'The connection joins your org\'s integration table. Inbound traffic routes by the secret in the URL path. Outbound traffic uses the encrypted token.' },
+  { n: '03', t: 'Live',         d: 'Status flips to connected. The dashboard surfaces the last sync, last error, and a one-click rotate. Disconnect cascades to dependent data.' },
+];
+
+// =========================================================================
+// "By the numbers" strip. Provider count, event count.
+// =========================================================================
+const numbers = [
+  { v: '9',  u: 'providers',  l: 'Calendly, Cal.com, Sheets, Postmaster, SNDS, DMARC, Cloudflare, GoDaddy, Namecheap', src: 'integration/catalog.go' },
+  { v: '18', u: 'webhook events', l: 'campaign · warmup · deliverability · account lifecycle', src: 'models/webhook.go' },
+  { v: 'HMAC-SHA256', u: '', l: 'every outbound webhook is signed with t=<unix>,v1=<hex>',         src: 'app/webhook/service.go' },
+  { v: '8',  u: 'max attempts',   l: 'exponential backoff, capped at 1h, abandoned after ~2h',     src: 'app/webhook/service.go' },
+];
+
+// =========================================================================
+// Security strip. Threading the KMS envelope story so trust is not a
+// separate page-load.
+// =========================================================================
+const security = [
+  { t: 'OAuth tokens encrypted with AES-256-GCM', d: 'Per-user data encryption keys (DEKs) wrapped with AWS KMS. The encrypted blob lands in DynamoDB; plaintext never persists outside a TTL-bounded Redis cache.' },
+  { t: 'API tokens stored as opaque blobs',       d: 'Cloudflare / GoDaddy / Namecheap / SNDS keys never serialize back to the API consumer. We expose only public display fields (zone name, IP, domain) for the dashboard.' },
+  { t: 'Inbound URLs carry per-org secrets',      d: 'A leaked URL only affects one organization. Rotation regenerates the secret and invalidates the old one immediately.' },
+  { t: 'Outbound delivery audit trail',           d: 'Every dispatch attempt is persisted with response status and body excerpt. Re-replay supported. SKIP LOCKED prevents duplicate fanout across replicas.' },
+];
+
+// =========================================================================
+// FAQ. Real product behaviour.
+// =========================================================================
+const faq = [
+  ['Do you support OAuth for everything?',
+   'No. OAuth is the right choice for providers that expose a per-user identity (Google Sheets, Google Postmaster). For provider-account-scoped credentials (Cloudflare API token, SNDS data-access key) a token is both simpler and safer. The connect drawer surfaces the right method per provider.'],
+  ['What happens to the connection if a token expires?',
+   'The status flips to degraded and the dashboard shows the provider error. We do not silently retry forever — degraded connections stop attempting new fanout until the user re-authenticates or rotates.'],
+  ['Can I have more than one of the same provider?',
+   'Yes. The connection is unique per (org, provider, label). Useful when one organization sends from two domains and you want one Cloudflare connection per zone instead of cramming both into one token.'],
+  ['How fast is the inbound webhook path?',
+   'Calendly/Cal.com/DMARC POSTs are accepted, persisted, and acknowledged in the same request. The fan-out to your outbound webhook subscribers happens through the same queue our internal events use, so the latency budget is bounded by the queue tick (default 2s).'],
+  ['What if I do not want a provider you list?',
+   'You can subscribe to the raw webhook stream and build whatever integration you want on top of it. The 18 event types cover every state transition we emit. The catalog is a curated convenience layer — the API surface underneath is open.'],
+];
 ---
 <Layout
   title="Integrations · Warmbly"
-  description="Mailbox providers, CRMs, data enrichment, and workflow tools that plug into Warmbly."
+  description="Tier 1 + Tier 2 integrations for cold outreach: Calendly, Cal.com, Google Sheets, Google Postmaster, Microsoft SNDS, DMARC, Cloudflare, GoDaddy, Namecheap. Plus a hardened webhook + API surface."
 >
-  <!-- HERO: with category nav -->
-  <section class="relative isolate overflow-hidden text-white" style="background: radial-gradient(ellipse 130% 140% at 72% 28%, #0284c7 0%, #0369a1 25%, #075985 50%, #0c4a6e 80%, #0a3d5c 100%);">
-    <div class="absolute top-0 right-0 w-[420px] opacity-30 pointer-events-none cloud-drift cloud-1" style="mix-blend-mode: screen;">
-      <Cloud variant={5} opacity={1} />
-    </div>
+  <!-- ============================================================
+       HERO · HeroAtmosphere, matches deliverability/warmup/developers
+  ============================================================ -->
+  <section class="relative isolate overflow-hidden">
+    <HeroAtmosphere />
 
-    <div class="container-page relative pt-14 pb-12">
-      <div class="text-[11px] uppercase tracking-[0.18em] text-white/55 font-mono mb-3">Integrations</div>
-      <h1 class="text-[32px] md:text-[48px] font-semibold tracking-[-0.025em] leading-[1.06] text-white max-w-3xl">
-        Connect what you already use.
+    <div class="container-page relative pt-16 md:pt-24 pb-44 md:pb-56 text-center">
+      <div class="inline-flex items-center gap-2 h-7 pl-1 pr-3 rounded-full bg-white/15 backdrop-blur ring-1 ring-white/25 text-[12px] text-white/95 shadow-[0_4px_14px_-4px_rgba(0,0,0,0.25)]">
+        <span class="inline-flex items-center h-5 px-1.5 rounded-full text-[10.5px] font-semibold uppercase tracking-[0.06em] bg-white" style="color:#0369a1;">
+          Integrations
+        </span>
+        Built around the moat, not the marketplace
+      </div>
+
+      <h1 class="mt-8 md:mt-10 text-[44px] sm:text-6xl md:text-[72px] lg:text-[80px] font-semibold tracking-[-0.04em] leading-[0.98] text-white max-w-4xl mx-auto">
+        Connect what already<br/>runs your stack.
       </h1>
-      <div class="mt-8 flex flex-wrap gap-2">
-        {groups.map((g) => (
-          <a href={`#${g.id}`} class="inline-flex items-center gap-2 h-8 px-3 rounded-full bg-white/10 backdrop-blur ring-1 ring-white/20 text-[12.5px] text-white/90 hover:bg-white/20">
-            {g.title}
-            <span class="font-mono text-[10.5px] text-white/55">{g.items.length}</span>
-          </a>
+      <p class="mt-6 text-[17px] md:text-[19px] text-white/80 max-w-2xl mx-auto leading-relaxed">
+        Postmaster + SNDS for provider truth. DMARC ingestion for alignment. Cloudflare-class one-click DNS. Calendly attribution for the conversion event that actually pays the bill. Plus a signed webhook stream the rest builds on.
+      </p>
+
+      <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
+        <a href="https://app.warmbly.com/register" class="inline-flex h-11 px-5 items-center gap-2 rounded-[10px] text-[14.5px] font-semibold bg-white hover:bg-white hover:-translate-y-0.5 hover:shadow-[0_12px_28px_-6px_rgba(0,0,0,0.3)] transition-all duration-200 ease-out shadow-[0_4px_14px_-2px_rgba(0,0,0,0.18)]">
+          <span style="color:#075985;">Connect a provider</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#075985" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>
+          </svg>
+        </a>
+        <a href="#deliverability" class="inline-flex h-11 px-5 items-center rounded-[10px] text-[14.5px] font-medium bg-white/10 backdrop-blur ring-1 ring-white/40 text-white hover:bg-white/20 hover:-translate-y-0.5 transition-all duration-200 ease-out">
+          See the moat
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       FLOATING DASHBOARD · connection state mock
+  ============================================================ -->
+  <section class="relative -mt-36 md:-mt-44 pb-16 md:pb-24 z-10">
+    <div class="container-page">
+      <div class="rounded-[18px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden shadow-[0_40px_90px_-30px_rgba(2,32,71,0.35),0_12px_30px_-12px_rgba(15,23,42,0.12)]">
+
+        <!-- Topbar -->
+        <div class="px-6 py-3 border-b border-[color:var(--border)] flex items-baseline justify-between gap-3">
+          <div class="flex items-baseline gap-3">
+            <div class="text-[10.5px] font-mono uppercase tracking-[0.18em] text-muted-foreground">Integrations</div>
+            <span class="text-[11.5px] text-foreground/55">5 connected · 1 pending · 0 degraded</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="inline-flex items-center h-6 px-2 rounded-md text-[10.5px] font-mono text-[#0369a1] bg-[color:var(--sky-1)]">live</span>
+          </div>
+        </div>
+
+        <!-- Filter chips -->
+        <div class="grid grid-cols-2 md:grid-cols-4 divide-x divide-[color:var(--border)] border-b border-[color:var(--border)]">
+          {[
+            { l: 'Deliverability', n: '3', c: 'bg-emerald-500' },
+            { l: 'DNS',           n: '1', c: 'bg-sky-500' },
+            { l: 'Meetings',      n: '1', c: 'bg-rose-400' },
+            { l: 'Data',          n: '1', c: 'bg-amber-500' },
+          ].map((s) => (
+            <div class="px-5 py-3.5 flex items-baseline justify-between">
+              <div class="flex items-center gap-2">
+                <span class={`w-2 h-2 rounded-full ${s.c}`}></span>
+                <span class="text-[11.5px] uppercase tracking-[0.14em] font-mono text-foreground/70">{s.l}</span>
+              </div>
+              <span class="text-[14.5px] font-mono font-semibold text-heading tabular-nums">{s.n}</span>
+            </div>
+          ))}
+        </div>
+
+        <!-- Connections grid -->
+        <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-px bg-[color:var(--border)]">
+          {mockConnections.map((c) => {
+            const ct = catTone(c.cat);
+            const st = stateTone(c.state);
+            return (
+              <div class="bg-white p-5 flex flex-col">
+                <div class="flex items-start justify-between gap-3">
+                  <div class="flex items-center gap-2.5">
+                    <div class="w-9 h-9 rounded-md bg-[color:var(--sky-1)] ring-1 ring-[color:var(--sky-2)] text-[#0369a1] inline-flex items-center justify-center text-[13px] font-semibold uppercase">
+                      {c.name.charAt(0)}
+                    </div>
+                    <div>
+                      <div class="text-[13px] font-semibold text-heading">{c.name}</div>
+                      <span class={`mt-0.5 inline-flex items-center gap-1 h-4 px-1.5 rounded text-[9.5px] uppercase tracking-[0.08em] font-medium font-mono ${ct.chip}`}>
+                        <span class={`w-1 h-1 rounded-full ${ct.dot}`}></span>{c.cat}
+                      </span>
+                    </div>
+                  </div>
+                  <span class={`inline-flex items-center gap-1 h-5 px-1.5 rounded text-[10px] uppercase tracking-[0.08em] font-medium ${st.chip}`}>
+                    <span class={`w-1 h-1 rounded-full ${st.dot}`}></span>{c.state}
+                  </span>
+                </div>
+                <div class="mt-3 text-[12px] text-foreground/70 leading-relaxed">{c.detail}</div>
+                <div class="mt-auto pt-3 flex items-center justify-between text-[10.5px] font-mono text-muted-foreground">
+                  <span>last sync</span>
+                  <span class="text-foreground/75">{c.age}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <!-- Footer note -->
+        <div class="px-6 py-3 border-t border-[color:var(--border)] bg-[color:var(--surface-1)]/60 flex items-center justify-between text-[11px] font-mono text-muted-foreground">
+          <span>9 providers in the catalog · 18 webhook event types</span>
+          <span class="inline-flex items-center gap-1.5 text-foreground/55">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+            evaluated every event
+          </span>
+        </div>
+      </div>
+      <div class="mt-3 text-center text-[11.5px] font-mono text-muted-foreground">
+        app.warmbly.com/integrations
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       STANCE · what is actually different here
+  ============================================================ -->
+  <section class="border-y border-[color:var(--border)] bg-[color:var(--surface-1)]/40 py-20 md:py-28">
+    <div class="container-page">
+      <div class="max-w-3xl mb-12">
+        <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7] mb-3">Stance</div>
+        <h2 class="text-[32px] md:text-[44px] font-semibold tracking-[-0.03em] leading-[1.05] text-heading">
+          Why this list is short on purpose.
+        </h2>
+        <p class="mt-4 text-[15.5px] text-foreground/70 leading-relaxed">
+          Every cold-outreach platform competes on the length of an integrations grid. We made the opposite call. Nine providers, all directly load-bearing for deliverability, DNS, meetings, or operator workflow. Everything else is a Zapier/Make/n8n template away.
+        </p>
+      </div>
+
+      <div class="grid md:grid-cols-2 gap-4 lg:gap-5">
+        {[
+          { h: 'A long list of CRM logos is a parity game.',
+            b: 'Customers compare "HubSpot · Salesforce · Pipedrive · Close · HighLevel" on every vendor page. The truth is most of these turn into a one-way push the first week. We would rather build one CRM connection that is genuinely two-way than ten that look the same on a logo wall.' },
+          { h: 'The moat is provider truth, not provider count.',
+            b: 'Google Postmaster, Microsoft SNDS, and DMARC reports tell you whether the platform is working. No competitor in the cold outreach segment ingests all three. We do, and we surface the data next to each mailbox so a regression downgrades health before a customer notices replies dropping.' },
+          { h: 'Conversion is meetings, not replies.',
+            b: 'A reply is a hint. A meeting is the conversion event. Calendly and Cal.com close the loop directly: the booking webhook joins the booking to the campaign that earned it, and the same campaign-level reporting that counts replies now counts meetings.' },
+          { h: 'DNS belongs inside the dashboard.',
+            b: 'The worst part of mailbox onboarding is publishing three records in someone else\'s DNS console. Cloudflare, GoDaddy, and Namecheap let us write those records for the customer. We verify the API token before saving so the failure mode is at connect time, not the first failed send.' },
+        ].map((c, i) => (
+          <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] p-6 md:p-7">
+            <div class="flex items-baseline gap-3 mb-3">
+              <span class="font-mono text-[11px] text-[#0284c7] font-semibold tabular-nums">{String(i + 1).padStart(2, '0')}</span>
+              <div class="text-[16px] md:text-[17px] font-semibold tracking-[-0.015em] text-heading leading-snug">{c.h}</div>
+            </div>
+            <p class="text-[13.5px] text-foreground/70 leading-relaxed">{c.b}</p>
+          </div>
         ))}
       </div>
     </div>
   </section>
 
-  <!-- GROUPED INTEGRATION GRIDS -->
-  <section class="py-16 md:py-20">
-    <div class="container-page space-y-16">
-      {groups.map((g) => (
-        <div id={g.id} class="scroll-mt-24">
-          <div class="flex items-end justify-between mb-6">
-            <div>
-              <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-2">{g.title}</div>
-              <h2 class="text-[22px] md:text-[28px] font-semibold tracking-[-0.02em] text-heading">{g.sub}</h2>
-            </div>
-            <div class="text-[12px] font-mono text-muted-foreground">{g.items.length} · integrations</div>
-          </div>
+  <!-- ============================================================
+       HOW IT CONNECTS · 3-step diagram
+  ============================================================ -->
+  <section class="border-b border-[color:var(--border)] py-20 md:py-28">
+    <div class="container-page">
+      <div class="max-w-3xl mb-12">
+        <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7] mb-3">Connection model</div>
+        <h2 class="text-[32px] md:text-[44px] font-semibold tracking-[-0.03em] leading-[1.05] text-heading">
+          Three steps. One drawer.
+        </h2>
+        <p class="mt-4 text-[15.5px] text-foreground/70 leading-relaxed">
+          The dashboard\'s connect drawer is the same shape for every provider — only the fields change. OAuth providers launch the auth popup. Token providers paste a key. Inbound providers get a URL minted on save.
+        </p>
+      </div>
 
-          <div class="grid sm:grid-cols-2 lg:grid-cols-5 gap-px bg-[color:var(--border)] rounded-[14px] overflow-hidden ring-1 ring-[color:var(--border)]" style="box-shadow: var(--shadow-sm);">
-            {g.items.map((it) => (
-              <div class="bg-white p-5 flex flex-col">
-                <div class="flex items-start justify-between">
-                  <div class="w-10 h-10 rounded-[10px] bg-[color:var(--sky-1)] text-[color:var(--sky-7)] ring-1 ring-[color:var(--sky-2)] inline-flex items-center justify-center text-[15px] font-semibold">
+      <div class="rounded-[14px] bg-[#0c1224] ring-1 ring-white/10 overflow-hidden">
+        <div class="px-6 py-3 border-b border-white/10 flex items-center justify-between text-[10.5px] font-mono text-white/55">
+          <span>connect drawer · v1</span>
+          <span>same surface, every provider</span>
+        </div>
+
+        <div class="grid md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-white/10">
+          {steps.map((s) => (
+            <div class="p-7 md:p-9">
+              <div class="flex items-baseline gap-3">
+                <span class="font-mono text-[11.5px] text-[#7dd3fc] font-semibold tabular-nums tracking-[0.08em]">{s.n}</span>
+                <span class="text-[18px] md:text-[20px] font-semibold tracking-[-0.02em] text-white">{s.t}</span>
+              </div>
+              <p class="mt-3 text-[13.5px] text-white/65 leading-relaxed">{s.d}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       CATEGORY SECTIONS · iterate
+  ============================================================ -->
+  {categories.map((cat, idx) => (
+    <section id={cat.id} class={`scroll-mt-4 py-20 md:py-28 ${idx % 2 === 0 ? 'bg-white' : 'border-y border-[color:var(--border)] bg-[color:var(--surface-1)]/40'}`}>
+      <div class="container-page">
+        <div class="max-w-2xl mb-12">
+          <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7] mb-3">{cat.eyebrow}</div>
+          <h2 class="text-[32px] md:text-[44px] font-semibold tracking-[-0.03em] leading-[1.05] text-heading">
+            {cat.headline}
+          </h2>
+          <p class="mt-4 text-[15.5px] text-foreground/70 leading-relaxed">{cat.body}</p>
+        </div>
+
+        <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-px bg-[color:var(--border)] rounded-[14px] overflow-hidden ring-1 ring-[color:var(--border)]" style="box-shadow: var(--shadow-sm);">
+          {cat.items.map((it) => (
+            <div class="bg-white p-6 flex flex-col">
+              <div class="flex items-start justify-between gap-3">
+                <div class="flex items-center gap-2.5">
+                  <div class="w-10 h-10 rounded-md bg-[color:var(--sky-1)] ring-1 ring-[color:var(--sky-2)] text-[#0369a1] inline-flex items-center justify-center text-[14px] font-semibold uppercase">
                     {it.name.charAt(0)}
                   </div>
-                  <span class={`inline-flex items-center gap-1 h-5 px-1.5 rounded text-[10px] font-medium font-mono uppercase tracking-[0.08em] ${statusChip(it.status)}`}>
-                    <span class={`w-1 h-1 rounded-full ${statusDot(it.status)}`}></span>
-                    {it.status}
-                  </span>
+                  <div>
+                    <div class="text-[15px] font-semibold text-heading">{it.name}</div>
+                    <div class="mt-0.5 text-[10.5px] uppercase tracking-[0.08em] text-muted-foreground font-mono">
+                      {it.auth}{it.beta && <span class="ml-1.5 text-amber-600">· beta</span>}
+                    </div>
+                  </div>
                 </div>
-                <div class="mt-4 text-[14px] font-semibold text-heading">{it.name}</div>
-                <p class="mt-1 text-[12.5px] text-foreground/70 leading-relaxed">{it.body}</p>
               </div>
-            ))}
+              <p class="mt-3 text-[13px] text-foreground/65 leading-relaxed">{it.tagline}</p>
+              <p class="mt-4 pt-4 border-t border-[color:var(--border)] text-[12.5px] text-foreground/65 leading-relaxed">{it.body}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  ))}
+
+  <!-- ============================================================
+       WEBHOOKS + API · the layer everything else builds on
+  ============================================================ -->
+  <section class="bg-white py-20 md:py-28">
+    <div class="container-page">
+      <div class="grid lg:grid-cols-[1fr_1.8fr] gap-12 lg:gap-20 items-start">
+        <div class="lg:sticky lg:top-24" style="align-self: start;">
+          <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Webhooks + API</div>
+          <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
+            One signed stream. Everything else builds on it.
+          </h2>
+          <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed">
+            The catalog is convenience. The webhook surface is the API. Eighteen event types, HMAC-SHA256 signed in the Stripe format, retry queue with exponential backoff, full delivery history per endpoint. If a provider is not in the catalog yet, your own subscriber can do anything any of the listed integrations does.
+          </p>
+          <ul class="mt-6 space-y-2 text-[13.5px] text-foreground/80">
+            <li class="flex items-start gap-2"><Icon name="check" size={13} class="text-[#0284c7] mt-1 shrink-0" /><span><span class="font-mono">X-Warmbly-Signature: t=&lt;unix&gt;,v1=&lt;hex&gt;</span> on every POST.</span></li>
+            <li class="flex items-start gap-2"><Icon name="check" size={13} class="text-[#0284c7] mt-1 shrink-0" /><span>Per-endpoint event-type filter. Subscribe selectively.</span></li>
+            <li class="flex items-start gap-2"><Icon name="check" size={13} class="text-[#0284c7] mt-1 shrink-0" /><span>Up to 8 attempts with capped exponential backoff. Full audit trail.</span></li>
+            <li class="flex items-start gap-2"><Icon name="check" size={13} class="text-[#0284c7] mt-1 shrink-0" /><span>Secret rotation invalidates the old secret immediately.</span></li>
+          </ul>
+        </div>
+
+        <div class="space-y-5">
+          <!-- Code block -->
+          <div class="rounded-[14px] bg-[#0c1224] ring-1 ring-white/10 overflow-hidden">
+            <div class="px-5 py-2.5 border-b border-white/10 flex items-center justify-between text-[10.5px] font-mono text-white/55">
+              <span>POST · your webhook endpoint</span>
+              <span>application/json</span>
+            </div>
+            <pre class="px-5 py-4 text-[12px] leading-relaxed text-white/85 font-mono whitespace-pre overflow-x-auto"><code>{`{
+  "id": "f4a07e0c-a4b1-4dc8-9c5d-2c1b3e29c7b1",
+  "event_type": "campaign.reply_received",
+  "organization_id": "8c4e7c3d-...-",
+  "created_at": "2026-05-28T14:21:09Z",
+  "data": {
+    "source": "calendly",
+    "invitee_email": "lead@target.co",
+    "event_name": "30 min intro",
+    "scheduled_for": "2026-06-02T16:00:00Z",
+    "contact_id": "c1f...",
+    "booking_id": "b91...",
+    "trigger": "meeting_booked"
+  }
+}`}</code></pre>
+          </div>
+
+          <!-- Event list -->
+          <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden">
+            <div class="px-5 py-3 bg-[color:var(--surface-1)] border-b border-[color:var(--border)] flex items-baseline justify-between gap-2">
+              <div class="text-[10.5px] uppercase tracking-[0.18em] font-mono text-muted-foreground">Event types</div>
+              <span class="text-[11px] font-mono text-foreground/55 tabular-nums">{webhookEvents.length} live</span>
+            </div>
+            <div class="divide-y divide-[color:var(--border)] max-h-[420px] overflow-y-auto">
+              {webhookEvents.map((e) => (
+                <div class="grid grid-cols-[minmax(0,1.4fr)_minmax(0,2fr)] gap-4 px-5 py-2.5">
+                  <code class="font-mono text-[11.5px] text-[#0369a1] truncate">{e.name}</code>
+                  <span class="text-[12px] text-foreground/65 leading-snug">{e.desc}</span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
-      ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       SECURITY · trust strip
+  ============================================================ -->
+  <section class="border-y border-[color:var(--border)] bg-[color:var(--surface-1)]/40 py-20 md:py-24">
+    <div class="container-page">
+      <div class="max-w-2xl mb-10">
+        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Security</div>
+        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
+          Credentials sit behind the same envelope as your mailbox tokens.
+        </h2>
+        <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed">
+          Integrations do not get a different security story than the rest of the platform — the OAuth tokens you connected your Gmail with already round-trip through KMS-wrapped per-user DEKs. Integration tokens follow the same path.
+        </p>
+      </div>
+
+      <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-px bg-[color:var(--border)] rounded-[14px] overflow-hidden ring-1 ring-[color:var(--border)]" style="box-shadow: var(--shadow-sm);">
+        {security.map((s) => (
+          <div class="bg-white p-6">
+            <Icon name="check" size={14} class="text-[#0284c7]" />
+            <div class="mt-3 text-[15px] font-semibold text-heading">{s.t}</div>
+            <p class="mt-2 text-[13px] text-foreground/65 leading-relaxed">{s.d}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       BY THE NUMBERS
+  ============================================================ -->
+  <section class="bg-white py-16 md:py-20">
+    <div class="container-page">
+      <div class="max-w-2xl mb-10">
+        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">By the numbers</div>
+        <h2 class="text-[26px] md:text-[34px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
+          Shape of the surface, in one strip.
+        </h2>
+        <p class="mt-3 text-[14px] text-foreground/65 leading-relaxed">
+          Real values from the codebase. The catalog is short for the reason in the stance section above.
+        </p>
+      </div>
+
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-px bg-[color:var(--border)] rounded-[14px] overflow-hidden ring-1 ring-[color:var(--border)]">
+        {numbers.map((n) => (
+          <div class="bg-white p-5 md:p-6">
+            <div class="flex items-baseline gap-1">
+              <span class="text-[26px] md:text-[32px] font-semibold tracking-[-0.025em] font-mono text-heading">{n.v}</span>
+              {n.u && <span class="text-[12px] text-muted-foreground">{n.u}</span>}
+            </div>
+            <div class="mt-2 text-[11.5px] uppercase tracking-[0.14em] font-mono text-foreground/70">{n.l}</div>
+            <div class="mt-3 pt-3 border-t border-[color:var(--border)] text-[10.5px] font-mono text-muted-foreground truncate">{n.src}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       FAQ
+  ============================================================ -->
+  <section class="bg-[color:var(--surface-1)]/40 border-y border-[color:var(--border)] py-20 md:py-24">
+    <div class="container-page grid lg:grid-cols-[1fr_1.8fr] gap-12 lg:gap-20 items-start">
+      <div class="lg:sticky lg:top-24" style="align-self: start;">
+        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Integrations FAQ</div>
+        <h2 class="text-[28px] md:text-[36px] font-semibold tracking-[-0.025em] leading-[1.08] text-heading">
+          Five questions worth asking.
+        </h2>
+        <p class="mt-4 text-[14.5px] text-foreground/70 leading-relaxed">
+          More depth in the <a class="text-[#0369a1] hover:text-[#075985] font-medium" href="/developers/">developer docs</a>.
+        </p>
+      </div>
+
+      <div class="divide-y divide-[color:var(--border)]" data-faq>
+        {faq.map(([q, a]) => (
+          <div class="faq-row py-2">
+            <button type="button" class="faq-trigger group w-full flex items-start justify-between gap-4 py-3 text-left" aria-expanded="false">
+              <span class="text-[15.5px] font-medium text-heading group-hover:text-[#0369a1] transition-colors">{q}</span>
+              <span class="faq-icon shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-full bg-white ring-1 ring-[color:var(--border)] text-foreground/60 transition-transform duration-300 ease-out">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+              </span>
+            </button>
+            <div class="faq-panel grid grid-rows-[0fr] transition-[grid-template-rows] duration-300 ease-out">
+              <div class="overflow-hidden">
+                <p class="pb-4 pr-12 text-[14px] text-foreground/75 leading-relaxed max-w-2xl">{a}</p>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <script is:inline>
+        (function () {
+          const faq = document.querySelector('[data-faq]');
+          if (!faq) return;
+          faq.querySelectorAll('.faq-trigger').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+              const row   = btn.closest('.faq-row');
+              const panel = row.querySelector('.faq-panel');
+              const icon  = btn.querySelector('.faq-icon');
+              const open  = btn.getAttribute('aria-expanded') === 'true';
+              btn.setAttribute('aria-expanded', String(!open));
+              panel.style.gridTemplateRows = open ? '0fr' : '1fr';
+              if (icon) icon.style.transform = open ? 'rotate(0deg)' : 'rotate(45deg)';
+            });
+          });
+        })();
+      </script>
     </div>
   </section>
 
   <CTA
-    title="Need an integration we do not list?"
-    description="We ship the most-requested integrations every quarter. Tell us which one matters."
-    primaryLabel="Request integration"
-    primaryHref="/contact/?topic=integrations"
+    title="Wire it up. See what your stack already knew."
+    description="One drawer, three steps, no service desk ticket. Or read the developer docs and build your own."
+    primaryLabel="Connect a provider"
+    primaryHref="https://app.warmbly.com/register"
     secondaryLabel="See the API"
     secondaryHref="/developers/"
   />
