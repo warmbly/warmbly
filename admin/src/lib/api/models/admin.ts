@@ -323,6 +323,41 @@ export interface ProvisioningJobCreate {
     };
 }
 
+// /admin/mailboxes — cross-org mailbox admin.
+
+export interface AdminMailboxRow {
+    id: string;
+    email: string;
+    provider: string;
+    status: string;
+    user_id: string;
+    owner_email: string;
+    organization_id?: string | null;
+    org_name?: string | null;
+    worker_id?: string | null;
+    warmup_enabled: boolean;
+    campaign_limit: number;
+    last_synced_at?: string | null;
+    created_at: string;
+}
+
+export interface AdminMailboxesResult {
+    data: AdminMailboxRow[];
+    pagination: {
+        total?: number | null;
+        next_cursor?: string | null;
+        has_more: boolean;
+    };
+}
+
+export interface AdminMailboxSearch {
+    q?: string;
+    status?: string;
+    provider?: string;
+    cursor?: string;
+    limit?: number;
+}
+
 // /admin/analytics — time-series counters for the platform.
 
 export interface DailyEmailStat {

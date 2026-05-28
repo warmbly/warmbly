@@ -318,6 +318,43 @@ type PlatformOverview struct {
 	TrialingUsers       int64 `json:"trialing_users"`
 }
 
+// AdminMailboxRow is one row in the platform-wide mailbox admin list.
+// Joins the connected mailbox with owner + workspace so the table can
+// answer "whose mailbox is this and where does it live" without
+// fan-out fetches.
+type AdminMailboxRow struct {
+	ID             uuid.UUID  `json:"id"`
+	Email          string     `json:"email"`
+	Provider       string     `json:"provider"`
+	Status         string     `json:"status"`
+	UserID         uuid.UUID  `json:"user_id"`
+	OwnerEmail     string     `json:"owner_email"`
+	OrganizationID *uuid.UUID `json:"organization_id,omitempty"`
+	OrgName        *string    `json:"org_name,omitempty"`
+	WorkerID       *uuid.UUID `json:"worker_id,omitempty"`
+	WarmupEnabled  bool       `json:"warmup_enabled"`
+	CampaignLimit  int        `json:"campaign_limit"`
+	LastSyncedAt   *time.Time `json:"last_synced_at,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+}
+
+// AdminMailboxesResult is the paginated wrapper.
+type AdminMailboxesResult struct {
+	Data       []AdminMailboxRow `json:"data"`
+	Pagination Pagination        `json:"pagination"`
+}
+
+// AdminMailboxSearch covers the query knobs the admin table needs.
+// All fields optional; empty status = active, "all" returns every
+// status. provider lets ops filter to "all gmail mailboxes" quickly.
+type AdminMailboxSearch struct {
+	Query    string     `form:"q"`
+	Status   string     `form:"status"`
+	Provider string     `form:"provider"`
+	Cursor   *uuid.UUID `form:"cursor"`
+	Limit    int        `form:"limit"`
+}
+
 // DailyEmailStats represents daily email statistics for graphs
 type DailyEmailStats struct {
 	Date           time.Time `json:"date"`

@@ -13,6 +13,9 @@ import (
 
 // AdminService defines the interface for admin operations
 type AdminService interface {
+	// Mailbox admin
+	SearchMailboxes(ctx context.Context, search *models.AdminMailboxSearch) (*models.AdminMailboxesResult, *errx.Error)
+
 	// User Management
 	SearchUsers(ctx context.Context, search *models.AdminUserSearch) (*models.AdminUsersResult, *errx.Error)
 	GetUserDetail(ctx context.Context, userID uuid.UUID) (*models.AdminUserDetail, *errx.Error)
@@ -129,6 +132,15 @@ func (s *adminService) LogAdminAction(ctx context.Context, adminID uuid.UUID, ac
 }
 
 // User Management
+
+func (s *adminService) SearchMailboxes(ctx context.Context, search *models.AdminMailboxSearch) (*models.AdminMailboxesResult, *errx.Error) {
+	result, err := s.repo.SearchMailboxesForAdmin(ctx, search)
+	if err != nil {
+		sentry.CaptureException(err)
+		return nil, errx.New(errx.Internal, "failed to search mailboxes")
+	}
+	return result, nil
+}
 
 func (s *adminService) SearchUsers(ctx context.Context, search *models.AdminUserSearch) (*models.AdminUsersResult, *errx.Error) {
 	result, err := s.repo.SearchUsers(ctx, search)

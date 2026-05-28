@@ -44,10 +44,8 @@ import PlansPage from "@/app/dashboard/PlansPage";
 import LimitRequestsPage from "@/app/dashboard/LimitRequestsPage";
 import OutreachPage from "@/app/dashboard/OutreachPage";
 import AnalyticsPage from "@/app/dashboard/AnalyticsPage";
-import {
-    MailboxesPage,
-    NotFoundPage,
-} from "@/app/dashboard/StubPages";
+import MailboxesPage from "@/app/dashboard/MailboxesPage";
+import { NotFoundPage } from "@/app/dashboard/StubPages";
 
 // Mirror of web/src/main.tsx's tuned defaults. The admin app sees less
 // traffic than the dashboard, so the staleness window is a touch wider:

@@ -596,6 +596,11 @@ func Run(
 		adminRoutes.POST("/warmup/appeals/:id/approve", middleware.RequireAdminPermission(models.AdminPermReviewAppeals), h.AdminApproveAppeal)
 		adminRoutes.POST("/warmup/appeals/:id/reject", middleware.RequireAdminPermission(models.AdminPermReviewAppeals), h.AdminRejectAppeal)
 
+		// Mailbox admin (cross-org). Reuses ViewUsers since mailboxes
+		// are tightly coupled to user/org context; a dedicated bit
+		// can be carved later if mailbox-specific actions land.
+		adminRoutes.GET("/mailboxes", middleware.RequireAdminPermission(models.AdminPermViewUsers), h.AdminSearchMailboxes)
+
 		// Campaign Management
 		adminRoutes.GET("/campaigns", middleware.RequireAdminPermission(models.AdminPermViewCampaigns), h.AdminSearchCampaigns)
 		adminRoutes.GET("/campaigns/:id", middleware.RequireAdminPermission(models.AdminPermViewCampaigns), h.AdminGetCampaign)

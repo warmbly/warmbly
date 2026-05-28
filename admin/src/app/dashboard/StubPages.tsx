@@ -19,16 +19,6 @@ function Stub({ title, description, coming }: StubProps) {
     );
 }
 
-export function MailboxesPage() {
-    return (
-        <Stub
-            title="Mailboxes"
-            description="Every connected mailbox across all organizations. Health, send budget, warmup state, last sync."
-            coming="Mailbox table backed by /admin/users/:id/emails coming in the next iteration."
-        />
-    );
-}
-
 export function NotFoundPage() {
     return (
         <div>
