@@ -39,6 +39,7 @@ import UsersPage from "@/app/dashboard/UsersPage";
 import UserDetailPage from "@/app/dashboard/UserDetailPage";
 import WarmupPage from "@/app/dashboard/WarmupPage";
 import CampaignsPage from "@/app/dashboard/CampaignsPage";
+import EnterprisePage from "@/app/dashboard/EnterprisePage";
 import {
     AnalyticsPage,
     MailboxesPage,
@@ -91,6 +92,7 @@ const router = createBrowserRouter([
                     { path: "plans", element: <PlansPage /> },
                     { path: "warmup", element: <WarmupPage /> },
                     { path: "campaigns", element: <CampaignsPage /> },
+                    { path: "enterprise", element: <EnterprisePage /> },
                     { path: "analytics", element: <AnalyticsPage /> },
                     { path: "audit", element: <AuditPage /> },
                     {

@@ -323,6 +323,35 @@ export interface ProvisioningJobCreate {
     };
 }
 
+// /admin/enterprise/inquiries — sales pipeline for "talk to us"
+// requests submitted from the marketing site.
+
+export type EnterpriseInquiryStatus =
+    | "pending"
+    | "contacted"
+    | "converted"
+    | "declined";
+
+export interface EnterpriseInquiry {
+    id: string;
+    company_name: string;
+    contact_name: string;
+    contact_email: string;
+    estimated_volume?: number | null;
+    team_size?: number | null;
+    notes: string;
+    status: EnterpriseInquiryStatus;
+    created_at: string;
+    processed_at?: string | null;
+    processed_by?: string | null;
+}
+
+export interface UpdateEnterpriseInquiryRequest {
+    status?: EnterpriseInquiryStatus;
+    assigned_to?: string;
+    notes?: string;
+}
+
 // /admin/campaigns/* — platform-wide campaign admin (force-stop runaway
 // campaigns, inspect engagement counters per campaign).
 
