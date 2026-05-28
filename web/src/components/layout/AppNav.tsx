@@ -9,6 +9,7 @@
 import { Link, useLocation } from "react-router-dom";
 import {
     BarChart3Icon,
+    CableIcon,
     CheckSquareIcon,
     CircleDollarSignIcon,
     FileTextIcon,
@@ -87,6 +88,7 @@ const sections: NavSection[] = [
         label: "Resources",
         items: [
             { title: "Templates", url: "/app/templates", icon: FileTextIcon },
+            { title: "Integrations", url: "/app/integrations", icon: CableIcon },
             { title: "API Keys", url: "/app/api-keys", icon: KeyIcon },
             { title: "Audit log", url: "/app/audit", icon: ListChecksIcon, rolesAllowed: "manage" },
         ],

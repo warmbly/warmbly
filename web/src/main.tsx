@@ -25,6 +25,7 @@ import DealsPage from './app/app/crm/deals/page';
 import TasksPage from './app/app/crm/tasks/page';
 import TemplatesPage from './app/app/templates/page';
 import APIKeysPage from './app/app/api-keys/page';
+import IntegrationsPage from './app/app/integrations/page';
 import AuditPage from './app/app/audit/page';
 import SettingsLayout from './app/app/settings/layout';
 import ProfileSettingsPage from './app/app/settings/profile/page';
@@ -246,6 +247,10 @@ const router = createBrowserRouter([
           {
             path: "api-keys",
             element: <APIKeysPage />,
+          },
+          {
+            path: "integrations",
+            element: <IntegrationsPage />,
           },
           {
             path: "audit",

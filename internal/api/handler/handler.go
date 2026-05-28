@@ -15,6 +15,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/emailsend"
 	"github.com/warmbly/warmbly/internal/app/feature"
 	"github.com/warmbly/warmbly/internal/app/group"
+	"github.com/warmbly/warmbly/internal/app/integration"
 	"github.com/warmbly/warmbly/internal/app/organization"
 	"github.com/warmbly/warmbly/internal/app/ratelimit"
 	"github.com/warmbly/warmbly/internal/app/releases"
@@ -106,6 +107,11 @@ type Handler struct {
 
 	// Customer-facing webhooks (subscribe → HMAC-signed delivery).
 	WebhookService webhook.Service
+
+	// Third-party integrations (Calendly, Cal.com, DMARC, Postmaster,
+	// SNDS, Cloudflare, GoDaddy, Namecheap, Google Sheets).
+	IntegrationService integration.Service
+	ContactRepo        repository.ContactRepository
 
 	// Public websocket URL used by frontend clients
 	WebsocketURI string

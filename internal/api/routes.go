@@ -31,6 +31,12 @@ func Run(
 	// X-Hub-Signature-256 (HMAC-SHA256 with RELEASES_WEBHOOK_SECRET).
 	r.POST("/webhooks/github/releases", h.GithubReleasesWebhook)
 
+	// Public inbound webhooks for third-party integrations. Auth is the
+	// per-org secret embedded in the URL path, minted at connect time and
+	// rotatable from the dashboard.
+	r.POST("/api/v1/integrations/inbound/calendly/:secret", h.InboundCalendly)
+	r.POST("/api/v1/integrations/inbound/cal-com/:secret", h.InboundCalCom)
+
 	// Public OAuth-bouncer pages used by the mailbox onboarding popup.
 	// The provider redirects here; the page postMessages the code/state
 	// back to the SPA opener which then calls /emails/onboarding/oauth/finish.
@@ -314,6 +320,19 @@ func Run(
 			webhooks.DELETE("/:id", h.DeleteWebhookEndpoint)
 			webhooks.POST("/:id/rotate-secret", h.RotateWebhookSecret)
 			webhooks.GET("/:id/deliveries", h.ListWebhookDeliveries)
+		}
+
+		// Third-party integrations (org-scoped). Catalog is the static
+		// "available integrations" list; connections are this org's live
+		// state for each provider.
+		integrations := protected.Group("/integrations")
+		integrations.Use(m.RequireOrganization(), m.RateLimitMiddleware(models.RateLimitWrite))
+		{
+			integrations.GET("/catalog", h.ListIntegrationCatalog)
+			integrations.GET("/connections", h.ListIntegrationConnections)
+			integrations.POST("/connections", h.ConnectIntegration)
+			integrations.DELETE("/connections/:id", h.DisconnectIntegration)
+			integrations.GET("/bookings", h.ListMeetingBookings)
 		}
 
 		// Warmup routing rules (org-scoped). Lets customers define

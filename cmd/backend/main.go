@@ -32,6 +32,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/feature"
 	"github.com/warmbly/warmbly/internal/app/fleet"
 	"github.com/warmbly/warmbly/internal/app/group"
+	"github.com/warmbly/warmbly/internal/app/integration"
 	"github.com/warmbly/warmbly/internal/app/organization"
 	"github.com/warmbly/warmbly/internal/app/releases"
 	"github.com/warmbly/warmbly/internal/app/sequence"
@@ -150,6 +151,8 @@ func main() {
 	var organizationRepoForHandler repository.OrganizationRepository
 	var warmupRoutingRepoForHandler repository.WarmupRoutingRepository
 	var webhookServiceForHandler webhook.Service
+	var integrationServiceForHandler integration.Service
+	var contactRepoForHandler repository.ContactRepository
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -444,6 +447,10 @@ func main() {
 		webhookRepository := repository.NewWebhookRepository(primaryDB.Pool)
 		webhookService := webhook.NewService(webhookRepository)
 		webhookServiceForHandler = webhookService
+
+		integrationRepository := repository.NewIntegrationRepository(primaryDB.Pool)
+		integrationServiceForHandler = integration.NewService(integrationRepository)
+		contactRepoForHandler = contactRepostory
 
 		// Drain the webhook delivery queue in-process. Multiple replicas are
 		// safe because ClaimDueDeliveries uses SELECT … FOR UPDATE SKIP LOCKED.
@@ -760,6 +767,10 @@ func main() {
 		WarmupService:     warmupService,
 		WarmupRoutingRepo: warmupRoutingRepoForHandler,
 		WebhookService:    webhookServiceForHandler,
+
+		// Third-party integrations
+		IntegrationService: integrationServiceForHandler,
+		ContactRepo:        contactRepoForHandler,
 
 		WebsocketURI: websocketURI,
 
