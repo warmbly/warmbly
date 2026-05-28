@@ -33,12 +33,13 @@ import TransportsPage from "@/app/settings/TransportsPage";
 import CloudProvidersPage from "@/app/settings/CloudProvidersPage";
 import ProvisioningTemplatesPage from "@/app/settings/ProvisioningTemplatesPage";
 import ProvisioningJobsPage from "@/app/dashboard/ProvisioningJobsPage";
+import OrganizationsPage from "@/app/dashboard/OrganizationsPage";
+import OrganizationDetailPage from "@/app/dashboard/OrganizationDetailPage";
 import {
     AnalyticsPage,
     CampaignsPage,
     MailboxesPage,
     NotFoundPage,
-    OrganizationsPage,
     PlansPage,
     UsersPage,
     WarmupPage,
@@ -84,6 +85,7 @@ const router = createBrowserRouter([
                     { path: "mailboxes", element: <MailboxesPage /> },
                     { path: "users", element: <UsersPage /> },
                     { path: "organizations", element: <OrganizationsPage /> },
+                    { path: "organizations/:id", element: <OrganizationDetailPage /> },
                     { path: "plans", element: <PlansPage /> },
                     { path: "warmup", element: <WarmupPage /> },
                     { path: "campaigns", element: <CampaignsPage /> },

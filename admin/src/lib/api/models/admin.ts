@@ -322,3 +322,91 @@ export interface ProvisioningJobCreate {
         description?: string;
     };
 }
+
+// /admin/organizations* — workspace admin (read-only slice).
+
+export interface AdminOrgListItem {
+    id: string;
+    name: string;
+    slug?: string | null;
+    owner_user_id: string;
+    owner_email: string;
+    owner_first_name: string;
+    owner_last_name: string;
+    owner_banned_at?: string | null;
+    created_at: string;
+    deletion_scheduled_for?: string | null;
+    member_count: number;
+    email_account_count: number;
+    campaign_count: number;
+    active_campaigns: number;
+}
+
+export interface OrganizationLimits {
+    max_campaigns?: number | null;
+    max_active_campaigns?: number | null;
+    max_team_members?: number | null;
+    max_email_accounts?: number | null;
+    max_contacts?: number | null;
+    daily_campaign_limit?: number | null;
+}
+
+export interface OrganizationCounts {
+    total_campaigns: number;
+    active_campaigns: number;
+    total_contacts: number;
+    total_members: number;
+    email_accounts: number;
+    emails_sent_today: number;
+}
+
+export interface AdminOrgDetail extends AdminOrgListItem {
+    updated_at: string;
+    deletion_scheduled_at?: string | null;
+    limits?: OrganizationLimits | null;
+    counts?: OrganizationCounts | null;
+    plan_name?: string | null;
+    subscription_status?: string | null;
+    is_enterprise: boolean;
+    current_period_end?: string | null;
+    trial_end?: string | null;
+}
+
+export interface AdminOrgsResult {
+    data: AdminOrgListItem[];
+    pagination: {
+        total?: number | null;
+        next_cursor?: string | null;
+        has_more: boolean;
+    };
+}
+
+export interface AdminOrgMember {
+    id: string;
+    organization_id: string;
+    user_id: string;
+    role: string;
+    permissions: number;
+    invited_by?: string | null;
+    invited_at: string;
+    accepted_at?: string | null;
+    user?: {
+        id: string;
+        first_name: string;
+        last_name: string;
+        email: string;
+    };
+}
+
+export interface AdminOrgMembersResult {
+    data: AdminOrgMember[];
+}
+
+export interface AdminOrgSearch {
+    q?: string;
+    status?: "active" | "pending_deletion" | "";
+    cursor?: string;
+    limit?: number;
+    sort_by?: "created_at" | "name";
+    sort_desc?: boolean;
+}

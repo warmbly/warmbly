@@ -39,16 +39,6 @@ export function UsersPage() {
     );
 }
 
-export function OrganizationsPage() {
-    return (
-        <Stub
-            title="Organizations"
-            description="Workspaces and team membership. Plan, seat usage, billing surface."
-            coming="Endpoint pending — backend exposes per-user data today, org-level rollups are next."
-        />
-    );
-}
-
 export function PlansPage() {
     return (
         <Stub
