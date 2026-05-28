@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -16,33 +15,28 @@ import (
 )
 
 // Service exposes the generic CRUD surface the dashboard talks to.
-// Provider-specific behaviour (inbound webhooks, scheduled pulls, DNS
-// writes) lives in the per-provider files in this package.
+// Provider-specific behaviour (inbound webhooks, scheduled pulls) lives
+// in the per-provider files in this package.
 type Service interface {
 	Catalog() []models.IntegrationCatalogEntry
 	ListConnections(ctx context.Context, orgID uuid.UUID) ([]models.IntegrationConnection, error)
 
 	// Connect registers a new connection. The provider-specific config is
-	// stored encrypted via the existing KMS envelope path; for the first
-	// pass we accept the raw config map and serialize it into JSON, which
-	// the storage layer hands to the encryption envelope.
+	// stored encrypted via the existing KMS envelope path.
 	Connect(ctx context.Context, orgID uuid.UUID, provider models.IntegrationProvider, label string, config map[string]any) (*models.IntegrationConnection, error)
 	Disconnect(ctx context.Context, orgID, id uuid.UUID) error
 
-	// RotateInboundSecret regenerates the shared secret that providers
-	// like Calendly use to address inbound webhooks to this org. Called
-	// by the dashboard to refresh the URL after a leak.
+	// RotateInboundSecret regenerates the shared secret for inbound
+	// providers like Calendly. Called by the dashboard to refresh the URL.
 	RotateInboundSecret(ctx context.Context, orgID, id uuid.UUID, provider models.IntegrationProvider) (string, error)
 
 	// MarkSynced is the call-site every per-provider implementation makes
-	// after a successful round-trip with the provider, so the dashboard's
-	// "last sync" stamp stays accurate.
+	// after a successful round-trip with the provider.
 	MarkSynced(ctx context.Context, id uuid.UUID, status models.IntegrationStatus, displayFields map[string]any, errMsg string) error
 
-	// Repo exposes the underlying repository so the per-provider files in
-	// this package and the HTTP handlers can persist provider-specific
-	// data (DMARC reports, Postmaster snapshots, bookings) without
-	// dragging the repo through every method signature.
+	// Repo exposes the underlying repository so the per-provider files and
+	// HTTP handlers can persist provider-specific data without dragging
+	// the repo through every method signature.
 	Repo() repository.IntegrationRepository
 }
 
@@ -71,21 +65,14 @@ func (s *service) Connect(ctx context.Context, orgID uuid.UUID, provider models.
 		label = string(provider)
 	}
 
-	// Per-provider config validation. We do not enforce required fields
-	// at the DB layer because OAuth flows finish in two steps: the first
-	// call seeds the row with status=pending, the OAuth callback fills
-	// the token. So validate only that the shape is plausible here.
-	displayFields, err := buildDisplayFields(provider, config)
-	if err != nil {
-		return nil, err
-	}
+	displayFields := buildDisplayFields(provider, config)
 
 	// For providers that POST inbound, mint a secret immediately so the
 	// dashboard can surface the URL on the same response.
 	var inboundSecret string
+	var err error
 	if provider == models.IntegrationCalendly ||
-		provider == models.IntegrationCalCom ||
-		provider == models.IntegrationDMARC {
+		provider == models.IntegrationCalCom {
 		inboundSecret, err = generateInboundSecret(provider)
 		if err != nil {
 			return nil, err
@@ -99,16 +86,18 @@ func (s *service) Connect(ctx context.Context, orgID uuid.UUID, provider models.
 
 	status := models.IntegrationStatusPending
 	switch provider {
-	case models.IntegrationCalendly, models.IntegrationCalCom, models.IntegrationDMARC:
-		// Inbound webhook providers are "connected" the moment the URL
-		// exists — the actual data arrives whenever the provider POSTs.
+	case models.IntegrationCalendly, models.IntegrationCalCom, models.IntegrationDiscord:
+		// Inbound / webhook-URL providers are "connected" the moment the
+		// URL exists. Data arrives whenever the provider POSTs.
 		status = models.IntegrationStatusConnected
-	case models.IntegrationCloudflare, models.IntegrationGoDaddy, models.IntegrationNamecheap,
-		models.IntegrationMicrosoftSNDS:
-		// API-key providers: if the user provided a token, mark connected
-		// optimistically and let the next round-trip downgrade to degraded
-		// if the token is bad.
+	default:
+		// API-key and OAuth providers: if the user provided the credential,
+		// mark connected optimistically. The next round-trip downgrades to
+		// degraded if the credential is bad.
 		if _, ok := config["api_token"]; ok {
+			status = models.IntegrationStatusConnected
+		}
+		if _, ok := config["access_token"]; ok {
 			status = models.IntegrationStatusConnected
 		}
 	}
@@ -157,8 +146,7 @@ func (s *service) MarkSynced(ctx context.Context, id uuid.UUID, status models.In
 	return s.repo.MarkConnectionSynced(ctx, id, status, df, errMsg)
 }
 
-// generateInboundSecret returns a 24-byte hex string. Long enough that
-// guessing is infeasible, short enough to keep the URL pasteable.
+// generateInboundSecret returns a 24-byte hex string.
 func generateInboundSecret(provider models.IntegrationProvider) (string, error) {
 	buf := make([]byte, 24)
 	if _, err := rand.Read(buf); err != nil {
@@ -170,8 +158,6 @@ func generateInboundSecret(provider models.IntegrationProvider) (string, error) 
 		prefix = "calendly"
 	case models.IntegrationCalCom:
 		prefix = "calcom"
-	case models.IntegrationDMARC:
-		prefix = "dmarc"
 	}
 	return prefix + "_" + hex.EncodeToString(buf), nil
 }
@@ -184,17 +170,12 @@ func BuildInboundURL(provider models.IntegrationProvider, secret string) string 
 		return "/api/v1/integrations/inbound/calendly/" + secret
 	case models.IntegrationCalCom:
 		return "/api/v1/integrations/inbound/cal-com/" + secret
-	case models.IntegrationDMARC:
-		return "/api/v1/integrations/inbound/dmarc/" + secret
 	}
 	return ""
 }
 
 // encodeConfig serializes the per-provider config map to JSON. The bytes
-// returned are what the persistence layer treats as the "encrypted blob"
-// — the real encryption envelope hook lives one layer up in the KMS
-// integration; for the first pass we accept the JSON-as-bytes shape and
-// keep encrypt/decrypt as a future swap-in.
+// returned are what the persistence layer treats as the "encrypted blob".
 func encodeConfig(config map[string]any) ([]byte, error) {
 	if len(config) == 0 {
 		return nil, nil
@@ -205,7 +186,7 @@ func encodeConfig(config map[string]any) ([]byte, error) {
 // buildDisplayFields extracts the public, non-secret bits of the config
 // that the dashboard surfaces next to a connection card. Anything not
 // listed here stays out of the API response.
-func buildDisplayFields(provider models.IntegrationProvider, config map[string]any) (map[string]any, error) {
+func buildDisplayFields(provider models.IntegrationProvider, config map[string]any) map[string]any {
 	df := map[string]any{}
 	switch provider {
 	case models.IntegrationCalendly, models.IntegrationCalCom:
@@ -219,28 +200,28 @@ func buildDisplayFields(provider models.IntegrationProvider, config map[string]a
 		if v, ok := config["sheet_title"]; ok {
 			df["sheet_title"] = v
 		}
-	case models.IntegrationGooglePostmaster:
-		if v, ok := config["domain"]; ok {
-			df["domain"] = v
+	case models.IntegrationHubSpot, models.IntegrationSalesforce, models.IntegrationPipedrive, models.IntegrationClose:
+		if v, ok := config["workspace"]; ok {
+			df["workspace"] = v
 		}
-	case models.IntegrationMicrosoftSNDS:
-		if v, ok := config["ip"]; ok {
-			df["ip"] = v
+		if v, ok := config["account_email"]; ok {
+			df["account_email"] = v
 		}
-	case models.IntegrationCloudflare:
-		if v, ok := config["zone_name"]; ok {
-			df["zone_name"] = v
+	case models.IntegrationSlack:
+		if v, ok := config["workspace"]; ok {
+			df["workspace"] = v
 		}
-		if _, ok := config["api_token"]; !ok {
-			return nil, errors.New("cloudflare connection requires an api_token")
+		if v, ok := config["channel"]; ok {
+			df["channel"] = v
 		}
-	case models.IntegrationGoDaddy, models.IntegrationNamecheap:
-		if v, ok := config["domain"]; ok {
-			df["domain"] = v
+	case models.IntegrationDiscord:
+		if v, ok := config["server"]; ok {
+			df["server"] = v
 		}
-		if _, ok := config["api_token"]; !ok {
-			return nil, errors.New("dns provider requires an api_token")
-		}
+	case models.IntegrationZapier, models.IntegrationMake, models.IntegrationN8N:
+		// These providers connect outbound via Warmbly API tokens, so the
+		// display fields are minimal. Users authenticate on the provider
+		// side using a Warmbly API key.
 	}
-	return df, nil
+	return df
 }

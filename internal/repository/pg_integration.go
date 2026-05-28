@@ -15,12 +15,8 @@ import (
 )
 
 // IntegrationRepository owns persistence for third-party integrations.
-//
-// One repo covers connections, DMARC reports, Postmaster snapshots, DNS
-// verifications, and meeting bookings — these are all sibling slices of
-// "integration data" and they share lifecycle (delete when an org is
-// deleted via the FK cascade). Splitting by domain noun didn't pay off
-// because handlers and the dashboard read across all five.
+// Connection rows store the encrypted config and inbound secret; meeting
+// bookings store Calendly/Cal.com conversion events.
 type IntegrationRepository interface {
 	// Connections
 	UpsertConnection(ctx context.Context, c *models.IntegrationConnection, configEncrypted []byte, inboundSecret string) error
@@ -29,18 +25,6 @@ type IntegrationRepository interface {
 	GetConnectionByInboundSecret(ctx context.Context, provider models.IntegrationProvider, secret string) (*models.IntegrationConnection, error)
 	DeleteConnection(ctx context.Context, orgID, id uuid.UUID) error
 	MarkConnectionSynced(ctx context.Context, id uuid.UUID, status models.IntegrationStatus, displayFields json.RawMessage, errMsg string) error
-
-	// DMARC
-	UpsertDMARCReport(ctx context.Context, report *models.DMARCReport) error
-	ListDMARCReports(ctx context.Context, orgID uuid.UUID, domain string, limit int) ([]models.DMARCReport, error)
-
-	// Postmaster
-	UpsertPostmasterSnapshot(ctx context.Context, snap *models.PostmasterSnapshot) error
-	ListPostmasterSnapshots(ctx context.Context, orgID uuid.UUID, source, target string, sinceDays int) ([]models.PostmasterSnapshot, error)
-
-	// DNS
-	InsertDNSVerification(ctx context.Context, v *models.DNSVerification) error
-	ListDNSVerifications(ctx context.Context, orgID uuid.UUID, limit int) ([]models.DNSVerification, error)
 
 	// Bookings
 	UpsertMeetingBooking(ctx context.Context, b *models.MeetingBooking) error
@@ -56,10 +40,9 @@ func NewIntegrationRepository(db *pgxpool.Pool) IntegrationRepository {
 }
 
 // UpsertConnection inserts a new connection or updates an existing
-// (org, provider, label) tuple. The encrypted config and inbound secret
-// are only written when non-nil/non-empty, so partial updates (e.g. the
-// DMARC ingest flow rotating just the inbound secret) don't blow away
-// the rest of the config.
+// (org, provider, label) tuple. Encrypted config and inbound secret are
+// only written when non-nil, so partial updates do not blow away the rest
+// of the config.
 func (r *integrationRepository) UpsertConnection(ctx context.Context, c *models.IntegrationConnection, configEncrypted []byte, inboundSecret string) error {
 	if c.ID == uuid.Nil {
 		c.ID = uuid.New()
@@ -87,7 +70,7 @@ func (r *integrationRepository) UpsertConnection(ctx context.Context, c *models.
 			updated_at = EXCLUDED.updated_at
 	`,
 		c.ID, c.OrganizationID, string(c.Provider), c.Label, string(c.Status),
-		nullIfEmptyStr(inboundSecret), nullIfEmptyStrBytes(configEncrypted), display, now,
+		nullIfEmptyStr(inboundSecret), nullIfEmptyBytes(configEncrypted), display, now,
 	)
 	return err
 }
@@ -99,7 +82,7 @@ func nullIfEmptyStr(s string) any {
 	return s
 }
 
-func nullIfEmptyStrBytes(b []byte) any {
+func nullIfEmptyBytes(b []byte) any {
 	if len(b) == 0 {
 		return nil
 	}
@@ -146,7 +129,7 @@ func (r *integrationRepository) GetConnection(ctx context.Context, orgID uuid.UU
 
 // GetConnectionByInboundSecret resolves the connection an incoming webhook
 // belongs to. Callers must validate the secret out-of-band (e.g. Calendly
-// signature) — this lookup is the org-routing step, not the auth step.
+// signature). This lookup is the org-routing step.
 func (r *integrationRepository) GetConnectionByInboundSecret(ctx context.Context, provider models.IntegrationProvider, secret string) (*models.IntegrationConnection, error) {
 	if secret == "" {
 		return nil, nil
@@ -217,241 +200,7 @@ func scanConnection(row scanner) (*models.IntegrationConnection, error) {
 	return &c, nil
 }
 
-// ─── DMARC ─────────────────────────────────────────────────────────────
-
-func (r *integrationRepository) UpsertDMARCReport(ctx context.Context, report *models.DMARCReport) error {
-	if report.ID == uuid.Nil {
-		report.ID = uuid.New()
-	}
-	tx, err := r.db.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx)
-
-	// Dedupe on (org, reporter, report_id). On conflict, return existing row.
-	var existingID uuid.UUID
-	err = tx.QueryRow(ctx, `
-		INSERT INTO dmarc_reports (
-			id, organization_id, domain, reporter_org, report_id,
-			range_start, range_end, total_messages, pass_messages, fail_messages,
-			raw_xml, created_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
-		ON CONFLICT (organization_id, reporter_org, report_id) DO UPDATE
-			SET total_messages = EXCLUDED.total_messages
-		RETURNING id
-	`,
-		report.ID, report.OrganizationID, report.Domain, report.ReporterOrg, report.ReportID,
-		report.RangeStart, report.RangeEnd, report.TotalMessages, report.PassMessages, report.FailMessages,
-		"",
-	).Scan(&existingID)
-	if err != nil {
-		return err
-	}
-	report.ID = existingID
-
-	// Clear and re-insert rows (idempotent for re-submissions).
-	if _, err := tx.Exec(ctx, `DELETE FROM dmarc_record_rows WHERE report_id = $1`, report.ID); err != nil {
-		return err
-	}
-	for _, row := range report.Rows {
-		if _, err := tx.Exec(ctx, `
-			INSERT INTO dmarc_record_rows (
-				report_id, source_ip, message_count, disposition,
-				spf_result, dkim_result, spf_domain, dkim_domain, header_from
-			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-		`,
-			report.ID, row.SourceIP, row.MessageCount, row.Disposition,
-			row.SPFResult, row.DKIMResult, row.SPFDomain, row.DKIMDomain, row.HeaderFrom,
-		); err != nil {
-			return err
-		}
-	}
-	return tx.Commit(ctx)
-}
-
-func (r *integrationRepository) ListDMARCReports(ctx context.Context, orgID uuid.UUID, domain string, limit int) ([]models.DMARCReport, error) {
-	if limit <= 0 {
-		limit = 50
-	}
-	var rows pgx.Rows
-	var err error
-	if domain == "" {
-		rows, err = r.db.Query(ctx, `
-			SELECT id, organization_id, domain, reporter_org, report_id,
-			       range_start, range_end, total_messages, pass_messages, fail_messages, created_at
-			FROM dmarc_reports
-			WHERE organization_id = $1
-			ORDER BY range_end DESC
-			LIMIT $2
-		`, orgID, limit)
-	} else {
-		rows, err = r.db.Query(ctx, `
-			SELECT id, organization_id, domain, reporter_org, report_id,
-			       range_start, range_end, total_messages, pass_messages, fail_messages, created_at
-			FROM dmarc_reports
-			WHERE organization_id = $1 AND domain = $2
-			ORDER BY range_end DESC
-			LIMIT $3
-		`, orgID, domain, limit)
-	}
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	out := []models.DMARCReport{}
-	for rows.Next() {
-		var rep models.DMARCReport
-		if err := rows.Scan(
-			&rep.ID, &rep.OrganizationID, &rep.Domain, &rep.ReporterOrg, &rep.ReportID,
-			&rep.RangeStart, &rep.RangeEnd, &rep.TotalMessages, &rep.PassMessages, &rep.FailMessages, &rep.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		out = append(out, rep)
-	}
-	return out, rows.Err()
-}
-
-// ─── Postmaster ────────────────────────────────────────────────────────
-
-func (r *integrationRepository) UpsertPostmasterSnapshot(ctx context.Context, s *models.PostmasterSnapshot) error {
-	raw := s.RawPayload
-	if len(raw) == 0 {
-		raw = json.RawMessage("{}")
-	}
-	_, err := r.db.Exec(ctx, `
-		INSERT INTO postmaster_snapshots (
-			organization_id, source, target, snapshot_date,
-			spam_rate_pct, inbox_placement_pct, domain_reputation, ip_reputation,
-			dkim_success_pct, spf_success_pct, dmarc_success_pct, raw_payload
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-		ON CONFLICT (organization_id, source, target, snapshot_date) DO UPDATE SET
-			spam_rate_pct = EXCLUDED.spam_rate_pct,
-			inbox_placement_pct = EXCLUDED.inbox_placement_pct,
-			domain_reputation = EXCLUDED.domain_reputation,
-			ip_reputation = EXCLUDED.ip_reputation,
-			dkim_success_pct = EXCLUDED.dkim_success_pct,
-			spf_success_pct = EXCLUDED.spf_success_pct,
-			dmarc_success_pct = EXCLUDED.dmarc_success_pct,
-			raw_payload = EXCLUDED.raw_payload
-	`,
-		s.OrganizationID, s.Source, s.Target, s.SnapshotDate,
-		s.SpamRatePct, s.InboxPlacementPct, s.DomainReputation, s.IPReputation,
-		s.DKIMSuccessPct, s.SPFSuccessPct, s.DMARCSuccessPct, raw,
-	)
-	return err
-}
-
-func (r *integrationRepository) ListPostmasterSnapshots(ctx context.Context, orgID uuid.UUID, source, target string, sinceDays int) ([]models.PostmasterSnapshot, error) {
-	if sinceDays <= 0 {
-		sinceDays = 30
-	}
-	rows, err := r.db.Query(ctx, `
-		SELECT id, organization_id, source, target, snapshot_date,
-		       spam_rate_pct, inbox_placement_pct, domain_reputation, ip_reputation,
-		       dkim_success_pct, spf_success_pct, dmarc_success_pct, created_at
-		FROM postmaster_snapshots
-		WHERE organization_id = $1
-		  AND ($2 = '' OR source = $2)
-		  AND ($3 = '' OR target = $3)
-		  AND snapshot_date >= CURRENT_DATE - $4::int
-		ORDER BY snapshot_date DESC
-	`, orgID, source, target, sinceDays)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	out := []models.PostmasterSnapshot{}
-	for rows.Next() {
-		var s models.PostmasterSnapshot
-		if err := rows.Scan(
-			&s.ID, &s.OrganizationID, &s.Source, &s.Target, &s.SnapshotDate,
-			&s.SpamRatePct, &s.InboxPlacementPct, &s.DomainReputation, &s.IPReputation,
-			&s.DKIMSuccessPct, &s.SPFSuccessPct, &s.DMARCSuccessPct, &s.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		out = append(out, s)
-	}
-	return out, rows.Err()
-}
-
-// ─── DNS verifications ─────────────────────────────────────────────────
-
-func (r *integrationRepository) InsertDNSVerification(ctx context.Context, v *models.DNSVerification) error {
-	if v.ID == uuid.Nil {
-		v.ID = uuid.New()
-	}
-	notes := v.Notes
-	if len(notes) == 0 {
-		notes = json.RawMessage("{}")
-	}
-	_, err := r.db.Exec(ctx, `
-		INSERT INTO dns_verifications (
-			id, organization_id, domain,
-			spf_record, spf_ok,
-			dkim_selector, dkim_record, dkim_ok,
-			dmarc_record, dmarc_ok,
-			tracking_cname, tracking_ok,
-			notes, checked_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
-	`,
-		v.ID, v.OrganizationID, v.Domain,
-		v.SPFRecord, v.SPFOK,
-		v.DKIMSelector, v.DKIMRecord, v.DKIMOK,
-		v.DMARCRecord, v.DMARCOK,
-		v.TrackingCNAME, v.TrackingOK,
-		notes,
-	)
-	return err
-}
-
-func (r *integrationRepository) ListDNSVerifications(ctx context.Context, orgID uuid.UUID, limit int) ([]models.DNSVerification, error) {
-	if limit <= 0 {
-		limit = 50
-	}
-	// Latest verification per domain. The window is a small enough N that
-	// DISTINCT ON in a subquery is cheaper than a CTE.
-	rows, err := r.db.Query(ctx, `
-		SELECT DISTINCT ON (domain)
-		       id, organization_id, domain,
-		       spf_record, spf_ok,
-		       dkim_selector, dkim_record, dkim_ok,
-		       dmarc_record, dmarc_ok,
-		       tracking_cname, tracking_ok,
-		       notes, checked_at
-		FROM dns_verifications
-		WHERE organization_id = $1
-		ORDER BY domain, checked_at DESC
-		LIMIT $2
-	`, orgID, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	out := []models.DNSVerification{}
-	for rows.Next() {
-		var v models.DNSVerification
-		if err := rows.Scan(
-			&v.ID, &v.OrganizationID, &v.Domain,
-			&v.SPFRecord, &v.SPFOK,
-			&v.DKIMSelector, &v.DKIMRecord, &v.DKIMOK,
-			&v.DMARCRecord, &v.DMARCOK,
-			&v.TrackingCNAME, &v.TrackingOK,
-			&v.Notes, &v.CheckedAt,
-		); err != nil {
-			return nil, err
-		}
-		out = append(out, v)
-	}
-	return out, rows.Err()
-}
-
-// ─── Meeting bookings ──────────────────────────────────────────────────
+// Meeting bookings
 
 func (r *integrationRepository) UpsertMeetingBooking(ctx context.Context, b *models.MeetingBooking) error {
 	if b.ID == uuid.Nil {

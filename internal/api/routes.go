@@ -32,11 +32,10 @@ func Run(
 	r.POST("/webhooks/github/releases", h.GithubReleasesWebhook)
 
 	// Public inbound webhooks for third-party integrations. Auth is the
-	// per-org secret embedded in the URL path — minted at connect time and
+	// per-org secret embedded in the URL path, minted at connect time and
 	// rotatable from the dashboard.
 	r.POST("/api/v1/integrations/inbound/calendly/:secret", h.InboundCalendly)
 	r.POST("/api/v1/integrations/inbound/cal-com/:secret", h.InboundCalCom)
-	r.POST("/api/v1/integrations/inbound/dmarc/:secret", h.InboundDMARC)
 
 	// Public OAuth-bouncer pages used by the mailbox onboarding popup.
 	// The provider redirects here; the page postMessages the code/state
@@ -333,14 +332,7 @@ func Run(
 			integrations.GET("/connections", h.ListIntegrationConnections)
 			integrations.POST("/connections", h.ConnectIntegration)
 			integrations.DELETE("/connections/:id", h.DisconnectIntegration)
-
-			integrations.GET("/dmarc/reports", h.ListDMARCReports)
-			integrations.GET("/postmaster/snapshots", h.ListPostmasterSnapshots)
 			integrations.GET("/bookings", h.ListMeetingBookings)
-
-			integrations.POST("/dns/verify", h.VerifyDNS)
-			integrations.GET("/dns/verifications", h.ListDNSVerifications)
-			integrations.POST("/dns/cloudflare/apply", h.ApplyCloudflareRecords)
 		}
 
 		// Warmup routing rules (org-scoped). Lets customers define
