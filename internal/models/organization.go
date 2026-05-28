@@ -197,3 +197,52 @@ type UpdateOrgOverridesRequest struct {
 	DailyCampaignLimit *int    `json:"daily_campaign_limit,omitempty"`
 	Notes              *string `json:"notes,omitempty"`
 }
+
+// LimitRequestStatus mirrors the postgres enum from migration 000046.
+type LimitRequestStatus string
+
+const (
+	LimitRequestStatusPending   LimitRequestStatus = "pending"
+	LimitRequestStatusApproved  LimitRequestStatus = "approved"
+	LimitRequestStatusRejected  LimitRequestStatus = "rejected"
+	LimitRequestStatusCancelled LimitRequestStatus = "cancelled"
+)
+
+// LimitIncreaseRequest is one row of the queue. Approving translates
+// the row into a write on organization_limit_overrides — same path the
+// admin override editor uses, so the audit story is unified.
+type LimitIncreaseRequest struct {
+	ID               uuid.UUID          `json:"id"`
+	OrganizationID   uuid.UUID          `json:"organization_id"`
+	Field            string             `json:"field"`
+	CurrentEffective int                `json:"current_effective"`
+	Requested        int                `json:"requested"`
+	Reason           string             `json:"reason"`
+	Status           LimitRequestStatus `json:"status"`
+	SubmittedBy      uuid.UUID          `json:"submitted_by"`
+	SubmittedAt      time.Time          `json:"submitted_at"`
+	ReviewedBy       *uuid.UUID         `json:"reviewed_by,omitempty"`
+	ReviewedAt       *time.Time         `json:"reviewed_at,omitempty"`
+	ReviewNotes      string             `json:"review_notes"`
+
+	// Joined data — populated by admin queries.
+	Organization    *Organization `json:"organization,omitempty"`
+	SubmittedByUser *User         `json:"submitted_by_user,omitempty"`
+}
+
+// CreateLimitIncreaseRequest is what the dashboard sends. Field must
+// match one of the OrganizationLimits keys; the service rejects unknown
+// fields and refuses Requested values that aren't strictly greater than
+// the current effective limit.
+type CreateLimitIncreaseRequest struct {
+	Field     string `json:"field" binding:"required"`
+	Requested int    `json:"requested" binding:"required,min=1"`
+	Reason    string `json:"reason" binding:"required,min=1,max=2000"`
+}
+
+// ReviewLimitRequestBody is what the admin sends to approve/reject. The
+// approve handler writes the corresponding override; reject just stamps
+// the row.
+type ReviewLimitRequestBody struct {
+	Notes string `json:"notes"`
+}

@@ -74,6 +74,16 @@ type OrganizationRepository interface {
 	// post-write row so callers get the authoritative timestamps back.
 	GetOrganizationLimitOverrides(ctx context.Context, orgID uuid.UUID) (*models.OrganizationLimitOverrides, error)
 	UpsertOrganizationLimitOverrides(ctx context.Context, orgID uuid.UUID, req *models.UpdateOrgOverridesRequest, grantedBy uuid.UUID) (*models.OrganizationLimitOverrides, error)
+
+	// Limit-increase requests. CreateLimitRequest enforces the partial
+	// unique index (one open request per (org, field)) by surfacing the
+	// pgx unique-violation error code. UpdateLimitRequestStatus stamps
+	// reviewer + timestamp atomically.
+	CreateLimitRequest(ctx context.Context, req *models.LimitIncreaseRequest) error
+	GetLimitRequest(ctx context.Context, id uuid.UUID) (*models.LimitIncreaseRequest, error)
+	ListLimitRequestsForOrg(ctx context.Context, orgID uuid.UUID) ([]models.LimitIncreaseRequest, error)
+	ListLimitRequestsForAdmin(ctx context.Context, status string, limit int) ([]models.LimitIncreaseRequest, error)
+	UpdateLimitRequestStatus(ctx context.Context, id uuid.UUID, status models.LimitRequestStatus, reviewedBy uuid.UUID, notes string) error
 }
 
 type organizationRepository struct {
@@ -905,4 +915,133 @@ func nullableInt(p *int) interface{} {
 		return nil
 	}
 	return *p
+}
+
+// CreateLimitRequest inserts a new limit-increase request row. The
+// (organization_id, field) WHERE status = 'pending' partial unique
+// index in migration 000046 makes duplicate-pending rejection a
+// constraint violation rather than a service-side query.
+func (r *organizationRepository) CreateLimitRequest(ctx context.Context, req *models.LimitIncreaseRequest) error {
+	const query = `
+		INSERT INTO limit_increase_requests
+			(id, organization_id, field, current_effective, requested,
+			 reason, status, submitted_by, submitted_at)
+		VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7, NOW())
+		RETURNING submitted_at`
+	return r.db.QueryRow(ctx, query,
+		req.ID, req.OrganizationID, req.Field, req.CurrentEffective, req.Requested,
+		req.Reason, req.SubmittedBy,
+	).Scan(&req.SubmittedAt)
+}
+
+func (r *organizationRepository) GetLimitRequest(ctx context.Context, id uuid.UUID) (*models.LimitIncreaseRequest, error) {
+	const query = `
+		SELECT id, organization_id, field, current_effective, requested,
+			reason, status, submitted_by, submitted_at,
+			reviewed_by, reviewed_at, review_notes
+		FROM limit_increase_requests
+		WHERE id = $1`
+	var lr models.LimitIncreaseRequest
+	err := r.db.QueryRow(ctx, query, id).Scan(
+		&lr.ID, &lr.OrganizationID, &lr.Field, &lr.CurrentEffective, &lr.Requested,
+		&lr.Reason, &lr.Status, &lr.SubmittedBy, &lr.SubmittedAt,
+		&lr.ReviewedBy, &lr.ReviewedAt, &lr.ReviewNotes,
+	)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &lr, nil
+}
+
+func (r *organizationRepository) ListLimitRequestsForOrg(ctx context.Context, orgID uuid.UUID) ([]models.LimitIncreaseRequest, error) {
+	const query = `
+		SELECT id, organization_id, field, current_effective, requested,
+			reason, status, submitted_by, submitted_at,
+			reviewed_by, reviewed_at, review_notes
+		FROM limit_increase_requests
+		WHERE organization_id = $1
+		ORDER BY submitted_at DESC`
+	rows, err := r.db.Query(ctx, query, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []models.LimitIncreaseRequest{}
+	for rows.Next() {
+		var lr models.LimitIncreaseRequest
+		if err := rows.Scan(
+			&lr.ID, &lr.OrganizationID, &lr.Field, &lr.CurrentEffective, &lr.Requested,
+			&lr.Reason, &lr.Status, &lr.SubmittedBy, &lr.SubmittedAt,
+			&lr.ReviewedBy, &lr.ReviewedAt, &lr.ReviewNotes,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, lr)
+	}
+	return out, nil
+}
+
+// ListLimitRequestsForAdmin joins org + submitter so the admin queue can
+// show context per row without an extra fan-out fetch.
+func (r *organizationRepository) ListLimitRequestsForAdmin(ctx context.Context, status string, limit int) ([]models.LimitIncreaseRequest, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	args := []interface{}{}
+	where := "WHERE 1=1"
+	if status != "" && status != "all" {
+		where += " AND lr.status = $1"
+		args = append(args, status)
+	}
+	args = append(args, limit)
+	limitParam := "$" + itoa(len(args))
+
+	query := `
+		SELECT lr.id, lr.organization_id, lr.field, lr.current_effective, lr.requested,
+			lr.reason, lr.status, lr.submitted_by, lr.submitted_at,
+			lr.reviewed_by, lr.reviewed_at, lr.review_notes,
+			o.id, o.name, o.slug, o.owner_user_id, o.created_at, o.updated_at,
+			u.id, u.first_name, u.last_name, u.email, u.created_at, u.updated_at
+		FROM limit_increase_requests lr
+		JOIN organizations o ON o.id = lr.organization_id
+		JOIN users u ON u.id = lr.submitted_by
+		` + where + `
+		ORDER BY lr.submitted_at DESC
+		LIMIT ` + limitParam
+	rows, err := r.db.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []models.LimitIncreaseRequest{}
+	for rows.Next() {
+		var lr models.LimitIncreaseRequest
+		var org models.Organization
+		var user models.User
+		if err := rows.Scan(
+			&lr.ID, &lr.OrganizationID, &lr.Field, &lr.CurrentEffective, &lr.Requested,
+			&lr.Reason, &lr.Status, &lr.SubmittedBy, &lr.SubmittedAt,
+			&lr.ReviewedBy, &lr.ReviewedAt, &lr.ReviewNotes,
+			&org.ID, &org.Name, &org.Slug, &org.OwnerUserID, &org.CreatedAt, &org.UpdatedAt,
+			&user.ID, &user.FirstName, &user.LastName, &user.Email, &user.CreatedAt, &user.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		lr.Organization = &org
+		lr.SubmittedByUser = &user
+		out = append(out, lr)
+	}
+	return out, nil
+}
+
+func (r *organizationRepository) UpdateLimitRequestStatus(ctx context.Context, id uuid.UUID, status models.LimitRequestStatus, reviewedBy uuid.UUID, notes string) error {
+	const query = `
+		UPDATE limit_increase_requests
+		SET status = $2, reviewed_by = $3, reviewed_at = NOW(), review_notes = $4
+		WHERE id = $1`
+	_, err := r.db.Exec(ctx, query, id, status, reviewedBy, notes)
+	return err
 }
