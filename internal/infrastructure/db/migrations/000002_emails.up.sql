@@ -237,13 +237,6 @@ CREATE TABLE campaign_folders (
     FOREIGN KEY (folder_id) REFERENCES folders(id) ON DELETE CASCADE
 );
 
-CREATE TABLE contact_categories (
-    contact_id UUID NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
-    category_id UUID NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
-    PRIMARY KEY (contact_id, category_id)
-);
-CREATE INDEX idx_contact_categories_cat ON contact_categories(category_id);
-
 -- Reply templates (org-scoped)
 CREATE TABLE reply_templates (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

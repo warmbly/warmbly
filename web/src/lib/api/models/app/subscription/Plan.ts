@@ -2,6 +2,8 @@ export default interface Plan {
     id: string
     name: string
     description?: string
+    // Present when the plan is wired to a Stripe price (used for in-app checkout).
+    stripe_price_id?: string | null
     price_monthly: number
     price_yearly: number
     limits: {

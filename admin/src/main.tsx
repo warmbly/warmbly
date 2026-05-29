@@ -41,6 +41,7 @@ import WarmupPage from "@/app/dashboard/WarmupPage";
 import CampaignsPage from "@/app/dashboard/CampaignsPage";
 import EnterprisePage from "@/app/dashboard/EnterprisePage";
 import PlansPage from "@/app/dashboard/PlansPage";
+import DiscountsPage from "@/app/dashboard/DiscountsPage";
 import LimitRequestsPage from "@/app/dashboard/LimitRequestsPage";
 import OutreachPage from "@/app/dashboard/OutreachPage";
 import AnalyticsPage from "@/app/dashboard/AnalyticsPage";
@@ -90,6 +91,7 @@ const router = createBrowserRouter([
                     { path: "organizations", element: <OrganizationsPage /> },
                     { path: "organizations/:id", element: <OrganizationDetailPage /> },
                     { path: "plans", element: <PlansPage /> },
+                    { path: "discounts", element: <DiscountsPage /> },
                     { path: "warmup", element: <WarmupPage /> },
                     { path: "campaigns", element: <CampaignsPage /> },
                     { path: "enterprise", element: <EnterprisePage /> },

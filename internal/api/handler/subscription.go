@@ -72,16 +72,17 @@ func (h *Handler) CreateCheckoutSession(c *gin.Context) {
 	}
 
 	var req struct {
-		PriceID    string `json:"price_id" binding:"required"`
-		SuccessURL string `json:"success_url" binding:"required"`
-		CancelURL  string `json:"cancel_url" binding:"required"`
+		PriceID      string `json:"price_id" binding:"required"`
+		SuccessURL   string `json:"success_url" binding:"required"`
+		CancelURL    string `json:"cancel_url" binding:"required"`
+		DiscountCode string `json:"discount_code"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		errx.JSON(c, errx.New(errx.BadRequest, "invalid request body"))
 		return
 	}
 
-	session, errX := h.StripeService.CreateCheckoutSession(c.Request.Context(), uid, *orgID, req.PriceID, req.SuccessURL, req.CancelURL)
+	session, errX := h.StripeService.CreateCheckoutSession(c.Request.Context(), uid, *orgID, req.PriceID, req.SuccessURL, req.CancelURL, req.DiscountCode)
 	if errX != nil {
 		errx.JSON(c, errX)
 		return
@@ -255,13 +256,14 @@ func (h *Handler) ChangePlan(c *gin.Context) {
 	var req struct {
 		PlanID            uuid.UUID `json:"plan_id" binding:"required"`
 		ProrationBehavior string    `json:"proration_behavior"` // "create_prorations", "always_invoice", "none"
+		DiscountCode      string    `json:"discount_code"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		errx.JSON(c, errx.New(errx.BadRequest, "invalid request body"))
 		return
 	}
 
-	updated, errX := h.StripeService.ChangePlan(c.Request.Context(), *orgID, req.PlanID, req.ProrationBehavior)
+	updated, errX := h.StripeService.ChangePlan(c.Request.Context(), *orgID, req.PlanID, req.ProrationBehavior, req.DiscountCode)
 	if errX != nil {
 		errx.JSON(c, errX)
 		return

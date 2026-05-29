@@ -28,6 +28,7 @@ import {
     Send,
     Server,
     ServerCog,
+    Ticket,
     Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -69,6 +70,7 @@ const GROUPS: NavGroup[] = [
             { to: "/organizations", label: "Organizations", icon: Building2 },
             { to: "/limit-requests", label: "Limit requests", icon: Gauge },
             { to: "/plans", label: "Plans & Billing", icon: CreditCard },
+            { to: "/discounts", label: "Discounts", icon: Ticket },
             { to: "/enterprise", label: "Enterprise", icon: Briefcase },
             { to: "/outreach", label: "Outreach", icon: Send },
         ],

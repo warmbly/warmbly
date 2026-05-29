@@ -5,7 +5,7 @@ import AuthButton from "@/components/auth/button";
 import { useResetPasswordConfirmForm } from "../../hooks/useResetPasswordConfirmForm";
 import { AlertTriangle } from "lucide-react";
 
-const INPUT = "w-full h-11 rounded-lg border border-sky-200 bg-white px-4 text-[15px] text-slate-800 placeholder:text-slate-300 outline-none transition-colors duration-200 focus:border-sky-400 focus:ring-4 focus:ring-sky-400/15";
+const INPUT = "w-full h-11 rounded-lg border border-slate-200 bg-white px-4 text-[15px] text-slate-900 placeholder:text-slate-400 outline-none transition-colors duration-200 focus:border-sky-400 focus:ring-4 focus:ring-sky-400/15";
 
 const strengthConfig = [
     { label: "Weak", color: "bg-red-400", width: "25%" },
@@ -25,7 +25,7 @@ export default function ResetPasswordConfirmPage() {
                     <AlertTriangle className="w-7 h-7 text-rose-500" />
                 </div>
                 <div>
-                    <h2 className="font-serif text-[28px] text-slate-800 tracking-tight">Link expired</h2>
+                    <h2 className="text-[24px] font-bold text-slate-900 tracking-tight">Link expired</h2>
                     <p className="text-sm text-slate-400 mt-1.5">This password reset link is no longer valid.</p>
                 </div>
                 <Link
@@ -41,7 +41,7 @@ export default function ResetPasswordConfirmPage() {
     return (
         <div className="space-y-6">
             <div className="text-center">
-                <h1 className="font-serif text-[32px] text-slate-800 tracking-tight leading-tight">New password</h1>
+                <h1 className="text-[28px] font-bold text-slate-900 tracking-tight leading-tight">New password</h1>
                 <p className="text-sm text-slate-400 mt-1.5">Choose a strong password for your account</p>
             </div>
 

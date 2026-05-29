@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/getsentry/sentry-go"
@@ -12,10 +13,12 @@ import (
 	"github.com/stripe/stripe-go/v76"
 	portalsession "github.com/stripe/stripe-go/v76/billingportal/session"
 	"github.com/stripe/stripe-go/v76/checkout/session"
+	"github.com/stripe/stripe-go/v76/coupon"
 	"github.com/stripe/stripe-go/v76/customer"
 	"github.com/stripe/stripe-go/v76/invoice"
 	"github.com/stripe/stripe-go/v76/subscription"
 	"github.com/stripe/stripe-go/v76/webhook"
+	"github.com/warmbly/warmbly/internal/app/discount"
 	"github.com/warmbly/warmbly/internal/app/worker"
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
@@ -38,16 +41,17 @@ type StripeService interface {
 	CreateCustomer(ctx context.Context, userID uuid.UUID, email, name string) (string, *errx.Error)
 	GetCustomer(ctx context.Context, customerID string) (*stripe.Customer, *errx.Error)
 
-	// Checkout
-	CreateCheckoutSession(ctx context.Context, userID uuid.UUID, orgID uuid.UUID, priceID, successURL, cancelURL string) (*stripe.CheckoutSession, *errx.Error)
+	// Checkout. discountCode is optional ("" for none); when set, a one-off
+	// Stripe coupon (money discounts) or trial extension is applied.
+	CreateCheckoutSession(ctx context.Context, userID uuid.UUID, orgID uuid.UUID, priceID, successURL, cancelURL, discountCode string) (*stripe.CheckoutSession, *errx.Error)
 	CreatePortalSession(ctx context.Context, customerID, returnURL string) (string, *errx.Error)
 
 	// Subscriptions
 	GetSubscription(ctx context.Context, subscriptionID string) (*stripe.Subscription, *errx.Error)
 	CancelSubscription(ctx context.Context, subscriptionID string, cancelAtPeriodEnd bool) *errx.Error
 
-	// Plan changes with proration
-	ChangePlan(ctx context.Context, orgID uuid.UUID, newPlanID uuid.UUID, prorationBehavior string) (*stripe.Subscription, *errx.Error)
+	// Plan changes with proration. discountCode is optional ("" for none).
+	ChangePlan(ctx context.Context, orgID uuid.UUID, newPlanID uuid.UUID, prorationBehavior, discountCode string) (*stripe.Subscription, *errx.Error)
 	PreviewPlanChange(ctx context.Context, orgID uuid.UUID, newPlanID uuid.UUID) (*ProrationPreview, *errx.Error)
 
 	// Webhooks
@@ -60,6 +64,7 @@ type stripeService struct {
 	subRepo          repository.SubscriptionRepository
 	planRepo         repository.PlanRepository
 	workerAssignment worker.WorkerAssignmentService
+	discountService  discount.DiscountService
 }
 
 func NewService(
@@ -67,6 +72,7 @@ func NewService(
 	subRepo repository.SubscriptionRepository,
 	planRepo repository.PlanRepository,
 	workerAssignment worker.WorkerAssignmentService,
+	discountService discount.DiscountService,
 ) StripeService {
 	stripe.Key = cfg.SecretKey
 	return &stripeService{
@@ -74,6 +80,7 @@ func NewService(
 		subRepo:          subRepo,
 		planRepo:         planRepo,
 		workerAssignment: workerAssignment,
+		discountService:  discountService,
 	}
 }
 
@@ -103,7 +110,7 @@ func (s *stripeService) GetCustomer(ctx context.Context, customerID string) (*st
 	return cust, nil
 }
 
-func (s *stripeService) CreateCheckoutSession(ctx context.Context, userID uuid.UUID, orgID uuid.UUID, priceID, successURL, cancelURL string) (*stripe.CheckoutSession, *errx.Error) {
+func (s *stripeService) CreateCheckoutSession(ctx context.Context, userID uuid.UUID, orgID uuid.UUID, priceID, successURL, cancelURL, discountCode string) (*stripe.CheckoutSession, *errx.Error) {
 	// Get or create customer
 	sub, err := s.subRepo.GetByOrganizationID(ctx, orgID)
 	if err != nil {
@@ -143,13 +150,110 @@ func (s *stripeService) CreateCheckoutSession(ctx context.Context, userID uuid.U
 		params.CustomerCreation = stripe.String("always")
 	}
 
+	// Resolve and attach a discount code, if supplied. The code is validated
+	// against the plan the chosen price belongs to; money discounts mint a
+	// one-off Stripe coupon, trial extensions add trial days.
+	var (
+		couponID   *string
+		reservedID *uuid.UUID
+	)
+	if discountCode != "" && s.discountService != nil {
+		plan, perr := s.planRepo.GetByStripePriceID(ctx, priceID)
+		if perr != nil {
+			return nil, errx.New(errx.Internal, "failed to resolve plan for price")
+		}
+		if plan == nil {
+			return nil, errx.New(errx.BadRequest, "plan not found for price")
+		}
+
+		dc, xerr := s.discountService.ValidateForCheckout(ctx, orgID, discountCode, plan.ID)
+		if xerr != nil {
+			return nil, xerr
+		}
+
+		// Reserve the cap slot BEFORE minting any coupon. This keeps cap
+		// accounting exact and prevents an orphaned coupon or an untracked
+		// discount if the reservation fails (cap race or DB error).
+		redeemedBy := userID
+		redID, xerr := s.discountService.ReservePendingRedemption(ctx, dc, orgID, &redeemedBy, &plan.ID)
+		if xerr != nil {
+			return nil, xerr
+		}
+		reservedID = &redID
+
+		if dc.Type.IsMoney() {
+			cid, xerr := s.mintCoupon(dc)
+			if xerr != nil {
+				_ = s.discountService.CancelRedemptionByID(ctx, redID)
+				return nil, xerr
+			}
+			couponID = &cid
+			params.Discounts = []*stripe.CheckoutSessionDiscountParams{{Coupon: stripe.String(cid)}}
+		} else {
+			params.SubscriptionData.TrialPeriodDays = stripe.Int64(int64(*dc.TrialExtensionDays))
+		}
+		params.Metadata["discount_code_id"] = dc.ID.String()
+		params.SubscriptionData.Metadata["discount_code_id"] = dc.ID.String()
+	}
+
 	sess, err := session.New(params)
 	if err != nil {
+		if reservedID != nil {
+			_ = s.discountService.CancelRedemptionByID(ctx, *reservedID)
+		}
 		sentry.CaptureException(fmt.Errorf("stripe checkout session failed: %w", err))
 		return nil, errx.New(errx.Internal, "failed to create checkout session")
 	}
 
+	// Link the reserved redemption to the session + coupon. It flips to applied
+	// on checkout.session.completed (idempotent), or is released on
+	// checkout.session.expired.
+	if reservedID != nil {
+		if xerr := s.discountService.AttachRedemptionStripe(ctx, *reservedID, &sess.ID, couponID); xerr != nil {
+			sentry.CaptureException(fmt.Errorf("attach discount redemption refs failed: %s", xerr.Message))
+		}
+	}
+
 	return sess, nil
+}
+
+// mintCoupon creates a one-off Stripe coupon for a money discount code.
+func (s *stripeService) mintCoupon(dc *models.DiscountCode) (string, *errx.Error) {
+	params := &stripe.CouponParams{
+		Name:           stripe.String(dc.Code),
+		MaxRedemptions: stripe.Int64(1),
+	}
+
+	switch dc.Duration {
+	case models.DiscountDurationForever:
+		params.Duration = stripe.String(string(stripe.CouponDurationForever))
+	case models.DiscountDurationRepeating:
+		params.Duration = stripe.String(string(stripe.CouponDurationRepeating))
+		if dc.DurationInMonths != nil {
+			params.DurationInMonths = stripe.Int64(int64(*dc.DurationInMonths))
+		}
+	default:
+		params.Duration = stripe.String(string(stripe.CouponDurationOnce))
+	}
+
+	switch dc.Type {
+	case models.DiscountTypePercent:
+		if dc.PercentOff != nil {
+			params.PercentOff = stripe.Float64(float64(*dc.PercentOff))
+		}
+	case models.DiscountTypeFixed:
+		if dc.AmountOff != nil && dc.Currency != nil {
+			params.AmountOff = stripe.Int64(int64(math.Round(*dc.AmountOff * 100)))
+			params.Currency = stripe.String(*dc.Currency)
+		}
+	}
+
+	c, err := coupon.New(params)
+	if err != nil {
+		sentry.CaptureException(fmt.Errorf("stripe coupon creation failed: %w", err))
+		return "", errx.New(errx.Internal, "failed to apply discount")
+	}
+	return c.ID, nil
 }
 
 func (s *stripeService) CreatePortalSession(ctx context.Context, customerID, returnURL string) (string, *errx.Error) {
@@ -190,7 +294,7 @@ func (s *stripeService) CancelSubscription(ctx context.Context, subscriptionID s
 }
 
 // ChangePlan changes the organization's subscription to a new plan with proration
-func (s *stripeService) ChangePlan(ctx context.Context, orgID uuid.UUID, newPlanID uuid.UUID, prorationBehavior string) (*stripe.Subscription, *errx.Error) {
+func (s *stripeService) ChangePlan(ctx context.Context, orgID uuid.UUID, newPlanID uuid.UUID, prorationBehavior, discountCode string) (*stripe.Subscription, *errx.Error) {
 	sub, err := s.subRepo.GetByOrganizationID(ctx, orgID)
 	if err != nil {
 		return nil, errx.New(errx.Internal, "failed to get subscription")
@@ -205,6 +309,20 @@ func (s *stripeService) ChangePlan(ctx context.Context, orgID uuid.UUID, newPlan
 	}
 	if newPlan.StripePriceID == nil {
 		return nil, errx.New(errx.BadRequest, "plan has no Stripe price")
+	}
+
+	// Validate a discount code (if supplied) up front. Only money discounts can
+	// apply to a mid-subscription plan change; trial extensions can't.
+	var resolved *models.DiscountCode
+	if discountCode != "" && s.discountService != nil {
+		dc, xerr := s.discountService.ValidateForCheckout(ctx, orgID, discountCode, newPlanID)
+		if xerr != nil {
+			return nil, xerr
+		}
+		if !dc.Type.IsMoney() {
+			return nil, errx.New(errx.BadRequest, "this discount code can only be applied at checkout, not to a plan change")
+		}
+		resolved = dc
 	}
 
 	// Get current subscription from Stripe
@@ -224,6 +342,28 @@ func (s *stripeService) ChangePlan(ctx context.Context, orgID uuid.UUID, newPlan
 		prorationBehavior = "create_prorations"
 	}
 
+	// Reserve the cap slot and mint the coupon only after all read-only checks
+	// pass, so a failure can't leave an orphaned coupon or an untracked discount.
+	var (
+		couponID   *string
+		reservedID *uuid.UUID
+	)
+	if resolved != nil {
+		planID := newPlanID
+		subID := sub.ID
+		redID, rerr := s.discountService.ReserveAppliedRedemption(ctx, resolved, orgID, &sub.UserID, &planID, &subID)
+		if rerr != nil {
+			return nil, rerr
+		}
+		reservedID = &redID
+		cid, cerr := s.mintCoupon(resolved)
+		if cerr != nil {
+			_ = s.discountService.CancelRedemptionByID(ctx, redID)
+			return nil, cerr
+		}
+		couponID = &cid
+	}
+
 	params := &stripe.SubscriptionParams{
 		Items: []*stripe.SubscriptionItemsParams{
 			{
@@ -233,10 +373,24 @@ func (s *stripeService) ChangePlan(ctx context.Context, orgID uuid.UUID, newPlan
 		},
 		ProrationBehavior: stripe.String(prorationBehavior),
 	}
+	if couponID != nil {
+		params.Coupon = stripe.String(*couponID)
+	}
 
 	updated, stripeErr := subscription.Update(*sub.StripeSubscriptionID, params)
 	if stripeErr != nil {
+		if reservedID != nil {
+			_ = s.discountService.CancelRedemptionByID(ctx, *reservedID)
+		}
 		return nil, errx.New(errx.Internal, fmt.Sprintf("failed to update subscription: %v", stripeErr))
+	}
+
+	// Link the applied redemption to the minted coupon (no checkout session for
+	// a direct plan change). Best-effort: the discount is already live.
+	if reservedID != nil {
+		if xerr := s.discountService.AttachRedemptionStripe(ctx, *reservedID, nil, couponID); xerr != nil {
+			sentry.CaptureException(fmt.Errorf("attach discount redemption refs failed: %s", xerr.Message))
+		}
 	}
 
 	return updated, nil
@@ -333,6 +487,8 @@ func (s *stripeService) ProcessWebhookEvent(ctx context.Context, event *stripe.E
 	switch event.Type {
 	case "checkout.session.completed":
 		processErr = s.handleCheckoutCompleted(ctx, event)
+	case "checkout.session.expired":
+		processErr = s.handleCheckoutExpired(ctx, event)
 	case "customer.subscription.created":
 		processErr = s.handleSubscriptionCreated(ctx, event)
 	case "customer.subscription.updated":
@@ -431,6 +587,7 @@ func (s *stripeService) handleCheckoutCompleted(ctx context.Context, event *stri
 		if err := s.subRepo.Create(ctx, newSub); err != nil {
 			return errx.New(errx.Internal, "failed to create subscription")
 		}
+		sub = newSub
 	} else {
 		// Update existing
 		if checkoutSession.Customer != nil {
@@ -444,6 +601,34 @@ func (s *stripeService) handleCheckoutCompleted(ctx context.Context, event *stri
 		}
 	}
 
+	// If a discount code rode along on this checkout, flip its reservation to
+	// applied. Idempotent: Stripe may retry the webhook.
+	if codeID, ok := checkoutSession.Metadata["discount_code_id"]; ok && codeID != "" && s.discountService != nil {
+		var subID *uuid.UUID
+		if sub != nil {
+			subID = &sub.ID
+		}
+		if xerr := s.discountService.MarkRedemptionApplied(ctx, checkoutSession.ID, subID); xerr != nil {
+			sentry.CaptureException(fmt.Errorf("mark discount redemption applied failed: %s", xerr.Message))
+		}
+	}
+
+	return nil
+}
+
+// handleCheckoutExpired releases a pending discount reservation when its
+// checkout session expires without completing, so the redemption slot is freed.
+func (s *stripeService) handleCheckoutExpired(ctx context.Context, event *stripe.Event) *errx.Error {
+	var checkoutSession stripe.CheckoutSession
+	if err := json.Unmarshal(event.Data.Raw, &checkoutSession); err != nil {
+		return errx.New(errx.Internal, "failed to parse checkout session")
+	}
+	if s.discountService == nil {
+		return nil
+	}
+	if codeID, ok := checkoutSession.Metadata["discount_code_id"]; ok && codeID != "" {
+		return s.discountService.CancelRedemption(ctx, checkoutSession.ID)
+	}
 	return nil
 }
 

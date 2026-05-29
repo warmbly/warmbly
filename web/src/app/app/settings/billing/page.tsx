@@ -14,6 +14,8 @@ import {
     Loader2Icon,
     LockIcon,
     SparklesIcon,
+    TicketIcon,
+    XIcon,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import toast from "react-hot-toast";
@@ -21,9 +23,16 @@ import { TopbarAction } from "@/components/layout/Page";
 import useFeatureAccess from "@/hooks/useFeatureAccess";
 import useSubscription from "@/lib/api/hooks/app/subscription/useSubscription";
 import useCreatePortalSession from "@/lib/api/hooks/app/subscription/useCreatePortalSession";
+import useValidateDiscountCode from "@/lib/api/hooks/app/subscription/useValidateDiscountCode";
+import useCreateCheckoutSession from "@/lib/api/hooks/app/subscription/useCreateCheckoutSession";
+import useChangePlan from "@/lib/api/hooks/app/subscription/useChangePlan";
+import usePlans from "@/lib/api/hooks/app/subscription/usePlans";
 import { useAppStore } from "@/stores";
 import type { AppError } from "@/lib/api/client/normalizeError";
+import type DiscountPreview from "@/lib/api/models/app/subscription/DiscountPreview";
+import type ServerPlan from "@/lib/api/models/app/subscription/Plan";
 import buildError from "@/lib/helper/buildError";
+import { TextInput } from "@/components/ui/field";
 import { Row, Section, SectionShell } from "../_components/SectionShell";
 import { PLAN_ACCENT_CLASSES, PAID_PLANS, getPlan, type PlanID } from "@/lib/plans";
 
@@ -32,6 +41,12 @@ export default function BillingSettingsPage() {
     const sub = useSubscription();
     const portal = useCreatePortalSession();
     const currentOrg = useAppStore((s) => s.currentOrganization);
+    const validateCode = useValidateDiscountCode();
+    const checkout = useCreateCheckoutSession();
+    const changePlan = useChangePlan();
+    const plansQuery = usePlans();
+    const [codeInput, setCodeInput] = React.useState("");
+    const [applied, setApplied] = React.useState<DiscountPreview | null>(null);
 
     if (!access.loading && !access.isOwner) {
         return (
@@ -74,6 +89,90 @@ export default function BillingSettingsPage() {
             window.location.assign(url);
         } catch {
             /* surfaced */
+        }
+    }
+
+    async function applyCode() {
+        const code = codeInput.trim();
+        if (!code) return;
+        try {
+            const res = await validateCode.mutateAsync({ code });
+            if (res.valid) {
+                setApplied(res);
+                toast.success("Promo code applied");
+            } else {
+                setApplied(null);
+                toast.error(res.reason || "That code can't be applied");
+            }
+        } catch (e) {
+            toast.error(buildError(e as AppError));
+        }
+    }
+
+    function clearCode() {
+        setApplied(null);
+        setCodeInput("");
+    }
+
+    // Resolve a marketing-catalog plan (e.g. "grow") to the server Plan record
+    // so we can read its Stripe price ID / UUID. Matches by name; returns
+    // undefined when the server has no matching public plan configured.
+    function resolveServerPlan(catalogId: PlanID): ServerPlan | undefined {
+        const label = getPlan(catalogId).label.toLowerCase().trim();
+        const plans = (plansQuery.data ?? []) as ServerPlan[];
+        return plans.find((p) => {
+            const n = (p.name ?? "").toLowerCase().trim();
+            return n === label || n.startsWith(label);
+        });
+    }
+
+    // Upgrade/switch to a plan. When a valid promo code is applied it rides
+    // along to Stripe: new subscriptions go through in-app Checkout, existing
+    // paid subscriptions change plan directly. Falls back to the Stripe portal
+    // when the target plan can't be resolved to a configured Stripe price.
+    async function upgrade(catalogId: PlanID) {
+        if (catalogId === "enterprise") {
+            openPortal();
+            return;
+        }
+        const code = applied?.valid ? applied.code : undefined;
+        const target = resolveServerPlan(catalogId);
+        const onPaid = currentPlan.id !== "free";
+
+        if (!target || (!onPaid && !target.stripe_price_id)) {
+            openPortal();
+            return;
+        }
+
+        try {
+            if (onPaid) {
+                await toast.promise(
+                    changePlan.mutateAsync({ plan_id: target.id, discount_code: code }),
+                    {
+                        loading: "Updating your plan…",
+                        success: "Plan updated",
+                        error: (e: AppError) => buildError(e),
+                    },
+                );
+            } else {
+                const base = `${window.location.origin}/app/settings/billing`;
+                const { checkout_url } = await toast.promise(
+                    checkout.mutateAsync({
+                        price_id: target.stripe_price_id as string,
+                        success_url: `${base}?checkout=success`,
+                        cancel_url: `${base}?checkout=cancel`,
+                        discount_code: code,
+                    }),
+                    {
+                        loading: "Starting checkout…",
+                        success: "Redirecting to checkout…",
+                        error: (e: AppError) => buildError(e),
+                    },
+                );
+                window.location.assign(checkout_url);
+            }
+        } catch {
+            /* surfaced via toast */
         }
     }
 
@@ -145,12 +244,75 @@ export default function BillingSettingsPage() {
             </Section>
 
             <Section
+                eyebrow="Promo code"
+                description="Have a discount code? Apply it to preview your price. It's applied at checkout."
+            >
+                <Row
+                    label="Discount code"
+                    description="We validate the code against your workspace and the plan you pick."
+                    align="start"
+                >
+                    <div className="flex flex-col items-stretch gap-2 sm:items-end">
+                        <div className="flex items-center gap-2">
+                            <TextInput
+                                value={codeInput}
+                                onChange={(v) => setCodeInput(v.toUpperCase())}
+                                placeholder="WELCOME10"
+                                disabled={!!applied}
+                                onKeyDown={(e) => {
+                                    if (e.key === "Enter") applyCode();
+                                }}
+                                className="w-[180px] font-mono uppercase"
+                            />
+                            {applied ? (
+                                <button
+                                    type="button"
+                                    onClick={clearCode}
+                                    className="h-7 px-2.5 rounded-md border border-slate-200 hover:border-slate-300 text-[12px] text-slate-700 hover:text-slate-900 transition-colors inline-flex items-center gap-1 shrink-0"
+                                >
+                                    <XIcon className="w-3 h-3" />
+                                    Clear
+                                </button>
+                            ) : (
+                                <button
+                                    type="button"
+                                    onClick={applyCode}
+                                    disabled={validateCode.isPending || !codeInput.trim()}
+                                    className="h-7 px-3 rounded-md bg-slate-900 hover:bg-slate-800 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors disabled:opacity-50 shrink-0"
+                                >
+                                    {validateCode.isPending ? (
+                                        <Loader2Icon className="w-3 h-3 animate-spin" />
+                                    ) : (
+                                        <TicketIcon className="w-3 h-3" />
+                                    )}
+                                    Apply
+                                </button>
+                            )}
+                        </div>
+                        {applied && (
+                            <div className="text-[11.5px] text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-md px-2 py-1 inline-flex items-center gap-1.5">
+                                <CheckIcon className="w-3 h-3 shrink-0" />
+                                <span className="font-mono font-medium">{applied.code}</span>
+                                <span>· {describeDiscount(applied)}</span>
+                            </div>
+                        )}
+                    </div>
+                </Row>
+            </Section>
+
+            <Section
                 eyebrow="Compare plans"
                 description="Same lineup as the public pricing page."
             >
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
                     {PAID_PLANS.map((id) => (
-                        <PlanCard key={id} id={id} active={currentPlan.id === id} onUpgrade={openPortal} />
+                        <PlanCard
+                            key={id}
+                            id={id}
+                            active={currentPlan.id === id}
+                            discount={applied}
+                            onUpgrade={() => upgrade(id)}
+                        />
                     ))}
                 </div>
                 <Link
@@ -252,17 +414,17 @@ export default function BillingSettingsPage() {
 function PlanCard({
     id,
     active,
+    discount,
     onUpgrade,
 }: {
     id: PlanID;
     active: boolean;
+    discount?: DiscountPreview | null;
     onUpgrade: () => void;
 }) {
     const plan = getPlan(id);
     const accent = PLAN_ACCENT_CLASSES[plan.accent];
-    const priceLabel = plan.priceMonthly == null
-        ? "Custom"
-        : `$${plan.priceMonthly}`;
+    const disc = discountedMonthly(plan.priceMonthly, discount);
 
     return (
         <div
@@ -287,11 +449,27 @@ function PlanCard({
                 )}
             </div>
             <div className="flex items-baseline gap-1 mb-2">
-                <span className="text-[18px] font-semibold text-slate-900 tabular-nums">
-                    {priceLabel}
-                </span>
-                {plan.priceMonthly != null && (
-                    <span className="text-[10.5px] text-slate-500">/ mo</span>
+                {plan.priceMonthly == null ? (
+                    <span className="text-[18px] font-semibold text-slate-900 tabular-nums">
+                        Custom
+                    </span>
+                ) : disc != null ? (
+                    <>
+                        <span className="text-[18px] font-semibold text-emerald-700 tabular-nums">
+                            ${fmtMoney(disc)}
+                        </span>
+                        <span className="text-[11px] text-slate-400 line-through tabular-nums">
+                            ${fmtMoney(plan.priceMonthly)}
+                        </span>
+                        <span className="text-[10.5px] text-slate-500">/ mo</span>
+                    </>
+                ) : (
+                    <>
+                        <span className="text-[18px] font-semibold text-slate-900 tabular-nums">
+                            ${fmtMoney(plan.priceMonthly)}
+                        </span>
+                        <span className="text-[10.5px] text-slate-500">/ mo</span>
+                    </>
                 )}
             </div>
             <ul className="space-y-1 mb-3 flex-1">
@@ -401,4 +579,47 @@ function UsageRow({
             </div>
         </div>
     );
+}
+
+// describeDiscount renders a short human summary of an applied code.
+function describeDiscount(d: DiscountPreview): string {
+    if (d.type === "trial_extension") {
+        return `+${d.trial_extension_days ?? 0} trial days`;
+    }
+    let base: string;
+    if (d.type === "percent") {
+        base = `${d.percent_off ?? 0}% off`;
+    } else {
+        base = `${(d.currency ?? "usd").toUpperCase()} ${fmtMoney(d.amount_off ?? 0)} off`;
+    }
+    if (d.duration === "forever") return `${base}, forever`;
+    if (d.duration === "repeating" && d.duration_in_months) {
+        return `${base} for ${d.duration_in_months} months`;
+    }
+    return `${base} on your first invoice`;
+}
+
+// discountedMonthly returns the discounted monthly price for a money discount,
+// or null when the discount doesn't change the price (trial extensions, custom
+// plans, or no applied code).
+function discountedMonthly(
+    price: number | null,
+    d: DiscountPreview | null | undefined,
+): number | null {
+    if (price == null || !d || !d.valid) return null;
+    if (d.type === "percent" && d.percent_off != null) {
+        return roundMoney(Math.max(0, price * (1 - d.percent_off / 100)));
+    }
+    if (d.type === "fixed" && d.amount_off != null) {
+        return roundMoney(Math.max(0, price - d.amount_off));
+    }
+    return null;
+}
+
+function roundMoney(n: number): number {
+    return Math.round(n * 100) / 100;
+}
+
+function fmtMoney(n: number): string {
+    return Number.isInteger(n) ? String(n) : n.toFixed(2);
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/contact"
 	"github.com/warmbly/warmbly/internal/app/crm"
 	"github.com/warmbly/warmbly/internal/app/dangerzone"
+	"github.com/warmbly/warmbly/internal/app/discount"
 	"github.com/warmbly/warmbly/internal/app/email"
 	"github.com/warmbly/warmbly/internal/app/emailsend"
 	"github.com/warmbly/warmbly/internal/app/feature"
@@ -68,6 +69,7 @@ type Handler struct {
 	// Subscription & billing
 	SubscriptionService subscription.SubscriptionService
 	StripeService       stripe.StripeService
+	DiscountService     discount.DiscountService
 
 	// Trial & feature gates
 	TrialService            trial.TrialService

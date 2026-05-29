@@ -29,6 +29,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/crm"
 	"github.com/warmbly/warmbly/internal/app/dailythrottle"
 	"github.com/warmbly/warmbly/internal/app/dangerzone"
+	"github.com/warmbly/warmbly/internal/app/discount"
 	"github.com/warmbly/warmbly/internal/app/email"
 	"github.com/warmbly/warmbly/internal/app/emailsend"
 	"github.com/warmbly/warmbly/internal/app/feature"
@@ -118,6 +119,7 @@ func main() {
 	var workerAssignmentService worker.WorkerAssignmentService
 	var subscriptionService subscription.SubscriptionService
 	var stripeService stripe.StripeService
+	var discountService discount.DiscountService
 	var organizationService organization.OrganizationService
 
 	// Email send & templates
@@ -437,6 +439,16 @@ func main() {
 		// New repositories for subscription & worker management
 		subscriptionRepository := repository.NewSubscriptionRepository(primaryDB.Pool)
 		planRepository := repository.NewPlanRepository(primaryDB.Pool)
+
+		// Admin + discount management. Constructed before the Stripe service:
+		// the Stripe service depends on the discount service (to validate codes
+		// and record redemptions at checkout), and the discount service audits
+		// management actions through the admin service.
+		adminRepository := repository.NewAdminRepository(primaryDB.Pool)
+		adminService = admin.NewService(adminRepository)
+		discountCodeRepository := repository.NewDiscountCodeRepository(primaryDB.Pool)
+		discountRedemptionRepository := repository.NewDiscountRedemptionRepository(primaryDB.Pool)
+		discountService = discount.NewService(discountCodeRepository, discountRedemptionRepository, planRepository, adminService)
 		workerRepository := repository.NewWorkerRepository(primaryDB.Pool)
 		organizationRepository := repository.NewOrganizationRepository(primaryDB.Pool)
 		organizationRepoForHandler = organizationRepository
@@ -486,7 +498,7 @@ func main() {
 			sentry.CaptureException(err)
 			log.Fatal(err)
 		}
-		stripeService = stripe.NewService(stripeCfg, subscriptionRepository, planRepository, workerAssignmentService)
+		stripeService = stripe.NewService(stripeCfg, subscriptionRepository, planRepository, workerAssignmentService, discountService)
 
 		tokenService = token.NewService(primaryDB, tokenRepostory, cache, geoloc, authCfg.AuthSecret)
 		userService = user.NewService(userRepostory, cache)
@@ -689,10 +701,6 @@ func main() {
 			advancedService,
 		)
 
-		// Admin service
-		adminRepository := repository.NewAdminRepository(primaryDB.Pool)
-		adminService = admin.NewService(adminRepository)
-
 		// Admin outreach composer — sends from the platform mailer
 		// (SES/SMTP) with a configurable Reply-To, audits every send.
 		adminOutreachRepo := repository.NewAdminOutreachRepository(primaryDB.Pool)
@@ -755,6 +763,7 @@ func main() {
 		// Subscription & billing
 		SubscriptionService: subscriptionService,
 		StripeService:       stripeService,
+		DiscountService:     discountService,
 
 		// Trial & feature gates
 		TrialService:            trialService,

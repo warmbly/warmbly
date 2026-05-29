@@ -60,7 +60,7 @@ const slideTrans = {
 
 /* ── Shared input class ─────────────────────── */
 
-const INPUT = "w-full h-11 rounded-lg border border-sky-200 bg-white px-4 text-[15px] text-slate-800 placeholder:text-slate-300 outline-none transition-colors duration-200 focus:border-sky-400 focus:ring-4 focus:ring-sky-400/15";
+const INPUT = "w-full h-11 rounded-lg border border-slate-200 bg-white px-4 text-[15px] text-slate-900 placeholder:text-slate-400 outline-none transition-colors duration-200 focus:border-sky-400 focus:ring-4 focus:ring-sky-400/15";
 
 /* ── Password strength ─────────────────────── */
 
@@ -443,7 +443,7 @@ function EmailStep({
                         exit={{ opacity: 0, y: -6 }}
                         transition={{ duration: 0.15 }}
                     >
-                        <h1 className="font-serif text-[32px] text-slate-800 tracking-tight leading-tight">
+                        <h1 className="text-[28px] font-bold text-slate-900 tracking-tight leading-tight">
                             {(mode === "signin" ? ["Welcome", "back"] : ["Get", "started"]).map((word, i) => (
                                 <motion.span
                                     key={word + i}
@@ -469,7 +469,7 @@ function EmailStep({
             </div>
 
             {/* Mode toggle */}
-            <div className="relative flex rounded-lg bg-sky-50 p-1">
+            <div className="relative flex rounded-lg bg-slate-100 p-1">
                 {(["signin", "signup"] as const).map((m) => (
                     <button
                         key={m}
@@ -510,9 +510,9 @@ function EmailStep({
 
             {/* Divider */}
             <div className="flex items-center gap-3">
-                <div className="flex-1 h-px bg-sky-100" />
+                <div className="flex-1 h-px bg-slate-200" />
                 <span className="text-xs text-slate-300 font-medium">or continue with</span>
-                <div className="flex-1 h-px bg-sky-100" />
+                <div className="flex-1 h-px bg-slate-200" />
             </div>
 
             <ExternalLogin />
@@ -541,7 +541,7 @@ function SignInStep({
         <div>
             <BackButton onClick={onBack} />
             <div className="text-center mb-6">
-                <h1 className="font-serif text-[32px] text-slate-800 tracking-tight leading-tight">Sign in</h1>
+                <h1 className="text-[28px] font-bold text-slate-900 tracking-tight leading-tight">Sign in</h1>
                 <p className="text-sm text-slate-400 mt-1.5">
                     Welcome back, <span className="text-slate-600 font-medium">{email}</span>
                 </p>
@@ -617,7 +617,7 @@ function SignUpStep({
         <div>
             <BackButton onClick={onBack} />
             <div className="text-center mb-6">
-                <h1 className="font-serif text-[32px] text-slate-800 tracking-tight leading-tight">Create account</h1>
+                <h1 className="text-[28px] font-bold text-slate-900 tracking-tight leading-tight">Create account</h1>
                 <p className="text-sm text-slate-400 mt-1.5">
                     Setting up <span className="text-slate-600 font-medium">{email}</span>
                 </p>
@@ -645,7 +645,7 @@ function SignUpStep({
                 <label className="flex items-start gap-3 pt-0.5 cursor-pointer">
                     <div className="relative mt-0.5 shrink-0">
                         <input type="checkbox" className="peer sr-only" {...register("acceptTerms")} />
-                        <div className={`size-[18px] rounded-md border-2 transition-all duration-200 flex items-center justify-center ${termsChecked ? "bg-sky-500 border-sky-500" : "border-sky-200 bg-white"}`}>
+                        <div className={`size-[18px] rounded-md border-2 transition-all duration-200 flex items-center justify-center ${termsChecked ? "bg-sky-500 border-sky-500" : "border-slate-300 bg-white"}`}>
                             {termsChecked && (
                                 <svg className="size-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
@@ -708,7 +708,7 @@ function VerifyStep({
                         <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
                     </svg>
                 </div>
-                <h1 className="font-serif text-[32px] text-slate-800 tracking-tight leading-tight">Check your email</h1>
+                <h1 className="text-[28px] font-bold text-slate-900 tracking-tight leading-tight">Check your email</h1>
                 <p className="text-sm text-slate-400 mt-1.5">
                     We sent a 6-digit code to <span className="text-slate-600 font-medium">{email}</span>
                 </p>
@@ -728,7 +728,7 @@ function VerifyStep({
                                 <InputOTPSlot
                                     key={i}
                                     index={i}
-                                    className="!w-12 !h-14 !rounded-lg !border-sky-200 text-lg font-semibold data-[active=true]:!border-sky-400 data-[active=true]:!ring-sky-400/15 !shadow-none first:!rounded-lg last:!rounded-lg !border"
+                                    className="!w-12 !h-14 !rounded-lg !border-slate-200 text-lg font-semibold data-[active=true]:!border-sky-400 data-[active=true]:!ring-sky-400/15 !shadow-none first:!rounded-lg last:!rounded-lg !border"
                                 />
                             ))}
                         </InputOTPGroup>

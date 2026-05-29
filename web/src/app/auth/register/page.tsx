@@ -5,7 +5,7 @@ import ExternalLogin from "@/components/auth/external";
 import { useRegisterForm } from "../hooks/useRegisterForm";
 import { WEBSITE_URL } from "@/lib/information";
 
-const INPUT = "w-full h-11 rounded-lg border border-sky-200 bg-white px-4 text-[15px] text-slate-800 placeholder:text-slate-300 outline-none transition-colors duration-200 focus:border-sky-400 focus:ring-4 focus:ring-sky-400/15";
+const INPUT = "w-full h-11 rounded-lg border border-slate-200 bg-white px-4 text-[15px] text-slate-900 placeholder:text-slate-400 outline-none transition-colors duration-200 focus:border-sky-400 focus:ring-4 focus:ring-sky-400/15";
 
 export default function RegisterPage() {
     const { mail, setMail, password, setPassword, password2, setPassword2, acceptTerms, setAcceptTerms, captcha, pending, onSubmit, onToken } = useRegisterForm();
@@ -13,7 +13,7 @@ export default function RegisterPage() {
     return (
         <div className="space-y-6">
             <div className="text-center">
-                <h1 className="font-serif text-[32px] text-slate-800 tracking-tight leading-tight">Create your account</h1>
+                <h1 className="text-[28px] font-bold text-slate-900 tracking-tight leading-tight">Create your account</h1>
                 <p className="text-sm text-slate-400 mt-1.5">Get started with Warmbly for free</p>
             </div>
 
@@ -36,7 +36,7 @@ export default function RegisterPage() {
                 <label className="flex items-start gap-3 pt-0.5 cursor-pointer">
                     <div className="relative mt-0.5 shrink-0">
                         <input type="checkbox" checked={acceptTerms} onChange={(e) => setAcceptTerms(e.target.checked)} className="peer sr-only" />
-                        <div className="size-[18px] rounded-md border-2 border-sky-200 bg-white peer-checked:bg-sky-500 peer-checked:border-sky-500 peer-focus-visible:ring-4 peer-focus-visible:ring-sky-400/15 transition-all duration-200 flex items-center justify-center">
+                        <div className="size-[18px] rounded-md border-2 border-slate-300 bg-white peer-checked:bg-sky-500 peer-checked:border-sky-500 peer-focus-visible:ring-4 peer-focus-visible:ring-sky-400/15 transition-all duration-200 flex items-center justify-center">
                             {acceptTerms && (
                                 <svg className="size-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
@@ -60,9 +60,9 @@ export default function RegisterPage() {
             </form>
 
             <div className="flex items-center gap-3">
-                <div className="flex-1 h-px bg-sky-100" />
+                <div className="flex-1 h-px bg-slate-200" />
                 <span className="text-xs text-slate-300 font-medium">or continue with</span>
-                <div className="flex-1 h-px bg-sky-100" />
+                <div className="flex-1 h-px bg-slate-200" />
             </div>
 
             <ExternalLogin />

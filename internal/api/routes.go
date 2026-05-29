@@ -468,6 +468,7 @@ func Run(
 			subscriptions.GET("/trial", h.GetTrialStatus)
 			subscriptions.GET("/features", h.GetFeatureStatus)
 			subscriptions.POST("/checkout", h.CreateCheckoutSession)
+			subscriptions.POST("/discount/validate", h.ValidateDiscountCode)
 			subscriptions.POST("/portal", h.CreateBillingPortalSession)
 			subscriptions.POST("/cancel", h.CancelSubscription)
 
@@ -640,6 +641,14 @@ func Run(
 		adminRoutes.GET("/plans/:id", middleware.RequireAdminPermission(models.AdminPermManagePlans), h.AdminGetPlan)
 		adminRoutes.PATCH("/plans/:id", middleware.RequireAdminPermission(models.AdminPermManagePlans), h.AdminUpdatePlan)
 		adminRoutes.DELETE("/plans/:id", middleware.RequireAdminPermission(models.AdminPermManagePlans), h.AdminDeletePlan)
+
+		// Discount / promo codes
+		adminRoutes.GET("/discounts", middleware.RequireAdminPermission(models.AdminPermManageBilling), h.AdminListDiscounts)
+		adminRoutes.POST("/discounts", middleware.RequireAdminPermission(models.AdminPermManageBilling), h.AdminCreateDiscount)
+		adminRoutes.GET("/discounts/:id", middleware.RequireAdminPermission(models.AdminPermManageBilling), h.AdminGetDiscount)
+		adminRoutes.PATCH("/discounts/:id", middleware.RequireAdminPermission(models.AdminPermManageBilling), h.AdminUpdateDiscount)
+		adminRoutes.DELETE("/discounts/:id", middleware.RequireAdminPermission(models.AdminPermManageBilling), h.AdminDeleteDiscount)
+		adminRoutes.GET("/discounts/:id/redemptions", middleware.RequireAdminPermission(models.AdminPermManageBilling), h.AdminListDiscountRedemptions)
 
 		// Enterprise Inquiries
 		adminRoutes.GET("/enterprise/inquiries", middleware.RequireAdminPermission(models.AdminPermViewEnterpriseInquiries), h.AdminListEnterpriseInquiries)

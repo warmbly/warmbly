@@ -506,6 +506,109 @@ export interface UpdatePlanRequest {
     public?: boolean;
 }
 
+// /admin/discounts — discount / promo code management.
+
+export type DiscountType = "percent" | "fixed" | "trial_extension";
+export type DiscountDuration = "once" | "repeating" | "forever";
+export type DiscountCodeStatus = "active" | "disabled" | "expired";
+export type DiscountRedemptionStatus = "pending" | "applied" | "canceled";
+
+export interface Discount {
+    id: string;
+    code: string;
+    description: string;
+    type: DiscountType;
+    percent_off?: number | null;
+    amount_off?: number | null;
+    currency?: string | null;
+    trial_extension_days?: number | null;
+    duration: DiscountDuration;
+    duration_in_months?: number | null;
+    max_redemptions?: number | null;
+    times_redeemed: number;
+    per_account_limit: number;
+    applies_to_all_plans: boolean;
+    plan_ids: string[];
+    status: DiscountCodeStatus;
+    starts_at?: string | null;
+    expires_at?: string | null;
+    created_by?: string | null;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface CreateDiscountRequest {
+    code: string;
+    description?: string;
+    type: DiscountType;
+    percent_off?: number;
+    amount_off?: number;
+    currency?: string;
+    trial_extension_days?: number;
+    duration?: DiscountDuration;
+    duration_in_months?: number;
+    max_redemptions?: number;
+    per_account_limit?: number;
+    applies_to_all_plans: boolean;
+    plan_ids?: string[];
+    status?: DiscountCodeStatus;
+    starts_at?: string;
+    expires_at?: string;
+}
+
+export interface UpdateDiscountRequest {
+    description?: string;
+    percent_off?: number;
+    amount_off?: number;
+    currency?: string;
+    trial_extension_days?: number;
+    duration?: DiscountDuration;
+    duration_in_months?: number;
+    max_redemptions?: number;
+    per_account_limit?: number;
+    applies_to_all_plans?: boolean;
+    plan_ids?: string[];
+    status?: DiscountCodeStatus;
+    starts_at?: string;
+    expires_at?: string;
+}
+
+export interface AdminDiscountsResult {
+    data: Discount[];
+    pagination: {
+        total?: number | null;
+        next_cursor?: string | null;
+        has_more: boolean;
+    };
+}
+
+export interface DiscountRedemption {
+    id: string;
+    discount_code_id: string;
+    organization_id: string;
+    redeemed_by?: string | null;
+    subscription_id?: string | null;
+    plan_id?: string | null;
+    stripe_coupon_id?: string | null;
+    stripe_checkout_session_id?: string | null;
+    type: DiscountType;
+    percent_off?: number | null;
+    amount_off?: number | null;
+    trial_extension_days?: number | null;
+    status: DiscountRedemptionStatus;
+    redeemed_at: string;
+    applied_at?: string | null;
+}
+
+export interface AdminDiscountRedemptionsResult {
+    data: DiscountRedemption[];
+    pagination: {
+        total?: number | null;
+        next_cursor?: string | null;
+        has_more: boolean;
+    };
+}
+
 // /admin/enterprise/inquiries — sales pipeline for "talk to us"
 // requests submitted from the marketing site.
 

@@ -87,6 +87,9 @@ var (
 
 	// Enterprise inquiry sample.
 	EnterpriseInquiryID = uuid.MustParse("00000000-0000-0000-0000-000000000d01")
+
+	// Discount codes (00000000-0000-0000-0000-000000000Fxx).
+	DiscountWelcome10ID = uuid.MustParse("00000000-0000-0000-0000-000000000f01")
 )
 
 // contactID derives a stable per-org contact UUID from a small sequence number.

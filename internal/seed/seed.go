@@ -33,6 +33,7 @@ func Run(ctx context.Context, pool *pgxpool.Pool) (*Result, error) {
 		{"users", seedUsers},
 		{"organizations", seedOrganizations},
 		{"subscriptions", seedSubscriptions},
+		{"discount-codes", seedDiscountCodes},
 		{"worker-assignments", seedWorkerAssignments},
 		{"api-keys", seedAPIKeys},
 		{"folders-tags-categories", seedGroups},

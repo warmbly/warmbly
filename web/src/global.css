@@ -160,89 +160,95 @@ svg.loading circle {
   100% { stroke-dashoffset: -125px; }
 }
 
-/* ── Sky / Auth animations ─────────────────────── */
+/* ── Auth sky + animations ───────────────────────
+   The auth showcase pane uses an airy sky (same palette as the marketing
+   site hero): CSS gradient layers + pre-rendered WebP clouds. No animated
+   SVG feTurbulence/feDisplacementMap (those rendered inconsistently in
+   Safari/Firefox and were slow); this is GPU-cheap and identical everywhere. */
 
-@keyframes sky-breathe {
-  0%, 100% { opacity: 0; transform: scale(1); }
-  40% { opacity: 0.22; transform: scale(1.03); }
-  70% { opacity: 0.10; transform: scale(0.98); }
+.sky-base {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse 140% 130% at 60% 18%,
+    #7dd3fc 0%,
+    #38bdf8 20%,
+    #0ea5e9 40%,
+    #0284c7 62%,
+    #075985 84%,
+    #0c4a6e 100%
+  );
 }
 
-@keyframes light-drift {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  25% { transform: translate(3%, -2%) scale(1.05); }
-  50% { transform: translate(-2%, 3%) scale(0.95); }
-  75% { transform: translate(4%, 1%) scale(1.02); }
+.sky-breathe {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse 130% 120% at 60% 16%,
+    rgba(186, 230, 253, 0.80) 0%,
+    rgba(56, 189, 248, 0.40) 20%,
+    rgba(14, 165, 233, 0.16) 40%,
+    transparent 62%
+  );
+  animation: sky-breathe 30s ease-in-out infinite;
+}
+
+@keyframes sky-breathe {
+  0%, 100% { opacity: 0.7; transform: scale(1); }
+  50%      { opacity: 0.45; transform: scale(1.05); }
+}
+
+.sun-glow {
+  position: absolute;
+  top: -6%;
+  right: -4%;
+  width: 420px;
+  height: 420px;
+  border-radius: 9999px;
+  pointer-events: none;
+  filter: blur(36px);
+  background: radial-gradient(circle,
+    rgba(253, 230, 138, 0.34) 0%,
+    rgba(253, 186, 116, 0.12) 32%,
+    rgba(186, 230, 253, 0.05) 55%,
+    transparent 70%
+  );
+  animation: sun-pulse 22s ease-in-out infinite;
 }
 
 @keyframes sun-pulse {
   0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.6; transform: scale(1.1); }
+  50%      { opacity: 0.6; transform: scale(1.10); }
 }
 
-@keyframes atmo-drift {
-  0%, 100% { transform: translate(0, 0) scale(1); opacity: 1; }
-  30% { transform: translate(4%, -3%) scale(1.08); opacity: 0.7; }
-  60% { transform: translate(-3%, 2%) scale(0.95); opacity: 1; }
-  80% { transform: translate(2%, -1%) scale(1.03); opacity: 0.8; }
+/* Drifting pre-rendered WebP clouds (browser-perfect <img>) */
+.cloud-drift {
+  position: absolute;
+  pointer-events: none;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  animation-direction: alternate;
+  will-change: transform;
 }
 
-@keyframes atmo-drift-2 {
-  0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.8; }
-  40% { transform: translate(-5%, 3%) scale(1.1); opacity: 1; }
-  70% { transform: translate(3%, -2%) scale(0.92); opacity: 0.6; }
-}
+@keyframes cloud-glide-1 { from { transform: translate3d(0, 0, 0); } to { transform: translate3d(40px, -10px, 0); } }
+@keyframes cloud-glide-2 { from { transform: translate3d(0, 0, 0); } to { transform: translate3d(-38px, 8px, 0); } }
 
-@keyframes cloud-float-1 {
-  0%, 100% { transform: translateX(0) translateY(0); }
-  25% { transform: translateX(35px) translateY(-10px); }
-  50% { transform: translateX(55px) translateY(5px); }
-  75% { transform: translateX(20px) translateY(-6px); }
-}
-
-@keyframes cloud-float-2 {
-  0%, 100% { transform: translateX(0) translateY(0); }
-  33% { transform: translateX(-45px) translateY(8px); }
-  66% { transform: translateX(-20px) translateY(-12px); }
-}
-
-@keyframes cloud-float-3 {
-  0%, 100% { transform: translateX(0) translateY(0); }
-  50% { transform: translateX(30px) translateY(10px); }
-}
-
-@keyframes cloud-float-4 {
-  0%, 100% { transform: translateX(0) translateY(0); }
-  20% { transform: translateX(-20px) translateY(-6px); }
-  60% { transform: translateX(25px) translateY(8px); }
-  80% { transform: translateX(10px) translateY(-4px); }
-}
+.cloud-1 { animation-name: cloud-glide-1; animation-duration: 36s; }
+.cloud-2 { animation-name: cloud-glide-2; animation-duration: 44s; }
 
 @keyframes card-float {
-  from { opacity: 0; transform: translateY(30px); }
+  from { opacity: 0; transform: translateY(16px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
-@keyframes blob-float-1 {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  33% { transform: translate(30px, -25px) scale(1.05); }
-  66% { transform: translate(-20px, 20px) scale(0.95); }
-}
-
-@keyframes blob-float-2 {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  33% { transform: translate(-25px, 25px) scale(1.08); }
-  66% { transform: translate(20px, -15px) scale(0.92); }
-}
-
-@keyframes blob-float-3 {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  50% { transform: translate(20px, -20px) scale(1.1); }
+@media (prefers-reduced-motion: reduce) {
+  .sky-breathe, .sun-glow, .cloud-drift, .animate-card-float, .animate-fade-in { animation: none !important; }
 }
 
 /* ── Utilities ─────────────────────── */
