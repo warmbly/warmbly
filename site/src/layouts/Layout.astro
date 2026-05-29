@@ -7,6 +7,10 @@ interface Props {
   title: string;
   description?: string;
   ogImage?: string;
+  /** og:type — 'website' for most pages, 'article' for Learn essays */
+  ogType?: string;
+  /** Extra structured data injected per-page (e.g. BlogPosting, SoftwareApplication) */
+  jsonLd?: Record<string, unknown> | Record<string, unknown>[];
   noIndex?: boolean;
   /** Toggle "marketing chrome" header/footer */
   bare?: boolean;
@@ -16,9 +20,13 @@ const {
   title,
   description = 'Warmbly is the deliverability platform for cold email. Warm your inboxes, send at scale, keep your reputation clean.',
   ogImage = '/og-image.png',
+  ogType = 'website',
+  jsonLd,
   noIndex = false,
   bare = false,
 } = Astro.props;
+
+const extraJsonLd = jsonLd ? (Array.isArray(jsonLd) ? jsonLd : [jsonLd]) : [];
 
 const siteOrigin = (Astro.site ?? new URL('https://warmbly.com')).toString().replace(/\/$/, '');
 const canonical = new URL(Astro.url.pathname, Astro.site ?? 'https://warmbly.com').toString();
@@ -28,6 +36,7 @@ const ogImageAbsolute = new URL(ogImage, Astro.site ?? 'https://warmbly.com').to
 const organizationJsonLd = {
   '@context': 'https://schema.org',
   '@type': 'Organization',
+  '@id': `${siteOrigin}#org`,
   name: 'Warmbly',
   legalName: 'Mindroot Ltd',
   url: siteOrigin,
@@ -81,7 +90,6 @@ const websiteJsonLd = {
     <title>{title}</title>
     <meta name="description" content={description} />
     <link rel="canonical" href={canonical} />
-    {noIndex && <meta name="robots" content="noindex,nofollow" />}
 
     <!-- Favicons: rounded sky chip variants generated from the social avatar.
          Sized PNGs are preferred by modern browsers; the .ico is a legacy
@@ -104,16 +112,18 @@ const websiteJsonLd = {
     <meta name="format-detection" content="telephone=no" />
 
     <!-- Open Graph -->
-    <meta property="og:type" content="website" />
+    <meta property="og:type" content={ogType} />
     <meta property="og:site_name" content="Warmbly" />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:url" content={canonical} />
     <meta property="og:locale" content="en_US" />
     <meta property="og:image" content={ogImageAbsolute} />
+    <meta property="og:image:secure_url" content={ogImageAbsolute} />
+    <meta property="og:image:type" content="image/png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="Warmbly" />
+    <meta property="og:image:alt" content="Warmbly: the open-source cold email platform" />
 
     <!-- Twitter / X -->
     <meta name="twitter:card" content="summary_large_image" />
@@ -122,7 +132,7 @@ const websiteJsonLd = {
     <meta name="twitter:title" content={title} />
     <meta name="twitter:description" content={description} />
     <meta name="twitter:image" content={ogImageAbsolute} />
-    <meta name="twitter:image:alt" content="Warmbly" />
+    <meta name="twitter:image:alt" content="Warmbly: the open-source cold email platform" />
 
     <!-- Crawler hints -->
     <meta name="robots" content={noIndex ? 'noindex,nofollow' : 'index,follow,max-image-preview:large,max-snippet:-1'} />
@@ -130,9 +140,12 @@ const websiteJsonLd = {
 
     <link rel="sitemap" href="/sitemap-index.xml" />
 
-    <!-- Structured data: Organization + WebSite -->
+    <!-- Structured data: Organization + WebSite (+ optional per-page schema) -->
     <script type="application/ld+json" is:inline set:html={JSON.stringify(organizationJsonLd)} />
     <script type="application/ld+json" is:inline set:html={JSON.stringify(websiteJsonLd)} />
+    {extraJsonLd.map((schema) => (
+      <script type="application/ld+json" is:inline set:html={JSON.stringify(schema)} />
+    ))}
   </head>
   <body class="min-h-screen flex flex-col antialiased">
     {!bare && <Header />}

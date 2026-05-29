@@ -1,6 +1,6 @@
 /**
- * Generate every favicon / app-icon / social-card variant from the
- * source social avatar (public/brand/social-avatar.jpg).
+ * Generate every favicon / app-icon variant from the source social avatar
+ * (public/brand/social-avatar.jpg).
  *
  * Outputs land in public/:
  *   favicon-16x16.png, favicon-32x32.png, favicon-48x48.png,
@@ -8,7 +8,9 @@
  *   apple-touch-icon.png        (180 square, iOS rounds it)
  *   web-app-manifest-192x192.png
  *   web-app-manifest-512x512.png
- *   og-image.png                (1200x630 OG / Twitter card)
+ *
+ * The 1200x630 OG / Twitter card (public/og-image.png) is generated
+ * separately from scripts/og-image.html — see scripts/render-og.py.
  *
  * Run with: node scripts/gen-icons.mjs
  */
@@ -55,52 +57,6 @@ async function rounded(size, outPath, radiusRatio = 0.22) {
   console.log('wrote', outPath, `(rounded r=${radiusRatio})`);
 }
 
-async function ogCard(outPath) {
-  // 1200x630 sky-blue canvas with the avatar centered on the left half
-  // and room on the right for typography handled by the platform.
-  const W = 1200;
-  const H = 630;
-  const AVATAR = 460;
-
-  const avatar = await sharp(source)
-    .resize(AVATAR, AVATAR, { fit: 'cover' })
-    .png()
-    .toBuffer();
-
-  const avatarRounded = await sharp(avatar)
-    .composite([{ input: roundedMask(AVATAR, 0.18), blend: 'dest-in' }])
-    .png()
-    .toBuffer();
-
-  // sky gradient background, matching the site's sky tokens
-  const bg = Buffer.from(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
-       <defs>
-         <linearGradient id="g" x1="0%" y1="0%" x2="0%" y2="100%">
-           <stop offset="0%" stop-color="#0284c7"/>
-           <stop offset="60%" stop-color="#0369a1"/>
-           <stop offset="100%" stop-color="#075985"/>
-         </linearGradient>
-       </defs>
-       <rect width="${W}" height="${H}" fill="url(#g)"/>
-     </svg>`
-  );
-
-  await sharp(bg)
-    .png()
-    .composite([
-      {
-        input: avatarRounded,
-        top: Math.round((H - AVATAR) / 2),
-        left: 95,
-      },
-    ])
-    .png({ quality: 92 })
-    .toFile(outPath);
-
-  console.log('wrote', outPath);
-}
-
 await Promise.all([
   // Tab favicons: rounded so the icon reads as a soft chip in the tab strip.
   rounded(16, resolve(PUB, 'favicon-16x16.png'), 0.22),
@@ -115,9 +71,6 @@ await Promise.all([
   // for adaptive (maskable) usage.
   square(192, resolve(PUB, 'web-app-manifest-192x192.png')),
   square(512, resolve(PUB, 'web-app-manifest-512x512.png')),
-
-  // Social cards
-  ogCard(resolve(PUB, 'og-image.png')),
 ]);
 
 console.log('done.');

@@ -29,8 +29,25 @@ const related = [
 ];
 const path = Astro.url.pathname;
 const next = related.filter((r) => r.href !== path).slice(0, 2);
+
+// BlogPosting structured data for each guide. Helps the essays surface as
+// articles rather than generic pages, and ties them back to the org.
+const siteOrigin = (Astro.site ?? new URL('https://warmbly.com')).toString().replace(/\/$/, '');
+const canonical = new URL(path, Astro.site ?? 'https://warmbly.com').toString();
+const articleJsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'BlogPosting',
+  headline: title,
+  description: description ?? title,
+  image: `${siteOrigin}/og-image.png`,
+  ...(updated ? { dateModified: updated, datePublished: updated } : {}),
+  author: { '@id': `${siteOrigin}#org` },
+  publisher: { '@id': `${siteOrigin}#org` },
+  mainEntityOfPage: { '@type': 'WebPage', '@id': canonical },
+  isAccessibleForFree: true,
+};
 ---
-<Layout title={title} description={description ?? title}>
+<Layout title={title} description={description ?? title} ogType="article" jsonLd={articleJsonLd}>
   <!-- TOP BAR -->
   <div class="bg-white border-b border-[color:var(--border)]">
     <div class="container-page py-3 flex items-center justify-between text-[11.5px] font-mono">

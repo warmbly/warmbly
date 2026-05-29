@@ -1,0 +1,3 @@
+ALTER TABLE users
+    DROP COLUMN IF EXISTS team_size,
+    DROP COLUMN IF EXISTS job_role;

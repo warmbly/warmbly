@@ -1,49 +1,32 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import Cloud from '../components/Cloud.astro';
+import HeroAtmosphere from '../components/HeroAtmosphere.astro';
 import Icon from '../components/Icon.astro';
 ---
-<Layout title="Not found · Warmbly" description="The page you are looking for does not exist." noIndex>
-  <section class="relative isolate overflow-hidden text-white min-h-[80vh] flex items-center" style="background: radial-gradient(ellipse 130% 140% at 50% 35%, #0284c7 0%, #0369a1 25%, #075985 50%, #0c4a6e 80%, #0a3d5c 100%);">
-    <div class="absolute -top-10 right-[-40px] w-[480px] opacity-35 pointer-events-none cloud-drift cloud-1" style="mix-blend-mode: screen;">
-      <Cloud variant={5} opacity={1} />
-    </div>
-    <div class="absolute -bottom-16 left-[-80px] w-[420px] opacity-30 pointer-events-none cloud-drift cloud-2" style="mix-blend-mode: screen;">
-      <Cloud variant={3} opacity={1} />
-    </div>
-    <div class="absolute top-1/4 left-1/4 w-[300px] opacity-22 pointer-events-none cloud-drift cloud-3" style="mix-blend-mode: screen;">
-      <Cloud variant={2} opacity={1} />
-    </div>
+<Layout title="Page Not Found | Warmbly" description="The page you are looking for does not exist." noIndex>
+  <section class="relative isolate overflow-hidden text-white min-h-[88vh] flex items-center justify-center">
+    <!-- Same airy sky as the marketing hero -->
+    <HeroAtmosphere />
 
-    <div class="container-page relative text-center py-16">
-      <div class="text-[10.5px] uppercase tracking-[0.18em] text-white/55 font-mono mb-4">Error 404</div>
-      <div class="text-[120px] md:text-[180px] font-semibold tracking-[-0.05em] leading-[0.85] text-white/95 select-none">404</div>
-      <h1 class="mt-8 text-[24px] md:text-[32px] font-semibold tracking-[-0.02em] leading-[1.1] text-white">
-        We could not find that page.
+    <div class="container-page relative text-center py-24">
+      <div class="text-[110px] sm:text-[140px] md:text-[168px] font-semibold tracking-[-0.05em] leading-[0.8] text-white select-none">
+        404
+      </div>
+
+      <h1 class="mt-6 text-[26px] md:text-[34px] font-semibold tracking-[-0.025em] text-white">
+        Page not found
       </h1>
-      <p class="mt-3 text-[14.5px] text-white/70 max-w-md mx-auto">
-        It was moved, never shipped, or got quarantined by the deliverability layer. We are sorry about that.
+      <p class="mt-4 text-[15px] md:text-[16.5px] text-white/75 max-w-md mx-auto leading-relaxed">
+        The page you are looking for doesn't exist or has moved.
       </p>
 
       <div class="mt-9 flex flex-wrap items-center justify-center gap-3">
-        <a href="/" class="inline-flex h-11 px-5 items-center gap-2 rounded-[10px] text-[14.5px] font-medium bg-white text-[color:var(--sky-7)] hover:bg-white/95">
+        <a href="/" class="inline-flex h-11 px-5 items-center gap-2 rounded-[10px] text-[14.5px] font-medium bg-white hover:bg-white/95 transition-colors shadow-[0_10px_24px_-10px_rgba(8,47,73,0.55)]" style="color:#0c4a6e;">
           <Icon name="arrowRight" size={14} class="rotate-180" /> Back to home
         </a>
-        <a href="/learn/" class="inline-flex h-11 px-5 items-center rounded-[10px] text-[14.5px] font-medium bg-white/10 backdrop-blur ring-1 ring-white/30 text-white hover:bg-white/20">
-          Browse learn
+        <a href="/learn/" class="inline-flex h-11 px-5 items-center rounded-[10px] text-[14.5px] font-medium bg-white/10 backdrop-blur ring-1 ring-white/30 text-white hover:bg-white/20 transition-colors">
+          Browse the guides
         </a>
-      </div>
-
-      <div class="mt-12 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-[12px] font-mono text-white/55">
-        {[
-          ['Warmup', '/warmup/'],
-          ['Pricing', '/pricing/'],
-          ['Changelog', '/changelog/'],
-          ['Contact', '/contact/'],
-          ['Status', 'https://status.warmbly.com'],
-        ].map(([l, h]) => (
-          <a href={h} class="hover:text-white">{l}</a>
-        ))}
       </div>
     </div>
   </section>

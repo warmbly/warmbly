@@ -90,10 +90,32 @@ const plans = [
     ],
   },
 ];
+
+// SoftwareApplication schema for the product itself — helps Google understand
+// Warmbly is a SaaS tool with a free tier, not just a marketing page.
+const softwareJsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'SoftwareApplication',
+  name: 'Warmbly',
+  applicationCategory: 'BusinessApplication',
+  applicationSubCategory: 'Email deliverability and cold outreach',
+  operatingSystem: 'Web',
+  url: 'https://warmbly.com',
+  description:
+    'Email warmup and cold email platform. Warm new mailboxes, send cold outreach at scale, and protect sender reputation with per-mailbox safety caps and deliverability tracking.',
+  publisher: { '@id': 'https://warmbly.com#org' },
+  offers: {
+    '@type': 'Offer',
+    price: '0',
+    priceCurrency: 'USD',
+    description: 'Free plan available, with paid plans for higher volume.',
+  },
+};
 ---
 <Layout
-  title="Warmbly · cold email that actually lands"
-  description="Warmbly is the deliverability platform for cold email. Warm your mailboxes, send at scale, keep your reputation clean across hundreds of mailboxes."
+  title="Open-Source Cold Email & Warmup Platform | Warmbly"
+  description="Warmbly is the open-source platform for cold email: warm your mailboxes, send campaigns, and triage every reply. Run it on our cloud or self-host the whole thing."
+  jsonLd={softwareJsonLd}
 >
   <!-- ============================================================
        HERO — deep sky with drifting clouds, white text,

@@ -13,6 +13,8 @@ type completeOnboardingRequest struct {
 	FirstName      string `json:"first_name"`
 	LastName       string `json:"last_name"`
 	ReferralSource string `json:"referral_source"`
+	Role           string `json:"role"`
+	TeamSize       string `json:"team_size"`
 }
 
 var validReferralSources = map[string]bool{
@@ -21,6 +23,25 @@ var validReferralSources = map[string]bool{
 	"facebook": true,
 	"google":   true,
 	"other":    true,
+}
+
+// Persona + team-size answers from the onboarding questionnaire. Both optional:
+// when provided they must be one of these, otherwise they're stored as NULL.
+var validRoles = map[string]bool{
+	"founder":   true,
+	"sales":     true,
+	"marketing": true,
+	"agency":    true,
+	"recruiter": true,
+	"other":     true,
+}
+
+var validTeamSizes = map[string]bool{
+	"just_me": true,
+	"2-10":    true,
+	"11-50":   true,
+	"51-200":  true,
+	"200+":    true,
 }
 
 func (h *Handler) CompleteOnboarding(c *gin.Context) {
@@ -45,6 +66,16 @@ func (h *Handler) CompleteOnboarding(c *gin.Context) {
 		return
 	}
 
+	if req.Role != "" && !validRoles[req.Role] {
+		errx.Handle(c, errx.New(errx.BadRequest, "Invalid role."))
+		return
+	}
+
+	if req.TeamSize != "" && !validTeamSizes[req.TeamSize] {
+		errx.Handle(c, errx.New(errx.BadRequest, "Invalid team size."))
+		return
+	}
+
 	userID := middleware.GetUserID(c)
 	uid, err := uuid.Parse(userID)
 	if err != nil {
@@ -52,7 +83,7 @@ func (h *Handler) CompleteOnboarding(c *gin.Context) {
 		return
 	}
 
-	if xerr := h.UserService.CompleteOnboarding(c.Request.Context(), uid, req.FirstName, req.LastName, req.ReferralSource); xerr != nil {
+	if xerr := h.UserService.CompleteOnboarding(c.Request.Context(), uid, req.FirstName, req.LastName, req.ReferralSource, req.Role, req.TeamSize); xerr != nil {
 		errx.Handle(c, xerr)
 		return
 	}

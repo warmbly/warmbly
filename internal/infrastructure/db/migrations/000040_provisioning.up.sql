@@ -27,22 +27,17 @@ CREATE TABLE IF NOT EXISTS cloud_credentials (
 );
 
 -- ---------------------------------------------------------------------------
--- Worker env profiles. env_template is the JSONB bundle that gets rendered
--- into /etc/warmbly/worker.env during install. tier + egress_kind constrain
--- which mailboxes the resulting workers can carry.
+-- NOTE: worker_profiles is intentionally NOT created here. It is owned by
+-- migration 000029 (worker_credentials), which models the Kafka/Redis/AWS
+-- connection bundle that pg_credentials.go reads and writes. An earlier merge
+-- accidentally re-declared a second, conflicting worker_profiles in this file
+-- (env_template/tier/egress_kind); because it used CREATE TABLE IF NOT EXISTS
+-- it silently no-op'd against 029's table, so those columns never existed and
+-- nothing reads them. The provisioning surface only needs worker_profiles to
+-- EXIST so the provisioning_templates.worker_profile_id FK below can reference
+-- it; the tier/egress_kind the provisioner cares about live on
+-- provisioning_templates itself.
 -- ---------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS worker_profiles (
-    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name         TEXT NOT NULL UNIQUE,
-    description  TEXT,
-    env_template JSONB NOT NULL DEFAULT '{}'::jsonb,
-    image_tag    TEXT NOT NULL DEFAULT 'ghcr.io/warmbly/worker:latest',
-    tier         TEXT NOT NULL CHECK (tier IN ('shared_free','shared_premium','dedicated')),
-    egress_kind  TEXT NOT NULL DEFAULT 'cold_smtp'
-                 CHECK (egress_kind IN ('cold_smtp','oauth_api','warmup_only')),
-    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
-);
 
 -- ---------------------------------------------------------------------------
 -- Provisioning templates: saved configs for one-click provisioning.

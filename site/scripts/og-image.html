@@ -1,0 +1,97 @@
+<!doctype html>
+<!--
+  Source for public/og-image.png (the 1200x630 Open Graph / Twitter card).
+
+  This mirrors the marketing hero (src/components/HeroAtmosphere.astro) 1:1:
+  the exact .sky-base deep-sky gradient, the same six painterly cloud WebPs in
+  the same layered arrangement, the warm sun glow and the twinkle. The only
+  foreground is the Warmbly lockup, centered, small and balanced, no shadow,
+  sitting on the clearer deep-blue centre so it reads cleanly.
+
+  Re-render to PNG with headless Chromium at a 1200x630 viewport:
+      /tmp/pwvenv/bin/python scripts/render-og.py
+
+  Fonts are committed under scripts/og-assets/; clouds live in public/backdrops/.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      @font-face { font-family: 'Inter'; font-weight: 700; src: url('./og-assets/inter-latin-700-normal.woff2') format('woff2'); }
+      @font-face { font-family: 'Inter'; font-weight: 800; src: url('./og-assets/inter-latin-800-normal.woff2') format('woff2'); }
+
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body {
+        width: 1200px; height: 630px; overflow: hidden;
+        font-family: 'Inter', system-ui, sans-serif;
+        -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision;
+      }
+      .card { position: relative; width: 1200px; height: 630px; overflow: hidden; }
+
+      /* === hero atmosphere, lifted verbatim from src/styles/global.css === */
+      .sky-base {
+        position: absolute; inset: 0;
+        background: radial-gradient(ellipse 140% 140% at 72% 25%,
+          #7dd3fc 0%, #38bdf8 18%, #0ea5e9 36%, #0284c7 58%, #075985 82%);
+      }
+      .sky-breathe {
+        position: absolute; inset: 0; opacity: 0.6;
+        background: radial-gradient(ellipse 140% 140% at 72% 25%,
+          rgba(186,230,253,0.85) 0%, rgba(56,189,248,0.42) 18%, rgba(14,165,233,0.18) 36%, transparent 60%);
+      }
+      .sky-haze-bottom {
+        position: absolute; inset: auto 0 0 0; height: 55%;
+        background: linear-gradient(to top, rgba(125,211,252,0.18) 0%, rgba(56,189,248,0.08) 35%, transparent 100%);
+      }
+      .sun-glow {
+        position: absolute; top: -110px; right: 90px; width: 620px; height: 620px;
+        border-radius: 9999px; filter: blur(42px);
+        background: radial-gradient(circle, rgba(253,230,138,0.30) 0%, rgba(253,186,116,0.10) 32%, rgba(186,230,253,0.04) 55%, transparent 70%);
+      }
+      /* a soft radial keeps the centre deep enough for the white lockup to read */
+      .center-deepen {
+        position: absolute; inset: 0;
+        background: radial-gradient(ellipse 56% 64% at 50% 52%, rgba(3,52,84,0.30) 0%, rgba(3,52,84,0.10) 42%, transparent 66%);
+      }
+      .cloud { position: absolute; height: auto; user-select: none; }
+
+      .lockup {
+        position: absolute; inset: 0; z-index: 3;
+        display: flex; align-items: center; justify-content: center; gap: 22px;
+      }
+      .lockup svg { height: 74px; width: auto; display: block; }
+      .word { font-weight: 800; font-size: 48px; letter-spacing: -1.8px; color: #fff; line-height: 1; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="sky-base"></div>
+      <div class="sky-breathe"></div>
+      <div class="sky-haze-bottom"></div>
+      <div class="sun-glow"></div>
+
+      <!-- six painterly clouds, same variants/arrangement as the hero, framing
+           the centre so the lockup sits on clear sky -->
+      <img class="cloud" src="../public/backdrops/cloud-5.webp" style="top: -130px; left: -130px; width: 600px; opacity: 0.95;" alt="" />
+      <img class="cloud" src="../public/backdrops/cloud-2.webp" style="top: -110px; right: -120px; width: 560px; opacity: 0.92;" alt="" />
+      <img class="cloud" src="../public/backdrops/cloud-3.webp" style="top: 150px; left: -120px; width: 380px; opacity: 0.66;" alt="" />
+      <img class="cloud" src="../public/backdrops/cloud-4.webp" style="top: 180px; right: -110px; width: 360px; opacity: 0.62;" alt="" />
+      <img class="cloud" src="../public/backdrops/cloud-1.webp" style="bottom: -150px; left: 90px; width: 420px; opacity: 0.78;" alt="" />
+      <img class="cloud" src="../public/backdrops/cloud-3.webp" style="bottom: -140px; right: 120px; width: 360px; opacity: 0.6;" alt="" />
+
+      <div class="center-deepen"></div>
+
+      <!-- twinkle, like the hero -->
+      <svg style="position:absolute; top:120px; left:430px; width:16px; height:16px; z-index:2;" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+        <path d="M7 1 L8.5 5.5 L13 7 L8.5 8.5 L7 13 L5.5 8.5 L1 7 L5.5 5.5 Z" fill="rgba(255,255,255,0.9)" />
+      </svg>
+
+      <div class="lockup">
+        <svg viewBox="0 0 746 764" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <path d="M222.805 644.772L186.274 108.881L704.5 451.158L484.5 451.158L245.5 196.158L444 463.5L222.805 644.772Z" fill="#ffffff" />
+        </svg>
+        <span class="word">Warmbly</span>
+      </div>
+    </div>
+  </body>
+</html>
