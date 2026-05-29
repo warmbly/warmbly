@@ -20,6 +20,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/admin"
 	"github.com/warmbly/warmbly/internal/app/adminoutreach"
 	"github.com/warmbly/warmbly/internal/app/advanced"
+	"github.com/warmbly/warmbly/internal/app/analytics"
 	"github.com/warmbly/warmbly/internal/app/apikey"
 	"github.com/warmbly/warmbly/internal/app/audit"
 	"github.com/warmbly/warmbly/internal/app/auth"
@@ -37,6 +38,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/group"
 	"github.com/warmbly/warmbly/internal/app/integration"
 	"github.com/warmbly/warmbly/internal/app/organization"
+	"github.com/warmbly/warmbly/internal/app/ratelimit"
 	"github.com/warmbly/warmbly/internal/app/releases"
 	"github.com/warmbly/warmbly/internal/app/sequence"
 	"github.com/warmbly/warmbly/internal/app/settings"
@@ -93,6 +95,8 @@ func main() {
 	var userService user.UserService
 	var emailService email.EmailService
 	var campaignService campaign.CampaignService
+	var analyticsService analytics.AnalyticsService
+	var rateLimitService ratelimit.RateLimitService
 	var sequenceService sequence.SequenceService
 	var contactService contact.ContactService
 	var socketService socket.SocketService
@@ -643,6 +647,13 @@ func main() {
 		// emailService without one.
 		emailService.WireThrottle(dailyThrottleService)
 		campaignService = campaign.NewService(campaignRepostory, taskRepository, emailRepostory, campaignLogRepository, featureGateService, dailyThrottleService, streamingPublisher)
+
+		analyticsRepository := repository.NewAnalyticsRepository(primaryDB)
+		emailAccountErrorRepository := repository.NewEmailAccountErrorRepository(primaryDB)
+		analyticsService = analytics.NewService(analyticsRepository, emailRepostory, campaignRepostory, emailAccountErrorRepository)
+
+		rateLimitRepository := repository.NewRateLimitRepository(primaryDB)
+		rateLimitService = ratelimit.NewService(cache, rateLimitRepository)
 		sequenceService = sequence.NewService(sequenceRepostory)
 		contactService = contact.NewService(contactRepostory, subscriptionRepository, planRepository)
 		apiKeyService = apikey.NewService(cache, apiKeyRepository)
@@ -740,14 +751,16 @@ func main() {
 	}
 
 	h := &handler.Handler{
-		AuthService:     authService,
-		TokenService:    tokenService,
-		UserService:     userService,
-		EmailService:    emailService,
-		CampaignService: campaignService,
-		ContactService:  contactService,
-		SequenceService: sequenceService,
-		UniboxService:   uniboxService,
+		AuthService:      authService,
+		TokenService:     tokenService,
+		UserService:      userService,
+		EmailService:     emailService,
+		CampaignService:  campaignService,
+		AnalyticsService: analyticsService,
+		RateLimitService: rateLimitService,
+		ContactService:   contactService,
+		SequenceService:  sequenceService,
+		UniboxService:    uniboxService,
 
 		FolderService:   folderService,
 		TagService:      tagService,
