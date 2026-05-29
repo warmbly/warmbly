@@ -149,16 +149,17 @@ const track = [...slides, slides[0]]; // clone first slide for a seamless forwar
 function SlideView({ slide }: { slide: Slide }) {
     const Icon = slide.icon;
     return (
-        <div className="flex h-full w-full shrink-0 flex-col p-9 xl:p-10">
-            <div className="flex flex-1 items-center justify-center">
-                <div className="w-full max-w-[268px]">{slide.mock}</div>
+        <div className="flex h-full w-full shrink-0 flex-col px-7 pb-9 pt-9 xl:px-8">
+            <div className="flex flex-1 items-center">
+                {/* Full-width card so a feature is always on screen as it slides in */}
+                <div className="w-full">{slide.mock}</div>
             </div>
             <div className="pt-6">
                 <div className="mb-1 flex items-center gap-2">
                     <Icon className="size-4 text-sky-200" />
                     <h3 className="text-[15px] font-bold tracking-tight text-white">{slide.title}</h3>
                 </div>
-                <p className="text-[12.5px] leading-relaxed text-white/65 max-w-[260px]">{slide.desc}</p>
+                <p className="text-[12.5px] leading-relaxed text-white/65 max-w-[280px]">{slide.desc}</p>
             </div>
         </div>
     );

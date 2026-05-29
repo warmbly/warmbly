@@ -3,16 +3,15 @@ import { Navigate, Outlet, useNavigate } from "react-router-dom";
 import { APP_URL, WEBSITE_URL } from "@/lib/information";
 import getToken from "@/lib/helper/getToken";
 import { Logo } from "@/components/svg";
-import { Github } from "lucide-react";
 import AuthShowcase from "./_components/AuthShowcase";
 
 /* ═══════════════════════════════════════════
-   Auth layout — a box, with a header above it and a footer below it.
+   Auth layout — one box, two panes.
 
-   The header (logo left · link right) and footer (copyright left · legal
-   right) share the box's exact width, so the whole thing reads as one
-   aligned column. The box itself is two panes: a rotating showcase on an
-   airy sky (left, desktop) and the form (right).
+   Left  : the airy-sky showcase. The Warmbly logo is pinned to it as a
+           persistent element, so something stays put while the feature
+           cards slide. Hidden on small screens.
+   Right : a clean form column with a minimal footer at the bottom.
    ═══════════════════════════════════════════ */
 
 export default function AuthLayout({
@@ -35,41 +34,36 @@ export default function AuthLayout({
 
     return (
         <div className="flex min-h-dvh w-full items-center justify-center bg-slate-50 px-5 py-10 text-slate-900">
-            <div className="w-full max-w-[400px] lg:max-w-[900px]">
-                {/* Header — above the box, full box width */}
-                <div className="mb-4 flex items-center justify-between px-1">
-                    <a href={WEBSITE_URL} className="flex items-center gap-2.5">
-                        <Logo className="w-7 text-slate-900" />
-                        <span className="font-extrabold text-[18px] tracking-tight text-slate-900">Warmbly</span>
-                    </a>
-                    <a
-                        href="https://github.com/warmbly/warmbly"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 text-[12.5px] text-slate-400 hover:text-slate-700 transition-colors"
-                    >
-                        <Github className="w-4 h-4" /> Star on GitHub
+            <div className="animate-card-float grid w-full max-w-[400px] overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_30px_70px_-32px_rgba(15,23,42,0.32)] lg:max-w-[900px] lg:grid-cols-2 lg:min-h-[580px]">
+                {/* Left: sky showcase with a persistent logo */}
+                <div className="relative hidden lg:block">
+                    <AuthShowcase />
+                    <a href={WEBSITE_URL} className="absolute left-9 top-8 z-20 flex items-center gap-2.5">
+                        <Logo className="w-7 text-white" />
+                        <span className="font-extrabold text-[18px] tracking-tight text-white">Warmbly</span>
                     </a>
                 </div>
 
-                {/* The box */}
-                <div className="animate-card-float grid overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_30px_70px_-32px_rgba(15,23,42,0.32)] lg:grid-cols-2 lg:min-h-[560px]">
-                    <div className="hidden lg:block">
-                        <AuthShowcase />
-                    </div>
-                    <div className="flex items-center justify-center px-6 py-10 sm:px-10">
-                        <div className="w-full max-w-[360px]">
-                            <Outlet />
+                {/* Right: form column + minimal footer */}
+                <div className="flex flex-col px-6 py-9 sm:px-10">
+                    <div className="mx-auto flex w-full max-w-[360px] flex-1 flex-col">
+                        {/* Logo for the mobile layout (no sky pane there) */}
+                        <a href={WEBSITE_URL} className="mb-8 flex w-fit items-center gap-2.5 lg:hidden">
+                            <Logo className="w-7 text-slate-900" />
+                            <span className="font-extrabold text-[18px] tracking-tight text-slate-900">Warmbly</span>
+                        </a>
+
+                        <div className="flex flex-1 items-center">
+                            <div className="w-full">
+                                <Outlet />
+                            </div>
                         </div>
-                    </div>
-                </div>
 
-                {/* Footer — below the box, full box width */}
-                <div className="mt-4 flex items-center justify-between px-1 text-[12px] text-slate-400">
-                    <span>© {new Date().getFullYear()} Warmbly</span>
-                    <div className="flex items-center gap-3">
-                        <a href={`${WEBSITE_URL}/terms`} target="_blank" rel="noopener noreferrer" className="hover:text-slate-700 transition-colors">Terms</a>
-                        <a href={`${WEBSITE_URL}/privacy`} target="_blank" rel="noopener noreferrer" className="hover:text-slate-700 transition-colors">Privacy</a>
+                        <div className="flex items-center gap-3 pt-8 text-[12px] text-slate-400">
+                            <a href={`${WEBSITE_URL}/terms`} target="_blank" rel="noopener noreferrer" className="hover:text-slate-700 transition-colors">Terms</a>
+                            <a href={`${WEBSITE_URL}/privacy`} target="_blank" rel="noopener noreferrer" className="hover:text-slate-700 transition-colors">Privacy</a>
+                            <span className="ml-auto">© {new Date().getFullYear()} Warmbly</span>
+                        </div>
                     </div>
                 </div>
             </div>
