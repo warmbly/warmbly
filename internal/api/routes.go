@@ -141,7 +141,7 @@ func Run(
 	// auth types; APIKeyUsageMiddleware records one log row per API-key
 	// request (JWT requests are skipped).
 	protected := r.Group("")
-	protected.Use(m.CombinedAuthMiddleware(), m.APIKeyUsageMiddleware())
+	protected.Use(m.CombinedAuthMiddleware(), m.APIKeyUsageMiddleware(), m.IdempotencyMiddleware())
 	{
 		emails := protected.Group("/emails")
 		emails.Use(m.RateLimitMiddleware(models.RateLimitWrite))

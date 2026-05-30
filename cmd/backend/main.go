@@ -34,6 +34,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/feature"
 	"github.com/warmbly/warmbly/internal/app/fleet"
 	"github.com/warmbly/warmbly/internal/app/group"
+	idempotencyapp "github.com/warmbly/warmbly/internal/app/idempotency"
 	"github.com/warmbly/warmbly/internal/app/integration"
 	"github.com/warmbly/warmbly/internal/app/organization"
 	"github.com/warmbly/warmbly/internal/app/releases"
@@ -111,6 +112,7 @@ func main() {
 	var categoryService group.GroupService
 	var crmService crm.CRMService
 	var apiKeyService apikey.APIKeyService
+	var idempotencyService idempotencyapp.Service
 
 	// New services for trial, feature gates, and worker assignment
 	var trialService trial.TrialService
@@ -442,6 +444,7 @@ func main() {
 		organizationRepoForHandler = organizationRepository
 		taskRepository := repository.NewTaskRepository(primaryDB.Pool)
 		apiKeyRepository := repository.NewAPIKeyRepository(primaryDB)
+		idempotencyService = idempotencyapp.NewService(primaryDB.Pool)
 		crmRepository := repository.NewCRMRepository(primaryDB.Pool)
 		advancedRepository := repository.NewAdvancedOutreachRepository(primaryDB.Pool)
 		templateRepository := repository.NewTemplateRepository(primaryDB.Pool)
@@ -824,6 +827,7 @@ func main() {
 	m := &middleware.Handler{
 		TokenService:        tokenService,
 		APIKeyService:       apiKeyService,
+		IdempotencyService:  idempotencyService,
 		OrganizationService: organizationService,
 	}
 
