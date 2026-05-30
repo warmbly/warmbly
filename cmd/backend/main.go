@@ -623,6 +623,7 @@ func main() {
 			cache,
 			&oauth2Cfg.InboxAuthorization,
 			workerAssignmentService,
+			streamingPublisher,
 		)
 		// Fan out email-account lifecycle events to customer webhooks.
 		emailService.WireWebhooks(webhookService)
@@ -632,7 +633,7 @@ func main() {
 		emailService.WireThrottle(dailyThrottleService)
 		campaignService = campaign.NewService(campaignRepostory, taskRepository, emailRepostory, campaignLogRepository, featureGateService, dailyThrottleService, streamingPublisher)
 		sequenceService = sequence.NewService(sequenceRepostory)
-		contactService = contact.NewService(contactRepostory, subscriptionRepository, planRepository)
+		contactService = contact.NewService(contactRepostory, subscriptionRepository, planRepository, streamingPublisher)
 		apiKeyService = apikey.NewService(cache, apiKeyRepository)
 		crmService = crm.NewService(crmRepository)
 		socketService = socket.NewService(cache, tokenService)

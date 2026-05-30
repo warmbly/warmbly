@@ -296,6 +296,9 @@ func (s *contactService) ImportCommit(
 	}
 
 	res.EndedAt = time.Now().UTC()
+	if res.Imported > 0 || res.Updated > 0 {
+		s.publishContactsReload(ctx, userID, "contacts:import")
+	}
 	return res, nil
 }
 

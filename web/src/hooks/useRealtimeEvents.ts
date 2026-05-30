@@ -1,4 +1,5 @@
-import { useEffect } from 'react'
+import { useCallback, useEffect } from 'react'
+import { useQueryClient, type QueryKey } from '@tanstack/react-query'
 import { useSocket } from './context/socket'
 import { useAppStore } from '@/stores'
 import { useUserProfile } from './context/user'
@@ -6,76 +7,204 @@ import { useUserProfile } from './context/user'
 export function useRealtimeEvents() {
   const { isConnected, subscribeToChannel } = useSocket()
   const { user } = useUserProfile()
+  const queryClient = useQueryClient()
   const currentOrg = useAppStore((s) => s.currentOrganization)
 
   const updateCampaign = useAppStore((s) => s.updateCampaign)
-  const addUniboxEmail = useAppStore((s) => s.addUniboxEmail)
   const incrementUnseenCount = useAppStore((s) => s.incrementUnseenCount)
   const updateDeal = useAppStore((s) => s.updateDeal)
   const setSubscription = useAppStore((s) => s.setSubscription)
 
-  // User channel events
-  useEffect(() => {
-    if (!isConnected || !user?.email) return
+  const invalidate = useCallback(
+    (queryKeys: QueryKey[]) => {
+      for (const queryKey of queryKeys) {
+        void queryClient.invalidateQueries({ queryKey })
+      }
+    },
+    [queryClient],
+  )
 
-    const topic = `user:${user.email}`
-    const unsubs: (() => void)[] = []
+  const handleRealtimeEvent = useCallback(
+    (payload: Record<string, unknown>) => {
+      const rawEvent = String(
+        payload.event_type ?? payload.type ?? payload._event ?? '',
+      )
+      const event = rawEvent.replace(/[.:\s-]+/g, '_').toUpperCase()
+      if (!event) return
 
-    // New email received
-    unsubs.push(
-      subscribeToChannel(topic, 'new_email', (payload) => {
-        addUniboxEmail(payload as any)
+      const getString = (key: string) => {
+        const value = payload[key]
+        return typeof value === 'string' && value.length > 0 ? value : null
+      }
+      const includes = (...needles: string[]) =>
+        needles.some((needle) => event.includes(needle))
+
+      const campaignId = getString('campaign_id')
+      const contactId = getString('contact_id')
+      const dealId = getString('deal_id')
+      const threadId = getString('thread_id')
+      const emailId = getString('email_id') ?? getString('message_id')
+
+      if (includes('EMAIL_RECEIVED', 'NEW_EMAIL', 'INBOX_NEW')) {
         incrementUnseenCount()
-      })
-    )
+        invalidate([
+          ['unibox'],
+          ['analytics'],
+          ['emails', 'list'],
+        ])
+        if (threadId) invalidate([['unibox', 'thread', threadId]])
+        if (emailId) invalidate([['unibox', 'email', emailId]])
+        return
+      }
 
-    // Campaign status changed
-    unsubs.push(
-      subscribeToChannel(topic, 'campaign_status_changed', (payload) => {
-        const { campaign_id, ...updates } = payload as any
-        if (campaign_id) {
-          updateCampaign(campaign_id, updates)
+      if (includes('EMAIL_UPDATED', 'EMAIL_DELETED', 'INBOX_UPDATE')) {
+        invalidate([['unibox'], ['analytics']])
+        if (threadId) invalidate([['unibox', 'thread', threadId]])
+        if (emailId) invalidate([['unibox', 'email', emailId]])
+        return
+      }
+
+      if (includes('CONTACT')) {
+        invalidate([
+          ['contacts'],
+          ['campaigns', 'list'],
+          ['analytics'],
+          ['organizations', 'limits'],
+        ])
+        if (contactId) invalidate([['contacts', contactId]])
+        return
+      }
+
+      if (
+        includes(
+          'CAMPAIGN',
+          'EMAIL_SENT',
+          'EMAIL_OPENED',
+          'EMAIL_CLICKED',
+          'EMAIL_REPLIED',
+          'EMAIL_BOUNCED',
+          'TASK_PROGRESS',
+        )
+      ) {
+        if (campaignId) {
+          const status = getString('status')
+          updateCampaign(campaignId, status ? { status } : {})
+          invalidate([
+            ['campaigns', campaignId],
+            ['campaigns', campaignId, 'logs'],
+            ['analytics', 'campaigns', campaignId],
+            ['analytics', 'campaigns', campaignId, 'daily'],
+            ['analytics', 'campaigns', campaignId, 'hourly'],
+          ])
         }
-      })
-    )
+        invalidate([
+          ['campaigns', 'list'],
+          ['analytics'],
+          ['contacts'],
+        ])
+        if (contactId) invalidate([['contacts', contactId]])
+        return
+      }
 
-    // Subscription changed
-    unsubs.push(
-      subscribeToChannel(topic, 'subscription_changed', (payload) => {
+      if (includes('ACCOUNT', 'EMAIL_STATUS', 'EMAIL_ERROR', 'WARMUP')) {
+        invalidate([
+          ['emails', 'list'],
+          ['analytics', 'accounts'],
+          ['analytics', 'warmup'],
+          ['analytics', 'dashboard'],
+        ])
+        return
+      }
+
+      if (includes('DEAL')) {
+        if (dealId) updateDeal(dealId, payload as any)
+        invalidate([['crm', 'deals'], ['crm', 'pipelines'], ['contacts']])
+        return
+      }
+
+      if (includes('PIPELINE', 'STAGE')) {
+        invalidate([['crm', 'pipelines'], ['crm', 'deals']])
+        return
+      }
+
+      if (includes('CRM_TASK', 'TASK')) {
+        invalidate([['crm', 'tasks'], ['crm', 'deals']])
+        return
+      }
+
+      if (includes('SUBSCRIPTION', 'PLAN', 'BILLING', 'LIMIT')) {
         setSubscription(payload as any)
-      })
-    )
+        invalidate([
+          ['subscription'],
+          ['organizations', 'current'],
+          ['organizations', 'limits'],
+          ['auth', 'me'],
+        ])
+        return
+      }
 
-    return () => unsubs.forEach((fn) => fn())
-  }, [isConnected, user?.email, subscribeToChannel, addUniboxEmail, incrementUnseenCount, updateCampaign, setSubscription])
+      if (includes('MEMBER', 'INVITATION', 'ORGANIZATION', 'SETTINGS')) {
+        invalidate([
+          ['organizations'],
+          ['organizations', 'current'],
+          ['organizations', 'invitations'],
+          ['auth', 'me'],
+        ])
+        return
+      }
+
+      if (includes('API_KEY')) {
+        invalidate([['api-keys']])
+        return
+      }
+
+      if (includes('TEMPLATE')) {
+        invalidate([['templates']])
+        return
+      }
+
+      if (includes('AUDIT')) {
+        invalidate([['audit']])
+        return
+      }
+
+      if (includes('DANGER', 'DELETION')) {
+        invalidate([
+          ['dangerzone'],
+          ['auth', 'me'],
+          ['organizations', 'current'],
+        ])
+        return
+      }
+
+      invalidate([
+        ['analytics', 'dashboard'],
+        ['auth', 'me'],
+      ])
+    },
+    [
+      incrementUnseenCount,
+      invalidate,
+      setSubscription,
+      updateCampaign,
+      updateDeal,
+    ],
+  )
+
+  // User channel events. Topic uses the user UUID; the realtime server
+  // rejects email-address topics and only authorizes `user:{sub}`.
+  useEffect(() => {
+    if (!isConnected || !user?.id) return
+
+    const topic = `user:${user.id}`
+    return subscribeToChannel(topic, '*', handleRealtimeEvent)
+  }, [isConnected, user?.id, subscribeToChannel, handleRealtimeEvent])
 
   // Org channel events
   useEffect(() => {
     if (!isConnected || !currentOrg?.id) return
 
     const topic = `org:${currentOrg.id}`
-    const unsubs: (() => void)[] = []
-
-    // Deal updated
-    unsubs.push(
-      subscribeToChannel(topic, 'deal_updated', (payload) => {
-        const { deal_id, ...updates } = payload as any
-        if (deal_id) {
-          updateDeal(deal_id, updates)
-        }
-      })
-    )
-
-    // Campaign events
-    unsubs.push(
-      subscribeToChannel(topic, 'email_sent', (payload) => {
-        const { campaign_id } = payload as any
-        if (campaign_id) {
-          updateCampaign(campaign_id, {})
-        }
-      })
-    )
-
-    return () => unsubs.forEach((fn) => fn())
-  }, [isConnected, currentOrg?.id, subscribeToChannel, updateDeal, updateCampaign])
+    return subscribeToChannel(topic, '*', handleRealtimeEvent)
+  }, [isConnected, currentOrg?.id, subscribeToChannel, handleRealtimeEvent])
 }

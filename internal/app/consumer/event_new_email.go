@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/config"
+	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/models"
 )
 
@@ -36,6 +37,9 @@ func (s *JobsService) HandleNewEmail(ctx context.Context, e *models.JobEventNewE
 		CaptureError(e.UserID, e.Message.EmailID, err)
 		return err
 	}
+	if s.StreamingPublisher != nil && e.Message != nil {
+		s.StreamingPublisher.PublishEmailReceived(ctx, emailInboxEvent(e.UserID, e.Message))
+	}
 
 	// Advanced reply-intent automation is best-effort and should not block inbox ingest.
 	if s.AdvancedService != nil {
@@ -43,6 +47,25 @@ func (s *JobsService) HandleNewEmail(ctx context.Context, e *models.JobEventNewE
 	}
 
 	return nil
+}
+
+func (s *JobsService) publishEmailUpdated(ctx context.Context, userID uuid.UUID, message *models.EmailMessageStoreData) {
+	if s.StreamingPublisher == nil || message == nil {
+		return
+	}
+	s.StreamingPublisher.PublishEmailUpdated(ctx, emailInboxEvent(userID, message))
+}
+
+func emailInboxEvent(userID uuid.UUID, message *models.EmailMessageStoreData) *pubsub.EmailInboxEvent {
+	return &pubsub.EmailInboxEvent{
+		BaseEvent:      pubsub.BaseEvent{UserID: userID.String()},
+		EmailAccountID: message.EmailID.String(),
+		MessageID:      message.ID.String(),
+		ThreadID:       message.ThreadID,
+		Subject:        message.Subject,
+		From:           strings.Join(message.FromAddr, ", "),
+		Preview:        message.Snippet,
+	}
 }
 
 // extractHeaderValue extracts a custom header value from the email message

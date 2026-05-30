@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/warmbly/warmbly/internal/errx"
+	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/utils/validate"
 )
@@ -41,6 +42,7 @@ func (s *emailService) Update(ctx context.Context, userID, emailAccountID string
 	}
 
 	s.syncWarmupPoolMembership(ctx, account)
+	s.publishAccountEvent(ctx, pubsub.EventAccountSynced, account)
 	return account, nil
 }
 
@@ -59,6 +61,7 @@ func (s *emailService) Delete(ctx context.Context, userID, emailAccountID string
 	}
 
 	s.removeFromAllWarmupPools(ctx, account)
+	s.publishAccountEvent(ctx, pubsub.EventAccountDisconnected, account)
 
 	if s.webhookService != nil && account != nil && account.OrganizationID != nil {
 		_, _ = s.webhookService.Dispatch(ctx, *account.OrganizationID, models.WebhookEventEmailAccountRemoved, map[string]any{

@@ -86,6 +86,14 @@ defmodule Realtime.CloudPubSub.Subscriber do
       Logger.debug("Broadcast #{event_type} to #{topic}")
     end
 
+    org_id = event["org_id"] || event["organization_id"]
+
+    if org_id do
+      topic = "org:#{org_id}"
+      Phoenix.PubSub.broadcast(Realtime.PubSub, topic, {:pubsub_event, event})
+      Logger.debug("Broadcast #{event_type} to #{topic}")
+    end
+
     # Broadcast to entity-specific channels
     broadcast_to_entity_channels(event)
   end

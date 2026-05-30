@@ -29,7 +29,14 @@ Other CI-touching rules:
 
 Commit hygiene:
 
+- when instructed to make a commit, use the subject format `feat: one line explanation`
 - commit messages on this repo do not include `Co-Authored-By:` or other AI/agent attribution footers. Keep messages to subject + body explaining the why. If a commit slips through with an attribution footer, rewrite it before opening or updating a PR.
+
+Dashboard realtime:
+
+- dashboard experiences should be realtime by default. When emails arrive, contacts are added, records change, or any dashboard-visible feature updates, the dashboard should reflect it live without requiring a manual refresh
+- aim for a responsive, Discord-like product feel: presence, counts, lists, detail panes, notifications, and workflow state should stay current across every dashboard feature where live updates are meaningful
+- when changing dashboard behavior, it is acceptable to safely change the API structure if a better solution exists. Before making an API shape change, ask the user how they want to handle it, especially when the current API may already be published or backwards compatibility might require a new API version
 
 ## System Shape
 

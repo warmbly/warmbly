@@ -51,7 +51,7 @@ func (s *JobsService) HandleFlagsAdd(ctx context.Context, e *models.JobEventFlag
 		return nil
 	}
 
-	return s.UniboxRepository.UpdateEntry(
+	if err := s.UniboxRepository.UpdateEntry(
 		ctx,
 		e.UserID,
 		e.EmailID,
@@ -59,7 +59,12 @@ func (s *JobsService) HandleFlagsAdd(ctx context.Context, e *models.JobEventFlag
 		&repository.UpdateUniboxEntry{
 			Flags: email.Flags,
 		},
-	)
+	); err != nil {
+		return err
+	}
+
+	s.publishEmailUpdated(ctx, e.UserID, email)
+	return nil
 }
 
 func warmupTokenFromFlags(flags []string) string {
@@ -106,7 +111,7 @@ func (s *JobsService) HandleFlagsRemove(ctx context.Context, e *models.JobEventF
 		return nil
 	}
 
-	return s.UniboxRepository.UpdateEntry(
+	if err := s.UniboxRepository.UpdateEntry(
 		ctx,
 		e.UserID,
 		e.EmailID,
@@ -114,5 +119,11 @@ func (s *JobsService) HandleFlagsRemove(ctx context.Context, e *models.JobEventF
 		&repository.UpdateUniboxEntry{
 			Flags: newFlags,
 		},
-	)
+	); err != nil {
+		return err
+	}
+
+	email.Flags = newFlags
+	s.publishEmailUpdated(ctx, e.UserID, email)
+	return nil
 }

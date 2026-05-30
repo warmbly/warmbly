@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/errx"
+	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
 )
@@ -47,19 +48,34 @@ type ContactService interface {
 }
 
 type contactService struct {
-	contactRepository repository.ContactRepository
-	subRepo           repository.SubscriptionRepository
-	planRepo          repository.PlanRepository
+	contactRepository  repository.ContactRepository
+	subRepo            repository.SubscriptionRepository
+	planRepo           repository.PlanRepository
+	streamingPublisher *pubsub.StreamingPublisher
 }
 
 func NewService(
 	contactRepository repository.ContactRepository,
 	subRepo repository.SubscriptionRepository,
 	planRepo repository.PlanRepository,
+	streamingPublisher ...*pubsub.StreamingPublisher,
 ) ContactService {
-	return &contactService{
-		contactRepository: contactRepository,
-		subRepo:           subRepo,
-		planRepo:          planRepo,
+	var publisher *pubsub.StreamingPublisher
+	if len(streamingPublisher) > 0 {
+		publisher = streamingPublisher[0]
 	}
+
+	return &contactService{
+		contactRepository:  contactRepository,
+		subRepo:            subRepo,
+		planRepo:           planRepo,
+		streamingPublisher: publisher,
+	}
+}
+
+func (s *contactService) publishContactsReload(ctx context.Context, userID string, operationID string) {
+	if s.streamingPublisher == nil {
+		return
+	}
+	s.streamingPublisher.PublishContactsReload(ctx, userID, operationID)
 }

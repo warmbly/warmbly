@@ -184,6 +184,46 @@ func (p *StreamingPublisher) PublishEmailReceived(ctx context.Context, event *Em
 	}
 }
 
+// PublishEmailUpdated notifies user that an inbox row changed.
+func (p *StreamingPublisher) PublishEmailUpdated(ctx context.Context, event *EmailInboxEvent) {
+	if p.client == nil {
+		return
+	}
+
+	event.EventType = EventEmailUpdated
+	event.Timestamp = time.Now()
+
+	attrs := map[string]string{
+		"user_id":    event.UserID,
+		"email_id":   event.EmailAccountID,
+		"event_type": string(EventEmailUpdated),
+	}
+
+	if err := p.client.Publish(ctx, TopicEmailInbox, event, attrs); err != nil {
+		// Log error but don't fail
+	}
+}
+
+// PublishEmailDeleted notifies user that an inbox row was removed.
+func (p *StreamingPublisher) PublishEmailDeleted(ctx context.Context, event *EmailInboxEvent) {
+	if p.client == nil {
+		return
+	}
+
+	event.EventType = EventEmailDeleted
+	event.Timestamp = time.Now()
+
+	attrs := map[string]string{
+		"user_id":    event.UserID,
+		"email_id":   event.EmailAccountID,
+		"event_type": string(EventEmailDeleted),
+	}
+
+	if err := p.client.Publish(ctx, TopicEmailInbox, event, attrs); err != nil {
+		// Log error but don't fail
+	}
+}
+
 // PublishContactsReload signals frontend to reload contacts
 func (p *StreamingPublisher) PublishContactsReload(ctx context.Context, userID, operationID string) {
 	if p.client == nil {

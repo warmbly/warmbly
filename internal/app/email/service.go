@@ -15,6 +15,7 @@ import (
 	"github.com/warmbly/warmbly/internal/events"
 	"github.com/warmbly/warmbly/internal/infrastructure/cache"
 	"github.com/warmbly/warmbly/internal/infrastructure/kafka"
+	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
 )
@@ -38,16 +39,17 @@ type EmailService interface {
 }
 
 type emailService struct {
-	emailRepository  repository.EmailRepository
-	cipherService    cipher.CipherService
-	featureGate      feature.FeatureGateService
-	warmupService    warmupapp.Service
-	publisher        events.Publisher
-	producer         *kafka.Producer
-	r                *cache.Cache
-	oauthInbox       *config.Oauth2Inbox
-	workerAssignment worker.WorkerAssignmentService
-	throttle         dailythrottle.Service
+	emailRepository    repository.EmailRepository
+	cipherService      cipher.CipherService
+	featureGate        feature.FeatureGateService
+	warmupService      warmupapp.Service
+	publisher          events.Publisher
+	streamingPublisher *pubsub.StreamingPublisher
+	producer           *kafka.Producer
+	r                  *cache.Cache
+	oauthInbox         *config.Oauth2Inbox
+	workerAssignment   worker.WorkerAssignmentService
+	throttle           dailythrottle.Service
 	// webhookService is optional. When non-nil, account lifecycle events
 	// (email_account.connected, email_account.removed) are dispatched to
 	// subscribed customer webhooks.
@@ -74,13 +76,20 @@ func NewService(
 	featureGate feature.FeatureGateService,
 	warmupService warmupapp.Service,
 	publisher events.Publisher,
+	streamingPublisher ...*pubsub.StreamingPublisher,
 ) EmailService {
+	var realtime *pubsub.StreamingPublisher
+	if len(streamingPublisher) > 0 {
+		realtime = streamingPublisher[0]
+	}
+
 	return &emailService{
-		emailRepository: emailRepository,
-		cipherService:   cipherService,
-		featureGate:     featureGate,
-		warmupService:   warmupService,
-		publisher:       publisher,
+		emailRepository:    emailRepository,
+		cipherService:      cipherService,
+		featureGate:        featureGate,
+		warmupService:      warmupService,
+		publisher:          publisher,
+		streamingPublisher: realtime,
 	}
 }
 
@@ -94,16 +103,40 @@ func NewServiceWithKafka(
 	r *cache.Cache,
 	oauthInbox *config.Oauth2Inbox,
 	workerAssignment worker.WorkerAssignmentService,
+	streamingPublisher ...*pubsub.StreamingPublisher,
 ) EmailService {
-	return &emailService{
-		emailRepository:  emailRepository,
-		cipherService:    cipherService,
-		featureGate:      featureGate,
-		warmupService:    warmupService,
-		publisher:        publisher,
-		producer:         producer,
-		r:                r,
-		oauthInbox:       oauthInbox,
-		workerAssignment: workerAssignment,
+	var realtime *pubsub.StreamingPublisher
+	if len(streamingPublisher) > 0 {
+		realtime = streamingPublisher[0]
 	}
+
+	return &emailService{
+		emailRepository:    emailRepository,
+		cipherService:      cipherService,
+		featureGate:        featureGate,
+		warmupService:      warmupService,
+		publisher:          publisher,
+		streamingPublisher: realtime,
+		producer:           producer,
+		r:                  r,
+		oauthInbox:         oauthInbox,
+		workerAssignment:   workerAssignment,
+	}
+}
+
+func (s *emailService) publishAccountEvent(ctx context.Context, eventType pubsub.EventType, account *models.Email) {
+	if s.streamingPublisher == nil || account == nil {
+		return
+	}
+
+	s.streamingPublisher.PublishAccountEvent(ctx, &pubsub.AccountEvent{
+		BaseEvent: pubsub.BaseEvent{
+			EventType: eventType,
+			UserID:    account.UserID,
+		},
+		EmailAccountID: account.ID.String(),
+		Email:          account.Email,
+		Provider:       account.Provider,
+		Status:         account.Status,
+	})
 }

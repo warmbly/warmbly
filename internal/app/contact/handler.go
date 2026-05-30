@@ -31,7 +31,13 @@ func (s *contactService) Add(ctx context.Context, userID string, contacts []mode
 		}
 	}
 
-	return s.contactRepository.Add(ctx, userID, contacts)
+	created, xerr := s.contactRepository.Add(ctx, userID, contacts)
+	if xerr != nil {
+		return nil, xerr
+	}
+
+	s.publishContactsReload(ctx, userID, "contacts:add")
+	return created, nil
 }
 
 func (s *contactService) Search(ctx context.Context, userID, cursor, category, limit string, filters models.SearchContacts) (*models.ContactsResult, *errx.Error) {
@@ -53,19 +59,41 @@ func (s *contactService) Search(ctx context.Context, userID, cursor, category, l
 }
 
 func (s *contactService) BulkUpdate(ctx context.Context, userID string, data *models.BulkEditContactsData) ([]models.Contact, *errx.Error) {
-	return s.contactRepository.BulkUpdate(ctx, userID, data)
+	updated, xerr := s.contactRepository.BulkUpdate(ctx, userID, data)
+	if xerr != nil {
+		return nil, xerr
+	}
+
+	s.publishContactsReload(ctx, userID, "contacts:bulk_update")
+	return updated, nil
 }
 
 func (s *contactService) Update(ctx context.Context, userID, contactID string, data *models.UpdateContact) (*models.Contact, *errx.Error) {
-	return s.contactRepository.Update(ctx, userID, contactID, data)
+	updated, xerr := s.contactRepository.Update(ctx, userID, contactID, data)
+	if xerr != nil {
+		return nil, xerr
+	}
+
+	s.publishContactsReload(ctx, userID, "contacts:update:"+contactID)
+	return updated, nil
 }
 
 func (s *contactService) BulkDelete(ctx context.Context, userID string, contactIDs []string) *errx.Error {
-	return s.contactRepository.BulkDelete(ctx, userID, contactIDs)
+	if xerr := s.contactRepository.BulkDelete(ctx, userID, contactIDs); xerr != nil {
+		return xerr
+	}
+
+	s.publishContactsReload(ctx, userID, "contacts:bulk_delete")
+	return nil
 }
 
 func (s *contactService) Delete(ctx context.Context, userID string, contactID string) *errx.Error {
-	return s.contactRepository.Delete(ctx, userID, contactID)
+	if xerr := s.contactRepository.Delete(ctx, userID, contactID); xerr != nil {
+		return xerr
+	}
+
+	s.publishContactsReload(ctx, userID, "contacts:delete:"+contactID)
+	return nil
 }
 
 func (s *contactService) GetDetail(ctx context.Context, userID uuid.UUID, orgID *uuid.UUID, contactID uuid.UUID) (*models.ContactDetail, *errx.Error) {

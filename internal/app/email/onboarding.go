@@ -14,6 +14,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/dailythrottle"
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
+	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/crypt"
 	"golang.org/x/oauth2"
@@ -161,6 +162,7 @@ func (s *emailService) OAuthFinish(ctx context.Context, userID, code, state stri
 		ExpiresAt:      tok.Expiry,
 	})
 	if xerr == nil && acc != nil {
+		s.publishAccountEvent(ctx, pubsub.EventAccountConnected, acc)
 		s.dispatchAccountConnected(ctx, sess.OrganizationID, acc)
 	}
 	return acc, xerr
@@ -222,6 +224,7 @@ func (s *emailService) OnboardSMTPIMAP(ctx context.Context, userID string, orgID
 		}
 	}
 
+	s.publishAccountEvent(ctx, pubsub.EventAccountConnected, acc)
 	s.dispatchAccountConnected(ctx, orgID, acc)
 	return acc, nil
 }

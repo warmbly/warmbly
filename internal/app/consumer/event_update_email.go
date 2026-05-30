@@ -31,5 +31,14 @@ func (s *JobsService) HandleUpdateEmail(ctx context.Context, e *models.JobEventE
 		updateData.ModSeq = &e.ModSeq
 	}
 
-	return s.UniboxRepository.UpdateEntry(ctx, e.UserID, e.EmailID, e.ID, &updateData)
+	if err := s.UniboxRepository.UpdateEntry(ctx, e.UserID, e.EmailID, e.ID, &updateData); err != nil {
+		return err
+	}
+
+	email.Flags = e.Flags
+	email.UID = e.UID
+	email.Mailbox = e.Mailbox
+	email.ModSeq = e.ModSeq
+	s.publishEmailUpdated(ctx, e.UserID, email)
+	return nil
 }
