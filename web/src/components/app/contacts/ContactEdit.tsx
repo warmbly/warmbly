@@ -372,41 +372,32 @@ function TabStrip({
     setTab: (t: ContactSlideTab) => void;
 }) {
     return (
-        <nav className="px-4 py-2 border-b border-slate-200 shrink-0">
-            <div className="inline-flex bg-slate-100 rounded-md p-0.5">
-                {CONTACT_SLIDE_TABS.map((t) => {
-                    const isActive = tab === t.id;
-                    return (
-                        <button
-                            key={t.id}
-                            type="button"
-                            onClick={() => setTab(t.id)}
-                            className="relative h-6 px-3 rounded text-[11.5px] font-medium outline-none"
-                        >
-                            {isActive && (
-                                <motion.div
-                                    layoutId="contact-tab-bg"
-                                    className="absolute inset-0 rounded bg-white shadow-sm"
-                                    transition={{
-                                        type: "spring",
-                                        duration: 0.3,
-                                        bounce: 0.15,
-                                    }}
-                                />
-                            )}
-                            <span
-                                className={`relative z-10 transition-colors ${
-                                    isActive
-                                        ? "text-slate-900"
-                                        : "text-slate-500 hover:text-slate-800"
-                                }`}
-                            >
-                                {t.label}
-                            </span>
-                        </button>
-                    );
-                })}
-            </div>
+        <nav className="shrink-0 px-3 flex items-center gap-1 border-b border-slate-200">
+            {CONTACT_SLIDE_TABS.map((t) => {
+                const isActive = tab === t.id;
+                return (
+                    <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => setTab(t.id)}
+                        className={`relative h-10 px-2.5 inline-flex items-center gap-1.5 text-[12.5px] outline-none transition-colors ${
+                            isActive
+                                ? "text-slate-900 font-medium"
+                                : "text-slate-500 hover:text-slate-800"
+                        }`}
+                    >
+                        <t.icon className="w-3.5 h-3.5" />
+                        {t.label}
+                        {isActive && (
+                            <motion.span
+                                layoutId="contact-tab-underline"
+                                className="absolute left-1.5 right-1.5 -bottom-px h-0.5 rounded-full bg-sky-600"
+                                transition={{ type: "spring", duration: 0.3, bounce: 0.15 }}
+                            />
+                        )}
+                    </button>
+                );
+            })}
         </nav>
     );
 }

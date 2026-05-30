@@ -1,8 +1,9 @@
 import { RiFireLine, RiMoreLine } from "@remixicon/react";
 import React, { useMemo } from "react";
 import toast from "react-hot-toast";
+import { useQueryClient } from "@tanstack/react-query";
 import useEmails from "@/lib/api/hooks/app/emails/useEmails";
-import useRemoveEmail from "@/lib/api/hooks/app/emails/useRemoveEmail";
+import removeEmail from "@/lib/api/client/app/emails/removeEmail";
 import { useUserProfile } from "@/hooks/context/user";
 import InboxDetails from "@/components/app/emails/InboxDetails";
 import type Tag from "@/lib/api/models/app/Tag";
@@ -14,8 +15,6 @@ import {
     Trash2Icon,
     XIcon,
 } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
-import removeEmail from "@/lib/api/client/app/emails/removeEmail";
 import { SearchInput } from "@/components/ui/field";
 import {
     PopoverMenu,

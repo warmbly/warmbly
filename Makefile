@@ -146,22 +146,7 @@ restart-all:
 #   2. From the worktree you're iterating on:  make app
 #      Brings up the language services in hot-reload mode against the
 #      already-running infra. Bind-mounted source means saves trigger
-#      in-container rebuilds with no image churn:
-#        - backend / consumer / worker-shared-1  → air rebuilds the
-#          binary into ./tmp/main and restarts in place
-#        - tracking                              → cargo-watch reruns
-#          `cargo run` on changes under tracking/src
-#        - realtime                              → Phoenix reloads
-#          modules in-process; no external watcher
-#
-#   3. Switching worktrees:  cd <other-worktree> && make app
-#      Because every worktree pins `-p warmbly`, this recreates the
-#      app containers in place against the new worktree's source.
-#      Infra is never touched. Caches (Go mod + build, Cargo registry
-#      + target, Mix deps + _build) live on named volumes whose
-#      `name:` skips the per-project prefix, so the first switch into
-#      a worktree is a warm compile (seconds), subsequent switches are
-#      near-instant.
+#      in-container rebuilds with no image churn.
 #
 # `make up` is the separate prod-image flow for smoke tests.
 
@@ -279,7 +264,7 @@ backend:
 	STRIPE_PUBLISHABLE_KEY=pk_test_local \
 	EMAIL_NAME='Warmbly Dev' \
 	EMAIL_ADDRESS=dev@warmbly.local \
-	TRACKING_DOMAIN=localhost:3000 \
+	TRACKING_DOMAIN=t.warmbly.com \
 	SMTP_HOST=localhost \
 	SMTP_PORT=11025 \
 	GEODB_PATH=data/GeoLite2-City.mmdb \
@@ -299,12 +284,9 @@ consumer:
 # (the worker resolves identity from WORKER_ID first, then bind IP, then
 # hostname), so it boots cleanly off-box.
 #
-# The worker reads encrypted DEKs through the `http` provider, calling the
-# backend's /internal/dek endpoint (guarded by INTERNAL_API_TOKEN). This is
-# the prod shape and keeps a single source of truth: the backend owns the
-# DEK store (Postgres), the worker never touches a database. The bearer
-# token here MUST match INTERNAL_API_TOKEN on `make backend`. So `make
-# worker` needs `make backend` running.
+# The worker reads encrypted DEKs through the backend's /internal/dek
+# endpoint (the prod `http` provider, no worker DB), so `make backend`
+# must be running and INTERNAL_API_TOKEN must match.
 worker:
 	$(WORKER_DEV_ENV) \
 	WORKER_ID=10c8f5e4-1c39-5b2a-9c8b-3d2f0a8b1a01 \
@@ -330,8 +312,7 @@ run:
 # need the open/click tracking pixel service or the websocket fanout. Each
 # needs its language toolchain on the host (cargo / elixir+mix).
 
-# Open/click tracking service (Rust) on :3000. Reads from kafka + schema
-# registry; AWS_CONFIG_ENABLED=false keeps it env-only (no SSM/Secrets).
+# Open/click tracking service (Rust) on :3000.
 tracking:
 	cd tracking && \
 	APP_ENV=dev \
@@ -343,10 +324,9 @@ tracking:
 	SCHEMA_REGISTRY_URL=http://localhost:8081 \
 	cargo run
 
-# Websocket fanout service (Elixir/Phoenix) on :4000. In dev (MIX_ENV=dev)
-# the prod-only env guards in runtime.exs are skipped; it reads discrete
-# DATABASE_* (for API-key validation via Ecto) and REDIS_URL. `deps.get`
-# is idempotent and fast once satisfied.
+# Websocket fanout service (Elixir/Phoenix) on :4000. MIX_ENV=dev skips
+# the prod-only env guards in runtime.exs; reads discrete DATABASE_* and
+# REDIS_URL.
 realtime:
 	cd realtime && \
 	export MIX_ENV=dev \
@@ -376,7 +356,7 @@ web:
 	cd web && \
 	VITE_APP_URL=http://localhost:5173 \
 	VITE_API_URL=http://localhost:8080 \
-	VITE_TRACKING_DOMAIN=localhost:3000 \
+	VITE_TRACKING_DOMAIN=t.warmbly.com \
 	VITE_TURNSTILE_KEY=1x00000000000000000000AA \
 	VITE_TURNSTILE_BYPASS_TOKEN=warmbly-local-turnstile-bypass \
 	pnpm dev
@@ -395,18 +375,11 @@ site:
 #
 #   make grant-admin EMAIL=you@example.com               # super (all perms)
 #   make grant-admin EMAIL=you@example.com ROLE=support
-#   make grant-admin EMAIL=you@example.com ROLE=ops
-#   make grant-admin EMAIL=you@example.com ROLE=analyst
 #   make grant-admin EMAIL=you@example.com BITMASK=1     # raw bitmask
 #   make revoke-admin EMAIL=you@example.com              # back to 0
 #
 # Role bitmasks mirror AdminRolePermissions in
-# internal/models/admin_permission.go. Keep them in sync with that file
-# (this is a dev helper; production grants go through the admin UI).
-#
-# Requires `make infra` (or `make app` / `make up`) to be running so the
-# postgres container is up. Sign up the user through the dashboard first
-# so the row exists with a real password hash.
+# internal/models/admin_permission.go.
 ROLE ?= super
 grant-admin:
 	@if [ -z "$(EMAIL)" ]; then \

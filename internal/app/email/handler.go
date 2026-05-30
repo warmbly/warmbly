@@ -2,6 +2,9 @@ package email
 
 import (
 	"context"
+	"net"
+	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/errx"
@@ -47,8 +50,36 @@ func (s *emailService) Update(ctx context.Context, userID, emailAccountID string
 	return account, nil
 }
 
-func (s *emailService) UpdateTrackingDomain(ctx context.Context, userID, emailAccountID, domain string) *errx.Error {
-	return s.emailRepository.UpdateTrackingDomain(ctx, userID, emailAccountID, domain)
+// trackingDomainTarget is the shared host customers point their CNAME at.
+// Keep in sync with the TRACKING_DOMAIN default (Makefile / config).
+const trackingDomainTarget = "t.warmbly.com"
+
+func (s *emailService) UpdateTrackingDomain(ctx context.Context, userID, emailAccountID, domain string) (*models.TrackingDomainStatus, *errx.Error) {
+	domain = strings.TrimSpace(strings.ToLower(domain))
+
+	status := &models.TrackingDomainStatus{TrackingDomain: domain}
+
+	// Empty clears the custom domain (back to the shared default).
+	if domain != "" {
+		// Resolve the CNAME chain for the customer's subdomain and treat
+		// it as verified once it points at our tracking host. DNS can lag
+		// behind a freshly-added record, so a miss is "pending", not an
+		// error — the customer just re-verifies.
+		if cname, err := net.LookupCNAME(domain); err == nil {
+			resolved := strings.TrimSuffix(strings.ToLower(cname), ".")
+			if strings.Contains(resolved, trackingDomainTarget) {
+				status.TrackingDomainVerified = true
+				now := time.Now().UTC()
+				status.TrackingDomainVerifiedAt = &now
+			}
+		}
+	}
+
+	if err := s.emailRepository.UpdateTrackingDomain(ctx, userID, emailAccountID, domain, status.TrackingDomainVerified, status.TrackingDomainVerifiedAt); err != nil {
+		return nil, err
+	}
+
+	return status, nil
 }
 
 func (s *emailService) Delete(ctx context.Context, userID, emailAccountID string) *errx.Error {

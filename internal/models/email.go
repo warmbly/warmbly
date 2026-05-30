@@ -38,7 +38,9 @@ type Email struct {
 	MinWaitTime   int    `json:"min_wait_time"`
 	ReplyTo       string `json:"reply_to"`
 
-	TrackingDomain string `json:"tracking_domain"`
+	TrackingDomain           string     `json:"tracking_domain"`
+	TrackingDomainVerified   bool       `json:"tracking_domain_verified"`
+	TrackingDomainVerifiedAt *time.Time `json:"tracking_domain_verified_at"`
 
 	Warmup          *time.Time `json:"warmup"`
 	WarmupBase      int        `json:"warmup_base"`
@@ -117,6 +119,15 @@ type EmailOnboardingStartResponse struct {
 type EmailsResult struct {
 	Data       []Email    `json:"data"`
 	Pagination Pagination `json:"pagination"`
+}
+
+// TrackingDomainStatus is returned after a tracking-domain update. The
+// backend resolves the CNAME on save; Verified is true once the
+// customer's subdomain points at the shared tracking host.
+type TrackingDomainStatus struct {
+	TrackingDomain           string     `json:"tracking_domain"`
+	TrackingDomainVerified   bool       `json:"tracking_domain_verified"`
+	TrackingDomainVerifiedAt *time.Time `json:"tracking_domain_verified_at"`
 }
 
 type UpdateEmail struct {

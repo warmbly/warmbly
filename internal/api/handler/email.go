@@ -75,7 +75,8 @@ func (h *Handler) UpdateEmailTrackingDomain(c *gin.Context) {
 	emailAccountID := c.Param("id")
 	domain := c.Query("domain")
 
-	if err := h.EmailService.UpdateTrackingDomain(c.Request.Context(), userIDStr, emailAccountID, domain); err != nil {
+	status, err := h.EmailService.UpdateTrackingDomain(c.Request.Context(), userIDStr, emailAccountID, domain)
+	if err != nil {
 		errx.Handle(c, err)
 		return
 	}
@@ -87,9 +88,7 @@ func (h *Handler) UpdateEmailTrackingDomain(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"tracking_domain": domain,
-	})
+	c.JSON(http.StatusOK, status)
 }
 
 func (h *Handler) DeleteEmail(c *gin.Context) {

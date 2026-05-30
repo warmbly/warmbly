@@ -80,6 +80,19 @@ Public API quality bar:
 - list endpoints should use consistent `data` plus `pagination` shapes with opaque cursors; invalid cursors or limits should return `400` instead of being ignored
 - webhook endpoints must stay HMAC-signed, HTTPS by default, and protected against obvious SSRF targets. Only development/self-hosted environments should opt into unsafe webhook URLs
 
+## Dashboard UI Conventions (`web/`)
+
+Everything in the dashboard must use our own theme, not browser/library defaults.
+
+- Number fields: never ship a raw `<input type="number">` with the native spinner. Use the shared `NumberInput` from `@/components/ui/field` — it strips the native up/down arrows (`appearance:none`) and renders our own themed chevron steppers. Do not re-add the default stepper anywhere.
+- Inputs/labels: reuse `TextInput`, `SearchInput`, `Label`, `NumberInput` from `@/components/ui/field`; don't hand-roll raw `<input>`/`<select>` with ad-hoc classes when a primitive exists.
+- Pickers: tag/category multi-selects share one visual language — bordered chip box + framer-motion dropdown with a search header + checkbox-square rows (see contacts `CategoryPicker` and `popup/select/TagSelector`). Reuse `useFlipPlacement` + `useClickOutside`.
+- Detail drawers + their tab bars share one pattern (see `emails/InboxDetails` and contacts `ContactEdit`): a `shrink-0 px-3 flex items-center gap-1 border-b border-slate-200` bar, each tab a `relative h-10 px-2.5 inline-flex items-center gap-1.5 text-[12.5px]` button with a lucide icon, active = `text-slate-900 font-medium` + a `bg-sky-600` underline span.
+- Theme tokens: slate borders (`border-slate-200`), sky accents (`focus:border-sky-400 focus:ring-sky-100`, `bg-sky-50 text-sky-700`), `rounded-md`, `text-[12.5px]` base, `h-7` controls, `10px uppercase tracking-[0.14em]` section labels.
+- Multi-select tables: when rows are selected, show a floating bottom-center selection bar with the count + bulk actions (mirror `SelectionBar` in contacts `ContactsTable.tsx`).
+- Row actions must be reachable on touch: never hide the only affordance behind `opacity-0 group-hover` with no mobile fallback. Use `opacity-100 md:opacity-0 md:group-hover:opacity-100`, or surface actions in the detail drawer.
+- Prefer realtime over polling: subscribe to the socket and `queryClient.invalidateQueries(...)` on the relevant event instead of `refetchInterval` where an event exists (see `useRealtimeEvents` / `RealtimeManager`).
+
 ## System Shape
 
 - `cmd/backend`: API and business orchestration

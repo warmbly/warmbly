@@ -4,6 +4,8 @@ import { useSocket } from './context/socket'
 import { useAppStore } from '@/stores'
 import { useUserProfile } from './context/user'
 
+// Bridges realtime socket events into both the zustand store and react-query
+// cache so list pages, detail panes, counters, and workflow states stay live.
 export function useRealtimeEvents() {
   const { isConnected, subscribeToChannel } = useSocket()
   const { user } = useUserProfile()
@@ -11,6 +13,7 @@ export function useRealtimeEvents() {
   const currentOrg = useAppStore((s) => s.currentOrganization)
 
   const updateCampaign = useAppStore((s) => s.updateCampaign)
+  const addUniboxEmail = useAppStore((s) => s.addUniboxEmail)
   const incrementUnseenCount = useAppStore((s) => s.incrementUnseenCount)
   const updateDeal = useAppStore((s) => s.updateDeal)
   const setSubscription = useAppStore((s) => s.setSubscription)
@@ -46,6 +49,7 @@ export function useRealtimeEvents() {
       const emailId = getString('email_id') ?? getString('message_id')
 
       if (includes('EMAIL_RECEIVED', 'NEW_EMAIL', 'INBOX_NEW')) {
+        addUniboxEmail(payload as any)
         incrementUnseenCount()
         invalidate([
           ['unibox'],
@@ -183,6 +187,7 @@ export function useRealtimeEvents() {
       ])
     },
     [
+      addUniboxEmail,
       incrementUnseenCount,
       invalidate,
       setSubscription,
@@ -191,8 +196,6 @@ export function useRealtimeEvents() {
     ],
   )
 
-  // User channel events. Topic uses the user UUID; the realtime server
-  // rejects email-address topics and only authorizes `user:{sub}`.
   useEffect(() => {
     if (!isConnected || !user?.id) return
 
@@ -200,7 +203,6 @@ export function useRealtimeEvents() {
     return subscribeToChannel(topic, '*', handleRealtimeEvent)
   }, [isConnected, user?.id, subscribeToChannel, handleRealtimeEvent])
 
-  // Org channel events
   useEffect(() => {
     if (!isConnected || !currentOrg?.id) return
 

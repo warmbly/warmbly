@@ -36,7 +36,7 @@ import buildError from "@/lib/helper/buildError";
 import EmailEditor from "../EmailEditor";
 import TagSelector from "../popup/select/TagSelector";
 import { Loading } from "@/components/loader";
-import { NumberInput } from "@/components/ui/field";
+import { NumberInput, TextInput } from "@/components/ui/field";
 import { cn } from "@/lib/utils";
 
 /* ── small themed primitives ─────────────────────── */
@@ -63,8 +63,6 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
         </div>
     );
 }
-
-const INPUT = "w-full h-9 rounded-md border border-slate-200 bg-white px-2.5 text-[12.5px] text-slate-900 placeholder:text-slate-400 outline-none transition-colors focus:border-sky-400 focus:ring-1 focus:ring-sky-200";
 
 function FieldShell({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
     return (
@@ -460,10 +458,10 @@ function SettingsTab({ form, update }: { form: Inbox; update: (p: Partial<Inbox>
             <div className="px-5 py-5 space-y-4">
                 <Eyebrow>Sender profile</Eyebrow>
                 <FieldShell label="Display name">
-                    <input className={INPUT} value={form.name} placeholder="First Last" onChange={(e) => update({ name: e.target.value })} />
+                    <TextInput value={form.name ?? ""} placeholder="First Last" onChange={(v) => update({ name: v })} className="w-full h-9" />
                 </FieldShell>
                 <FieldShell label="Reply-to" hint="Where replies are routed. Defaults to the mailbox address.">
-                    <input className={INPUT} value={form.reply_to} placeholder="support@company.com" onChange={(e) => update({ reply_to: e.target.value })} />
+                    <TextInput value={form.reply_to ?? ""} placeholder="support@company.com" onChange={(v) => update({ reply_to: v })} className="w-full h-9" />
                 </FieldShell>
             </div>
 
@@ -506,7 +504,7 @@ function SettingsTab({ form, update }: { form: Inbox; update: (p: Partial<Inbox>
             <div className="px-5 py-5 space-y-2">
                 <Eyebrow>Tracking domain</Eyebrow>
                 <FieldShell label="Custom tracking domain" hint="Track opens & clicks through your own domain (CNAME). Improves deliverability.">
-                    <input className={INPUT} value={form.tracking_domain} placeholder="track.yourdomain.com" onChange={(e) => update({ tracking_domain: e.target.value })} />
+                    <TextInput value={form.tracking_domain ?? ""} placeholder="track.yourdomain.com" onChange={(v) => update({ tracking_domain: v })} className="w-full h-9" />
                 </FieldShell>
             </div>
 
