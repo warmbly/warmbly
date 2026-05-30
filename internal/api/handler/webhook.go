@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 )
 
@@ -29,7 +30,7 @@ func (h *Handler) ListWebhookEndpoints(c *gin.Context) {
 	}
 	endpoints, err := h.WebhookService.ListEndpoints(c.Request.Context(), orgID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list endpoints"})
+		errx.JSON(c, errx.New(errx.Internal, "failed to list endpoints"))
 		return
 	}
 	if endpoints == nil {
@@ -51,7 +52,7 @@ func (h *Handler) CreateWebhookEndpoint(c *gin.Context) {
 	}
 	var p webhookEndpointPayload
 	if err := c.ShouldBindJSON(&p); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
+		errx.JSON(c, errx.New(errx.BadRequest, "invalid payload"))
 		return
 	}
 	enabled := true
@@ -60,7 +61,7 @@ func (h *Handler) CreateWebhookEndpoint(c *gin.Context) {
 	}
 	endpoint, err := h.WebhookService.CreateEndpoint(c.Request.Context(), orgID, p.URL, p.Description, p.EventTypes, enabled)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		errx.JSON(c, errx.New(errx.BadRequest, err.Error()))
 		return
 	}
 	c.JSON(http.StatusCreated, endpoint)
@@ -75,12 +76,12 @@ func (h *Handler) UpdateWebhookEndpoint(c *gin.Context) {
 	}
 	endpointID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid endpoint id"})
+		errx.JSON(c, errx.New(errx.BadRequest, "invalid endpoint id"))
 		return
 	}
 	var p webhookEndpointPayload
 	if err := c.ShouldBindJSON(&p); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
+		errx.JSON(c, errx.New(errx.BadRequest, "invalid payload"))
 		return
 	}
 	enabled := true
@@ -89,7 +90,7 @@ func (h *Handler) UpdateWebhookEndpoint(c *gin.Context) {
 	}
 	endpoint, err := h.WebhookService.UpdateEndpoint(c.Request.Context(), orgID, endpointID, p.URL, p.Description, p.EventTypes, enabled)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		errx.JSON(c, errx.New(errx.BadRequest, err.Error()))
 		return
 	}
 	c.JSON(http.StatusOK, endpoint)
@@ -104,11 +105,11 @@ func (h *Handler) DeleteWebhookEndpoint(c *gin.Context) {
 	}
 	endpointID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid endpoint id"})
+		errx.JSON(c, errx.New(errx.BadRequest, "invalid endpoint id"))
 		return
 	}
 	if err := h.WebhookService.DeleteEndpoint(c.Request.Context(), orgID, endpointID); err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		errx.JSON(c, errx.New(errx.NotFound, err.Error()))
 		return
 	}
 	c.Status(http.StatusNoContent)
@@ -124,12 +125,12 @@ func (h *Handler) RotateWebhookSecret(c *gin.Context) {
 	}
 	endpointID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid endpoint id"})
+		errx.JSON(c, errx.New(errx.BadRequest, "invalid endpoint id"))
 		return
 	}
 	secret, err := h.WebhookService.RotateSecret(c.Request.Context(), orgID, endpointID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		errx.JSON(c, errx.New(errx.NotFound, err.Error()))
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"secret": secret})
@@ -144,18 +145,21 @@ func (h *Handler) ListWebhookDeliveries(c *gin.Context) {
 	}
 	endpointID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid endpoint id"})
+		errx.JSON(c, errx.New(errx.BadRequest, "invalid endpoint id"))
 		return
 	}
 	limit := 50
 	if raw := c.Query("limit"); raw != "" {
-		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
-			limit = n
+		n, err := strconv.Atoi(raw)
+		if err != nil || n <= 0 || n > 200 {
+			errx.JSON(c, errx.New(errx.BadRequest, "limit must be between 1 and 200"))
+			return
 		}
+		limit = n
 	}
 	deliveries, err := h.WebhookService.ListDeliveries(c.Request.Context(), orgID, endpointID, limit)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list deliveries"})
+		errx.JSON(c, errx.New(errx.Internal, "failed to list deliveries"))
 		return
 	}
 	if deliveries == nil {

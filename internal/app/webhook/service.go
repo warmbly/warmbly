@@ -14,8 +14,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -186,8 +188,9 @@ func generateSecret() (string, error) {
 }
 
 // validateURL keeps malformed entries and obvious SSRF targets out of the
-// table. We do not enforce HTTPS at insert time because internal-network
-// integrations and ngrok-style local tests legitimately use http://.
+// table. Public webhook endpoints must use HTTPS and route to public hosts.
+// Local/self-hosted development can set WARMBLY_ALLOW_UNSAFE_WEBHOOK_URLS=true
+// to permit HTTP and private targets.
 func validateURL(raw string) error {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -197,13 +200,33 @@ func validateURL(raw string) error {
 	if err != nil {
 		return fmt.Errorf("invalid url: %w", err)
 	}
-	if u.Scheme != "http" && u.Scheme != "https" {
-		return fmt.Errorf("url scheme must be http or https")
+	allowUnsafe := strings.EqualFold(os.Getenv("WARMBLY_ALLOW_UNSAFE_WEBHOOK_URLS"), "true")
+	if u.Scheme != "https" && !(allowUnsafe && u.Scheme == "http") {
+		return fmt.Errorf("url scheme must be https")
 	}
 	if u.Host == "" {
 		return fmt.Errorf("url must have a host")
 	}
+	if !allowUnsafe && isPrivateWebhookHost(u.Hostname()) {
+		return fmt.Errorf("url host must be publicly routable")
+	}
 	return nil
+}
+
+func isPrivateWebhookHost(host string) bool {
+	host = strings.Trim(strings.ToLower(host), "[]")
+	if host == "" || host == "localhost" || strings.HasSuffix(host, ".localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	return ip.IsLoopback() ||
+		ip.IsPrivate() ||
+		ip.IsLinkLocalUnicast() ||
+		ip.IsLinkLocalMulticast() ||
+		ip.IsUnspecified()
 }
 
 func validateEventTypes(eventTypes []string) error {

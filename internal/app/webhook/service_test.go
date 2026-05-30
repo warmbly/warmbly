@@ -73,7 +73,10 @@ func TestValidateURL_RejectsBadInput(t *testing.T) {
 		"javascript:alert(1)":        true,
 		"http://":                    true,
 		"https://example.com/hook":   false,
-		"http://localhost:3000/hook": false,
+		"http://localhost:3000/hook": true,
+		"https://localhost/hook":     true,
+		"https://127.0.0.1/hook":     true,
+		"https://10.0.0.10/hook":     true,
 	}
 	for input, wantErr := range cases {
 		err := validateURL(input)
@@ -83,5 +86,13 @@ func TestValidateURL_RejectsBadInput(t *testing.T) {
 		if !wantErr && err != nil {
 			t.Errorf("validateURL(%q) unexpected error: %v", input, err)
 		}
+	}
+}
+
+func TestValidateURL_AllowsUnsafeLocalDevelopmentWhenEnabled(t *testing.T) {
+	t.Setenv("WARMBLY_ALLOW_UNSAFE_WEBHOOK_URLS", "true")
+
+	if err := validateURL("http://localhost:3000/hook"); err != nil {
+		t.Fatalf("expected unsafe local URL to be accepted in development mode: %v", err)
 	}
 }

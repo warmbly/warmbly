@@ -164,6 +164,6 @@ func requireOrgID(c *gin.Context) (uuid.UUID, bool) {
 	if orgID := middleware.GetOrganizationID(c); orgID != nil {
 		return *orgID, true
 	}
-	c.JSON(http.StatusForbidden, gin.H{"error": "organization context required"})
+	errx.JSON(c, errx.New(errx.Forbidden, "organization context required"))
 	return uuid.Nil, false
 }
