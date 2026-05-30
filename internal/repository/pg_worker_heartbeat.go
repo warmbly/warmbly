@@ -24,6 +24,13 @@ func (r *workerRepository) UpsertOnHeartbeat(ctx context.Context, id uuid.UUID, 
 		VALUES ($1, $2, $3, TRUE, $4, $5, $6, 'healthy', 0)
 		ON CONFLICT (id) DO UPDATE
 		   SET ip_addr = EXCLUDED.ip_addr,
+		       active = TRUE,
+		       install_state = CASE
+		         WHEN workers.install_state IN ('pending', 'provisioning', 'error') THEN 'installed'::worker_install_state
+		         ELSE workers.install_state
+		       END,
+		       last_seen_at = now(),
+		       last_error = NULL,
 		       updated_at = now()
 	`
 	name := "auto-registered-" + id.String()[:8]

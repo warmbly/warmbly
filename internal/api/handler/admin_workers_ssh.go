@@ -107,7 +107,7 @@ func (h *Handler) AdminCreateWorker(c *gin.Context) {
 			errx.JSON(c, errx.New(errx.Internal, "failed to generate enrollment token"))
 			return
 		}
-		enrollToken = hex.EncodeToString(raw)
+		enrollToken = "wmenroll_" + hex.EncodeToString(raw)
 		sum := sha256.Sum256([]byte(enrollToken))
 		enrollHash = hex.EncodeToString(sum[:])
 		exp := time.Now().Add(2 * time.Hour)

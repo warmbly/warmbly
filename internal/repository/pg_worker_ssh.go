@@ -255,7 +255,11 @@ func (r *workerRepository) ListWorkersByProfile(ctx context.Context, profileID u
 
 func (r *workerRepository) RecordEnrolledIP(ctx context.Context, id uuid.UUID, ip string) error {
 	_, err := r.db.Exec(ctx, `
-		UPDATE workers SET ip_addr = $2, ssh_host = COALESCE(NULLIF(ssh_host,''), $2), updated_at = NOW()
+		UPDATE workers
+		SET ip_addr = $2,
+		    ssh_host = COALESCE(NULLIF(ssh_host,''), $2),
+		    install_state = 'provisioning',
+		    updated_at = NOW()
 		WHERE id = $1
 	`, id, ip)
 	return err

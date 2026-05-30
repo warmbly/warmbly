@@ -57,6 +57,13 @@ type WorkerEnvConfig struct {
 	AWSRegion          string
 	AWSAccessKeyID     string
 	AWSSecretAccessKey string
+
+	EncryptedKeysBackendURL  string
+	EncryptedKeysWorkerToken string
+
+	EventBusProvider string
+	NATSURL          string
+	CodecProvider    string
 }
 
 type Orchestrator struct {
@@ -141,6 +148,26 @@ func (o *Orchestrator) Install(ctx context.Context, workerID uuid.UUID) error {
 	}
 	_ = o.repo.MarkConfigApplied(ctx, workerID, time.Now())
 	return o.repo.UpdateInstallState(ctx, workerID, models.WorkerInstallStateInstalled, "")
+}
+
+// RenderEnrollmentEnv returns a complete dotenv payload for the one-command
+// enrollment flow. The token exchange authenticates the caller; this method
+// only renders the config the installer writes to disk.
+func (o *Orchestrator) RenderEnrollmentEnv(ctx context.Context, workerID uuid.UUID) (string, string, error) {
+	envContent, image, err := o.renderEnvFile(ctx, workerID)
+	if err != nil {
+		return "", "", err
+	}
+	var b strings.Builder
+	b.WriteString("# Warmbly worker enrollment config\n")
+	b.WriteString("WORKER_ID=")
+	b.WriteString(workerID.String())
+	b.WriteString("\n")
+	b.WriteString("WARMBLY_WORKER_IMAGE=")
+	b.WriteString(image)
+	b.WriteString("\n")
+	b.WriteString(envContent)
+	return b.String(), image, nil
 }
 
 // ApplyConfig re-writes /etc/warmbly/worker.env from the worker's current
@@ -578,6 +605,9 @@ func (o *Orchestrator) renderEnvFile(ctx context.Context, workerID uuid.UUID) (e
 	write("AWS_REGION", env.AWSRegion)
 	write("AWS_ACCESS_KEY_ID", env.AWSAccessKeyID)
 	write("AWS_SECRET_ACCESS_KEY", env.AWSSecretAccessKey)
+	write("ENCRYPTED_KEYS_PROVIDER", "http")
+	write("ENCRYPTED_KEYS_BACKEND_URL", env.EncryptedKeysBackendURL)
+	write("ENCRYPTED_KEYS_WORKER_TOKEN", env.EncryptedKeysWorkerToken)
 	write("KAFKA_BOOTSTRAP_SERVERS", env.KafkaBootstrap)
 	write("KAFKA_SASL_USERNAME", env.KafkaSASLUsername)
 	write("KAFKA_SASL_PASSWORD", env.KafkaSASLPassword)
@@ -585,6 +615,9 @@ func (o *Orchestrator) renderEnvFile(ctx context.Context, workerID uuid.UUID) (e
 	write("SCHEMA_REGISTRY_KEY", env.SchemaRegistryKey)
 	write("SCHEMA_REGISTRY_SECRET", env.SchemaRegistrySecret)
 	write("REDIS", env.RedisURL)
+	write("EVENTBUS_PROVIDER", env.EventBusProvider)
+	write("NATS_URL", env.NATSURL)
+	write("CODEC_PROVIDER", env.CodecProvider)
 	return b.String(), image, nil
 }
 

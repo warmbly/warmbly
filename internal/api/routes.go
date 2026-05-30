@@ -38,6 +38,11 @@ func Run(
 	r.POST("/api/v1/integrations/inbound/calendly/:secret", h.InboundCalendly)
 	r.POST("/api/v1/integrations/inbound/cal-com/:secret", h.InboundCalCom)
 
+	// Public worker enrollment. The one-time enrollment token is the
+	// credential; successful exchange returns a dotenv file for the installer
+	// and consumes the token.
+	r.POST("/api/v1/workers/enroll", h.EnrollWorker)
+
 	// Public OAuth-bouncer pages used by the mailbox onboarding popup.
 	// The provider redirects here; the page postMessages the code/state
 	// back to the SPA opener which then calls /emails/onboarding/oauth/finish.

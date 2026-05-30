@@ -1,10 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -164,6 +168,7 @@ func main() {
 	// the rolling 1m counters into a WorkerHealth event, publishes via the
 	// event bus so the consumer can write a row into worker_health_samples.
 	go workerService.Heartbeat(ctx)
+	go runInternalHeartbeat(ctx, workerID, bindIP)
 	go workerService.RunHealth(ctx, 30*time.Second)
 
 	// Graceful shutdown
@@ -181,6 +186,60 @@ func main() {
 		log.Println("event bus subscribe ended:", err)
 	}
 	log.Println("Worker stopped")
+}
+
+func runInternalHeartbeat(ctx context.Context, workerID uuid.UUID, bindIP string) {
+	baseURL := strings.TrimRight(os.Getenv("ENCRYPTED_KEYS_BACKEND_URL"), "/")
+	token := os.Getenv("ENCRYPTED_KEYS_WORKER_TOKEN")
+	if baseURL == "" || token == "" {
+		return
+	}
+	reportedIP := os.Getenv("WORKER_PUBLIC_IP")
+	if reportedIP == "" && bindIP != "default route" {
+		reportedIP = bindIP
+	}
+	if reportedIP == "" {
+		reportedIP = "unknown"
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	send := func() {
+		payload := map[string]string{
+			"worker_id":   workerID.String(),
+			"bind_ip":     reportedIP,
+			"tier":        os.Getenv("WORKER_TIER"),
+			"egress_kind": os.Getenv("WORKER_EGRESS_KIND"),
+		}
+		body, _ := json.Marshal(payload)
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/api/v1/internal/worker/heartbeat", bytes.NewReader(body))
+		if err != nil {
+			log.Println("failed to build internal heartbeat:", err)
+			return
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := client.Do(req)
+		if err != nil {
+			log.Println("failed internal heartbeat:", err)
+			return
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode >= 300 {
+			log.Println("internal heartbeat returned status", resp.StatusCode)
+		}
+	}
+
+	send()
+	ticker := time.NewTicker(90 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			send()
+		}
+	}
 }
 
 // uuidNamespaceURL is the RFC 4122 URL namespace, matching the value used by
