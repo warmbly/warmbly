@@ -1,15 +1,21 @@
 import { RiFireLine, RiMoreLine } from "@remixicon/react";
 import React, { useMemo } from "react";
+import toast from "react-hot-toast";
 import useEmails from "@/lib/api/hooks/app/emails/useEmails";
+import useRemoveEmail from "@/lib/api/hooks/app/emails/useRemoveEmail";
 import { useUserProfile } from "@/hooks/context/user";
 import InboxDetails from "@/components/app/emails/InboxDetails";
 import type Tag from "@/lib/api/models/app/Tag";
 import {
+    CheckIcon,
     FilterIcon,
-    MailIcon,
     PlusIcon,
     Settings2Icon,
+    Trash2Icon,
+    XIcon,
 } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import removeEmail from "@/lib/api/client/app/emails/removeEmail";
 import { SearchInput } from "@/components/ui/field";
 import {
     PopoverMenu,
@@ -44,6 +50,22 @@ export default function AddressesPage() {
     const emailsData = useEmails({ query, tag });
     const [selected, setSelected] = React.useState<string[]>([]);
     const [view, setView] = React.useState<string>("");
+    const [removing, setRemoving] = React.useState(false);
+    const queryClient = useQueryClient();
+
+    const removeSelected = async () => {
+        if (selected.length === 0 || removing) return;
+        const n = selected.length;
+        if (!window.confirm(`Remove ${n} mailbox${n > 1 ? "es" : ""}? This disconnects ${n > 1 ? "them" : "it"} from Warmbly.`)) return;
+        setRemoving(true);
+        const results = await Promise.allSettled(selected.map((id) => removeEmail(id)));
+        const failed = results.filter((r) => r.status === "rejected").length;
+        await queryClient.invalidateQueries({ queryKey: ["emails"] });
+        setSelected([]);
+        setRemoving(false);
+        if (failed > 0) toast.error(`${failed} mailbox${failed > 1 ? "es" : ""} couldn't be removed`);
+        else toast.success(`Removed ${n} mailbox${n > 1 ? "es" : ""}`);
+    };
 
     const stag = useMemo(() => {
         if (!p) return DefaultFolder;
@@ -267,6 +289,32 @@ export default function AddressesPage() {
                             })}
                         </tbody>
                     </table>
+                )}
+
+                {selected.length > 0 && (
+                    <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 rounded-md border border-slate-200 bg-white shadow-[0_6px_20px_-4px_rgba(15,23,42,0.12),0_2px_4px_rgba(15,23,42,0.04)] px-2 py-1.5">
+                        <div className="inline-flex items-center gap-1.5 px-2 h-7 rounded bg-sky-50 text-sky-700 text-[12px] font-medium">
+                            <CheckIcon className="w-3 h-3" />
+                            <span>{selected.length} selected</span>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={removeSelected}
+                            disabled={removing}
+                            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded text-[12px] font-medium text-red-600 hover:bg-red-50 disabled:opacity-50 transition-colors"
+                        >
+                            <Trash2Icon className="w-3.5 h-3.5" />
+                            Remove
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setSelected([])}
+                            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded text-[12px] text-slate-500 hover:bg-slate-100 transition-colors"
+                        >
+                            <XIcon className="w-3.5 h-3.5" />
+                            Clear
+                        </button>
+                    </div>
                 )}
             </PageBody>
 

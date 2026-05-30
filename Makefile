@@ -25,7 +25,7 @@ PROTO_GEN_FILES := $(PROTO_DIR)/tasks.pb.go
 .PHONY: setup-tools fmt lint proto check-proto \
         up sim seed reset logs status stop down tools test-seed \
         restart restart-go restart-all infra infra-down app app-down app-logs \
-        backend consumer worker run web \
+        backend consumer worker run tracking realtime web \
         admin site grant-admin revoke-admin
 
 setup-tools:
@@ -282,6 +282,8 @@ backend:
 	TRACKING_DOMAIN=localhost:3000 \
 	SMTP_HOST=localhost \
 	SMTP_PORT=11025 \
+	GEODB_PATH=data/GeoLite2-City.mmdb \
+	INTERNAL_API_TOKEN=local-dev-internal-token \
 	GOOGLE_APPLICATION_CREDENTIALS_JSON=dev@local.iam.gserviceaccount.com \
 	CLOUD_TASKS_EMULATOR_HOST=localhost:8123 \
 	CLOUD_TASKS_QUEUE_NAME=projects/local/locations/local/queues/default \
@@ -296,10 +298,20 @@ consumer:
 # Send/sync worker. No Postgres by design. WORKER_ID is an explicit UUID
 # (the worker resolves identity from WORKER_ID first, then bind IP, then
 # hostname), so it boots cleanly off-box.
+#
+# The worker reads encrypted DEKs through the `http` provider, calling the
+# backend's /internal/dek endpoint (guarded by INTERNAL_API_TOKEN). This is
+# the prod shape and keeps a single source of truth: the backend owns the
+# DEK store (Postgres), the worker never touches a database. The bearer
+# token here MUST match INTERNAL_API_TOKEN on `make backend`. So `make
+# worker` needs `make backend` running.
 worker:
 	$(WORKER_DEV_ENV) \
 	WORKER_ID=10c8f5e4-1c39-5b2a-9c8b-3d2f0a8b1a01 \
 	WORKER_TIER=shared \
+	ENCRYPTED_KEYS_PROVIDER=http \
+	ENCRYPTED_KEYS_BACKEND_URL=http://localhost:8080 \
+	ENCRYPTED_KEYS_WORKER_TOKEN=local-dev-internal-token \
 	go run ./cmd/worker
 
 # backend + consumer + worker together in one terminal. Ctrl-C stops all
@@ -311,6 +323,42 @@ run:
 	$(MAKE) --no-print-directory consumer & \
 	$(MAKE) --no-print-directory worker & \
 	wait
+
+# ─── other native services (Rust tracking, Elixir realtime) ──────────────
+#
+# Deliberately NOT part of `make run` — run them on their own only when you
+# need the open/click tracking pixel service or the websocket fanout. Each
+# needs its language toolchain on the host (cargo / elixir+mix).
+
+# Open/click tracking service (Rust) on :3000. Reads from kafka + schema
+# registry; AWS_CONFIG_ENABLED=false keeps it env-only (no SSM/Secrets).
+tracking:
+	cd tracking && \
+	APP_ENV=dev \
+	AWS_CONFIG_ENABLED=false \
+	TRACKING_HOST=0.0.0.0 \
+	TRACKING_PORT=3000 \
+	KAFKA_BOOTSTRAP_SERVERS=localhost:9092 \
+	KAFKA_TRACKING_TOPIC=tracking-events \
+	SCHEMA_REGISTRY_URL=http://localhost:8081 \
+	cargo run
+
+# Websocket fanout service (Elixir/Phoenix) on :4000. In dev (MIX_ENV=dev)
+# the prod-only env guards in runtime.exs are skipped; it reads discrete
+# DATABASE_* (for API-key validation via Ecto) and REDIS_URL. `deps.get`
+# is idempotent and fast once satisfied.
+realtime:
+	cd realtime && \
+	export MIX_ENV=dev \
+	       PORT=4000 \
+	       PHX_HOST=localhost \
+	       DATABASE_HOST=localhost \
+	       DATABASE_PORT=15432 \
+	       DATABASE_NAME=warmbly_dev \
+	       DATABASE_USER=warmbly \
+	       DATABASE_PASSWORD=warmbly \
+	       REDIS_URL=redis://localhost:16379 && \
+	mix deps.get && mix phx.server
 
 # ─── standalone frontends (web + admin + marketing site) ─────────────────
 #

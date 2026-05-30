@@ -55,8 +55,9 @@ Infra runs in docker; the Go services and frontends run natively on the host for
 
 - `make infra` — start the backing services in docker (postgres, redis, kafka, schema-registry, mailpit, localstack + init, cloud-tasks, stripe-mock). Run once; leave running.
 - `make backend` — run the API natively on `:8080` (applies the embedded migrations on boot against the docker postgres).
-- `make consumer` / `make worker` — run those Go services natively, each in its own terminal.
+- `make consumer` / `make worker` — run those Go services natively, each in its own terminal. The worker reads encrypted DEKs through the backend's `/internal/dek` endpoint (the prod `http` provider, no worker DB), so `make backend` must be running and their `INTERNAL_API_TOKEN` must match (the targets are pre-wired to match).
 - `make run` — backend + consumer + worker together in one terminal (Ctrl-C stops all).
+- `make tracking` / `make realtime` — the Rust tracking pixel service (:3000) and Elixir/Phoenix websocket fanout (:4000). Deliberately kept out of `make run`; start them only when needed, and only if you have the cargo / elixir toolchains on the host.
 - `make web` / `make admin` / `make site` — frontend dev servers (5173 / 5174 / 4321), pointed at the native backend.
 - `make seed` — load fixtures (after the backend has applied migrations).
 - `make fmt` / `make lint` — format and lint Go.

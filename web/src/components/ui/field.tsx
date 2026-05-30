@@ -9,7 +9,7 @@
 // focus ring tuned to sky-200 so it blends with the rest of the chrome.
 
 import React from "react";
-import { SearchIcon, XIcon } from "lucide-react";
+import { SearchIcon, XIcon, ChevronUpIcon, ChevronDownIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const base =
@@ -111,6 +111,101 @@ export function FieldRow({ children, className }: { children: React.ReactNode; c
     return (
         <div className={cn("space-y-1.5", className)}>
             {children}
+        </div>
+    );
+}
+
+// NumberInput — our own number field. No native browser spinner (those
+// stubby up/down arrows are stripped with appearance:none); instead a
+// pair of themed chevron steppers sits flush on the right inside the
+// field border. Value is a number; onChange always gets a clamped
+// number. `suffix` renders a muted unit label (e.g. "emails / day")
+// inside the field, before the steppers.
+export function NumberInput({
+    value,
+    onChange,
+    min,
+    max,
+    step = 1,
+    disabled,
+    placeholder,
+    suffix,
+    align = "left",
+    className,
+}: {
+    value: number;
+    onChange: (value: number) => void;
+    min?: number;
+    max?: number;
+    step?: number;
+    disabled?: boolean;
+    placeholder?: string;
+    suffix?: React.ReactNode;
+    align?: "left" | "right" | "center";
+    className?: string;
+}) {
+    const clamp = (n: number) => {
+        if (Number.isNaN(n)) return min ?? 0;
+        if (min !== undefined && n < min) return min;
+        if (max !== undefined && n > max) return max;
+        return n;
+    };
+    const bump = (dir: 1 | -1) => {
+        if (disabled) return;
+        onChange(clamp((Number.isFinite(value) ? value : 0) + dir * step));
+    };
+    const atMax = max !== undefined && value >= max;
+    const atMin = min !== undefined && value <= min;
+    return (
+        <div
+            className={cn(
+                "relative inline-flex items-center h-7 rounded-md border border-slate-200 bg-white transition-colors focus-within:border-sky-400 focus-within:ring-2 focus-within:ring-sky-100",
+                disabled && "bg-slate-50",
+                className,
+            )}
+        >
+            <input
+                type="number"
+                inputMode="numeric"
+                value={Number.isFinite(value) ? value : ""}
+                disabled={disabled}
+                placeholder={placeholder}
+                onChange={(e) => {
+                    const raw = e.target.value;
+                    onChange(raw === "" ? min ?? 0 : clamp(Number(raw)));
+                }}
+                className={cn(
+                    "w-full min-w-0 h-full bg-transparent outline-none px-2.5 text-[12.5px] text-slate-900 tabular-nums disabled:text-slate-400",
+                    "[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",
+                    align === "right" && "text-right",
+                    align === "center" && "text-center",
+                )}
+            />
+            {suffix ? (
+                <span className="pr-2 text-[11px] text-slate-400 whitespace-nowrap select-none">{suffix}</span>
+            ) : null}
+            <div className="flex flex-col self-stretch border-l border-slate-200 shrink-0">
+                <button
+                    type="button"
+                    tabIndex={-1}
+                    aria-label="Increase"
+                    disabled={disabled || atMax}
+                    onClick={() => bump(1)}
+                    className="flex-1 px-1 flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-50 disabled:opacity-30 disabled:hover:bg-transparent transition-colors rounded-tr-md"
+                >
+                    <ChevronUpIcon className="w-3 h-3" />
+                </button>
+                <button
+                    type="button"
+                    tabIndex={-1}
+                    aria-label="Decrease"
+                    disabled={disabled || atMin}
+                    onClick={() => bump(-1)}
+                    className="flex-1 px-1 flex items-center justify-center border-t border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-slate-50 disabled:opacity-30 disabled:hover:bg-transparent transition-colors rounded-br-md"
+                >
+                    <ChevronDownIcon className="w-3 h-3" />
+                </button>
+            </div>
         </div>
     );
 }

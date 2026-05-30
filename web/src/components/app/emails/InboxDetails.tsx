@@ -36,6 +36,7 @@ import buildError from "@/lib/helper/buildError";
 import EmailEditor from "../EmailEditor";
 import TagSelector from "../popup/select/TagSelector";
 import { Loading } from "@/components/loader";
+import { NumberInput } from "@/components/ui/field";
 import { cn } from "@/lib/utils";
 
 /* ── small themed primitives ─────────────────────── */
@@ -76,16 +77,16 @@ function FieldShell({ label, hint, children }: { label: string; hint?: string; c
 }
 
 function NumField({ value, onChange, suffix }: { value: number; onChange: (v: number) => void; suffix?: string }) {
+    // Themed number field with our own steppers, no native spinner.
     return (
-        <div className="flex items-center gap-2">
-            <input
-                type="number"
-                value={Number.isFinite(value) ? value : 0}
-                onChange={(e) => onChange(e.target.valueAsNumber)}
-                className={cn(INPUT, "w-24 text-right tabular-nums")}
-            />
-            {suffix && <span className="text-[11.5px] text-slate-500">{suffix}</span>}
-        </div>
+        <NumberInput
+            value={value}
+            onChange={onChange}
+            suffix={suffix}
+            min={0}
+            align="right"
+            className="w-full h-9"
+        />
     );
 }
 
