@@ -1,120 +1,192 @@
-// Conversation list — middle pane of the unibox.
+// Middle pane of the unibox.
 //
-// Now fully wired to the backend search endpoint via useUniboxSearch.
-// The page builds a UniboxSearchParams object out of:
+// Three upgrades over the flat list:
+//   1. Time-bucket grouping (Today / Yesterday / This week / Earlier)
+//      with sticky group headers so scanning across days reads as a
+//      timeline, not a uniform wall.
+//   2. Keyboard navigation: j/k step through rows, Enter opens, Esc
+//      deselects, e archives (placeholder), r focuses reply.
+//   3. A compact footer with the keyboard cheat-sheet so the
+//      shortcuts are discoverable without a help menu.
 //
-//   - a quick-filter strip at the top (All / Unread / Today / This week)
-//   - a free-text search input (subject substring server-side)
-//   - an advanced filter sheet (sender, account, status, dates, sort)
-//
-// Realtime: when a new email arrives, the WS slice adds it to the
-// store; the list still renders from server data but shows a sticky
-// "N new" pill at the top for fresh entries.
+// All scope/filter state still lives in the parent page — this
+// component owns only its own search box + focused row.
 
 import React from "react";
 import {
     Loader2Icon,
+    SearchIcon,
     Settings2Icon,
 } from "lucide-react";
-import { SearchInput } from "@/components/ui/field";
 import { ConversationItem } from "./ConversationItem";
-import { SectionBar } from "@/components/layout/Page";
 import useUniboxSearch from "@/lib/api/hooks/app/unibox/useUniboxSearch";
-import useUnseenCount from "@/lib/api/hooks/app/unibox/useUnseenCount";
+import { useAppStore } from "@/stores";
 import { UniboxFilterSheet } from "./UniboxFilterSheet";
 import type { UniboxSearchParams } from "@/lib/api/models/app/unibox/UniboxSearch";
 
-type Quick = "all" | "unread" | "today" | "week";
+type Bucket = "today" | "yesterday" | "week" | "earlier";
 
-const QUICKS: { id: Quick; label: string }[] = [
-    { id: "all", label: "All" },
-    { id: "unread", label: "Unread" },
-    { id: "today", label: "Today" },
-    { id: "week", label: "This week" },
-];
+const BUCKET_LABELS: Record<Bucket, string> = {
+    today: "Today",
+    yesterday: "Yesterday",
+    week: "This week",
+    earlier: "Earlier",
+};
 
-function startOfToday(): Date {
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    return d;
+function bucketFor(d: Date): Bucket {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const yesterday = today - 24 * 60 * 60 * 1000;
+    const weekStart = today - 6 * 24 * 60 * 60 * 1000;
+    const t = d.getTime();
+    if (t >= today) return "today";
+    if (t >= yesterday) return "yesterday";
+    if (t >= weekStart) return "week";
+    return "earlier";
 }
 
-function startOfWeek(): Date {
-    const d = startOfToday();
-    d.setDate(d.getDate() - 6);
-    return d;
+interface ConversationListProps {
+    scopeLabel: string;
+    params: UniboxSearchParams;
+    setParams: React.Dispatch<React.SetStateAction<UniboxSearchParams>>;
 }
 
-export function ConversationList() {
+export function ConversationList({
+    scopeLabel,
+    params,
+    setParams,
+}: ConversationListProps) {
     const [search, setSearch] = React.useState("");
-    const [quick, setQuick] = React.useState<Quick>("all");
-    const [advanced, setAdvanced] = React.useState<UniboxSearchParams>({ sortBy: "newest" });
     const [sheetOpen, setSheetOpen] = React.useState(false);
+    const searchRef = React.useRef<HTMLInputElement>(null);
+    const listRef = React.useRef<HTMLDivElement>(null);
+    const selectedThreadId = useAppStore((s) => s.selectedThreadId);
+    const setSelectedThreadId = useAppStore((s) => s.setSelectedThreadId);
+    const setSelectedAccountId = useAppStore((s) => s.setSelectedAccountId);
 
-    // Combine quick filter + free-text search + advanced filters into
-    // one params object react-query keys on.
-    const params: UniboxSearchParams = React.useMemo(() => {
-        const next: UniboxSearchParams = { ...advanced };
+    const merged: UniboxSearchParams = React.useMemo(() => {
+        const next: UniboxSearchParams = { ...params };
         if (search.trim()) next.query = search.trim();
-        if (quick === "unread") next.unseen = true;
-        else if (quick === "today") next.since = startOfToday();
-        else if (quick === "week") next.since = startOfWeek();
         return next;
-    }, [advanced, search, quick]);
+    }, [params, search]);
 
-    const q = useUniboxSearch(params);
-    const unseen = useUnseenCount();
-
+    const q = useUniboxSearch(merged);
     const emails = q.emails;
     const totalShown = emails.length;
-    const unseenCount = unseen.data?.count ?? 0;
+
+    // Group rows by time bucket. The server already orders newest →
+    // oldest so a single pass preserves both global order and group
+    // adjacency.
+    const grouped = React.useMemo(() => {
+        const groups: { bucket: Bucket; rows: typeof emails }[] = [];
+        for (const e of emails) {
+            const b = bucketFor(new Date(e.internal_date));
+            const tail = groups[groups.length - 1];
+            if (tail && tail.bucket === b) tail.rows.push(e);
+            else groups.push({ bucket: b, rows: [e] });
+        }
+        return groups;
+    }, [emails]);
+
+    // Keyboard navigation. We work off `emails` (flat order) so j/k
+    // moves across bucket boundaries naturally. Ignoring shortcuts
+    // while typing into any input/textarea, and while the filter
+    // sheet is open, keeps the bindings out of the user's way.
+    React.useEffect(() => {
+        const handler = (e: KeyboardEvent) => {
+            if (sheetOpen) return;
+            const target = e.target as HTMLElement | null;
+            if (target) {
+                const tag = target.tagName;
+                if (tag === "INPUT" || tag === "TEXTAREA" || target.isContentEditable) {
+                    // Allow Escape from search to deselect.
+                    if (e.key === "Escape" && target === searchRef.current) {
+                        searchRef.current?.blur();
+                    }
+                    return;
+                }
+            }
+
+            const currentIdx = selectedThreadId
+                ? emails.findIndex((row) => (row.thread_id || row.id) === selectedThreadId)
+                : -1;
+
+            const move = (delta: number) => {
+                if (emails.length === 0) return;
+                const next = Math.max(0, Math.min(emails.length - 1, (currentIdx < 0 ? 0 : currentIdx) + delta));
+                const row = emails[next];
+                if (!row) return;
+                setSelectedThreadId(row.thread_id || row.id);
+                setSelectedAccountId(row.email_id ?? null);
+                // Bring the focused row into view if the list scrolled.
+                requestAnimationFrame(() => {
+                    const el = listRef.current?.querySelector<HTMLElement>(
+                        `[data-thread-id="${row.thread_id || row.id}"]`,
+                    );
+                    el?.scrollIntoView({ block: "nearest" });
+                });
+                e.preventDefault();
+            };
+
+            switch (e.key) {
+                case "j":
+                    move(1);
+                    return;
+                case "k":
+                    move(-1);
+                    return;
+                case "Enter":
+                    if (currentIdx < 0 && emails[0]) {
+                        const row = emails[0];
+                        setSelectedThreadId(row.thread_id || row.id);
+                        setSelectedAccountId(row.email_id ?? null);
+                        e.preventDefault();
+                    }
+                    return;
+                case "Escape":
+                    if (selectedThreadId) {
+                        setSelectedThreadId(null);
+                        setSelectedAccountId(null);
+                        e.preventDefault();
+                    }
+                    return;
+                case "/":
+                    searchRef.current?.focus();
+                    e.preventDefault();
+                    return;
+            }
+        };
+        document.addEventListener("keydown", handler);
+        return () => document.removeEventListener("keydown", handler);
+    }, [emails, selectedThreadId, sheetOpen, setSelectedThreadId, setSelectedAccountId]);
 
     return (
-        <div className="flex flex-col h-full">
-            <SectionBar label="Inbox" count={unseenCount > 0 ? unseenCount : 0}>
+        <div className="flex flex-col h-full bg-white">
+            <div className="h-9 px-2 shrink-0 border-b border-slate-200 flex items-center gap-1.5">
+                <SearchIcon className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                <input
+                    ref={searchRef}
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder={`Search ${scopeLabel.toLowerCase()}… (/)`}
+                    className="flex-1 min-w-0 h-7 bg-transparent text-[12.5px] text-slate-900 placeholder:text-slate-400 outline-none"
+                />
+                {totalShown > 0 && (
+                    <span className="font-mono tabular-nums text-[10.5px] text-slate-400 shrink-0">
+                        {totalShown}
+                    </span>
+                )}
                 <button
                     type="button"
                     onClick={() => setSheetOpen(true)}
-                    className="size-6 rounded text-slate-500 hover:text-slate-900 hover:bg-slate-100 inline-flex items-center justify-center transition-colors"
+                    className="size-7 rounded text-slate-500 hover:text-slate-900 hover:bg-slate-100 inline-flex items-center justify-center transition-colors shrink-0"
                     aria-label="Advanced filters"
                 >
                     <Settings2Icon className="w-3.5 h-3.5" />
                 </button>
-            </SectionBar>
-
-            <div className="px-3 py-2 shrink-0 border-b border-slate-200 space-y-2">
-                <SearchInput
-                    value={search}
-                    onChange={setSearch}
-                    placeholder="Search subject…"
-                />
-                <div className="flex items-center gap-0.5 overflow-x-auto">
-                    {QUICKS.map((f) => (
-                        <button
-                            key={f.id}
-                            onClick={() => setQuick(f.id)}
-                            className={`shrink-0 h-6 px-2 rounded text-[11.5px] font-medium transition-colors inline-flex items-center gap-1 ${
-                                quick === f.id
-                                    ? "bg-slate-900 text-white"
-                                    : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"
-                            }`}
-                        >
-                            {f.label}
-                            {f.id === "unread" && unseenCount > 0 && (
-                                <span
-                                    className={`font-mono tabular-nums text-[10px] ${
-                                        quick === f.id ? "text-white/80" : "text-sky-600"
-                                    }`}
-                                >
-                                    {unseenCount}
-                                </span>
-                            )}
-                        </button>
-                    ))}
-                </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto">
+            <div ref={listRef} className="flex-1 overflow-y-auto">
                 {q.isPending ? (
                     <SkeletonRows />
                 ) : q.isError ? (
@@ -136,36 +208,52 @@ export function ConversationList() {
                 ) : emails.length === 0 ? (
                     <div className="px-5 py-16 text-center">
                         <p className="text-[12.5px] text-slate-700 font-medium mb-1">
-                            {search.trim() || params.from || params.accountIds?.length || params.unseen || params.since
+                            {hasActiveFilters(merged) || search.trim()
                                 ? "No matches"
-                                : "Nothing in your inbox yet"}
+                                : "Nothing here yet"}
                         </p>
                         <p className="text-[11.5px] text-slate-400 max-w-[28ch] mx-auto leading-relaxed">
-                            {search.trim() || params.from || params.accountIds?.length || params.unseen || params.since
-                                ? "Try a different filter or clear them all."
-                                : "Replies and inbound mail will land here automatically."}
+                            {hasActiveFilters(merged) || search.trim()
+                                ? "Try a different scope or clear the filters."
+                                : "Pick a different scope from the rail, or wait for new mail."}
                         </p>
                     </div>
                 ) : (
                     <>
-                        <div className="divide-y divide-slate-200/60">
-                            {emails.map((e) => (
-                                <ConversationItem
-                                    key={e.id}
-                                    email={{
-                                        id: e.id,
-                                        from: "", // server doesn't include from_addr in preview yet
-                                        to: "",
-                                        subject: e.subject,
-                                        body: e.snippet,
-                                        date: new Date(e.internal_date),
-                                        is_seen: e.seen,
-                                        thread_id: e.thread_id,
-                                        account_id: e.email_id,
-                                    }}
-                                />
-                            ))}
-                        </div>
+                        {grouped.map((g) => (
+                            <section key={g.bucket}>
+                                <div className="sticky top-0 z-10 px-3 py-1 bg-slate-50/95 backdrop-blur-sm border-b border-slate-200/60 flex items-center gap-2">
+                                    <span className="text-[10px] uppercase tracking-[0.14em] text-slate-500 font-semibold">
+                                        {BUCKET_LABELS[g.bucket]}
+                                    </span>
+                                    <span className="font-mono text-[10px] text-slate-400 tabular-nums">
+                                        {g.rows.length}
+                                    </span>
+                                </div>
+                                <div className="divide-y divide-slate-200/60">
+                                    {g.rows.map((e) => (
+                                        <div
+                                            key={e.id}
+                                            data-thread-id={e.thread_id || e.id}
+                                        >
+                                            <ConversationItem
+                                                email={{
+                                                    id: e.id,
+                                                    from: e.from_addr?.[0] ?? "",
+                                                    to: e.to_addr?.[0] ?? "",
+                                                    subject: e.subject,
+                                                    body: e.snippet,
+                                                    date: new Date(e.internal_date),
+                                                    is_seen: e.seen,
+                                                    thread_id: e.thread_id,
+                                                    account_id: e.email_id,
+                                                }}
+                                            />
+                                        </div>
+                                    ))}
+                                </div>
+                            </section>
+                        ))}
                         {q.hasNextPage && (
                             <div className="px-3 py-3 flex justify-center border-t border-slate-200/60">
                                 <button
@@ -188,14 +276,48 @@ export function ConversationList() {
                 )}
             </div>
 
+            {/* Keyboard cheat-sheet footer. Slim and unobtrusive but
+                makes the shortcuts discoverable without a help menu. */}
+            <div className="h-6 px-2 shrink-0 border-t border-slate-200/80 bg-slate-50/60 flex items-center gap-2 text-[10px] text-slate-500 overflow-x-auto">
+                <Kbd>j</Kbd>/<Kbd>k</Kbd>
+                <span className="text-slate-400">move</span>
+                <Kbd>↵</Kbd>
+                <span className="text-slate-400">open</span>
+                <Kbd>esc</Kbd>
+                <span className="text-slate-400">close</span>
+                <Kbd>/</Kbd>
+                <span className="text-slate-400">search</span>
+            </div>
+
             <UniboxFilterSheet
                 open={sheetOpen}
                 setOpen={setSheetOpen}
-                filters={advanced}
-                setFilters={setAdvanced}
+                filters={params}
+                setFilters={setParams}
                 loading={q.isFetching}
             />
         </div>
+    );
+}
+
+function Kbd({ children }: { children: React.ReactNode }) {
+    return (
+        <kbd className="px-1 h-3.5 rounded-sm bg-white border border-slate-200 text-slate-600 font-mono text-[9px] inline-flex items-center shrink-0">
+            {children}
+        </kbd>
+    );
+}
+
+function hasActiveFilters(p: UniboxSearchParams): boolean {
+    return Boolean(
+        p.from ||
+            (p.accountIds && p.accountIds.length > 0) ||
+            p.tagId ||
+            p.unseen !== undefined ||
+            p.since ||
+            p.until ||
+            p.snoozed ||
+            p.awaitingReply,
     );
 }
 

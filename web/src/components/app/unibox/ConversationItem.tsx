@@ -1,5 +1,13 @@
+// One row in the conversation list.
+//
+// Dense by design: sender + relative time on top, subject in the
+// middle, snippet at the bottom, mailbox chip + tag color dots as the
+// last meta row. Unread shows both as a left bar AND a font-weight
+// change so it's scannable from across the room.
+
 import type UniboxEmail from "@/lib/api/models/app/unibox/UniboxEmail";
 import { useAppStore } from "@/stores";
+import { useUserProfile } from "@/hooks/context/user";
 import { cn } from "@/lib/utils";
 
 function relative(d: Date): string {
@@ -15,6 +23,7 @@ function relative(d: Date): string {
 }
 
 function fromName(s: string): string {
+    if (!s) return "Unknown sender";
     const m = s.match(/^"?([^"<]+)"?\s*<.+>$/);
     if (m) return m[1].trim();
     return s.replace(/<.+>/, "").trim() || s;
@@ -27,6 +36,13 @@ function initials(s: string): string {
     return (parts[0]?.slice(0, 2) ?? "??").toUpperCase();
 }
 
+// Stable colour per sender so the eye learns to spot them.
+function hueFor(s: string): number {
+    let h = 0;
+    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+    return h % 360;
+}
+
 interface ConversationItemProps {
     email: UniboxEmail;
 }
@@ -34,56 +50,135 @@ interface ConversationItemProps {
 export function ConversationItem({ email }: ConversationItemProps) {
     const selectedThreadId = useAppStore((s) => s.selectedThreadId);
     const setSelectedThreadId = useAppStore((s) => s.setSelectedThreadId);
+    const setSelectedAccountId = useAppStore((s) => s.setSelectedAccountId);
+    const accounts = useAppStore((s) => s.emails);
+    const profile = useUserProfile();
+    const tagCatalog = profile.user.tags ?? [];
 
     const threadId = email.thread_id || email.id;
     const isSelected = selectedThreadId === threadId;
     const date = new Date(email.date);
     const unread = !email.is_seen;
-    const preview = email.body.replace(/<[^>]*>/g, "").replace(/\s+/g, " ").slice(0, 100);
+    const preview = email.body.replace(/<[^>]*>/g, "").replace(/\s+/g, " ").slice(0, 140);
+
+    const mailbox = accounts.find((a) => a.id === email.account_id);
+    const sender = fromName(email.from);
+    const hue = hueFor(sender);
+
+    // Resolve mailbox tag IDs → catalog entries so we can show the
+    // real colour dot per tag (no more abstract "2 tags" badge).
+    const tagsOnMailbox = (mailbox?.tags ?? [])
+        .map((id) => tagCatalog.find((t) => t.id === id))
+        .filter((t): t is NonNullable<typeof t> => Boolean(t));
 
     return (
         <button
-            onClick={() => setSelectedThreadId(threadId)}
+            onClick={() => {
+                setSelectedThreadId(threadId);
+                setSelectedAccountId(email.account_id ?? null);
+            }}
             className={cn(
-                "group w-full text-left px-3 py-2.5 transition-colors flex items-start gap-2.5 relative",
+                "group w-full text-left px-3 py-2 transition-colors flex items-start gap-2.5 relative",
                 isSelected ? "bg-sky-50/80" : "hover:bg-slate-50/80",
             )}
         >
             {unread && (
                 <span
                     aria-hidden
-                    className="absolute left-0 top-2.5 bottom-2.5 w-[3px] rounded-r bg-sky-500"
+                    className="absolute left-0 top-2 bottom-2 w-[3px] rounded-r bg-sky-500"
                 />
             )}
             <div
                 className={cn(
                     "size-7 rounded-full flex items-center justify-center shrink-0 text-[10px] font-semibold",
-                    isSelected ? "bg-sky-100 text-sky-700" : "bg-slate-100 text-slate-600",
                 )}
+                style={
+                    isSelected
+                        ? { backgroundColor: "rgb(224 242 254)", color: "rgb(2 132 199)" }
+                        : {
+                              backgroundColor: `hsl(${hue} 70% 94%)`,
+                              color: `hsl(${hue} 55% 35%)`,
+                          }
+                }
             >
                 {initials(email.from)}
             </div>
             <div className="min-w-0 flex-1">
-                <div className="flex items-baseline justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
                     <span
                         className={cn(
-                            "text-[12.5px] truncate",
+                            "text-[12.5px] truncate min-w-0",
                             unread ? "text-slate-900 font-semibold" : "text-slate-800 font-medium",
                         )}
                     >
-                        {fromName(email.from)}
+                        {sender}
                     </span>
-                    <span className="font-mono text-[10px] text-slate-400 tabular-nums shrink-0">
+                    <span className="font-mono text-[10px] text-slate-400 tabular-nums shrink-0 ml-auto">
                         {relative(date)}
                     </span>
                 </div>
-                <div className="text-[12px] text-slate-700 truncate mt-0.5">
+                <div
+                    className={cn(
+                        "text-[12px] truncate mt-0.5",
+                        unread ? "text-slate-800 font-medium" : "text-slate-600",
+                    )}
+                >
                     {email.subject || "(no subject)"}
                 </div>
                 <div className="text-[11px] text-slate-400 truncate mt-0.5">
-                    {preview}
+                    {preview || "(no preview)"}
                 </div>
+                {(mailbox || tagsOnMailbox.length > 0) && (
+                    <div className="mt-1 flex items-center gap-1 min-w-0 flex-wrap">
+                        {mailbox && (
+                            <span className="inline-flex items-center h-4 px-1.5 rounded-sm bg-slate-100 text-slate-500 text-[9.5px] font-mono truncate max-w-[160px]">
+                                {mailbox.email}
+                            </span>
+                        )}
+                        {/* Real tag chips: colored dot + name, so the user
+                            sees exactly which tags this conversation
+                            inherits from its mailbox. */}
+                        {tagsOnMailbox.slice(0, 3).map((t) => (
+                            <TagChip key={t.id} title={t.title} color={t.color} />
+                        ))}
+                        {tagsOnMailbox.length > 3 && (
+                            <span
+                                className="text-[9.5px] text-slate-400 font-mono"
+                                title={tagsOnMailbox
+                                    .slice(3)
+                                    .map((t) => t.title)
+                                    .join(", ")}
+                            >
+                                +{tagsOnMailbox.length - 3}
+                            </span>
+                        )}
+                    </div>
+                )}
             </div>
         </button>
+    );
+}
+
+function TagChip({ title, color }: { title: string; color: string }) {
+    // Tint a slim chip background from the tag's own color so two
+    // chips read as visually distinct without needing to read the
+    // text. We don't render solid coloured chips (too loud); the dot
+    // carries the colour, the chip carries the name.
+    return (
+        <span
+            className="inline-flex items-center gap-1 h-4 pl-1 pr-1.5 rounded-sm border bg-white text-[10px] font-medium text-slate-700 truncate max-w-[120px]"
+            style={{
+                borderColor: color ? `${color}60` : "rgb(226 232 240)",
+                backgroundColor: color ? `${color}12` : "white",
+            }}
+            title={title}
+        >
+            <span
+                aria-hidden
+                className="block size-2 rounded-full shrink-0"
+                style={{ backgroundColor: color || "#94a3b8" }}
+            />
+            {title}
+        </span>
     );
 }

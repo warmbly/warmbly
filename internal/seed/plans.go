@@ -57,11 +57,11 @@ func seedPlans(ctx context.Context, pool *pgxpool.Pool, r *Result) error {
 	plans := []plan{
 		{
 			id: PlanFreeTrialID, name: "Free Trial", maxContacts: 100, dailyEmails: 20,
-			ai: false, accountLimit: 1, price: 0, discounted: 0,
+			ai: false, accountLimit: 2, price: 0, discounted: 0,
 			duration: DurationMonthID, savings: 0, public: false,
 			dedicatedWorkers: 0, dailyCampaignLimit: intPtr(20),
 			maxCampaigns: intPtr(2), maxActiveCampaigns: intPtr(1),
-			maxTeamMembers: intPtr(1), maxEmailAccounts: intPtr(1),
+			maxTeamMembers: intPtr(1), maxEmailAccounts: intPtr(2),
 		},
 		{
 			id: PlanStarterID, name: "Starter", maxContacts: 1_000, dailyEmails: 100,

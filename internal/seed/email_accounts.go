@@ -42,6 +42,13 @@ func seedEmailAccounts(ctx context.Context, pool *pgxpool.Pool, r *Result) error
 			provider: "gmail", warmupTag: "seed-warmup-globex-hans",
 			warmupOn: false, poolType: "free",
 		},
+		{
+			id: EmailOwnerSelfID, userID: UserOwnerID, orgID: OrgAcmeID,
+			workerID: WorkerSharedID,
+			email:    "owner@warmbly.local", name: "Owner Inbox",
+			provider: "smtp_imap", warmupTag: "seed-warmup-owner-self",
+			warmupOn: false, poolType: "premium",
+		},
 	}
 
 	acmeCount, globexCount := 0, 0

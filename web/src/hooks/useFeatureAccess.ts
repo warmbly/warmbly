@@ -70,7 +70,11 @@ export default function useFeatureAccess(): FeatureAccess {
         status,
         plan,
         paid: isPaid,
-        hasInbox: status === "trialing" || (isPaid && isAtLeast(plan, "starter")),
+        // Unified inbox is included on the free trial and on every paid tier,
+        // so gate it on having an active/trialing subscription (isPaid) rather
+        // than the plan-name → catalog map, which doesn't recognise server plan
+        // names like "Pro" / "Free Trial" and would wrongly lock paid orgs.
+        hasInbox: isPaid,
         hasAdvanced: isPaid && isAtLeast(plan, "business"),
         hasDedicatedIps: isPaid && isAtLeast(plan, "business"),
         hasRealtime: true,

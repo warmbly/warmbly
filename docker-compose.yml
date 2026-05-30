@@ -140,18 +140,17 @@ services:
       kafka:
         condition: service_healthy
     entrypoint: ["/bin/bash", "-lc"]
-    command: >
-      "for topic in
-        jobs:worker-events
-        tracking-events
-        email-events
-        warmup-events
-        w:10c8f5e4-1c39-5b2a-9c8b-3d2f0a8b1a01
-        w:10c8f5e4-1c39-5b2a-9c8b-3d2f0a8b1a02
-        w:10c8f5e4-1c39-5b2a-9c8b-3d2f0a8b1a03;
-      do
-        kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic \"$$topic\" --partitions 1 --replication-factor 1;
-      done"
+    # Pre-creates the Kafka topics used by the platform. Only ".", "_", "-",
+    # and alphanumerics are legal in Kafka topic names, so the ":"-separated
+    # logical names the app uses (e.g. "jobs:worker-events", "w:<uuid>") only
+    # work when the eventbus runs over NATS — Kafka can't host them at all.
+    # The remaining topics here are the legal ones the system actually publishes
+    # to Kafka.
+    command:
+      - >-
+        for topic in tracking-events email-events warmup-events; do
+        kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic "$$topic" --partitions 1 --replication-factor 1;
+        done
 
   schema-registry:
     image: confluentinc/cp-schema-registry:7.5.0

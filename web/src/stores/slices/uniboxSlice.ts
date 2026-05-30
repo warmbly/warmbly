@@ -7,6 +7,7 @@ export interface UniboxSlice {
   uniboxThreads: UniboxThread[]
   unseenCount: number
   selectedThreadId: string | null
+  selectedAccountId: string | null
 
   setUniboxEmails: (emails: UniboxEmail[]) => void
   addUniboxEmail: (email: UniboxEmail) => void
@@ -15,6 +16,7 @@ export interface UniboxSlice {
   incrementUnseenCount: () => void
   decrementUnseenCount: (by?: number) => void
   setSelectedThreadId: (id: string | null) => void
+  setSelectedAccountId: (id: string | null) => void
 }
 
 export const createUniboxSlice: StateCreator<UniboxSlice, [], [], UniboxSlice> = (set) => ({
@@ -22,6 +24,7 @@ export const createUniboxSlice: StateCreator<UniboxSlice, [], [], UniboxSlice> =
   uniboxThreads: [],
   unseenCount: 0,
   selectedThreadId: null,
+  selectedAccountId: null,
 
   setUniboxEmails: (uniboxEmails) => set({ uniboxEmails }),
   addUniboxEmail: (email) =>
@@ -32,4 +35,5 @@ export const createUniboxSlice: StateCreator<UniboxSlice, [], [], UniboxSlice> =
   decrementUnseenCount: (by = 1) =>
     set((state) => ({ unseenCount: Math.max(0, state.unseenCount - by) })),
   setSelectedThreadId: (selectedThreadId) => set({ selectedThreadId }),
+  setSelectedAccountId: (selectedAccountId) => set({ selectedAccountId }),
 })

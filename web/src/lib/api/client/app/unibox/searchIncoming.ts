@@ -6,16 +6,20 @@
 import Request from "../../Request";
 import type { UniboxSearchParams } from "@/lib/api/models/app/unibox/UniboxSearch";
 
+export interface UniboxListRow {
+    id: string;
+    email_id: string;
+    thread_id: string;
+    from_addr: string[];
+    to_addr: string[];
+    subject: string;
+    snippet: string;
+    internal_date: string;
+    seen: boolean;
+}
+
 interface UniboxListResponse {
-    data: {
-        id: string;
-        email_id: string;
-        thread_id: string;
-        subject: string;
-        snippet: string;
-        internal_date: string;
-        seen: boolean;
-    }[];
+    data: UniboxListRow[];
     pagination: {
         has_more: boolean;
         next_cursor: string | null;
@@ -44,6 +48,9 @@ export default async function searchIncoming(
         usp.set("email_ids", p.accountIds.join(","));
     }
     if (p.unseen) usp.set("unseen", "true");
+    if (p.snoozed === true) usp.set("snoozed", "true");
+    else if (p.snoozed === "any") usp.set("snoozed", "any");
+    if (p.awaitingReply) usp.set("awaiting_reply", "true");
     if (p.since) usp.set("since", isoDay(p.since));
     if (p.until) usp.set("until", isoDay(p.until));
     if (p.cursor) usp.set("cursor", p.cursor);

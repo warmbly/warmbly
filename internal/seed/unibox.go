@@ -105,6 +105,24 @@ func seedUnibox(ctx context.Context, pool *pgxpool.Pool, _ *Result) error {
 			seen:         true,
 			internalDate: "2026-05-25T10:00:00Z",
 		},
+		{
+			id: UniboxOwnerWelcomeID, userID: UserOwnerID, emailID: EmailOwnerSelfID,
+			threadID: "seed-thread-owner-welcome", messageID: "<seed-owner-welcome@warmbly.local>",
+			uid: 401, flags: []string{}, from: []string{"Warmbly <hello@warmbly.com>"},
+			to: []string{"Owner Inbox <owner@warmbly.local>"}, subject: "Welcome to Warmbly",
+			snippet:      "Your account is ready. Connect another mailbox or start a campaign whenever you are.",
+			seen:         false,
+			internalDate: "2026-05-30T07:00:00Z",
+		},
+		{
+			id: UniboxOwnerDigestID, userID: UserOwnerID, emailID: EmailOwnerSelfID,
+			threadID: "seed-thread-owner-digest", messageID: "<seed-owner-digest@warmbly.local>",
+			uid: 402, flags: []string{"\\Seen"}, from: []string{"Warmbly Digest <digest@warmbly.com>"},
+			to: []string{"Owner Inbox <owner@warmbly.local>"}, subject: "Your weekly deliverability digest",
+			snippet:      "Inbox placement held steady across both connected mailboxes this week. No complaints, no hard bounces.",
+			seen:         true,
+			internalDate: "2026-05-28T07:00:00Z",
+		},
 	}
 
 	for _, row := range rows {
@@ -125,6 +143,7 @@ func seedUniboxMailboxes(ctx context.Context, pool *pgxpool.Pool) error {
 		{EmailAcmeAliceID, 1001, "INBOX", []string{"\\HasNoChildren"}},
 		{EmailAcmeBobID, 2001, "INBOX", []string{"\\HasNoChildren"}},
 		{EmailGlobexHansID, 3001, "INBOX", []string{"\\HasNoChildren"}},
+		{EmailOwnerSelfID, 4001, "INBOX", []string{"\\HasNoChildren"}},
 	}
 	for _, row := range rows {
 		_, err := pool.Exec(ctx, `
