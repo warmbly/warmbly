@@ -22,6 +22,7 @@ func Run(
 	gin.SetMode(ginMode)
 
 	r := gin.Default()
+	r.Use(middleware.RequestIDMiddleware())
 
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok"})

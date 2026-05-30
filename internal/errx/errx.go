@@ -35,8 +35,10 @@ var (
 
 // --- Gin handler helper ---
 type response struct {
-	Error   string `json:"error"`
-	Message string `json:"message"`
+	Error     string `json:"error"`
+	Message   string `json:"message"`
+	Code      string `json:"code"`
+	RequestID string `json:"request_id,omitempty"`
 }
 
 func InternalError() *Error {
@@ -50,8 +52,10 @@ func Handle(c *gin.Context, err error) {
 		httpCode := codeToHTTP[bizErr.Code]
 		httpError := codeToString[bizErr.Code]
 		c.JSON(httpCode, response{
-			Error:   httpError,
-			Message: bizErr.Message,
+			Error:     httpError,
+			Message:   bizErr.Message,
+			Code:      codeToIdentifier[bizErr.Code],
+			RequestID: c.GetString("request_id"),
 		})
 		return
 	}
@@ -65,7 +69,9 @@ func JSON(c *gin.Context, err *Error) {
 	httpCode := codeToHTTP[err.Code]
 	httpError := codeToString[err.Code]
 	c.JSON(httpCode, response{
-		Error:   httpError,
-		Message: err.Message,
+		Error:     httpError,
+		Message:   err.Message,
+		Code:      codeToIdentifier[err.Code],
+		RequestID: c.GetString("request_id"),
 	})
 }

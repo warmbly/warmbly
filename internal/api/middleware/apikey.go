@@ -96,6 +96,8 @@ func (h *Handler) validateAPIKey(c *gin.Context, rawKey string) {
 		c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
 			"error":       "rate_limit_exceeded",
 			"message":     fmt.Sprintf("API key exceeded %d requests per minute", limit),
+			"code":        "rate_limit_exceeded",
+			"request_id":  c.GetString(RequestIDContextKey),
 			"retry_after": retryAfter,
 		})
 		return

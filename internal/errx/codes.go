@@ -42,3 +42,16 @@ var codeToString = map[Code]string{
 	NotImplemented:     "Not Implemented",
 	ServiceUnavailable: "Service Unavailable",
 }
+
+var codeToIdentifier = map[Code]string{
+	BadRequest:         "bad_request",
+	Unauthorized:       "unauthorized",
+	Forbidden:          "forbidden",
+	NotFound:           "not_found",
+	Conflict:           "conflict",
+	Unprocessable:      "unprocessable",
+	TooManyRequests:    "rate_limit_exceeded",
+	Internal:           "internal_error",
+	NotImplemented:     "not_implemented",
+	ServiceUnavailable: "service_unavailable",
+}
