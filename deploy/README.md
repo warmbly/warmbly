@@ -64,14 +64,16 @@ Add a worker from the admin dashboard:
 3. Copy the generated enrollment command
 4. Run it on the VPS as root
 
-The installer exchanges the one-time token for worker config, writes `/etc/warmbly/worker.env`, configures systemd, and starts the worker container. The worker then heartbeats back to the backend and marks itself installed.
+The installer is served by the backend at `/worker-install.sh`. It exchanges the one-time token for worker config, writes `/etc/warmbly/worker.env`, configures systemd, enables a daily randomized self-update timer, and starts the worker container. The worker then heartbeats back to the backend and marks itself installed.
 
 The older SSH-managed path is still supported: paste the generated SSH public key into the VPS's `~/.ssh/authorized_keys`, then click Test and Install. From then on, lifecycle operations (restart, update, system updates, reboot, rotate keys, logs, uninstall) can happen from the dashboard.
 
 Manual install on the VPS is also supported:
 
 ```bash
-sudo bash scripts/install-worker.sh --enroll wmenroll_...
+curl -fsSL https://api.example.com/worker-install.sh | sudo bash -s -- \
+  --enroll wmenroll_... \
+  --api-base https://api.example.com
 
 # or fully manual:
 sudo bash scripts/install-worker.sh \

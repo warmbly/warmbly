@@ -11,6 +11,21 @@ import (
 	"github.com/warmbly/warmbly/internal/models"
 )
 
+func (h *Handler) ServeWorkerInstaller(c *gin.Context) {
+	if h.WorkerOrchestrator == nil {
+		errx.JSON(c, errx.New(errx.ServiceUnavailable, "worker installer is not configured"))
+		return
+	}
+	script, err := h.WorkerOrchestrator.InstallerScript()
+	if err != nil {
+		errx.JSON(c, errx.New(errx.Internal, "failed to load worker installer"))
+		return
+	}
+	c.Header("Content-Type", "text/x-shellscript; charset=utf-8")
+	c.Header("Cache-Control", "no-cache")
+	c.Data(http.StatusOK, "text/x-shellscript; charset=utf-8", script)
+}
+
 type workerEnrollmentRequest struct {
 	Token    string `json:"token"`
 	PublicIP string `json:"public_ip,omitempty"`

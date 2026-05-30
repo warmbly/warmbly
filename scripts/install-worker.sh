@@ -13,7 +13,7 @@
 #
 # Quick start:
 #
-#   curl -fsSL https://get.warmbly.com/worker | sudo bash -s -- \
+#   curl -fsSL https://api.warmbly.com/worker-install.sh | sudo bash -s -- \
 #     --kafka kafka.warmbly.com:9092 \
 #     --schema-registry https://schema.warmbly.com \
 #     --redis redis://cache.warmbly.com:6379 \
@@ -21,12 +21,12 @@
 #
 # Or with a pre-built env file:
 #
-#   curl -fsSL https://get.warmbly.com/worker | sudo bash -s -- \
+#   curl -fsSL https://api.warmbly.com/worker-install.sh | sudo bash -s -- \
 #     --env-file /root/worker.env
 #
 # Or with a one-time enrollment token from the dashboard:
 #
-#   curl -fsSL https://get.warmbly.com/worker | sudo bash -s -- \
+#   curl -fsSL https://api.warmbly.com/worker-install.sh | sudo bash -s -- \
 #     --enroll wmenroll_...
 #
 # Re-running is safe: existing env values are preserved unless overridden,
@@ -44,12 +44,16 @@ UNIT_FILE="/etc/systemd/system/warmbly-worker.service"
 TEMPLATE_UNIT_FILE="/etc/systemd/system/warmbly-worker@.service"
 INSTANCES_DIR="${CONFIG_DIR}/instances"
 CONTAINER_NAME="warmbly-worker"
+INSTALLER_BIN="/usr/local/bin/warmbly-worker-installer"
+AUTO_UPDATE_UNIT_FILE="/etc/systemd/system/warmbly-worker-auto-update.service"
+AUTO_UPDATE_TIMER_FILE="/etc/systemd/system/warmbly-worker-auto-update.timer"
 
 ACTION="install"
 INTERACTIVE=1
 SUPPLIED_ENV_FILE=""
 ENROLL_TOKEN=""
 API_BASE="${WARMBLY_API_BASE:-https://api.warmbly.com}"
+AUTO_UPDATE=1
 
 # Comma-separated list of IPv4 addresses for multi-IP install. When non-empty,
 # the installer drops one templated systemd unit per IP, each bound to that IP
@@ -121,6 +125,7 @@ Configuration flags:
   --enroll <token>             Exchange a one-time dashboard enrollment token
                                for worker config and install without prompts
   --api-base <url>             API base for --enroll (default: ${API_BASE})
+  --no-auto-update             Do not install the systemd auto-update timer
 
   --kafka <bootstrap>          Kafka bootstrap servers (host:port[,host:port])
   --kafka-user <user>
@@ -163,6 +168,7 @@ while [[ $# -gt 0 ]]; do
     --env-file)        SUPPLIED_ENV_FILE="$2"; shift 2 ;;
     --enroll)          ENROLL_TOKEN="$2"; INTERACTIVE=0; shift 2 ;;
     --api-base)        API_BASE="$2"; shift 2 ;;
+    --no-auto-update)  AUTO_UPDATE=0; shift ;;
 
     --kafka)           CFG[KAFKA_BOOTSTRAP_SERVERS]="$2"; shift 2 ;;
     --kafka-user)      CFG[KAFKA_SASL_USERNAME]="$2"; shift 2 ;;
@@ -397,6 +403,61 @@ write_env_file() {
   ok "wrote $ENV_FILE"
 }
 
+resolve_update_image() {
+  local configured=""
+  if [[ -f "$ENV_FILE" ]]; then
+    configured="$(env_file_value "$ENV_FILE" WARMBLY_WORKER_IMAGE || true)"
+  fi
+  if [[ -n "$configured" ]]; then
+    IMAGE="$configured"
+  fi
+}
+
+install_auto_update_timer() {
+  [[ "$AUTO_UPDATE" -eq 1 ]] || return 0
+  command -v curl >/dev/null 2>&1 || return 0
+
+  cat > "$INSTALLER_BIN" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+tmp="\$(mktemp)"
+curl -fsSL "${API_BASE%/}/worker-install.sh" -o "\$tmp"
+install -m 0755 "\$tmp" "$INSTALLER_BIN"
+rm -f "\$tmp"
+exec "$INSTALLER_BIN" --update --api-base "${API_BASE%/}"
+EOF
+  chmod 0755 "$INSTALLER_BIN"
+
+  cat > "$AUTO_UPDATE_UNIT_FILE" <<EOF
+[Unit]
+Description=Warmbly worker auto-update
+After=network-online.target docker.service
+Wants=network-online.target docker.service
+
+[Service]
+Type=oneshot
+ExecStart=$INSTALLER_BIN
+EOF
+
+  cat > "$AUTO_UPDATE_TIMER_FILE" <<EOF
+[Unit]
+Description=Run Warmbly worker auto-update
+
+[Timer]
+OnCalendar=*-*-* 04:00:00
+RandomizedDelaySec=3600
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+
+  chmod 0644 "$AUTO_UPDATE_UNIT_FILE" "$AUTO_UPDATE_TIMER_FILE"
+  systemctl daemon-reload
+  systemctl enable --now warmbly-worker-auto-update.timer >/dev/null 2>&1 || true
+  ok "auto-update timer enabled"
+}
+
 resolve_worker_id() {
   local ip="${IP_OVERRIDE}"
   local id
@@ -611,6 +672,7 @@ do_install() {
 
   systemctl enable warmbly-worker.service >/dev/null 2>&1 || true
   systemctl restart warmbly-worker.service
+  install_auto_update_timer
   ok "warmbly-worker started"
 
   sleep 2
@@ -698,6 +760,7 @@ do_install_multi() {
     systemctl enable "warmbly-worker@${inst}.service" >/dev/null 2>&1 || true
     systemctl restart "warmbly-worker@${inst}.service"
   done
+  install_auto_update_timer
   ok "started ${count} worker instances"
 
   sleep 2
@@ -739,6 +802,7 @@ EOF
 
 do_update() {
   require_root
+  resolve_update_image
 
   local -a instances=()
   while IFS= read -r line; do
@@ -818,6 +882,9 @@ do_uninstall() {
     docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
   fi
 
+  systemctl daemon-reload
+  systemctl disable --now warmbly-worker-auto-update.timer 2>/dev/null || true
+  rm -f "$AUTO_UPDATE_UNIT_FILE" "$AUTO_UPDATE_TIMER_FILE" "$INSTALLER_BIN"
   systemctl daemon-reload
   ok "worker removed (config preserved in $CONFIG_DIR)"
 }

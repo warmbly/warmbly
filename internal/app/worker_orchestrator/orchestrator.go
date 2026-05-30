@@ -150,6 +150,10 @@ func (o *Orchestrator) Install(ctx context.Context, workerID uuid.UUID) error {
 	return o.repo.UpdateInstallState(ctx, workerID, models.WorkerInstallStateInstalled, "")
 }
 
+func (o *Orchestrator) InstallerScript() ([]byte, error) {
+	return os.ReadFile(o.installerPath)
+}
+
 // RenderEnrollmentEnv returns a complete dotenv payload for the one-command
 // enrollment flow. The token exchange authenticates the caller; this method
 // only renders the config the installer writes to disk.

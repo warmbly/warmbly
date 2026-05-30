@@ -41,6 +41,8 @@ func Run(
 	// Public worker enrollment. The one-time enrollment token is the
 	// credential; successful exchange returns a dotenv file for the installer
 	// and consumes the token.
+	r.GET("/worker-install.sh", h.ServeWorkerInstaller)
+	r.GET("/api/v1/workers/install.sh", h.ServeWorkerInstaller)
 	r.POST("/api/v1/workers/enroll", h.EnrollWorker)
 
 	// Public OAuth-bouncer pages used by the mailbox onboarding popup.

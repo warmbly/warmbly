@@ -27,6 +27,7 @@ import {
 } from "@/lib/api/client/app/admin/workers";
 import { assignWorkerProfile, listWorkerProfiles } from "@/lib/api/client/app/admin/credentials";
 import type { CreateWorkerResponse } from "@/lib/api/models/app/admin/Worker";
+import { API_URL } from "@/lib/information";
 
 type Purpose = "shared" | "dedicated" | "risky";
 
@@ -624,7 +625,7 @@ function PostCreatePanel({
 }) {
     const [pasted, setPasted] = useState(false);
     const enrollCommand = result.enrollment_token
-        ? `curl -fsSL https://get.warmbly.com/worker | sudo bash -s -- --enroll ${result.enrollment_token}`
+        ? `curl -fsSL ${API_URL}/worker-install.sh | sudo bash -s -- --enroll ${result.enrollment_token} --api-base ${API_URL}`
         : "";
 
     return (
