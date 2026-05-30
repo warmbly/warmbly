@@ -48,6 +48,8 @@ x-worker-base: &worker-base
   depends_on:
     kafka:
       condition: service_healthy
+    kafka-init:
+      condition: service_completed_successfully
     redis:
       condition: service_healthy
     schema-registry:
@@ -131,6 +133,25 @@ services:
       timeout: 10s
       retries: 12
       start_period: 30s
+
+  kafka-init:
+    image: confluentinc/cp-kafka:7.5.0
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "-lc"]
+    command: >
+      "for topic in
+        jobs:worker-events
+        tracking-events
+        email-events
+        warmup-events
+        w:10c8f5e4-1c39-5b2a-9c8b-3d2f0a8b1a01
+        w:10c8f5e4-1c39-5b2a-9c8b-3d2f0a8b1a02
+        w:10c8f5e4-1c39-5b2a-9c8b-3d2f0a8b1a03;
+      do
+        kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic \"$$topic\" --partitions 1 --replication-factor 1;
+      done"
 
   schema-registry:
     image: confluentinc/cp-schema-registry:7.5.0
@@ -277,6 +298,8 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
       schema-registry:
         condition: service_started
       cloud-tasks-emulator:
@@ -317,6 +340,8 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
       schema-registry:
         condition: service_started
 
@@ -365,6 +390,8 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
       schema-registry:
         condition: service_started
 
