@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/getsentry/sentry-go"
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/app/dailythrottle"
 	"github.com/warmbly/warmbly/internal/config"
@@ -12,6 +13,8 @@ import (
 	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
+	"github.com/warmbly/warmbly/internal/scheduler"
+	"github.com/warmbly/warmbly/internal/tasks/proto"
 	"github.com/warmbly/warmbly/internal/utils/validate"
 )
 
@@ -178,6 +181,10 @@ func (s *campaignService) StartCampaign(ctx context.Context, orgID uuid.UUID, ca
 		return errx.InternalError()
 	}
 
+	if xerr := s.enqueueCampaignWakeup(ctx, cID); xerr != nil {
+		return xerr
+	}
+
 	// Log campaign started
 	if s.campaignLogRepo != nil {
 		s.campaignLogRepo.CreateLog(ctx, &repository.CampaignLogEntry{
@@ -198,6 +205,63 @@ func (s *campaignService) StartCampaign(ctx context.Context, orgID uuid.UUID, ca
 			Name:       campaign.Name,
 			Status:     "active",
 		})
+	}
+
+	return nil
+}
+
+func (s *campaignService) enqueueCampaignWakeup(ctx context.Context, campaignID uuid.UUID) *errx.Error {
+	if s.scheduler == nil || s.tasksClient == nil || s.taskRepo == nil {
+		return nil
+	}
+
+	nextTime, _, accountID, err := s.scheduler.CalculateNextCampaignTime(ctx, campaignID)
+	if err != nil {
+		switch {
+		case errors.Is(err, scheduler.ErrNoEmailAccounts):
+			_ = s.campaignRepository.UpdateStatusWithLock(ctx, campaignID, "paused_no_accounts")
+			return errx.New(errx.BadRequest, "no active email accounts found for campaign's email tags")
+		case errors.Is(err, scheduler.ErrCampaignCompleted):
+			_ = s.campaignRepository.UpdateStatusWithLock(ctx, campaignID, "completed")
+			return errx.New(errx.BadRequest, "campaign has no remaining contacts to send")
+		default:
+			sentry.CaptureException(err)
+			return errx.InternalError()
+		}
+	}
+
+	taskID := uuid.New()
+	task := &repository.Task{
+		ID:             taskID,
+		TaskType:       "campaign",
+		EmailAccountID: accountID,
+		Status:         "pending",
+		ScheduledAt:    &nextTime,
+	}
+	campaignTask := &repository.CampaignTask{
+		TaskID:     taskID,
+		CampaignID: &campaignID,
+	}
+
+	created, err := s.taskRepo.CreateTaskWithLock(ctx, task, campaignTask)
+	if err != nil {
+		sentry.CaptureException(err)
+		return errx.InternalError()
+	}
+	if !created {
+		return nil
+	}
+
+	cloudTaskName, err := s.tasksClient.CreateTask(ctx, &proto.ProcessTask{TaskId: taskID.String()}, nextTime)
+	if err != nil {
+		_ = s.taskRepo.DeleteTask(ctx, taskID)
+		_ = s.campaignRepository.StopCampaign(ctx, campaignID)
+		sentry.CaptureException(err)
+		return errx.New(errx.ServiceUnavailable, "could not schedule campaign right now")
+	}
+	if err := s.taskRepo.UpdateTaskScheduledAt(ctx, taskID, nextTime, cloudTaskName); err != nil {
+		sentry.CaptureException(err)
+		return errx.InternalError()
 	}
 
 	return nil
