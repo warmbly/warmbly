@@ -1,8 +1,6 @@
 <p align="center">
-  <img src="docs/public/logo.svg" alt="Warmbly" width="64" height="66" />
+  <img src="docs/public/banner.svg" alt="Warmbly" width="100%" />
 </p>
-
-<h1 align="center">Warmbly</h1>
 
 <p align="center">
   Open-source cold email and mailbox warmup you can self-host.<br />
@@ -10,10 +8,11 @@
 </p>
 
 <p align="center">
-  <a href="./LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square" alt="License" /></a>
-  <img src="https://img.shields.io/badge/go-1.25-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go" />
-  <img src="https://img.shields.io/badge/postgres-16-336791?style=flat-square&logo=postgresql&logoColor=white" alt="Postgres" />
-  <img src="https://img.shields.io/badge/self--hostable-yes-22c55e?style=flat-square" alt="Self-hostable" />
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-0369a1?style=flat-square&labelColor=0c4a6e" alt="License: Apache 2.0" /></a>
+  &nbsp;<img src="https://img.shields.io/badge/Go-1.25-00ADD8?style=flat-square&labelColor=0c4a6e&logo=go&logoColor=white" alt="Go 1.25" />
+  &nbsp;<img src="https://img.shields.io/badge/PostgreSQL-16-336791?style=flat-square&labelColor=0c4a6e&logo=postgresql&logoColor=white" alt="PostgreSQL 16" />
+  &nbsp;<img src="https://img.shields.io/badge/Self--hostable-yes-10b981?style=flat-square&labelColor=0c4a6e" alt="Self-hostable" />
+  &nbsp;<a href="./CONTRIBUTING.md"><img src="https://img.shields.io/badge/PRs-welcome-0ea5e9?style=flat-square&labelColor=0c4a6e" alt="PRs welcome" /></a>
 </p>
 
 <p align="center">
