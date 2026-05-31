@@ -28,9 +28,10 @@ import (
 type Resource string
 
 const (
-	ResourceCampaign Resource = "campaign"
-	ResourceMailbox  Resource = "mailbox"
-	ResourceOrg      Resource = "org"
+	ResourceCampaign      Resource = "campaign"
+	ResourceMailbox       Resource = "mailbox"
+	ResourceOrg           Resource = "org"
+	ResourceScheduledSend Resource = "scheduled_send"
 )
 
 type Service interface {

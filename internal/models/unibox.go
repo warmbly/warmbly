@@ -202,15 +202,45 @@ type UniboxTagOverview struct {
 // UniboxOverview powers the scope rail + top metric strip in one
 // request. Computed at /unibox/overview.
 type UniboxOverview struct {
-	Total            int64                   `json:"total"`
-	Unread           int64                   `json:"unread"`
-	Today            int64                   `json:"today"`
-	Week             int64                   `json:"week"`
-	Snoozed          int64                   `json:"snoozed"`
-	AwaitingReply    int64                   `json:"awaiting_reply"`
-	Mailboxes        []UniboxMailboxOverview `json:"mailboxes"`
-	Tags             []UniboxTagOverview     `json:"tags"`
-	GeneratedAt      time.Time               `json:"generated_at"`
-	WindowTodayStart time.Time               `json:"window_today_start"`
-	WindowWeekStart  time.Time               `json:"window_week_start"`
+	Total            int64 `json:"total"`
+	Unread           int64 `json:"unread"`
+	Today            int64 `json:"today"`
+	Week             int64 `json:"week"`
+	Snoozed          int64 `json:"snoozed"`
+	AwaitingReply    int64 `json:"awaiting_reply"`
+	ScheduledPending int64 `json:"scheduled_pending"`
+	// ScheduledPendingMax is the hard cap on pending scheduled email
+	// tasks per user. The dashboard shows current/max so the user
+	// sees how close they are to the limit before hitting it.
+	ScheduledPendingMax int64                   `json:"scheduled_pending_max"`
+	Mailboxes           []UniboxMailboxOverview `json:"mailboxes"`
+	Tags                []UniboxTagOverview     `json:"tags"`
+	GeneratedAt         time.Time               `json:"generated_at"`
+	WindowTodayStart    time.Time               `json:"window_today_start"`
+	WindowWeekStart     time.Time               `json:"window_week_start"`
+}
+
+// UniboxScheduledItem describes one queued outbound message the user
+// can review or cancel before it fires. The shape mirrors what the
+// scheduled-list view needs to render: who it's going to, when, the
+// thread it'll thread into, and which mailbox is sending.
+type UniboxScheduledItem struct {
+	TaskID      uuid.UUID `json:"task_id"`
+	ScheduledAt time.Time `json:"scheduled_at"`
+	CreatedAt   time.Time `json:"created_at"`
+
+	// Sending mailbox.
+	AccountID    uuid.UUID `json:"account_id"`
+	AccountEmail string    `json:"account_email"`
+	AccountName  string    `json:"account_name"`
+
+	// Recipients + message contents (preview only).
+	To      []string `json:"to"`
+	CC      []string `json:"cc,omitempty"`
+	BCC     []string `json:"bcc,omitempty"`
+	Subject string   `json:"subject"`
+	Snippet string   `json:"snippet"`
+
+	// Thread the reply will land in (when the user queued from unibox).
+	ThreadID *string `json:"thread_id,omitempty"`
 }

@@ -2,6 +2,7 @@ package unibox
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/errx"
@@ -38,17 +39,39 @@ type UniboxService interface {
 	) (int64, *errx.Error)
 	MarkSeen(ctx context.Context, userID, emailID uuid.UUID, seen bool) *errx.Error
 	MarkSeenBulk(ctx context.Context, userID uuid.UUID, data *models.MarkSeen) (*models.MarkSeen, *errx.Error)
+
+	// Snooze hides a thread until `until`. Unsnooze drops the row.
+	Snooze(ctx context.Context, userID uuid.UUID, threadID string, until time.Time) (*models.UniboxSnooze, *errx.Error)
+	Unsnooze(ctx context.Context, userID uuid.UUID, threadID string) *errx.Error
+	ListSnoozes(ctx context.Context, userID uuid.UUID) ([]models.UniboxSnooze, *errx.Error)
+
+	// Overview powers the scope rail + top metric strip in one call.
+	Overview(ctx context.Context, userID uuid.UUID) (*models.UniboxOverview, *errx.Error)
+
+	// Scheduled-sends review + cancel. CancelScheduled is DB-only: we
+	// flip status to 'cancelled' and let the queued Cloud Task fire as
+	// a no-op (handler short-circuits on non-pending status). Avoids
+	// per-cancel API calls against Cloud Tasks.
+	ListScheduled(ctx context.Context, userID uuid.UUID) ([]models.UniboxScheduledItem, *errx.Error)
+	CancelScheduled(ctx context.Context, userID, taskID uuid.UUID) *errx.Error
 }
 
 type uniboxService struct {
 	uniboxRepository repository.UniboxRepository
+	taskRepo         repository.TaskRepository
 	cache            *cache.Cache
 	blob             storage.Store
 }
 
-func NewService(cache *cache.Cache, blob storage.Store, uniboxRepository repository.UniboxRepository) UniboxService {
+func NewService(
+	cache *cache.Cache,
+	blob storage.Store,
+	uniboxRepository repository.UniboxRepository,
+	taskRepo repository.TaskRepository,
+) UniboxService {
 	return &uniboxService{
 		uniboxRepository: uniboxRepository,
+		taskRepo:         taskRepo,
 		cache:            cache,
 		blob:             blob,
 	}

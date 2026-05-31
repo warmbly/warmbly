@@ -38,5 +38,33 @@ func seedGroups(ctx context.Context, pool *pgxpool.Pool, _ *Result) error {
 			return err
 		}
 	}
+
+	return nil
+}
+
+// seedEmailTagBindings runs AFTER email-accounts because email_tags
+// has a FK to email_accounts(id). Without this ordering the inserts
+// would fail silently (or error out) and the rail's Tags section
+// would never show data.
+func seedEmailTagBindings(ctx context.Context, pool *pgxpool.Pool, _ *Result) error {
+	bindings := []struct {
+		emailID uuid.UUID
+		tagID   uuid.UUID
+	}{
+		{EmailAcmeAliceID, TagVIPID},
+		{EmailAcmeBobID, TagColdID},
+		{EmailOwnerSelfID, TagVIPID},
+		{EmailOwnerSelfID, TagColdID},
+	}
+	for _, b := range bindings {
+		_, err := pool.Exec(ctx, `
+			INSERT INTO email_tags (email_id, tag_id)
+			VALUES ($1, $2)
+			ON CONFLICT (email_id, tag_id) DO NOTHING
+		`, b.emailID, b.tagID)
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }

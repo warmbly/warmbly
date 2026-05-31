@@ -60,6 +60,28 @@ type TaskFailure struct {
 	Message string
 }
 
+// ScheduledEmailItem is the join shape returned by
+// ListScheduledForUser — task + email_task + sender mailbox columns,
+// shaped for the dashboard's "Scheduled" view.
+type ScheduledEmailItem struct {
+	TaskID      uuid.UUID
+	ScheduledAt time.Time
+	CreatedAt   time.Time
+
+	AccountID    uuid.UUID
+	AccountEmail string
+	AccountName  string
+
+	To       []string
+	CC       []string
+	BCC      []string
+	Subject  string
+	Body     string
+	BodyHTML string
+
+	ThreadID *string
+}
+
 // TaskRepository defines methods for task data access
 type TaskRepository interface {
 	// Create operations
@@ -101,6 +123,23 @@ type TaskRepository interface {
 
 	// Update campaign task with contact/sequence IDs (for tracking)
 	UpdateCampaignTaskTracking(ctx context.Context, taskID, contactID, sequenceID uuid.UUID) error
+
+	// ListScheduledForUser returns every pending email task scheduled
+	// for the user's mailboxes, ordered by next-to-fire. Used by the
+	// unibox "Scheduled" view.
+	ListScheduledForUser(ctx context.Context, userID uuid.UUID, limit int) ([]ScheduledEmailItem, error)
+	// CountScheduledForUser returns the number of pending email tasks
+	// currently scheduled (regardless of fire time). Used for the
+	// scope-rail counter.
+	CountScheduledForUser(ctx context.Context, userID uuid.UUID) (int64, error)
+	// CancelScheduledByUser flips a pending email task to status
+	// 'cancelled' only when (a) it belongs to a mailbox the user owns,
+	// (b) it's still pending. Returns true if a row was updated;
+	// callers can use that to distinguish 404 vs. 200. We deliberately
+	// do NOT call Cloud Tasks DeleteTask — the queued task will still
+	// fire, and the task handler short-circuits on a non-pending
+	// status. Cheaper than a DeleteTask round-trip per cancel.
+	CancelScheduledByUser(ctx context.Context, taskID, userID uuid.UUID) (bool, error)
 }
 
 type taskRepository struct {
@@ -610,4 +649,112 @@ func (r *taskRepository) UpdateCampaignTaskTracking(ctx context.Context, taskID,
 
 	_, err := r.db.Exec(ctx, query, taskID, contactID, sequenceID)
 	return err
+}
+
+// ListScheduledForUser returns user-initiated email tasks still in
+// 'pending' state, ordered by scheduled_at. Joins tasks → email_tasks
+// → email_accounts so callers don't need three lookups per row.
+func (r *taskRepository) ListScheduledForUser(ctx context.Context, userID uuid.UUID, limit int) ([]ScheduledEmailItem, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 200
+	}
+	query := `
+		SELECT
+			t.id,
+			t.scheduled_at,
+			t.created_at,
+			ea.id,
+			ea.email,
+			COALESCE(ea.name, ''),
+			et.to_addrs,
+			et.cc,
+			et.bcc,
+			et.subject,
+			et.body_plain,
+			et.body_html,
+			et.thread_id
+		FROM tasks t
+		INNER JOIN email_tasks et ON et.task_id = t.id
+		INNER JOIN email_accounts ea ON ea.id = t.email_account_id
+		WHERE ea.user_id = $1
+		  AND t.task_type = 'email'
+		  AND t.status = 'pending'
+		ORDER BY t.scheduled_at ASC NULLS LAST, t.created_at ASC
+		LIMIT $2
+	`
+	rows, err := r.db.Query(ctx, query, userID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]ScheduledEmailItem, 0)
+	for rows.Next() {
+		var it ScheduledEmailItem
+		var scheduledAt sql.NullTime
+		if err := rows.Scan(
+			&it.TaskID,
+			&scheduledAt,
+			&it.CreatedAt,
+			&it.AccountID,
+			&it.AccountEmail,
+			&it.AccountName,
+			&it.To,
+			&it.CC,
+			&it.BCC,
+			&it.Subject,
+			&it.Body,
+			&it.BodyHTML,
+			&it.ThreadID,
+		); err != nil {
+			return nil, err
+		}
+		if scheduledAt.Valid {
+			it.ScheduledAt = scheduledAt.Time
+		}
+		items = append(items, it)
+	}
+	return items, rows.Err()
+}
+
+// CountScheduledForUser returns how many email tasks are pending across
+// every mailbox the user owns. Cheap enough to fold into the overview
+// payload.
+func (r *taskRepository) CountScheduledForUser(ctx context.Context, userID uuid.UUID) (int64, error) {
+	query := `
+		SELECT COUNT(*)
+		FROM tasks t
+		INNER JOIN email_accounts ea ON ea.id = t.email_account_id
+		WHERE ea.user_id = $1
+		  AND t.task_type = 'email'
+		  AND t.status = 'pending'
+	`
+	var n int64
+	err := r.db.QueryRow(ctx, query, userID).Scan(&n)
+	return n, err
+}
+
+// CancelScheduledByUser flips a single pending email task to
+// 'cancelled', enforcing ownership through the email_accounts join.
+// Returns true when a row was actually updated; false when the task
+// either doesn't exist, isn't owned by this user, isn't an email task,
+// or already left the pending state (e.g. it already fired or someone
+// else cancelled it).
+func (r *taskRepository) CancelScheduledByUser(ctx context.Context, taskID, userID uuid.UUID) (bool, error) {
+	query := `
+		UPDATE tasks t
+		SET status = 'cancelled',
+		    updated_at = NOW()
+		FROM email_accounts ea
+		WHERE t.id = $1
+		  AND t.email_account_id = ea.id
+		  AND ea.user_id = $2
+		  AND t.task_type = 'email'
+		  AND t.status = 'pending'
+	`
+	tag, err := r.db.Exec(ctx, query, taskID, userID)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
 }

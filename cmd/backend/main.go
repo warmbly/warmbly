@@ -668,7 +668,7 @@ func main() {
 		apiKeyService = apikey.NewService(cache, apiKeyRepository)
 		crmService = crm.NewService(crmRepository)
 		socketService = socket.NewService(cache, tokenService)
-		uniboxService = unibox.NewService(cache, s3, uniboxRepository)
+		uniboxService = unibox.NewService(cache, s3, uniboxRepository, taskRepository)
 
 		// Cloud Tasks client
 		cloudTasksCfg, err := cfg.LoadCloudTasksConfig(ctx)
@@ -686,7 +686,7 @@ func main() {
 		// Template & email send services
 		templateService = template.NewService(templateRepository)
 		schedulerService := scheduler.NewSchedulerService(taskRepository, warmupRepository, campaignProgressRepository, emailRepostory, campaignRepostory)
-		emailSendService = emailsend.NewService(taskRepository, emailRepostory, userRepostory, schedulerService, tasksClient, featureGateService)
+		emailSendService = emailsend.NewService(taskRepository, emailRepostory, userRepostory, schedulerService, tasksClient, featureGateService, dailyThrottleService)
 		advancedService = advanced.NewService(
 			advancedRepository,
 			campaignRepostory,

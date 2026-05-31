@@ -67,4 +67,31 @@ const (
 	DailyThrottleNewCampaigns = 20 // new campaigns per org per day
 	DailyThrottleNewMailboxes = 5  // newly connected mailboxes per org per day
 	DailyThrottleNewOrgs      = 3  // new workspaces per owner per day
+
+	// DailyThrottleNewScheduledSends caps how many NEW scheduled-send
+	// schedules a single user can create in a rolling 24h window. The
+	// real defense against burst abuse — someone writing a loop that
+	// queues thousands of scheduled sends in seconds. Set high enough
+	// that no human-driven volume comes close (a power user replying
+	// to 200 inbound messages a day couldn't hit it organically).
+	DailyThrottleNewScheduledSends = 1000
+
+	// MaxPendingScheduledSendsPerUser caps how many pending scheduled
+	// email sends one user can have queued at once. The DAILY rate
+	// (DailyThrottleNewScheduledSends) is the primary abuse defense;
+	// this is the DB-bloat defense — each pending row carries a body
+	// (~5KB), so capping pending count keeps total scheduled-queue
+	// storage bounded per user.
+	//
+	// 10,000 is generous: a user scheduling 100 sends/day for the next
+	// 100 days hits this exactly once. The combination of "1K new/day"
+	// + "10K total pending" means a legitimate user cannot organically
+	// hit either, while a scripted attacker is bounded on both axes.
+	//
+	// Cloud Tasks cost is negligible at this size — at $0.40/M
+	// operations, 10K pending = 20K ops = $0.008/user even at the
+	// hardest abuse. The cap exists for DB sanity, not cost.
+	//
+	// Future: per-plan ceiling lookup. Today: single backstop.
+	MaxPendingScheduledSendsPerUser = 10000
 )

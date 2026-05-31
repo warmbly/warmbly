@@ -248,9 +248,24 @@ func Run(
 		{
 			unibox.GET("", m.RequireAccess(models.PermAccessUnibox, models.APIPermReadUnibox), h.GetUniboxIncoming)
 			unibox.GET("/count", m.RequireAccess(models.PermAccessUnibox, models.APIPermReadUnibox), h.GetUnseenCount)
+			unibox.GET("/overview", m.RequireAccess(models.PermAccessUnibox, models.APIPermReadUnibox), h.GetUniboxOverview)
 			unibox.GET("/thread", m.RequireAccess(models.PermAccessUnibox, models.APIPermReadUnibox), h.GetUniboxThread)
 			unibox.PATCH("/seen", m.RequireAccess(models.PermAccessUnibox, models.APIPermWriteUnibox), h.UniboxMarkSeen)
 			unibox.POST("/reply", m.RequireOrganization(), m.RequireAccess(models.PermAccessUnibox, models.APIPermWriteUnibox), h.UniboxReply)
+
+			// Snoozes — POST/DELETE on a thread, GET lists active ones.
+			unibox.GET("/snoozes", m.RequireAccess(models.PermAccessUnibox, models.APIPermReadUnibox), h.ListUniboxSnoozes)
+			unibox.POST("/snooze", m.RequireAccess(models.PermAccessUnibox, models.APIPermWriteUnibox), h.CreateUniboxSnooze)
+			unibox.DELETE("/snooze", m.RequireAccess(models.PermAccessUnibox, models.APIPermWriteUnibox), h.DeleteUniboxSnooze)
+
+			// Scheduled-sends review + cancel. DELETE is DB-only —
+			// we don't pay Cloud Tasks to delete the queued task; the
+			// handler short-circuits on cancelled status when it fires.
+			unibox.GET("/scheduled", m.RequireAccess(models.PermAccessUnibox, models.APIPermReadUnibox), h.ListUniboxScheduled)
+			unibox.DELETE("/scheduled/:task_id", m.RequireAccess(models.PermAccessUnibox, models.APIPermWriteUnibox), h.CancelUniboxScheduled)
+
+			// Keep /:id last — gin treats it as a catch-all so any
+			// fixed-name routes (above) must register first.
 			unibox.GET("/:id", m.RequireAccess(models.PermAccessUnibox, models.APIPermReadUnibox), h.GetUniboxEmail)
 		}
 

@@ -38,6 +38,7 @@ func Run(ctx context.Context, pool *pgxpool.Pool) (*Result, error) {
 		{"api-keys", seedAPIKeys},
 		{"folders-tags-categories", seedGroups},
 		{"email-accounts", seedEmailAccounts},
+		{"email-tag-bindings", seedEmailTagBindings},
 		{"unibox", seedUnibox},
 		{"warmup-participants", seedWarmupParticipants},
 		{"reply-templates", seedReplyTemplates},

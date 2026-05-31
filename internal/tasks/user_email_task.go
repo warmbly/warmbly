@@ -49,7 +49,30 @@ func (s *tasksService) HandleUserEmailTask(task *proto.ProcessTask) *errx.Error 
 	}
 
 	if taskRecord == nil {
-		return errx.ErrNotFound
+		// A queued Cloud Task is firing for a task row that no longer
+		// exists in the DB. Treat as success so Cloud Tasks doesn't
+		// retry — the only way this happens is if the row was
+		// explicitly removed (e.g. account/org wipe) and we don't
+		// want phantom retries piling up.
+		log.Info().Str("task_id", taskID.String()).
+			Msg("user_email skipped: task row missing (returning success)")
+		return nil
+	}
+
+	// Soft-cancel path. The dashboard "Scheduled" view cancels a
+	// queued send by flipping status to 'cancelled' (no Cloud Tasks
+	// DeleteTask call — that's a paid API per cancel). When the
+	// queued task fires, we see the non-pending status and return
+	// success so Cloud Tasks doesn't retry. Also catches:
+	//   - completed (duplicate fire / replay)
+	//   - failed / dead_lettered (already terminal)
+	//   - active (mid-flight by another worker)
+	if taskRecord.Status != "pending" {
+		log.Info().
+			Str("task_id", taskID.String()).
+			Str("status", taskRecord.Status).
+			Msg("user_email skipped: task not in pending state")
+		return nil
 	}
 
 	// STEP 3: Load email_task record (with new columns)
@@ -67,6 +90,35 @@ func (s *tasksService) HandleUserEmailTask(task *proto.ProcessTask) *errx.Error 
 	account, xerr := s.emailRepo.GetByID(ctx, taskRecord.EmailAccountID)
 	if xerr != nil {
 		return xerr
+	}
+
+	// Pre-execution guards. The user may have queued this send
+	// hours/days/weeks ago — re-validate that:
+	//   (a) the mailbox is still active (not revoked/inactive/deleted)
+	//   (b) the org still has unibox/send access (sub didn't lapse)
+	// If either fails we cancel the task with a clear reason instead
+	// of dispatching to the worker and producing an SMTP failure
+	// downstream.
+	if account.Status != "active" {
+		_ = s.taskRepo.RecordTaskFailure(ctx, taskID,
+			"Mailbox no longer active",
+			"email account status="+string(account.Status)+" at execution time")
+		_ = s.taskRepo.UpdateTaskStatus(ctx, taskID, "cancelled")
+		log.Info().Str("task_id", taskID.String()).Str("status", string(account.Status)).
+			Msg("user_email cancelled: mailbox not active")
+		return nil
+	}
+	if s.featureGate != nil && account.OrganizationID != nil {
+		canUse, _ := s.featureGate.CanUseUnibox(ctx, *account.OrganizationID)
+		if !canUse {
+			_ = s.taskRepo.RecordTaskFailure(ctx, taskID,
+				"Subscription does not allow sending",
+				"feature gate CanUseUnibox=false at execution time")
+			_ = s.taskRepo.UpdateTaskStatus(ctx, taskID, "cancelled")
+			log.Info().Str("task_id", taskID.String()).
+				Msg("user_email cancelled: feature gate denied at execution time")
+			return nil
+		}
 	}
 
 	// STEP 5: Mark task as active (with advisory lock)

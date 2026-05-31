@@ -14,6 +14,24 @@ import (
 	"github.com/warmbly/warmbly/internal/models"
 )
 
+// gateUnibox enforces feature access for any unibox endpoint that
+// needs an org context. Returns true when the caller is allowed.
+func (h *Handler) gateUnibox(c *gin.Context) bool {
+	if h.FeatureGateService == nil {
+		return true
+	}
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		return true
+	}
+	canUse, _ := h.FeatureGateService.CanUseUnibox(c.Request.Context(), *orgID)
+	if !canUse {
+		errx.Handle(c, errx.New(errx.Forbidden, "Unibox requires an active trial or paid subscription"))
+		return false
+	}
+	return true
+}
+
 func (h *Handler) GetUniboxIncoming(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	uid, err := uuid.Parse(userID)
@@ -60,6 +78,23 @@ func (h *Handler) GetUniboxIncoming(c *gin.Context) {
 	if unseenStr := c.Query("unseen"); unseenStr == "true" {
 		unseen := true
 		params.Unseen = &unseen
+	}
+
+	// Snoozed scope. snoozed=true → only snoozed; snoozed=any → no
+	// filter; absent → default behaviour (exclude snoozed). The "any"
+	// value is supplied by admin debug tooling, not the dashboard.
+	switch c.Query("snoozed") {
+	case "true":
+		v := true
+		params.Snoozed = &v
+	case "any":
+		v := false
+		params.Snoozed = &v
+	}
+
+	if c.Query("awaiting_reply") == "true" {
+		v := true
+		params.AwaitingReply = &v
 	}
 
 	// Parse date filters
@@ -258,16 +293,17 @@ func (h *Handler) GetUnseenCount(c *gin.Context) {
 }
 
 type UniboxReplyRequest struct {
-	EmailAccountID string   `json:"email_account_id" binding:"required"`
-	To             []string `json:"to" binding:"required,min=1"`
-	CC             []string `json:"cc"`
-	BCC            []string `json:"bcc"`
-	Subject        string   `json:"subject" binding:"required"`
-	BodyHTML       string   `json:"body_html"`
-	BodyPlain      string   `json:"body_plain"`
-	InReplyTo      []string `json:"in_reply_to"`
-	ThreadID       string   `json:"thread_id"`
-	SendMode       string   `json:"send_mode"`
+	EmailAccountID string     `json:"email_account_id" binding:"required"`
+	To             []string   `json:"to" binding:"required,min=1"`
+	CC             []string   `json:"cc"`
+	BCC            []string   `json:"bcc"`
+	Subject        string     `json:"subject" binding:"required"`
+	BodyHTML       string     `json:"body_html"`
+	BodyPlain      string     `json:"body_plain"`
+	InReplyTo      []string   `json:"in_reply_to"`
+	ThreadID       string     `json:"thread_id"`
+	SendMode       string     `json:"send_mode"`
+	ScheduledAt    *time.Time `json:"scheduled_at,omitempty"`
 }
 
 // UniboxReply schedules a reply email from Unibox.
@@ -298,15 +334,16 @@ func (h *Handler) UniboxReply(c *gin.Context) {
 	}
 
 	sendReq := &emailsend.SendEmailRequest{
-		To:        req.To,
-		CC:        req.CC,
-		BCC:       req.BCC,
-		Subject:   req.Subject,
-		BodyHTML:  req.BodyHTML,
-		BodyPlain: req.BodyPlain,
-		InReplyTo: req.InReplyTo,
-		ThreadID:  req.ThreadID,
-		SendMode:  req.SendMode,
+		To:          req.To,
+		CC:          req.CC,
+		BCC:         req.BCC,
+		Subject:     req.Subject,
+		BodyHTML:    req.BodyHTML,
+		BodyPlain:   req.BodyPlain,
+		InReplyTo:   req.InReplyTo,
+		ThreadID:    req.ThreadID,
+		SendMode:    req.SendMode,
+		ScheduledAt: req.ScheduledAt,
 	}
 	if sendReq.SendMode == "" {
 		sendReq.SendMode = "instant"
@@ -319,4 +356,157 @@ func (h *Handler) UniboxReply(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, resp)
+}
+
+// GetUniboxOverview rolls up unread/today/week/snoozed/awaiting plus
+// per-mailbox and per-tag counts in one call. The dashboard's scope
+// rail and metric strip share this response.
+// GET /unibox/overview
+func (h *Handler) GetUniboxOverview(c *gin.Context) {
+	if !h.gateUnibox(c) {
+		return
+	}
+	userID := middleware.GetUserID(c)
+	uid, err := uuid.Parse(userID)
+	if err != nil {
+		errx.Handle(c, errx.ErrUser)
+		return
+	}
+
+	resp, xerr := h.UniboxService.Overview(c.Request.Context(), uid)
+	if xerr != nil {
+		errx.Handle(c, xerr)
+		return
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
+type UniboxSnoozeRequest struct {
+	ThreadID     string    `json:"thread_id" binding:"required"`
+	SnoozedUntil time.Time `json:"snoozed_until" binding:"required"`
+}
+
+// CreateUniboxSnooze hides a thread until snoozed_until passes.
+// Upsert semantics: a second call on the same thread updates the time.
+// POST /unibox/snooze
+func (h *Handler) CreateUniboxSnooze(c *gin.Context) {
+	if !h.gateUnibox(c) {
+		return
+	}
+	userID := middleware.GetUserID(c)
+	uid, err := uuid.Parse(userID)
+	if err != nil {
+		errx.Handle(c, errx.ErrUser)
+		return
+	}
+
+	var req UniboxSnoozeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		errx.Handle(c, errx.ErrInvalid)
+		return
+	}
+
+	resp, xerr := h.UniboxService.Snooze(c.Request.Context(), uid, req.ThreadID, req.SnoozedUntil)
+	if xerr != nil {
+		errx.Handle(c, xerr)
+		return
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
+// DeleteUniboxSnooze un-snoozes a thread immediately. Idempotent —
+// deleting a snooze that doesn't exist still returns 204.
+// DELETE /unibox/snooze
+func (h *Handler) DeleteUniboxSnooze(c *gin.Context) {
+	if !h.gateUnibox(c) {
+		return
+	}
+	userID := middleware.GetUserID(c)
+	uid, err := uuid.Parse(userID)
+	if err != nil {
+		errx.Handle(c, errx.ErrUser)
+		return
+	}
+
+	threadID := c.Query("thread_id")
+	if threadID == "" {
+		errx.Handle(c, errx.New(errx.BadRequest, "thread_id is required"))
+		return
+	}
+
+	if xerr := h.UniboxService.Unsnooze(c.Request.Context(), uid, threadID); xerr != nil {
+		errx.Handle(c, xerr)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+// ListUniboxScheduled returns every pending email task the user has
+// queued — what the "Scheduled" scope in the dashboard reads from.
+// GET /unibox/scheduled
+func (h *Handler) ListUniboxScheduled(c *gin.Context) {
+	if !h.gateUnibox(c) {
+		return
+	}
+	userID := middleware.GetUserID(c)
+	uid, err := uuid.Parse(userID)
+	if err != nil {
+		errx.Handle(c, errx.ErrUser)
+		return
+	}
+
+	items, xerr := h.UniboxService.ListScheduled(c.Request.Context(), uid)
+	if xerr != nil {
+		errx.Handle(c, xerr)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": items})
+}
+
+// CancelUniboxScheduled cancels a pending scheduled send. DB-only:
+// we mark the task cancelled and let the queued Cloud Task fire as a
+// no-op (the task handler short-circuits on non-pending statuses).
+// DELETE /unibox/scheduled/:task_id
+func (h *Handler) CancelUniboxScheduled(c *gin.Context) {
+	if !h.gateUnibox(c) {
+		return
+	}
+	userID := middleware.GetUserID(c)
+	uid, err := uuid.Parse(userID)
+	if err != nil {
+		errx.Handle(c, errx.ErrUser)
+		return
+	}
+	taskID, err := uuid.Parse(c.Param("task_id"))
+	if err != nil {
+		errx.Handle(c, errx.ErrUuid)
+		return
+	}
+
+	if xerr := h.UniboxService.CancelScheduled(c.Request.Context(), uid, taskID); xerr != nil {
+		errx.Handle(c, xerr)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+// ListUniboxSnoozes returns the user's active snoozes (debug + UI).
+// GET /unibox/snoozes
+func (h *Handler) ListUniboxSnoozes(c *gin.Context) {
+	if !h.gateUnibox(c) {
+		return
+	}
+	userID := middleware.GetUserID(c)
+	uid, err := uuid.Parse(userID)
+	if err != nil {
+		errx.Handle(c, errx.ErrUser)
+		return
+	}
+
+	resp, xerr := h.UniboxService.ListSnoozes(c.Request.Context(), uid)
+	if xerr != nil {
+		errx.Handle(c, xerr)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": resp})
 }
