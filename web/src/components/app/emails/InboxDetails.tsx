@@ -594,8 +594,27 @@ function SettingsTab({ form, update, mailbox }: { form: Inbox; update: (p: Parti
                 <FieldShell label="Display name">
                     <TextInput value={form.name ?? ""} placeholder="First Last" onChange={(v) => update({ name: v })} className="w-full h-9" />
                 </FieldShell>
-                <FieldShell label="Reply-to" hint="Where replies are routed. Defaults to the mailbox address.">
-                    <TextInput value={form.reply_to ?? ""} placeholder="support@company.com" onChange={(v) => update({ reply_to: v })} className="w-full h-9" />
+                <FieldShell
+                    label="Reply-to"
+                    hint={`Where replies land. Leave empty to use ${mailbox.email}.`}
+                >
+                    <div className="flex items-center gap-1.5">
+                        <TextInput
+                            value={form.reply_to ?? ""}
+                            placeholder={mailbox.email}
+                            onChange={(v) => update({ reply_to: v })}
+                            className="w-full h-9"
+                        />
+                        {form.reply_to !== mailbox.email && (
+                            <button
+                                type="button"
+                                onClick={() => update({ reply_to: mailbox.email })}
+                                className="h-9 px-2.5 rounded-md border border-slate-200 hover:border-slate-300 text-[12px] text-slate-700 hover:text-slate-900 transition-colors shrink-0"
+                            >
+                                Use mailbox address
+                            </button>
+                        )}
+                    </div>
                 </FieldShell>
             </div>
 

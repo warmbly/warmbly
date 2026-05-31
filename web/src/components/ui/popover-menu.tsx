@@ -48,7 +48,7 @@ interface MenuCtx {
     id: string;
     open: boolean;
     setOpen: (o: boolean) => void;
-    triggerRef: React.RefObject<HTMLElement>;
+    triggerRef: React.RefObject<HTMLElement | null>;
     side: "bottom" | "top";
     align: "start" | "end" | "center";
     sideOffset: number;
@@ -179,9 +179,21 @@ export function PopoverMenuContent({
         compute();
         window.addEventListener("resize", compute);
         window.addEventListener("scroll", compute, true);
+
+        // Recompute when the popover's own content changes size — e.g.
+        // swapping a preset list for a datetime picker inside. Without
+        // this the popover stays anchored to its old size and either
+        // floats away from the trigger or gets clipped off-screen.
+        let observer: ResizeObserver | null = null;
+        if (ref.current && typeof ResizeObserver !== "undefined") {
+            observer = new ResizeObserver(compute);
+            observer.observe(ref.current);
+        }
+
         return () => {
             window.removeEventListener("resize", compute);
             window.removeEventListener("scroll", compute, true);
+            observer?.disconnect();
         };
     }, [open, side, align, sideOffset, triggerRef]);
 
@@ -224,6 +236,7 @@ export function PopoverMenuContent({
                     ref={ref}
                     key="popover"
                     role="menu"
+                    layout
                     initial={{ opacity: 0, scale: 0.96, y: enterY }}
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.97, y: enterY * 0.5 }}
@@ -231,6 +244,11 @@ export function PopoverMenuContent({
                         opacity: { duration: 0.14, ease: [0.16, 1, 0.3, 1] },
                         scale: { duration: 0.18, ease: [0.16, 1, 0.3, 1] },
                         y: { duration: 0.18, ease: [0.16, 1, 0.3, 1] },
+                        // Smooth resize when the inner content swaps
+                        // (e.g. preset list → datetime picker). The
+                        // ResizeObserver above re-anchors position; this
+                        // makes the height/width travel feel intentional.
+                        layout: { duration: 0.22, ease: [0.16, 1, 0.3, 1] },
                     }}
                     style={{
                         position: "fixed",

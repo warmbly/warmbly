@@ -21,6 +21,7 @@ import {
     MoonIcon,
     ReplyIcon,
     SearchIcon,
+    SendIcon,
     SparkleIcon,
 } from "lucide-react";
 import useUniboxOverview from "@/lib/api/hooks/app/unibox/useUniboxOverview";
@@ -33,6 +34,7 @@ export type UniboxScope =
     | { kind: "week" }
     | { kind: "awaiting" }
     | { kind: "snoozed" }
+    | { kind: "scheduled" }
     | { kind: "mailbox"; mailboxId: string }
     | { kind: "tag"; tagId: string };
 
@@ -108,6 +110,26 @@ export function ScopeRail({ scope, onChange }: ScopeRailProps) {
                     active={active === "snoozed"}
                     onClick={() => onChange({ kind: "snoozed" })}
                 />
+                <Item
+                    icon={<SendIcon className="w-3.5 h-3.5" />}
+                    label="Scheduled"
+                    count={data?.scheduled_pending}
+                    countTone={data?.scheduled_pending ? "accent" : "muted"}
+                    active={active === "scheduled"}
+                    onClick={() => onChange({ kind: "scheduled" })}
+                />
+                {/* Cap meter — only when the user is materially through the
+                    allowance, so the rail stays calm for the 99% case. */}
+                {data &&
+                    data.scheduled_pending_max > 0 &&
+                    data.scheduled_pending / data.scheduled_pending_max >= 0.7 && (
+                        <div className="px-2 pt-1 pb-1.5">
+                            <ScheduledMeter
+                                used={data.scheduled_pending}
+                                cap={data.scheduled_pending_max}
+                            />
+                        </div>
+                    )}
             </Section>
 
             <CollapsibleSection
@@ -261,6 +283,52 @@ function CollapsibleSection<T extends { id: string }>({
                         </button>
                     )}
                 </div>
+            )}
+        </div>
+    );
+}
+
+// ScheduledMeter — slim usage bar that surfaces the pending-cap. Stays
+// hidden until the user is at ≥70% so the rail isn't cluttered for the
+// common case where the cap is irrelevant. Shifts to amber/red as the
+// cap gets close so the user gets unmissable warning before sends fail.
+function ScheduledMeter({ used, cap }: { used: number; cap: number }) {
+    const ratio = Math.min(1, used / cap);
+    const pct = Math.round(ratio * 100);
+    const tone =
+        ratio >= 0.95 ? "rose" : ratio >= 0.85 ? "amber" : "sky";
+
+    const barClasses =
+        tone === "rose"
+            ? "bg-rose-500"
+            : tone === "amber"
+                ? "bg-amber-500"
+                : "bg-sky-500";
+    const textClasses =
+        tone === "rose"
+            ? "text-rose-700"
+            : tone === "amber"
+                ? "text-amber-700"
+                : "text-slate-500";
+
+    return (
+        <div className="px-1">
+            <div className={cn("flex items-center justify-between text-[10px] mb-1", textClasses)}>
+                <span className="uppercase tracking-[0.14em] font-medium">Queue</span>
+                <span className="font-mono tabular-nums">
+                    {used}/{cap}
+                </span>
+            </div>
+            <div className="h-1 rounded-full bg-slate-200 overflow-hidden">
+                <div
+                    className={cn("h-full transition-all", barClasses)}
+                    style={{ width: `${pct}%` }}
+                />
+            </div>
+            {ratio >= 0.95 && (
+                <p className="mt-1 text-[10px] text-rose-600 leading-snug">
+                    Near the limit — cancel a few sends to free up space.
+                </p>
             )}
         </div>
     );

@@ -19,6 +19,14 @@ export interface UniboxSearchParams {
      */
     tagId?: string;
     unseen?: boolean;      // Only unread
+    /**
+     * Snoozed scope. true = only snoozed threads; undefined = exclude
+     * snoozed (default inbox view); "any" = no snooze filter at all
+     * (debug only).
+     */
+    snoozed?: true | "any";
+    /** Awaiting reply: threads where the last message was from us. */
+    awaitingReply?: boolean;
     since?: Date;          // From date
     until?: Date;          // To date
     sortBy?: "newest" | "oldest";

@@ -17,6 +17,7 @@ import { useSearchParams } from "react-router-dom";
 import { ChevronLeftIcon, InboxIcon } from "lucide-react";
 
 import { ConversationList } from "@/components/app/unibox/ConversationList";
+import { ScheduledList } from "@/components/app/unibox/ScheduledList";
 import { ThreadView } from "@/components/app/unibox/ThreadView";
 import { ScopeRail, type UniboxScope } from "@/components/app/unibox/ScopeRail";
 import { UniboxHeader } from "@/components/app/unibox/UniboxHeader";
@@ -97,6 +98,8 @@ export default function UniboxPage() {
                 return { kind: "awaiting" };
             case "snoozed":
                 return { kind: "snoozed" };
+            case "scheduled":
+                return { kind: "scheduled" };
             case "mailbox":
                 return urlScopeRef ? { kind: "mailbox", mailboxId: urlScopeRef } : { kind: "all" };
             case "tag":
@@ -185,6 +188,8 @@ export default function UniboxPage() {
                 return "Awaiting reply";
             case "snoozed":
                 return "Snoozed";
+            case "scheduled":
+                return "Scheduled";
             case "mailbox": {
                 const m = overviewData?.mailboxes.find((x) => x.id === scope.mailboxId);
                 return m ? m.email : "Mailbox";
@@ -222,6 +227,14 @@ export default function UniboxPage() {
                         <ScopeRail scope={scope} onChange={setScope} />
                     </aside>
 
+                    {scope.kind === "scheduled" ? (
+                        // Scheduled scope takes the full right side — a
+                        // queued send has no thread context to load.
+                        <div className="flex-1 min-w-0 flex flex-col overflow-hidden border-l border-slate-200">
+                            <ScheduledList />
+                        </div>
+                    ) : (
+                    <>
                     <div
                         className={cn(
                             "w-full md:w-[360px] shrink-0 border-r border-slate-200 overflow-hidden flex-col",
@@ -274,6 +287,8 @@ export default function UniboxPage() {
                             </div>
                         )}
                     </div>
+                    </>
+                    )}
                 </div>
             </div>
         </LockedSurface>

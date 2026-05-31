@@ -10,7 +10,12 @@ export interface SendUniboxReplyRequest {
     body_plain?: string
     in_reply_to?: string[]
     thread_id?: string
-    send_mode?: "instant" | "smart"
+    // "instant" → send right away
+    // "smart"   → next slot picked by the per-mailbox scheduler
+    // "scheduled" → use scheduled_at verbatim (must be future)
+    send_mode?: "instant" | "smart" | "scheduled"
+    /** ISO timestamp — only honoured when send_mode = "scheduled". */
+    scheduled_at?: string
 }
 
 export interface SendUniboxReplyResponse {

@@ -6,6 +6,7 @@
 // path with a native datetime input.
 
 import React from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import {
@@ -100,10 +101,12 @@ function nextMonday9(): Date {
 // Local datetime → ISO string. The native <input type="datetime-local">
 // hands back "YYYY-MM-DDTHH:mm" (no zone), interpreted as the user's
 // local clock — perfectly fine here since we round-trip to UTC on send.
-function defaultCustomSnoozeValue(): string {
-    const d = offsetHours(2);
+function toLocalInput(d: Date): string {
     const pad = (n: number) => String(n).padStart(2, "0");
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+function defaultCustomSnoozeValue(): string {
+    return toLocalInput(offsetHours(2));
 }
 
 export function ThreadView({ threadId, emailId }: ThreadViewProps) {
@@ -191,8 +194,16 @@ export function ThreadView({ threadId, emailId }: ThreadViewProps) {
     const submitCustomSnooze = () => {
         if (!customValue) return;
         const d = new Date(customValue);
-        if (Number.isNaN(d.getTime()) || d.getTime() <= Date.now()) {
-            toast.error("Pick a future time");
+        // Server caps at 90 days for snooze (matches SnoozeMaxHorizon
+        // in internal/app/unibox/config.go). Reject early with a
+        // useful message instead of letting the API 400.
+        const MAX_SNOOZE_MS = 90 * 24 * 60 * 60 * 1000;
+        if (Number.isNaN(d.getTime()) || d.getTime() <= Date.now() + 5_000) {
+            toast.error("Pick a future time (a few seconds out, please)");
+            return;
+        }
+        if (d.getTime() - Date.now() > MAX_SNOOZE_MS) {
+            toast.error("Snooze can't be more than 90 days out");
             return;
         }
         snooze.mutate(d);
@@ -239,55 +250,73 @@ export function ThreadView({ threadId, emailId }: ThreadViewProps) {
                             </button>
                         </PopoverMenuTrigger>
                         <PopoverMenuContent>
-                            {customMode ? (
-                                <div className="px-1 py-1 w-[240px]">
-                                    <PopoverMenuLabel>Pick a date &amp; time</PopoverMenuLabel>
-                                    <input
-                                        type="datetime-local"
-                                        value={customValue}
-                                        onChange={(e) => setCustomValue(e.target.value)}
-                                        className="w-full h-8 px-2 mt-1 rounded-md border border-slate-200 text-[12.5px] text-slate-900 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 tabular-nums"
-                                    />
-                                    <div className="mt-2 flex items-center gap-1.5">
-                                        <button
-                                            type="button"
-                                            onClick={submitCustomSnooze}
-                                            className="h-7 px-2.5 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-[12px] font-medium inline-flex items-center gap-1 transition-colors"
-                                        >
-                                            <CheckIcon className="w-3 h-3" />
-                                            Snooze
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => setCustomMode(false)}
-                                            className="h-7 px-2 rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100 text-[12px] transition-colors"
-                                        >
-                                            Back
-                                        </button>
-                                    </div>
-                                </div>
-                            ) : (
-                                <>
-                                    <PopoverMenuLabel>Snooze until</PopoverMenuLabel>
-                                    {SNOOZE_PRESETS.map((p) => (
-                                        <PopoverMenuItem
-                                            key={p.label}
-                                            onSelect={() => snooze.mutate(p.until())}
-                                        >
-                                            {p.label}
-                                        </PopoverMenuItem>
-                                    ))}
-                                    <PopoverMenuItem
-                                        onSelect={() => setCustomMode(true)}
-                                        closeOnSelect={false}
+                            <AnimatePresence mode="wait" initial={false}>
+                                {customMode ? (
+                                    <motion.div
+                                        key="custom"
+                                        initial={{ opacity: 0 }}
+                                        animate={{ opacity: 1 }}
+                                        exit={{ opacity: 0 }}
+                                        transition={{ duration: 0.12, ease: [0.16, 1, 0.3, 1] }}
+                                        className="px-1 py-1 w-[240px]"
                                     >
-                                        Pick a time…
-                                    </PopoverMenuItem>
-                                    <PopoverMenuItem onSelect={() => unsnooze.mutate()}>
-                                        Un-snooze now
-                                    </PopoverMenuItem>
-                                </>
-                            )}
+                                        <PopoverMenuLabel>Pick a date &amp; time</PopoverMenuLabel>
+                                        <input
+                                            type="datetime-local"
+                                            value={customValue}
+                                            onChange={(e) => setCustomValue(e.target.value)}
+                                            min={toLocalInput(new Date(Date.now() + 60_000))}
+                                            max={toLocalInput(new Date(Date.now() + 90 * 24 * 60 * 60 * 1000))}
+                                            autoFocus
+                                            className="w-full h-8 px-2 mt-1 rounded-md border border-slate-200 text-[12.5px] text-slate-900 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 tabular-nums"
+                                        />
+                                        <div className="mt-2 flex items-center gap-1.5">
+                                            <button
+                                                type="button"
+                                                onClick={submitCustomSnooze}
+                                                className="h-7 px-2.5 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-[12px] font-medium inline-flex items-center gap-1 transition-colors"
+                                            >
+                                                <CheckIcon className="w-3 h-3" />
+                                                Snooze
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setCustomMode(false)}
+                                                className="h-7 px-2 rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100 text-[12px] transition-colors"
+                                            >
+                                                Back
+                                            </button>
+                                        </div>
+                                    </motion.div>
+                                ) : (
+                                    <motion.div
+                                        key="presets"
+                                        initial={{ opacity: 0 }}
+                                        animate={{ opacity: 1 }}
+                                        exit={{ opacity: 0 }}
+                                        transition={{ duration: 0.12, ease: [0.16, 1, 0.3, 1] }}
+                                    >
+                                        <PopoverMenuLabel>Snooze until</PopoverMenuLabel>
+                                        {SNOOZE_PRESETS.map((p) => (
+                                            <PopoverMenuItem
+                                                key={p.label}
+                                                onSelect={() => snooze.mutate(p.until())}
+                                            >
+                                                {p.label}
+                                            </PopoverMenuItem>
+                                        ))}
+                                        <PopoverMenuItem
+                                            onSelect={() => setCustomMode(true)}
+                                            closeOnSelect={false}
+                                        >
+                                            Pick a time…
+                                        </PopoverMenuItem>
+                                        <PopoverMenuItem onSelect={() => unsnooze.mutate()}>
+                                            Un-snooze now
+                                        </PopoverMenuItem>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
                         </PopoverMenuContent>
                     </PopoverMenu>
 
