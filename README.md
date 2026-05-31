@@ -21,7 +21,8 @@
   <a href="#quick-start">Quick start</a> ·
   <a href="#architecture">Architecture</a> ·
   <a href="#self-hosting">Self-hosting</a> ·
-  <a href="#documentation">Docs</a>
+  <a href="#documentation">Docs</a> ·
+  <a href="./CONTRIBUTING.md">Contributing</a>
 </p>
 
 ---
@@ -254,6 +255,7 @@ cd realtime && mix test
 | [resources/deployment-guide.md](resources/deployment-guide.md) | Production control plane + worker fleet |
 | [resources/Events.md](resources/Events.md) | Event bus reference |
 | [resources/EMSG.md](resources/EMSG.md) | Encrypted-message blob format |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Contribution guidelines and local checks |
 
 ## Security
 
@@ -262,19 +264,6 @@ issue. We prefer responsible disclosure and credit reporters in the release
 notes. The encryption model is documented in
 [resources/architecture.md](resources/architecture.md) and the internal-API auth
 model in [docs/INTERNAL_API_AUTH.md](docs/INTERNAL_API_AUTH.md).
-
-## Contributing
-
-Bug reports and PRs are welcome. Run `gofmt`/`go vet`, the `web/` TypeScript
-config, and `cargo fmt`, plus the test suite before opening a PR. For larger
-changes, open an issue first. PRs land fastest when they:
-
-- stay scoped to one logical change
-- keep workers free of direct data-service dependencies (no Postgres in workers;
-  route through `/api/v1/internal/*`)
-- add tests for new business logic
-- keep self-hostability intact — any new external dependency needs an
-  open-source path documented in [docs/VENDOR_LOCKIN.md](docs/VENDOR_LOCKIN.md)
 
 ## License
 
