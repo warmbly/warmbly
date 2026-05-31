@@ -211,7 +211,8 @@ func (s *JobsService) HandleEmailRateLimited(ctx context.Context, event models.E
 	}
 
 	if s.WarmupService != nil {
-		_, _ = s.WarmupService.ApplyRateLimitExceeded(ctx, emailAccountID, "worker sync/email rate limit exceeded")
+		health, _ := s.WarmupService.ApplyRateLimitExceeded(ctx, emailAccountID, "worker sync/email rate limit exceeded")
+		s.markRiskBandFromWarmupHealth(ctx, emailAccountID, health)
 	}
 
 	// Send Pub/Sub notification to user (this is a warning notification)

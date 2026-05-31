@@ -24,14 +24,18 @@ func (s *JobsService) StartWarmupHealthSweep(ctx context.Context, interval time.
 		case <-ticker.C:
 			sweepCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 			evaluated, changes, xerr := s.WarmupService.EvaluateAllParticipants(sweepCtx)
-			cancel()
 			if xerr != nil {
+				cancel()
 				log.Warn().Str("error", xerr.Error()).Msg("warmup health sweep failed")
 				continue
 			}
 			if evaluated > 0 {
 				log.Info().Int("evaluated", evaluated).Int("state_changes", changes).Msg("warmup health sweep completed")
 			}
+			if changes > 0 {
+				s.rebalanceRisk(sweepCtx)
+			}
+			cancel()
 		}
 	}
 }

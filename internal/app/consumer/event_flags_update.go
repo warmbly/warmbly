@@ -28,10 +28,12 @@ func (s *JobsService) HandleFlagsAdd(ctx context.Context, e *models.JobEventFlag
 				token, tokenErr := s.WarmupRepo.FindWarmupToken(ctx, tokenID)
 				if tokenErr == nil && token != nil {
 					if s.WarmupService != nil {
-						_, _ = s.WarmupService.ApplySpamReport(ctx, e.EmailID, token.SenderAccountID, email.MessageID, "user_complaint")
+						health, _ := s.WarmupService.ApplySpamReport(ctx, e.EmailID, token.SenderAccountID, email.MessageID, "user_complaint")
+						s.markRiskBandFromWarmupHealth(ctx, token.SenderAccountID, health)
 					} else {
 						_, _ = s.WarmupRepo.IncrementSpamScore(ctx, token.SenderAccountID, 10)
 						s.checkAndAutoBlock(ctx, token.SenderAccountID)
+						s.markRiskBandFromWarmupHealth(ctx, token.SenderAccountID, nil)
 					}
 				}
 			}

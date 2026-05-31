@@ -120,7 +120,8 @@ func (s *JobsService) handleWarmupEmail(ctx context.Context, e *models.JobEventN
 	// flags an already-delivered message) because nobody actively rejected
 	// it — the provider classifier placed it there on arrival.
 	if containsSpamFlag(e.Message.Flags) && s.WarmupService != nil {
-		_, _ = s.WarmupService.RecordSpamPlacement(ctx, e.Message.EmailID, token.SenderAccountID, e.Message.MessageID)
+		health, _ := s.WarmupService.RecordSpamPlacement(ctx, e.Message.EmailID, token.SenderAccountID, e.Message.MessageID)
+		s.markRiskBandFromWarmupHealth(ctx, token.SenderAccountID, health)
 	}
 
 	// Perform warmup actions
@@ -154,7 +155,8 @@ func (s *JobsService) performWarmupActions(ctx context.Context, e *models.JobEve
 
 func (s *JobsService) applyInvalidWarmupAttempt(ctx context.Context, accountID uuid.UUID, attemptedToken string, scoreDelta int) {
 	if s.WarmupService != nil {
-		if _, err := s.WarmupService.ApplyInvalidTokenAttempt(ctx, accountID, attemptedToken, scoreDelta); err == nil {
+		if health, err := s.WarmupService.ApplyInvalidTokenAttempt(ctx, accountID, attemptedToken, scoreDelta); err == nil {
+			s.markRiskBandFromWarmupHealth(ctx, accountID, health)
 			return
 		}
 	}
@@ -169,6 +171,7 @@ func (s *JobsService) applyInvalidWarmupAttempt(ctx context.Context, accountID u
 	}
 
 	s.checkAndAutoBlock(ctx, accountID)
+	s.markRiskBandFromWarmupHealth(ctx, accountID, nil)
 }
 
 // checkAndAutoBlock checks if an account should be auto-blocked based on invalid token attempts or spam score
@@ -182,6 +185,7 @@ func (s *JobsService) checkAndAutoBlock(ctx context.Context, accountID uuid.UUID
 	if attempts >= 3 {
 		_ = s.WarmupRepo.BlockFromPool(ctx, accountID,
 			fmt.Sprintf("Auto-blocked: %d invalid warmup token attempts in 24h", attempts))
+		s.markRiskBandFromWarmupHealth(ctx, accountID, nil)
 		return
 	}
 
@@ -189,6 +193,7 @@ func (s *JobsService) checkAndAutoBlock(ctx context.Context, accountID uuid.UUID
 	if score > 50 {
 		_ = s.WarmupRepo.BlockFromPool(ctx, accountID,
 			fmt.Sprintf("Auto-blocked: spam score %d exceeds threshold", score))
+		s.markRiskBandFromWarmupHealth(ctx, accountID, nil)
 	}
 }
 
