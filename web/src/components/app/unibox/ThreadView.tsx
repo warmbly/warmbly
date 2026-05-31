@@ -1,4 +1,4 @@
-// Thread reader — right pane of the unibox.
+// Thread reader : right pane of the unibox.
 //
 // Fetches the thread via /unibox/thread. Header actions are wrapped
 // in radix tooltips so hover reveals the intent + (where it exists) a
@@ -14,6 +14,8 @@ import {
     ArchiveIcon,
     CheckIcon,
     ChevronDownIcon,
+    CornerUpLeftIcon,
+    ForwardIcon,
     Loader2Icon,
     MailCheckIcon,
     MoonIcon,
@@ -21,7 +23,7 @@ import {
 } from "lucide-react";
 
 import { MessageBubble } from "./MessageBubble";
-import { ReplyComposer } from "./ReplyComposer";
+import { ReplyComposer, type ReplyMode } from "./ReplyComposer";
 import { SectionBar } from "@/components/layout/Page";
 import useThread from "@/lib/api/hooks/app/unibox/useThread";
 import { useAppStore } from "@/stores";
@@ -100,7 +102,7 @@ function nextMonday9(): Date {
 
 // Local datetime → ISO string. The native <input type="datetime-local">
 // hands back "YYYY-MM-DDTHH:mm" (no zone), interpreted as the user's
-// local clock — perfectly fine here since we round-trip to UTC on send.
+// local clock : perfectly fine here since we round-trip to UTC on send.
 function toLocalInput(d: Date): string {
     const pad = (n: number) => String(n).padStart(2, "0");
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
@@ -117,6 +119,19 @@ export function ThreadView({ threadId, emailId }: ThreadViewProps) {
     const [snoozeOpen, setSnoozeOpen] = React.useState(false);
     const [customValue, setCustomValue] = React.useState(defaultCustomSnoozeValue);
     const [customMode, setCustomMode] = React.useState(false);
+
+    // Composer is opt-in. Default: no reply UI mounted. The user has
+    // to click Reply (per-message or the footer CTA) before any blank
+    // composer appears. Cleared on thread change so navigating to a
+    // different conversation doesn't carry a half-written reply with
+    // it.
+    const [replyState, setReplyState] = React.useState<{
+        messageId: string;
+        mode: ReplyMode;
+    } | null>(null);
+    React.useEffect(() => {
+        setReplyState(null);
+    }, [threadId]);
 
     const snooze = useMutation({
         mutationFn: (until: Date) =>
@@ -211,16 +226,16 @@ export function ThreadView({ threadId, emailId }: ThreadViewProps) {
 
     return (
         <div className="flex flex-col h-full bg-white">
-            <div className="h-12 px-5 border-b border-slate-200 flex items-center gap-3 shrink-0 bg-white">
-                <span className="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">
+            <div className="h-12 px-3 sm:px-5 border-b border-slate-200 flex items-center gap-2 sm:gap-3 shrink-0 bg-white">
+                <span className="hidden sm:inline text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">
                     Thread
                 </span>
-                <div className="h-4 w-px bg-slate-200" />
-                <span className="text-[12.5px] text-slate-900 font-medium truncate">
+                <div className="hidden sm:block h-4 w-px bg-slate-200" />
+                <span className="text-[12.5px] text-slate-900 font-medium truncate min-w-0">
                     {subject}
                 </span>
                 {mailbox && (
-                    <span className="ml-1 inline-flex items-center gap-1 h-5 px-1.5 rounded bg-slate-100 text-slate-600 text-[10.5px] font-medium font-mono shrink-0">
+                    <span className="ml-1 hidden md:inline-flex items-center gap-1 h-5 px-1.5 rounded bg-slate-100 text-slate-600 text-[10.5px] font-medium font-mono shrink-0">
                         {mailbox.email}
                     </span>
                 )}
@@ -343,11 +358,70 @@ export function ThreadView({ threadId, emailId }: ThreadViewProps) {
 
             <div className="flex-1 overflow-y-auto divide-y divide-slate-200/60">
                 {messages.map((email) => (
-                    <MessageBubble key={email.id} email={email} />
+                    <MessageBubble
+                        key={email.id}
+                        email={email}
+                        onReply={() => setReplyState({ messageId: email.id, mode: "reply" })}
+                        onForward={() => setReplyState({ messageId: email.id, mode: "forward" })}
+                    />
                 ))}
             </div>
 
-            <ReplyComposer threadId={threadId} threadEmails={messages} />
+            <AnimatePresence mode="wait" initial={false}>
+                {replyState ? (
+                    (() => {
+                        const target =
+                            messages.find((m) => m.id === replyState.messageId) ??
+                            messages[messages.length - 1];
+                        return target ? (
+                            <ReplyComposer
+                                key={`${replyState.messageId}-${replyState.mode}`}
+                                threadId={threadId}
+                                replyTo={target}
+                                mode={replyState.mode}
+                                onClose={() => setReplyState(null)}
+                            />
+                        ) : null;
+                    })()
+                ) : (
+                    <motion.div
+                        key="reply-rail"
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 6 }}
+                        transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+                        className="border-t border-slate-200 bg-white px-3 py-2 flex items-center gap-1.5 shrink-0"
+                    >
+                        <button
+                            type="button"
+                            onClick={() => {
+                                const last = messages[messages.length - 1];
+                                if (!last) return;
+                                setReplyState({ messageId: last.id, mode: "reply" });
+                            }}
+                            className="h-7 px-2.5 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors"
+                        >
+                            <CornerUpLeftIcon className="w-3 h-3" />
+                            Reply
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                const last = messages[messages.length - 1];
+                                if (!last) return;
+                                setReplyState({ messageId: last.id, mode: "forward" });
+                            }}
+                            className="h-7 px-2 rounded-md border border-slate-200 hover:border-slate-300 text-slate-700 hover:text-slate-900 text-[12px] inline-flex items-center gap-1.5 transition-colors"
+                        >
+                            <ForwardIcon className="w-3 h-3" />
+                            Forward
+                        </button>
+                        <span className="ml-auto hidden md:inline text-[10.5px] text-slate-400">
+                            Hover any message to reply to it directly.
+                        </span>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </div>
     );
 }

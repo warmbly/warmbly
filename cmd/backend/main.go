@@ -666,7 +666,6 @@ func main() {
 		apiKeyService = apikey.NewService(cache, apiKeyRepository)
 		crmService = crm.NewService(crmRepository)
 		socketService = socket.NewService(cache, tokenService)
-		uniboxService = unibox.NewService(cache, s3, uniboxRepository, taskRepository)
 
 		// Cloud Tasks client
 		cloudTasksCfg, err := cfg.LoadCloudTasksConfig(ctx)
@@ -686,6 +685,12 @@ func main() {
 		schedulerService := scheduler.NewSchedulerService(taskRepository, warmupRepository, campaignProgressRepository, emailRepostory, campaignRepostory)
 		campaignService = campaign.NewService(campaignRepostory, taskRepository, emailRepostory, campaignLogRepository, featureGateService, dailyThrottleService, schedulerService, tasksClient, streamingPublisher)
 		emailSendService = emailsend.NewService(taskRepository, emailRepostory, userRepostory, schedulerService, tasksClient, featureGateService, dailyThrottleService)
+		// uniboxService is constructed here (rather than alongside the
+		// other service constructors above) because cancel-scheduled
+		// needs the Cloud Tasks client for best-effort DeleteTask, and
+		// tasksClient isn't initialised until the Cloud Tasks config
+		// block runs.
+		uniboxService = unibox.NewService(cache, s3, uniboxRepository, taskRepository, tasksClient)
 		advancedService = advanced.NewService(
 			advancedRepository,
 			campaignRepostory,

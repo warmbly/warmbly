@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
@@ -136,12 +137,13 @@ type TaskRepository interface {
 	CountScheduledForUser(ctx context.Context, userID uuid.UUID) (int64, error)
 	// CancelScheduledByUser flips a pending email task to status
 	// 'cancelled' only when (a) it belongs to a mailbox the user owns,
-	// (b) it's still pending. Returns true if a row was updated;
-	// callers can use that to distinguish 404 vs. 200. We deliberately
-	// do NOT call Cloud Tasks DeleteTask — the queued task will still
-	// fire, and the task handler short-circuits on a non-pending
-	// status. Cheaper than a DeleteTask round-trip per cancel.
-	CancelScheduledByUser(ctx context.Context, taskID, userID uuid.UUID) (bool, error)
+	// (b) it's still pending. Returns (cloudTaskName, ok, err) — the
+	// Cloud Task resource name is included so the caller can issue a
+	// best-effort DeleteTask to clean the queue. The handler still
+	// short-circuits on a non-pending status, so a failed DeleteTask
+	// just degrades to a harmless no-op dispatch — never a real send.
+	// `ok` distinguishes 404 (no row updated) from 200.
+	CancelScheduledByUser(ctx context.Context, taskID, userID uuid.UUID) (cloudTaskName *string, ok bool, err error)
 }
 
 type taskRepository struct {
@@ -805,11 +807,11 @@ func (r *taskRepository) CountScheduledForUser(ctx context.Context, userID uuid.
 
 // CancelScheduledByUser flips a single pending email task to
 // 'cancelled', enforcing ownership through the email_accounts join.
-// Returns true when a row was actually updated; false when the task
-// either doesn't exist, isn't owned by this user, isn't an email task,
-// or already left the pending state (e.g. it already fired or someone
-// else cancelled it).
-func (r *taskRepository) CancelScheduledByUser(ctx context.Context, taskID, userID uuid.UUID) (bool, error) {
+// Returns the Cloud Task resource name (if the row had one) so the
+// caller can issue a best-effort DeleteTask to clean up the GCP
+// queue. ok=false when the task either doesn't exist, isn't owned by
+// this user, isn't an email task, or already left the pending state.
+func (r *taskRepository) CancelScheduledByUser(ctx context.Context, taskID, userID uuid.UUID) (*string, bool, error) {
 	query := `
 		UPDATE tasks t
 		SET status = 'cancelled',
@@ -820,10 +822,15 @@ func (r *taskRepository) CancelScheduledByUser(ctx context.Context, taskID, user
 		  AND ea.user_id = $2
 		  AND t.task_type = 'email'
 		  AND t.status = 'pending'
+		RETURNING t.cloud_task_name
 	`
-	tag, err := r.db.Exec(ctx, query, taskID, userID)
+	var cloudTaskName *string
+	err := r.db.QueryRow(ctx, query, taskID, userID).Scan(&cloudTaskName)
 	if err != nil {
-		return false, err
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, false, nil
+		}
+		return nil, false, err
 	}
-	return tag.RowsAffected() > 0, nil
+	return cloudTaskName, true, nil
 }

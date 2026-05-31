@@ -2,9 +2,14 @@ package unibox
 
 import (
 	"context"
+	"time"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/google/uuid"
+	"github.com/rs/zerolog/log"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 )
@@ -48,15 +53,26 @@ func (s *uniboxService) ListScheduled(ctx context.Context, userID uuid.UUID) ([]
 	return out, nil
 }
 
-// CancelScheduled cancels a pending outbound email by flipping its
-// status in the database. We DO NOT call Cloud Tasks DeleteTask —
-// that would be a paid API round-trip per cancel. The queued task
-// still fires; HandleUserEmailTask short-circuits when it sees a
-// non-pending status and returns success so Cloud Tasks doesn't
-// retry. Idempotent: cancelling an already-cancelled task returns
-// the same "not pending" error (404-shaped) instead of double-acting.
+// CancelScheduled cancels a pending outbound email.
+//
+// Two-step, belt-and-braces:
+//
+//  1. Flip status to 'cancelled' in Postgres. This is the
+//     user-facing source of truth — the response succeeds as soon as
+//     this commits.
+//  2. Best-effort DeleteTask against Cloud Tasks to clean the queue.
+//     Bounded to 1s so a slow GCP doesn't bleed into the API
+//     response. Failures are logged but do not roll the cancel back.
+//
+// Why both: at GCP's pricing ($0.40/M ops), a DeleteTask costs the
+// same as the dispatch that would have fired anyway, so deletion is
+// free *and* gives a cleaner queue (no zombie tasks burning real
+// dispatch-rate-limit slots and no wasted POSTs to our handler). If
+// DeleteTask fails for any reason — GCP outage, network blip,
+// already-fired — the handler's status check still short-circuits
+// the dispatch into a harmless no-op, so the user is always safe.
 func (s *uniboxService) CancelScheduled(ctx context.Context, userID, taskID uuid.UUID) *errx.Error {
-	cancelled, err := s.taskRepo.CancelScheduledByUser(ctx, taskID, userID)
+	cloudTaskName, cancelled, err := s.taskRepo.CancelScheduledByUser(ctx, taskID, userID)
 	if err != nil {
 		sentry.CaptureException(err)
 		return errx.InternalError()
@@ -67,6 +83,31 @@ func (s *uniboxService) CancelScheduled(ctx context.Context, userID, taskID uuid
 		// three look the same from the caller's perspective.
 		return errx.New(errx.NotFound, "no pending scheduled send for this id")
 	}
+
+	// Best-effort Cloud Tasks cleanup. Bounded timeout so a stuck GCP
+	// can't add seconds to the user-visible cancel latency. We use
+	// context.Background as the parent because we don't want a
+	// request-scope cancellation (user closing the browser) to skip
+	// the cleanup.
+	if s.tasksClient != nil && cloudTaskName != nil && *cloudTaskName != "" {
+		gcpCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if derr := s.tasksClient.DeleteTask(gcpCtx, *cloudTaskName); derr != nil {
+			// NotFound = already executed or already deleted. Common,
+			// not an error. Anything else is genuinely worth knowing
+			// but doesn't change the response — the DB is the source
+			// of truth and the handler safety-net catches stragglers.
+			if st, ok := status.FromError(derr); !ok || st.Code() != codes.NotFound {
+				sentry.CaptureException(derr)
+				log.Warn().
+					Err(derr).
+					Str("task_id", taskID.String()).
+					Str("cloud_task_name", *cloudTaskName).
+					Msg("cloud tasks DeleteTask failed; handler status-check will catch the dispatch")
+			}
+		}
+	}
+
 	return nil
 }
 
