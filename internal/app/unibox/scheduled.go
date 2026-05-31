@@ -19,6 +19,12 @@ import (
 // something well above any realistic personal queue.
 const ScheduledListMax = 200
 
+// ScheduledThreadListMax bounds the queued-sends list returned for a
+// single thread. Tighter than ScheduledListMax because a single
+// conversation accumulating dozens of pending replies almost
+// certainly means runaway client behaviour, not a real workflow.
+const ScheduledThreadListMax = 50
+
 // snippetMaxLen keeps the preview snippet small enough to stay cheap
 // to ship across the wire and short enough to render as one line.
 const snippetMaxLen = 240
@@ -28,6 +34,39 @@ const snippetMaxLen = 240
 // The view is read-only — cancel is a separate explicit action.
 func (s *uniboxService) ListScheduled(ctx context.Context, userID uuid.UUID) ([]models.UniboxScheduledItem, *errx.Error) {
 	rows, err := s.taskRepo.ListScheduledForUser(ctx, userID, ScheduledListMax)
+	if err != nil {
+		sentry.CaptureException(err)
+		return nil, errx.InternalError()
+	}
+
+	out := make([]models.UniboxScheduledItem, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, models.UniboxScheduledItem{
+			TaskID:       r.TaskID,
+			ScheduledAt:  r.ScheduledAt,
+			CreatedAt:    r.CreatedAt,
+			AccountID:    r.AccountID,
+			AccountEmail: r.AccountEmail,
+			AccountName:  r.AccountName,
+			To:           r.To,
+			CC:           r.CC,
+			BCC:          r.BCC,
+			Subject:      r.Subject,
+			Snippet:      snippet(r.Body),
+			ThreadID:     r.ThreadID,
+		})
+	}
+	return out, nil
+}
+
+// ListScheduledByThread returns pending queued sends for the given
+// thread. Empty threadID is rejected up front so a malformed query
+// can't silently fall back to the full per-user list.
+func (s *uniboxService) ListScheduledByThread(ctx context.Context, userID uuid.UUID, threadID string) ([]models.UniboxScheduledItem, *errx.Error) {
+	if threadID == "" {
+		return nil, errx.New(errx.BadRequest, "thread_id is required")
+	}
+	rows, err := s.taskRepo.ListScheduledForUserByThread(ctx, userID, threadID, ScheduledThreadListMax)
 	if err != nil {
 		sentry.CaptureException(err)
 		return nil, errx.InternalError()

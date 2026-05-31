@@ -14,18 +14,23 @@ import {
     ArchiveIcon,
     CheckIcon,
     ChevronDownIcon,
+    ClockIcon,
     CornerUpLeftIcon,
     ForwardIcon,
     Loader2Icon,
     MailCheckIcon,
     MoonIcon,
+    SendIcon,
     TrashIcon,
+    XIcon,
 } from "lucide-react";
 
 import { MessageBubble } from "./MessageBubble";
 import { ReplyComposer, type ReplyMode } from "./ReplyComposer";
 import { SectionBar } from "@/components/layout/Page";
 import useThread from "@/lib/api/hooks/app/unibox/useThread";
+import useThreadScheduled from "@/lib/api/hooks/app/unibox/useThreadScheduled";
+import cancelScheduled from "@/lib/api/client/app/unibox/cancelScheduled";
 import { useAppStore } from "@/stores";
 import {
     PopoverMenu,
@@ -37,6 +42,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { snoozeThread, unsnoozeThread } from "@/lib/api/client/app/unibox/snoozeThread";
 import type UniboxEmail from "@/lib/api/models/app/unibox/UniboxEmail";
+import type UniboxScheduledItem from "@/lib/api/models/app/unibox/UniboxScheduled";
 import type { UniboxThreadMessage } from "@/lib/api/models/app/unibox/UniboxThread";
 
 interface ThreadViewProps {
@@ -113,8 +119,25 @@ function defaultCustomSnoozeValue(): string {
 
 export function ThreadView({ threadId, emailId }: ThreadViewProps) {
     const q = useThread(threadId, emailId);
+    const scheduledQ = useThreadScheduled(threadId);
     const accounts = useAppStore((s) => s.emails);
     const queryClient = useQueryClient();
+
+    const cancel = useMutation({
+        mutationFn: (taskId: string) => cancelScheduled(taskId),
+        onSuccess: () => {
+            toast.success("Scheduled send cancelled");
+            // Three caches to refresh: the per-thread list (this view),
+            // the global scheduled list (Scheduled scope), and the
+            // overview that powers the scope-rail counter.
+            queryClient.invalidateQueries({
+                queryKey: ["unibox", "scheduled", "thread", threadId],
+            });
+            queryClient.invalidateQueries({ queryKey: ["unibox", "scheduled"] });
+            queryClient.invalidateQueries({ queryKey: ["unibox", "overview"] });
+        },
+        onError: () => toast.error("Couldn't cancel that send"),
+    });
 
     const [snoozeOpen, setSnoozeOpen] = React.useState(false);
     const [customValue, setCustomValue] = React.useState(defaultCustomSnoozeValue);
@@ -365,6 +388,14 @@ export function ThreadView({ threadId, emailId }: ThreadViewProps) {
                         onForward={() => setReplyState({ messageId: email.id, mode: "forward" })}
                     />
                 ))}
+                {(scheduledQ.data?.data ?? []).map((item) => (
+                    <ScheduledMessageBubble
+                        key={item.task_id}
+                        item={item}
+                        cancelling={cancel.isPending && cancel.variables === item.task_id}
+                        onCancel={() => cancel.mutate(item.task_id)}
+                    />
+                ))}
             </div>
 
             <AnimatePresence mode="wait" initial={false}>
@@ -456,5 +487,127 @@ function IconAction({
             </TooltipTrigger>
             <TooltipContent side="bottom">{label}</TooltipContent>
         </Tooltip>
+    );
+}
+
+// Friendly relative-or-absolute time used for scheduled cards.
+// Examples: "in 12 min", "in 3 h", "tomorrow, 09:00", "Mar 5, 17:00".
+function formatScheduled(iso: string): string {
+    const d = new Date(iso);
+    if (!Number.isFinite(d.getTime())) return iso;
+    const now = new Date();
+    const diffMs = d.getTime() - now.getTime();
+    const diffMin = Math.round(diffMs / 60_000);
+    const timeStr = d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+
+    if (diffMin > 0 && diffMin < 60) {
+        return `in ${diffMin} min`;
+    }
+    const sameDay =
+        d.getFullYear() === now.getFullYear() &&
+        d.getMonth() === now.getMonth() &&
+        d.getDate() === now.getDate();
+    if (sameDay) return `today, ${timeStr}`;
+
+    const tomorrow = new Date(now);
+    tomorrow.setDate(now.getDate() + 1);
+    const isTomorrow =
+        d.getFullYear() === tomorrow.getFullYear() &&
+        d.getMonth() === tomorrow.getMonth() &&
+        d.getDate() === tomorrow.getDate();
+    if (isTomorrow) return `tomorrow, ${timeStr}`;
+
+    return d.toLocaleString(undefined, {
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+    });
+}
+
+// ScheduledMessageBubble : a queued send rendered inline at the
+// bottom of the thread. Visually distinct from sent messages
+// (dashed border, sky tint, ClockIcon) so the user can tell at a
+// glance that this hasn't fired yet. Cancel flips the row to
+// 'cancelled' in Postgres; the queued Cloud Task either gets a
+// best-effort DeleteTask or fires as a no-op (the worker handler
+// short-circuits on non-pending status).
+function ScheduledMessageBubble({
+    item,
+    cancelling,
+    onCancel,
+}: {
+    item: UniboxScheduledItem;
+    cancelling: boolean;
+    onCancel: () => void;
+}) {
+    const when = formatScheduled(item.scheduled_at);
+    const recipients = [
+        ...item.to,
+        ...(item.cc ?? []),
+        ...(item.bcc ?? []),
+    ];
+    const recipientLine = recipients.slice(0, 3).join(", ") +
+        (recipients.length > 3 ? ` +${recipients.length - 3}` : "");
+
+    return (
+        <article className="px-3 sm:px-5 py-3">
+            <div className="rounded-lg border border-dashed border-sky-300 bg-sky-50/40 px-3 sm:px-4 py-3">
+                <header className="flex items-start gap-3">
+                    <div className="size-7 rounded-full bg-sky-100 text-sky-700 flex items-center justify-center shrink-0">
+                        <ClockIcon className="w-3.5 h-3.5" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                        <div className="flex items-baseline gap-2 flex-wrap">
+                            <span className="text-[10px] uppercase tracking-[0.14em] text-sky-700 font-semibold">
+                                Scheduled
+                            </span>
+                            <span className="text-[12.5px] font-semibold text-slate-900">
+                                {when}
+                            </span>
+                        </div>
+                        <div className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1.5 min-w-0">
+                            <span className="truncate">
+                                from {item.account_email}
+                            </span>
+                            <span aria-hidden className="text-slate-300">
+                                &middot;
+                            </span>
+                            <span className="truncate">to {recipientLine || "(no recipient)"}</span>
+                        </div>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={onCancel}
+                        disabled={cancelling}
+                        title="Cancel this scheduled send"
+                        className="shrink-0 inline-flex items-center gap-1 h-6 px-1.5 rounded-md border border-sky-200 bg-white text-sky-700 hover:text-rose-700 hover:border-rose-300 hover:bg-rose-50 text-[11px] font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        {cancelling ? (
+                            <Loader2Icon className="w-3 h-3 animate-spin" />
+                        ) : (
+                            <XIcon className="w-3 h-3" />
+                        )}
+                        {cancelling ? "Cancelling" : "Cancel"}
+                    </button>
+                </header>
+                <div className="mt-2.5 ml-10">
+                    {item.subject && (
+                        <div className="text-[12.5px] font-medium text-slate-900 truncate">
+                            {item.subject}
+                        </div>
+                    )}
+                    {item.snippet && (
+                        <p className="text-[12px] text-slate-600 mt-1 leading-relaxed line-clamp-3">
+                            {item.snippet}
+                        </p>
+                    )}
+                    <div className="mt-2 inline-flex items-center gap-1 h-5 px-1.5 rounded bg-white border border-sky-200 text-[10px] text-sky-700 font-medium">
+                        <SendIcon className="w-2.5 h-2.5" />
+                        Will send {when}
+                    </div>
+                </div>
+            </div>
+        </article>
     );
 }

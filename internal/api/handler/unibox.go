@@ -442,8 +442,13 @@ func (h *Handler) DeleteUniboxSnooze(c *gin.Context) {
 }
 
 // ListUniboxScheduled returns every pending email task the user has
-// queued — what the "Scheduled" scope in the dashboard reads from.
+// queued: what the "Scheduled" scope in the dashboard reads from.
+// When `thread_id` is set we scope the response to a single thread,
+// which the ThreadView uses to render queued replies inline. The
+// response shape is identical either way so the same client + hook
+// handle both forms.
 // GET /unibox/scheduled
+// GET /unibox/scheduled?thread_id=<id>
 func (h *Handler) ListUniboxScheduled(c *gin.Context) {
 	if !h.gateUnibox(c) {
 		return
@@ -452,6 +457,16 @@ func (h *Handler) ListUniboxScheduled(c *gin.Context) {
 	uid, err := uuid.Parse(userID)
 	if err != nil {
 		errx.Handle(c, errx.ErrUser)
+		return
+	}
+
+	if threadID := c.Query("thread_id"); threadID != "" {
+		items, xerr := h.UniboxService.ListScheduledByThread(c.Request.Context(), uid, threadID)
+		if xerr != nil {
+			errx.Handle(c, xerr)
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"data": items})
 		return
 	}
 

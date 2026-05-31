@@ -54,6 +54,10 @@ type UniboxService interface {
 	// a no-op (handler short-circuits on non-pending status). Avoids
 	// per-cancel API calls against Cloud Tasks.
 	ListScheduled(ctx context.Context, userID uuid.UUID) ([]models.UniboxScheduledItem, *errx.Error)
+	// ListScheduledByThread returns the user's pending queued sends
+	// for a single thread. ThreadView calls this so queued replies
+	// render inline alongside already-sent messages.
+	ListScheduledByThread(ctx context.Context, userID uuid.UUID, threadID string) ([]models.UniboxScheduledItem, *errx.Error)
 	CancelScheduled(ctx context.Context, userID, taskID uuid.UUID) *errx.Error
 }
 

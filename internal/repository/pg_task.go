@@ -131,6 +131,12 @@ type TaskRepository interface {
 	// for the user's mailboxes, ordered by next-to-fire. Used by the
 	// unibox "Scheduled" view.
 	ListScheduledForUser(ctx context.Context, userID uuid.UUID, limit int) ([]ScheduledEmailItem, error)
+	// ListScheduledForUserByThread is the same query scoped to a
+	// single email thread. ThreadView uses it to render queued sends
+	// inline alongside already-sent messages so the user can see (and
+	// cancel) what's about to fire on the conversation they're
+	// reading.
+	ListScheduledForUserByThread(ctx context.Context, userID uuid.UUID, threadID string, limit int) ([]ScheduledEmailItem, error)
 	// CountScheduledForUser returns the number of pending email tasks
 	// currently scheduled (regardless of fire time). Used for the
 	// scope-rail counter.
@@ -754,6 +760,77 @@ func (r *taskRepository) ListScheduledForUser(ctx context.Context, userID uuid.U
 		LIMIT $2
 	`
 	rows, err := r.db.Query(ctx, query, userID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]ScheduledEmailItem, 0)
+	for rows.Next() {
+		var it ScheduledEmailItem
+		var scheduledAt sql.NullTime
+		if err := rows.Scan(
+			&it.TaskID,
+			&scheduledAt,
+			&it.CreatedAt,
+			&it.AccountID,
+			&it.AccountEmail,
+			&it.AccountName,
+			&it.To,
+			&it.CC,
+			&it.BCC,
+			&it.Subject,
+			&it.Body,
+			&it.BodyHTML,
+			&it.ThreadID,
+		); err != nil {
+			return nil, err
+		}
+		if scheduledAt.Valid {
+			it.ScheduledAt = scheduledAt.Time
+		}
+		items = append(items, it)
+	}
+	return items, rows.Err()
+}
+
+// ListScheduledForUserByThread is ListScheduledForUser scoped to a
+// single thread. Same join + ownership enforcement, plus an extra
+// thread_id filter. Empty threadID is treated as "no rows" so the
+// caller can't accidentally fall back to the full list.
+func (r *taskRepository) ListScheduledForUserByThread(ctx context.Context, userID uuid.UUID, threadID string, limit int) ([]ScheduledEmailItem, error) {
+	if threadID == "" {
+		return []ScheduledEmailItem{}, nil
+	}
+	if limit <= 0 || limit > 200 {
+		limit = 100
+	}
+	query := `
+		SELECT
+			t.id,
+			t.scheduled_at,
+			t.created_at,
+			ea.id,
+			ea.email,
+			COALESCE(ea.name, ''),
+			et.to_addrs,
+			et.cc,
+			et.bcc,
+			et.subject,
+			et.body_plain,
+			et.body_html,
+			et.thread_id
+		FROM tasks t
+		INNER JOIN email_tasks et ON et.task_id = t.id
+		INNER JOIN email_accounts ea ON ea.id = t.email_account_id
+		WHERE ea.user_id = $1
+		  AND t.task_type = 'email'
+		  AND t.status = 'pending'
+		  AND et.thread_id = $2
+		ORDER BY t.scheduled_at ASC NULLS LAST, t.created_at ASC
+		LIMIT $3
+	`
+	rows, err := r.db.Query(ctx, query, userID, threadID, limit)
 	if err != nil {
 		return nil, err
 	}
