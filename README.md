@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/public/logo.svg" alt="Warmbly" width="64" height="66" />
+</p>
+
 <h1 align="center">Warmbly</h1>
 
 <p align="center">
