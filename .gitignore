@@ -47,6 +47,10 @@ go.work.sum
 # Local Go build cache
 .gocache/
 
+# Node dependencies (per-tree .gitignores cover admin/site/docs/web; this
+# also catches a stray root-level install / pnpm store)
+node_modules/
+
 # Local pnpm store created by dockerized frontend installs
 web/.pnpm-store/
 
