@@ -4,31 +4,43 @@ import (
 	"context"
 	"time"
 
+	"github.com/getsentry/sentry-go"
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/errx"
+	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
 type AuditService interface {
-	// Log a new audit entry
+	// Log writes a single audit entry synchronously.
 	Log(ctx context.Context, log *models.CreateAuditLog) error
 
-	// Log from gin context (extracts IP, user agent)
-	LogAction(ctx context.Context, userID uuid.UUID, action models.AuditAction, entityType models.AuditEntityType, entityID *uuid.UUID, ipAddress, userAgent string, changes, metadata map[string]string)
+	// LogAction records an action without blocking the caller. orgID scopes the
+	// entry to an organization and actorID identifies the member who performed
+	// it. Sensitive secret values must never be passed in changes/metadata.
+	LogAction(ctx context.Context, orgID, actorID uuid.UUID, action models.AuditAction, entityType models.AuditEntityType, entityID *uuid.UUID, ipAddress, userAgent string, changes, metadata map[string]string)
 
-	// Query logs
-	GetUserLogs(ctx context.Context, userID uuid.UUID, params *models.AuditLogSearch) (*models.AuditLogsResult, *errx.Error)
-	GetEntityLogs(ctx context.Context, entityType models.AuditEntityType, entityID uuid.UUID, limit int, cursor string) (*models.AuditLogsResult, *errx.Error)
+	// Search returns an organization's audit trail. params.OrgID must be set by
+	// the caller from the session; it is the only tenancy boundary.
+	Search(ctx context.Context, params *models.AuditLogSearch) (*models.AuditLogsResult, *errx.Error)
+
+	// Prune removes entries older than the retention window. Returns the number
+	// of rows deleted.
+	Prune(ctx context.Context, retention time.Duration) (int64, error)
 }
 
 type auditService struct {
-	repo repository.AuditRepository
+	repo      repository.AuditRepository
+	publisher *pubsub.StreamingPublisher
 }
 
-func NewService(repo repository.AuditRepository) AuditService {
+// NewService builds the audit service. publisher may be nil (e.g. when Pub/Sub
+// is not configured); realtime emission is then skipped.
+func NewService(repo repository.AuditRepository, publisher *pubsub.StreamingPublisher) AuditService {
 	return &auditService{
-		repo: repo,
+		repo:      repo,
+		publisher: publisher,
 	}
 }
 
@@ -36,83 +48,82 @@ func (s *auditService) Log(ctx context.Context, log *models.CreateAuditLog) erro
 	return s.repo.Log(ctx, log)
 }
 
-func (s *auditService) LogAction(ctx context.Context, userID uuid.UUID, action models.AuditAction, entityType models.AuditEntityType, entityID *uuid.UUID, ipAddress, userAgent string, changes, metadata map[string]string) {
-	// Fire and forget - don't block the request
+func (s *auditService) LogAction(ctx context.Context, orgID, actorID uuid.UUID, action models.AuditAction, entityType models.AuditEntityType, entityID *uuid.UUID, ipAddress, userAgent string, changes, metadata map[string]string) {
+	// Never block the request, and never let a logging failure (or a panic in
+	// the write path) bubble up and take down the handler. Audit logging is
+	// best-effort: the trail is valuable but it must not become a liability on
+	// the hot path.
+	if orgID == uuid.Nil {
+		return
+	}
+
+	log := &models.CreateAuditLog{
+		OrgID:      orgID,
+		UserID:     actorID,
+		Action:     action,
+		EntityType: entityType,
+		EntityID:   entityID,
+		IPAddress:  ipAddress,
+		UserAgent:  userAgent,
+		Changes:    changes,
+		Metadata:   metadata,
+	}
+
 	go func() {
-		log := &models.CreateAuditLog{
-			UserID:     userID,
-			Action:     action,
-			EntityType: entityType,
-			EntityID:   entityID,
-			IPAddress:  ipAddress,
-			UserAgent:  userAgent,
-			Changes:    changes,
-			Metadata:   metadata,
+		defer func() {
+			if r := recover(); r != nil {
+				sentry.CurrentHub().Recover(r)
+			}
+		}()
+		if err := s.repo.Log(context.Background(), log); err != nil {
+			sentry.CaptureException(err)
+			return
 		}
-		_ = s.repo.Log(context.Background(), log)
+		// Notify the org's dashboard to refetch the activity log live. Carries
+		// no sensitive detail — just the org/actor/action/entity.
+		if s.publisher != nil {
+			s.publisher.PublishAuditCreated(context.Background(), orgID, actorID, string(action), string(entityType), entityID)
+		}
 	}()
 }
 
-func (s *auditService) GetUserLogs(ctx context.Context, userID uuid.UUID, params *models.AuditLogSearch) (*models.AuditLogsResult, *errx.Error) {
-	if params == nil {
-		params = &models.AuditLogSearch{}
+func (s *auditService) Search(ctx context.Context, params *models.AuditLogSearch) (*models.AuditLogsResult, *errx.Error) {
+	if params == nil || params.OrgID == nil {
+		return nil, errx.ErrAuth
 	}
-	params.UserID = &userID
 
-	if params.Limit <= 0 || params.Limit > 100 {
+	if params.Limit <= 0 || params.Limit > 200 {
 		params.Limit = 50
-	}
-
-	// Default to today if no date range
-	if params.Since == nil {
-		today := time.Now().Truncate(24 * time.Hour)
-		params.Since = &today
 	}
 
 	result, err := s.repo.Search(ctx, params)
 	if err != nil {
+		sentry.CaptureException(err)
 		return nil, errx.InternalError()
 	}
 
 	return result, nil
 }
 
-func (s *auditService) GetEntityLogs(ctx context.Context, entityType models.AuditEntityType, entityID uuid.UUID, limit int, cursor string) (*models.AuditLogsResult, *errx.Error) {
-	if limit <= 0 || limit > 100 {
-		limit = 50
-	}
-
-	result, err := s.repo.GetByEntity(ctx, string(entityType), entityID, limit, cursor)
-	if err != nil {
-		return nil, errx.InternalError()
-	}
-
-	return result, nil
+func (s *auditService) Prune(ctx context.Context, retention time.Duration) (int64, error) {
+	cutoff := time.Now().Add(-retention)
+	return s.repo.PruneOlderThan(ctx, cutoff)
 }
 
-// Helper functions for common audit log scenarios
+// Helper functions for common audit log scenarios. Each takes orgID so the
+// entry is scoped to the organization the action happened in.
 
-// LogCreate logs a create action
-func LogCreate(s AuditService, ctx context.Context, userID uuid.UUID, entityType models.AuditEntityType, entityID uuid.UUID, ipAddress, userAgent string, metadata map[string]string) {
-	s.LogAction(ctx, userID, models.AuditActionCreate, entityType, &entityID, ipAddress, userAgent, nil, metadata)
+// LogCreate logs a create action.
+func LogCreate(s AuditService, ctx context.Context, orgID, actorID uuid.UUID, entityType models.AuditEntityType, entityID uuid.UUID, ipAddress, userAgent string, metadata map[string]string) {
+	s.LogAction(ctx, orgID, actorID, models.AuditActionCreate, entityType, &entityID, ipAddress, userAgent, nil, metadata)
 }
 
-// LogUpdate logs an update action with changes
-func LogUpdate(s AuditService, ctx context.Context, userID uuid.UUID, entityType models.AuditEntityType, entityID uuid.UUID, ipAddress, userAgent string, changes map[string]string) {
-	s.LogAction(ctx, userID, models.AuditActionUpdate, entityType, &entityID, ipAddress, userAgent, changes, nil)
+// LogUpdate logs an update action with changes.
+func LogUpdate(s AuditService, ctx context.Context, orgID, actorID uuid.UUID, entityType models.AuditEntityType, entityID uuid.UUID, ipAddress, userAgent string, changes map[string]string) {
+	s.LogAction(ctx, orgID, actorID, models.AuditActionUpdate, entityType, &entityID, ipAddress, userAgent, changes, nil)
 }
 
-// LogDelete logs a delete action
-func LogDelete(s AuditService, ctx context.Context, userID uuid.UUID, entityType models.AuditEntityType, entityID uuid.UUID, ipAddress, userAgent string) {
-	s.LogAction(ctx, userID, models.AuditActionDelete, entityType, &entityID, ipAddress, userAgent, nil, nil)
-}
-
-// LogLogin logs a login action
-func LogLogin(s AuditService, ctx context.Context, userID uuid.UUID, ipAddress, userAgent string, metadata map[string]string) {
-	s.LogAction(ctx, userID, models.AuditActionLogin, models.AuditEntitySession, nil, ipAddress, userAgent, nil, metadata)
-}
-
-// LogLogout logs a logout action
-func LogLogout(s AuditService, ctx context.Context, userID uuid.UUID, ipAddress, userAgent string) {
-	s.LogAction(ctx, userID, models.AuditActionLogout, models.AuditEntitySession, nil, ipAddress, userAgent, nil, nil)
+// LogDelete logs a delete action.
+func LogDelete(s AuditService, ctx context.Context, orgID, actorID uuid.UUID, entityType models.AuditEntityType, entityID uuid.UUID, ipAddress, userAgent string) {
+	s.LogAction(ctx, orgID, actorID, models.AuditActionDelete, entityType, &entityID, ipAddress, userAgent, nil, nil)
 }

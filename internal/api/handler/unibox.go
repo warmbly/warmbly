@@ -355,6 +355,11 @@ func (h *Handler) UniboxReply(c *gin.Context) {
 		return
 	}
 
+	h.auditOrg(c, models.AuditActionSend, models.AuditEntityUnibox, &accountID, nil, map[string]string{
+		"send_mode":  sendReq.SendMode,
+		"recipients": strconv.Itoa(len(req.To)),
+	})
+
 	c.JSON(http.StatusOK, resp)
 }
 
@@ -411,6 +416,12 @@ func (h *Handler) CreateUniboxSnooze(c *gin.Context) {
 		errx.Handle(c, xerr)
 		return
 	}
+
+	h.auditOrg(c, models.AuditActionCreate, models.AuditEntityUnibox, nil, nil, map[string]string{
+		"action":    "snooze",
+		"thread_id": req.ThreadID,
+	})
+
 	c.JSON(http.StatusOK, resp)
 }
 
@@ -438,6 +449,12 @@ func (h *Handler) DeleteUniboxSnooze(c *gin.Context) {
 		errx.Handle(c, xerr)
 		return
 	}
+
+	h.auditOrg(c, models.AuditActionDelete, models.AuditEntityUnibox, nil, nil, map[string]string{
+		"action":    "snooze",
+		"thread_id": threadID,
+	})
+
 	c.Status(http.StatusNoContent)
 }
 
@@ -502,6 +519,11 @@ func (h *Handler) CancelUniboxScheduled(c *gin.Context) {
 		errx.Handle(c, xerr)
 		return
 	}
+
+	h.auditOrg(c, models.AuditActionDelete, models.AuditEntityUnibox, &taskID, nil, map[string]string{
+		"action": "cancel_scheduled",
+	})
+
 	c.Status(http.StatusNoContent)
 }
 

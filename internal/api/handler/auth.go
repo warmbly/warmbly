@@ -6,7 +6,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/api/middleware"
-	"github.com/warmbly/warmbly/internal/app/audit"
 	"github.com/warmbly/warmbly/internal/app/auth"
 	"github.com/warmbly/warmbly/internal/errx"
 )
@@ -99,16 +98,10 @@ func (h *Handler) RefreshToken(c *gin.Context) {
 
 func (h *Handler) Logout(c *gin.Context) {
 	accessToken := middleware.GetAccessToken(c)
-	userIDStr := middleware.GetUserID(c)
 
 	if err := h.TokenService.RevokeSession(c.Request.Context(), accessToken); err != nil {
 		errx.Handle(c, err)
 		return
-	}
-
-	// Audit log
-	if userID, err := uuid.Parse(userIDStr); err == nil {
-		audit.LogLogout(h.AuditService, c.Request.Context(), userID, c.ClientIP(), c.Request.UserAgent())
 	}
 
 	c.Status(http.StatusNoContent)
@@ -116,16 +109,10 @@ func (h *Handler) Logout(c *gin.Context) {
 
 func (h *Handler) LogoutAll(c *gin.Context) {
 	accessToken := middleware.GetAccessToken(c)
-	userIDStr := middleware.GetUserID(c)
 
 	if err := h.TokenService.RevokeAllSession(c.Request.Context(), accessToken); err != nil {
 		errx.Handle(c, err)
 		return
-	}
-
-	// Audit log
-	if userID, err := uuid.Parse(userIDStr); err == nil {
-		audit.LogLogout(h.AuditService, c.Request.Context(), userID, c.ClientIP(), c.Request.UserAgent())
 	}
 
 	c.Status(http.StatusNoContent)

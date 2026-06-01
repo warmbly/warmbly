@@ -31,6 +31,8 @@ func (h *Handler) CreateOrganization(c *gin.Context) {
 		return
 	}
 
+	h.auditOrg(c, models.AuditActionCreate, models.AuditEntityOrganization, &org.ID, nil, map[string]string{"name": org.Name})
+
 	c.JSON(http.StatusCreated, org)
 }
 
@@ -143,6 +145,8 @@ func (h *Handler) UpdateOrganization(c *gin.Context) {
 		return
 	}
 
+	h.auditOrg(c, models.AuditActionUpdate, models.AuditEntityOrganization, orgID, nil, nil)
+
 	c.JSON(http.StatusOK, org)
 }
 
@@ -188,6 +192,8 @@ func (h *Handler) InviteMember(c *gin.Context) {
 		errx.JSON(c, xerr)
 		return
 	}
+
+	h.auditOrg(c, models.AuditActionInvite, models.AuditEntityOrganizationMember, nil, nil, map[string]string{"email": inv.Email, "role": inv.Role})
 
 	// Get organization name for email
 	org, _ := h.OrganizationService.Get(c.Request.Context(), *orgID)
@@ -254,6 +260,8 @@ func (h *Handler) UpdateMemberRole(c *gin.Context) {
 		return
 	}
 
+	h.auditOrg(c, models.AuditActionUpdate, models.AuditEntityOrganizationMember, &memberUserID, nil, map[string]string{"role": member.Role})
+
 	c.JSON(http.StatusOK, member)
 }
 
@@ -277,6 +285,8 @@ func (h *Handler) RemoveMember(c *gin.Context) {
 		return
 	}
 
+	h.auditOrg(c, models.AuditActionRemove, models.AuditEntityOrganizationMember, &memberUserID, nil, nil)
+
 	c.JSON(http.StatusOK, gin.H{"message": "member removed"})
 }
 
@@ -298,6 +308,8 @@ func (h *Handler) TransferOwnership(c *gin.Context) {
 		errx.JSON(c, xerr)
 		return
 	}
+
+	h.auditOrg(c, models.AuditActionTransfer, models.AuditEntityOrganization, orgID, nil, map[string]string{"new_owner": req.NewOwnerUserID.String()})
 
 	c.JSON(http.StatusOK, gin.H{"message": "ownership transferred"})
 }
@@ -333,6 +345,8 @@ func (h *Handler) CancelInvitation(c *gin.Context) {
 		return
 	}
 
+	h.auditOrg(c, models.AuditActionDelete, models.AuditEntityInvitation, &invID, nil, nil)
+
 	c.JSON(http.StatusOK, gin.H{"message": "invitation cancelled"})
 }
 
@@ -362,6 +376,8 @@ func (h *Handler) AcceptInvitation(c *gin.Context) {
 		errx.JSON(c, xerr)
 		return
 	}
+
+	h.auditOrg(c, models.AuditActionCreate, models.AuditEntityOrganizationMember, &member.UserID, nil, map[string]string{"via": "invitation"})
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "invitation accepted",

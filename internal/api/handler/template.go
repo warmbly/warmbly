@@ -59,6 +59,8 @@ func (h *Handler) CreateTemplate(c *gin.Context) {
 		return
 	}
 
+	h.auditOrg(c, models.AuditActionCreate, models.AuditEntityTemplate, &tmpl.ID, nil, map[string]string{"name": tmpl.Name})
+
 	c.JSON(http.StatusOK, tmpl)
 }
 
@@ -113,6 +115,8 @@ func (h *Handler) UpdateTemplate(c *gin.Context) {
 		return
 	}
 
+	h.auditOrg(c, models.AuditActionUpdate, models.AuditEntityTemplate, &templateID, nil, map[string]string{"name": tmpl.Name})
+
 	c.JSON(http.StatusOK, tmpl)
 }
 
@@ -135,6 +139,8 @@ func (h *Handler) DeleteTemplate(c *gin.Context) {
 		errx.Handle(c, xerr)
 		return
 	}
+
+	h.auditOrg(c, models.AuditActionDelete, models.AuditEntityTemplate, &templateID, nil, nil)
 
 	c.Status(http.StatusNoContent)
 }
@@ -166,6 +172,8 @@ func (h *Handler) DuplicateTemplate(c *gin.Context) {
 		errx.Handle(c, xerr)
 		return
 	}
+
+	h.auditOrg(c, models.AuditActionDuplicate, models.AuditEntityTemplate, &tmpl.ID, nil, map[string]string{"source": templateID.String(), "name": tmpl.Name})
 
 	c.JSON(http.StatusOK, tmpl)
 }

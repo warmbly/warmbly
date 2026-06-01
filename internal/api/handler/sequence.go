@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/api/middleware"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
@@ -19,6 +20,8 @@ func (h *Handler) CreateSequence(c *gin.Context) {
 		errx.Handle(c, err)
 		return
 	}
+
+	h.auditOrg(c, models.AuditActionCreate, models.AuditEntitySequence, &resp.ID, nil, map[string]string{"campaign_id": id})
 
 	c.JSON(http.StatusOK, resp)
 }
@@ -56,6 +59,8 @@ func (h *Handler) UpdateSequence(c *gin.Context) {
 		return
 	}
 
+	h.auditOrg(c, models.AuditActionUpdate, models.AuditEntitySequence, &resp.ID, nil, map[string]string{"campaign_id": id})
+
 	c.JSON(http.StatusOK, resp)
 }
 
@@ -68,6 +73,12 @@ func (h *Handler) DeleteSequence(c *gin.Context) {
 	if err := h.SequenceService.Delete(c.Request.Context(), userID, id, sequenceID); err != nil {
 		errx.Handle(c, err)
 		return
+	}
+
+	if sid, perr := uuid.Parse(sequenceID); perr == nil {
+		h.auditOrg(c, models.AuditActionDelete, models.AuditEntitySequence, &sid, nil, map[string]string{"campaign_id": id})
+	} else {
+		h.auditOrg(c, models.AuditActionDelete, models.AuditEntitySequence, nil, nil, map[string]string{"campaign_id": id})
 	}
 
 	c.Status(http.StatusOK)

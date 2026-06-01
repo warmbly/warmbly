@@ -60,10 +60,8 @@ func (h *Handler) UpdateEmail(c *gin.Context) {
 	}
 
 	// Audit log
-	if userID, err := uuid.Parse(userIDStr); err == nil {
-		if accountID, err := uuid.Parse(emailAccountID); err == nil {
-			h.AuditService.LogAction(c.Request.Context(), userID, models.AuditActionUpdate, models.AuditEntityEmailAccount, &accountID, c.ClientIP(), c.Request.UserAgent(), nil, nil)
-		}
+	if accountID, err := uuid.Parse(emailAccountID); err == nil {
+		h.auditOrg(c, models.AuditActionUpdate, models.AuditEntityEmailAccount, &accountID, nil, nil)
 	}
 
 	c.JSON(http.StatusOK, resp)
@@ -82,10 +80,8 @@ func (h *Handler) UpdateEmailTrackingDomain(c *gin.Context) {
 	}
 
 	// Audit log
-	if userID, err := uuid.Parse(userIDStr); err == nil {
-		if accountID, err := uuid.Parse(emailAccountID); err == nil {
-			h.AuditService.LogAction(c.Request.Context(), userID, models.AuditActionUpdate, models.AuditEntityEmailAccount, &accountID, c.ClientIP(), c.Request.UserAgent(), map[string]string{"tracking_domain": domain}, nil)
-		}
+	if accountID, err := uuid.Parse(emailAccountID); err == nil {
+		h.auditOrg(c, models.AuditActionUpdate, models.AuditEntityEmailAccount, &accountID, map[string]string{"tracking_domain": domain}, nil)
 	}
 
 	c.JSON(http.StatusOK, status)
@@ -102,10 +98,8 @@ func (h *Handler) DeleteEmail(c *gin.Context) {
 	}
 
 	// Audit log
-	if userID, err := uuid.Parse(userIDStr); err == nil {
-		if accountID, err := uuid.Parse(emailAccountID); err == nil {
-			h.AuditService.LogAction(c.Request.Context(), userID, models.AuditActionDelete, models.AuditEntityEmailAccount, &accountID, c.ClientIP(), c.Request.UserAgent(), nil, nil)
-		}
+	if accountID, err := uuid.Parse(emailAccountID); err == nil {
+		h.auditOrg(c, models.AuditActionDelete, models.AuditEntityEmailAccount, &accountID, nil, nil)
 	}
 
 	c.Status(http.StatusNoContent)

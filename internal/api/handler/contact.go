@@ -40,9 +40,7 @@ func (h *Handler) AddContacts(c *gin.Context) {
 	}
 
 	// Audit log - bulk import
-	if userID, err := uuid.Parse(userIDStr); err == nil {
-		h.AuditService.LogAction(c.Request.Context(), userID, models.AuditActionImport, models.AuditEntityContact, nil, c.ClientIP(), c.Request.UserAgent(), nil, map[string]string{"count": fmt.Sprintf("%d", len(data))})
-	}
+	h.auditOrg(c, models.AuditActionImport, models.AuditEntityContact, nil, nil, map[string]string{"count": fmt.Sprintf("%d", len(data))})
 
 	c.JSON(http.StatusOK, resp)
 }
@@ -96,9 +94,7 @@ func (h *Handler) UpdateContactBulk(c *gin.Context) {
 	}
 
 	// Audit log - bulk update
-	if userID, err := uuid.Parse(userIDStr); err == nil {
-		h.AuditService.LogAction(c.Request.Context(), userID, models.AuditActionUpdate, models.AuditEntityContact, nil, c.ClientIP(), c.Request.UserAgent(), nil, map[string]string{"bulk": "true", "count": fmt.Sprintf("%d", len(data.Contacts))})
-	}
+	h.auditOrg(c, models.AuditActionUpdate, models.AuditEntityContact, nil, nil, map[string]string{"bulk": "true", "count": fmt.Sprintf("%d", len(data.Contacts))})
 
 	c.JSON(http.StatusOK, resp)
 }
@@ -122,10 +118,8 @@ func (h *Handler) UpdateContact(c *gin.Context) {
 	}
 
 	// Audit log
-	if userID, err := uuid.Parse(userIDStr); err == nil {
-		if contactID, err := uuid.Parse(id); err == nil {
-			h.AuditService.LogAction(c.Request.Context(), userID, models.AuditActionUpdate, models.AuditEntityContact, &contactID, c.ClientIP(), c.Request.UserAgent(), nil, nil)
-		}
+	if contactID, err := uuid.Parse(id); err == nil {
+		h.auditOrg(c, models.AuditActionUpdate, models.AuditEntityContact, &contactID, nil, nil)
 	}
 
 	c.JSON(http.StatusOK, resp)
@@ -156,9 +150,7 @@ func (h *Handler) DeleteContactBulk(c *gin.Context) {
 	}
 
 	// Audit log - bulk delete
-	if userID, err := uuid.Parse(userIDStr); err == nil {
-		h.AuditService.LogAction(c.Request.Context(), userID, models.AuditActionDelete, models.AuditEntityContact, nil, c.ClientIP(), c.Request.UserAgent(), nil, map[string]string{"bulk": "true", "count": fmt.Sprintf("%d", len(data))})
-	}
+	h.auditOrg(c, models.AuditActionDelete, models.AuditEntityContact, nil, nil, map[string]string{"bulk": "true", "count": fmt.Sprintf("%d", len(data))})
 
 	c.Status(http.StatusNoContent)
 }
@@ -174,10 +166,8 @@ func (h *Handler) DeleteContact(c *gin.Context) {
 	}
 
 	// Audit log
-	if userID, err := uuid.Parse(userIDStr); err == nil {
-		if contactID, err := uuid.Parse(id); err == nil {
-			h.AuditService.LogAction(c.Request.Context(), userID, models.AuditActionDelete, models.AuditEntityContact, &contactID, c.ClientIP(), c.Request.UserAgent(), nil, nil)
-		}
+	if contactID, err := uuid.Parse(id); err == nil {
+		h.auditOrg(c, models.AuditActionDelete, models.AuditEntityContact, &contactID, nil, nil)
 	}
 
 	c.Status(http.StatusNoContent)

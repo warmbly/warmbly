@@ -334,6 +334,9 @@ func (h *Handler) DeleteConnectionEventSubscription(c *gin.Context) {
 		errx.JSON(c, errx.New(errx.Internal, "delete failed"))
 		return
 	}
+
+	h.auditOrg(c, models.AuditActionDelete, models.AuditEntityIntegration, &subID, nil, map[string]string{"detail": "event_subscription"})
+
 	c.Status(http.StatusNoContent)
 }
 
@@ -454,5 +457,9 @@ func (h *Handler) auditIntegration(c *gin.Context, userID uuid.UUID, action mode
 		meta["detail"] = detail
 	}
 	id := entityID
-	h.AuditService.LogAction(c.Request.Context(), userID, action, models.AuditEntityIntegration, &id, c.ClientIP(), c.Request.UserAgent(), meta, nil)
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		return
+	}
+	h.AuditService.LogAction(c.Request.Context(), *orgID, userID, action, models.AuditEntityIntegration, &id, c.ClientIP(), c.Request.UserAgent(), nil, meta)
 }
