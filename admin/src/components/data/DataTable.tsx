@@ -59,12 +59,13 @@ interface Props<T> {
     sort?: { by: string; desc: boolean };
     onSortChange?: (s: { by: string; desc: boolean }) => void;
     pager?: Pager;
-    toolbar?: React.ReactNode;
     storageKey?: string;
     emptyTitle?: string;
     emptyHint?: string;
     csvName?: string;
     errorTitle?: string;
+    /** Noun for the result count, e.g. "organizations". */
+    noun?: string;
 }
 
 function load(key: string | undefined, suffix: string): string | null {
@@ -95,12 +96,12 @@ export function DataTable<T>({
     sort,
     onSortChange,
     pager,
-    toolbar,
     storageKey,
     emptyTitle = "Nothing here",
     emptyHint = "No records match these filters.",
     csvName = "export",
     errorTitle = "Failed to load",
+    noun = "results",
 }: Props<T>) {
     const [hidden, setHidden] = useState<Set<string>>(() => {
         const stored = load(storageKey, "cols");
@@ -132,11 +133,6 @@ export function DataTable<T>({
         });
     }
 
-    function setDensity(c: boolean) {
-        setCompact(c);
-        save(storageKey, "density", c ? "compact" : "comfortable");
-    }
-
     function headerClick(c: Column<T>) {
         if (!c.sortable || !onSortChange) return;
         const key = c.sortKey ?? c.id;
@@ -153,55 +149,67 @@ export function DataTable<T>({
         );
     }
 
-    const pad = compact ? "px-3 py-1" : "px-3 py-2";
+    const rowPad = compact ? "py-1.5" : "py-2.5";
     const alignCls = (a?: string) => (a === "right" ? "text-right" : a === "center" ? "text-center" : "text-left");
+
+    const count =
+        pager?.total != null
+            ? `${pager.total.toLocaleString()} ${noun}`
+            : `${rows.length} ${rows.length === 1 ? noun.replace(/s$/, "") : noun}`;
+
+    const iconBtn = "grid size-7 place-items-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40 disabled:hover:bg-transparent";
 
     return (
         <div>
-            {/* Toolbar */}
-            <div className="mb-3 flex items-center gap-2">
-                <div className="flex-1">{toolbar}</div>
-
-                <div className="relative" ref={menuRef}>
-                    <Button variant="outline" size="sm" className="h-8 gap-1.5" onClick={() => setColMenu((v) => !v)}>
-                        <Columns3 className="size-3.5" />
-                        Columns
-                    </Button>
-                    {colMenu && (
-                        <div className="absolute right-0 z-20 mt-1 w-48 rounded-md border border-border bg-popover p-1 shadow-md">
-                            {columns.map((c) => (
-                                <label
-                                    key={c.id}
-                                    className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
-                                >
-                                    <input
-                                        type="checkbox"
-                                        checked={!hidden.has(c.id)}
-                                        onChange={() => toggleCol(c.id)}
-                                        className="accent-[var(--admin-accent)]"
-                                    />
-                                    {c.header}
-                                </label>
-                            ))}
-                        </div>
-                    )}
+            {/* Result count + tidy icon toolbar */}
+            <div className="mb-2.5 flex items-center justify-between gap-3">
+                <span className="text-[12.5px] text-muted-foreground">
+                    {loading ? "Loading…" : count}
+                </span>
+                <div className="flex items-center gap-0.5 rounded-md border border-border bg-card p-0.5">
+                    <div className="relative" ref={menuRef}>
+                        <button type="button" className={iconBtn} title="Columns" onClick={() => setColMenu((v) => !v)}>
+                            <Columns3 className="size-3.5" />
+                        </button>
+                        {colMenu && (
+                            <div className="absolute right-0 z-30 mt-1.5 w-48 rounded-md border border-border bg-popover p-1 shadow-md">
+                                <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                                    Columns
+                                </div>
+                                {columns.map((c) => (
+                                    <label
+                                        key={c.id}
+                                        className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-[12.5px] hover:bg-muted/60"
+                                    >
+                                        <input
+                                            type="checkbox"
+                                            checked={!hidden.has(c.id)}
+                                            onChange={() => toggleCol(c.id)}
+                                            className="size-3.5 accent-[var(--admin-accent)]"
+                                        />
+                                        {c.header}
+                                    </label>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                    <button
+                        type="button"
+                        className={iconBtn}
+                        title={compact ? "Comfortable rows" : "Compact rows"}
+                        onClick={() => {
+                            setCompact((v) => {
+                                save(storageKey, "density", !v ? "compact" : "comfortable");
+                                return !v;
+                            });
+                        }}
+                    >
+                        <Rows3 className="size-3.5" />
+                    </button>
+                    <button type="button" className={iconBtn} title="Export CSV" onClick={doExport} disabled={rows.length === 0}>
+                        <Download className="size-3.5" />
+                    </button>
                 </div>
-
-                <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-8 gap-1.5"
-                    onClick={() => setDensity(!compact)}
-                    title={compact ? "Comfortable rows" : "Compact rows"}
-                >
-                    <Rows3 className="size-3.5" />
-                    {compact ? "Compact" : "Comfortable"}
-                </Button>
-
-                <Button variant="outline" size="sm" className="h-8 gap-1.5" onClick={doExport} disabled={rows.length === 0}>
-                    <Download className="size-3.5" />
-                    CSV
-                </Button>
             </div>
 
             {error ? (
@@ -209,9 +217,9 @@ export function DataTable<T>({
             ) : (
                 <div className="overflow-hidden rounded-lg border border-border bg-card">
                     <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                            <thead className="sticky top-0 z-10 bg-muted/60 text-xs uppercase text-muted-foreground">
-                                <tr>
+                        <table className="w-full border-collapse text-sm">
+                            <thead>
+                                <tr className="border-b border-border bg-muted/40">
                                     {visible.map((c) => {
                                         const key = c.sortKey ?? c.id;
                                         const active = sort?.by === key;
@@ -219,19 +227,14 @@ export function DataTable<T>({
                                             <th
                                                 key={c.id}
                                                 className={cn(
-                                                    "px-3 py-2 font-medium",
+                                                    "whitespace-nowrap px-3 py-2 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground",
                                                     alignCls(c.align),
                                                     c.sortable && "cursor-pointer select-none hover:text-foreground",
                                                     c.className,
                                                 )}
                                                 onClick={() => headerClick(c)}
                                             >
-                                                <span
-                                                    className={cn(
-                                                        "inline-flex items-center gap-1",
-                                                        c.align === "right" && "flex-row-reverse",
-                                                    )}
-                                                >
+                                                <span className={cn("inline-flex items-center gap-1", c.align === "right" && "flex-row-reverse")}>
                                                     {c.header}
                                                     {c.sortable &&
                                                         (active ? (
@@ -241,7 +244,7 @@ export function DataTable<T>({
                                                                 <ArrowUp className="size-3 text-[var(--admin-accent-strong)]" />
                                                             )
                                                         ) : (
-                                                            <ChevronsUpDown className="size-3 opacity-40" />
+                                                            <ChevronsUpDown className="size-3 opacity-30" />
                                                         ))}
                                                 </span>
                                             </th>
@@ -252,10 +255,10 @@ export function DataTable<T>({
                             <tbody>
                                 {loading &&
                                     Array.from({ length: 8 }).map((_, i) => (
-                                        <tr key={i} className="border-t border-border">
+                                        <tr key={i} className="border-b border-border/60 last:border-0">
                                             {visible.map((c) => (
-                                                <td key={c.id} className={pad}>
-                                                    <Skeleton className="h-4 w-full" />
+                                                <td key={c.id} className={cn("px-3", rowPad)}>
+                                                    <Skeleton className="h-4 w-2/3" />
                                                 </td>
                                             ))}
                                         </tr>
@@ -267,12 +270,12 @@ export function DataTable<T>({
                                             key={getRowId(row)}
                                             onClick={onRowClick ? () => onRowClick(row) : undefined}
                                             className={cn(
-                                                "border-t border-border",
-                                                onRowClick && "cursor-pointer hover:bg-muted/40",
+                                                "border-b border-border/60 last:border-0 transition-colors",
+                                                onRowClick && "cursor-pointer hover:bg-muted/50",
                                             )}
                                         >
                                             {visible.map((c) => (
-                                                <td key={c.id} className={cn(pad, alignCls(c.align), c.className)}>
+                                                <td key={c.id} className={cn("px-3 align-middle text-[13px]", rowPad, alignCls(c.align), c.className)}>
                                                     {c.cell(row)}
                                                 </td>
                                             ))}
@@ -281,7 +284,7 @@ export function DataTable<T>({
 
                                 {!loading && rows.length === 0 && (
                                     <tr>
-                                        <td colSpan={visible.length} className="px-3 py-12 text-center">
+                                        <td colSpan={visible.length} className="px-3 py-14 text-center">
                                             <div className="text-sm font-medium text-foreground">{emptyTitle}</div>
                                             <div className="mt-0.5 text-xs text-muted-foreground">{emptyHint}</div>
                                         </td>
@@ -293,37 +296,17 @@ export function DataTable<T>({
                 </div>
             )}
 
-            {/* Pager */}
             {pager && !error && (
-                <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
-                    <span>
-                        {pager.total != null
-                            ? `${pager.shown} shown · ${pager.total.toLocaleString()} total`
-                            : `${pager.shown} shown`}
-                    </span>
-                    <div className="flex items-center gap-1">
-                        <span className="mr-1">Page {pager.page}</span>
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-7 gap-1 px-2"
-                            disabled={!pager.canPrev || loading}
-                            onClick={pager.onPrev}
-                        >
-                            <ChevronLeft className="size-3.5" />
-                            Prev
-                        </Button>
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-7 gap-1 px-2"
-                            disabled={!pager.canNext || loading}
-                            onClick={pager.onNext}
-                        >
-                            Next
-                            <ChevronRight className="size-3.5" />
-                        </Button>
-                    </div>
+                <div className="mt-3 flex items-center justify-end gap-2 text-xs text-muted-foreground">
+                    <span>Page {pager.page}</span>
+                    <Button variant="outline" size="sm" className="h-7 gap-1 px-2" disabled={!pager.canPrev || loading} onClick={pager.onPrev}>
+                        <ChevronLeft className="size-3.5" />
+                        Prev
+                    </Button>
+                    <Button variant="outline" size="sm" className="h-7 gap-1 px-2" disabled={!pager.canNext || loading} onClick={pager.onNext}>
+                        Next
+                        <ChevronRight className="size-3.5" />
+                    </Button>
                 </div>
             )}
         </div>

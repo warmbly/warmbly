@@ -142,6 +142,12 @@ export default function MailboxesPage() {
         <div>
             <PageHeader title="Mailboxes" description="Every connected mailbox across the platform. Filter, scope to an org, and export." />
             <Explorer
+                activeCount={(query ? 1 : 0) + (status !== "active" ? 1 : 0) + (orgId ? 1 : 0)}
+                onReset={() => {
+                    setQuery("");
+                    setStatus("active");
+                    clearOrg();
+                }}
                 filters={
                     <>
                         <FilterGroup label="Search">
@@ -181,6 +187,7 @@ export default function MailboxesPage() {
                     errorTitle="Failed to load mailboxes"
                     storageKey="admin.mailboxes"
                     csvName="warmbly-mailboxes"
+                    noun="mailboxes"
                     emptyTitle="No mailboxes"
                     emptyHint="No mailboxes match these filters."
                     pager={{

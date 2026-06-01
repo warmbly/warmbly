@@ -140,6 +140,12 @@ export default function OrganizationsPage() {
         <div>
             <PageHeader title="Organizations" description="Every workspace on the platform. Filter, sort, and drill into owner, usage, members, and mailboxes." />
             <Explorer
+                activeCount={(query ? 1 : 0) + (status !== "active" ? 1 : 0) + (sort.by ? 1 : 0)}
+                onReset={() => {
+                    setQuery("");
+                    setStatus("active");
+                    setSort({ by: "", desc: true });
+                }}
                 filters={
                     <>
                         <FilterGroup label="Search">
@@ -172,6 +178,7 @@ export default function OrganizationsPage() {
                     onSortChange={setSort}
                     storageKey="admin.organizations"
                     csvName="warmbly-organizations"
+                    noun="organizations"
                     emptyTitle="No organizations"
                     emptyHint="No organizations match these filters."
                     pager={{

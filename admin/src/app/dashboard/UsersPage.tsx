@@ -115,6 +115,13 @@ export default function UsersPage() {
         <div>
             <PageHeader title="Users" description="Every account on the platform. Filter, sort, and drill in to ban, unban, override rate limits, or inspect orgs and mailboxes." />
             <Explorer
+                activeCount={(query ? 1 : 0) + (status !== "active" ? 1 : 0) + (adminOnly ? 1 : 0) + (sort.by ? 1 : 0)}
+                onReset={() => {
+                    setQuery("");
+                    setStatus("active");
+                    setAdminOnly(false);
+                    setSort({ by: "", desc: true });
+                }}
                 filters={
                     <>
                         <FilterGroup label="Search">
@@ -150,6 +157,7 @@ export default function UsersPage() {
                     onSortChange={setSort}
                     storageKey="admin.users"
                     csvName="warmbly-users"
+                    noun="users"
                     emptyTitle="No users"
                     emptyHint="No users match these filters."
                     pager={{
