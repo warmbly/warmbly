@@ -150,7 +150,7 @@ func (r *adminRepository) SearchUsers(ctx context.Context, search *models.AdminU
 			u.admin_permissions, u.admin_granted_at, u.admin_granted_by, u.banned_at,
 			u.created_at, u.updated_at,
 			(SELECT COUNT(*) FROM organization_members om WHERE om.user_id = u.id) as org_count,
-			(SELECT COUNT(*) FROM email_accounts ea WHERE ea.user_id = u.id::text) as email_count,
+			(SELECT COUNT(*) FROM email_accounts ea WHERE ea.user_id = u.id) as email_count,
 			(SELECT COUNT(*) FROM campaigns c WHERE c.user_id = u.id) as campaign_count
 		FROM users u
 		` + whereClause + `
@@ -209,7 +209,7 @@ func (r *adminRepository) GetUserDetail(ctx context.Context, userID uuid.UUID) (
 			u.admin_permissions, u.admin_granted_at, u.admin_granted_by, u.banned_at,
 			u.created_at, u.updated_at,
 			(SELECT COUNT(*) FROM organization_members om WHERE om.user_id = u.id) as org_count,
-			(SELECT COUNT(*) FROM email_accounts ea WHERE ea.user_id = u.id::text) as email_count,
+			(SELECT COUNT(*) FROM email_accounts ea WHERE ea.user_id = u.id) as email_count,
 			(SELECT COUNT(*) FROM campaigns c WHERE c.user_id = u.id) as campaign_count
 		FROM users u
 		WHERE u.id = $1
@@ -1228,7 +1228,7 @@ func (r *adminRepository) SearchCampaigns(ctx context.Context, search *models.Ad
 
 	query := `
 		SELECT c.id, c.name, c.user_id, c.organization_id, c.status, c.created_at,
-			c.started_at, c.stopped_at,
+			c.start_date, c.end_date,
 			u.id, u.first_name, u.last_name, u.email
 		FROM campaigns c
 		JOIN users u ON u.id = c.user_id
@@ -1280,7 +1280,7 @@ func (r *adminRepository) SearchCampaigns(ctx context.Context, search *models.Ad
 func (r *adminRepository) GetCampaignDetail(ctx context.Context, campaignID uuid.UUID) (*models.AdminCampaignDetail, error) {
 	query := `
 		SELECT c.id, c.name, c.user_id, c.organization_id, c.status, c.created_at,
-			c.started_at, c.stopped_at,
+			c.start_date, c.end_date,
 			u.id, u.first_name, u.last_name, u.email
 		FROM campaigns c
 		JOIN users u ON u.id = c.user_id
@@ -1609,18 +1609,19 @@ func (r *adminRepository) GetEmailDistribution(ctx context.Context) ([]models.Em
 func (r *adminRepository) ListPlans(ctx context.Context, includePrivate bool) ([]models.Plan, error) {
 	whereClause := ""
 	if !includePrivate {
-		whereClause = "WHERE public = true"
+		whereClause = "WHERE p.public = true"
 	}
 
 	query := `
-		SELECT id, name, max_contacts, daily_emails, ai_generation, account_limit,
-			price, discounted_price, duration, savings, public,
-			stripe_price_id, stripe_product_id, dedicated_workers, daily_campaign_limit,
-			max_campaigns, max_active_campaigns, max_team_members, max_email_accounts,
-			updated_at, created_at
-		FROM plans
+		SELECT p.id, p.name, p.max_contacts, p.daily_emails, p.ai_generation, p.account_limit,
+			p.price, p.discounted_price, d.title, p.savings, p.public,
+			p.stripe_price_id, p.stripe_product_id, p.dedicated_workers, p.daily_campaign_limit,
+			p.max_campaigns, p.max_active_campaigns, p.max_team_members, p.max_email_accounts,
+			p.updated_at, p.created_at
+		FROM plans p
+		LEFT JOIN durations d ON d.id = p.duration_id
 		` + whereClause + `
-		ORDER BY price ASC
+		ORDER BY p.price ASC
 	`
 
 	rows, err := r.db.Query(ctx, query)
@@ -1632,15 +1633,19 @@ func (r *adminRepository) ListPlans(ctx context.Context, includePrivate bool) ([
 	var plans []models.Plan
 	for rows.Next() {
 		var p models.Plan
+		var duration *string
 		err := rows.Scan(
 			&p.ID, &p.Name, &p.MaxContacts, &p.DailyEmails, &p.AIGeneration, &p.AccountLimit,
-			&p.Price, &p.DiscountedPrice, &p.Duration, &p.Savings, &p.Public,
+			&p.Price, &p.DiscountedPrice, &duration, &p.Savings, &p.Public,
 			&p.StripePriceID, &p.StripeProductID, &p.DedicatedWorkers, &p.DailyCampaignLimit,
 			&p.MaxCampaigns, &p.MaxActiveCampaigns, &p.MaxTeamMembers, &p.MaxEmailAccounts,
 			&p.UpdatedAt, &p.CreatedAt,
 		)
 		if err != nil {
 			return nil, err
+		}
+		if duration != nil {
+			p.Duration = models.Duration(*duration)
 		}
 		plans = append(plans, p)
 	}

@@ -20,11 +20,13 @@ export function getWarmupHealthSummary(): Promise<WarmupPoolHealthSummary> {
 }
 
 export function listWarmupPools(): Promise<WarmupPoolInfo[]> {
-    return Request({
+    // The backend wraps the list as { pools: [...] } and returns null (not [])
+    // when empty — unwrap + default so the page always gets an array to map.
+    return Request<{ pools: WarmupPoolInfo[] | null }>({
         method: "GET",
         url: "/admin/warmup/pools",
         authorization: true,
-    });
+    }).then((r) => r.pools ?? []);
 }
 
 export function listBlockedWarmupAccounts(

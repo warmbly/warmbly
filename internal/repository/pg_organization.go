@@ -651,7 +651,7 @@ const adminOrgListColumns = `
 	u.email, u.first_name, u.last_name, u.banned_at,
 	o.created_at, o.deletion_scheduled_for,
 	(SELECT COUNT(*) FROM organization_members om WHERE om.organization_id = o.id) AS member_count,
-	(SELECT COUNT(*) FROM email_accounts ea WHERE ea.organization_id = o.id::text) AS email_account_count,
+	(SELECT COUNT(*) FROM email_accounts ea WHERE ea.organization_id = o.id) AS email_account_count,
 	(SELECT COUNT(*) FROM campaigns c WHERE c.organization_id = o.id) AS campaign_count,
 	(SELECT COUNT(*) FROM campaigns c WHERE c.organization_id = o.id AND c.status = 'active') AS active_campaigns`
 
