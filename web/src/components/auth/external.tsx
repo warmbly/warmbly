@@ -1,9 +1,8 @@
 import React, { useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { RiAppleFill } from "@remixicon/react";
-import { KeyRound } from "lucide-react";
+import { KeyRound, Loader2Icon } from "lucide-react";
 import { Google } from "../svg";
-import { Loading } from "../loader";
 import { API_URL, PopupCenter } from "@/lib/information";
 import { AUTH_CELL as CELL } from "./styles";
 
@@ -21,11 +20,6 @@ const ICON_SWAP = {
     exit: { opacity: 0, scale: 0.55 },
     transition: { duration: 0.2, ease: [0.22, 1, 0.36, 1] as const },
 };
-
-// sky-500 — passed explicitly because <Loading> strokes its circle via an
-// attribute (defaulting to white), not currentColor, so a className alone
-// renders an invisible white-on-white spinner.
-const SPINNER_COLOR = "#0ea5e9";
 
 // Inner content is layout="position" so it only translates (stays centered)
 // while its button animates width — the icon + label never stretch.
@@ -95,7 +89,7 @@ export default function ExternalLogin({
                                             {...ICON_SWAP}
                                             className="absolute inset-0 inline-flex items-center justify-center"
                                         >
-                                            <Loading className="!w-4 h-4" color={SPINNER_COLOR} />
+                                            <Loader2Icon className="h-4 w-4 animate-spin text-sky-500" />
                                         </motion.span>
                                     ) : (
                                         <motion.span
