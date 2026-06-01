@@ -162,6 +162,17 @@ export function useRealtimeEvents() {
         return
       }
 
+      if (includes('INTEGRATION', 'CONNECTION', 'BOOKING', 'MEETING')) {
+        invalidate([
+          ['integrations', 'connections'],
+          ['integrations', 'catalog'],
+          ['integrations', 'bookings'],
+        ])
+        const connectionId = getString('connection_id')
+        if (connectionId) invalidate([['integrations', 'connection', connectionId]])
+        return
+      }
+
       if (includes('TEMPLATE')) {
         invalidate([['templates']])
         return

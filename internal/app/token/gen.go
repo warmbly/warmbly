@@ -86,13 +86,16 @@ func (s *tokenService) GenerateSessionWithOrg(ctx context.Context, userID uuid.U
 		UserID:                userID,
 		CurrentOrganizationID: orgID,
 
-		LocationCity:       ipinfo.City,
-		LocationRegion:     ipinfo.Region,
-		LocationCountry:    ipinfo.Country,
-		LocationPostalCode: ipinfo.PostalCode,
+		LocationCity:        ipinfo.City,
+		LocationRegion:      ipinfo.Region,
+		LocationCountry:     ipinfo.Country,
+		LocationCountryCode: ipinfo.CountryCode,
+		LocationPostalCode:  ipinfo.PostalCode,
 
 		BrowserName: userAgentInfo.Name,
-		OSName:      userAgentInfo.Name,
+		OSName:      userAgentInfo.OS,
+
+		AuthProvider: authProvider,
 	}
 
 	tx, err := s.db.Begin(ctx)

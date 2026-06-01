@@ -7,6 +7,7 @@ interface UserC {
     user: User;
     access: Access;
     timezones: Timezone[];
+    setUser: React.Dispatch<React.SetStateAction<User | null>>;
     tagsEdit: boolean;
     setTagsEdit: React.Dispatch<React.SetStateAction<boolean>>;
     foldersEdit: boolean;

@@ -50,6 +50,11 @@ func Run(
 	r.GET("/addresses/google/callback", h.EmailOAuthCallbackGmail)
 	r.GET("/addresses/outlook/callback", h.EmailOAuthCallbackOutlook)
 
+	// Public OAuth callback bouncer for third-party integrations (HubSpot,
+	// Slack, Google, Pipedrive, …). The provider redirects here; the page
+	// postMessages code+state to the SPA opener, which calls oauth/finish.
+	r.GET("/integrations/oauth/callback", h.IntegrationOAuthCallback)
+
 	// Internal backend-to-backend endpoints. Workers call these instead of
 	// touching Postgres / DynamoDB directly, per the no-direct-data-services
 	// rule in CLAUDE.md. Auth: shared bearer token (INTERNAL_API_TOKEN).
@@ -122,6 +127,13 @@ func Run(
 		auth.POST("/refresh", h.RefreshToken)
 		auth.POST("/reset-password", h.ResetPasswordStart)
 		auth.POST("/reset-password/confirm", h.ResetPasswordConfirm)
+
+		// Passkey (WebAuthn) sign-in is discoverable/usernameless: a passkey
+		// is already strong auth, so it's a single step with no email OTP.
+		// Public on purpose — there's no account context until the assertion
+		// resolves, and the challenge + signature are the protection.
+		auth.POST("/passkey/login/begin", h.PasskeyLoginBegin)
+		auth.POST("/passkey/login/finish", h.PasskeyLoginFinish)
 	}
 
 	protectedAuth := auth.Group("")
@@ -129,10 +141,24 @@ func Run(
 	{
 		protectedAuth.POST("/logout", h.Logout)
 		protectedAuth.POST("/logout-all", h.LogoutAll)
+
+		// Self-service session management. Scoped to the authenticated user;
+		// per-id revoke can never touch another user's session.
+		protectedAuth.GET("/sessions", h.SessionsList)
+		protectedAuth.DELETE("/sessions", h.SessionRevokeOthers)
+		protectedAuth.DELETE("/sessions/:id", h.SessionRevoke)
+
 		protectedAuth.GET("/me", h.GetUser)
 		protectedAuth.PATCH("/me/onboarding", h.CompleteOnboarding)
 		protectedAuth.POST("/me/avatar", h.UploadUserAvatar)
 		protectedAuth.DELETE("/me/avatar", h.DeleteUserAvatar)
+
+		// Passkey enrollment + management require an authenticated session.
+		protectedAuth.POST("/passkey/register/begin", h.PasskeyRegisterBegin)
+		protectedAuth.POST("/passkey/register/finish", h.PasskeyRegisterFinish)
+		protectedAuth.GET("/passkey/credentials", h.PasskeyListCredentials)
+		protectedAuth.PATCH("/passkey/credentials/:id", h.PasskeyRenameCredential)
+		protectedAuth.DELETE("/passkey/credentials/:id", h.PasskeyDeleteCredential)
 	}
 
 	// JWT-only protected group: routes that are tied to a human session and
@@ -173,6 +199,16 @@ func Run(
 			onboardingEmails.POST("/oauth/start", h.StartEmailOAuth)
 			onboardingEmails.POST("/oauth/finish", h.FinishEmailOAuth)
 			onboardingEmails.POST("/smtp-imap", h.ConnectEmailSMTPIMAP)
+		}
+
+		// Integration OAuth handshake is JWT-only — it writes user-encrypted
+		// provider tokens via the SPA popup flow, same as mailbox onboarding.
+		integrationsOAuth := jwtOnly.Group("/integrations/oauth")
+		integrationsOAuth.Use(m.RequireOrganization(), m.RateLimitMiddleware(models.RateLimitWrite))
+		{
+			integrationsOAuth.POST("/start", h.StartIntegrationOAuth)
+			integrationsOAuth.POST("/finish", h.FinishIntegrationOAuth)
+			integrationsOAuth.POST("/reauth/:id", h.ReauthIntegration)
 		}
 
 		campaigns := protected.Group("/campaigns")
@@ -243,9 +279,9 @@ func Run(
 
 		// Group endpoints map to the resources they organize: campaign
 		// folders, email-account tags, and contact categories.
-		grouph.New(protected, h.FolderService, "folders", m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns))
-		grouph.New(protected, h.TagService, "tags", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails))
-		grouph.New(protected, h.CategoryService, "categories", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts))
+		grouph.New(protected, h.FolderService, h.AuditService, "folders", m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns))
+		grouph.New(protected, h.TagService, h.AuditService, "tags", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails))
+		grouph.New(protected, h.CategoryService, h.AuditService, "categories", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts))
 
 		unibox := protected.Group("/unibox")
 		unibox.Use(m.RateLimitMiddleware(models.RateLimitRead))
@@ -369,7 +405,12 @@ func Run(
 			integrations.GET("/catalog", h.ListIntegrationCatalog)
 			integrations.GET("/connections", h.ListIntegrationConnections)
 			integrations.POST("/connections", h.ConnectIntegration)
+			integrations.GET("/connections/:id", h.GetIntegrationConnection)
 			integrations.DELETE("/connections/:id", h.DisconnectIntegration)
+			integrations.GET("/connections/:id/events", h.ListConnectionEventSubscriptions)
+			integrations.POST("/connections/:id/events", h.CreateConnectionEventSubscription)
+			integrations.DELETE("/connections/:id/events/:eventId", h.DeleteConnectionEventSubscription)
+			integrations.GET("/connections/:id/runs", h.ListConnectionSyncRuns)
 			integrations.GET("/bookings", h.ListMeetingBookings)
 		}
 

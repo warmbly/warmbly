@@ -1,26 +1,15 @@
-// Integrations dashboard.
+// Integrations marketplace.
 //
-// One page covers the integration surface: catalog of available providers
-// (HubSpot, Salesforce, Pipedrive, Close, Zapier, Make, n8n, Slack,
-// Discord, Calendly, Cal.com, Google Sheets), per-org connection state,
-// inbound webhook URLs, and meeting bookings.
-//
-// Layout follows the Page primitives: stat strip across the top, section
-// bars between zones, no max-width chrome. Connect / disconnect happens
-// in an inline drawer so the page stays a single navigation target from
-// the sidebar.
+// The connect experience is the point of this page: a searchable app directory
+// grouped by category, a "connected" rail across the top, a multi-step connect
+// drawer (one-click OAuth where the provider supports it), and a management
+// drawer for health, reauth, and event automations. Realtime keeps connection
+// state live without a manual refresh.
 
 "use client";
 
 import React from "react";
-import {
-    CableIcon,
-    CalendarCheckIcon,
-    CheckIcon,
-    PlusIcon,
-    RefreshCwIcon,
-    XIcon,
-} from "lucide-react";
+import { CalendarCheckIcon, ExternalLinkIcon, RefreshCwIcon, SettingsIcon } from "lucide-react";
 import toast from "react-hot-toast";
 
 import {
@@ -32,63 +21,73 @@ import {
     Stat,
     StatStrip,
 } from "@/components/layout/Page";
+import { SearchInput } from "@/components/ui/field";
 import useIntegrationCatalog from "@/lib/api/hooks/app/integrations/useIntegrationCatalog";
 import useIntegrationConnections from "@/lib/api/hooks/app/integrations/useIntegrationConnections";
-import useDisconnectIntegration from "@/lib/api/hooks/app/integrations/useDisconnectIntegration";
 import useMeetingBookings from "@/lib/api/hooks/app/integrations/useMeetingBookings";
-import type {
-    IntegrationCatalogEntry,
-    IntegrationCategory,
-    IntegrationConnection,
-    IntegrationProvider,
+import {
+    CATEGORY_LABELS,
+    CATEGORY_ORDER,
+    type IntegrationCatalogEntry,
+    type IntegrationCategory,
+    type IntegrationConnection,
+    type IntegrationProvider,
 } from "@/lib/api/models/app/integrations/Integration";
 import { cn } from "@/lib/utils";
 
 import ConnectDrawer from "./_components/ConnectDrawer";
+import ConnectionDetail from "./_components/ConnectionDetail";
 import InboundUrlDialog from "./_components/InboundUrlDialog";
-
-const CATEGORY_LABELS: Record<IntegrationCategory, string> = {
-    crm: "CRM",
-    automation: "Automation",
-    notifications: "Notifications",
-    meetings: "Meetings",
-    data: "Data",
-};
-
-const CATEGORY_ORDER: IntegrationCategory[] = ["crm", "automation", "notifications", "meetings", "data"];
+import ProviderGlyph from "./_components/ProviderGlyph";
+import StatusPill from "./_components/StatusPill";
 
 export default function IntegrationsPage() {
     const catalogQuery = useIntegrationCatalog();
     const connectionsQuery = useIntegrationConnections();
     const bookingsQuery = useMeetingBookings();
 
-    const disconnect = useDisconnectIntegration();
-
     const [connectTarget, setConnectTarget] = React.useState<IntegrationCatalogEntry | null>(null);
+    const [manageTarget, setManageTarget] = React.useState<IntegrationConnection | null>(null);
     const [inboundUrl, setInboundUrl] = React.useState<{ provider: IntegrationProvider; url: string } | null>(null);
+    const [query, setQuery] = React.useState("");
 
     const catalog = catalogQuery.data?.catalog ?? [];
     const connections = connectionsQuery.data?.connections ?? [];
     const bookings = bookingsQuery.data?.bookings ?? [];
 
-    const byProvider = React.useMemo(() => {
-        const m: Record<string, IntegrationConnection[]> = {};
-        for (const c of connections) {
-            (m[c.provider] ??= []).push(c);
-        }
+    const entryByProvider = React.useMemo(() => {
+        const m: Record<string, IntegrationCatalogEntry> = {};
+        for (const e of catalog) m[e.provider] = e;
+        return m;
+    }, [catalog]);
+
+    const firstConnByProvider = React.useMemo(() => {
+        const m: Record<string, IntegrationConnection> = {};
+        for (const c of connections) if (!m[c.provider]) m[c.provider] = c;
         return m;
     }, [connections]);
 
+    const q = query.trim().toLowerCase();
+    const filtered = React.useMemo(() => {
+        if (!q) return catalog;
+        return catalog.filter(
+            (e) =>
+                e.name.toLowerCase().includes(q) ||
+                e.tagline.toLowerCase().includes(q) ||
+                e.category.toLowerCase().includes(q),
+        );
+    }, [catalog, q]);
+
     const grouped = React.useMemo(() => {
         const map: Partial<Record<IntegrationCategory, IntegrationCatalogEntry[]>> = {};
-        for (const entry of catalog) {
-            (map[entry.category] ??= []).push(entry);
-        }
+        for (const entry of filtered) (map[entry.category] ??= []).push(entry);
         return map;
-    }, [catalog]);
+    }, [filtered]);
 
     const connectedCount = connections.filter((c) => c.status === "connected").length;
-    const degradedCount = connections.filter((c) => c.status === "degraded").length;
+    const attentionCount = connections.filter(
+        (c) => c.status === "degraded" || c.status === "reauth_required",
+    ).length;
 
     function refreshAll() {
         catalogQuery.refetch();
@@ -96,54 +95,56 @@ export default function IntegrationsPage() {
         bookingsQuery.refetch();
     }
 
-    async function handleDisconnect(connection: IntegrationConnection) {
-        try {
-            await disconnect.mutateAsync(connection.id);
-            toast.success("Disconnected");
-        } catch {
-            toast.error("Disconnect failed");
-        }
+    function onCardClick(entry: IntegrationCatalogEntry) {
+        const existing = firstConnByProvider[entry.provider];
+        if (existing) setManageTarget(existing);
+        else setConnectTarget(entry);
     }
 
     return (
         <Page>
-            <PageTopbar eyebrow="Integrations" subtitle="CRMs, automation, notifications, meetings, and data">
-                <button
-                    type="button"
-                    onClick={refreshAll}
-                    aria-label="Refresh"
-                    className="h-7 w-7 rounded-md border border-slate-200 hover:border-slate-300 text-slate-500 hover:text-slate-900 inline-flex items-center justify-center transition-colors"
-                >
-                    <RefreshCwIcon className={cn("w-3 h-3", connectionsQuery.isFetching && "animate-spin")} />
-                </button>
+            <PageTopbar eyebrow="Integrations" subtitle="Connect your stack — CRMs, alerts, automation, meetings, and data">
+                <div className="flex items-center gap-2">
+                    <div className="w-48 hidden sm:block">
+                        <SearchInput value={query} onChange={setQuery} placeholder="Search integrations" />
+                    </div>
+                    <button
+                        type="button"
+                        onClick={refreshAll}
+                        aria-label="Refresh"
+                        className="h-7 w-7 rounded-md border border-slate-200 hover:border-slate-300 text-slate-500 hover:text-slate-900 inline-flex items-center justify-center transition-colors"
+                    >
+                        <RefreshCwIcon className={cn("w-3 h-3", connectionsQuery.isFetching && "animate-spin")} />
+                    </button>
+                </div>
             </PageTopbar>
 
             <StatStrip cols={4}>
-                <Stat
-                    label="Catalog"
-                    value={catalog.length}
-                    sub="available providers"
-                />
-                <Stat
-                    label="Connected"
-                    value={connectedCount}
-                    sub={`${connections.length} total`}
-                    accent={connectedCount > 0}
-                />
-                <Stat
-                    label="Degraded"
-                    value={degradedCount}
-                    sub={degradedCount > 0 ? "needs attention" : "all healthy"}
-                />
-                <Stat
-                    label="Meetings"
-                    value={bookings.length}
-                    sub="from Calendly + Cal.com"
-                    last
-                />
+                <Stat label="Available" value={catalog.length} sub="providers" />
+                <Stat label="Connected" value={connectedCount} sub={`${connections.length} total`} accent={connectedCount > 0} />
+                <Stat label="Needs attention" value={attentionCount} sub={attentionCount > 0 ? "reconnect / errors" : "all healthy"} />
+                <Stat label="Meetings" value={bookings.length} sub="booked via integrations" last />
             </StatStrip>
 
             <PageBody>
+                {/* Connected rail */}
+                {connections.length > 0 && (
+                    <section>
+                        <SectionBar label="Your connections" count={connections.length} />
+                        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-px bg-slate-200/60 border-b border-slate-200/60">
+                            {connections.map((c) => (
+                                <ConnectionCard
+                                    key={c.id}
+                                    connection={c}
+                                    entry={entryByProvider[c.provider]}
+                                    onManage={() => setManageTarget(c)}
+                                />
+                            ))}
+                        </div>
+                    </section>
+                )}
+
+                {/* Catalog by category */}
                 {CATEGORY_ORDER.map((category) => {
                     const entries = grouped[category] ?? [];
                     if (entries.length === 0) return null;
@@ -155,10 +156,8 @@ export default function IntegrationsPage() {
                                     <CatalogCard
                                         key={entry.provider}
                                         entry={entry}
-                                        connections={byProvider[entry.provider] ?? []}
-                                        onConnect={() => setConnectTarget(entry)}
-                                        onDisconnect={handleDisconnect}
-                                        onShowInbound={(url) => setInboundUrl({ provider: entry.provider, url })}
+                                        connection={firstConnByProvider[entry.provider]}
+                                        onClick={() => onCardClick(entry)}
                                     />
                                 ))}
                             </div>
@@ -166,19 +165,29 @@ export default function IntegrationsPage() {
                     );
                 })}
 
+                {q && filtered.length === 0 && (
+                    <EmptyBlock title="No matches" body={`Nothing in the catalog matches “${query}”.`} />
+                )}
+
+                {/* Meetings */}
                 <SectionBar label="Meeting bookings" count={bookings.length}>
                     <CalendarCheckIcon className="w-3 h-3 text-slate-400" />
                 </SectionBar>
                 {bookings.length === 0 ? (
                     <EmptyBlock
                         title="No meetings booked yet"
-                        body="Connect Calendly or Cal.com to track which campaigns lead to meetings."
+                        body="Connect Calendly or Cal.com to credit booked meetings to the campaign that surfaced the lead."
                     />
                 ) : (
                     <div className="divide-y divide-slate-200/60 border-b border-slate-200/60">
-                        {bookings.slice(0, 10).map((b) => (
+                        {bookings.slice(0, 12).map((b) => (
                             <div key={b.id} className="px-5 h-12 flex items-center gap-3 text-[12.5px]">
-                                <SourceDot source={b.source} />
+                                <span
+                                    className={cn(
+                                        "size-1.5 rounded-full shrink-0",
+                                        b.source === "calendly" ? "bg-rose-400" : "bg-indigo-400",
+                                    )}
+                                />
                                 <span className="font-medium text-slate-900 truncate w-32 sm:w-60">{b.invitee_email}</span>
                                 <span className="text-slate-500 truncate flex-1">{b.event_name}</span>
                                 <span className="font-mono text-[10.5px] text-slate-400 tabular-nums">
@@ -195,9 +204,23 @@ export default function IntegrationsPage() {
                     entry={connectTarget}
                     onClose={() => setConnectTarget(null)}
                     onConnected={(conn) => {
+                        connectionsQuery.refetch();
                         if (conn.inbound_webhook_url) {
                             setInboundUrl({ provider: conn.provider, url: conn.inbound_webhook_url });
+                        } else {
+                            // Drop straight into management so the user can wire automations.
+                            setManageTarget(conn);
                         }
+                    }}
+                />
+            )}
+            {manageTarget && (
+                <ConnectionDetail
+                    connection={manageTarget}
+                    entry={entryByProvider[manageTarget.provider]}
+                    onClose={() => {
+                        setManageTarget(null);
+                        connectionsQuery.refetch();
                     }}
                 />
             )}
@@ -214,42 +237,36 @@ export default function IntegrationsPage() {
 
 function CatalogCard({
     entry,
-    connections,
-    onConnect,
-    onDisconnect,
-    onShowInbound,
+    connection,
+    onClick,
 }: {
     entry: IntegrationCatalogEntry;
-    connections: IntegrationConnection[];
-    onConnect: () => void;
-    onDisconnect: (c: IntegrationConnection) => void;
-    onShowInbound: (url: string) => void;
+    connection?: IntegrationConnection;
+    onClick: () => void;
 }) {
-    const connected = connections.length > 0;
-    const status = connected ? connections[0].status : "disconnected";
+    const connected = !!connection;
+    const comingSoon = entry.auth_method === "oauth" && !entry.configured && !connected;
     return (
-        <div className="bg-white p-5 flex flex-col min-h-[140px]">
+        <button
+            type="button"
+            onClick={onClick}
+            className="text-left bg-white p-5 flex flex-col min-h-[150px] hover:bg-slate-50/60 transition-colors group"
+        >
             <div className="flex items-start justify-between gap-3">
                 <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="w-9 h-9 rounded-md bg-sky-50 ring-1 ring-sky-100 text-sky-700 inline-flex items-center justify-center text-[13px] font-semibold uppercase">
-                        {entry.name.charAt(0)}
-                    </div>
+                    <ProviderGlyph provider={entry.provider} name={entry.name} />
                     <div className="min-w-0">
                         <div className="text-[13px] font-semibold text-slate-900 truncate">{entry.name}</div>
-                        <div className="text-[10.5px] uppercase tracking-[0.08em] text-slate-400 font-mono">
-                            {entry.auth_method}
-                            {entry.beta && (
-                                <span className="ml-1.5 text-amber-600">· beta</span>
-                            )}
+                        <div className="text-[10px] uppercase tracking-[0.08em] text-slate-400 font-mono">
+                            {entry.auth_method === "oauth" ? "one-click" : entry.auth_method}
+                            {entry.beta && <span className="ml-1.5 text-amber-600">· beta</span>}
                         </div>
                     </div>
                 </div>
-                <StatusPill status={status} />
+                {connected ? <StatusPill status={connection.status} /> : comingSoon ? <ComingSoon /> : null}
             </div>
 
-            <p className="mt-3 text-[12px] text-slate-600 leading-relaxed line-clamp-3">
-                {entry.tagline}
-            </p>
+            <p className="mt-3 text-[12px] text-slate-600 leading-relaxed line-clamp-2">{entry.tagline}</p>
 
             <div className="mt-auto pt-3 flex items-center justify-between gap-2">
                 {entry.docs_url ? (
@@ -257,95 +274,76 @@ function CatalogCard({
                         href={entry.docs_url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-[11px] text-slate-500 hover:text-sky-700 underline decoration-dotted underline-offset-2"
+                        onClick={(e) => e.stopPropagation()}
+                        className="text-[11px] text-slate-400 hover:text-sky-700 inline-flex items-center gap-1 underline decoration-dotted underline-offset-2"
                     >
+                        <ExternalLinkIcon className="w-3 h-3" />
                         Docs
                     </a>
-                ) : <span />}
-                <div className="flex items-center gap-1.5">
-                    {connected && connections[0].id ? (
-                        <>
-                            <button
-                                type="button"
-                                onClick={() => onDisconnect(connections[0])}
-                                className="h-6 px-2 rounded text-[11px] text-slate-500 hover:text-rose-700 hover:bg-rose-50 transition-colors"
-                            >
-                                Disconnect
-                            </button>
-                            {connections[0].display_fields && Object.keys(connections[0].display_fields).length > 0 && (
-                                <span className="font-mono text-[10px] text-slate-400 truncate max-w-[120px]">
-                                    {(connections[0].display_fields as Record<string, string>)["workspace"] ??
-                                        (connections[0].display_fields as Record<string, string>)["sheet_title"] ??
-                                        (connections[0].display_fields as Record<string, string>)["account_email"] ??
-                                        (connections[0].display_fields as Record<string, string>)["channel"] ??
-                                        ""}
-                                </span>
-                            )}
-                        </>
-                    ) : (
-                        <button
-                            type="button"
-                            onClick={onConnect}
-                            className="h-7 px-2.5 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-[11.5px] font-medium inline-flex items-center gap-1 transition-colors"
-                        >
-                            <PlusIcon className="w-3 h-3" />
-                            Connect
-                        </button>
+                ) : (
+                    <span />
+                )}
+                <span
+                    className={cn(
+                        "h-7 px-2.5 rounded-md text-[11.5px] font-medium inline-flex items-center gap-1 transition-colors",
+                        connected
+                            ? "text-slate-600 group-hover:text-slate-900 group-hover:bg-slate-100"
+                            : comingSoon
+                              ? "text-slate-300"
+                              : "bg-sky-600 text-white group-hover:bg-sky-700",
                     )}
-                </div>
-            </div>
-
-            {connected && entry.webhook_hint && (
-                <button
-                    type="button"
-                    onClick={() => {
-                        onShowInbound("/api/v1/integrations/inbound/" + entry.provider.replace("_", "-") + "/<your-secret>");
-                    }}
-                    className="mt-2 text-[10.5px] text-sky-700 hover:underline self-start inline-flex items-center gap-1"
                 >
-                    <CableIcon className="w-3 h-3" />
-                    Webhook URL
-                </button>
-            )}
-        </div>
+                    {connected ? (
+                        <>
+                            <SettingsIcon className="w-3 h-3" />
+                            Manage
+                        </>
+                    ) : comingSoon ? (
+                        "Coming soon"
+                    ) : (
+                        "Connect"
+                    )}
+                </span>
+            </div>
+        </button>
     );
 }
 
-function StatusPill({ status }: { status: string }) {
-    const tone =
-        status === "connected"
-            ? { bg: "bg-emerald-50", text: "text-emerald-700", dot: "bg-emerald-500" }
-            : status === "degraded"
-              ? { bg: "bg-amber-50", text: "text-amber-700", dot: "bg-amber-500" }
-              : status === "pending"
-                ? { bg: "bg-sky-50", text: "text-sky-700", dot: "bg-sky-500" }
-                : { bg: "bg-slate-100", text: "text-slate-500", dot: "bg-slate-400" };
-    const label = status === "disconnected" ? "not connected" : status;
+function ConnectionCard({
+    connection,
+    entry,
+    onManage,
+}: {
+    connection: IntegrationConnection;
+    entry?: IntegrationCatalogEntry;
+    onManage: () => void;
+}) {
+    const account =
+        connection.external_account_name ||
+        (connection.display_fields as Record<string, string>)?.account ||
+        (connection.display_fields as Record<string, string>)?.workspace ||
+        (connection.display_fields as Record<string, string>)?.channel ||
+        "";
     return (
-        <span
-            className={cn(
-                "inline-flex items-center gap-1 h-5 px-1.5 rounded text-[9.5px] uppercase tracking-[0.08em] font-medium",
-                tone.bg,
-                tone.text,
-            )}
+        <button
+            type="button"
+            onClick={onManage}
+            className="text-left bg-white p-4 flex items-center gap-3 hover:bg-slate-50/60 transition-colors"
         >
-            <span className={cn("size-1.5 rounded-full", tone.dot)} />
-            {label}
-        </span>
+            <ProviderGlyph provider={connection.provider} name={entry?.name ?? connection.label} />
+            <div className="min-w-0 flex-1">
+                <div className="text-[12.5px] font-semibold text-slate-900 truncate">{connection.label}</div>
+                <div className="text-[11px] text-slate-400 truncate">{account || (entry?.name ?? connection.provider)}</div>
+            </div>
+            <StatusPill status={connection.status} />
+        </button>
     );
 }
 
-function SourceDot({ source }: { source: string }) {
-    const colour = source === "calendly" ? "bg-rose-400" : "bg-indigo-400";
+function ComingSoon() {
     return (
-        <span className="inline-flex items-center gap-1">
-            <span className={cn("size-1.5 rounded-full", colour)} />
-            <span className="text-[10px] uppercase tracking-[0.08em] text-slate-400 font-mono">
-                {source === "calendly" ? "calendly" : "cal.com"}
-            </span>
+        <span className="inline-flex items-center h-5 px-1.5 rounded text-[9.5px] uppercase tracking-[0.08em] font-medium bg-slate-100 text-slate-400">
+            soon
         </span>
     );
 }
-
-void CheckIcon;
-void XIcon;

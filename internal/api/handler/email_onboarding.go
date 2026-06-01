@@ -4,7 +4,6 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/api/middleware"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
@@ -63,12 +62,10 @@ func (h *Handler) FinishEmailOAuth(c *gin.Context) {
 		return
 	}
 
-	if userID, err := uuid.Parse(userIDStr); err == nil {
-		h.AuditService.LogAction(c.Request.Context(), userID, models.AuditActionCreate, models.AuditEntityEmailAccount, &acc.ID, c.ClientIP(), c.Request.UserAgent(), map[string]string{
-			"provider": acc.Provider,
-			"email":    acc.Email,
-		}, nil)
-	}
+	h.auditOrg(c, models.AuditActionConnect, models.AuditEntityEmailAccount, &acc.ID, nil, map[string]string{
+		"provider": acc.Provider,
+		"email":    acc.Email,
+	})
 
 	c.JSON(http.StatusCreated, acc)
 }
@@ -94,12 +91,10 @@ func (h *Handler) ConnectEmailSMTPIMAP(c *gin.Context) {
 		return
 	}
 
-	if userID, err := uuid.Parse(userIDStr); err == nil {
-		h.AuditService.LogAction(c.Request.Context(), userID, models.AuditActionCreate, models.AuditEntityEmailAccount, &acc.ID, c.ClientIP(), c.Request.UserAgent(), map[string]string{
-			"provider": "smtp_imap",
-			"email":    acc.Email,
-		}, nil)
-	}
+	h.auditOrg(c, models.AuditActionConnect, models.AuditEntityEmailAccount, &acc.ID, nil, map[string]string{
+		"provider": "smtp_imap",
+		"email":    acc.Email,
+	})
 
 	c.JSON(http.StatusCreated, acc)
 }

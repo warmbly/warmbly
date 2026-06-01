@@ -3,6 +3,7 @@ package handler
 import (
 	"io"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -88,6 +89,11 @@ func (h *Handler) CreateCheckoutSession(c *gin.Context) {
 		return
 	}
 
+	h.auditOrg(c, models.AuditActionCreate, models.AuditEntitySubscription, nil, nil, map[string]string{
+		"action":   "checkout",
+		"price_id": req.PriceID,
+	})
+
 	c.JSON(http.StatusOK, gin.H{
 		"session_id":   session.ID,
 		"checkout_url": session.URL,
@@ -157,6 +163,16 @@ func (h *Handler) CancelSubscription(c *gin.Context) {
 		errx.JSON(c, errX)
 		return
 	}
+
+	subID := sub.ID
+	action := models.AuditActionResume
+	if req.CancelAtPeriodEnd {
+		action = models.AuditActionStop
+	}
+	h.auditOrg(c, action, models.AuditEntitySubscription, &subID, nil, map[string]string{
+		"plan":                 sub.PlanID.String(),
+		"cancel_at_period_end": strconv.FormatBool(req.CancelAtPeriodEnd),
+	})
 
 	c.JSON(http.StatusOK, gin.H{"message": "subscription cancelled"})
 }
@@ -269,6 +285,12 @@ func (h *Handler) ChangePlan(c *gin.Context) {
 		errx.JSON(c, errX)
 		return
 	}
+
+	planID := req.PlanID
+	h.auditOrg(c, models.AuditActionUpdate, models.AuditEntitySubscription, &planID, nil, map[string]string{
+		"action": "change_plan",
+		"plan":   req.PlanID.String(),
+	})
 
 	c.JSON(http.StatusOK, gin.H{
 		"message":      "plan changed successfully",

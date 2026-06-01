@@ -7,7 +7,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/api/middleware"
-	"github.com/warmbly/warmbly/internal/app/audit"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 )
@@ -30,9 +29,7 @@ func (h *Handler) CreateCampaign(c *gin.Context) {
 	}
 
 	// Audit log
-	if userID, err := uuid.Parse(userIDStr); err == nil {
-		audit.LogCreate(h.AuditService, c.Request.Context(), userID, models.AuditEntityCampaign, resp.ID, c.ClientIP(), c.Request.UserAgent(), map[string]string{"name": resp.Name})
-	}
+	h.auditOrg(c, models.AuditActionCreate, models.AuditEntityCampaign, &resp.ID, nil, map[string]string{"name": resp.Name})
 
 	c.JSON(http.StatusOK, resp)
 }
@@ -87,10 +84,8 @@ func (h *Handler) UpdateCampaign(c *gin.Context) {
 	}
 
 	// Audit log
-	if userID, err := uuid.Parse(userIDStr); err == nil {
-		if campaignID, err := uuid.Parse(id); err == nil {
-			audit.LogUpdate(h.AuditService, c.Request.Context(), userID, models.AuditEntityCampaign, campaignID, c.ClientIP(), c.Request.UserAgent(), nil)
-		}
+	if campaignID, err := uuid.Parse(id); err == nil {
+		h.auditOrg(c, models.AuditActionUpdate, models.AuditEntityCampaign, &campaignID, nil, nil)
 	}
 
 	c.JSON(http.StatusOK, resp)
@@ -107,10 +102,8 @@ func (h *Handler) DeleteCampaign(c *gin.Context) {
 	}
 
 	// Audit log
-	if userID, err := uuid.Parse(userIDStr); err == nil {
-		if campaignID, err := uuid.Parse(id); err == nil {
-			audit.LogDelete(h.AuditService, c.Request.Context(), userID, models.AuditEntityCampaign, campaignID, c.ClientIP(), c.Request.UserAgent())
-		}
+	if campaignID, err := uuid.Parse(id); err == nil {
+		h.auditOrg(c, models.AuditActionDelete, models.AuditEntityCampaign, &campaignID, nil, nil)
 	}
 
 	c.Status(http.StatusNoContent)
@@ -132,6 +125,10 @@ func (h *Handler) StartCampaign(c *gin.Context) {
 		return
 	}
 
+	if campaignID, err := uuid.Parse(id); err == nil {
+		h.auditOrg(c, models.AuditActionStart, models.AuditEntityCampaign, &campaignID, nil, nil)
+	}
+
 	c.JSON(http.StatusOK, gin.H{"status": "started"})
 }
 
@@ -149,6 +146,10 @@ func (h *Handler) StopCampaign(c *gin.Context) {
 	if xerr := h.CampaignService.StopCampaign(c.Request.Context(), *orgID, id); xerr != nil {
 		errx.JSON(c, xerr)
 		return
+	}
+
+	if campaignID, err := uuid.Parse(id); err == nil {
+		h.auditOrg(c, models.AuditActionStop, models.AuditEntityCampaign, &campaignID, nil, nil)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"status": "stopped"})

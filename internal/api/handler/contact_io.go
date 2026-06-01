@@ -6,7 +6,6 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/api/middleware"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
@@ -69,13 +68,11 @@ func (h *Handler) ExportContacts(c *gin.Context) {
 	}
 
 	// Audit
-	if userID, perr := uuid.Parse(userIDStr); perr == nil {
-		h.AuditService.LogAction(c.Request.Context(), userID, models.AuditActionExport, models.AuditEntityContact, nil, c.ClientIP(), c.Request.UserAgent(), nil, map[string]string{
-			"count":  fmt.Sprintf("%d", count),
-			"format": string(req.Format),
-			"scope":  string(req.Scope),
-		})
-	}
+	h.auditOrg(c, models.AuditActionExport, models.AuditEntityContact, nil, nil, map[string]string{
+		"count":  fmt.Sprintf("%d", count),
+		"format": string(req.Format),
+		"scope":  string(req.Scope),
+	})
 }
 
 // bufferedResponse is a minimal io.Writer that captures bytes for the
@@ -147,15 +144,13 @@ func (h *Handler) ImportCommitContacts(c *gin.Context) {
 		return
 	}
 
-	if userID, perr := uuid.Parse(userIDStr); perr == nil {
-		h.AuditService.LogAction(c.Request.Context(), userID, models.AuditActionImport, models.AuditEntityContact, nil, c.ClientIP(), c.Request.UserAgent(), nil, map[string]string{
-			"total":    fmt.Sprintf("%d", result.Total),
-			"imported": fmt.Sprintf("%d", result.Imported),
-			"updated":  fmt.Sprintf("%d", result.Updated),
-			"skipped":  fmt.Sprintf("%d", result.Skipped),
-			"failed":   fmt.Sprintf("%d", result.Failed),
-		})
-	}
+	h.auditOrg(c, models.AuditActionImport, models.AuditEntityContact, nil, nil, map[string]string{
+		"total":    fmt.Sprintf("%d", result.Total),
+		"imported": fmt.Sprintf("%d", result.Imported),
+		"updated":  fmt.Sprintf("%d", result.Updated),
+		"skipped":  fmt.Sprintf("%d", result.Skipped),
+		"failed":   fmt.Sprintf("%d", result.Failed),
+	})
 
 	c.JSON(http.StatusOK, result)
 }

@@ -44,6 +44,8 @@ func (h *Handler) CreateContactNote(c *gin.Context) {
 		return
 	}
 
+	h.auditOrg(c, models.AuditActionCreate, models.AuditEntityCRMNote, &note.ID, nil, map[string]string{"contact_id": contactID.String()})
+
 	c.JSON(http.StatusCreated, note)
 }
 
@@ -104,6 +106,8 @@ func (h *Handler) UpdateContactNote(c *gin.Context) {
 		return
 	}
 
+	h.auditOrg(c, models.AuditActionUpdate, models.AuditEntityCRMNote, &noteID, nil, nil)
+
 	c.JSON(http.StatusOK, note)
 }
 
@@ -124,6 +128,8 @@ func (h *Handler) DeleteContactNote(c *gin.Context) {
 		errx.Handle(c, xerr)
 		return
 	}
+
+	h.auditOrg(c, models.AuditActionDelete, models.AuditEntityCRMNote, &noteID, nil, nil)
 
 	c.Status(http.StatusNoContent)
 }
@@ -187,6 +193,8 @@ func (h *Handler) CreatePipeline(c *gin.Context) {
 		errx.Handle(c, xerr)
 		return
 	}
+
+	h.auditOrg(c, models.AuditActionCreate, models.AuditEntityCRMPipeline, &pipeline.ID, nil, map[string]string{"name": pipeline.Name})
 
 	c.JSON(http.StatusCreated, pipeline)
 }
@@ -252,6 +260,8 @@ func (h *Handler) UpdatePipeline(c *gin.Context) {
 		return
 	}
 
+	h.auditOrg(c, models.AuditActionUpdate, models.AuditEntityCRMPipeline, &pipelineID, nil, nil)
+
 	c.JSON(http.StatusOK, pipeline)
 }
 
@@ -272,6 +282,8 @@ func (h *Handler) DeletePipeline(c *gin.Context) {
 		errx.Handle(c, xerr)
 		return
 	}
+
+	h.auditOrg(c, models.AuditActionDelete, models.AuditEntityCRMPipeline, &pipelineID, nil, nil)
 
 	c.Status(http.StatusNoContent)
 }
@@ -299,6 +311,8 @@ func (h *Handler) CreateStage(c *gin.Context) {
 		return
 	}
 
+	h.auditOrg(c, models.AuditActionCreate, models.AuditEntityCRMStage, &stage.ID, nil, map[string]string{"pipeline_id": pipelineID.String(), "name": stage.Name})
+
 	c.JSON(http.StatusCreated, stage)
 }
 
@@ -321,6 +335,8 @@ func (h *Handler) UpdateStage(c *gin.Context) {
 		return
 	}
 
+	h.auditOrg(c, models.AuditActionUpdate, models.AuditEntityCRMStage, &stageID, nil, nil)
+
 	c.JSON(http.StatusOK, stage)
 }
 
@@ -336,6 +352,8 @@ func (h *Handler) DeleteStage(c *gin.Context) {
 		errx.Handle(c, xerr)
 		return
 	}
+
+	h.auditOrg(c, models.AuditActionDelete, models.AuditEntityCRMStage, &stageID, nil, nil)
 
 	c.Status(http.StatusNoContent)
 }
@@ -362,6 +380,8 @@ func (h *Handler) CreateDeal(c *gin.Context) {
 		errx.Handle(c, xerr)
 		return
 	}
+
+	h.auditOrg(c, models.AuditActionCreate, models.AuditEntityCRMDeal, &deal.ID, nil, map[string]string{"name": deal.Name, "pipeline_id": deal.PipelineID.String()})
 
 	c.JSON(http.StatusCreated, deal)
 }
@@ -456,6 +476,13 @@ func (h *Handler) UpdateDeal(c *gin.Context) {
 		return
 	}
 
+	var dealMeta map[string]string
+	if data.StageID != nil {
+		// Moving the deal between stages.
+		dealMeta = map[string]string{"stage": deal.StageID.String()}
+	}
+	h.auditOrg(c, models.AuditActionUpdate, models.AuditEntityCRMDeal, &dealID, nil, dealMeta)
+
 	c.JSON(http.StatusOK, deal)
 }
 
@@ -476,6 +503,8 @@ func (h *Handler) DeleteDeal(c *gin.Context) {
 		errx.Handle(c, xerr)
 		return
 	}
+
+	h.auditOrg(c, models.AuditActionDelete, models.AuditEntityCRMDeal, &dealID, nil, nil)
 
 	c.Status(http.StatusNoContent)
 }
@@ -523,6 +552,8 @@ func (h *Handler) CreateCRMTask(c *gin.Context) {
 		errx.Handle(c, xerr)
 		return
 	}
+
+	h.auditOrg(c, models.AuditActionCreate, models.AuditEntityCRMTask, &task.ID, nil, map[string]string{"title": task.Title})
 
 	c.JSON(http.StatusCreated, task)
 }
@@ -622,6 +653,12 @@ func (h *Handler) UpdateCRMTask(c *gin.Context) {
 		return
 	}
 
+	var taskMeta map[string]string
+	if data.Status != nil && *data.Status == string(models.CRMTaskStatusCompleted) {
+		taskMeta = map[string]string{"completed": "true"}
+	}
+	h.auditOrg(c, models.AuditActionUpdate, models.AuditEntityCRMTask, &taskID, nil, taskMeta)
+
 	c.JSON(http.StatusOK, task)
 }
 
@@ -642,6 +679,8 @@ func (h *Handler) DeleteCRMTask(c *gin.Context) {
 		errx.Handle(c, xerr)
 		return
 	}
+
+	h.auditOrg(c, models.AuditActionDelete, models.AuditEntityCRMTask, &taskID, nil, nil)
 
 	c.Status(http.StatusNoContent)
 }

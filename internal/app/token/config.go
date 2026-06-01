@@ -8,7 +8,8 @@ const (
 	AccessTokenLifeTime  = 12 * time.Hour
 	RefreshTokenLifeTime = 180 * 24 * time.Hour
 
-	AuthProviderEmail  = "email"
-	AuthProviderApple  = "apple"
-	AuthProviderGoogle = "google"
+	AuthProviderEmail    = "email"
+	AuthProviderApple    = "apple"
+	AuthProviderGoogle   = "google"
+	AuthProviderWebAuthn = "webauthn"
 )

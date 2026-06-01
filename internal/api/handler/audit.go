@@ -2,7 +2,6 @@ package handler
 
 import (
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -10,47 +9,123 @@ import (
 	"github.com/warmbly/warmbly/internal/api/middleware"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/utils/validate"
 )
 
-// GetAuditLogs gets audit logs for the current user
+// audit records an action performed in the current request's organization. It
+// pulls the actor, org, client IP and user-agent from the gin context, so
+// handlers only describe what happened. It is a no-op when there is no org
+// context (e.g. pre-auth flows); those paths log explicitly with the org they
+// create or resolve.
+//
+// IMPORTANT: never pass secret values (API key material, webhook secrets,
+// passwords) in changes or metadata — record only that a field changed.
+func (h *Handler) auditOrg(c *gin.Context, action models.AuditAction, entityType models.AuditEntityType, entityID *uuid.UUID, changes, metadata map[string]string) {
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		return
+	}
+	actorID, err := middleware.GetUserUUID(c)
+	if err != nil {
+		return
+	}
+	h.AuditService.LogAction(c.Request.Context(), *orgID, actorID, action, entityType, entityID, c.ClientIP(), c.Request.UserAgent(), changes, metadata)
+}
+
+// GetAuditLogs returns the organization-wide activity trail for the caller's
+// current organization ("who did what, when, from where"). Gated to
+// owners/admins via PermViewAnalytics. The organization is always taken from
+// the session, never from a client parameter, so one org can never read
+// another's trail.
+//
 // GET /audit-logs
 func (h *Handler) GetAuditLogs(c *gin.Context) {
-	userIDStr := middleware.GetUserID(c)
-	userID, err := uuid.Parse(userIDStr)
-	if err != nil {
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
 		errx.Handle(c, errx.ErrAuth)
 		return
 	}
 
+	limit, xerr := validate.Limit(c.Query("limit"))
+	if xerr != nil {
+		errx.Handle(c, xerr)
+		return
+	}
+
+	cursor, xerr := validate.Uuid(c.Query("cursor"))
+	if xerr != nil {
+		errx.Handle(c, xerr)
+		return
+	}
+
 	params := &models.AuditLogSearch{
-		Limit:  50,
-		Cursor: c.Query("cursor"),
+		OrgID: orgID,
+		Limit: int(limit),
+	}
+	if cursor != nil {
+		params.Cursor = *cursor
 	}
 
-	// Parse optional filters
-	if limitStr := c.Query("limit"); limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 100 {
-			params.Limit = l
+	if v := c.Query("actor_id"); v != "" {
+		id, err := uuid.Parse(v)
+		if err != nil {
+			errx.Handle(c, errx.ErrUuid)
+			return
 		}
+		params.ActorID = &id
 	}
 
-	if dateStr := c.Query("date"); dateStr != "" {
-		if date, err := time.Parse("2006-01-02", dateStr); err == nil {
-			params.Since = &date
+	if v := c.Query("entity_id"); v != "" {
+		id, err := uuid.Parse(v)
+		if err != nil {
+			errx.Handle(c, errx.ErrUuid)
+			return
 		}
+		params.EntityID = &id
 	}
 
-	if entityType := c.Query("entity_type"); entityType != "" {
-		et := models.AuditEntityType(entityType)
+	if v := c.Query("entity_type"); v != "" {
+		et := models.AuditEntityType(v)
 		params.EntityType = &et
 	}
 
-	if action := c.Query("action"); action != "" {
-		a := models.AuditAction(action)
+	if v := c.Query("action"); v != "" {
+		a := models.AuditAction(v)
 		params.Action = &a
 	}
 
-	result, xerr := h.AuditService.GetUserLogs(c.Request.Context(), userID, params)
+	// Single-day filter (the dashboard sends ?date=YYYY-MM-DD).
+	if v := c.Query("date"); v != "" {
+		day, err := time.Parse("2006-01-02", v)
+		if err != nil {
+			errx.Handle(c, errx.New(errx.BadRequest, "date must be in YYYY-MM-DD format"))
+			return
+		}
+		since := day
+		until := day.Add(24 * time.Hour)
+		params.Since = &since
+		params.Until = &until
+	}
+
+	// Optional explicit range; overrides the single-day bounds when present.
+	if v := c.Query("start_date"); v != "" {
+		t, err := parseAuditDate(v)
+		if err != nil {
+			errx.Handle(c, errx.New(errx.BadRequest, "start_date must be RFC3339 or YYYY-MM-DD"))
+			return
+		}
+		params.Since = &t
+	}
+	if v := c.Query("end_date"); v != "" {
+		t, err := parseAuditDate(v)
+		if err != nil {
+			errx.Handle(c, errx.New(errx.BadRequest, "end_date must be RFC3339 or YYYY-MM-DD"))
+			return
+		}
+		params.Until = &t
+	}
+
+	result, xerr := h.AuditService.Search(c.Request.Context(), params)
 	if xerr != nil {
 		errx.Handle(c, xerr)
 		return
@@ -59,66 +134,11 @@ func (h *Handler) GetAuditLogs(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// GetAdminAuditLogs gets audit logs for any user (admin only)
-// GET /admin/audit-logs
-func (h *Handler) GetAdminAuditLogs(c *gin.Context) {
-	// Note: This endpoint should be protected by admin role middleware
-
-	params := &models.AuditLogSearch{
-		Limit:  50,
-		Cursor: c.Query("cursor"),
+func parseAuditDate(v string) (time.Time, error) {
+	if t, err := time.Parse(time.RFC3339, v); err == nil {
+		return t, nil
 	}
-
-	// Parse user_id filter (required for admin)
-	userIDStr := c.Query("user_id")
-	if userIDStr == "" {
-		errx.Handle(c, errx.New(errx.BadRequest, "user_id parameter is required"))
-		return
-	}
-
-	userID, err := uuid.Parse(userIDStr)
-	if err != nil {
-		errx.Handle(c, errx.New(errx.BadRequest, "Invalid user_id"))
-		return
-	}
-	params.UserID = &userID
-
-	// Parse optional filters
-	if limitStr := c.Query("limit"); limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 100 {
-			params.Limit = l
-		}
-	}
-
-	if dateStr := c.Query("date"); dateStr != "" {
-		if date, err := time.Parse("2006-01-02", dateStr); err == nil {
-			params.Since = &date
-		}
-	}
-
-	if entityType := c.Query("entity_type"); entityType != "" {
-		et := models.AuditEntityType(entityType)
-		params.EntityType = &et
-	}
-
-	if entityIDStr := c.Query("entity_id"); entityIDStr != "" {
-		if entityID, err := uuid.Parse(entityIDStr); err == nil {
-			params.EntityID = &entityID
-		}
-	}
-
-	if action := c.Query("action"); action != "" {
-		a := models.AuditAction(action)
-		params.Action = &a
-	}
-
-	result, xerr := h.AuditService.GetUserLogs(c.Request.Context(), userID, params)
-	if xerr != nil {
-		errx.Handle(c, xerr)
-		return
-	}
-
-	c.JSON(http.StatusOK, result)
+	return time.Parse("2006-01-02", v)
 }
 
 // GetUserRateLimits gets rate limits for a user (admin only)

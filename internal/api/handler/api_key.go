@@ -39,6 +39,9 @@ func (h *Handler) CreateAPIKey(c *gin.Context) {
 		return
 	}
 
+	keyID := keyWithSecret.ID
+	h.auditOrg(c, models.AuditActionCreate, models.AuditEntityAPIKey, &keyID, nil, map[string]string{"name": keyWithSecret.Name})
+
 	c.JSON(http.StatusCreated, keyWithSecret)
 }
 
@@ -127,6 +130,8 @@ func (h *Handler) UpdateAPIKey(c *gin.Context) {
 		return
 	}
 
+	h.auditOrg(c, models.AuditActionUpdate, models.AuditEntityAPIKey, &keyID, nil, nil)
+
 	c.JSON(http.StatusOK, key)
 }
 
@@ -156,6 +161,8 @@ func (h *Handler) RevokeAPIKey(c *gin.Context) {
 		errx.JSON(c, xerr)
 		return
 	}
+
+	h.auditOrg(c, models.AuditActionRevoke, models.AuditEntityAPIKey, &keyID, nil, nil)
 
 	c.JSON(http.StatusOK, gin.H{"status": "revoked"})
 }

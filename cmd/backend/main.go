@@ -39,6 +39,7 @@ import (
 	idempotencyapp "github.com/warmbly/warmbly/internal/app/idempotency"
 	"github.com/warmbly/warmbly/internal/app/integration"
 	"github.com/warmbly/warmbly/internal/app/organization"
+	"github.com/warmbly/warmbly/internal/app/passkey"
 	"github.com/warmbly/warmbly/internal/app/ratelimit"
 	"github.com/warmbly/warmbly/internal/app/releases"
 	"github.com/warmbly/warmbly/internal/app/sequence"
@@ -103,6 +104,7 @@ func main() {
 	var socketService socket.SocketService
 	var uniboxService unibox.UniboxService
 	var cipherService cipher.CipherService
+	var passkeyService passkey.Service
 	var encryptedKeys encryptedkeys.Store
 	var storageBackendRepo repository.StorageBackendRepository
 	var cloudCredentialRepo repository.CloudCredentialRepository
@@ -151,6 +153,9 @@ func main() {
 
 	// Danger zone (delayed deletions)
 	var dangerZoneService dangerzone.Service
+
+	// Organization-wide audit trail
+	var auditService audit.AuditService
 
 	// Pub/Sub for realtime streaming
 	var streamingPublisher *pubsub.StreamingPublisher
@@ -424,6 +429,7 @@ func main() {
 		userRepoForHandler = userRepostory
 		authRepostory := repository.NewAuthRepostory(primaryDB)
 		tokenRepostory := repository.NewTokenRepostory(primaryDB)
+		webauthnRepository := repository.NewWebAuthnRepository(primaryDB)
 		emailRepostory := repository.NewEmailRepostory(primaryDB)
 		campaignRepostory := repository.NewCampaignRepostory(primaryDB)
 		sequenceRepostory := repository.NewSequenceRepostory(primaryDB)
@@ -472,7 +478,8 @@ func main() {
 		webhookServiceForHandler = webhookService
 
 		integrationRepository := repository.NewIntegrationRepository(primaryDB.Pool)
-		integrationServiceForHandler = integration.NewService(integrationRepository)
+		// integrationServiceForHandler is constructed after cipherService below —
+		// OAuth/secret sealing depends on the envelope-encryption service.
 		contactRepoForHandler = contactRepostory
 
 		// Drain the webhook delivery queue in-process. Multiple replicas are
@@ -509,6 +516,11 @@ func main() {
 
 		tokenService = token.NewService(primaryDB, tokenRepostory, cache, geoloc, authCfg.AuthSecret)
 		userService = user.NewService(userRepostory, cache)
+
+		// Organization-wide audit trail (who did what, when, from where).
+		auditRepository := repository.NewAuditRepository(primaryDB.Pool)
+		auditService = audit.NewService(auditRepository, streamingPublisher)
+
 		authService = auth.NewService(
 			authRepostory,
 			cache,
@@ -524,7 +536,28 @@ func main() {
 			userRepostory,
 			userService,
 		)
+		var passkeyErr error
+		passkeyService, passkeyErr = passkey.New(passkey.Deps{
+			Repo:          webauthnRepository,
+			UserRepo:      userRepostory,
+			TokenService:  tokenService,
+			Cache:         cache,
+			RPID:          authCfg.WebAuthnRPID,
+			RPDisplayName: authCfg.WebAuthnRPDisplayName,
+			RPOrigins:     authCfg.WebAuthnRPOrigins,
+		})
+		if passkeyErr != nil {
+			sentry.CaptureException(passkeyErr)
+			log.Fatal(passkeyErr)
+		}
 		cipherService = cipher.NewService(kms, cache, encryptedKeys)
+
+		// Third-party integrations: OAuth connect flows + encrypted token
+		// storage (sealed with the connecting user's DEK) + event-driven actions.
+		integrationServiceForHandler = integration.NewService(integrationRepository, cipherService, integration.NewOAuthManager())
+		// Fan platform events (replies, bounces, warmup health, booked meetings)
+		// out to integration actions alongside customer webhooks.
+		webhookService.WireDispatchSink(integrationServiceForHandler.DispatchAny)
 
 		// Reflect the active infrastructure backends into storage_backends so
 		// the admin UI can display what's running. Read-only entries — they
@@ -702,6 +735,9 @@ func main() {
 			tasksClient,
 			warmupService,
 		)
+		// Fan reply + bounce events from the advanced-outreach brain out to
+		// customer webhooks AND third-party integration actions (Slack / CRM).
+		advancedService.WireDispatcher(webhookService)
 		emailSender := tasks.NewEmailSender(emailRepostory, eventsPublisher)
 		tasksService = tasks.NewService(
 			tasksClient,
@@ -763,6 +799,13 @@ func main() {
 		dangerZoneScheduler := jobs.NewDangerZoneScheduler(dangerZoneJob, 1*time.Hour)
 		go dangerZoneScheduler.Start(ctx)
 
+		// Prune audit entries past the retention window (90 days). Bounding the
+		// trail's age also bounds how long PII is retained. auditRepository is
+		// constructed earlier (before authService).
+		auditRetentionJob := jobs.NewAuditRetentionJob(auditRepository, 90*24*time.Hour)
+		auditRetentionScheduler := jobs.NewAuditRetentionScheduler(auditRetentionJob, 6*time.Hour)
+		go auditRetentionScheduler.Start(ctx)
+
 		addr = apiCfg.Hostname
 		ginMode = apiCfg.GinMode
 		websocketURI = apiCfg.WebsocketURI
@@ -772,6 +815,7 @@ func main() {
 	h := &handler.Handler{
 		AuthService:      authService,
 		TokenService:     tokenService,
+		PasskeyService:   passkeyService,
 		UserService:      userService,
 		EmailService:     emailService,
 		CampaignService:  campaignService,
@@ -854,11 +898,10 @@ func main() {
 		// Danger zone
 		DangerZoneService: dangerZoneService,
 
-		// Audit logs aren't persisted yet; install a no-op so the
-		// many h.AuditService.LogAction sites don't panic on a nil
-		// interface. Swap for audit.NewService(repo) when wiring the
-		// real repository.
-		AuditService: audit.NewNoOpService(),
+		// Organization-wide audit trail, backed by Postgres. The no-op
+		// fallback (audit.NewNoOpService) remains for entrypoints without
+		// a database.
+		AuditService: auditService,
 	}
 
 	m := &middleware.Handler{

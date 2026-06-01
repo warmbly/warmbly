@@ -26,6 +26,8 @@ interface SocketContextValue {
     // Connection state
     isConnected: boolean;
     reconnectAttempt: number;
+    error?: boolean;
+    message?: string;
 
     // Channel management
     joinChannel: (topic: string, params?: Record<string, unknown>) => void;

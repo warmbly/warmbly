@@ -14,6 +14,36 @@ func GetGroupID(c *gin.Context) string {
 	return c.Param("gid")
 }
 
+// entityType maps the group's name ("folders"/"tags"/"categories") to the
+// matching audit entity type.
+func (h *Handler) entityType() models.AuditEntityType {
+	switch h.name {
+	case "tags":
+		return models.AuditEntityTag
+	case "categories":
+		return models.AuditEntityCategory
+	default:
+		return models.AuditEntityFolder
+	}
+}
+
+// logAudit records a group mutation in the organization-wide audit trail. It
+// pulls actor/org/IP/user-agent from the gin context; no-op without org context.
+func (h *Handler) logAudit(c *gin.Context, action models.AuditAction, entityID *uuid.UUID, metadata map[string]string) {
+	if h.audit == nil {
+		return
+	}
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		return
+	}
+	actorID, err := middleware.GetUserUUID(c)
+	if err != nil {
+		return
+	}
+	h.audit.LogAction(c.Request.Context(), *orgID, actorID, action, h.entityType(), entityID, c.ClientIP(), c.Request.UserAgent(), nil, metadata)
+}
+
 func (h *Handler) Create(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	uid, err := uuid.Parse(userID)
@@ -34,6 +64,8 @@ func (h *Handler) Create(c *gin.Context) {
 		errx.Handle(c, xerr)
 		return
 	}
+
+	h.logAudit(c, models.AuditActionCreate, &group.ID, map[string]string{"title": group.Title})
 
 	c.JSON(http.StatusOK, group)
 }
@@ -65,6 +97,8 @@ func (h *Handler) Update(c *gin.Context) {
 		return
 	}
 
+	h.logAudit(c, models.AuditActionUpdate, &gid, map[string]string{"title": group.Title})
+
 	c.JSON(http.StatusOK, group)
 }
 
@@ -95,6 +129,8 @@ func (h *Handler) Move(c *gin.Context) {
 		return
 	}
 
+	h.logAudit(c, models.AuditActionUpdate, &gid, map[string]string{"moved": "true"})
+
 	c.JSON(http.StatusOK, orders)
 }
 
@@ -116,6 +152,8 @@ func (h *Handler) Delete(c *gin.Context) {
 		errx.Handle(c, xerr)
 		return
 	}
+
+	h.logAudit(c, models.AuditActionDelete, &gid, nil)
 
 	c.Status(http.StatusNoContent)
 }

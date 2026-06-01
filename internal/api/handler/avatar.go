@@ -93,7 +93,7 @@ func (h *Handler) UploadUserAvatar(c *gin.Context) {
 		return
 	}
 
-	h.AuditService.LogAction(c.Request.Context(), userID, models.AuditActionUpdate, models.AuditEntityUser, &userID, c.ClientIP(), c.Request.UserAgent(), nil, map[string]string{"field": "avatar_url"})
+	h.auditOrg(c, models.AuditActionUpdate, models.AuditEntityUser, &userID, nil, map[string]string{"field": "avatar_url"})
 
 	c.JSON(http.StatusOK, gin.H{"avatar_url": url})
 }
@@ -112,7 +112,7 @@ func (h *Handler) DeleteUserAvatar(c *gin.Context) {
 		return
 	}
 
-	h.AuditService.LogAction(c.Request.Context(), userID, models.AuditActionUpdate, models.AuditEntityUser, &userID, c.ClientIP(), c.Request.UserAgent(), nil, map[string]string{"field": "avatar_url", "value": "cleared"})
+	h.auditOrg(c, models.AuditActionUpdate, models.AuditEntityUser, &userID, nil, map[string]string{"field": "avatar_url", "value": "cleared"})
 
 	c.Status(http.StatusNoContent)
 }
@@ -156,7 +156,7 @@ func (h *Handler) UploadOrganizationAvatar(c *gin.Context) {
 		return
 	}
 
-	h.AuditService.LogAction(c.Request.Context(), userID, models.AuditActionUpdate, models.AuditEntityUser, orgID, c.ClientIP(), c.Request.UserAgent(), nil, map[string]string{"field": "org_avatar_url"})
+	h.auditOrg(c, models.AuditActionUpdate, models.AuditEntityOrganization, orgID, nil, map[string]string{"field": "avatar_url"})
 
 	c.JSON(http.StatusOK, gin.H{"avatar_url": url})
 }

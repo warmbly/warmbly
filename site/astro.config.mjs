@@ -14,5 +14,10 @@ export default defineConfig({
   ],
   vite: {
     plugins: [tailwindcss()],
+    server: {
+      // Allow Tailscale MagicDNS names when `make site PUBLIC_HOST=…` exposes
+      // the dev server with --host. IPs + localhost are always allowed.
+      allowedHosts: ['.ts.net'],
+    },
   },
 });
