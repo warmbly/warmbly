@@ -1,7 +1,7 @@
 import { Loading } from "@/components/loader";
 import { useError } from "@/hooks/ErrorProvider";
-import type { Tag} from "@/hooks/UserProvider";
-import { User, useUser } from "@/hooks/UserProvider";
+import type { Tag } from "@/hooks/UserProvider";
+import { useUser } from "@/hooks/UserProvider";
 import { APIError, Call } from "@/lib/api";
 import {
   DndContext,

@@ -472,7 +472,8 @@ func main() {
 		webhookServiceForHandler = webhookService
 
 		integrationRepository := repository.NewIntegrationRepository(primaryDB.Pool)
-		integrationServiceForHandler = integration.NewService(integrationRepository)
+		// integrationServiceForHandler is constructed after cipherService below —
+		// OAuth/secret sealing depends on the envelope-encryption service.
 		contactRepoForHandler = contactRepostory
 
 		// Drain the webhook delivery queue in-process. Multiple replicas are
@@ -525,6 +526,13 @@ func main() {
 			userService,
 		)
 		cipherService = cipher.NewService(kms, cache, encryptedKeys)
+
+		// Third-party integrations: OAuth connect flows + encrypted token
+		// storage (sealed with the connecting user's DEK) + event-driven actions.
+		integrationServiceForHandler = integration.NewService(integrationRepository, cipherService, integration.NewOAuthManager())
+		// Fan platform events (replies, bounces, warmup health, booked meetings)
+		// out to integration actions alongside customer webhooks.
+		webhookService.WireDispatchSink(integrationServiceForHandler.DispatchAny)
 
 		// Reflect the active infrastructure backends into storage_backends so
 		// the admin UI can display what's running. Read-only entries — they
@@ -702,6 +710,9 @@ func main() {
 			tasksClient,
 			warmupService,
 		)
+		// Fan reply + bounce events from the advanced-outreach brain out to
+		// customer webhooks AND third-party integration actions (Slack / CRM).
+		advancedService.WireDispatcher(webhookService)
 		emailSender := tasks.NewEmailSender(emailRepostory, eventsPublisher)
 		tasksService = tasks.NewService(
 			tasksClient,

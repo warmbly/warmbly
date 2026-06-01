@@ -48,6 +48,11 @@ type Service interface {
 	ProcessIncomingReply(ctx context.Context, emailAccountID uuid.UUID, msg *models.EmailMessageStoreData) *errx.Error
 	GetABWinnerAnalysis(ctx context.Context, organizationID, campaignID uuid.UUID) (*models.ABWinnerAnalysis, *errx.Error)
 
+	// WireDispatcher attaches the event dispatcher that fans classified
+	// replies + deliverability events out to customer webhooks and third-party
+	// integration actions (Slack ping, CRM upsert).
+	WireDispatcher(d EventDispatcher)
+
 	// DLQ auto-retry
 	ProcessRetryableDeadLetters(ctx context.Context) (int, *errx.Error)
 }
@@ -62,6 +67,7 @@ type service struct {
 	crmRepo              repository.CRMRepository
 	tasksClient          *gtasks.Client
 	warmupService        warmupapp.Service
+	dispatcher           EventDispatcher
 }
 
 func NewService(
@@ -558,6 +564,34 @@ func (s *service) ProcessIncomingReply(ctx context.Context, emailAccountID uuid.
 		},
 	})
 
+	// Fan the classified reply out to customer webhooks + integration actions
+	// (Slack ping, CRM upsert). The intent/confidence fields let an integration
+	// automation filter for e.g. only "positive" replies. This is the trigger
+	// behind "notify me when a prospect replies".
+	payload := map[string]any{
+		"contact_email": sender,
+		"intent":        string(intent),
+		"confidence":    confidence,
+		"subject":       msg.Subject,
+		"snippet":       msg.Snippet,
+		"action_taken":  actionTaken,
+		"trigger":       "campaign_reply",
+	}
+	if campaignID != nil {
+		payload["campaign_id"] = campaignID.String()
+	}
+	if contactID != nil {
+		payload["contact_id"] = contactID.String()
+	}
+	s.emit(ctx, *account.OrganizationID, models.WebhookEventCampaignReplyReceived, payload)
+	if intent == models.ReplyIntentNegative {
+		// Negative/unsubscribe-leaning replies also fire the unsubscribe event
+		// only when we actually suppressed; otherwise the reply event is enough.
+		if strings.Contains(actionTaken, "suppressed_recipient") {
+			s.emit(ctx, *account.OrganizationID, models.WebhookEventCampaignUnsubscribed, payload)
+		}
+	}
+
 	return nil
 }
 
@@ -662,6 +696,31 @@ func (s *service) IngestDeliverabilityEvent(ctx context.Context, organizationID 
 		if tErr == nil && task != nil {
 			_, _ = s.warmupService.ApplySpamReport(ctx, uuid.Nil, task.EmailAccountID, req.IdempotencyKey, string(eventType))
 		}
+	}
+
+	// Fan bounce / complaint / unsubscribe out to customer webhooks +
+	// integration actions so a Slack channel or CRM can react in real time.
+	payload := map[string]any{
+		"contact_email": req.RecipientEmail,
+		"recipient":     req.RecipientEmail,
+		"event_type":    string(eventType),
+		"provider":      provider,
+		"reason":        req.Reason,
+	}
+	if req.CampaignID != nil {
+		payload["campaign_id"] = req.CampaignID.String()
+	}
+	if req.ContactID != nil {
+		payload["contact_id"] = req.ContactID.String()
+	}
+	switch eventType {
+	case models.DeliverabilityEventBounce:
+		s.emit(ctx, organizationID, models.WebhookEventCampaignEmailBounced, payload)
+		s.emit(ctx, organizationID, models.WebhookEventDeliverabilityBounce, payload)
+	case models.DeliverabilityEventComplaint:
+		s.emit(ctx, organizationID, models.WebhookEventDeliverabilityComplaint, payload)
+	case models.DeliverabilityEventUnsubscribe:
+		s.emit(ctx, organizationID, models.WebhookEventCampaignUnsubscribed, payload)
 	}
 
 	return nil

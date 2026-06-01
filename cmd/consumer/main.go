@@ -13,7 +13,9 @@ import (
 	"github.com/warmbly/warmbly/internal/app/advanced"
 	"github.com/warmbly/warmbly/internal/app/cipher"
 	jobs "github.com/warmbly/warmbly/internal/app/consumer"
+	"github.com/warmbly/warmbly/internal/app/integration"
 	warmupapp "github.com/warmbly/warmbly/internal/app/warmup"
+	"github.com/warmbly/warmbly/internal/app/webhook"
 	workerapp "github.com/warmbly/warmbly/internal/app/worker"
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/events"
@@ -185,6 +187,19 @@ func main() {
 	crmRepo := repository.NewCRMRepository(primaryDB.Pool)
 	advancedRepo := repository.NewAdvancedOutreachRepository(primaryDB.Pool)
 
+	// Reply → integration fan-out. The consumer is where inbound replies are
+	// detected, so this is where "prospect replied" turns into a Slack ping /
+	// CRM upsert. webhookService.Dispatch enqueues customer webhook deliveries
+	// (drained by the backend's DeliveryWorker) AND, via the wired sink, runs
+	// integration actions in-process (cipher + Postgres are available here; the
+	// consumer is control-plane, not a worker). Suppression already lives in the
+	// advanced repo, so no separate suppression repo is wired here.
+	webhookRepoC := repository.NewWebhookRepository(primaryDB.Pool)
+	webhookService := webhook.NewService(webhookRepoC)
+	integrationRepoC := repository.NewIntegrationRepository(primaryDB.Pool)
+	integrationServiceC := integration.NewService(integrationRepoC, cipherService, integration.NewOAuthManager())
+	webhookService.WireDispatchSink(integrationServiceC.DispatchAny)
+
 	advancedService := advanced.NewService(
 		advancedRepo,
 		campaignRepo,
@@ -193,9 +208,10 @@ func main() {
 		contactRepo,
 		campaignProgressRepo,
 		crmRepo,
-		nil,
+		nil, // tasksClient: the consumer does not schedule Cloud Tasks
 		warmupService,
 	)
+	advancedService.WireDispatcher(webhookService)
 
 	// Events publisher — wraps the existing Kafka producer in an EventBus,
 	// wraps Avrov2 in a Codec. Once EVENTBUS_PROVIDER=nats is exercised in

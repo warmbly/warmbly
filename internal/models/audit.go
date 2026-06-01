@@ -49,6 +49,7 @@ const (
 	AuditEntityAWSCredentials AuditEntityType = "aws_credentials"
 	AuditEntityWorkerProfile  AuditEntityType = "worker_profile"
 	AuditEntityRelease        AuditEntityType = "release"
+	AuditEntityIntegration    AuditEntityType = "integration"
 )
 
 type AuditLog struct {

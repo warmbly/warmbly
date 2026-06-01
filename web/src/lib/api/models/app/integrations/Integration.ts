@@ -1,5 +1,5 @@
-// Mirror of the backend's models/integration.go shapes. Only the fields
-// the dashboard renders are typed; opaque blobs like display_fields stay
+// Mirror of the backend's models/integration.go shapes. Only the fields the
+// dashboard renders are typed; opaque blobs like display_fields / config stay
 // generic so the UI can dig in without round-trips to the type system.
 
 export type IntegrationProvider =
@@ -16,7 +16,17 @@ export type IntegrationProvider =
     | "cal_com"
     | "google_sheets";
 
-export type IntegrationStatus = "pending" | "connected" | "degraded" | "disconnected";
+export type IntegrationAuthMethod = "oauth" | "api_key" | "webhook";
+
+export type IntegrationStatus =
+    | "pending"
+    | "authorizing"
+    | "connected"
+    | "degraded"
+    | "reauth_required"
+    | "disconnected";
+
+export type IntegrationHealth = "unknown" | "healthy" | "degraded" | "down";
 
 export type IntegrationCategory =
     | "crm"
@@ -31,10 +41,15 @@ export interface IntegrationCatalogEntry {
     tagline: string;
     category: IntegrationCategory;
     docs_url?: string;
-    auth_method: "oauth" | "api_key" | "webhook";
+    auth_method: IntegrationAuthMethod;
     badge_color?: string;
     beta: boolean;
     webhook_hint?: string;
+    highlights?: string[];
+    scopes?: string[];
+    events?: string[];
+    /** Whether the server has OAuth client credentials wired for this provider. */
+    configured: boolean;
 }
 
 export interface IntegrationConnection {
@@ -43,7 +58,16 @@ export interface IntegrationConnection {
     provider: IntegrationProvider;
     label: string;
     status: IntegrationStatus;
+    auth_method: IntegrationAuthMethod;
     display_fields: Record<string, unknown>;
+    connected_by_user_id?: string | null;
+    external_account_id?: string;
+    external_account_name?: string;
+    granted_scopes?: string[];
+    token_expires_at?: string | null;
+    health: IntegrationHealth;
+    health_detail?: string | null;
+    health_checked_at?: string | null;
     last_synced_at?: string | null;
     last_error?: string | null;
     last_error_at?: string | null;
@@ -52,6 +76,49 @@ export interface IntegrationConnection {
 
     /** Returned once at create time for inbound-webhook providers. */
     inbound_webhook_url?: string;
+}
+
+export type IntegrationAction =
+    | "slack.notify"
+    | "discord.notify"
+    | "hubspot.upsert_contact"
+    | "pipedrive.upsert_person"
+    | "google_sheets.append_row"
+    | "webhook.ping";
+
+export interface IntegrationEventSubscription {
+    id: string;
+    connection_id: string;
+    organization_id: string;
+    event_type: string;
+    action: IntegrationAction;
+    config: Record<string, unknown>;
+    enabled: boolean;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface IntegrationSyncRun {
+    id: string;
+    connection_id: string;
+    organization_id: string;
+    kind: string;
+    status: "running" | "success" | "error";
+    detail: string;
+    records_processed: number;
+    started_at: string;
+    finished_at?: string | null;
+}
+
+export interface IntegrationOAuthStartResponse {
+    url: string;
+    state: string;
+}
+
+export interface IntegrationConnectionDetail {
+    connection: IntegrationConnection;
+    events: IntegrationEventSubscription[];
+    runs: IntegrationSyncRun[];
 }
 
 export interface MeetingBooking {
@@ -66,4 +133,59 @@ export interface MeetingBooking {
     contact_id?: string;
     campaign_id?: string;
     created_at: string;
+}
+
+// --- presentation helpers (shared by cards + drawers) ----------------------
+
+export const CATEGORY_LABELS: Record<IntegrationCategory, string> = {
+    crm: "CRM",
+    automation: "Automation",
+    notifications: "Notifications",
+    meetings: "Meetings",
+    data: "Data",
+};
+
+export const CATEGORY_ORDER: IntegrationCategory[] = [
+    "crm",
+    "notifications",
+    "automation",
+    "meetings",
+    "data",
+];
+
+// Reply-intent classifier buckets, used to filter reply automations
+// ("only notify me on positive replies"). Mirrors models.ReplyIntentType.
+export const REPLY_INTENT_OPTIONS: { value: string; label: string }[] = [
+    { value: "positive", label: "Positive" },
+    { value: "question", label: "Question" },
+    { value: "neutral", label: "Neutral" },
+    { value: "negative", label: "Negative" },
+    { value: "out_of_office", label: "Out of office" },
+];
+
+// Human labels for the Warmbly event vocabulary (subset surfaced as triggers).
+export const EVENT_LABELS: Record<string, string> = {
+    "campaign.reply_received": "Prospect replies",
+    "campaign.email_bounced": "Email bounces",
+    "campaign.unsubscribed": "Contact unsubscribes",
+    "warmup.health_changed": "Warmup health changes",
+    "deliverability.complaint": "Spam complaint",
+};
+
+// Which action a provider performs for an event subscription.
+export function defaultActionForProvider(provider: IntegrationProvider): IntegrationAction {
+    switch (provider) {
+        case "slack":
+            return "slack.notify";
+        case "discord":
+            return "discord.notify";
+        case "hubspot":
+            return "hubspot.upsert_contact";
+        case "pipedrive":
+            return "pipedrive.upsert_person";
+        case "google_sheets":
+            return "google_sheets.append_row";
+        default:
+            return "webhook.ping";
+    }
 }
