@@ -29,6 +29,9 @@ type Session struct {
 	BrowserName string `json:"browser_name"`
 	OSName      string `json:"os_name"`
 
+	// How this session authenticated: email, google, apple, webauthn.
+	AuthProvider string `json:"auth_provider"`
+
 	CreatedAt time.Time  `json:"created_at"`
 	RevokedAt *time.Time `json:"revoked_at"`
 	ExpiresAt *time.Time `json:"expires_at"`

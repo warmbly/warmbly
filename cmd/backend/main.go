@@ -39,6 +39,7 @@ import (
 	idempotencyapp "github.com/warmbly/warmbly/internal/app/idempotency"
 	"github.com/warmbly/warmbly/internal/app/integration"
 	"github.com/warmbly/warmbly/internal/app/organization"
+	"github.com/warmbly/warmbly/internal/app/passkey"
 	"github.com/warmbly/warmbly/internal/app/ratelimit"
 	"github.com/warmbly/warmbly/internal/app/releases"
 	"github.com/warmbly/warmbly/internal/app/sequence"
@@ -103,6 +104,7 @@ func main() {
 	var socketService socket.SocketService
 	var uniboxService unibox.UniboxService
 	var cipherService cipher.CipherService
+	var passkeyService passkey.Service
 	var encryptedKeys encryptedkeys.Store
 	var storageBackendRepo repository.StorageBackendRepository
 	var cloudCredentialRepo repository.CloudCredentialRepository
@@ -427,6 +429,7 @@ func main() {
 		userRepoForHandler = userRepostory
 		authRepostory := repository.NewAuthRepostory(primaryDB)
 		tokenRepostory := repository.NewTokenRepostory(primaryDB)
+		webauthnRepository := repository.NewWebAuthnRepository(primaryDB)
 		emailRepostory := repository.NewEmailRepostory(primaryDB)
 		campaignRepostory := repository.NewCampaignRepostory(primaryDB)
 		sequenceRepostory := repository.NewSequenceRepostory(primaryDB)
@@ -533,6 +536,20 @@ func main() {
 			userRepostory,
 			userService,
 		)
+		var passkeyErr error
+		passkeyService, passkeyErr = passkey.New(passkey.Deps{
+			Repo:          webauthnRepository,
+			UserRepo:      userRepostory,
+			TokenService:  tokenService,
+			Cache:         cache,
+			RPID:          authCfg.WebAuthnRPID,
+			RPDisplayName: authCfg.WebAuthnRPDisplayName,
+			RPOrigins:     authCfg.WebAuthnRPOrigins,
+		})
+		if passkeyErr != nil {
+			sentry.CaptureException(passkeyErr)
+			log.Fatal(passkeyErr)
+		}
 		cipherService = cipher.NewService(kms, cache, encryptedKeys)
 
 		// Third-party integrations: OAuth connect flows + encrypted token
@@ -792,6 +809,7 @@ func main() {
 	h := &handler.Handler{
 		AuthService:      authService,
 		TokenService:     tokenService,
+		PasskeyService:   passkeyService,
 		UserService:      userService,
 		EmailService:     emailService,
 		CampaignService:  campaignService,

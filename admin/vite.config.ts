@@ -32,5 +32,9 @@ export default defineConfig({
         // dev server (5173) without a port collision when both are up.
         port: 5174,
         strictPort: false,
+        // Permit Tailscale MagicDNS names (and extras via VITE_ALLOWED_HOSTS)
+        // when exposed with --host. IPs + localhost are always allowed, so
+        // this is inert for normal local dev.
+        allowedHosts: [".ts.net", ...(process.env.VITE_ALLOWED_HOSTS?.split(",").filter(Boolean) ?? [])],
     },
 });

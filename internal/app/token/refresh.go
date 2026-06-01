@@ -25,6 +25,11 @@ func (s *tokenService) RefreshToken(ctx context.Context, refreshToken string) (*
 		return nil, err
 	}
 
+	// Don't let a revoked session refresh itself back to life.
+	if sess.RevokedAt != nil {
+		return nil, errx.ErrToken
+	}
+
 	if sess.RefreshNonce != t.Nonce {
 		return nil, errx.ErrToken
 	}

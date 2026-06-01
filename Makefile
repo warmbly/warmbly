@@ -255,6 +255,44 @@ app-logs:
 INFRA_HOST ?= localhost
 SELF_HOST  ?= localhost
 
+# ─── expose the dev servers off-box (Tailscale / LAN) ───────────────────
+#
+# By default every dev server binds localhost and the frontends call the
+# backend at localhost, so only this machine can use them. To reach them from
+# another computer (e.g. over Tailscale), set PUBLIC_HOST to the address OTHER
+# machines use to reach THIS one — your Tailscale IPv4 (`tailscale ip -4`, a
+# 100.x.y.z) or MagicDNS name (`<host>.<tailnet>.ts.net`) — and pass it to
+# every target you start:
+#
+#   make backend PUBLIC_HOST=100.83.12.7
+#   make web     PUBLIC_HOST=100.83.12.7
+#   make admin   PUBLIC_HOST=100.83.12.7
+#   make site    PUBLIC_HOST=100.83.12.7
+#
+# When set: the Vite/Astro servers bind 0.0.0.0 (reachable off-box), the
+# dashboard + admin point their API/app URLs at PUBLIC_HOST, and the backend
+# widens CORS to those origins. Unset → unchanged localhost behavior.
+#
+# The Go backend already listens on 0.0.0.0:8080, so it's reachable on the
+# Tailscale IP without PUBLIC_HOST — but you still need PUBLIC_HOST so the
+# browser app calls the backend at that address instead of its own localhost.
+# (The Vite configs allow *.ts.net hosts, so MagicDNS names work too; raw IPs
+# are always allowed.)
+PUBLIC_HOST ?=
+
+comma := ,
+
+# localhost when PUBLIC_HOST is unset, else PUBLIC_HOST — used to build the
+# browser-facing URLs handed to the frontends and the backend.
+WEB_HOST := $(if $(PUBLIC_HOST),$(PUBLIC_HOST),localhost)
+
+# `--host 0.0.0.0` only when exposing; empty (default localhost bind) otherwise.
+VITE_HOST_FLAG := $(if $(PUBLIC_HOST),--host 0.0.0.0,)
+
+# Backend CORS allowlist: web + admin origins at PUBLIC_HOST plus localhost.
+# Empty when not exposing, so the backend keeps its APP_URL-derived default.
+CORS_ORIGINS := $(if $(PUBLIC_HOST),http://$(PUBLIC_HOST):5173$(comma)http://$(PUBLIC_HOST):5174$(comma)http://localhost:5173$(comma)http://localhost:5174,)
+
 # Shared by the control-plane services (backend, consumer). Flattened to
 # one line by make so it can prefix a command as inline env.
 GO_DEV_ENV := \
@@ -294,8 +332,9 @@ backend:
 	$(GO_DEV_ENV) \
 	API_HOST=0.0.0.0:8080 \
 	GIN_MODE=debug \
-	APP_URL=http://localhost:5173 \
-	WEBSOCKET_URL=ws://localhost:4000/socket/websocket \
+	APP_URL=http://$(WEB_HOST):5173 \
+	CORS_ALLOW_ORIGINS=$(CORS_ORIGINS) \
+	WEBSOCKET_URL=ws://$(WEB_HOST):4000/socket/websocket \
 	KAFKA_TRACKING_TOPIC=tracking-events \
 	AUTH_SECRET=local-dev-auth-secret-minimum-32-characters-long \
 	GOOGLE_CLIENT_ID=local-google-client-id \
@@ -380,7 +419,7 @@ realtime:
 	cd realtime && \
 	export MIX_ENV=dev \
 	       PORT=4000 \
-	       PHX_HOST=localhost \
+	       PHX_HOST=$(WEB_HOST) \
 	       DATABASE_HOST=localhost \
 	       DATABASE_PORT=15432 \
 	       DATABASE_NAME=warmbly_dev \
@@ -400,21 +439,29 @@ realtime:
 #
 # `make web` points the dashboard at the natively-run backend on :8080,
 # so you don't need the dockerized `web` service from `make app`.
+#
+# To reach these from another computer (Tailscale / LAN), add PUBLIC_HOST to
+# every target (see the PUBLIC_HOST section above), e.g.
+#   make backend PUBLIC_HOST=$$(tailscale ip -4 | head -1)
+#   make web     PUBLIC_HOST=$$(tailscale ip -4 | head -1)
 
 web:
 	cd web && \
-	VITE_APP_URL=http://localhost:5173 \
-	VITE_API_URL=http://localhost:8080 \
+	VITE_APP_URL=http://$(WEB_HOST):5173 \
+	VITE_API_URL=http://$(WEB_HOST):8080 \
 	VITE_TRACKING_DOMAIN=t.warmbly.com \
 	VITE_TURNSTILE_KEY=1x00000000000000000000AA \
 	VITE_TURNSTILE_BYPASS_TOKEN=warmbly-local-turnstile-bypass \
-	pnpm dev
+	pnpm dev $(VITE_HOST_FLAG)
 
 admin:
-	cd admin && pnpm dev
+	cd admin && \
+	VITE_API_URL=http://$(WEB_HOST):8080 \
+	VITE_DASHBOARD_URL=http://$(WEB_HOST):5173 \
+	pnpm dev $(VITE_HOST_FLAG)
 
 site:
-	cd site && pnpm dev
+	cd site && pnpm dev $(VITE_HOST_FLAG)
 
 # ─── admin bootstrap (local/test only) ──────────────────────────────────
 #

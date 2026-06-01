@@ -41,6 +41,7 @@ import React, {
     useRef,
     useState,
 } from "react";
+import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 
@@ -229,7 +230,16 @@ export function PopoverMenuContent({
     // ones settle up 4px.
     const enterY = side === "bottom" ? -4 : 4;
 
-    return (
+    if (typeof document === "undefined") return null;
+
+    // Render through a portal to <body>. The menu is `position: fixed` with
+    // viewport coordinates, but a transformed ancestor (e.g. the sidebar
+    // <aside>, which uses translate-x for its drawer slide — even
+    // `md:translate-x-0` on desktop) becomes the containing block for fixed
+    // descendants, so the menu would otherwise anchor to the sidebar instead
+    // of the viewport and render trapped inside it. The portal lifts it out of
+    // any transformed/overflow-clipped ancestor.
+    return createPortal(
         <AnimatePresence>
             {open && (
                 <motion.div
@@ -269,7 +279,8 @@ export function PopoverMenuContent({
                     {children}
                 </motion.div>
             )}
-        </AnimatePresence>
+        </AnimatePresence>,
+        document.body,
     );
 }
 
