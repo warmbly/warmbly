@@ -32,6 +32,7 @@ import {
     Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Logo } from "@/components/Logo";
 import { AdminBadge } from "./AdminBadge";
 
 interface NavItem {
@@ -108,16 +109,15 @@ export function Sidebar() {
                 "border-r border-sidebar-border bg-sidebar admin-sidebar-pattern",
             )}
         >
-            <div className="flex items-center justify-between gap-2 px-4 pt-4 pb-3 border-b border-sidebar-border">
+            {/* h-14 matches the Topbar so the two headers sit on one line. */}
+            <div className="flex h-14 shrink-0 items-center justify-between gap-2 px-4 border-b border-sidebar-border">
                 <div className="flex items-center gap-2 min-w-0">
-                    <div className="size-8 rounded-md bg-zinc-900 text-white flex items-center justify-center font-bold text-sm shrink-0">
-                        W
-                    </div>
-                    <div className="min-w-0">
+                    <Logo className="size-6 shrink-0 text-foreground" />
+                    <div className="min-w-0 leading-none">
                         <div className="text-sm font-semibold text-sidebar-foreground leading-none truncate">
                             Warmbly
                         </div>
-                        <div className="text-[11px] text-muted-foreground mt-0.5">
+                        <div className="text-[11px] text-muted-foreground mt-1">
                             Control plane
                         </div>
                     </div>
