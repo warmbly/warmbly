@@ -39,6 +39,14 @@ var (
 	ErrExternalCode  = New(BadRequest, "Invalid or expired code, please try again.")
 	ErrExternalEmail = New(BadRequest, "Invalid or unverified email address.")
 
+	// Passkeys (WebAuthn)
+	ErrPasskey         = New(BadRequest, "We couldn’t verify that passkey. Please try again.")
+	ErrPasskeySession  = New(BadRequest, "Your passkey request expired. Please start again.")
+	ErrPasskeyName     = New(BadRequest, "Passkey name must be between 1 and 60 characters.")
+	ErrPasskeyNotFound = New(NotFound, "Passkey not found.")
+	ErrPasskeyExists   = New(Conflict, "This passkey is already registered.")
+	ErrPasskeyNone     = New(BadRequest, "No passkey was found for this account.")
+
 	// Roles
 	ErrRoleName = New(BadRequest, "Role name length must be between 3 and 100 characters.")
 

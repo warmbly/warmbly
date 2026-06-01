@@ -38,6 +38,15 @@ SENTRY_DSN=""
 AUTH_SECRET="example123"
 TURNSTILE_SECRET=""
 
+# Passkeys (WebAuthn). Optional — derived from APP_URL / CORS_ALLOW_ORIGINS
+# when unset (and localhost for local dev). Override for self-hosting:
+#   WEBAUTHN_RP_ID is the bare host (no scheme/port) passkeys bind to.
+#   WEBAUTHN_RP_ORIGINS is a CSV of full origins allowed to run ceremonies.
+# Changing the RP ID invalidates every enrolled passkey — keep it stable.
+# WEBAUTHN_RP_ID="app.warmbly.com"
+# WEBAUTHN_RP_ORIGINS="https://app.warmbly.com"
+# WEBAUTHN_RP_DISPLAY_NAME="Warmbly"
+
 # Amazon AWS
 AWS_ACCESS_KEY_ID=AKIAxxxxxxxxxxxx
 AWS_SECRET_ACCESS_KEY=xxxxxxxxxxxxxxxxxxxxxxxxx

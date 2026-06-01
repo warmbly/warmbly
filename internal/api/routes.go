@@ -122,6 +122,13 @@ func Run(
 		auth.POST("/refresh", h.RefreshToken)
 		auth.POST("/reset-password", h.ResetPasswordStart)
 		auth.POST("/reset-password/confirm", h.ResetPasswordConfirm)
+
+		// Passkey (WebAuthn) sign-in is discoverable/usernameless: a passkey
+		// is already strong auth, so it's a single step with no email OTP.
+		// Public on purpose — there's no account context until the assertion
+		// resolves, and the challenge + signature are the protection.
+		auth.POST("/passkey/login/begin", h.PasskeyLoginBegin)
+		auth.POST("/passkey/login/finish", h.PasskeyLoginFinish)
 	}
 
 	protectedAuth := auth.Group("")
@@ -133,6 +140,13 @@ func Run(
 		protectedAuth.PATCH("/me/onboarding", h.CompleteOnboarding)
 		protectedAuth.POST("/me/avatar", h.UploadUserAvatar)
 		protectedAuth.DELETE("/me/avatar", h.DeleteUserAvatar)
+
+		// Passkey enrollment + management require an authenticated session.
+		protectedAuth.POST("/passkey/register/begin", h.PasskeyRegisterBegin)
+		protectedAuth.POST("/passkey/register/finish", h.PasskeyRegisterFinish)
+		protectedAuth.GET("/passkey/credentials", h.PasskeyListCredentials)
+		protectedAuth.PATCH("/passkey/credentials/:id", h.PasskeyRenameCredential)
+		protectedAuth.DELETE("/passkey/credentials/:id", h.PasskeyDeleteCredential)
 	}
 
 	// JWT-only protected group: routes that are tied to a human session and

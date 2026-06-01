@@ -21,6 +21,19 @@ import { saveTokens } from "@/lib/auth";
 import { WEBSITE_URL } from "@/lib/information";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
+import * as Sentry from "@sentry/react";
+import type Token from "@/lib/api/models/auth/Token";
+import {
+    beginPasskeyLogin,
+    passkeyLogin,
+    passkeySupported,
+    passkeyAutofillSupported,
+    finishPasskeyLogin,
+    cancelPasskeyCeremony,
+    PasskeyCancelled,
+    SUGGEST_PASSKEY_FLAG,
+    type PasskeyLoginChallenge,
+} from "@/lib/passkey";
 
 /* ── Schemas ─────────────────────── */
 
@@ -173,8 +186,107 @@ export default function LoginPage() {
     /* Step nav */
     const goTo = (s: Step, dir: 1 | -1 = 1) => { setDirection(dir); setStep(s); };
 
+    /* ── Passkey sign-in (single step, no OTP) ─────────────────────── */
+    const [passkeyPending, setPasskeyPending] = useState(false);
+    // Shown when an explicit passkey attempt found nothing on this device.
+    const [noPasskeyHere, setNoPasskeyHere] = useState(false);
+    const explicitPasskeyChallengeRef = useRef<PasskeyLoginChallenge | null>(null);
+    const explicitPasskeyChallengePendingRef = useRef(false);
+
+    const completeSession = useCallback((token: Token) => {
+        saveTokens(token as unknown as Record<string, unknown>);
+        navigate("/app/emails");
+    }, [navigate]);
+
+    // Conditional UI: surface passkeys inside the email field's native autofill
+    // — no modal, no layout shift. Stays pending until the user picks a passkey
+    // (or it's aborted). Cancellation is silent by design. Extracted so it can
+    // be re-armed after an explicit-button ceremony settles.
+    const runConditionalPasskey = useCallback(async () => {
+        if (!passkeySupported() || !(await passkeyAutofillSupported())) return;
+        try {
+            const token = await passkeyLogin({ conditional: true });
+            toast.success("Welcome back!");
+            completeSession(token);
+        } catch (e) {
+            // Cancel / no-passkey is expected here; report only real failures.
+            if (!(e instanceof PasskeyCancelled)) Sentry.captureException(e);
+        }
+    }, [completeSession]);
+
+    const prepareExplicitPasskey = useCallback(() => {
+        if (!passkeySupported() || explicitPasskeyChallengeRef.current || explicitPasskeyChallengePendingRef.current) return;
+
+        explicitPasskeyChallengePendingRef.current = true;
+        beginPasskeyLogin()
+            .then((challenge) => {
+                explicitPasskeyChallengeRef.current = challenge;
+            })
+            .catch((e) => {
+                Sentry.captureException(e);
+            })
+            .finally(() => {
+                explicitPasskeyChallengePendingRef.current = false;
+            });
+    }, []);
+
+    useEffect(() => {
+        prepareExplicitPasskey();
+        void runConditionalPasskey();
+        return () => cancelPasskeyCeremony();
+    }, [prepareExplicitPasskey, runConditionalPasskey]);
+
+    // The "no passkey here" note is informational, not an error — auto-dismiss
+    // it so it never lingers.
+    useEffect(() => {
+        if (!noPasskeyHere) return;
+        const id = setTimeout(() => setNoPasskeyHere(false), 8000);
+        return () => clearTimeout(id);
+    }, [noPasskeyHere]);
+
+    const handlePasskey = useCallback(async () => {
+        setNoPasskeyHere(false);
+
+        const challenge = explicitPasskeyChallengeRef.current;
+        explicitPasskeyChallengeRef.current = null;
+        if (!challenge) {
+            toast.error("Passkey sign-in is getting ready. Please try again in a moment.");
+            prepareExplicitPasskey();
+            return;
+        }
+
+        // Release the background conditional request so the modal ceremony owns
+        // the authenticator.
+        cancelPasskeyCeremony();
+        let signedIn = false;
+        setPasskeyPending(true);
+        try {
+            const token = await finishPasskeyLogin(challenge);
+            signedIn = true;
+            toast.success("Welcome back!");
+            completeSession(token);
+        } catch (e) {
+            if (e instanceof PasskeyCancelled) {
+                // WebAuthn can't distinguish "no passkey on this device" from
+                // "user dismissed the sheet" — both are NotAllowedError, by
+                // design (no credential enumeration). Since the user explicitly
+                // asked for a passkey, surface a calm inline note pointing at
+                // the still-visible password / Google / Apple options.
+                if (e.reason === "not-allowed") setNoPasskeyHere(true);
+            } else {
+                toast.error((e as Error)?.message || "Couldn't sign in with a passkey.");
+            }
+        } finally {
+            setPasskeyPending(false);
+            prepareExplicitPasskey();
+            // Re-arm autofill (unless we're navigating away) so a synced/roaming
+            // passkey keeps being offered on the email field.
+            if (!signedIn) void runConditionalPasskey();
+        }
+    }, [completeSession, prepareExplicitPasskey, runConditionalPasskey]);
+
     /* Captcha helper — invisible Turnstile with loading + timeout */
-    const withCaptcha = (fn: (token: string) => Promise<void>) => {
+    const withCaptcha = useCallback((fn: (token: string) => Promise<void>) => {
         if (turnstileBypassToken) {
             void fn(turnstileBypassToken);
             return;
@@ -208,7 +320,7 @@ export default function LoginPage() {
             // Invisible Turnstile requires explicit execution per action.
             turnstileRef.current?.execute();
         }
-    };
+    }, [turnstileBypassToken]);
 
     const onTurnstileVerify = (token: string, bound?: BoundTurnstileObject) => {
         if (bound) turnstileRef.current = bound;
@@ -285,6 +397,8 @@ export default function LoginPage() {
                     const res = await loginConfirmMutation.mutateAsync({ session, code, turnstile: token });
                     toast.success("Welcome back!");
                     saveTokens(res as unknown as Record<string, string>);
+                    // Nudge passwordless enrollment once the dashboard loads.
+                    try { sessionStorage.setItem(SUGGEST_PASSKEY_FLAG, "1"); } catch { /* storage unavailable */ }
                     navigate("/app/emails");
                 } else {
                     await registerConfirmMutation.mutateAsync({ session, code, turnstile: token });
@@ -310,7 +424,7 @@ export default function LoginPage() {
                 toast.error(buildError(e as AppError));
             }
         });
-    }, [mode, email, password, loginMutation, registerMutation]);
+    }, [mode, email, password, loginMutation, registerMutation, withCaptcha]);
 
     return (
         <div className="relative">
@@ -322,6 +436,10 @@ export default function LoginPage() {
                             onModeChange={handleModeChange}
                             defaultEmail={email}
                             onContinue={handleEmailContinue}
+                            onPasskey={handlePasskey}
+                            onPasskeyPrepare={prepareExplicitPasskey}
+                            passkeyPending={passkeyPending}
+                            noPasskey={noPasskeyHere}
                         />
                     </MotionWrap>
                 )}
@@ -349,7 +467,6 @@ export default function LoginPage() {
                     <MotionWrap key="verify" direction={direction}>
                         <VerifyStep
                             email={email}
-                            mode={mode}
                             pending={pending}
                             onBack={() => goTo(mode === "signin" ? "signin" : "signup", -1)}
                             onSubmit={handleVerify}
@@ -435,11 +552,19 @@ function EmailStep({
     onModeChange,
     defaultEmail,
     onContinue,
+    onPasskey,
+    onPasskeyPrepare,
+    passkeyPending,
+    noPasskey,
 }: {
     mode: "signin" | "signup";
     onModeChange: (m: "signin" | "signup") => void;
     defaultEmail: string;
     onContinue: (data: z.infer<typeof emailSchema>) => void;
+    onPasskey: () => void;
+    onPasskeyPrepare: () => void;
+    passkeyPending: boolean;
+    noPasskey: boolean;
 }) {
     const { register, handleSubmit, formState: { errors } } = useForm<z.infer<typeof emailSchema>>({
         resolver: zodResolver(emailSchema),
@@ -512,7 +637,7 @@ function EmailStep({
                         type="email"
                         placeholder="name@company.com"
                         className={INPUT}
-                        autoComplete="email"
+                        autoComplete="username webauthn"
                         autoFocus
                         {...register("email")}
                     />
@@ -522,14 +647,34 @@ function EmailStep({
                 <AuthButton loading={false}>Continue</AuthButton>
             </form>
 
-            {/* Divider */}
-            <div className="flex items-center gap-3">
-                <div className="flex-1 h-px bg-slate-200" />
-                <span className="text-xs text-slate-300 font-medium">or continue with</span>
-                <div className="flex-1 h-px bg-slate-200" />
-            </div>
+            {/* Alternative sign-in — one balanced row under a single divider */}
+            <div className="space-y-3">
+                <div className="flex items-center gap-3">
+                    <div className="flex-1 h-px bg-slate-200" />
+                    <span className="text-[10.5px] uppercase tracking-[0.14em] text-slate-400 font-medium">or continue with</span>
+                    <div className="flex-1 h-px bg-slate-200" />
+                </div>
 
-            <ExternalLogin />
+                <ExternalLogin
+                    passkey={mode === "signin" && passkeySupported() ? { onClick: onPasskey, onPrepare: onPasskeyPrepare, loading: passkeyPending } : undefined}
+                />
+
+                <AnimatePresence>
+                    {mode === "signin" && noPasskey && (
+                        <motion.div
+                            key="no-passkey"
+                            initial={{ opacity: 0, y: -4 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -4 }}
+                            transition={{ duration: 0.2 }}
+                            className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-[12.5px] leading-relaxed text-slate-600"
+                        >
+                            No passkey found on this device. Sign in with your password, or add one later in{" "}
+                            <span className="font-medium text-slate-700">Settings → Security</span>.
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+            </div>
         </div>
     );
 }
@@ -688,14 +833,12 @@ function SignUpStep({
 
 function VerifyStep({
     email,
-    mode,
     pending,
     onBack,
     onSubmit,
     onResend,
 }: {
     email: string;
-    mode: "signin" | "signup";
     pending: boolean;
     onBack: () => void;
     onSubmit: (code: string) => void;

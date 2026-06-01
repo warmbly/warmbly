@@ -1,6 +1,11 @@
 package config
 
-import "context"
+import (
+	"context"
+	"net/url"
+	"os"
+	"strings"
+)
 
 type AuthConfig struct {
 	GoogleClientID     string
@@ -15,6 +20,21 @@ type AuthConfig struct {
 	AuthSecret      string
 	TurnstileSecret string
 	TurnstileBypass string
+
+	// WebAuthn / passkey relying-party configuration.
+	//
+	// WebAuthnRPID is the relying-party ID a passkey is cryptographically
+	// bound to — the registrable domain the dashboard is served from
+	// (e.g. "app.warmbly.com"), with no scheme or port. WebAuthnRPOrigins
+	// are the full scheme-qualified origins allowed to run ceremonies
+	// (e.g. "https://app.warmbly.com"). Both are derived from APP_URL /
+	// CORS_ALLOW_ORIGINS so self-hosted and local-dev deployments work out
+	// of the box, and can be overridden explicitly with WEBAUTHN_RP_ID /
+	// WEBAUTHN_RP_ORIGINS. Changing the RP ID invalidates every enrolled
+	// passkey, so it must stay stable for a given deployment.
+	WebAuthnRPID          string
+	WebAuthnRPDisplayName string
+	WebAuthnRPOrigins     []string
 }
 
 func (c *Config) LoadAuthConfig(ctx context.Context) (*AuthConfig, error) {
@@ -64,6 +84,11 @@ func (c *Config) LoadAuthConfig(ctx context.Context) (*AuthConfig, error) {
 	}
 	turnstileBypass := c.GetSecretOptional(ctx, "TURNSTILE_BYPASS_TOKEN", "turnstile/bypass_token", "")
 
+	rpDisplayName := c.GetStringOptional(ctx, "WEBAUTHN_RP_DISPLAY_NAME", "webauthn/rp_display_name", "Warmbly")
+	rpIDRaw := c.GetStringOptional(ctx, "WEBAUTHN_RP_ID", "webauthn/rp_id", "")
+	rpOriginsRaw := c.GetStringOptional(ctx, "WEBAUTHN_RP_ORIGINS", "webauthn/rp_origins", "")
+	rpID, rpOrigins := resolveWebAuthnRP(rpIDRaw, rpOriginsRaw)
+
 	return &AuthConfig{
 		GoogleClientID:     googleClientID,
 		GoogleClientSecret: googleClientSecret,
@@ -77,5 +102,52 @@ func (c *Config) LoadAuthConfig(ctx context.Context) (*AuthConfig, error) {
 		AuthSecret:      authSecret,
 		TurnstileSecret: turnstileSecret,
 		TurnstileBypass: turnstileBypass,
+
+		WebAuthnRPID:          rpID,
+		WebAuthnRPDisplayName: rpDisplayName,
+		WebAuthnRPOrigins:     rpOrigins,
 	}, nil
+}
+
+// resolveWebAuthnRP derives the passkey relying-party ID and allowed origins.
+//
+// Origins come from (in order): an explicit WEBAUTHN_RP_ORIGINS list, then
+// CORS_ALLOW_ORIGINS, then APP_URL, then a localhost dev fallback. The RP ID
+// is an explicit override if given, otherwise the host of the first origin
+// (scheme and port stripped), otherwise "localhost". This keeps prod, self
+// hosted, and local-dev deployments correct without per-environment code.
+func resolveWebAuthnRP(explicitRPID, explicitOrigins string) (string, []string) {
+	originsRaw := explicitOrigins
+	if originsRaw == "" {
+		originsRaw = os.Getenv("CORS_ALLOW_ORIGINS")
+	}
+	if originsRaw == "" {
+		originsRaw = os.Getenv("APP_URL")
+	}
+
+	origins := splitCSV(originsRaw)
+	if len(origins) == 0 {
+		origins = []string{"http://localhost:5173"}
+	}
+
+	rpID := strings.TrimSpace(explicitRPID)
+	if rpID == "" {
+		rpID = hostFromOrigin(origins[0])
+	}
+	if rpID == "" {
+		rpID = "localhost"
+	}
+
+	return rpID, origins
+}
+
+// hostFromOrigin returns the bare hostname of an origin (no scheme, no port),
+// suitable for use as a WebAuthn RP ID. Returns "" if the origin can't be
+// parsed into a host (e.g. a wildcard "*").
+func hostFromOrigin(origin string) string {
+	u, err := url.Parse(strings.TrimSpace(origin))
+	if err != nil || u.Hostname() == "" {
+		return ""
+	}
+	return u.Hostname()
 }

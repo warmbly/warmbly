@@ -1,9 +1,12 @@
 import { comingSoon } from "@/lib/helper/comingSoon";
 import { RowLink, Section, SectionShell } from "../_components/SectionShell";
+import PasskeyManager from "./PasskeyManager";
 
 export default function SecuritySettingsPage() {
     return (
         <SectionShell title="Security" description="Sign-in protection for your account.">
+            <PasskeyManager />
+
             <Section eyebrow="Authentication" description="How you prove it's you when signing in.">
                 <RowLink
                     title="Two-factor authentication"

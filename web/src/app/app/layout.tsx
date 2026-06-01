@@ -12,6 +12,7 @@ import { OrgGate } from "@/hooks/OrgGate";
 import TagsModal from "@/components/app/modals/TagsModal";
 import FoldersModal from "@/components/app/modals/FoldersModal";
 import AddEmailModal from "@/components/app/modals/AddEmailModal";
+import PasskeyEnrollPrompt from "@/components/app/modals/PasskeyEnrollPrompt";
 
 export default function RootAppLayout() {
     const token = getToken();
@@ -41,6 +42,7 @@ export default function RootAppLayout() {
                 <TagsModal />
                 <FoldersModal />
                 <AddEmailModal />
+                <PasskeyEnrollPrompt />
             </ConfirmProvider>
         </DataSyncProvider>
     </UserProvider>

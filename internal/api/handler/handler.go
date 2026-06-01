@@ -19,6 +19,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/group"
 	"github.com/warmbly/warmbly/internal/app/integration"
 	"github.com/warmbly/warmbly/internal/app/organization"
+	"github.com/warmbly/warmbly/internal/app/passkey"
 	"github.com/warmbly/warmbly/internal/app/ratelimit"
 	"github.com/warmbly/warmbly/internal/app/releases"
 	"github.com/warmbly/warmbly/internal/app/sequence"
@@ -45,6 +46,7 @@ import (
 type Handler struct {
 	AuthService     auth.AuthService
 	TokenService    token.TokenService
+	PasskeyService  passkey.Service
 	UserService     user.UserService
 	EmailService    email.EmailService
 	CampaignService campaign.CampaignService
