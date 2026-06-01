@@ -56,9 +56,9 @@ export default function ExternalLogin({
                         layout
                         key="passkey"
                         type="button"
-                        onPointerEnter={passkey.onPrepare}
-                        onPointerDown={passkey.onPrepare}
-                        onFocus={passkey.onPrepare}
+                        onPointerEnter={() => passkey.onPrepare()}
+                        onPointerDown={() => passkey.onPrepare()}
+                        onFocus={() => passkey.onPrepare()}
                         disabled={passkey.loading}
                         aria-label="Sign in with a passkey"
                         initial={{ opacity: 0, scale: 0.85 }}

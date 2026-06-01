@@ -30,6 +30,12 @@ export const passkeyAutofillSupported = (): Promise<boolean> => browserSupportsW
 export const platformPasskeyAvailable = (): Promise<boolean> => platformAuthenticatorIsAvailable();
 export type PasskeyLoginChallenge = PasskeyLoginBegin;
 
+export function safariNeedsExplicitPasskeyGesture(): boolean {
+    if (typeof navigator === "undefined") return false;
+    const ua = navigator.userAgent;
+    return /Safari/i.test(ua) && !/Chrome|Chromium|CriOS|FxiOS|Edg/i.test(ua);
+}
+
 /**
  * Thrown when a ceremony doesn't complete. `reason` lets callers react:
  * - "aborted": we cancelled it (e.g. conditional autofill superseded) — always silent.
@@ -38,8 +44,8 @@ export type PasskeyLoginChallenge = PasskeyLoginBegin;
  *   button uses this to nudge enrollment; the autofill path stays silent.
  */
 export class PasskeyCancelled extends Error {
-    reason: "aborted" | "not-allowed";
-    constructor(reason: "aborted" | "not-allowed" = "aborted") {
+    reason: "aborted" | "not-allowed" | "timeout";
+    constructor(reason: "aborted" | "not-allowed" | "timeout" = "aborted") {
         super("Passkey request cancelled");
         this.name = "PasskeyCancelled";
         this.reason = reason;
@@ -85,14 +91,35 @@ export async function finishPasskeyLogin(
     challenge: PasskeyLoginChallenge,
     opts?: { conditional?: boolean },
 ): Promise<Token> {
+    const timeoutMs = opts?.conditional ? undefined : 12000;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+
     try {
-        const credential = await startAuthentication({
-            optionsJSON: challenge.options.publicKey,
+        const authentication = startAuthentication({
+            optionsJSON: {
+                ...challenge.options.publicKey,
+                timeout: timeoutMs ?? challenge.options.publicKey.timeout,
+            },
             useBrowserAutofill: opts?.conditional ?? false,
         });
+
+        const credential = timeoutMs
+            ? await Promise.race([
+                authentication,
+                new Promise<never>((_, reject) => {
+                    timeout = setTimeout(() => {
+                        cancelPasskeyCeremony();
+                        reject(new PasskeyCancelled("timeout"));
+                    }, timeoutMs);
+                }),
+            ])
+            : await authentication;
+
         return await passkeyLoginFinish({ session: challenge.session, credential });
     } catch (e) {
         throw mapError(e);
+    } finally {
+        if (timeout) clearTimeout(timeout);
     }
 }
 

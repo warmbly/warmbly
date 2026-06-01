@@ -29,6 +29,7 @@ import {
     passkeySupported,
     passkeyAutofillSupported,
     finishPasskeyLogin,
+    safariNeedsExplicitPasskeyGesture,
     cancelPasskeyCeremony,
     PasskeyCancelled,
     SUGGEST_PASSKEY_FLAG,
@@ -143,6 +144,7 @@ function useCountdown(seconds: number) {
    ═══════════════════════════════════════════ */
 
 type Step = "email" | "signin" | "signup" | "verify";
+type PasskeyStatus = "preparing" | "ready" | "waiting" | "timeout" | "not-found" | "error";
 
 export default function LoginPage() {
     const navigate = useNavigate();
@@ -190,6 +192,7 @@ export default function LoginPage() {
     const [passkeyPending, setPasskeyPending] = useState(false);
     // Shown when an explicit passkey attempt found nothing on this device.
     const [noPasskeyHere, setNoPasskeyHere] = useState(false);
+    const [passkeyStatus, setPasskeyStatus] = useState<PasskeyStatus>("preparing");
     const explicitPasskeyChallengeRef = useRef<PasskeyLoginChallenge | null>(null);
     const explicitPasskeyChallengePendingRef = useRef(false);
 
@@ -203,6 +206,7 @@ export default function LoginPage() {
     // (or it's aborted). Cancellation is silent by design. Extracted so it can
     // be re-armed after an explicit-button ceremony settles.
     const runConditionalPasskey = useCallback(async () => {
+        if (safariNeedsExplicitPasskeyGesture()) return;
         if (!passkeySupported() || !(await passkeyAutofillSupported())) return;
         try {
             const token = await passkeyLogin({ conditional: true });
@@ -214,15 +218,18 @@ export default function LoginPage() {
         }
     }, [completeSession]);
 
-    const prepareExplicitPasskey = useCallback(() => {
+    const prepareExplicitPasskey = useCallback((preserveStatus = false) => {
         if (!passkeySupported() || explicitPasskeyChallengeRef.current || explicitPasskeyChallengePendingRef.current) return;
 
+        if (!preserveStatus) setPasskeyStatus("preparing");
         explicitPasskeyChallengePendingRef.current = true;
         beginPasskeyLogin()
             .then((challenge) => {
                 explicitPasskeyChallengeRef.current = challenge;
+                if (!preserveStatus) setPasskeyStatus("ready");
             })
             .catch((e) => {
+                setPasskeyStatus("error");
                 Sentry.captureException(e);
             })
             .finally(() => {
@@ -250,8 +257,9 @@ export default function LoginPage() {
         const challenge = explicitPasskeyChallengeRef.current;
         explicitPasskeyChallengeRef.current = null;
         if (!challenge) {
+            setPasskeyStatus("preparing");
             toast.error("Passkey sign-in is getting ready. Please try again in a moment.");
-            prepareExplicitPasskey();
+            prepareExplicitPasskey(true);
             return;
         }
 
@@ -260,6 +268,7 @@ export default function LoginPage() {
         cancelPasskeyCeremony();
         let signedIn = false;
         setPasskeyPending(true);
+        setPasskeyStatus("waiting");
         try {
             const token = await finishPasskeyLogin(challenge);
             signedIn = true;
@@ -272,8 +281,15 @@ export default function LoginPage() {
                 // design (no credential enumeration). Since the user explicitly
                 // asked for a passkey, surface a calm inline note pointing at
                 // the still-visible password / Google / Apple options.
-                if (e.reason === "not-allowed") setNoPasskeyHere(true);
+                if (e.reason === "not-allowed") {
+                    setNoPasskeyHere(true);
+                    setPasskeyStatus("not-found");
+                } else if (e.reason === "timeout") {
+                    setPasskeyStatus("timeout");
+                    toast.error("Safari didn't show a passkey prompt. Try again, or use password sign-in.");
+                }
             } else {
+                setPasskeyStatus("error");
                 toast.error((e as Error)?.message || "Couldn't sign in with a passkey.");
             }
         } finally {
@@ -439,6 +455,7 @@ export default function LoginPage() {
                             onPasskey={handlePasskey}
                             onPasskeyPrepare={prepareExplicitPasskey}
                             passkeyPending={passkeyPending}
+                            passkeyStatus={passkeyStatus}
                             noPasskey={noPasskeyHere}
                         />
                     </MotionWrap>
@@ -555,6 +572,7 @@ function EmailStep({
     onPasskey,
     onPasskeyPrepare,
     passkeyPending,
+    passkeyStatus,
     noPasskey,
 }: {
     mode: "signin" | "signup";
@@ -564,6 +582,7 @@ function EmailStep({
     onPasskey: () => void;
     onPasskeyPrepare: () => void;
     passkeyPending: boolean;
+    passkeyStatus: PasskeyStatus;
     noPasskey: boolean;
 }) {
     const { register, handleSubmit, formState: { errors } } = useForm<z.infer<typeof emailSchema>>({
@@ -658,6 +677,25 @@ function EmailStep({
                 <ExternalLogin
                     passkey={mode === "signin" && passkeySupported() ? { onClick: onPasskey, onPrepare: onPasskeyPrepare, loading: passkeyPending } : undefined}
                 />
+
+                <AnimatePresence>
+                    {mode === "signin" && passkeySupported() && passkeyStatus !== "ready" && (
+                        <motion.p
+                            key={passkeyStatus}
+                            initial={{ opacity: 0, y: -4 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -4 }}
+                            transition={{ duration: 0.2 }}
+                            className="text-center text-[12.5px] text-slate-500"
+                        >
+                            {passkeyStatus === "preparing" && "Preparing passkey sign-in..."}
+                            {passkeyStatus === "waiting" && "Waiting for Safari to show the passkey prompt..."}
+                            {passkeyStatus === "timeout" && "No passkey prompt appeared. Try again or use your password."}
+                            {passkeyStatus === "not-found" && "No passkey was selected on this device."}
+                            {passkeyStatus === "error" && "Passkey sign-in couldn't start. Try again or use your password."}
+                        </motion.p>
+                    )}
+                </AnimatePresence>
 
                 <AnimatePresence>
                     {mode === "signin" && noPasskey && (
