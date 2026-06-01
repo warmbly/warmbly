@@ -1,9 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
   <!-- Admin favicon: the Warmbly mark in the admin red (red-600, the theme's
        admin-danger token) on the app's dark slate. The red marks this as the
-       restricted admin surface and sets the tab apart from the dashboard. -->
+       restricted admin surface and sets the tab apart from the dashboard.
+       The mark is OPTICALLY centered, not bounding-box centered: it is
+       left-heavy (a thin point reaches right while the mass sits left), so
+       the transform nudges it right (~+4.5px) to look centered in the square. -->
   <rect width="64" height="64" rx="14" fill="#0f172a"/>
-  <path transform="translate(3.74 8.09) scale(0.0634)"
+  <path transform="translate(8.2 8.09) scale(0.0634)"
         d="M222.805 644.772L186.274 108.881L704.5 451.158L484.5 451.158L245.5 196.158L444 463.5L222.805 644.772Z"
         fill="#dc2626"/>
 </svg>
