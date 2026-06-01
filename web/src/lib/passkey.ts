@@ -10,6 +10,10 @@ import {
     platformAuthenticatorIsAvailable,
     WebAuthnAbortService,
     WebAuthnError,
+    base64URLStringToBuffer,
+    bufferToBase64URLString,
+    type AuthenticationResponseJSON,
+    type PublicKeyCredentialRequestOptionsJSON,
 } from "@simplewebauthn/browser";
 
 import passkeyLoginBegin from "@/lib/api/client/auth/passkey/loginBegin";
@@ -53,6 +57,7 @@ export class PasskeyCancelled extends Error {
 }
 
 function mapError(e: unknown): Error {
+    if (e instanceof PasskeyCancelled) return e;
     if (e instanceof WebAuthnError) {
         switch (e.code) {
             // Control flow, not failures.
@@ -69,8 +74,76 @@ function mapError(e: unknown): Error {
                 return new Error("Your device couldn't complete the passkey request.");
         }
     }
+    if (e instanceof DOMException) {
+        switch (e.name) {
+            case "AbortError":
+                return new PasskeyCancelled("aborted");
+            case "NotAllowedError":
+                return new PasskeyCancelled("not-allowed");
+            default:
+                return new Error(e.message || "Your device couldn't complete the passkey request.");
+        }
+    }
     if (e instanceof Error) return e;
     return new Error("Something went wrong with the passkey request.");
+}
+
+function toPublicKeyCredentialRequestOptions(
+    options: PublicKeyCredentialRequestOptionsJSON,
+    timeoutMs?: number,
+): PublicKeyCredentialRequestOptions {
+    return {
+        ...options,
+        challenge: base64URLStringToBuffer(options.challenge),
+        timeout: timeoutMs ?? options.timeout,
+        allowCredentials: options.allowCredentials?.length
+            ? options.allowCredentials.map((credential) => ({
+                ...credential,
+                id: base64URLStringToBuffer(credential.id),
+                transports: credential.transports as AuthenticatorTransport[] | undefined,
+            }))
+            : undefined,
+    };
+}
+
+function toAuthenticatorAttachment(attachment: string | null): AuthenticatorAttachment | undefined {
+    return attachment === "platform" || attachment === "cross-platform" ? attachment : undefined;
+}
+
+async function startExplicitAuthentication(
+    optionsJSON: PublicKeyCredentialRequestOptionsJSON,
+    timeoutMs: number,
+): Promise<AuthenticationResponseJSON> {
+    if (!browserSupportsWebAuthn()) {
+        throw new Error("WebAuthn is not supported in this browser");
+    }
+
+    const credential = await navigator.credentials.get({
+        mediation: "required",
+        publicKey: toPublicKeyCredentialRequestOptions(optionsJSON, timeoutMs),
+        signal: WebAuthnAbortService.createNewAbortSignal(),
+    }) as PublicKeyCredential | null;
+
+    if (!credential) {
+        throw new Error("Authentication was not completed");
+    }
+
+    const response = credential.response as AuthenticatorAssertionResponse;
+    const userHandle = response.userHandle ? bufferToBase64URLString(response.userHandle) : undefined;
+
+    return {
+        id: credential.id,
+        rawId: bufferToBase64URLString(credential.rawId),
+        response: {
+            authenticatorData: bufferToBase64URLString(response.authenticatorData),
+            clientDataJSON: bufferToBase64URLString(response.clientDataJSON),
+            signature: bufferToBase64URLString(response.signature),
+            userHandle,
+        },
+        type: "public-key",
+        clientExtensionResults: credential.getClientExtensionResults(),
+        authenticatorAttachment: toAuthenticatorAttachment(credential.authenticatorAttachment),
+    };
 }
 
 /**
@@ -95,13 +168,12 @@ export async function finishPasskeyLogin(
     let timeout: ReturnType<typeof setTimeout> | undefined;
 
     try {
-        const authentication = startAuthentication({
-            optionsJSON: {
-                ...challenge.options.publicKey,
-                timeout: timeoutMs ?? challenge.options.publicKey.timeout,
-            },
-            useBrowserAutofill: opts?.conditional ?? false,
-        });
+        const authentication = opts?.conditional
+            ? startAuthentication({
+                optionsJSON: challenge.options.publicKey,
+                useBrowserAutofill: true,
+            })
+            : startExplicitAuthentication(challenge.options.publicKey, timeoutMs ?? 12000);
 
         const credential = timeoutMs
             ? await Promise.race([
