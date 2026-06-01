@@ -152,6 +152,9 @@ func main() {
 	// Danger zone (delayed deletions)
 	var dangerZoneService dangerzone.Service
 
+	// Organization-wide audit trail
+	var auditService audit.AuditService
+
 	// Pub/Sub for realtime streaming
 	var streamingPublisher *pubsub.StreamingPublisher
 
@@ -509,6 +512,11 @@ func main() {
 
 		tokenService = token.NewService(primaryDB, tokenRepostory, cache, geoloc, authCfg.AuthSecret)
 		userService = user.NewService(userRepostory, cache)
+
+		// Organization-wide audit trail (who did what, when, from where).
+		auditRepository := repository.NewAuditRepository(primaryDB.Pool)
+		auditService = audit.NewService(auditRepository, streamingPublisher)
+
 		authService = auth.NewService(
 			authRepostory,
 			cache,
@@ -757,6 +765,13 @@ func main() {
 		dangerZoneScheduler := jobs.NewDangerZoneScheduler(dangerZoneJob, 1*time.Hour)
 		go dangerZoneScheduler.Start(ctx)
 
+		// Prune audit entries past the retention window (90 days). Bounding the
+		// trail's age also bounds how long PII is retained. auditRepository is
+		// constructed earlier (before authService).
+		auditRetentionJob := jobs.NewAuditRetentionJob(auditRepository, 90*24*time.Hour)
+		auditRetentionScheduler := jobs.NewAuditRetentionScheduler(auditRetentionJob, 6*time.Hour)
+		go auditRetentionScheduler.Start(ctx)
+
 		addr = apiCfg.Hostname
 		ginMode = apiCfg.GinMode
 		websocketURI = apiCfg.WebsocketURI
@@ -848,11 +863,10 @@ func main() {
 		// Danger zone
 		DangerZoneService: dangerZoneService,
 
-		// Audit logs aren't persisted yet; install a no-op so the
-		// many h.AuditService.LogAction sites don't panic on a nil
-		// interface. Swap for audit.NewService(repo) when wiring the
-		// real repository.
-		AuditService: audit.NewNoOpService(),
+		// Organization-wide audit trail, backed by Postgres. The no-op
+		// fallback (audit.NewNoOpService) remains for entrypoints without
+		// a database.
+		AuditService: auditService,
 	}
 
 	m := &middleware.Handler{

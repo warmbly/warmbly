@@ -109,6 +109,12 @@ func (h *Handler) CreateWarmupRoutingRule(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create rule"})
 		return
 	}
+
+	ruleID := rule.ID
+	h.auditOrg(c, models.AuditActionCreate, models.AuditEntityWarmupRoutingRule, &ruleID, nil, map[string]string{
+		"name": rule.Name,
+	})
+
 	c.JSON(http.StatusCreated, rule)
 }
 
@@ -137,6 +143,11 @@ func (h *Handler) UpdateWarmupRoutingRule(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
+
+	h.auditOrg(c, models.AuditActionUpdate, models.AuditEntityWarmupRoutingRule, &ruleID, nil, map[string]string{
+		"name": rule.Name,
+	})
+
 	c.JSON(http.StatusOK, rule)
 }
 
@@ -155,6 +166,9 @@ func (h *Handler) DeleteWarmupRoutingRule(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
+
+	h.auditOrg(c, models.AuditActionDelete, models.AuditEntityWarmupRoutingRule, &ruleID, nil, nil)
+
 	c.Status(http.StatusNoContent)
 }
 

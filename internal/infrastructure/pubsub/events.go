@@ -54,6 +54,10 @@ const (
 
 	// Task progress events
 	EventTaskProgress EventType = "TASK_PROGRESS"
+
+	// Audit trail events (org-scoped). The web client invalidates the
+	// ['audit'] query on any event type containing "AUDIT".
+	EventAuditCreated EventType = "AUDIT_CREATED"
 )
 
 // BaseEvent contains common fields for all events
@@ -309,6 +313,51 @@ func (p *StreamingPublisher) PublishAccountEvent(ctx context.Context, event *Acc
 
 	if err := p.client.Publish(ctx, topicID, event, attrs); err != nil {
 		// Log error but don't fail
+	}
+}
+
+// AuditEvent signals that a new audit-trail entry was recorded. It is
+// org-scoped: org_id is set in both the body and the Pub/Sub attributes so the
+// realtime fanout delivers it to the org channel (owners/admins watching the
+// activity log), not just the acting user.
+type AuditEvent struct {
+	BaseEvent
+	OrgID      string `json:"org_id"`
+	Action     string `json:"action"`
+	EntityType string `json:"entity_type"`
+	EntityID   string `json:"entity_id,omitempty"`
+}
+
+// PublishAuditCreated emits an org-scoped audit.created signal. It carries no
+// sensitive detail (no IP, user-agent, changes or metadata) — only enough for
+// the dashboard to know it should refetch the audit list.
+func (p *StreamingPublisher) PublishAuditCreated(ctx context.Context, orgID, actorID uuid.UUID, action, entityType string, entityID *uuid.UUID) {
+	if p == nil || p.client == nil {
+		return
+	}
+
+	event := &AuditEvent{
+		BaseEvent: BaseEvent{
+			EventType: EventAuditCreated,
+			UserID:    actorID.String(),
+			Timestamp: time.Now(),
+		},
+		OrgID:      orgID.String(),
+		Action:     action,
+		EntityType: entityType,
+	}
+	if entityID != nil {
+		event.EntityID = entityID.String()
+	}
+
+	attrs := map[string]string{
+		"user_id":    actorID.String(),
+		"org_id":     orgID.String(),
+		"event_type": string(EventAuditCreated),
+	}
+
+	if err := p.client.Publish(ctx, TopicUserEvents, event, attrs); err != nil {
+		// Best-effort: realtime is a nicety, not a requirement.
 	}
 }
 

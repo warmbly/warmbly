@@ -239,9 +239,9 @@ func Run(
 
 		// Group endpoints map to the resources they organize: campaign
 		// folders, email-account tags, and contact categories.
-		grouph.New(protected, h.FolderService, "folders", m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns))
-		grouph.New(protected, h.TagService, "tags", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails))
-		grouph.New(protected, h.CategoryService, "categories", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts))
+		grouph.New(protected, h.FolderService, h.AuditService, "folders", m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns))
+		grouph.New(protected, h.TagService, h.AuditService, "tags", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails))
+		grouph.New(protected, h.CategoryService, h.AuditService, "categories", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts))
 
 		unibox := protected.Group("/unibox")
 		unibox.Use(m.RateLimitMiddleware(models.RateLimitRead))

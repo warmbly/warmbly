@@ -1,13 +1,15 @@
-// Audit log — workspace activity trail.
+// Audit log — organization-wide activity trail ("who did what").
 //
 // Visible to owners + admins (gated in the sidebar + on the page).
-// Reads from /audit-logs (the user-facing endpoint, scoped to the
-// caller's own actions — a future backend pass will broaden this to
-// the whole workspace for managers).
+// Reads from /audit-logs, which returns every member's activity in the
+// caller's current organization (member/role changes, and CRUD across
+// campaigns, contacts, email accounts, API keys, webhooks, CRM, and more).
+// Personal auth events (login/logout) are deliberately excluded. Updates
+// live via the realtime AUDIT event.
 //
 // Layout matches the rest of the dashboard chrome: dense table with
-// hairline borders, expandable rows for the JSON changes payload,
-// filters in the topbar.
+// hairline borders, an actor ("Who") column, expandable rows for the JSON
+// changes payload, and filters in the topbar.
 
 import React from "react";
 import {
@@ -40,26 +42,42 @@ import type AuditLog from "@/lib/api/models/app/audit/AuditLog";
 import type { AuditAction, AuditEntityType } from "@/lib/api/models/app/audit/AuditLog";
 
 const ACTIONS: AuditAction[] = [
-    "create", "update", "delete", "login", "logout", "api_call",
-    "export", "import", "revoke", "connect",
+    "create", "update", "delete",
+    "invite", "remove", "transfer",
+    "start", "stop", "pause", "resume", "send",
+    "connect", "disconnect", "rotate", "revoke",
+    "duplicate", "export", "import", "api_call",
 ];
 
 const ENTITY_TYPES: AuditEntityType[] = [
-    "campaign", "contact", "email_account", "api_key", "sequence",
-    "user", "session", "worker",
+    "campaign", "contact", "email_account", "sequence", "template",
+    "api_key", "webhook", "integration", "warmup_routing_rule",
+    "organization", "organization_member", "invitation",
+    "folder", "tag", "category", "subscription", "settings",
+    "crm_pipeline", "crm_stage", "crm_deal", "crm_task", "crm_note",
+    "unibox", "user",
 ];
 
 const ACTION_TONE: Record<string, { dot: string; text: string }> = {
-    create:  { dot: "bg-emerald-500", text: "text-emerald-700" },
-    update:  { dot: "bg-sky-500",     text: "text-sky-700" },
-    delete:  { dot: "bg-red-500",     text: "text-red-700" },
-    login:   { dot: "bg-violet-500",  text: "text-violet-700" },
-    logout:  { dot: "bg-slate-400",   text: "text-slate-600" },
-    api_call:{ dot: "bg-amber-500",   text: "text-amber-700" },
-    export:  { dot: "bg-sky-500",     text: "text-sky-700" },
-    import:  { dot: "bg-sky-500",     text: "text-sky-700" },
-    revoke:  { dot: "bg-red-500",     text: "text-red-700" },
-    connect: { dot: "bg-emerald-500", text: "text-emerald-700" },
+    create:     { dot: "bg-emerald-500", text: "text-emerald-700" },
+    update:     { dot: "bg-sky-500",     text: "text-sky-700" },
+    delete:     { dot: "bg-red-500",     text: "text-red-700" },
+    api_call:   { dot: "bg-amber-500",   text: "text-amber-700" },
+    export:     { dot: "bg-sky-500",     text: "text-sky-700" },
+    import:     { dot: "bg-sky-500",     text: "text-sky-700" },
+    revoke:     { dot: "bg-red-500",     text: "text-red-700" },
+    connect:    { dot: "bg-emerald-500", text: "text-emerald-700" },
+    disconnect: { dot: "bg-red-500",     text: "text-red-700" },
+    invite:     { dot: "bg-emerald-500", text: "text-emerald-700" },
+    remove:     { dot: "bg-red-500",     text: "text-red-700" },
+    transfer:   { dot: "bg-violet-500",  text: "text-violet-700" },
+    start:      { dot: "bg-emerald-500", text: "text-emerald-700" },
+    stop:       { dot: "bg-red-500",     text: "text-red-700" },
+    pause:      { dot: "bg-amber-500",   text: "text-amber-700" },
+    resume:     { dot: "bg-emerald-500", text: "text-emerald-700" },
+    send:       { dot: "bg-sky-500",     text: "text-sky-700" },
+    duplicate:  { dot: "bg-sky-500",     text: "text-sky-700" },
+    rotate:     { dot: "bg-amber-500",   text: "text-amber-700" },
 };
 
 export default function AuditPage() {
@@ -113,13 +131,16 @@ export default function AuditPage() {
     }
 
     const all = audit.data?.data ?? [];
-    const filtered = search.trim()
+    const q = search.trim().toLowerCase();
+    const filtered = q
         ? all.filter(
               (l) =>
-                  l.action.toLowerCase().includes(search.trim().toLowerCase()) ||
-                  l.entity_type.toLowerCase().includes(search.trim().toLowerCase()) ||
-                  (l.entity_id ?? "").toLowerCase().includes(search.trim().toLowerCase()) ||
-                  (l.ip_address ?? "").toLowerCase().includes(search.trim().toLowerCase()),
+                  l.action.toLowerCase().includes(q) ||
+                  l.entity_type.toLowerCase().includes(q) ||
+                  actorLabel(l).toLowerCase().includes(q) ||
+                  (l.actor?.email ?? "").toLowerCase().includes(q) ||
+                  (l.entity_id ?? "").toLowerCase().includes(q) ||
+                  (l.ip_address ?? "").toLowerCase().includes(q),
           )
         : all;
 
@@ -209,10 +230,11 @@ export default function AuditPage() {
                                 <tr>
                                     <th className="w-6"></th>
                                     <Th className="w-40">When</Th>
+                                    <Th className="w-48">Who</Th>
                                     <Th className="w-32">Action</Th>
                                     <Th>Entity</Th>
                                     <Th className="w-32">IP</Th>
-                                    <Th className="w-12"></Th>
+                                    <th className="w-12" aria-label="Details"></th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -292,6 +314,18 @@ function AuditRow({ log }: { log: AuditLog }) {
                     {fmt(log.timestamp || log.action_date)}
                 </td>
                 <td className="px-3">
+                    <div className="flex flex-col leading-tight min-w-0">
+                        <span className="text-[12px] text-slate-900 font-medium truncate">
+                            {actorLabel(log)}
+                        </span>
+                        {log.actor?.email && (
+                            <span className="text-[10.5px] text-slate-400 truncate">
+                                {log.actor.email}
+                            </span>
+                        )}
+                    </div>
+                </td>
+                <td className="px-3">
                     <span className={`inline-flex items-center gap-1.5 text-[11px] font-medium ${tone.text}`}>
                         <span className={`size-1.5 rounded-full ${tone.dot}`} />
                         {log.action}
@@ -319,7 +353,7 @@ function AuditRow({ log }: { log: AuditLog }) {
             {open && hasDetails && (
                 <tr className="bg-slate-50/60 border-b border-slate-200/60">
                     <td></td>
-                    <td colSpan={5} className="px-3 py-3">
+                    <td colSpan={6} className="px-3 py-3">
                         <div className="space-y-2">
                             {log.changes && Object.keys(log.changes).length > 0 && (
                                 <DetailsBlock label="Changes" data={log.changes} />
@@ -352,6 +386,19 @@ function DetailsBlock({ label, data }: { label: string; data: Record<string, str
             </pre>
         </div>
     );
+}
+
+function actorLabel(log: AuditLog): string {
+    const a = log.actor;
+    if (a) {
+        const name = `${a.first_name ?? ""} ${a.last_name ?? ""}`.trim();
+        if (name) return name;
+        if (a.email) return a.email;
+    }
+    if (log.user_id && log.user_id !== "00000000-0000-0000-0000-000000000000") {
+        return `${log.user_id.slice(0, 8)}…`;
+    }
+    return "System";
 }
 
 function fmt(d: string) {

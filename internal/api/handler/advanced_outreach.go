@@ -47,6 +47,11 @@ func (h *Handler) UpdateOutreachSettings(c *gin.Context) {
 		errx.JSON(c, xerr)
 		return
 	}
+
+	h.auditOrg(c, models.AuditActionUpdate, models.AuditEntitySettings, nil, nil, map[string]string{
+		"scope": "outreach",
+	})
+
 	c.Status(http.StatusNoContent)
 }
 
@@ -79,6 +84,12 @@ func (h *Handler) UpdateCampaignAdvancedSettings(c *gin.Context) {
 		errx.JSON(c, xerr)
 		return
 	}
+
+	h.auditOrg(c, models.AuditActionUpdate, models.AuditEntitySettings, &campaignID, nil, map[string]string{
+		"scope":       "campaign_advanced",
+		"campaign_id": campaignID.String(),
+	})
+
 	c.Status(http.StatusNoContent)
 }
 
@@ -112,6 +123,14 @@ func (h *Handler) CreateCampaignABVariant(c *gin.Context) {
 		errx.JSON(c, xerr)
 		return
 	}
+
+	variantID := out.ID
+	h.auditOrg(c, models.AuditActionCreate, models.AuditEntitySettings, &variantID, nil, map[string]string{
+		"scope":       "ab_variant",
+		"campaign_id": campaignID.String(),
+		"name":        out.Name,
+	})
+
 	c.JSON(http.StatusCreated, out)
 }
 
@@ -136,6 +155,12 @@ func (h *Handler) UpdateCampaignABVariant(c *gin.Context) {
 		errx.JSON(c, xerr)
 		return
 	}
+
+	h.auditOrg(c, models.AuditActionUpdate, models.AuditEntitySettings, &variantID, nil, map[string]string{
+		"scope":       "ab_variant",
+		"campaign_id": campaignID.String(),
+	})
+
 	c.JSON(http.StatusOK, out)
 }
 
@@ -154,6 +179,12 @@ func (h *Handler) DeleteCampaignABVariant(c *gin.Context) {
 		errx.JSON(c, xerr)
 		return
 	}
+
+	h.auditOrg(c, models.AuditActionDelete, models.AuditEntitySettings, &variantID, nil, map[string]string{
+		"scope":       "ab_variant",
+		"campaign_id": campaignID.String(),
+	})
+
 	c.Status(http.StatusNoContent)
 }
 

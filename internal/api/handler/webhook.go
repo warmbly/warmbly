@@ -64,6 +64,8 @@ func (h *Handler) CreateWebhookEndpoint(c *gin.Context) {
 		errx.JSON(c, errx.New(errx.BadRequest, err.Error()))
 		return
 	}
+	endpointID := endpoint.ID
+	h.auditOrg(c, models.AuditActionCreate, models.AuditEntityWebhook, &endpointID, nil, map[string]string{"url": endpoint.URL})
 	c.JSON(http.StatusCreated, endpoint)
 }
 
@@ -93,6 +95,7 @@ func (h *Handler) UpdateWebhookEndpoint(c *gin.Context) {
 		errx.JSON(c, errx.New(errx.BadRequest, err.Error()))
 		return
 	}
+	h.auditOrg(c, models.AuditActionUpdate, models.AuditEntityWebhook, &endpointID, nil, nil)
 	c.JSON(http.StatusOK, endpoint)
 }
 
@@ -112,6 +115,7 @@ func (h *Handler) DeleteWebhookEndpoint(c *gin.Context) {
 		errx.JSON(c, errx.New(errx.NotFound, err.Error()))
 		return
 	}
+	h.auditOrg(c, models.AuditActionDelete, models.AuditEntityWebhook, &endpointID, nil, nil)
 	c.Status(http.StatusNoContent)
 }
 
@@ -133,6 +137,7 @@ func (h *Handler) RotateWebhookSecret(c *gin.Context) {
 		errx.JSON(c, errx.New(errx.NotFound, err.Error()))
 		return
 	}
+	h.auditOrg(c, models.AuditActionRotate, models.AuditEntityWebhook, &endpointID, nil, map[string]string{"rotated": "true"})
 	c.JSON(http.StatusOK, gin.H{"secret": secret})
 }
 

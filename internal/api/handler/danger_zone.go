@@ -6,7 +6,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/warmbly/warmbly/internal/api/middleware"
-	"github.com/warmbly/warmbly/internal/app/audit"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 )
@@ -57,9 +56,7 @@ func (h *Handler) ScheduleOrganizationDeletion(c *gin.Context) {
 		return
 	}
 
-	if h.AuditService != nil {
-		audit.LogDelete(h.AuditService, c.Request.Context(), userID, models.AuditEntityOrganization, *orgID, c.ClientIP(), c.Request.UserAgent())
-	}
+	h.auditOrg(c, models.AuditActionDelete, models.AuditEntityOrganization, orgID, nil, map[string]string{"scheduled": "true"})
 
 	c.JSON(http.StatusAccepted, d)
 }
@@ -127,9 +124,7 @@ func (h *Handler) ScheduleAccountDeletion(c *gin.Context) {
 		return
 	}
 
-	if h.AuditService != nil {
-		audit.LogDelete(h.AuditService, c.Request.Context(), userID, models.AuditEntityUser, userID, c.ClientIP(), c.Request.UserAgent())
-	}
+	h.auditOrg(c, models.AuditActionDelete, models.AuditEntityUser, &userID, nil, map[string]string{"scheduled": "true"})
 
 	c.JSON(http.StatusAccepted, d)
 }

@@ -70,6 +70,9 @@ func (h *Handler) ConnectIntegration(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+
+	h.auditOrg(c, models.AuditActionConnect, models.AuditEntityIntegration, &conn.ID, nil, map[string]string{"provider": string(provider)})
+
 	c.JSON(http.StatusCreated, conn)
 }
 
@@ -89,6 +92,9 @@ func (h *Handler) DisconnectIntegration(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "delete failed"})
 		return
 	}
+
+	h.auditOrg(c, models.AuditActionDisconnect, models.AuditEntityIntegration, &id, nil, nil)
+
 	c.Status(http.StatusNoContent)
 }
 
