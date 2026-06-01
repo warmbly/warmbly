@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/warmbly/warmbly/internal/infrastructure/kafka"
 )
 
 // Internal worker bootstrap + config endpoints. A worker process starts with
@@ -84,7 +85,7 @@ func (h *Handler) InternalWorkerConfig(c *gin.Context) {
 			SchemaURL:   envOr("SCHEMA_REGISTRY_URL", ""),
 			SchemaKey:   envOr("SCHEMA_REGISTRY_KEY", ""),
 			SchemaSec:   envOr("SCHEMA_REGISTRY_SECRET", ""),
-			WorkerTopic: "w:" + id.String(),
+			WorkerTopic: kafka.GetWorkerTopic(id.String()),
 		},
 		Storage: WorkerStorageConfig{
 			EncryptedKeysProvider: envOr("ENCRYPTED_KEYS_PROVIDER", "http"),

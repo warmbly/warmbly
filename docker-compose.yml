@@ -146,15 +146,16 @@ services:
       kafka:
         condition: service_healthy
     entrypoint: ["/bin/bash", "-lc"]
-    # Pre-creates the Kafka topics used by the platform. Only ".", "_", "-",
-    # and alphanumerics are legal in Kafka topic names, so the ":"-separated
-    # logical names the app uses (e.g. "jobs:worker-events", "w:<uuid>") only
-    # work when the eventbus runs over NATS — Kafka can't host them at all.
-    # The remaining topics here are the legal ones the system actually publishes
-    # to Kafka.
+    # Pre-creates the Kafka topics used by the platform. Topic names use "."
+    # separators (the only separator legal in both Kafka topic names and NATS
+    # subjects — see internal/infrastructure/kafka/topics.go). The per-worker
+    # "w.<uuid>" command topics are not listed here: they are created on demand
+    # via auto-create (KAFKA_AUTO_CREATE_TOPICS_ENABLE) the first time the
+    # backend publishes to a worker, so the worker's startup subscription warns
+    # only briefly until then.
     command:
       - >-
-        for topic in tracking-events email-events warmup-events; do
+        for topic in tracking-events email-events warmup-events jobs.worker-events; do
         kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic "$$topic" --partitions 1 --replication-factor 1;
         done
 

@@ -12,12 +12,15 @@
 // concern: this package handles transport only.
 //
 // Topic naming:
-//   - Kafka topics use ":" as a separator (e.g. "w:<uuid>", "jobs:worker-events")
-//   - NATS subjects use "."         (e.g. "w.<uuid>", "jobs.worker-events")
+//   - Names use "." as the separator (e.g. "w.<uuid>", "jobs.worker-events").
+//     "." is legal in both Kafka topic names and NATS subjects, so the same
+//     name addresses either backend. A ":" is NOT legal in a Kafka topic name,
+//     so it must never appear in these names.
 //
-// The Subject() helper performs the translation in a single place so callers
-// can keep using the existing kafka.GetWorkerTopic / kafka.TopicWorkerEvents
-// constants without caring which backend is wired in.
+// The Subject() helper still normalises any stray ":" to "." in a single place
+// (idempotent for the dotted names callers already produce), so callers can
+// keep using the kafka.GetWorkerTopic / kafka.TopicWorkerEvents constants
+// without caring which backend is wired in.
 package eventbus
 
 import (
@@ -60,18 +63,18 @@ type Handler func(ctx context.Context, msg Message) error
 // Message is the broker-neutral envelope passed to a Handler. Payload bytes
 // are owned by the bus and must not be retained past the handler call.
 //
-// Topic is reported in the backend's native form: Kafka delivers "w:<uuid>",
-// NATS delivers "w.<uuid>". Handlers that need to compare against a known
-// topic name should normalise both sides with Subject() rather than relying
-// on byte equality.
+// Topic is reported in the backend's native form ("w.<uuid>" on both Kafka
+// and NATS). Handlers that need to compare against a known topic name should
+// normalise both sides with Subject() rather than relying on byte equality.
 type Message struct {
 	Topic   string
 	Key     string
 	Payload []byte
 }
 
-// Subject translates a Kafka-style topic name into a NATS-safe subject by
-// replacing ":" with ".". Idempotent for already-translated subjects.
+// Subject normalises a topic name to the dot-separated form by replacing any
+// ":" with ".". Topic names already use ".", so this is a no-op for them; it
+// remains as a guard against any stray legacy colon name. Idempotent.
 //
 // Exposed so callers that need to address a topic directly through the NATS
 // bus (e.g. tests, admin tools) can produce a valid subject without knowing
