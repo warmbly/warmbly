@@ -1,6 +1,0 @@
-DROP TABLE IF EXISTS durations;
-DROP TABLE IF EXISTS plans;
-DROP TABLE IF EXISTS offers;
-DROP TABLE IF EXISTS offer_options;
-DROP TABLE IF EXISTS secret_plans;
-DROP TABLE IF EXISTS subscriptions;

@@ -1,2 +1,0 @@
-ALTER TABLE users DROP CONSTRAINT IF EXISTS ban_scope_non_negative;
-ALTER TABLE users DROP COLUMN IF EXISTS ban_scope;

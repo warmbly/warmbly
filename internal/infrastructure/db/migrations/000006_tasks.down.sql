@@ -1,7 +1,0 @@
-DROP TYPE IF EXISTS task_type;
-DROP TYPE IF EXISTS task_status;
-DROP TABLE IF EXISTS tasks;
-DROP TABLE IF EXISTS campaign_tasks;
-DROP TABLE IF EXISTS warmup_tasks;
-DROP TABLE IF EXISTS email_tasks;
-DROP TABLE IF EXISTS task_fails;
