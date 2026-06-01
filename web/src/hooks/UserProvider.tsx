@@ -1,6 +1,8 @@
 import React, { useMemo } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { UserContext } from './context/user';
-import useUser from '@/lib/api/hooks/auth/useUser';
+import { useUserProfile } from './context/user';
+import useAuthUser from '@/lib/api/hooks/auth/useUser';
 import { AnimatePresence } from 'framer-motion';
 import LoadingScreen from '@/components/LoadingScreen';
 import useRoles from '@/lib/api/hooks/app/admin/roles/useRoles';
@@ -17,7 +19,8 @@ const EMPTY_ACCESS: Access = { roles: [], permissions: [] };
 const EMPTY_TIMEZONES: Timezone[] = [];
 
 export const UserProvider = ({ children }: { children: React.ReactNode }) => {
-    const user = useUser();
+    const queryClient = useQueryClient();
+    const user = useAuthUser();
     const access = useRoles();
     const timezones = useTimezones();
 
@@ -56,6 +59,14 @@ export const UserProvider = ({ children }: { children: React.ReactNode }) => {
         }
     }, [user.error, access.error, timezones.error]);
 
+    const setUser = React.useCallback<React.Dispatch<React.SetStateAction<User | null>>>((value) => {
+        queryClient.setQueryData<User | null>(["auth", "me"], (old) => (
+            typeof value === "function"
+                ? (value as (prev: User | null) => User | null)(old ?? null)
+                : value
+        ));
+    }, [queryClient]);
+
     if (error?.redirect) {
         clearTokens();
         return <Navigate to="/auth/login" replace />;
@@ -87,6 +98,7 @@ export const UserProvider = ({ children }: { children: React.ReactNode }) => {
             user: safeUser,
             access: access.data ?? EMPTY_ACCESS,
             timezones: timezones.data ?? EMPTY_TIMEZONES,
+            setUser,
             tagsEdit,
             setTagsEdit,
             foldersEdit,
@@ -98,3 +110,8 @@ export const UserProvider = ({ children }: { children: React.ReactNode }) => {
         </UserContext.Provider>
     );
 };
+
+export { useUserProfile as useUser };
+export type { default as Folder } from "@/lib/api/models/app/Folder";
+export type { default as Tag } from "@/lib/api/models/app/Tag";
+export type { default as User } from "@/lib/api/models/auth/User";

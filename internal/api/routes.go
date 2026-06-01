@@ -50,6 +50,11 @@ func Run(
 	r.GET("/addresses/google/callback", h.EmailOAuthCallbackGmail)
 	r.GET("/addresses/outlook/callback", h.EmailOAuthCallbackOutlook)
 
+	// Public OAuth callback bouncer for third-party integrations (HubSpot,
+	// Slack, Google, Pipedrive, …). The provider redirects here; the page
+	// postMessages code+state to the SPA opener, which calls oauth/finish.
+	r.GET("/integrations/oauth/callback", h.IntegrationOAuthCallback)
+
 	// Internal backend-to-backend endpoints. Workers call these instead of
 	// touching Postgres / DynamoDB directly, per the no-direct-data-services
 	// rule in CLAUDE.md. Auth: shared bearer token (INTERNAL_API_TOKEN).
@@ -169,6 +174,16 @@ func Run(
 			onboardingEmails.POST("/oauth/start", h.StartEmailOAuth)
 			onboardingEmails.POST("/oauth/finish", h.FinishEmailOAuth)
 			onboardingEmails.POST("/smtp-imap", h.ConnectEmailSMTPIMAP)
+		}
+
+		// Integration OAuth handshake is JWT-only — it writes user-encrypted
+		// provider tokens via the SPA popup flow, same as mailbox onboarding.
+		integrationsOAuth := jwtOnly.Group("/integrations/oauth")
+		integrationsOAuth.Use(m.RequireOrganization(), m.RateLimitMiddleware(models.RateLimitWrite))
+		{
+			integrationsOAuth.POST("/start", h.StartIntegrationOAuth)
+			integrationsOAuth.POST("/finish", h.FinishIntegrationOAuth)
+			integrationsOAuth.POST("/reauth/:id", h.ReauthIntegration)
 		}
 
 		campaigns := protected.Group("/campaigns")
@@ -365,7 +380,12 @@ func Run(
 			integrations.GET("/catalog", h.ListIntegrationCatalog)
 			integrations.GET("/connections", h.ListIntegrationConnections)
 			integrations.POST("/connections", h.ConnectIntegration)
+			integrations.GET("/connections/:id", h.GetIntegrationConnection)
 			integrations.DELETE("/connections/:id", h.DisconnectIntegration)
+			integrations.GET("/connections/:id/events", h.ListConnectionEventSubscriptions)
+			integrations.POST("/connections/:id/events", h.CreateConnectionEventSubscription)
+			integrations.DELETE("/connections/:id/events/:eventId", h.DeleteConnectionEventSubscription)
+			integrations.GET("/connections/:id/runs", h.ListConnectionSyncRuns)
 			integrations.GET("/bookings", h.ListMeetingBookings)
 		}
 

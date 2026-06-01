@@ -158,8 +158,13 @@ function AWSCredsForm({
         secret_access_key: "",
     });
     const mut = useMutation({
-        mutationFn: () =>
-            initial ? updateAWSCredentials(initial.id, form) : createAWSCredentials(form),
+        mutationFn: async () => {
+            if (initial) {
+                await updateAWSCredentials(initial.id, form);
+                return { id: initial.id };
+            }
+            return createAWSCredentials(form);
+        },
         onSuccess: onSaved,
     });
 

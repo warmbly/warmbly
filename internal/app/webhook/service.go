@@ -40,6 +40,12 @@ const EventHeader = "X-Warmbly-Event"
 // dedupe replays.
 const EventIDHeader = "X-Warmbly-Event-Id"
 
+// DispatchSink receives every dispatched event so other subsystems (notably
+// third-party integration actions: Slack pings, CRM upserts) can react to the
+// same event vocabulary that drives customer webhooks, without every call site
+// having to know about them. Wired optionally via WireDispatchSink.
+type DispatchSink func(ctx context.Context, orgID uuid.UUID, eventType models.WebhookEventType, data any)
+
 // Service is the call-site API. Internal events call Dispatch — the
 // service writes one delivery row per matching endpoint and returns
 // immediately. The DeliveryWorker drains the queue asynchronously.
@@ -48,6 +54,11 @@ type Service interface {
 	// enqueues a delivery for each. Returns the event ID so callers can
 	// log/audit. If no endpoints match, this is a no-op.
 	Dispatch(ctx context.Context, orgID uuid.UUID, eventType models.WebhookEventType, data any) (uuid.UUID, error)
+
+	// WireDispatchSink attaches a single fan-out sink invoked for every
+	// dispatched event (even when no webhook endpoint matches). Idempotent
+	// replacement; pass nil to detach.
+	WireDispatchSink(sink DispatchSink)
 
 	// Endpoint CRUD wrappers.
 	CreateEndpoint(ctx context.Context, orgID uuid.UUID, url, description string, eventTypes []string, enabled bool) (*models.WebhookEndpointWithSecret, error)
@@ -61,14 +72,25 @@ type Service interface {
 type service struct {
 	repo repository.WebhookRepository
 	now  func() time.Time
+	sink DispatchSink
 }
 
 func NewService(repo repository.WebhookRepository) Service {
 	return &service{repo: repo, now: time.Now}
 }
 
+func (s *service) WireDispatchSink(sink DispatchSink) {
+	s.sink = sink
+}
+
 func (s *service) Dispatch(ctx context.Context, orgID uuid.UUID, eventType models.WebhookEventType, data any) (uuid.UUID, error) {
 	eventID := uuid.New()
+
+	// Fan the event to non-webhook subscribers (integration actions) first,
+	// independently of whether any webhook endpoint is configured.
+	if s.sink != nil {
+		s.sink(ctx, orgID, eventType, data)
+	}
 
 	endpoints, err := s.repo.MatchingEndpoints(ctx, orgID, eventType)
 	if err != nil {
@@ -185,6 +207,15 @@ func generateSecret() (string, error) {
 		return "", err
 	}
 	return "whsec_" + hex.EncodeToString(buf), nil
+}
+
+// ValidateOutboundURL is the exported SSRF/HTTPS guard reused by any subsystem
+// that stores a user-supplied URL we will later POST to (e.g. third-party
+// integration actions such as Discord/generic webhooks). Same policy as the
+// customer-webhook endpoints: HTTPS + publicly-routable host, unless
+// WARMBLY_ALLOW_UNSAFE_WEBHOOK_URLS=true for local/self-hosted development.
+func ValidateOutboundURL(raw string) error {
+	return validateURL(raw)
 }
 
 // validateURL keeps malformed entries and obvious SSRF targets out of the

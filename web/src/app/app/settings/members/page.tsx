@@ -101,7 +101,7 @@ export default function MembersSettingsPage() {
             try {
                 await toast.promise(
                     updateRole.mutateAsync({
-                        memberId,
+                        id: memberId,
                         data: { role: nextRole },
                     }),
                     {
