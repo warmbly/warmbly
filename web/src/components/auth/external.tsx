@@ -11,6 +11,22 @@ import { AUTH_CELL as CELL } from "./styles";
 // enters/leaves (sign-in ⇄ create-account) and the others resize to fill.
 const spring = { type: "spring" as const, stiffness: 520, damping: 42, mass: 0.85 };
 
+// Crossfade for the passkey glyph ⇄ spinner. Both sit absolutely stacked in a
+// fixed 16px slot, so one dissolves into the other in place — the "Passkey"
+// label never shifts. Soft ease-out + a hair of scale reads as a morph, not a
+// hard swap.
+const ICON_SWAP = {
+    initial: { opacity: 0, scale: 0.55 },
+    animate: { opacity: 1, scale: 1 },
+    exit: { opacity: 0, scale: 0.55 },
+    transition: { duration: 0.2, ease: [0.22, 1, 0.36, 1] as const },
+};
+
+// sky-500 — passed explicitly because <Loading> strokes its circle via an
+// attribute (defaulting to white), not currentColor, so a className alone
+// renders an invisible white-on-white spinner.
+const SPINNER_COLOR = "#0ea5e9";
+
 // Inner content is layout="position" so it only translates (stays centered)
 // while its button animates width — the icon + label never stretch.
 function CellBody({ children }: { children: React.ReactNode }) {
@@ -61,16 +77,37 @@ export default function ExternalLogin({
                         onFocus={() => passkey.onPrepare()}
                         disabled={passkey.loading}
                         aria-label="Sign in with a passkey"
+                        aria-busy={passkey.loading}
                         initial={{ opacity: 0, scale: 0.85 }}
                         animate={{ opacity: 1, scale: 1 }}
                         exit={{ opacity: 0, scale: 0.85 }}
                         transition={{ ...spring, opacity: { duration: 0.15 } }}
-                        className={`${CELL} flex-1 min-w-0`}
+                        // Stay full-opacity while busy: the spinner signals work,
+                        // not the greyed-out disabled look.
+                        className={`${CELL} flex-1 min-w-0 ${passkey.loading ? "!opacity-100" : ""}`}
                     >
                         <CellBody>
-                            {passkey.loading
-                                ? <Loading className="!w-4 h-4 text-sky-500" />
-                                : <KeyRound className="w-4 h-4 text-sky-500 shrink-0" />}
+                            <span className="relative inline-flex h-4 w-4 shrink-0 items-center justify-center">
+                                <AnimatePresence initial={false}>
+                                    {passkey.loading ? (
+                                        <motion.span
+                                            key="spinner"
+                                            {...ICON_SWAP}
+                                            className="absolute inset-0 inline-flex items-center justify-center"
+                                        >
+                                            <Loading className="!w-4 h-4" color={SPINNER_COLOR} />
+                                        </motion.span>
+                                    ) : (
+                                        <motion.span
+                                            key="key"
+                                            {...ICON_SWAP}
+                                            className="absolute inset-0 inline-flex items-center justify-center"
+                                        >
+                                            <KeyRound className="h-4 w-4 text-sky-500" />
+                                        </motion.span>
+                                    )}
+                                </AnimatePresence>
+                            </span>
                             Passkey
                         </CellBody>
                     </motion.button>
