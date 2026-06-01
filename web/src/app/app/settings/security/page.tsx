@@ -1,6 +1,7 @@
 import { comingSoon } from "@/lib/helper/comingSoon";
 import { RowLink, Section, SectionShell } from "../_components/SectionShell";
 import PasskeyManager from "./PasskeyManager";
+import SessionManager from "./SessionManager";
 
 export default function SecuritySettingsPage() {
     return (
@@ -30,19 +31,9 @@ export default function SecuritySettingsPage() {
                 />
             </Section>
 
-            <Section eyebrow="Sessions" description="Active sign-ins and how they're alerted.">
-                <RowLink
-                    title="Active sessions"
-                    description="Devices currently signed in to your account."
-                    cta="View"
-                    onClick={() => comingSoon("Active sessions")}
-                />
-                <RowLink
-                    title="Sign out everywhere"
-                    description="Revoke every session except this one."
-                    cta="Sign out"
-                    onClick={() => comingSoon("Sign out everywhere")}
-                />
+            <SessionManager />
+
+            <Section eyebrow="Alerts" description="How we let you know about account activity.">
                 <RowLink
                     title="Sign-in alerts"
                     description="Email when your account is accessed from a new device."

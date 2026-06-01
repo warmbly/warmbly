@@ -25,6 +25,11 @@ type TokenService interface {
 	RevokeSession(ctx context.Context, accessToken string) *errx.Error
 	RevokeAllSession(ctx context.Context, accessToken string) *errx.Error
 
+	// Self-service session management (account security page)
+	ListSessions(ctx context.Context, userID, currentSessionID uuid.UUID) ([]SessionView, *errx.Error)
+	RevokeSessionByID(ctx context.Context, userID, sessionID, currentSessionID uuid.UUID) *errx.Error
+	RevokeOtherSessions(ctx context.Context, userID, currentSessionID uuid.UUID) *errx.Error
+
 	// Organization switching
 	SwitchOrganization(ctx context.Context, sessionID uuid.UUID, orgID *uuid.UUID) *errx.Error
 	GetCurrentOrganization(ctx context.Context, sessionID uuid.UUID) (*uuid.UUID, *errx.Error)

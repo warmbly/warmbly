@@ -136,6 +136,13 @@ func Run(
 	{
 		protectedAuth.POST("/logout", h.Logout)
 		protectedAuth.POST("/logout-all", h.LogoutAll)
+
+		// Self-service session management. Scoped to the authenticated user;
+		// per-id revoke can never touch another user's session.
+		protectedAuth.GET("/sessions", h.SessionsList)
+		protectedAuth.DELETE("/sessions", h.SessionRevokeOthers)
+		protectedAuth.DELETE("/sessions/:id", h.SessionRevoke)
+
 		protectedAuth.GET("/me", h.GetUser)
 		protectedAuth.PATCH("/me/onboarding", h.CompleteOnboarding)
 		protectedAuth.POST("/me/avatar", h.UploadUserAvatar)

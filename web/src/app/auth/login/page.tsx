@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "motion/react";
 import { useForm } from "react-hook-form";
+import { useQueryClient } from "@tanstack/react-query";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import toast from "react-hot-toast";
@@ -149,6 +150,7 @@ type PasskeyStatus = "preparing" | "ready" | "waiting" | "timeout" | "not-found"
 export default function LoginPage() {
     const navigate = useNavigate();
     const location = useLocation();
+    const queryClient = useQueryClient();
     const defaultDevBypassToken = "warmbly-local-turnstile-bypass";
     const turnstileBypassToken = import.meta.env.DEV
         ? (import.meta.env.VITE_TURNSTILE_BYPASS_TOKEN?.trim() || defaultDevBypassToken)
@@ -198,8 +200,13 @@ export default function LoginPage() {
 
     const completeSession = useCallback((token: Token) => {
         saveTokens(token as unknown as Record<string, unknown>);
+        // Drop any cache from the logged-out state. `useUser` is
+        // `refetchOnMount: false`, so a stale/errored ["auth","me"] entry would
+        // otherwise survive into the app shell and leave every gated page empty
+        // until a manual reload or window-focus refetch. Mirrors useLogout().
+        queryClient.clear();
         navigate("/app/emails");
-    }, [navigate]);
+    }, [navigate, queryClient]);
 
     // Conditional UI: surface passkeys inside the email field's native autofill
     // — no modal, no layout shift. Stays pending until the user picks a passkey
@@ -413,6 +420,9 @@ export default function LoginPage() {
                     const res = await loginConfirmMutation.mutateAsync({ session, code, turnstile: token });
                     toast.success("Welcome back!");
                     saveTokens(res as unknown as Record<string, string>);
+                    // See completeSession: clear stale logged-out cache so the
+                    // app shell refetches identity with the new token.
+                    queryClient.clear();
                     // Nudge passwordless enrollment once the dashboard loads.
                     try { sessionStorage.setItem(SUGGEST_PASSKEY_FLAG, "1"); } catch { /* storage unavailable */ }
                     navigate("/app/emails");

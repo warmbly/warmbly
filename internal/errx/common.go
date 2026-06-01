@@ -39,6 +39,10 @@ var (
 	ErrExternalCode  = New(BadRequest, "Invalid or expired code, please try again.")
 	ErrExternalEmail = New(BadRequest, "Invalid or unverified email address.")
 
+	// Sessions
+	ErrSessionNotFound = New(NotFound, "Session not found.")
+	ErrSessionCurrent  = New(BadRequest, "You can't revoke the session you're currently using. Use sign out instead.")
+
 	// Passkeys (WebAuthn)
 	ErrPasskey         = New(BadRequest, "We couldn’t verify that passkey. Please try again.")
 	ErrPasskeySession  = New(BadRequest, "Your passkey request expired. Please start again.")
