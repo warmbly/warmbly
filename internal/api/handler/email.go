@@ -104,10 +104,8 @@ func (h *Handler) warmupLifecycle(c *gin.Context, action string) {
 	}
 
 	// Audit log
-	if userID, err := uuid.Parse(userIDStr); err == nil {
-		if accountID, err := uuid.Parse(emailAccountID); err == nil {
-			h.AuditService.LogAction(c.Request.Context(), userID, models.AuditActionUpdate, models.AuditEntityEmailAccount, &accountID, c.ClientIP(), c.Request.UserAgent(), map[string]string{"warmup": action}, nil)
-		}
+	if accountID, err := uuid.Parse(emailAccountID); err == nil {
+		h.auditOrg(c, models.AuditActionUpdate, models.AuditEntityEmailAccount, &accountID, map[string]string{"warmup": action}, nil)
 	}
 
 	c.JSON(http.StatusOK, resp)
