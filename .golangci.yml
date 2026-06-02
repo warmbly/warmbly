@@ -1,49 +1,46 @@
-version: "2"
 run:
+  timeout: 5m
   modules-download-mode: readonly
+
 linters:
-  default: none
+  # Minimal set targeted at "the code still compiles + is formatted".
+  # Larger sets keep catching legacy issues unrelated to this PR
+  # (deprecated pubsub usage, tautological comparisons in scheduler
+  # helpers, empty branches in event handlers, etc.). Tracking those
+  # for a dedicated cleanup pass.
+  disable-all: true
   enable:
-    - bodyclose
     - govet
+    - typecheck
+    - gofmt
+    - bodyclose
     - noctx
-  settings:
-    govet:
-      disable:
-        - fieldalignment
-        - shadow
-        - nilness
-        - unusedwrite
-      enable-all: true
-  exclusions:
-    generated: lax
-    presets:
-      - comments
-      - common-false-positives
-      - legacy
-      - std-error-handling
-    rules:
-      - linters:
-          - errcheck
-          - gosec
-          - unparam
-        path: _test\.go
-      - linters:
-          - unparam
-        path: cmd/
-    paths:
-      - third_party$
-      - builtin$
-      - examples$
+
+linters-settings:
+  govet:
+    # Real-bug subset of govet. shadow + nilness + unusedwrite fire
+    # on legacy patterns (idiomatic err re-decl in tx blocks,
+    # defensive nil checks the analyzer reads as tautological,
+    # struct-builder writes to fields read later). Field-alignment
+    # is intentional for readability.
+    enable-all: true
+    disable:
+      - fieldalignment
+      - shadow
+      - nilness
+      - unusedwrite
+
 issues:
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - errcheck
+        - gosec
+        - unparam
+
+    - path: cmd/
+      linters:
+        - unparam
+
   max-issues-per-linter: 50
   max-same-issues: 10
-formatters:
-  enable:
-    - gofmt
-  exclusions:
-    generated: lax
-    paths:
-      - third_party$
-      - builtin$
-      - examples$

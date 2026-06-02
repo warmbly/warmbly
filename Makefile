@@ -40,7 +40,7 @@ fmt:
 	gofmt -w ./cmd ./internal
 
 lint:
-	golangci-lint run --timeout=5m
+	$(GO_BIN)/golangci-lint run --timeout=5m
 
 proto:
 	@command -v protoc >/dev/null || (echo "protoc not found in PATH"; exit 1)
