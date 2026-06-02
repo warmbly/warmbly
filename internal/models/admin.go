@@ -8,9 +8,48 @@ import (
 
 // AdminUserSearch represents search parameters for admin user listing
 type AdminUserSearch struct {
-	Query    string     `form:"q"`
-	Status   string     `form:"status"` // active, banned, all
-	IsAdmin  *bool      `form:"is_admin"`
+	Query         string `form:"q"`
+	Status        string `form:"status"` // active, banned, all
+	IsAdmin       *bool  `form:"is_admin"`
+	HasOverrides  bool   `form:"has_overrides"`   // has custom rate limits
+	FreeTrialUsed bool   `form:"free_trial_used"` // has consumed the free trial
+	CreatedWithin int    `form:"created_within"`  // signup window, in days
+
+	// Plan / subscription
+	PlanID                *uuid.UUID `form:"plan_id"`             // subscribed to THIS plan
+	SubscriptionStatus    string     `form:"subscription_status"` // trialing, active, past_due, ...
+	IsEnterprise          bool       `form:"is_enterprise"`
+	HasSubscription       bool       `form:"has_subscription"`
+	HasActiveSubscription bool       `form:"has_active_subscription"`
+
+	// Account state
+	OnboardingCompleted bool `form:"onboarding_completed"`
+	DeletionScheduled   bool `form:"deletion_scheduled"`
+	HasAvatar           bool `form:"has_avatar"`
+	HasActiveCampaign   bool `form:"has_active_campaign"`
+	HasBanRecord        bool `form:"has_ban_record"`
+	HasDedicatedWorker  bool `form:"has_dedicated_worker"`
+
+	// Count / numeric ranges
+	OrgCountMin          *int `form:"org_count_min"`
+	OrgCountMax          *int `form:"org_count_max"`
+	EmailAccountCountMin *int `form:"email_account_count_min"`
+	EmailAccountCountMax *int `form:"email_account_count_max"`
+	CampaignCountMin     *int `form:"campaign_count_min"`
+	CampaignCountMax     *int `form:"campaign_count_max"`
+	MaxOrganizationsMin  *int `form:"max_organizations_min"`
+	MaxOrganizationsMax  *int `form:"max_organizations_max"`
+
+	// Date ranges (YYYY-MM-DD, parsed as UTC)
+	CreatedAfter       *time.Time `form:"created_after" time_format:"2006-01-02" time_utc:"true"`
+	CreatedBefore      *time.Time `form:"created_before" time_format:"2006-01-02" time_utc:"true"`
+	AdminGrantedAfter  *time.Time `form:"admin_granted_after" time_format:"2006-01-02" time_utc:"true"`
+	AdminGrantedBefore *time.Time `form:"admin_granted_before" time_format:"2006-01-02" time_utc:"true"`
+	BannedAfter        *time.Time `form:"banned_after" time_format:"2006-01-02" time_utc:"true"`
+	BannedBefore       *time.Time `form:"banned_before" time_format:"2006-01-02" time_utc:"true"`
+	UpdatedAfter       *time.Time `form:"updated_after" time_format:"2006-01-02" time_utc:"true"`
+	UpdatedBefore      *time.Time `form:"updated_before" time_format:"2006-01-02" time_utc:"true"`
+
 	Cursor   *uuid.UUID `form:"cursor"`
 	Limit    int        `form:"limit"`
 	SortBy   string     `form:"sort_by"` // created_at, email, name
@@ -333,6 +372,8 @@ type AdminMailboxRow struct {
 	OrgName        *string    `json:"org_name,omitempty"`
 	WorkerID       *uuid.UUID `json:"worker_id,omitempty"`
 	WarmupEnabled  bool       `json:"warmup_enabled"`
+	RiskBand       string     `json:"risk_band"`
+	WarmupPoolType *string    `json:"warmup_pool_type,omitempty"`
 	CampaignLimit  int        `json:"campaign_limit"`
 	LastSyncedAt   *time.Time `json:"last_synced_at,omitempty"`
 	CreatedAt      time.Time  `json:"created_at"`
@@ -348,12 +389,47 @@ type AdminMailboxesResult struct {
 // All fields optional; empty status = active, "all" returns every
 // status. provider lets ops filter to "all gmail mailboxes" quickly.
 type AdminMailboxSearch struct {
-	Query    string     `form:"q"`
-	Status   string     `form:"status"`
-	Provider string     `form:"provider"`
-	OrgID    *uuid.UUID `form:"org_id"` // browse a single org's mailboxes
+	Query         string     `form:"q"`
+	Status        string     `form:"status"`
+	Provider      string     `form:"provider"`
+	Warmup        string     `form:"warmup"`         // "on", "off", or "" for any
+	CreatedWithin int        `form:"created_within"` // connected window, in days
+	OrgID         *uuid.UUID `form:"org_id"`         // browse a single org's mailboxes
+
+	// Ownership / placement
+	UserID   *uuid.UUID `form:"user_id"`   // mailboxes owned by THIS user
+	WorkerID *uuid.UUID `form:"worker_id"` // mailboxes on THIS worker
+
+	// Classification
+	RiskBand       string `form:"risk_band"`        // clean, risky, quarantine
+	WarmupPoolType string `form:"warmup_pool_type"` // free, premium
+	SyncedStatus   string `form:"synced_status"`    // never, stale, recent
+
+	// Flags
+	WarmupPaused           bool `form:"warmup_paused"`
+	TrackingDomainVerified bool `form:"tracking_domain_verified"`
+	HasTrackingDomain      bool `form:"has_tracking_domain"`
+	HasOrganization        bool `form:"has_organization"`
+	SignatureSync          bool `form:"signature_sync"`
+	HasOAuth               bool `form:"has_oauth"`
+	HasSMTPImap            bool `form:"has_smtp_imap"`
+
+	// Numeric ranges
+	CampaignLimitMin *int `form:"campaign_limit_min"`
+	CampaignLimitMax *int `form:"campaign_limit_max"`
+	MinWaitTimeMin   *int `form:"min_wait_time_min"`
+	MinWaitTimeMax   *int `form:"min_wait_time_max"`
+
+	// Date ranges (YYYY-MM-DD, UTC)
+	CreatedAfter     *time.Time `form:"created_after" time_format:"2006-01-02" time_utc:"true"`
+	CreatedBefore    *time.Time `form:"created_before" time_format:"2006-01-02" time_utc:"true"`
+	LastSyncedAfter  *time.Time `form:"last_synced_after" time_format:"2006-01-02" time_utc:"true"`
+	LastSyncedBefore *time.Time `form:"last_synced_before" time_format:"2006-01-02" time_utc:"true"`
+
 	Cursor   *uuid.UUID `form:"cursor"`
 	Limit    int        `form:"limit"`
+	SortBy   string     `form:"sort_by"` // email, created_at, last_synced_at, campaign_limit
+	SortDesc bool       `form:"sort_desc"`
 }
 
 // DailyEmailStats represents daily email statistics for graphs
@@ -578,11 +654,46 @@ type EmailDistribution struct {
 
 // AdminOrgSearch are the query params for the admin organization listing.
 type AdminOrgSearch struct {
-	Query    string     `form:"q"`
-	Status   string     `form:"status"` // active, pending_deletion, all
+	Query          string     `form:"q"`
+	Status         string     `form:"status"` // active, pending_deletion, all
+	PlanID         *uuid.UUID `form:"plan_id"`
+	PlanVisibility string     `form:"plan_visibility"` // public, private, none
+	CreatedWithin  int        `form:"created_within"`  // days; 0 = any
+	HasOverrides   bool       `form:"has_overrides"`   // has organization_limit_overrides
+	Enterprise     bool       `form:"enterprise"`      // has an enterprise subscription
+
+	// Subscription state
+	SubscriptionStatus    string `form:"subscription_status"`
+	CancelAtPeriodEnd     bool   `form:"cancel_at_period_end"`
+	HasActiveSubscription bool   `form:"has_active_subscription"`
+	NoSubscription        bool   `form:"no_subscription"`
+	OwnerBanned           bool   `form:"owner_banned"`
+
+	// Relationship existence
+	HasActiveCampaigns bool `form:"has_active_campaigns"`
+	HasEmailAccounts   bool `form:"has_email_accounts"`
+
+	// Count ranges
+	MemberCountMin       *int `form:"member_count_min"`
+	MemberCountMax       *int `form:"member_count_max"`
+	EmailAccountCountMin *int `form:"email_account_count_min"`
+	EmailAccountCountMax *int `form:"email_account_count_max"`
+	CampaignCountMin     *int `form:"campaign_count_min"`
+	CampaignCountMax     *int `form:"campaign_count_max"`
+
+	// Date ranges (YYYY-MM-DD, UTC)
+	CreatedAfter           *time.Time `form:"created_after" time_format:"2006-01-02" time_utc:"true"`
+	CreatedBefore          *time.Time `form:"created_before" time_format:"2006-01-02" time_utc:"true"`
+	TrialEndAfter          *time.Time `form:"trial_end_after" time_format:"2006-01-02" time_utc:"true"`
+	TrialEndBefore         *time.Time `form:"trial_end_before" time_format:"2006-01-02" time_utc:"true"`
+	CurrentPeriodEndAfter  *time.Time `form:"current_period_end_after" time_format:"2006-01-02" time_utc:"true"`
+	CurrentPeriodEndBefore *time.Time `form:"current_period_end_before" time_format:"2006-01-02" time_utc:"true"`
+	UpdatedAfter           *time.Time `form:"updated_after" time_format:"2006-01-02" time_utc:"true"`
+	UpdatedBefore          *time.Time `form:"updated_before" time_format:"2006-01-02" time_utc:"true"`
+
 	Cursor   *uuid.UUID `form:"cursor"`
 	Limit    int        `form:"limit"`
-	SortBy   string     `form:"sort_by"` // created_at, name
+	SortBy   string     `form:"sort_by"` // created_at, name, owner_email, member_count, campaign_count, email_account_count
 	SortDesc bool       `form:"sort_desc"`
 }
 
@@ -607,6 +718,11 @@ type AdminOrgListItem struct {
 	EmailAccountCount int `json:"email_account_count"`
 	CampaignCount     int `json:"campaign_count"`
 	ActiveCampaigns   int `json:"active_campaigns"`
+
+	// Plan summary (LEFT JOINed via the org's single active subscription).
+	PlanName     *string `json:"plan_name,omitempty"`
+	PlanPublic   *bool   `json:"plan_public,omitempty"`
+	IsEnterprise bool    `json:"is_enterprise"`
 }
 
 // AdminOrgsResult is the paginated response for the admin org listing.

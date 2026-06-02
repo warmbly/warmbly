@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -655,15 +656,6 @@ const adminOrgListColumns = `
 	(SELECT COUNT(*) FROM campaigns c WHERE c.organization_id = o.id) AS campaign_count,
 	(SELECT COUNT(*) FROM campaigns c WHERE c.organization_id = o.id AND c.status = 'active') AS active_campaigns`
 
-func scanAdminOrgListItem(row pgx.Row, item *models.AdminOrgListItem) error {
-	return row.Scan(
-		&item.ID, &item.Name, &item.Slug, &item.OwnerUserID,
-		&item.OwnerEmail, &item.OwnerFirstName, &item.OwnerLastName, &item.OwnerBannedAt,
-		&item.CreatedAt, &item.DeletionScheduledFor,
-		&item.MemberCount, &item.EmailAccountCount, &item.CampaignCount, &item.ActiveCampaigns,
-	)
-}
-
 // SearchOrganizationsForAdmin lists orgs for the admin panel with cursor
 // pagination. The cursor is the last seen org id; rows are returned in
 // descending created_at order by default. Counts are computed inline so
@@ -693,26 +685,133 @@ func (r *organizationRepository) SearchOrganizationsForAdmin(ctx context.Context
 		where += ` AND o.deletion_scheduled_for IS NULL`
 	}
 
+	if search.PlanID != nil {
+		where += ` AND s.plan_id = $` + itoa(argNum)
+		args = append(args, *search.PlanID)
+		argNum++
+	}
+	switch search.PlanVisibility {
+	case "public":
+		where += ` AND p.public = TRUE`
+	case "private":
+		where += ` AND p.public = FALSE`
+	case "none":
+		where += ` AND s.id IS NULL`
+	}
+	if search.Enterprise {
+		where += ` AND s.is_enterprise = TRUE`
+	}
+	if search.CreatedWithin > 0 {
+		where += ` AND o.created_at >= NOW() - ($` + itoa(argNum) + `::int * INTERVAL '1 day')`
+		args = append(args, search.CreatedWithin)
+		argNum++
+	}
+	if search.HasOverrides {
+		where += ` AND EXISTS (SELECT 1 FROM organization_limit_overrides olo WHERE olo.organization_id = o.id)`
+	}
+
+	// Local helpers, same style as the rest of this builder.
+	addInt := func(frag string, v *int) {
+		if v != nil {
+			where += " AND " + fmt.Sprintf(frag, argNum)
+			args = append(args, *v)
+			argNum++
+		}
+	}
+	addAfter := func(col string, v *time.Time) {
+		if v != nil {
+			where += " AND " + col + " >= $" + itoa(argNum)
+			args = append(args, *v)
+			argNum++
+		}
+	}
+	addBefore := func(col string, v *time.Time) {
+		if v != nil {
+			where += " AND " + col + " < ($" + itoa(argNum) + " + INTERVAL '1 day')"
+			args = append(args, *v)
+			argNum++
+		}
+	}
+
+	// Subscription state
+	if search.SubscriptionStatus != "" {
+		where += ` AND s.status::text = $` + itoa(argNum)
+		args = append(args, search.SubscriptionStatus)
+		argNum++
+	}
+	if search.CancelAtPeriodEnd {
+		where += ` AND s.cancel_at_period_end = TRUE`
+	}
+	if search.HasActiveSubscription {
+		where += ` AND EXISTS (SELECT 1 FROM subscriptions s2 WHERE s2.organization_id = o.id AND s2.status IN ('active','trialing'))`
+	}
+	if search.NoSubscription {
+		where += ` AND NOT EXISTS (SELECT 1 FROM subscriptions s2 WHERE s2.organization_id = o.id)`
+	}
+	if search.OwnerBanned {
+		where += ` AND u.banned_at IS NOT NULL`
+	}
+
+	// Relationship existence
+	if search.HasActiveCampaigns {
+		where += ` AND EXISTS (SELECT 1 FROM campaigns c WHERE c.organization_id = o.id AND c.status = 'active')`
+	}
+	if search.HasEmailAccounts {
+		where += ` AND EXISTS (SELECT 1 FROM email_accounts ea WHERE ea.organization_id = o.id)`
+	}
+
+	// Count ranges
+	addInt(`(SELECT COUNT(*) FROM organization_members om WHERE om.organization_id = o.id) >= $%d`, search.MemberCountMin)
+	addInt(`(SELECT COUNT(*) FROM organization_members om WHERE om.organization_id = o.id) <= $%d`, search.MemberCountMax)
+	addInt(`(SELECT COUNT(*) FROM email_accounts ea WHERE ea.organization_id = o.id) >= $%d`, search.EmailAccountCountMin)
+	addInt(`(SELECT COUNT(*) FROM email_accounts ea WHERE ea.organization_id = o.id) <= $%d`, search.EmailAccountCountMax)
+	addInt(`(SELECT COUNT(*) FROM campaigns c WHERE c.organization_id = o.id) >= $%d`, search.CampaignCountMin)
+	addInt(`(SELECT COUNT(*) FROM campaigns c WHERE c.organization_id = o.id) <= $%d`, search.CampaignCountMax)
+
+	// Date ranges
+	addAfter("o.created_at", search.CreatedAfter)
+	addBefore("o.created_at", search.CreatedBefore)
+	addAfter("s.trial_end", search.TrialEndAfter)
+	addBefore("s.trial_end", search.TrialEndBefore)
+	addAfter("s.current_period_end", search.CurrentPeriodEndAfter)
+	addBefore("s.current_period_end", search.CurrentPeriodEndBefore)
+	addAfter("o.updated_at", search.UpdatedAfter)
+	addBefore("o.updated_at", search.UpdatedBefore)
+
 	if search.Cursor != nil {
 		where += ` AND o.id < $` + itoa(argNum)
 		args = append(args, *search.Cursor)
 		argNum++
 	}
 
-	orderBy := "ORDER BY o.created_at DESC"
-	if search.SortBy == "name" {
-		orderBy = "ORDER BY o.name"
-		if search.SortDesc {
-			orderBy += " DESC"
-		}
+	orderCol := "o.created_at"
+	switch search.SortBy {
+	case "name":
+		orderCol = "o.name"
+	case "owner_email":
+		orderCol = "u.email"
+	case "member_count":
+		orderCol = "(SELECT COUNT(*) FROM organization_members om WHERE om.organization_id = o.id)"
+	case "email_account_count":
+		orderCol = "(SELECT COUNT(*) FROM email_accounts ea WHERE ea.organization_id = o.id)"
+	case "campaign_count":
+		orderCol = "(SELECT COUNT(*) FROM campaigns c WHERE c.organization_id = o.id)"
 	}
+	orderDir := "DESC"
+	if search.SortBy != "" && !search.SortDesc {
+		orderDir = "ASC"
+	}
+	orderBy := "ORDER BY " + orderCol + " " + orderDir
 
 	args = append(args, limit+1)
 
 	query := `
-		SELECT ` + adminOrgListColumns + `
+		SELECT ` + adminOrgListColumns + `,
+			p.name, p.public, COALESCE(s.is_enterprise, FALSE)
 		FROM organizations o
 		JOIN users u ON u.id = o.owner_user_id
+		LEFT JOIN subscriptions s ON s.organization_id = o.id
+		LEFT JOIN plans p ON p.id = s.plan_id
 		` + where + `
 		` + orderBy + `
 		LIMIT $` + itoa(argNum)
@@ -726,9 +825,21 @@ func (r *organizationRepository) SearchOrganizationsForAdmin(ctx context.Context
 	items := []models.AdminOrgListItem{}
 	for rows.Next() {
 		var item models.AdminOrgListItem
-		if err := scanAdminOrgListItem(rows, &item); err != nil {
+		var planName *string
+		var planPublic *bool
+		var isEnterprise bool
+		if err := rows.Scan(
+			&item.ID, &item.Name, &item.Slug, &item.OwnerUserID,
+			&item.OwnerEmail, &item.OwnerFirstName, &item.OwnerLastName, &item.OwnerBannedAt,
+			&item.CreatedAt, &item.DeletionScheduledFor,
+			&item.MemberCount, &item.EmailAccountCount, &item.CampaignCount, &item.ActiveCampaigns,
+			&planName, &planPublic, &isEnterprise,
+		); err != nil {
 			return nil, err
 		}
+		item.PlanName = planName
+		item.PlanPublic = planPublic
+		item.IsEnterprise = isEnterprise
 		items = append(items, item)
 	}
 
@@ -743,7 +854,7 @@ func (r *organizationRepository) SearchOrganizationsForAdmin(ctx context.Context
 	}
 
 	// Total count for the same filter — drop the trailing LIMIT arg.
-	countQuery := `SELECT COUNT(*) FROM organizations o JOIN users u ON u.id = o.owner_user_id ` + where
+	countQuery := `SELECT COUNT(*) FROM organizations o JOIN users u ON u.id = o.owner_user_id LEFT JOIN subscriptions s ON s.organization_id = o.id LEFT JOIN plans p ON p.id = s.plan_id ` + where
 	var total int64
 	if err := r.db.QueryRow(ctx, countQuery, args[:len(args)-1]...).Scan(&total); err == nil {
 		result.Pagination.Total = &total

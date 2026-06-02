@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -122,6 +123,107 @@ func (r *adminRepository) SearchUsers(ctx context.Context, search *models.AdminU
 	if search.IsAdmin != nil && *search.IsAdmin {
 		whereClause += ` AND u.admin_permissions > 0`
 	}
+
+	if search.HasOverrides {
+		whereClause += ` AND EXISTS (SELECT 1 FROM user_rate_limits url WHERE url.user_id = u.id)`
+	}
+
+	if search.FreeTrialUsed {
+		whereClause += ` AND u.free_trial_used = TRUE`
+	}
+
+	if search.CreatedWithin > 0 {
+		whereClause += ` AND u.created_at >= NOW() - ($` + itoa(argNum) + `::int * INTERVAL '1 day')`
+		args = append(args, search.CreatedWithin)
+		argNum++
+	}
+
+	// Local helpers keep the many optional clauses in the established
+	// whereClause/argNum/itoa style. `frag` carries a single %d placeholder
+	// for the bind position; date "before" bounds are made inclusive of the
+	// whole day by comparing against the next midnight.
+	addInt := func(frag string, v *int) {
+		if v != nil {
+			whereClause += " AND " + fmt.Sprintf(frag, argNum)
+			args = append(args, *v)
+			argNum++
+		}
+	}
+	addAfter := func(col string, v *time.Time) {
+		if v != nil {
+			whereClause += " AND " + col + " >= $" + itoa(argNum)
+			args = append(args, *v)
+			argNum++
+		}
+	}
+	addBefore := func(col string, v *time.Time) {
+		if v != nil {
+			whereClause += " AND " + col + " < ($" + itoa(argNum) + " + INTERVAL '1 day')"
+			args = append(args, *v)
+			argNum++
+		}
+	}
+
+	// Plan / subscription
+	if search.PlanID != nil {
+		whereClause += ` AND EXISTS (SELECT 1 FROM subscriptions s WHERE s.user_id = u.id AND s.plan_id = $` + itoa(argNum) + `)`
+		args = append(args, *search.PlanID)
+		argNum++
+	}
+	if search.SubscriptionStatus != "" {
+		whereClause += ` AND EXISTS (SELECT 1 FROM subscriptions s WHERE s.user_id = u.id AND s.status = $` + itoa(argNum) + `)`
+		args = append(args, search.SubscriptionStatus)
+		argNum++
+	}
+	if search.IsEnterprise {
+		whereClause += ` AND EXISTS (SELECT 1 FROM subscriptions s WHERE s.user_id = u.id AND s.is_enterprise = TRUE)`
+	}
+	if search.HasSubscription {
+		whereClause += ` AND EXISTS (SELECT 1 FROM subscriptions s WHERE s.user_id = u.id)`
+	}
+	if search.HasActiveSubscription {
+		whereClause += ` AND EXISTS (SELECT 1 FROM subscriptions s WHERE s.user_id = u.id AND s.status IN ('active','trialing'))`
+	}
+
+	// Account state
+	if search.OnboardingCompleted {
+		whereClause += ` AND u.onboarding_completed_at IS NOT NULL`
+	}
+	if search.DeletionScheduled {
+		whereClause += ` AND u.deletion_scheduled_at IS NOT NULL`
+	}
+	if search.HasAvatar {
+		whereClause += ` AND u.avatar_url IS NOT NULL`
+	}
+	if search.HasActiveCampaign {
+		whereClause += ` AND EXISTS (SELECT 1 FROM campaigns c WHERE c.user_id = u.id AND c.status = 'active')`
+	}
+	if search.HasBanRecord {
+		whereClause += ` AND EXISTS (SELECT 1 FROM user_bans ub WHERE ub.user_id = u.id)`
+	}
+	if search.HasDedicatedWorker {
+		whereClause += ` AND EXISTS (SELECT 1 FROM dedicated_worker_assignments dwa WHERE dwa.user_id = u.id AND dwa.released_at IS NULL)`
+	}
+
+	// Count / numeric ranges
+	addInt(`(SELECT COUNT(*) FROM organization_members om WHERE om.user_id = u.id) >= $%d`, search.OrgCountMin)
+	addInt(`(SELECT COUNT(*) FROM organization_members om WHERE om.user_id = u.id) <= $%d`, search.OrgCountMax)
+	addInt(`(SELECT COUNT(*) FROM email_accounts ea WHERE ea.user_id = u.id) >= $%d`, search.EmailAccountCountMin)
+	addInt(`(SELECT COUNT(*) FROM email_accounts ea WHERE ea.user_id = u.id) <= $%d`, search.EmailAccountCountMax)
+	addInt(`(SELECT COUNT(*) FROM campaigns c WHERE c.user_id = u.id) >= $%d`, search.CampaignCountMin)
+	addInt(`(SELECT COUNT(*) FROM campaigns c WHERE c.user_id = u.id) <= $%d`, search.CampaignCountMax)
+	addInt(`u.max_organizations >= $%d`, search.MaxOrganizationsMin)
+	addInt(`u.max_organizations <= $%d`, search.MaxOrganizationsMax)
+
+	// Date ranges
+	addAfter("u.created_at", search.CreatedAfter)
+	addBefore("u.created_at", search.CreatedBefore)
+	addAfter("u.admin_granted_at", search.AdminGrantedAfter)
+	addBefore("u.admin_granted_at", search.AdminGrantedBefore)
+	addAfter("u.banned_at", search.BannedAfter)
+	addBefore("u.banned_at", search.BannedBefore)
+	addAfter("u.updated_at", search.UpdatedAfter)
+	addBefore("u.updated_at", search.UpdatedBefore)
 
 	if search.Cursor != nil {
 		whereClause += ` AND u.id < $` + itoa(argNum)
@@ -1964,15 +2066,137 @@ func (r *adminRepository) SearchMailboxesForAdmin(ctx context.Context, search *m
 		args = append(args, search.Provider)
 		argNum++
 	}
+	switch search.Warmup {
+	case "on":
+		where += " AND ea.warmup IS NOT NULL"
+	case "off":
+		where += " AND ea.warmup IS NULL"
+	}
+	if search.CreatedWithin > 0 {
+		where += " AND ea.created_at >= NOW() - ($" + itoa(argNum) + "::int * INTERVAL '1 day')"
+		args = append(args, search.CreatedWithin)
+		argNum++
+	}
 	if search.OrgID != nil {
 		where += " AND ea.organization_id = $" + itoa(argNum)
 		args = append(args, *search.OrgID)
 		argNum++
 	}
+
+	// Local clause helpers in the established argNum/itoa style.
+	addInt := func(frag string, v *int) {
+		if v != nil {
+			where += " AND " + fmt.Sprintf(frag, argNum)
+			args = append(args, *v)
+			argNum++
+		}
+	}
+	addAfter := func(col string, v *time.Time) {
+		if v != nil {
+			where += " AND " + col + " >= $" + itoa(argNum)
+			args = append(args, *v)
+			argNum++
+		}
+	}
+	addBefore := func(col string, v *time.Time) {
+		if v != nil {
+			where += " AND " + col + " < ($" + itoa(argNum) + " + INTERVAL '1 day')"
+			args = append(args, *v)
+			argNum++
+		}
+	}
+
+	// Ownership / placement
+	if search.UserID != nil {
+		where += " AND ea.user_id = $" + itoa(argNum)
+		args = append(args, *search.UserID)
+		argNum++
+	}
+	if search.WorkerID != nil {
+		where += " AND ea.worker_id = $" + itoa(argNum)
+		args = append(args, *search.WorkerID)
+		argNum++
+	}
+
+	// Classification
+	if search.RiskBand != "" {
+		where += " AND ea.risk_band::text = $" + itoa(argNum)
+		args = append(args, search.RiskBand)
+		argNum++
+	}
+	if search.WarmupPoolType != "" {
+		where += " AND ea.warmup_pool_type = $" + itoa(argNum)
+		args = append(args, search.WarmupPoolType)
+		argNum++
+	}
+	switch search.SyncedStatus {
+	case "never":
+		where += " AND ea.last_synced_at IS NULL"
+	case "stale":
+		where += " AND ea.last_synced_at IS NOT NULL AND NOW() - ea.last_synced_at > INTERVAL '24 hours'"
+	case "recent":
+		where += " AND ea.last_synced_at IS NOT NULL AND NOW() - ea.last_synced_at <= INTERVAL '24 hours'"
+	}
+
+	// Flags
+	if search.WarmupPaused {
+		where += " AND ea.warmup_paused_at IS NOT NULL"
+	}
+	if search.TrackingDomainVerified {
+		where += " AND ea.tracking_domain_verified = TRUE"
+	}
+	if search.HasTrackingDomain {
+		where += " AND ea.tracking_domain IS NOT NULL AND ea.tracking_domain <> ''"
+	}
+	if search.HasOrganization {
+		where += " AND ea.organization_id IS NOT NULL"
+	}
+	if search.SignatureSync {
+		where += " AND ea.signature_sync = TRUE"
+	}
+	if search.HasOAuth {
+		where += " AND EXISTS (SELECT 1 FROM email_accounts_oauth eao WHERE eao.email_account_id = ea.id)"
+	}
+	if search.HasSMTPImap {
+		where += " AND EXISTS (SELECT 1 FROM email_accounts_smtp_imap easi WHERE easi.email_account_id = ea.id)"
+	}
+
+	// Numeric ranges
+	addInt("ea.campaign_limit >= $%d", search.CampaignLimitMin)
+	addInt("ea.campaign_limit <= $%d", search.CampaignLimitMax)
+	addInt("ea.min_wait_time >= $%d", search.MinWaitTimeMin)
+	addInt("ea.min_wait_time <= $%d", search.MinWaitTimeMax)
+
+	// Date ranges
+	addAfter("ea.created_at", search.CreatedAfter)
+	addBefore("ea.created_at", search.CreatedBefore)
+	addAfter("ea.last_synced_at", search.LastSyncedAfter)
+	addBefore("ea.last_synced_at", search.LastSyncedBefore)
+
 	if search.Cursor != nil {
 		where += " AND ea.id < $" + itoa(argNum)
 		args = append(args, *search.Cursor)
 		argNum++
+	}
+
+	orderCol := "ea.id"
+	switch search.SortBy {
+	case "email":
+		orderCol = "ea.email"
+	case "created_at":
+		orderCol = "ea.created_at"
+	case "last_synced_at":
+		orderCol = "ea.last_synced_at"
+	case "campaign_limit":
+		orderCol = "ea.campaign_limit"
+	}
+	orderDir := "DESC"
+	if search.SortBy != "" && !search.SortDesc {
+		orderDir = "ASC"
+	}
+	orderBy := "ORDER BY " + orderCol + " " + orderDir
+	if orderCol != "ea.id" {
+		orderBy += ", ea.id DESC"
 	}
 
 	args = append(args, limit+1)
@@ -1984,12 +2208,13 @@ func (r *adminRepository) SearchMailboxesForAdmin(ctx context.Context, search *m
 			ea.organization_id, o.name,
 			ea.worker_id,
 			(ea.warmup IS NOT NULL) AS warmup_enabled,
+			ea.risk_band::text, ea.warmup_pool_type,
 			ea.campaign_limit, ea.last_synced_at, ea.created_at
 		FROM email_accounts ea
 		JOIN users u ON u.id = ea.user_id
 		LEFT JOIN organizations o ON o.id = ea.organization_id
 		` + where + `
-		ORDER BY ea.id DESC
+		` + orderBy + `
 		LIMIT ` + limitParam
 
 	rows, err := r.db.Query(ctx, query, args...)
@@ -2007,6 +2232,7 @@ func (r *adminRepository) SearchMailboxesForAdmin(ctx context.Context, search *m
 			&m.OrganizationID, &m.OrgName,
 			&m.WorkerID,
 			&m.WarmupEnabled,
+			&m.RiskBand, &m.WarmupPoolType,
 			&m.CampaignLimit, &m.LastSyncedAt, &m.CreatedAt,
 		); err != nil {
 			return nil, err
