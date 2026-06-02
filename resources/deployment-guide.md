@@ -6,7 +6,7 @@ End-to-end guide for deploying Warmbly. The control plane runs on a container ho
 
 | Plane | What runs | Where |
 |-------|-----------|-------|
-| Control | backend, consumer, tracking, realtime, web | One container host with stable region pinning (Railway, ECS Fargate, Fly, Kubernetes — any of them works). Postgres + Redis + Kafka + Schema Registry + S3 + KMS + DynamoDB are external dependencies. |
+| Control | backend, consumer, tracking, realtime, web | One container host with stable region pinning (Railway, ECS Fargate, Fly, Kubernetes — any of them works). Postgres + Redis + Kafka + Schema Registry + S3 + KMS are external dependencies. |
 | Execution | worker | One process per VPS, anywhere in the world, supervised by systemd, configured from the admin dashboard over SSH. |
 
 The control plane never needs to scale beyond a few replicas; the worker fleet is what fans out for IP diversity.
@@ -20,7 +20,6 @@ The control plane never needs to scale beyond a few replicas; the worker fleet i
 - A Kafka broker with a Schema Registry (Confluent Cloud, Aiven, Redpanda, self-hosted)
 - An S3-compatible bucket
 - AWS KMS for envelope-encryption root, or a KMS-compatible service via LocalStack for local dev
-- DynamoDB (or compatible) for per-user encrypted DEKs
 - A Stripe account (or stripe-mock for non-prod)
 
 **For the workers**:
@@ -30,7 +29,7 @@ The control plane never needs to scale beyond a few replicas; the worker fleet i
 
 ## Step 1: Provision the control-plane dependencies
 
-Whatever your stack, get the seven external services above running and collect the connection details. Local dev can substitute everything with `make sim` from the repo root (see [local-development.md](local-development.md)) — that runs LocalStack for KMS/Dynamo/S3 and includes everything else as containers.
+Whatever your stack, get the external services above running and collect the connection details. Local dev can substitute everything with `make sim` from the repo root (see [local-development.md](local-development.md)) — that runs LocalStack for KMS/S3 and includes everything else as containers.
 
 ## Step 2: Configure the backend
 

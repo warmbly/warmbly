@@ -25,7 +25,7 @@ const planes = [
     accent: '#059669',
     title: 'Workers',
     body: 'One process per machine. One IP per worker. Receives commands from a worker-specific Kafka topic. Sends, syncs, validates, heartbeats. State is disposable. A crashed worker is replaced by another reading the same topic.',
-    parts: ['cmd/worker', 'Kafka consumer', 'Redis cache', 'KMS + DynamoDB + S3'],
+    parts: ['cmd/worker', 'Kafka consumer', 'Redis cache', 'KMS + S3'],
   },
 ];
 

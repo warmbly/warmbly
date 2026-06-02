@@ -82,7 +82,7 @@ const flow = [
   {
     n: '04',
     title: 'Ciphertext at rest',
-    body: 'Ciphertext is stored in Postgres or DynamoDB. The encrypted DEK blob lives in DynamoDB. Plaintext DEKs are cached in Redis with a TTL.',
+    body: 'Ciphertext is stored in Postgres. The encrypted DEK blob lives in the user_encrypted_keys Postgres table. Plaintext DEKs are cached in Redis with a TTL.',
     tag: 'Envelope',
   },
 ];
@@ -109,7 +109,7 @@ const neverCollect = [
 
 // Subprocessor summary. The infrastructure Warmbly relies on to run.
 const subs = [
-  { name: 'AWS',         use: 'Compute, KMS, DynamoDB, S3, MSK, RDS',     region: 'us-east-1, eu-west-1' },
+  { name: 'AWS',         use: 'Compute, KMS, S3, MSK, RDS',               region: 'us-east-1, eu-west-1' },
   { name: 'Cloudflare',  use: 'Edge, DDoS, Turnstile CAPTCHA',            region: 'Global' },
   { name: 'Stripe',      use: 'Billing and tax',                          region: 'United States' },
   { name: 'Postmark',    use: 'Transactional account email',              region: 'United States' },
@@ -156,7 +156,7 @@ const workerBoundary = [
   { k: 'PostgreSQL',  v: 'never connected', tone: 'never' },
   { k: 'Kafka',       v: 'commands in, results out', tone: 'yes' },
   { k: 'AWS KMS',     v: 'envelope decryption only', tone: 'yes' },
-  { k: 'DynamoDB',    v: 'encrypted DEK lookup',     tone: 'yes' },
+  { k: 'Backend API', v: 'DEK + message map (HTTPS)', tone: 'yes' },
   { k: 'S3',          v: 'object storage only',      tone: 'yes' },
   { k: 'Redis',       v: 'plaintext DEK cache, TTL', tone: 'yes' },
 ];
@@ -303,7 +303,7 @@ const disclosure = [
         <!-- Footer summary strip -->
         <div class="px-5 md:px-7 py-4 bg-[color:var(--surface-1)] border-t border-[color:var(--border)] flex flex-wrap items-center gap-x-6 gap-y-2 text-[12px] text-muted-foreground">
           <span class="inline-flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Plaintext DEK cached in Redis with TTL</span>
-          <span class="inline-flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Encrypted DEK persisted in DynamoDB</span>
+          <span class="inline-flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Encrypted DEK persisted in Postgres</span>
           <span class="inline-flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> AES-256-GCM authenticated encryption</span>
         </div>
       </div>
@@ -314,7 +314,7 @@ const disclosure = [
           'internal/app/cipher/cipher.go',
           'internal/app/cipher/encrypt.go',
           'internal/infrastructure/kms/encryption.go',
-          'internal/repository/dynamo_user_encrypted_keys.go',
+          'internal/infrastructure/encryptedkeys/postgres.go',
         ].map((p) => (
           <div class="flex items-center gap-2 px-3 py-2 rounded-[8px] bg-white ring-1 ring-[color:var(--border)] font-mono text-[12px] text-foreground/75">
             <Icon name="code" size={12} class="text-[color:var(--sky-4)]" />

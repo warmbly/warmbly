@@ -135,7 +135,7 @@ variable. A self-hoster pays only for the boxes they rent.
 | Event bus          | NATS JetStream (1 binary)  | Kafka, MSK              |
 | Blob storage       | Filesystem                 | S3, MinIO, R2, B2       |
 | KMS / root key     | Local AES master key       | AWS KMS, Vault, GCP     |
-| Encrypted keys     | PostgreSQL table           | DynamoDB / Scylla       |
+| Encrypted keys     | PostgreSQL table           | Same (workers via HTTP) |
 | Codec              | JSON                       | Avro + Schema Registry  |
 | Captcha            | Bypass token (trusted)     | Cloudflare Turnstile    |
 | Payments           | Off                        | Stripe                  |

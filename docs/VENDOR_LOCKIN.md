@@ -19,7 +19,7 @@ cloud / SaaS provider. Status as of the pluggable-backends refactor.
 | Concern | Interface | Self-host default | AWS / cloud option | Other options |
 |---|---|---|---|---|
 | **KMS / root key** | `kms.Provider` | `local` (AES-256-GCM, key from env/file) | `aws-kms` | Add `vault`, `gcp-kms`, `azure-keyvault` by implementing the interface |
-| **Encrypted DEKs** | `encryptedkeys.Store` | `postgres` (backend) / `http` (worker) | `dynamodb` | ScyllaDB Alternator via DynamoDB API; add `etcd` etc. |
+| **Encrypted DEKs** | `encryptedkeys.Store` | `postgres` (backend) / `http` (worker) | n/a — `postgres` works everywhere | Add `dynamodb`, `etcd`, etc. by implementing the `Store` interface |
 | **Blob storage** | `storage.Store` | `filesystem` | `s3` (AWS) | One `s3` impl also works for MinIO, Cloudflare R2, Backblaze B2, Hetzner Object Storage — set `AWS_ENDPOINT_URL_S3` |
 | **Event bus** | `eventbus.EventBus` | `nats` (JetStream) | `kafka` | Redis Streams, etc. by implementing the interface |
 | **Codec** | `codec.Codec` | `json` | `avro` (requires Schema Registry) | Protobuf etc. |

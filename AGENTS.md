@@ -156,10 +156,11 @@ Design intent:
 - workers should not depend on PostgreSQL or other direct SQL access
 - workers should receive commands from Kafka
 - workers should publish results back through Kafka
-- workers may talk to infrastructure-style services that scale independently, such as S3, KMS, DynamoDB, and cache layers
+- workers may talk to infrastructure-style services that scale independently, such as S3, KMS, and cache layers
+- relational data the worker needs (encrypted DEKs, the messageId→internal-email map) is reached over the backend's internal HTTP API (`/api/v1/internal/...`), never via direct SQL
 - worker-local state should be minimal and disposable
 
-Current code matches that intent in `cmd/worker/main.go`: the worker boots Kafka, Redis cache, KMS, DynamoDB, and S3 clients, but does not open a PostgreSQL connection.
+Current code matches that intent in `cmd/worker/main.go`: the worker boots Kafka, Redis cache, KMS, and S3 clients, and reaches DEKs + the email message map through the backend's internal API, but does not open a PostgreSQL connection.
 
 When changing worker behavior, preserve that boundary unless there is a very strong reason not to.
 
@@ -178,7 +179,7 @@ High-level flow:
 Current implementation:
 
 - KMS generates a 32-byte DEK for AES-256
-- the encrypted DEK blob is base64-encoded and stored in DynamoDB
+- the encrypted DEK blob is base64-encoded and stored via the pluggable `encryptedkeys.Store` (the `postgres` backend writes the `user_encrypted_keys` table; workers use the `http` backend, which proxies to the backend's `/api/v1/internal/dek` endpoint)
 - the plaintext DEK is cached in Redis with a TTL
 - encrypted fields are sealed with AES-GCM and then base64-encoded
 
@@ -190,13 +191,14 @@ Main code paths:
 - `internal/app/cipher/cache.go`
 - `internal/infrastructure/kms/encryption.go`
 - `internal/infrastructure/kms/decryption.go`
-- `internal/repository/dynamo_user_encrypted_keys.go`
+- `internal/infrastructure/encryptedkeys/` (`store.go`, `factory.go`, `postgres.go`, `http.go`)
+- `internal/api/handler/internal_dek.go` (the worker-facing DEK proxy endpoint)
 
 Operational guidance:
 
 - do not introduce plaintext storage of secrets or message content where the current design expects encrypted values
-- do not move DEK storage into Postgres; keep it in the KMS + DynamoDB envelope-encryption model unless there is a migration plan
-- if workers need access to encrypted payloads, prefer passing encrypted material plus access to KMS-backed decryption primitives rather than introducing direct SQL dependencies
+- DEKs live in the `user_encrypted_keys` Postgres table behind the `encryptedkeys.Store` interface (provider selected by `ENCRYPTED_KEYS_PROVIDER`: `postgres` for backend/consumer, `http` for workers). DynamoDB is no longer used anywhere; do not reintroduce it. Losing a DEK is unrecoverable, so any change to DEK storage needs a migration plan
+- if workers need access to encrypted payloads, prefer passing encrypted material plus access to KMS-backed decryption primitives, or an internal backend API, rather than introducing direct SQL dependencies
 - be explicit about which fields are encrypted at rest in app code versus stored in infrastructure services like S3
 
 ## Sending Safety Policy

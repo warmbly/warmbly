@@ -73,7 +73,7 @@ docker compose -p warmbly --profile sim --profile seed --profile tools down -v  
 After `make infra && make app`:
 
 - **postgres**, **redis**, **zookeeper**, **kafka**, **schema-registry** — infra
-- **localstack** — KMS + DynamoDB + S3 emulation
+- **localstack** — KMS + S3 emulation
 - **stripe-mock** — Stripe API surrogate
 - **mailpit** — SMTP catcher with a web UI
 - **cloud-tasks-emulator** — Google Cloud Tasks surrogate
@@ -127,10 +127,9 @@ When `SEED_RICH=true` (default in `docker-compose.yml`), also loads:
 
 ## LocalStack
 
-The `localstack` service provides KMS, DynamoDB, and S3 locally. A one-shot init container (`localstack-init`) creates everything Warmbly expects:
+The `localstack` service provides KMS and S3 locally. A one-shot init container (`localstack-init`) creates everything Warmbly expects:
 
 - KMS alias `alias/master-key-dev` for envelope encryption
-- DynamoDB tables `UserEncryptedKeys` and `EmailMessageData`
 - S3 bucket `main`
 
 Backend, consumer, and workers point at LocalStack via `AWS_ENDPOINT_URL=http://localstack:4566`. Production deployments leave that var unset and hit real AWS.

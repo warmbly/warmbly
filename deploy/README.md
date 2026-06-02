@@ -4,7 +4,7 @@ Two distinct planes, deployed differently.
 
 | Plane | Services | How |
 |-------|----------|-----|
-| Control | backend, consumer, tracking, realtime, web | Container hosting in one region (Railway in production). Stable region-pinning so KMS/DynamoDB/S3 calls stay local. |
+| Control | backend, consumer, tracking, realtime, web | Container hosting in one region (Railway in production). Stable region-pinning so KMS/S3 calls stay local. |
 | Execution | worker | One process per VPS, anywhere with a public IPv4. Managed from the admin dashboard over SSH. |
 
 ## Directory layout

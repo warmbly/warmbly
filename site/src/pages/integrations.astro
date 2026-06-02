@@ -169,7 +169,7 @@ const numbers = [
 ];
 
 const security = [
-  { t: 'OAuth tokens encrypted at rest',    d: 'AES-256-GCM with per-user data encryption keys wrapped by AWS KMS. The encrypted blob is stored in DynamoDB. Plaintext is only held in a TTL-bounded cache during active use.' },
+  { t: 'OAuth tokens encrypted at rest',    d: 'AES-256-GCM with per-user data encryption keys wrapped by AWS KMS. The encrypted blob is stored in PostgreSQL. Plaintext is only held in a TTL-bounded cache during active use.' },
   { t: 'API tokens stored as opaque blobs', d: 'CRM, automation, and notification keys are never serialized back to the API consumer. The dashboard sees only the public display fields (workspace, channel, account email).' },
   { t: 'Inbound URLs are per-organization', d: 'A leaked URL only affects one organization. Rotating the secret invalidates the old one immediately.' },
   { t: 'Outbound delivery audit trail',     d: 'Every webhook dispatch attempt is recorded with response status and body excerpt. Replays are supported. SKIP LOCKED prevents duplicate fanout across replicas.' },

@@ -204,10 +204,10 @@ restart-all:
 DEV_COMPOSE := $(COMPOSE) -f docker-compose.yml -f docker-compose.dev.yml
 
 # Stateful infrastructure. Brought up once and left running.
-# localstack-init is a one-shot that (re)creates the KMS alias, DynamoDB
-# tables, and S3 bucket. localstack runs with PERSISTENCE=0, so those are
-# wiped on every restart and must be recreated before any service (incl.
-# the natively-run backend) touches KMS/Dynamo/S3.
+# localstack-init is a one-shot that (re)creates the KMS alias and S3
+# bucket. localstack runs with PERSISTENCE=0, so those are wiped on every
+# restart and must be recreated before any service (incl. the natively-run
+# backend) touches KMS/S3.
 INFRA_SVCS  := postgres redis zookeeper kafka kafka-init schema-registry \
                mailpit localstack localstack-init stripe-mock cloud-tasks-emulator
 
