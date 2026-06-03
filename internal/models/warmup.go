@@ -37,13 +37,13 @@ type WarmupEmailAction struct {
 	MailboxUIDValidity uint32    `json:"mailbox_uid_validity"`
 	Actions            []string  `json:"actions"` // "move_to_warmbly", "mark_read", "remove_from_spam", "mark_important"
 
-	// DelaySeconds is a recipient-side "dwell" delay applied ONLY to the
-	// low-stakes engagement-timing signals (read / important / star), so they
-	// don't all fire milliseconds after delivery (a bot signature). The worker
-	// holds these with an in-process timer; losing that timer on a restart drops
-	// only those low-stakes signals. The reputation-critical actions (folder +
-	// spam-rescue) run immediately and durably, so a restart never loses them.
-	// 0 = run everything now.
+	// DelaySeconds is retained for wire compatibility but is now always 0: the
+	// recipient-side "dwell" is owned by the consumer's durable schedule
+	// (warmup_pending_engagements + the engagement poller), which publishes the
+	// immediate leg (folder + spam-rescue) now and the delayed leg (read /
+	// important / star) when due. The worker runs whatever it receives
+	// immediately. This survives a worker restart, which the old in-process
+	// timer did not.
 	DelaySeconds int `json:"delay_seconds,omitempty"`
 }
 

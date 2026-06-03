@@ -3,7 +3,6 @@ package worker
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/rs/zerolog/log"
 	"github.com/warmbly/warmbly/internal/app/worker/wmail"
@@ -11,10 +10,15 @@ import (
 	"github.com/warmbly/warmbly/internal/models"
 )
 
-// maxWarmupDwell bounds how long the worker will hold a warmup action timer, so
-// a misconfigured dwell can't pin goroutines/memory indefinitely.
-const maxWarmupDwell = 15 * time.Minute
-
+// HandleWarmupAction executes recipient-side warmup actions on the mailbox.
+//
+// The worker just runs whatever actions it receives, immediately. The
+// recipient-side "dwell" and the immediate-vs-delayed split are now owned by the
+// CONSUMER's durable schedule (internal/app/consumer/warmup_engagement_poller):
+// the consumer publishes the immediate leg (folder + spam-rescue) right away and
+// the delayed leg (read / important / star) when its fire_at passes, each with
+// DelaySeconds=0. That makes the dwell survive a worker restart, which the old
+// in-process time.AfterFunc here could not.
 func (w *WorkerService) HandleWarmupAction(ctx context.Context, body any) error {
 	action, ok := body.(models.WarmupEmailAction)
 	if !ok {
@@ -28,90 +32,31 @@ func (w *WorkerService) HandleWarmupAction(ctx context.Context, body any) error 
 		Uint32("uid", action.UID).
 		Uint32("mailbox_uid_validity", action.MailboxUIDValidity).
 		Strs("actions", action.Actions).
-		Int("delay_seconds", action.DelaySeconds).
 		Msg("Processing warmup email action")
 
-	runActions := func(runCtx context.Context, acts []string) {
-		if len(acts) == 0 {
-			return
-		}
-		w.mailManager.RLock()
-		mail, exists := w.mailManager.Emails[action.EmailID]
-		w.mailManager.RUnlock()
-
-		if !exists {
-			log.Warn().Str("email_id", action.EmailID.String()).Msg("Email account not found for warmup action")
-			return
-		}
-
-		a := action
-		a.Actions = acts
-		switch {
-		case mail.GoogleData != nil && mail.GoogleData.Client != nil:
-			w.runGoogleWarmupActions(runCtx, mail, a)
-		case mail.SmtpImapData != nil && mail.SmtpImapData.ImapClient != nil:
-			w.runImapWarmupActions(runCtx, mail, a)
-		default:
-			log.Warn().
-				Str("email_id", action.EmailID.String()).
-				Msg("No mail client available for warmup actions; skipping")
-		}
-	}
-
-	// Two legs. The IMMEDIATE leg holds the reputation-critical, durable actions:
-	// foldering (move the warmup mail into the auto-created "Warmbly"
-	// folder/label, keeping the inbox clean) AND spam-rescue (move it out of
-	// Junk). These run promptly and survive a worker restart. The DELAYED leg
-	// holds the pure engagement-timing signals (read / important / star) behind
-	// the recipient-side dwell so they don't all fire milliseconds after
-	// delivery — a bot signature. The delayed leg is best-effort: its timer is
-	// in-process, so a restart mid-dwell drops those low-stakes signals. We keep
-	// spam-rescue OUT of the delayed leg precisely so the highest-stakes action
-	// (a message stuck in spam) is never lost to a restart.
-	immediate, delayed := splitWarmupActions(action.Actions)
-	runActions(ctx, immediate)
-
-	if len(delayed) == 0 {
+	if len(action.Actions) == 0 {
 		return nil
 	}
-	if delay := warmupDwellDelay(action.DelaySeconds); delay > 0 {
-		// Detached timer so the consume loop isn't blocked. Losing the timer on
-		// restart is fine for best-effort warmup engagement.
-		time.AfterFunc(delay, func() {
-			runCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-			defer cancel()
-			runActions(runCtx, delayed)
-		})
+
+	w.mailManager.RLock()
+	mail, exists := w.mailManager.Emails[action.EmailID]
+	w.mailManager.RUnlock()
+	if !exists {
+		log.Warn().Str("email_id", action.EmailID.String()).Msg("Email account not found for warmup action")
 		return nil
 	}
-	runActions(ctx, delayed)
+
+	switch {
+	case mail.GoogleData != nil && mail.GoogleData.Client != nil:
+		w.runGoogleWarmupActions(ctx, mail, action)
+	case mail.SmtpImapData != nil && mail.SmtpImapData.ImapClient != nil:
+		w.runImapWarmupActions(ctx, mail, action)
+	default:
+		log.Warn().
+			Str("email_id", action.EmailID.String()).
+			Msg("No mail client available for warmup actions; skipping")
+	}
 	return nil
-}
-
-// splitWarmupActions separates the durable, reputation-critical actions
-// (foldering + spam-rescue, run promptly) from the pure engagement-timing
-// signals (read / important / star, delayed by the recipient-side dwell).
-func splitWarmupActions(actions []string) (immediate, delayed []string) {
-	for _, a := range actions {
-		if a == "move_to_warmbly" || a == "remove_from_spam" {
-			immediate = append(immediate, a)
-		} else {
-			delayed = append(delayed, a)
-		}
-	}
-	return immediate, delayed
-}
-
-// warmupDwellDelay clamps the requested dwell into a sane bound.
-func warmupDwellDelay(seconds int) time.Duration {
-	if seconds <= 0 {
-		return 0
-	}
-	d := time.Duration(seconds) * time.Second
-	if d > maxWarmupDwell {
-		d = maxWarmupDwell
-	}
-	return d
 }
 
 func (w *WorkerService) runGoogleWarmupActions(ctx context.Context, mail *wmail.WMail, action models.WarmupEmailAction) {
