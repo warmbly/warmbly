@@ -30,6 +30,15 @@ type Contact struct {
 	Campaigns  []MiniCampaign `json:"campaigns"`
 	Categories []MiniCategory `json:"categories"`
 
+	// Pre-send verification state (see internal/pkg/emailverify). Populated by
+	// the verification scheduler / on-demand verify; the campaign send path uses
+	// VerificationStatus == "invalid" to drop addresses before a worker sends.
+	// VerificationStatus is one of: valid | risky | invalid | unknown.
+	VerificationStatus    string     `json:"verification_status"`
+	VerificationReason    string     `json:"verification_reason"`
+	IsCatchAll            bool       `json:"is_catch_all"`
+	VerificationCheckedAt *time.Time `json:"verification_checked_at,omitempty"`
+
 	UpdatedAt time.Time `json:"updated_at"`
 	CreatedAt time.Time `json:"created_at"`
 }

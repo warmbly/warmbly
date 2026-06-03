@@ -15,11 +15,13 @@ import (
 	"github.com/warmbly/warmbly/internal/app/discount"
 	"github.com/warmbly/warmbly/internal/app/email"
 	"github.com/warmbly/warmbly/internal/app/emailsend"
+	emailverifyapp "github.com/warmbly/warmbly/internal/app/emailverify"
 	"github.com/warmbly/warmbly/internal/app/feature"
 	"github.com/warmbly/warmbly/internal/app/group"
 	"github.com/warmbly/warmbly/internal/app/integration"
 	"github.com/warmbly/warmbly/internal/app/organization"
 	"github.com/warmbly/warmbly/internal/app/passkey"
+	"github.com/warmbly/warmbly/internal/app/placement"
 	"github.com/warmbly/warmbly/internal/app/ratelimit"
 	"github.com/warmbly/warmbly/internal/app/releases"
 	"github.com/warmbly/warmbly/internal/app/sequence"
@@ -105,6 +107,10 @@ type Handler struct {
 	// Advanced outreach controls
 	AdvancedService advanced.Service
 
+	// Pre-send email verification (control-plane SMTP RCPT probe / pluggable
+	// paid backend). Drops hard-bouncing addresses before a worker sends.
+	EmailVerifyService emailverifyapp.Service
+
 	// Warmup health
 	WarmupService warmup.Service
 
@@ -115,6 +121,10 @@ type Handler struct {
 	// Warmup content bank + offline AI generator (admin control/visibility).
 	WarmupContentRepo    repository.WarmupContentRepository
 	WarmupContentService warmupcontent.Service
+
+	// Seed inbox-placement testing.
+	PlacementRepo    repository.PlacementRepository
+	PlacementService placement.Service
 
 	// Customer-facing webhooks (subscribe → HMAC-signed delivery).
 	WebhookService webhook.Service

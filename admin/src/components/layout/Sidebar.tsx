@@ -60,6 +60,7 @@ const GROUPS: NavGroup[] = [
             { to: "/warmup", label: "Warmup", icon: Flame, end: true },
             { to: "/warmup/appeals", label: "Warmup Appeals", icon: ShieldCheck },
             { to: "/warmup-content", label: "Warmup Content", icon: Sparkles },
+            { to: "/placement", label: "Inbox Placement", icon: Inbox },
             { to: "/campaigns", label: "Campaigns", icon: Megaphone },
         ],
     },

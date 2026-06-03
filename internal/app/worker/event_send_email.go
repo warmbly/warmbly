@@ -64,18 +64,19 @@ func (w *WorkerService) HandleSendEmail(ctx context.Context, body any) error {
 	w.recordSendAttempt()
 	sendStart := time.Now()
 	result := mail.Send(ctx, &wmail.SendRequest{
-		TaskID:      sendEmail.TaskID,
-		To:          sendEmail.To,
-		Cc:          sendEmail.Cc,
-		Bcc:         sendEmail.Bcc,
-		MessageID:   sendEmail.MessageID,
-		Subject:     subject,
-		BodyPlain:   bodyPlain,
-		BodyHTML:    bodyHTML,
-		InReplyTo:   sendEmail.InReplyTo,
-		Parent:      sendEmail.Parent,
-		IsWarmup:    sendEmail.IsWarmup,
-		WarmupToken: sendEmail.WarmupToken,
+		TaskID:         sendEmail.TaskID,
+		To:             sendEmail.To,
+		Cc:             sendEmail.Cc,
+		Bcc:            sendEmail.Bcc,
+		MessageID:      sendEmail.MessageID,
+		Subject:        subject,
+		BodyPlain:      bodyPlain,
+		BodyHTML:       bodyHTML,
+		InReplyTo:      sendEmail.InReplyTo,
+		Parent:         sendEmail.Parent,
+		IsWarmup:       sendEmail.IsWarmup,
+		WarmupToken:    sendEmail.WarmupToken,
+		UnsubscribeURL: sendEmail.UnsubscribeURL,
 	})
 	w.recordSendLatency(time.Since(sendStart))
 	w.recordSendOutcome(result)

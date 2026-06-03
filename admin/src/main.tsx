@@ -48,6 +48,7 @@ import LimitRequestsPage from "@/app/dashboard/LimitRequestsPage";
 import OutreachPage from "@/app/dashboard/OutreachPage";
 import AnalyticsPage from "@/app/dashboard/AnalyticsPage";
 import MailboxesPage from "@/app/dashboard/MailboxesPage";
+import PlacementPage from "@/app/dashboard/PlacementPage";
 import { NotFoundPage } from "@/app/dashboard/StubPages";
 
 // Mirror of web/src/main.tsx's tuned defaults. The admin app sees less
@@ -112,6 +113,7 @@ const router = createBrowserRouter([
                             { path: "settings", element: <WarmupContentSettingsPage /> },
                         ],
                     },
+                    { path: "placement", element: <PlacementPage /> },
                     { path: "campaigns", element: <CampaignsPage /> },
                     { path: "enterprise", element: <EnterprisePage /> },
                     { path: "limit-requests", element: <LimitRequestsPage /> },

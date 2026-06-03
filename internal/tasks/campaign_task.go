@@ -219,6 +219,24 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 		}
 	}
 
+	// Pre-send verification gate: drop addresses already known to be invalid
+	// (bad syntax / no MX / 550 RCPT) before a worker sends and earns a hard
+	// bounce. Only 'invalid' is dropped — 'risky'/'unknown'/'valid' still send.
+	if contact.VerificationStatus == "invalid" {
+		_ = s.taskRepo.UpdateTaskStatusWithLock(ctx, taskID, "skipped_suppressed")
+		if s.campaignLogRepo != nil {
+			_ = s.campaignLogRepo.CreateLog(ctx, &repository.CampaignLogEntry{
+				CampaignID: campaign.ID,
+				EventType:  "suppressed",
+				Message:    fmt.Sprintf("Unverifiable recipient skipped: %s", contact.Email),
+				Metadata:   map[string]interface{}{"reason": contact.VerificationReason},
+			})
+		}
+		_ = s.createCampaignTask(ctx, campaign.ID, accountID, nextTime)
+		executionStatus = "completed"
+		return nil
+	}
+
 	sequence, err := s.campaignRepo.GetSequenceByID(ctx, nextPair.SequenceID)
 	if err != nil {
 		sentry.CaptureException(err)

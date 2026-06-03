@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
@@ -108,6 +109,25 @@ func (s *schedulerService) CalculateNextCampaignTime(ctx context.Context, campai
 		// Skip accounts that have reached their daily limit
 		if remaining <= 0 {
 			continue
+		}
+
+		// Health-gate cold sends on the SAME warmup health state used for pool
+		// selection, so a mailbox in deliverability trouble doesn't keep blasting
+		// cold volume (the concentration risk the safety policy warns about):
+		//   - quarantined/blocked (still within blocked_until) → don't send at all
+		//   - throttled → halve today's budget (and the wider min-gap still applies)
+		if state, blockedUntil, herr := s.warmupRepo.GetHealthState(ctx, acct.ID); herr == nil {
+			switch state {
+			case models.WarmupHealthQuarantined, models.WarmupHealthBlocked:
+				if blockedUntil == nil || blockedUntil.After(time.Now()) {
+					continue
+				}
+			case models.WarmupHealthThrottled:
+				remaining /= 2
+				if remaining <= 0 {
+					continue
+				}
+			}
 		}
 
 		// If the account has its own timezone, check it is within business hours

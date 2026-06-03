@@ -36,6 +36,10 @@ type Service interface {
 	IngestDeliverabilityEvent(ctx context.Context, organizationID uuid.UUID, req *models.IngestDeliverabilityEventRequest) *errx.Error
 
 	ShouldSuppressRecipient(ctx context.Context, organizationID uuid.UUID, recipient string) (bool, string, *errx.Error)
+	// Unsubscribe suppresses a contact in response to a List-Unsubscribe action
+	// (one-click POST or the manual link). Always suppresses — it's an explicit
+	// recipient request, independent of the auto-suppress settings.
+	Unsubscribe(ctx context.Context, campaignID, contactID uuid.UUID) *errx.Error
 	SelectVariant(ctx context.Context, organizationID, campaignID, contactID uuid.UUID, subject, bodyHTML, bodyPlain string) (*models.VariantSelection, *errx.Error)
 	OptimizeSendTime(ctx context.Context, organizationID uuid.UUID, contact *models.Contact, base time.Time) (time.Time, *errx.Error)
 
@@ -267,6 +271,38 @@ func (s *service) ShouldSuppressRecipient(ctx context.Context, organizationID uu
 		return false, "", nil
 	}
 	return true, entry.Reason, nil
+}
+
+// Unsubscribe resolves the campaign + contact behind a List-Unsubscribe link and
+// suppresses the recipient org-wide. Always suppresses (an explicit recipient
+// request), then fans out the campaign.unsubscribed event for Slack/CRM.
+func (s *service) Unsubscribe(ctx context.Context, campaignID, contactID uuid.UUID) *errx.Error {
+	campaign, err := s.campaignRepo.GetByID(ctx, campaignID)
+	if err != nil || campaign == nil || campaign.OrganizationID == nil {
+		return errx.New(errx.BadRequest, "invalid unsubscribe link")
+	}
+	contact, cerr := s.contactRepo.GetByID(ctx, contactID)
+	if cerr != nil || contact == nil || contact.Email == "" {
+		return errx.New(errx.BadRequest, "invalid unsubscribe link")
+	}
+
+	if err := s.repo.UpsertSuppressedRecipient(ctx, &models.SuppressedRecipient{
+		OrganizationID: *campaign.OrganizationID,
+		Email:          contact.Email,
+		Reason:         "one-click unsubscribe",
+		Source:         models.DeliverabilityEventUnsubscribe,
+		CampaignID:     &campaignID,
+	}); err != nil {
+		return toErrx(err)
+	}
+
+	s.emit(ctx, *campaign.OrganizationID, models.WebhookEventCampaignUnsubscribed, map[string]any{
+		"campaign_id":   campaignID.String(),
+		"contact_id":    contactID.String(),
+		"contact_email": contact.Email,
+		"source":        "one_click",
+	})
+	return nil
 }
 
 func (s *service) SelectVariant(ctx context.Context, organizationID, campaignID, contactID uuid.UUID, subject, bodyHTML, bodyPlain string) (*models.VariantSelection, *errx.Error) {

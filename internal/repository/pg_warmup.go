@@ -94,6 +94,11 @@ type WarmupRepository interface {
 	SetParticipantRole(ctx context.Context, poolID, accountID uuid.UUID, role string) error
 	LeavePool(ctx context.Context, poolID, accountID uuid.UUID) error
 	BlockFromPool(ctx context.Context, accountID uuid.UUID, reason string) error
+	// GetHealthState returns the WORST current warmup health state across the
+	// account's pool memberships plus its blocked_until, so non-warmup callers
+	// (e.g. the campaign scheduler) can gate cold sends on warmup health without
+	// needing a pool type. Returns ("healthy", nil) when the account is in no pool.
+	GetHealthState(ctx context.Context, accountID uuid.UUID) (models.WarmupHealthState, *time.Time, error)
 	UnblockFromPool(ctx context.Context, accountID uuid.UUID) error
 	IsInPool(ctx context.Context, accountID uuid.UUID, poolType string) (bool, error)
 	GetParticipantHealth(ctx context.Context, accountID uuid.UUID, poolType string) (*models.WarmupParticipantHealth, error)
@@ -337,6 +342,36 @@ func (r *warmupRepository) BlockFromPool(ctx context.Context, accountID uuid.UUI
 
 	_, err := r.db.Exec(ctx, query, reason, accountID)
 	return err
+}
+
+// GetHealthState returns the worst current health state across the account's
+// pool memberships and that row's blocked_until. Worst-wins so a mailbox that's
+// blocked in any pool is treated as blocked for cold-send gating.
+func (r *warmupRepository) GetHealthState(ctx context.Context, accountID uuid.UUID) (models.WarmupHealthState, *time.Time, error) {
+	query := `
+		SELECT health_state, blocked_until
+		FROM warmup_pool_participants
+		WHERE email_account_id = $1
+		ORDER BY CASE health_state
+			WHEN 'blocked' THEN 5
+			WHEN 'quarantined' THEN 4
+			WHEN 'throttled' THEN 3
+			WHEN 'watch' THEN 2
+			WHEN 'healthy' THEN 1
+			ELSE 0
+		END DESC
+		LIMIT 1
+	`
+	var state string
+	var blockedUntil *time.Time
+	err := r.db.QueryRow(ctx, query, accountID).Scan(&state, &blockedUntil)
+	if err == sql.ErrNoRows {
+		return models.WarmupHealthHealthy, nil, nil
+	}
+	if err != nil {
+		return models.WarmupHealthHealthy, nil, err
+	}
+	return models.WarmupHealthState(state), blockedUntil, nil
 }
 
 // UnblockFromPool unblocks an account from all warmup pools

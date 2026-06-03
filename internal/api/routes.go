@@ -55,6 +55,12 @@ func Run(
 	// postMessages code+state to the SPA opener, which calls oauth/finish.
 	r.GET("/integrations/oauth/callback", h.IntegrationOAuthCallback)
 
+	// Public List-Unsubscribe endpoint (RFC 8058). GET = recipient clicks the
+	// link; POST = mailbox provider's one-click (body List-Unsubscribe=One-Click).
+	// Both suppress the recipient org-wide. Unauthenticated by design.
+	r.GET("/unsubscribe", h.Unsubscribe)
+	r.POST("/unsubscribe", h.Unsubscribe)
+
 	// Internal backend-to-backend endpoints. Workers call these instead of
 	// touching Postgres directly, per the no-direct-data-services rule in
 	// CLAUDE.md. Auth: shared bearer token (INTERNAL_API_TOKEN).
@@ -206,6 +212,7 @@ func Run(
 			emails.POST("/:id/warmup/resume", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails), middleware.RequireAPIKeyEmailAccountParam("id"), h.ResumeWarmup)
 			emails.POST("/:id/warmup/stop", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails), middleware.RequireAPIKeyEmailAccountParam("id"), h.StopWarmup)
 			emails.GET("/:id/auth-check", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadEmails), middleware.RequireAPIKeyEmailAccountParam("id"), h.GetEmailAuthCheck)
+			emails.POST("/verify", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadEmails), h.VerifyEmail)
 			emails.GET("/:id/warmup/ban-status", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadEmails), middleware.RequireAPIKeyEmailAccountParam("id"), h.GetWarmupBanStatus)
 			emails.POST("/:id/warmup/appeal", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails), middleware.RequireAPIKeyEmailAccountParam("id"), h.SubmitWarmupAppeal)
 			emails.DELETE("/:id", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails), middleware.RequireAPIKeyEmailAccountParam("id"), h.DeleteEmail)
@@ -731,6 +738,14 @@ func Run(
 		adminRoutes.POST("/warmup-content/generate", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminGenerateWarmupContent)
 		adminRoutes.POST("/warmup-content/batch", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminSubmitWarmupBatch)
 		adminRoutes.POST("/warmup-content/jobs/:id/cancel", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminCancelWarmupBatch)
+		// Seed inbox-placement testing.
+		adminRoutes.GET("/placement/tests", middleware.RequireAdminPermission(models.AdminPermViewWarmupPool), h.AdminListPlacementTests)
+		adminRoutes.GET("/placement/tests/:id", middleware.RequireAdminPermission(models.AdminPermViewWarmupPool), h.AdminGetPlacementTest)
+		adminRoutes.POST("/placement/tests", middleware.RequireAdminPermission(models.AdminPermManageWarmupBans), h.AdminCreatePlacementTest)
+		adminRoutes.GET("/placement/seeds", middleware.RequireAdminPermission(models.AdminPermViewWarmupPool), h.AdminListSeedMailboxes)
+		adminRoutes.GET("/placement/seeds/candidates", middleware.RequireAdminPermission(models.AdminPermViewWarmupPool), h.AdminListSeedCandidates)
+		adminRoutes.POST("/placement/seeds/:id", middleware.RequireAdminPermission(models.AdminPermManageWarmupBans), h.AdminSetSeedMailbox)
+
 		adminRoutes.GET("/warmup-content/jobs", middleware.RequireAdminPermission(models.AdminPermViewWarmupPool), h.AdminListWarmupGenerationJobs)
 		adminRoutes.GET("/warmup-content/jobs/:id", middleware.RequireAdminPermission(models.AdminPermViewWarmupPool), h.AdminGetWarmupGenerationJob)
 		adminRoutes.GET("/warmup-content/settings", middleware.RequireAdminPermission(models.AdminPermViewWarmupPool), h.AdminGetWarmupGenerationSettings)

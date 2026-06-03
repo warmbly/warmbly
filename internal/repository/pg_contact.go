@@ -16,6 +16,7 @@ import (
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/infrastructure/db"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/emailverify"
 	"github.com/warmbly/warmbly/internal/pkg/encrypt"
 	"github.com/warmbly/warmbly/internal/utils"
 )
@@ -24,6 +25,13 @@ type ContactRepository interface {
 	Add(ctx context.Context, userID string, contacts []models.AddContact) ([]models.Contact, *errx.Error)
 	GetByID(ctx context.Context, contactID uuid.UUID) (*models.Contact, *errx.Error)
 	GetByEmailAndOrganization(ctx context.Context, organizationID uuid.UUID, email string) (*models.Contact, *errx.Error)
+
+	// Pre-send email verification round-trip. UpdateContactVerification stores
+	// the outcome of a verify pass; ListUnverifiedContacts returns contacts that
+	// have never been conclusively checked (status 'unknown', never verified) so
+	// the batch scheduler can work them off a cap per tick.
+	UpdateContactVerification(ctx context.Context, contactID uuid.UUID, res emailverify.Result) *errx.Error
+	ListUnverifiedContacts(ctx context.Context, limit int) ([]models.Contact, *errx.Error)
 	GetByEmailsAndUser(ctx context.Context, userID uuid.UUID, emails []string) (map[string]models.Contact, *errx.Error)
 	Search(ctx context.Context, userID string, category, cursor *string, filters models.SearchContacts, limit int32) (*models.ContactsResult, *errx.Error)
 	ExportAll(ctx context.Context, userID string, filters *models.SearchContacts, contactIDs []string, max int) ([]models.Contact, *errx.Error)
@@ -331,7 +339,8 @@ func (r *contactRepository) GetByID(ctx context.Context, contactID uuid.UUID) (*
 	query := `
 		SELECT
 			c.id, c.first_name, c.last_name, c.email, c.company, c.phone,
-			c.custom_fields, c.subscribed, c.updated_at, c.created_at
+			c.custom_fields, c.subscribed, c.updated_at, c.created_at,
+			c.verification_status, c.verification_reason, c.is_catch_all, c.verification_checked_at
 		FROM contacts c
 		WHERE c.id = $1
 	`
@@ -341,6 +350,7 @@ func (r *contactRepository) GetByID(ctx context.Context, contactID uuid.UUID) (*
 		&contact.ID, &contact.FirstName, &contact.LastName, &contact.Email,
 		&contact.Company, &contact.Phone, &contact.CustomFields, &contact.Subscribed,
 		&contact.UpdatedAt, &contact.CreatedAt,
+		&contact.VerificationStatus, &contact.VerificationReason, &contact.IsCatchAll, &contact.VerificationCheckedAt,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -353,6 +363,89 @@ func (r *contactRepository) GetByID(ctx context.Context, contactID uuid.UUID) (*
 	contact.Campaigns = []models.MiniCampaign{}
 	contact.Categories = []models.MiniCategory{}
 	return &contact, nil
+}
+
+// UpdateContactVerification stores the outcome of a verification pass on the
+// contact. It is keyed only by contact id (the verifier runs in the control
+// plane, not in a user request) and is a no-op-safe single UPDATE.
+func (r *contactRepository) UpdateContactVerification(ctx context.Context, contactID uuid.UUID, res emailverify.Result) *errx.Error {
+	status := string(res.Status)
+	if status == "" {
+		status = string(emailverify.StatusUnknown)
+	}
+	checkedAt := res.CheckedAt
+	if checkedAt.IsZero() {
+		checkedAt = time.Now().UTC()
+	}
+
+	query := `
+		UPDATE contacts
+		SET verification_status = $2,
+		    verification_reason = $3,
+		    is_catch_all = $4,
+		    verification_checked_at = $5,
+		    updated_at = NOW()
+		WHERE id = $1
+	`
+	params := []any{contactID, status, res.Reason, res.IsCatchAll, checkedAt}
+	cmd, err := r.DB.Exec(ctx, query, params...)
+	if err != nil {
+		db.CaptureError(err, query, params, "exec")
+		return errx.InternalError()
+	}
+	if cmd.RowsAffected() == 0 {
+		return errx.ErrNotFound
+	}
+	return nil
+}
+
+// ListUnverifiedContacts returns up to `limit` contacts that have never been
+// conclusively verified (status 'unknown' and no recorded check). Oldest
+// contacts first so a backlog drains in creation order. The pre-send gate only
+// drops 'invalid', so 'risky'/'valid'/already-checked rows are intentionally
+// excluded here — they don't need re-verification on every tick.
+func (r *contactRepository) ListUnverifiedContacts(ctx context.Context, limit int) ([]models.Contact, *errx.Error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	query := `
+		SELECT
+			c.id, c.first_name, c.last_name, c.email, c.company, c.phone,
+			c.custom_fields, c.subscribed, c.updated_at, c.created_at,
+			c.verification_status, c.verification_reason, c.is_catch_all, c.verification_checked_at
+		FROM contacts c
+		WHERE c.verification_status = 'unknown' AND c.verification_checked_at IS NULL
+		ORDER BY c.created_at ASC
+		LIMIT $1
+	`
+	rows, err := r.DB.Query(ctx, query, limit)
+	if err != nil {
+		db.CaptureError(err, query, []any{limit}, "query")
+		return nil, errx.InternalError()
+	}
+	defer rows.Close()
+
+	out := make([]models.Contact, 0, limit)
+	for rows.Next() {
+		var c models.Contact
+		if err := rows.Scan(
+			&c.ID, &c.FirstName, &c.LastName, &c.Email,
+			&c.Company, &c.Phone, &c.CustomFields, &c.Subscribed,
+			&c.UpdatedAt, &c.CreatedAt,
+			&c.VerificationStatus, &c.VerificationReason, &c.IsCatchAll, &c.VerificationCheckedAt,
+		); err != nil {
+			db.CaptureError(err, "", nil, "ListUnverifiedContacts scan")
+			return nil, errx.InternalError()
+		}
+		c.Campaigns = []models.MiniCampaign{}
+		c.Categories = []models.MiniCategory{}
+		out = append(out, c)
+	}
+	if err := rows.Err(); err != nil {
+		db.CaptureError(err, "", nil, "ListUnverifiedContacts rows")
+		return nil, errx.InternalError()
+	}
+	return out, nil
 }
 
 func (r *contactRepository) GetByEmailAndOrganization(ctx context.Context, organizationID uuid.UUID, email string) (*models.Contact, *errx.Error) {

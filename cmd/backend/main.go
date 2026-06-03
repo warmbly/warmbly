@@ -34,6 +34,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/discount"
 	"github.com/warmbly/warmbly/internal/app/email"
 	"github.com/warmbly/warmbly/internal/app/emailsend"
+	emailverifyapp "github.com/warmbly/warmbly/internal/app/emailverify"
 	"github.com/warmbly/warmbly/internal/app/feature"
 	"github.com/warmbly/warmbly/internal/app/fleet"
 	"github.com/warmbly/warmbly/internal/app/group"
@@ -41,6 +42,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/integration"
 	"github.com/warmbly/warmbly/internal/app/organization"
 	"github.com/warmbly/warmbly/internal/app/passkey"
+	"github.com/warmbly/warmbly/internal/app/placement"
 	"github.com/warmbly/warmbly/internal/app/provisioning"
 	"github.com/warmbly/warmbly/internal/app/ratelimit"
 	"github.com/warmbly/warmbly/internal/app/releases"
@@ -79,6 +81,7 @@ import (
 	"github.com/warmbly/warmbly/internal/notify"
 	"github.com/warmbly/warmbly/internal/observability"
 	"github.com/warmbly/warmbly/internal/pkg/captcha"
+	"github.com/warmbly/warmbly/internal/pkg/emailverify"
 	"github.com/warmbly/warmbly/internal/pkg/generation"
 	"github.com/warmbly/warmbly/internal/pkg/geo"
 	"github.com/warmbly/warmbly/internal/repository"
@@ -120,6 +123,9 @@ func main() {
 	var advancedService advanced.Service
 	var warmupContentRepo repository.WarmupContentRepository
 	var warmupContentService warmupcontent.Service
+	var emailVerifyService emailverifyapp.Service
+	var placementRepository repository.PlacementRepository
+	var placementService placement.Service
 
 	var folderService group.GroupService
 	var tagService group.GroupService
@@ -886,6 +892,27 @@ func main() {
 		warmupBatchPoller := jobs.NewWarmupBatchPoller(warmupContentService, 5*time.Minute)
 		go warmupBatchPoller.Start(ctx)
 
+		// Pre-send email verification: verify a capped batch of not-yet-checked
+		// contacts each tick so hard-bouncing addresses are dropped before any
+		// worker sends. CONTROL-PLANE ONLY — the SMTP RCPT probe dials remote MX
+		// on :25 from this backend host (a non-sending IP), never a worker.
+		emailVerifier := emailverify.New(emailverify.Config{
+			HeloHost: os.Getenv("EMAIL_VERIFY_HELO_HOST"), // e.g. verify.warmbly.com
+			MailFrom: os.Getenv("EMAIL_VERIFY_MAIL_FROM"), // e.g. verify@warmbly.com
+		})
+		emailVerifyService = emailverifyapp.NewService(contactRepostory, emailVerifier)
+		emailVerificationJob := jobs.NewEmailVerificationJob(emailVerifyService, 100)
+		emailVerificationScheduler := jobs.NewEmailVerificationScheduler(emailVerificationJob, 15*time.Minute)
+		go emailVerificationScheduler.Start(ctx)
+
+		// Seed inbox-placement testing: send a tokenized copy of a template
+		// through a real sender to the seed panel, then classify where it landed
+		// by looking the token up in each seed's synced unibox entries.
+		placementRepository = repository.NewPlacementRepository(primaryDB)
+		placementService = placement.NewService(placementRepository, emailRepostory, emailSender)
+		placementPoller := jobs.NewPlacementPoller(placementService, 2*time.Minute)
+		go placementPoller.Start(ctx)
+
 		addr = apiCfg.Hostname
 		ginMode = apiCfg.GinMode
 		websocketURI = apiCfg.WebsocketURI
@@ -960,6 +987,13 @@ func main() {
 		// Warmup content bank + offline AI generator
 		WarmupContentRepo:    warmupContentRepo,
 		WarmupContentService: warmupContentService,
+
+		// Pre-send email verification
+		EmailVerifyService: emailVerifyService,
+
+		// Seed inbox-placement testing
+		PlacementRepo:    placementRepository,
+		PlacementService: placementService,
 
 		// Third-party integrations
 		IntegrationService: integrationServiceForHandler,

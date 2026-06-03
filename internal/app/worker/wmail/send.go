@@ -26,6 +26,29 @@ type SendRequest struct {
 	Parent      *models.EmailParent
 	IsWarmup    bool
 	WarmupToken string
+	// UnsubscribeURL, when set (campaign sends with the unsubscribe header
+	// enabled), produces RFC 8058 one-click unsubscribe headers.
+	UnsubscribeURL string
+}
+
+// buildSendHeaders assembles the outbound custom headers: the warmup
+// verification token (warmup sends) and RFC 8058 one-click unsubscribe headers
+// (campaign sends). Returns nil when there are none so callers can branch.
+func buildSendHeaders(req *SendRequest) map[string]string {
+	h := map[string]string{}
+	if req.WarmupToken != "" {
+		h[config.WarmupVerifyHeader] = req.WarmupToken
+	}
+	if req.UnsubscribeURL != "" {
+		// RFC 8058: the HTTPS URI in List-Unsubscribe plus the one-click marker
+		// tells Gmail/Yahoo/Microsoft to POST List-Unsubscribe=One-Click here.
+		h["List-Unsubscribe"] = "<" + req.UnsubscribeURL + ">"
+		h["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
+	}
+	if len(h) == 0 {
+		return nil
+	}
+	return h
 }
 
 // SendResult contains the result of a send operation
@@ -119,13 +142,8 @@ func (w *WMail) sendViaGmail(ctx context.Context, req *SendRequest, bodyHTML str
 		}
 	}
 
-	// Build custom headers for warmup token
-	var customHeaders map[string]string
-	if req.WarmupToken != "" {
-		customHeaders = map[string]string{
-			config.WarmupVerifyHeader: req.WarmupToken,
-		}
-	}
+	// Build custom headers (warmup token + RFC 8058 one-click unsubscribe).
+	customHeaders := buildSendHeaders(req)
 
 	// Send via Gmail API
 	gmailMsg, err := w.GoogleData.Client.SendMessage(
@@ -179,13 +197,8 @@ func (w *WMail) sendViaSMTP(ctx context.Context, req *SendRequest, bodyHTML stri
 		return result
 	}
 
-	// Build custom headers for warmup token
-	var smtpCustomHeaders map[string]string
-	if req.WarmupToken != "" {
-		smtpCustomHeaders = map[string]string{
-			config.WarmupVerifyHeader: req.WarmupToken,
-		}
-	}
+	// Build custom headers (warmup token + RFC 8058 one-click unsubscribe).
+	smtpCustomHeaders := buildSendHeaders(req)
 
 	// Send via SMTP
 	var merr *errx.MailError
