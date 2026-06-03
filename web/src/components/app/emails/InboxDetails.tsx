@@ -27,6 +27,9 @@ import {
     PlayIcon,
     PauseIcon,
     ShieldCheckIcon,
+    ShieldAlertIcon,
+    BanIcon,
+    HourglassIcon,
     type LucideIcon,
 } from "lucide-react";
 import toast from "react-hot-toast";
@@ -38,6 +41,8 @@ import useAccountStatus from "@/lib/api/hooks/app/analytics/useAccountStatus";
 import useWarmupAnalytics from "@/lib/api/hooks/app/analytics/useWarmupAnalytics";
 import useUpdateEmail from "@/lib/api/hooks/app/emails/useUpdateEmail";
 import useWarmupLifecycle from "@/lib/api/hooks/app/emails/useWarmupLifecycle";
+import useWarmupBanStatus from "@/lib/api/hooks/app/emails/useWarmupBanStatus";
+import useAppealWarmupBan from "@/lib/api/hooks/app/emails/useAppealWarmupBan";
 import useUpdateEmailTrackingDomain from "@/lib/api/hooks/app/emails/useUpdateEmailTrackingDomain";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
@@ -441,6 +446,122 @@ const warmupStateTone: Record<string, { text: string; bar: string; label: string
     blocked: { text: "text-rose-700", bar: "bg-rose-600", label: "Blocked" },
 };
 
+/* ── Warmup ban banner + appeal form ─────────────────────── */
+
+// Shown at the top of the Warmup tab when a mailbox has been blocked from the
+// warmup pool (e.g. for deleting or spam-marking warmup mail). Explains why,
+// lets the owner submit an appeal, and flips to "under review" once one is
+// pending. Renders nothing while loading or when the mailbox isn't blocked.
+function WarmupBanBanner({ emailId }: { emailId: string }) {
+    const ban = useWarmupBanStatus(emailId);
+    const appeal = useAppealWarmupBan(emailId);
+    const [open, setOpen] = useState(false);
+    const [reason, setReason] = useState("");
+
+    const data = ban.data;
+    if (!data || !data.blocked) return null;
+
+    const submit = async () => {
+        const trimmed = reason.trim();
+        if (!trimmed) {
+            toast.error("Please describe why this mailbox should be reinstated.");
+            return;
+        }
+        try {
+            await appeal.mutateAsync(trimmed);
+            toast.success("Appeal submitted — our team will review it.");
+            setOpen(false);
+            setReason("");
+        } catch (e) {
+            toast.error(buildError(e as unknown as AppError));
+        }
+    };
+
+    return (
+        <div className="px-5 py-4">
+            <div className="rounded-md border border-rose-200 bg-rose-50 p-3.5">
+                <div className="flex items-start gap-2.5">
+                    <div className="w-7 h-7 rounded-md bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                        <BanIcon className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                            <span className="text-[12.5px] font-semibold text-rose-900">Blocked from warmup</span>
+                            <span className="h-5 px-2 rounded-full border border-rose-200 bg-white/60 text-rose-700 text-[10px] font-semibold uppercase tracking-wide inline-flex items-center capitalize">
+                                {data.health_state}
+                            </span>
+                        </div>
+                        <p className="mt-1 text-[11.5px] text-rose-800/90 leading-relaxed">
+                            {data.reason || "This mailbox was removed from the warmup pool to protect shared sender reputation."}
+                        </p>
+                        {(data.blocked_at || data.blocked_until) && (
+                            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10.5px] text-rose-700/80">
+                                {data.blocked_at && (
+                                    <span className="inline-flex items-center gap-1">
+                                        <ClockIcon className="w-3 h-3" /> Blocked {new Date(data.blocked_at).toLocaleDateString()}
+                                    </span>
+                                )}
+                                {data.blocked_until && (
+                                    <span className="inline-flex items-center gap-1">
+                                        <CalendarIcon className="w-3 h-3" /> Until {new Date(data.blocked_until).toLocaleDateString()}
+                                    </span>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Appeal affordance */}
+                        {data.pending_appeal ? (
+                            <div className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11.5px] font-medium text-amber-800">
+                                <HourglassIcon className="w-3.5 h-3.5" /> Appeal submitted — under review
+                            </div>
+                        ) : data.can_appeal ? (
+                            open ? (
+                                <div className="mt-3 space-y-2">
+                                    <label className="block text-[10px] uppercase tracking-[0.14em] text-rose-700/80 font-medium">
+                                        Appeal reason
+                                    </label>
+                                    <textarea
+                                        value={reason}
+                                        onChange={(e) => setReason(e.target.value)}
+                                        rows={3}
+                                        autoFocus
+                                        placeholder="Tell us what changed or why this block is a mistake…"
+                                        className="w-full px-2.5 py-2 rounded-md border border-rose-200 bg-white text-[12px] text-slate-900 placeholder:text-slate-400 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 resize-none transition-colors"
+                                    />
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            onClick={submit}
+                                            disabled={appeal.isPending || !reason.trim()}
+                                            className="h-8 px-3.5 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors disabled:opacity-60"
+                                        >
+                                            {appeal.isPending && <Loading className="!w-3.5 h-3.5 text-white" />}
+                                            Submit appeal
+                                        </button>
+                                        <button
+                                            onClick={() => { setOpen(false); setReason(""); }}
+                                            disabled={appeal.isPending}
+                                            className="h-8 px-3 rounded-md border border-rose-200 hover:border-rose-300 text-[12px] text-rose-700 hover:text-rose-900 transition-colors disabled:opacity-60"
+                                        >
+                                            Cancel
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <button
+                                    onClick={() => setOpen(true)}
+                                    className="mt-3 h-8 px-3 rounded-md bg-rose-600 hover:bg-rose-700 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors"
+                                >
+                                    <ShieldAlertIcon className="w-3.5 h-3.5" /> Appeal this block
+                                </button>
+                            )
+                        ) : null}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 function WarmupTab({ form, update, status, mailbox, canWarmup = true }: { form: Inbox; update: (p: Partial<Inbox>) => void; status?: AccountStatusModel; mailbox: Inbox; canWarmup?: boolean }) {
     const ws = status?.warmup_status;
     const wh = status?.warmup_health;
@@ -469,6 +590,9 @@ function WarmupTab({ form, update, status, mailbox, canWarmup = true }: { form: 
 
     return (
         <div className="divide-y divide-slate-200/60">
+            {/* Ban banner + appeal — only when the mailbox is blocked from the pool */}
+            <WarmupBanBanner emailId={mailbox.id} />
+
             {/* Lifecycle control */}
             <div className="px-5 py-4 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2.5 min-w-0">

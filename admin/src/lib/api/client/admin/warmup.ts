@@ -65,9 +65,13 @@ export function unblockWarmupAccount(accountId: string): Promise<void> {
 
 export function listWarmupAppeals(
     status: "pending" | "approved" | "rejected" | "all" = "pending",
+    cursor?: string,
+    limit = 50,
 ): Promise<WarmupAppealsResult> {
     const usp = new URLSearchParams();
     if (status !== "all") usp.set("status", status);
+    if (cursor) usp.set("cursor", cursor);
+    usp.set("limit", String(limit));
     return Request({
         method: "GET",
         url: `/admin/warmup/appeals?${usp.toString()}`,

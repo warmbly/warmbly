@@ -114,13 +114,21 @@ func (s *JobsService) handleWarmupEmail(ctx context.Context, e *models.JobEventN
 	// Valid! Consume the token
 	s.WarmupRepo.ConsumeWarmupToken(ctx, tokenUUID)
 
+	// Record the receipt so a later deletion or spam-flag of THIS message can be
+	// attributed back to warmup and to the sender. Verified warmup mail is not
+	// stored in the unibox, so this is the only record that the message was a
+	// warmup email.
+	if e.Message != nil {
+		_ = s.WarmupRepo.RecordWarmupReceived(ctx, e.Message.EmailID, e.Message.ID, e.Message.MessageID, token.SenderAccountID)
+	}
+
 	// If the warmup mail arrived in a Junk/Spam state, record a
 	// spam_placement event against the sender. This is distinct from a
 	// user_complaint (which fires later via HandleFlagsAdd when a recipient
 	// flags an already-delivered message) because nobody actively rejected
 	// it — the provider classifier placed it there on arrival.
 	if containsSpamFlag(e.Message.Flags) && s.WarmupService != nil {
-		health, _ := s.WarmupService.RecordSpamPlacement(ctx, e.Message.EmailID, token.SenderAccountID, e.Message.MessageID)
+		health, _ := s.WarmupService.RecordSpamPlacement(ctx, e.Message.EmailID, token.SenderAccountID, e.Message.MessageID, token.ContentSource)
 		s.markRiskBandFromWarmupHealth(ctx, token.SenderAccountID, health)
 	}
 
@@ -129,11 +137,17 @@ func (s *JobsService) handleWarmupEmail(ctx context.Context, e *models.JobEventN
 	return true, nil
 }
 
-// performWarmupActions publishes warmup action events to the worker
+// performWarmupActions publishes warmup action events to the worker. Action
+// selection is probabilistic and per-mailbox (see engagementPlan) so the pool
+// doesn't behave in detectable lockstep, with a randomised recipient-side
+// dwell before the actions run.
 func (s *JobsService) performWarmupActions(ctx context.Context, e *models.JobEventNewEmail) {
 	if s.Publisher == nil {
 		return
 	}
+
+	settings := s.getGenerationSettings(ctx)
+	actions, delaySeconds := engagementPlan(e.Message.EmailID, settings.Engagement)
 
 	action := &models.WarmupEmailAction{
 		UserID:             e.UserID,
@@ -141,7 +155,8 @@ func (s *JobsService) performWarmupActions(ctx context.Context, e *models.JobEve
 		GmailID:            e.Message.GmailID,
 		UID:                e.Message.UID,
 		MailboxUIDValidity: e.Message.Mailbox,
-		Actions:            []string{"move_to_warmbly", "mark_read", "remove_from_spam", "mark_important"},
+		Actions:            actions,
+		DelaySeconds:       delaySeconds,
 	}
 
 	// Look up the worker ID from the email account

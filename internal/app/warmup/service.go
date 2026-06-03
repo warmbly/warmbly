@@ -3,6 +3,7 @@ package warmup
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -53,6 +54,13 @@ const (
 
 	invalidTokenBlockThreshold = 3
 
+	// Tampering: harming pool warmup mail (deleting it or marking it as spam)
+	// bans the mailbox once this many harm events occur within the window.
+	// Default 1 = ban on first harm (Instantly-style zero tolerance); the
+	// owner can appeal. Bump to forgive accidental actions.
+	warmupTamperingBlockThreshold = 1
+	warmupTamperingWindow         = 7 * 24 * time.Hour
+
 	warmupThrottleDuration   = 3 * 24 * time.Hour
 	warmupQuarantineDuration = 7 * 24 * time.Hour
 	warmupBlockDuration      = 30 * 24 * time.Hour
@@ -68,9 +76,19 @@ type Service interface {
 	// RecordSpamPlacement records that a warmup message landed in the
 	// recipient's Junk/Spam folder on arrival. Counted separately from
 	// user complaints so the two signals can drive distinct thresholds.
-	RecordSpamPlacement(ctx context.Context, reporterAccountID, reportedAccountID uuid.UUID, messageID string) (*models.WarmupParticipantHealth, *errx.Error)
+	RecordSpamPlacement(ctx context.Context, reporterAccountID, reportedAccountID uuid.UUID, messageID, contentSource string) (*models.WarmupParticipantHealth, *errx.Error)
 	ApplyInvalidTokenAttempt(ctx context.Context, accountID uuid.UUID, attemptedToken string, scoreDelta int) (*models.WarmupParticipantHealth, *errx.Error)
 	ApplyRateLimitExceeded(ctx context.Context, accountID uuid.UUID, reason string) (*models.WarmupParticipantHealth, *errx.Error)
+
+	// RecordTampering records that a participant harmed a warmup email (deleted
+	// it or marked it as spam) and bans the mailbox from warmup once the harm
+	// count crosses the threshold. The owner can then appeal.
+	RecordTampering(ctx context.Context, accountID uuid.UUID, messageID, kind string) (*models.WarmupParticipantHealth, *errx.Error)
+
+	// SubmitAppeal lets the mailbox owner appeal a warmup ban with a reason.
+	SubmitAppeal(ctx context.Context, userID, accountID uuid.UUID, reason string) (uuid.UUID, *errx.Error)
+	// GetBanStatus returns the user-facing warmup standing for a mailbox.
+	GetBanStatus(ctx context.Context, userID, accountID uuid.UUID) (*models.WarmupBanStatus, *errx.Error)
 
 	// Scheduled health evaluation
 	EvaluateAllParticipants(ctx context.Context) (evaluated int, stateChanges int, err *errx.Error)
@@ -265,13 +283,14 @@ func (s *service) CanParticipate(ctx context.Context, accountID uuid.UUID, poolT
 // 'spam_placement' type and a smaller spam-score delta (placement is a
 // weaker individual signal than a user complaint — it is more likely to
 // reflect content rather than malice).
-func (s *service) RecordSpamPlacement(ctx context.Context, reporterAccountID, reportedAccountID uuid.UUID, messageID string) (*models.WarmupParticipantHealth, *errx.Error) {
+func (s *service) RecordSpamPlacement(ctx context.Context, reporterAccountID, reportedAccountID uuid.UUID, messageID, contentSource string) (*models.WarmupParticipantHealth, *errx.Error) {
 	inserted, err := s.repo.RecordSpamReport(ctx, &repository.SpamReport{
 		ID:                uuid.New(),
 		ReporterAccountID: reporterAccountID,
 		ReportedAccountID: reportedAccountID,
 		MessageID:         messageID,
 		ReportType:        "spam_placement",
+		ContentSource:     contentSource,
 	})
 	if err != nil {
 		return nil, errx.InternalError()
@@ -283,6 +302,128 @@ func (s *service) RecordSpamPlacement(ctx context.Context, reporterAccountID, re
 		return nil, errx.InternalError()
 	}
 	return s.evaluateAndPersistAnyPool(ctx, reportedAccountID)
+}
+
+// RecordTampering records that a participant harmed a warmup email (deleted it
+// or marked it as spam) and bans the mailbox from warmup once the harm count
+// crosses the threshold within the window. The block carries a clear,
+// user-facing reason and fires the health transition so the dashboard updates.
+func (s *service) RecordTampering(ctx context.Context, accountID uuid.UUID, messageID, kind string) (*models.WarmupParticipantHealth, *errx.Error) {
+	inserted, err := s.repo.RecordWarmupTampering(ctx, accountID, messageID, kind)
+	if err != nil {
+		return nil, errx.InternalError()
+	}
+	if !inserted {
+		// Already counted this exact harm — don't double-penalise.
+		return s.getParticipantForAnyPool(ctx, accountID)
+	}
+
+	since := s.now().Add(-warmupTamperingWindow)
+	count, err := s.repo.CountWarmupTamperingSince(ctx, accountID, since)
+	if err != nil {
+		return nil, errx.InternalError()
+	}
+
+	if count >= warmupTamperingBlockThreshold {
+		prev, _ := s.getParticipantForAnyPool(ctx, accountID)
+		reason := fmt.Sprintf("Auto-blocked from warmup: %s a warmup email. Warmup mailboxes must let warmup mail be delivered and engaged with. You can appeal this from your dashboard.", tamperingVerb(kind))
+		if count > 1 {
+			reason = fmt.Sprintf("Auto-blocked from warmup: harmed %d warmup emails (deleted or marked as spam) in the last %d days. You can appeal this from your dashboard.", count, int(warmupTamperingWindow.Hours()/24))
+		}
+		if err := s.repo.BlockFromPool(ctx, accountID, reason); err != nil {
+			return nil, errx.InternalError()
+		}
+		if prev != nil && prev.HealthState != models.WarmupHealthBlocked {
+			s.dispatchHealthEvent(ctx, accountID, prev.HealthState, models.WarmupHealthBlocked, reason)
+		}
+	}
+
+	return s.getParticipantForAnyPool(ctx, accountID)
+}
+
+func tamperingVerb(kind string) string {
+	switch kind {
+	case "deletion":
+		return "deleted"
+	case "spam_flag":
+		return "marked as spam"
+	default:
+		return "tampered with"
+	}
+}
+
+// SubmitAppeal records a user's appeal against a warmup ban. Verifies the
+// mailbox belongs to the user, is actually blocked, and has no open appeal.
+func (s *service) SubmitAppeal(ctx context.Context, userID, accountID uuid.UUID, reason string) (uuid.UUID, *errx.Error) {
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return uuid.Nil, errx.New(errx.BadRequest, "an appeal reason is required")
+	}
+	if len(reason) > 2000 {
+		reason = reason[:2000]
+	}
+
+	if s.emailRepo != nil {
+		acc, _ := s.emailRepo.GetByID(ctx, accountID)
+		if acc == nil || acc.UserID != userID.String() {
+			return uuid.Nil, errx.New(errx.Forbidden, "this mailbox does not belong to you")
+		}
+	}
+
+	health, _ := s.getParticipantForAnyPool(ctx, accountID)
+	if health == nil || (health.HealthState != models.WarmupHealthBlocked && health.HealthState != models.WarmupHealthQuarantined) {
+		return uuid.Nil, errx.New(errx.BadRequest, "this mailbox is not blocked from warmup")
+	}
+
+	pending, err := s.repo.HasPendingWarmupAppeal(ctx, accountID)
+	if err != nil {
+		return uuid.Nil, errx.InternalError()
+	}
+	if pending {
+		return uuid.Nil, errx.New(errx.BadRequest, "an appeal is already pending for this mailbox")
+	}
+
+	id, err := s.repo.CreateWarmupAppeal(ctx, accountID, userID, reason)
+	if err != nil {
+		return uuid.Nil, errx.InternalError()
+	}
+	return id, nil
+}
+
+// GetBanStatus returns the user-facing warmup standing for a mailbox.
+func (s *service) GetBanStatus(ctx context.Context, userID, accountID uuid.UUID) (*models.WarmupBanStatus, *errx.Error) {
+	if s.emailRepo != nil {
+		acc, _ := s.emailRepo.GetByID(ctx, accountID)
+		if acc == nil || acc.UserID != userID.String() {
+			return nil, errx.New(errx.Forbidden, "this mailbox does not belong to you")
+		}
+	}
+
+	status := &models.WarmupBanStatus{
+		EmailAccountID: accountID,
+		HealthState:    string(models.WarmupHealthHealthy),
+	}
+
+	health, _ := s.getParticipantForAnyPool(ctx, accountID)
+	if health != nil {
+		status.HealthState = string(health.HealthState)
+		status.BlockedAt = health.BlockedAt
+		status.BlockedUntil = health.BlockedUntil
+		if health.BlockedReason != nil {
+			status.Reason = *health.BlockedReason
+		}
+		if health.HealthState == models.WarmupHealthBlocked || health.HealthState == models.WarmupHealthQuarantined {
+			status.Blocked = true
+		}
+	}
+
+	if status.Blocked {
+		pending, _ := s.repo.HasPendingWarmupAppeal(ctx, accountID)
+		status.PendingAppeal = pending
+		status.CanAppeal = !pending
+	}
+
+	return status, nil
 }
 
 func (s *service) ApplySpamReport(ctx context.Context, reporterAccountID, reportedAccountID uuid.UUID, messageID, reportType string) (*models.WarmupParticipantHealth, *errx.Error) {

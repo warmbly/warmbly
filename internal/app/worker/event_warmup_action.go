@@ -3,12 +3,17 @@ package worker
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/rs/zerolog/log"
 	"github.com/warmbly/warmbly/internal/app/worker/wmail"
 	"github.com/warmbly/warmbly/internal/client/smtpimap/imap"
 	"github.com/warmbly/warmbly/internal/models"
 )
+
+// maxWarmupDwell bounds how long the worker will hold a warmup action timer, so
+// a misconfigured dwell can't pin goroutines/memory indefinitely.
+const maxWarmupDwell = 15 * time.Minute
 
 func (w *WorkerService) HandleWarmupAction(ctx context.Context, body any) error {
 	action, ok := body.(models.WarmupEmailAction)
@@ -23,33 +28,84 @@ func (w *WorkerService) HandleWarmupAction(ctx context.Context, body any) error 
 		Uint32("uid", action.UID).
 		Uint32("mailbox_uid_validity", action.MailboxUIDValidity).
 		Strs("actions", action.Actions).
+		Int("delay_seconds", action.DelaySeconds).
 		Msg("Processing warmup email action")
 
-	w.mailManager.RLock()
-	mail, exists := w.mailManager.Emails[action.EmailID]
-	w.mailManager.RUnlock()
+	runActions := func(runCtx context.Context, acts []string) {
+		if len(acts) == 0 {
+			return
+		}
+		w.mailManager.RLock()
+		mail, exists := w.mailManager.Emails[action.EmailID]
+		w.mailManager.RUnlock()
 
-	if !exists {
-		log.Warn().Str("email_id", action.EmailID.String()).Msg("Email account not found for warmup action")
-		return fmt.Errorf("email account %s not found", action.EmailID.String())
+		if !exists {
+			log.Warn().Str("email_id", action.EmailID.String()).Msg("Email account not found for warmup action")
+			return
+		}
+
+		a := action
+		a.Actions = acts
+		switch {
+		case mail.GoogleData != nil && mail.GoogleData.Client != nil:
+			w.runGoogleWarmupActions(runCtx, mail, a)
+		case mail.SmtpImapData != nil && mail.SmtpImapData.ImapClient != nil:
+			w.runImapWarmupActions(runCtx, mail, a)
+		default:
+			log.Warn().
+				Str("email_id", action.EmailID.String()).
+				Msg("No mail client available for warmup actions; skipping")
+		}
 	}
 
-	switch {
-	case mail.GoogleData != nil && mail.GoogleData.Client != nil:
-		w.runGoogleWarmupActions(ctx, mail, action)
-	case mail.SmtpImapData != nil && mail.SmtpImapData.ImapClient != nil:
-		w.runImapWarmupActions(ctx, mail, action)
-	default:
-		log.Warn().
-			Str("email_id", action.EmailID.String()).
-			Msg("No mail client available for warmup actions; skipping")
+	// Foldering (moving the warmup email into the dedicated "Warmbly"
+	// folder/label, auto-created if missing) keeps the recipient's inbox clean
+	// and should happen promptly. The engagement actions (read / mark-important
+	// / spam-rescue) get the recipient-side dwell delay so they don't all fire
+	// milliseconds after delivery — a bot signature.
+	immediate, delayed := splitWarmupActions(action.Actions)
+	runActions(ctx, immediate)
+
+	if len(delayed) == 0 {
+		return nil
 	}
-
-	log.Info().
-		Str("email_id", action.EmailID.String()).
-		Msg("Warmup email actions completed")
-
+	if delay := warmupDwellDelay(action.DelaySeconds); delay > 0 {
+		// Detached timer so the consume loop isn't blocked. Losing the timer on
+		// restart is fine for best-effort warmup engagement.
+		time.AfterFunc(delay, func() {
+			runCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer cancel()
+			runActions(runCtx, delayed)
+		})
+		return nil
+	}
+	runActions(ctx, delayed)
 	return nil
+}
+
+// splitWarmupActions separates foldering (done promptly) from engagement
+// actions (delayed by the recipient-side dwell).
+func splitWarmupActions(actions []string) (immediate, delayed []string) {
+	for _, a := range actions {
+		if a == "move_to_warmbly" {
+			immediate = append(immediate, a)
+		} else {
+			delayed = append(delayed, a)
+		}
+	}
+	return immediate, delayed
+}
+
+// warmupDwellDelay clamps the requested dwell into a sane bound.
+func warmupDwellDelay(seconds int) time.Duration {
+	if seconds <= 0 {
+		return 0
+	}
+	d := time.Duration(seconds) * time.Second
+	if d > maxWarmupDwell {
+		d = maxWarmupDwell
+	}
+	return d
 }
 
 func (w *WorkerService) runGoogleWarmupActions(ctx context.Context, mail *wmail.WMail, action models.WarmupEmailAction) {

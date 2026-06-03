@@ -22,6 +22,7 @@ type JobsService struct {
 	EmailHistoryIDRepository    repository.EmailHistoryIDRepository
 	EmailAccountErrorRepository repository.EmailAccountErrorRepository
 	WarmupRepo                  repository.WarmupRepository
+	WarmupContentRepo           repository.WarmupContentRepository
 	WarmupService               warmupapp.Service
 	WorkerRepo                  repository.WorkerRepository
 

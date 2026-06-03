@@ -33,6 +33,8 @@ import OrganizationDetailPage from "@/app/dashboard/OrganizationDetailPage";
 import UsersPage from "@/app/dashboard/UsersPage";
 import UserDetailPage from "@/app/dashboard/UserDetailPage";
 import WarmupPage from "@/app/dashboard/WarmupPage";
+import WarmupAppealsPage from "@/app/dashboard/WarmupAppealsPage";
+import WarmupContentPage from "@/app/dashboard/WarmupContentPage";
 import CampaignsPage from "@/app/dashboard/CampaignsPage";
 import EnterprisePage from "@/app/dashboard/EnterprisePage";
 import PlansPage from "@/app/dashboard/PlansPage";
@@ -87,6 +89,8 @@ const router = createBrowserRouter([
                     { path: "plans", element: <PlansPage /> },
                     { path: "discounts", element: <DiscountsPage /> },
                     { path: "warmup", element: <WarmupPage /> },
+                    { path: "warmup/appeals", element: <WarmupAppealsPage /> },
+                    { path: "warmup-content", element: <WarmupContentPage /> },
                     { path: "campaigns", element: <CampaignsPage /> },
                     { path: "enterprise", element: <EnterprisePage /> },
                     { path: "limit-requests", element: <LimitRequestsPage /> },

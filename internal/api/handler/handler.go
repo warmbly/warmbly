@@ -33,6 +33,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/unibox"
 	"github.com/warmbly/warmbly/internal/app/user"
 	"github.com/warmbly/warmbly/internal/app/warmup"
+	"github.com/warmbly/warmbly/internal/app/warmupcontent"
 	"github.com/warmbly/warmbly/internal/app/webhook"
 	"github.com/warmbly/warmbly/internal/app/worker"
 	"github.com/warmbly/warmbly/internal/app/worker_orchestrator"
@@ -110,6 +111,10 @@ type Handler struct {
 	// Warmup routing rules — customer-defined preferences for premium-pool
 	// partner selection (e.g. Gmail recipients from Google Workspace senders).
 	WarmupRoutingRepo repository.WarmupRoutingRepository
+
+	// Warmup content bank + offline AI generator (admin control/visibility).
+	WarmupContentRepo    repository.WarmupContentRepository
+	WarmupContentService warmupcontent.Service
 
 	// Customer-facing webhooks (subscribe → HMAC-signed delivery).
 	WebhookService webhook.Service

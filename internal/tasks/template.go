@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/warmpersona"
 )
 
 // Conversation represents a warmup conversation for AI generation
@@ -137,28 +138,51 @@ func WrapLinksForTracking(htmlBody string, taskID uuid.UUID, trackingDomain stri
 	return result
 }
 
-// GenerateConversationEmail generates email content from AI conversation
+// personaPick chooses from a mailbox's preferred subset of phrasing options so
+// each mailbox keeps a consistent "voice" while still varying message to
+// message. Falls back gracefully for tiny option sets.
+func personaPick(p warmpersona.Persona, axis string, opts []string) string {
+	if len(opts) == 0 {
+		return ""
+	}
+	k := 3
+	if k > len(opts) {
+		k = len(opts)
+	}
+	subset := p.Subset(axis, len(opts), k)
+	if len(subset) == 0 {
+		return opts[rand.Intn(len(opts))]
+	}
+	return opts[subset[rand.Intn(len(subset))]]
+}
+
+// GenerateConversationEmail renders a plaintext warmup body from a conversation.
+//
+// Bodies vary three ways to avoid the small-fixed-corpus fingerprint: a
+// per-mailbox persona biases the greeting/sign-off "voice", {a|b|c} spintax in
+// the description/messages is expanded per send, and the structure (optional
+// opener line, optional follow-up question) is randomised. Plaintext only — no
+// links, no HTML, in line with warmup policy.
 func GenerateConversationEmail(conversation Conversation, account models.Email, isReply bool) string {
 	signature := account.Name
 	if signature == "" {
 		signature = account.Email
 	}
 
+	persona := warmpersona.For(account.ID)
+
+	greetings := []string{"Hi,", "Hey,", "Hi there,", "Hello,", "Hey there,", "Morning,", "Hello there,"}
+	signoffs := []string{"Best regards,", "Best,", "Cheers,", "Thanks,", "Talk soon,", "All the best,", "Speak soon,", "Take care,"}
+
+	greeting := personaPick(persona, "greeting", greetings)
+	signoff := personaPick(persona, "signoff", signoffs)
+
 	pickMessage := func() string {
 		if len(conversation.Messages) == 0 {
 			return ""
 		}
-		return conversation.Messages[rand.Intn(len(conversation.Messages))]
+		return spinClean(conversation.Messages[rand.Intn(len(conversation.Messages))])
 	}
-
-	greetings := []string{"Hi,", "Hey,", "Hi there,", "Hello,", "Hey there,"}
-	greeting := greetings[rand.Intn(len(greetings))]
-
-	signoffs := []string{"Best regards,", "Best,", "Cheers,", "Thanks,", "Talk soon,", "All the best,"}
-	signoff := signoffs[rand.Intn(len(signoffs))]
-
-	description := strings.TrimSpace(conversation.Description)
-	message := strings.TrimSpace(pickMessage())
 
 	if isReply {
 		replyStarters := []string{
@@ -167,23 +191,57 @@ func GenerateConversationEmail(conversation Conversation, account models.Email, 
 			"Good to hear from you.",
 			"Thanks for the reply.",
 			"Great to hear back.",
+			"Thanks for the note — good timing.",
 		}
-		replyLine := replyStarters[rand.Intn(len(replyStarters))]
-		if message != "" {
-			replyLine = message
+		lead := replyStarters[rand.Intn(len(replyStarters))]
+		question := pickMessage()
+
+		var sb strings.Builder
+		sb.WriteString(lead)
+		if question != "" {
+			sb.WriteString("\n\n")
+			sb.WriteString(question)
 		}
-		return fmt.Sprintf("%s\n\n%s\n%s", replyLine, signoff, signature)
+		sb.WriteString("\n\n")
+		sb.WriteString(signoff)
+		sb.WriteString("\n")
+		sb.WriteString(signature)
+		return sb.String()
 	}
 
-	body := description
-	if body == "" {
-		body = "Just checking in with a quick note."
-	}
-	if message != "" {
-		body = body + "\n\n" + message
+	description := spinClean(conversation.Description)
+	if description == "" {
+		description = "Just wanted to check in with a quick note."
 	}
 
-	return fmt.Sprintf("%s\n\n%s\n\n%s\n%s", greeting, body, signoff, signature)
+	openers := []string{
+		"Hope your week is going well.",
+		"Hope you're doing well.",
+		"Hope things are good on your end.",
+		"Hope you've had a good start to the week.",
+		"Hope all's well with you.",
+	}
+
+	var sb strings.Builder
+	sb.WriteString(greeting)
+	sb.WriteString("\n\n")
+	// ~60% include a short opener for a warmer, less terse message.
+	if rand.Float64() < 0.6 {
+		sb.WriteString(openers[rand.Intn(len(openers))])
+		sb.WriteString(" ")
+	}
+	sb.WriteString(description)
+
+	if question := pickMessage(); question != "" {
+		sb.WriteString("\n\n")
+		sb.WriteString(question)
+	}
+
+	sb.WriteString("\n\n")
+	sb.WriteString(signoff)
+	sb.WriteString("\n")
+	sb.WriteString(signature)
+	return sb.String()
 }
 
 // ExtractPlainTextFromHTML converts HTML to plain text (basic implementation)

@@ -232,6 +232,7 @@ func main() {
 		EmailHistoryIDRepository:    emailHistoryIDRepo,
 		EmailAccountErrorRepository: emailAccountErrorRepo,
 		WarmupRepo:                  warmupRepo,
+		WarmupContentRepo:           repository.NewWarmupContentRepository(primaryDB.Pool),
 		WarmupService:               warmupService,
 		WorkerRepo:                  workerRepo,
 		Publisher:                   eventsPublisher,

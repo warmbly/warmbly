@@ -2,6 +2,7 @@ package tasks
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -71,11 +72,23 @@ type tasksService struct {
 	taskRepo             repository.TaskRepository
 	warmupRepo           repository.WarmupRepository
 	warmupRoutingRepo    repository.WarmupRoutingRepository
+	warmupContentRepo    repository.WarmupContentRepository
 	campaignProgressRepo repository.CampaignProgressRepository
 	emailRepo            repository.EmailRepository
 	campaignRepo         repository.CampaignRepository
 	contactRepo          repository.ContactRepository
 	campaignLogRepo      repository.CampaignLogRepository
+
+	// warmupSettings caches the warmup generation settings in-process so the
+	// per-send AI-vs-static decision doesn't hit Postgres on every warmup.
+	warmupSettings *warmupSettingsCache
+}
+
+// warmupSettingsCache is a tiny TTL cache over the generation settings.
+type warmupSettingsCache struct {
+	mu      sync.RWMutex
+	val     models.WarmupGenerationSettings
+	fetched time.Time
 }
 
 func NewService(
@@ -92,6 +105,7 @@ func NewService(
 	taskRepo repository.TaskRepository,
 	warmupRepo repository.WarmupRepository,
 	warmupRoutingRepo repository.WarmupRoutingRepository,
+	warmupContentRepo repository.WarmupContentRepository,
 	campaignProgressRepo repository.CampaignProgressRepository,
 	emailRepo repository.EmailRepository,
 	campaignRepo repository.CampaignRepository,
@@ -114,10 +128,12 @@ func NewService(
 		taskRepo:             taskRepo,
 		warmupRepo:           warmupRepo,
 		warmupRoutingRepo:    warmupRoutingRepo,
+		warmupContentRepo:    warmupContentRepo,
 		campaignProgressRepo: campaignProgressRepo,
 		emailRepo:            emailRepo,
 		campaignRepo:         campaignRepo,
 		contactRepo:          contactRepo,
 		campaignLogRepo:      campaignLogRepo,
+		warmupSettings:       &warmupSettingsCache{},
 	}
 }

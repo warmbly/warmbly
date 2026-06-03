@@ -56,6 +56,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/unibox"
 	"github.com/warmbly/warmbly/internal/app/user"
 	warmupapp "github.com/warmbly/warmbly/internal/app/warmup"
+	"github.com/warmbly/warmbly/internal/app/warmupcontent"
 	"github.com/warmbly/warmbly/internal/app/webhook"
 	"github.com/warmbly/warmbly/internal/app/worker"
 	"github.com/warmbly/warmbly/internal/app/worker_orchestrator"
@@ -78,6 +79,7 @@ import (
 	"github.com/warmbly/warmbly/internal/notify"
 	"github.com/warmbly/warmbly/internal/observability"
 	"github.com/warmbly/warmbly/internal/pkg/captcha"
+	"github.com/warmbly/warmbly/internal/pkg/generation"
 	"github.com/warmbly/warmbly/internal/pkg/geo"
 	"github.com/warmbly/warmbly/internal/repository"
 	"github.com/warmbly/warmbly/internal/scheduler"
@@ -116,6 +118,8 @@ func main() {
 	var provisioningPolicyRepo repository.ProvisioningPolicyRepository
 	var tasksService tasks.TasksService
 	var advancedService advanced.Service
+	var warmupContentRepo repository.WarmupContentRepository
+	var warmupContentService warmupcontent.Service
 
 	var folderService group.GroupService
 	var tagService group.GroupService
@@ -475,6 +479,16 @@ func main() {
 		warmupRepository := repository.NewWarmupRepository(primaryDB.Pool)
 		warmupRoutingRepository := repository.NewWarmupRoutingRepository(primaryDB.Pool)
 		warmupRoutingRepoForHandler = warmupRoutingRepository
+
+		// Warmup content bank + offline AI generator. The generation client is
+		// optional: without OPENAI_API_KEY the live send path simply keeps using
+		// the static library and admin generation returns "not configured".
+		warmupContentRepo = repository.NewWarmupContentRepository(primaryDB.Pool)
+		var generationClient *generation.GenerationClient
+		if openaiKey := cfg.GetSecretOptional(ctx, "OPENAI_API_KEY", "openai_api_key", ""); openaiKey != "" {
+			generationClient = generation.NewClient(openaiKey)
+		}
+		warmupContentService = warmupcontent.NewService(warmupContentRepo, generationClient)
 		webhookRepository := repository.NewWebhookRepository(primaryDB.Pool)
 		webhookService := webhook.NewService(webhookRepository)
 		webhookServiceForHandler = webhookService
@@ -792,7 +806,7 @@ func main() {
 		tasksService = tasks.NewService(
 			tasksClient,
 			kafkaProducer,
-			nil, // AI generation client is optional for task execution
+			generationClient,
 			streamingPublisher,
 			eventsPublisher,
 			schedulerService,
@@ -803,6 +817,7 @@ func main() {
 			taskRepository,
 			warmupRepository,
 			warmupRoutingRepository,
+			warmupContentRepo,
 			campaignProgressRepository,
 			emailRepostory,
 			campaignRepostory,
@@ -855,6 +870,14 @@ func main() {
 		auditRetentionJob := jobs.NewAuditRetentionJob(auditRepository, 90*24*time.Hour)
 		auditRetentionScheduler := jobs.NewAuditRetentionScheduler(auditRetentionJob, 6*time.Hour)
 		go auditRetentionScheduler.Start(ctx)
+
+		// Warmup content generator: tops the AI thread bank up toward the
+		// admin-configured per-pool/segment targets. The internal cadence gate
+		// honours the admin's cadence_hours; it no-ops when generation is
+		// disabled or unconfigured.
+		warmupGenerationJob := jobs.NewWarmupGenerationJob(warmupContentService, warmupContentRepo)
+		warmupGenerationScheduler := jobs.NewWarmupGenerationScheduler(warmupGenerationJob, 30*time.Minute)
+		go warmupGenerationScheduler.Start(ctx)
 
 		addr = apiCfg.Hostname
 		ginMode = apiCfg.GinMode
@@ -926,6 +949,10 @@ func main() {
 		WarmupService:     warmupService,
 		WarmupRoutingRepo: warmupRoutingRepoForHandler,
 		WebhookService:    webhookServiceForHandler,
+
+		// Warmup content bank + offline AI generator
+		WarmupContentRepo:    warmupContentRepo,
+		WarmupContentService: warmupContentService,
 
 		// Third-party integrations
 		IntegrationService: integrationServiceForHandler,

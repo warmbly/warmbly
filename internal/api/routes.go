@@ -205,6 +205,8 @@ func Run(
 			emails.POST("/:id/warmup/pause", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails), middleware.RequireAPIKeyEmailAccountParam("id"), h.PauseWarmup)
 			emails.POST("/:id/warmup/resume", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails), middleware.RequireAPIKeyEmailAccountParam("id"), h.ResumeWarmup)
 			emails.POST("/:id/warmup/stop", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails), middleware.RequireAPIKeyEmailAccountParam("id"), h.StopWarmup)
+			emails.GET("/:id/warmup/ban-status", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadEmails), middleware.RequireAPIKeyEmailAccountParam("id"), h.GetWarmupBanStatus)
+			emails.POST("/:id/warmup/appeal", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails), middleware.RequireAPIKeyEmailAccountParam("id"), h.SubmitWarmupAppeal)
 			emails.DELETE("/:id", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails), middleware.RequireAPIKeyEmailAccountParam("id"), h.DeleteEmail)
 			emails.POST("/:id/send", m.RequireOrganization(), m.RequireAccess(models.PermSendCampaigns, models.APIPermSendCampaigns), middleware.RequireAPIKeyEmailAccountParam("id"), h.SendEmailFromAccount)
 		}
@@ -714,6 +716,22 @@ func Run(
 		adminRoutes.GET("/warmup/appeals/:id", middleware.RequireAdminPermission(models.AdminPermReviewAppeals), h.AdminGetAppeal)
 		adminRoutes.POST("/warmup/appeals/:id/approve", middleware.RequireAdminPermission(models.AdminPermReviewAppeals), h.AdminApproveAppeal)
 		adminRoutes.POST("/warmup/appeals/:id/reject", middleware.RequireAdminPermission(models.AdminPermReviewAppeals), h.AdminRejectAppeal)
+
+		// Warmup content bank + offline AI generator. Reads use the warmup
+		// view permission; the A/B analytics uses the analytics permission;
+		// mutations (generate, archive/delete, settings) use ManageSettings.
+		adminRoutes.GET("/warmup-content/overview", middleware.RequireAdminPermission(models.AdminPermViewWarmupPool), h.AdminWarmupContentOverview)
+		adminRoutes.GET("/warmup-content/conversations", middleware.RequireAdminPermission(models.AdminPermViewWarmupPool), h.AdminListWarmupConversations)
+		adminRoutes.GET("/warmup-content/conversations/:id", middleware.RequireAdminPermission(models.AdminPermViewWarmupPool), h.AdminGetWarmupConversation)
+		adminRoutes.POST("/warmup-content/conversations/:id/archive", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminArchiveWarmupConversation)
+		adminRoutes.POST("/warmup-content/conversations/:id/unarchive", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminUnarchiveWarmupConversation)
+		adminRoutes.DELETE("/warmup-content/conversations/:id", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminDeleteWarmupConversation)
+		adminRoutes.POST("/warmup-content/generate", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminGenerateWarmupContent)
+		adminRoutes.GET("/warmup-content/jobs", middleware.RequireAdminPermission(models.AdminPermViewWarmupPool), h.AdminListWarmupGenerationJobs)
+		adminRoutes.GET("/warmup-content/jobs/:id", middleware.RequireAdminPermission(models.AdminPermViewWarmupPool), h.AdminGetWarmupGenerationJob)
+		adminRoutes.GET("/warmup-content/settings", middleware.RequireAdminPermission(models.AdminPermViewWarmupPool), h.AdminGetWarmupGenerationSettings)
+		adminRoutes.PUT("/warmup-content/settings", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminUpdateWarmupGenerationSettings)
+		adminRoutes.GET("/warmup-content/ab", middleware.RequireAdminPermission(models.AdminPermViewAnalytics), h.AdminWarmupContentAB)
 
 		// Mailbox admin (cross-org). Reuses ViewUsers since mailboxes
 		// are tightly coupled to user/org context; a dedicated bit

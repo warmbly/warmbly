@@ -7,14 +7,20 @@ import (
 )
 
 type WarmupToken struct {
-	Token              uuid.UUID  `json:"token"`
-	TaskID             uuid.UUID  `json:"task_id"`
-	SenderAccountID    uuid.UUID  `json:"sender_account_id"`
-	RecipientAccountID uuid.UUID  `json:"recipient_account_id"`
-	ConversationTheme  string     `json:"conversation_theme"`
-	CreatedAt          time.Time  `json:"created_at"`
-	ConsumedAt         *time.Time `json:"consumed_at,omitempty"`
-	ExpiresAt          time.Time  `json:"expires_at"`
+	Token              uuid.UUID `json:"token"`
+	TaskID             uuid.UUID `json:"task_id"`
+	SenderAccountID    uuid.UUID `json:"sender_account_id"`
+	RecipientAccountID uuid.UUID `json:"recipient_account_id"`
+	ConversationTheme  string    `json:"conversation_theme"`
+	// ContentSource records which content cohort produced this send
+	// ("static" or "ai") so the A/B harness can compare spam-placement
+	// rate by cohort. ConversationID points at the cached warmup_conversations
+	// row when the body came from the AI bank (nil for static content).
+	ContentSource  string     `json:"content_source"`
+	ConversationID *uuid.UUID `json:"conversation_id,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	ConsumedAt     *time.Time `json:"consumed_at,omitempty"`
+	ExpiresAt      time.Time  `json:"expires_at"`
 }
 
 // WarmupEmailAction represents actions to perform on a detected warmup email.
@@ -30,6 +36,13 @@ type WarmupEmailAction struct {
 	UID                uint32    `json:"uid"`
 	MailboxUIDValidity uint32    `json:"mailbox_uid_validity"`
 	Actions            []string  `json:"actions"` // "move_to_warmbly", "mark_read", "remove_from_spam", "mark_important"
+
+	// DelaySeconds is a recipient-side "dwell" delay: the worker waits this
+	// long before executing the actions, so opens/reads don't all happen
+	// milliseconds after delivery (a bot signature). The worker schedules the
+	// batch with a timer instead of blocking its consume loop; losing a timer
+	// on restart is acceptable for best-effort warmup engagement. 0 = run now.
+	DelaySeconds int `json:"delay_seconds,omitempty"`
 }
 
 type WarmupHealthState string
@@ -55,6 +68,20 @@ type WarmupParticipantHealth struct {
 	LastHealthScore       float64           `json:"last_health_score"`
 	LastHealthReason      *string           `json:"last_health_reason,omitempty"`
 	LastHealthEvaluatedAt *time.Time        `json:"last_health_evaluated_at,omitempty"`
+}
+
+// WarmupBanStatus is the user-facing view of a mailbox's warmup standing,
+// returned by GetBanStatus so the dashboard can show why warmup is blocked and
+// whether the user can appeal.
+type WarmupBanStatus struct {
+	EmailAccountID uuid.UUID  `json:"email_account_id"`
+	Blocked        bool       `json:"blocked"`
+	HealthState    string     `json:"health_state"`
+	Reason         string     `json:"reason,omitempty"`
+	BlockedAt      *time.Time `json:"blocked_at,omitempty"`
+	BlockedUntil   *time.Time `json:"blocked_until,omitempty"`
+	CanAppeal      bool       `json:"can_appeal"`
+	PendingAppeal  bool       `json:"pending_appeal"`
 }
 
 type WarmupPoolHealthSummary struct {
