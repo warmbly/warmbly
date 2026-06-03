@@ -122,9 +122,10 @@ type WarmupGenerationSettings struct {
 }
 
 // DefaultWarmupGenerationSettings returns conservative defaults: AI off (static
-// library only), premium pool targeted for generation when enabled, free pool
-// off (cost + premium-only product gate), and engagement rates that keep the
-// strong "not spam" rescue signal while adding variation and dwell.
+// library only) and engagement rates that keep the strong "not spam" rescue
+// signal while adding variation and dwell. Content is ONE shared library
+// (free/premium pools only isolate mailbox reputation, not content), so there's
+// a single library config; "premium" is just its canonical bucket label.
 func DefaultWarmupGenerationSettings() WarmupGenerationSettings {
 	return WarmupGenerationSettings{
 		Enabled:              false,
@@ -136,7 +137,6 @@ func DefaultWarmupGenerationSettings() WarmupGenerationSettings {
 		AISelectionShare:     50,
 		Pools: []WarmupGenerationPoolConfig{
 			{PoolType: "premium", Enabled: true, TargetActiveThreads: 60, Segments: []string{""}},
-			{PoolType: "free", Enabled: false, TargetActiveThreads: 0, Segments: []string{""}},
 		},
 		Engagement: WarmupEngagementSettings{
 			SpamRescueRate:    85,
@@ -181,6 +181,28 @@ func (s *WarmupGenerationSettings) Normalize() {
 	if s.Engagement.MaxDwellSeconds > 3600 {
 		s.Engagement.MaxDwellSeconds = 3600
 	}
+
+	// Collapse to a single shared content library. Content isn't split by tier
+	// (PickConversation ignores pool_type), so a multi-pool config would leave a
+	// dead, never-topped-up branch and contradict the single-library admin UI.
+	// Keep one entry under the canonical "premium" bucket, preferring an enabled
+	// one from any legacy multi-pool doc.
+	s.collapsePools()
+}
+
+func (s *WarmupGenerationSettings) collapsePools() {
+	chosen := WarmupGenerationPoolConfig{PoolType: "premium", Enabled: true, TargetActiveThreads: 60, Segments: []string{""}}
+	for _, p := range s.Pools {
+		chosen = p
+		if p.Enabled {
+			break // prefer an enabled entry
+		}
+	}
+	chosen.PoolType = "premium"
+	if len(chosen.Segments) == 0 {
+		chosen.Segments = []string{""}
+	}
+	s.Pools = []WarmupGenerationPoolConfig{chosen}
 }
 
 func clampPct(v int) int {

@@ -40,12 +40,10 @@ import {
     unarchiveWarmupConversation,
     type WarmupConversationRow,
 } from "@/lib/api/client/admin/warmupContent";
-import { PoolBadge } from "./components";
-import { CONTENT_STATUS_TONE, POOL_OPTIONS, fmtDate } from "./shared";
+import { CONTENT_STATUS_TONE, fmtDate } from "./shared";
 
 export default function LibraryPage() {
     const qc = useQueryClient();
-    const [pool, setPool] = useState("");
     const [source, setSource] = useState("");
     const [status, setStatus] = useState("");
     const [openId, setOpenId] = useState<string | null>(null);
@@ -55,7 +53,7 @@ export default function LibraryPage() {
     const pager = useCursorPager();
     const { reset } = pager;
 
-    const filterKey = JSON.stringify({ pool, source, status });
+    const filterKey = JSON.stringify({ source, status });
     useEffect(() => {
         reset();
     }, [filterKey, reset]);
@@ -64,7 +62,6 @@ export default function LibraryPage() {
         queryKey: ["admin", "warmup-content", "conversations", filterKey, pager.cursor],
         queryFn: () =>
             listWarmupConversations({
-                pool: pool || undefined,
                 source: source || undefined,
                 status: status || undefined,
                 cursor: pager.cursor,
@@ -116,12 +113,6 @@ export default function LibraryPage() {
                     </div>
                 ),
                 csv: (c) => c.subject,
-            },
-            {
-                id: "pool",
-                header: "Pool",
-                cell: (c) => <PoolBadge pool={c.pool_type} />,
-                csv: (c) => c.pool_type,
             },
             {
                 id: "segment",
@@ -248,25 +239,6 @@ export default function LibraryPage() {
     return (
         <div className="space-y-4">
             <div className="flex flex-wrap items-end gap-3">
-                <div className="w-40">
-                    <Label className="mb-1 text-xs text-muted-foreground">Pool</Label>
-                    <Select
-                        value={pool || "any"}
-                        onValueChange={(v) => setPool(v === "any" ? "" : v)}
-                    >
-                        <SelectTrigger size="sm">
-                            <SelectValue placeholder="Any pool" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="any">Any pool</SelectItem>
-                            {POOL_OPTIONS.map((o) => (
-                                <SelectItem key={o.value} value={o.value}>
-                                    {o.label}
-                                </SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-                </div>
                 <div className="w-44">
                     <Label className="mb-1 text-xs text-muted-foreground">Source</Label>
                     <Select
@@ -412,7 +384,6 @@ function ConversationDialog({
                 ) : (
                     <div className="space-y-4">
                         <div className="flex flex-wrap items-center gap-2 text-xs">
-                            <PoolBadge pool={c.pool_type} />
                             {c.segment && (
                                 <Badge variant="outline" className="text-[10px]">
                                     segment: {c.segment}

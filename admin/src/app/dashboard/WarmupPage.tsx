@@ -108,14 +108,18 @@ function HealthSummary() {
 
     // Guard every field: a partial response must degrade gracefully, never
     // throw and blank the whole tab.
+    //
+    // `avg_spam_placement_rate` is ALREADY a percent (the backend computes
+    // placements/sent*100), so we render it directly — no second *100.
     const placement = data.avg_spam_placement_rate ?? 0;
-    const spamPct = (placement * 100).toFixed(1);
+    const spamPct = placement.toFixed(1);
     const placementTone =
-        placement >= 0.2 ? "text-red-700" : placement >= 0.1 ? "text-amber-700" : "text-emerald-600";
+        placement >= 20 ? "text-red-700" : placement >= 10 ? "text-amber-700" : "text-emerald-600";
     const atRisk = data.at_risk_count ?? 0;
     const blocked = data.blocked_count ?? 0;
 
-    // Per-provider spam-folder placement, sorted worst-first so the riskiest
+    // `spam_placement_by_provider` is a Record of RAW COUNTS (backend does
+    // COUNT(*)), not rates. Sort worst-first by count so the riskiest
     // mailbox-provider surface is the first thing an investigator sees.
     const byProvider = Object.entries(data.spam_placement_by_provider ?? {}).sort(
         (a, b) => b[1] - a[1],
@@ -159,42 +163,22 @@ function HealthSummary() {
             <div className="mt-3 border border-border rounded-lg p-3 bg-card">
                 <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-2">
                     <Flame className="size-4" />
-                    <span>Spam placement by provider</span>
+                    <span>Spam placements by provider (count)</span>
                 </div>
                 <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                    {byProvider.map(([provider, rate]) => {
-                        const pct = (rate ?? 0) * 100;
-                        const tone =
-                            pct >= 20
-                                ? "text-red-700"
-                                : pct >= 10
-                                  ? "text-amber-700"
-                                  : "text-emerald-600";
-                        const bar =
-                            pct >= 20
-                                ? "bg-red-500"
-                                : pct >= 10
-                                  ? "bg-amber-500"
-                                  : "bg-emerald-500";
-                        return (
-                            <div key={provider}>
-                                <div className="flex items-center justify-between text-xs">
-                                    <span className="capitalize truncate text-foreground">
-                                        {provider}
-                                    </span>
-                                    <span className={`tabular-nums font-medium ${tone}`}>
-                                        {pct.toFixed(1)}%
-                                    </span>
-                                </div>
-                                <div className="mt-1 h-1.5 w-full rounded-full bg-muted overflow-hidden">
-                                    <div
-                                        className={`h-full rounded-full ${bar}`}
-                                        style={{ width: `${Math.min(100, pct)}%` }}
-                                    />
-                                </div>
-                            </div>
-                        );
-                    })}
+                    {byProvider.map(([provider, count]) => (
+                        <div
+                            key={provider}
+                            className="flex items-center justify-between text-xs"
+                        >
+                            <span className="capitalize truncate text-foreground">
+                                {provider}
+                            </span>
+                            <span className="tabular-nums font-medium text-foreground">
+                                {(count ?? 0).toLocaleString()}
+                            </span>
+                        </div>
+                    ))}
                 </div>
             </div>
         )}

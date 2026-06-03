@@ -1,6 +1,7 @@
 // /warmup-content/overview — headline counts, AI/schedule status, per-pool
 // library breakdown, and content-source vs spam-placement A/B comparison.
 
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Archive, CalendarClock, Inbox, Play, Sparkles } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -9,7 +10,7 @@ import {
     getWarmupContentAb,
     getWarmupContentOverview,
 } from "@/lib/api/client/admin/warmupContent";
-import { PoolBadge, StatCard } from "./components";
+import { StatCard } from "./components";
 import { fmtDate } from "./shared";
 
 export default function OverviewPage() {
@@ -24,6 +25,33 @@ export default function OverviewPage() {
         queryFn: () => getWarmupContentAb(14),
         staleTime: 60_000,
     });
+
+    // Content is one shared library now — pools only isolate mailbox
+    // reputation, not content. Aggregate the per-pool breakdown by
+    // segment+source so the table reflects the actual library shape rather
+    // than misleading per-pool rows (e.g. "free has no content").
+    const bySegmentSource = useMemo(() => {
+        const acc = new Map<
+            string,
+            { segment: string; source: string; active: number; archived: number }
+        >();
+        for (const p of data?.by_pool ?? []) {
+            const key = `${p.segment}::${p.source}`;
+            const cur = acc.get(key);
+            if (cur) {
+                cur.active += p.active;
+                cur.archived += p.archived;
+            } else {
+                acc.set(key, {
+                    segment: p.segment,
+                    source: p.source,
+                    active: p.active,
+                    archived: p.archived,
+                });
+            }
+        }
+        return Array.from(acc.values());
+    }, [data?.by_pool]);
 
     if (isLoading) {
         return (
@@ -44,8 +72,6 @@ export default function OverviewPage() {
         );
     }
     if (!data) return null;
-
-    const byPool = data.by_pool ?? [];
 
     return (
         <div className="space-y-6">
@@ -95,12 +121,11 @@ export default function OverviewPage() {
             </div>
 
             <section>
-                <h2 className="mb-2 text-sm font-semibold">Library by pool</h2>
+                <h2 className="mb-2 text-sm font-semibold">Library by segment & source</h2>
                 <div className="overflow-hidden rounded-lg border border-border bg-card">
                     <table className="w-full text-sm">
                         <thead className="bg-muted/50 text-xs uppercase text-muted-foreground">
                             <tr>
-                                <th className="px-3 py-2 text-left font-medium">Pool</th>
                                 <th className="px-3 py-2 text-left font-medium">Segment</th>
                                 <th className="px-3 py-2 text-left font-medium">Source</th>
                                 <th className="px-3 py-2 text-right font-medium">Active</th>
@@ -108,14 +133,11 @@ export default function OverviewPage() {
                             </tr>
                         </thead>
                         <tbody>
-                            {byPool.map((p, i) => (
+                            {bySegmentSource.map((p, i) => (
                                 <tr
-                                    key={`${p.pool_type}-${p.segment}-${p.source}-${i}`}
+                                    key={`${p.segment}-${p.source}-${i}`}
                                     className="border-t border-border"
                                 >
-                                    <td className="px-3 py-2">
-                                        <PoolBadge pool={p.pool_type} />
-                                    </td>
                                     <td className="px-3 py-2 text-xs">{p.segment || "—"}</td>
                                     <td className="px-3 py-2 text-xs text-muted-foreground">
                                         {p.source || "—"}
@@ -128,10 +150,10 @@ export default function OverviewPage() {
                                     </td>
                                 </tr>
                             ))}
-                            {byPool.length === 0 && (
+                            {bySegmentSource.length === 0 && (
                                 <tr>
                                     <td
-                                        colSpan={5}
+                                        colSpan={4}
                                         className="py-6 text-center text-sm text-muted-foreground"
                                     >
                                         No content generated yet.
@@ -177,7 +199,9 @@ export default function OverviewPage() {
                             </thead>
                             <tbody>
                                 {(ab.data?.data ?? []).map((r) => {
-                                    const pct = (r.spam_placement_rate ?? 0) * 100;
+                                    // Backend already returns a percent (it
+                                    // multiplies by 100), so use it directly.
+                                    const pct = r.spam_placement_rate ?? 0;
                                     const tone =
                                         pct >= 20
                                             ? "text-red-700"

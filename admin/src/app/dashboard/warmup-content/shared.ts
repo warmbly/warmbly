@@ -5,11 +5,6 @@
 // Keep this file JSX-free — the badge/stat-card *components* live in
 // `components.tsx` so React Fast Refresh stays happy.
 
-export const POOL_OPTIONS = [
-    { value: "premium", label: "Premium" },
-    { value: "free", label: "Free" },
-];
-
 const JOB_STATUS_TONE: Record<string, string> = {
     pending: "border-amber-300 bg-amber-50 text-amber-700",
     queued: "border-amber-300 bg-amber-50 text-amber-700",
