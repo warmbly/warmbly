@@ -34,7 +34,12 @@ import UsersPage from "@/app/dashboard/UsersPage";
 import UserDetailPage from "@/app/dashboard/UserDetailPage";
 import WarmupPage from "@/app/dashboard/WarmupPage";
 import WarmupAppealsPage from "@/app/dashboard/WarmupAppealsPage";
-import WarmupContentPage from "@/app/dashboard/WarmupContentPage";
+import WarmupContentLayout from "@/app/dashboard/warmup-content/WarmupContentLayout";
+import WarmupContentOverviewPage from "@/app/dashboard/warmup-content/OverviewPage";
+import WarmupContentLibraryPage from "@/app/dashboard/warmup-content/LibraryPage";
+import WarmupContentGeneratePage from "@/app/dashboard/warmup-content/GeneratePage";
+import WarmupContentJobsPage from "@/app/dashboard/warmup-content/JobsPage";
+import WarmupContentSettingsPage from "@/app/dashboard/warmup-content/SettingsPage";
 import CampaignsPage from "@/app/dashboard/CampaignsPage";
 import EnterprisePage from "@/app/dashboard/EnterprisePage";
 import PlansPage from "@/app/dashboard/PlansPage";
@@ -90,7 +95,23 @@ const router = createBrowserRouter([
                     { path: "discounts", element: <DiscountsPage /> },
                     { path: "warmup", element: <WarmupPage /> },
                     { path: "warmup/appeals", element: <WarmupAppealsPage /> },
-                    { path: "warmup-content", element: <WarmupContentPage /> },
+                    {
+                        path: "warmup-content",
+                        element: <WarmupContentLayout />,
+                        children: [
+                            {
+                                index: true,
+                                element: (
+                                    <Navigate to="/warmup-content/overview" replace />
+                                ),
+                            },
+                            { path: "overview", element: <WarmupContentOverviewPage /> },
+                            { path: "library", element: <WarmupContentLibraryPage /> },
+                            { path: "generate", element: <WarmupContentGeneratePage /> },
+                            { path: "jobs", element: <WarmupContentJobsPage /> },
+                            { path: "settings", element: <WarmupContentSettingsPage /> },
+                        ],
+                    },
                     { path: "campaigns", element: <CampaignsPage /> },
                     { path: "enterprise", element: <EnterprisePage /> },
                     { path: "limit-requests", element: <LimitRequestsPage /> },
