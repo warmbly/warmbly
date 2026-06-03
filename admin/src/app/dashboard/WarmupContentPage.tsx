@@ -1474,7 +1474,17 @@ function SettingsTab() {
                         step={0.01}
                         onChange={(v) => patchEngagement({ mark_read_rate: v })}
                     />
-                    <div />
+                    <NumberField
+                        id="eng-star"
+                        label="Star rate (%)"
+                        hint="Share of warmup mail starred / flagged (0–100)."
+                        value={form.engagement.star_rate}
+                        min={0}
+                        max={100}
+                        onChange={(v) =>
+                            patchEngagement({ star_rate: Math.max(0, Math.min(100, v)) })
+                        }
+                    />
                     <NumberField
                         id="eng-min-dwell"
                         label="Min dwell (seconds)"

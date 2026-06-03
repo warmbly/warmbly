@@ -127,6 +127,10 @@ func (w *WorkerService) runGoogleWarmupActions(ctx context.Context, mail *wmail.
 			if err := mail.GoogleData.Client.MarkImportant(ctx, action.GmailID); err != nil {
 				log.Error().Err(err).Str("gmail_id", action.GmailID).Msg("Failed to mark important")
 			}
+		case "star":
+			if err := mail.GoogleData.Client.AddStar(ctx, action.GmailID); err != nil {
+				log.Error().Err(err).Str("gmail_id", action.GmailID).Msg("Failed to star warmup message")
+			}
 		default:
 			log.Warn().Str("action", act).Msg("Unknown warmup action")
 		}
@@ -173,6 +177,11 @@ func (w *WorkerService) runImapWarmupActions(ctx context.Context, mail *wmail.WM
 			if err := imapClient.MarkImportant(ctx, sourceBox.Name, uid); err != nil {
 				log.Error().Err(err).Uint32("uid", uid).Msg("Failed to mark important (IMAP)")
 			}
+		case "star":
+			// No-op on IMAP: \Flagged is already set by mark_important, so
+			// starring here would just re-flag the same message. Star is a
+			// Gmail-only distinct signal.
+			continue
 		default:
 			log.Warn().Str("action", act).Msg("Unknown warmup action")
 		}

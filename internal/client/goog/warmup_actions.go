@@ -62,6 +62,24 @@ func (c *Client) RemoveFromSpam(ctx context.Context, messageID string) error {
 	return nil
 }
 
+// AddStar stars a message by adding the STARRED system label. Distinct from
+// MarkImportant (the IMPORTANT label): a star is a deliberate, visible positive
+// signal, so providers weight it as genuine engagement.
+func (c *Client) AddStar(ctx context.Context, messageID string) error {
+	if c.srv == nil {
+		return fmt.Errorf("gmail service not initialized")
+	}
+
+	_, err := c.srv.Users.Messages.Modify("me", messageID, &gmail.ModifyMessageRequest{
+		AddLabelIds: []string{Starred},
+	}).Context(ctx).Do()
+	if err != nil {
+		return fmt.Errorf("failed to add star: %w", err)
+	}
+
+	return nil
+}
+
 // MarkImportant marks a message as important
 func (c *Client) MarkImportant(ctx context.Context, messageID string) error {
 	if c.srv == nil {

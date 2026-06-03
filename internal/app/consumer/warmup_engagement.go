@@ -72,6 +72,12 @@ func engagementPlan(accountID uuid.UUID, e models.WarmupEngagementSettings) (act
 	if rollPct(e.MarkImportantRate, p.Bias("important", 0.7, 1.3)) {
 		actions = append(actions, "mark_important")
 	}
+	// Starring is a separate, lower-rate positive signal (Gmail STARRED). On
+	// IMAP the worker no-ops it because \Flagged is already covered by
+	// mark_important — so it never double-flags the same message.
+	if rollPct(e.StarRate, p.Bias("star", 0.6, 1.4)) {
+		actions = append(actions, "star")
+	}
 
 	delaySeconds = dwellSeconds(e.MinDwellSeconds, e.MaxDwellSeconds, p.Bias("dwell", 0.7, 1.3))
 	return actions, delaySeconds

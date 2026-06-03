@@ -92,6 +92,7 @@ export interface WarmupGenerationEngagement {
     spam_rescue_rate: number;
     mark_important_rate: number;
     mark_read_rate: number;
+    star_rate: number;
     min_dwell_seconds: number;
     max_dwell_seconds: number;
 }

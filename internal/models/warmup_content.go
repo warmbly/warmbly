@@ -76,8 +76,12 @@ type WarmupEngagementSettings struct {
 	SpamRescueRate    int `json:"spam_rescue_rate"`
 	MarkImportantRate int `json:"mark_important_rate"`
 	MarkReadRate      int `json:"mark_read_rate"`
-	MinDwellSeconds   int `json:"min_dwell_seconds"`
-	MaxDwellSeconds   int `json:"max_dwell_seconds"`
+	// StarRate is the chance a warmup message is starred (Gmail STARRED). A
+	// star is a deliberate positive signal distinct from "important"; kept
+	// lower than read/important so the pool doesn't star in lockstep.
+	StarRate        int `json:"star_rate"`
+	MinDwellSeconds int `json:"min_dwell_seconds"`
+	MaxDwellSeconds int `json:"max_dwell_seconds"`
 }
 
 // WarmupGenerationSettings is the admin-controlled config document for the
@@ -119,6 +123,7 @@ func DefaultWarmupGenerationSettings() WarmupGenerationSettings {
 			SpamRescueRate:    85,
 			MarkImportantRate: 30,
 			MarkReadRate:      95,
+			StarRate:          20,
 			MinDwellSeconds:   20,
 			MaxDwellSeconds:   240,
 		},
@@ -147,6 +152,7 @@ func (s *WarmupGenerationSettings) Normalize() {
 	s.Engagement.SpamRescueRate = clampPct(s.Engagement.SpamRescueRate)
 	s.Engagement.MarkImportantRate = clampPct(s.Engagement.MarkImportantRate)
 	s.Engagement.MarkReadRate = clampPct(s.Engagement.MarkReadRate)
+	s.Engagement.StarRate = clampPct(s.Engagement.StarRate)
 	if s.Engagement.MinDwellSeconds < 0 {
 		s.Engagement.MinDwellSeconds = 0
 	}
