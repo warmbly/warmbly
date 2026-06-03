@@ -58,9 +58,10 @@ func (s *tasksService) pickNewWarmupContent(ctx context.Context, account Email) 
 	settings := s.getWarmupSettings(ctx)
 
 	if settings.Enabled && s.warmupContentRepo != nil && rand.Intn(100) < settings.AISelectionShare {
-		poolType := s.resolveWarmupPoolType(ctx, &account)
+		// Content is drawn from the shared library by segment; tier doesn't
+		// affect content (only mailbox reputation isolation uses the pool).
 		segment := strings.TrimSpace(account.WarmupTag)
-		conv, err := s.warmupContentRepo.PickConversation(ctx, poolType, segment)
+		conv, err := s.warmupContentRepo.PickConversation(ctx, segment)
 		if err == nil && conv != nil {
 			c := Conversation{ID: conv.ID, Theme: conv.Theme, Description: conv.Description, Messages: conv.Messages}
 			body := GenerateConversationEmail(c, account, false)

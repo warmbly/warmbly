@@ -38,11 +38,22 @@ type WarmupConversation struct {
 	UpdatedAt      time.Time  `json:"updated_at"`
 }
 
+// Warmup generation job modes. "sync" runs every model call inline (the
+// original behaviour); "batch" submits one OpenAI Batch API job and ingests its
+// results asynchronously when the batch completes.
+const (
+	WarmupGenerationModeSync  = "sync"
+	WarmupGenerationModeBatch = "batch"
+)
+
 // WarmupGenerationJob records one offline generation run for observability.
+// Batch runs additionally carry the OpenAI batch/file identifiers and the
+// last-observed batch status so the poller can reconcile them.
 type WarmupGenerationJob struct {
 	ID                uuid.UUID  `json:"id"`
 	RequestedBy       *uuid.UUID `json:"requested_by,omitempty"`
 	Trigger           string     `json:"trigger"` // "manual" | "schedule"
+	Mode              string     `json:"mode"`    // "sync" | "batch"
 	PoolType          string     `json:"pool_type"`
 	Segment           string     `json:"segment"`
 	Theme             string     `json:"theme"`
@@ -53,6 +64,14 @@ type WarmupGenerationJob struct {
 	FailedCount       int        `json:"failed_count"`
 	Status            string     `json:"status"` // pending | running | completed | failed
 	Error             string     `json:"error"`
+	// Batch-only fields. BatchStatus is the last status reported by OpenAI
+	// (validating | in_progress | finalizing | completed | failed | expired |
+	// cancelling | cancelled); empty for sync jobs.
+	BatchID           string     `json:"batch_id,omitempty"`
+	BatchInputFileID  string     `json:"batch_input_file_id,omitempty"`
+	BatchOutputFileID string     `json:"batch_output_file_id,omitempty"`
+	BatchStatus       string     `json:"batch_status,omitempty"`
+	CompletionWindow  string     `json:"completion_window,omitempty"`
 	StartedAt         *time.Time `json:"started_at,omitempty"`
 	FinishedAt        *time.Time `json:"finished_at,omitempty"`
 	CreatedAt         time.Time  `json:"created_at"`

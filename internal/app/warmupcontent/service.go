@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"strings"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/generation"
+	"github.com/warmbly/warmbly/internal/pkg/humanlint"
 	"github.com/warmbly/warmbly/internal/pkg/warmlint"
 	"github.com/warmbly/warmbly/internal/repository"
 )
@@ -33,8 +35,13 @@ var defaultThemes = []string{
 	"customer success", "writing", "travel", "community",
 }
 
-// maxPerRun bounds a single generation run regardless of request size.
+// maxPerRun bounds a single sync generation run regardless of request size.
 const maxPerRun = 200
+
+// maxPerBatch bounds a single Batch API submission. Batch is async and cheap so
+// it tolerates a much larger fan-out than the sync path; OpenAI itself allows up
+// to 50,000 requests per batch input file.
+const maxPerBatch = 2000
 
 // GenerateRequest describes one generation run.
 type GenerateRequest struct {
@@ -45,6 +52,13 @@ type GenerateRequest struct {
 	Theme       string
 	Model       string
 	Count       int
+	// MaxMessages overrides the per-thread follow-up count for this run; 0 falls
+	// back to the admin generation settings. Used by the batch path so callers
+	// have full control over the thread shape.
+	MaxMessages int
+	// CompletionWindow is the OpenAI Batch API processing window (batch path
+	// only); empty defaults to "24h".
+	CompletionWindow string
 }
 
 // Service drives offline warmup content generation.
@@ -52,6 +66,14 @@ type Service interface {
 	// Generate starts an offline generation run in the background and returns
 	// the job ID immediately so callers can track progress.
 	Generate(ctx context.Context, req GenerateRequest) (uuid.UUID, error)
+	// GenerateBatch submits an async OpenAI Batch API run (~50% cheaper) and
+	// returns the job ID immediately. Results are ingested later by PollBatches.
+	GenerateBatch(ctx context.Context, req GenerateRequest) (uuid.UUID, error)
+	// PollBatches reconciles in-flight batch jobs against OpenAI: it ingests
+	// completed batches and marks failed/expired/cancelled ones.
+	PollBatches(ctx context.Context) error
+	// CancelBatch cancels an in-flight batch job (OpenAI + local job row).
+	CancelBatch(ctx context.Context, jobID uuid.UUID) error
 	// RunScheduled tops every enabled pool/segment up toward its target.
 	RunScheduled(ctx context.Context) error
 	// Enabled reports whether an AI client is configured.
@@ -228,9 +250,19 @@ func (s *service) runJob(ctx context.Context, job *models.WarmupGenerationJob) i
 			continue
 		}
 
+		// Humanize BEFORE the gates: strip AI tells (em-dashes, stock openers,
+		// AI-accent vocabulary, "not only X but also Y") and apply casual
+		// contractions, so the cached copy reads like a person wrote it.
+		subject, description, messages = humanizeThread(subject, description, messages)
+
 		lintBody := description
 		if len(messages) > 0 {
 			lintBody += "\n\n" + strings.Join(messages, "\n")
+		}
+		// Reject threads that still read machine-generated after cleanup.
+		if humanlint.LooksRobotic(lintBody) {
+			job.LintRejectedCount++
+			continue
 		}
 		if err := warmlint.Check(subject, lintBody, false); err != nil {
 			job.LintRejectedCount++
@@ -289,6 +321,23 @@ func cleanMessages(in []string) []string {
 		}
 	}
 	return out
+}
+
+// humanizeThread runs the deterministic humanizer over a generated thread's
+// subject, opening line, and follow-ups, seeded by content so the same thread
+// humanizes identically (reproducible) while differing across threads. Shared
+// by the sync (runJob) and batch (ingestBatch) ingest paths.
+func humanizeThread(subject, description string, messages []string) (string, string, []string) {
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(subject + "|" + description))
+	seed := int64(h.Sum64())
+
+	subject = humanlint.Humanize(subject, seed)
+	description = humanlint.Humanize(description, seed+1)
+	for i := range messages {
+		messages[i] = humanlint.Humanize(messages[i], seed+int64(i)+2)
+	}
+	return subject, description, messages
 }
 
 func dailyRemaining(ctx context.Context, repo repository.WarmupContentRepository, dailyCap int) int {

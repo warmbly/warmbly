@@ -879,6 +879,13 @@ func main() {
 		warmupGenerationScheduler := jobs.NewWarmupGenerationScheduler(warmupGenerationJob, 30*time.Minute)
 		go warmupGenerationScheduler.Start(ctx)
 
+		// Warmup batch poller: reconciles in-flight OpenAI Batch API generation
+		// jobs (~50% cheaper, async up to 24h), ingesting completed batches into
+		// the content bank and marking failed/expired/cancelled ones. No-ops when
+		// generation is unconfigured or there are no active batch jobs.
+		warmupBatchPoller := jobs.NewWarmupBatchPoller(warmupContentService, 5*time.Minute)
+		go warmupBatchPoller.Start(ctx)
+
 		addr = apiCfg.Hostname
 		ginMode = apiCfg.GinMode
 		websocketURI = apiCfg.WebsocketURI

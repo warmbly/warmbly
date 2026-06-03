@@ -62,6 +62,39 @@ export interface WarmupConversationDetail {
     updated_at: string;
 }
 
+/** Whether a job ran inline ("sync") or via the OpenAI Batch API ("batch"). */
+export type WarmupGenerationMode = "sync" | "batch";
+
+/**
+ * OpenAI Batch lifecycle status, surfaced verbatim for batch-mode jobs.
+ * Terminal states are `completed`, `failed`, `expired`, and `cancelled`.
+ */
+export type WarmupBatchStatus =
+    | "validating"
+    | "in_progress"
+    | "finalizing"
+    | "completed"
+    | "failed"
+    | "expired"
+    | "cancelling"
+    | "cancelled";
+
+const TERMINAL_BATCH_STATUS: ReadonlySet<string> = new Set([
+    "completed",
+    "failed",
+    "expired",
+    "cancelled",
+]);
+
+const TERMINAL_JOB_STATUS: ReadonlySet<string> = new Set([
+    "completed",
+    "succeeded",
+    "failed",
+    "error",
+    "cancelled",
+    "canceled",
+]);
+
 export interface WarmupGenerationJob {
     id: string;
     requested_by: string | null;
@@ -79,6 +112,34 @@ export interface WarmupGenerationJob {
     started_at: string | null;
     finished_at: string | null;
     created_at: string;
+    /** "sync" for inline jobs, "batch" for OpenAI Batch API jobs. */
+    mode?: WarmupGenerationMode;
+    /** Batch-only fields — present when `mode === "batch"`. */
+    batch_id?: string | null;
+    batch_input_file_id?: string | null;
+    batch_output_file_id?: string | null;
+    batch_status?: WarmupBatchStatus | null;
+    completion_window?: string | null;
+}
+
+/**
+ * True while a job is still doing work and should keep being polled. Covers
+ * both the inline `status` lifecycle and the OpenAI `batch_status` lifecycle.
+ */
+export function isJobActive(job: WarmupGenerationJob): boolean {
+    if (job.mode === "batch") {
+        const bs = job.batch_status ?? "";
+        if (bs) return !TERMINAL_BATCH_STATUS.has(bs);
+    }
+    return !TERMINAL_JOB_STATUS.has(job.status);
+}
+
+/** Only batch jobs that are still in flight can be cancelled. */
+export function isJobCancellable(job: WarmupGenerationJob): boolean {
+    if (job.mode !== "batch") return false;
+    const bs = job.batch_status ?? "";
+    if (!bs) return !TERMINAL_JOB_STATUS.has(job.status);
+    return !TERMINAL_BATCH_STATUS.has(bs);
 }
 
 export interface WarmupGenerationPoolConfig {
@@ -154,10 +215,36 @@ export interface ListJobsParams {
 
 export interface GenerateContentRequest {
     count: number;
-    pool_type: string;
+    /**
+     * Reputation pool the threads nominally belong to. Optional — warmup
+     * content is a single shared library, so the UI omits this and the
+     * backend defaults it to "premium".
+     */
+    pool_type?: string;
     segment?: string;
     theme?: string;
     model?: string;
+}
+
+/**
+ * Batch generation request. Every field is optional; the backend applies
+ * defaults. If `themes` is non-empty the backend fans out one batch job per
+ * theme, and `count` is interpreted as threads-per-job (default 100, clamped
+ * to 2000 and the daily cap). `completion_window` defaults to "24h".
+ */
+export interface GenerateBatchRequest {
+    pool_type?: string;
+    segment?: string;
+    theme?: string;
+    themes?: string[];
+    model?: string;
+    count?: number;
+    max_messages?: number;
+    completion_window?: string;
+}
+
+export interface GenerateBatchResult {
+    job_ids: string[];
 }
 
 // --------------------------------------------------------------------
@@ -233,6 +320,35 @@ export function generateWarmupContent(
         method: "POST",
         url: "/admin/warmup-content/generate",
         data: body,
+        authorization: true,
+    });
+}
+
+// --------------------------------------------------------------------
+// Batch generate (OpenAI Batch API — async, cheaper, large volume)
+// --------------------------------------------------------------------
+
+/**
+ * Enqueue one or more OpenAI Batch jobs. Returns the created job ids; watch
+ * them on the Jobs view via `listWarmupGenerationJobs`. A 400 with code
+ * `not_configured` / `daily_cap_reached` means generation can't run yet.
+ */
+export function submitWarmupBatch(
+    body: GenerateBatchRequest,
+): Promise<GenerateBatchResult> {
+    return Request({
+        method: "POST",
+        url: "/admin/warmup-content/batch",
+        data: body,
+        authorization: true,
+    });
+}
+
+/** Cancel an in-flight batch job. 400 if it isn't a cancellable batch job. */
+export function cancelWarmupBatch(jobId: string): Promise<{ ok: true }> {
+    return Request({
+        method: "POST",
+        url: `/admin/warmup-content/jobs/${jobId}/cancel`,
         authorization: true,
     });
 }

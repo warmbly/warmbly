@@ -43,7 +43,11 @@ type WarmupCohortStat struct {
 type WarmupContentRepository interface {
 	// Conversation bank
 	InsertConversation(ctx context.Context, c *models.WarmupConversation) error
-	PickConversation(ctx context.Context, poolType, segment string) (*models.WarmupConversation, error)
+	// PickConversation draws an active thread for the segment from the SHARED
+	// content library, regardless of tier: free/premium separate which mailboxes
+	// warm together (reputation isolation), not what they say, so content is not
+	// split by pool. Prefers an exact segment match, falls back to generic.
+	PickConversation(ctx context.Context, segment string) (*models.WarmupConversation, error)
 	GetConversation(ctx context.Context, id uuid.UUID) (*models.WarmupConversation, error)
 	ListConversations(ctx context.Context, f ConversationFilter) ([]models.WarmupConversation, int, error)
 	SetConversationStatus(ctx context.Context, id uuid.UUID, status string) error
@@ -58,6 +62,9 @@ type WarmupContentRepository interface {
 	UpdateGenerationJob(ctx context.Context, j *models.WarmupGenerationJob) error
 	GetGenerationJob(ctx context.Context, id uuid.UUID) (*models.WarmupGenerationJob, error)
 	ListGenerationJobs(ctx context.Context, limit, offset int) ([]models.WarmupGenerationJob, int, error)
+	// ListActiveBatchJobs returns batch-mode jobs still in flight (running with a
+	// non-terminal OpenAI batch status), for the poller to reconcile.
+	ListActiveBatchJobs(ctx context.Context) ([]models.WarmupGenerationJob, error)
 	GeneratedCountSince(ctx context.Context, since time.Time) (int, error)
 
 	// Settings (admin_settings key/value)
@@ -115,17 +122,19 @@ func scanConversation(row pgx.Row) (*models.WarmupConversation, error) {
 
 const conversationCols = `id, pool_type, segment, source, theme, subject, description, messages, status, lint_passed, usage_count, generated_by_job_id, created_at, updated_at`
 
-// PickConversation returns a random active conversation for the pool, preferring
-// an exact segment match and falling back to generic (segment=”) content.
-func (r *warmupContentRepository) PickConversation(ctx context.Context, poolType, segment string) (*models.WarmupConversation, error) {
+// PickConversation returns a random active conversation from the shared library,
+// preferring an exact segment match and falling back to generic (segment=”)
+// content. Tier (free/premium) is intentionally NOT a filter — content is shared
+// across pools; only mailbox reputation is isolated by pool.
+func (r *warmupContentRepository) PickConversation(ctx context.Context, segment string) (*models.WarmupConversation, error) {
 	query := `
 		SELECT ` + conversationCols + `
 		FROM warmup_conversations
-		WHERE pool_type = $1 AND status = 'active' AND (segment = $2 OR segment = '')
-		ORDER BY (segment = $2) DESC, random()
+		WHERE status = 'active' AND (segment = $1 OR segment = '')
+		ORDER BY (segment = $1) DESC, random()
 		LIMIT 1
 	`
-	c, err := scanConversation(r.db.QueryRow(ctx, query, poolType, segment))
+	c, err := scanConversation(r.db.QueryRow(ctx, query, segment))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -256,13 +265,21 @@ func (r *warmupContentRepository) CreateGenerationJob(ctx context.Context, j *mo
 	if j.ID == uuid.Nil {
 		j.ID = uuid.New()
 	}
+	if j.Mode == "" {
+		j.Mode = models.WarmupGenerationModeSync
+	}
+	if j.CompletionWindow == "" {
+		j.CompletionWindow = "24h"
+	}
 	query := `
 		INSERT INTO warmup_generation_jobs
-			(id, requested_by, trigger, pool_type, segment, theme, model, requested_count, status)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+			(id, requested_by, trigger, mode, pool_type, segment, theme, model, requested_count, status,
+			 batch_id, batch_input_file_id, batch_output_file_id, batch_status, completion_window)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 	`
 	_, err := r.db.Exec(ctx, query,
-		j.ID, j.RequestedBy, j.Trigger, j.PoolType, j.Segment, j.Theme, j.Model, j.RequestedCount, j.Status,
+		j.ID, j.RequestedBy, j.Trigger, j.Mode, j.PoolType, j.Segment, j.Theme, j.Model, j.RequestedCount, j.Status,
+		j.BatchID, j.BatchInputFileID, j.BatchOutputFileID, j.BatchStatus, j.CompletionWindow,
 	)
 	return err
 }
@@ -277,23 +294,30 @@ func (r *warmupContentRepository) UpdateGenerationJob(ctx context.Context, j *mo
 			error = $6,
 			started_at = $7,
 			finished_at = $8,
+			batch_id = $9,
+			batch_input_file_id = $10,
+			batch_output_file_id = $11,
+			batch_status = $12,
+			completion_window = $13,
 			updated_at = NOW()
 		WHERE id = $1
 	`
 	_, err := r.db.Exec(ctx, query,
 		j.ID, j.GeneratedCount, j.LintRejectedCount, j.FailedCount, j.Status, j.Error, j.StartedAt, j.FinishedAt,
+		j.BatchID, j.BatchInputFileID, j.BatchOutputFileID, j.BatchStatus, j.CompletionWindow,
 	)
 	return err
 }
 
-const generationJobCols = `id, requested_by, trigger, pool_type, segment, theme, model, requested_count, generated_count, lint_rejected_count, failed_count, status, error, started_at, finished_at, created_at, updated_at`
+const generationJobCols = `id, requested_by, trigger, mode, pool_type, segment, theme, model, requested_count, generated_count, lint_rejected_count, failed_count, status, error, batch_id, batch_input_file_id, batch_output_file_id, batch_status, completion_window, started_at, finished_at, created_at, updated_at`
 
 func scanGenerationJob(row pgx.Row) (*models.WarmupGenerationJob, error) {
 	var j models.WarmupGenerationJob
 	err := row.Scan(
-		&j.ID, &j.RequestedBy, &j.Trigger, &j.PoolType, &j.Segment, &j.Theme, &j.Model,
+		&j.ID, &j.RequestedBy, &j.Trigger, &j.Mode, &j.PoolType, &j.Segment, &j.Theme, &j.Model,
 		&j.RequestedCount, &j.GeneratedCount, &j.LintRejectedCount, &j.FailedCount,
-		&j.Status, &j.Error, &j.StartedAt, &j.FinishedAt, &j.CreatedAt, &j.UpdatedAt,
+		&j.Status, &j.Error, &j.BatchID, &j.BatchInputFileID, &j.BatchOutputFileID, &j.BatchStatus, &j.CompletionWindow,
+		&j.StartedAt, &j.FinishedAt, &j.CreatedAt, &j.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -334,6 +358,35 @@ func (r *warmupContentRepository) ListGenerationJobs(ctx context.Context, limit,
 		out = append(out, *j)
 	}
 	return out, total, rows.Err()
+}
+
+// ListActiveBatchJobs returns batch-mode jobs that are still running with a
+// non-terminal OpenAI batch status. Terminal statuses (completed/failed/expired/
+// cancelled) and a terminal job status are excluded so the poller only touches
+// in-flight work. An empty batch_status (just submitted, not yet polled) is
+// treated as active.
+func (r *warmupContentRepository) ListActiveBatchJobs(ctx context.Context) ([]models.WarmupGenerationJob, error) {
+	query := `SELECT ` + generationJobCols + ` FROM warmup_generation_jobs
+		WHERE mode = 'batch'
+		  AND status = 'running'
+		  AND batch_status NOT IN ('completed', 'failed', 'expired', 'cancelled')
+		  AND batch_id <> ''
+		ORDER BY created_at ASC`
+	rows, err := r.db.Query(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []models.WarmupGenerationJob{}
+	for rows.Next() {
+		j, err := scanGenerationJob(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *j)
+	}
+	return out, rows.Err()
 }
 
 func (r *warmupContentRepository) GeneratedCountSince(ctx context.Context, since time.Time) (int, error) {
