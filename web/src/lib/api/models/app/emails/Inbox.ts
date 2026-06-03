@@ -24,6 +24,7 @@ export default interface Inbox {
     warmup_increase: number;
     warmup_reply_rate: number;
     warmup_pool_type?: string;
+    warmup_tag?: string;
     warmup_start_time?: string;
     warmup_end_time?: string;
     warmup_days?: number;

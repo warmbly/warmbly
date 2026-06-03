@@ -14,7 +14,6 @@ import (
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/infrastructure/db"
 	"github.com/warmbly/warmbly/internal/models"
-	"github.com/warmbly/warmbly/internal/pkg/crypt"
 	"github.com/warmbly/warmbly/internal/pkg/encrypt"
 	"github.com/warmbly/warmbly/internal/utils"
 	"github.com/warmbly/warmbly/internal/utils/validate"
@@ -166,12 +165,10 @@ func (r *emailRepository) NewOauthAccount(ctx context.Context, userID string, da
 
 	t := time.Now()
 	id := uuid.New()
-	rid, err := crypt.RID(8)
-	if err != nil {
-		sentry.CaptureException(err)
-		return nil, errx.InternalError()
-	}
 
+	// warmup_tag is the content segment (defaults to '' = generic). It used to
+	// be seeded with a random RID, which silently broke segment-aware content
+	// selection because a random tag never matches a real segment.
 	query := `
 		INSERT INTO email_accounts (id, user_id, organization_id, email, name, provider, signature_plain, signature_html, tracking_domain, last_synced_at, created_at, updated_at, warmup_tag)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10, $10, $11)
@@ -188,7 +185,7 @@ func (r *emailRepository) NewOauthAccount(ctx context.Context, userID string, da
 		sightml,
 		"",
 		t,
-		rid,
+		"",
 	}
 
 	_, err = tx.Exec(
@@ -274,11 +271,6 @@ func (r *emailRepository) NewSMTPIMAPAccount(ctx context.Context, userID string,
 
 	id := uuid.New()
 	t := time.Now()
-	rid, err := crypt.RID(8)
-	if err != nil {
-		sentry.CaptureException(err)
-		return nil, errx.InternalError()
-	}
 
 	query := `
 		INSERT INTO email_accounts (id, user_id, organization_id, email, name, provider, signature_plain, signature_html, tracking_domain, last_synced_at, updated_at, created_at, warmup_tag)
@@ -295,7 +287,7 @@ func (r *emailRepository) NewSMTPIMAPAccount(ctx context.Context, userID string,
 		sightml,
 		"",
 		t,
-		rid,
+		"",
 	}
 
 	_, err = tx.Exec(
@@ -699,6 +691,24 @@ func (r *emailRepository) Update(ctx context.Context, userID, emailAccountID str
 		}
 		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", "warmup_reply_rate", argPos))
 		args = append(args, *udata.WarmupReplyRate)
+		argPos++
+	}
+	if udata.WarmupTag != nil {
+		// warmup_tag is the content segment: a lowercase slug (e.g. "saas",
+		// "agency") that the segment-aware AI content bank is keyed on. Empty
+		// = generic content. Reject anything that isn't a simple slug so it
+		// can't smuggle arbitrary text into the content-selection path.
+		seg := strings.ToLower(strings.TrimSpace(*udata.WarmupTag))
+		if len(seg) > 32 {
+			return nil, errx.ErrInvalid
+		}
+		for _, r := range seg {
+			if !((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_' || r == '-') {
+				return nil, errx.ErrInvalid
+			}
+		}
+		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", "warmup_tag", argPos))
+		args = append(args, seg)
 		argPos++
 	}
 	if udata.WarmupStartTime != nil {

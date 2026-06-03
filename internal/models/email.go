@@ -165,6 +165,7 @@ type UpdateEmail struct {
 	WarmupMax       *int    `json:"warmup_max"`
 	WarmupIncrease  *int    `json:"warmup_increase"`
 	WarmupReplyRate *int    `json:"warmup_reply_rate"`
+	WarmupTag       *string `json:"warmup_tag"`
 	WarmupStartTime *string `json:"warmup_start_time"`
 	WarmupEndTime   *string `json:"warmup_end_time"`
 	WarmupDays      *int    `json:"warmup_days"`
