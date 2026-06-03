@@ -460,6 +460,7 @@ func Run(
 			templates.DELETE("/:id", m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteTemplates), h.DeleteTemplate)
 			templates.POST("/:id/duplicate", m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteTemplates), h.DuplicateTemplate)
 			templates.POST("/:id/render", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadTemplates), h.RenderTemplate)
+			templates.POST("/score", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadTemplates), h.ScoreTemplateContent)
 		}
 
 		// CRM routes (require org)

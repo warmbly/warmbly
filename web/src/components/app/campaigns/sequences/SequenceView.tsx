@@ -3,6 +3,7 @@ import type Sequence from "@/lib/api/models/app/campaigns/sequences/Sequence";
 import SubTitle from "../../text/SubTitle";
 import MiniInput from "../../popup/MiniInput";
 import EmailEditor from "../../EmailEditor";
+import ContentScore from "../ContentScore";
 import { Loading } from "@/components/loader";
 import useUpdateSequence from "@/lib/api/hooks/app/campaigns/sequences/useUpdateSequence";
 import toast from "react-hot-toast";
@@ -105,6 +106,11 @@ export default function SequenceView({
                     />
                 </div>
             </div>
+            <ContentScore
+                subject={sequence.subject}
+                bodyHtml={sequence.body_html}
+                bodyPlain={sequence.body_plain}
+            />
             <div className="flex relative justify-end gap-2">
                 <button
                     className={`bg-slate-200 select-none ripple transition flex justify-center items-center cursor-pointer ${!load && "hover:bg-slate-300"} px-3 py-2 rounded-lg text-slate-600`}
