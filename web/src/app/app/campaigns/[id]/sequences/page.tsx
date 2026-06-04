@@ -1,147 +1,139 @@
 import React from "react";
+import { LayersIcon, Loader2Icon, PlusIcon } from "lucide-react";
+import toast from "react-hot-toast";
 import { useCampaign } from "@/hooks/context/campaign";
-import { Loading } from "@/components/loader";
-import SequenceBox from "@/components/app/campaigns/sequences/SequenceBox";
+import StepRail from "@/components/app/campaigns/sequences/StepRail";
 import SequenceView from "@/components/app/campaigns/sequences/SequenceView";
 import useSequences from "@/lib/api/hooks/app/campaigns/sequences/useSequences";
 import useCreateSequence from "@/lib/api/hooks/app/campaigns/sequences/useCreateSequence";
-import toast from "react-hot-toast";
+import type Sequence from "@/lib/api/models/app/campaigns/sequences/Sequence";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
-import type Sequence from "@/lib/api/models/app/campaigns/sequences/Sequence";
-import { FileTextIcon, PlusIcon } from "lucide-react";
 
 export default function CampaignSequences() {
     const campaign = useCampaign();
     if (!campaign) {
-        throw new Error("CampaignSequences cannot be rendered without a campaign")
+        throw new Error("CampaignSequences cannot be rendered without a campaign");
     }
 
-    const [load, setLoad] = React.useState<boolean>(false);
-    const [select, setSelect] = React.useState<string>("");
-    const [newSequences, setNewSequences] = React.useState<Sequence[] | null>()
-    const sequencesData = useSequences(campaign.id);
+    return (
+        <React.Suspense fallback={<SequencesSkeleton />}>
+            <SequencesBuilder campaignId={campaign.id} />
+        </React.Suspense>
+    );
+}
 
-    const createSequence = useCreateSequence(campaign.id);
+function SequencesBuilder({ campaignId }: { campaignId: string }) {
+    const { data: sequences } = useSequences(campaignId);
+    const createSequence = useCreateSequence(campaignId);
+    const [creating, setCreating] = React.useState(false);
+    const [selectedId, setSelectedId] = React.useState<string>("");
 
-    async function CreateSequence() {
-        if (load) return;
-        setLoad(true);
+    // Keep a valid selection: default to the first step, and recover if the
+    // selected step is deleted.
+    React.useEffect(() => {
+        if (sequences.length === 0) {
+            if (selectedId !== "") setSelectedId("");
+            return;
+        }
+        if (!sequences.some((s) => s.id === selectedId)) {
+            setSelectedId(sequences[0].id);
+        }
+    }, [sequences, selectedId]);
+
+    async function create() {
+        if (creating) return;
+        setCreating(true);
         try {
-            const resp = await toast.promise(
-                createSequence.mutateAsync,
-                {
-                    loading: "Creating sequence...",
-                    success: "Sequence successfully created.",
-                    error: (err: AppError) => buildError(err),
-                }
-            )
-            setNewSequences(bef => bef ? [...bef, resp] : [resp])
+            const created = await toast.promise(createSequence.mutateAsync(), {
+                loading: "Adding step…",
+                success: "Step added.",
+                error: (err: AppError) => buildError(err),
+            });
+            setSelectedId((created as Sequence).id);
         } finally {
-            setLoad(false);
+            setCreating(false);
         }
     }
 
-    return !sequencesData.isLoading ? (
-        <div className="flex flex-col md:flex-row gap-4">
-            <div className="md:w-56 xl:w-64 shrink-0 space-y-2">
-                {sequencesData.data.map((seq, i) => {
-                    if (!campaign.sequences || !newSequences || campaign.sequences.length !== newSequences.length) return null;
-                    return (
-                        <SequenceBox
-                            key={seq.id}
-                            next={i !== campaign.sequences.length - 1}
-                            active={seq.id === select}
-                            def_wait={seq.wait_after}
-                            wait={newSequences[i].wait_after}
-                            setWait={(v) => setNewSequences(bef => bef ? bef.map((s) => s.id === seq.id ? {
-                                ...s,
-                                wait_after: v,
-                            } : s) : null)}
-                            onClick={() => setSelect(seq.id)}
-                        >{seq.name}</SequenceBox>
-                    )
-                })}
-                {sequencesData.data.length === 0 && (
-                    <SequenceBox
-                        next={false}
-                        active
-                        def_wait={10}
-                        wait={10}
-                        setWait={() => { }}
-                        onClick={() => { }}
-                    >New Sequence</SequenceBox>
-                )}
-                {sequencesData.data.length < 5 && (
-                    <button
-                        className={`flex items-center justify-center gap-1.5 w-full rounded-lg text-[13px] font-medium transition-colors duration-100 px-3 py-1.5 ${load ? "bg-zinc-100 text-zinc-400" : "text-zinc-500 hover:text-zinc-900 border border-zinc-200 rounded-lg cursor-pointer"}`}
-                        onClick={CreateSequence}
-                    >
-                        {load ? <Loading className="h-4" /> : <><PlusIcon className="w-3.5 h-3.5" />New Sequence</>}
-                    </button>
-                )}
+    if (sequences.length === 0) {
+        return (
+            <div className="flex flex-col items-center justify-center rounded-md border border-slate-200 bg-white py-16">
+                <div className="mb-3 flex size-10 items-center justify-center rounded-md bg-sky-50 text-sky-600">
+                    <LayersIcon className="w-4 h-4" />
+                </div>
+                <h2 className="text-[13px] font-medium text-slate-900">Build your sequence</h2>
+                <p className="mt-1 mb-4 max-w-xs text-center text-[11.5px] leading-relaxed text-slate-400">
+                    Add steps to automate the outreach flow. The first step sends immediately;
+                    later steps wait and thread as follow-ups.
+                </p>
+                <button
+                    type="button"
+                    onClick={create}
+                    disabled={creating}
+                    className="inline-flex h-7 items-center gap-1.5 rounded-md bg-sky-600 px-3 text-[12px] font-medium text-white transition-colors hover:bg-sky-700 disabled:opacity-60"
+                >
+                    {creating ? (
+                        <Loader2Icon className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                        <PlusIcon className="w-3.5 h-3.5" />
+                    )}
+                    Add your first step
+                </button>
             </div>
-            <div className="flex-1 min-w-0">
-                {(() => {
-                    const seq = sequencesData.data.find((v) => v.id === select)
-                    const seq2 = newSequences?.find((v) => v.id === select)
-                    if (!seq || !seq2 || !campaign.sequences) {
-                        return (
-                            <div className="flex flex-col items-center justify-center py-16 bg-white rounded-xl border border-zinc-200">
-                                <div className="w-10 h-10 rounded-xl bg-zinc-100 flex items-center justify-center mb-3">
-                                    <FileTextIcon className="w-4 h-4 text-zinc-400" />
-                                </div>
-                                <h2 className="text-sm font-medium text-zinc-900 mb-1">Create your first sequence</h2>
-                                <p className="text-xs text-zinc-400 text-center max-w-xs mb-4">
-                                    Add email sequences to automate your outreach flow.
-                                </p>
-                                <button
-                                    className="bg-zinc-900 text-white hover:bg-zinc-800 rounded-lg px-3 py-1.5 text-[13px] font-medium transition-colors duration-100 flex items-center gap-1.5"
-                                    onClick={CreateSequence}
-                                >
-                                    {load ? <Loading className="h-4" /> : <><PlusIcon className="w-3.5 h-3.5" />Create Sequence</>}
-                                </button>
-                            </div>
-                        )
-                    }
-                    return <SequenceView
-                        campaign_id={campaign.id}
-                        def_sequence={seq}
-                        sequence={seq2}
-                        setName={(v) => setNewSequences(bef => bef ? bef.map((s) => s.id === select ? {
-                            ...s,
-                            name: v,
-                        } : s) : null)}
-                        setSubject={(v) => setNewSequences(bef => bef ? bef.map((s) => s.id === select ? {
-                            ...s,
-                            subject: v,
-                        } : s) : null)}
-                        setBodyPlain={(v) => setNewSequences(bef => bef ? bef.map((s) => s.id === select ? {
-                            ...s,
-                            body_plain: v,
-                        } : s) : null)}
-                        setBodyHTML={(v) => setNewSequences(bef => bef ? bef.map((s) => s.id === select ? {
-                            ...s,
-                            body_html: v,
-                        } : s) : null)}
-                        setBodySync={(v) => setNewSequences(bef => bef ? bef.map((s) => s.id === select ? {
-                            ...s,
-                            body_sync: v,
-                        } : s) : null)}
-                        setBodyCode={(v) => setNewSequences(bef => bef ? bef.map((s) => s.id === select ? {
-                            ...s,
-                            body_code: v,
-                        } : s) : null)}
-                        onUpdate={(s) => setNewSequences(bef => bef ? bef.map((seq) => seq.id === s.id ? s : seq) : null)}
+        );
+    }
+
+    const selected = sequences.find((s) => s.id === selectedId);
+    const selectedIndex = sequences.findIndex((s) => s.id === selectedId);
+
+    return (
+        <div className="flex flex-col gap-4 md:flex-row">
+            <div className="shrink-0 md:w-60 xl:w-72">
+                <div className="mb-2 text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">
+                    Steps
+                </div>
+                <StepRail
+                    campaignId={campaignId}
+                    sequences={sequences}
+                    selectedId={selectedId}
+                    onSelect={setSelectedId}
+                    onCreate={create}
+                    creating={creating}
+                />
+            </div>
+            <div className="min-w-0 flex-1">
+                {selected ? (
+                    <SequenceView
+                        key={selected.id}
+                        campaignId={campaignId}
+                        sequence={selected}
+                        index={selectedIndex}
                     />
-                })()}
+                ) : (
+                    <div className="rounded-md border border-slate-200 bg-white px-5 py-16 text-center">
+                        <p className="text-[12.5px] font-medium text-slate-700">Select a step</p>
+                        <p className="mt-1 text-[11.5px] text-slate-400">
+                            Pick a step from the list to edit its email.
+                        </p>
+                    </div>
+                )}
             </div>
         </div>
-    ) : (
-        <div className="space-y-2">
-            {[...Array(3)].map((_, i) => (
-                <div key={i} className="h-12 bg-zinc-100 animate-pulse rounded-lg" />
-            ))}
+    );
+}
+
+function SequencesSkeleton() {
+    return (
+        <div className="flex flex-col gap-4 md:flex-row">
+            <div className="shrink-0 space-y-2 md:w-60 xl:w-72">
+                {[...Array(3)].map((_, i) => (
+                    <div key={i} className="h-14 animate-pulse rounded-md bg-slate-100" />
+                ))}
+            </div>
+            <div className="min-w-0 flex-1">
+                <div className="h-80 animate-pulse rounded-md bg-slate-100" />
+            </div>
         </div>
-    )
+    );
 }

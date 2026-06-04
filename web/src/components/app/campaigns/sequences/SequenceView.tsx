@@ -1,138 +1,175 @@
-import React, { useMemo } from "react";
+import React from "react";
+import { GitBranchIcon, Loader2Icon } from "lucide-react";
+import toast from "react-hot-toast";
 import type Sequence from "@/lib/api/models/app/campaigns/sequences/Sequence";
-import SubTitle from "../../text/SubTitle";
-import MiniInput from "../../popup/MiniInput";
 import EmailEditor from "../../EmailEditor";
 import ContentScore from "../ContentScore";
-import { Loading } from "@/components/loader";
+import { Label, TextInput } from "@/components/ui/field";
 import useUpdateSequence from "@/lib/api/hooks/app/campaigns/sequences/useUpdateSequence";
-import toast from "react-hot-toast";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 
+// Editable subset of a step. wait_after is edited from the stepper rail, so the
+// editor pane only owns the content fields — but the save still diffs the same
+// body_sync/body_html/body_plain/body_code semantics the original used.
+type Draft = Pick<
+    Sequence,
+    "name" | "subject" | "body_plain" | "body_html" | "body_sync" | "body_code"
+>;
+
+function toDraft(s: Sequence): Draft {
+    return {
+        name: s.name,
+        subject: s.subject,
+        body_plain: s.body_plain,
+        body_html: s.body_html,
+        body_sync: s.body_sync,
+        body_code: s.body_code,
+    };
+}
+
 export default function SequenceView({
-    campaign_id,
-    def_sequence,
+    campaignId,
     sequence,
-
-    setName,
-    setSubject,
-    setBodyPlain,
-    setBodyHTML,
-    setBodySync,
-    setBodyCode,
-    onUpdate,
+    index,
 }: {
-    campaign_id: string,
-    def_sequence: Sequence,
-    sequence: Sequence,
-
-    setName: (v: string) => void,
-    setSubject: (v: string) => void,
-    setBodyPlain: (v: string) => void,
-    setBodyHTML: (v: string) => void,
-    setBodySync: (v: boolean) => void,
-    setBodyCode: (v: boolean) => void,
-    onUpdate: (v: Sequence) => void,
+    campaignId: string;
+    sequence: Sequence;
+    index: number;
 }) {
-    const updateSequence = useUpdateSequence(campaign_id, sequence.id)
+    const updateSequence = useUpdateSequence(campaignId, sequence.id);
+    const [load, setLoad] = React.useState(false);
 
-    const [load, setLoad] = React.useState<boolean>(false);
+    // Draft is seeded from the canonical sequence and reset whenever a different
+    // step is selected (or the underlying record changes). The committed
+    // baseline lives in `sequence`; `draft` is the local working copy.
+    const [draft, setDraft] = React.useState<Draft>(() => toDraft(sequence));
+    React.useEffect(() => {
+        setDraft(toDraft(sequence));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [sequence.id]);
 
-    const savable = useMemo(
-        () => JSON.stringify(def_sequence) !== JSON.stringify(sequence),
-        [def_sequence, sequence]
-    )
+    const baseline = toDraft(sequence);
+    const savable = React.useMemo(
+        () => JSON.stringify(baseline) !== JSON.stringify(draft),
+        [baseline, draft],
+    );
+
+    const patch = (p: Partial<Draft>) => setDraft((d) => ({ ...d, ...p }));
 
     async function submit() {
-        if (load) return;
+        if (load || !savable) return;
         setLoad(true);
         try {
-            const data = {
-                ...(sequence.name !== def_sequence.name && { name: sequence.name }),
-                ...(sequence.subject !== def_sequence.subject && { subject: sequence.subject }),
-
-                ...(sequence.body_plain !== def_sequence.body_plain && { body_plain: sequence.body_plain }),
-                ...(sequence.body_html !== def_sequence.body_html && { body_html: sequence.body_html }),
-                ...(sequence.body_sync !== def_sequence.body_sync && { body_sync: sequence.body_sync }),
-                ...(sequence.body_code !== def_sequence.body_code && { body_code: sequence.body_code }),
-            }
-            const resp = await toast.promise(
-                updateSequence.mutateAsync(data),
-                {
-                    loading: "Updating sequence...",
-                    success: "Sequence successfully updated.",
-                    error: (err: AppError) => buildError(err),
-                }
-            )
-            onUpdate(resp)
+            // Diff against the committed baseline so we only PATCH changed
+            // fields — identical semantics to the previous implementation.
+            const data: Partial<Sequence> = {
+                ...(draft.name !== baseline.name && { name: draft.name }),
+                ...(draft.subject !== baseline.subject && { subject: draft.subject }),
+                ...(draft.body_plain !== baseline.body_plain && { body_plain: draft.body_plain }),
+                ...(draft.body_html !== baseline.body_html && { body_html: draft.body_html }),
+                ...(draft.body_sync !== baseline.body_sync && { body_sync: draft.body_sync }),
+                ...(draft.body_code !== baseline.body_code && { body_code: draft.body_code }),
+            };
+            await toast.promise(updateSequence.mutateAsync(data), {
+                loading: "Saving step…",
+                success: "Step saved.",
+                error: (err: AppError) => buildError(err),
+            });
+            // The mutation hook writes the fresh record into the query cache; the
+            // `sequence` prop will update and the effect above re-seeds the draft.
         } finally {
-            setLoad(false)
+            setLoad(false);
         }
     }
 
     return (
-        <div className="grid gap-5">
-            <div>
-                <SubTitle>Display Name</SubTitle>
-                <MiniInput
-                    placeholder={def_sequence.name}
-                    value={sequence.name}
-                    id={sequence.id}
-                    onChange={(e) => setName(e.target.value)}
-                />
+        <div className="rounded-md border border-slate-200 bg-white">
+            <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-3 py-2.5">
+                <div className="min-w-0">
+                    <div className="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">
+                        Step {index + 1}
+                    </div>
+                    <p className="mt-0.5 truncate text-[11px] text-slate-400">
+                        Edit the email this step sends.
+                    </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                    <button
+                        type="button"
+                        onClick={() => setDraft(toDraft(sequence))}
+                        disabled={!savable || load}
+                        className="h-7 px-2.5 rounded-md border border-slate-200 bg-white text-[12px] font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 disabled:opacity-40"
+                    >
+                        Reset
+                    </button>
+                    <button
+                        type="button"
+                        onClick={submit}
+                        disabled={!savable || load}
+                        className="h-7 px-3 rounded-md bg-sky-600 text-[12px] font-medium text-white transition-colors hover:bg-sky-700 inline-flex items-center gap-1.5 disabled:opacity-40"
+                    >
+                        {load && <Loader2Icon className="w-3 h-3 animate-spin" />}
+                        Save changes
+                    </button>
+                </div>
             </div>
 
-            <div className="overflow-hidden">
-                <input
-                    className="outline-none border-none font-medium font-inter px-3 text-slate-700 placeholder:text-slate-300 w-full py-4"
-                    placeholder={def_sequence.subject ? def_sequence.subject : "Subject"}
-                    value={sequence.subject}
-                    onChange={(e) => setSubject(e.target.value)}
-                    type="text"
-                />
-                <div className="overflow-x-scroll no-scrollbar pb-1">
+            <div className="space-y-4 p-3">
+                <div>
+                    <Label>Step name</Label>
+                    <TextInput
+                        value={draft.name}
+                        onChange={(v) => patch({ name: v })}
+                        placeholder={`Step ${index + 1}`}
+                    />
+                    <p className="mt-1.5 text-[10.5px] text-slate-400">
+                        Internal label only — recipients never see it.
+                    </p>
+                </div>
+
+                <div>
+                    <Label>Subject</Label>
+                    <TextInput
+                        value={draft.subject}
+                        onChange={(v) => patch({ subject: v })}
+                        placeholder="Subject line"
+                    />
+                </div>
+
+                <div>
+                    <Label>Body</Label>
                     <EmailEditor
                         key={sequence.id}
                         id={`sequence-edit-${sequence.id}`}
-                        htmlText={sequence.body_html}
-                        plainText={sequence.body_plain}
-                        sync={sequence.body_sync}
-                        code={sequence.body_code}
-                        setHtmlText={setBodyHTML}
-                        setPlainText={setBodyPlain}
-                        setSync={setBodySync}
-                        setCode={setBodyCode}
+                        htmlText={draft.body_html}
+                        plainText={draft.body_plain}
+                        sync={draft.body_sync}
+                        code={draft.body_code}
+                        setHtmlText={(v) => patch({ body_html: v })}
+                        setPlainText={(v) => patch({ body_plain: v })}
+                        setSync={(v) => patch({ body_sync: v })}
+                        setCode={(v) => patch({ body_code: v })}
                     />
                 </div>
-            </div>
-            <ContentScore
-                subject={sequence.subject}
-                bodyHtml={sequence.body_html}
-                bodyPlain={sequence.body_plain}
-            />
-            <div className="flex relative justify-end gap-2">
-                <button
-                    className={`bg-slate-200 select-none ripple transition flex justify-center items-center cursor-pointer ${!load && "hover:bg-slate-300"} px-3 py-2 rounded-lg text-slate-600`}
-                    onClick={() => {
-                        setName(def_sequence.name)
-                        setSubject(def_sequence.subject)
-                        setBodyPlain(def_sequence.body_plain)
-                        setBodyHTML(def_sequence.body_html)
-                        setBodySync(def_sequence.body_sync)
-                        setBodyCode(def_sequence.body_code)
-                    }}
-                >
-                    Reset
-                </button>
-                <button
-                    className={`bg-blue-500 select-none ripple transition w-33 flex justify-center items-center cursor-pointer ${!load && "hover:bg-blue-600"} px-3 py-2 rounded-lg text-slate-50`}
-                    onClick={submit}
-                >
-                    {load ? <Loading className="h-6" /> : "Save Changes"}
-                </button>
-                <div className={`bg-gray-50 absolute transition select-none left-0 top-0 w-full h-full ${!savable ? "opacity-60 visible" : "opacity-0 invisible"}`} />
+
+                {index > 0 && (
+                    <div className="flex items-start gap-2 rounded-md border border-slate-200 bg-slate-50/60 px-3 py-2.5">
+                        <GitBranchIcon className="mt-0.5 w-3.5 h-3.5 shrink-0 text-slate-400" />
+                        <p className="text-[11px] leading-relaxed text-slate-500">
+                            Follow-ups thread on the previous step&apos;s subject. Change this
+                            subject and the follow-up starts a new thread instead of replying in
+                            the existing one.
+                        </p>
+                    </div>
+                )}
+
+                <ContentScore
+                    subject={draft.subject}
+                    bodyHtml={draft.body_html}
+                    bodyPlain={draft.body_plain}
+                />
             </div>
         </div>
-    )
+    );
 }
