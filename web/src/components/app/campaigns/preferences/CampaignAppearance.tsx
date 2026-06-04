@@ -5,7 +5,8 @@
 import type Campaign from "@/lib/api/models/app/campaigns/Campaign";
 import { Label, NumberInput, TextInput } from "@/components/ui/field";
 import TagSelector from "../../popup/select/TagSelector";
-import { SettingRow, Toggle } from "./components/CampaignPreferenceBoolBox";
+import AccountSelector from "./AccountSelector";
+import { Segmented, SettingRow, Toggle } from "./components/CampaignPreferenceBoolBox";
 
 const DAILY_MIN = 3;
 const DAILY_MAX = 100;
@@ -14,10 +15,16 @@ export default function CampaignAppearance({
     campaign,
     newCampaign,
     setNewCampaign,
+    explicitAccounts,
+    setExplicitAccounts,
 }: {
     campaign: Campaign;
     newCampaign: Campaign;
     setNewCampaign: React.Dispatch<React.SetStateAction<Campaign>>;
+    // Explicit-strategy sender selection. Lives on the page (persisted via the
+    // senders endpoint, not PATCH) and is seeded from the campaign's current pool.
+    explicitAccounts: string[];
+    setExplicitAccounts: React.Dispatch<React.SetStateAction<string[]>>;
 }) {
     const dailyInvalid = newCampaign.daily_limit < DAILY_MIN || newCampaign.daily_limit > DAILY_MAX;
 
@@ -50,22 +57,45 @@ export default function CampaignAppearance({
             {/* Sending */}
             <section className="space-y-4">
                 <div>
-                    <Label>Sending accounts</Label>
-                    <TagSelector
-                        selected={newCampaign.email_tags}
-                        onAdd={(t) =>
-                            setNewCampaign((bef) => ({ ...bef, email_tags: [...bef.email_tags, t] }))
-                        }
-                        onRemove={(t) =>
-                            setNewCampaign((bef) => ({
-                                ...bef,
-                                email_tags: bef.email_tags.filter((e) => e !== t),
-                            }))
-                        }
-                    />
-                    <p className="text-[11px] text-slate-400 mt-1.5">
-                        Volume is split across every mailbox in these tags to protect deliverability.
-                    </p>
+                    <div className="flex items-center justify-between gap-3 mb-1.5">
+                        <Label className="mb-0">Sending accounts</Label>
+                        <Segmented
+                            value={newCampaign.sender_strategy}
+                            onChange={(v) =>
+                                setNewCampaign((bef) => ({ ...bef, sender_strategy: v }))
+                            }
+                            options={[
+                                { value: "tags", label: "By tag" },
+                                { value: "explicit", label: "Specific accounts" },
+                            ]}
+                        />
+                    </div>
+                    {newCampaign.sender_strategy === "tags" ? (
+                        <>
+                            <TagSelector
+                                selected={newCampaign.email_tags}
+                                onAdd={(t) =>
+                                    setNewCampaign((bef) => ({ ...bef, email_tags: [...bef.email_tags, t] }))
+                                }
+                                onRemove={(t) =>
+                                    setNewCampaign((bef) => ({
+                                        ...bef,
+                                        email_tags: bef.email_tags.filter((e) => e !== t),
+                                    }))
+                                }
+                            />
+                            <p className="text-[11px] text-slate-400 mt-1.5">
+                                Volume is split across every mailbox in these tags to protect deliverability.
+                            </p>
+                        </>
+                    ) : (
+                        <>
+                            <AccountSelector value={explicitAccounts} onChange={setExplicitAccounts} />
+                            <p className="text-[11px] text-slate-400 mt-1.5">
+                                Send only from the mailboxes you pick here. Volume is split evenly across them.
+                            </p>
+                        </>
+                    )}
                 </div>
                 <div>
                     <Label>Daily limit per mailbox</Label>

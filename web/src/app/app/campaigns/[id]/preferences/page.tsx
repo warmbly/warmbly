@@ -10,6 +10,8 @@ import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import CampaignEmails from "@/components/app/campaigns/preferences/CampaignEmails";
 import CampaignContactOrder from "@/components/app/campaigns/preferences/CampaignContactOrder";
+import useCampaignSenders from "@/lib/api/hooks/app/campaigns/useCampaignSenders";
+import useReplaceCampaignSenders from "@/lib/api/hooks/app/campaigns/useReplaceCampaignSenders";
 
 const DAILY_MIN = 3;
 const DAILY_MAX = 100;
@@ -29,15 +31,35 @@ export default function CampaignPreferences() {
     }
 
     const updateCampaign = useUpdateCampaign(campaign.id);
+    const replaceSenders = useReplaceCampaignSenders(campaign.id);
+
+    // The explicit sender pool is managed by the senders endpoint (not PATCH).
+    // Only fetch it when the campaign is actually on the explicit strategy.
+    const { data: senders } = useCampaignSenders(
+        campaign.id,
+        campaign.sender_strategy === "explicit",
+    );
 
     const [loading, setLoading] = React.useState(false);
     const [activeTab, setActiveTab] = React.useState<TabKey>("standard");
     const [newData, setNewData] = React.useState<Campaign>(campaign);
 
+    // Selected mailbox ids for the "Specific accounts" mode + the saved baseline
+    // we diff against. Seeded from the campaign's current senders.
+    const [explicitAccounts, setExplicitAccounts] = React.useState<string[]>([]);
+    const [savedAccounts, setSavedAccounts] = React.useState<string[]>([]);
+
     React.useEffect(() => {
         if (!campaign) return;
         setNewData(campaign);
     }, [campaign]);
+
+    React.useEffect(() => {
+        if (!senders) return;
+        const ids = senders.map((s) => s.email_account_id);
+        setExplicitAccounts(ids);
+        setSavedAccounts(ids);
+    }, [senders]);
 
     const getChanges = (): Partial<Campaign> => {
         if (!newData) return {};
@@ -100,12 +122,24 @@ export default function CampaignPreferences() {
         };
     };
 
+    // Whether the explicit sender pool changed. Only meaningful while the
+    // campaign is (or is being switched to) the explicit strategy.
+    const accountsDirty = React.useMemo(() => {
+        if (newData.sender_strategy !== "explicit") return false;
+        if (explicitAccounts.length !== savedAccounts.length) return true;
+        const a = new Set(savedAccounts);
+        return explicitAccounts.some((id) => !a.has(id));
+    }, [newData.sender_strategy, explicitAccounts, savedAccounts]);
+
     const validationError = (): string | null => {
         if (newData.daily_limit < DAILY_MIN || newData.daily_limit > DAILY_MAX) {
             return `Daily limit must be between ${DAILY_MIN} and ${DAILY_MAX}.`;
         }
         if (newData.ramp_enabled && newData.ramp_start > newData.ramp_ceiling) {
             return "Ramp start must be less than or equal to the ramp ceiling.";
+        }
+        if (newData.sender_strategy === "explicit" && explicitAccounts.length === 0) {
+            return "Pick at least one sending account, or switch back to selecting by tag.";
         }
         return null;
     };
@@ -120,11 +154,28 @@ export default function CampaignPreferences() {
         try {
             setLoading(true);
             const data = getChanges();
-            await toast.promise(updateCampaign.mutateAsync(data), {
-                loading: "Saving…",
-                success: "Campaign successfully updated.",
-                error: (e: AppError) => buildError(e),
-            });
+            // Persist the explicit sender pool through its own endpoint (it is
+            // not part of the campaign PATCH body). Map each picked mailbox to a
+            // CampaignSender with weight 1 so volume splits evenly.
+            const writeSenders = newData.sender_strategy === "explicit" && accountsDirty;
+            await toast.promise(
+                (async () => {
+                    if (Object.keys(data).length > 0) {
+                        await updateCampaign.mutateAsync(data);
+                    }
+                    if (writeSenders) {
+                        await replaceSenders.mutateAsync(
+                            explicitAccounts.map((id) => ({ email_account_id: id, weight: 1 })),
+                        );
+                        setSavedAccounts(explicitAccounts);
+                    }
+                })(),
+                {
+                    loading: "Saving…",
+                    success: "Campaign successfully updated.",
+                    error: (e: AppError) => buildError(e),
+                },
+            );
         } finally {
             setLoading(false);
         }
@@ -132,7 +183,13 @@ export default function CampaignPreferences() {
 
     const tabContent: Record<TabKey, React.ReactNode> = {
         standard: (
-            <CampaignAppearance campaign={campaign} newCampaign={newData} setNewCampaign={setNewData} />
+            <CampaignAppearance
+                campaign={campaign}
+                newCampaign={newData}
+                setNewCampaign={setNewData}
+                explicitAccounts={explicitAccounts}
+                setExplicitAccounts={setExplicitAccounts}
+            />
         ),
         advanced: (
             <CampaignEmails campaign={campaign} newCampaign={newData} setNewCampaign={setNewData} />
@@ -142,7 +199,7 @@ export default function CampaignPreferences() {
         ),
     };
 
-    const hasChanges = Object.keys(getChanges()).length > 0;
+    const hasChanges = Object.keys(getChanges()).length > 0 || accountsDirty;
     const blocked = validationError() !== null;
 
     return (
@@ -179,7 +236,10 @@ export default function CampaignPreferences() {
                 )}
                 <button
                     className="h-7 px-3 text-[12px] font-medium text-slate-600 hover:text-slate-900 border border-slate-200 hover:border-slate-300 rounded-md transition-colors"
-                    onClick={() => setNewData(campaign)}
+                    onClick={() => {
+                        setNewData(campaign);
+                        setExplicitAccounts(savedAccounts);
+                    }}
                 >
                     Reset
                 </button>

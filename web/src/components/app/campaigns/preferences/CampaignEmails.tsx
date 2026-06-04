@@ -5,7 +5,6 @@
 
 import {
     CheckCircle2Icon,
-    InfoIcon,
     AlertCircleIcon,
     Loader2Icon,
 } from "lucide-react";
@@ -33,31 +32,9 @@ export default function CampaignEmails({
 
     return (
         <div className="space-y-7">
-            {/* Sender selection */}
+            {/* Rotation — sender selection (tags vs specific accounts) now lives in
+                the Standard tab next to the sending-accounts picker. */}
             <section className="space-y-4">
-                <SettingRow
-                    title="Sender selection"
-                    description="Resolve mailboxes from the campaign's tags, or pin an explicit sender pool."
-                    control={
-                        <Segmented
-                            value={newCampaign.sender_strategy}
-                            onChange={(v) => setNewCampaign((bef) => ({ ...bef, sender_strategy: v }))}
-                            options={[
-                                { value: "tags", label: "Tags" },
-                                { value: "explicit", label: "Explicit" },
-                            ]}
-                        />
-                    }
-                />
-                {newCampaign.sender_strategy === "explicit" && (
-                    <div className="flex items-start gap-2 rounded-md border border-slate-200 bg-slate-50/60 px-3 py-2.5">
-                        <InfoIcon className="w-3.5 h-3.5 text-slate-400 mt-0.5 shrink-0" />
-                        <p className="text-[11.5px] text-slate-600 leading-relaxed">
-                            Manage the explicit mailbox pool from the senders API. The in-app picker
-                            is coming soon — until then the campaign keeps its current pinned senders.
-                        </p>
-                    </div>
-                )}
                 <SettingRow
                     title="Rotation"
                     description="How sends are distributed across the resolved mailboxes."
