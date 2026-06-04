@@ -9,7 +9,9 @@ import useFeatureStatus from "@/lib/api/hooks/app/subscription/useFeatureStatus"
 import warmupLifecycle from "@/lib/api/client/app/emails/warmupLifecycle";
 import removeEmail from "@/lib/api/client/app/emails/removeEmail";
 import { useUserProfile } from "@/hooks/context/user";
+import { useConfirm } from "@/hooks/context/confirm";
 import InboxDetails from "@/components/app/emails/InboxDetails";
+import BulkWarmupDialog from "@/components/app/emails/BulkWarmupDialog";
 import type Tag from "@/lib/api/models/app/Tag";
 import type Inbox from "@/lib/api/models/app/emails/Inbox";
 import type AccountStatus from "@/lib/api/models/app/analytics/AccountStatus";
@@ -68,6 +70,7 @@ function healthTone(status?: AccountStatus): { dot: string; text: string; label:
 
 export default function AddressesPage() {
     const p = useUserProfile();
+    const confirm = useConfirm();
 
     const [query, setQuery] = React.useState<string>("");
     const [tag, setTag] = React.useState<string>("");
@@ -76,6 +79,7 @@ export default function AddressesPage() {
     const [view, setView] = React.useState<string>("");
     const [viewTab, setViewTab] = React.useState<string>("overview");
     const [removing, setRemoving] = React.useState(false);
+    const [bulkStart, setBulkStart] = React.useState(false);
     const queryClient = useQueryClient();
 
     // Warmup is a paid/trial feature; gate the start controls when the org
@@ -87,19 +91,25 @@ export default function AddressesPage() {
     // One query feeds live health for every row; the realtime layer already
     // invalidates ["analytics","accounts",…] on warmup/account events.
     const statuses = useAccountStatuses();
+    // Coerce to an array defensively: a wrong-shape (non-array) response must
+    // never reach a `for…of`, which would throw "{} is not iterable".
+    const accountStatuses = useMemo(
+        () => (Array.isArray(statuses.data) ? statuses.data : []),
+        [statuses.data],
+    );
     const statusById = useMemo(() => {
         const m = new Map<string, AccountStatus>();
-        for (const s of statuses.data ?? []) m.set(s.id, s);
+        for (const s of accountStatuses) m.set(s.id, s);
         return m;
-    }, [statuses.data]);
+    }, [accountStatuses]);
 
     // Proactively notify the user when a mailbox's health drops.
     const prevHealth = useRef<Map<string, string>>(new Map());
     useEffect(() => {
-        if (!statuses.data) return;
+        if (accountStatuses.length === 0) return;
         const prev = prevHealth.current;
         const next = new Map<string, string>();
-        for (const s of statuses.data) {
+        for (const s of accountStatuses) {
             const cur = s.health?.status ?? "healthy";
             next.set(s.id, cur);
             const before = prev.get(s.id);
@@ -109,20 +119,24 @@ export default function AddressesPage() {
             }
         }
         prevHealth.current = next;
-    }, [statuses.data]);
+    }, [accountStatuses]);
 
-    const removeSelected = async () => {
+    const removeSelected = () => {
         if (selected.length === 0 || removing) return;
         const n = selected.length;
-        if (!window.confirm(`Remove ${n} mailbox${n > 1 ? "es" : ""}? This disconnects ${n > 1 ? "them" : "it"} from Warmbly.`)) return;
-        setRemoving(true);
-        const results = await Promise.allSettled(selected.map((id) => removeEmail(id)));
-        const failed = results.filter((r) => r.status === "rejected").length;
-        await queryClient.invalidateQueries({ queryKey: ["emails"] });
-        setSelected([]);
-        setRemoving(false);
-        if (failed > 0) toast.error(`${failed} mailbox${failed > 1 ? "es" : ""} couldn't be removed`);
-        else toast.success(`Removed ${n} mailbox${n > 1 ? "es" : ""}`);
+        confirm.show(
+            `Remove ${n} mailbox${n > 1 ? "es" : ""}? This disconnects ${n > 1 ? "them" : "it"} from Warmbly.`,
+            async () => {
+                setRemoving(true);
+                const results = await Promise.allSettled(selected.map((id) => removeEmail(id)));
+                const failed = results.filter((r) => r.status === "rejected").length;
+                await queryClient.invalidateQueries({ queryKey: ["emails"] });
+                setSelected([]);
+                setRemoving(false);
+                if (failed > 0) toast.error(`${failed} mailbox${failed > 1 ? "es" : ""} couldn't be removed`);
+                else toast.success(`Removed ${n} mailbox${n > 1 ? "es" : ""}`);
+            },
+        );
     };
 
     const bulkWarmup = async (action: "start" | "pause") => {
@@ -319,7 +333,7 @@ export default function AddressesPage() {
                         {canWarmup && (
                             <button
                                 type="button"
-                                onClick={() => bulkWarmup("start")}
+                                onClick={() => setBulkStart(true)}
                                 className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded text-[12px] font-medium text-orange-600 hover:bg-orange-50 transition-colors"
                             >
                                 <PlayIcon className="w-3.5 h-3.5" />
@@ -357,6 +371,13 @@ export default function AddressesPage() {
             </PageBody>
 
             <InboxDetails emails={emailsData.emails} view={view} setView={setView} initialTab={viewTab} canWarmup={canWarmup} />
+
+            <BulkWarmupDialog
+                open={bulkStart}
+                ids={selected}
+                onClose={() => setBulkStart(false)}
+                onComplete={() => setSelected([])}
+            />
         </Page>
     );
 }
@@ -379,6 +400,7 @@ function MailboxRow({
     onOpen: (id: string, tab?: string) => void;
 }) {
     const life = useWarmupLifecycle(box.id);
+    const confirm = useConfirm();
 
     const off = !box.warmup;
     const paused = !!box.warmup && !!box.warmup_paused_at;
@@ -412,27 +434,37 @@ function MailboxRow({
     };
 
     const stopReset = () => {
-        if (!window.confirm(`Stop warmup for ${box.email}? This resets ramp progress — restarting begins from the base volume. Use Pause to keep progress.`)) return;
-        life.mutate("stop", {
-            onSuccess: () => toast.success(`Warmup stopped for ${box.email}`),
-            onError: () => toast.error("Couldn't update warmup"),
-        });
+        confirm.show(
+            `Stop warmup for ${box.email}? This resets ramp progress — restarting begins from the base volume. Use Pause to keep progress.`,
+            async () => {
+                try {
+                    await life.mutateAsync("stop");
+                    toast.success(`Warmup stopped for ${box.email}`);
+                } catch {
+                    toast.error("Couldn't update warmup");
+                }
+            },
+        );
     };
 
     const upsell = () => toast("Warmup is available on paid plans", { icon: "✨" });
 
     return (
-        <tr className="border-b border-slate-200/60 hover:bg-slate-50/80 transition-colors group h-11">
+        <tr
+            onClick={() => onOpen(box.id)}
+            className="border-b border-slate-200/60 hover:bg-slate-50/80 transition-colors group h-11 cursor-pointer"
+        >
             <td className="pl-5 pr-2">
                 <input
                     type="checkbox"
                     className="w-3.5 h-3.5 rounded accent-sky-600"
                     checked={checked}
                     onChange={onToggleSelect}
+                    onClick={(e) => e.stopPropagation()}
                 />
             </td>
             <td className="px-3">
-                <button type="button" onClick={() => onOpen(box.id)} className="flex items-center gap-2.5 text-left">
+                <button type="button" onClick={(e) => { e.stopPropagation(); onOpen(box.id); }} className="flex items-center gap-2.5 text-left">
                     <div className="w-6 h-6 rounded-full bg-sky-100 flex items-center justify-center shrink-0">
                         <span className="text-[9.5px] font-semibold text-sky-700">
                             {box.email.slice(0, 2).toUpperCase()}
@@ -450,7 +482,7 @@ function MailboxRow({
             <td className="px-3">
                 <button
                     type="button"
-                    onClick={() => onOpen(box.id, "overview")}
+                    onClick={(e) => { e.stopPropagation(); onOpen(box.id, "overview"); }}
                     className={`inline-flex items-center gap-1.5 text-[11px] font-medium ${tone.text}`}
                     title="View mailbox health"
                 >
@@ -505,8 +537,8 @@ function MailboxRow({
                     <button
                         type="button"
                         className="w-6 h-6 flex items-center justify-center rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
-                        onClick={() => onOpen(box.id)}
-                        aria-label="Account details"
+                        onClick={(e) => { e.stopPropagation(); onOpen(box.id, "settings"); }}
+                        aria-label="Mailbox settings"
                     >
                         <RiMoreLine className="w-3.5 h-3.5" />
                     </button>

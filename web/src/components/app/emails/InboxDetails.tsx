@@ -51,10 +51,11 @@ import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import EmailEditor from "../EmailEditor";
 import TagSelector from "../popup/select/TagSelector";
-import TimeSelector from "../popup/select/TimeSelector";
+import TimeSelect from "@/components/ui/TimeSelect";
 import WeekdayBitmask from "../campaigns/schedule/WeekdayBitmask";
 import { Loading } from "@/components/loader";
 import { NumberInput, TextInput } from "@/components/ui/field";
+import { useConfirm } from "@/hooks/context/confirm";
 import { cn } from "@/lib/utils";
 
 /* ── small themed primitives ─────────────────────── */
@@ -660,6 +661,7 @@ function WarmupTab({ form, update, status, mailbox, canWarmup = true }: { form: 
     // read live state off the mailbox prop, which the lifecycle mutation patches
     // back into cache on success.
     const life = useWarmupLifecycle(mailbox.id);
+    const confirm = useConfirm();
     const off = !mailbox.warmup;
     const paused = !!mailbox.warmup && !!mailbox.warmup_paused_at;
     const active = !!mailbox.warmup && !mailbox.warmup_paused_at;
@@ -671,8 +673,17 @@ function WarmupTab({ form, update, status, mailbox, canWarmup = true }: { form: 
         });
 
     const stopReset = () => {
-        if (!window.confirm("Stop warmup and reset ramp progress? Restarting begins from the base volume. Use Pause to keep progress.")) return;
-        run("stop", "stopped");
+        confirm.show(
+            "Stop warmup and reset ramp progress? Restarting begins from the base volume. Use Pause to keep progress.",
+            async () => {
+                try {
+                    await life.mutateAsync("stop");
+                    toast.success("Warmup stopped");
+                } catch (e) {
+                    toast.error(buildError(e as unknown as AppError));
+                }
+            },
+        );
     };
 
     const baseOverMax = form.warmup_base > form.warmup_max;
@@ -825,14 +836,14 @@ function WarmupTab({ form, update, status, mailbox, canWarmup = true }: { form: 
                 <Eyebrow>Sending window</Eyebrow>
                 <div className="grid grid-cols-2 gap-3">
                     <FieldShell label="Start time">
-                        <TimeSelector value={form.warmup_start_time || "08:00"} onChange={(v) => update({ warmup_start_time: v })} />
+                        <TimeSelect value={form.warmup_start_time || "08:00"} onChange={(v) => update({ warmup_start_time: v })} />
                     </FieldShell>
                     <FieldShell label="End time">
-                        <TimeSelector value={form.warmup_end_time || "20:00"} onChange={(v) => update({ warmup_end_time: v })} />
+                        <TimeSelect value={form.warmup_end_time || "20:00"} onChange={(v) => update({ warmup_end_time: v })} />
                     </FieldShell>
                 </div>
-                <FieldShell label="Sending days" hint="Days warmup mail goes out. Leave all unchecked to send every day.">
-                    <div className="grid grid-cols-2 gap-x-4 gap-y-2 mt-1">
+                <FieldShell label="Sending days" hint="Days warmup mail goes out. Leave all unselected to send every day.">
+                    <div className="mt-1">
                         <WeekdayBitmask
                             weekdays={WEEKDAYS}
                             value={form.warmup_days ?? 0}
