@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useChannel, useChannelEvent } from './context/socket';
 
 // Task progress event payload
@@ -47,6 +47,17 @@ export interface CampaignChannelState {
 
 const MAX_ACTIVITIES = 50;
 
+// Normalize a realtime event name to a canonical UPPERCASE_SNAKE key. The Go
+// publishers set `event_type` to uppercase constants (TASK_PROGRESS,
+// EMAIL_OPENED, CAMPAIGN_STARTED, …) and the Elixir channel pushes that verbatim
+// as the Phoenix event name. Normalizing here (the same way useRealtimeEvents
+// does) means the feed works regardless of any future casing/separator drift.
+function normalizeEvent(name: unknown): string {
+    return String(name ?? '')
+        .replace(/[.:\s-]+/g, '_')
+        .toUpperCase();
+}
+
 export function useCampaignChannel(campaignId: string): CampaignChannelState {
     const topic = `campaign:${campaignId}`;
     const channel = useChannel(topic);
@@ -54,6 +65,11 @@ export function useCampaignChannel(campaignId: string): CampaignChannelState {
     const [campaignStatus, setCampaignStatus] = useState<CampaignStatusPayload | null>(null);
     const [taskProgress, setTaskProgress] = useState<TaskProgressPayload | null>(null);
     const [activities, setActivities] = useState<ActivityItem[]>([]);
+
+    // Monotonic id source so rapid same-millisecond events don't collide on
+    // React keys (Date.now() alone repeats under bursty sending).
+    const idRef = useRef(0);
+    const nextId = useCallback((prefix: string) => `${prefix}-${++idRef.current}`, []);
 
     // Add activity to feed
     const addActivity = useCallback((activity: ActivityItem) => {
@@ -68,97 +84,106 @@ export function useCampaignChannel(campaignId: string): CampaignChannelState {
         setActivities([]);
     }, []);
 
-    // Handle task progress events
-    useChannelEvent(topic, 'task_progress', (payload) => {
-        const data = payload as unknown as TaskProgressPayload;
-        setTaskProgress(data);
+    // Single wildcard subscription: the socket dispatcher passes every event on
+    // this channel here with `_event` set to the Phoenix event name. We
+    // normalize and route, instead of registering lowercase handlers that never
+    // matched the uppercase event names the backend actually emits.
+    useChannelEvent(topic, '*', (payload) => {
+        const raw = payload as { _event?: string; event_type?: string; type?: string };
+        const name = normalizeEvent(raw._event ?? raw.event_type ?? raw.type);
 
-        // Add to activity feed based on status
-        if (data.status === 'completed') {
-            addActivity({
-                id: `${data.task_id}-${Date.now()}`,
-                type: 'sent',
-                contactEmail: data.contact_email,
-                contactName: data.contact_name,
-                message: `Email sent to ${data.contact_email}`,
-                timestamp: new Date(data.timestamp || Date.now()),
-            });
-        } else if (data.status === 'failed') {
-            addActivity({
-                id: `${data.task_id}-${Date.now()}`,
-                type: 'failed',
-                contactEmail: data.contact_email,
-                contactName: data.contact_name,
-                message: `Failed to send to ${data.contact_email}`,
-                timestamp: new Date(data.timestamp || Date.now()),
-            });
+        switch (name) {
+            case 'TASK_PROGRESS': {
+                const data = payload as unknown as TaskProgressPayload;
+                setTaskProgress(data);
+                if (data.status === 'completed') {
+                    addActivity({
+                        id: nextId('sent'),
+                        type: 'sent',
+                        contactEmail: data.contact_email,
+                        contactName: data.contact_name,
+                        message: `Email sent to ${data.contact_email}`,
+                        timestamp: new Date(data.timestamp || Date.now()),
+                    });
+                } else if (data.status === 'failed') {
+                    addActivity({
+                        id: nextId('failed'),
+                        type: 'failed',
+                        contactEmail: data.contact_email,
+                        contactName: data.contact_name,
+                        message: `Failed to send to ${data.contact_email}`,
+                        timestamp: new Date(data.timestamp || Date.now()),
+                    });
+                }
+                break;
+            }
+            case 'EMAIL_OPENED': {
+                const data = payload as { contact_email?: string };
+                addActivity({
+                    id: nextId('open'),
+                    type: 'opened',
+                    contactEmail: data.contact_email || 'Unknown',
+                    message: `Opened by ${data.contact_email || 'Unknown'}`,
+                    timestamp: new Date(),
+                });
+                break;
+            }
+            case 'EMAIL_CLICKED': {
+                const data = payload as { contact_email?: string; original_url?: string };
+                addActivity({
+                    id: nextId('click'),
+                    type: 'clicked',
+                    contactEmail: data.contact_email || 'Unknown',
+                    message: data.original_url
+                        ? `Click from ${data.contact_email || 'Unknown'} → ${data.original_url}`
+                        : `Click from ${data.contact_email || 'Unknown'}`,
+                    timestamp: new Date(),
+                });
+                break;
+            }
+            case 'EMAIL_REPLIED': {
+                const data = payload as { contact_email?: string };
+                addActivity({
+                    id: nextId('reply'),
+                    type: 'replied',
+                    contactEmail: data.contact_email || 'Unknown',
+                    message: `Reply from ${data.contact_email || 'Unknown'}`,
+                    timestamp: new Date(),
+                });
+                break;
+            }
+            case 'EMAIL_BOUNCED': {
+                const data = payload as { contact_email?: string };
+                addActivity({
+                    id: nextId('bounce'),
+                    type: 'bounced',
+                    contactEmail: data.contact_email || 'Unknown',
+                    message: `Bounced: ${data.contact_email || 'Unknown'}`,
+                    timestamp: new Date(),
+                });
+                break;
+            }
+            case 'CAMPAIGN_STARTED': {
+                const data = payload as unknown as CampaignStatusPayload;
+                setCampaignStatus({ ...data, status: 'active' });
+                break;
+            }
+            case 'CAMPAIGN_PAUSED': {
+                const data = payload as unknown as CampaignStatusPayload;
+                setCampaignStatus({ ...data, status: 'paused' });
+                break;
+            }
+            case 'CAMPAIGN_COMPLETED': {
+                const data = payload as unknown as CampaignStatusPayload;
+                setCampaignStatus({ ...data, status: 'completed' });
+                break;
+            }
+            case 'CAMPAIGN_UPDATED': {
+                const data = payload as unknown as CampaignStatusPayload;
+                setCampaignStatus(data);
+                break;
+            }
         }
-    });
-
-    // Handle campaign status changes
-    useChannelEvent(topic, 'campaign_updated', (payload) => {
-        const data = payload as unknown as CampaignStatusPayload;
-        setCampaignStatus(data);
-    });
-
-    useChannelEvent(topic, 'campaign_started', (payload) => {
-        const data = payload as unknown as CampaignStatusPayload;
-        setCampaignStatus({ ...data, status: 'active' });
-    });
-
-    useChannelEvent(topic, 'campaign_paused', (payload) => {
-        const data = payload as unknown as CampaignStatusPayload;
-        setCampaignStatus({ ...data, status: 'paused' });
-    });
-
-    useChannelEvent(topic, 'campaign_completed', (payload) => {
-        const data = payload as unknown as CampaignStatusPayload;
-        setCampaignStatus({ ...data, status: 'completed' });
-    });
-
-    // Handle tracking events
-    useChannelEvent(topic, 'email_opened', (payload) => {
-        const data = payload as { contact_email?: string; contact_id?: string };
-        addActivity({
-            id: `open-${data.contact_id}-${Date.now()}`,
-            type: 'opened',
-            contactEmail: data.contact_email || 'Unknown',
-            message: `Opened by ${data.contact_email || 'Unknown'}`,
-            timestamp: new Date(),
-        });
-    });
-
-    useChannelEvent(topic, 'email_clicked', (payload) => {
-        const data = payload as { contact_email?: string; contact_id?: string; original_url?: string };
-        addActivity({
-            id: `click-${data.contact_id}-${Date.now()}`,
-            type: 'clicked',
-            contactEmail: data.contact_email || 'Unknown',
-            message: `Click from ${data.contact_email || 'Unknown'}`,
-            timestamp: new Date(),
-        });
-    });
-
-    useChannelEvent(topic, 'email_replied', (payload) => {
-        const data = payload as { contact_email?: string; contact_id?: string };
-        addActivity({
-            id: `reply-${data.contact_id}-${Date.now()}`,
-            type: 'replied',
-            contactEmail: data.contact_email || 'Unknown',
-            message: `Reply from ${data.contact_email || 'Unknown'}`,
-            timestamp: new Date(),
-        });
-    });
-
-    useChannelEvent(topic, 'email_bounced', (payload) => {
-        const data = payload as { contact_email?: string; contact_id?: string };
-        addActivity({
-            id: `bounce-${data.contact_id}-${Date.now()}`,
-            type: 'bounced',
-            contactEmail: data.contact_email || 'Unknown',
-            message: `Bounced: ${data.contact_email || 'Unknown'}`,
-            timestamp: new Date(),
-        });
     });
 
     // Reset state when campaign changes
