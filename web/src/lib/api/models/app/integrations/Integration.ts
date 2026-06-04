@@ -13,8 +13,7 @@ export type IntegrationProvider =
     | "slack"
     | "discord"
     | "calendly"
-    | "cal_com"
-    | "google_sheets";
+    | "cal_com";
 
 export type IntegrationAuthMethod = "oauth" | "api_key" | "webhook";
 
@@ -83,7 +82,6 @@ export type IntegrationAction =
     | "discord.notify"
     | "hubspot.upsert_contact"
     | "pipedrive.upsert_person"
-    | "google_sheets.append_row"
     | "webhook.ping";
 
 export interface IntegrationEventSubscription {
@@ -183,8 +181,6 @@ export function defaultActionForProvider(provider: IntegrationProvider): Integra
             return "hubspot.upsert_contact";
         case "pipedrive":
             return "pipedrive.upsert_person";
-        case "google_sheets":
-            return "google_sheets.append_row";
         default:
             return "webhook.ping";
     }
