@@ -53,49 +53,14 @@ import {
 import { Label, TextInput } from "@/components/ui/field";
 import CategoryPicker from "./CategoryPicker";
 import { downloadBlob } from "@/lib/api/client/app/contacts/exportContacts";
+import { DEDUP_OPTIONS, STANDARD_TARGETS, describeError } from "./importShared";
 
 interface Props {
     open: boolean;
     onClose: () => void;
 }
 
-const STANDARD_TARGETS: { id: string; label: string }[] = [
-    { id: "ignore",      label: "Ignore" },
-    { id: "email",       label: "Email" },
-    { id: "first_name",  label: "First name" },
-    { id: "last_name",   label: "Last name" },
-    { id: "company",     label: "Company" },
-    { id: "phone",       label: "Phone" },
-    { id: "subscribed",  label: "Subscribed" },
-    { id: "categories",  label: "Categories" },
-];
-
-const DEDUP_OPTIONS: { id: ImportDedupStrategy; label: string; hint: string }[] = [
-    { id: "skip",             label: "Skip existing",     hint: "If a contact with this email exists, leave it alone." },
-    { id: "update",           label: "Update existing",   hint: "Merge new values onto the existing contact." },
-    { id: "create_duplicate", label: "Create duplicates", hint: "Force a new contact. Falls back to update if blocked by uniqueness." },
-];
-
 type Step = "upload" | "map" | "options" | "result";
-
-// Extract a human-readable message from whatever the API client throws.
-// Client.ts rethrows AppError (a plain object), not an Error instance —
-// so `err instanceof Error` silently fails and you lose the real reason.
-function describeError(err: unknown, fallback: string): string {
-    if (err && typeof err === "object") {
-        const e = err as { message?: unknown; error?: unknown; status?: unknown };
-        const msg = typeof e.message === "string" ? e.message.trim() : "";
-        const title = typeof e.error === "string" ? e.error.trim() : "";
-        const status = typeof e.status === "number" ? e.status : undefined;
-        if (msg && title && msg !== title) {
-            return status ? `${status} ${title}: ${msg}` : `${title}: ${msg}`;
-        }
-        if (msg) return status ? `${status}: ${msg}` : msg;
-        if (title) return status ? `${status} ${title}` : title;
-    }
-    if (err instanceof Error && err.message) return err.message;
-    return fallback;
-}
 
 export default function ImportWizard({ open, onClose }: Props) {
     const [step, setStep] = React.useState<Step>("upload");
@@ -456,7 +421,7 @@ function UploadStep({
 
 // ----- Map step --------------------------------------------------
 
-function MapStep({
+export function MapStep({
     preview,
     mapping,
     setMapping,
@@ -538,7 +503,7 @@ function MapStep({
     );
 }
 
-function TargetPicker({
+export function TargetPicker({
     value,
     onChange,
 }: {
@@ -683,7 +648,7 @@ function OptionsStep({
 
 // ----- Result step ----------------------------------------------
 
-function ResultStep({ result, filename }: { result: ImportResult; filename: string }) {
+export function ResultStep({ result, filename }: { result: ImportResult; filename: string }) {
     function downloadErrors() {
         if (!result.errors || result.errors.length === 0) return;
         const rows = [["line", "email", "reason"]];
