@@ -27,6 +27,7 @@ import {
 import toast from "react-hot-toast";
 
 import { Label, TextInput } from "@/components/ui/field";
+import { useConfirm } from "@/hooks/context/confirm";
 import useConnectionDetail from "@/lib/api/hooks/app/integrations/useConnectionDetail";
 import useDisconnectIntegration from "@/lib/api/hooks/app/integrations/useDisconnectIntegration";
 import {
@@ -70,6 +71,7 @@ export default function ConnectionDetail({
 
     const [adding, setAdding] = React.useState(false);
     const [busy, setBusy] = React.useState(false);
+    const confirm = useConfirm();
 
     const conn = detail.data?.connection ?? connection;
     const events = detail.data?.events ?? [];
@@ -94,15 +96,16 @@ export default function ConnectionDetail({
         }
     }
 
-    async function handleDisconnect() {
-        if (!window.confirm(`Disconnect ${conn.label}? Automations using it will stop.`)) return;
-        try {
-            await disconnect.mutateAsync(conn.id);
-            toast.success("Disconnected");
-            onClose();
-        } catch {
-            toast.error("Disconnect failed");
-        }
+    function handleDisconnect() {
+        confirm.show(`Disconnect ${conn.label}? Automations using it will stop.`, async () => {
+            try {
+                await disconnect.mutateAsync(conn.id);
+                toast.success("Disconnected");
+                onClose();
+            } catch {
+                toast.error("Disconnect failed");
+            }
+        });
     }
 
     async function addAutomation(eventType: string, config: Record<string, unknown>) {

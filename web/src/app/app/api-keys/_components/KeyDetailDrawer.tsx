@@ -35,6 +35,7 @@ import useAPIPermissions from "@/lib/api/hooks/app/api-keys/useAPIPermissions";
 import useRevokeAPIKey from "@/lib/api/hooks/app/api-keys/useRevokeAPIKey";
 import useUpdateAPIKey from "@/lib/api/hooks/app/api-keys/useUpdateAPIKey";
 import { StackedBars } from "./Sparkline";
+import { useConfirm } from "@/hooks/context/confirm";
 
 export default function KeyDetailDrawer({
     apiKey,
@@ -84,6 +85,7 @@ function Inner({ apiKey, onClose }: { apiKey: APIKey; onClose: () => void }) {
     const perms = useAPIPermissions();
     const revoke = useRevokeAPIKey();
     const update = useUpdateAPIKey();
+    const confirm = useConfirm();
 
     const [editing, setEditing] = React.useState(false);
     const [name, setName] = React.useState(apiKey.name);
@@ -115,15 +117,16 @@ function Inner({ apiKey, onClose }: { apiKey: APIKey; onClose: () => void }) {
     }
 
     function confirmRevoke() {
-        if (!window.confirm(`Revoke "${apiKey.name}"? Requests authenticating with this key will start failing immediately.`)) return;
-        revoke.mutate(
-            { id: apiKey.id, reason: "Revoked by user" },
-            {
-                onSuccess: () => {
+        confirm.show(
+            `Revoke "${apiKey.name}"? Requests authenticating with this key will start failing immediately.`,
+            async () => {
+                try {
+                    await revoke.mutateAsync({ id: apiKey.id, reason: "Revoked by user" });
                     toast.success("Key revoked");
                     onClose();
-                },
-                onError: () => toast.error("Failed to revoke"),
+                } catch {
+                    toast.error("Failed to revoke");
+                }
             },
         );
     }

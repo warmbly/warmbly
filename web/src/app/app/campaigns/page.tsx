@@ -344,7 +344,7 @@ export default function CampaignsPage() {
                                             (cstatus === "active" && stopCampaign.isPending) ||
                                             (cstatus !== "active" && startCampaign.isPending)
                                         }
-                                        className="size-6 rounded text-slate-400 hover:text-slate-900 hover:bg-slate-100 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shrink-0 disabled:opacity-30"
+                                        className="size-6 rounded text-slate-400 hover:text-slate-900 hover:bg-slate-100 flex items-center justify-center opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity shrink-0 disabled:opacity-30"
                                         aria-label={
                                             cstatus === "active" ? "Pause campaign" : "Start campaign"
                                         }

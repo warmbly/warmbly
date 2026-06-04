@@ -36,8 +36,12 @@ import {
 } from "@/components/layout/Page";
 import useFeatureAccess from "@/hooks/useFeatureAccess";
 import useAuditLogs from "@/lib/api/hooks/app/audit/useAuditLogs";
-import useClickOutside from "@/hooks/useClickOutside";
-import { AnimatePresence, motion } from "framer-motion";
+import {
+    PopoverMenu,
+    PopoverMenuContent,
+    PopoverMenuItem,
+    PopoverMenuTrigger,
+} from "@/components/ui/popover-menu";
 import type AuditLog from "@/lib/api/models/app/audit/AuditLog";
 import type { AuditAction, AuditEntityType } from "@/lib/api/models/app/audit/AuditLog";
 
@@ -453,70 +457,38 @@ function FilterPopover({
     onChange: (v: string) => void;
 }) {
     const [open, setOpen] = React.useState(false);
-    const ref = React.useRef<HTMLDivElement>(null);
-    useClickOutside(ref, () => setOpen(false));
 
     return (
-        <div ref={ref} className="relative">
-            <button
-                type="button"
-                onClick={() => setOpen((o) => !o)}
-                className={`h-7 px-2.5 rounded-md border text-[12px] inline-flex items-center gap-1.5 transition-colors ${
-                    value
-                        ? "border-slate-300 bg-slate-100 text-slate-900"
-                        : "border-slate-200 text-slate-600 hover:text-slate-900 hover:border-slate-300"
-                }`}
-            >
-                {label}
-                {value && (
-                    <span className="text-[11px] font-mono text-slate-500 max-w-[80px] truncate">
-                        {value}
-                    </span>
-                )}
-                <ChevronDownIcon className="w-3 h-3 opacity-60" />
-            </button>
-            <AnimatePresence>
-                {open && (
-                    <motion.div
-                        initial={{ opacity: 0, y: -4 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -4 }}
-                        transition={{ duration: 0.12 }}
-                        className="absolute top-full right-0 mt-1 z-30 min-w-[180px] max-h-72 overflow-y-auto rounded-md border border-slate-200 bg-white shadow-[0_12px_32px_-8px_rgba(15,23,42,0.18)] py-1"
-                    >
-                        <button
-                            type="button"
-                            onClick={() => {
-                                onChange("");
-                                setOpen(false);
-                            }}
-                            className={`w-full px-2.5 h-7 text-left text-[12px] transition-colors ${
-                                value === "" ? "bg-slate-100 text-slate-900 font-medium" : "text-slate-600 hover:bg-slate-100"
-                            }`}
-                        >
-                            All
-                        </button>
-                        {options.map((o) => (
-                            <button
-                                key={o}
-                                type="button"
-                                onClick={() => {
-                                    onChange(o);
-                                    setOpen(false);
-                                }}
-                                className={`w-full px-2.5 h-7 text-left text-[12px] transition-colors ${
-                                    value === o
-                                        ? "bg-slate-100 text-slate-900 font-medium"
-                                        : "text-slate-600 hover:bg-slate-100"
-                                }`}
-                            >
-                                {o}
-                            </button>
-                        ))}
-                    </motion.div>
-                )}
-            </AnimatePresence>
-        </div>
+        <PopoverMenu open={open} onOpenChange={setOpen} align="end">
+            <PopoverMenuTrigger asChild>
+                <button
+                    type="button"
+                    className={`h-7 px-2.5 rounded-md border text-[12px] inline-flex items-center gap-1.5 transition-colors ${
+                        value
+                            ? "border-slate-300 bg-slate-100 text-slate-900"
+                            : "border-slate-200 text-slate-600 hover:text-slate-900 hover:border-slate-300"
+                    }`}
+                >
+                    {label}
+                    {value && (
+                        <span className="text-[11px] font-mono text-slate-500 max-w-[80px] truncate">
+                            {value}
+                        </span>
+                    )}
+                    <ChevronDownIcon className="w-3 h-3 opacity-60" />
+                </button>
+            </PopoverMenuTrigger>
+            <PopoverMenuContent minWidth={180} className="max-h-72 overflow-y-auto">
+                <PopoverMenuItem onSelect={() => onChange("")} selected={value === ""}>
+                    All
+                </PopoverMenuItem>
+                {options.map((o) => (
+                    <PopoverMenuItem key={o} onSelect={() => onChange(o)} selected={value === o}>
+                        {o}
+                    </PopoverMenuItem>
+                ))}
+            </PopoverMenuContent>
+        </PopoverMenu>
     );
 }
 

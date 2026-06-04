@@ -19,10 +19,13 @@ import {
     XIcon,
 } from "lucide-react";
 import toast from "react-hot-toast";
-import { AnimatePresence, motion } from "framer-motion";
-import { Label, TextInput } from "@/components/ui/field";
+import { Label } from "@/components/ui/field";
+import {
+    PopoverMenu,
+    PopoverMenuContent,
+    PopoverMenuTrigger,
+} from "@/components/ui/popover-menu";
 import { useConfirm } from "@/hooks/context/confirm";
-import useClickOutside from "@/hooks/useClickOutside";
 import useFeatureAccess from "@/hooks/useFeatureAccess";
 import useMembers from "@/lib/api/hooks/app/organizations/useMembers";
 import usePendingInvitations from "@/lib/api/hooks/app/organizations/usePendingInvitations";
@@ -226,7 +229,7 @@ export default function MembersSettingsPage() {
                                                         type="button"
                                                         onClick={() => doRemove(m.user_id, email)}
                                                         aria-label="Remove member"
-                                                        className="size-6 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 inline-flex items-center justify-center transition-colors opacity-0 group-hover:opacity-100"
+                                                        className="size-6 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 inline-flex items-center justify-center transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100"
                                                     >
                                                         <TrashIcon className="w-3 h-3" />
                                                     </button>
@@ -284,7 +287,7 @@ export default function MembersSettingsPage() {
                                         </td>
                                         <td className="px-3">
                                             {access.isOwner && (
-                                                <div className="flex items-center gap-0.5 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <div className="flex items-center gap-0.5 justify-end opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                                                     <button
                                                         type="button"
                                                         onClick={() => copyInviteLink(inv.id)}
@@ -353,67 +356,56 @@ function InlineRolePicker({
     pending: boolean;
 }) {
     const [open, setOpen] = React.useState(false);
-    const ref = React.useRef<HTMLDivElement>(null);
-    useClickOutside(ref, () => setOpen(false));
     const cur = getRoleDef(value);
     const assignable = ROLE_CATALOG.filter((r) => r.assignable && r.id !== "member");
 
     return (
-        <div ref={ref} className="relative inline-block">
-            <button
-                type="button"
-                onClick={() => setOpen((o) => !o)}
-                disabled={pending}
-                className={`h-6 px-1.5 rounded text-[10px] uppercase tracking-[0.08em] font-semibold inline-flex items-center gap-1 border transition-colors ${ACCENT_PILL[cur.accent] ?? ACCENT_PILL.slate} hover:opacity-80 disabled:opacity-60`}
-            >
-                {pending ? (
-                    <Loader2Icon className="w-2.5 h-2.5 animate-spin" />
-                ) : (
-                    <span className={`size-1.5 rounded-full ${ACCENT_DOT[cur.accent] ?? ACCENT_DOT.slate}`} />
-                )}
-                {cur.label}
-                <ChevronDownIcon className="w-2.5 h-2.5 opacity-60" />
-            </button>
-            <AnimatePresence>
-                {open && (
-                    <motion.div
-                        initial={{ opacity: 0, y: -4 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -4 }}
-                        transition={{ duration: 0.12 }}
-                        className="absolute top-full left-0 mt-1 z-20 w-72 max-w-[calc(100vw-2rem)] rounded-md border border-slate-200 bg-white shadow-[0_12px_32px_-8px_rgba(15,23,42,0.18)] py-1"
-                    >
-                        {assignable.map((r) => {
-                            const selected = r.id === value;
-                            return (
-                                <button
-                                    key={r.id}
-                                    type="button"
-                                    onClick={() => {
-                                        setOpen(false);
-                                        onChange(r.id);
-                                    }}
-                                    className={`w-full px-2.5 py-1.5 text-left hover:bg-slate-100 transition-colors ${
-                                        selected ? "bg-slate-50" : ""
-                                    }`}
-                                >
-                                    <div className="flex items-center gap-2">
-                                        <span className={`size-1.5 rounded-full ${ACCENT_DOT[r.accent] ?? ACCENT_DOT.slate}`} />
-                                        <span className="text-[12px] font-medium text-slate-900">
-                                            {r.label}
-                                        </span>
-                                        {selected && <CheckIcon className="ml-auto w-3 h-3 text-slate-500" />}
-                                    </div>
-                                    <p className="text-[11px] text-slate-500 leading-tight mt-0.5">
-                                        {r.description}
-                                    </p>
-                                </button>
-                            );
-                        })}
-                    </motion.div>
-                )}
-            </AnimatePresence>
-        </div>
+        <PopoverMenu open={open} onOpenChange={setOpen} align="start">
+            <PopoverMenuTrigger asChild>
+                <button
+                    type="button"
+                    disabled={pending}
+                    className={`h-6 px-1.5 rounded text-[10px] uppercase tracking-[0.08em] font-semibold inline-flex items-center gap-1 border transition-colors ${ACCENT_PILL[cur.accent] ?? ACCENT_PILL.slate} hover:opacity-80 disabled:opacity-60`}
+                >
+                    {pending ? (
+                        <Loader2Icon className="w-2.5 h-2.5 animate-spin" />
+                    ) : (
+                        <span className={`size-1.5 rounded-full ${ACCENT_DOT[cur.accent] ?? ACCENT_DOT.slate}`} />
+                    )}
+                    {cur.label}
+                    <ChevronDownIcon className="w-2.5 h-2.5 opacity-60" />
+                </button>
+            </PopoverMenuTrigger>
+            <PopoverMenuContent minWidth={288} className="max-w-[calc(100vw-2rem)]">
+                {assignable.map((r) => {
+                    const selected = r.id === value;
+                    return (
+                        <button
+                            key={r.id}
+                            type="button"
+                            onClick={() => {
+                                setOpen(false);
+                                onChange(r.id);
+                            }}
+                            className={`w-full px-2.5 py-1.5 text-left hover:bg-slate-100 transition-colors ${
+                                selected ? "bg-slate-50" : ""
+                            }`}
+                        >
+                            <div className="flex items-center gap-2">
+                                <span className={`size-1.5 rounded-full ${ACCENT_DOT[r.accent] ?? ACCENT_DOT.slate}`} />
+                                <span className="text-[12px] font-medium text-slate-900">
+                                    {r.label}
+                                </span>
+                                {selected && <CheckIcon className="ml-auto w-3 h-3 text-slate-500" />}
+                            </div>
+                            <p className="text-[11px] text-slate-500 leading-tight mt-0.5">
+                                {r.description}
+                            </p>
+                        </button>
+                    );
+                })}
+            </PopoverMenuContent>
+        </PopoverMenu>
     );
 }
 

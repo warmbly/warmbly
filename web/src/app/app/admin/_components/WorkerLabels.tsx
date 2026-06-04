@@ -8,6 +8,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import {
+    PopoverMenu,
+    PopoverMenuContent,
+    PopoverMenuTrigger,
+} from "@/components/ui/popover-menu";
 import { listAllWorkerTags, setWorkerTags } from "@/lib/api/client/app/admin/workers";
 import type { ManagedWorker } from "@/lib/api/models/app/admin/Worker";
 
@@ -113,10 +118,17 @@ export function TagEditor({
     const [input, setInput] = useState("");
     const [saving, setSaving] = useState(false);
     const [err, setErr] = useState<string | null>(null);
+    // The suggestion list opens whenever typing produces matches, and can be
+    // dismissed (click-outside / Esc); typing again clears the dismissal.
+    const [dismissed, setDismissed] = useState(false);
 
     useEffect(() => {
         setDraft(worker.tags ?? []);
     }, [worker.tags]);
+
+    useEffect(() => {
+        setDismissed(false);
+    }, [input]);
 
     const allTagsQ = useQuery({ queryKey: ["admin", "worker-tags"], queryFn: listAllWorkerTags });
     const suggestions = useMemo(() => {
@@ -126,6 +138,8 @@ export function TagEditor({
             .filter((t) => t.startsWith(q) && !draft.includes(t))
             .slice(0, 6);
     }, [input, allTagsQ.data, draft]);
+
+    const suggestOpen = suggestions.length > 0 && !dismissed;
 
     function normalize(t: string): string | null {
         const v = t.trim().toLowerCase();
@@ -176,36 +190,42 @@ export function TagEditor({
                     <UserTag key={t} tag={t} onRemove={() => remove(t)} />
                 ))}
             </div>
-            <div className="relative">
-                <input
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === ",") {
-                            e.preventDefault();
-                            add(input);
-                        }
-                        if (e.key === "Backspace" && input === "" && draft.length > 0) {
-                            remove(draft[draft.length - 1]);
-                        }
-                    }}
-                    placeholder="add a tag (eu-west, hetzner, warmup-only) and press enter"
-                    className="w-full border rounded px-3 py-1.5 text-sm"
-                />
-                {suggestions.length > 0 && (
-                    <div className="absolute top-full left-0 right-0 mt-1 border rounded bg-white shadow z-10 max-h-40 overflow-auto">
-                        {suggestions.map((s) => (
-                            <button
-                                key={s}
-                                onClick={() => add(s)}
-                                className="block w-full text-left px-3 py-1.5 text-sm hover:bg-blue-50"
-                            >
-                                {s}
-                            </button>
-                        ))}
-                    </div>
-                )}
-            </div>
+            <PopoverMenu
+                open={suggestOpen}
+                onOpenChange={(o) => {
+                    if (!o) setDismissed(true);
+                }}
+                align="start"
+            >
+                <PopoverMenuTrigger asChild>
+                    <input
+                        value={input}
+                        onChange={(e) => setInput(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === ",") {
+                                e.preventDefault();
+                                add(input);
+                            }
+                            if (e.key === "Backspace" && input === "" && draft.length > 0) {
+                                remove(draft[draft.length - 1]);
+                            }
+                        }}
+                        placeholder="add a tag (eu-west, hetzner, warmup-only) and press enter"
+                        className="w-full border rounded px-3 py-1.5 text-sm"
+                    />
+                </PopoverMenuTrigger>
+                <PopoverMenuContent className="max-h-40 overflow-auto">
+                    {suggestions.map((s) => (
+                        <button
+                            key={s}
+                            onClick={() => add(s)}
+                            className="block w-full text-left px-3 py-1.5 text-sm hover:bg-blue-50"
+                        >
+                            {s}
+                        </button>
+                    ))}
+                </PopoverMenuContent>
+            </PopoverMenu>
             <div className="flex items-center gap-2 mt-2">
                 <button
                     onClick={save}

@@ -33,12 +33,17 @@ import {
     TopbarAction,
 } from "@/components/layout/Page";
 import { Label, TextInput } from "@/components/ui/field";
+import {
+    PopoverMenu,
+    PopoverMenuContent,
+    PopoverMenuItem,
+    PopoverMenuTrigger,
+} from "@/components/ui/popover-menu";
 import useCRMTasks from "@/lib/api/hooks/app/crm/tasks/useCRMTasks";
 import useCreateCRMTask from "@/lib/api/hooks/app/crm/tasks/useCreateCRMTask";
 import useUpdateCRMTask from "@/lib/api/hooks/app/crm/tasks/useUpdateCRMTask";
 import useDeleteCRMTask from "@/lib/api/hooks/app/crm/tasks/useDeleteCRMTask";
 import { useConfirm } from "@/hooks/context/confirm";
-import useClickOutside from "@/hooks/useClickOutside";
 import type CRMTask from "@/lib/api/models/app/crm/CRMTask";
 import type { CRMTaskPriority, CRMTaskStatus } from "@/lib/api/models/app/crm/CRMTask";
 import type { AppError } from "@/lib/api/client/normalizeError";
@@ -591,50 +596,33 @@ function PriorityPill({
     onChange: (p: CRMTaskPriority) => void;
 }) {
     const [open, setOpen] = React.useState(false);
-    const ref = React.useRef<HTMLDivElement>(null);
-    useClickOutside(ref, () => setOpen(false));
     const cur = PRIORITIES.find((p) => p.id === value)!;
 
     return (
-        <div ref={ref} className="relative">
-            <button
-                type="button"
-                onClick={() => setOpen((o) => !o)}
-                className="h-7 w-full px-2.5 rounded-md border border-slate-200 hover:border-slate-300 text-[12px] text-slate-700 hover:text-slate-900 transition-colors inline-flex items-center gap-1.5"
-            >
-                <span className={`size-1.5 rounded-full ${cur.dot}`} />
-                <span className="truncate">{cur.label}</span>
-                <span className="ml-auto text-slate-400">▾</span>
-            </button>
-            <AnimatePresence>
-                {open && (
-                    <motion.div
-                        initial={{ opacity: 0, y: -4 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -4 }}
-                        transition={{ duration: 0.12 }}
-                        className="absolute top-full left-0 right-0 mt-1 z-30 rounded-md border border-slate-200 bg-white shadow-[0_12px_32px_-8px_rgba(15,23,42,0.18)] py-1"
+        <PopoverMenu open={open} onOpenChange={setOpen} align="start">
+            <PopoverMenuTrigger asChild>
+                <button
+                    type="button"
+                    className="h-7 w-full px-2.5 rounded-md border border-slate-200 hover:border-slate-300 text-[12px] text-slate-700 hover:text-slate-900 transition-colors inline-flex items-center gap-1.5"
+                >
+                    <span className={`size-1.5 rounded-full ${cur.dot}`} />
+                    <span className="truncate">{cur.label}</span>
+                    <span className="ml-auto text-slate-400">▾</span>
+                </button>
+            </PopoverMenuTrigger>
+            <PopoverMenuContent>
+                {PRIORITIES.map((p) => (
+                    <PopoverMenuItem
+                        key={p.id}
+                        onSelect={() => onChange(p.id)}
+                        selected={p.id === value}
+                        icon={<span className={`size-1.5 rounded-full ${p.dot}`} />}
                     >
-                        {PRIORITIES.map((p) => (
-                            <button
-                                key={p.id}
-                                type="button"
-                                onClick={() => {
-                                    onChange(p.id);
-                                    setOpen(false);
-                                }}
-                                className={`w-full px-2.5 h-7 flex items-center gap-2 text-[12px] transition-colors ${
-                                    p.id === value ? "bg-slate-100 text-slate-900" : "text-slate-700 hover:bg-slate-100"
-                                }`}
-                            >
-                                <span className={`size-1.5 rounded-full ${p.dot}`} />
-                                <span className="truncate">{p.label}</span>
-                            </button>
-                        ))}
-                    </motion.div>
-                )}
-            </AnimatePresence>
-        </div>
+                        {p.label}
+                    </PopoverMenuItem>
+                ))}
+            </PopoverMenuContent>
+        </PopoverMenu>
     );
 }
 

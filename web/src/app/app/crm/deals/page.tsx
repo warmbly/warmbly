@@ -31,13 +31,18 @@ import {
     TopbarAction,
 } from "@/components/layout/Page";
 import { Label, TextInput } from "@/components/ui/field";
+import {
+    PopoverMenu,
+    PopoverMenuTrigger,
+    PopoverMenuContent,
+    PopoverMenuItem,
+} from "@/components/ui/popover-menu";
 import usePipelines from "@/lib/api/hooks/app/crm/pipelines/usePipelines";
 import useDeals from "@/lib/api/hooks/app/crm/deals/useDeals";
 import useCreateDeal from "@/lib/api/hooks/app/crm/deals/useCreateDeal";
 import useUpdateDeal from "@/lib/api/hooks/app/crm/deals/useUpdateDeal";
 import useDeleteDeal from "@/lib/api/hooks/app/crm/deals/useDeleteDeal";
 import { useConfirm } from "@/hooks/context/confirm";
-import useClickOutside from "@/hooks/useClickOutside";
 import type Deal from "@/lib/api/models/app/crm/Deal";
 import type { Stage } from "@/lib/api/models/app/crm/Pipeline";
 import type { AppError } from "@/lib/api/client/normalizeError";
@@ -316,50 +321,31 @@ function PipelinePicker({
     onChange: (id: string) => void;
 }) {
     const [open, setOpen] = React.useState(false);
-    const ref = React.useRef<HTMLDivElement>(null);
-    useClickOutside(ref, () => setOpen(false));
     const cur = pipelines.find((p) => p.id === currentId);
 
     return (
-        <div ref={ref} className="relative">
-            <button
-                type="button"
-                onClick={() => setOpen((o) => !o)}
-                className="h-7 px-2.5 rounded-md border border-slate-200 hover:border-slate-300 text-[12px] text-slate-700 hover:text-slate-900 transition-colors inline-flex items-center gap-1.5"
-            >
-                {cur?.name ?? "Pick pipeline"}
-                <span className="text-slate-400">▾</span>
-            </button>
-            <AnimatePresence>
-                {open && (
-                    <motion.div
-                        initial={{ opacity: 0, y: -4 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -4 }}
-                        transition={{ duration: 0.12 }}
-                        className="absolute top-full right-0 mt-1 z-30 min-w-[200px] rounded-md border border-slate-200 bg-white shadow-[0_12px_32px_-8px_rgba(15,23,42,0.18)] py-1"
+        <PopoverMenu open={open} onOpenChange={setOpen} align="end">
+            <PopoverMenuTrigger asChild>
+                <button
+                    type="button"
+                    className="h-7 px-2.5 rounded-md border border-slate-200 hover:border-slate-300 text-[12px] text-slate-700 hover:text-slate-900 transition-colors inline-flex items-center gap-1.5"
+                >
+                    {cur?.name ?? "Pick pipeline"}
+                    <span className="text-slate-400">▾</span>
+                </button>
+            </PopoverMenuTrigger>
+            <PopoverMenuContent minWidth={200}>
+                {pipelines.map((p) => (
+                    <PopoverMenuItem
+                        key={p.id}
+                        onSelect={() => onChange(p.id)}
+                        selected={p.id === currentId}
                     >
-                        {pipelines.map((p) => (
-                            <button
-                                key={p.id}
-                                type="button"
-                                onClick={() => {
-                                    onChange(p.id);
-                                    setOpen(false);
-                                }}
-                                className={`w-full px-2.5 h-7 text-left text-[12px] transition-colors ${
-                                    p.id === currentId
-                                        ? "bg-slate-100 text-slate-900 font-medium"
-                                        : "text-slate-700 hover:bg-slate-100"
-                                }`}
-                            >
-                                {p.name}
-                            </button>
-                        ))}
-                    </motion.div>
-                )}
-            </AnimatePresence>
-        </div>
+                        {p.name}
+                    </PopoverMenuItem>
+                ))}
+            </PopoverMenuContent>
+        </PopoverMenu>
     );
 }
 
@@ -680,64 +666,47 @@ function StagePill({
     onChange: (id: string) => void;
 }) {
     const [open, setOpen] = React.useState(false);
-    const ref = React.useRef<HTMLDivElement>(null);
-    useClickOutside(ref, () => setOpen(false));
     const cur = stages.find((s) => s.id === value);
 
     return (
-        <div ref={ref} className="relative">
-            <button
-                type="button"
-                onClick={() => setOpen((o) => !o)}
-                className="h-7 w-full px-2.5 rounded-md border border-slate-200 hover:border-slate-300 text-[12px] text-slate-700 hover:text-slate-900 transition-colors inline-flex items-center gap-1.5"
-            >
-                {cur ? (
-                    <>
-                        <span
-                            className="size-1.5 rounded-full shrink-0"
-                            style={{ backgroundColor: cur.color || "#94a3b8" }}
-                        />
-                        <span className="truncate">{cur.name}</span>
-                    </>
-                ) : (
-                    <span className="text-slate-400">Select…</span>
-                )}
-                <span className="ml-auto text-slate-400">▾</span>
-            </button>
-            <AnimatePresence>
-                {open && (
-                    <motion.div
-                        initial={{ opacity: 0, y: -4 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -4 }}
-                        transition={{ duration: 0.12 }}
-                        className="absolute top-full left-0 right-0 mt-1 z-30 rounded-md border border-slate-200 bg-white shadow-[0_12px_32px_-8px_rgba(15,23,42,0.18)] py-1 max-h-56 overflow-y-auto"
+        <PopoverMenu open={open} onOpenChange={setOpen} align="start">
+            <PopoverMenuTrigger asChild>
+                <button
+                    type="button"
+                    className="h-7 w-full px-2.5 rounded-md border border-slate-200 hover:border-slate-300 text-[12px] text-slate-700 hover:text-slate-900 transition-colors inline-flex items-center gap-1.5"
+                >
+                    {cur ? (
+                        <>
+                            <span
+                                className="size-1.5 rounded-full shrink-0"
+                                style={{ backgroundColor: cur.color || "#94a3b8" }}
+                            />
+                            <span className="truncate">{cur.name}</span>
+                        </>
+                    ) : (
+                        <span className="text-slate-400">Select…</span>
+                    )}
+                    <span className="ml-auto text-slate-400">▾</span>
+                </button>
+            </PopoverMenuTrigger>
+            <PopoverMenuContent minWidth={200} className="max-h-56 overflow-y-auto">
+                {stages.map((s) => (
+                    <PopoverMenuItem
+                        key={s.id}
+                        onSelect={() => onChange(s.id)}
+                        selected={s.id === value}
+                        icon={
+                            <span
+                                className="size-1.5 rounded-full shrink-0 block"
+                                style={{ backgroundColor: s.color || "#94a3b8" }}
+                            />
+                        }
                     >
-                        {stages.map((s) => (
-                            <button
-                                key={s.id}
-                                type="button"
-                                onClick={() => {
-                                    onChange(s.id);
-                                    setOpen(false);
-                                }}
-                                className={`w-full px-2.5 h-7 flex items-center gap-2 text-[12px] transition-colors ${
-                                    s.id === value
-                                        ? "bg-slate-100 text-slate-900"
-                                        : "text-slate-700 hover:bg-slate-100"
-                                }`}
-                            >
-                                <span
-                                    className="size-1.5 rounded-full shrink-0"
-                                    style={{ backgroundColor: s.color || "#94a3b8" }}
-                                />
-                                <span className="truncate">{s.name}</span>
-                            </button>
-                        ))}
-                    </motion.div>
-                )}
-            </AnimatePresence>
-        </div>
+                        {s.name}
+                    </PopoverMenuItem>
+                ))}
+            </PopoverMenuContent>
+        </PopoverMenu>
     );
 }
 

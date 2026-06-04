@@ -32,6 +32,12 @@ import {
     TopbarAction,
 } from "@/components/layout/Page";
 import { Label, TextInput } from "@/components/ui/field";
+import {
+    PopoverMenu,
+    PopoverMenuContent,
+    PopoverMenuItem,
+    PopoverMenuTrigger,
+} from "@/components/ui/popover-menu";
 import usePipelines from "@/lib/api/hooks/app/crm/pipelines/usePipelines";
 import useCreatePipeline from "@/lib/api/hooks/app/crm/pipelines/useCreatePipeline";
 import useDeletePipeline from "@/lib/api/hooks/app/crm/pipelines/useDeletePipeline";
@@ -44,7 +50,6 @@ import type Pipeline from "@/lib/api/models/app/crm/Pipeline";
 import type { Stage } from "@/lib/api/models/app/crm/Pipeline";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
-import useClickOutside from "@/hooks/useClickOutside";
 
 const STAGE_COLORS = [
     { id: "slate",   bg: "bg-slate-400",   hex: "#94a3b8" },
@@ -166,8 +171,6 @@ function PipelineCard({ pipeline }: { pipeline: Pipeline }) {
     const [name, setName] = React.useState(pipeline.name);
     const [menuOpen, setMenuOpen] = React.useState(false);
     const [addStageOpen, setAddStageOpen] = React.useState(false);
-    const menuRef = React.useRef<HTMLDivElement>(null);
-    useClickOutside(menuRef, () => setMenuOpen(false));
 
     React.useEffect(() => setName(pipeline.name), [pipeline.name]);
 
@@ -268,50 +271,32 @@ function PipelineCard({ pipeline }: { pipeline: Pipeline }) {
                         <PlusIcon className="w-2.5 h-2.5" />
                         Stage
                     </button>
-                    <div ref={menuRef} className="relative">
-                        <button
-                            type="button"
-                            onClick={() => setMenuOpen((o) => !o)}
-                            aria-label="Pipeline menu"
-                            className="size-6 rounded-md text-slate-400 hover:text-slate-900 hover:bg-slate-100 inline-flex items-center justify-center"
-                        >
-                            <MoreHorizontalIcon className="w-3 h-3" />
-                        </button>
-                        <AnimatePresence>
-                            {menuOpen && (
-                                <motion.div
-                                    initial={{ opacity: 0, y: -4 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    exit={{ opacity: 0, y: -4 }}
-                                    transition={{ duration: 0.12 }}
-                                    className="absolute top-full right-0 mt-1 z-20 w-44 rounded-md border border-slate-200 bg-white shadow-[0_12px_32px_-8px_rgba(15,23,42,0.18)] py-1"
-                                >
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            setMenuOpen(false);
-                                            setRenaming(true);
-                                        }}
-                                        className="w-full px-2.5 h-7 flex items-center gap-2 text-[12px] text-slate-700 hover:bg-slate-100 transition-colors"
-                                    >
-                                        <PencilIcon className="w-3 h-3 text-slate-400" />
-                                        Rename
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            setMenuOpen(false);
-                                            doDelete();
-                                        }}
-                                        className="w-full px-2.5 h-7 flex items-center gap-2 text-[12px] text-red-600 hover:bg-red-50 transition-colors"
-                                    >
-                                        <TrashIcon className="w-3 h-3" />
-                                        Delete pipeline
-                                    </button>
-                                </motion.div>
-                            )}
-                        </AnimatePresence>
-                    </div>
+                    <PopoverMenu open={menuOpen} onOpenChange={setMenuOpen} align="end">
+                        <PopoverMenuTrigger asChild>
+                            <button
+                                type="button"
+                                aria-label="Pipeline menu"
+                                className="size-6 rounded-md text-slate-400 hover:text-slate-900 hover:bg-slate-100 inline-flex items-center justify-center"
+                            >
+                                <MoreHorizontalIcon className="w-3 h-3" />
+                            </button>
+                        </PopoverMenuTrigger>
+                        <PopoverMenuContent minWidth={176}>
+                            <PopoverMenuItem
+                                onSelect={() => setRenaming(true)}
+                                icon={<PencilIcon className="w-3 h-3" />}
+                            >
+                                Rename
+                            </PopoverMenuItem>
+                            <PopoverMenuItem
+                                onSelect={doDelete}
+                                icon={<TrashIcon className="w-3 h-3" />}
+                                danger
+                            >
+                                Delete pipeline
+                            </PopoverMenuItem>
+                        </PopoverMenuContent>
+                    </PopoverMenu>
                 </div>
             </div>
             <div className="p-3 flex flex-wrap items-stretch gap-2">
@@ -368,8 +353,6 @@ function StageCell({ stage, pipelineId: _pipelineId }: { stage: Stage; pipelineI
     const [editing, setEditing] = React.useState(false);
     const [name, setName] = React.useState(stage.name);
     const [colorOpen, setColorOpen] = React.useState(false);
-    const colorRef = React.useRef<HTMLDivElement>(null);
-    useClickOutside(colorRef, () => setColorOpen(false));
     const color = colorForHex(stage.color);
 
     React.useEffect(() => setName(stage.name), [stage.name]);
@@ -422,39 +405,32 @@ function StageCell({ stage, pipelineId: _pipelineId }: { stage: Stage; pipelineI
     return (
         <div className="group min-w-[140px] rounded-md border border-slate-200 bg-slate-50 hover:bg-white hover:border-slate-300 px-2.5 py-2 transition-colors">
             <div className="flex items-center gap-1.5 mb-1">
-                <div ref={colorRef} className="relative">
-                    <button
-                        type="button"
-                        onClick={() => setColorOpen((o) => !o)}
-                        aria-label="Change color"
-                        className={`size-1.5 rounded-full ${color.bg}`}
-                    />
-                    <AnimatePresence>
-                        {colorOpen && (
-                            <motion.div
-                                initial={{ opacity: 0, y: -4 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                exit={{ opacity: 0, y: -4 }}
-                                transition={{ duration: 0.12 }}
-                                className="absolute top-full left-0 mt-1.5 z-20 rounded-md border border-slate-200 bg-white shadow-[0_12px_32px_-8px_rgba(15,23,42,0.18)] p-1.5 flex gap-1"
-                            >
-                                {STAGE_COLORS.map((c) => (
-                                    <button
-                                        key={c.id}
-                                        type="button"
-                                        onClick={() => changeColor(c.hex)}
-                                        aria-label={c.id}
-                                        className={`size-4 rounded-full ${c.bg} ring-offset-1 ring-1 ring-transparent hover:ring-slate-300 transition-shadow ${
-                                            c.hex.toLowerCase() === (stage.color ?? "").toLowerCase()
-                                                ? "ring-slate-900"
-                                                : ""
-                                        }`}
-                                    />
-                                ))}
-                            </motion.div>
-                        )}
-                    </AnimatePresence>
-                </div>
+                <PopoverMenu open={colorOpen} onOpenChange={setColorOpen} align="start">
+                    <PopoverMenuTrigger asChild>
+                        <button
+                            type="button"
+                            aria-label="Change color"
+                            className={`size-1.5 rounded-full ${color.bg}`}
+                        />
+                    </PopoverMenuTrigger>
+                    <PopoverMenuContent minWidth={1} className="p-1.5">
+                        <div className="flex gap-1">
+                            {STAGE_COLORS.map((c) => (
+                                <button
+                                    key={c.id}
+                                    type="button"
+                                    onClick={() => changeColor(c.hex)}
+                                    aria-label={c.id}
+                                    className={`size-4 rounded-full ${c.bg} ring-offset-1 ring-1 ring-transparent hover:ring-slate-300 transition-shadow ${
+                                        c.hex.toLowerCase() === (stage.color ?? "").toLowerCase()
+                                            ? "ring-slate-900"
+                                            : ""
+                                    }`}
+                                />
+                            ))}
+                        </div>
+                    </PopoverMenuContent>
+                </PopoverMenu>
                 {editing ? (
                     <input
                         value={name}
@@ -483,7 +459,7 @@ function StageCell({ stage, pipelineId: _pipelineId }: { stage: Stage; pipelineI
                     type="button"
                     onClick={doDelete}
                     aria-label="Delete stage"
-                    className="ml-auto size-4 rounded text-slate-300 hover:text-red-600 hover:bg-red-50 inline-flex items-center justify-center transition-colors opacity-0 group-hover:opacity-100"
+                    className="ml-auto size-4 rounded text-slate-300 hover:text-red-600 hover:bg-red-50 inline-flex items-center justify-center transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100"
                 >
                     <XIcon className="w-2.5 h-2.5" />
                 </button>
@@ -782,44 +758,35 @@ function AddStageDialog({
 
 function ColorDot({ hex, onChange }: { hex: string; onChange: (hex: string) => void }) {
     const [open, setOpen] = React.useState(false);
-    const ref = React.useRef<HTMLDivElement>(null);
-    useClickOutside(ref, () => setOpen(false));
     const color = colorForHex(hex);
     return (
-        <div ref={ref} className="relative shrink-0">
-            <button
-                type="button"
-                onClick={() => setOpen((o) => !o)}
-                aria-label="Color"
-                className={`size-7 rounded-md border border-slate-200 hover:border-slate-300 transition-colors flex items-center justify-center bg-white`}
-            >
-                <span className={`size-3 rounded-full ${color.bg}`} />
-            </button>
-            <AnimatePresence>
-                {open && (
-                    <motion.div
-                        initial={{ opacity: 0, y: -4 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -4 }}
-                        transition={{ duration: 0.12 }}
-                        className="absolute top-full left-0 mt-1 z-20 rounded-md border border-slate-200 bg-white shadow-[0_12px_32px_-8px_rgba(15,23,42,0.18)] p-1.5 flex gap-1"
-                    >
-                        {STAGE_COLORS.map((c) => (
-                            <button
-                                key={c.id}
-                                type="button"
-                                onClick={() => {
-                                    onChange(c.hex);
-                                    setOpen(false);
-                                }}
-                                className={`size-4 rounded-full ${c.bg} ring-offset-1 ring-1 ring-transparent hover:ring-slate-300 transition-shadow ${
-                                    c.hex === hex ? "ring-slate-900" : ""
-                                }`}
-                            />
-                        ))}
-                    </motion.div>
-                )}
-            </AnimatePresence>
-        </div>
+        <PopoverMenu open={open} onOpenChange={setOpen} align="start">
+            <PopoverMenuTrigger asChild>
+                <button
+                    type="button"
+                    aria-label="Color"
+                    className={`shrink-0 size-7 rounded-md border border-slate-200 hover:border-slate-300 transition-colors flex items-center justify-center bg-white`}
+                >
+                    <span className={`size-3 rounded-full ${color.bg}`} />
+                </button>
+            </PopoverMenuTrigger>
+            <PopoverMenuContent minWidth={1} className="p-1.5">
+                <div className="flex gap-1">
+                    {STAGE_COLORS.map((c) => (
+                        <button
+                            key={c.id}
+                            type="button"
+                            onClick={() => {
+                                onChange(c.hex);
+                                setOpen(false);
+                            }}
+                            className={`size-4 rounded-full ${c.bg} ring-offset-1 ring-1 ring-transparent hover:ring-slate-300 transition-shadow ${
+                                c.hex === hex ? "ring-slate-900" : ""
+                            }`}
+                        />
+                    ))}
+                </div>
+            </PopoverMenuContent>
+        </PopoverMenu>
     );
 }
