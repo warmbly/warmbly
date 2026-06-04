@@ -23,6 +23,7 @@ import {
     PlusIcon,
     RefreshCcwIcon,
     Settings2Icon,
+    SheetIcon,
     TrashIcon,
     UploadIcon,
     UserPlusIcon,
@@ -43,6 +44,7 @@ import ContactsEditBulk from "./ContactsEditBulk";
 import { NewContactDialog } from "./NewContactDialog";
 import ExportDialog from "./ExportDialog";
 import ImportWizard from "./ImportWizard";
+import SyncSourcesPanel from "./SyncSourcesPanel";
 import { CategoryChip } from "./CategoryPicker";
 
 import {
@@ -90,6 +92,7 @@ export default function ContactsTable({
     const [newOpen, setNewOpen] = React.useState<boolean>(false);
     const [exportOpen, setExportOpen] = React.useState<boolean>(false);
     const [importOpen, setImportOpen] = React.useState<boolean>(false);
+    const [syncOpen, setSyncOpen] = React.useState<boolean>(false);
 
     const [searchProps, setSearchProps] = React.useState<SearchContacts>({
         query: "",
@@ -228,6 +231,13 @@ export default function ContactsTable({
                         Filters
                     </TopbarAction>
                     <TopbarAction
+                        variant="ghost"
+                        icon={<SheetIcon className="w-3 h-3" />}
+                        onClick={() => setSyncOpen(true)}
+                    >
+                        Sheet sync
+                    </TopbarAction>
+                    <TopbarAction
                         icon={<UserPlusIcon className="w-3 h-3" />}
                         onClick={() => setNewOpen(true)}
                     >
@@ -264,6 +274,11 @@ export default function ContactsTable({
                 />
                 <ContactsEditBulk active={bulkEdit} setActive={setBulkEdit} selected={selected} />
                 <NewContactDialog open={newOpen} onClose={() => setNewOpen(false)} />
+                <SyncSourcesPanel
+                    open={syncOpen}
+                    onClose={() => setSyncOpen(false)}
+                    campaign={current_campaign}
+                />
             </>
         );
     }
@@ -286,6 +301,13 @@ export default function ContactsTable({
                     onClick={() => setImportOpen(true)}
                 >
                     Import
+                </TopbarAction>
+                <TopbarAction
+                    variant="ghost"
+                    icon={<SheetIcon className="w-3 h-3" />}
+                    onClick={() => setSyncOpen(true)}
+                >
+                    Sheet sync
                 </TopbarAction>
                 <TopbarAction
                     variant="ghost"
@@ -435,6 +457,7 @@ export default function ContactsTable({
                 open={importOpen}
                 onClose={() => setImportOpen(false)}
             />
+            <SyncSourcesPanel open={syncOpen} onClose={() => setSyncOpen(false)} />
         </Page>
     );
 }
