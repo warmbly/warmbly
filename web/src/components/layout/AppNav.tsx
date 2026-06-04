@@ -154,7 +154,7 @@ function NavRow({ item }: { item: NavItem }) {
                 </span>
             ) : (
                 badge != null && badge > 0 && (
-                    <span className="text-[10px] font-medium bg-slate-900 text-white rounded-full min-w-[16px] h-4 flex items-center justify-center px-1 tabular-nums">
+                    <span className="text-[10px] font-medium bg-red-500 text-white rounded-full min-w-[16px] h-4 flex items-center justify-center px-1 tabular-nums">
                         {badge > 99 ? "99+" : badge}
                     </span>
                 )

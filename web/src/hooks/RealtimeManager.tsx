@@ -3,6 +3,7 @@ import { useSocket } from './context/socket'
 import { useAppStore } from '@/stores'
 import { useUserProfile } from './context/user'
 import { useRealtimeEvents } from './useRealtimeEvents'
+import getUnseenCount from '@/lib/api/client/app/unibox/getUnseenCount'
 
 export function RealtimeManager({ children }: { children: React.ReactNode }) {
   const { isConnected, reconnectAttempt, joinChannel, leaveChannel } = useSocket()
@@ -13,6 +14,7 @@ export function RealtimeManager({ children }: { children: React.ReactNode }) {
   const setConnectionQuality = useAppStore((s) => s.setConnectionQuality)
   const addJoinedChannel = useAppStore((s) => s.addJoinedChannel)
   const removeJoinedChannel = useAppStore((s) => s.removeJoinedChannel)
+  const setUnseenCount = useAppStore((s) => s.setUnseenCount)
 
   const prevOrgIdRef = useRef<string | null>(null)
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -96,6 +98,16 @@ export function RealtimeManager({ children }: { children: React.ReactNode }) {
       }
     }
   }, [isConnected, setConnectionQuality])
+
+  // Seed the unread inbox count from the server once on load. The store value
+  // is otherwise session-only (realtime increments it but it starts at 0), so
+  // seeding makes the title + favicon badge reflect the real unread count
+  // immediately. Best-effort — a failure just leaves the count at 0.
+  useEffect(() => {
+    getUnseenCount()
+      .then((r) => { if (r && typeof r.count === 'number') setUnseenCount(r.count) })
+      .catch(() => { /* endpoint unavailable — keep current count */ })
+  }, [setUnseenCount])
 
   // Set up event-to-store routing
   useRealtimeEvents()

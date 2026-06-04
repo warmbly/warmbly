@@ -38,6 +38,8 @@ import BillingSettingsPage from './app/app/settings/billing/page';
 import LimitsSettingsPage from './app/app/settings/limits/page';
 import RolesSettingsPage from './app/app/settings/roles/page';
 import UniboxPage from './app/app/unibox/page';
+import DashboardNotFound from './app/app/not-found';
+import NotFound from './app/not-found';
 
 import { Toaster } from '@/components/ui/toaster';
 
@@ -178,6 +180,10 @@ const router = createBrowserRouter([
         element: <RootAppLayout />,
         children: [
           {
+            index: true,
+            element: <Navigate to="/app/emails" replace />,
+          },
+          {
             path: "emails",
             element: <AddressesPage />,
           },
@@ -228,6 +234,10 @@ const router = createBrowserRouter([
             path: "crm",
             children: [
               {
+                index: true,
+                element: <Navigate to="/app/crm/pipelines" replace />,
+              },
+              {
                 path: "pipelines",
                 element: <PipelinesPage />,
               },
@@ -261,6 +271,7 @@ const router = createBrowserRouter([
             path: "settings",
             element: <SettingsLayout />,
             children: [
+              { index: true, element: <Navigate to="/app/settings/profile" replace /> },
               { path: "profile", element: <ProfileSettingsPage /> },
               { path: "notifications", element: <NotificationsSettingsPage /> },
               { path: "security", element: <SecuritySettingsPage /> },
@@ -298,7 +309,15 @@ const router = createBrowserRouter([
               { path: "audit", element: <AdminAuditPage /> },
             ],
           },
+          {
+            path: "*",
+            element: <DashboardNotFound />,
+          },
         ]
+      },
+      {
+        path: "*",
+        element: <NotFound />,
       }
     ],
   },

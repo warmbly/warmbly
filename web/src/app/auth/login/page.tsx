@@ -19,6 +19,7 @@ import useLoginConfirm from "@/lib/api/hooks/auth/useLoginConfirm";
 import useRegister from "@/lib/api/hooks/auth/useRegister";
 import useRegisterConfirm from "@/lib/api/hooks/auth/useRegisterConfirm";
 import { saveTokens } from "@/lib/auth";
+import getUser from "@/lib/api/client/auth/getUser";
 import { WEBSITE_URL } from "@/lib/information";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
@@ -198,13 +199,24 @@ export default function LoginPage() {
     const explicitPasskeyChallengeRef = useRef<PasskeyLoginChallenge | null>(null);
     const explicitPasskeyChallengePendingRef = useRef(false);
 
-    const completeSession = useCallback((token: Token) => {
+    const completeSession = useCallback(async (token: Token) => {
         saveTokens(token as unknown as Record<string, unknown>);
         // Drop any cache from the logged-out state. `useUser` is
         // `refetchOnMount: false`, so a stale/errored ["auth","me"] entry would
-        // otherwise survive into the app shell and leave every gated page empty
-        // until a manual reload or window-focus refetch. Mirrors useLogout().
+        // otherwise survive into the app shell. Mirrors useLogout().
         queryClient.clear();
+        // Prime identity with the NEW token BEFORE entering the gated shell.
+        // Navigating the instant tokens are saved raced UserProvider's mount:
+        // with no cached profile and refetchOnMount:false, the loader could spin
+        // until a manual reload / window refocus (the reported infinite load).
+        // Fetching /auth/me here resolves it deterministically — the network and
+        // token are known-good (login just succeeded) — and a genuine auth
+        // failure surfaces as a redirect rather than a hang.
+        try {
+            await queryClient.fetchQuery({ queryKey: ["auth", "me"], queryFn: getUser });
+        } catch {
+            // UserProvider re-attempts and redirects to login on a real failure.
+        }
         navigate("/app/emails");
     }, [navigate, queryClient]);
 
@@ -218,7 +230,7 @@ export default function LoginPage() {
         try {
             const token = await passkeyLogin({ conditional: true });
             toast.success("Welcome back!");
-            completeSession(token);
+            await completeSession(token);
         } catch (e) {
             // Cancel / no-passkey is expected here; report only real failures.
             if (!(e instanceof PasskeyCancelled)) Sentry.captureException(e);
@@ -280,7 +292,7 @@ export default function LoginPage() {
             const token = await finishPasskeyLogin(challenge);
             signedIn = true;
             toast.success("Welcome back!");
-            completeSession(token);
+            await completeSession(token);
         } catch (e) {
             if (e instanceof PasskeyCancelled) {
                 // WebAuthn can't distinguish "no passkey on this device" from
@@ -419,13 +431,12 @@ export default function LoginPage() {
                 if (mode === "signin") {
                     const res = await loginConfirmMutation.mutateAsync({ session, code, turnstile: token });
                     toast.success("Welcome back!");
-                    saveTokens(res as unknown as Record<string, string>);
-                    // See completeSession: clear stale logged-out cache so the
-                    // app shell refetches identity with the new token.
-                    queryClient.clear();
                     // Nudge passwordless enrollment once the dashboard loads.
                     try { sessionStorage.setItem(SUGGEST_PASSKEY_FLAG, "1"); } catch { /* storage unavailable */ }
-                    navigate("/app/emails");
+                    // completeSession saves tokens, clears stale cache, primes the
+                    // profile with the new token, then navigates — so the gated
+                    // shell never mounts without identity (no infinite loader).
+                    await completeSession(res as unknown as Token);
                 } else {
                     await registerConfirmMutation.mutateAsync({ session, code, turnstile: token });
                     toast.success("Account created! Please sign in.");
