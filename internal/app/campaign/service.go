@@ -34,6 +34,10 @@ type CampaignService interface {
 	ListCampaignSenders(ctx context.Context, orgID uuid.UUID, campaignID string) ([]models.CampaignSender, *errx.Error)
 	ReplaceCampaignSenders(ctx context.Context, orgID uuid.UUID, campaignID string, in []models.CampaignSenderInput) ([]models.CampaignSender, *errx.Error)
 
+	// Manual lead order (contact_order_by = 'manual').
+	ListCampaignLeadOrder(ctx context.Context, orgID uuid.UUID, campaignID string, limit int) ([]models.CampaignLead, *errx.Error)
+	ReplaceCampaignLeadOrder(ctx context.Context, orgID uuid.UUID, campaignID string, contactIDs []uuid.UUID) ([]models.CampaignLead, *errx.Error)
+
 	// Campaign-scoped tracking domain (feature 5). Resolves the override's CNAME
 	// and flips verified on success; an unresolved record stays "pending".
 	VerifyCampaignTrackingDomain(ctx context.Context, orgID uuid.UUID, campaignID string) (*models.TrackingDomainStatus, *errx.Error)
