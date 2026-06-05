@@ -259,6 +259,24 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 		return errx.InternalError()
 	}
 
+	// Load campaign attachments (campaign-wide; metadata only — the worker
+	// fetches the bytes from object storage by S3 key at send time).
+	var attachmentRefs []models.AttachmentRef
+	if s.attachmentRepo != nil {
+		atts, attErr := s.attachmentRepo.ListByCampaign(ctx, campaign.ID)
+		if attErr != nil {
+			log.Warn().Err(attErr).Str("campaign_id", campaign.ID.String()).Str("task_id", taskID.String()).Msg("Failed to load campaign attachments")
+		} else {
+			for _, a := range atts {
+				attachmentRefs = append(attachmentRefs, models.AttachmentRef{
+					S3Key:    a.S3Key,
+					Filename: a.Filename,
+					MimeType: a.MimeType,
+				})
+			}
+		}
+	}
+
 	// STEP 7.5: Update campaign task with contact_id and sequence_id for tracking
 	// This allows the tracking consumer to find the correct contact/sequence when
 	// processing open/click events from the tracking pixel service
@@ -297,7 +315,7 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 	}
 
 	if s.advanced != nil && campaign.OrganizationID != nil {
-		selection, sxerr := s.advanced.SelectVariant(ctx, *campaign.OrganizationID, campaign.ID, contact.ID, subject, bodyHTML, bodyPlain)
+		selection, sxerr := s.advanced.SelectVariant(ctx, *campaign.OrganizationID, campaign.ID, contact.ID, sequence.ID, subject, bodyHTML, bodyPlain)
 		if sxerr != nil {
 			return sxerr
 		}
@@ -404,6 +422,7 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 		Tracking:       tracking,
 		UserID:         userUUID,
 		UnsubscribeURL: unsubscribeURL,
+		Attachments:    attachmentRefs,
 	}
 
 	if err := s.emailSender.Send(ctx, taskID, emailMsg, *account); err != nil {

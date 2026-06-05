@@ -138,8 +138,11 @@ type SuppressedRecipient struct {
 }
 
 type CampaignABVariant struct {
-	ID         uuid.UUID              `json:"id"`
-	CampaignID uuid.UUID              `json:"campaign_id"`
+	ID         uuid.UUID `json:"id"`
+	CampaignID uuid.UUID `json:"campaign_id"`
+	// SequenceID scopes the variant to one step. nil = campaign-level (applies
+	// to every step, legacy behavior).
+	SequenceID *uuid.UUID             `json:"sequence_id,omitempty"`
 	Name       string                 `json:"name"`
 	Weight     int                    `json:"weight"`
 	Subject    string                 `json:"subject"`
@@ -153,14 +156,15 @@ type CampaignABVariant struct {
 }
 
 type CreateCampaignABVariantRequest struct {
-	Name      string                 `json:"name" binding:"required"`
-	Weight    int                    `json:"weight"`
-	Subject   string                 `json:"subject,omitempty"`
-	BodyHTML  string                 `json:"body_html,omitempty"`
-	BodyPlain string                 `json:"body_plain,omitempty"`
-	IsControl bool                   `json:"is_control"`
-	IsActive  *bool                  `json:"is_active,omitempty"`
-	Metadata  map[string]interface{} `json:"metadata,omitempty"`
+	Name       string                 `json:"name" binding:"required"`
+	SequenceID *uuid.UUID             `json:"sequence_id,omitempty"`
+	Weight     int                    `json:"weight"`
+	Subject    string                 `json:"subject,omitempty"`
+	BodyHTML   string                 `json:"body_html,omitempty"`
+	BodyPlain  string                 `json:"body_plain,omitempty"`
+	IsControl  bool                   `json:"is_control"`
+	IsActive   *bool                  `json:"is_active,omitempty"`
+	Metadata   map[string]interface{} `json:"metadata,omitempty"`
 }
 
 type UpdateCampaignABVariantRequest struct {

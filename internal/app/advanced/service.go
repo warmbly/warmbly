@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"math/rand"
 	"net/mail"
 	"strings"
@@ -40,7 +41,7 @@ type Service interface {
 	// (one-click POST or the manual link). Always suppresses — it's an explicit
 	// recipient request, independent of the auto-suppress settings.
 	Unsubscribe(ctx context.Context, campaignID, contactID uuid.UUID) *errx.Error
-	SelectVariant(ctx context.Context, organizationID, campaignID, contactID uuid.UUID, subject, bodyHTML, bodyPlain string) (*models.VariantSelection, *errx.Error)
+	SelectVariant(ctx context.Context, organizationID, campaignID, contactID, sequenceID uuid.UUID, subject, bodyHTML, bodyPlain string) (*models.VariantSelection, *errx.Error)
 	OptimizeSendTime(ctx context.Context, organizationID uuid.UUID, contact *models.Contact, base time.Time) (time.Time, *errx.Error)
 
 	StartTaskExecution(ctx context.Context, taskID uuid.UUID, executionKey string, metadata map[string]interface{}) (bool, *errx.Error)
@@ -305,7 +306,56 @@ func (s *service) Unsubscribe(ctx context.Context, campaignID, contactID uuid.UU
 	return nil
 }
 
-func (s *service) SelectVariant(ctx context.Context, organizationID, campaignID, contactID uuid.UUID, subject, bodyHTML, bodyPlain string) (*models.VariantSelection, *errx.Error) {
+// pickVariantWeightedRandom does a weighted random draw over active variants.
+func pickVariantWeightedRandom(variants []models.CampaignABVariant) *models.CampaignABVariant {
+	total := 0
+	for i := range variants {
+		if variants[i].Weight <= 0 {
+			variants[i].Weight = 100
+		}
+		total += variants[i].Weight
+	}
+	if total <= 0 {
+		return nil
+	}
+	pick := rand.Intn(total)
+	running := 0
+	for i := range variants {
+		running += variants[i].Weight
+		if pick < running {
+			return &variants[i]
+		}
+	}
+	return &variants[len(variants)-1]
+}
+
+// pickVariantDeterministic does a weighted draw seeded by a stable string, so
+// the same seed always picks the same variant (used for per-step assignment).
+func pickVariantDeterministic(variants []models.CampaignABVariant, seed string) *models.CampaignABVariant {
+	total := 0
+	for i := range variants {
+		if variants[i].Weight <= 0 {
+			variants[i].Weight = 100
+		}
+		total += variants[i].Weight
+	}
+	if total <= 0 {
+		return nil
+	}
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(seed))
+	pick := int(h.Sum32() % uint32(total))
+	running := 0
+	for i := range variants {
+		running += variants[i].Weight
+		if pick < running {
+			return &variants[i]
+		}
+	}
+	return &variants[len(variants)-1]
+}
+
+func (s *service) SelectVariant(ctx context.Context, organizationID, campaignID, contactID, sequenceID uuid.UUID, subject, bodyHTML, bodyPlain string) (*models.VariantSelection, *errx.Error) {
 	settings, xerr := s.effectiveSettings(ctx, organizationID, campaignID)
 	if xerr != nil {
 		return nil, xerr
@@ -314,45 +364,44 @@ func (s *service) SelectVariant(ctx context.Context, organizationID, campaignID,
 		return &models.VariantSelection{Subject: subject, BodyHTML: bodyHTML, BodyPlain: bodyPlain}, nil
 	}
 
-	assigned, err := s.repo.GetAssignedVariant(ctx, campaignID, contactID)
+	variants, err := s.repo.ListABVariants(ctx, campaignID)
 	if err != nil {
 		return nil, toErrx(err)
 	}
-	var selected *models.CampaignABVariant
-	if assigned != nil && assigned.IsActive {
-		selected = assigned
-	} else {
-		variants, err := s.repo.ListABVariants(ctx, campaignID)
-		if err != nil {
-			return nil, toErrx(err)
+	// Partition active variants into step-scoped (this step) and campaign-level.
+	var stepVariants, campaignVariants []models.CampaignABVariant
+	for _, v := range variants {
+		if !v.IsActive {
+			continue
 		}
-		active := make([]models.CampaignABVariant, 0, len(variants))
-		totalWeight := 0
-		for _, v := range variants {
-			if !v.IsActive {
-				continue
+		if v.SequenceID != nil {
+			if *v.SequenceID == sequenceID {
+				stepVariants = append(stepVariants, v)
 			}
-			if v.Weight <= 0 {
-				v.Weight = 100
-			}
-			totalWeight += v.Weight
-			active = append(active, v)
+		} else {
+			campaignVariants = append(campaignVariants, v)
 		}
-		if len(active) == 0 || totalWeight <= 0 {
-			return &models.VariantSelection{Subject: subject, BodyHTML: bodyHTML, BodyPlain: bodyPlain}, nil
-		}
+	}
 
-		pick := rand.Intn(totalWeight)
-		running := 0
-		for i := range active {
-			running += active[i].Weight
-			if pick < running {
-				selected = &active[i]
-				break
-			}
+	var selected *models.CampaignABVariant
+	if len(stepVariants) > 0 {
+		// Step-scoped: deterministic per (contact, step), so the same contact
+		// always gets the same variant for this step without an assignment row.
+		selected = pickVariantDeterministic(stepVariants, contactID.String()+":"+sequenceID.String())
+	} else if len(campaignVariants) > 0 {
+		// Campaign-level (legacy): keep the assignment-based selection so a
+		// contact stays on one variant across the whole campaign.
+		assigned, aerr := s.repo.GetAssignedVariant(ctx, campaignID, contactID)
+		if aerr != nil {
+			return nil, toErrx(aerr)
 		}
-		if selected != nil {
-			_ = s.repo.AssignVariant(ctx, campaignID, contactID, selected.ID)
+		if assigned != nil && assigned.IsActive && assigned.SequenceID == nil {
+			selected = assigned
+		} else {
+			selected = pickVariantWeightedRandom(campaignVariants)
+			if selected != nil {
+				_ = s.repo.AssignVariant(ctx, campaignID, contactID, selected.ID)
+			}
 		}
 	}
 
