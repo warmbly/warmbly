@@ -48,8 +48,9 @@ function SequencesBuilder({ campaignId }: { campaignId: string }) {
                 </div>
                 <h2 className="text-[13px] font-medium text-slate-900">Build your flow</h2>
                 <p className="mt-1 mb-4 max-w-xs text-center text-[11.5px] leading-relaxed text-slate-400">
-                    Add your first step, then connect steps to branch on opens, clicks, or replies.
-                    The first step sends immediately; later steps wait and thread as follow-ups.
+                    Add your first step, then drag from a step to branch on opens, clicks, or
+                    replies. The first email sends immediately; later steps wait and thread as
+                    follow-ups.
                 </p>
                 <button
                     type="button"
