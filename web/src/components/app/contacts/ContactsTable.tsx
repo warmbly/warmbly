@@ -232,6 +232,13 @@ export default function ContactsTable({
                     </TopbarAction>
                     <TopbarAction
                         variant="ghost"
+                        icon={<UploadIcon className="w-3 h-3" />}
+                        onClick={() => setImportOpen(true)}
+                    >
+                        Import
+                    </TopbarAction>
+                    <TopbarAction
+                        variant="ghost"
                         icon={<SheetIcon className="w-3 h-3" />}
                         onClick={() => setSyncOpen(true)}
                     >
@@ -273,11 +280,16 @@ export default function ContactsTable({
                     setActive={setEdit}
                 />
                 <ContactsEditBulk active={bulkEdit} setActive={setBulkEdit} selected={selected} />
-                <NewContactDialog open={newOpen} onClose={() => setNewOpen(false)} />
+                <NewContactDialog open={newOpen} onClose={() => setNewOpen(false)} campaign={current_campaign} />
                 <SyncSourcesPanel
                     open={syncOpen}
                     onClose={() => setSyncOpen(false)}
                     campaign={current_campaign}
+                />
+                <ImportWizard
+                    open={importOpen}
+                    onClose={() => setImportOpen(false)}
+                    lockedCampaign={current_campaign}
                 />
             </>
         );
