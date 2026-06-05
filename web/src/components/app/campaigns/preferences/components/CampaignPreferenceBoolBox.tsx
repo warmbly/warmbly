@@ -5,25 +5,42 @@
 // rebuilt analytics + campaign-overview chrome.
 
 import React from "react";
+import { CheckIcon } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 /**
  * SettingRow — a labelled setting line. Title + helper text on the left,
  * an arbitrary control (Toggle, Segmented, NumberInput…) on the right.
- * Used for the boolean toggles and inline selects across the tabs.
+ *
+ * Mobile-first: by default the control stacks UNDER the title on phones and
+ * moves to the classic right-justified position from sm+ (good for compact
+ * controls: Toggle, NumberInput, the 2-option Segmented).
+ *
+ * `stack` forces the control onto its own full-width line beneath the title at
+ * EVERY width. Use it for wide, long-label controls (the 3-option OptionSelect
+ * for Rotation / ESP matching) so the control owns the full content width and
+ * never competes with the label for horizontal space.
  */
 export function SettingRow({
     title,
     description,
     control,
     children,
+    stack = false,
 }: {
     title: string;
     description?: React.ReactNode;
     control?: React.ReactNode;
     children?: React.ReactNode;
+    stack?: boolean;
 }) {
     return (
-        <div className="flex items-start justify-between gap-5 min-w-0">
+        <div
+            className={cn(
+                "min-w-0 flex flex-col gap-2.5",
+                !stack && "sm:flex-row sm:items-start sm:justify-between sm:gap-5",
+            )}
+        >
             <div className="min-w-0 flex-1">
                 <p className="text-[12.5px] text-slate-900 font-medium">{title}</p>
                 {description && (
@@ -31,7 +48,7 @@ export function SettingRow({
                 )}
                 {children}
             </div>
-            {control && <div className="shrink-0">{control}</div>}
+            {control && <div className={cn("min-w-0", stack ? "w-full" : "sm:shrink-0")}>{control}</div>}
         </div>
     );
 }
@@ -117,6 +134,96 @@ export function Segmented<T extends string>({
                         }`}
                     >
                         {o.label}
+                    </button>
+                );
+            })}
+        </div>
+    );
+}
+
+/**
+ * OptionSelect — a themed, mutually-exclusive option group (a styled radio
+ * group) for 3+ choices whose labels can be long ("Least-recently-used").
+ *
+ * Layout: a vertical stack of full-width selectable rows on mobile, so any
+ * label length fits at 360px with ZERO horizontal overflow — the label lives in
+ * a min-w-0 flex-1 cell and wraps if it ever needs to, while the check
+ * indicator stays shrink-0 on the right. On sm+ it optionally becomes an even
+ * multi-column grid (`cols`) for a compact, intentional desktop layout; pass
+ * cols={1} (default) to keep a single column everywhere.
+ *
+ * Active row = sky tint + sky border + filled sky check. Idle = slate border on
+ * white. Mirrors Segmented's value / onChange / options API for a near drop-in
+ * swap; `hint` is optional one-line helper text per option. Prefer Segmented
+ * for compact 2-option choices and OptionSelect for wide/long-label ones.
+ */
+export function OptionSelect<T extends string>({
+    value,
+    onChange,
+    options,
+    cols = 1,
+    className,
+    "aria-label": ariaLabel,
+}: {
+    value: T;
+    onChange: (v: T) => void;
+    options: { value: T; label: string; hint?: string }[];
+    /** Columns from the sm breakpoint up. Mobile is always a single column. */
+    cols?: 1 | 2 | 3;
+    className?: string;
+    "aria-label"?: string;
+}) {
+    // Static class strings so Tailwind's JIT keeps them.
+    const smCols = cols === 3 ? "sm:grid-cols-3" : cols === 2 ? "sm:grid-cols-2" : "";
+    return (
+        <div role="radiogroup" aria-label={ariaLabel} className={cn("grid grid-cols-1 gap-1.5", smCols, className)}>
+            {options.map((o) => {
+                const active = o.value === value;
+                return (
+                    <button
+                        key={o.value}
+                        type="button"
+                        role="radio"
+                        aria-checked={active}
+                        onClick={() => onChange(o.value)}
+                        className={cn(
+                            "group flex w-full items-start gap-2.5 rounded-md border px-3 py-2 text-left transition-colors outline-none focus-visible:ring-2 focus-visible:ring-sky-100",
+                            active
+                                ? "border-sky-300 bg-sky-50"
+                                : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50",
+                        )}
+                    >
+                        <span className="min-w-0 flex-1">
+                            <span
+                                className={cn(
+                                    "block text-[12px] font-medium leading-snug",
+                                    active ? "text-sky-700" : "text-slate-700 group-hover:text-slate-900",
+                                )}
+                            >
+                                {o.label}
+                            </span>
+                            {o.hint && (
+                                <span
+                                    className={cn(
+                                        "mt-0.5 block text-[11px] leading-snug",
+                                        active ? "text-sky-600/80" : "text-slate-400",
+                                    )}
+                                >
+                                    {o.hint}
+                                </span>
+                            )}
+                        </span>
+                        <span
+                            className={cn(
+                                "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border transition-colors",
+                                active
+                                    ? "border-sky-600 bg-sky-600 text-white"
+                                    : "border-slate-300 bg-white text-transparent group-hover:border-slate-400",
+                            )}
+                            aria-hidden="true"
+                        >
+                            <CheckIcon className="size-2.5" strokeWidth={3} />
+                        </span>
                     </button>
                 );
             })}

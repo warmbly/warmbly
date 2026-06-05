@@ -1,7 +1,7 @@
 // Contact ordering settings — how the campaign picks who to send to next.
 // On-theme: slate/sky, rounded-md, 12.5px base, house primitives.
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import {
     DndContext,
     closestCenter,
@@ -19,16 +19,12 @@ import {
     verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVerticalIcon, InfoIcon } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
+import { CheckIcon, ChevronDownIcon, GripVerticalIcon, InfoIcon } from "lucide-react";
 import type Campaign from "@/lib/api/models/app/campaigns/Campaign";
 import { Label, TextInput } from "@/components/ui/field";
-import {
-    PopoverMenu,
-    PopoverMenuContent,
-    PopoverMenuItem,
-    PopoverMenuTrigger,
-    SelectButton,
-} from "@/components/ui/popover-menu";
+import useClickOutside from "@/hooks/useClickOutside";
+import useFlipPlacement from "@/hooks/useFlipPlacement";
 import { Segmented, SettingRow } from "./components/CampaignPreferenceBoolBox";
 
 const ORDER_OPTIONS = [
@@ -115,6 +111,13 @@ export default function CampaignContactOrder({
     const selectedOption =
         ORDER_OPTIONS.find((o) => o.value === newCampaign.contact_order_by) || ORDER_OPTIONS[0];
 
+    // Order-by dropdown (house framer-motion pattern + flip placement).
+    const [orderOpen, setOrderOpen] = useState(false);
+    const orderRef = useRef<HTMLDivElement>(null);
+    const orderTriggerRef = useRef<HTMLDivElement>(null);
+    useClickOutside(orderRef, () => setOrderOpen(false));
+    const orderPlacement = useFlipPlacement(orderTriggerRef, orderOpen, 300);
+
     const handleDragEnd = useCallback(
         (event: DragEndEvent) => {
             const { active, over } = event;
@@ -139,32 +142,60 @@ export default function CampaignContactOrder({
             {/* Order By */}
             <div>
                 <Label>Order contacts by</Label>
-                <PopoverMenu>
-                    <PopoverMenuTrigger asChild>
-                        <SelectButton label={selectedOption.label} className="w-full max-w-[280px] justify-between" />
-                    </PopoverMenuTrigger>
-                    <PopoverMenuContent minWidth={280}>
-                        {ORDER_OPTIONS.map((option) => (
-                            <PopoverMenuItem
-                                key={option.value}
-                                selected={newCampaign.contact_order_by === option.value}
-                                onSelect={() =>
-                                    setNewCampaign((prev) => ({
-                                        ...prev,
-                                        contact_order_by: option.value,
-                                    }))
-                                }
+                <div ref={orderRef} className="relative w-full max-w-[280px]">
+                    <div ref={orderTriggerRef}>
+                        <button
+                            type="button"
+                            onClick={() => setOrderOpen((o) => !o)}
+                            className="flex h-8 w-full items-center justify-between rounded-md border border-slate-200 bg-white px-2.5 text-[12.5px] text-slate-800 transition-colors hover:border-slate-300 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100"
+                        >
+                            <span>{selectedOption.label}</span>
+                            <ChevronDownIcon
+                                className={`w-3.5 h-3.5 shrink-0 text-slate-400 transition-transform ${orderOpen ? "rotate-180" : ""}`}
+                            />
+                        </button>
+                    </div>
+                    <AnimatePresence>
+                        {orderOpen && (
+                            <motion.div
+                                initial={{ opacity: 0, y: orderPlacement === "top" ? 4 : -4 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: orderPlacement === "top" ? 4 : -4 }}
+                                transition={{ duration: 0.12 }}
+                                className={`absolute left-0 right-0 z-30 overflow-hidden rounded-md border border-slate-200 bg-white py-1 shadow-[0_12px_32px_-8px_rgba(15,23,42,0.18)] ${
+                                    orderPlacement === "top" ? "bottom-full mb-1" : "top-full mt-1"
+                                }`}
                             >
-                                <span className="flex flex-col gap-0.5 py-1">
-                                    <span className="text-[12.5px] text-slate-900 font-medium">
-                                        {option.label}
-                                    </span>
-                                    <span className="text-[11px] text-slate-400">{option.description}</span>
-                                </span>
-                            </PopoverMenuItem>
-                        ))}
-                    </PopoverMenuContent>
-                </PopoverMenu>
+                                {ORDER_OPTIONS.map((option) => {
+                                    const sel = newCampaign.contact_order_by === option.value;
+                                    return (
+                                        <button
+                                            key={option.value}
+                                            type="button"
+                                            onClick={() => {
+                                                setNewCampaign((prev) => ({ ...prev, contact_order_by: option.value }));
+                                                setOrderOpen(false);
+                                            }}
+                                            className="flex w-full items-start gap-2 px-2.5 py-1.5 text-left transition-colors hover:bg-slate-100"
+                                        >
+                                            <span
+                                                className={`mt-0.5 flex size-3.5 shrink-0 items-center justify-center rounded-full border ${
+                                                    sel ? "border-sky-600 bg-sky-600" : "border-slate-300 bg-white"
+                                                }`}
+                                            >
+                                                {sel && <CheckIcon className="w-2 h-2 text-white" />}
+                                            </span>
+                                            <span className="flex flex-col gap-0.5">
+                                                <span className="text-[12.5px] font-medium text-slate-900">{option.label}</span>
+                                                <span className="text-[11px] text-slate-400">{option.description}</span>
+                                            </span>
+                                        </button>
+                                    );
+                                })}
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+                </div>
             </div>
 
             {/* Direction (not for manual) */}
