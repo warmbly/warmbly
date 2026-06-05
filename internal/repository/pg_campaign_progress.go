@@ -3,11 +3,21 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/warmbly/warmbly/internal/models"
 )
+
+// ErrUseLinearProgression is returned by ResolveSequenceBranch when the current
+// step has no branching configured, or no branch matched. The caller should
+// keep the default linear next-step behaviour. It is NOT an error condition —
+// it is the explicit "no override" signal, kept distinct from a real error and
+// from a nil ("stop") target.
+var ErrUseLinearProgression = errors.New("use linear sequence progression")
 
 // CampaignContactProgress represents the progress of a contact in a campaign
 type CampaignContactProgress struct {
@@ -81,6 +91,42 @@ type CampaignProgressRepository interface {
 	// pairs first; excludeNewLeads drops position-1 pairs entirely (so the
 	// new-lead/day cap can be enforced while follow-ups keep flowing).
 	FindNextContactSequence(ctx context.Context, campaignID uuid.UUID, orderBy, orderDir, orderField string, prioritizeNewLeads, excludeNewLeads bool) (*ContactSequencePair, error)
+
+	// FindNextRoutedPair selects the next (contact, step) by following the flow
+	// graph (branch routing) rather than linear position order. A step is sent
+	// only if the route reaches it. Supersedes FindNextContactSequence + the
+	// scheduler's separate branch-override step.
+	FindNextRoutedPair(ctx context.Context, campaignID uuid.UUID, orderBy, orderDir, orderField string, prioritizeNewLeads, excludeNewLeads bool) (*ContactSequencePair, error)
+
+	// ResolveSequenceBranch evaluates the branching tree on currentSequenceID
+	// against the contact's recorded engagement and decides what comes next:
+	//   - (*uuid.UUID, nil)          → jump to that target step
+	//   - (nil, nil)                 → STOP (a matched branch routes to "stop")
+	//   - (nil, ErrUseLinearProgression) → no branching / no branch matched;
+	//     keep the default linear next step
+	//   - (nil, err)                 → a real lookup error
+	// Conditions are evaluated at schedule time against the contact's
+	// campaign_contact_progress row for currentSequenceID (see the race note in
+	// the scheduler).
+	ResolveSequenceBranch(ctx context.Context, campaignID, contactID, currentSequenceID uuid.UUID) (*uuid.UUID, error)
+
+	// GetCurrentSequenceForContact returns the contact's CURRENT step in a
+	// campaign (the most recently sent sequence). Returns (nil, nil) when the
+	// contact has not been sent anything yet (a brand-new lead, for which there
+	// is no prior step to branch from). Used by the scheduler to know which
+	// step's branching tree to evaluate.
+	GetCurrentSequenceForContact(ctx context.Context, campaignID, contactID uuid.UUID) (*uuid.UUID, error)
+
+	// HasSentSequence reports whether a specific step has already been sent to a
+	// contact. The scheduler uses it so a branch override never re-sends a step
+	// the contact already received.
+	HasSentSequence(ctx context.Context, campaignID, contactID, sequenceID uuid.UUID) (bool, error)
+
+	// FindNextContactSequenceExcluding behaves exactly like
+	// FindNextContactSequence but additionally skips the given contacts. The
+	// scheduler uses it to step past contacts whose branching resolved to STOP
+	// for this pass without re-sending them.
+	FindNextContactSequenceExcluding(ctx context.Context, campaignID uuid.UUID, orderBy, orderDir, orderField string, prioritizeNewLeads, excludeNewLeads bool, excludeContacts []uuid.UUID) (*ContactSequencePair, error)
 }
 
 type campaignProgressRepository struct {
@@ -366,6 +412,12 @@ func (r *campaignProgressRepository) GetLatestCampaignSequenceForContact(ctx con
 // orderDir: "asc", "desc"
 // orderField: custom field name (used when orderBy is "custom_field")
 func (r *campaignProgressRepository) FindNextContactSequence(ctx context.Context, campaignID uuid.UUID, orderBy, orderDir, orderField string, prioritizeNewLeads, excludeNewLeads bool) (*ContactSequencePair, error) {
+	return r.FindNextContactSequenceExcluding(ctx, campaignID, orderBy, orderDir, orderField, prioritizeNewLeads, excludeNewLeads, nil)
+}
+
+// FindNextContactSequenceExcluding is FindNextContactSequence plus an optional
+// set of contacts to skip (used by the branching STOP path).
+func (r *campaignProgressRepository) FindNextContactSequenceExcluding(ctx context.Context, campaignID uuid.UUID, orderBy, orderDir, orderField string, prioritizeNewLeads, excludeNewLeads bool, excludeContacts []uuid.UUID) (*ContactSequencePair, error) {
 	// Build the ORDER BY clause based on ordering settings
 	var contactOrder string
 	switch orderBy {
@@ -405,6 +457,13 @@ func (r *campaignProgressRepository) FindNextContactSequence(ctx context.Context
 		excludeClause = "AND s.position > 1"
 	}
 
+	// Optional per-contact exclusion (branching STOP path). Bound as $2 so the
+	// list is parameterised; empty list means "exclude nothing".
+	contactExcludeClause := "AND NOT (cl.contact_id = ANY($2::uuid[]))"
+	if len(excludeContacts) == 0 {
+		excludeContacts = []uuid.UUID{}
+	}
+
 	query := `
 		WITH all_pairs AS (
 			-- Generate all possible contact-sequence combinations for this campaign
@@ -419,6 +478,7 @@ func (r *campaignProgressRepository) FindNextContactSequence(ctx context.Context
 			WHERE cl.campaign_id = $1
 			  AND s.campaign_id = $1
 			  ` + excludeClause + `
+			  ` + contactExcludeClause + `
 			  -- Skip contacts that bounced in ANY campaign
 			  AND NOT EXISTS (
 			    SELECT 1 FROM campaign_contact_progress ccp2
@@ -450,11 +510,283 @@ func (r *campaignProgressRepository) FindNextContactSequence(ctx context.Context
 	`
 
 	pair := &ContactSequencePair{}
-	err := r.db.QueryRow(ctx, query, campaignID).Scan(&pair.ContactID, &pair.SequenceID, &pair.IsNewLead)
+	err := r.db.QueryRow(ctx, query, campaignID, excludeContacts).Scan(&pair.ContactID, &pair.SequenceID, &pair.IsNewLead)
 
 	if err == sql.ErrNoRows {
 		return nil, nil // No more emails to send
 	}
 
 	return pair, err
+}
+
+// FindNextRoutedPair selects the next (contact, step) to send by FOLLOWING THE
+// FLOW graph instead of linear position order. For each contact, the next step
+// is the route out of their last-sent step:
+//  1. conditional branches (first match wins, evaluated against engagement),
+//  2. then the explicit "else" catch-all branch (empty conditions; target nil = STOP),
+//  3. then linear position+1 — but ONLY when the step defines no branches at all
+//     (so plain linear campaigns keep working unchanged).
+//
+// A contact who has never been sent starts at the entry step (position 1). A
+// step is sent only if the route reaches it, so branch-only steps are never sent
+// linearly, and a routed step that was already sent (a loop) stops the contact.
+// Returns nil when no contact has a due next step.
+func (r *campaignProgressRepository) FindNextRoutedPair(ctx context.Context, campaignID uuid.UUID, orderBy, orderDir, orderField string, prioritizeNewLeads, excludeNewLeads bool) (*ContactSequencePair, error) {
+	// 1. Load steps (position + branch tree) once, ordered by position.
+	type stepInfo struct {
+		id uuid.UUID
+		bc models.BranchConditions
+	}
+	srows, err := r.db.Query(ctx, `SELECT id, conditions FROM sequences WHERE campaign_id = $1 ORDER BY position ASC, created_at ASC`, campaignID)
+	if err != nil {
+		return nil, err
+	}
+	var steps []stepInfo
+	idxByID := map[uuid.UUID]int{}
+	for srows.Next() {
+		var si stepInfo
+		var raw []byte
+		if serr := srows.Scan(&si.id, &raw); serr != nil {
+			srows.Close()
+			return nil, serr
+		}
+		if len(raw) > 0 {
+			_ = json.Unmarshal(raw, &si.bc)
+		}
+		idxByID[si.id] = len(steps)
+		steps = append(steps, si)
+	}
+	srows.Close()
+	if serr := srows.Err(); serr != nil {
+		return nil, serr
+	}
+	if len(steps) == 0 {
+		return nil, nil
+	}
+	entry := steps[0].id
+	now := time.Now()
+
+	// routeNext returns the next step out of fromID, or nil for STOP/end.
+	routeNext := func(fromID uuid.UUID, prog *CampaignContactProgress) *uuid.UUID {
+		idx, ok := idxByID[fromID]
+		if !ok {
+			return nil
+		}
+		bc := steps[idx].bc
+		linearNext := func() *uuid.UUID {
+			if idx+1 < len(steps) {
+				return &steps[idx+1].id
+			}
+			return nil
+		}
+		if len(bc.Branches) == 0 {
+			return linearNext() // pure linear step
+		}
+		branch, matched := evaluateBranchConditions(&bc, prog, now)
+		if !matched {
+			return linearNext() // branches exist but none matched (no catch-all)
+		}
+		return branch.TargetSequenceID // uuid target, or nil = explicit STOP
+	}
+
+	// 2. Ordered candidate contacts + their last-sent step (with engagement) + sent set.
+	var contactOrder string
+	switch orderBy {
+	case "email":
+		contactOrder = "c.email"
+	case "name":
+		contactOrder = "c.first_name, c.last_name"
+	case "custom_field":
+		if orderField != "" {
+			contactOrder = "c.custom_fields->>'" + orderField + "'"
+		} else {
+			contactOrder = "c.created_at"
+		}
+	case "manual":
+		contactOrder = "cl.position NULLS LAST, c.created_at"
+	default:
+		contactOrder = "c.created_at"
+	}
+	dir := "ASC"
+	if orderDir == "desc" {
+		dir = "DESC"
+	}
+	orderPrefix := ""
+	if prioritizeNewLeads {
+		// New leads (no last-sent step) first.
+		orderPrefix = "(lp.sequence_id IS NULL) DESC, "
+	}
+
+	query := `
+		SELECT cl.contact_id,
+		       lp.sequence_id, lp.sent_at, lp.opened_at, lp.clicked_at, lp.replied_at,
+		       COALESCE(ss.ids, '{}') AS sent_ids
+		FROM campaign_leads cl
+		JOIN contacts c ON c.id = cl.contact_id
+		LEFT JOIN LATERAL (
+			SELECT sequence_id, sent_at, opened_at, clicked_at, replied_at
+			FROM campaign_contact_progress p
+			WHERE p.campaign_id = $1 AND p.contact_id = cl.contact_id AND p.sent_at IS NOT NULL
+			ORDER BY p.sent_at DESC LIMIT 1
+		) lp ON true
+		LEFT JOIN LATERAL (
+			SELECT array_agg(sequence_id) AS ids
+			FROM campaign_contact_progress p2
+			WHERE p2.campaign_id = $1 AND p2.contact_id = cl.contact_id AND p2.sent_at IS NOT NULL
+		) ss ON true
+		WHERE cl.campaign_id = $1
+		  AND NOT EXISTS (
+		    SELECT 1 FROM campaign_contact_progress b
+		    WHERE b.contact_id = cl.contact_id AND b.bounced_at IS NOT NULL
+		  )
+		  AND NOT EXISTS (
+		    SELECT 1 FROM suppressed_recipients sr
+		    JOIN campaigns camp ON camp.organization_id = sr.organization_id
+		    WHERE camp.id = $1
+		      AND LOWER(sr.email) = LOWER(c.email)
+		      AND (sr.expires_at IS NULL OR sr.expires_at > NOW())
+		  )
+		ORDER BY ` + orderPrefix + contactOrder + ` ` + dir + `
+	`
+
+	rows, err := r.db.Query(ctx, query, campaignID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var contactID uuid.UUID
+		var lastSeq *uuid.UUID
+		var sentAt, openedAt, clickedAt, repliedAt *time.Time
+		var sentIDs []uuid.UUID
+		if serr := rows.Scan(&contactID, &lastSeq, &sentAt, &openedAt, &clickedAt, &repliedAt, &sentIDs); serr != nil {
+			return nil, serr
+		}
+
+		isNew := lastSeq == nil
+		var routed *uuid.UUID
+		if isNew {
+			if excludeNewLeads {
+				continue
+			}
+			e := entry
+			routed = &e
+		} else {
+			prog := &CampaignContactProgress{
+				CampaignID: campaignID, ContactID: contactID, SequenceID: *lastSeq,
+				SentAt: sentAt, OpenedAt: openedAt, ClickedAt: clickedAt, RepliedAt: repliedAt,
+			}
+			routed = routeNext(*lastSeq, prog)
+		}
+		if routed == nil {
+			continue // contact has reached the end / a STOP
+		}
+		// Loop guard: never re-send a step the contact already received.
+		already := false
+		for _, sid := range sentIDs {
+			if sid == *routed {
+				already = true
+				break
+			}
+		}
+		if already {
+			continue
+		}
+		return &ContactSequencePair{ContactID: contactID, SequenceID: *routed, IsNewLead: isNew}, nil
+	}
+	return nil, rows.Err()
+}
+
+// GetCurrentSequenceForContact returns the contact's most recently sent step in
+// a campaign (its current step). nil when nothing has been sent yet.
+func (r *campaignProgressRepository) GetCurrentSequenceForContact(ctx context.Context, campaignID, contactID uuid.UUID) (*uuid.UUID, error) {
+	query := `
+		SELECT sequence_id
+		FROM campaign_contact_progress
+		WHERE campaign_id = $1
+		  AND contact_id = $2
+		  AND sent_at IS NOT NULL
+		ORDER BY sent_at DESC
+		LIMIT 1
+	`
+	var seqID uuid.UUID
+	if err := r.db.QueryRow(ctx, query, campaignID, contactID).Scan(&seqID); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &seqID, nil
+}
+
+// HasSentSequence reports whether a step has already been sent to a contact.
+func (r *campaignProgressRepository) HasSentSequence(ctx context.Context, campaignID, contactID, sequenceID uuid.UUID) (bool, error) {
+	query := `
+		SELECT EXISTS(
+			SELECT 1 FROM campaign_contact_progress
+			WHERE campaign_id = $1
+			  AND contact_id = $2
+			  AND sequence_id = $3
+			  AND sent_at IS NOT NULL
+		)
+	`
+	var exists bool
+	err := r.db.QueryRow(ctx, query, campaignID, contactID, sequenceID).Scan(&exists)
+	return exists, err
+}
+
+// ResolveSequenceBranch reads the branching tree on currentSequenceID and the
+// contact's engagement for that step, then returns the branch decision. See the
+// interface doc for the (target, error) contract. Keeps existing linear
+// behaviour by returning ErrUseLinearProgression whenever conditions are empty
+// or nothing matches.
+func (r *campaignProgressRepository) ResolveSequenceBranch(ctx context.Context, campaignID, contactID, currentSequenceID uuid.UUID) (*uuid.UUID, error) {
+	// Load the current step's conditions jsonb. The step must belong to this
+	// campaign (defence-in-depth: a stale/foreign sequence id can never branch).
+	var raw []byte
+	err := r.db.QueryRow(ctx,
+		`SELECT conditions FROM sequences WHERE id = $1 AND campaign_id = $2`,
+		currentSequenceID, campaignID,
+	).Scan(&raw)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, ErrUseLinearProgression
+		}
+		return nil, err
+	}
+
+	if len(raw) == 0 {
+		return nil, ErrUseLinearProgression
+	}
+	var bc models.BranchConditions
+	if uerr := json.Unmarshal(raw, &bc); uerr != nil {
+		// Malformed stored tree: fail safe to linear rather than stopping or
+		// erroring the whole schedule pass.
+		return nil, ErrUseLinearProgression
+	}
+	if len(bc.Branches) == 0 {
+		return nil, ErrUseLinearProgression
+	}
+
+	// Load engagement for this contact on the CURRENT step. Absence of a row
+	// means "no engagement yet" — every signal is treated as not-happened.
+	prog := &CampaignContactProgress{CampaignID: campaignID, ContactID: contactID, SequenceID: currentSequenceID}
+	scanErr := r.db.QueryRow(ctx,
+		`SELECT sent_at, opened_at, clicked_at, replied_at, bounced_at, complained_at
+		 FROM campaign_contact_progress
+		 WHERE campaign_id = $1 AND contact_id = $2 AND sequence_id = $3`,
+		campaignID, contactID, currentSequenceID,
+	).Scan(&prog.SentAt, &prog.OpenedAt, &prog.ClickedAt, &prog.RepliedAt, &prog.BouncedAt, &prog.ComplainedAt)
+	if scanErr != nil && scanErr != sql.ErrNoRows {
+		return nil, scanErr
+	}
+
+	branch, ok := evaluateBranchConditions(&bc, prog, time.Now())
+	if !ok {
+		// No branch matched → keep linear progression.
+		return nil, ErrUseLinearProgression
+	}
+
+	// Matched. nil target = explicit STOP; otherwise jump to the target step.
+	return branch.TargetSequenceID, nil
 }

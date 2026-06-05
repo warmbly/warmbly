@@ -90,7 +90,7 @@ func (s *schedulerService) CalculateNextCampaignTime(ctx context.Context, campai
 			excludeNewLeads = true
 		}
 	}
-	nextPair, err := s.campaignProgressRepo.FindNextContactSequence(
+	nextPair, err := s.campaignProgressRepo.FindNextRoutedPair(
 		ctx,
 		campaignID,
 		campaign.ContactOrderBy,
@@ -109,7 +109,7 @@ func (s *schedulerService) CalculateNextCampaignTime(ctx context.Context, campai
 		// pair without it. In that case defer to the next day so follow-ups keep
 		// progressing and new leads resume tomorrow — do NOT complete.
 		if excludeNewLeads {
-			if again, aerr := s.campaignProgressRepo.FindNextContactSequence(
+			if again, aerr := s.campaignProgressRepo.FindNextRoutedPair(
 				ctx, campaignID, campaign.ContactOrderBy, campaign.ContactOrderDir, orderField,
 				campaign.PrioritizeNewLeads, false,
 			); aerr == nil && again != nil {
@@ -125,6 +125,14 @@ func (s *schedulerService) CalculateNextCampaignTime(ctx context.Context, campai
 		}
 		return time.Time{}, nil, uuid.Nil, ErrCampaignCompleted
 	}
+
+	// Branch routing is resolved inside FindNextRoutedPair: the chosen step is the
+	// route out of the contact's last-sent step — conditional branches first
+	// (first match wins, evaluated against opened/clicked/replied), then the
+	// explicit "else" catch-all, then linear position+1 only when a step defines
+	// no branches. A step is sent only if the flow reaches it; STOP/end and
+	// already-sent loops drop the contact in the finder. Conditions are evaluated
+	// at schedule time (a known, accepted race vs. last-moment engagement).
 
 	// STEP 3.5: Resolve the recipient ESP/provider for ESP matching. Cheap:
 	// prefer the cached contact.esp_provider, else derive from the domain
