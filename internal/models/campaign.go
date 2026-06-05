@@ -175,6 +175,17 @@ type CampaignSenderInput struct {
 	Enabled        *bool     `json:"enabled,omitempty"`
 }
 
+// CampaignLead is a contact enrolled in a campaign with its manual send order.
+// Position is nil when unset, in which case the scheduler falls back to the
+// contact's creation time (cl.position NULLS LAST, c.created_at).
+type CampaignLead struct {
+	ContactID uuid.UUID `json:"contact_id"`
+	Email     string    `json:"email"`
+	FirstName string    `json:"first_name"`
+	LastName  string    `json:"last_name"`
+	Position  *int      `json:"position"`
+}
+
 type MiniCampaign struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`

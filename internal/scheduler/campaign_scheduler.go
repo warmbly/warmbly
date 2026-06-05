@@ -233,15 +233,18 @@ func (s *schedulerService) CalculateNextCampaignTime(ctx context.Context, campai
 	}
 
 	// providerMatches reports whether a mailbox's provider satisfies the
-	// recipient ESP under the current match mode. smtp_imap is a wildcard
-	// (can carry any provider's recipients); an unknown recipient provider is
-	// also a wildcard so matching never blocks first contact.
+	// recipient ESP under the current match mode. An unknown recipient provider
+	// (non-Google/Outlook domain) is always a wildcard so matching never blocks
+	// first contact. An smtp_imap mailbox has no known ESP: under PREFER it acts
+	// as a wildcard so matching never starves, but under STRICT "same provider"
+	// means exactly that — an smtp_imap mailbox is NOT treated as a Gmail/Outlook
+	// match (it only carries unknown/other-domain recipients, handled above).
 	providerMatches := func(acctProvider string) bool {
 		if campaign.ESPMatchMode == "off" || recipientProvider == "" {
 			return true
 		}
 		if acctProvider == "smtp_imap" {
-			return true
+			return campaign.ESPMatchMode != "strict"
 		}
 		return acctProvider == recipientProvider
 	}
