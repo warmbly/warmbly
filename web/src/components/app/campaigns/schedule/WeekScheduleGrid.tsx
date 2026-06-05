@@ -7,7 +7,7 @@
 // 0 = Monday); the page converts to/from the Sun=0 wire format.
 
 import React from "react";
-import { CopyIcon, XIcon } from "lucide-react";
+import { CopyIcon, PlusIcon, XIcon } from "lucide-react";
 
 export interface Interval {
     start: number; // minutes since midnight [0,1440)
@@ -161,6 +161,9 @@ export default function WeekScheduleGrid({
     };
 
     const beginDraw = (e: React.PointerEvent, day: number) => {
+        // Touch/pen: do NOT draw — let the column scroll the page. Add via the
+        // "+" in the day header instead. Drawing-by-drag stays a mouse gesture.
+        if (e.pointerType !== "mouse") return;
         // Only the empty column surface starts a draw (blocks stopPropagation).
         e.preventDefault();
         const rect = e.currentTarget.getBoundingClientRect();
@@ -183,6 +186,10 @@ export default function WeekScheduleGrid({
 
     const removeInterval = (day: number, idx: number) =>
         setDay(day, windows[day].filter((_, i) => i !== idx));
+    // Touch-friendly add (no drag needed): drop a default 9–5 window, then drag
+    // the block to adjust.
+    const addDefault = (day: number) =>
+        setDay(day, mergeIntervals([...winRef.current[day], { start: 9 * 60, end: 17 * 60 }]));
     const copyToAll = (day: number) => {
         const src = windows[day].map((iv) => ({ ...iv }));
         onChange(windows.map(() => src.map((iv) => ({ ...iv }))));
@@ -207,6 +214,14 @@ export default function WeekScheduleGrid({
                                 {i === todayIdx && (
                                     <span className="absolute bottom-1 size-1 rounded-full bg-sky-500" title="Today" />
                                 )}
+                                <button
+                                    type="button"
+                                    title="Add a window"
+                                    onClick={() => addDefault(i)}
+                                    className="absolute left-1 top-1.5 inline-flex size-4 items-center justify-center rounded text-slate-400 transition-opacity hover:bg-white hover:text-sky-600 opacity-100 md:opacity-0 md:group-hover/h:opacity-100"
+                                >
+                                    <PlusIcon className="w-2.5 h-2.5" />
+                                </button>
                                 {active && (
                                     <button
                                         type="button"
@@ -251,13 +266,13 @@ export default function WeekScheduleGrid({
                                 key={d}
                                 data-col-body
                                 onPointerDown={(e) => beginDraw(e, i)}
-                                className={`relative flex-1 cursor-crosshair touch-pan-x ${
+                                className={`relative flex-1 cursor-crosshair touch-pan-y ${
                                     active ? "bg-sky-50/30" : "bg-slate-50/40 hover:bg-slate-100/50"
                                 } ${isToday ? "ring-1 ring-inset ring-sky-100" : ""}`}
                             >
                                 {windows[i].length === 0 && (
                                     <span className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 text-center text-[9.5px] text-slate-300 leading-tight px-1">
-                                        drag to add
+                                        drag, or tap +
                                     </span>
                                 )}
                                 {windows[i].map((iv, idx) => (

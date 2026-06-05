@@ -1,18 +1,17 @@
-// Visual flow canvas for a campaign's steps (React Flow) — an explicit branching
-// tree. Nothing connects automatically: a contact only moves where you've drawn
-// a connection.
+// Visual flow canvas for a campaign's steps (React Flow) — a branching tree
+// where each condition is its own "IF" block.
 //
-// HOW IT WORKS
-// - Each step is a box, identified by its name. The entry step is marked "Start".
-// - Draw a connection from a step's bottom dot to another step (or empty canvas
-//   to make a new one). A connection with NO condition just means "go there
-//   after the wait" — you're never forced to pick a condition.
-// - Add conditions to branch: click a connection and choose "if opened / clicked
-//   / replied / didn't… within N days" (or a random split). Draw several
-//   connections from one step for multiple branches; the first match wins.
-// - Timing lives on the connections (wait N days before the step it points to).
-// - Anything with no matching connection just ends — every path ends in STOP,
-//   automatically. A step with no outgoing connection shows "Ends here".
+// SHAPE
+//   Step ──▶ [ IF opened within 3d ] ──▶ Step …   (the branch's steps flow below
+//   its IF block). An unconditional path is a plain line straight to the step.
+//
+// BUILD
+// - Drag from a STEP's bottom dot → a plain "just go there" connection.
+// - Drag from an IF block's SIDE dots → a new "if" branch from that step
+//   (onto a step, or empty for a new step). Drag the IF block's BOTTOM dot →
+//   change where that if leads.
+// - Click a step → edit its email. Click an IF block → edit its condition.
+// - Nothing connects automatically; a step with no outgoing path ends in STOP.
 
 import React from "react";
 import {
@@ -20,10 +19,12 @@ import {
     ChevronUpIcon,
     ClockIcon,
     FlagIcon,
+    GitBranchIcon,
     Loader2Icon,
     MailIcon,
     PlusIcon,
     Trash2Icon,
+    UnlinkIcon,
     XIcon,
 } from "lucide-react";
 import {
@@ -32,6 +33,7 @@ import {
     Controls,
     Panel,
     Handle,
+    MarkerType,
     Position,
     useNodesState,
     useEdgesState,
@@ -60,10 +62,14 @@ import buildError from "@/lib/helper/buildError";
 import SequenceView from "./SequenceView";
 
 const STOP_ID = "__stop__";
+const IF_PREFIX = "if-";
 const NODE_W = 248;
 const NODE_H = 92;
 const MAX_STEPS = 50;
 const SEQ_KEY = (id: string) => ["campaigns", id, "sequences"] as const;
+
+const ifNodeId = (branchId: string) => `${IF_PREFIX}${branchId}`;
+const isIfId = (id: string) => id.startsWith(IF_PREFIX);
 
 function newBranchId(): string {
     try {
@@ -76,37 +82,9 @@ function newBranchId(): string {
 const isCond = (b: SequenceBranch) => (b.conditions?.length ?? 0) > 0;
 const stepName = (s: Sequence | undefined) => (s?.name?.trim() ? s.name : "Untitled step");
 
-// Conditions are first-match; unconditional ("just go there") connections are the
-// fallback, so keep them after the conditional ones.
+// Conditions first-match; unconditional ("just go there") paths are the fallback.
 function ordered(branches: SequenceBranch[]): SequenceBranch[] {
     return [...branches.filter(isCond), ...branches.filter((b) => !isCond(b))];
-}
-
-function layoutGraph(nodes: Node[], edges: Edge[]): Node[] {
-    const g = new dagre.graphlib.Graph();
-    g.setDefaultEdgeLabel(() => ({}));
-    // Generous spacing so step cards fan out as a clear tree and the little
-    // label cards on the connections never sit on top of each other.
-    g.setGraph({ rankdir: "TB", nodesep: 90, ranksep: 130, marginx: 20, marginy: 20, edgesep: 40 });
-    nodes.forEach((n) => {
-        const stop = n.id === STOP_ID;
-        g.setNode(n.id, { width: stop ? 96 : NODE_W, height: stop ? 40 : NODE_H });
-    });
-    edges.forEach((e) => {
-        const text = typeof e.label === "string" ? e.label : "";
-        // Give dagre the label card's footprint so it reserves room for it and
-        // never lets two condition cards land on top of each other.
-        g.setEdge(
-            e.source,
-            e.target,
-            text ? { width: Math.min(260, text.length * 6 + 24), height: 28, labelpos: "c" } : {},
-        );
-    });
-    dagre.layout(g);
-    return nodes.map((n) => {
-        const p = g.node(n.id);
-        return p ? { ...n, position: { x: p.x - p.width / 2, y: p.y - p.height / 2 } } : n;
-    });
 }
 
 function conditionText(b: SequenceBranch): string {
@@ -119,12 +97,103 @@ function conditionText(b: SequenceBranch): string {
         .join(" + ");
 }
 
+function layoutGraph(nodes: Node[], edges: Edge[]): Node[] {
+    const g = new dagre.graphlib.Graph();
+    g.setDefaultEdgeLabel(() => ({}));
+    g.setGraph({ rankdir: "TB", nodesep: 220, ranksep: 120, marginx: 32, marginy: 32, edgesep: 120 });
+    nodes.forEach((n) => {
+        let w = NODE_W;
+        let h = NODE_H;
+        if (n.id === STOP_ID) {
+            w = 96;
+            h = 40;
+        } else if (isIfId(n.id)) {
+            w = 210;
+            h = 40;
+        }
+        g.setNode(n.id, { width: w, height: h });
+    });
+    edges.forEach((e) => {
+        const text = typeof e.label === "string" ? e.label : "";
+        // Keep the if / else-if spine (in / chain / else edges) straight and
+        // aligned; let the "then" steps fan out to the side.
+        const spine = e.id.startsWith("in-") || e.id.startsWith("chain-") || e.id.startsWith("else-");
+        const label = text ? { width: Math.min(160, text.length * 6 + 24), height: 30, labelpos: "c" } : {};
+        g.setEdge(e.source, e.target, { ...label, weight: spine ? 6 : 1 });
+    });
+    dagre.layout(g);
+    return nodes.map((n) => {
+        const p = g.node(n.id);
+        return p ? { ...n, position: { x: p.x - p.width / 2, y: p.y - p.height / 2 } } : n;
+    });
+}
+
+// dagre can pile disconnected pieces on top of each other at the origin, which
+// hides orphaned steps (an upstream step was deleted) so they can't be clicked,
+// deleted, or connected. Split the graph into connected components and stack
+// them in vertical bands — the main flow (with the entry) first, orphans below.
+function stackComponents(nodes: Node[], edges: Edge[]): Node[] {
+    const adj = new Map<string, string[]>();
+    const link = (a: string, b: string) => {
+        const list = adj.get(a) ?? [];
+        list.push(b);
+        adj.set(a, list);
+    };
+    for (const e of edges) {
+        link(e.source, e.target);
+        link(e.target, e.source);
+    }
+    const comp = new Map<string, number>();
+    let count = 0;
+    for (const n of nodes) {
+        if (comp.has(n.id)) continue;
+        const queue = [n.id];
+        comp.set(n.id, count);
+        while (queue.length) {
+            const id = queue.shift()!;
+            for (const m of adj.get(id) ?? []) {
+                if (!comp.has(m)) {
+                    comp.set(m, count);
+                    queue.push(m);
+                }
+            }
+        }
+        count++;
+    }
+    if (count <= 1) return nodes; // a single connected flow needs no banding
+
+    const box = new Map<number, { minX: number; minY: number; maxY: number }>();
+    for (const n of nodes) {
+        const k = comp.get(n.id)!;
+        const h = n.id === STOP_ID ? 40 : NODE_H;
+        const b = box.get(k) ?? { minX: Infinity, minY: Infinity, maxY: -Infinity };
+        b.minX = Math.min(b.minX, n.position.x);
+        b.minY = Math.min(b.minY, n.position.y);
+        b.maxY = Math.max(b.maxY, n.position.y + h);
+        box.set(k, b);
+    }
+    const baseX = Math.min(...[...box.values()].map((b) => b.minX));
+    const GAP = 140;
+    let cursorY = 0;
+    const offset = new Map<number, { dx: number; dy: number }>();
+    for (const k of [...box.keys()].sort((a, b) => a - b)) {
+        const b = box.get(k)!;
+        offset.set(k, { dx: baseX - b.minX, dy: cursorY - b.minY });
+        cursorY += b.maxY - b.minY + GAP;
+    }
+    return nodes.map((n) => {
+        const o = offset.get(comp.get(n.id)!)!;
+        return { ...n, position: { x: n.position.x + o.dx, y: n.position.y + o.dy } };
+    });
+}
+
 // ── Custom nodes ────────────────────────────────────────────────────────────
 type StepNodeData = {
     label: string;
     subtitle: string;
     isStart: boolean;
     endsHere: boolean;
+    orphan: boolean;
     onDelete: () => void;
 };
 
@@ -132,11 +201,11 @@ function StepNode({ data, selected }: NodeProps) {
     const d = data as StepNodeData;
     return (
         <div
-            className={`w-[248px] rounded-md border bg-white shadow-sm transition-colors ${
-                selected ? "border-sky-400 ring-2 ring-sky-100" : "border-slate-200"
-            }`}
+            className={`w-[248px] rounded-xl border bg-white shadow-sm transition-shadow duration-200 hover:shadow-md ${
+                d.orphan ? "border-dashed border-amber-300" : "border-slate-200"
+            } ${selected ? "border-sky-400 ring-2 ring-sky-100" : ""}`}
         >
-            <Handle type="target" position={Position.Top} className="!h-2 !w-2 !bg-slate-300" />
+            <Handle type="target" position={Position.Top} className="!h-2 !w-2 !border-2 !border-white !bg-slate-300" />
             <div className="flex items-center gap-1.5 border-b border-slate-200/70 px-2.5 py-1.5">
                 <MailIcon className="w-3 h-3 shrink-0 text-sky-600" />
                 {d.isStart && (
@@ -161,13 +230,55 @@ function StepNode({ data, selected }: NodeProps) {
                 <div className="truncate text-[12.5px] font-medium text-slate-800">{d.label || "Untitled step"}</div>
                 <div className="truncate text-[11px] text-slate-400">{d.subtitle || "No subject yet"}</div>
             </div>
-            {d.endsHere && (
+            {d.orphan ? (
+                <div className="flex items-center gap-1 border-t border-amber-200/70 px-2.5 py-1 text-[10.5px] text-amber-600">
+                    <UnlinkIcon className="w-3 h-3" />
+                    Not connected — drag a link in
+                </div>
+            ) : d.endsHere ? (
                 <div className="flex items-center gap-1 border-t border-slate-200/70 px-2.5 py-1 text-[10.5px] text-slate-400">
                     <FlagIcon className="w-3 h-3 text-slate-400" />
                     Ends here
                 </div>
-            )}
-            <Handle type="source" position={Position.Bottom} className="!h-2.5 !w-2.5 !bg-sky-500" />
+            ) : null}
+            {/* Right dot = start an "if" branch; bottom dot = plain "go there". */}
+            <Handle type="source" id="if" position={Position.Right} className="!h-3 !w-3 !border-2 !border-white !bg-amber-400" />
+            <Handle type="source" id="s" position={Position.Bottom} className="!h-3 !w-3 !border-2 !border-white !bg-sky-500" />
+        </div>
+    );
+}
+
+type IfNodeData = { label: string; onDelete: () => void };
+
+function IfNode({ data, selected }: NodeProps) {
+    const d = data as IfNodeData;
+    return (
+        <div
+            className={`rounded-lg border bg-gradient-to-b from-sky-50 to-white px-2 py-1 shadow-sm transition-shadow duration-200 hover:shadow-md ${
+                selected ? "border-sky-400 ring-2 ring-sky-100" : "border-sky-200"
+            }`}
+        >
+            <Handle type="target" position={Position.Top} className="!h-2 !w-2 !border-2 !border-white !bg-slate-300" />
+            {/* Right dot = the THEN path: where this if leads (drag to change). */}
+            <Handle type="source" id="out" position={Position.Right} className="!h-3 !w-3 !border-2 !border-white !bg-sky-500" />
+            <div className="flex items-center gap-1.5">
+                <GitBranchIcon className="w-3 h-3 shrink-0 text-sky-600" />
+                <span className="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-sky-500">if</span>
+                <span className="max-w-[150px] truncate text-[11px] font-medium text-sky-800">{d.label}</span>
+                <button
+                    type="button"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        d.onDelete();
+                    }}
+                    title="Delete this branch"
+                    className="nodrag inline-flex size-4 items-center justify-center rounded text-sky-400 hover:bg-rose-50 hover:text-rose-600"
+                >
+                    <Trash2Icon className="w-3 h-3" />
+                </button>
+            </div>
+            {/* Bottom dot = the ELSE path: drag to add the next condition (else-if). */}
+            <Handle type="source" id="else" position={Position.Bottom} className="!h-3 !w-3 !border-2 !border-white !bg-slate-400" />
         </div>
     );
 }
@@ -182,7 +293,9 @@ function StopNode() {
     );
 }
 
-const nodeTypes = { step: StepNode, stop: StopNode };
+const nodeTypes = { step: StepNode, ifcond: IfNode, stop: StopNode };
+
+type IfMeta = { sourceId: string; branchId: string };
 
 export default function CampaignFlow({ campaignId }: { campaignId: string }) {
     const { data: sequences } = useSequences(campaignId);
@@ -198,7 +311,10 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
     const [selectedEdge, setSelectedEdge] = React.useState<{ sourceId: string; branchId: string } | null>(null);
     const [editStepId, setEditStepId] = React.useState<string | null>(null);
     const [adding, setAdding] = React.useState(false);
+    // While dragging a node, kill the position transition so the drag is 1:1.
+    const [dragging, setDragging] = React.useState(false);
     const structureSig = React.useRef("");
+    const ifMetaRef = React.useRef<Record<string, IfMeta>>({});
 
     const seqById = React.useMemo(() => {
         const m = new Map<string, Sequence>();
@@ -206,12 +322,17 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
         return m;
     }, [sequences]);
 
-    const invalidate = React.useCallback(
-        () => qc.invalidateQueries({ queryKey: SEQ_KEY(campaignId) }),
-        [qc, campaignId],
-    );
+    const invalidate = React.useCallback(() => qc.invalidateQueries({ queryKey: SEQ_KEY(campaignId) }), [qc, campaignId]);
 
-    // All steps reachable downstream of a step — i.e. everything "inside" a branch.
+    const openCondition = React.useCallback((sourceId: string, branchId: string) => {
+        setSelectedEdge({ sourceId, branchId });
+        setEditStepId(null);
+    }, []);
+    const openEditStep = React.useCallback((id: string) => {
+        setEditStepId(id);
+        setSelectedEdge(null);
+    }, []);
+
     const reachableFrom = React.useCallback(
         (rootId: string) => {
             const set = new Set<string>([rootId]);
@@ -231,16 +352,6 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
         [seqById],
     );
 
-    // Only ever one editor open at a time.
-    const openCondition = React.useCallback((sourceId: string, branchId: string) => {
-        setSelectedEdge({ sourceId, branchId });
-        setEditStepId(null);
-    }, []);
-    const openEditStep = React.useCallback((id: string) => {
-        setEditStepId(id);
-        setSelectedEdge(null);
-    }, []);
-
     const saveBranches = React.useCallback(
         async (sourceId: string, branches: SequenceBranch[]) => {
             const b = ordered(branches);
@@ -258,8 +369,6 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
         [campaignId, qc, invalidate],
     );
 
-    // Timing lives on connections: stored as the TARGET step's wait_after ("days
-    // before this step"), edited from the arrow leading to it.
     const saveWait = React.useCallback(
         async (targetId: string, days: number) => {
             const d = Math.max(0, Math.round(days));
@@ -277,8 +386,56 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
         [campaignId, qc, invalidate],
     );
 
-    // Reorder a conditional connection among its siblings — i.e. change the
-    // if / else-if priority (which condition is checked first).
+    const addUnconditional = React.useCallback(
+        (sourceId: string, target: string | null) => {
+            const src = seqById.get(sourceId);
+            if (!src) return;
+            saveBranches(sourceId, [
+                ...(src.conditions?.branches ?? []),
+                { branch_id: newBranchId(), target_sequence_id: target, conditions: [] },
+            ]);
+        },
+        [seqById, saveBranches],
+    );
+    const addIfTo = React.useCallback(
+        (sourceId: string, target: string | null) => {
+            const src = seqById.get(sourceId);
+            if (!src) return;
+            const branch: SequenceBranch = {
+                branch_id: newBranchId(),
+                target_sequence_id: target,
+                conditions: [{ field: "opened", operator: "within_days", value: 3 }],
+            };
+            saveBranches(sourceId, [...(src.conditions?.branches ?? []), branch]);
+            openCondition(sourceId, branch.branch_id);
+        },
+        [seqById, saveBranches, openCondition],
+    );
+    const retargetBranch = React.useCallback(
+        (sourceId: string, branchId: string, target: string | null) => {
+            const src = seqById.get(sourceId);
+            if (!src) return;
+            saveBranches(
+                sourceId,
+                (src.conditions?.branches ?? []).map((b) =>
+                    b.branch_id === branchId ? { ...b, target_sequence_id: target } : b,
+                ),
+            );
+        },
+        [seqById, saveBranches],
+    );
+    const deleteBranch = React.useCallback(
+        (sourceId: string, branchId: string) => {
+            const src = seqById.get(sourceId);
+            if (!src) return;
+            saveBranches(
+                sourceId,
+                (src.conditions?.branches ?? []).filter((b) => b.branch_id !== branchId),
+            );
+            setSelectedEdge((cur) => (cur?.branchId === branchId ? null : cur));
+        },
+        [seqById, saveBranches],
+    );
     const moveBranch = React.useCallback(
         (sourceId: string, branchId: string, dir: -1 | 1) => {
             const src = seqById.get(sourceId);
@@ -295,16 +452,14 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
         [seqById, saveBranches],
     );
 
-    // Add step drops a STANDALONE step (its own node) — nothing auto-connects.
-    // Connect it by dragging from another step, or drag from this one to extend.
-    // The first step is the entry (where new contacts start).
+    // Step drops standalone; you connect it by dragging.
     const addStep = React.useCallback(async () => {
         if (adding || sequences.length >= MAX_STEPS) return;
         setAdding(true);
         try {
             await toast.promise(createSequence.mutateAsync(), {
                 loading: "Adding step…",
-                success: "Step added — drag a step's dot to connect it.",
+                success: "Step added — drag a dot to connect it.",
                 error: (err: AppError) => buildError(err),
             });
         } finally {
@@ -312,9 +467,8 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
         }
     }, [adding, sequences.length, createSequence]);
 
-    // Drag from a step onto empty canvas -> new step connected (unconditionally)
-    // from THAT step. No forced condition; add one later if you want a branch.
-    const dragOut = React.useCallback(
+    // Drag from a step's dot to empty -> new step, plain ("just go there") link.
+    const dragOutStep = React.useCallback(
         async (sourceId: string) => {
             if (adding || sequences.length >= MAX_STEPS) return;
             const src = seqById.get(sourceId);
@@ -332,6 +486,45 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
             }
         },
         [adding, sequences.length, seqById, createSequence, saveBranches],
+    );
+    // Drag from an IF block's side to empty -> new step + new if-branch.
+    const addIfToNew = React.useCallback(
+        async (sourceId: string) => {
+            if (adding || sequences.length >= MAX_STEPS) return;
+            const src = seqById.get(sourceId);
+            setAdding(true);
+            try {
+                const created = (await createSequence.mutateAsync()) as Sequence;
+                const branch: SequenceBranch = {
+                    branch_id: newBranchId(),
+                    target_sequence_id: created.id,
+                    conditions: [{ field: "opened", operator: "within_days", value: 3 }],
+                };
+                await saveBranches(sourceId, [...(src?.conditions?.branches ?? []), branch]);
+                openCondition(sourceId, branch.branch_id);
+            } catch {
+                toast.error("Couldn't add the step");
+            } finally {
+                setAdding(false);
+            }
+        },
+        [adding, sequences.length, seqById, createSequence, saveBranches, openCondition],
+    );
+    // Drag an IF block's bottom dot to empty -> new step the if leads to.
+    const retargetToNew = React.useCallback(
+        async (sourceId: string, branchId: string) => {
+            if (adding || sequences.length >= MAX_STEPS) return;
+            setAdding(true);
+            try {
+                const created = (await createSequence.mutateAsync()) as Sequence;
+                retargetBranch(sourceId, branchId, created.id);
+            } catch {
+                toast.error("Couldn't add the step");
+            } finally {
+                setAdding(false);
+            }
+        },
+        [adding, sequences.length, createSequence, retargetBranch],
     );
 
     const deleteStep = React.useCallback(
@@ -368,13 +561,41 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
         [sequences, seqById, confirm, campaignId, deleteSequence, invalidate],
     );
 
-    const deleteRef = React.useRef(deleteStep);
+    // Node-data callbacks via refs so the layout effect deps don't churn.
+    const deleteStepRef = React.useRef(deleteStep);
+    const deleteBranchRef = React.useRef(deleteBranch);
     React.useEffect(() => {
-        deleteRef.current = deleteStep;
-    }, [deleteStep]);
+        deleteStepRef.current = deleteStep;
+        deleteBranchRef.current = deleteBranch;
+    }, [deleteStep, deleteBranch]);
 
     React.useEffect(() => {
-        const stepNodes: Node[] = sequences.map((s, i) => {
+        const waitTag = (targetId: string | null) => {
+            if (!targetId) return "";
+            const w = seqById.get(targetId)?.wait_after ?? 0;
+            return w > 0 ? `wait ${w}d` : "";
+        };
+
+        // Steps reachable from the entry (first step). Anything else became an
+        // orphan — e.g. an upstream step was deleted — and is flagged so it can
+        // be spotted and re-linked (it stays fully connectable).
+        const reachable = new Set<string>();
+        if (sequences[0]) {
+            const queue = [sequences[0].id];
+            reachable.add(sequences[0].id);
+            while (queue.length) {
+                const id = queue.shift()!;
+                for (const b of seqById.get(id)?.conditions?.branches ?? []) {
+                    const t = b.target_sequence_id;
+                    if (t && !reachable.has(t)) {
+                        reachable.add(t);
+                        queue.push(t);
+                    }
+                }
+            }
+        }
+
+        const allNodes: Node[] = sequences.map((s, i) => {
             const branches = s.conditions?.branches ?? [];
             return {
                 id: s.id,
@@ -385,62 +606,139 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                     subtitle: s.subject,
                     isStart: i === 0,
                     endsHere: branches.length === 0,
-                    onDelete: () => deleteRef.current(s.id),
+                    orphan: !reachable.has(s.id),
+                    onDelete: () => deleteStepRef.current(s.id),
                 } satisfies StepNodeData,
             };
         });
 
-        const anyStop = sequences.some((s) => (s.conditions?.branches ?? []).some((b) => b.target_sequence_id === null));
-        if (anyStop) stepNodes.push({ id: STOP_ID, type: "stop", position: { x: 0, y: 0 }, data: {} });
-
-        const waitTag = (targetId: string | null) => {
-            if (!targetId) return "";
-            const w = seqById.get(targetId)?.wait_after ?? 0;
-            return w > 0 ? `wait ${w}d` : "";
-        };
-
+        const ifMeta: Record<string, IfMeta> = {};
         const flowEdges: Edge[] = [];
+        const edgeStyle = (cond: boolean) =>
+            cond ? { stroke: "#0ea5e9", strokeWidth: 2 } : { stroke: "#94a3b8" };
+
         sequences.forEach((s) => {
             const branches = ordered(s.conditions?.branches ?? []);
-            for (const b of branches) {
-                const cond = isCond(b);
+            const conds = branches.filter(isCond);
+            const uncond = branches.find((b) => !isCond(b));
+
+            conds.forEach((b, i) => {
+                const nid = ifNodeId(b.branch_id);
+                ifMeta[nid] = { sourceId: s.id, branchId: b.branch_id };
+                allNodes.push({
+                    id: nid,
+                    type: "ifcond",
+                    position: { x: 0, y: 0 },
+                    data: {
+                        label: conditionText(b),
+                        onDelete: () => deleteBranchRef.current(s.id, b.branch_id),
+                    } satisfies IfNodeData,
+                });
+                // Incoming: from the step (first condition) or the PREVIOUS
+                // condition's ELSE — so conditions chain as if / else-if.
+                if (i === 0) {
+                    flowEdges.push({
+                        id: `in-${b.branch_id}`,
+                        source: s.id,
+                        sourceHandle: "s",
+                        target: nid,
+                        style: edgeStyle(true),
+                        data: { sourceId: s.id, branchId: b.branch_id },
+                    });
+                } else {
+                    flowEdges.push({
+                        id: `chain-${b.branch_id}`,
+                        source: ifNodeId(conds[i - 1].branch_id),
+                        sourceHandle: "else",
+                        target: nid,
+                        label: "else",
+                        style: edgeStyle(false),
+                        labelStyle: { fill: "#94a3b8", fontSize: 10 },
+                        labelBgStyle: { fill: "#fff", stroke: "#e2e8f0" },
+                        labelBgPadding: [4, 2],
+                        labelBgBorderRadius: 5,
+                        data: { sourceId: s.id, branchId: b.branch_id },
+                    });
+                }
+                // THEN path -> the condition's target.
                 const wt = waitTag(b.target_sequence_id);
-                // Each connection shows ONLY its own condition — no auto
-                // "if" / "else if" / "else" labels imposed by position. An
-                // unconditional connection just shows its wait (or nothing).
-                const label: string | undefined = cond
-                    ? wt
-                        ? `${conditionText(b)} · ${wt}`
-                        : conditionText(b)
-                    : wt || undefined;
                 flowEdges.push({
-                    id: `br-${s.id}-${b.branch_id}`,
-                    source: s.id,
+                    id: `then-${b.branch_id}`,
+                    source: nid,
+                    sourceHandle: "out",
                     target: b.target_sequence_id ?? STOP_ID,
-                    label,
+                    label: wt || undefined,
                     reconnectable: true,
-                    style: cond ? { stroke: "#0ea5e9", strokeWidth: 2 } : { stroke: "#94a3b8" },
-                    labelStyle: cond
-                        ? { fill: "#0369a1", fontSize: 10.5, fontWeight: 600 }
-                        : { fill: "#475569", fontSize: 10.5, fontWeight: 500 },
-                    // A little card: filled, bordered, rounded, with room to breathe.
-                    labelBgStyle: {
-                        fill: "#ffffff",
-                        stroke: cond ? "#bae6fd" : "#e2e8f0",
-                        strokeWidth: 1,
-                    },
-                    labelBgPadding: [6, 4] as [number, number],
-                    labelBgBorderRadius: 6,
+                    style: edgeStyle(true),
+                    labelStyle: { fill: "#0369a1", fontSize: 10 },
+                    labelBgStyle: { fill: "#fff", stroke: "#bae6fd" },
+                    labelBgPadding: [5, 3],
+                    labelBgBorderRadius: 5,
                     data: { sourceId: s.id, branchId: b.branch_id },
                 });
+            });
+
+            if (uncond) {
+                const wt = waitTag(uncond.target_sequence_id);
+                const target = uncond.target_sequence_id ?? STOP_ID;
+                if (conds.length > 0) {
+                    // The final ELSE hangs off the LAST condition's else.
+                    flowEdges.push({
+                        id: `else-${uncond.branch_id}`,
+                        source: ifNodeId(conds[conds.length - 1].branch_id),
+                        sourceHandle: "else",
+                        target,
+                        label: wt ? `else · ${wt}` : "else",
+                        reconnectable: true,
+                        style: edgeStyle(false),
+                        labelStyle: { fill: "#475569", fontSize: 10 },
+                        labelBgStyle: { fill: "#fff", stroke: "#e2e8f0" },
+                        labelBgPadding: [5, 3],
+                        labelBgBorderRadius: 5,
+                        data: { sourceId: s.id, branchId: uncond.branch_id },
+                    });
+                } else {
+                    // No conditions on this step: a plain "just go there" line.
+                    flowEdges.push({
+                        id: `u-${uncond.branch_id}`,
+                        source: s.id,
+                        sourceHandle: "s",
+                        target,
+                        label: wt || undefined,
+                        reconnectable: true,
+                        style: edgeStyle(false),
+                        labelStyle: { fill: "#475569", fontSize: 10 },
+                        labelBgStyle: { fill: "#fff", stroke: "#e2e8f0" },
+                        labelBgPadding: [5, 3],
+                        labelBgBorderRadius: 5,
+                        data: { sourceId: s.id, branchId: uncond.branch_id },
+                    });
+                }
             }
         });
+        ifMetaRef.current = ifMeta;
 
-        const laid = layoutGraph(stepNodes, flowEdges);
+        const anyStop = sequences.some((s) => (s.conditions?.branches ?? []).some((b) => b.target_sequence_id === null));
+        if (anyStop) allNodes.push({ id: STOP_ID, type: "stop", position: { x: 0, y: 0 }, data: {} });
+
+        // Flowing curved (bezier) connectors with arrowheads — no boxy right
+        // angles. The arrow takes the edge's own stroke colour.
+        const smoothEdges: Edge[] = flowEdges.map((e) => ({
+            ...e,
+            type: "default",
+            markerEnd: {
+                type: MarkerType.ArrowClosed,
+                width: 16,
+                height: 16,
+                color: (e.style as { stroke?: string } | undefined)?.stroke ?? "#94a3b8",
+            },
+        }));
+
+        const laid = stackComponents(layoutGraph(allNodes, smoothEdges), smoothEdges);
         const sig =
-            stepNodes.map((n) => n.id).sort().join(",") +
+            allNodes.map((n) => n.id).sort().join(",") +
             "|" +
-            flowEdges.map((e) => `${e.source}>${e.target}`).sort().join(",");
+            smoothEdges.map((e) => `${e.source}>${e.target}`).sort().join(",");
         const changed = sig !== structureSig.current;
         structureSig.current = sig;
         setNodes((cur) => {
@@ -448,52 +746,59 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
             const pos = new Map(cur.map((n) => [n.id, n.position]));
             return laid.map((n) => (pos.has(n.id) ? { ...n, position: pos.get(n.id)! } : n));
         });
-        setEdges(flowEdges);
+        setEdges(smoothEdges);
     }, [sequences, seqById, setNodes, setEdges]);
 
-    // Highlight the subtree of the selected connection (its "if" branch) or the
-    // selected step, dimming everything else so it's clear what's inside it.
+    // Subtree highlight: select a step/if → light up what's reachable, dim rest.
     React.useEffect(() => {
         let root: string | null = null;
-        if (selectedEdge) {
+        if (editStepId) root = editStepId;
+        else if (selectedEdge) {
             const br = seqById
                 .get(selectedEdge.sourceId)
                 ?.conditions?.branches?.find((b) => b.branch_id === selectedEdge.branchId);
-            root = br?.target_sequence_id ?? null;
-        } else if (editStepId) {
-            root = editStepId;
+            root = br?.target_sequence_id ?? selectedEdge.sourceId;
         }
         const hl = root ? reachableFrom(root) : null;
+        const stepIn = (id: string) => {
+            if (!hl) return true;
+            if (id === STOP_ID) return true;
+            if (isIfId(id)) {
+                const m = ifMetaRef.current[id];
+                return m ? hl.has(m.sourceId) : true;
+            }
+            return hl.has(id);
+        };
         setNodes((ns) =>
-            ns.map((n) => ({
-                ...n,
-                style: { ...n.style, opacity: hl && n.id !== STOP_ID && !hl.has(n.id) ? 0.3 : 1 },
-            })),
+            ns.map((n) => ({ ...n, style: { ...n.style, opacity: hl && !stepIn(n.id) ? 0.3 : 1 } })),
         );
         setEdges((es) =>
-            es.map((e) => ({
-                ...e,
-                style: { ...e.style, opacity: hl && !(hl.has(e.source) && hl.has(e.target)) ? 0.15 : 1 },
-            })),
+            es.map((e) => {
+                const sid = (e.data as { sourceId?: string } | undefined)?.sourceId;
+                const on = !hl || (sid ? hl.has(sid) : true);
+                return { ...e, style: { ...e.style, opacity: on ? 1 : 0.15 } };
+            }),
         );
-    }, [selectedEdge, editStepId, seqById, reachableFrom, setNodes, setEdges]);
+    }, [editStepId, selectedEdge, seqById, reachableFrom, setNodes, setEdges]);
 
-    // Drag a node's dot onto another node (or Stop) -> new unconditional link.
     const onConnect = React.useCallback(
         (c: Connection) => {
-            if (!c.source || !c.target || c.source === c.target) return;
-            const src = seqById.get(c.source);
-            if (!src) return;
-            saveBranches(c.source, [
-                ...(src.conditions?.branches ?? []),
-                {
-                    branch_id: newBranchId(),
-                    target_sequence_id: c.target === STOP_ID ? null : c.target,
-                    conditions: [],
-                },
-            ]);
+            if (!c.source || !c.target || c.source === c.target || isIfId(c.target)) return;
+            const target = c.target === STOP_ID ? null : c.target;
+            if (isIfId(c.source)) {
+                const m = ifMetaRef.current[c.source];
+                if (!m) return;
+                // "out" = retarget the then-target; "else" (bottom gray dot) =
+                // an unconditional "always / just go there" fallback by default.
+                if (c.sourceHandle === "out") retargetBranch(m.sourceId, m.branchId, target);
+                else addUnconditional(m.sourceId, target);
+            } else if (c.sourceHandle === "if") {
+                addIfTo(c.source, target);
+            } else {
+                addUnconditional(c.source, target);
+            }
         },
-        [seqById, saveBranches],
+        [retargetBranch, addIfTo, addUnconditional],
     );
 
     const selected = React.useMemo(() => {
@@ -503,33 +808,58 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
         return src && br ? { source: src, branch: br } : null;
     }, [selectedEdge, seqById]);
 
+    // Touch / coarse-pointer devices: don't let a drag MOVE nodes (so a swipe
+    // pans to navigate instead of "placing a card"), and let page scroll through.
+    const isCoarse = React.useMemo(
+        () => typeof window !== "undefined" && !!window.matchMedia && window.matchMedia("(pointer: coarse)").matches,
+        [],
+    );
+
     const editStep = editStepId ? seqById.get(editStepId) : undefined;
     const editIndex = editStep ? sequences.findIndex((s) => s.id === editStep.id) : -1;
     const atMax = sequences.length >= MAX_STEPS;
 
     return (
-        <div className="relative h-[78vh] w-full overflow-hidden rounded-md border border-slate-200 bg-slate-50/40">
+        <div
+            className={`campaign-flow relative h-[70vh] w-full overflow-hidden rounded-md border border-slate-200 bg-slate-50/40 sm:h-[78vh] ${
+                dragging ? "rf-dragging" : ""
+            }`}
+        >
             <ReactFlow
                 nodes={nodes}
                 edges={edges}
                 onNodesChange={onNodesChange}
                 onEdgesChange={onEdgesChange}
+                onNodeDragStart={() => setDragging(true)}
+                onNodeDragStop={() => setDragging(false)}
                 onConnect={onConnect}
+                nodesDraggable={!isCoarse}
+                zoomOnScroll={false}
+                panOnScroll={false}
+                preventScrolling={false}
+                minZoom={0.2}
+                maxZoom={1.75}
                 onConnectEnd={(_, state) => {
-                    if (state.fromNode && !state.toNode) dragOut(state.fromNode.id);
+                    const from = state.fromNode;
+                    if (!from || state.toNode) return;
+                    const handle = state.fromHandle?.id;
+                    if (isIfId(from.id)) {
+                        const m = ifMetaRef.current[from.id];
+                        if (!m) return;
+                        // "out" = new then-step; "else" (bottom gray dot) = a new
+                        // step reached unconditionally ("always / just go there").
+                        if (handle === "out") retargetToNew(m.sourceId, m.branchId);
+                        else dragOutStep(m.sourceId);
+                    } else if (handle === "if") {
+                        addIfToNew(from.id);
+                    } else {
+                        dragOutStep(from.id);
+                    }
                 }}
                 onReconnect={(oldEdge, conn) => {
                     const d = oldEdge.data as { sourceId?: string; branchId?: string } | undefined;
-                    if (!d?.sourceId || !d?.branchId || !conn.target) return;
-                    const src = seqById.get(d.sourceId);
-                    if (!src) return;
-                    const newTarget = conn.target === STOP_ID ? null : conn.target;
-                    saveBranches(
-                        d.sourceId,
-                        (src.conditions?.branches ?? []).map((b) =>
-                            b.branch_id === d.branchId ? { ...b, target_sequence_id: newTarget } : b,
-                        ),
-                    );
+                    if (!d?.sourceId || !d?.branchId || !conn.target || isIfId(conn.target)) return;
+                    retargetBranch(d.sourceId, d.branchId, conn.target === STOP_ID ? null : conn.target);
                 }}
                 nodeTypes={nodeTypes}
                 onEdgeClick={(_, edge) => {
@@ -537,16 +867,21 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                     if (d?.sourceId && d?.branchId) openCondition(d.sourceId, d.branchId);
                 }}
                 onNodeClick={(_, node) => {
-                    if (node.id !== STOP_ID) openEditStep(node.id);
+                    if (node.type === "ifcond") {
+                        const m = ifMetaRef.current[node.id];
+                        if (m) openCondition(m.sourceId, m.branchId);
+                    } else if (node.id !== STOP_ID) {
+                        openEditStep(node.id);
+                    }
                 }}
                 fitView
                 proOptions={{ hideAttribution: true }}
             >
-                <Background color="#e2e8f0" gap={18} />
+                <Background color="#e9eef5" gap={24} size={1} />
                 <Controls showInteractive={false} />
 
                 <Panel position="top-left">
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex max-w-[calc(100vw-1.5rem)] flex-wrap items-center gap-1.5">
                         <button
                             type="button"
                             onClick={addStep}
@@ -558,7 +893,7 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                         </button>
                         <button
                             type="button"
-                            onClick={() => setNodes((ns) => layoutGraph(ns, edges))}
+                            onClick={() => setNodes((ns) => stackComponents(layoutGraph(ns, edges), edges))}
                             className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 text-[12px] font-medium text-slate-700 shadow-sm transition-colors hover:border-slate-300 hover:text-slate-900"
                         >
                             Tidy up
@@ -579,13 +914,9 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
 
                 <Panel position="bottom-center">
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md bg-white/95 px-3 py-1.5 text-[11px] text-slate-500 shadow-sm">
-                        <span className="inline-flex items-center gap-1">
-                            <span className="inline-block h-0 w-4 border-t-2 border-sky-500" /> condition
+                        <span className="text-slate-400">
+                            step: bottom dot = go there, right (amber) dot = add an “if” · IF block: right dot = then, bottom (gray) dot = else / just go there · no match = stop
                         </span>
-                        <span className="inline-flex items-center gap-1">
-                            <span className="inline-block h-0 w-4 border-t-2 border-slate-400" /> just go there
-                        </span>
-                        <span className="text-slate-400">drag a step's dot to connect · no match = stop</span>
                     </div>
                 </Panel>
             </ReactFlow>
@@ -615,12 +946,7 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                         setSelectedEdge(null);
                     }}
                     onDelete={() => {
-                        saveBranches(
-                            selected.source.id,
-                            (selected.source.conditions?.branches ?? []).filter(
-                                (b) => b.branch_id !== selected.branch.branch_id,
-                            ),
-                        );
+                        deleteBranch(selected.source.id, selected.branch.branch_id);
                         setSelectedEdge(null);
                     }}
                 />
@@ -702,7 +1028,7 @@ function WaitRow({ value, onCommit }: { value: number; onCommit: (v: number) => 
     );
 }
 
-// ── Connection editor (optional condition + wait behind an arrow) ───────────
+// ── Connection editor (optional condition + wait behind a connection) ───────
 function ConnectionEditor({
     source,
     branch,
@@ -719,7 +1045,7 @@ function ConnectionEditor({
     source: Sequence;
     branch: SequenceBranch;
     steps: Sequence[];
-    order: number; // index among the step's conditional branches, -1 if unconditional
+    order: number;
     condCount: number;
     onMove: (dir: -1 | 1) => void;
     waitDays: number;
@@ -729,7 +1055,6 @@ function ConnectionEditor({
     onDelete: () => void;
 }) {
     const c0 = branch.conditions?.[0];
-    // "always" = no condition (just go there). Otherwise an engagement field.
     const [field, setField] = React.useState<string>(c0 ? c0.field : "always");
     const [value, setValue] = React.useState<number>(c0?.value ?? (c0?.field === "random" ? 50 : 3));
 
@@ -750,7 +1075,7 @@ function ConnectionEditor({
         onSave({ branch_id: branch.branch_id, target_sequence_id, conditions: buildConditions() });
 
     return (
-        <div className="absolute right-3 top-3 z-20 w-[300px] rounded-md border border-slate-200 bg-white p-3 shadow-[0_12px_32px_-8px_rgba(15,23,42,0.18)]">
+        <div className="absolute right-3 top-3 z-20 w-[300px] max-w-[calc(100vw-1.5rem)] rounded-md border border-slate-200 bg-white p-3 shadow-[0_12px_32px_-8px_rgba(15,23,42,0.18)]">
             <div className="mb-2 flex items-center justify-between">
                 <span className="truncate text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">
                     From “{stepName(source)}”
@@ -766,13 +1091,12 @@ function ConnectionEditor({
 
             {order >= 0 && condCount > 1 && (
                 <div className="mb-2 flex items-center justify-between rounded-md bg-slate-50 px-2 py-1 text-[11px] text-slate-500">
-                    <span>When several conditions match, this is checked {order + 1} of {condCount}</span>
+                    <span>When several match, this is checked {order + 1} of {condCount}</span>
                     <span className="flex items-center gap-0.5">
                         <button
                             type="button"
                             onClick={() => onMove(-1)}
                             disabled={order === 0}
-                            title="Check this earlier"
                             className="inline-flex size-5 items-center justify-center rounded text-slate-400 hover:bg-white hover:text-slate-700 disabled:opacity-30"
                         >
                             <ChevronUpIcon className="w-3.5 h-3.5" />
@@ -781,7 +1105,6 @@ function ConnectionEditor({
                             type="button"
                             onClick={() => onMove(1)}
                             disabled={order === condCount - 1}
-                            title="Check this later"
                             className="inline-flex size-5 items-center justify-center rounded text-slate-400 hover:bg-white hover:text-slate-700 disabled:opacity-30"
                         >
                             <ChevronDownIcon className="w-3.5 h-3.5" />
@@ -791,7 +1114,7 @@ function ConnectionEditor({
             )}
 
             <div className="space-y-2 text-[12px] text-slate-600">
-                <div className="flex items-center gap-1.5">
+                <div className="flex flex-wrap items-center gap-1.5">
                     <span>then go to</span>
                     <span className="font-medium text-slate-800">{targetLabel}</span>
                     {branch.target_sequence_id !== null && (
@@ -848,7 +1171,6 @@ function ConnectionEditor({
                 )}
 
                 {branch.target_sequence_id !== null && <WaitRow value={waitDays} onCommit={onSetWait} />}
-                <p className="text-[10.5px] text-slate-400">Drag the arrow’s end onto another step to change where it goes.</p>
             </div>
 
             <div className="mt-3 flex items-center gap-2">

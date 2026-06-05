@@ -317,6 +317,17 @@ svg.loading circle {
 .tiptap-body strong { font-weight: 600; }
 .tiptap-body:focus { outline: none; }
 
+/* Campaign flow canvas — smoothly glide nodes when the layout recomputes
+   (adding/deleting a step, "Tidy up"). The transition is killed while dragging
+   so node drag stays 1:1 with the cursor. Scoped to .campaign-flow so other
+   React Flow surfaces are unaffected. */
+.campaign-flow .react-flow__node {
+  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.campaign-flow.rf-dragging .react-flow__node {
+  transition: none;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
