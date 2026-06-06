@@ -3,11 +3,11 @@
  * Pixel-faithful mock of the Warmbly /app/emails screen.
  *
  * Maps 1:1 to the real shell:
- *   - web/src/components/layout/AppShell.tsx — the outer frame
- *   - web/src/components/layout/SkyChrome.tsx — the off-white #f5f6f8 chrome
- *   - web/src/components/layout/AppHeader.tsx — top breadcrumb bar (h-14)
- *   - web/src/components/layout/AppNav.tsx — the w-64 sidebar (LivePanel + sections)
- *   - web/src/app/app/emails/page.tsx — the content panel (PageTopbar/StatStrip/SectionBar/table)
+ *   - web/src/components/layout/AppShell.tsx - the outer frame
+ *   - web/src/components/layout/SkyChrome.tsx - the off-white #f5f6f8 chrome
+ *   - web/src/components/layout/AppHeader.tsx - top breadcrumb bar (h-14)
+ *   - web/src/components/layout/AppNav.tsx - the w-64 sidebar (LivePanel + sections)
+ *   - web/src/app/app/emails/page.tsx - the content panel (PageTopbar/StatStrip/SectionBar/table)
  *
  * The white content panel meets the bottom + right edges of the frame
  * and has only its inner top-left corner rounded (rounded-tl-2xl) plus
@@ -56,7 +56,7 @@ const sidebarSections: { label: string; items: { title: string; active?: boolean
   ]},
 ];
 ---
-<!-- Outer SkyChrome — #f5f6f8 base + cloud blurs -->
+<!-- Outer SkyChrome - #f5f6f8 base + cloud blurs -->
 <div class="relative overflow-hidden text-slate-900" style="background:#f5f6f8;">
   <!-- cloud blurs (subtle, ambient) -->
   <span aria-hidden="true" class="absolute pointer-events-none" style="top:-80px; left:-60px; width:520px; height:240px; background:rgba(255,255,255,0.95); border-radius:50% 50% 18% 18%; filter:blur(60px); opacity:0.7;"></span>
@@ -65,7 +65,7 @@ const sidebarSections: { label: string; items: { title: string; active?: boolean
 
   <!-- ── AppHeader (h-14, sits over SkyChrome) ── -->
   <div class="relative z-10 h-14 flex items-center shrink-0">
-    <!-- Logo zone — sidebar-width -->
+    <!-- Logo zone - sidebar-width -->
     <div class="w-64 px-5 h-full flex items-center gap-2.5 shrink-0">
       <svg viewBox="0 0 746 764" class="w-7 h-7 text-slate-900" fill="currentColor"><path d="M222.805 644.772L186.274 108.881L704.5 451.158L484.5 451.158L245.5 196.158L444 463.5L222.805 644.772Z"/></svg>
       <span class="font-extrabold text-[15.5px] tracking-tight text-slate-900">Warmbly</span>
@@ -183,7 +183,7 @@ const sidebarSections: { label: string; items: { title: string; active?: boolean
       </div>
     </aside>
 
-    <!-- Content panel — white with rounded inner top-left corner -->
+    <!-- Content panel - white with rounded inner top-left corner -->
     <main class="flex-1 min-w-0 rounded-tl-2xl bg-white overflow-hidden border-t border-l border-slate-200/70">
       <!-- PageTopbar -->
       <div class="h-12 px-5 border-b border-slate-200 flex items-center gap-3 shrink-0 bg-white">
