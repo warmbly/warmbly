@@ -327,15 +327,15 @@ const railToneClass = (tone: string, active: boolean) => {
 
       <!-- reply rail footer -->
       <div class="border-t border-slate-200 bg-white px-3 py-2 flex items-center gap-1.5 shrink-0">
-        <span class="ub-reply-btn h-7 px-2.5 rounded-md bg-sky-600 text-white text-[12px] font-medium inline-flex items-center gap-1.5">
+        <span class="ub-reply-btn h-7 px-2.5 rounded-md bg-sky-600 text-white text-[12px] font-medium inline-flex items-center gap-1.5 whitespace-nowrap shrink-0">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>
           Reply
         </span>
-        <span class="h-7 px-2 rounded-md border border-slate-200 text-slate-700 text-[12px] inline-flex items-center gap-1.5">
+        <span class="h-7 px-2 rounded-md border border-slate-200 text-slate-700 text-[12px] inline-flex items-center gap-1.5 whitespace-nowrap shrink-0">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/></svg>
           Forward
         </span>
-        <span class="ml-auto inline text-[10.5px] text-slate-400">Hover any message to reply to it directly.</span>
+        <span class="ml-auto min-w-0 truncate text-[10.5px] text-slate-400">Hover any message to reply to it directly.</span>
       </div>
     </div>
   </div>
@@ -373,11 +373,11 @@ const railToneClass = (tone: string, active: boolean) => {
         <div class="flex-1 min-w-0 flex flex-wrap items-center gap-1.5">
           <div class="inline-flex items-center gap-2 min-w-0">
             <span class="text-[12.5px] text-slate-900 font-medium truncate">Company</span>
-            <span class="font-mono text-[10.5px] text-slate-500 bg-slate-50 px-1.5 h-4 inline-flex items-center rounded border border-slate-200 shrink-0">hello@company.com</span>
+            <span class="font-mono text-[10.5px] text-slate-500 bg-slate-50 px-1.5 h-4 inline-flex items-center rounded border border-slate-200 shrink-0 whitespace-nowrap">hello@company.com</span>
           </div>
-          <div class="ml-auto flex items-center gap-1">
-            <span class="h-5 px-1.5 rounded text-[10.5px] text-slate-500 inline-flex items-center">+ Cc</span>
-            <span class="h-5 px-1.5 rounded text-[10.5px] text-slate-500 inline-flex items-center">+ Bcc</span>
+          <div class="ml-auto flex items-center gap-1 shrink-0">
+            <span class="h-5 px-1.5 rounded text-[10.5px] text-slate-500 inline-flex items-center whitespace-nowrap shrink-0">+ Cc</span>
+            <span class="h-5 px-1.5 rounded text-[10.5px] text-slate-500 inline-flex items-center whitespace-nowrap shrink-0">+ Bcc</span>
           </div>
         </div>
       </div>
@@ -385,7 +385,7 @@ const railToneClass = (tone: string, active: boolean) => {
         <span class="w-14 shrink-0 pt-[3px] text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">To</span>
         <span class="self-stretch w-px bg-slate-200 shrink-0"></span>
         <div class="flex-1 min-w-0 flex flex-wrap items-center gap-1.5">
-          <span class="inline-flex items-center gap-1 h-5 pl-1.5 pr-0.5 rounded-md text-[11px] font-medium shrink-0 border bg-sky-50 text-sky-800 border-sky-200">
+          <span class="inline-flex items-center gap-1 h-5 pl-1.5 pr-0.5 rounded-md text-[11px] font-medium shrink-0 whitespace-nowrap border bg-sky-50 text-sky-800 border-sky-200">
             <span class="font-mono">sarah@acme.io</span>
             <span class="size-4 inline-flex items-center justify-center rounded">
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
@@ -420,27 +420,23 @@ const railToneClass = (tone: string, active: boolean) => {
       <div class="px-3 py-2 font-sans text-[11.5px] text-slate-700 leading-relaxed">Best,<br />The Company Team</div>
     </div>
 
-    <!-- action bar -->
-    <div class="px-3 py-2 border-t border-slate-200/60 flex flex-wrap items-center gap-1.5">
+    <!-- action bar : single row, no wrap at the 320px composer width -->
+    <div class="px-3 py-2 border-t border-slate-200/60 flex flex-nowrap items-center gap-1.5">
       <span class="h-7 px-2.5 rounded-md bg-sky-600 text-white text-[12px] font-medium inline-flex items-center gap-1.5 whitespace-nowrap shrink-0">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/><path d="m21.854 2.147-10.94 10.939"/></svg>
         Send
       </span>
-      <span class="h-7 px-2 rounded-md border border-slate-200 text-slate-700 text-[12px] inline-flex items-center gap-1">
+      <span class="h-7 px-2 rounded-md border border-slate-200 text-slate-700 text-[12px] inline-flex items-center gap-1 whitespace-nowrap shrink-0">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
         Schedule
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-slate-400" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
       </span>
-      <span class="h-7 px-2 rounded-md border border-slate-200 text-slate-700 text-[12px] inline-flex items-center gap-1">
+      <span class="h-7 px-2 rounded-md border border-slate-200 text-slate-700 text-[12px] inline-flex items-center gap-1 whitespace-nowrap shrink-0">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
         Template
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-slate-400" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
       </span>
-      <span class="ml-auto inline-flex items-center gap-1 h-5 px-1.5 rounded text-[10px] font-medium bg-emerald-50 text-emerald-700">
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.376 3.622a1 1 0 0 1 3.002 3.002L7.368 18.635a2 2 0 0 1-.855.506l-2.872.838a.5.5 0 0 1-.62-.62l.838-2.872a2 2 0 0 1 .506-.854z"/></svg>
-        Signature on
-      </span>
-      <span class="font-mono text-[10px] text-slate-400 tabular-nums">0 / 4000</span>
+      <span class="ml-auto font-mono text-[10px] text-slate-400 tabular-nums shrink-0">0 / 4000</span>
     </div>
   </div>
 
