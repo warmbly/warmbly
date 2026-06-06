@@ -188,27 +188,27 @@ const stats = [
       <!-- pipeline picker (PipelinePicker) -->
       <button
         type="button"
-        class="h-7 px-2.5 rounded-md border border-slate-200 text-[12px] text-slate-700 inline-flex items-center gap-1.5"
+        class="h-7 px-2.5 rounded-md border border-slate-200 text-[12px] text-slate-700 inline-flex items-center gap-1.5 whitespace-nowrap shrink-0"
       >
         Sales pipeline
         <span class="text-slate-400">▾</span>
       </button>
       <!-- total-value pill -->
       <span
-        class="h-7 px-2.5 rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700 text-[12px] font-mono tabular-nums inline-flex items-center gap-1.5"
+        class="h-7 px-2.5 rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700 text-[12px] font-mono tabular-nums inline-flex items-center gap-1.5 whitespace-nowrap shrink-0"
       >
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 18V6"/></svg>
         {money(totalValue)}
       </span>
       <!-- search pill (SearchPill) -->
-      <div class="h-7 px-2 rounded-md border border-slate-200 bg-white flex items-center gap-1.5">
+      <div class="h-7 px-2 rounded-md border border-slate-200 bg-white flex items-center gap-1.5 whitespace-nowrap shrink-0">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-slate-400" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
         <span class="w-[120px] text-[12px] text-slate-400">Search deals…</span>
       </div>
-      <!-- primary action (TopbarAction, sky-600) -->
+      <!-- primary action (TopbarAction, sky-600); cr-target shows the press feedback -->
       <button
         type="button"
-        class="h-7 px-2.5 rounded-md inline-flex items-center gap-1.5 text-[12px] font-medium bg-sky-600 text-white"
+        class="cr-target h-7 px-2.5 rounded-md inline-flex items-center gap-1.5 text-[12px] font-medium bg-sky-600 text-white whitespace-nowrap shrink-0"
       >
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         Add deal
@@ -381,10 +381,16 @@ const stats = [
     .cr-ripple{position:absolute;left:-6px;top:-6px;width:32px;height:32px;border-radius:9999px;background:rgba(2,132,199,.5);transform:scale(0);opacity:0;animation:cr-rip 11s ease-out infinite;}
     .cr-react{position:absolute;z-index:40;opacity:0;animation:cr-react 11s ease-out infinite;}
     .cr-toast{position:absolute;z-index:45;opacity:0;animation:cr-react 11s ease-out infinite;}
-    @keyframes cr-move{0%{left:46%;top:62%}22%{left:84%;top:7%}32%{left:84%;top:7%}58%{left:11%;top:46%}68%{left:11%;top:46%}88%{left:46%;top:62%}100%{left:46%;top:62%}}
+    /* Press #1 (28%) lands on the "Add deal" button center (834.5px,24px on the
+       900x~522 mock => 92.4%,4.2% after the 3px/2px cursor hotspot). Press #2
+       (64%) lands on the new Beacon Labs card, which PERSISTS (shown 33%->88%). */
+    @keyframes cr-move{0%{left:46%;top:62%}22%{left:92.4%;top:4.2%}32%{left:92.4%;top:4.2%}58%{left:20%;top:43%}68%{left:20%;top:43%}88%{left:46%;top:62%}100%{left:46%;top:62%}}
     @keyframes cr-press{0%,26%{transform:scale(1)}28%{transform:scale(.82)}31%,62%{transform:scale(1)}64%{transform:scale(.82)}67%,100%{transform:scale(1)}}
     @keyframes cr-rip{0%,26%{transform:scale(0);opacity:0}29%{transform:scale(.25);opacity:.7}41%{transform:scale(1.9);opacity:0}60%{transform:scale(0);opacity:0}63%{transform:scale(.25);opacity:.7}75%{transform:scale(1.9);opacity:0}100%{transform:scale(0);opacity:0}}
     @keyframes cr-react{0%,29%{opacity:0;transform:scale(.92) translateY(-6px)}33%{opacity:1;transform:scale(1) translateY(0)}88%{opacity:1;transform:scale(1) translateY(0)}95%{opacity:0;transform:scale(.92) translateY(-6px)}100%{opacity:0;transform:scale(.92) translateY(-6px)}}
+    /* target press-feedback: the "Add deal" button dips at press #1 (28%) */
+    .cr-target{animation:cr-target 11s ease-in-out infinite;}
+    @keyframes cr-target{0%,26%{transform:scale(1);background-color:#0284c7}28%{transform:scale(.96);background-color:#0369a1}31%,100%{transform:scale(1);background-color:#0284c7}}
     @media (prefers-reduced-motion: reduce){.cr-cursor{display:none}.cr-react{display:none}.cr-toast{display:none}}
   </style>
 </div>
