@@ -1,0 +1,178 @@
+---
+import Icon from './Icon.astro';
+
+/**
+ * ChangelogShowcase - a landing-page CHANGELOG section.
+ *
+ * A clean vertical timeline of the latest releases. Content is grounded in the
+ * real entries on /changelog/ (versions, dates, change bullets) so the section
+ * never drifts from the actual product history. Self-contained, no props, no
+ * client JS, no app-window frame - this is a content section, not a mock.
+ *
+ * Category chips map the changelog tag vocabulary to a reader-friendly set:
+ *   shipped -> New      (sky)
+ *   changed -> Improved (emerald)
+ *   fixed   -> Fixed    (amber)
+ */
+
+interface Release {
+  version: string;
+  date: string;
+  category: 'New' | 'Improved' | 'Fixed';
+  title: string;
+  bullets: string[];
+}
+
+// Latest four releases, taken from /changelog/ and split into 2-3 bullet lines.
+const releases: Release[] = [
+  {
+    version: 'v1.9',
+    date: '2026-05-26',
+    category: 'New',
+    title: 'BYOK envelope encryption for self-host',
+    bullets: [
+      'Register your own AWS KMS key as the root of trust for the per-user DEK envelope.',
+      'Existing encrypted material is re-wrapped on first key activation.',
+      'Plaintext DEKs stay only in the Redis cache with a bounded TTL.',
+    ],
+  },
+  {
+    version: 'v1.8',
+    date: '2026-05-22',
+    category: 'New',
+    title: 'SAML SSO for Business plans',
+    bullets: [
+      'Connect Okta, Azure AD, or any SAML 2.0 identity provider.',
+      'Just-in-time provisioning is on by default.',
+      'Admins can pin a default role for new sign-ins.',
+    ],
+  },
+  {
+    version: 'v1.7',
+    date: '2026-05-20',
+    category: 'New',
+    title: 'API keys dashboard',
+    bullets: [
+      'Per-key scopes, last-used timestamps, and one-click rotation.',
+      'Existing keys auto-migrated to full-access scope.',
+    ],
+  },
+  {
+    version: 'v1.6',
+    date: '2026-05-15',
+    category: 'Improved',
+    title: 'Per-mailbox health bands',
+    bullets: [
+      'Mailboxes surface a health band: healthy, watch, quarantined, or blocked.',
+      'Bands are driven by rolling placement, complaint, and bounce signals.',
+      'Pool selection now skips anything not healthy.',
+    ],
+  },
+];
+
+const categoryStyle = (c: Release['category']) => {
+  if (c === 'New') {
+    return { chip: 'bg-sky-50 text-sky-700 ring-sky-100', dot: 'bg-sky-500', rail: 'bg-sky-500' };
+  }
+  if (c === 'Improved') {
+    return { chip: 'bg-emerald-50 text-emerald-700 ring-emerald-100', dot: 'bg-emerald-500', rail: 'bg-emerald-500' };
+  }
+  return { chip: 'bg-amber-50 text-amber-700 ring-amber-100', dot: 'bg-amber-500', rail: 'bg-amber-500' };
+};
+---
+<section class="bg-[color:var(--surface-2)] border-y border-[color:var(--border)] py-20 md:py-28">
+  <div class="container-page">
+    <!-- Header: eyebrow + heading + subcopy -->
+    <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-6 mb-12 md:mb-16">
+      <div class="max-w-2xl">
+        <div class="flex items-center gap-2.5 mb-4">
+          <span class="text-[11px] uppercase tracking-[0.18em] text-[color:var(--brand-strong)] font-mono">
+            Changelog
+          </span>
+          <span class="w-1 h-1 rounded-full bg-[color:var(--border-strong)]"></span>
+          <span class="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.14em] text-muted-foreground font-mono">
+            <span class="relative inline-flex">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+              <span class="absolute inset-0 rounded-full bg-emerald-500/40 animate-pulse-soft"></span>
+            </span>
+            Shipping continuously
+          </span>
+        </div>
+        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.08] text-heading">
+          The latest from Warmbly.
+        </h2>
+        <p class="mt-4 text-[15.5px] md:text-[16.5px] text-foreground/75 leading-relaxed">
+          New features, behavioural changes, and fixes, in the order they reached production. Every entry is dated, tagged, and traceable to a commit.
+        </p>
+      </div>
+
+      <a
+        href="/changelog/"
+        class="group shrink-0 inline-flex items-center gap-1.5 h-9 px-4 rounded-[10px] text-[12.5px] font-medium bg-white ring-1 ring-[color:var(--border)] text-foreground/80 hover:text-heading hover:ring-[color:var(--brand)]/40 hover:-translate-y-0.5 transition-all"
+      >
+        View full changelog
+        <Icon name="arrowUpRight" size={13} class="text-muted-foreground group-hover:text-[color:var(--brand-strong)] transition-colors" />
+      </a>
+    </div>
+
+    <!-- Vertical timeline of releases -->
+    <ol class="relative">
+      <!-- continuous rail -->
+      <span aria-hidden="true" class="absolute left-[7px] top-2 bottom-2 w-px bg-[color:var(--border)] hidden sm:block"></span>
+
+      {releases.map((r) => {
+        const s = categoryStyle(r.category);
+        return (
+          <li class="relative sm:pl-10 mb-4 last:mb-0">
+            <!-- timeline node -->
+            <span aria-hidden="true" class="hidden sm:flex absolute left-0 top-6 w-[15px] h-[15px] items-center justify-center">
+              <span class="w-[15px] h-[15px] rounded-full bg-white ring-1 ring-[color:var(--border)] flex items-center justify-center">
+                <span class={`w-1.5 h-1.5 rounded-full ${s.dot}`}></span>
+              </span>
+            </span>
+
+            <article class="relative bg-white ring-1 ring-[color:var(--border)] rounded-[12px] p-5 md:p-6 hover:ring-[color:var(--brand)]/40 hover:shadow-[0_18px_36px_-22px_rgba(2,132,199,0.3)] transition-all overflow-hidden">
+              <!-- category accent rail -->
+              <span aria-hidden="true" class={`absolute left-0 top-0 bottom-0 w-[3px] ${s.rail}`}></span>
+
+              <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
+                <span class="text-[12.5px] font-mono font-semibold text-heading tabular-nums">
+                  {r.version}
+                </span>
+                <span class="text-[11.5px] font-mono uppercase tracking-[0.14em] text-muted-foreground tabular-nums">
+                  {r.date}
+                </span>
+                <span class={`ml-auto inline-flex items-center gap-1.5 h-5 px-2 rounded-full ring-1 text-[10px] font-semibold uppercase tracking-[0.1em] ${s.chip}`}>
+                  <span class={`w-1 h-1 rounded-full ${s.dot}`}></span>
+                  {r.category}
+                </span>
+              </div>
+
+              <h3 class="mt-3 text-[16px] md:text-[17px] font-semibold text-heading tracking-[-0.015em] leading-[1.25]">
+                {r.title}
+              </h3>
+
+              <ul class="mt-3 space-y-1.5">
+                {r.bullets.map((b) => (
+                  <li class="flex gap-2.5 text-[12.5px] text-foreground/70 leading-relaxed">
+                    <span class={`mt-[7px] w-1 h-1 rounded-full shrink-0 ${s.dot}`}></span>
+                    <span>{b}</span>
+                  </li>
+                ))}
+              </ul>
+            </article>
+          </li>
+        );
+      })}
+    </ol>
+
+    <!-- footer link -->
+    <div class="mt-10 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11.5px] font-mono text-muted-foreground sm:pl-10">
+      <span>Older releases and the full history</span>
+      <span class="w-1 h-1 rounded-full bg-[color:var(--border-strong)]"></span>
+      <a href="/changelog/" class="text-[color:var(--brand-strong)] hover:text-[color:var(--brand)] transition-colors">
+        Read the full changelog
+      </a>
+    </div>
+  </div>
+</section>

@@ -1,0 +1,464 @@
+---
+/**
+ * Pixel-faithful mock of the Warmbly /app/unibox screen (unified inbox).
+ *
+ * Maps 1:1 to the real components:
+ *   - web/src/app/app/unibox/page.tsx          - three-pane layout
+ *   - web/src/components/app/unibox/UniboxHeader.tsx     - top metric strip (h-10)
+ *   - web/src/components/app/unibox/ScopeRail.tsx        - left scope rail (w-220)
+ *   - web/src/components/app/unibox/ConversationList.tsx - middle list (w-360)
+ *   - web/src/components/app/unibox/ConversationItem.tsx - list rows
+ *   - web/src/components/app/unibox/ThreadView.tsx       - right thread pane
+ *   - web/src/components/app/unibox/MessageBubble.tsx    - per-message article
+ *
+ * Renders only the in-app screen content. The marketing page wraps this
+ * in its own browser frame, so there is no sidebar / app header / window
+ * chrome here. The content overflows the frame on purpose; the parent
+ * crops with overflow-hidden, so the load-bearing content sits top-left.
+ */
+
+// ── Top metric strip ───────────────────────────────────────────────
+const stats = [
+  { value: '7',  label: 'unread',    tone: 'accent' as const },
+  { value: '3',  label: 'awaiting',  tone: 'default' as const },
+  { value: '24', label: 'today',     tone: 'default' as const },
+  { value: '89', label: 'week',      tone: 'default' as const },
+  { value: '2',  label: 'snoozed',   tone: 'muted' as const },
+  { value: '3',  label: 'mailboxes', tone: 'muted' as const },
+];
+
+// ── Scope rail (left) ──────────────────────────────────────────────
+const inboxScopes = [
+  { icon: 'inbox',    label: 'All',           count: '342', active: false, tone: 'muted'  },
+  { icon: 'sparkle',  label: 'Unread',        count: '7',   active: true,  tone: 'accent' },
+  { icon: 'clock',    label: 'Today',         count: '24',  active: false, tone: 'muted'  },
+  { icon: 'calendar', label: 'This week',     count: '89',  active: false, tone: 'muted'  },
+  { icon: 'reply',    label: 'Awaiting reply', count: '3',  active: false, tone: 'accent' },
+  { icon: 'moon',     label: 'Snoozed',       count: '2',   active: false, tone: 'muted'  },
+  { icon: 'send',     label: 'Scheduled',     count: '1',   active: false, tone: 'accent' },
+];
+
+const mailboxScopes = [
+  { email: 'hello@company.com',   count: '2' },
+  { email: 'support@company.com', count: '5' },
+  { email: 'sales@company.com',   count: ''  },
+];
+
+const tagScopes = [
+  { color: '#ef4444', label: 'Urgent', count: '1'  },
+  { color: '#3b82f6', label: 'Leads',  count: '12' },
+];
+
+// ── Conversation list (middle) ─────────────────────────────────────
+const conversations = [
+  {
+    initials: 'SC', hue: 14, sender: 'Sarah Chen',
+    subject: 'Follow up on Q1 proposal',
+    preview: "Thanks for sending over the docs. I've reviewed them and have a few…",
+    time: '5m', unread: true, selected: true,
+    mailbox: 'hello@company.com',
+    tags: [{ color: '#ef4444', label: 'Urgent' }, { color: '#f59e0b', label: 'Clients' }],
+  },
+  {
+    initials: 'JS', hue: 210, sender: 'Jordan Smith',
+    subject: 'Re: Dashboard integration',
+    preview: 'The API endpoint looks good. When can we expect the staging build?',
+    time: '42m', unread: false, selected: false,
+    mailbox: 'support@company.com',
+    tags: [],
+  },
+  {
+    initials: 'AM', hue: 265, sender: 'Alex Morgan',
+    subject: 'New partnership opportunity',
+    preview: "Hi there, I'm reaching out about a potential partnership between…",
+    time: '3h', unread: false, selected: false, muted: true,
+    mailbox: 'sales@company.com',
+    tags: [{ color: '#3b82f6', label: 'Leads' }],
+  },
+  {
+    initials: 'CR', hue: 150, sender: 'Casey Reynolds',
+    subject: '(no subject)',
+    preview: '(no preview)',
+    time: 'Jan 15', unread: false, selected: false, muted: true,
+    mailbox: 'hello@company.com',
+    tags: [],
+  },
+];
+
+// ── Thread (right) ─────────────────────────────────────────────────
+const messages = [
+  {
+    initials: 'SC', name: 'Sarah Chen', addr: 'sarah@acme.io',
+    to: 'hello@company.com', time: 'Jan 18, 10:32', you: false,
+    body: "Thanks for sending over the docs. I've reviewed them and have a few questions. Can we sync up tomorrow morning?",
+  },
+  {
+    initials: 'YO', name: 'You', addr: 'hello@company.com',
+    to: 'sarah@acme.io', time: '14:15', you: true,
+    body: 'Absolutely! How does 10am EST work for you?',
+  },
+  {
+    initials: 'SC', name: 'Sarah Chen', addr: 'sarah@acme.io',
+    to: 'hello@company.com', time: '14:28', you: false,
+    body: 'Perfect. See you then!',
+  },
+];
+
+const railToneClass = (tone: string, active: boolean) => {
+  if (active) return 'bg-white/80 text-sky-700';
+  if (tone === 'accent') return 'bg-sky-100 text-sky-700';
+  return 'text-slate-400';
+};
+---
+<div class="relative w-full flex flex-col bg-white text-slate-900" style="min-height:500px;">
+  <!-- ─────────────────────────────────────────────────────────────
+       1) TOP STRIP - UniboxHeader (h-10)
+  ────────────────────────────────────────────────────────────── -->
+  <header class="h-10 px-4 border-b border-slate-200 bg-white flex items-center gap-3 shrink-0">
+    <span class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-semibold shrink-0">Inbox</span>
+    <div class="h-4 w-px bg-slate-200 shrink-0"></div>
+    <div class="flex items-center gap-3.5 min-w-0">
+      {stats.map((s) => (
+        <div class="inline-flex items-baseline gap-1 shrink-0">
+          <span class={`font-mono tabular-nums text-[12.5px] font-semibold ${s.tone === 'accent' ? 'text-sky-600' : s.tone === 'muted' ? 'text-slate-400' : 'text-slate-900'}`}>{s.value}</span>
+          <span class="text-[10.5px] text-slate-500">{s.label}</span>
+        </div>
+      ))}
+    </div>
+    <div class="ml-auto inline-flex items-center gap-1.5 text-[11px] text-emerald-600 font-medium shrink-0">
+      <span class="relative flex size-1.5">
+        <span class="absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-60 animate-ping"></span>
+        <span class="relative inline-flex size-1.5 rounded-full bg-emerald-500"></span>
+      </span>
+      live
+    </div>
+  </header>
+
+  <!-- ─────────────────────────────────────────────────────────────
+       2) MAIN ROW - rail · list · thread
+  ────────────────────────────────────────────────────────────── -->
+  <div class="flex-1 flex min-h-0">
+
+    <!-- a) LEFT SCOPE RAIL (w-220, hidden on narrower viewports) -->
+    <nav class="flex flex-col w-[220px] shrink-0 border-r border-slate-200 bg-slate-50/60 overflow-y-auto py-2">
+      <!-- Inbox section -->
+      <div class="mb-1">
+        <div class="px-3 pt-3 pb-1 flex items-center gap-2">
+          <span class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-semibold">Inbox</span>
+        </div>
+        <div class="px-1.5 space-y-px">
+          {inboxScopes.map((it) => (
+            <div class={`w-full h-7 pl-2 pr-2 rounded-md flex items-center gap-2 text-left ${it.active ? 'bg-sky-100 text-sky-900 font-medium' : 'text-slate-600'}`}>
+              <span class={`shrink-0 ${it.active ? 'text-sky-700' : 'text-slate-500'}`}>
+                {it.icon === 'inbox'    && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>}
+                {it.icon === 'sparkle'  && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .962 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.962 0z"/></svg>}
+                {it.icon === 'clock'    && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>}
+                {it.icon === 'calendar' && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="M17 14h-6"/><path d="M13 18H7"/><path d="M7 14h.01"/><path d="M17 18h.01"/></svg>}
+                {it.icon === 'reply'    && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>}
+                {it.icon === 'moon'     && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>}
+                {it.icon === 'send'     && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/><path d="m21.854 2.147-10.94 10.939"/></svg>}
+              </span>
+              <span class="truncate min-w-0 flex-1 text-[12px]">{it.label}</span>
+              {it.count && (
+                <span class={`shrink-0 font-mono tabular-nums text-[10.5px] px-1.5 h-4 rounded inline-flex items-center ${railToneClass(it.tone, it.active)}`}>{it.count}</span>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <!-- Mailboxes section -->
+      <div class="mb-1">
+        <div class="w-full px-3 pt-3 pb-1 flex items-center gap-1.5">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-slate-400" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          <span class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-semibold">Mailboxes</span>
+          <span class="ml-auto font-mono text-[10px] text-slate-400 tabular-nums">3</span>
+        </div>
+        <div class="px-1.5">
+          <div class="space-y-px">
+            {mailboxScopes.map((m) => (
+              <div class="w-full h-7 pl-2 pr-2 rounded-md flex items-center gap-2 text-left text-slate-600">
+                <span class="shrink-0 text-slate-500">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 17a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9.5C2 7 4 5 6.5 5H18c2.2 0 4 1.8 4 4z"/><polyline points="15,9 18,9 18,11"/><path d="M6.5 5C9 5 11 7 11 9.5V17a2 2 0 0 1-2 2"/><line x1="6" x2="7" y1="10" y2="10"/></svg>
+                </span>
+                <span class="truncate min-w-0 flex-1 font-mono text-[11.5px]">{m.email}</span>
+                {m.count && (
+                  <span class={`shrink-0 font-mono tabular-nums text-[10.5px] px-1.5 h-4 rounded inline-flex items-center ${m.count !== '' ? 'bg-sky-100 text-sky-700' : 'text-slate-400'}`}>{m.count}</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <!-- Tags section -->
+      <div class="mb-1">
+        <div class="w-full px-3 pt-3 pb-1 flex items-center gap-1.5">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-slate-400" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          <span class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-semibold">Tags</span>
+          <span class="ml-auto font-mono text-[10px] text-slate-400 tabular-nums">2</span>
+        </div>
+        <div class="px-1.5">
+          <div class="space-y-px">
+            {tagScopes.map((t) => (
+              <div class="w-full h-7 pl-2 pr-2 rounded-md flex items-center gap-2 text-left text-slate-600">
+                <span class="shrink-0">
+                  <span class="block size-3 rounded-full ring-1 ring-black/10 shadow-sm" style={`background-color:${t.color};`}></span>
+                </span>
+                <span class="truncate min-w-0 flex-1 text-[12px]">{t.label}</span>
+                <span class="shrink-0 font-mono tabular-nums text-[10.5px] px-1.5 h-4 rounded inline-flex items-center bg-sky-100 text-sky-700">{t.count}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </nav>
+
+    <!-- b) MIDDLE LIST (w-360) -->
+    <div class="w-[360px] shrink-0 border-r border-slate-200 flex flex-col bg-white min-h-0">
+      <!-- search bar -->
+      <div class="h-9 px-2 shrink-0 border-b border-slate-200 flex items-center gap-1.5">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-slate-400 shrink-0" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        <span class="flex-1 min-w-0 text-[12.5px] text-slate-400">Search inbox… (/)</span>
+        <span class="size-7 rounded text-slate-500 inline-flex items-center justify-center shrink-0">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/></svg>
+        </span>
+      </div>
+
+      <!-- scrollable list -->
+      <div class="flex-1 overflow-y-auto">
+        <!-- sticky time-bucket header -->
+        <div class="sticky top-0 z-10 px-3 py-1 bg-slate-50/95 border-b border-slate-200/60 flex items-center gap-2">
+          <span class="text-[10px] uppercase tracking-[0.14em] text-slate-500 font-semibold">Today</span>
+          <span class="font-mono text-[10px] text-slate-400 tabular-nums">4</span>
+        </div>
+
+        <div class="divide-y divide-slate-200/60">
+          {conversations.map((c) => (
+            <div class={`group w-full text-left px-3 py-2.5 flex items-start gap-2.5 relative ${c.selected ? 'bg-sky-50/80' : ''}`}>
+              {c.unread && (
+                <span class="absolute left-0 top-2 bottom-2 w-[3px] rounded-r bg-sky-500"></span>
+              )}
+              <div
+                class="size-7 rounded-full flex items-center justify-center shrink-0 text-[10px] font-semibold"
+                style={c.selected
+                  ? 'background-color:rgb(224 242 254);color:rgb(2 132 199);'
+                  : `background-color:hsl(${c.hue} 70% 94%);color:hsl(${c.hue} 55% 35%);`}
+              >{c.initials}</div>
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-2 min-w-0">
+                  <span class={`text-[12.5px] truncate min-w-0 ${c.unread ? 'text-slate-900 font-semibold' : c.muted ? 'text-slate-500 font-medium' : 'text-slate-800 font-medium'}`}>{c.sender}</span>
+                  <span class="font-mono text-[10px] text-slate-400 tabular-nums shrink-0 ml-auto">{c.time}</span>
+                </div>
+                <div class={`text-[12px] truncate mt-0.5 ${c.unread ? 'text-slate-800 font-medium' : c.muted ? 'text-slate-500' : 'text-slate-600'}`}>{c.subject}</div>
+                <div class="text-[11px] text-slate-400 truncate mt-0.5">{c.preview}</div>
+                <div class="mt-1 flex items-center gap-1 min-w-0 flex-wrap">
+                  <span class="inline-flex items-center h-4 px-1.5 rounded-sm bg-slate-100 text-slate-500 text-[9.5px] font-mono truncate max-w-[160px]">{c.mailbox}</span>
+                  {c.tags.map((t) => (
+                    <span
+                      class="inline-flex items-center gap-1 h-4 pl-1 pr-1.5 rounded-sm border bg-white text-[10px] font-medium text-slate-700 truncate max-w-[120px]"
+                      style={`border-color:${t.color}60;background-color:${t.color}12;`}
+                    >
+                      <span class="block size-2 rounded-full shrink-0" style={`background-color:${t.color};`}></span>
+                      {t.label}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+
+    <!-- c) RIGHT THREAD PANE -->
+    <div class="flex-1 min-w-0 flex flex-col bg-white min-h-0">
+      <!-- thread header (h-12) -->
+      <div class="h-12 px-5 border-b border-slate-200 flex items-center gap-3 shrink-0 bg-white">
+        <span class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">Thread</span>
+        <div class="h-4 w-px bg-slate-200"></div>
+        <span class="text-[12.5px] text-slate-900 font-medium truncate min-w-0">Follow up on Q1 proposal</span>
+        <span class="ml-1 inline-flex items-center gap-1 h-5 px-1.5 rounded bg-slate-100 text-slate-600 text-[10.5px] font-medium font-mono shrink-0">hello@company.com</span>
+        <div class="ml-auto flex items-center gap-1">
+          <span class="h-7 px-2 rounded-md text-slate-500 border border-slate-200 inline-flex items-center gap-1 text-[12px]">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+            Snooze
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-slate-400" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </span>
+          <span class="size-7 rounded-md inline-flex items-center justify-center text-slate-500">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m22 7-8.991 5.727a2 2 0 0 1-2.009 0L2 7"/><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m16 19 2 2 4-4"/></svg>
+          </span>
+          <span class="size-7 rounded-md inline-flex items-center justify-center text-slate-500">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>
+          </span>
+          <span class="size-7 rounded-md inline-flex items-center justify-center text-slate-500 hover:text-red-600 hover:bg-red-50">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
+          </span>
+        </div>
+      </div>
+
+      <!-- SectionBar -->
+      <div class="h-9 px-5 border-b border-slate-200/60 flex items-center gap-2.5 shrink-0">
+        <span class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">3 messages</span>
+        <span class="font-mono text-[10.5px] text-slate-400 tabular-nums">2</span>
+      </div>
+
+      <!-- messages -->
+      <div class="flex-1 overflow-y-auto divide-y divide-slate-200/60">
+        {messages.map((m) => (
+          <article class="px-5 py-4">
+            <header class="flex items-start gap-3 mb-3">
+              <div class={`size-7 rounded-full flex items-center justify-center text-[10px] font-semibold shrink-0 ${m.you ? 'bg-sky-100 text-sky-700' : 'bg-slate-100 text-slate-600'}`}>{m.initials}</div>
+              <div class="min-w-0 flex-1">
+                <div class="flex items-baseline gap-2">
+                  <span class="text-[12.5px] font-semibold text-slate-900 truncate">{m.name}</span>
+                  <span class="font-mono text-[10.5px] text-slate-400 truncate">{m.addr}</span>
+                </div>
+                <div class="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1.5">
+                  <span>to {m.to}</span>
+                </div>
+              </div>
+              <span class="font-mono text-[10.5px] text-slate-400 tabular-nums shrink-0">{m.time}</span>
+            </header>
+            <div class="text-[13px] text-slate-800 leading-relaxed">{m.body}</div>
+          </article>
+        ))}
+      </div>
+
+      <!-- reply rail footer -->
+      <div class="border-t border-slate-200 bg-white px-3 py-2 flex items-center gap-1.5 shrink-0">
+        <span class="ub-reply-btn h-7 px-2.5 rounded-md bg-sky-600 text-white text-[12px] font-medium inline-flex items-center gap-1.5 whitespace-nowrap shrink-0">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>
+          Reply
+        </span>
+        <span class="h-7 px-2 rounded-md border border-slate-200 text-slate-700 text-[12px] inline-flex items-center gap-1.5 whitespace-nowrap shrink-0">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/></svg>
+          Forward
+        </span>
+        <span class="ml-auto min-w-0 truncate text-[10.5px] text-slate-400">Hover any message to reply to it directly.</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─────────────────────────────────────────────────────────────
+       DEMO SCENE - cursor presses Reply, the real ReplyComposer
+       slides up over the bottom of the thread pane, then Send.
+       Mirrors web/src/components/app/unibox/ReplyComposer.tsx
+  ────────────────────────────────────────────────────────────── -->
+  <!-- reaction: ReplyComposer anchored to the thread (right) area -->
+  <div class="ub-react absolute left-[580px] right-0 bottom-0 bg-white border-t border-slate-200 flex flex-col shadow-[0_-6px_24px_-12px_rgba(15,23,42,.12)]" aria-hidden="true">
+    <!-- target message preview : "Replying to" strip -->
+    <div class="px-4 pt-3 pb-2 flex items-start gap-3 bg-slate-50/60 border-b border-slate-200/70">
+      <span class="size-7 rounded-full flex items-center justify-center text-[10px] font-semibold shrink-0 bg-sky-100 text-sky-700">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>
+      </span>
+      <div class="min-w-0 flex-1">
+        <div class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">Replying to</div>
+        <div class="flex items-baseline gap-2 mt-0.5 min-w-0">
+          <span class="text-[12.5px] font-semibold text-slate-900 truncate">Sarah Chen</span>
+          <span class="font-mono text-[10.5px] text-slate-500 truncate">sarah@acme.io</span>
+        </div>
+        <div class="text-[11.5px] text-slate-500 mt-0.5 truncate">Follow up on Q1 proposal</div>
+      </div>
+      <span class="size-7 inline-flex items-center justify-center rounded-md text-slate-400 shrink-0">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+      </span>
+    </div>
+
+    <!-- header strip : From / To / Subject -->
+    <div class="px-4 py-2.5 border-b border-slate-200/70 divide-y divide-slate-200/40 bg-white">
+      <div class="flex items-start gap-3 py-1.5">
+        <span class="w-14 shrink-0 pt-[3px] text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">From</span>
+        <span class="self-stretch w-px bg-slate-200 shrink-0"></span>
+        <div class="flex-1 min-w-0 flex flex-wrap items-center gap-1.5">
+          <div class="inline-flex items-center gap-2 min-w-0">
+            <span class="text-[12.5px] text-slate-900 font-medium truncate">Company</span>
+            <span class="font-mono text-[10.5px] text-slate-500 bg-slate-50 px-1.5 h-4 inline-flex items-center rounded border border-slate-200 shrink-0 whitespace-nowrap">hello@company.com</span>
+          </div>
+          <div class="ml-auto flex items-center gap-1 shrink-0">
+            <span class="h-5 px-1.5 rounded text-[10.5px] text-slate-500 inline-flex items-center whitespace-nowrap shrink-0">+ Cc</span>
+            <span class="h-5 px-1.5 rounded text-[10.5px] text-slate-500 inline-flex items-center whitespace-nowrap shrink-0">+ Bcc</span>
+          </div>
+        </div>
+      </div>
+      <div class="flex items-start gap-3 py-1.5">
+        <span class="w-14 shrink-0 pt-[3px] text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">To</span>
+        <span class="self-stretch w-px bg-slate-200 shrink-0"></span>
+        <div class="flex-1 min-w-0 flex flex-wrap items-center gap-1.5">
+          <span class="inline-flex items-center gap-1 h-5 pl-1.5 pr-0.5 rounded-md text-[11px] font-medium shrink-0 whitespace-nowrap border bg-sky-50 text-sky-800 border-sky-200">
+            <span class="font-mono">sarah@acme.io</span>
+            <span class="size-4 inline-flex items-center justify-center rounded">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+            </span>
+          </span>
+        </div>
+      </div>
+      <div class="flex items-start gap-3 py-1.5">
+        <span class="w-14 shrink-0 pt-[3px] text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">Subject</span>
+        <span class="self-stretch w-px bg-slate-200 shrink-0"></span>
+        <div class="flex-1 min-w-0 flex flex-wrap items-center gap-1.5">
+          <span class="flex-1 min-w-0 h-6 inline-flex items-center text-[12.5px] text-slate-900">Re: Follow up on Q1 proposal</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- body -->
+    <div class="w-full min-h-[120px] px-5 py-3 text-[13px] text-slate-800 leading-relaxed">
+      Tomorrow at 10am EST works great for me. I'll send a calendar invite shortly.<span class="text-slate-400"> Write your reply. ⌘ + Enter to send.</span>
+    </div>
+
+    <!-- signature preview strip -->
+    <div class="mx-5 mb-2 rounded-md border border-emerald-200/60 bg-emerald-50/40 overflow-hidden">
+      <div class="px-3 py-1.5 flex items-center gap-1.5 border-b border-emerald-200/40 bg-emerald-50/60">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="text-emerald-700" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.376 3.622a1 1 0 0 1 3.002 3.002L7.368 18.635a2 2 0 0 1-.855.506l-2.872.838a.5.5 0 0 1-.62-.62l.838-2.872a2 2 0 0 1 .506-.854z"/></svg>
+        <span class="text-[10px] uppercase tracking-[0.14em] text-emerald-800 font-semibold">Signature appended on send</span>
+        <span class="ml-auto inline-flex items-center gap-1 text-[10px] text-emerald-700/80">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+          from hello@company.com
+        </span>
+      </div>
+      <div class="px-3 py-2 font-sans text-[11.5px] text-slate-700 leading-relaxed">Best,<br />The Company Team</div>
+    </div>
+
+    <!-- action bar : single row, no wrap at the 320px composer width -->
+    <div class="px-3 py-2 border-t border-slate-200/60 flex flex-nowrap items-center gap-1.5">
+      <span class="h-7 px-2.5 rounded-md bg-sky-600 text-white text-[12px] font-medium inline-flex items-center gap-1.5 whitespace-nowrap shrink-0">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/><path d="m21.854 2.147-10.94 10.939"/></svg>
+        Send
+      </span>
+      <span class="h-7 px-2 rounded-md border border-slate-200 text-slate-700 text-[12px] inline-flex items-center gap-1 whitespace-nowrap shrink-0">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        Schedule
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-slate-400" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </span>
+      <span class="h-7 px-2 rounded-md border border-slate-200 text-slate-700 text-[12px] inline-flex items-center gap-1 whitespace-nowrap shrink-0">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
+        Template
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-slate-400" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </span>
+      <span class="ml-auto font-mono text-[10px] text-slate-400 tabular-nums shrink-0">0 / 4000</span>
+    </div>
+  </div>
+
+  <!-- cursor -->
+  <div class="ub-cursor" aria-hidden="true"><span class="ub-ripple"></span><svg width="23" height="27" viewBox="0 0 23 27" fill="none"><path d="M3 2.2 L3 20.4 L7.7 16 L10.9 23.2 L14 21.8 L10.9 14.8 L17.2 14.6 Z" fill="#ffffff" stroke="#0f172a" stroke-width="1.4" stroke-linejoin="round"/></svg></div>
+
+  <style>
+    .ub-cursor{position:absolute;z-index:50;width:23px;height:27px;pointer-events:none;filter:drop-shadow(0 4px 6px rgba(15,23,42,.4));animation:ub-move 11s cubic-bezier(.5,0,.2,1) infinite;}
+    .ub-cursor svg{display:block;transform-origin:3px 2px;animation:ub-press 11s ease-in-out infinite;}
+    .ub-ripple{position:absolute;left:-6px;top:-6px;width:32px;height:32px;border-radius:9999px;background:rgba(2,132,199,.5);transform:scale(0);opacity:0;animation:ub-rip 11s ease-out infinite;}
+    .ub-react{position:absolute;z-index:40;opacity:0;animation:ub-react 11s ease-out infinite;}
+    /* press #1 (28%) lands on the Reply button center (x 626/900=70%, y 478/500=95.5%);
+       press #2 (64%) lands in the thread/messages area ABOVE the composer to dismiss it
+       (right pane center x 740/900=82%, thread-header y 65/500=13%) */
+    @keyframes ub-move{0%{left:30%;top:34%}22%{left:70%;top:95.5%}32%{left:70%;top:95.5%}58%{left:82%;top:13%}68%{left:82%;top:13%}88%{left:30%;top:34%}100%{left:30%;top:34%}}
+    @keyframes ub-press{0%,26%{transform:scale(1)}28%{transform:scale(.82)}31%,62%{transform:scale(1)}64%{transform:scale(.82)}67%,100%{transform:scale(1)}}
+    @keyframes ub-rip{0%,26%{transform:scale(0);opacity:0}29%{transform:scale(.25);opacity:.7}41%{transform:scale(1.9);opacity:0}60%{transform:scale(0);opacity:0}63%{transform:scale(.25);opacity:.7}75%{transform:scale(1.9);opacity:0}100%{transform:scale(0);opacity:0}}
+    /* dismiss timeline: composer opens after press #1, closes after press #2 (click-outside) */
+    @keyframes ub-react{0%,29%{opacity:0;transform:translateY(22px)}33%{opacity:1;transform:translateY(0)}60%{opacity:1;transform:translateY(0)}66%{opacity:0;transform:translateY(22px)}100%{opacity:0;transform:translateY(22px)}}
+    /* press feedback : Reply button darkens + rings on press #1 (opens composer) */
+    .ub-reply-btn{transition:none;animation:ub-reply-press 11s ease-in-out infinite;}
+    @keyframes ub-reply-press{0%,27%{background-color:#0284c7;box-shadow:none}28%,31%{background-color:#0369a1;box-shadow:0 0 0 2px rgba(186,230,253,1)}32%,100%{background-color:#0284c7;box-shadow:none}}
+    @media (prefers-reduced-motion: reduce){.ub-cursor{display:none}.ub-react{display:none}.ub-reply-btn{animation:none}}
+  </style>
+</div>

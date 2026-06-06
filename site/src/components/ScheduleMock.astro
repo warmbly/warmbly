@@ -1,0 +1,289 @@
+---
+/**
+ * Mock of /app/campaigns/[id]/schedule - the weekly sending-window editor.
+ * Faithful to the real screen:
+ *   - web/src/app/app/campaigns/[id]/schedule/page.tsx (hero card, presets, dates, save bar)
+ *   - web/src/components/app/campaigns/schedule/WeekScheduleGrid.tsx (the week grid + drag-to-create)
+ *
+ * Authored at a DESIGN WIDTH of 900px, desktop-locked (no responsive variants).
+ * The demo reaction reproduces the real beginDraw gesture: the cursor presses an
+ * empty weekend column near the 9am line and drags down to 5pm while a sending
+ * window grows from the press point, its bottom edge following the cursor.
+ */
+const DAY = 1440;
+const HOURS = [0, 3, 6, 9, 12, 15, 18, 21, 24];
+const ABBR = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const todayIdx = 2; // Wed - illustrative
+
+// minutes since midnight; Mon=0..Sun=6 (display order, matches the real grid)
+const windows: { start: number; end: number }[][] = [
+  [{ start: 540, end: 720 }, { start: 780, end: 1020 }], // Mon 9-12, 1-5
+  [{ start: 540, end: 1020 }],                           // Tue 9-5
+  [{ start: 510, end: 720 }, { start: 840, end: 1080 }], // Wed 8:30-12, 2-6
+  [{ start: 540, end: 1020 }],                           // Thu 9-5
+  [{ start: 540, end: 900 }],                            // Fri 9-3
+  [],                                                    // Sat (empty - the drag target)
+  [],                                                    // Sun
+];
+
+const pct = (min: number) => `${(min / DAY) * 100}%`;
+const hourLabel = (h: number) => {
+  const hh = h % 24;
+  const ampm = hh < 12 ? 'a' : 'p';
+  const h12 = hh % 12 === 0 ? 12 : hh % 12;
+  return `${h12}${ampm}`;
+};
+const fmt = (min: number) => {
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  const ampm = h < 12 ? 'am' : 'pm';
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return m === 0 ? `${h12}${ampm}` : `${h12}:${String(m).padStart(2, '0')}${ampm}`;
+};
+
+const totalWindows = windows.reduce((s, d) => s + d.length, 0);
+const activeDays = windows.filter((d) => d.length > 0).length;
+
+const GUTTER = 46; // px (matches the real grid)
+const BODY_H = 360; // px
+
+// ── Reaction geometry (computed so the cursor + growing block land exactly
+// on the Sat column between 9am and 5pm). All values in px relative to the
+// mock root, then converted to % for the absolute overlay.
+const ROOT_W = 900;
+// The grid lives inside: card px-4 (16) -> grid section px-4 (16) -> GUTTER.
+const GRID_LEFT = 16 + 16; // card pad + section pad
+const COLS_LEFT = GRID_LEFT + GUTTER; // x where the 7 columns begin
+const COLS_W = ROOT_W - COLS_LEFT - GRID_LEFT; // available width for columns
+const COL_W = (COLS_W - 6) / 7; // 7 columns, 6 x 1px gaps
+const SAT_LEFT = COLS_LEFT + 5 * (COL_W + 1); // left x of the Sat column (index 5)
+
+// Vertical: the grid body top. Header chrome above the body:
+//   card header h-14 (56) + presets row (~41) + grid section pt-4 (16)
+//   + day headers row h-9 (36) = top of the grid body.
+const BODY_TOP = 56 + 41 + 16 + 36;
+const NINE = BODY_TOP + (540 / DAY) * BODY_H; // y of the 9am line
+const FIVE = BODY_TOP + (1020 / DAY) * BODY_H; // y of the 5pm line
+
+// Cursor / reaction anchor: centre of the Sat column. The growing window is
+// drawn from this anchor; vertical values stay in px so they track the layout
+// exactly regardless of total mock height.
+const cursorX = SAT_LEFT + COL_W / 2;
+const cursorXPct = (cursorX / ROOT_W) * 100;
+---
+<div class="relative w-full bg-white">
+  <!-- ── Hero scheduler card ─────────────────────────────────────────── -->
+  <section class="rounded-lg border border-slate-200 bg-white overflow-hidden">
+    <!-- header bar (h-14) -->
+    <div class="px-4 h-14 flex items-center gap-3 border-b border-slate-200/70">
+      <span class="size-7 rounded-md bg-sky-50 text-sky-600 inline-flex items-center justify-center shrink-0">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 14v2.2l1.6 1"/><path d="M16 2v4"/><path d="M21 7.5V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h6.5"/><path d="M3 10h5"/><path d="M8 2v4"/><circle cx="16" cy="16" r="6"/></svg>
+      </span>
+      <div class="min-w-0">
+        <div class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">Weekly sending windows</div>
+        <p class="text-[12.5px] text-slate-700 leading-tight mt-0.5">
+          <span class="font-medium text-slate-900">{totalWindows}</span> windows across
+          <span class="font-medium text-slate-900">{activeDays}</span> days
+        </p>
+      </div>
+      <!-- timezone SelectButton -->
+      <div class="ml-auto shrink-0">
+        <button type="button" class="h-7 px-2 rounded-md border border-slate-200 bg-white text-slate-700 inline-flex items-center gap-1.5 text-[12px] font-medium">
+          <span class="text-slate-400 shrink-0">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
+          </span>
+          <span class="truncate max-w-[160px]">America/New York (EST)</span>
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="text-slate-400 shrink-0"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- presets row -->
+    <div class="px-4 py-2.5 flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-slate-200/70 bg-slate-50/30">
+      <span class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium mr-0.5">Presets</span>
+      {['Mon–Fri 9–5', 'Every day 9–5', 'Clear'].map((p) => (
+        <button type="button" class="h-7 px-2.5 rounded-md border border-slate-200 text-[11.5px] text-slate-600 whitespace-nowrap shrink-0">{p}</button>
+      ))}
+      <span class="ml-auto text-[11px] text-slate-400 block">Drag to add &middot; drag a block to move &middot; edges to resize &middot; &#x29C9; copies a day to all</span>
+    </div>
+
+    <!-- week grid -->
+    <div class="px-4 py-4">
+      <div class="min-w-[520px]">
+        <!-- day headers -->
+        <div class="flex">
+          <div style={`width:${GUTTER}px`} class="shrink-0"></div>
+          <div class="flex flex-1 gap-px">
+            {ABBR.map((d, i) => {
+              const active = windows[i].length > 0;
+              return (
+                <div class={`group/h relative flex-1 h-9 flex items-center justify-center rounded-t-md text-[11px] ${active ? 'text-sky-700 font-semibold bg-sky-50/60' : 'text-slate-400'}`}>
+                  {d}
+                  {i === todayIdx && <span class="absolute bottom-1 size-1 rounded-full bg-sky-500"></span>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <!-- grid body -->
+        <div class="relative select-none" style={`height:${BODY_H}px`}>
+          {HOURS.map((h) => (
+            <span class="absolute left-0 -translate-y-1/2 text-right text-[10px] text-slate-400 tabular-nums pr-2" style={`top:${pct(h * 60)}; width:${GUTTER}px`}>
+              {hourLabel(h)}
+            </span>
+          ))}
+          {HOURS.map((h) => (
+            <div class="absolute right-0 border-t border-slate-100" style={`left:${GUTTER}px; top:${pct(h * 60)}`}></div>
+          ))}
+
+          <div class="absolute top-0 bottom-0 right-0 flex gap-px" style={`left:${GUTTER}px`}>
+            {ABBR.map((d, i) => {
+              const active = windows[i].length > 0;
+              const isToday = i === todayIdx;
+              return (
+                <div class={`relative flex-1 cursor-crosshair ${active ? 'bg-sky-50/30' : 'bg-slate-50/40'} ${isToday ? 'ring-1 ring-inset ring-sky-100' : ''}`}>
+                  {windows[i].length === 0 && (
+                    <span class="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 text-center text-[9.5px] text-slate-300 leading-tight px-1">drag, or tap +</span>
+                  )}
+                  {windows[i].map((iv) => {
+                    const tall = iv.end - iv.start >= 90;
+                    return (
+                      <div class="group absolute inset-x-[3px] rounded-md border border-sky-400/60 bg-sky-500/15 overflow-hidden" style={`top:${pct(iv.start)}; height:${pct(iv.end - iv.start)}`}>
+                        <span class={`pointer-events-none absolute left-1.5 ${tall ? 'top-1' : 'top-1/2 -translate-y-1/2'} text-[9.5px] font-medium text-sky-700 tabular-nums leading-tight`}>
+                          {fmt(iv.start)}{tall ? <br /> : '–'}{fmt(iv.end)}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+      <p class="text-[11px] text-slate-400 mt-3">
+        Each day is independent. Set different windows per day, or several windows in one day. Sends are scheduled in America/New York; worker IPs spread distribution naturally.
+      </p>
+    </div>
+  </section>
+
+  <!-- ── Campaign dates ─────────────────────────────────────────────── -->
+  <section class="rounded-lg border border-slate-200 bg-white px-4 pt-3 pb-4 mt-4">
+    <div class="flex flex-wrap items-center gap-x-2 gap-y-1 mb-2.5">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-slate-400"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="M17 14h-6"/><path d="M13 18H7"/><path d="M7 14h.01"/><path d="M17 18h.01"/></svg>
+      <span class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">Campaign dates</span>
+      <span class="ml-auto inline-flex items-center gap-2 text-[11px] text-slate-400">
+        <span>Jun 9 &ndash; Jul 7, 2026</span>
+        <span class="inline-flex items-center h-5 px-1.5 rounded border border-slate-200 bg-slate-50 text-slate-600 tabular-nums">28 days</span>
+      </span>
+    </div>
+    <div class="flex items-end gap-3 flex-wrap">
+      <div class="w-[170px]">
+        <div class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium mb-1.5">Start date</div>
+        <button type="button" class="flex gap-2 items-center h-7 px-2.5 w-full rounded-md border border-slate-200 text-[12.5px] text-slate-700 whitespace-nowrap">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-slate-400 shrink-0"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg>
+          <span class="tabular-nums">09 Jun, 2026</span>
+        </button>
+      </div>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-slate-300 shrink-0 self-end mb-1.5"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+      <div class="w-[170px]">
+        <div class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium mb-1.5">End date</div>
+        <button type="button" class="flex gap-2 items-center h-7 px-2.5 w-full rounded-md border border-slate-200 text-[12.5px] text-slate-700 whitespace-nowrap">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-slate-400 shrink-0"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg>
+          <span class="tabular-nums">07 Jul, 2026</span>
+        </button>
+      </div>
+      <p class="text-[11px] text-slate-400 self-end mb-1 flex-1 min-w-[180px]">
+        Optional bounds for when the campaign may send. Leave both blank to run open-ended.
+      </p>
+    </div>
+  </section>
+
+  <!-- ── Save / Reset ───────────────────────────────────────────────── -->
+  <div class="flex justify-end gap-2 pt-1 mt-4">
+    <button class="h-7 px-3 text-[12px] font-medium text-slate-600 border border-slate-200 rounded-md whitespace-nowrap shrink-0">Reset</button>
+    <button class="h-7 px-3 bg-sky-600 text-white rounded-md text-[12px] font-medium min-w-[110px] inline-flex items-center justify-center whitespace-nowrap shrink-0">Save changes</button>
+  </div>
+
+  <!-- ── Demo reaction: the real drag-to-create window growing on Sat ─── -->
+  <div class="sc-react" aria-hidden="true" style={`left:${cursorXPct}%; top:${NINE}px;`}>
+    <!-- the growing sending-window block, anchored at the 9am press point -->
+    <div class="sc-grow absolute rounded-md border border-sky-400/60 bg-sky-500/15 overflow-hidden" style={`left:${-(COL_W / 2 - 3)}px; width:${COL_W - 6}px; height:${FIVE - NINE}px;`}>
+      <span class="pointer-events-none absolute left-1.5 top-1 text-[9.5px] font-medium text-sky-700 tabular-nums leading-tight">9am<br />5pm</span>
+    </div>
+    <!-- live time chip following the bottom edge -->
+    <span class="sc-chip absolute inline-flex items-center h-5 px-1.5 rounded-md border border-sky-300 bg-sky-50 text-[9px] font-medium text-sky-700 tabular-nums whitespace-nowrap shadow-sm" style={`left:${COL_W / 2 + 4}px;`}>9:00 - 17:00</span>
+  </div>
+
+  <div class="sc-cursor" aria-hidden="true"><span class="sc-ripple"></span><svg width="23" height="27" viewBox="0 0 23 27" fill="none"><path d="M3 2.2 L3 20.4 L7.7 16 L10.9 23.2 L14 21.8 L10.9 14.8 L17.2 14.6 Z" fill="#ffffff" stroke="#0f172a" stroke-width="1.4" stroke-linejoin="round"/></svg></div>
+
+  <style define:vars={{ ninePx: `${NINE}px`, fivePx: `${FIVE}px`, cursorXPct: `${cursorXPct}%`, growH: `${FIVE - NINE}px` }}>
+    .sc-cursor{position:absolute;z-index:50;width:23px;height:27px;pointer-events:none;filter:drop-shadow(0 4px 6px rgba(15,23,42,.4));animation:sc-move 11s cubic-bezier(.5,0,.2,1) infinite;}
+    .sc-cursor svg{display:block;transform-origin:3px 2px;animation:sc-press 11s ease-in-out infinite;}
+    .sc-ripple{position:absolute;left:-6px;top:-6px;width:32px;height:32px;border-radius:9999px;background:rgba(2,132,199,.5);transform:scale(0);opacity:0;animation:sc-rip 11s ease-out infinite;}
+
+    /* The reaction overlay is anchored at the 9am press point of the Sat
+       column. Its inner block grows downward (scaleY 0 -> 1) locked to the
+       drag window, then rests until the loop resets. */
+    .sc-react{position:absolute;z-index:40;}
+    .sc-grow{transform-origin:top;transform:scaleY(0);opacity:0;animation:sc-grow 11s ease-out infinite;}
+    .sc-chip{transform:translateY(-50%);opacity:0;animation:sc-chip 11s ease-out infinite;}
+
+    /* Cursor path: travels in from the top-left, presses on the Sat column at
+       the 9am line (~22-28%), then DRAGS DOWN (stationary-x, moving-y) to the
+       5pm line between 28% and 44%, holding pressed. It rests, then on the
+       second beat nudges the finished block before the loop resets. */
+    @keyframes sc-move{
+      0%{left:18%;top:18%}
+      22%{left:var(--cursorXPct);top:var(--ninePx)}
+      28%{left:var(--cursorXPct);top:var(--ninePx)}
+      44%{left:var(--cursorXPct);top:var(--fivePx)}
+      58%{left:var(--cursorXPct);top:var(--fivePx)}
+      64%{left:var(--cursorXPct);top:var(--fivePx)}
+      68%{left:var(--cursorXPct);top:var(--fivePx)}
+      88%{left:62%;top:88%}
+      100%{left:18%;top:18%}
+    }
+    /* Pressed/grabbing through the whole drag (28% -> 44%), released after. */
+    @keyframes sc-press{
+      0%,26%{transform:scale(1)}
+      28%{transform:scale(.82)}
+      44%{transform:scale(.82)}
+      48%{transform:scale(1)}
+      62%{transform:scale(1)}
+      64%{transform:scale(.82)}
+      67%,100%{transform:scale(1)}
+    }
+    /* Ripple on the initial press, and again on the second beat. */
+    @keyframes sc-rip{
+      0%,26%{transform:scale(0);opacity:0}
+      29%{transform:scale(.25);opacity:.7}
+      41%{transform:scale(1.7);opacity:0}
+      60%{transform:scale(0);opacity:0}
+      63%{transform:scale(.25);opacity:.7}
+      75%{transform:scale(1.7);opacity:0}
+      100%{transform:scale(0);opacity:0}
+    }
+    /* Block grows from 0 height at the press point to full, tracking the drag
+       window (28% -> 44%), then rests as a finished block until ~90%. */
+    @keyframes sc-grow{
+      0%,28%{opacity:0;transform:scaleY(0)}
+      30%{opacity:1;transform:scaleY(.06)}
+      44%{opacity:1;transform:scaleY(1)}
+      90%{opacity:1;transform:scaleY(1)}
+      96%{opacity:0;transform:scaleY(0)}
+      100%{opacity:0;transform:scaleY(0)}
+    }
+    /* The live time chip rides the growing bottom edge, then rests. */
+    @keyframes sc-chip{
+      0%,28%{opacity:0;transform:translateY(-50%) translateY(0)}
+      31%{opacity:1;transform:translateY(-50%) translateY(0)}
+      44%{opacity:1;transform:translateY(-50%) translateY(var(--growH))}
+      90%{opacity:1;transform:translateY(-50%) translateY(var(--growH))}
+      96%{opacity:0;transform:translateY(-50%) translateY(var(--growH))}
+      100%{opacity:0;transform:translateY(-50%) translateY(var(--growH))}
+    }
+    @media (prefers-reduced-motion: reduce){.sc-cursor{display:none}.sc-react{display:none}}
+  </style>
+</div>

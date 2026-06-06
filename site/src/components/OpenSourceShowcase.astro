@@ -1,0 +1,233 @@
+---
+/**
+ * Big, information-rich open-source band after the changelog. Fills the full
+ * width: a hero (copy + facts left, live self-host terminal right), a row of
+ * real info cards (the actual services in the repo, how to contribute, how to
+ * self-host), and a links row. No fabricated metrics; everything here is true.
+ */
+const gh = '<path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.8 10.9.6.1.8-.2.8-.5v-2c-3.2.7-3.9-1.4-3.9-1.4-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.4-2.3 1.2-3.2-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2 1-.3 2-.4 3-.4s2 .1 3 .4c2.3-1.5 3.3-1.2 3.3-1.2.7 1.6.2 2.9.1 3.1.8.8 1.2 1.9 1.2 3.2 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.5 4.6-1.5 7.8-5.8 7.8-10.9C23.5 5.7 18.3.5 12 .5z"/>';
+const arrow = '<path d="M7 17 17 7M7 7h10v10"/>';
+
+const facts = [
+  { value: '100%', label: 'Open source' },
+  { value: 'Apache 2.0', label: 'Fork it, ship it' },
+  { value: '$0', label: 'To self-host' },
+  { value: 'Public', label: 'Roadmap and issues' },
+];
+
+const lines = [
+  { kind: 'cmd', text: 'git clone https://github.com/warmbly/warmbly.git' },
+  { kind: 'cmd', text: 'cd warmbly' },
+  { kind: 'cmd', text: 'make up', note: 'build images, boot the full stack' },
+  { kind: 'ok', text: 'Warmbly is live on http://localhost:8080' },
+  { kind: 'caret' },
+];
+
+const layers = [
+  { name: 'Backend API', tag: 'Go', desc: 'Control plane and business orchestration' },
+  { name: 'Consumer', tag: 'Go', desc: 'Turns Kafka events into platform state' },
+  { name: 'Workers', tag: 'Go', desc: 'Distributed sending and mailbox sync' },
+  { name: 'Tracking', tag: 'Rust', desc: 'Open and click pixel service' },
+  { name: 'Realtime', tag: 'Elixir', desc: 'Websocket fanout for live dashboards' },
+  { name: 'Dashboard & admin', tag: 'React', desc: 'The product UI and the admin console' },
+  { name: 'Marketing site', tag: 'Astro', desc: 'This very site you are reading' },
+];
+const contribute = [
+  { label: 'Browse good first issues', href: 'https://github.com/warmbly/warmbly/labels/good%20first%20issue' },
+  { label: 'Read the contributing guide', href: 'https://github.com/warmbly/warmbly/blob/main/CONTRIBUTING.md' },
+  { label: 'Follow the public roadmap', href: '/roadmap/' },
+  { label: 'Open a discussion or RFC', href: 'https://github.com/warmbly/warmbly/discussions' },
+];
+const selfhost = [
+  'Run on your own infra: Postgres, Redis, Kafka, S3, KMS',
+  'One make up command boots the whole stack',
+  'Or skip the ops and use our managed cloud',
+  'BYOK encryption and SSO on enterprise',
+];
+const links = [
+  { label: 'Docs', href: '/developers/' },
+  { label: 'Architecture', href: '/trust/' },
+  { label: 'Roadmap', href: '/roadmap/' },
+  { label: 'Changelog', href: '/changelog/' },
+  { label: 'Apache 2.0 license', href: 'https://github.com/warmbly/warmbly/blob/main/LICENSE' },
+];
+---
+<section class="relative isolate overflow-hidden text-white"
+         style="background: radial-gradient(ellipse 130% 130% at 50% -10%, #0ea5e9 0%, #0284c7 30%, #075985 62%, #0c2f4a 100%);">
+  <img src="/backdrops/cloud-4.webp" alt="" aria-hidden="true" class="absolute -top-16 -left-20 w-[560px] opacity-[0.18] pointer-events-none select-none cloud-drift cloud-1" loading="lazy" decoding="async" style="mix-blend-mode: screen;" />
+  <img src="/backdrops/cloud-5.webp" alt="" aria-hidden="true" class="absolute top-24 -right-16 w-[520px] opacity-[0.12] pointer-events-none select-none cloud-drift cloud-2" loading="lazy" decoding="async" style="mix-blend-mode: screen;" />
+
+  <div class="container-page relative py-20 md:py-28">
+    <!-- HERO: copy + facts left, terminal right -->
+    <div class="grid lg:grid-cols-12 gap-10 lg:gap-12 items-center">
+      <div class="lg:col-span-6">
+        <a href="https://github.com/warmbly/warmbly" target="_blank" rel="noopener noreferrer"
+           class="inline-flex items-center gap-2 h-7 pl-1 pr-3 rounded-full bg-white/10 backdrop-blur text-[12px] text-white/95">
+          <span class="inline-flex items-center gap-1.5 h-5 px-1.5 rounded-full text-[10.5px] font-semibold uppercase tracking-[0.06em] bg-white text-[color:var(--sky-6)]">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" set:html={gh}></svg>
+            Open source
+          </span>
+          Apache 2.0
+        </a>
+        <h2 class="mt-6 text-[40px] md:text-[58px] font-semibold tracking-[-0.035em] leading-[1.02] text-white">
+          Read the code. Run it yourself.
+        </h2>
+        <p class="mt-5 text-[16px] md:text-[17.5px] text-white/80 leading-relaxed max-w-xl">
+          Read exactly how warmup, sending and deliverability really work, self-host the whole platform,
+          and send a pull request. Help us build the biggest open-source cold email and warmup platform.
+        </p>
+        <div class="mt-7 flex flex-wrap items-center gap-3">
+          <a href="https://github.com/warmbly/warmbly" target="_blank" rel="noopener noreferrer"
+             class="inline-flex h-11 px-5 items-center gap-2 rounded-[10px] text-[14.5px] font-medium text-[color:var(--sky-6)] bg-white hover:bg-white/95 transition-colors whitespace-nowrap shadow-[0_12px_30px_-12px_rgba(8,47,73,0.6)]">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" class="shrink-0" set:html={gh}></svg>
+            Star on GitHub
+          </a>
+          <a href="https://github.com/warmbly/warmbly/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener noreferrer"
+             class="inline-flex h-11 px-5 items-center gap-2 rounded-[10px] text-[14.5px] font-medium text-white bg-white/[0.14] backdrop-blur hover:bg-white/20 transition-colors whitespace-nowrap">
+            Contributing guide
+          </a>
+        </div>
+        <div class="mt-9 grid grid-cols-2 sm:grid-cols-4 gap-y-6 gap-x-4">
+          {facts.map((f) => (
+            <div>
+              <div class="text-[24px] md:text-[30px] font-semibold tracking-[-0.02em] leading-none text-white">{f.value}</div>
+              <div class="mt-2 text-[10.5px] uppercase tracking-[0.14em] font-mono text-white/55">{f.label}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <!-- terminal -->
+      <div class="lg:col-span-6">
+        <div class="os-term w-full text-left rounded-[14px] overflow-hidden bg-[#0a1020]"
+             style="box-shadow: 0 40px 90px -30px rgba(8,47,73,0.75), 0 0 0 1px rgba(125,211,252,0.08);">
+          <div class="flex items-center gap-2 px-4 h-9 border-b border-black/20 bg-white/[0.04]">
+            <span class="w-2.5 h-2.5 rounded-full bg-[#ff5f57]"></span>
+            <span class="w-2.5 h-2.5 rounded-full bg-[#febc2e]"></span>
+            <span class="w-2.5 h-2.5 rounded-full bg-[#28c840]"></span>
+            <span class="ml-2 text-[11px] font-mono text-white/40">warmbly · self-host</span>
+          </div>
+          <div class="px-5 py-4 font-mono text-[12.5px] md:text-[13px] leading-[1.9]">
+            {lines.map((l, i) => (
+              <div class="os-line" style={`animation-delay: ${(-3 + i * 0.7).toFixed(2)}s`}>
+                {l.kind === 'cmd' && (
+                  <span>
+                    <span class="text-sky-400">$</span>
+                    <span class="text-white/90"> {l.text}</span>
+                    {l.note && <span class="text-white/35">  # {l.note}</span>}
+                  </span>
+                )}
+                {l.kind === 'ok' && (
+                  <span class="inline-flex items-center gap-2 text-emerald-300">
+                    <span class="relative inline-flex">
+                      <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                      <span class="absolute inset-0 rounded-full bg-emerald-400/50 animate-ping"></span>
+                    </span>
+                    <span>{l.text}</span>
+                  </span>
+                )}
+                {l.kind === 'caret' && (
+                  <span><span class="text-sky-400">$</span> <span class="os-caret inline-block w-[8px] h-[15px] -mb-0.5 bg-sky-300"></span></span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- INFO CARDS (full width) -->
+    <div class="mt-14 grid md:grid-cols-3 gap-4">
+      <!-- card 1: every layer -->
+      <div class="rounded-[14px] bg-white/[0.08] backdrop-blur p-5 transition-colors hover:bg-white/[0.13] shadow-[0_16px_38px_-20px_rgba(2,16,32,0.7)]">
+        <div class="flex items-center gap-2.5 mb-4">
+          <span class="w-8 h-8 rounded-lg bg-white/10 grid place-items-center">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="text-white"><path d="m12 2 9 4.9-9 4.9-9-4.9z"/><path d="m3 12 9 4.9 9-4.9"/><path d="m3 17 9 4.9 9-4.9"/></svg>
+          </span>
+          <h3 class="text-[14.5px] font-semibold text-white">Every layer is open</h3>
+        </div>
+        <ul class="space-y-2.5">
+          {layers.map((s) => (
+            <li class="flex items-start gap-2.5">
+              <span class="shrink-0 mt-0.5 inline-flex items-center h-4 px-1.5 rounded text-[9.5px] font-mono font-semibold uppercase tracking-[0.06em] bg-white/12 text-white/70">{s.tag}</span>
+              <span class="min-w-0">
+                <span class="text-[13px] font-medium text-white">{s.name}</span>
+                <span class="block text-[12px] text-white/55 leading-snug">{s.desc}</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <!-- card 2: contribute -->
+      <div class="rounded-[14px] bg-white/[0.08] backdrop-blur p-5 transition-colors hover:bg-white/[0.13] shadow-[0_16px_38px_-20px_rgba(2,16,32,0.7)]">
+        <div class="flex items-center gap-2.5 mb-4">
+          <span class="w-8 h-8 rounded-lg bg-white/10 grid place-items-center">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="text-white"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>
+          </span>
+          <h3 class="text-[14.5px] font-semibold text-white">Made to contribute to</h3>
+        </div>
+        <ul class="space-y-1">
+          {contribute.map((c) => (
+            <li>
+              <a href={c.href} target={c.href.startsWith('http') ? '_blank' : undefined} rel="noopener noreferrer"
+                 class="group flex items-center gap-2 -mx-2 px-2 py-2 rounded-lg text-[13px] text-white/85 hover:bg-white/10 transition-colors">
+                <span class="flex-1">{c.label}</span>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-white/40 group-hover:text-white/80 transition-colors" set:html={arrow}></svg>
+              </a>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <!-- card 3: self-host -->
+      <div class="rounded-[14px] bg-white/[0.08] backdrop-blur p-5 transition-colors hover:bg-white/[0.13] shadow-[0_16px_38px_-20px_rgba(2,16,32,0.7)]">
+        <div class="flex items-center gap-2.5 mb-4">
+          <span class="w-8 h-8 rounded-lg bg-white/10 grid place-items-center">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="text-white"><rect width="20" height="8" x="2" y="2" rx="2"/><rect width="20" height="8" x="2" y="14" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg>
+          </span>
+          <h3 class="text-[14.5px] font-semibold text-white">Run it your way</h3>
+        </div>
+        <ul class="space-y-2.5">
+          {selfhost.map((s) => (
+            <li class="flex items-start gap-2.5 text-[13px] text-white/80 leading-snug">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 mt-0.5 text-sky-300"><polyline points="20 6 9 17 4 12"/></svg>
+              <span>{s}</span>
+            </li>
+          ))}
+        </ul>
+        <p class="mt-4 text-[12px] text-white/60 leading-relaxed">
+          Heads up: shared warmup pools only work with a large, vetted base of mailboxes, which a single
+          self-hosted instance usually will not have, so the shared pool is really only effective on our cloud.
+          Self-hosting still gives you the full sending, inbox and CRM stack.
+        </p>
+      </div>
+    </div>
+
+    <!-- links row -->
+    <div class="mt-12 flex flex-wrap items-center gap-x-6 gap-y-3 text-[13px]">
+      <span class="text-[11px] uppercase tracking-[0.18em] font-mono text-white/45">Built with Go · Rust · Elixir · React · Astro</span>
+      <span class="ml-auto flex flex-wrap items-center gap-x-5 gap-y-2">
+        {links.map((l) => (
+          <a href={l.href} target={l.href.startsWith('http') ? '_blank' : undefined} rel="noopener noreferrer"
+             class="text-white/70 hover:text-white transition-colors whitespace-nowrap">{l.label}</a>
+        ))}
+      </span>
+    </div>
+  </div>
+
+  <style>
+    .os-line { opacity: 0; transform: translateY(4px); animation: os-line 8s ease-in-out infinite; }
+    @keyframes os-line {
+      0%, 4%   { opacity: 0; transform: translateY(4px); }
+      9%, 90%  { opacity: 1; transform: translateY(0); }
+      97%, 100%{ opacity: 0; transform: translateY(4px); }
+    }
+    .os-caret { animation: os-caret 1s step-end infinite; }
+    @keyframes os-caret { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+    @media (prefers-reduced-motion: reduce) {
+      .os-line { opacity: 1; transform: none; animation: none; }
+      .os-caret { animation: none; }
+    }
+  </style>
+</section>

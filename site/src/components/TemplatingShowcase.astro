@@ -1,0 +1,126 @@
+---
+/**
+ * TemplatingShowcase - explains how the Go text/template subset works inside
+ * Warmbly campaign steps. Mirrors the exact send-time syntax the dashboard
+ * composer renders (web/src/components/app/campaigns/sequences/SequenceView.tsx):
+ *
+ *   - merge fields:  {{.FirstName}} {{.LastName}} {{.Company}} {{.Email}} {{.Phone}}
+ *   - conditionals:  {{if eq .role "Engineer"}} ... {{else}} ... {{end}}  + and / or
+ *   - spintax:       {Hi|Hey|Hello} {{.FirstName}}  (one variant is picked)
+ *
+ * Sample data matches the composer's SAMPLE map (Alex Rivera at Acme, role
+ * Engineer) so the before/after examples line up with the in-app preview.
+ *
+ * Self-contained, no props. Dark code style matches the campaign code block on
+ * index.astro / campaigns.astro (#0c1224 surface, white/85 text, sky/amber/
+ * violet/emerald spans). No app-window frame and no demo cursor.
+ */
+import SectionHead from './SectionHead.astro';
+
+// Merge fields, paired with their resolved value from the composer's SAMPLE.
+const fields = [
+  { token: '{{.FirstName}}', value: 'Alex' },
+  { token: '{{.LastName}}', value: 'Rivera' },
+  { token: '{{.Company}}', value: 'Acme' },
+  { token: '{{.Email}}', value: 'alex@acme.com' },
+  { token: '{{.Phone}}', value: '+1 555-0100' },
+];
+---
+<section class="border-y border-[color:var(--border)] bg-[color:var(--surface-1)]/40 py-20 md:py-28">
+  <div class="container-page">
+    <SectionHead
+      eyebrow="Personalization / Templating"
+      title="Go templating, rendered at send time"
+      description="Every step is a Go text/template. Merge fields, if/else conditionals, and spintax all resolve per recipient the moment the email goes out, and the composer previews exactly what each contact will receive."
+    />
+
+    <div class="mt-12 md:mt-14 grid gap-5 lg:grid-cols-3">
+      <!-- 1 · MERGE FIELDS -->
+      <div class="rounded-[12px] bg-white ring-1 ring-[color:var(--border)] p-6 flex flex-col" style="box-shadow: var(--shadow-sm);">
+        <div class="flex items-center gap-2">
+          <span class="grid place-items-center w-7 h-7 rounded-md bg-sky-50 text-sky-600 ring-1 ring-sky-100">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v2"/><path d="M9 20h6"/><path d="M12 4v16"/></svg>
+          </span>
+          <h3 class="text-[15px] font-semibold tracking-[-0.01em] text-heading">Merge fields</h3>
+        </div>
+        <p class="mt-2.5 text-[13.5px] leading-relaxed text-foreground/65">
+          Pull any contact field with a leading dot. Missing values render empty, so a blank field never breaks the line.
+        </p>
+
+        <div class="mt-4 flex flex-wrap gap-1.5">
+          {fields.map((f) => (
+            <code class="inline-flex items-center h-6 px-2 rounded-md bg-[#0c1224] text-[11.5px] font-mono text-sky-300 ring-1 ring-white/10">{f.token}</code>
+          ))}
+        </div>
+
+        <div class="mt-auto pt-5">
+          <div class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-mono mb-2">Before / after</div>
+          <div class="rounded-[10px] bg-[#0c1224] ring-1 ring-white/10 p-3.5 font-mono text-[12.5px] leading-[1.6] text-white/85">
+            <div>Hi <span class="text-sky-300">{`{{.FirstName}}`}</span></div>
+            <div class="mt-1.5 flex items-center gap-1.5 text-white/50">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-emerald-400"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+              <span class="text-white/85">Hi <span class="text-emerald-400">Alex</span></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2 · CONDITIONALS -->
+      <div class="rounded-[12px] bg-white ring-1 ring-[color:var(--border)] p-6 flex flex-col" style="box-shadow: var(--shadow-sm);">
+        <div class="flex items-center gap-2">
+          <span class="grid place-items-center w-7 h-7 rounded-md bg-violet-50 text-violet-600 ring-1 ring-violet-100">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>
+          </span>
+          <h3 class="text-[15px] font-semibold tracking-[-0.01em] text-heading">Conditionals</h3>
+        </div>
+        <p class="mt-2.5 text-[13.5px] leading-relaxed text-foreground/65">
+          Branch on a contact field with <code class="kbd">if</code> / <code class="kbd">else</code> / <code class="kbd">end</code>. Compare values with <code class="kbd">eq</code>.
+        </p>
+
+        <div class="mt-4 rounded-[10px] bg-[#0c1224] ring-1 ring-white/10 overflow-hidden">
+          <pre class="p-3.5 font-mono text-[12px] leading-[1.7] text-white/85 overflow-x-auto"><code>{`{{`}<span style="color:#c4b5fd">if eq</span> <span style="color:#7dd3fc">.role</span> <span style="color:#fde68a">"Engineer"</span>{`}}`}
+  We built this for teams like yours.
+{`{{`}<span style="color:#c4b5fd">else</span>{`}}`}
+  Thought this might be useful.
+{`{{`}<span style="color:#c4b5fd">end</span>{`}}`}</code></pre>
+        </div>
+
+        <p class="mt-auto pt-5 text-[12.5px] leading-relaxed text-foreground/60">
+          Combine checks with <code class="kbd">and</code> / <code class="kbd">or</code>, for example
+          <code class="inline-flex items-center mt-1 px-1.5 py-0.5 rounded bg-[#0c1224] text-[11px] font-mono text-white/85 ring-1 ring-white/10">{`{{if and (eq .role "Engineer") .Company}}`}</code>.
+        </p>
+      </div>
+
+      <!-- 3 · SPINTAX -->
+      <div class="rounded-[12px] bg-white ring-1 ring-[color:var(--border)] p-6 flex flex-col" style="box-shadow: var(--shadow-sm);">
+        <div class="flex items-center gap-2">
+          <span class="grid place-items-center w-7 h-7 rounded-md bg-emerald-50 text-emerald-600 ring-1 ring-emerald-100">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 14 4 4-4 4"/><path d="m18 2 4 4-4 4"/><path d="M2 18h1.973a4 4 0 0 0 3.3-1.7l5.454-8.6a4 4 0 0 1 3.3-1.7H22"/><path d="M2 6h1.972a4 4 0 0 1 3.6 2.2"/><path d="M22 18h-6.041a4 4 0 0 1-3.3-1.8l-.359-.45"/></svg>
+          </span>
+          <h3 class="text-[15px] font-semibold tracking-[-0.01em] text-heading">Spintax</h3>
+        </div>
+        <p class="mt-2.5 text-[13.5px] leading-relaxed text-foreground/65">
+          List variants in braces and Warmbly picks one per send, so the same step reads a little differently to every recipient.
+        </p>
+
+        <div class="mt-4 rounded-[10px] bg-[#0c1224] ring-1 ring-white/10 overflow-hidden">
+          <pre class="p-3.5 font-mono text-[12.5px] leading-[1.7] text-white/85 overflow-x-auto"><code>{`{`}<span style="color:#6ee7b7">Hi</span>|<span style="color:#6ee7b7">Hey</span>|<span style="color:#6ee7b7">Hello</span>{`}`} <span style="color:#7dd3fc">{`{{.FirstName}}`}</span></code></pre>
+        </div>
+
+        <div class="mt-auto pt-5">
+          <div class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-mono mb-2">Picks one variant</div>
+          <div class="flex flex-wrap gap-1.5">
+            <span class="inline-flex items-center h-6 px-2 rounded-md bg-emerald-50 text-[11.5px] font-medium text-emerald-700 ring-1 ring-emerald-100">Hey Alex</span>
+            <span class="inline-flex items-center h-6 px-2 rounded-md bg-slate-50 text-[11.5px] font-medium text-slate-400 ring-1 ring-slate-200">Hi Alex</span>
+            <span class="inline-flex items-center h-6 px-2 rounded-md bg-slate-50 text-[11.5px] font-medium text-slate-400 ring-1 ring-slate-200">Hello Alex</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p class="mt-8 flex items-center justify-center gap-2 text-[13px] text-foreground/60">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-sky-500 shrink-0"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+      Everything resolves at send time, and the composer previews the result against sample data before you launch.
+    </p>
+  </div>
+</section>

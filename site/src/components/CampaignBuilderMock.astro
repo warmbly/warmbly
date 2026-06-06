@@ -1,0 +1,359 @@
+---
+/**
+ * Pixel-faithful mock of the Warmbly /app/campaigns/[id]/sequences screen,
+ * the campaign SEQUENCE BUILDER (flow canvas).
+ *
+ * Maps to the real shell:
+ *   web/src/app/app/campaigns/[id]/layout.tsx (campaign header + tab bar)
+ *   web/src/components/app/campaigns/sequences/CampaignFlow.tsx (the flow canvas:
+ *   StepNode / IfNode / ActionNode / StopNode, toolbar, help panel)
+ *
+ * Flow geometry is laid out in ONE fixed 720x360 coordinate layer: the SVG edge
+ * overlay uses viewBox 0 0 720 360 at a fixed 720x360 size, and every node card
+ * is absolutely positioned in the same px space, so edges connect node ports
+ * exactly and the branch labels sit on the lines.
+ *
+ * The marketing page wraps this in its own browser frame, so this renders only
+ * the in-app screen content + its immediate chrome (header + tab bar).
+ */
+const tabs = [
+  { label: 'Overview', icon: 'barchart', active: false },
+  { label: 'Leads', icon: 'users', active: false },
+  { label: 'Steps', icon: 'listchecks', active: true },
+  { label: 'Schedule', icon: 'calendar', active: false },
+  { label: 'Settings', icon: 'settings', active: false },
+];
+
+const tabIcons: Record<string, string> = {
+  barchart: '<path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>',
+  users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  listchecks: '<path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/>',
+  calendar: '<rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/>',
+  settings: '<path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/>',
+};
+
+// lucide mail (step icon) + trash (node delete)
+const mailIcon = '<rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>';
+const trashIcon = '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>';
+const flagIcon = '<path d="M4 22V4a2 2 0 0 1 2-2h8.5L20 7.5V22l-3-2-2 2-2-2-2 2-2-2z"/>';
+
+// lucide icons for the step composer drawer (matches SequenceView + RichTextEditor toolbar)
+const sparklesIcon = '<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/>';
+const bookmarkPlusIcon = '<path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h7"/><path d="M16 6h6"/><path d="M19 3v6"/>';
+const bracesIcon = '<path d="M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5c0 1.1.9 2 2 2h1"/><path d="M16 21h1a2 2 0 0 0 2-2v-5c0-1.1.9-2 2-2a2 2 0 0 1-2-2V5a2 2 0 0 0-2-2h-1"/>';
+const pencilLineIcon = '<path d="M12 20h9"/><path d="M16.376 3.622a1 1 0 0 1 3.002 3.002L7.368 18.635a2 2 0 0 1-.855.506l-2.872.838a.5.5 0 0 1-.62-.62l.838-2.872a2 2 0 0 1 .506-.854z"/><path d="m15 5 3 3"/>';
+const eyeIcon = '<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/>';
+const boldIcon = '<path d="M6 12h9a4 4 0 0 1 0 8H7a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h7a4 4 0 0 1 0 8"/>';
+const italicIcon = '<line x1="19" x2="10" y1="4" y2="4"/><line x1="14" x2="5" y1="20" y2="20"/><line x1="15" x2="9" y1="4" y2="20"/>';
+const underlineIcon = '<path d="M6 4v6a6 6 0 0 0 12 0V4"/><line x1="4" x2="20" y1="20" y2="20"/>';
+const strikeIcon = '<path d="M16 4H9a3 3 0 0 0-2.83 4"/><path d="M14 12a4 4 0 0 1 0 8H6"/><line x1="4" x2="20" y1="12" y2="12"/>';
+const h2Icon = '<path d="M4 12h8"/><path d="M4 18V6"/><path d="M12 18V6"/><path d="M21 18h-4c0-4 4-3 4-6 0-1.5-2-2.5-4-1"/>';
+const listIcon = '<path d="M3 5h.01"/><path d="M3 12h.01"/><path d="M3 19h.01"/><path d="M8 5h13"/><path d="M8 12h13"/><path d="M8 19h13"/>';
+const listOrderedIcon = '<path d="M10 5h11"/><path d="M10 12h11"/><path d="M10 19h11"/><path d="M4 4h1v5"/><path d="M4 9h2"/><path d="M6 17a2 2 0 1 0-3.464 1.5"/><path d="M2 20h4"/>';
+const link2Icon = '<path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" x2="16" y1="12" y2="12"/>';
+const shuffleIcon = '<path d="m18 14 4 4-4 4"/><path d="m18 2 4 4-4 4"/><path d="M2 18h1.973a4 4 0 0 0 3.3-1.7l5.454-8.6a4 4 0 0 1 3.3-1.7H22"/><path d="M2 6h1.972a4 4 0 0 1 3.6 2.2"/><path d="M22 18h-6.041a4 4 0 0 1-3.3-1.8l-.359-.45"/>';
+const shieldCheckIcon = '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/>';
+const rotateIcon = '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>';
+const chevronDownIcon = '<path d="m6 9 6 6 6-6"/>';
+---
+<div class="relative w-full bg-white min-h-[500px] flex flex-col">
+  <!-- Campaign header -->
+  <div class="px-5 pt-5 pb-3 flex items-start gap-3 shrink-0">
+    <div class="min-w-0">
+      <div class="flex items-center gap-2">
+        <h1 class="text-[18px] font-semibold text-slate-900 truncate">Q1 Sales Outreach</h1>
+        <span class="shrink-0 inline-flex items-center h-5 px-2 rounded-md border text-[10px] uppercase tracking-[0.12em] font-medium bg-slate-100 text-slate-600 border-slate-200">draft</span>
+      </div>
+      <p class="text-[11px] text-slate-400 font-mono mt-1 truncate">cmp_8fK2pQ7rXa19</p>
+    </div>
+    <div class="ml-auto shrink-0">
+      <button type="button" class="h-7 px-2.5 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+        Start
+      </button>
+    </div>
+  </div>
+
+  <!-- Tab bar -->
+  <div class="shrink-0 px-3 flex items-center gap-1 border-b border-slate-200 overflow-x-auto">
+    {tabs.map((t) => (
+      <div class={`relative h-10 px-2.5 inline-flex items-center gap-1.5 text-[12.5px] ${t.active ? 'text-slate-900 font-medium' : 'text-slate-500'}`}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width={t.active ? 2 : 1.8} stroke-linecap="round" stroke-linejoin="round" set:html={tabIcons[t.icon]}></svg>
+        {t.label}
+        {t.active && <span class="absolute left-1.5 right-1.5 -bottom-px h-0.5 rounded-full bg-sky-600"></span>}
+      </div>
+    ))}
+  </div>
+
+  <!-- Page body -->
+  <div class="p-5 flex-1 min-h-0">
+    <div class="relative h-full min-h-[380px] w-full overflow-hidden rounded-md border border-slate-200 bg-slate-50/40">
+      <!-- dotted background -->
+      <div aria-hidden="true" class="absolute inset-0 pointer-events-none" style="background-image: radial-gradient(#e2e8f0 1px, transparent 1px); background-size: 22px 22px;"></div>
+
+      <!-- top-left toolbar -->
+      <div class="absolute left-3 top-3 z-20 flex items-center gap-1.5">
+        <button type="button" class="inline-flex h-8 items-center gap-1.5 rounded-md bg-sky-600 px-3 text-[12px] font-medium text-white shadow-sm hover:bg-sky-700 transition-colors">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Add step
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="-mr-0.5 opacity-80"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <button type="button" class="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 text-[12px] font-medium text-slate-700 shadow-sm hover:border-slate-300 transition-colors">Tidy up</button>
+      </div>
+
+      <!-- top-right: stop on reply -->
+      <div class="absolute right-3 top-3 z-20 flex items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 shadow-sm">
+        <span class="text-[11.5px] text-slate-600">Stop on reply</span>
+        <span class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full bg-sky-600">
+          <span class="inline-block size-4 translate-x-4 rounded-full bg-white shadow-sm"></span>
+        </span>
+      </div>
+
+      <!-- fixed coordinate layer (720x360): SVG edges + node cards share these px -->
+      <div class="absolute left-1/2 top-12 -translate-x-1/2" style="width:720px; height:360px;">
+        <svg width="720" height="360" viewBox="0 0 720 360" class="absolute inset-0 pointer-events-none" aria-hidden="true">
+          <defs>
+            <marker id="cb-arrow-sky" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M1 1 L9 5 L1 9 z" fill="#0ea5e9"/></marker>
+            <marker id="cb-arrow-slate" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M1 1 L9 5 L1 9 z" fill="#94a3b8"/></marker>
+          </defs>
+          <!-- 1: First email -> IF (conditional spine) -->
+          <path d="M 360 78 L 360 102" fill="none" stroke="#0ea5e9" stroke-width="2" marker-end="url(#cb-arrow-sky)"/>
+          <!-- 2: IF then (right) -> Follow-up -->
+          <path d="M 434 116 C 452 150, 464 168, 464 193" fill="none" stroke="#0ea5e9" stroke-width="2" marker-end="url(#cb-arrow-sky)"/>
+          <!-- 3: IF else (bottom) -> Alternative -->
+          <path d="M 360 130 C 360 152, 180 144, 180 160" fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#cb-arrow-slate)"/>
+          <!-- 4: Follow-up -> Add engagement tag -->
+          <path d="M 588 226 L 588 268" fill="none" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#cb-arrow-slate)"/>
+          <!-- 5: Alternative -> Stop -->
+          <path d="M 180 226 C 180 250, 180 258, 180 276" fill="none" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#cb-arrow-slate)"/>
+        </svg>
+
+        <!-- edge labels, placed on the lines -->
+        <span class="absolute z-10 inline-flex items-center rounded border border-sky-200 bg-white px-1.5 py-px text-[10px] text-sky-700 shadow-sm" style="left:430px; top:150px;">wait 2d</span>
+        <span class="absolute z-10 inline-flex items-center rounded border border-slate-200 bg-white px-1.5 py-px text-[10px] text-slate-500 shadow-sm" style="left:243px; top:132px;">else</span>
+
+        <!-- StepNode: First email (selected) -->
+        <div class="absolute" style="left:236px; top:12px; width:248px;">
+          <div class="cb-node rounded-xl border border-sky-400 ring-2 ring-sky-100 bg-white shadow-sm">
+            <div class="flex items-center gap-2 rounded-t-xl border-b border-slate-200/70 bg-gradient-to-r from-sky-50/80 to-white px-2.5 py-1.5">
+              <span class="inline-flex size-5 shrink-0 items-center justify-center rounded-md bg-sky-100 text-sky-600 ring-1 ring-sky-200/70"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={mailIcon}></svg></span>
+              <span class="min-w-0 flex-1 truncate text-[12.5px] font-semibold text-slate-800">First email</span>
+              <span class="shrink-0 rounded bg-sky-600 px-1.5 py-px text-[9px] font-semibold uppercase tracking-[0.12em] text-white">Start</span>
+            </div>
+            <div class="px-2.5 py-2">
+              <div class="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-slate-300">Email</div>
+              <div class="mt-0.5 truncate text-[11.5px] text-slate-500">Quick question, {`{{.FirstName}}`}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- IfNode: opened within 3d -->
+        <div class="absolute" style="left:286px; top:102px; width:148px;">
+          <div class="rounded-lg border border-sky-200 bg-gradient-to-b from-sky-50 to-white px-2 py-1 shadow-sm">
+            <div class="flex items-center gap-1.5">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-sky-600"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>
+              <span class="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-sky-500">if</span>
+              <span class="min-w-0 flex-1 truncate text-[11px] font-medium text-sky-800">opened within 3d</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- StepNode: Follow-up -->
+        <div class="absolute" style="left:464px; top:160px; width:248px;">
+          <div class="rounded-xl border border-slate-200 bg-white shadow-sm">
+            <div class="flex items-center gap-2 rounded-t-xl border-b border-slate-200/70 bg-gradient-to-r from-sky-50/80 to-white px-2.5 py-1.5">
+              <span class="inline-flex size-5 shrink-0 items-center justify-center rounded-md bg-sky-100 text-sky-600 ring-1 ring-sky-200/70"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={mailIcon}></svg></span>
+              <span class="min-w-0 flex-1 truncate text-[12.5px] font-semibold text-slate-800">Follow-up</span>
+            </div>
+            <div class="px-2.5 py-2">
+              <div class="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-slate-300">Email</div>
+              <div class="mt-0.5 truncate text-[11.5px] text-slate-500">Following up on my message</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- StepNode: Alternative -->
+        <div class="absolute" style="left:56px; top:160px; width:248px;">
+          <div class="rounded-xl border border-slate-200 bg-white shadow-sm">
+            <div class="flex items-center gap-2 rounded-t-xl border-b border-slate-200/70 bg-gradient-to-r from-sky-50/80 to-white px-2.5 py-1.5">
+              <span class="inline-flex size-5 shrink-0 items-center justify-center rounded-md bg-sky-100 text-sky-600 ring-1 ring-sky-200/70"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={mailIcon}></svg></span>
+              <span class="min-w-0 flex-1 truncate text-[12.5px] font-semibold text-slate-800">Alternative</span>
+            </div>
+            <div class="px-2.5 py-2">
+              <div class="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-slate-300">Email</div>
+              <div class="mt-0.5 truncate text-[11.5px] text-slate-500">Trying a different angle</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ActionNode: Add engagement tag -->
+        <div class="absolute" style="left:464px; top:268px; width:248px;">
+          <div class="rounded-xl border border-slate-200 bg-white shadow-sm">
+            <div class="flex items-center gap-2 rounded-t-xl border-b border-slate-200/70 bg-gradient-to-r from-slate-50 to-white px-2.5 py-1.5">
+              <span class="inline-flex size-5 shrink-0 items-center justify-center rounded-md bg-slate-100 ring-1 ring-slate-200/70"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-emerald-600"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/></svg></span>
+              <span class="min-w-0 flex-1 truncate text-[12.5px] font-semibold text-slate-800">Add engagement tag</span>
+            </div>
+            <div class="px-2.5 py-2">
+              <div class="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-slate-300">Add tag</div>
+              <div class="mt-0.5 truncate text-[11.5px] text-slate-500">engaged</div>
+            </div>
+            <div class="flex items-center gap-1 border-t border-slate-200/70 px-2.5 py-1 text-[10.5px] text-slate-400">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={flagIcon}></svg>
+              Ends here
+            </div>
+          </div>
+        </div>
+
+        <!-- StopNode -->
+        <div class="absolute" style="left:122px; top:276px;">
+          <div class="inline-flex items-center gap-1.5 rounded-md border border-rose-200 bg-rose-50 px-3 py-1.5 text-[11.5px] font-medium text-rose-600">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={flagIcon}></svg>
+            Stop
+          </div>
+        </div>
+      </div>
+
+      <!-- bottom-left zoom controls -->
+      <div class="absolute bottom-3 left-3 z-20 flex flex-col overflow-hidden rounded-md border border-slate-200 bg-white shadow-sm">
+        <span class="inline-flex size-6 items-center justify-center border-b border-slate-100 text-slate-500"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+        <span class="inline-flex size-6 items-center justify-center border-b border-slate-100 text-slate-500"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+        <span class="inline-flex size-6 items-center justify-center text-slate-500"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/></svg></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Demo scene: reaction drawer (the real Step composer / SequenceView sliding in from the right) -->
+  <div class="cb-react absolute right-0 top-0 bottom-0 w-[330px] bg-white border-l border-slate-200 shadow-[-8px_0_30px_-12px_rgba(15,23,42,.25)] flex flex-col overflow-hidden" aria-hidden="true">
+    <!-- Header row: Step label + subtitle + Templates / Save as template / Write with AI + Reset + Save changes -->
+    <div class="shrink-0 border-b border-slate-200 px-3 py-2.5">
+      <div class="flex items-center justify-between gap-2">
+        <div class="min-w-0">
+          <div class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">Step 1</div>
+          <p class="mt-0.5 truncate text-[11px] text-slate-400">Compose the email this step sends.</p>
+        </div>
+        <button type="button" class="h-7 px-3 rounded-md bg-sky-600 text-[12px] font-medium text-white inline-flex items-center gap-1.5 transition-colors shrink-0 whitespace-nowrap">Save changes</button>
+      </div>
+      <div class="mt-2 flex items-center gap-1.5">
+        <button type="button" aria-label="Templates" title="Templates" class="h-7 px-2 rounded-md border border-slate-200 bg-white text-slate-700 inline-flex items-center gap-1 text-[12px] font-medium shrink-0 whitespace-nowrap">
+          <span class="text-slate-400 shrink-0"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={sparklesIcon}></svg></span>
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="text-slate-400 shrink-0"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <button type="button" aria-label="Save as template" title="Save as template" class="h-7 w-7 inline-flex items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 shrink-0">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={bookmarkPlusIcon}></svg>
+        </button>
+        <button type="button" class="h-7 px-2.5 inline-flex items-center gap-1.5 rounded-md border border-sky-200 bg-sky-50 text-[12px] font-medium text-sky-700 shrink-0 whitespace-nowrap">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={sparklesIcon}></svg>
+          Write with AI
+        </button>
+        <div class="h-4 w-px bg-slate-200 shrink-0"></div>
+        <button type="button" class="h-7 px-2.5 rounded-md border border-slate-200 bg-white text-[12px] font-medium text-slate-700 shrink-0 whitespace-nowrap">Reset</button>
+      </div>
+    </div>
+
+    <!-- Composer body -->
+    <div class="flex-1 min-h-0 overflow-hidden space-y-4 p-3">
+      <!-- Step name -->
+      <div>
+        <label class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium block mb-1.5">Step name</label>
+        <div class="h-7 px-2.5 rounded-md border border-slate-200 bg-white text-[12.5px] text-slate-900 inline-flex w-full items-center">First email</div>
+        <p class="mt-1.5 text-[10.5px] text-slate-400">Internal label only. Recipients never see it.</p>
+      </div>
+
+      <!-- Subject + variables insert -->
+      <div>
+        <div class="flex items-center justify-between gap-2 mb-1.5">
+          <label class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium block">Subject</label>
+          <span class="h-7 px-1.5 inline-flex items-center gap-1 rounded text-slate-500">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={bracesIcon}></svg>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={chevronDownIcon}></svg>
+          </span>
+        </div>
+        <div class="h-7 px-2.5 rounded-md border border-slate-200 bg-white text-[12.5px] text-slate-900 inline-flex w-full items-center">Quick question, {`{{.FirstName}}`}</div>
+      </div>
+
+      <!-- Body: Edit/Preview pill + rich text toolbar + body -->
+      <div>
+        <div class="flex items-center justify-between gap-2 mb-1.5">
+          <label class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium block">Body</label>
+          <div class="inline-flex items-center gap-0.5 rounded-md bg-slate-100 p-0.5">
+            <span class="h-6 px-2 inline-flex items-center gap-1 rounded text-[11.5px] font-medium bg-white text-slate-900 shadow-sm">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={pencilLineIcon}></svg>
+              Edit
+            </span>
+            <span class="h-6 px-2 inline-flex items-center gap-1 rounded text-[11.5px] font-medium text-slate-500">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={eyeIcon}></svg>
+              Preview
+            </span>
+          </div>
+        </div>
+        <div class="rounded-md border border-slate-200 bg-white">
+          <!-- Toolbar -->
+          <div class="flex flex-wrap items-center gap-0.5 border-b border-slate-200/70 px-1.5 py-1">
+            <span class="size-7 inline-flex items-center justify-center rounded text-slate-500"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={boldIcon}></svg></span>
+            <span class="size-7 inline-flex items-center justify-center rounded text-slate-500"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={italicIcon}></svg></span>
+            <span class="size-7 inline-flex items-center justify-center rounded text-slate-500"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={underlineIcon}></svg></span>
+            <span class="size-7 inline-flex items-center justify-center rounded text-slate-500"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={strikeIcon}></svg></span>
+            <span class="mx-0.5 h-4 w-px bg-slate-200"></span>
+            <span class="size-7 inline-flex items-center justify-center rounded text-slate-500"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={h2Icon}></svg></span>
+            <span class="size-7 inline-flex items-center justify-center rounded text-slate-500"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={listIcon}></svg></span>
+            <span class="size-7 inline-flex items-center justify-center rounded text-slate-500"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={listOrderedIcon}></svg></span>
+            <span class="size-7 inline-flex items-center justify-center rounded text-slate-500"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={link2Icon}></svg></span>
+            <span class="mx-0.5 h-4 w-px bg-slate-200"></span>
+            <span class="h-7 px-1.5 inline-flex items-center gap-1 rounded text-slate-500"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={bracesIcon}></svg><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={chevronDownIcon}></svg></span>
+            <span class="size-7 inline-flex items-center justify-center rounded text-slate-500"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={shuffleIcon}></svg></span>
+          </div>
+          <!-- Body text -->
+          <div class="px-3 py-2.5 text-[13px] leading-relaxed text-slate-800 space-y-2">
+            <p>Hi {`{{.FirstName}}`}, I noticed {`{{.Company}}`} is scaling fast.</p>
+            <p>We help teams like yours land more cold replies without burning sender reputation.</p>
+            <p>Worth a quick 15 minutes this week?</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ContentScore footer -->
+      <div class="rounded-md border border-slate-200 bg-white">
+        <div class="flex items-center justify-between gap-3 px-3 py-2.5">
+          <div class="min-w-0">
+            <div class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">Content check</div>
+            <p class="mt-0.5 text-[11px] text-slate-400 leading-relaxed">Advisory deliverability score. Never blocks sending.</p>
+          </div>
+          <span class="h-8 px-3 rounded-md border border-slate-200 text-[12px] font-medium text-slate-700 inline-flex items-center gap-1.5 shrink-0">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={shieldCheckIcon}></svg>
+            Re-check
+          </span>
+        </div>
+        <div class="px-3 pb-3 border-t border-slate-200/60 pt-3">
+          <div class="flex items-center gap-2">
+            <span class="text-[22px] font-light leading-none tabular-nums text-emerald-600">78</span>
+            <span class="text-[11px] text-slate-400 mb-0.5">/ 100</span>
+            <span class="ml-auto text-[11px] font-medium text-emerald-600">Looks good</span>
+          </div>
+          <div class="mt-2 h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
+            <div class="h-full rounded-full bg-emerald-500" style="width:78%"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Demo scene: animated cursor -->
+  <div class="cb-cursor" aria-hidden="true"><span class="cb-ripple"></span><svg width="23" height="27" viewBox="0 0 23 27" fill="none"><path d="M3 2.2 L3 20.4 L7.7 16 L10.9 23.2 L14 21.8 L10.9 14.8 L17.2 14.6 Z" fill="#ffffff" stroke="#0f172a" stroke-width="1.4" stroke-linejoin="round"/></svg></div>
+
+  <style>
+    .cb-cursor{position:absolute;z-index:50;width:23px;height:27px;pointer-events:none;filter:drop-shadow(0 4px 6px rgba(15,23,42,.4));animation:cb-move 11s cubic-bezier(.5,0,.2,1) infinite;}
+    .cb-cursor svg{display:block;transform-origin:3px 2px;animation:cb-press 11s ease-in-out infinite;}
+    .cb-ripple{position:absolute;left:-6px;top:-6px;width:32px;height:32px;border-radius:9999px;background:rgba(2,132,199,.5);transform:scale(0);opacity:0;animation:cb-rip 11s ease-out infinite;}
+    .cb-react{position:absolute;z-index:40;opacity:0;animation:cb-react 11s ease-out infinite;}
+    /* press #1 feedback on the First email node */
+    .cb-node{animation:cb-node-press 11s ease-in-out infinite;}
+    /* press #1 lands on the First email node center (~50%, 44%); press #2 dismisses the
+       drawer by clicking the canvas to its LEFT (34%, 62%); start/return is a neutral spot. */
+    @keyframes cb-move{0%{left:18%;top:80%}22%{left:50%;top:44%}32%{left:50%;top:44%}58%{left:34%;top:62%}68%{left:34%;top:62%}88%{left:30%;top:70%}100%{left:18%;top:80%}}
+    @keyframes cb-press{0%,26%{transform:scale(1)}28%{transform:scale(.82)}31%,62%{transform:scale(1)}64%{transform:scale(.82)}67%,100%{transform:scale(1)}}
+    @keyframes cb-rip{0%,26%{transform:scale(0);opacity:0}29%{transform:scale(.25);opacity:.7}41%{transform:scale(1.9);opacity:0}60%{transform:scale(0);opacity:0}63%{transform:scale(.25);opacity:.7}75%{transform:scale(1.9);opacity:0}100%{transform:scale(0);opacity:0}}
+    @keyframes cb-react{0%,29%{opacity:0;transform:translateX(18px)}33%{opacity:1;transform:translateX(0)}60%{opacity:1;transform:translateX(0)}66%{opacity:0;transform:translateX(18px)}100%{opacity:0;transform:translateX(18px)}}
+    @keyframes cb-node-press{0%,26%{box-shadow:none}28%{box-shadow:0 0 0 4px rgba(186,230,253,.9)}31%,100%{box-shadow:none}}
+    @media (prefers-reduced-motion: reduce){.cb-cursor{display:none}.cb-react{display:none}}
+  </style>
+</div>

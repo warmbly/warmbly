@@ -1,0 +1,314 @@
+---
+/**
+ * Pixel-faithful mock of the Warmbly "Write with AI" assistant, shown IN
+ * CONTEXT inside the campaign Step email composer.
+ *
+ * Maps 1:1 to the real components:
+ *   - web/src/components/app/campaigns/sequences/SequenceView.tsx   the Step composer panel
+ *   - web/src/components/app/campaigns/sequences/WriteWithAI.tsx    the AI popover (the star)
+ *   - web/src/components/app/campaigns/sequences/RichTextEditor.tsx the body toolbar + editor
+ *   - web/src/lib/api/models/app/generation/Write.ts               WRITE_TONES presets
+ *   - web/src/components/ui/field.tsx                               TextInput / Label
+ *   - web/src/components/ui/popover-menu.tsx                        SelectButton / PopoverMenuContent
+ *
+ * Desktop-locked, authored at the 900px design width (FeatureSection scales it
+ * to the column). No responsive variants; always the desktop layout.
+ */
+
+// Tone presets, copied verbatim from WRITE_TONES (web/.../generation/Write.ts).
+// "Default" (empty value) is the selected tone.
+const tones = [
+  { label: "Default", selected: true },
+  { label: "Friendly", selected: false },
+  { label: "Professional", selected: false },
+  { label: "Casual", selected: false },
+  { label: "Concise", selected: false },
+  { label: "Persuasive", selected: false },
+];
+
+// The freshly generated cold-email draft that fills the body after Generate.
+// Matches SequenceView.onInsert -> setBody: each line is a <p> in the tiptap body.
+const draftLines = [
+  "Hi Alex,",
+  "Noticed Acme has been scaling fast on AWS. Teams your size are usually overpaying 30 to 40 percent on compute they spun up once and never tuned.",
+  "I help engineering teams find that spend without re-architecting anything. Worth a quick 15-minute call to walk through the three line items I'd check first?",
+  "Open to next Tuesday or Wednesday afternoon?",
+  "Best,",
+  "Jordan",
+];
+---
+<!-- Root: fills parent width, white surface. relative for cursor + reaction. -->
+<div class="w-full bg-white text-slate-900 relative" style="min-height:560px;">
+
+  <!-- Slim Step tab bar above the composer (campaign sequence builder chrome) -->
+  <div class="h-12 px-5 border-b border-slate-200 flex items-center gap-3 bg-white">
+    <span class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">Sequence</span>
+    <div class="h-4 w-px bg-slate-200"></div>
+    <div class="flex items-center gap-1.5">
+      <span class="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md bg-slate-900 text-white text-[12px] font-medium">
+        <span class="size-4 rounded-full bg-white/20 inline-flex items-center justify-center font-mono text-[10px] tabular-nums">1</span>
+        Step 1
+      </span>
+      <span class="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-slate-500 text-[12px]">
+        <span class="size-4 rounded-full bg-slate-100 inline-flex items-center justify-center font-mono text-[10px] tabular-nums text-slate-500">2</span>
+        Follow-up
+        <span class="font-mono text-[10px] text-slate-400 tabular-nums">+3d</span>
+      </span>
+      <span class="inline-flex items-center gap-1.5 h-7 px-2 rounded-md text-slate-400 text-[12px]">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Add step
+      </span>
+    </div>
+    <div class="ml-auto inline-flex items-center gap-1.5 text-[11px] text-emerald-600 font-medium">
+      <span class="relative flex size-1.5">
+        <span class="absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-60 animate-ping"></span>
+        <span class="relative inline-flex size-1.5 rounded-full bg-emerald-500"></span>
+      </span>
+      Draft saved
+    </div>
+  </div>
+
+  <!-- Composer body padding -->
+  <div class="p-5">
+
+    <!-- The Step composer card (SequenceView root) -->
+    <div class="rounded-md border border-slate-200 bg-white relative">
+
+      <!-- Header: Step label + subtitle (left), action buttons (right) -->
+      <div class="flex flex-row items-center justify-between gap-3 border-b border-slate-200 px-3 py-2.5">
+        <div class="min-w-0">
+          <div class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">Step 1</div>
+          <p class="mt-0.5 truncate text-[11px] text-slate-400">Compose the email this step sends.</p>
+        </div>
+        <div class="flex flex-nowrap shrink-0 items-center gap-2">
+          <!-- Templates (SelectButton) -->
+          <button type="button" class="h-7 px-2 rounded-md border border-slate-200 bg-white text-slate-700 inline-flex items-center gap-1.5 text-[12px] font-medium whitespace-nowrap shrink-0">
+            <span class="text-slate-400 shrink-0">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .962 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.962 0z"/></svg>
+            </span>
+            <span class="truncate max-w-[160px]">Templates</span>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="text-slate-400 shrink-0"><path d="M6 9l6 6 6-6"/></svg>
+          </button>
+
+          <!-- Save as template (icon-only at 900px to keep the row on one line) -->
+          <button type="button" aria-label="Save as template" title="Save as template" class="h-7 w-7 inline-flex items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 shrink-0">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15.5 22v-8.4a.6.6 0 0 0-.6-.6H9.1a.6.6 0 0 0-.6.6V22l3.5-2.5z"/><path d="M4 19V4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v15"/><line x1="12" y1="7" x2="12" y2="11"/><line x1="10" y1="9" x2="14" y2="9"/></svg>
+          </button>
+
+          <!-- Write with AI (highlighted, popover open) -->
+          <button type="button" class="h-7 px-2.5 inline-flex items-center gap-1.5 rounded-md border border-sky-300 bg-sky-100 text-[12px] font-medium text-sky-700 whitespace-nowrap shrink-0">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .962 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.962 0z"/></svg>
+            Write with AI
+          </button>
+
+          <div class="h-4 w-px bg-slate-200 shrink-0"></div>
+
+          <!-- Reset -->
+          <button type="button" class="h-7 px-2.5 rounded-md border border-slate-200 bg-white text-[12px] font-medium text-slate-700 opacity-40 whitespace-nowrap shrink-0">Reset</button>
+
+          <!-- Save changes -->
+          <button type="button" class="h-7 px-3 rounded-md bg-sky-600 text-[12px] font-medium text-white inline-flex items-center gap-1.5 opacity-40 whitespace-nowrap shrink-0">Save changes</button>
+        </div>
+      </div>
+
+      <!-- Composer fields -->
+      <div class="space-y-4 p-3">
+
+        <!-- Step name -->
+        <div>
+          <label class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium block mb-1.5">Step name</label>
+          <div class="h-7 px-2.5 rounded-md border border-slate-200 bg-white text-[12.5px] text-slate-900 flex items-center">Cold intro</div>
+          <p class="mt-1.5 text-[10.5px] text-slate-400">Internal label only. Recipients never see it.</p>
+        </div>
+
+        <!-- Subject -->
+        <div>
+          <div class="flex items-center justify-between gap-2 mb-1.5">
+            <label class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium block">Subject</label>
+            <button type="button" class="h-7 px-1.5 inline-flex items-center gap-1 rounded text-slate-500">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5a2 2 0 0 0 2 2h1"/><path d="M16 21h1a2 2 0 0 0 2-2v-5a2 2 0 0 1 2-2 2 2 0 0 1-2-2V5a2 2 0 0 0-2-2h-1"/></svg>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
+          </div>
+          <div class="h-7 px-2.5 rounded-md border border-slate-200 bg-white text-[12.5px] text-slate-900 flex items-center">
+            <span>Quick question about Acme's AWS spend, </span><span class="font-mono text-sky-700">{`{{.FirstName}}`}</span>
+          </div>
+        </div>
+
+        <!-- Body: Edit/Preview toggle + rich-text editor -->
+        <div>
+          <div class="flex items-center justify-between gap-2 mb-1.5">
+            <label class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium block">Body</label>
+            <div class="inline-flex items-center gap-0.5 rounded-md bg-slate-100 p-0.5">
+              <span class="h-6 px-2 inline-flex items-center gap-1 rounded text-[11.5px] font-medium bg-white text-slate-900 shadow-sm">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                Edit
+              </span>
+              <span class="h-6 px-2 inline-flex items-center gap-1 rounded text-[11.5px] font-medium text-slate-500">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg>
+                Preview
+              </span>
+            </div>
+          </div>
+
+          <!-- RichTextEditor: bordered card, toolbar + body -->
+          <div class="rounded-md border border-slate-200 bg-white">
+            <!-- Toolbar (px-1.5 py-1, gap-0.5, hairline bottom border) -->
+            <div class="relative flex flex-wrap items-center gap-0.5 border-b border-slate-200/70 px-1.5 py-1">
+              <!-- Bold -->
+              <span class="size-7 inline-flex items-center justify-center rounded text-slate-500">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 12h9a4 4 0 0 1 0 8H7a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h7a4 4 0 0 1 0 8"/></svg>
+              </span>
+              <!-- Italic -->
+              <span class="size-7 inline-flex items-center justify-center rounded text-slate-500">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" x2="10" y1="4" y2="4"/><line x1="14" x2="5" y1="20" y2="20"/><line x1="15" x2="9" y1="4" y2="20"/></svg>
+              </span>
+              <!-- Underline -->
+              <span class="size-7 inline-flex items-center justify-center rounded text-slate-500">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4v6a6 6 0 0 0 12 0V4"/><line x1="4" x2="20" y1="20" y2="20"/></svg>
+              </span>
+              <!-- Strikethrough -->
+              <span class="size-7 inline-flex items-center justify-center rounded text-slate-500">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4H9a3 3 0 0 0-2.83 4"/><path d="M14 12a4 4 0 0 1 0 8H6"/><line x1="4" x2="20" y1="12" y2="12"/></svg>
+              </span>
+              <span class="mx-0.5 h-4 w-px bg-slate-200"></span>
+              <!-- Heading 2 -->
+              <span class="size-7 inline-flex items-center justify-center rounded text-slate-500">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h8"/><path d="M4 18V6"/><path d="M12 18V6"/><path d="M21 18h-4c0-4 4-3 4-6 0-1.5-2-2.5-4-1"/></svg>
+              </span>
+              <!-- Bullet list -->
+              <span class="size-7 inline-flex items-center justify-center rounded text-slate-500">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h.01"/><path d="M3 12h.01"/><path d="M3 19h.01"/><path d="M8 5h13"/><path d="M8 12h13"/><path d="M8 19h13"/></svg>
+              </span>
+              <!-- Ordered list -->
+              <span class="size-7 inline-flex items-center justify-center rounded text-slate-500">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 12h11"/><path d="M10 18h11"/><path d="M10 6h11"/><path d="M4 10h2"/><path d="M4 6h1v4"/><path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg>
+              </span>
+              <!-- Link -->
+              <span class="size-7 inline-flex items-center justify-center rounded text-slate-500">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" x2="16" y1="12" y2="12"/></svg>
+              </span>
+              <span class="mx-0.5 h-4 w-px bg-slate-200"></span>
+              <!-- Variables (Braces + chevron) -->
+              <span class="h-7 px-1.5 inline-flex items-center gap-1 rounded text-slate-500">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5a2 2 0 0 0 2 2h1"/><path d="M16 21h1a2 2 0 0 0 2-2v-5a2 2 0 0 1 2-2 2 2 0 0 1-2-2V5a2 2 0 0 0-2-2h-1"/></svg>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+              </span>
+              <!-- Spintax (shuffle) -->
+              <span class="size-7 inline-flex items-center justify-center rounded text-slate-500">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 14 4 4-4 4"/><path d="m18 2 4 4-4 4"/><path d="M2 18h1.973a4 4 0 0 0 3.3-1.7l5.454-8.6a4 4 0 0 1 3.3-1.7H22"/><path d="M2 6h1.972a4 4 0 0 1 3.6 2.2"/><path d="M22 18h-6.041a4 4 0 0 1-3.3-1.8l-.359-.45"/></svg>
+              </span>
+            </div>
+
+            <!-- Body content area (empty before Generate). The reaction overlays
+                 here, so it reads as Generate -> body filled. -->
+            <div class="ai-bodyarea relative tiptap-body min-h-[228px] px-3 py-2.5 text-[13px] leading-relaxed">
+              <p class="text-slate-300 select-none">Hi {`{{.FirstName}}`}, ...</p>
+
+              <!-- REACTION: the generated draft fills the body (white bg so it
+                   cleanly covers the placeholder once revealed). -->
+              <div class="ai-react" style="position:absolute; left:12px; right:12px; top:10px; background:#ffffff;">
+                <div class="space-y-3 text-slate-800">
+                  {draftLines.map((line) => (
+                    <p>{line}</p>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ─────────────────────────────────────────────────────────────
+           THE STAR: "Write with AI" popover, open at the top-right under
+           its trigger (align="end"). PopoverMenuContent: rounded-md border
+           border-slate-200 bg-white, minWidth 320, p-3, the popover shadow.
+      ────────────────────────────────────────────────────────────── -->
+      <div
+        class="absolute z-40 rounded-md border border-slate-200 bg-white p-3 overflow-hidden"
+        style="top:48px; right:12px; min-width:408px; box-shadow:0 4px 12px -2px rgba(15,23,42,0.10),0 12px 32px -8px rgba(15,23,42,0.18);"
+      >
+        <div class="space-y-3">
+          <!-- Prompt (textarea, focused state: sky border + ring) -->
+          <div>
+            <label class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium block mb-1.5">What should this email say?</label>
+            <div class="w-full rounded-md border border-sky-400 ring-2 ring-sky-100 bg-white px-2.5 py-2 text-[12.5px] text-slate-900 leading-relaxed">
+              A short intro asking to book a 15-min call about cutting their AWS bill.
+            </div>
+          </div>
+
+          <!-- Tone: 6 chips, Default selected -->
+          <div>
+            <label class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium block mb-1.5">Tone</label>
+            <div class="flex flex-nowrap gap-1">
+              {tones.map((t) => (
+                <span class={`h-6 rounded-md border px-1.5 inline-flex items-center whitespace-nowrap shrink-0 text-[11.5px] font-medium ${
+                  t.selected
+                    ? "border-sky-300 bg-sky-50 text-sky-700"
+                    : "border-slate-200 bg-white text-slate-600"
+                }`}>{t.label}</span>
+              ))}
+            </div>
+          </div>
+
+          <!-- Footer: credits remaining + Generate. Credits flip to 2 + a
+               "Generated" check after the press (via the .ai-credits swap). -->
+          <div class="flex items-center justify-between gap-2 pt-0.5">
+            <span class="text-[10.5px] text-slate-400">
+              <span class="ai-credits-before">3 credits remaining</span>
+              <span class="ai-credits-after inline-flex items-center gap-1 text-emerald-600 font-medium">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                Generated. 2 credits remaining
+              </span>
+            </span>
+            <button type="button" class="ai-genbtn h-7 px-3 inline-flex items-center gap-1.5 rounded-md bg-sky-600 text-[12px] font-medium text-white whitespace-nowrap shrink-0">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72"/><path d="m14 7 3 3"/><path d="M5 6v4"/><path d="M19 14v4"/><path d="M10 2v2"/><path d="M7 8H3"/><path d="M21 16h-4"/><path d="M11 3H9"/></svg>
+              Generate
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ─────────────────────────────────────────────────────────────
+       DEMO SCENE: the cursor glides to the popover "Generate" button,
+       presses it (28%) - the button shows an active ring; the generated
+       draft fades into the composer body (~32%) and the footer flips to
+       "Generated. 2 credits remaining". The cursor then dips into the
+       body (press #2, 64%). 11s infinite loop.
+  ────────────────────────────────────────────────────────────── -->
+
+  <!-- Cursor -->
+  <div class="ai-cursor" aria-hidden="true">
+    <span class="ai-ripple"></span>
+    <svg width="23" height="27" viewBox="0 0 23 27" fill="none"><path d="M3 2.2 L3 20.4 L7.7 16 L10.9 23.2 L14 21.8 L10.9 14.8 L17.2 14.6 Z" fill="#ffffff" stroke="#0f172a" stroke-width="1.4" stroke-linejoin="round"/></svg>
+  </div>
+
+  <style>
+    /* Reaction (generated draft) hidden until press #1, then rests. */
+    .ai-react{opacity:0;animation:ai-react 11s ease-out infinite;}
+
+    /* Credits text swap: "3 remaining" -> "Generated. 2 remaining" on press. */
+    .ai-credits-after{display:none;}
+    .ai-credits-before{animation:ai-credits-before 11s step-end infinite;}
+    .ai-credits-after{animation:ai-credits-after 11s step-end infinite;}
+
+    /* Generate button active state synced with press #1. */
+    .ai-genbtn{animation:ai-genbtn 11s ease-in-out infinite;}
+
+    .ai-cursor{position:absolute;z-index:50;width:23px;height:27px;pointer-events:none;filter:drop-shadow(0 4px 6px rgba(15,23,42,.4));animation:ai-move 11s cubic-bezier(.5,0,.2,1) infinite;}
+    .ai-cursor svg{display:block;transform-origin:3px 2px;animation:ai-press 11s ease-in-out infinite;}
+    .ai-ripple{position:absolute;left:-6px;top:-6px;width:32px;height:32px;border-radius:9999px;background:rgba(2,132,199,.5);transform:scale(0);opacity:0;animation:ai-rip 11s ease-out infinite;}
+
+    @keyframes ai-move{0%{left:18%;top:14%}22%{left:89.2%;top:46.2%}32%{left:89.2%;top:46.2%}58%{left:34%;top:72%}68%{left:34%;top:72%}88%{left:34%;top:72%}100%{left:18%;top:14%}}
+    @keyframes ai-press{0%,26%{transform:scale(1)}28%{transform:scale(.82)}31%,62%{transform:scale(1)}64%{transform:scale(.82)}67%,100%{transform:scale(1)}}
+    @keyframes ai-rip{0%,26%{transform:scale(0);opacity:0}29%{transform:scale(.25);opacity:.7}41%{transform:scale(1.9);opacity:0}60%{transform:scale(0);opacity:0}63%{transform:scale(.25);opacity:.7}75%{transform:scale(1.9);opacity:0}100%{transform:scale(0);opacity:0}}
+    @keyframes ai-react{0%,29%{opacity:0;transform:translateY(8px)}33%{opacity:1;transform:translateY(0)}88%{opacity:1;transform:translateY(0)}95%{opacity:0;transform:translateY(8px)}100%{opacity:0;transform:translateY(8px)}}
+    @keyframes ai-genbtn{0%,27%{background-color:#0284c7;box-shadow:none}28%,31%{background-color:#0369a1;box-shadow:0 0 0 2px rgba(186,230,253,1)}33%,100%{background-color:#0284c7;box-shadow:none}}
+    @keyframes ai-credits-before{0%,31.9%{display:inline}32%,100%{display:none}}
+    @keyframes ai-credits-after{0%,31.9%{display:none}32%,92%{display:inline-flex}92.1%,100%{display:none}}
+    @media (prefers-reduced-motion: reduce){.ai-cursor{display:none}.ai-react{opacity:1;transform:none;animation:none}.ai-genbtn{animation:none}.ai-credits-before{display:none;animation:none}.ai-credits-after{display:inline-flex;animation:none}}
+  </style>
+</div>

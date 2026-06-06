@@ -1,0 +1,246 @@
+---
+/**
+ * Static, desktop-locked mock of the Warmbly /app/integrations screen.
+ *
+ * Faithful to the real source:
+ *   - web/src/app/app/integrations/page.tsx                       marketplace page (CatalogCard)
+ *   - web/src/components/layout/Page.tsx                          PageTopbar / StatStrip / Stat / SectionBar
+ *   - web/src/app/app/integrations/_components/ProviderGlyph.tsx  per-brand tinted glyph tile (BRAND map)
+ *   - web/src/app/app/integrations/_components/StatusPill.tsx     connected / configured pills (TONES map)
+ *   - web/src/app/app/integrations/_components/ConnectDrawer.tsx  trust copy + primary button styling
+ *   - web/src/components/ui/field.tsx                             SearchInput
+ *   - internal/app/integration/catalog.go                        provider names + taglines + auth methods
+ *
+ * Authored at a 900px design width and scaled by the page. DESKTOP-LOCKED:
+ * no responsive variants anywhere. Renders only the in-app content (no global
+ * sidebar / app header), since the marketing page wraps it in its own frame.
+ */
+
+// Per-brand glyph tints, mirroring ProviderGlyph.tsx BRAND (with mail-provider
+// + webhook + sheets tints that match the real theme tokens).
+const brand: Record<string, { bg: string; ring: string; text: string }> = {
+  gmail: { bg: 'bg-red-50', ring: 'ring-red-200', text: 'text-red-600' },
+  outlook: { bg: 'bg-sky-50', ring: 'ring-sky-200', text: 'text-sky-600' },
+  slack: { bg: 'bg-fuchsia-50', ring: 'ring-fuchsia-200', text: 'text-fuchsia-600' },
+  hubspot: { bg: 'bg-orange-50', ring: 'ring-orange-200', text: 'text-orange-600' },
+  salesforce: { bg: 'bg-sky-50', ring: 'ring-sky-200', text: 'text-sky-600' },
+  zapier: { bg: 'bg-orange-50', ring: 'ring-orange-200', text: 'text-orange-600' },
+  webhooks: { bg: 'bg-slate-100', ring: 'ring-slate-300', text: 'text-slate-700' },
+  sheets: { bg: 'bg-emerald-50', ring: 'ring-emerald-200', text: 'text-emerald-600' },
+};
+
+type Tile = {
+  key: string;
+  name: string;
+  initial: string;
+  tagline: string;
+  auth: string; // mono caption: one-click / api_key / webhook
+  state: 'connected' | 'configured' | 'connect';
+};
+
+const tiles: Tile[] = [
+  {
+    key: 'gmail', name: 'Gmail', initial: 'G',
+    tagline: 'Send and sync through your Google Workspace mailboxes.',
+    auth: 'one-click', state: 'connected',
+  },
+  {
+    key: 'outlook', name: 'Microsoft 365', initial: 'M',
+    tagline: 'Send and sync through Outlook and Exchange Online mailboxes.',
+    auth: 'one-click', state: 'connected',
+  },
+  {
+    key: 'slack', name: 'Slack', initial: 'S',
+    tagline: 'Real-time alerts for positive replies, bounces, and deliverability.',
+    auth: 'one-click', state: 'connect',
+  },
+  {
+    key: 'hubspot', name: 'HubSpot', initial: 'H',
+    tagline: 'Push positive replies and new leads straight into your CRM.',
+    auth: 'one-click', state: 'connect',
+  },
+  {
+    key: 'salesforce', name: 'Salesforce', initial: 'S',
+    tagline: 'Sync leads, contacts, and email activity to Salesforce.',
+    auth: 'one-click', state: 'connect',
+  },
+  {
+    key: 'zapier', name: 'Zapier', initial: 'Z',
+    tagline: 'Triggers and actions across 8,000+ apps.',
+    auth: 'api_key', state: 'connect',
+  },
+  {
+    key: 'webhooks', name: 'Webhooks', initial: 'W',
+    tagline: 'HMAC-signed event delivery to your own endpoint.',
+    auth: 'webhook', state: 'configured',
+  },
+  {
+    key: 'sheets', name: 'Google Sheets', initial: 'G',
+    tagline: 'On-demand lead sync from a spreadsheet into your contacts.',
+    auth: 'one-click', state: 'connect',
+  },
+];
+
+// StatStrip cells (mirror page.tsx: Available / Connected / Needs attention / Meetings).
+const stats = [
+  { label: 'Available', value: '8', sub: 'providers', accent: false, last: false },
+  { label: 'Connected', value: '3', sub: '3 total', accent: true, last: false },
+  { label: 'Needs attention', value: '0', sub: 'all healthy', accent: false, last: false },
+  { label: 'Meetings', value: '14', sub: 'booked via integrations', accent: false, last: true },
+];
+---
+<div class="relative w-full flex flex-col bg-white text-slate-900" style="min-height:500px;">
+
+  <!-- PageTopbar (h-12 px-5 border-b): eyebrow + divider + subtitle + search + refresh -->
+  <div class="h-12 px-5 border-b border-slate-200 flex items-center gap-3 shrink-0 bg-white">
+    <span class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">Integrations</span>
+    <div class="h-4 w-px bg-slate-200"></div>
+    <span class="text-[12.5px] text-slate-600 truncate">
+      Connect your stack: CRMs, alerts, automation, meetings, and data
+    </span>
+    <div class="ml-auto flex items-center gap-1.5">
+      <!-- SearchInput (w-48, h-7, hairline, sky focus) -->
+      <div class="w-48 flex h-7 pl-2 pr-1 rounded-md border border-slate-200 bg-white items-center gap-1.5">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-slate-400 shrink-0" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        <span class="flex-1 min-w-0 text-[12.5px] text-slate-400">Search integrations</span>
+      </div>
+      <!-- Refresh -->
+      <button class="h-7 w-7 rounded-md border border-slate-200 text-slate-500 inline-flex items-center justify-center" aria-label="Refresh">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- StatStrip (4 cols, vertical-rule dividers, bottom hairline) -->
+  <div class="grid grid-cols-4 border-b border-slate-200 shrink-0 bg-white">
+    {stats.map((s) => (
+      <div class={`px-5 py-4 ${!s.last ? 'border-r border-slate-200' : ''}`}>
+        <div class="flex items-center gap-2">
+          <span class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">{s.label}</span>
+          {s.accent && <span class="size-1.5 rounded-full bg-sky-500 animate-pulse"></span>}
+        </div>
+        <div class="text-[26px] text-slate-900 font-light leading-none mt-2 tabular-nums">{s.value}</div>
+        <div class="text-[10px] text-slate-400 mt-1.5 font-mono truncate">{s.sub}</div>
+      </div>
+    ))}
+  </div>
+
+  <!-- SectionBar (h-9, lighter divider): directory label + count + trust note -->
+  <div class="h-9 px-5 border-b border-slate-200/60 flex items-center gap-2.5 shrink-0">
+    <span class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">App directory</span>
+    <span class="font-mono text-[10.5px] text-slate-400 tabular-nums">8</span>
+    <div class="ml-auto inline-flex items-center gap-1.5 text-[10.5px] text-slate-400">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="text-slate-400" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>
+      <span>OAuth tokens encrypted at rest. Webhooks HMAC-signed.</span>
+    </div>
+  </div>
+
+  <!-- Tile grid (grid-cols-3 gap-3 p-5) -->
+  <div class="grid grid-cols-3 gap-3 p-5">
+    {tiles.map((t) => {
+      const b = brand[t.key] ?? { bg: 'bg-sky-50', ring: 'ring-sky-100', text: 'text-sky-700' };
+      const isSlack = t.key === 'slack';
+      return (
+        <div class={`relative rounded-lg border bg-white p-4 flex flex-col ${isSlack ? 'ig-slack-tile border-slate-200' : 'border-slate-200'}`}>
+          <!-- top row: glyph + name/auth + status -->
+          <div class="flex items-start justify-between gap-3">
+            <div class="flex items-center gap-2.5 min-w-0">
+              <div class={`w-9 h-9 text-[13px] rounded-md ring-1 inline-flex items-center justify-center font-semibold uppercase shrink-0 ${b.bg} ${b.ring} ${b.text}`}>{t.initial}</div>
+              <div class="min-w-0">
+                <div class="text-[13px] font-semibold text-slate-900 truncate">{t.name}</div>
+                <div class="text-[10px] uppercase tracking-[0.08em] text-slate-400 font-mono">{t.auth}</div>
+              </div>
+            </div>
+            {t.state === 'connected' && (
+              <span class="inline-flex items-center gap-1 h-5 px-1.5 rounded text-[9.5px] uppercase tracking-[0.08em] font-medium bg-emerald-50 text-emerald-700 whitespace-nowrap shrink-0">
+                <span class="size-1.5 rounded-full bg-emerald-500"></span>
+                connected
+              </span>
+            )}
+            {t.state === 'configured' && (
+              <span class="inline-flex items-center gap-1 h-5 px-1.5 rounded text-[9.5px] uppercase tracking-[0.08em] font-medium bg-sky-50 text-sky-700 whitespace-nowrap shrink-0">
+                <span class="size-1.5 rounded-full bg-sky-500"></span>
+                configured
+              </span>
+            )}
+          </div>
+
+          <!-- one-line tagline -->
+          <p class="mt-3 text-[12px] text-slate-600 leading-relaxed line-clamp-2">{t.tagline}</p>
+
+          <!-- bottom row: docs link + action -->
+          <div class="mt-auto pt-3 flex items-center justify-between gap-2">
+            <span class="text-[11px] text-slate-400 inline-flex items-center gap-1 underline decoration-dotted underline-offset-2">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
+              Docs
+            </span>
+
+            {t.state === 'connect' && !isSlack && (
+              <span class="h-7 px-2.5 rounded-md text-[11.5px] font-medium inline-flex items-center gap-1 bg-sky-600 text-white whitespace-nowrap shrink-0">
+                Connect
+              </span>
+            )}
+            {t.state === 'configured' && (
+              <span class="h-7 px-2.5 rounded-md text-[11.5px] font-medium inline-flex items-center gap-1 text-slate-600 whitespace-nowrap shrink-0">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+                Manage
+              </span>
+            )}
+            {isSlack && (
+              <span class="relative inline-flex items-center justify-end" style="min-width:78px;height:28px;">
+                <!-- default Slack Connect button (presses, then fades to the pill) -->
+                <span class="ig-slack-connect absolute right-0 h-7 px-2.5 rounded-md text-[11.5px] font-medium inline-flex items-center gap-1 bg-sky-600 text-white whitespace-nowrap shrink-0">
+                  Connect
+                </span>
+                <!-- reaction: emerald Connected pill revealed after press #1 -->
+                <span class="ig-react absolute right-0 inline-flex items-center gap-1 h-5 px-1.5 rounded text-[9.5px] uppercase tracking-[0.08em] font-medium bg-emerald-50 text-emerald-700 whitespace-nowrap shrink-0" style="top:50%;margin-top:-10px;">
+                  <span class="size-1.5 rounded-full bg-emerald-500"></span>
+                  connected
+                </span>
+              </span>
+            )}
+          </div>
+        </div>
+      );
+    })}
+  </div>
+
+  <!-- Demo scene: cursor presses Slack Connect (press #1) then the toast area
+       (press #2). The Slack tile flips to a Connected pill and a bottom-right
+       toast confirms. 11s loop. -->
+
+  <!-- cursor -->
+  <div class="ig-cursor" aria-hidden="true">
+    <span class="ig-ripple"></span>
+    <svg width="23" height="27" viewBox="0 0 23 27" fill="none"><path d="M3 2.2 L3 20.4 L7.7 16 L10.9 23.2 L14 21.8 L10.9 14.8 L17.2 14.6 Z" fill="#ffffff" stroke="#0f172a" stroke-width="1.4" stroke-linejoin="round"/></svg>
+  </div>
+
+  <!-- bottom-right toast (reaction) -->
+  <div class="ig-react" style="right:4%;bottom:5%;" aria-hidden="true">
+    <span class="inline-flex items-center gap-1.5 h-8 pl-2 pr-3 rounded-md bg-white border border-slate-200 shadow-md text-[12px] font-medium text-slate-700 whitespace-nowrap shrink-0">
+      <span class="size-4 rounded-full bg-emerald-50 text-emerald-600 inline-flex items-center justify-center">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+      </span>
+      Slack connected
+    </span>
+  </div>
+
+  <style>
+    .ig-cursor{position:absolute;z-index:50;width:23px;height:27px;pointer-events:none;filter:drop-shadow(0 4px 6px rgba(15,23,42,.4));animation:ig-move 11s cubic-bezier(.5,0,.2,1) infinite;}
+    .ig-cursor svg{display:block;transform-origin:3px 2px;animation:ig-press 11s ease-in-out infinite;}
+    .ig-ripple{position:absolute;left:-6px;top:-6px;width:32px;height:32px;border-radius:9999px;background:rgba(2,132,199,.5);transform:scale(0);opacity:0;animation:ig-rip 11s ease-out infinite;}
+    .ig-react{position:absolute;z-index:40;opacity:0;animation:ig-react 11s ease-out infinite;}
+    /* Slack Connect button: active dip in sync with press #1, then fade out so the pill shows through. */
+    .ig-slack-connect{animation:ig-slack-btn 11s ease-out infinite;}
+    .ig-slack-tile{animation:ig-slack-ring 11s ease-out infinite;}
+    @keyframes ig-move{0%{left:24%;top:24%}22%{left:92%;top:46%}32%{left:92%;top:46%}58%{left:82%;top:91%}68%{left:82%;top:91%}88%{left:24%;top:24%}100%{left:24%;top:24%}}
+    @keyframes ig-press{0%,26%{transform:scale(1)}28%{transform:scale(.82)}31%,62%{transform:scale(1)}64%{transform:scale(.82)}67%,100%{transform:scale(1)}}
+    @keyframes ig-rip{0%,26%{transform:scale(0);opacity:0}29%{transform:scale(.25);opacity:.7}41%{transform:scale(1.9);opacity:0}60%{transform:scale(0);opacity:0}63%{transform:scale(.25);opacity:.7}75%{transform:scale(1.9);opacity:0}100%{transform:scale(0);opacity:0}}
+    @keyframes ig-react{0%,29%{opacity:0;transform:translateY(8px)}33%{opacity:1;transform:translateY(0)}88%{opacity:1;transform:translateY(0)}95%{opacity:0;transform:translateY(8px)}100%{opacity:0;transform:translateY(8px)}}
+    /* Connect button darkens at the press, then disappears once the pill is revealed. */
+    @keyframes ig-slack-btn{0%,27%{background-color:#0284c7;opacity:1}28%{background-color:#0369a1;opacity:1}30%{background-color:#0369a1;opacity:1}33%{opacity:0}88%{opacity:0}95%{background-color:#0284c7;opacity:1}100%{background-color:#0284c7;opacity:1}}
+    /* Slack tile briefly rings sky at the press to sell the click. */
+    @keyframes ig-slack-ring{0%,27%{box-shadow:0 0 0 0 rgba(186,230,253,0)}28%{box-shadow:0 0 0 2px rgba(186,230,253,1)}33%{box-shadow:0 0 0 2px rgba(186,230,253,1)}40%{box-shadow:0 0 0 0 rgba(186,230,253,0)}100%{box-shadow:0 0 0 0 rgba(186,230,253,0)}}
+    @media (prefers-reduced-motion: reduce){.ig-cursor{display:none}.ig-react{opacity:1;transform:none}.ig-slack-connect{display:none}.ig-slack-tile{box-shadow:none}}
+  </style>
+</div>

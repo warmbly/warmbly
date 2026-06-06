@@ -167,12 +167,23 @@ body {
    Reusable patterns
 ---------------------------------------------------------------- */
 
+/* Site-wide content width. Widened to 90rem so the header, hero, footer
+   and every section share the same generous width as the feature showcase. */
 @utility container-page {
   width: 100%;
   margin-inline: auto;
   padding-inline: 1.25rem;
-  max-width: 80rem;
-  @media (min-width: 768px) { padding-inline: 2rem; }
+  max-width: 90rem;
+  @media (min-width: 768px) { padding-inline: 2.5rem; }
+}
+
+/* Alias kept for the feature showcase; same width as container-page. */
+@utility container-wide {
+  width: 100%;
+  margin-inline: auto;
+  padding-inline: 1.25rem;
+  max-width: 90rem;
+  @media (min-width: 768px) { padding-inline: 2.5rem; }
 }
 
 @utility prose-warmbly {

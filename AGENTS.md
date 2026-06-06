@@ -32,6 +32,10 @@ Commit hygiene:
 - when instructed to make a commit, use the subject format `feat: one line explanation`
 - commit messages on this repo do not include `Co-Authored-By:` or other AI/agent attribution footers. Keep messages to subject + body explaining the why. If a commit slips through with an attribution footer, rewrite it before opening or updating a PR.
 
+Copy / writing style:
+
+- do not lean on em dashes (`—`). Use them sparingly, only when one is genuinely the clearest option; prefer a period, comma, colon, or parentheses instead. This applies to user-facing copy and microcopy in `site/` and `web/`, and to docs. Overusing em dashes reads as machine-written.
+
 Data modeling / representation:
 
 - we are happiest with the most **type-safe** option, but the rule is: pick the **most effective option for the actual use case**, not type-safety for its own sake.

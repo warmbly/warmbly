@@ -1,0 +1,371 @@
+---
+import Logo from '../components/Logo.astro';
+
+/**
+ * Pixel-faithful mock of the Warmbly /app/analytics screen.
+ *
+ * Maps 1:1 to the real content panel:
+ *   - web/src/app/app/analytics/page.tsx - PageTopbar / StatStrip / SectionBar / charts / rows
+ *   - web/src/components/ui/charts.tsx    - DailyBars (rounded-sm bars, baseline, font-mono ticks)
+ *   - web/src/components/app/analytics/StatsShareCard.tsx - the branded share card
+ *   - web/src/components/app/analytics/AnalyticsShareButton.tsx - the preview modal
+ *
+ * Renders only the in-app screen content + its immediate chrome (no global
+ * sidebar / app header). The marketing page wraps this in its own browser frame.
+ */
+
+// Exact StatsShareCard gradient/wash/haze (copied from the real component).
+const SKY_BASE =
+  'radial-gradient(ellipse 125% 105% at 50% -12%,' +
+  ' #9fe0fb 0%, #74cef7 30%, #4ec1f6 58%, #2fb6f2 82%, #18abed 100%)';
+const SKY_BREATHE =
+  'radial-gradient(ellipse 125% 105% at 50% -12%,' +
+  ' rgba(224,242,254,0.85) 0%, rgba(125,211,252,0.38) 24%, rgba(56,189,248,0.14) 46%, transparent 64%)';
+const HAZE_BOTTOM =
+  'linear-gradient(to top, rgba(186,230,253,0.40) 0%, rgba(125,211,252,0.16) 42%, transparent 100%)';
+
+// The card's "Sends over time" area chart, computed from the same trend the
+// dashboard shows (ShareAreaChart geometry: viewBox 0 0 1000 320, baseline y=314).
+const shareLine = 'M 4.0 76.5 L 169.3 51.5 L 334.7 95.2 L 500.0 14.0 L 665.3 39.0 L 830.7 57.8 L 996.0 84.6';
+const shareArea = `${shareLine} L 996.0 314 L 4 314 Z`;
+
+// The 4-metric divided row inside the share card (matches the StatStrip values).
+const shareMetrics = [
+  { label: 'Sent',        value: '2,847' },
+  { label: 'Open rate',   value: '31.3%' },
+  { label: 'Reply rate',  value: '2.0%'  },
+  { label: 'Bounce rate', value: '0.5%'  },
+];
+
+// daily_trend "sent" series - Dec 2 … Dec 8
+const trend = [
+  { date: 'Dec 2', sent: 380 },
+  { date: 'Dec 3', sent: 420 },
+  { date: 'Dec 4', sent: 350 },
+  { date: 'Dec 5', sent: 480 },
+  { date: 'Dec 6', sent: 440 },
+  { date: 'Dec 7', sent: 410 },
+  { date: 'Dec 8', sent: 367 },
+];
+const maxSent = Math.max(...trend.map((p) => p.sent));
+
+const statStrip = [
+  { label: 'Total sent',  value: '2,847', sub: 'in range',       accent: false, last: false },
+  { label: 'Open rate',   value: '31.3%', sub: 'after delivery', accent: true,  last: false },
+  { label: 'Reply rate',  value: '2.0%',  sub: 'incl. positive', accent: false, last: false },
+  { label: 'Bounce rate', value: '0.5%',  sub: 'hard + soft',    accent: false, last: true  },
+];
+
+const metricTabs = [
+  { label: 'Sent',    active: true  },
+  { label: 'Opens',   active: false },
+  { label: 'Clicks',  active: false },
+  { label: 'Replies', active: false },
+];
+
+const breakdown = [
+  { label: 'Sent',    value: '2,847', dot: 'bg-slate-400'   },
+  { label: 'Opens',   value: '891',   dot: 'bg-emerald-500' },
+  { label: 'Clicks',  value: '234',   dot: 'bg-violet-500'  },
+  { label: 'Replies', value: '56',    dot: 'bg-amber-500'   },
+  { label: 'Bounces', value: '14',    dot: 'bg-rose-500'    },
+];
+
+const health = [
+  { n: '6', label: 'Healthy', tone: 'text-emerald-600' },
+  { n: '1', label: 'At risk', tone: 'text-amber-600'   },
+  { n: '1', label: 'Issues',  tone: 'text-rose-600'    },
+];
+
+const campaigns = [
+  { name: 'Q4 Outreach - Tech Leaders', status: 'active', sent: '850', open: '38.5%', reply: '2.8%' },
+  { name: 'Win-back: Former Customers',  status: 'active', sent: '620', open: '26.3%', reply: '1.6%' },
+  { name: 'Product Launch Beta Access',  status: 'paused', sent: '480', open: '42.1%', reply: '3.1%' },
+];
+const statusDot = (s: string) =>
+  s === 'active' ? 'bg-emerald-500' : s === 'paused' ? 'bg-amber-500' : 'bg-slate-300';
+
+// activity icon path (lucide "activity")
+const activityPath = '<path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/>';
+const activity = [
+  { tone: 'text-emerald-600', verb: 'Opened by',  email: 'sarah.chen@techcorp.com',  campaign: 'Q4 Outreach',     ts: 'Dec 8, 02:32 PM' },
+  { tone: 'text-violet-600',  verb: 'Clicked by',  email: 'mark.ross@northwind.dev',  campaign: 'Win-back',        ts: 'Dec 8, 02:18 PM' },
+  { tone: 'text-amber-600',   verb: 'Reply from',  email: 'jess@helio.gen',           campaign: 'Product Launch',  ts: 'Dec 8, 01:54 PM' },
+];
+---
+<div class="relative w-full bg-white text-slate-900 min-h-[480px] flex flex-col">
+  <!-- ── PageTopbar ── -->
+  <div class="h-12 px-5 border-b border-slate-200 flex items-center gap-3 shrink-0">
+    <span class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">Analytics</span>
+    <div class="h-4 w-px bg-slate-200"></div>
+    <span class="text-[12.5px] text-slate-600 truncate">Deliverability across the workspace</span>
+    <div class="ml-auto flex items-center gap-2">
+      <!-- RangeTabs -->
+      <div class="inline-flex items-center gap-0.5 rounded-md border border-slate-200 bg-white p-0.5 shrink-0">
+        <button class="h-6 px-2 rounded text-[11px] font-medium tabular-nums bg-slate-900 text-white whitespace-nowrap shrink-0">7d</button>
+        <button class="h-6 px-2 rounded text-[11px] font-medium tabular-nums text-slate-500 whitespace-nowrap shrink-0">30d</button>
+        <button class="h-6 px-2 rounded text-[11px] font-medium tabular-nums text-slate-500 whitespace-nowrap shrink-0">90d</button>
+      </div>
+      <!-- Share image -->
+      <button class="an-share h-7 px-2.5 rounded-md border border-slate-200 bg-white text-slate-700 text-[12px] font-medium inline-flex items-center gap-1.5 whitespace-nowrap shrink-0">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="shrink-0">
+          <rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>
+        </svg>
+        Share image
+      </button>
+    </div>
+  </div>
+
+  <!-- ── StatStrip ── -->
+  <div class="grid grid-cols-4 border-b border-slate-200 shrink-0">
+    {statStrip.map((s) => (
+      <div class={`px-5 py-4 ${!s.last ? 'border-r border-slate-200' : ''}`}>
+        <div class="flex items-center gap-2">
+          <span class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">{s.label}</span>
+          {s.accent && <span class="size-1.5 rounded-full bg-sky-500 animate-pulse"></span>}
+        </div>
+        <div class="text-[26px] text-slate-900 font-light leading-none mt-2 tabular-nums">{s.value}</div>
+        <div class="text-[10px] text-slate-400 mt-1.5 font-mono truncate">{s.sub}</div>
+      </div>
+    ))}
+  </div>
+
+  <!-- ── Main grid: performance + sidebar ── -->
+  <div class="grid grid-cols-[1fr_300px]">
+    <!-- LEFT: Email performance -->
+    <section class="flex flex-col border-r border-slate-200">
+      <div class="h-9 px-5 border-b border-slate-200/60 flex items-center gap-2.5 shrink-0">
+        <span class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">Email performance</span>
+        <div class="ml-auto inline-flex items-center gap-0.5 rounded-md border border-slate-200 bg-white p-0.5">
+          {metricTabs.map((m) => (
+            <button class={`h-6 px-2 rounded text-[11px] font-medium whitespace-nowrap shrink-0 ${m.active ? 'bg-slate-900 text-white' : 'text-slate-500'}`}>{m.label}</button>
+          ))}
+        </div>
+      </div>
+      <!-- Bar chart -->
+      <div class="px-5 py-4">
+        <div class="relative w-full select-none" style="height:176px;">
+          <div class="absolute inset-x-0 top-0 flex items-end gap-1.5" style="height:150px;">
+            {trend.map((p) => (
+              <div class="relative flex-1 flex items-end justify-center h-full">
+                <div class="w-full rounded-sm bg-sky-500" style={`height:${Math.max(2, (p.sent / maxSent) * 150)}px; max-width:64px;`}></div>
+              </div>
+            ))}
+          </div>
+          <!-- baseline -->
+          <div class="absolute left-0 right-0 h-px bg-slate-200/80" style="bottom:18px;"></div>
+          <!-- date ticks -->
+          <div class="absolute left-0 right-0 bottom-0 flex justify-between font-mono text-[9.5px] text-slate-400 tabular-nums">
+            <span>{trend[0].date}</span>
+            <span>{trend[trend.length - 1].date}</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- RIGHT: Breakdown + Account health -->
+    <aside class="flex flex-col bg-slate-50/40 border-slate-200">
+      <div class="h-9 px-4 border-b border-slate-200/60 flex items-center shrink-0">
+        <span class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">Breakdown</span>
+      </div>
+      <div class="divide-y divide-slate-200/60">
+        {breakdown.map((q) => (
+          <div class="h-9 px-4 flex items-center gap-2">
+            <span class={`size-1.5 rounded-full ${q.dot}`}></span>
+            <span class="text-[12px] text-slate-700">{q.label}</span>
+            <span class="ml-auto font-mono text-[11px] text-slate-500 tabular-nums">{q.value}</span>
+          </div>
+        ))}
+      </div>
+      <div class="h-9 px-4 border-y border-slate-200/60 flex items-center shrink-0">
+        <span class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">Account health</span>
+      </div>
+      <div class="px-4 py-3 grid grid-cols-3 gap-2 text-center">
+        {health.map((h) => (
+          <div>
+            <div class={`font-mono text-[18px] tabular-nums leading-none ${h.tone}`}>{h.n}</div>
+            <div class="text-[10px] uppercase tracking-[0.12em] text-slate-400 mt-1">{h.label}</div>
+          </div>
+        ))}
+      </div>
+    </aside>
+  </div>
+
+  <!-- ── Top campaigns ── -->
+  <div class="h-9 px-5 border-y border-slate-200/60 flex items-center gap-2.5 shrink-0">
+    <span class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">Top campaigns</span>
+    <span class="ml-auto inline-flex items-center gap-1 text-[11px] text-slate-500">
+      All campaigns
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg>
+    </span>
+  </div>
+  <div class="divide-y divide-slate-200/60">
+    {campaigns.map((c) => (
+      <div class="group h-11 px-5 flex items-center gap-3 hover:bg-slate-50">
+        <span class={`size-1.5 rounded-full shrink-0 ${statusDot(c.status)}`}></span>
+        <span class="text-[12.5px] font-medium text-slate-900 truncate max-w-[40%]">{c.name}</span>
+        <span class="ml-auto flex items-center gap-4 font-mono text-[11px] text-slate-500 tabular-nums shrink-0">
+          <span>{c.sent} sent</span>
+          <span class="text-emerald-600">{c.open} open</span>
+          <span class="text-amber-600">{c.reply} reply</span>
+        </span>
+      </div>
+    ))}
+  </div>
+
+  <!-- ── Recent activity ── -->
+  <div class="h-9 px-5 border-y border-slate-200/60 flex items-center shrink-0">
+    <span class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">Recent activity</span>
+  </div>
+  <div class="divide-y divide-slate-200/60">
+    {activity.map((a) => (
+      <div class="h-10 px-5 flex items-center gap-3">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class={`shrink-0 ${a.tone}`} set:html={activityPath}></svg>
+        <span class="text-[12.5px] text-slate-900 truncate">
+          <span class={a.tone}>{a.verb}</span> {a.email}
+        </span>
+        <span class="text-[11.5px] text-slate-400 truncate inline">{a.campaign}</span>
+        <span class="ml-auto font-mono text-[10.5px] text-slate-400 tabular-nums shrink-0">{a.ts}</span>
+      </div>
+    ))}
+  </div>
+
+  <!-- ── Demo scene: cursor + Share image reaction ── -->
+  <!-- Reaction: the AnalyticsShareButton preview modal (scrim + centered card) -->
+  <div class="an-react absolute inset-0 z-40 flex items-center justify-center" aria-hidden="true">
+    <div class="absolute inset-0 bg-slate-900/30"></div>
+    <div class="an-modal relative w-full max-w-[680px] mx-6 rounded-lg bg-white border border-slate-200 shadow-xl overflow-hidden">
+      <!-- modal header -->
+      <div class="h-12 px-4 border-b border-slate-200 flex items-center gap-2 shrink-0">
+        <span class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">Share image</span>
+        <div class="h-4 w-px bg-slate-200"></div>
+        <span class="text-[12.5px] text-slate-600 truncate">Preview before download</span>
+        <span class="ml-auto size-7 rounded-md text-slate-400 inline-flex items-center justify-center">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </span>
+      </div>
+
+      <!-- aspect preset selector -->
+      <div class="px-4 pt-3 flex items-center gap-2">
+        <span class="text-[11px] text-slate-500 font-medium">Aspect</span>
+        <div class="inline-flex items-center gap-1 rounded-md bg-slate-100 p-0.5 shrink-0">
+          <button class="h-7 px-3 rounded text-[12px] font-medium text-slate-600 whitespace-nowrap shrink-0">1:1</button>
+          <button class="h-7 px-3 rounded text-[12px] font-medium bg-sky-600 text-white shadow-sm whitespace-nowrap shrink-0">3:2</button>
+          <button class="h-7 px-3 rounded text-[12px] font-medium text-slate-600 whitespace-nowrap shrink-0">16:9</button>
+        </div>
+      </div>
+
+      <!-- preview: the full StatsShareCard rendered at 3:2 -->
+      <div class="px-4 py-4 bg-slate-50/40 flex justify-center">
+        <div class="relative rounded-md border border-slate-200 overflow-hidden" style="width:618px;aspect-ratio:3 / 2;">
+          <!-- card: symmetric sky base + breathe + bottom haze -->
+          <div class="absolute inset-0" style={`background:${SKY_BASE};`}></div>
+          <div class="absolute inset-0 overflow-hidden pointer-events-none">
+            <div class="absolute inset-0" style={`background:${SKY_BREATHE};opacity:0.6;`}></div>
+            <div class="absolute inset-x-0 bottom-0" style={`height:55%;background:${HAZE_BOTTOM};`}></div>
+          </div>
+
+          <!-- card content (pad scaled to the 3:2 preset, ~56 of 1620w) -->
+          <div class="relative z-10 flex flex-col h-full" style="padding:21px;">
+            <!-- logo on the sky + date -->
+            <div class="flex items-center justify-between">
+              <div class="inline-flex items-center gap-[5px]">
+                <Logo class="w-[23px] h-[23px] text-white" />
+                <span class="text-white font-extrabold tracking-tight leading-none" style="font-size:16px;">Warmbly</span>
+              </div>
+              <span class="font-mono text-[8px] tabular-nums text-white/85">Dec 8, 2025</span>
+            </div>
+
+            <!-- single white panel -->
+            <div class="mt-[10px] flex-1 flex flex-col min-h-0" style="background:#ffffff;border-radius:11px;border:1px solid rgba(255,255,255,0.85);">
+              <div class="flex flex-col h-full" style="padding:17px;">
+                <div class="text-[8px] font-semibold uppercase tracking-[0.16em] text-sky-600">Workspace performance</div>
+                <h1 class="mt-1 font-semibold leading-tight tracking-tight text-slate-900" style="font-size:17px;">Deliverability across the workspace</h1>
+
+                <!-- divided metric row -->
+                <div class="mt-3 grid grid-cols-4 divide-x divide-slate-200">
+                  {shareMetrics.map((m) => (
+                    <div class="px-3 first:pl-0 last:pr-0">
+                      <div class="text-[7px] font-medium uppercase tracking-[0.14em] text-slate-400">{m.label}</div>
+                      <div class="mt-1 font-mono leading-none tabular-nums text-slate-900" style="font-size:19px;">{m.value}</div>
+                    </div>
+                  ))}
+                </div>
+
+                <div class="mt-3 h-px bg-slate-200/70"></div>
+
+                <!-- long area chart -->
+                <div class="mt-2.5 flex items-center justify-between">
+                  <span class="text-[7px] font-medium uppercase tracking-[0.14em] text-slate-400">Sends over time</span>
+                </div>
+                <div class="mt-1.5 flex-1 min-h-0 flex flex-col">
+                  <div class="relative flex-1 min-h-0">
+                    <svg viewBox="0 0 1000 320" preserveAspectRatio="none" width="100%" height="100%" style="display:block;">
+                      <defs>
+                        <linearGradient id="anShareArea" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stop-color="#0ea5e9" stop-opacity="0.28"/>
+                          <stop offset="100%" stop-color="#0ea5e9" stop-opacity="0"/>
+                        </linearGradient>
+                      </defs>
+                      <path d={shareArea} fill="url(#anShareArea)"/>
+                      <path d={shareLine} fill="none" stroke="#0284c7" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>
+                      <line x1="4" y1="314" x2="996" y2="314" stroke="#cbd5e1" stroke-width="2" vector-effect="non-scaling-stroke"/>
+                    </svg>
+                  </div>
+                  <div class="mt-1 flex justify-between font-mono text-[6px] tabular-nums text-slate-400">
+                    <span>Dec 2</span>
+                    <span>Dec 8</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- footer on the sky -->
+            <div class="mt-[7px] flex items-center justify-between" style="font-size:8px;">
+              <span class="text-white font-semibold">warmbly.com</span>
+              <span class="text-white/80">Cold email, warmed up.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- modal footer: Copy + Download PNG -->
+      <div class="px-4 py-3 border-t border-slate-200 flex items-center justify-end gap-2">
+        <span class="h-8 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-[12px] font-medium inline-flex items-center gap-1.5 whitespace-nowrap shrink-0">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+          Copy
+        </span>
+        <button class="h-8 px-3 rounded-md bg-slate-900 text-white text-[12px] font-medium inline-flex items-center gap-1.5 whitespace-nowrap shrink-0">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+          Download PNG
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Cursor -->
+  <div class="an-cursor" aria-hidden="true">
+    <span class="an-ripple"></span>
+    <svg width="23" height="27" viewBox="0 0 23 27" fill="none"><path d="M3 2.2 L3 20.4 L7.7 16 L10.9 23.2 L14 21.8 L10.9 14.8 L17.2 14.6 Z" fill="#ffffff" stroke="#0f172a" stroke-width="1.4" stroke-linejoin="round"/></svg>
+  </div>
+
+  <style>
+    .an-cursor{position:absolute;z-index:50;width:23px;height:27px;pointer-events:none;filter:drop-shadow(0 4px 6px rgba(15,23,42,.4));animation:an-move 11s cubic-bezier(.5,0,.2,1) infinite;}
+    .an-cursor svg{display:block;transform-origin:3px 2px;animation:an-press 11s ease-in-out infinite;}
+    .an-ripple{position:absolute;left:-6px;top:-6px;width:32px;height:32px;border-radius:9999px;background:rgba(2,132,199,.5);transform:scale(0);opacity:0;animation:an-rip 11s ease-out infinite;}
+    .an-react{position:absolute;z-index:40;opacity:0;animation:an-react 11s ease-out infinite;}
+    .an-modal{transform-origin:center;}
+    /* press #1 (~28%) flashes the topbar "Share image" button (its computed center) */
+    .an-share{animation:an-share-press 11s ease-out infinite;}
+    /* press #1 lands on the Share image button center (x 92%, y 4% of the mock);
+       press #2 lands on the dark scrim in the upper-left corner (x 8%, y 16%) and
+       dismisses the modal via the click-outside timeline. */
+    @keyframes an-move{0%{left:30%;top:80%}22%{left:92%;top:4%}32%{left:92%;top:4%}58%{left:8%;top:16%}68%{left:8%;top:16%}88%{left:8%;top:16%}100%{left:30%;top:80%}}
+    @keyframes an-press{0%,26%{transform:scale(1)}28%{transform:scale(.82)}31%,62%{transform:scale(1)}64%{transform:scale(.82)}67%,100%{transform:scale(1)}}
+    @keyframes an-rip{0%,26%{transform:scale(0);opacity:0}29%{transform:scale(.25);opacity:.7}41%{transform:scale(1.9);opacity:0}60%{transform:scale(0);opacity:0}63%{transform:scale(.25);opacity:.7}75%{transform:scale(1.9);opacity:0}100%{transform:scale(0);opacity:0}}
+    /* dismissable popup timeline: opens after press #1, closes after press #2 */
+    @keyframes an-react{0%,29%{opacity:0;transform:scale(.94)}33%{opacity:1;transform:scale(1)}60%{opacity:1;transform:scale(1)}66%{opacity:0;transform:scale(.94)}100%{opacity:0;transform:scale(.94)}}
+    @keyframes an-share-press{0%,26%{box-shadow:none;border-color:rgb(226,232,240)}28%{box-shadow:0 0 0 2px rgb(186,230,253);border-color:rgb(125,211,252)}33%,100%{box-shadow:none;border-color:rgb(226,232,240)}}
+    @media (prefers-reduced-motion: reduce){.an-cursor{display:none}.an-react{display:none}.an-share{animation:none}}
+  </style>
+</div>
