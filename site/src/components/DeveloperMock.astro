@@ -275,7 +275,7 @@ const stats = [
 
   <!-- ════════════════════════════════════════════════════════════
        DEMO SCENE · cursor presses "Create key" -> CreateKeyModal opens,
-       cursor then presses the modal's "Create key" button
+       cursor then presses the dark scrim (click-outside) -> modal dismisses
   ════════════════════════════════════════════════════════════ -->
 
   <!-- (b) reaction overlay: the real CreateKeyModal -->
@@ -426,7 +426,7 @@ const stats = [
     .dv-react{position:absolute;z-index:40;opacity:0;animation:dv-react 11s ease-out infinite;}
     .dv-card{transform-origin:center;transform:scale(.94);animation:dv-card 11s ease-out infinite;}
     .dv-caret{display:inline-block;animation:dv-blink 1s step-end infinite;}
-    /* press feedback on the two targets, synced to the cursor dips */
+    /* press feedback on the trigger, synced to the press #1 cursor dip; press #2 lands on the scrim (no target highlight, the modal dismisses) */
     #dv-create{animation:dv-btn1 11s ease-out infinite;}
     @keyframes dv-move{0%{left:30%;top:60%}22%{left:47.5%;top:4.6%}32%{left:47.5%;top:4.6%}58%{left:8%;top:85%}68%{left:8%;top:85%}88%{left:30%;top:60%}100%{left:30%;top:60%}}
     @keyframes dv-press{0%,26%{transform:scale(1)}28%{transform:scale(.82)}31%,62%{transform:scale(1)}64%{transform:scale(.82)}67%,100%{transform:scale(1)}}
