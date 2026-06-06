@@ -101,14 +101,14 @@ const activity = [
     <span class="text-[12.5px] text-slate-600 truncate">Deliverability across the workspace</span>
     <div class="ml-auto flex items-center gap-2">
       <!-- RangeTabs -->
-      <div class="inline-flex items-center gap-0.5 rounded-md border border-slate-200 bg-white p-0.5">
-        <button class="h-6 px-2 rounded text-[11px] font-medium tabular-nums bg-slate-900 text-white">7d</button>
-        <button class="h-6 px-2 rounded text-[11px] font-medium tabular-nums text-slate-500">30d</button>
-        <button class="h-6 px-2 rounded text-[11px] font-medium tabular-nums text-slate-500">90d</button>
+      <div class="inline-flex items-center gap-0.5 rounded-md border border-slate-200 bg-white p-0.5 shrink-0">
+        <button class="h-6 px-2 rounded text-[11px] font-medium tabular-nums bg-slate-900 text-white whitespace-nowrap shrink-0">7d</button>
+        <button class="h-6 px-2 rounded text-[11px] font-medium tabular-nums text-slate-500 whitespace-nowrap shrink-0">30d</button>
+        <button class="h-6 px-2 rounded text-[11px] font-medium tabular-nums text-slate-500 whitespace-nowrap shrink-0">90d</button>
       </div>
       <!-- Share image -->
-      <button class="an-share h-7 px-2.5 rounded-md border border-slate-200 bg-white text-slate-700 text-[12px] font-medium inline-flex items-center gap-1.5">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <button class="an-share h-7 px-2.5 rounded-md border border-slate-200 bg-white text-slate-700 text-[12px] font-medium inline-flex items-center gap-1.5 whitespace-nowrap shrink-0">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="shrink-0">
           <rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>
         </svg>
         Share image
@@ -138,7 +138,7 @@ const activity = [
         <span class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">Email performance</span>
         <div class="ml-auto inline-flex items-center gap-0.5 rounded-md border border-slate-200 bg-white p-0.5">
           {metricTabs.map((m) => (
-            <button class={`h-6 px-2 rounded text-[11px] font-medium ${m.active ? 'bg-slate-900 text-white' : 'text-slate-500'}`}>{m.label}</button>
+            <button class={`h-6 px-2 rounded text-[11px] font-medium whitespace-nowrap shrink-0 ${m.active ? 'bg-slate-900 text-white' : 'text-slate-500'}`}>{m.label}</button>
           ))}
         </div>
       </div>
@@ -248,10 +248,10 @@ const activity = [
       <!-- aspect preset selector -->
       <div class="px-4 pt-3 flex items-center gap-2">
         <span class="text-[11px] text-slate-500 font-medium">Aspect</span>
-        <div class="inline-flex items-center gap-1 rounded-md bg-slate-100 p-0.5">
-          <button class="h-7 px-3 rounded text-[12px] font-medium text-slate-600">1:1</button>
-          <button class="h-7 px-3 rounded text-[12px] font-medium bg-sky-600 text-white shadow-sm">3:2</button>
-          <button class="h-7 px-3 rounded text-[12px] font-medium text-slate-600">16:9</button>
+        <div class="inline-flex items-center gap-1 rounded-md bg-slate-100 p-0.5 shrink-0">
+          <button class="h-7 px-3 rounded text-[12px] font-medium text-slate-600 whitespace-nowrap shrink-0">1:1</button>
+          <button class="h-7 px-3 rounded text-[12px] font-medium bg-sky-600 text-white shadow-sm whitespace-nowrap shrink-0">3:2</button>
+          <button class="h-7 px-3 rounded text-[12px] font-medium text-slate-600 whitespace-nowrap shrink-0">16:9</button>
         </div>
       </div>
 
@@ -331,12 +331,12 @@ const activity = [
 
       <!-- modal footer: Copy + Download PNG -->
       <div class="px-4 py-3 border-t border-slate-200 flex items-center justify-end gap-2">
-        <span class="h-8 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-[12px] font-medium inline-flex items-center gap-1.5">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+        <span class="h-8 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-[12px] font-medium inline-flex items-center gap-1.5 whitespace-nowrap shrink-0">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
           Copy
         </span>
-        <button class="an-dl h-8 px-3 rounded-md bg-slate-900 text-white text-[12px] font-medium inline-flex items-center gap-1.5">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+        <button class="h-8 px-3 rounded-md bg-slate-900 text-white text-[12px] font-medium inline-flex items-center gap-1.5 whitespace-nowrap shrink-0">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
           Download PNG
         </button>
       </div>
@@ -355,16 +355,17 @@ const activity = [
     .an-ripple{position:absolute;left:-6px;top:-6px;width:32px;height:32px;border-radius:9999px;background:rgba(2,132,199,.5);transform:scale(0);opacity:0;animation:an-rip 11s ease-out infinite;}
     .an-react{position:absolute;z-index:40;opacity:0;animation:an-react 11s ease-out infinite;}
     .an-modal{transform-origin:center;}
-    /* press #1 (~28%) flashes the topbar "Share image" button */
+    /* press #1 (~28%) flashes the topbar "Share image" button (its computed center) */
     .an-share{animation:an-share-press 11s ease-out infinite;}
-    /* press #2 (~64%) darkens the modal "Download PNG" button */
-    .an-dl{animation:an-dl-press 11s ease-out infinite;}
-    @keyframes an-move{0%{left:30%;top:80%}22%{left:88%;top:9%}32%{left:88%;top:9%}58%{left:74%;top:71%}68%{left:74%;top:71%}88%{left:74%;top:71%}100%{left:30%;top:80%}}
+    /* press #1 lands on the Share image button center (x 92%, y 4% of the mock);
+       press #2 lands on the dark scrim in the upper-left corner (x 8%, y 16%) and
+       dismisses the modal via the click-outside timeline. */
+    @keyframes an-move{0%{left:30%;top:80%}22%{left:92%;top:4%}32%{left:92%;top:4%}58%{left:8%;top:16%}68%{left:8%;top:16%}88%{left:8%;top:16%}100%{left:30%;top:80%}}
     @keyframes an-press{0%,26%{transform:scale(1)}28%{transform:scale(.82)}31%,62%{transform:scale(1)}64%{transform:scale(.82)}67%,100%{transform:scale(1)}}
     @keyframes an-rip{0%,26%{transform:scale(0);opacity:0}29%{transform:scale(.25);opacity:.7}41%{transform:scale(1.9);opacity:0}60%{transform:scale(0);opacity:0}63%{transform:scale(.25);opacity:.7}75%{transform:scale(1.9);opacity:0}100%{transform:scale(0);opacity:0}}
-    @keyframes an-react{0%,29%{opacity:0;transform:scale(.94)}33%{opacity:1;transform:scale(1)}88%{opacity:1;transform:scale(1)}95%{opacity:0;transform:scale(.94)}100%{opacity:0;transform:scale(.94)}}
+    /* dismissable popup timeline: opens after press #1, closes after press #2 */
+    @keyframes an-react{0%,29%{opacity:0;transform:scale(.94)}33%{opacity:1;transform:scale(1)}60%{opacity:1;transform:scale(1)}66%{opacity:0;transform:scale(.94)}100%{opacity:0;transform:scale(.94)}}
     @keyframes an-share-press{0%,26%{box-shadow:none;border-color:rgb(226,232,240)}28%{box-shadow:0 0 0 2px rgb(186,230,253);border-color:rgb(125,211,252)}33%,100%{box-shadow:none;border-color:rgb(226,232,240)}}
-    @keyframes an-dl-press{0%,62%{background-color:rgb(15,23,42)}64%{background-color:rgb(2,132,199);box-shadow:0 0 0 2px rgb(186,230,253)}69%,100%{background-color:rgb(15,23,42)}}
-    @media (prefers-reduced-motion: reduce){.an-cursor{display:none}.an-react{display:none}.an-share{animation:none}.an-dl{animation:none}}
+    @media (prefers-reduced-motion: reduce){.an-cursor{display:none}.an-react{display:none}.an-share{animation:none}}
   </style>
 </div>
