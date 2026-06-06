@@ -3,7 +3,13 @@
  * Mock of /app/campaigns/[id] sequence builder — shows the multi-step
  * sequence layout with branching, A/B variants and TZ-aware delays.
  */
-const steps = [
+interface Props {
+  /** Show only the first N steps (keeps the showcase satellite compact). */
+  limit?: number;
+}
+const { limit } = Astro.props;
+
+const allSteps = [
   { n: 1, kind: 'send', title: 'Intro · plain text', meta: '2 variants', open: true },
   { n: 2, kind: 'wait', title: 'Wait · 3 business days', meta: 'if no reply' },
   { n: 3, kind: 'send', title: 'Follow-up · context line', meta: '4 variants' },
@@ -11,6 +17,7 @@ const steps = [
   { n: 5, kind: 'send', title: 'Soft close · short ask', meta: '2 variants' },
   { n: 6, kind: 'wait', title: 'Break · 7 business days', meta: 'silence' },
 ];
+const steps = limit ? allSteps.slice(0, limit) : allSteps;
 ---
 <div class="bg-white">
   <!-- Topbar -->
@@ -22,7 +29,7 @@ const steps = [
       <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>active
     </span>
     <div class="ml-auto flex items-center gap-2">
-      <span class="text-[11px] font-mono text-slate-500">6 steps · 4 mailboxes</span>
+      <span class="text-[11px] font-mono text-slate-500">{steps.length} steps · 4 mailboxes</span>
       <button class="h-7 px-2.5 rounded-md inline-flex items-center gap-1.5 text-[12px] font-medium bg-sky-600 text-white">
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         Add step
