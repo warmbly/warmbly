@@ -382,15 +382,15 @@ const stats = [
     .cr-react{position:absolute;z-index:40;opacity:0;animation:cr-react 11s ease-out infinite;}
     .cr-toast{position:absolute;z-index:45;opacity:0;animation:cr-react 11s ease-out infinite;}
     /* Press #1 (28%) lands on the "Add deal" button center (834.5px,24px on the
-       900x~522 mock => 92.4%,4.2% after the 3px/2px cursor hotspot). Press #2
+       900x~522 mock => 92.5%,4.2% after the 3px/2px cursor hotspot). Press #2
        (64%) lands on the new Beacon Labs card, which PERSISTS (shown 33%->88%). */
-    @keyframes cr-move{0%{left:46%;top:62%}22%{left:92.4%;top:4.2%}32%{left:92.4%;top:4.2%}58%{left:20%;top:43%}68%{left:20%;top:43%}88%{left:46%;top:62%}100%{left:46%;top:62%}}
+    @keyframes cr-move{0%{left:46%;top:62%}22%{left:92.5%;top:4.2%}32%{left:92.5%;top:4.2%}58%{left:20%;top:43%}68%{left:20%;top:43%}88%{left:46%;top:62%}100%{left:46%;top:62%}}
     @keyframes cr-press{0%,26%{transform:scale(1)}28%{transform:scale(.82)}31%,62%{transform:scale(1)}64%{transform:scale(.82)}67%,100%{transform:scale(1)}}
     @keyframes cr-rip{0%,26%{transform:scale(0);opacity:0}29%{transform:scale(.25);opacity:.7}41%{transform:scale(1.9);opacity:0}60%{transform:scale(0);opacity:0}63%{transform:scale(.25);opacity:.7}75%{transform:scale(1.9);opacity:0}100%{transform:scale(0);opacity:0}}
     @keyframes cr-react{0%,29%{opacity:0;transform:scale(.92) translateY(-6px)}33%{opacity:1;transform:scale(1) translateY(0)}88%{opacity:1;transform:scale(1) translateY(0)}95%{opacity:0;transform:scale(.92) translateY(-6px)}100%{opacity:0;transform:scale(.92) translateY(-6px)}}
     /* target press-feedback: the "Add deal" button dips at press #1 (28%) */
     .cr-target{animation:cr-target 11s ease-in-out infinite;}
     @keyframes cr-target{0%,26%{transform:scale(1);background-color:#0284c7}28%{transform:scale(.96);background-color:#0369a1}31%,100%{transform:scale(1);background-color:#0284c7}}
-    @media (prefers-reduced-motion: reduce){.cr-cursor{display:none}.cr-react{display:none}.cr-toast{display:none}}
+    @media (prefers-reduced-motion: reduce){.cr-cursor{display:none}.cr-react{display:none}.cr-toast{display:none}.cr-target{animation:none}}
   </style>
 </div>
