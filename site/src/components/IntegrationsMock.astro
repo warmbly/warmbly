@@ -152,13 +152,13 @@ const stats = [
               </div>
             </div>
             {t.state === 'connected' && (
-              <span class="inline-flex items-center gap-1 h-5 px-1.5 rounded text-[9.5px] uppercase tracking-[0.08em] font-medium bg-emerald-50 text-emerald-700">
+              <span class="inline-flex items-center gap-1 h-5 px-1.5 rounded text-[9.5px] uppercase tracking-[0.08em] font-medium bg-emerald-50 text-emerald-700 whitespace-nowrap shrink-0">
                 <span class="size-1.5 rounded-full bg-emerald-500"></span>
                 connected
               </span>
             )}
             {t.state === 'configured' && (
-              <span class="inline-flex items-center gap-1 h-5 px-1.5 rounded text-[9.5px] uppercase tracking-[0.08em] font-medium bg-sky-50 text-sky-700">
+              <span class="inline-flex items-center gap-1 h-5 px-1.5 rounded text-[9.5px] uppercase tracking-[0.08em] font-medium bg-sky-50 text-sky-700 whitespace-nowrap shrink-0">
                 <span class="size-1.5 rounded-full bg-sky-500"></span>
                 configured
               </span>
@@ -176,12 +176,12 @@ const stats = [
             </span>
 
             {t.state === 'connect' && !isSlack && (
-              <span class="h-7 px-2.5 rounded-md text-[11.5px] font-medium inline-flex items-center gap-1 bg-sky-600 text-white">
+              <span class="h-7 px-2.5 rounded-md text-[11.5px] font-medium inline-flex items-center gap-1 bg-sky-600 text-white whitespace-nowrap shrink-0">
                 Connect
               </span>
             )}
             {t.state === 'configured' && (
-              <span class="h-7 px-2.5 rounded-md text-[11.5px] font-medium inline-flex items-center gap-1 text-slate-600">
+              <span class="h-7 px-2.5 rounded-md text-[11.5px] font-medium inline-flex items-center gap-1 text-slate-600 whitespace-nowrap shrink-0">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
                 Manage
               </span>
@@ -189,11 +189,11 @@ const stats = [
             {isSlack && (
               <span class="relative inline-flex items-center justify-end" style="min-width:78px;height:28px;">
                 <!-- default Slack Connect button (presses, then fades to the pill) -->
-                <span class="ig-slack-connect absolute right-0 h-7 px-2.5 rounded-md text-[11.5px] font-medium inline-flex items-center gap-1 bg-sky-600 text-white">
+                <span class="ig-slack-connect absolute right-0 h-7 px-2.5 rounded-md text-[11.5px] font-medium inline-flex items-center gap-1 bg-sky-600 text-white whitespace-nowrap shrink-0">
                   Connect
                 </span>
                 <!-- reaction: emerald Connected pill revealed after press #1 -->
-                <span class="ig-react absolute right-0 inline-flex items-center gap-1 h-5 px-1.5 rounded text-[9.5px] uppercase tracking-[0.08em] font-medium bg-emerald-50 text-emerald-700" style="top:50%;margin-top:-10px;">
+                <span class="ig-react absolute right-0 inline-flex items-center gap-1 h-5 px-1.5 rounded text-[9.5px] uppercase tracking-[0.08em] font-medium bg-emerald-50 text-emerald-700 whitespace-nowrap shrink-0" style="top:50%;margin-top:-10px;">
                   <span class="size-1.5 rounded-full bg-emerald-500"></span>
                   connected
                 </span>
@@ -217,7 +217,7 @@ const stats = [
 
   <!-- bottom-right toast (reaction) -->
   <div class="ig-react" style="right:4%;bottom:5%;" aria-hidden="true">
-    <span class="inline-flex items-center gap-1.5 h-8 pl-2 pr-3 rounded-md bg-white border border-slate-200 shadow-md text-[12px] font-medium text-slate-700">
+    <span class="inline-flex items-center gap-1.5 h-8 pl-2 pr-3 rounded-md bg-white border border-slate-200 shadow-md text-[12px] font-medium text-slate-700 whitespace-nowrap shrink-0">
       <span class="size-4 rounded-full bg-emerald-50 text-emerald-600 inline-flex items-center justify-center">
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
       </span>
@@ -233,7 +233,7 @@ const stats = [
     /* Slack Connect button: active dip in sync with press #1, then fade out so the pill shows through. */
     .ig-slack-connect{animation:ig-slack-btn 11s ease-out infinite;}
     .ig-slack-tile{animation:ig-slack-ring 11s ease-out infinite;}
-    @keyframes ig-move{0%{left:18%;top:30%}22%{left:54.5%;top:51%}32%{left:54.5%;top:51%}58%{left:86%;top:88%}68%{left:86%;top:88%}88%{left:18%;top:30%}100%{left:18%;top:30%}}
+    @keyframes ig-move{0%{left:24%;top:24%}22%{left:92%;top:46%}32%{left:92%;top:46%}58%{left:82%;top:91%}68%{left:82%;top:91%}88%{left:24%;top:24%}100%{left:24%;top:24%}}
     @keyframes ig-press{0%,26%{transform:scale(1)}28%{transform:scale(.82)}31%,62%{transform:scale(1)}64%{transform:scale(.82)}67%,100%{transform:scale(1)}}
     @keyframes ig-rip{0%,26%{transform:scale(0);opacity:0}29%{transform:scale(.25);opacity:.7}41%{transform:scale(1.9);opacity:0}60%{transform:scale(0);opacity:0}63%{transform:scale(.25);opacity:.7}75%{transform:scale(1.9);opacity:0}100%{transform:scale(0);opacity:0}}
     @keyframes ig-react{0%,29%{opacity:0;transform:translateY(8px)}33%{opacity:1;transform:translateY(0)}88%{opacity:1;transform:translateY(0)}95%{opacity:0;transform:translateY(8px)}100%{opacity:0;transform:translateY(8px)}}
