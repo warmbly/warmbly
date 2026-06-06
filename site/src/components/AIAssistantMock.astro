@@ -240,9 +240,9 @@ const draftLines = [
           <!-- Tone: 6 chips, Default selected -->
           <div>
             <label class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium block mb-1.5">Tone</label>
-            <div class="flex flex-wrap gap-1.5">
+            <div class="flex flex-nowrap gap-1">
               {tones.map((t) => (
-                <span class={`h-6 rounded-md border px-2 inline-flex items-center text-[11.5px] font-medium ${
+                <span class={`h-6 rounded-md border px-1.5 inline-flex items-center whitespace-nowrap shrink-0 text-[11.5px] font-medium ${
                   t.selected
                     ? "border-sky-300 bg-sky-50 text-sky-700"
                     : "border-slate-200 bg-white text-slate-600"
@@ -261,7 +261,7 @@ const draftLines = [
                 Generated. 2 credits remaining
               </span>
             </span>
-            <button type="button" class="ai-genbtn h-7 px-3 inline-flex items-center gap-1.5 rounded-md bg-sky-600 text-[12px] font-medium text-white">
+            <button type="button" class="ai-genbtn h-7 px-3 inline-flex items-center gap-1.5 rounded-md bg-sky-600 text-[12px] font-medium text-white whitespace-nowrap shrink-0">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72"/><path d="m14 7 3 3"/><path d="M5 6v4"/><path d="M19 14v4"/><path d="M10 2v2"/><path d="M7 8H3"/><path d="M21 16h-4"/><path d="M11 3H9"/></svg>
               Generate
             </button>
@@ -302,7 +302,7 @@ const draftLines = [
     .ai-cursor svg{display:block;transform-origin:3px 2px;animation:ai-press 11s ease-in-out infinite;}
     .ai-ripple{position:absolute;left:-6px;top:-6px;width:32px;height:32px;border-radius:9999px;background:rgba(2,132,199,.5);transform:scale(0);opacity:0;animation:ai-rip 11s ease-out infinite;}
 
-    @keyframes ai-move{0%{left:20%;top:15%}22%{left:88%;top:45%}32%{left:88%;top:45%}58%{left:32%;top:74%}68%{left:32%;top:74%}88%{left:32%;top:74%}100%{left:20%;top:15%}}
+    @keyframes ai-move{0%{left:18%;top:14%}22%{left:89.2%;top:46.2%}32%{left:89.2%;top:46.2%}58%{left:34%;top:72%}68%{left:34%;top:72%}88%{left:34%;top:72%}100%{left:18%;top:14%}}
     @keyframes ai-press{0%,26%{transform:scale(1)}28%{transform:scale(.82)}31%,62%{transform:scale(1)}64%{transform:scale(.82)}67%,100%{transform:scale(1)}}
     @keyframes ai-rip{0%,26%{transform:scale(0);opacity:0}29%{transform:scale(.25);opacity:.7}41%{transform:scale(1.9);opacity:0}60%{transform:scale(0);opacity:0}63%{transform:scale(.25);opacity:.7}75%{transform:scale(1.9);opacity:0}100%{transform:scale(0);opacity:0}}
     @keyframes ai-react{0%,29%{opacity:0;transform:translateY(8px)}33%{opacity:1;transform:translateY(0)}88%{opacity:1;transform:translateY(0)}95%{opacity:0;transform:translateY(8px)}100%{opacity:0;transform:translateY(8px)}}
