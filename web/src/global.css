@@ -247,8 +247,66 @@ svg.loading circle {
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* 3x3 dot-grid activity indicator (adapted from Temani Afif's css-loaders
+   "l26"). Native geometry is a ~52px square block, so the dot + box-shadow
+   grid lives on a ::before that is scaled down (origin 0 0, after the
+   centering translateX) and centered inside a fixed 18px box so it sits
+   inline on a nav row. currentColor tints all nine dots. */
+.campaign-grid {
+  display: inline-block;
+  position: relative;
+  width: 14px;
+  height: 14px;
+  vertical-align: middle;
+}
+
+.campaign-grid::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  color: currentColor;
+  transform-origin: 0 0;
+  transform: scale(0.26) translateX(-38px);
+  box-shadow:
+    19px -19px 0 0px, 38px -19px 0 0px, 57px -19px 0 0px,
+    19px 0     0 5px, 38px 0     0 5px, 57px 0     0 5px,
+    19px 19px  0 0px, 38px 19px  0 0px, 57px 19px  0 0px;
+  animation: campaign-grid 3.5s infinite linear;
+}
+
+@keyframes campaign-grid {
+  12.5% { box-shadow:
+    19px -19px 0 0px, 38px -19px 0 0px, 57px -19px 0 5px,
+    19px 0     0 5px, 38px 0     0 0px, 57px 0     0 5px,
+    19px 19px  0 0px, 38px 19px  0 0px, 57px 19px  0 0px; }
+  25%   { box-shadow:
+    19px -19px 0 5px, 38px -19px 0 0px, 57px -19px 0 5px,
+    19px 0     0 0px, 38px 0     0 0px, 57px 0     0 0px,
+    19px 19px  0 0px, 38px 19px  0 5px, 57px 19px  0 0px; }
+  50%   { box-shadow:
+    19px -19px 0 5px, 38px -19px 0 5px, 57px -19px 0 0px,
+    19px 0     0 0px, 38px 0     0 0px, 57px 0     0 0px,
+    19px 19px  0 0px, 38px 19px  0 0px, 57px 19px  0 5px; }
+  62.5% { box-shadow:
+    19px -19px 0 0px, 38px -19px 0 0px, 57px -19px 0 0px,
+    19px 0     0 5px, 38px 0     0 0px, 57px 0     0 0px,
+    19px 19px  0 0px, 38px 19px  0 5px, 57px 19px  0 5px; }
+  75%   { box-shadow:
+    19px -19px 0 0px, 38px -19px 0 5px, 57px -19px 0 0px,
+    19px 0     0 0px, 38px 0     0 0px, 57px 0     0 5px,
+    19px 19px  0 0px, 38px 19px  0 0px, 57px 19px  0 5px; }
+  87.5% { box-shadow:
+    19px -19px 0 0px, 38px -19px 0 5px, 57px -19px 0 0px,
+    19px 0     0 0px, 38px 0     0 5px, 57px 0     0 0px,
+    19px 19px  0 5px, 38px 19px  0 0px, 57px 19px  0 0px; }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .sky-breathe, .sun-glow, .cloud-drift, .animate-card-float, .animate-fade-in { animation: none !important; }
+  .sky-breathe, .sun-glow, .cloud-drift, .animate-card-float, .animate-fade-in, .campaign-grid::before { animation: none !important; }
 }
 
 /* ── Utilities ─────────────────────── */

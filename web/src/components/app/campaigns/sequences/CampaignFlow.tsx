@@ -15,6 +15,7 @@
 
 import React from "react";
 import {
+    BellOffIcon,
     ChevronDownIcon,
     ChevronUpIcon,
     ClockIcon,
@@ -23,9 +24,12 @@ import {
     Loader2Icon,
     MailIcon,
     PlusIcon,
+    SendIcon,
+    TagIcon,
     Trash2Icon,
     UnlinkIcon,
     XIcon,
+    ZapIcon,
 } from "lucide-react";
 import {
     ReactFlow,
@@ -56,10 +60,13 @@ import updateSequence from "@/lib/api/client/app/campaigns/sequences/updateSeque
 import useCampaign from "@/lib/api/hooks/app/campaigns/useCampaign";
 import useUpdateCampaign from "@/lib/api/hooks/app/campaigns/useUpdateCampaign";
 import { useConfirm } from "@/hooks/context/confirm";
-import { NumberInput } from "@/components/ui/field";
+import useClickOutside from "@/hooks/useClickOutside";
+import { NumberInput, Label, TextInput } from "@/components/ui/field";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import SequenceView from "./SequenceView";
+import CategoryPicker from "@/components/app/contacts/CategoryPicker";
+import type { SequenceAction, SequenceActionType } from "@/lib/api/models/app/campaigns/sequences/Action";
 
 const STOP_ID = "__stop__";
 const IF_PREFIX = "if-";
@@ -206,14 +213,18 @@ function StepNode({ data, selected }: NodeProps) {
             } ${selected ? "border-sky-400 ring-2 ring-sky-100" : ""}`}
         >
             <Handle type="target" position={Position.Top} className="!h-2 !w-2 !border-2 !border-white !bg-slate-300" />
-            <div className="flex items-center gap-1.5 border-b border-slate-200/70 px-2.5 py-1.5">
-                <MailIcon className="w-3 h-3 shrink-0 text-sky-600" />
+            <div className="flex items-center gap-2 rounded-t-xl border-b border-slate-200/70 bg-gradient-to-r from-sky-50/80 to-white px-2.5 py-1.5">
+                <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-md bg-sky-100 text-sky-600 ring-1 ring-sky-200/70">
+                    <MailIcon className="w-3 h-3" />
+                </span>
+                <span className="min-w-0 flex-1 truncate text-[12.5px] font-semibold text-slate-800">
+                    {d.label || "Untitled step"}
+                </span>
                 {d.isStart && (
-                    <span className="rounded bg-sky-50 px-1.5 py-px text-[9.5px] font-semibold uppercase tracking-[0.12em] text-sky-700">
+                    <span className="shrink-0 rounded bg-sky-600 px-1.5 py-px text-[9px] font-semibold uppercase tracking-[0.12em] text-white">
                         Start
                     </span>
                 )}
-                <span className="ml-auto" />
                 <button
                     type="button"
                     onClick={(e) => {
@@ -221,14 +232,14 @@ function StepNode({ data, selected }: NodeProps) {
                         d.onDelete();
                     }}
                     title="Delete step"
-                    className="nodrag inline-flex size-5 items-center justify-center rounded text-slate-300 transition-colors hover:bg-rose-50 hover:text-rose-600"
+                    className="nodrag inline-flex size-5 shrink-0 items-center justify-center rounded text-slate-300 transition-colors hover:bg-rose-50 hover:text-rose-600"
                 >
                     <Trash2Icon className="w-3 h-3" />
                 </button>
             </div>
             <div className="px-2.5 py-2">
-                <div className="truncate text-[12.5px] font-medium text-slate-800">{d.label || "Untitled step"}</div>
-                <div className="truncate text-[11px] text-slate-400">{d.subtitle || "No subject yet"}</div>
+                <div className="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-slate-300">Email</div>
+                <div className="mt-0.5 truncate text-[11.5px] text-slate-500">{d.subtitle || "No subject yet"}</div>
             </div>
             {d.orphan ? (
                 <div className="flex items-center gap-1 border-t border-amber-200/70 px-2.5 py-1 text-[10.5px] text-amber-600">
@@ -293,7 +304,91 @@ function StopNode() {
     );
 }
 
-const nodeTypes = { step: StepNode, ifcond: IfNode, stop: StopNode };
+// Per-type chrome for action nodes (icon + label + accent).
+const ACTION_META: Record<string, { label: string; Icon: typeof ClockIcon; tint: string }> = {
+    add_tag: { label: "Add tag", Icon: TagIcon, tint: "text-emerald-600" },
+    remove_tag: { label: "Remove tag", Icon: TagIcon, tint: "text-amber-600" },
+    unsubscribe: { label: "Unsubscribe", Icon: BellOffIcon, tint: "text-rose-600" },
+    notify: { label: "Notify", Icon: SendIcon, tint: "text-sky-600" },
+};
+
+// actionSummary is the one-line subtitle shown on an action node.
+function actionSummary(a?: SequenceAction | null): string {
+    if (!a) return "Not configured";
+    switch (a.type) {
+        case "add_tag":
+            return a.category_id ? "Add a tag" : "Pick a tag…";
+        case "remove_tag":
+            return a.category_id ? "Remove a tag" : "Pick a tag…";
+        case "unsubscribe":
+            return "Unsubscribe the contact";
+        case "notify":
+            return "Send a notification";
+        default:
+            return "Action";
+    }
+}
+
+type ActionNodeData = {
+    actionType: string;
+    label: string;
+    subtitle: string;
+    endsHere: boolean;
+    orphan: boolean;
+    onDelete: () => void;
+};
+
+function ActionNode({ data, selected }: NodeProps) {
+    const d = data as ActionNodeData;
+    const meta = ACTION_META[d.actionType] ?? { label: "Action", Icon: ZapIcon, tint: "text-slate-500" };
+    const Icon = meta.Icon;
+    return (
+        <div
+            className={`w-[248px] rounded-xl border bg-white shadow-sm transition-shadow duration-200 hover:shadow-md ${
+                d.orphan ? "border-dashed border-amber-300" : "border-slate-200"
+            } ${selected ? "border-sky-400 ring-2 ring-sky-100" : ""}`}
+        >
+            <Handle type="target" position={Position.Top} className="!h-2 !w-2 !border-2 !border-white !bg-slate-300" />
+            <div className="flex items-center gap-2 rounded-t-xl border-b border-slate-200/70 bg-gradient-to-r from-slate-50 to-white px-2.5 py-1.5">
+                <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-md bg-slate-100 ring-1 ring-slate-200/70">
+                    <Icon className={`w-3 h-3 ${meta.tint}`} />
+                </span>
+                <span className="min-w-0 flex-1 truncate text-[12.5px] font-semibold text-slate-800">{d.label}</span>
+                <button
+                    type="button"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        d.onDelete();
+                    }}
+                    title="Delete action"
+                    className="nodrag inline-flex size-5 shrink-0 items-center justify-center rounded text-slate-300 transition-colors hover:bg-rose-50 hover:text-rose-600"
+                >
+                    <Trash2Icon className="w-3 h-3" />
+                </button>
+            </div>
+            <div className="px-2.5 py-2">
+                <div className="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-slate-300">{meta.label}</div>
+                <div className="mt-0.5 truncate text-[11.5px] text-slate-500">{d.subtitle}</div>
+            </div>
+            {d.orphan ? (
+                <div className="flex items-center gap-1 border-t border-amber-200/70 px-2.5 py-1 text-[10.5px] text-amber-600">
+                    <UnlinkIcon className="w-3 h-3" />
+                    Not connected — drag a link in
+                </div>
+            ) : d.endsHere ? (
+                <div className="flex items-center gap-1 border-t border-slate-200/70 px-2.5 py-1 text-[10.5px] text-slate-400">
+                    <FlagIcon className="w-3 h-3 text-slate-400" />
+                    Ends here
+                </div>
+            ) : null}
+            {/* Same handles as a step: right = "if" branch, bottom = "go there". */}
+            <Handle type="source" id="if" position={Position.Right} className="!h-3 !w-3 !border-2 !border-white !bg-amber-400" />
+            <Handle type="source" id="s" position={Position.Bottom} className="!h-3 !w-3 !border-2 !border-white !bg-sky-500" />
+        </div>
+    );
+}
+
+const nodeTypes = { step: StepNode, ifcond: IfNode, stop: StopNode, action: ActionNode };
 
 type IfMeta = { sourceId: string; branchId: string };
 
@@ -406,7 +501,14 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                 target_sequence_id: target,
                 conditions: [{ field: "opened", operator: "within_days", value: 3 }],
             };
-            saveBranches(sourceId, [...(src.conditions?.branches ?? []), branch]);
+            // Drop a default ("else") line that already points to the same step
+            // the if routes to — otherwise adding the if looks like it
+            // auto-created a duplicate else to the same step. The else stays
+            // something you add and connect yourself.
+            const existing = (src.conditions?.branches ?? []).filter(
+                (b) => !(!isCond(b) && b.target_sequence_id === target),
+            );
+            saveBranches(sourceId, [...existing, branch]);
             openCondition(sourceId, branch.branch_id);
         },
         [seqById, saveBranches, openCondition],
@@ -466,6 +568,29 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
             setAdding(false);
         }
     }, [adding, sequences.length, createSequence]);
+
+    // Add an action node. It drops standalone like a step; you connect it by
+    // dragging, and configure it by clicking it open.
+    const addAction = React.useCallback(
+        async (type: SequenceActionType) => {
+            if (adding || sequences.length >= MAX_STEPS) return;
+            setAdding(true);
+            try {
+                const created = (await createSequence.mutateAsync()) as Sequence;
+                await updateSequence(campaignId, created.id, {
+                    kind: "action",
+                    action: { type },
+                });
+                invalidate();
+                toast.success("Action added — drag a dot to connect it.");
+            } catch (err) {
+                toast.error(buildError(err as AppError));
+            } finally {
+                setAdding(false);
+            }
+        },
+        [adding, sequences.length, createSequence, campaignId, invalidate],
+    );
 
     // Drag from a step's dot to empty -> new step, plain ("just go there") link.
     const dragOutStep = React.useCallback(
@@ -595,14 +720,34 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
             }
         }
 
+        let emailNum = 0;
         const allNodes: Node[] = sequences.map((s, i) => {
             const branches = s.conditions?.branches ?? [];
+            const isAction = s.kind !== "email";
+            if (isAction) {
+                const at = s.action?.type ?? "add_tag";
+                const fallback = ACTION_META[at]?.label ?? "Action";
+                return {
+                    id: s.id,
+                    type: "action",
+                    position: { x: 0, y: 0 },
+                    data: {
+                        actionType: at,
+                        label: s.name?.trim() || fallback,
+                        subtitle: actionSummary(s.action),
+                        endsHere: branches.length === 0,
+                        orphan: !reachable.has(s.id),
+                        onDelete: () => deleteStepRef.current(s.id),
+                    } satisfies ActionNodeData,
+                };
+            }
+            emailNum += 1;
             return {
                 id: s.id,
                 type: "step",
                 position: { x: 0, y: 0 },
                 data: {
-                    label: stepName(s),
+                    label: s.name?.trim() || `Email ${emailNum}`,
                     subtitle: s.subject,
                     isStart: i === 0,
                     endsHere: branches.length === 0,
@@ -861,6 +1006,14 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                     if (!d?.sourceId || !d?.branchId || !conn.target || isIfId(conn.target)) return;
                     retargetBranch(d.sourceId, d.branchId, conn.target === STOP_ID ? null : conn.target);
                 }}
+                onEdgesDelete={(deleted) =>
+                    deleted.forEach((e) => {
+                        // Cancel a line: removing an edge removes its branch (the
+                        // then/else/“go there” path it represents).
+                        const d = e.data as { sourceId?: string; branchId?: string } | undefined;
+                        if (d?.sourceId && d?.branchId) deleteBranch(d.sourceId, d.branchId);
+                    })
+                }
                 nodeTypes={nodeTypes}
                 onEdgeClick={(_, edge) => {
                     const d = edge.data as { sourceId?: string; branchId?: string } | undefined;
@@ -882,15 +1035,12 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
 
                 <Panel position="top-left">
                     <div className="flex max-w-[calc(100vw-1.5rem)] flex-wrap items-center gap-1.5">
-                        <button
-                            type="button"
-                            onClick={addStep}
+                        <AddNodeMenu
+                            onAddEmail={addStep}
+                            onAddAction={addAction}
                             disabled={adding || atMax}
-                            className="inline-flex h-8 items-center gap-1.5 rounded-md bg-sky-600 px-3 text-[12px] font-medium text-white shadow-sm transition-colors hover:bg-sky-700 disabled:opacity-60"
-                        >
-                            {adding ? <Loader2Icon className="w-3.5 h-3.5 animate-spin" /> : <PlusIcon className="w-3.5 h-3.5" />}
-                            Add step
-                        </button>
+                            busy={adding}
+                        />
                         <button
                             type="button"
                             onClick={() => setNodes((ns) => stackComponents(layoutGraph(ns, edges), edges))}
@@ -915,7 +1065,7 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                 <Panel position="bottom-center">
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md bg-white/95 px-3 py-1.5 text-[11px] text-slate-500 shadow-sm">
                         <span className="text-slate-400">
-                            step: bottom dot = go there, right (amber) dot = add an “if” · IF block: right dot = then, bottom (gray) dot = else / just go there · no match = stop
+                            step: bottom dot = go there, right (amber) dot = add an “if” · IF block: right dot = then, bottom (gray) dot = else / just go there · click a line then press Delete to remove it · no match = stop
                         </span>
                     </div>
                 </Panel>
@@ -974,7 +1124,12 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                         </div>
                     </div>
                     <div className="p-3">
-                        <SequenceView campaignId={campaignId} sequence={editStep} index={editIndex} />
+                        <NodeTypeSwitcher campaignId={campaignId} sequence={editStep} onChanged={invalidate} />
+                        {editStep.kind !== "email" ? (
+                            <ActionEditor campaignId={campaignId} sequence={editStep} onSaved={invalidate} />
+                        ) : (
+                            <SequenceView campaignId={campaignId} sequence={editStep} index={editIndex} />
+                        )}
                     </div>
                 </div>
             )}
@@ -1188,6 +1343,266 @@ function ConnectionEditor({
                     className="ml-auto h-7 rounded-md bg-sky-600 px-3 text-[12px] font-medium text-white hover:bg-sky-700"
                 >
                     Save
+                </button>
+            </div>
+        </div>
+    );
+}
+
+// ── Add-action menu (Panel) ─────────────────────────────────────────────────
+// Note: there is no "end" action — a path ends simply by leaving a node's
+// bottom dot unconnected (shows "Ends here") or routing a branch to Stop. That
+// keeps the cleaner Stop/"Ends here" visual instead of a configurable end node.
+const ADD_ACTION_OPTIONS: { type: SequenceActionType; label: string }[] = [
+    { type: "add_tag", label: "Add tag" },
+    { type: "remove_tag", label: "Remove tag" },
+    { type: "unsubscribe", label: "Unsubscribe" },
+    { type: "notify", label: "Notify (webhook)" },
+];
+
+function AddNodeMenu({
+    onAddEmail,
+    onAddAction,
+    disabled,
+    busy,
+}: {
+    onAddEmail: () => void;
+    onAddAction: (t: SequenceActionType) => void;
+    disabled: boolean;
+    busy: boolean;
+}) {
+    const [open, setOpen] = React.useState(false);
+    const ref = React.useRef<HTMLDivElement>(null);
+    useClickOutside(ref, () => setOpen(false));
+    return (
+        <div ref={ref} className="relative inline-flex">
+            {/* Primary click = add an email step (the default, common case). */}
+            <button
+                type="button"
+                disabled={disabled}
+                onClick={onAddEmail}
+                className="inline-flex h-8 items-center gap-1.5 rounded-l-md bg-sky-600 px-3 text-[12px] font-medium text-white shadow-sm transition-colors hover:bg-sky-700 disabled:opacity-60"
+            >
+                {busy ? <Loader2Icon className="w-3.5 h-3.5 animate-spin" /> : <PlusIcon className="w-3.5 h-3.5" />}
+                Add step
+            </button>
+            {/* Chevron = the full list of node types (email + actions). */}
+            <button
+                type="button"
+                disabled={disabled}
+                onClick={() => setOpen((o) => !o)}
+                aria-label="More step types"
+                className="inline-flex h-8 items-center rounded-r-md border-l border-sky-500/60 bg-sky-600 px-1.5 text-white shadow-sm transition-colors hover:bg-sky-700 disabled:opacity-60"
+            >
+                <ChevronDownIcon className="w-3.5 h-3.5" />
+            </button>
+            {open && (
+                <div className="absolute left-0 top-full z-30 mt-1 w-52 overflow-hidden rounded-md border border-slate-200 bg-white py-1 shadow-[0_12px_32px_-8px_rgba(15,23,42,0.18)]">
+                    <button
+                        type="button"
+                        onClick={() => {
+                            onAddEmail();
+                            setOpen(false);
+                        }}
+                        className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[12px] font-medium text-slate-800 transition-colors hover:bg-slate-100"
+                    >
+                        <MailIcon className="w-3.5 h-3.5 text-sky-600" />
+                        Send email
+                        <span className="ml-auto rounded bg-slate-100 px-1 py-px text-[9px] uppercase tracking-[0.1em] text-slate-400">
+                            default
+                        </span>
+                    </button>
+                    <div className="my-1 border-t border-slate-100" />
+                    {ADD_ACTION_OPTIONS.map((o) => {
+                        const meta = ACTION_META[o.type];
+                        const Icon = meta.Icon;
+                        return (
+                            <button
+                                key={o.type}
+                                type="button"
+                                onClick={() => {
+                                    onAddAction(o.type);
+                                    setOpen(false);
+                                }}
+                                className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[12px] text-slate-700 transition-colors hover:bg-slate-100"
+                            >
+                                <Icon className={`w-3.5 h-3.5 ${meta.tint}`} />
+                                {o.label}
+                            </button>
+                        );
+                    })}
+                </div>
+            )}
+        </div>
+    );
+}
+
+// defaultActionFor returns a fresh action config for a newly-picked type.
+function defaultActionFor(type: SequenceActionType): SequenceAction {
+    return { type };
+}
+
+// ── Node-type switcher (top of the editor drawer) ───────────────────────────
+// One place to switch ANY node between Send email and every action type —
+// mirrors the unified "Add" menu. Switching persists immediately and the drawer
+// body re-renders to the matching editor (SequenceView for email, ActionEditor
+// for actions).
+function NodeTypeSwitcher({
+    campaignId,
+    sequence,
+    onChanged,
+}: {
+    campaignId: string;
+    sequence: Sequence;
+    onChanged: () => void;
+}) {
+    const [busy, setBusy] = React.useState(false);
+    const current: "email" | SequenceActionType =
+        sequence.kind === "email" ? "email" : sequence.action?.type ?? "add_tag";
+
+    const items: { value: "email" | SequenceActionType; label: string; Icon: typeof MailIcon; tint: string }[] = [
+        { value: "email", label: "Send email", Icon: MailIcon, tint: "text-sky-600" },
+        ...ADD_ACTION_OPTIONS.map((o) => ({
+            value: o.type,
+            label: o.label,
+            Icon: ACTION_META[o.type].Icon,
+            tint: ACTION_META[o.type].tint,
+        })),
+    ];
+
+    const pick = async (value: "email" | SequenceActionType) => {
+        if (busy || value === current) return;
+        setBusy(true);
+        try {
+            if (value === "email") {
+                await updateSequence(campaignId, sequence.id, { kind: "email" });
+            } else {
+                await updateSequence(campaignId, sequence.id, {
+                    kind: "action",
+                    action: defaultActionFor(value),
+                });
+            }
+            onChanged();
+        } catch (err) {
+            toast.error(buildError(err as AppError));
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    return (
+        <div className="mb-4">
+            <Label>Step type</Label>
+            <div className="grid grid-cols-3 gap-1.5">
+                {items.map((it) => {
+                    const active = it.value === current;
+                    const Icon = it.Icon;
+                    return (
+                        <button
+                            key={it.value}
+                            type="button"
+                            disabled={busy}
+                            onClick={() => pick(it.value)}
+                            className={`flex items-center gap-1.5 rounded-md border px-2 py-1.5 text-left text-[11.5px] transition-colors disabled:opacity-60 ${
+                                active
+                                    ? "border-sky-300 bg-sky-50 text-sky-700"
+                                    : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                            }`}
+                        >
+                            <Icon className={`w-3.5 h-3.5 shrink-0 ${active ? "text-sky-600" : it.tint}`} />
+                            <span className="truncate">{it.label}</span>
+                        </button>
+                    );
+                })}
+            </div>
+        </div>
+    );
+}
+
+// ── Action editor (drawer body for non-email nodes) ─────────────────────────
+function ActionEditor({
+    campaignId,
+    sequence,
+    onSaved,
+}: {
+    campaignId: string;
+    sequence: Sequence;
+    onSaved: () => void;
+}) {
+    const [action, setAction] = React.useState<SequenceAction>(sequence.action ?? { type: "add_tag" });
+    const [name, setName] = React.useState(sequence.name ?? "");
+    const [saving, setSaving] = React.useState(false);
+    React.useEffect(() => {
+        setAction(sequence.action ?? { type: "add_tag" });
+        setName(sequence.name ?? "");
+    }, [sequence.id, sequence.action, sequence.kind, sequence.name]);
+
+    const save = async () => {
+        setSaving(true);
+        try {
+            await updateSequence(campaignId, sequence.id, {
+                name,
+                kind: "action",
+                action,
+            });
+            onSaved();
+            toast.success("Action saved");
+        } catch (err) {
+            toast.error(buildError(err as AppError));
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <div className="space-y-5">
+            <div>
+                <Label>Step name</Label>
+                <TextInput
+                    value={name}
+                    onChange={setName}
+                    placeholder={ACTION_META[action.type]?.label ?? "Action"}
+                    className="w-full max-w-[320px]"
+                />
+                <p className="mt-1.5 text-[11px] text-slate-400">Internal label only — shown on the node.</p>
+            </div>
+
+            {(action.type === "add_tag" || action.type === "remove_tag") && (
+                <div>
+                    <Label>{action.type === "add_tag" ? "Tag to add" : "Tag to remove"}</Label>
+                    <CategoryPicker
+                        value={action.category_id ? [action.category_id] : []}
+                        onChange={(ids) =>
+                            setAction((a) => ({ ...a, category_id: ids.length ? ids[ids.length - 1] : null }))
+                        }
+                        placeholder="Pick a tag…"
+                    />
+                    <p className="mt-1.5 text-[11px] text-slate-400">Tags are your contact categories.</p>
+                </div>
+            )}
+
+            {action.type === "unsubscribe" && (
+                <p className="rounded-md border border-slate-200 bg-slate-50/60 px-3 py-2.5 text-[11.5px] leading-relaxed text-slate-600">
+                    Suppresses this contact across your workspace — they won't receive further campaign emails, and a{" "}
+                    <code className="font-mono">campaign.unsubscribed</code> event fires to your integrations.
+                </p>
+            )}
+
+            {action.type === "notify" && (
+                <p className="rounded-md border border-slate-200 bg-slate-50/60 px-3 py-2.5 text-[11.5px] leading-relaxed text-slate-600">
+                    Sends a <code className="font-mono">campaign.action</code> event to your connected webhooks and
+                    integrations (Slack, CRM…) with this contact's details. Configure where it goes in Integrations.
+                </p>
+            )}
+
+            <div className="flex items-center justify-end pt-1">
+                <button
+                    type="button"
+                    onClick={save}
+                    disabled={saving}
+                    className="h-7 rounded-md bg-sky-600 px-3 text-[12px] font-medium text-white transition-colors hover:bg-sky-700 disabled:opacity-60"
+                >
+                    {saving ? "Saving…" : "Save action"}
                 </button>
             </div>
         </div>
