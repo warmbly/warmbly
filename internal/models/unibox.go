@@ -119,6 +119,24 @@ type EmailMessageStoreDataPreview struct {
 	Snippet      string    `json:"snippet"`
 	InternalDate time.Time `json:"internal_date"`
 	Seen         bool      `json:"seen"`
+
+	// Thread-stacking fields. The inbox list collapses to one row per
+	// thread (the newest message), so these summarise the whole
+	// conversation behind the row:
+	//   MessageCount — number of messages in the thread (within the
+	//                  current filter scope); 1 for a singleton.
+	//   HasUnread    — true if any message in the thread is unseen, so
+	//                  the row can bold the whole conversation Gmail-style
+	//                  rather than only when the latest message is unread.
+	// Both are zero-valued on the message-level paths (GetByThread /
+	// GetBySender / GetIncoming) that don't collapse.
+	MessageCount int64 `json:"message_count"`
+	HasUnread    bool  `json:"has_unread"`
+
+	// Labels are the conversation's assigned categories (denormalised
+	// id/title/color so the row renders chips without a second lookup).
+	// Always non-nil so it marshals to [] not null.
+	Labels []MiniCategory `json:"labels"`
 }
 
 type EmailParent struct { // used to get information from the parent email
@@ -157,8 +175,11 @@ type MailSearchParams struct {
 	// message in the thread was sent by the user (i.e. the recipient
 	// hasn't replied yet). nil = no filter.
 	AwaitingReply *bool
-	PageSize      int
-	Cursor        string
+	// CategoryIDs restricts results to threads carrying at least one of
+	// these conversation labels. Empty = no category filter.
+	CategoryIDs []uuid.UUID
+	PageSize    int
+	Cursor      string
 }
 
 type MarkSeen struct {
@@ -199,6 +220,18 @@ type UniboxTagOverview struct {
 	Total  int64     `json:"total"`
 }
 
+// UniboxCategoryOverview gives the rail per-conversation-label counts.
+// Resolved by joining threads through unibox_thread_labels. Unread/Total
+// are counted as THREADS (matching the thread-stacked list), not
+// messages.
+type UniboxCategoryOverview struct {
+	ID     uuid.UUID `json:"id"`
+	Title  string    `json:"title"`
+	Color  string    `json:"color"`
+	Unread int64     `json:"unread"`
+	Total  int64     `json:"total"`
+}
+
 // UniboxOverview powers the scope rail + top metric strip in one
 // request. Computed at /unibox/overview.
 type UniboxOverview struct {
@@ -212,12 +245,21 @@ type UniboxOverview struct {
 	// ScheduledPendingMax is the hard cap on pending scheduled email
 	// tasks per user. The dashboard shows current/max so the user
 	// sees how close they are to the limit before hitting it.
-	ScheduledPendingMax int64                   `json:"scheduled_pending_max"`
-	Mailboxes           []UniboxMailboxOverview `json:"mailboxes"`
-	Tags                []UniboxTagOverview     `json:"tags"`
-	GeneratedAt         time.Time               `json:"generated_at"`
-	WindowTodayStart    time.Time               `json:"window_today_start"`
-	WindowWeekStart     time.Time               `json:"window_week_start"`
+	ScheduledPendingMax int64                    `json:"scheduled_pending_max"`
+	Mailboxes           []UniboxMailboxOverview  `json:"mailboxes"`
+	Tags                []UniboxTagOverview      `json:"tags"`
+	Categories          []UniboxCategoryOverview `json:"categories"`
+	GeneratedAt         time.Time                `json:"generated_at"`
+	WindowTodayStart    time.Time                `json:"window_today_start"`
+	WindowWeekStart     time.Time                `json:"window_week_start"`
+}
+
+// UniboxThreadLabels is the assign/replace payload for a conversation's
+// labels. CategoryIDs is the full desired set — the handler diffs it
+// against what's stored, so a PUT-style replace is idempotent.
+type UniboxThreadLabels struct {
+	ThreadID    string      `json:"thread_id" binding:"required"`
+	CategoryIDs []uuid.UUID `json:"category_ids"`
 }
 
 // UniboxScheduledItem describes one queued outbound message the user

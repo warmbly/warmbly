@@ -49,6 +49,11 @@ type UniboxService interface {
 	// Overview powers the scope rail + top metric strip in one call.
 	Overview(ctx context.Context, userID uuid.UUID) (*models.UniboxOverview, *errx.Error)
 
+	// Conversation labels. SetThreadLabels replaces a thread's full
+	// label set (idempotent); ListThreadLabels reads the current set.
+	SetThreadLabels(ctx context.Context, userID uuid.UUID, threadID string, categoryIDs []uuid.UUID) ([]models.MiniCategory, *errx.Error)
+	ListThreadLabels(ctx context.Context, userID uuid.UUID, threadID string) ([]models.MiniCategory, *errx.Error)
+
 	// Scheduled-sends review + cancel. CancelScheduled is DB-only: we
 	// flip status to 'cancelled' and let the queued Cloud Task fire as
 	// a no-op (handler short-circuits on non-pending status). Avoids

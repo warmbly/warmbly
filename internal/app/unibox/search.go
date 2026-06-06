@@ -23,18 +23,11 @@ func (s *uniboxService) Search(
 		params.PageSize = LimitMax
 	}
 
-	// If only sender filter is used, delegate to optimized method
-	if params.Sender != nil && *params.Sender != "" &&
-		params.Subject == nil && params.Since == nil &&
-		params.Until == nil && params.Unseen == nil {
-		resp, err := s.uniboxRepository.GetBySender(ctx, userID, *params.Sender, params.PageSize, params.Cursor)
-		if err != nil {
-			sentry.CaptureException(err)
-			return nil, errx.InternalError()
-		}
-		return resp, nil
-	}
-
+	// Everything goes through Search: it collapses messages into one row
+	// per thread and attaches per-thread counts + labels. The old
+	// sender-only fast path (GetBySender) returned un-collapsed,
+	// label-less rows, so it can't serve the stacked list anymore — the
+	// sender filter is handled inside Search via params.Sender.
 	resp, err := s.uniboxRepository.Search(ctx, userID, params)
 	if err != nil {
 		sentry.CaptureException(err)
