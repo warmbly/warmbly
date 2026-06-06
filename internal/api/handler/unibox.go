@@ -133,6 +133,21 @@ func (h *Handler) GetUniboxIncoming(c *gin.Context) {
 		collectAccountIDs(v)
 	}
 
+	// Conversation-label filter: category_ids=<uuid>,<uuid>. A thread
+	// matches if it carries any of the listed labels. Invalid UUIDs are
+	// dropped, matching the email_ids behaviour.
+	if v := c.Query("category_ids"); v != "" {
+		for _, s := range strings.Split(v, ",") {
+			s = strings.TrimSpace(s)
+			if s == "" {
+				continue
+			}
+			if id, err := uuid.Parse(s); err == nil {
+				params.CategoryIDs = append(params.CategoryIDs, id)
+			}
+		}
+	}
+
 	resp, xerr := h.UniboxService.Search(c.Request.Context(), uid, params)
 	if xerr != nil {
 		errx.Handle(c, xerr)
@@ -240,6 +255,73 @@ func (h *Handler) GetUniboxThread(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, resp)
+}
+
+// GetUniboxThreadLabels returns the conversation labels on a thread.
+// GET /unibox/thread/labels?thread_id=<id>
+func (h *Handler) GetUniboxThreadLabels(c *gin.Context) {
+	if !h.gateUnibox(c) {
+		return
+	}
+	userID := middleware.GetUserID(c)
+	uid, err := uuid.Parse(userID)
+	if err != nil {
+		errx.Handle(c, errx.ErrUser)
+		return
+	}
+
+	threadID := c.Query("thread_id")
+	if threadID == "" {
+		threadID = c.Query("id")
+	}
+	if threadID == "" {
+		errx.Handle(c, errx.New(errx.BadRequest, "thread_id is required"))
+		return
+	}
+
+	labels, xerr := h.UniboxService.ListThreadLabels(c.Request.Context(), uid, threadID)
+	if xerr != nil {
+		errx.Handle(c, xerr)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": labels})
+}
+
+// SetUniboxThreadLabels replaces the full conversation-label set on a
+// thread. Idempotent (PUT semantics): the body's category_ids is the
+// desired set, so retries are naturally safe. Only the user's own
+// categories are attached.
+// PUT /unibox/thread/labels
+func (h *Handler) SetUniboxThreadLabels(c *gin.Context) {
+	if !h.gateUnibox(c) {
+		return
+	}
+	userID := middleware.GetUserID(c)
+	uid, err := uuid.Parse(userID)
+	if err != nil {
+		errx.Handle(c, errx.ErrUser)
+		return
+	}
+
+	var req models.UniboxThreadLabels
+	if err := c.ShouldBindJSON(&req); err != nil {
+		errx.Handle(c, errx.ErrInvalid)
+		return
+	}
+
+	labels, xerr := h.UniboxService.SetThreadLabels(c.Request.Context(), uid, req.ThreadID, req.CategoryIDs)
+	if xerr != nil {
+		errx.Handle(c, xerr)
+		return
+	}
+
+	h.auditOrg(c, models.AuditActionUpdate, models.AuditEntityUnibox, nil, nil, map[string]string{
+		"action":    "set_labels",
+		"thread_id": req.ThreadID,
+		"labels":    strconv.Itoa(len(labels)),
+	})
+
+	c.JSON(http.StatusOK, gin.H{"data": labels})
 }
 
 func (h *Handler) UniboxMarkSeen(c *gin.Context) {

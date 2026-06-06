@@ -336,6 +336,13 @@ func Run(
 			unibox.GET("/count", m.RequireAccess(models.PermAccessUnibox, models.APIPermReadUnibox), h.GetUnseenCount)
 			unibox.GET("/overview", m.RequireAccess(models.PermAccessUnibox, models.APIPermReadUnibox), h.GetUniboxOverview)
 			unibox.GET("/thread", m.RequireAccess(models.PermAccessUnibox, models.APIPermReadUnibox), h.GetUniboxThread)
+
+			// Conversation labels — read the set on a thread, or replace
+			// it wholesale (idempotent PUT). Registered before /:id so the
+			// fixed path wins over the catch-all.
+			unibox.GET("/thread/labels", m.RequireAccess(models.PermAccessUnibox, models.APIPermReadUnibox), h.GetUniboxThreadLabels)
+			unibox.PUT("/thread/labels", m.RequireAccess(models.PermAccessUnibox, models.APIPermWriteUnibox), h.SetUniboxThreadLabels)
+
 			unibox.PATCH("/seen", m.RequireAccess(models.PermAccessUnibox, models.APIPermWriteUnibox), h.UniboxMarkSeen)
 			unibox.POST("/reply", m.RequireOrganization(), m.RequireAccess(models.PermAccessUnibox, models.APIPermWriteUnibox), h.UniboxReply)
 
