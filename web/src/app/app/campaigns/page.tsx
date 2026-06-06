@@ -2,19 +2,28 @@ import { useUserProfile } from "@/hooks/context/user";
 import useCampaigns from "@/lib/api/hooks/app/campaigns/useCampaigns";
 import useStartCampaign from "@/lib/api/hooks/app/campaigns/useStartCampaign";
 import useStopCampaign from "@/lib/api/hooks/app/campaigns/useStopCampaign";
+import useUpdateCampaign from "@/lib/api/hooks/app/campaigns/useUpdateCampaign";
 import { useConfirm } from "@/hooks/context/confirm";
 import { NewCampaignDialog } from "@/components/app/campaigns/NewCampaignDialog";
+import LaunchCampaignDialog from "@/components/app/campaigns/LaunchCampaignDialog";
 import toast from "react-hot-toast";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
+import type Campaign from "@/lib/api/models/app/campaigns/Campaign";
+import type Folder from "@/lib/api/models/app/Folder";
+import { cn, hexToRgba } from "@/lib/utils";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
     AlertTriangleIcon,
     CalendarIcon,
+    CheckIcon,
+    CheckCircle2Icon,
+    FileTextIcon,
     FilterIcon,
     FolderIcon,
     Loader2Icon,
+    type LucideIcon,
     PauseIcon,
     PlayIcon,
     PlusIcon,
@@ -42,8 +51,203 @@ import {
     SelectButton,
 } from "@/components/ui/popover-menu";
 
-type StatusFilter = "all" | "active" | "paused" | "draft";
+type StatusFilter = "all" | "active" | "paused" | "draft" | "completed";
 type SortMode = "newest" | "oldest" | "name";
+
+// Collapse the backend's raw campaign statuses into the buckets the list
+// filters/counts by. paused_no_accounts / paused_trial_expired are auto-pause
+// variants, so they belong with "paused"; anything unknown reads as draft.
+function statusBucket(s?: string): "active" | "paused" | "completed" | "draft" {
+    if (s === "active") return "active";
+    if (s === "completed") return "completed";
+    if (s && s.startsWith("paused")) return "paused";
+    return "draft";
+}
+
+// Per-state label + leading mark for a campaign row. "active" renders the
+// animated dot-grid loader; every other state is a 14px lucide icon so the
+// fixed-width leading slot keeps each row's name aligned.
+const STATUS_LABEL: Record<string, string> = {
+    active: "running",
+    paused: "paused",
+    paused_no_accounts: "no accounts",
+    paused_trial_expired: "trial expired",
+    completed: "finished",
+    draft: "draft",
+};
+
+// Single source of truth for a status's color — drives BOTH the leading mark
+// and the right-side text label so they always agree. emerald = live/done,
+// amber = paused/needs-attention, slate = not started.
+const STATUS_TONE: Record<string, string> = {
+    active: "text-emerald-600",
+    completed: "text-emerald-600",
+    paused: "text-amber-600",
+    paused_no_accounts: "text-amber-600",
+    paused_trial_expired: "text-amber-600",
+    draft: "text-slate-500",
+};
+
+function statusTone(status: string): string {
+    return STATUS_TONE[status] ?? STATUS_TONE.draft;
+}
+
+function CampaignStatusMark({ status }: { status: string }) {
+    const tone = statusTone(status);
+    if (status === "active") {
+        return <span className={cn("campaign-grid", tone)} aria-hidden title="Sending now" />;
+    }
+    let Icon: LucideIcon = FileTextIcon;
+    let title = "Draft — not started";
+    if (status === "completed") {
+        Icon = CheckCircle2Icon;
+        title = "Finished";
+    } else if (status === "paused") {
+        Icon = PauseIcon;
+        title = "Paused";
+    } else if (status === "paused_no_accounts" || status === "paused_trial_expired") {
+        Icon = AlertTriangleIcon;
+        title = status === "paused_no_accounts" ? "Paused — no sending accounts" : "Paused — trial expired";
+    }
+    return <Icon className={cn("w-3.5 h-3.5", tone)} aria-label={title} />;
+}
+
+// Read-only chips showing which folders a campaign belongs to — resolves the
+// campaign's folder ids against the user's folders, shows up to 2 then "+N".
+// Each chip is tinted with the folder's own color for a quick visual read.
+function CampaignFolderChips({ campaign, folders }: { campaign: Campaign; folders: Folder[] }) {
+    const mine = (campaign.folders ?? [])
+        .map((id) => folders.find((f) => f.id === id))
+        .filter((f): f is Folder => !!f);
+    if (mine.length === 0) return null;
+    const shown = mine.slice(0, 2);
+    const extra = mine.length - shown.length;
+    return (
+        <span className="hidden sm:flex items-center gap-1.5 shrink-0">
+            {shown.map((f) => (
+                <span
+                    key={f.id}
+                    title={f.title}
+                    className="inline-flex items-center gap-1.5 h-[18px] pl-1.5 pr-2 rounded-full text-[10.5px] font-medium text-slate-700 max-w-[130px]"
+                    style={{ backgroundColor: hexToRgba(f.color, 0.16) }}
+                >
+                    <span
+                        className="inline-block size-2 rounded-full ring-1 ring-black/5 shrink-0"
+                        style={{ backgroundColor: f.color }}
+                    />
+                    <span className="truncate">{f.title}</span>
+                </span>
+            ))}
+            {extra > 0 && (
+                <span
+                    className="inline-flex items-center h-[18px] px-1.5 rounded-full text-[10.5px] font-medium text-slate-500 bg-slate-100"
+                    title={mine.slice(2).map((f) => f.title).join(", ")}
+                >
+                    +{extra}
+                </span>
+            )}
+        </span>
+    );
+}
+
+// Per-row "move to folder" control: a folder button (revealed on hover, or
+// kept visible + sky when the campaign is already filed) that opens a popover
+// of the user's folders. Toggling an item PATCHes the campaign's `folders`
+// array; the menu stays open so several folders can be toggled at once.
+function CampaignFolderMenu({ campaign, folders }: { campaign: Campaign; folders: Folder[] }) {
+    const p = useUserProfile();
+    const update = useUpdateCampaign(campaign.id);
+    const current = campaign.folders ?? [];
+    const inCount = current.length;
+
+    function setFolders(next: string[]) {
+        update.mutate(
+            { folders: next },
+            { onError: (e) => toast.error(buildError(e as unknown as AppError)) },
+        );
+    }
+
+    return (
+        <PopoverMenu align="end">
+            <PopoverMenuTrigger asChild>
+                <button
+                    type="button"
+                    aria-label="Move to folder"
+                    title={
+                        inCount > 0
+                            ? `In ${inCount} folder${inCount === 1 ? "" : "s"}`
+                            : "Move to folder"
+                    }
+                    className={cn(
+                        "size-6 rounded flex items-center justify-center transition-opacity shrink-0",
+                        inCount > 0
+                            ? "text-sky-600 hover:bg-sky-50 opacity-100"
+                            : "text-slate-400 hover:text-slate-900 hover:bg-slate-100 opacity-100 md:opacity-0 md:group-hover:opacity-100",
+                    )}
+                >
+                    <FolderIcon className="w-3.5 h-3.5" />
+                </button>
+            </PopoverMenuTrigger>
+            <PopoverMenuContent minWidth={200}>
+                <PopoverMenuLabel>Folders</PopoverMenuLabel>
+                {folders.length === 0 ? (
+                    <PopoverMenuItem
+                        onSelect={() => p.setFoldersEdit(true)}
+                        icon={<PlusIcon className="w-3 h-3" />}
+                    >
+                        Create a folder
+                    </PopoverMenuItem>
+                ) : (
+                    folders.map((f) => {
+                        const isIn = current.includes(f.id);
+                        return (
+                            <PopoverMenuItem
+                                key={f.id}
+                                closeOnSelect={false}
+                                selected={isIn}
+                                onSelect={() =>
+                                    setFolders(
+                                        isIn
+                                            ? current.filter((x) => x !== f.id)
+                                            : [...current, f.id],
+                                    )
+                                }
+                                icon={
+                                    <span
+                                        className="inline-block size-2.5 rounded-full ring-1 ring-black/5"
+                                        style={{ backgroundColor: f.color }}
+                                    />
+                                }
+                                trailing={
+                                    isIn ? (
+                                        <CheckIcon className="w-3.5 h-3.5 text-sky-600" strokeWidth={2.5} />
+                                    ) : null
+                                }
+                            >
+                                {f.title}
+                            </PopoverMenuItem>
+                        );
+                    })
+                )}
+                {inCount > 0 && (
+                    <>
+                        <PopoverMenuSeparator />
+                        <PopoverMenuItem danger onSelect={() => setFolders([])}>
+                            Remove from all
+                        </PopoverMenuItem>
+                    </>
+                )}
+                <PopoverMenuSeparator />
+                <PopoverMenuItem
+                    onSelect={() => p.setFoldersEdit(true)}
+                    icon={<Settings2Icon className="w-3 h-3" />}
+                >
+                    Manage folders
+                </PopoverMenuItem>
+            </PopoverMenuContent>
+        </PopoverMenu>
+    );
+}
 
 export default function CampaignsPage() {
     const p = useUserProfile();
@@ -55,6 +259,7 @@ export default function CampaignsPage() {
     const [status, setStatus] = useState<StatusFilter>("all");
     const [sort, setSort] = useState<SortMode>("newest");
     const [newOpen, setNewOpen] = useState<boolean>(false);
+    const [launchTarget, setLaunchTarget] = useState<Campaign | null>(null);
 
     async function toggleCampaign(id: string, currentStatus: string) {
         try {
@@ -85,7 +290,7 @@ export default function CampaignsPage() {
     const filtered = useMemo(() => {
         const base = status === "all"
             ? campaigns
-            : campaigns.filter((c) => (c.status ?? "draft") === status);
+            : campaigns.filter((c) => statusBucket(c.status) === status);
         const sorted = [...base];
         if (sort === "newest") {
             sorted.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
@@ -98,12 +303,9 @@ export default function CampaignsPage() {
     }, [campaigns, status, sort]);
 
     const counts = useMemo(() => {
-        const stats = { total: campaigns.length, active: 0, paused: 0, draft: 0 };
+        const stats = { total: campaigns.length, active: 0, paused: 0, draft: 0, completed: 0 };
         for (const c of campaigns) {
-            const s = c.status ?? "draft";
-            if (s === "active") stats.active++;
-            else if (s === "paused") stats.paused++;
-            else stats.draft++;
+            stats[statusBucket(c.status)]++;
         }
         return stats;
     }, [campaigns]);
@@ -135,7 +337,7 @@ export default function CampaignsPage() {
                 </TopbarAction>
             </PageTopbar>
 
-            <StatStrip cols={4}>
+            <StatStrip cols={5}>
                 <Stat
                     label="All"
                     value={counts.total}
@@ -159,8 +361,14 @@ export default function CampaignsPage() {
                     label="Draft"
                     value={counts.draft}
                     sub="not started"
-                    last
                     onClick={() => setStatus("draft")}
+                />
+                <Stat
+                    label="Done"
+                    value={counts.completed}
+                    sub="finished"
+                    last
+                    onClick={() => setStatus("completed")}
                 />
             </StatStrip>
 
@@ -194,7 +402,7 @@ export default function CampaignsPage() {
                             <PopoverMenuItem
                                 key={f.id}
                                 onSelect={() => setFolder(folder === f.id ? "" : f.id)}
-                                icon={<span className="size-2 rounded-full" style={{ backgroundColor: f.color }} />}
+                                icon={<span className="inline-block size-2 rounded-full" style={{ backgroundColor: f.color }} />}
                                 selected={folder === f.id}
                             >
                                 {f.title}
@@ -288,14 +496,7 @@ export default function CampaignsPage() {
                     <div className="divide-y divide-slate-200/60">
                         {filtered.map((c) => {
                             const cstatus = c.status ?? "draft";
-                            const dot =
-                                cstatus === "active"
-                                    ? "bg-emerald-500"
-                                    : cstatus === "paused"
-                                        ? "bg-amber-500"
-                                        : "bg-slate-300";
-                            const stateLabel =
-                                cstatus === "active" ? "running" : cstatus;
+                            const stateLabel = STATUS_LABEL[cstatus] ?? cstatus;
                             const StateIcon =
                                 cstatus === "active" ? PauseIcon : PlayIcon;
                             return (
@@ -304,19 +505,24 @@ export default function CampaignsPage() {
                                     to={`/app/campaigns/${c.id}`}
                                     className="group h-11 px-5 flex items-center gap-3 hover:bg-slate-50 transition-colors"
                                 >
-                                    <span className={`size-1.5 rounded-full shrink-0 ${dot}`} />
+                                    {/* Fixed-width leading slot so every row's name aligns,
+                                        whatever state mark (loader or icon) sits in it. */}
+                                    <span className="shrink-0 w-3.5 flex items-center justify-center">
+                                        <CampaignStatusMark status={cstatus} />
+                                    </span>
                                     <span className="text-[12.5px] text-slate-900 font-medium truncate max-w-[40%]">
                                         {c.name}
                                     </span>
                                     <span className="font-mono text-[10.5px] text-slate-400 tabular-nums shrink-0">
                                         {c.id.slice(0, 8)}
                                     </span>
+                                    <CampaignFolderChips campaign={c} folders={folders} />
                                     {c.description && (
                                         <span className="text-[11.5px] text-slate-400 truncate hidden md:inline">
                                             {c.description}
                                         </span>
                                     )}
-                                    <span className="ml-auto text-[10px] uppercase tracking-[0.1em] text-slate-500 font-medium shrink-0">
+                                    <span className={cn("ml-auto text-[10px] uppercase tracking-[0.1em] font-medium shrink-0", statusTone(cstatus))}>
                                         {stateLabel}
                                     </span>
                                     <span className="font-mono text-[10.5px] text-slate-400 tabular-nums flex items-center gap-1 shrink-0">
@@ -328,23 +534,26 @@ export default function CampaignsPage() {
                                             })
                                             : "—"}
                                     </span>
+                                    <CampaignFolderMenu campaign={c} folders={folders} />
                                     <button
                                         type="button"
                                         onClick={(e) => {
                                             e.preventDefault();
                                             e.stopPropagation();
-                                            const action =
-                                                cstatus === "active" ? "Pause" : "Start";
-                                            confirm?.show(
-                                                `${action} ${c.name}?`,
-                                                () => toggleCampaign(c.id, cstatus),
-                                            );
+                                            if (cstatus === "active") {
+                                                confirm?.show(
+                                                    `Pause ${c.name}?`,
+                                                    () => toggleCampaign(c.id, cstatus),
+                                                );
+                                            } else {
+                                                setLaunchTarget(c);
+                                            }
                                         }}
                                         disabled={
                                             (cstatus === "active" && stopCampaign.isPending) ||
                                             (cstatus !== "active" && startCampaign.isPending)
                                         }
-                                        className="size-6 rounded text-slate-400 hover:text-slate-900 hover:bg-slate-100 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shrink-0 disabled:opacity-30"
+                                        className="size-6 rounded text-slate-400 hover:text-slate-900 hover:bg-slate-100 flex items-center justify-center opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity shrink-0 disabled:opacity-30"
                                         aria-label={
                                             cstatus === "active" ? "Pause campaign" : "Start campaign"
                                         }
@@ -359,6 +568,11 @@ export default function CampaignsPage() {
             </PageBody>
 
             <NewCampaignDialog open={newOpen} onClose={() => setNewOpen(false)} />
+            <LaunchCampaignDialog
+                campaign={launchTarget}
+                onClose={() => setLaunchTarget(null)}
+                onConfirm={(id) => startCampaign.mutateAsync(id)}
+            />
         </Page>
     );
 }

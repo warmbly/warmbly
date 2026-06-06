@@ -25,6 +25,7 @@ import { Label, TextInput } from "@/components/ui/field";
 import useUpdateContactsBulk from "@/lib/api/hooks/app/contacts/useUpdateContactsBulk";
 import useCampaigns from "@/lib/api/hooks/app/campaigns/useCampaigns";
 import useClickOutside from "@/hooks/useClickOutside";
+import { useConfirm } from "@/hooks/context/confirm";
 import useFlipPlacement from "@/hooks/useFlipPlacement";
 import type MiniCampaign from "@/lib/api/models/app/campaigns/MiniCampaign";
 import type { AppError } from "@/lib/api/client/normalizeError";
@@ -62,6 +63,7 @@ export default function ContactsEditBulk({
     const [subscribeMode, setSubscribeMode] = React.useState<"unchanged" | "subscribe" | "unsubscribe">("unchanged");
 
     const update = useUpdateContactsBulk();
+    const confirm = useConfirm();
 
     const dirty =
         campaignsAdd.length > 0 ||
@@ -70,6 +72,12 @@ export default function ContactsEditBulk({
         categoriesRemove.length > 0 ||
         fields.length > 0 ||
         subscribeMode !== "unchanged";
+
+    // Close, guarding unsaved edits behind the in-app confirm (never window.confirm).
+    const requestClose = React.useCallback(() => {
+        if (dirty) confirm.show("Discard bulk changes?", () => setActive(false));
+        else setActive(false);
+    }, [dirty, confirm, setActive]);
 
     function reset() {
         setCampaignsAdd([]);
@@ -111,14 +119,11 @@ export default function ContactsEditBulk({
 
     React.useEffect(() => {
         function onKey(e: KeyboardEvent) {
-            if (e.key === "Escape") {
-                if (dirty && !window.confirm("Discard bulk changes?")) return;
-                setActive(false);
-            }
+            if (e.key === "Escape") requestClose();
         }
         if (active) window.addEventListener("keydown", onKey);
         return () => window.removeEventListener("keydown", onKey);
-    }, [dirty, active, setActive]);
+    }, [requestClose, active]);
 
     return (
         <AnimatePresence>
@@ -130,7 +135,7 @@ export default function ContactsEditBulk({
                     exit={{ opacity: 0 }}
                     transition={{ duration: 0.15 }}
                     className="fixed inset-0 z-[110] flex justify-end bg-slate-900/30 backdrop-blur-[2px]"
-                    onMouseDown={() => (dirty && !window.confirm("Discard bulk changes?") ? undefined : setActive(false))}
+                    onMouseDown={requestClose}
                 >
                     <motion.aside
                         key="panel"
@@ -156,7 +161,7 @@ export default function ContactsEditBulk({
                             )}
                             <button
                                 type="button"
-                                onClick={() => (dirty && !window.confirm("Discard bulk changes?") ? undefined : setActive(false))}
+                                onClick={requestClose}
                                 aria-label="Close"
                                 className="ml-auto size-7 rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100 inline-flex items-center justify-center transition-colors"
                             >

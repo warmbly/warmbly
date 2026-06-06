@@ -1,8 +1,11 @@
 import React from "react";
+import toast from "react-hot-toast";
 import { useUserProfile } from "@/hooks/context/user";
 import { TextInput } from "@/components/ui/field";
 import { TopbarAction } from "@/components/layout/Page";
-import { comingSoon } from "@/lib/helper/comingSoon";
+import type { AppError } from "@/lib/api/client/normalizeError";
+import buildError from "@/lib/helper/buildError";
+import useUpdateProfile from "@/lib/api/hooks/auth/useUpdateProfile";
 import { AvatarUploader } from "@/components/app/avatar/AvatarUploader";
 import {
     useDeleteUserAvatar,
@@ -19,6 +22,24 @@ export default function ProfileSettingsPage() {
 
     const uploadAvatar = useUploadUserAvatar();
     const removeAvatar = useDeleteUserAvatar();
+    const updateProfile = useUpdateProfile();
+
+    async function save() {
+        if (!dirty || updateProfile.isPending) return;
+        if (!firstName.trim() || !lastName.trim()) {
+            toast.error("First and last name are required.");
+            return;
+        }
+        try {
+            await updateProfile.mutateAsync({
+                first_name: firstName.trim(),
+                last_name: lastName.trim(),
+            });
+            toast.success("Profile saved");
+        } catch (err) {
+            toast.error(buildError(err as AppError));
+        }
+    }
 
     return (
         <SectionShell
@@ -36,8 +57,8 @@ export default function ProfileSettingsPage() {
                         >
                             Discard
                         </TopbarAction>
-                        <TopbarAction onClick={() => comingSoon("Profile editing")}>
-                            Save profile
+                        <TopbarAction onClick={save} disabled={updateProfile.isPending}>
+                            {updateProfile.isPending ? "Saving…" : "Save profile"}
                         </TopbarAction>
                     </>
                 ) : null

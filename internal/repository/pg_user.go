@@ -22,6 +22,7 @@ type UserRepository interface {
 	GetUserByEmail(ctx context.Context, email string) (*models.User, error)
 	SetFreeTrialUsed(ctx context.Context, userID uuid.UUID) error
 	UpdateOnboarding(ctx context.Context, userID uuid.UUID, firstName, lastName, referralSource, role, teamSize string) error
+	UpdateProfile(ctx context.Context, userID uuid.UUID, firstName, lastName string) error
 	UpdateAvatar(ctx context.Context, userID uuid.UUID, avatarURL *string) error
 
 	// GetBanState returns the user's ban_scope bitmask (0 = not
@@ -159,6 +160,12 @@ func (r *userRepository) SetFreeTrialUsed(ctx context.Context, userID uuid.UUID)
 func (r *userRepository) UpdateOnboarding(ctx context.Context, userID uuid.UUID, firstName, lastName, referralSource, role, teamSize string) error {
 	const q = `UPDATE users SET first_name=$2, last_name=$3, referral_source=$4, job_role=NULLIF($5,''), team_size=NULLIF($6,''), onboarding_completed_at=NOW(), updated_at=NOW() WHERE id=$1`
 	_, err := r.DB.Exec(ctx, q, userID, firstName, lastName, referralSource, role, teamSize)
+	return err
+}
+
+func (r *userRepository) UpdateProfile(ctx context.Context, userID uuid.UUID, firstName, lastName string) error {
+	const q = `UPDATE users SET first_name=$2, last_name=$3, updated_at=NOW() WHERE id=$1`
+	_, err := r.DB.Exec(ctx, q, userID, firstName, lastName)
 	return err
 }
 

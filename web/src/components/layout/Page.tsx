@@ -86,12 +86,14 @@ export function TopbarAction({
     href,
     icon,
     variant = "primary",
+    disabled = false,
 }: {
     children: React.ReactNode;
     onClick?: () => void;
     href?: string;
     icon?: React.ReactNode;
     variant?: "primary" | "ghost";
+    disabled?: boolean;
 }) {
     const cls =
         variant === "primary"
@@ -114,8 +116,9 @@ export function TopbarAction({
     return (
         <button
             onClick={onClick}
+            disabled={disabled}
             className={cn(
-                "h-7 px-2.5 rounded-md inline-flex items-center gap-1.5 text-[12px] font-medium transition-colors",
+                "h-7 px-2.5 rounded-md inline-flex items-center gap-1.5 text-[12px] font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed",
                 cls,
             )}
         >
@@ -158,7 +161,7 @@ export function Stat({
     onClick,
 }: {
     label: string;
-    value: string | number;
+    value: React.ReactNode;
     sub?: string;
     accent?: boolean;
     href?: string;

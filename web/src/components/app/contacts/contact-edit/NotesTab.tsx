@@ -12,6 +12,7 @@ import useContactNotes from "@/lib/api/hooks/app/contacts/useContactNotes";
 import useCreateContactNote from "@/lib/api/hooks/app/contacts/useCreateContactNote";
 import useUpdateContactNote from "@/lib/api/hooks/app/contacts/useUpdateContactNote";
 import useDeleteContactNote from "@/lib/api/hooks/app/contacts/useDeleteContactNote";
+import { useConfirm } from "@/hooks/context/confirm";
 import type ContactNote from "@/lib/api/models/app/crm/ContactNote";
 import { fmtRelative, fmtAbsolute } from "./format";
 
@@ -30,6 +31,7 @@ export default function NotesTab({ contactId }: { contactId: string }) {
     const notes = useContactNotes(contactId);
     const create = useCreateContactNote();
     const remove = useDeleteContactNote();
+    const confirm = useConfirm();
 
     const [draft, setDraft] = React.useState("");
 
@@ -53,20 +55,21 @@ export default function NotesTab({ contactId }: { contactId: string }) {
         }
     }
 
-    async function onDelete(noteId: string) {
-        if (!window.confirm("Delete this note? This cannot be undone.")) return;
-        try {
-            await toast.promise(
-                remove.mutateAsync({ contactId, noteId }),
-                {
-                    loading: "Deleting…",
-                    success: "Note deleted",
-                    error: "Could not delete note",
-                },
-            );
-        } catch {
-            /* toast surfaced */
-        }
+    function onDelete(noteId: string) {
+        confirm.show("Delete this note? This cannot be undone.", async () => {
+            try {
+                await toast.promise(
+                    remove.mutateAsync({ contactId, noteId }),
+                    {
+                        loading: "Deleting…",
+                        success: "Note deleted",
+                        error: "Could not delete note",
+                    },
+                );
+            } catch {
+                /* toast surfaced */
+            }
+        });
     }
 
     return (

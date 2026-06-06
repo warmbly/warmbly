@@ -24,6 +24,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 
+	"github.com/warmbly/warmbly/internal/infrastructure/cache"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
 )
@@ -60,6 +61,17 @@ type Service interface {
 	// replacement; pass nil to detach.
 	WireDispatchSink(sink DispatchSink)
 
+	// WireThrottle attaches a Redis-backed per-org, per-event-type dispatch
+	// throttle. resolveLimit returns the org's per-minute cap on how many events
+	// of a single type it may fan out (plan-based — see organization
+	// WebhookDispatchLimit); over the cap, further events of that type in the
+	// same minute are dropped (logged) instead of reaching webhooks or
+	// integration sinks. The guard against a campaign "notify" action — or any
+	// per-contact event — flooding a customer's endpoints. The resolved cap is
+	// cached briefly so resolveLimit is not hit on every event. Pass a nil cache
+	// or nil resolver to disable (fail-open).
+	WireThrottle(c *cache.Cache, resolveLimit func(ctx context.Context, orgID uuid.UUID) int)
+
 	// Endpoint CRUD wrappers.
 	CreateEndpoint(ctx context.Context, orgID uuid.UUID, url, description string, eventTypes []string, enabled bool) (*models.WebhookEndpointWithSecret, error)
 	UpdateEndpoint(ctx context.Context, orgID, endpointID uuid.UUID, url, description string, eventTypes []string, enabled bool) (*models.WebhookEndpoint, error)
@@ -70,9 +82,11 @@ type Service interface {
 }
 
 type service struct {
-	repo repository.WebhookRepository
-	now  func() time.Time
-	sink DispatchSink
+	repo         repository.WebhookRepository
+	now          func() time.Time
+	sink         DispatchSink
+	cache        *cache.Cache
+	resolveLimit func(ctx context.Context, orgID uuid.UUID) int
 }
 
 func NewService(repo repository.WebhookRepository) Service {
@@ -83,8 +97,77 @@ func (s *service) WireDispatchSink(sink DispatchSink) {
 	s.sink = sink
 }
 
+func (s *service) WireThrottle(c *cache.Cache, resolveLimit func(ctx context.Context, orgID uuid.UUID) int) {
+	s.cache = c
+	s.resolveLimit = resolveLimit
+}
+
+// StaticLimit adapts a fixed per-minute cap into a throttle resolver, for
+// callers without plan context (e.g. the consumer, which dispatches lower-volume
+// reply/warmup events rather than per-contact campaign fan-out).
+func StaticLimit(perMinute int) func(context.Context, uuid.UUID) int {
+	return func(context.Context, uuid.UUID) int { return perMinute }
+}
+
+// orgLimit returns the org's per-minute dispatch cap, caching the resolved
+// value in Redis for a minute so resolveLimit (a plan lookup) is not hit on
+// every event.
+func (s *service) orgLimit(ctx context.Context, orgID uuid.UUID) int {
+	key := "wh:limit:" + orgID.String()
+	if v, err := s.cache.Get(ctx, key).Int(); err == nil && v > 0 {
+		return v
+	}
+	limit := s.resolveLimit(ctx, orgID)
+	if limit > 0 {
+		s.cache.Set(ctx, key, limit, time.Minute)
+	}
+	return limit
+}
+
+// throttled reports whether this (org, eventType) has exceeded its per-minute
+// dispatch cap. Fixed one-minute window in Redis; fail-open on any cache error
+// so a Redis hiccup never silently swallows events. A no-op (returns false)
+// when no throttle is wired.
+func (s *service) throttled(ctx context.Context, orgID uuid.UUID, eventType models.WebhookEventType) bool {
+	if s.cache == nil || s.resolveLimit == nil {
+		return false
+	}
+	limit := s.orgLimit(ctx, orgID)
+	if limit <= 0 {
+		return false // resolver opted out / fail-open
+	}
+	bucket := s.now().Unix() / 60
+	key := fmt.Sprintf("wh:disp:%s:%s:%d", orgID, eventType, bucket)
+	n, err := s.cache.Incr(ctx, key).Result()
+	if err != nil {
+		return false // fail-open
+	}
+	if n == 1 {
+		// First hit in this window — set a short TTL so the key self-expires.
+		s.cache.Expire(ctx, key, 2*time.Minute)
+	}
+	if n > int64(limit) {
+		log.Warn().
+			Str("org_id", orgID.String()).
+			Str("event_type", string(eventType)).
+			Int64("count", n).
+			Int("limit_per_min", limit).
+			Msg("Webhook dispatch throttled — dropping event for this minute")
+		return true
+	}
+	return false
+}
+
 func (s *service) Dispatch(ctx context.Context, orgID uuid.UUID, eventType models.WebhookEventType, data any) (uuid.UUID, error) {
 	eventID := uuid.New()
+
+	// Global per-org, per-event-type fan-out throttle. Stops a per-contact
+	// event source (notably a campaign "notify" action over a large lead list)
+	// from flooding the org's webhooks and integration sinks. Checked before
+	// both the sink and endpoint enqueue so an over-cap event reaches neither.
+	if s.throttled(ctx, orgID, eventType) {
+		return eventID, nil
+	}
 
 	// Fan the event to non-webhook subscribers (integration actions) first,
 	// independently of whether any webhook endpoint is configured.

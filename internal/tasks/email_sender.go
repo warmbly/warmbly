@@ -27,6 +27,10 @@ type EmailMessage struct {
 	WarmupToken    string
 	UserID         uuid.UUID
 	UnsubscribeURL string
+	// Attachments are file refs (S3 key + metadata). The worker fetches the
+	// bytes from object storage at send time. Refs travel inside the S3 body
+	// blob, never the Avro Kafka event.
+	Attachments []models.AttachmentRef
 }
 
 // EmailSender interface for sending emails via workers
@@ -78,6 +82,7 @@ func (s *emailSender) Send(ctx context.Context, taskID uuid.UUID, msg EmailMessa
 		TrackingInfo:   msg.Tracking,
 		WarmupToken:    msg.WarmupToken,
 		UnsubscribeURL: msg.UnsubscribeURL,
+		Attachments:    msg.Attachments,
 	}
 
 	// Publish send email event to worker

@@ -124,17 +124,6 @@ func (s *service) execAction(ctx context.Context, target repository.DispatchTarg
 		}
 		return pipedriveUpsertPerson(ctx, token, data)
 
-	case models.IntegrationActionSheetsAppend:
-		token, terr := s.accessTokenFor(ctx, &target.Secrets)
-		if terr != nil {
-			return errReauthRequired
-		}
-		sheetID := configString(sub.Config, "sheet_id")
-		if sheetID == "" {
-			return errors.New("no sheet_id configured")
-		}
-		return sheetsAppendRow(ctx, token, sheetID, data)
-
 	default:
 		return fmt.Errorf("unknown action: %s", sub.Action)
 	}

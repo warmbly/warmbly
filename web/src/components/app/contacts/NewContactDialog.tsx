@@ -18,9 +18,12 @@ import CategoryPicker from "./CategoryPicker";
 interface Props {
     open: boolean;
     onClose: () => void;
+    // When set (the campaign Leads tab), the new lead is added straight into
+    // this campaign.
+    campaign?: { id: string; name: string };
 }
 
-export function NewContactDialog({ open, onClose }: Props) {
+export function NewContactDialog({ open, onClose, campaign }: Props) {
     const [email, setEmail] = React.useState("");
     const [firstName, setFirstName] = React.useState("");
     const [lastName, setLastName] = React.useState("");
@@ -56,7 +59,7 @@ export function NewContactDialog({ open, onClose }: Props) {
             last_name: lastName.trim(),
             company: company.trim(),
             phone: phone.trim(),
-            campaigns: [],
+            campaigns: campaign ? [campaign.id] : [],
             categories,
             custom_fields: {},
         };

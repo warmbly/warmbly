@@ -195,6 +195,10 @@ func main() {
 	// advanced repo, so no separate suppression repo is wired here.
 	webhookRepoC := repository.NewWebhookRepository(primaryDB.Pool)
 	webhookService := webhook.NewService(webhookRepoC)
+	// The consumer dispatches lower-volume reply/warmup events (not per-contact
+	// campaign fan-out), so a generous static cap is enough here; the plan-based
+	// resolver lives in the backend where campaign "notify" actions run.
+	webhookService.WireThrottle(redisCache, webhook.StaticLimit(config.WebhookDispatchBasePerMinute))
 	integrationRepoC := repository.NewIntegrationRepository(primaryDB.Pool)
 	integrationServiceC := integration.NewService(integrationRepoC, cipherService, integration.NewOAuthManager())
 	webhookService.WireDispatchSink(integrationServiceC.DispatchAny)

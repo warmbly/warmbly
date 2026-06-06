@@ -20,4 +20,13 @@ var (
 
 	// ErrDailyLimitReached is returned when the daily limit has been reached
 	ErrDailyLimitReached = errors.New("daily email limit reached")
+
+	// ErrCampaignDeferred is returned when there IS a valid contact to send but
+	// no eligible mailbox right now — ESP-strict has no same-provider mailbox
+	// under budget, or the daily new-lead cap is reached. The caller must
+	// reschedule at the returned (defer) time WITHOUT sending. The returned pair
+	// is always nil on this path so it can never be mistaken for a sendable
+	// contact; the returned accountID is a nominal pool mailbox for the wakeup
+	// task only (the next invocation re-evaluates selection from scratch).
+	ErrCampaignDeferred = errors.New("campaign send deferred - no eligible mailbox for this contact right now")
 )

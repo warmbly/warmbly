@@ -71,3 +71,35 @@ func TestEmailBlob_EncodeDecode(t *testing.T) {
 		})
 	}
 }
+
+func TestEmailBlob_Attachments(t *testing.T) {
+	in := &EmailBlob{
+		PlainText: []byte("hi"),
+		HTMLBody:  []byte("<b>hi</b>"),
+		Attachments: []Attachment{
+			{S3Key: "attachments/a/1.pdf", Filename: "report.pdf", MimeType: "application/pdf"},
+			{S3Key: "attachments/a/2.png", Filename: "logo.png", MimeType: "image/png"},
+		},
+	}
+
+	got := roundTrip(t, in)
+
+	if len(got.Attachments) != len(in.Attachments) {
+		t.Fatalf("attachment count mismatch: got=%d want=%d", len(got.Attachments), len(in.Attachments))
+	}
+	for i, want := range in.Attachments {
+		if got.Attachments[i] != want {
+			t.Errorf("attachment[%d] mismatch:\n got=%+v\nwant=%+v", i, got.Attachments[i], want)
+		}
+	}
+	if !bytes.Equal(got.PlainText, in.PlainText) || !bytes.Equal(got.HTMLBody, in.HTMLBody) {
+		t.Errorf("body sections corrupted when attachments present")
+	}
+}
+
+func TestEmailBlob_NoAttachments(t *testing.T) {
+	got := roundTrip(t, &EmailBlob{PlainText: []byte("x")})
+	if len(got.Attachments) != 0 {
+		t.Errorf("expected no attachments, got %d", len(got.Attachments))
+	}
+}

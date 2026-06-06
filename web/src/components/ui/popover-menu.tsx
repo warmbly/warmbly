@@ -300,6 +300,7 @@ export function PopoverMenuItem({
     danger = false,
     disabled = false,
     closeOnSelect = true,
+    trailing,
 }: {
     children: React.ReactNode;
     onSelect?: () => void;
@@ -308,6 +309,9 @@ export function PopoverMenuItem({
     danger?: boolean;
     disabled?: boolean;
     closeOnSelect?: boolean;
+    /** Custom right-aligned content. When set, it replaces the default
+     *  `selected` dot — e.g. pass a checkmark for multi-select menus. */
+    trailing?: React.ReactNode;
 }) {
     const { setOpen } = useMenu();
     return (
@@ -332,9 +336,11 @@ export function PopoverMenuItem({
         >
             {icon && <span className="shrink-0 text-slate-400 group-hover:text-slate-600">{icon}</span>}
             <span className="flex-1 truncate">{children}</span>
-            {selected && (
+            {trailing !== undefined ? (
+                <span className="shrink-0">{trailing}</span>
+            ) : selected ? (
                 <span className="text-[10px] text-sky-600 shrink-0">●</span>
-            )}
+            ) : null}
         </button>
     );
 }

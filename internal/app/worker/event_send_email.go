@@ -52,11 +52,20 @@ func (w *WorkerService) HandleSendEmail(ctx context.Context, body any) error {
 		}
 	}
 
-	// Fetch email body from S3
-	bodyPlain, bodyHTML, err := w.fetchEmailBody(ctx, sendEmail.UserID, sendEmail.BodyS3Key)
+	// Fetch email body from S3 (attachment refs ride inside the emsg blob).
+	bodyPlain, bodyHTML, attachmentRefs, err := w.fetchEmailBody(ctx, sendEmail.UserID, sendEmail.BodyS3Key)
 	if err != nil {
 		log.Error().Err(err).Str("s3_key", sendEmail.BodyS3Key).Msg("Failed to fetch email body from S3")
 		w.sendEmailFailure(sendEmail.TaskID, sendEmail.EmailID, mail, fmt.Sprintf("failed to fetch email body: %v", err))
+		return err
+	}
+
+	// Fetch each attachment's bytes from object storage by key. A fetch failure
+	// fails the send rather than silently dropping a file the user expects.
+	attachments, err := w.fetchAttachments(ctx, attachmentRefs)
+	if err != nil {
+		log.Error().Err(err).Str("task_id", sendEmail.TaskID.String()).Msg("Failed to fetch attachment bytes from S3")
+		w.sendEmailFailure(sendEmail.TaskID, sendEmail.EmailID, mail, fmt.Sprintf("failed to fetch attachment: %v", err))
 		return err
 	}
 
@@ -77,6 +86,7 @@ func (w *WorkerService) HandleSendEmail(ctx context.Context, body any) error {
 		IsWarmup:       sendEmail.IsWarmup,
 		WarmupToken:    sendEmail.WarmupToken,
 		UnsubscribeURL: sendEmail.UnsubscribeURL,
+		Attachments:    attachments,
 	})
 	w.recordSendLatency(time.Since(sendStart))
 	w.recordSendOutcome(result)
@@ -118,29 +128,30 @@ func (w *WorkerService) deleteTransportEmailBody(ctx context.Context, taskID uui
 	}
 }
 
-// fetchEmailBody fetches and decodes email body from S3
-func (w *WorkerService) fetchEmailBody(ctx context.Context, userID uuid.UUID, s3Key string) (string, string, error) {
+// fetchEmailBody fetches and decodes the email body from S3, returning the
+// decrypted plain/HTML bodies and the attachment refs carried inside the blob.
+func (w *WorkerService) fetchEmailBody(ctx context.Context, userID uuid.UUID, s3Key string) (string, string, []emsg.Attachment, error) {
 	if w.Storage == nil {
-		return "", "", fmt.Errorf("storage client not configured")
+		return "", "", nil, fmt.Errorf("storage client not configured")
 	}
 
 	// Get object from storage
 	body, err := w.Storage.Get(ctx, s3Key)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to get S3 object: %w", err)
+		return "", "", nil, fmt.Errorf("failed to get S3 object: %w", err)
 	}
 	defer body.Close()
 
 	// Read the body
 	data, err := io.ReadAll(body)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to read S3 object: %w", err)
+		return "", "", nil, fmt.Errorf("failed to read S3 object: %w", err)
 	}
 
 	// Decode using emsg
 	blob, err := emsg.DecodeBinary(bytes.NewReader(data))
 	if err != nil {
-		return "", "", fmt.Errorf("failed to decode emsg blob: %w", err)
+		return "", "", nil, fmt.Errorf("failed to decode emsg blob: %w", err)
 	}
 
 	bodyPlain := string(blob.PlainText)
@@ -161,7 +172,43 @@ func (w *WorkerService) fetchEmailBody(ctx context.Context, userID uuid.UUID, s3
 		}
 	}
 
-	return bodyPlain, bodyHTML, nil
+	return bodyPlain, bodyHTML, blob.Attachments, nil
+}
+
+// fetchAttachments downloads each attachment's bytes from object storage by
+// key, returning wmail attachments ready to be MIME-encoded. The bytes are
+// stored as-is (not user-encrypted), so no cipher pass is needed here.
+func (w *WorkerService) fetchAttachments(ctx context.Context, refs []emsg.Attachment) ([]wmail.Attachment, error) {
+	if len(refs) == 0 {
+		return nil, nil
+	}
+	if w.Storage == nil {
+		return nil, fmt.Errorf("storage client not configured")
+	}
+
+	out := make([]wmail.Attachment, 0, len(refs))
+	for _, ref := range refs {
+		rc, err := w.Storage.Get(ctx, ref.S3Key)
+		if err != nil {
+			return nil, fmt.Errorf("get attachment %s: %w", ref.Filename, err)
+		}
+		data, readErr := io.ReadAll(rc)
+		rc.Close()
+		if readErr != nil {
+			return nil, fmt.Errorf("read attachment %s: %w", ref.Filename, readErr)
+		}
+
+		mimeType := ref.MimeType
+		if mimeType == "" {
+			mimeType = "application/octet-stream"
+		}
+		out = append(out, wmail.Attachment{
+			Filename: ref.Filename,
+			MimeType: mimeType,
+			Data:     data,
+		})
+	}
+	return out, nil
 }
 
 // sendEmailSuccess sends a success result back to the jobs service

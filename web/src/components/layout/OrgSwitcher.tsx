@@ -46,6 +46,7 @@ export function OrgSwitcher() {
     const [newOpen, setNewOpen] = React.useState(false);
 
     const name = currentOrganization?.name ?? "Workspace";
+    const orgAvatar = currentOrganization?.avatar_url ?? currentOrganization?.avatar;
 
     // Picking an org from the sidebar used to call only the local
     // zustand action, which left the server session's
@@ -70,17 +71,21 @@ export function OrgSwitcher() {
             <PopoverMenuTrigger asChild>
                 <button
                     type="button"
-                    className="group w-full flex items-center gap-2 px-1.5 h-7 rounded-md hover:bg-slate-200/60 transition-colors text-left"
+                    className="group w-full flex items-center gap-2 pl-1 pr-2 h-8 rounded-md hover:bg-slate-200/60 transition-colors text-left"
                 >
-                    <span className="size-[18px] rounded bg-slate-900 flex items-center justify-center shrink-0 overflow-hidden">
-                        {currentOrganization?.avatar_url || currentOrganization?.avatar ? (
+                    <span
+                        className={`size-6 rounded-md ring-1 ring-slate-200 flex items-center justify-center shrink-0 overflow-hidden ${
+                            orgAvatar ? "bg-white p-0.5" : "bg-slate-900"
+                        }`}
+                    >
+                        {orgAvatar ? (
                             <img
-                                src={currentOrganization.avatar_url ?? currentOrganization.avatar}
+                                src={orgAvatar}
                                 alt=""
-                                className="w-full h-full object-cover"
+                                className="w-full h-full object-cover rounded-[4px]"
                             />
                         ) : (
-                            <span className="text-[9px] font-bold text-white leading-none tracking-tight">
+                            <span className="text-[10px] font-bold text-white leading-none tracking-tight">
                                 {initials(name)}
                             </span>
                         )}
@@ -88,7 +93,7 @@ export function OrgSwitcher() {
                     <span className="text-[12.5px] font-medium text-slate-900 truncate flex-1 min-w-0">
                         {name}
                     </span>
-                    <ChevronDownIcon className="w-3 h-3 text-slate-400 shrink-0 group-hover:text-slate-700 transition-colors" />
+                    <ChevronDownIcon className="w-3.5 h-3.5 text-slate-400 shrink-0 group-hover:text-slate-700 transition-colors" />
                 </button>
             </PopoverMenuTrigger>
 
@@ -108,15 +113,15 @@ export function OrgSwitcher() {
                                 disabled={switchOrgMutation.isPending}
                                 selected={org.id === currentOrganization?.id}
                                 icon={
-                                    <span className="size-4 rounded bg-slate-900 flex items-center justify-center shrink-0 overflow-hidden">
+                                    <span className={`size-5 rounded-md ring-1 ring-slate-200 flex items-center justify-center shrink-0 overflow-hidden ${avatar ? "bg-white p-px" : "bg-slate-900"}`}>
                                         {avatar ? (
                                             <img
                                                 src={avatar}
                                                 alt=""
-                                                className="w-full h-full object-cover"
+                                                className="w-full h-full object-cover rounded-[3px]"
                                             />
                                         ) : (
-                                            <span className="text-[8px] font-bold text-white leading-none tracking-tight">
+                                            <span className="text-[9px] font-bold text-white leading-none tracking-tight">
                                                 {initials(org.name)}
                                             </span>
                                         )}

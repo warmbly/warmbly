@@ -32,6 +32,8 @@ const (
 	// bounce/complaint rate enters the early-warning band (half the pause
 	// threshold) — a graduated signal short of an auto-pause.
 	WebhookEventCampaignDeliverabilityWarning WebhookEventType = "campaign.deliverability_warning"
+	// campaign.action fires from a "notify" action node in a sequence flow.
+	WebhookEventCampaignAction WebhookEventType = "campaign.action"
 
 	// Warmup
 	WebhookEventWarmupEmailSent       WebhookEventType = "warmup.email_sent"
@@ -61,6 +63,7 @@ var AllWebhookEventTypes = []WebhookEventType{
 	WebhookEventCampaignPaused,
 	WebhookEventCampaignCompleted,
 	WebhookEventCampaignDeliverabilityWarning,
+	WebhookEventCampaignAction,
 	WebhookEventWarmupEmailSent,
 	WebhookEventWarmupHealthChanged,
 	WebhookEventWarmupPlacementInSpam,

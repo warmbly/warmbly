@@ -67,6 +67,22 @@ type Service interface {
 	// MarkSynced records a successful/failed round-trip against a connection.
 	MarkSynced(ctx context.Context, id uuid.UUID, status models.IntegrationStatus, displayFields map[string]any, errMsg string) error
 
+	// --- Google Sheets read helpers (used by the lead-sync feature) ---------
+	// These expose the existing google_sheets OAuth token + Sheets client to
+	// the leadsync package without leaking secret handling out of this service.
+
+	// GoogleConnection returns the org's google_sheets OAuth connection, or nil
+	// if the org has not connected Google. Even though google_sheets is hidden
+	// from the integrations catalog, the underlying OAuth connection still lives
+	// in integration_connections — this is how lead-sync finds it.
+	GoogleConnection(ctx context.Context, orgID uuid.UUID) (*models.IntegrationConnection, error)
+	// SpreadsheetMeta returns the sheet's title + tabs using the connection's
+	// (refreshed) Google token.
+	SpreadsheetMeta(ctx context.Context, orgID, connID uuid.UUID, sheetID string) (*SheetMeta, error)
+	// SpreadsheetValues reads an A1 range from the sheet using the connection's
+	// (refreshed) Google token.
+	SpreadsheetValues(ctx context.Context, orgID, connID uuid.UUID, sheetID, a1Range string) ([][]string, error)
+
 	// Dispatch fans a platform event out to every matching event subscription,
 	// executing each provider action. Best-effort: action failures are recorded
 	// on the connection's health but never block the caller.
@@ -116,7 +132,23 @@ func (s *service) Catalog() []models.IntegrationCatalogEntry {
 }
 
 func (s *service) ListConnections(ctx context.Context, orgID uuid.UUID) ([]models.IntegrationConnection, error) {
-	return s.repo.ListConnections(ctx, orgID)
+	conns, err := s.repo.ListConnections(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
+	// Google Sheets is no longer a catalog integration — its OAuth connection
+	// exists only to power the on-demand Lead Sync feature (see
+	// internal/app/leadsync). Hide it from the Integrations page so it doesn't
+	// render as an integration tile. GoogleConnection() still reaches it via the
+	// repository directly.
+	out := conns[:0]
+	for _, c := range conns {
+		if c.Provider == models.IntegrationGoogleSheets {
+			continue
+		}
+		out = append(out, c)
+	}
+	return out, nil
 }
 
 func (s *service) GetConnection(ctx context.Context, orgID, id uuid.UUID) (*models.IntegrationConnection, error) {
@@ -393,6 +425,70 @@ func (s *service) ListSyncRuns(ctx context.Context, orgID, connID uuid.UUID, lim
 func (s *service) MarkSynced(ctx context.Context, id uuid.UUID, status models.IntegrationStatus, displayFields map[string]any, errMsg string) error {
 	df, _ := json.Marshal(displayFields)
 	return s.repo.MarkConnectionSynced(ctx, id, status, df, errMsg)
+}
+
+// --- Google Sheets read helpers ---------------------------------------------
+
+// GoogleConnection returns the org's google_sheets OAuth connection (the most
+// recent one), or nil when none exists. Lead-sync uses this connection's token
+// to read sheets even though google_sheets is no longer surfaced as a catalog
+// integration.
+func (s *service) GoogleConnection(ctx context.Context, orgID uuid.UUID) (*models.IntegrationConnection, error) {
+	conns, err := s.repo.ListConnections(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range conns {
+		if conns[i].Provider == models.IntegrationGoogleSheets {
+			c := conns[i]
+			return &c, nil
+		}
+	}
+	return nil, nil
+}
+
+// googleSheetsClient resolves the (refreshed) Google access token for a
+// connection and returns a ready Sheets client. The connection must belong to
+// orgID and be the google_sheets provider.
+func (s *service) googleSheetsClient(ctx context.Context, orgID, connID uuid.UUID) (*SheetsClient, error) {
+	conn, err := s.repo.GetConnectionByID(ctx, orgID, connID)
+	if err != nil {
+		return nil, err
+	}
+	if conn == nil {
+		return nil, errors.New("connection not found")
+	}
+	if conn.Provider != models.IntegrationGoogleSheets {
+		return nil, errors.New("connection is not a google_sheets connection")
+	}
+	sec, err := s.repo.GetConnectionSecrets(ctx, connID)
+	if err != nil {
+		return nil, err
+	}
+	if sec == nil {
+		return nil, errors.New("connection secrets not found")
+	}
+	token, err := s.accessTokenFor(ctx, sec)
+	if err != nil {
+		return nil, err
+	}
+	return NewSheetsClient(token), nil
+}
+
+func (s *service) SpreadsheetMeta(ctx context.Context, orgID, connID uuid.UUID, sheetID string) (*SheetMeta, error) {
+	client, err := s.googleSheetsClient(ctx, orgID, connID)
+	if err != nil {
+		return nil, err
+	}
+	return client.GetSpreadsheet(ctx, sheetID)
+}
+
+func (s *service) SpreadsheetValues(ctx context.Context, orgID, connID uuid.UUID, sheetID, a1Range string) ([][]string, error) {
+	client, err := s.googleSheetsClient(ctx, orgID, connID)
+	if err != nil {
+		return nil, err
+	}
+	return client.ReadValues(ctx, sheetID, a1Range)
 }
 
 // --- encryption helpers -----------------------------------------------------

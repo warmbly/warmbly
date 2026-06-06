@@ -31,13 +31,19 @@ import {
     TopbarAction,
 } from "@/components/layout/Page";
 import { Label, TextInput } from "@/components/ui/field";
+import {
+    PopoverMenu,
+    PopoverMenuContent,
+    PopoverMenuItem,
+    PopoverMenuSeparator,
+    PopoverMenuTrigger,
+} from "@/components/ui/popover-menu";
 import useTemplates from "@/lib/api/hooks/app/templates/useTemplates";
 import useCreateTemplate from "@/lib/api/hooks/app/templates/useCreateTemplate";
 import useUpdateTemplate from "@/lib/api/hooks/app/templates/useUpdateTemplate";
 import useDeleteTemplate from "@/lib/api/hooks/app/templates/useDeleteTemplate";
 import useDuplicateTemplate from "@/lib/api/hooks/app/templates/useDuplicateTemplate";
 import useReorderTemplates from "@/lib/api/hooks/app/templates/useReorderTemplates";
-import useClickOutside from "@/hooks/useClickOutside";
 import { useConfirm } from "@/hooks/context/confirm";
 import type Template from "@/lib/api/models/app/templates/Template";
 import type { AppError } from "@/lib/api/client/normalizeError";
@@ -271,13 +277,10 @@ function TemplateRow({
     const del = useDeleteTemplate();
     const confirm = useConfirm();
     const [menuOpen, setMenuOpen] = React.useState(false);
-    const menuRef = React.useRef<HTMLDivElement>(null);
-    useClickOutside(menuRef, () => setMenuOpen(false));
 
     const preview = previewText(template);
 
     async function doDuplicate() {
-        setMenuOpen(false);
         try {
             await toast.promise(duplicate.mutateAsync(template.id), {
                 loading: "Duplicating…",
@@ -290,7 +293,6 @@ function TemplateRow({
     }
 
     function doDelete() {
-        setMenuOpen(false);
         confirm?.show(`Delete template "${template.name}"? This can't be undone.`, async () => {
             try {
                 await toast.promise(del.mutateAsync(template.id), {
@@ -356,57 +358,42 @@ function TemplateRow({
                 )}
             </button>
 
-            <div ref={menuRef} className="relative shrink-0">
-                <button
-                    type="button"
-                    onClick={() => setMenuOpen((o) => !o)}
-                    aria-label="Template menu"
-                    className="size-7 rounded-md text-slate-400 hover:text-slate-900 hover:bg-slate-100 inline-flex items-center justify-center transition-colors"
-                >
-                    <MoreHorizontalIcon className="w-3.5 h-3.5" />
-                </button>
-                <AnimatePresence>
-                    {menuOpen && (
-                        <motion.div
-                            initial={{ opacity: 0, y: -4 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -4 }}
-                            transition={{ duration: 0.12 }}
-                            className="absolute top-full right-0 mt-1 z-20 w-44 rounded-md border border-slate-200 bg-white shadow-[0_12px_32px_-8px_rgba(15,23,42,0.18)] py-1"
+            <div className="shrink-0">
+                <PopoverMenu open={menuOpen} onOpenChange={setMenuOpen} align="end">
+                    <PopoverMenuTrigger asChild>
+                        <button
+                            type="button"
+                            aria-label="Template menu"
+                            className="size-7 rounded-md text-slate-400 hover:text-slate-900 hover:bg-slate-100 inline-flex items-center justify-center transition-colors"
                         >
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setMenuOpen(false);
-                                    onEdit();
-                                }}
-                                className="w-full px-2.5 h-7 flex items-center gap-2 text-[12px] text-slate-700 hover:bg-slate-100 transition-colors"
-                            >
-                                <PencilIcon className="w-3 h-3 text-slate-400" />
-                                Edit
-                            </button>
-                            <button
-                                type="button"
-                                onClick={doDuplicate}
-                                disabled={duplicate.isPending}
-                                className="w-full px-2.5 h-7 flex items-center gap-2 text-[12px] text-slate-700 hover:bg-slate-100 transition-colors"
-                            >
-                                <CopyIcon className="w-3 h-3 text-slate-400" />
-                                Duplicate
-                            </button>
-                            <div className="h-px bg-slate-100 my-1" />
-                            <button
-                                type="button"
-                                onClick={doDelete}
-                                disabled={del.isPending}
-                                className="w-full px-2.5 h-7 flex items-center gap-2 text-[12px] text-red-600 hover:bg-red-50 transition-colors"
-                            >
-                                <TrashIcon className="w-3 h-3" />
-                                Delete
-                            </button>
-                        </motion.div>
-                    )}
-                </AnimatePresence>
+                            <MoreHorizontalIcon className="w-3.5 h-3.5" />
+                        </button>
+                    </PopoverMenuTrigger>
+                    <PopoverMenuContent minWidth={176}>
+                        <PopoverMenuItem
+                            onSelect={onEdit}
+                            icon={<PencilIcon className="w-3 h-3" />}
+                        >
+                            Edit
+                        </PopoverMenuItem>
+                        <PopoverMenuItem
+                            onSelect={doDuplicate}
+                            disabled={duplicate.isPending}
+                            icon={<CopyIcon className="w-3 h-3" />}
+                        >
+                            Duplicate
+                        </PopoverMenuItem>
+                        <PopoverMenuSeparator />
+                        <PopoverMenuItem
+                            onSelect={doDelete}
+                            disabled={del.isPending}
+                            danger
+                            icon={<TrashIcon className="w-3 h-3" />}
+                        >
+                            Delete
+                        </PopoverMenuItem>
+                    </PopoverMenuContent>
+                </PopoverMenu>
             </div>
         </div>
     );
@@ -458,6 +445,7 @@ function TemplateEditor({
 }) {
     const create = useCreateTemplate();
     const update = useUpdateTemplate();
+    const confirm = useConfirm();
 
     const [name, setName] = React.useState("");
     const [subject, setSubject] = React.useState("");
@@ -486,19 +474,22 @@ function TemplateEditor({
     }, [state]);
 
     function applyPreset(p: TemplatePreset) {
-        // Only fill empty fields if the user has already started typing,
-        // so picking a preset by accident doesn't trash their work.
+        const apply = () => {
+            setName(p.name);
+            setSubject(p.subject);
+            setBodyPlain(p.body_plain);
+            setBodyHTML("");
+            setShowHTML(false);
+            setActivePresetId(p.id);
+        };
+        // Only warn if the user has already started typing, so picking a preset
+        // by accident doesn't trash their work.
         const dirty = name.trim() !== "" || subject.trim() !== "" || bodyPlain.trim() !== "" || bodyHTML.trim() !== "";
         if (dirty && activePresetId !== p.id) {
-            const ok = window.confirm("Replace what you have so far with this template?");
-            if (!ok) return;
+            confirm.show("Replace what you have so far with this template?", apply);
+            return;
         }
-        setName(p.name);
-        setSubject(p.subject);
-        setBodyPlain(p.body_plain);
-        setBodyHTML("");
-        setShowHTML(false);
-        setActivePresetId(p.id);
+        apply();
     }
 
     function clearPreset() {
@@ -722,44 +713,25 @@ function TemplateEditor({
 
 function VariableMenu({ onPick }: { onPick: (token: string) => void }) {
     const [open, setOpen] = React.useState(false);
-    const ref = React.useRef<HTMLDivElement>(null);
-    useClickOutside(ref, () => setOpen(false));
 
     return (
-        <div ref={ref} className="relative">
-            <button
-                type="button"
-                onClick={() => setOpen((o) => !o)}
-                className="text-[10.5px] text-slate-500 hover:text-slate-900 inline-flex items-center gap-1 h-5 px-1.5 rounded hover:bg-slate-100 transition-colors"
-            >
-                + variable
-            </button>
-            <AnimatePresence>
-                {open && (
-                    <motion.div
-                        initial={{ opacity: 0, y: -4 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -4 }}
-                        transition={{ duration: 0.12 }}
-                        className="absolute top-full right-0 mt-1 z-30 w-44 rounded-md border border-slate-200 bg-white shadow-[0_12px_32px_-8px_rgba(15,23,42,0.18)] py-1"
-                    >
-                        {VARIABLE_HINTS.map((v) => (
-                            <button
-                                key={v}
-                                type="button"
-                                onClick={() => {
-                                    onPick(v);
-                                    setOpen(false);
-                                }}
-                                className="w-full px-2.5 h-7 flex items-center gap-2 text-[11.5px] font-mono text-slate-700 hover:bg-slate-100 transition-colors text-left"
-                            >
-                                {v}
-                            </button>
-                        ))}
-                    </motion.div>
-                )}
-            </AnimatePresence>
-        </div>
+        <PopoverMenu open={open} onOpenChange={setOpen} align="end">
+            <PopoverMenuTrigger asChild>
+                <button
+                    type="button"
+                    className="text-[10.5px] text-slate-500 hover:text-slate-900 inline-flex items-center gap-1 h-5 px-1.5 rounded hover:bg-slate-100 transition-colors"
+                >
+                    + variable
+                </button>
+            </PopoverMenuTrigger>
+            <PopoverMenuContent minWidth={176}>
+                {VARIABLE_HINTS.map((v) => (
+                    <PopoverMenuItem key={v} onSelect={() => onPick(v)}>
+                        <span className="font-mono text-[11.5px]">{v}</span>
+                    </PopoverMenuItem>
+                ))}
+            </PopoverMenuContent>
+        </PopoverMenu>
     );
 }
 

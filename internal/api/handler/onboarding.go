@@ -90,3 +90,42 @@ func (h *Handler) CompleteOnboarding(c *gin.Context) {
 
 	c.Status(http.StatusNoContent)
 }
+
+type updateProfileRequest struct {
+	FirstName string `json:"first_name"`
+	LastName  string `json:"last_name"`
+}
+
+// UpdateUserProfile persists editable profile fields (first/last name) from the
+// profile settings page. Unlike onboarding, it carries no questionnaire answers
+// and can be called any time the user renames themselves.
+func (h *Handler) UpdateUserProfile(c *gin.Context) {
+	var req updateProfileRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		errx.Handle(c, errx.ErrInvalid)
+		return
+	}
+
+	if req.FirstName == "" || req.LastName == "" {
+		errx.Handle(c, errx.New(errx.BadRequest, "First name and last name are required."))
+		return
+	}
+	if len(req.FirstName) > 50 || len(req.LastName) > 50 {
+		errx.Handle(c, errx.New(errx.BadRequest, "Name must be 50 characters or less."))
+		return
+	}
+
+	userID := middleware.GetUserID(c)
+	uid, err := uuid.Parse(userID)
+	if err != nil {
+		errx.Handle(c, errx.ErrUser)
+		return
+	}
+
+	if xerr := h.UserService.UpdateProfile(c.Request.Context(), uid, req.FirstName, req.LastName); xerr != nil {
+		errx.Handle(c, xerr)
+		return
+	}
+
+	c.Status(http.StatusNoContent)
+}

@@ -12,14 +12,52 @@ const (
 	WarmupMaxDefault      = 40
 	WarmupIncreaseDefault = 1
 
+	// Net-new campaign send controls. The ramp mirrors the warmup ramp shape
+	// (start, +increment/day, ceiling) but is applied only via min() against
+	// the per-mailbox cold cap, so it can only lower effective volume.
+	CampaignSenderWeightDefault  = 1
+	CampaignSenderWeightMax      = 100
+	CampaignRampStartDefault     = 10
+	CampaignRampIncrementDefault = 5
+	CampaignRampCeilingDefault   = 50
+	CampaignMaxNewLeadsMax       = 1000
+
 	MaxContactSize   = 10240
 	MaxEmailBodySize = 200 * 1024 // 200 KB
 	MaxEmailFolders  = 30
 
-	// Sequences
-	SequenceDefaultName  = "New Sequence"
+	// Sequences. Empty by default so the editor shows a smart, position-based
+	// label (e.g. "Email 1") until the user names the step themselves.
+	SequenceDefaultName  = ""
 	SequenceSubjectLimit = 100
 	SequenceBodyLimit    = 30_000
+	// SequenceWaitAfterMax bounds a step's per-step delay (in days). Mirrors the
+	// editor's 0–60 day cap so an API caller can't persist an absurd or negative
+	// delay that the scheduler would then turn into an unreachable send time.
+	SequenceWaitAfterMax = 60
+
+	// Webhook/integration fan-out throttle. Caps how many events of a single
+	// type one org can fan out to its webhooks + integration sinks
+	// (Slack/Discord/CRM) per minute — the backstop against a campaign "notify"
+	// action, or any per-contact event, flooding a customer's endpoints. Over
+	// the cap, further events of that type in the same minute are dropped
+	// (logged), not queued.
+	//
+	// The effective cap is PLAN-BASED: it scales with the org's resolved mailbox
+	// allowance (override > plan > hard cap), so bigger plans get more webhook
+	// throughput. These three knobs are "what we centrally allow":
+	//
+	//   - Base: a generous floor every org gets, including free/no-plan orgs, so
+	//     normal usage never trips the throttle (good UX by default).
+	//   - PerMailbox: how much each mailbox in the plan's allowance adds, since
+	//     webhook volume tracks sending activity.
+	//   - Max: a hard ceiling so even an "unlimited" plan stays bounded.
+	//
+	// Sized far above normally-spaced sending (per-mailbox daily caps + min-gap
+	// spacing); only a runaway loop or a huge per-contact fan-out approaches it.
+	WebhookDispatchBasePerMinute       = 600  // generous floor for any org (10/s)
+	WebhookDispatchPerMailboxPerMinute = 30   // added per mailbox the plan allows
+	WebhookDispatchMaxPerMinute        = 6000 // hard ceiling (100/s) for any plan
 
 	// Unibox
 	UniboxLimitMin     = 1

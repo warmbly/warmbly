@@ -16,6 +16,10 @@ func (s *sequenceService) Get(ctx context.Context, userID, campaignID string) ([
 }
 
 func (s *sequenceService) Update(ctx context.Context, userID, campaignID, sequenceID string, data *models.UpdateSequence) (*models.Sequence, *errx.Error) {
+	// Branch routing is resolved (and made safe against deleted/dangling targets
+	// and loops) at schedule time in the repository's finder; the repository also
+	// validates branch shape before persisting. No cross-step write validation is
+	// needed here — the canvas only ever points a branch at a real step or stop.
 	return s.sequenceRepository.Update(ctx, userID, campaignID, sequenceID, data)
 }
 

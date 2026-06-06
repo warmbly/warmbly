@@ -16,7 +16,6 @@ const BRAND: Record<string, { bg: string; ring: string; text: string }> = {
     discord: { bg: "bg-indigo-50", ring: "ring-indigo-200", text: "text-indigo-600" },
     calendly: { bg: "bg-sky-50", ring: "ring-sky-200", text: "text-sky-600" },
     cal_com: { bg: "bg-slate-100", ring: "ring-slate-300", text: "text-slate-800" },
-    google_sheets: { bg: "bg-emerald-50", ring: "ring-emerald-200", text: "text-emerald-600" },
 };
 
 export default function ProviderGlyph({

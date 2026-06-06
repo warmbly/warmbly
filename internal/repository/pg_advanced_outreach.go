@@ -148,6 +148,7 @@ func scanABVariant(rows pgx.Row, v *models.CampaignABVariant) error {
 	if err := rows.Scan(
 		&v.ID,
 		&v.CampaignID,
+		&v.SequenceID,
 		&v.Name,
 		&v.Weight,
 		&v.Subject,
@@ -174,7 +175,7 @@ func scanABVariant(rows pgx.Row, v *models.CampaignABVariant) error {
 
 func (r *advancedOutreachRepository) ListABVariants(ctx context.Context, campaignID uuid.UUID) ([]models.CampaignABVariant, error) {
 	query := `
-		SELECT id, campaign_id, name, weight, subject, body_html, body_plain, is_control, is_active, metadata, created_at, updated_at
+		SELECT id, campaign_id, sequence_id, name, weight, subject, body_html, body_plain, is_control, is_active, metadata, created_at, updated_at
 		FROM campaign_ab_variants
 		WHERE campaign_id = $1
 		ORDER BY is_control DESC, created_at ASC
@@ -211,14 +212,15 @@ func (r *advancedOutreachRepository) CreateABVariant(ctx context.Context, campai
 	}
 	query := `
 		INSERT INTO campaign_ab_variants (
-			campaign_id, name, weight, subject, body_html, body_plain, is_control, is_active, metadata, created_at, updated_at
+			campaign_id, sequence_id, name, weight, subject, body_html, body_plain, is_control, is_active, metadata, created_at, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
-		RETURNING id, campaign_id, name, weight, subject, body_html, body_plain, is_control, is_active, metadata, created_at, updated_at
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
+		RETURNING id, campaign_id, sequence_id, name, weight, subject, body_html, body_plain, is_control, is_active, metadata, created_at, updated_at
 	`
 	var out models.CampaignABVariant
 	if err := scanABVariant(r.db.QueryRow(ctx, query,
 		campaignID,
+		req.SequenceID,
 		req.Name,
 		weight,
 		req.Subject,
@@ -292,7 +294,7 @@ func (r *advancedOutreachRepository) UpdateABVariant(ctx context.Context, campai
 		UPDATE campaign_ab_variants
 		SET %s
 		WHERE campaign_id = $1 AND id = $2
-		RETURNING id, campaign_id, name, weight, subject, body_html, body_plain, is_control, is_active, metadata, created_at, updated_at
+		RETURNING id, campaign_id, sequence_id, name, weight, subject, body_html, body_plain, is_control, is_active, metadata, created_at, updated_at
 	`, strings.Join(sets, ", "))
 
 	var out models.CampaignABVariant
@@ -316,7 +318,7 @@ func (r *advancedOutreachRepository) DeleteABVariant(ctx context.Context, campai
 
 func (r *advancedOutreachRepository) GetAssignedVariant(ctx context.Context, campaignID, contactID uuid.UUID) (*models.CampaignABVariant, error) {
 	query := `
-		SELECT v.id, v.campaign_id, v.name, v.weight, v.subject, v.body_html, v.body_plain, v.is_control, v.is_active, v.metadata, v.created_at, v.updated_at
+		SELECT v.id, v.campaign_id, v.sequence_id, v.name, v.weight, v.subject, v.body_html, v.body_plain, v.is_control, v.is_active, v.metadata, v.created_at, v.updated_at
 		FROM campaign_ab_assignments a
 		JOIN campaign_ab_variants v ON v.id = a.variant_id
 		WHERE a.campaign_id = $1 AND a.contact_id = $2

@@ -20,8 +20,14 @@ type RelationSyncInput struct {
 	NewValues  []string
 }
 
+// SyncRelation diffs the desired related-id set against what's stored and
+// applies the minimal insert/delete. All relation join tables here key on
+// uuid↔uuid (campaign_id/email_id ↔ tag_id/folder_id), and Postgres has NO
+// implicit text→uuid assignment cast, so the id params (sent by pgx as text)
+// are cast to uuid explicitly. The SELECT casts the related id back to ::text
+// so it scans cleanly into a Go string.
 func SyncRelation(input RelationSyncInput) ([]string, *errx.Error) {
-	querySelect := fmt.Sprintf(`SELECT %s FROM %s WHERE %s = $1`,
+	querySelect := fmt.Sprintf(`SELECT %s::text FROM %s WHERE %s = $1::uuid`,
 		input.ColRelated, input.Table, input.ColMain)
 
 	params := []any{
@@ -53,7 +59,7 @@ func SyncRelation(input RelationSyncInput) ([]string, *errx.Error) {
 	toDelete := utils.Difference(current, input.NewValues)
 
 	if len(toDelete) > 0 {
-		queryDel := fmt.Sprintf(`DELETE FROM %s WHERE %s = $1 AND %s = ANY($2)`,
+		queryDel := fmt.Sprintf(`DELETE FROM %s WHERE %s = $1::uuid AND %s = ANY($2::uuid[])`,
 			input.Table, input.ColMain, input.ColRelated)
 
 		params = []any{
@@ -73,7 +79,7 @@ func SyncRelation(input RelationSyncInput) ([]string, *errx.Error) {
 
 	if len(toInsert) > 0 {
 		queryIns := fmt.Sprintf(`INSERT INTO %s (%s, %s)
-                                 SELECT $1, unnest($2::text[])`,
+                                 SELECT $1::uuid, unnest($2::uuid[])`,
 			input.Table, input.ColMain, input.ColRelated)
 
 		params = []any{

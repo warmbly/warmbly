@@ -8,8 +8,9 @@
 // pill always sits on the left edge so it stays reachable even when
 // the rest of the strip scrolls horizontally.
 
-import { ActivityIcon, LayoutGridIcon, XIcon } from "lucide-react";
+import { LayoutGridIcon, XIcon } from "lucide-react";
 import useUniboxOverview from "@/lib/api/hooks/app/unibox/useUniboxOverview";
+import AnimatedNumber from "@/components/ui/AnimatedNumber";
 import { cn } from "@/lib/utils";
 
 interface UniboxHeaderProps {
@@ -72,8 +73,11 @@ export function UniboxHeader({
                 <Stat label="mailboxes" value={data?.mailboxes.length ?? 0} muted />
             </div>
 
-            <div className="ml-auto inline-flex items-center gap-1.5 text-[11px] text-emerald-600 shrink-0">
-                <ActivityIcon className="w-3 h-3" />
+            <div className="ml-auto inline-flex items-center gap-1.5 text-[11px] text-emerald-600 font-medium shrink-0">
+                <span className="relative flex size-1.5">
+                    <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-60 animate-ping" />
+                    <span className="relative inline-flex size-1.5 rounded-full bg-emerald-500" />
+                </span>
                 live
             </div>
         </header>
@@ -99,7 +103,7 @@ function Stat({
                     tone === "accent" ? "text-sky-600" : muted ? "text-slate-400" : "text-slate-900",
                 )}
             >
-                {value.toLocaleString()}
+                <AnimatedNumber value={value} />
             </span>
             <span className="text-[10.5px] text-slate-500">{label}</span>
         </div>

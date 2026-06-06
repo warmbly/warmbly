@@ -13,8 +13,11 @@
 import React from "react";
 import {
     AlertTriangleIcon,
+    BanIcon,
     Building2Icon,
     CheckIcon,
+    ClockIcon,
+    CornerUpLeftIcon,
     DownloadIcon,
     Loader2Icon,
     MailIcon,
@@ -23,6 +26,7 @@ import {
     PlusIcon,
     RefreshCcwIcon,
     Settings2Icon,
+    SheetIcon,
     TrashIcon,
     UploadIcon,
     UserPlusIcon,
@@ -37,11 +41,14 @@ import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import ContactFilters from "./ContactFilters";
 import ContactEdit from "./ContactEdit";
+import type { ContactSlideTab } from "./contact-edit/tabs";
 import type MiniCampaign from "@/lib/api/models/app/campaigns/MiniCampaign";
+import type { ContactCampaignProgress, LeadStatus } from "@/lib/api/models/app/contacts/Contact";
 import ContactsEditBulk from "./ContactsEditBulk";
 import { NewContactDialog } from "./NewContactDialog";
 import ExportDialog from "./ExportDialog";
 import ImportWizard from "./ImportWizard";
+import SyncSourcesPanel from "./SyncSourcesPanel";
 import { CategoryChip } from "./CategoryPicker";
 
 import {
@@ -77,11 +84,19 @@ export default function ContactsTable({
     const [del, setDelete] = React.useState<boolean>(false);
     const [filtersOpen, setFiltersOpen] = React.useState<boolean>(false);
     const [edit, setEdit] = React.useState<string>("");
+    // Which tab the drawer opens on. Row click → default (overview); the
+    // right-side 3-dots → "details", mirroring the mailbox 3-dots → settings.
+    const [editTab, setEditTab] = React.useState<ContactSlideTab | undefined>(undefined);
+    const openContact = React.useCallback((id: string, tab?: ContactSlideTab) => {
+        setEditTab(tab);
+        setEdit(id);
+    }, []);
     const [bulkEdit, setBulkEdit] = React.useState<boolean>(false);
     const [subFilter, setSubFilter] = React.useState<SubFilter>("all");
     const [newOpen, setNewOpen] = React.useState<boolean>(false);
     const [exportOpen, setExportOpen] = React.useState<boolean>(false);
     const [importOpen, setImportOpen] = React.useState<boolean>(false);
+    const [syncOpen, setSyncOpen] = React.useState<boolean>(false);
 
     const [searchProps, setSearchProps] = React.useState<SearchContacts>({
         query: "",
@@ -151,6 +166,7 @@ export default function ContactsTable({
     const embedded = !!current_campaign;
     const tableNode = (
         <ContactsTableBody
+            embedded={embedded}
             isLoading={contactsData.isPending}
             isError={contactsData.isError}
             errorMessage={(contactsData.error as Error | undefined)?.message ?? "Request failed."}
@@ -163,7 +179,7 @@ export default function ContactsTable({
             }
             isSelectedAll={isSelectedAll}
             onToggleAll={toggleAll}
-            onRowClick={setEdit}
+            onRowClick={openContact}
             onDelete={(id) =>
                 confirm?.show(`Delete this contact?`, async () => {
                     setSelected([id]);
@@ -220,12 +236,31 @@ export default function ContactsTable({
                         Filters
                     </TopbarAction>
                     <TopbarAction
+                        variant="ghost"
+                        icon={<UploadIcon className="w-3 h-3" />}
+                        onClick={() => setImportOpen(true)}
+                    >
+                        Import
+                    </TopbarAction>
+                    <TopbarAction
+                        variant="ghost"
+                        icon={<SheetIcon className="w-3 h-3" />}
+                        onClick={() => setSyncOpen(true)}
+                    >
+                        Sheet sync
+                    </TopbarAction>
+                    <TopbarAction
                         icon={<UserPlusIcon className="w-3 h-3" />}
                         onClick={() => setNewOpen(true)}
                     >
                         Add lead
                     </TopbarAction>
                 </SectionBar>
+                <LeadProgressStrip
+                    contacts={contacts ?? []}
+                    total={total}
+                    hasMore={!!contactsData.hasNextPage}
+                />
                 <div className="relative">
                     {tableNode}
                     <SelectionBar
@@ -255,7 +290,17 @@ export default function ContactsTable({
                     setActive={setEdit}
                 />
                 <ContactsEditBulk active={bulkEdit} setActive={setBulkEdit} selected={selected} />
-                <NewContactDialog open={newOpen} onClose={() => setNewOpen(false)} />
+                <NewContactDialog open={newOpen} onClose={() => setNewOpen(false)} campaign={current_campaign} />
+                <SyncSourcesPanel
+                    open={syncOpen}
+                    onClose={() => setSyncOpen(false)}
+                    campaign={current_campaign}
+                />
+                <ImportWizard
+                    open={importOpen}
+                    onClose={() => setImportOpen(false)}
+                    lockedCampaign={current_campaign}
+                />
             </>
         );
     }
@@ -278,6 +323,13 @@ export default function ContactsTable({
                     onClick={() => setImportOpen(true)}
                 >
                     Import
+                </TopbarAction>
+                <TopbarAction
+                    variant="ghost"
+                    icon={<SheetIcon className="w-3 h-3" />}
+                    onClick={() => setSyncOpen(true)}
+                >
+                    Sheet sync
                 </TopbarAction>
                 <TopbarAction
                     variant="ghost"
@@ -413,7 +465,7 @@ export default function ContactsTable({
                 activeCampaign={current_campaign}
                 loading={contactsData.isLoading}
             />
-            <ContactEdit contacts={contacts ?? []} active={edit} setActive={setEdit} />
+            <ContactEdit contacts={contacts ?? []} active={edit} setActive={setEdit} initialTab={editTab} />
             <ContactsEditBulk active={bulkEdit} setActive={setBulkEdit} selected={selected} />
             <NewContactDialog open={newOpen} onClose={() => setNewOpen(false)} />
             <ExportDialog
@@ -427,11 +479,13 @@ export default function ContactsTable({
                 open={importOpen}
                 onClose={() => setImportOpen(false)}
             />
+            <SyncSourcesPanel open={syncOpen} onClose={() => setSyncOpen(false)} />
         </Page>
     );
 }
 
 function ContactsTableBody({
+    embedded,
     isLoading,
     isError,
     errorMessage,
@@ -451,6 +505,7 @@ function ContactsTableBody({
     isFetchingNextPage,
     onLoadMore,
 }: {
+    embedded?: boolean;
     isLoading: boolean;
     isError: boolean;
     errorMessage: string;
@@ -466,13 +521,14 @@ function ContactsTableBody({
         subscribed: boolean;
         campaigns: { id: string }[];
         categories?: { id: string; title: string; color: string }[];
+        campaign_lead?: ContactCampaignProgress | null;
         created_at: Date;
     }[];
     selected: string[];
     onToggle: (id: string, on: boolean) => void;
     isSelectedAll: boolean;
     onToggleAll: () => void;
-    onRowClick: (id: string) => void;
+    onRowClick: (id: string, tab?: ContactSlideTab) => void;
     onDelete: (id: string) => void;
     emptyTitle: string;
     emptyBody: string;
@@ -550,9 +606,13 @@ function ContactsTableBody({
                         <Th>Name</Th>
                         <Th className="hidden md:table-cell">Company</Th>
                         <Th className="hidden lg:table-cell">Phone</Th>
-                        <Th className="w-28">Status</Th>
-                        <Th className="w-24 text-right">Campaigns</Th>
-                        <Th className="w-24 text-right hidden md:table-cell">Added</Th>
+                        <Th className="w-32">{embedded ? "Progress" : "Status"}</Th>
+                        {embedded ? (
+                            <Th className="w-28">Current step</Th>
+                        ) : (
+                            <Th className="w-24 text-right">Campaigns</Th>
+                        )}
+                        <Th className="w-24 text-right hidden md:table-cell">{embedded ? "Last activity" : "Added"}</Th>
                         <th className="px-3 py-2 w-12"></th>
                     </tr>
                 </thead>
@@ -563,12 +623,29 @@ function ContactsTableBody({
                             (c.first_name || c.last_name)
                                 ? `${c.first_name ?? ""} ${c.last_name ?? ""}`.trim()
                                 : c.email;
+                        // In the campaign Leads view, terminal leads (replied /
+                        // bounced / unsubscribed) are "already processed" — render
+                        // them muted so the eye lands on what's still in flight.
+                        const lead = c.campaign_lead;
+                        const processed =
+                            embedded &&
+                            !!lead &&
+                            (lead.status === "replied" ||
+                                lead.status === "bounced" ||
+                                lead.status === "unsubscribed");
+                        const isActiveLead = embedded && lead?.status === "active";
                         return (
                             <tr
                                 key={c.id}
                                 onClick={() => onRowClick(c.id)}
                                 className={`group h-11 transition-colors cursor-pointer border-b border-slate-200/60 ${
-                                    isSel ? "bg-sky-50/60" : "hover:bg-slate-50/80"
+                                    isSel
+                                        ? "bg-sky-50/60"
+                                        : isActiveLead
+                                            ? "bg-sky-50/40 hover:bg-sky-50/70"
+                                            : processed
+                                                ? "bg-slate-50/40 hover:bg-slate-50/80"
+                                                : "hover:bg-slate-50/80"
                                 }`}
                             >
                                 <td
@@ -590,7 +667,7 @@ function ContactsTableBody({
                                             </span>
                                         </div>
                                         <div className="min-w-0">
-                                            <div className="text-[12.5px] text-slate-900 font-medium truncate leading-tight flex items-center gap-1.5">
+                                            <div className={`text-[12.5px] font-medium truncate leading-tight flex items-center gap-1.5 ${processed ? "text-slate-400" : "text-slate-900"}`}>
                                                 <span className="truncate">{name}</span>
                                                 {c.categories && c.categories.length > 0 && (
                                                     <span className="inline-flex items-center gap-0.5 shrink-0">
@@ -636,21 +713,52 @@ function ContactsTableBody({
                                     )}
                                 </td>
                                 <td className="px-3">
-                                    <StatusPill subscribed={c.subscribed} />
+                                    {embedded ? (
+                                        <LeadStatusPill lead={lead} />
+                                    ) : (
+                                        <StatusPill subscribed={c.subscribed} />
+                                    )}
                                 </td>
-                                <td className="px-3 text-right font-mono text-[12px] text-slate-600 tabular-nums">
-                                    {c.campaigns?.length ?? 0}
-                                </td>
+                                {embedded ? (
+                                    <td className="px-3">
+                                        {lead?.current_step ? (
+                                            <span
+                                                title={lead.current_step}
+                                                className={`inline-flex items-center h-5 px-1.5 rounded text-[11px] font-medium max-w-[108px] ${
+                                                    processed
+                                                        ? "bg-slate-100 text-slate-400"
+                                                        : "bg-sky-100 text-sky-700"
+                                                }`}
+                                            >
+                                                <span className="truncate">{lead.current_step}</span>
+                                            </span>
+                                        ) : (
+                                            <span className="text-[11px] text-slate-300">Not started</span>
+                                        )}
+                                    </td>
+                                ) : (
+                                    <td className="px-3 text-right font-mono text-[12px] text-slate-600 tabular-nums">
+                                        {c.campaigns?.length ?? 0}
+                                    </td>
+                                )}
                                 <td className="px-3 text-right font-mono text-[11px] text-slate-500 tabular-nums hidden md:table-cell">
-                                    {c.created_at
-                                        ? new Date(c.created_at).toLocaleDateString("en-US", {
-                                              month: "short",
-                                              day: "numeric",
-                                          })
-                                        : "—"}
+                                    {embedded
+                                        ? lead?.last_activity_at
+                                            ? new Date(lead.last_activity_at).toLocaleDateString("en-US", {
+                                                  month: "short",
+                                                  day: "numeric",
+                                              })
+                                            : "—"
+                                        : c.created_at
+                                            ? new Date(c.created_at).toLocaleDateString("en-US", {
+                                                  month: "short",
+                                                  day: "numeric",
+                                              })
+                                            : "—"}
                                 </td>
                                 <td className="px-3" onClick={(e) => e.stopPropagation()}>
-                                    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    {/* Touch-safe: always visible on mobile, hover-reveal on desktop. */}
+                                    <div className="flex items-center gap-0.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                                         <button
                                             type="button"
                                             aria-label="Delete contact"
@@ -661,8 +769,8 @@ function ContactsTableBody({
                                         </button>
                                         <button
                                             type="button"
-                                            aria-label="More"
-                                            onClick={() => onRowClick(c.id)}
+                                            aria-label="Contact details"
+                                            onClick={() => onRowClick(c.id, "details")}
                                             className="size-6 rounded text-slate-400 hover:text-slate-900 hover:bg-slate-100 flex items-center justify-center transition-colors"
                                         >
                                             <MoreHorizontalIcon className="w-3 h-3" />
@@ -722,6 +830,137 @@ function StatusPill({ subscribed }: { subscribed: boolean }) {
         <span className="inline-flex items-center gap-1 text-[10.5px] font-medium text-slate-500 uppercase tracking-[0.08em]">
             <span className="size-1.5 rounded-full bg-slate-300" />
             unsubscribed
+        </span>
+    );
+}
+
+// Per-lead processing state inside a campaign (campaign Leads view only).
+// `active` renders the animated dot-grid loader (the same "processing" motif
+// used across the app); every other state is a distinct lucide icon.
+const LEAD_META: Record<
+    LeadStatus,
+    { label: string; dot: string; text: string; Icon: typeof ClockIcon }
+> = {
+    pending: { label: "Queued", dot: "bg-slate-300", text: "text-slate-500", Icon: ClockIcon },
+    active: { label: "Processing", dot: "bg-sky-500", text: "text-sky-700", Icon: ClockIcon },
+    replied: { label: "Replied", dot: "bg-emerald-500", text: "text-emerald-700", Icon: CornerUpLeftIcon },
+    bounced: { label: "Bounced", dot: "bg-rose-500", text: "text-rose-600", Icon: AlertTriangleIcon },
+    unsubscribed: { label: "Unsubscribed", dot: "bg-slate-300", text: "text-slate-400", Icon: BanIcon },
+};
+
+function LeadStatusPill({ lead }: { lead?: ContactCampaignProgress | null }) {
+    const status: LeadStatus = lead?.status ?? "pending";
+    const meta = LEAD_META[status];
+    const Icon = meta.Icon;
+    return (
+        <span
+            className={`inline-flex items-center gap-1.5 text-[10.5px] font-medium uppercase tracking-[0.08em] ${meta.text}`}
+        >
+            {status === "active" ? (
+                <span className="campaign-grid text-sky-600 shrink-0" aria-hidden />
+            ) : (
+                <Icon className="w-3 h-3 shrink-0" />
+            )}
+            {meta.label}
+        </span>
+    );
+}
+
+// Compact campaign-state strip above the Leads list: a segmented bar + per-state
+// counts derived from the loaded leads, so you can see at a glance how the
+// campaign is processing its leads.
+function LeadProgressStrip({
+    contacts,
+    total,
+    hasMore,
+}: {
+    contacts: { campaign_lead?: ContactCampaignProgress | null }[];
+    total: number;
+    hasMore: boolean;
+}) {
+    const counts = React.useMemo(() => {
+        const c: Record<LeadStatus, number> = {
+            pending: 0,
+            active: 0,
+            replied: 0,
+            bounced: 0,
+            unsubscribed: 0,
+        };
+        for (const ct of contacts) c[ct.campaign_lead?.status ?? "pending"]++;
+        return c;
+    }, [contacts]);
+
+    const loaded = contacts.length;
+    if (loaded === 0) return null;
+
+    const segs: { key: LeadStatus; color: string }[] = [
+        { key: "active", color: "bg-sky-500" },
+        { key: "replied", color: "bg-emerald-500" },
+        { key: "pending", color: "bg-slate-300" },
+        { key: "bounced", color: "bg-rose-400" },
+        { key: "unsubscribed", color: "bg-slate-200" },
+    ];
+
+    return (
+        <div className="px-5 py-2.5 border-b border-slate-200/60 flex items-center gap-x-4 gap-y-2 flex-wrap">
+            <div className="flex-1 min-w-[160px] max-w-[360px]">
+                <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                    {segs.map((s) =>
+                        counts[s.key] ? (
+                            <div
+                                key={s.key}
+                                className={`${s.color} transition-[width] duration-500 ease-out`}
+                                style={{ width: `${(counts[s.key] / loaded) * 100}%` }}
+                            />
+                        ) : null,
+                    )}
+                </div>
+            </div>
+            <div className="flex items-center gap-3 text-[11px] flex-wrap">
+                <StripChip dot="bg-sky-500" label="Processing" n={counts.active} loader={counts.active > 0} />
+                <StripChip dot="bg-emerald-500" label="Replied" n={counts.replied} />
+                <StripChip dot="bg-slate-300" label="Queued" n={counts.pending} />
+                <StripChip dot="bg-rose-400" label="Bounced" n={counts.bounced} />
+                <StripChip dot="bg-slate-300" label="Unsub" n={counts.unsubscribed} />
+            </div>
+            <div className="ml-auto flex items-center gap-2 text-[10.5px] text-slate-400 tabular-nums">
+                {counts.active > 0 && (
+                    <span className="inline-flex items-center gap-1 text-emerald-600 font-medium">
+                        <span className="relative flex size-1.5">
+                            <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-60 animate-ping" />
+                            <span className="relative inline-flex size-1.5 rounded-full bg-emerald-500" />
+                        </span>
+                        Live
+                    </span>
+                )}
+                <span>
+                    {hasMore ? `${loaded} of ${total} loaded` : `${total} lead${total === 1 ? "" : "s"}`}
+                </span>
+            </div>
+        </div>
+    );
+}
+
+function StripChip({
+    dot,
+    label,
+    n,
+    loader = false,
+}: {
+    dot: string;
+    label: string;
+    n: number;
+    loader?: boolean;
+}) {
+    return (
+        <span className="inline-flex items-center gap-1.5">
+            {loader ? (
+                <span className="campaign-grid text-sky-600" aria-hidden />
+            ) : (
+                <span className={`size-1.5 rounded-full ${dot}`} />
+            )}
+            <span className="text-slate-500">{label}</span>
+            <span className="font-mono tabular-nums text-slate-900">{n}</span>
         </span>
     );
 }

@@ -120,7 +120,7 @@ defmodule Realtime.Subscription do
     WHERE s.user_id = $1
     """
 
-    case Repo.query(query, [Ecto.UUID.dump!(user_id) |> elem(1)]) do
+    case Repo.query(query, [Ecto.UUID.dump!(user_id)]) do
       {:ok, %{rows: [[ws_message, ws_join, ws_event, max_conn]]}} ->
         %{
           limit_ws_message_pm: ws_message || 120,

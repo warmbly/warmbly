@@ -59,6 +59,9 @@ type Plan struct {
 	MaxTeamMembers     *int `json:"max_team_members,omitempty"`
 	MaxEmailAccounts   *int `json:"max_email_accounts,omitempty"`
 
+	// AI writing-assistant monthly credit grant for this plan.
+	MonthlyCredits int `json:"monthly_credits"`
+
 	UpdatedAt time.Time `json:"updated_at"`
 	CreatedAt time.Time `json:"created_at"`
 }

@@ -1,0 +1,155 @@
+---
+import Learn from '../../layouts/Learn.astro';
+
+// Template syntax is kept in consts so Astro renders it literally (in .astro
+// markup a bare "{" starts an expression).
+const t = {
+  first: '{{.FirstName}}',
+  company: '{{.Company}}',
+  role: '{{.role}}',
+  index: '{{index . "Job Title"}}',
+  if: '{{if}}',
+  end: '{{end}}',
+  else: '{{else}}',
+  elseif: '{{else if}}',
+  eq: '{{eq}}',
+};
+
+const exVars = `Hi {{.FirstName}},
+
+Thanks for the work you're doing at {{.Company}}.`;
+
+const exCustom = `You're the {{.role}} at {{.Company}}, right?`;
+
+const exIndex = `Role: {{index . "Job Title"}}`;
+
+const exIf = `Hi {{.FirstName}},{{if .Company}} I saw {{.Company}} is hiring.{{end}}`;
+
+const exIfElse = `{{if .FirstName}}Hi {{.FirstName}}{{else}}Hi there{{end}},`;
+
+const exEq = `{{if eq .city "Berlin"}}I'll be in Berlin next week.{{else}}Let's set up a call.{{end}}`;
+
+const exChain = `{{if eq .plan "enterprise"}}your team's size{{else if eq .plan "pro"}}your growing team{{else}}teams like yours{{end}}`;
+
+const exAnd = `{{if and (.FirstName) (eq .Company "Acme")}}Hi {{.FirstName}} at Acme{{end}}`;
+
+// The "way more complex" example: one template that adapts the subject, the
+// greeting, the opening line (by role), a city aside, and the call to action
+// (by plan) — all from variables + custom fields.
+const exAdvanced = `Subject: {{if .Company}}quick idea for {{.Company}}{{else}}a quick idea{{end}}
+
+Hi {{if .FirstName}}{{.FirstName}}{{else}}there{{end}},
+
+{{if eq .role "Founder"}}As the founder, you probably feel {{else if eq .role "Marketing"}}On the marketing side, you've likely noticed {{else}}You've probably run into {{end}}the cost of {{if .Company}}{{.Company}}'s{{else}}your{{end}} cold email landing in spam instead of the inbox.
+
+{{if and (.city) (eq .city "Berlin")}}I'm in Berlin next week and happy to grab a coffee. {{end}}We get teams to the inbox with gradual warmup and per-mailbox limits, no gimmicks.
+
+{{if eq .plan "enterprise"}}Given your volume, worth a 15-minute call?{{else if eq .plan "pro"}}Want the 2-line version of how it works?{{else}}Open to a quick look, or not a priority right now?{{end}}
+
+Best,
+Sam`;
+
+const preClass = "not-prose my-4 overflow-x-auto rounded-lg border border-[color:var(--border)] bg-[color:var(--surface-1)] p-4 text-[12.5px] leading-relaxed text-foreground/80 whitespace-pre-wrap";
+const preStyle = "font-family: var(--font-mono)";
+---
+<Learn
+  title="Personalization & conditionals | Warmbly"
+  description="Use merge variables, custom fields, and if/else conditionals so one cold-email template reads naturally for every recipient."
+  eyebrow="Guide"
+  reading="6 min read"
+  updated="2026-06-05"
+>
+  <p>
+    Every subject line and email body in Warmbly supports merge variables and simple conditionals.
+    They're rendered separately for each recipient when the email actually sends, so a single template
+    can read naturally for your whole list.
+  </p>
+
+  <h2>Variables</h2>
+  <p>Insert a variable and it's replaced with that contact's detail on send. The standard contact fields are:</p>
+  <ul>
+    <li><code class="kbd">{t.first}</code> — the contact's first name</li>
+    <li><code class="kbd">{'{{.LastName}}'}</code> — the contact's last name</li>
+    <li><code class="kbd">{'{{.Email}}'}</code> — the contact's email address</li>
+    <li><code class="kbd">{t.company}</code> — where the contact works</li>
+    <li><code class="kbd">{'{{.Phone}}'}</code> — the contact's phone number</li>
+  </ul>
+  <pre class={preClass} style={preStyle}>{exVars}</pre>
+  <p>
+    If a contact is missing a value, it renders as nothing (blank). Write so the sentence still reads, or guard
+    it with a conditional (below).
+  </p>
+
+  <h2>Custom fields</h2>
+  <p>
+    Any custom field on your contacts works too — reference it by its exact name. For a field called
+    <code class="kbd">role</code>:
+  </p>
+  <pre class={preClass} style={preStyle}>{exCustom}</pre>
+  <p>
+    If the field name has spaces or punctuation (for example <code class="kbd">Job Title</code>), use the
+    <code class="kbd">index</code> form instead:
+  </p>
+  <pre class={preClass} style={preStyle}>{exIndex}</pre>
+  <p>
+    The name must match a field that exists on the contact; if it doesn't, the value is blank. So pair custom
+    fields with a conditional whenever the surrounding text depends on them.
+  </p>
+
+  <h2>Conditionals (if / else)</h2>
+  <p>Wrap text so it only appears when a field has a value — or matches a specific value.</p>
+
+  <h3>Show text only when a field is set</h3>
+  <pre class={preClass} style={preStyle}>{exIf}</pre>
+  <p>→ “Hi Alex, I saw Acme is hiring.” when Company is set; “Hi Alex,” when it's blank.</p>
+
+  <h3>Provide a fallback with else</h3>
+  <pre class={preClass} style={preStyle}>{exIfElse}</pre>
+
+  <h3>Match a specific value with eq</h3>
+  <pre class={preClass} style={preStyle}>{exEq}</pre>
+  <p>
+    <code class="kbd">eq</code> compares exact text and is case-sensitive — <code class="kbd">{'eq .Company "acme"'}</code>
+    will not match “Acme”.
+  </p>
+
+  <h3>Chain options and combine checks</h3>
+  <pre class={preClass} style={preStyle}>{exChain}</pre>
+  <pre class={preClass} style={preStyle}>{exAnd}</pre>
+  <p>
+    Supported: <code class="kbd">{t.if}</code>, <code class="kbd">{t.else}</code>, <code class="kbd">{t.elseif}</code>,
+    <code class="kbd">{t.end}</code>, <code class="kbd">eq</code>, <code class="kbd">and</code>, and
+    <code class="kbd">or</code>. A missing or empty field counts as “not set” (false).
+  </p>
+
+  <h2>A complete, complex template</h2>
+  <p>
+    Here's everything together — one template whose subject, greeting, opening line (by role), city aside, and
+    call to action (by plan) all adapt per recipient. It uses three custom fields (<code class="kbd">role</code>,
+    <code class="kbd">city</code>, <code class="kbd">plan</code>) alongside the standard ones:
+  </p>
+  <pre class={preClass} style={preStyle}>{exAdvanced}</pre>
+  <p>
+    Build these up gradually and lean on the editor's Preview tab — it evaluates your conditionals against sample
+    data so you can see each branch before you send.
+  </p>
+
+  <h2>If something goes wrong</h2>
+  <p>Warmbly guards against broken templates at three points:</p>
+  <ul>
+    <li>While editing, an unbalanced conditional (an <code class="kbd">{t.if}</code> with no <code class="kbd">{t.end}</code>) shows an inline warning.</li>
+    <li>A campaign won't start if any step's template is malformed — you get an error naming the step, so recipients never receive raw <code class="kbd">{'{{if ...}}'}</code> text.</li>
+    <li>If a broken template ever reaches sending, it falls back to plain variable substitution rather than failing the send.</li>
+  </ul>
+  <p>Always check Preview and send yourself a test email before launching.</p>
+
+  <h2>Quick reference</h2>
+  <ul>
+    <li><code class="kbd">{t.first}</code> — a contact field</li>
+    <li><code class="kbd">{'{{.your_field}}'}</code> — a custom field by name</li>
+    <li><code class="kbd">{t.index}</code> — a custom field whose name has spaces</li>
+    <li><code class="kbd">{'{{if .Field}} … {{end}}'}</code> — show only when the field is set</li>
+    <li><code class="kbd">{'{{if .Field}} … {{else}} … {{end}}'}</code> — with a fallback</li>
+    <li><code class="kbd">{'{{if eq .Field "value"}} … {{end}}'}</code> — when the field equals a value</li>
+  </ul>
+</Learn>

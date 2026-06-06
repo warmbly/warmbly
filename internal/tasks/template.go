@@ -6,6 +6,8 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
+	"text/template"
 
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/models"
@@ -30,37 +32,141 @@ type TemplateVariables struct {
 	Custom    map[string]string
 }
 
-// RenderTemplate renders a template string with contact variables
-func RenderTemplate(template string, contact models.Contact) string {
-	vars := TemplateVariables{
-		FirstName: contact.FirstName,
-		LastName:  contact.LastName,
-		Email:     contact.Email,
-		Company:   contact.Company,
-		Phone:     contact.Phone,
-		Custom:    make(map[string]string),
+// identifierKey matches a Go-template-safe selector key: a leading letter or
+// underscore followed by letters, digits, or underscores. Only keys matching
+// this can be referenced via the {{.Key}} selector syntax; non-identifier
+// custom-field keys (e.g. "job title", "first-name") are substituted literally
+// by a pre-pass before the template engine parses the body.
+var identifierKey = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+// legacyDotToken matches a single {{.<anything-but-brace>}} token. Used by the
+// pre-pass to find tokens whose key is a known but non-identifier custom field.
+var legacyDotToken = regexp.MustCompile(`\{\{\.([^{}]+)\}\}`)
+
+// tmplCache caches parsed templates keyed by the raw template string. A stored
+// nil *template.Template is a "known-bad" sentinel: that body failed to parse,
+// so future renders skip straight to the naive fallback instead of re-parsing
+// on every recipient. *template.Template is safe for concurrent Execute once
+// parsed, so a single cached instance is reused across the whole send loop.
+var tmplCache sync.Map // map[string]*template.Template ; nil value = known-bad
+
+// buildTemplateData flattens the contact into the single map[string]string root
+// the template engine executes against. Standard fields use their established
+// dot-names so {{.FirstName}} keeps working; custom fields are merged in, with
+// standard fields winning a name collision.
+func buildTemplateData(contact models.Contact) map[string]string {
+	data := make(map[string]string, len(contact.CustomFields)+5)
+	for k, v := range contact.CustomFields {
+		data[k] = v
+	}
+	data["FirstName"] = contact.FirstName
+	data["LastName"] = contact.LastName
+	data["Email"] = contact.Email
+	data["Company"] = contact.Company
+	data["Phone"] = contact.Phone
+	return data
+}
+
+// rewriteNonIdentifierTokens substitutes {{.<key>}} tokens whose key exists in
+// data but is NOT a valid Go-template identifier (so the selector syntax can't
+// reference it, e.g. "job title"). Identifier tokens are left for the engine so
+// they remain usable inside {{if}}/{{eq}}.
+func rewriteNonIdentifierTokens(tmpl string, data map[string]string) string {
+	if !strings.Contains(tmpl, "{{.") {
+		return tmpl
+	}
+	return legacyDotToken.ReplaceAllStringFunc(tmpl, func(match string) string {
+		key := strings.TrimSpace(legacyDotToken.FindStringSubmatch(match)[1])
+		if identifierKey.MatchString(key) {
+			return match // engine resolves it (and it may be used in if/eq)
+		}
+		if v, ok := data[key]; ok {
+			return v // legacy literal substitution for non-identifier keys
+		}
+		return match // unknown + non-identifier: leave for engine/missingkey
+	})
+}
+
+// compiledTemplate returns a parsed, cached template for tmpl, or nil if the
+// body is known-bad (caller falls back to naiveRenderTemplate). missingkey=zero
+// makes absent map keys render as "" and test false in {{if .X}}. text/template
+// (not html/template) performs no escaping, so the author's HTML body is emitted
+// verbatim.
+func compiledTemplate(tmpl string) *template.Template {
+	if v, ok := tmplCache.Load(tmpl); ok {
+		t, _ := v.(*template.Template)
+		return t // may be nil (known-bad)
+	}
+	t, err := template.New("body").Option("missingkey=zero").Parse(tmpl)
+	if err != nil {
+		tmplCache.Store(tmpl, (*template.Template)(nil))
+		return nil
+	}
+	tmplCache.Store(tmpl, t)
+	return t
+}
+
+// TemplateError returns a parse error when a template's control syntax is
+// malformed (e.g. an {{if}} with no {{end}}, or a bad {{eq}}), or nil when it is
+// valid. Non-identifier {{.key}} tokens (custom fields with spaces) are
+// neutralized first — the renderer substitutes those per contact, so they must
+// not false-fail validation. Used to block starting a campaign with a template
+// that would otherwise degrade to literal {{if}} text in the sent email.
+func TemplateError(tmpl string) error {
+	if tmpl == "" {
+		return nil
+	}
+	prepared := legacyDotToken.ReplaceAllStringFunc(tmpl, func(match string) string {
+		key := strings.TrimSpace(legacyDotToken.FindStringSubmatch(match)[1])
+		if identifierKey.MatchString(key) {
+			return match
+		}
+		return "" // non-identifier custom key: substituted per contact at render
+	})
+	_, err := template.New("validate").Option("missingkey=zero").Parse(prepared)
+	return err
+}
+
+// RenderTemplate renders a sequence template against a contact, supporting Go
+// text/template conditionals ({{if}}/{{else}}/{{eq}}), standard variables, and
+// custom fields. It NEVER hard-fails: any parse or execution error falls back to
+// the naive replacement path so a send always produces a body. Spintax is
+// intentionally left untouched here (single-brace {a|b} survives the template
+// pass) and expanded later in the pipeline where applicable.
+func RenderTemplate(tmpl string, contact models.Contact) string {
+	if tmpl == "" {
+		return tmpl
 	}
 
-	// Parse custom fields if present
-	if contact.CustomFields != nil {
-		vars.Custom = contact.CustomFields
+	data := buildTemplateData(contact)
+	prepared := rewriteNonIdentifierTokens(tmpl, data)
+
+	t := compiledTemplate(prepared)
+	if t == nil {
+		return naiveRenderTemplate(tmpl, contact) // known-bad -> legacy path
 	}
 
-	result := template
-
-	// Replace standard variables
-	result = strings.ReplaceAll(result, "{{.FirstName}}", vars.FirstName)
-	result = strings.ReplaceAll(result, "{{.LastName}}", vars.LastName)
-	result = strings.ReplaceAll(result, "{{.Email}}", vars.Email)
-	result = strings.ReplaceAll(result, "{{.Company}}", vars.Company)
-	result = strings.ReplaceAll(result, "{{.Phone}}", vars.Phone)
-
-	// Replace custom variables
-	for k, v := range vars.Custom {
-		placeholder := fmt.Sprintf("{{.%s}}", k)
-		result = strings.ReplaceAll(result, placeholder, v)
+	var b strings.Builder
+	if err := t.Execute(&b, data); err != nil {
+		return naiveRenderTemplate(tmpl, contact)
 	}
+	return b.String()
+}
 
+// naiveRenderTemplate is the legacy renderer: a literal {{.Key}} -> value
+// substitution for the standard fields and every custom field. It is the
+// graceful fallback when text/template parsing or execution fails, so a body
+// always renders even for malformed conditional syntax.
+func naiveRenderTemplate(tmpl string, contact models.Contact) string {
+	result := tmpl
+	result = strings.ReplaceAll(result, "{{.FirstName}}", contact.FirstName)
+	result = strings.ReplaceAll(result, "{{.LastName}}", contact.LastName)
+	result = strings.ReplaceAll(result, "{{.Email}}", contact.Email)
+	result = strings.ReplaceAll(result, "{{.Company}}", contact.Company)
+	result = strings.ReplaceAll(result, "{{.Phone}}", contact.Phone)
+	for k, v := range contact.CustomFields {
+		result = strings.ReplaceAll(result, fmt.Sprintf("{{.%s}}", k), v)
+	}
 	return result
 }
 

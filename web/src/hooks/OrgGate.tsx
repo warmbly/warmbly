@@ -49,7 +49,11 @@ export function OrgGate() {
     // to fire on every render → repeated navigate() calls into
     // /select-org → "Too many calls to Location or History APIs" and a
     // setState loop from setOrganizations re-firing each time.
-    const { mutate: switchOrgMutate } = useSwitchOrganization();
+    // "sync" mode: this is session reconciliation, NOT a workspace change, so
+    // it must INVALIDATE (refetch in place) rather than removeQueries — the
+    // latter orphans the dashboard's in-flight bootstrap queries and hangs the
+    // first paint after login. See useSwitchOrganization.
+    const { mutate: switchOrgMutate } = useSwitchOrganization({ mode: "sync" });
 
     // Guard against the single-org auto-pick re-firing while the
     // mutation is in flight (effect re-runs on data changes).
@@ -63,8 +67,8 @@ export function OrgGate() {
     const lastRedirectKey = useRef<string | null>(null);
     // The org id we've already re-synced to the server session this
     // mount. Without this the stillMember branch would re-POST the
-    // switch on every effect run (e.g. when orgs.data settles), and
-    // useSwitchOrganization wipes the query cache on success → refetch
+    // switch on every effect run (e.g. when orgs.data settles), and the
+    // "sync" invalidate on success would re-fire each time → refetch
     // storm. One sync per (mount, org) is enough.
     const syncedOrgId = useRef<string | null>(null);
 

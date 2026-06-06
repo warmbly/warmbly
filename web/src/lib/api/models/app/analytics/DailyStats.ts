@@ -1,8 +1,10 @@
+// Per-day campaign series. Mirrors the backend models.CampaignDailyStats
+// (and DashboardDailyStats) JSON tags exactly — note the backend uses
+// `opens`/`clicks`/`replies`, not `opened`/`clicked`/`replied`.
 export default interface DailyStats {
     date: string
     sent: number
-    opened: number
-    clicked: number
-    replied: number
-    bounced: number
+    opens: number
+    clicks: number
+    replies: number
 }

@@ -4,13 +4,17 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
+	"mime"
 	"mime/multipart"
 	"mime/quotedprintable"
 	"net"
 	"net/mail"
 	"net/smtp"
+	"net/textproto"
 	"strings"
 	"time"
 
@@ -35,11 +39,20 @@ type Client struct {
 	BindIP *net.TCPAddr
 }
 
+// Attachment is a fully-resolved file to encode into an outbound message. Data
+// is the raw bytes; MimeType drives the Content-Type.
+type Attachment struct {
+	Filename string
+	MimeType string
+	Data     []byte
+}
+
 func (c *Client) Send(
 	ctx context.Context,
 	to, cc, bcc []string,
 	subject, bodyPlain, bodyHTML,
 	inReplyTo string,
+	attachments []Attachment,
 	customHeaders ...map[string]string,
 ) *errx.MailError {
 	from := mail.Address{Address: c.Email, Name: fmt.Sprintf("%s %s", c.FirstName, c.LastName)}
@@ -71,20 +84,80 @@ func (c *Client) Send(
 		}
 	}
 
-	// ----- Multipart body -----
 	var msg bytes.Buffer
-	writer := multipart.NewWriter(&msg)
-	boundary := writer.Boundary()
-	headers["Content-Type"] = fmt.Sprintf("multipart/alternative; boundary=%s", boundary)
+	if len(attachments) > 0 {
+		c.writeMixedBody(&msg, headers, bodyPlain, bodyHTML, attachments)
+	} else {
+		c.writeAlternativeBody(&msg, headers, bodyPlain, bodyHTML)
+	}
+
+	recipients := append(append([]string{}, to...), cc...)
+	recipients = append(recipients, bcc...)
+
+	return c.sendRaw(ctx, from.Address, recipients, msg.Bytes())
+}
+
+// writeAlternativeBody writes a multipart/alternative message (text/plain +
+// optional text/html) including the top-level headers.
+func (c *Client) writeAlternativeBody(msg *bytes.Buffer, headers map[string]string, bodyPlain, bodyHTML string) {
+	writer := multipart.NewWriter(msg)
+	headers["Content-Type"] = fmt.Sprintf("multipart/alternative; boundary=%s", writer.Boundary())
 
 	for k, v := range headers {
-		fmt.Fprintf(&msg, "%s: %s\r\n", k, v)
+		fmt.Fprintf(msg, "%s: %s\r\n", k, v)
 	}
-	fmt.Fprint(&msg, "\r\n")
+	fmt.Fprint(msg, "\r\n")
 
-	// text/plain
+	writeTextParts(writer, bodyPlain, bodyHTML)
+	writer.Close()
+}
+
+// writeMixedBody writes a multipart/mixed message: a multipart/alternative
+// sub-tree for the text bodies, then one application/* part per attachment with
+// a Content-Disposition: attachment header.
+func (c *Client) writeMixedBody(msg *bytes.Buffer, headers map[string]string, bodyPlain, bodyHTML string, attachments []Attachment) {
+	mixed := multipart.NewWriter(msg)
+	headers["Content-Type"] = fmt.Sprintf("multipart/mixed; boundary=%s", mixed.Boundary())
+
+	for k, v := range headers {
+		fmt.Fprintf(msg, "%s: %s\r\n", k, v)
+	}
+	fmt.Fprint(msg, "\r\n")
+
+	// multipart/alternative sub-tree for the text bodies.
+	var altBuf bytes.Buffer
+	alt := multipart.NewWriter(&altBuf)
+	writeTextParts(alt, bodyPlain, bodyHTML)
+	alt.Close()
+
+	altPart, _ := mixed.CreatePart(textproto.MIMEHeader{
+		"Content-Type": {fmt.Sprintf("multipart/alternative; boundary=%s", alt.Boundary())},
+	})
+	altPart.Write(altBuf.Bytes())
+
+	// One attachment part per file.
+	for _, a := range attachments {
+		mimeType := a.MimeType
+		if mimeType == "" {
+			mimeType = "application/octet-stream"
+		}
+		fn := mime.QEncoding.Encode("utf-8", a.Filename)
+		part, _ := mixed.CreatePart(textproto.MIMEHeader{
+			"Content-Type":              {fmt.Sprintf("%s; name=%q", mimeType, fn)},
+			"Content-Transfer-Encoding": {"base64"},
+			"Content-Disposition":       {fmt.Sprintf("attachment; filename=%q", fn)},
+		})
+		writeBase64Wrapped(part, a.Data)
+	}
+
+	mixed.Close()
+}
+
+// writeTextParts writes the text/plain and optional text/html quoted-printable
+// parts into the given multipart writer.
+func writeTextParts(writer *multipart.Writer, bodyPlain, bodyHTML string) {
 	if bodyPlain != "" {
-		part, _ := writer.CreatePart(map[string][]string{
+		part, _ := writer.CreatePart(textproto.MIMEHeader{
 			"Content-Type":              {"text/plain; charset=UTF-8"},
 			"Content-Transfer-Encoding": {"quoted-printable"},
 		})
@@ -92,10 +165,8 @@ func (c *Client) Send(
 		qp.Write([]byte(bodyPlain))
 		qp.Close()
 	}
-
-	// text/html
 	if bodyHTML != "" {
-		part, _ := writer.CreatePart(map[string][]string{
+		part, _ := writer.CreatePart(textproto.MIMEHeader{
 			"Content-Type":              {"text/html; charset=UTF-8"},
 			"Content-Transfer-Encoding": {"quoted-printable"},
 		})
@@ -103,12 +174,20 @@ func (c *Client) Send(
 		qp.Write([]byte(bodyHTML))
 		qp.Close()
 	}
-	writer.Close()
+}
 
-	recipients := append(append([]string{}, to...), cc...)
-	recipients = append(recipients, bcc...)
-
-	return c.sendRaw(ctx, from.Address, recipients, msg.Bytes())
+// writeBase64Wrapped writes data as base64, hard-wrapped at 76 columns per
+// RFC 2045 so strict MTAs accept the message.
+func writeBase64Wrapped(w io.Writer, data []byte) {
+	encoded := base64.StdEncoding.EncodeToString(data)
+	const lineLen = 76
+	for i := 0; i < len(encoded); i += lineLen {
+		end := i + lineLen
+		if end > len(encoded) {
+			end = len(encoded)
+		}
+		w.Write([]byte(encoded[i:end] + "\r\n"))
+	}
 }
 
 // ---------- Internal helpers ----------

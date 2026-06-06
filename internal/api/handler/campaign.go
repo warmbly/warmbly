@@ -182,3 +182,74 @@ func (h *Handler) GetCampaignLogs(c *gin.Context) {
 
 	c.JSON(http.StatusOK, result)
 }
+
+// ListCampaignSenders returns a campaign's explicit sender pool.
+// GET /campaigns/:id/senders
+func (h *Handler) ListCampaignSenders(c *gin.Context) {
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "no organization selected"))
+		return
+	}
+
+	senders, xerr := h.CampaignService.ListCampaignSenders(c.Request.Context(), *orgID, c.Param("id"))
+	if xerr != nil {
+		errx.JSON(c, xerr)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": senders})
+}
+
+// ReplaceCampaignSenders atomically replaces a campaign's explicit sender pool.
+// PUT /campaigns/:id/senders
+func (h *Handler) ReplaceCampaignSenders(c *gin.Context) {
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "no organization selected"))
+		return
+	}
+
+	var body struct {
+		Senders []models.CampaignSenderInput `json:"senders"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		errx.JSON(c, errx.ErrInvalid)
+		return
+	}
+
+	senders, xerr := h.CampaignService.ReplaceCampaignSenders(c.Request.Context(), *orgID, c.Param("id"), body.Senders)
+	if xerr != nil {
+		errx.JSON(c, xerr)
+		return
+	}
+
+	if campaignID, err := uuid.Parse(c.Param("id")); err == nil {
+		h.auditOrg(c, models.AuditActionUpdate, models.AuditEntityCampaign, &campaignID, nil, map[string]string{"scope": "senders"})
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": senders})
+}
+
+// VerifyCampaignTrackingDomain resolves the campaign-scoped tracking domain's
+// CNAME and flips verified on success.
+// POST /campaigns/:id/tracking-domain/verify
+func (h *Handler) VerifyCampaignTrackingDomain(c *gin.Context) {
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "no organization selected"))
+		return
+	}
+
+	status, xerr := h.CampaignService.VerifyCampaignTrackingDomain(c.Request.Context(), *orgID, c.Param("id"))
+	if xerr != nil {
+		errx.JSON(c, xerr)
+		return
+	}
+
+	if campaignID, err := uuid.Parse(c.Param("id")); err == nil {
+		h.auditOrg(c, models.AuditActionUpdate, models.AuditEntityCampaign, &campaignID, nil, map[string]string{"scope": "tracking_domain_verify"})
+	}
+
+	c.JSON(http.StatusOK, status)
+}

@@ -53,51 +53,19 @@ import {
 import { Label, TextInput } from "@/components/ui/field";
 import CategoryPicker from "./CategoryPicker";
 import { downloadBlob } from "@/lib/api/client/app/contacts/exportContacts";
+import { DEDUP_OPTIONS, STANDARD_TARGETS, describeError } from "./importShared";
 
 interface Props {
     open: boolean;
     onClose: () => void;
+    // When set (the campaign Leads tab), imported contacts are attached to this
+    // campaign and the wizard shows a read-only "Adding to …" indicator.
+    lockedCampaign?: { id: string; name: string };
 }
-
-const STANDARD_TARGETS: { id: string; label: string }[] = [
-    { id: "ignore",      label: "Ignore" },
-    { id: "email",       label: "Email" },
-    { id: "first_name",  label: "First name" },
-    { id: "last_name",   label: "Last name" },
-    { id: "company",     label: "Company" },
-    { id: "phone",       label: "Phone" },
-    { id: "subscribed",  label: "Subscribed" },
-    { id: "categories",  label: "Categories" },
-];
-
-const DEDUP_OPTIONS: { id: ImportDedupStrategy; label: string; hint: string }[] = [
-    { id: "skip",             label: "Skip existing",     hint: "If a contact with this email exists, leave it alone." },
-    { id: "update",           label: "Update existing",   hint: "Merge new values onto the existing contact." },
-    { id: "create_duplicate", label: "Create duplicates", hint: "Force a new contact. Falls back to update if blocked by uniqueness." },
-];
 
 type Step = "upload" | "map" | "options" | "result";
 
-// Extract a human-readable message from whatever the API client throws.
-// Client.ts rethrows AppError (a plain object), not an Error instance —
-// so `err instanceof Error` silently fails and you lose the real reason.
-function describeError(err: unknown, fallback: string): string {
-    if (err && typeof err === "object") {
-        const e = err as { message?: unknown; error?: unknown; status?: unknown };
-        const msg = typeof e.message === "string" ? e.message.trim() : "";
-        const title = typeof e.error === "string" ? e.error.trim() : "";
-        const status = typeof e.status === "number" ? e.status : undefined;
-        if (msg && title && msg !== title) {
-            return status ? `${status} ${title}: ${msg}` : `${title}: ${msg}`;
-        }
-        if (msg) return status ? `${status}: ${msg}` : msg;
-        if (title) return status ? `${status} ${title}` : title;
-    }
-    if (err instanceof Error && err.message) return err.message;
-    return fallback;
-}
-
-export default function ImportWizard({ open, onClose }: Props) {
+export default function ImportWizard({ open, onClose, lockedCampaign }: Props) {
     const [step, setStep] = React.useState<Step>("upload");
     const [file, setFile] = React.useState<File | null>(null);
     const [preview, setPreview] = React.useState<ImportPreview | null>(null);
@@ -152,6 +120,7 @@ export default function ImportWizard({ open, onClose }: Props) {
                 dedup,
                 has_header: hasHeader,
                 category_ids: categoryIds.length > 0 ? categoryIds : undefined,
+                campaign_ids: lockedCampaign ? [lockedCampaign.id] : undefined,
             });
             setResult(res);
             setStep("result");
@@ -204,6 +173,11 @@ export default function ImportWizard({ open, onClose }: Props) {
                             <span className="text-[12.5px] text-slate-900 font-medium">
                                 Contacts
                             </span>
+                            {lockedCampaign && (
+                                <span className="hidden sm:inline-flex items-center h-5 px-1.5 rounded bg-sky-50 text-sky-700 text-[10px] font-medium max-w-[180px] truncate">
+                                    → {lockedCampaign.name}
+                                </span>
+                            )}
                             <StepDots step={step} />
                             <button
                                 type="button"
@@ -456,7 +430,7 @@ function UploadStep({
 
 // ----- Map step --------------------------------------------------
 
-function MapStep({
+export function MapStep({
     preview,
     mapping,
     setMapping,
@@ -538,7 +512,7 @@ function MapStep({
     );
 }
 
-function TargetPicker({
+export function TargetPicker({
     value,
     onChange,
 }: {
@@ -683,7 +657,7 @@ function OptionsStep({
 
 // ----- Result step ----------------------------------------------
 
-function ResultStep({ result, filename }: { result: ImportResult; filename: string }) {
+export function ResultStep({ result, filename }: { result: ImportResult; filename: string }) {
     function downloadErrors() {
         if (!result.errors || result.errors.length === 0) return;
         const rows = [["line", "email", "reason"]];

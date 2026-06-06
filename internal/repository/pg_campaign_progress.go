@@ -3,10 +3,12 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/warmbly/warmbly/internal/models"
 )
 
 // CampaignContactProgress represents the progress of a contact in a campaign
@@ -48,6 +50,9 @@ type CampaignRollingRates struct {
 type ContactSequencePair struct {
 	ContactID  uuid.UUID
 	SequenceID uuid.UUID
+	// IsNewLead is true when this pair is the contact's first step (sequence
+	// position 1). Drives the per-day new-lead counter and cap.
+	IsNewLead bool
 }
 
 type CampaignSequencePair struct {
@@ -74,8 +79,14 @@ type CampaignProgressRepository interface {
 	CountEmailsSentTodayByOrganization(ctx context.Context, organizationID uuid.UUID) (int, error)
 	GetLatestCampaignSequenceForContact(ctx context.Context, contactID uuid.UUID) (*CampaignSequencePair, error)
 
-	// Find next email to send
-	FindNextContactSequence(ctx context.Context, campaignID uuid.UUID, orderBy, orderDir, orderField string) (*ContactSequencePair, error)
+	// FindNextRoutedPair selects the next (contact, step) to send by following
+	// each contact's step rules (the branching tree) rather than a flat position
+	// order. prioritizeNewLeads sorts first-step pairs first; excludeNewLeads
+	// drops first-step pairs entirely so the new-lead/day cap can be enforced
+	// while follow-ups keep flowing. The second return value, when the pair is
+	// nil, is the soonest time a waiting contact's condition window elapses — the
+	// scheduler should defer and re-check then rather than completing.
+	FindNextRoutedPair(ctx context.Context, campaignID uuid.UUID, orderBy, orderDir, orderField string, prioritizeNewLeads, excludeNewLeads bool) (*ContactSequencePair, *time.Time, error)
 }
 
 type campaignProgressRepository struct {
@@ -356,12 +367,108 @@ func (r *campaignProgressRepository) GetLatestCampaignSequenceForContact(ctx con
 	return out, nil
 }
 
-// FindNextContactSequence finds the next contact/sequence pair that needs to be sent
-// orderBy: "created_at", "email", "name", "custom_field", "manual"
-// orderDir: "asc", "desc"
-// orderField: custom field name (used when orderBy is "custom_field")
-func (r *campaignProgressRepository) FindNextContactSequence(ctx context.Context, campaignID uuid.UUID, orderBy, orderDir, orderField string) (*ContactSequencePair, error) {
-	// Build the ORDER BY clause based on ordering settings
+// FindNextRoutedPair selects the next (contact, step) to send by FOLLOWING THE
+// FLOW graph instead of linear position order. For each contact, the next step
+// is the route out of their last-sent step:
+//  1. conditional branches (first match wins, evaluated against engagement),
+//  2. then the explicit "else" catch-all branch (empty conditions; target nil = STOP),
+//  3. then linear position+1 — but ONLY when the step defines no branches at all
+//     (so plain linear campaigns keep working unchanged).
+//
+// A contact who has never been sent starts at the entry step (position 1). A
+// step is sent only if the route reaches it, so branch-only steps are never sent
+// linearly, and a routed step that was already sent (a loop) stops the contact.
+//
+// Conditions are evaluated SEND-RELATIVE with a three-valued result: a contact
+// whose next step isn't decidable yet (an engagement window still open) is not
+// returned; instead the soonest re-check time is returned (second value) so the
+// scheduler defers and checks again exactly then. Returns (nil, nil, nil) when
+// the campaign is genuinely complete (no sendable and nothing pending).
+func (r *campaignProgressRepository) FindNextRoutedPair(ctx context.Context, campaignID uuid.UUID, orderBy, orderDir, orderField string, prioritizeNewLeads, excludeNewLeads bool) (*ContactSequencePair, *time.Time, error) {
+	// 1. Load steps (position + branch tree) once, ordered by position.
+	type stepInfo struct {
+		id uuid.UUID
+		bc models.BranchConditions
+	}
+	srows, err := r.db.Query(ctx, `SELECT id, conditions FROM sequences WHERE campaign_id = $1 ORDER BY position ASC, created_at ASC`, campaignID)
+	if err != nil {
+		return nil, nil, err
+	}
+	var steps []stepInfo
+	idxByID := map[uuid.UUID]int{}
+	for srows.Next() {
+		var si stepInfo
+		var raw []byte
+		if serr := srows.Scan(&si.id, &raw); serr != nil {
+			srows.Close()
+			return nil, nil, serr
+		}
+		if len(raw) > 0 {
+			_ = json.Unmarshal(raw, &si.bc)
+		}
+		idxByID[si.id] = len(steps)
+		steps = append(steps, si)
+	}
+	srows.Close()
+	if serr := srows.Err(); serr != nil {
+		return nil, nil, serr
+	}
+	if len(steps) == 0 {
+		return nil, nil, nil
+	}
+	entry := steps[0].id
+	now := time.Now()
+
+	// routeResult is the outcome of routing a contact out of their current step:
+	// send `target`, fully `stop`, or `wait` until a condition window elapses.
+	type routeResult struct {
+		target *uuid.UUID
+		stop   bool
+		wait   *time.Time
+	}
+	// routeNext follows the first DECIDABLE branch out of fromID. A branch whose
+	// window is still open leaves the contact waiting (so "if opened within 3d"
+	// gets its 3 days instead of being judged the instant the step is sent).
+	routeNext := func(fromID uuid.UUID, prog *CampaignContactProgress, sentAt time.Time) routeResult {
+		idx, ok := idxByID[fromID]
+		if !ok {
+			return routeResult{stop: true}
+		}
+		bc := steps[idx].bc
+		// Routing is purely the connections the user drew. A step with no
+		// outgoing connection, or whose connections don't match, ends the
+		// contact (STOP). There is NO implicit "advance to the next step by
+		// position" — steps are only linked when explicitly connected, and an
+		// unconditional connection (a branch with no conditions) is the "just go
+		// there after the wait" default.
+		if len(bc.Branches) == 0 {
+			return routeResult{stop: true}
+		}
+		for i := range bc.Branches {
+			b := &bc.Branches[i]
+			st, recheck := evaluateBranchState(b, prog, sentAt, now)
+			if st == BranchNoMatch {
+				continue
+			}
+			if st == BranchUndecided {
+				rc := recheck
+				return routeResult{wait: &rc}
+			}
+			// Matched: a nil / deleted target ends the contact (STOP).
+			if b.TargetSequenceID == nil {
+				return routeResult{stop: true}
+			}
+			if _, live := idxByID[*b.TargetSequenceID]; !live {
+				return routeResult{stop: true}
+			}
+			t := *b.TargetSequenceID
+			return routeResult{target: &t}
+		}
+		// Nothing matched -> the flow ends with STOP.
+		return routeResult{stop: true}
+	}
+
+	// 2. Ordered candidate contacts + their last-sent step (with engagement) + sent set.
 	var contactOrder string
 	switch orderBy {
 	case "email":
@@ -376,64 +483,122 @@ func (r *campaignProgressRepository) FindNextContactSequence(ctx context.Context
 		}
 	case "manual":
 		contactOrder = "cl.position NULLS LAST, c.created_at"
-	default: // created_at
+	default:
 		contactOrder = "c.created_at"
 	}
-
-	// Apply direction
 	dir := "ASC"
 	if orderDir == "desc" {
 		dir = "DESC"
 	}
-
-	query := `
-		WITH all_pairs AS (
-			-- Generate all possible contact-sequence combinations for this campaign
-			SELECT
-				cl.contact_id,
-				s.id as sequence_id,
-				ROW_NUMBER() OVER (ORDER BY ` + contactOrder + ` ` + dir + `, s.position, s.created_at) as pair_order
-			FROM campaign_leads cl
-			JOIN contacts c ON c.id = cl.contact_id
-			CROSS JOIN sequences s
-			WHERE cl.campaign_id = $1
-			  AND s.campaign_id = $1
-			  -- Skip contacts that bounced in ANY campaign
-			  AND NOT EXISTS (
-			    SELECT 1 FROM campaign_contact_progress ccp2
-			    WHERE ccp2.contact_id = cl.contact_id
-			      AND ccp2.bounced_at IS NOT NULL
-			  )
-			  -- Skip suppressed recipients (bounce, complaint, unsubscribe from deliverability)
-			  AND NOT EXISTS (
-			    SELECT 1 FROM suppressed_recipients sr
-			    JOIN campaigns camp ON camp.organization_id = sr.organization_id
-			    WHERE camp.id = $1
-			      AND LOWER(sr.email) = LOWER(c.email)
-			      AND (sr.expires_at IS NULL OR sr.expires_at > NOW())
-			  )
-		),
-		sent_pairs AS (
-			-- Get all already-sent pairs
-			SELECT contact_id, sequence_id
-			FROM campaign_contact_progress
-			WHERE campaign_id = $1
-			  AND sent_at IS NOT NULL
-		)
-		SELECT ap.contact_id, ap.sequence_id
-		FROM all_pairs ap
-		LEFT JOIN sent_pairs sp ON ap.contact_id = sp.contact_id AND ap.sequence_id = sp.sequence_id
-		WHERE sp.contact_id IS NULL  -- Not yet sent
-		ORDER BY ap.pair_order
-		LIMIT 1
-	`
-
-	pair := &ContactSequencePair{}
-	err := r.db.QueryRow(ctx, query, campaignID).Scan(&pair.ContactID, &pair.SequenceID)
-
-	if err == sql.ErrNoRows {
-		return nil, nil // No more emails to send
+	orderPrefix := ""
+	if prioritizeNewLeads {
+		// New leads (no last-sent step) first.
+		orderPrefix = "(lp.sequence_id IS NULL) DESC, "
 	}
 
-	return pair, err
+	query := `
+		SELECT cl.contact_id,
+		       lp.sequence_id, lp.sent_at, lp.opened_at, lp.clicked_at, lp.replied_at,
+		       COALESCE(ss.ids, '{}') AS sent_ids
+		FROM campaign_leads cl
+		JOIN contacts c ON c.id = cl.contact_id
+		LEFT JOIN LATERAL (
+			SELECT sequence_id, sent_at, opened_at, clicked_at, replied_at
+			FROM campaign_contact_progress p
+			WHERE p.campaign_id = $1 AND p.contact_id = cl.contact_id AND p.sent_at IS NOT NULL
+			ORDER BY p.sent_at DESC LIMIT 1
+		) lp ON true
+		LEFT JOIN LATERAL (
+			SELECT array_agg(sequence_id) AS ids
+			FROM campaign_contact_progress p2
+			WHERE p2.campaign_id = $1 AND p2.contact_id = cl.contact_id AND p2.sent_at IS NOT NULL
+		) ss ON true
+		WHERE cl.campaign_id = $1
+		  AND NOT EXISTS (
+		    SELECT 1 FROM campaign_contact_progress b
+		    WHERE b.contact_id = cl.contact_id AND b.bounced_at IS NOT NULL
+		  )
+		  AND NOT EXISTS (
+		    -- Global "stop on reply": when the campaign has it on, a contact who
+		    -- has already replied never surfaces as a candidate again.
+		    SELECT 1 FROM campaigns camp_sr
+		    JOIN campaign_contact_progress rp
+		      ON rp.contact_id = cl.contact_id AND rp.campaign_id = $1
+		    WHERE camp_sr.id = $1 AND camp_sr.stop_on_reply = true AND rp.replied_at IS NOT NULL
+		  )
+		  AND NOT EXISTS (
+		    SELECT 1 FROM suppressed_recipients sr
+		    JOIN campaigns camp ON camp.organization_id = sr.organization_id
+		    WHERE camp.id = $1
+		      AND LOWER(sr.email) = LOWER(c.email)
+		      AND (sr.expires_at IS NULL OR sr.expires_at > NOW())
+		  )
+		ORDER BY ` + orderPrefix + contactOrder + ` ` + dir + `
+	`
+
+	rows, err := r.db.Query(ctx, query, campaignID)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	var earliestWait *time.Time
+	for rows.Next() {
+		var contactID uuid.UUID
+		var lastSeq *uuid.UUID
+		var sentAt, openedAt, clickedAt, repliedAt *time.Time
+		var sentIDs []uuid.UUID
+		if serr := rows.Scan(&contactID, &lastSeq, &sentAt, &openedAt, &clickedAt, &repliedAt, &sentIDs); serr != nil {
+			return nil, nil, serr
+		}
+
+		isNew := lastSeq == nil
+		var res routeResult
+		if isNew {
+			if excludeNewLeads {
+				continue
+			}
+			e := entry
+			res = routeResult{target: &e}
+		} else {
+			prog := &CampaignContactProgress{
+				CampaignID: campaignID, ContactID: contactID, SequenceID: *lastSeq,
+				SentAt: sentAt, OpenedAt: openedAt, ClickedAt: clickedAt, RepliedAt: repliedAt,
+			}
+			sa := time.Time{}
+			if sentAt != nil {
+				sa = *sentAt
+			}
+			res = routeNext(*lastSeq, prog, sa)
+		}
+
+		if res.wait != nil {
+			// Not decidable yet — remember the soonest window so the scheduler
+			// can re-check exactly then instead of guessing or completing.
+			if earliestWait == nil || res.wait.Before(*earliestWait) {
+				earliestWait = res.wait
+			}
+			continue
+		}
+		if res.stop || res.target == nil {
+			continue // reached the end / a STOP
+		}
+		// Loop guard: never re-send a step the contact already received.
+		already := false
+		for _, sid := range sentIDs {
+			if sid == *res.target {
+				already = true
+				break
+			}
+		}
+		if already {
+			continue
+		}
+		return &ContactSequencePair{ContactID: contactID, SequenceID: *res.target, IsNewLead: isNew}, nil, nil
+	}
+	if rerr := rows.Err(); rerr != nil {
+		return nil, nil, rerr
+	}
+	// Nobody sendable now. If contacts are waiting on a window, hand back the
+	// soonest re-check time so the scheduler defers rather than completing.
+	return nil, earliestWait, nil
 }

@@ -89,6 +89,12 @@ type OrganizationService interface {
 	// compare counts against.
 	GetEffectiveLimits(ctx context.Context, orgID uuid.UUID) (*models.OrganizationLimits, *errx.Error)
 
+	// WebhookDispatchLimit returns the org's per-minute cap on webhook +
+	// integration fan-out, derived from the org's effective plan limits. Used by
+	// the webhook dispatch throttle. Never errors — falls back to the generous
+	// base cap so dispatch is never blocked by a limits-lookup failure.
+	WebhookDispatchLimit(ctx context.Context, orgID uuid.UUID) int
+
 	// Limit-increase request workflow. Users self-serve via
 	// SubmitLimitIncreaseRequest from the dashboard; admins drain the
 	// queue with the AdminListLimitRequests / ApproveLimitRequest /
@@ -871,6 +877,30 @@ func (s *organizationService) GetEffectiveLimits(ctx context.Context, orgID uuid
 		MaxContacts:        resolve(ovMaxContacts, planLimits.MaxContacts, config.HardCapContacts),
 		DailyCampaignLimit: resolve(ovDaily, planLimits.DailyCampaignLimit, config.HardCapDailyCampaignSends),
 	}, nil
+}
+
+// WebhookDispatchLimit derives the org's per-minute webhook/integration fan-out
+// cap from its effective plan limits. Plan-based: it scales with the org's
+// resolved mailbox allowance (since webhook volume tracks sending activity),
+// floored at a generous baseline so even free/no-plan orgs never trip the
+// throttle under normal use, and ceilinged so an "unlimited" plan stays bounded.
+// Fail-open generous: any error yields the base cap rather than blocking.
+func (s *organizationService) WebhookDispatchLimit(ctx context.Context, orgID uuid.UUID) int {
+	limit := config.WebhookDispatchBasePerMinute
+
+	eff, err := s.GetEffectiveLimits(ctx, orgID)
+	if err != nil || eff == nil {
+		return limit
+	}
+	if eff.MaxEmailAccounts != nil {
+		if scaled := *eff.MaxEmailAccounts * config.WebhookDispatchPerMailboxPerMinute; scaled > limit {
+			limit = scaled
+		}
+	}
+	if limit > config.WebhookDispatchMaxPerMinute {
+		limit = config.WebhookDispatchMaxPerMinute
+	}
+	return limit
 }
 
 // limitFieldUpdater maps a request's `field` string onto the override

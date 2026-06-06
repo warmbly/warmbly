@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -39,10 +40,40 @@ type CampaignRepository interface {
 	CountActiveForOrganization(ctx context.Context, orgID uuid.UUID) (int, error)
 	AccountHasActiveCampaign(ctx context.Context, accountID uuid.UUID) (bool, error)
 	// CountActiveCampaignsForAccount returns how many active campaigns send
-	// from the given mailbox (matched through the campaign's email tags).
-	// Used by the warmup scheduler to keep a low-volume health-check warmup
-	// running whenever a mailbox is in use by a live campaign.
+	// from the given mailbox (matched through the campaign's email tags OR an
+	// explicit campaign_senders row). Used by the warmup scheduler to keep a
+	// low-volume health-check warmup running whenever a mailbox is in use by a
+	// live campaign.
 	CountActiveCampaignsForAccount(ctx context.Context, accountID uuid.UUID) (int, error)
+
+	// ── Explicit sender pool (feature 1) ────────────────────────────────
+	// GetCampaignSenders returns the campaign's explicit sender rows.
+	GetCampaignSenders(ctx context.Context, campaignID uuid.UUID) ([]models.CampaignSender, error)
+	// ReplaceCampaignSenders atomically replaces the explicit sender pool
+	// (delete-all + multi-insert in one tx). Every account must belong to the
+	// campaign owner; an empty list clears the pool (the campaign then resolves
+	// from its email tags, or all active mailboxes when it has none).
+	ReplaceCampaignSenders(ctx context.Context, campaignID uuid.UUID, in []models.CampaignSenderInput) ([]models.CampaignSender, *errx.Error)
+	// AdvanceCampaignSender bumps the round-robin cursor and stamps last_sent_at
+	// for the chosen mailbox in a single atomic UPDATE. Fires only on a genuine
+	// send so the round-robin/LRU cursors stay coherent under concurrency.
+	AdvanceCampaignSender(ctx context.Context, campaignID, accountID uuid.UUID) error
+
+	// ── Per-campaign ramp + daily counters (features 2 & 4) ─────────────
+	// AdvanceRampLevel advances the persisted ramp level once per UTC day.
+	// Idempotent and a no-op when ramp is disabled or already advanced today.
+	AdvanceRampLevel(ctx context.Context, campaignID uuid.UUID) error
+	// IncrementCampaignDailySend bumps today's send counters; newLead also
+	// increments new_leads_started (a position-1 send).
+	IncrementCampaignDailySend(ctx context.Context, campaignID uuid.UUID, newLead bool) error
+	// CountNewLeadsStartedToday returns new_leads_started for the current UTC
+	// day (0 when no row exists yet).
+	CountNewLeadsStartedToday(ctx context.Context, campaignID uuid.UUID) (int, error)
+
+	// ── Campaign-scoped tracking domain (feature 5) ─────────────────────
+	// SetCampaignTrackingDomainVerified flips the verified flag / timestamp on
+	// the campaign-scoped tracking-domain override.
+	SetCampaignTrackingDomainVerified(ctx context.Context, campaignID uuid.UUID, verified bool, at *time.Time) error
 }
 
 type campaignRepository struct {
@@ -55,13 +86,24 @@ func NewCampaignRepostory(db *db.DB) CampaignRepository {
 	}
 }
 
+// CAMPAIGN_SELECT and its scan dests (getCampaign), CAMPAIGN_SELECT_FULL +
+// getCampaignFull, and the hand-written GetByID Scan MUST stay in lockstep:
+// the new send-control columns are appended AFTER created_at in the base list
+// (and BETWEEN created_at and the tag/folder aggregates in the _FULL list) so
+// every scanner reads the same column order. A mismatch is a runtime scan error
+// that compiles and lints cleanly — change all four together.
 const CAMPAIGN_SELECT = `id, name, description, status,
 		  stop_on_reply, open_tracking, link_tracking,
 		  text_only, daily_limit, unsubscribe_header, risky_emails,
 		  cc_addr, bcc_addr, start_date, end_date, timezone, days,
 		  start_time, end_time,
 		  contact_order_by, contact_order_dir, contact_order_field,
-		  updated_at, created_at`
+		  updated_at, created_at,
+		  sender_strategy, rotation_mode,
+		  ramp_enabled, ramp_start, ramp_increment, ramp_ceiling, ramp_level, ramp_level_date,
+		  esp_match_mode, max_new_leads_per_day, prioritize_new_leads,
+		  tracking_domain, tracking_domain_verified, tracking_domain_verified_at,
+		  schedule_windows`
 
 func getCampaign(rows db.Scannable, campaign *models.Campaign, extra ...any) error {
 	var dest []any = []any{
@@ -72,6 +114,11 @@ func getCampaign(rows db.Scannable, campaign *models.Campaign, extra ...any) err
 		&campaign.StartTime, &campaign.EndTime,
 		&campaign.ContactOrderBy, &campaign.ContactOrderDir, &campaign.ContactOrderField,
 		&campaign.UpdatedAt, &campaign.CreatedAt,
+		&campaign.SenderStrategy, &campaign.RotationMode,
+		&campaign.RampEnabled, &campaign.RampStart, &campaign.RampIncrement, &campaign.RampCeiling, &campaign.RampLevel, &campaign.RampLevelDate,
+		&campaign.ESPMatchMode, &campaign.MaxNewLeadsPerDay, &campaign.PrioritizeNewLeads,
+		&campaign.TrackingDomain, &campaign.TrackingDomainVerified, &campaign.TrackingDomainVerifiedAt,
+		&campaign.ScheduleWindows,
 	}
 	dest = append(dest, extra...)
 	return rows.Scan(
@@ -87,6 +134,11 @@ const CAMPAIGN_SELECT_FULL = `
 	c.start_time, c.end_time,
 	c.contact_order_by, c.contact_order_dir, c.contact_order_field,
 	c.updated_at, c.created_at,
+	c.sender_strategy, c.rotation_mode,
+	c.ramp_enabled, c.ramp_start, c.ramp_increment, c.ramp_ceiling, c.ramp_level, c.ramp_level_date,
+	c.esp_match_mode, c.max_new_leads_per_day, c.prioritize_new_leads,
+	c.tracking_domain, c.tracking_domain_verified, c.tracking_domain_verified_at,
+	c.schedule_windows,
 	COALESCE(array_agg(cet.tag_id) FILTER (WHERE cet.tag_id IS NOT NULL), '{}') AS email_tag_ids,
 	COALESCE(array_agg(cec.folder_id) FILTER (WHERE cec.folder_id IS NOT NULL), '{}') AS email_folder_ids
 `
@@ -214,6 +266,74 @@ func (r *campaignRepository) Create(ctx context.Context, userID string, orgID *u
 		riskyEmails = *data.RiskyEmails
 	}
 
+	// ── Net-new send controls. Defaults reproduce today's behavior exactly. ──
+	senderStrategy := "tags"
+	if data.SenderStrategy != nil {
+		if err := validate.CampaignSenderStrategy(*data.SenderStrategy); err != nil {
+			return nil, err
+		}
+		senderStrategy = *data.SenderStrategy
+	}
+	rotationMode := "weighted"
+	if data.RotationMode != nil {
+		if err := validate.CampaignRotationMode(*data.RotationMode); err != nil {
+			return nil, err
+		}
+		rotationMode = *data.RotationMode
+	}
+	rampEnabled := false
+	if data.RampEnabled != nil {
+		rampEnabled = *data.RampEnabled
+	}
+	rampStart := config.CampaignRampStartDefault
+	if data.RampStart != nil {
+		rampStart = *data.RampStart
+	}
+	rampIncrement := config.CampaignRampIncrementDefault
+	if data.RampIncrement != nil {
+		rampIncrement = *data.RampIncrement
+	}
+	rampCeiling := config.CampaignRampCeilingDefault
+	if data.RampCeiling != nil {
+		rampCeiling = *data.RampCeiling
+	}
+	if data.RampEnabled != nil || data.RampStart != nil || data.RampIncrement != nil || data.RampCeiling != nil {
+		if err := validate.CampaignRamp(rampStart, rampIncrement, rampCeiling); err != nil {
+			return nil, err
+		}
+	}
+	espMatchMode := "off"
+	if data.ESPMatchMode != nil {
+		if err := validate.CampaignESPMatchMode(*data.ESPMatchMode); err != nil {
+			return nil, err
+		}
+		espMatchMode = *data.ESPMatchMode
+	}
+	maxNewLeads := 0
+	if data.MaxNewLeadsPerDay != nil {
+		if err := validate.CampaignMaxNewLeads(*data.MaxNewLeadsPerDay); err != nil {
+			return nil, err
+		}
+		maxNewLeads = *data.MaxNewLeadsPerDay
+	}
+	prioritizeNewLeads := false
+	if data.PrioritizeNewLeads != nil {
+		prioritizeNewLeads = *data.PrioritizeNewLeads
+	}
+	trackingDomain := ""
+	if data.TrackingDomain != nil {
+		if err := validate.CampaignTrackingDomain(*data.TrackingDomain); err != nil {
+			return nil, err
+		}
+		trackingDomain = strings.TrimSpace(strings.ToLower(*data.TrackingDomain))
+	}
+	// An explicit-strategy campaign must ship at least one sender (the scheduler
+	// otherwise falls back to tags, but persisting an empty explicit pool is a
+	// configuration error the caller should fix up front).
+	if senderStrategy == "explicit" && len(data.Senders) == 0 {
+		return nil, errx.New(errx.BadRequest, "explicit sender strategy requires at least one sender")
+	}
+
 	tx, err := r.DB.Begin(ctx)
 	if err != nil {
 		db.CaptureError(err, "", nil, "begin")
@@ -235,6 +355,10 @@ func (r *campaignRepository) Create(ctx context.Context, userID string, orgID *u
 			daily_limit, unsubscribe_header, risky_emails,
 			cc_addr, bcc_addr,
 			start_date, end_date, timezone, days, start_time, end_time,
+			sender_strategy, rotation_mode,
+			ramp_enabled, ramp_start, ramp_increment, ramp_ceiling,
+			esp_match_mode, max_new_leads_per_day, prioritize_new_leads,
+			tracking_domain,
 			created_at, updated_at
 		) VALUES (
 			gen_random_uuid(), $1, $2, $3, $4,
@@ -242,31 +366,45 @@ func (r *campaignRepository) Create(ctx context.Context, userID string, orgID *u
 			$9, $10, $11,
 			$12, $13,
 			$14, $15, $16, $17, $18, $19,
+			$20, $21,
+			$22, $23, $24, $25,
+			$26, $27, $28,
+			$29,
 			NOW(), NOW()
 		)
 		RETURNING %s
 	`, CAMPAIGN_SELECT)
 
 	params := []any{
-		data.Name,        // $1
-		data.Description, // $2
-		userID,           // $3
-		orgID,            // $4 (nullable)
-		stopOnReply,      // $5
-		openTracking,     // $6
-		linkTracking,     // $7
-		textOnly,         // $8
-		dailyLimit,       // $9
-		unsubHeader,      // $10
-		riskyEmails,      // $11
-		cc,               // $12
-		bcc,              // $13
-		data.StartDate,   // $14
-		data.EndDate,     // $15
-		timezone,         // $16
-		days,             // $17
-		startTime,        // $18
-		endTime,          // $19
+		data.Name,          // $1
+		data.Description,   // $2
+		userID,             // $3
+		orgID,              // $4 (nullable)
+		stopOnReply,        // $5
+		openTracking,       // $6
+		linkTracking,       // $7
+		textOnly,           // $8
+		dailyLimit,         // $9
+		unsubHeader,        // $10
+		riskyEmails,        // $11
+		cc,                 // $12
+		bcc,                // $13
+		data.StartDate,     // $14
+		data.EndDate,       // $15
+		timezone,           // $16
+		days,               // $17
+		startTime,          // $18
+		endTime,            // $19
+		senderStrategy,     // $20
+		rotationMode,       // $21
+		rampEnabled,        // $22
+		rampStart,          // $23
+		rampIncrement,      // $24
+		rampCeiling,        // $25
+		espMatchMode,       // $26
+		maxNewLeads,        // $27
+		prioritizeNewLeads, // $28
+		trackingDomain,     // $29
 	}
 
 	row := tx.QueryRow(ctx, insertSQL, params...)
@@ -298,6 +436,20 @@ func (r *campaignRepository) Create(ctx context.Context, userID string, orgID *u
 		campaign.Folders = folders
 	}
 
+	// Explicit sender pool (feature 1). Only persisted when the caller passed a
+	// list; validation/ownership checks live in syncCampaignSendersTx.
+	if len(data.Senders) > 0 {
+		orgStr := ""
+		if orgID != nil {
+			orgStr = orgID.String()
+		}
+		senders, xerr := syncCampaignSendersTx(ctx, tx, campaign.ID, userID, orgStr, data.Senders)
+		if xerr != nil {
+			return nil, xerr
+		}
+		campaign.Senders = senders
+	}
+
 	// Initial sequences. Position is the array index; wait_after defaults
 	// to 0 for the first step and 3 days for any follow-ups so a default
 	// wizard run still produces something usable.
@@ -308,6 +460,9 @@ func (r *campaignRepository) Create(ctx context.Context, userID string, orgID *u
 				waitAfter = 3
 			}
 			if seq.WaitAfter != nil {
+				if *seq.WaitAfter < 0 || *seq.WaitAfter > config.SequenceWaitAfterMax {
+					return nil, errx.ErrSequenceWaitAfter
+				}
 				waitAfter = *seq.WaitAfter
 			}
 			bodySync := true
@@ -708,6 +863,14 @@ func (r *campaignRepository) Update(ctx context.Context, userID, campaignID stri
 		args = append(args, *data.EndTime)
 		argPos++
 	}
+	if data.ScheduleWindows != nil {
+		if err := validate.CampaignScheduleWindows(data.ScheduleWindows); err != nil {
+			return nil, err
+		}
+		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", "schedule_windows", argPos))
+		args = append(args, *data.ScheduleWindows)
+		argPos++
+	}
 	if data.ContactOrderBy != nil {
 		validOrderBy := map[string]bool{
 			"created_at": true, "email": true, "name": true,
@@ -734,7 +897,89 @@ func (r *campaignRepository) Update(ctx context.Context, userID, campaignID stri
 		argPos++
 	}
 
-	if argPos == 3 && data.EmailTags == nil {
+	// ── Net-new send controls ───────────────────────────────────────────
+	if data.SenderStrategy != nil {
+		if err := validate.CampaignSenderStrategy(*data.SenderStrategy); err != nil {
+			return nil, err
+		}
+		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", "sender_strategy", argPos))
+		args = append(args, *data.SenderStrategy)
+		argPos++
+	}
+	if data.RotationMode != nil {
+		if err := validate.CampaignRotationMode(*data.RotationMode); err != nil {
+			return nil, err
+		}
+		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", "rotation_mode", argPos))
+		args = append(args, *data.RotationMode)
+		argPos++
+	}
+	if data.RampEnabled != nil {
+		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", "ramp_enabled", argPos))
+		args = append(args, *data.RampEnabled)
+		argPos++
+	}
+	if data.RampStart != nil {
+		if *data.RampStart < 1 || *data.RampStart > 100 {
+			return nil, errx.New(errx.BadRequest, "ramp start must be between 1 and 100")
+		}
+		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", "ramp_start", argPos))
+		args = append(args, *data.RampStart)
+		argPos++
+	}
+	if data.RampIncrement != nil {
+		if *data.RampIncrement < 0 || *data.RampIncrement > 100 {
+			return nil, errx.New(errx.BadRequest, "ramp increment must be between 0 and 100")
+		}
+		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", "ramp_increment", argPos))
+		args = append(args, *data.RampIncrement)
+		argPos++
+	}
+	if data.RampCeiling != nil {
+		if *data.RampCeiling < 1 || *data.RampCeiling > 100 {
+			return nil, errx.New(errx.BadRequest, "ramp ceiling must be between 1 and 100")
+		}
+		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", "ramp_ceiling", argPos))
+		args = append(args, *data.RampCeiling)
+		argPos++
+	}
+	if data.RampStart != nil && data.RampCeiling != nil && *data.RampStart > *data.RampCeiling {
+		return nil, errx.New(errx.BadRequest, "ramp start cannot exceed ramp ceiling")
+	}
+	if data.ESPMatchMode != nil {
+		if err := validate.CampaignESPMatchMode(*data.ESPMatchMode); err != nil {
+			return nil, err
+		}
+		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", "esp_match_mode", argPos))
+		args = append(args, *data.ESPMatchMode)
+		argPos++
+	}
+	if data.MaxNewLeadsPerDay != nil {
+		if err := validate.CampaignMaxNewLeads(*data.MaxNewLeadsPerDay); err != nil {
+			return nil, err
+		}
+		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", "max_new_leads_per_day", argPos))
+		args = append(args, *data.MaxNewLeadsPerDay)
+		argPos++
+	}
+	if data.PrioritizeNewLeads != nil {
+		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", "prioritize_new_leads", argPos))
+		args = append(args, *data.PrioritizeNewLeads)
+		argPos++
+	}
+	if data.TrackingDomain != nil {
+		if err := validate.CampaignTrackingDomain(*data.TrackingDomain); err != nil {
+			return nil, err
+		}
+		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", "tracking_domain", argPos))
+		args = append(args, *data.TrackingDomain)
+		argPos++
+		// Any change to the override invalidates a prior verification until
+		// the CNAME is re-resolved (only a verified override is honored).
+		setClauses = append(setClauses, "tracking_domain_verified = false", "tracking_domain_verified_at = NULL")
+	}
+
+	if argPos == 3 && data.EmailTags == nil && data.Folders == nil {
 		return nil, errx.ErrNotEnough
 	}
 
@@ -832,6 +1077,11 @@ func (r *campaignRepository) GetByID(ctx context.Context, campaignID uuid.UUID) 
 		&campaign.StartTime, &campaign.EndTime,
 		&campaign.ContactOrderBy, &campaign.ContactOrderDir, &campaign.ContactOrderField,
 		&campaign.UpdatedAt, &campaign.CreatedAt,
+		&campaign.SenderStrategy, &campaign.RotationMode,
+		&campaign.RampEnabled, &campaign.RampStart, &campaign.RampIncrement, &campaign.RampCeiling, &campaign.RampLevel, &campaign.RampLevelDate,
+		&campaign.ESPMatchMode, &campaign.MaxNewLeadsPerDay, &campaign.PrioritizeNewLeads,
+		&campaign.TrackingDomain, &campaign.TrackingDomainVerified, &campaign.TrackingDomainVerifiedAt,
+		&campaign.ScheduleWindows,
 		&campaign.EmailTags, &campaign.Folders,
 	)
 	if err != nil {
@@ -848,7 +1098,7 @@ func (r *campaignRepository) GetByID(ctx context.Context, campaignID uuid.UUID) 
 // GetSequenceByID retrieves a sequence by ID
 func (r *campaignRepository) GetSequenceByID(ctx context.Context, sequenceID uuid.UUID) (*models.Sequence, error) {
 	query := `
-		SELECT id, name, subject, body_plain, body_html, body_sync, body_code, wait_after, updated_at, created_at
+		SELECT id, name, subject, body_plain, body_html, body_sync, body_code, wait_after, kind, action, updated_at, created_at
 		FROM sequences
 		WHERE id = $1
 	`
@@ -856,7 +1106,7 @@ func (r *campaignRepository) GetSequenceByID(ctx context.Context, sequenceID uui
 	var seq models.Sequence
 	err := r.DB.QueryRow(ctx, query, sequenceID).Scan(
 		&seq.ID, &seq.Name, &seq.Subject, &seq.BodyPlain, &seq.BodyHTML,
-		&seq.BodySync, &seq.BodyCode, &seq.WaitAfter, &seq.UpdatedAt, &seq.CreatedAt,
+		&seq.BodySync, &seq.BodyCode, &seq.WaitAfter, &seq.Kind, &seq.Action, &seq.UpdatedAt, &seq.CreatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -938,9 +1188,20 @@ func (r *campaignRepository) PauseAllByUserID(ctx context.Context, userID uuid.U
 	return err
 }
 
-// StartCampaign sets campaign status to active and updates last_status_change_at
+// StartCampaign sets campaign status to active and updates last_status_change_at.
+// When ramp is enabled and not yet started (ramp_level = 0), it also seeds the
+// ramp at ramp_start for today so the first day sends at the ramp floor rather
+// than ramp_start+increment. Pause/resume preserves ramp_level, so a resume
+// continues from the persisted level (this only fires on a fresh start).
 func (r *campaignRepository) StartCampaign(ctx context.Context, campaignID uuid.UUID) error {
-	query := `UPDATE campaigns SET status = 'active', last_status_change_at = NOW(), updated_at = NOW() WHERE id = $1`
+	query := `
+		UPDATE campaigns
+		SET status = 'active',
+		    last_status_change_at = NOW(),
+		    updated_at = NOW(),
+		    ramp_level = CASE WHEN ramp_enabled AND ramp_level = 0 THEN ramp_start ELSE ramp_level END,
+		    ramp_level_date = CASE WHEN ramp_enabled AND ramp_level = 0 THEN CURRENT_DATE ELSE ramp_level_date END
+		WHERE id = $1`
 	_, err := r.DB.Exec(ctx, query, campaignID)
 	return err
 }
@@ -974,16 +1235,30 @@ func (r *campaignRepository) ValidateCampaignReady(ctx context.Context, campaign
 		return errx.New(errx.BadRequest, "campaign must have at least one contact")
 	}
 
-	// Check email tags
-	var tagCount int
-	err = r.DB.QueryRow(ctx, `SELECT COUNT(*) FROM campaign_email_tags WHERE campaign_id = $1`, campaignID).Scan(&tagCount)
-	if err != nil {
+	// Sender pool (unified): valid if it has any enabled explicit sender OR any
+	// email tag OR — when neither is selected ("all") — at least one active
+	// mailbox for the owner to fall back to.
+	var senderCount int
+	if err := r.DB.QueryRow(ctx, `SELECT COUNT(*) FROM campaign_senders WHERE campaign_id = $1 AND enabled`, campaignID).Scan(&senderCount); err != nil {
 		return err
 	}
-	if tagCount == 0 {
-		return errx.New(errx.BadRequest, "campaign must have at least one email tag")
+	var tagCount int
+	if err := r.DB.QueryRow(ctx, `SELECT COUNT(*) FROM campaign_email_tags WHERE campaign_id = $1`, campaignID).Scan(&tagCount); err != nil {
+		return err
 	}
-
+	if senderCount > 0 || tagCount > 0 {
+		return nil
+	}
+	var activeMailboxes int
+	if err := r.DB.QueryRow(ctx, `
+		SELECT COUNT(*) FROM email_accounts
+		WHERE user_id = (SELECT user_id FROM campaigns WHERE id = $1) AND status = 'active'
+	`, campaignID).Scan(&activeMailboxes); err != nil {
+		return err
+	}
+	if activeMailboxes == 0 {
+		return errx.New(errx.BadRequest, "campaign must have at least one active sending mailbox")
+	}
 	return nil
 }
 
@@ -1026,9 +1301,15 @@ func (r *campaignRepository) CountActiveForOrganization(ctx context.Context, org
 	return count, err
 }
 
+// AccountHasActiveCampaign reports whether the mailbox backs at least one active
+// campaign, counting BOTH tag-based campaigns AND explicit-sender campaigns
+// (campaign_senders). The explicit lane matters for the warmup health-check
+// floor: an explicit-sender mailbox sends cold and must keep its in-campaign
+// warmup heartbeat just like a tag-based one.
 func (r *campaignRepository) AccountHasActiveCampaign(ctx context.Context, accountID uuid.UUID) (bool, error) {
 	query := `
 		SELECT EXISTS (
+			-- tag-resolved
 			SELECT 1
 			FROM email_accounts ea
 			JOIN email_tags et ON et.email_id = ea.id
@@ -1037,6 +1318,26 @@ func (r *campaignRepository) AccountHasActiveCampaign(ctx context.Context, accou
 			WHERE ea.id = $1
 			  AND ea.status = 'active'
 			  AND c.status = 'active'
+			UNION ALL
+			-- explicit sender
+			SELECT 1
+			FROM campaign_senders cs
+			JOIN campaigns c ON c.id = cs.campaign_id
+			JOIN email_accounts ea ON ea.id = cs.email_account_id
+			WHERE cs.email_account_id = $1
+			  AND cs.enabled
+			  AND ea.status = 'active'
+			  AND c.status = 'active'
+			UNION ALL
+			-- "all" campaigns (no tags, no enabled senders) back every active mailbox of their owner
+			SELECT 1
+			FROM campaigns c
+			JOIN email_accounts ea ON ea.user_id = c.user_id
+			WHERE ea.id = $1
+			  AND ea.status = 'active'
+			  AND c.status = 'active'
+			  AND NOT EXISTS (SELECT 1 FROM campaign_email_tags cet2 WHERE cet2.campaign_id = c.id)
+			  AND NOT EXISTS (SELECT 1 FROM campaign_senders cs2 WHERE cs2.campaign_id = c.id AND cs2.enabled)
 		)
 	`
 	var exists bool
@@ -1044,16 +1345,290 @@ func (r *campaignRepository) AccountHasActiveCampaign(ctx context.Context, accou
 	return exists, err
 }
 
+// CountActiveCampaignsForAccount counts distinct active campaigns the mailbox
+// backs, via the campaign's email tags (tag strategy) OR an enabled
+// campaign_senders row (explicit strategy).
 func (r *campaignRepository) CountActiveCampaignsForAccount(ctx context.Context, accountID uuid.UUID) (int, error) {
 	query := `
-		SELECT COUNT(DISTINCT c.id)
-		FROM campaigns c
-		JOIN campaign_email_tags cet ON cet.campaign_id = c.id
-		JOIN email_tags et ON et.tag_id = cet.tag_id
-		WHERE et.email_id = $1 AND c.status = 'active'`
+		SELECT COUNT(*) FROM (
+			-- tag-resolved
+			SELECT c.id
+			FROM campaigns c
+			JOIN campaign_email_tags cet ON cet.campaign_id = c.id
+			JOIN email_tags et ON et.tag_id = cet.tag_id
+			WHERE et.email_id = $1
+			  AND c.status = 'active'
+			UNION
+			-- explicit sender
+			SELECT c.id
+			FROM campaigns c
+			JOIN campaign_senders cs ON cs.campaign_id = c.id
+			WHERE cs.email_account_id = $1
+			  AND cs.enabled
+			  AND c.status = 'active'
+			UNION
+			-- "all" campaigns (no tags, no enabled senders) count for every active mailbox of their owner
+			SELECT c.id
+			FROM campaigns c
+			JOIN email_accounts ea ON ea.user_id = c.user_id
+			WHERE ea.id = $1
+			  AND ea.status = 'active'
+			  AND c.status = 'active'
+			  AND NOT EXISTS (SELECT 1 FROM campaign_email_tags cet2 WHERE cet2.campaign_id = c.id)
+			  AND NOT EXISTS (SELECT 1 FROM campaign_senders cs2 WHERE cs2.campaign_id = c.id AND cs2.enabled)
+		) AS active_campaigns`
 	var count int
 	err := r.DB.QueryRow(ctx, query, accountID).Scan(&count)
 	return count, err
+}
+
+// syncCampaignSendersTx replaces the explicit sender pool inside an existing tx.
+// It deletes the current rows and multi-inserts the new set, validating that
+// every account is reachable in the campaign's context — by the campaign's
+// organization (orgID) for org-scoped campaigns, or by the owner (userID) for a
+// personal campaign with no org. rotation_position and last_sent_at are
+// preserved for accounts that remain in the pool so a rewrite of weights/enabled
+// flags does not reset the round-robin/LRU cursors.
+func syncCampaignSendersTx(ctx context.Context, tx pgx.Tx, campaignID uuid.UUID, userID, orgID string, in []models.CampaignSenderInput) ([]models.CampaignSender, *errx.Error) {
+	accountIDs := make([]uuid.UUID, 0, len(in))
+	weights := make(map[uuid.UUID]int, len(in))
+	enabledFor := make(map[uuid.UUID]bool, len(in))
+	seen := make(map[uuid.UUID]struct{}, len(in))
+	for _, s := range in {
+		if s.EmailAccountID == uuid.Nil {
+			return nil, errx.New(errx.BadRequest, "sender email_account_id is required")
+		}
+		if _, dup := seen[s.EmailAccountID]; dup {
+			return nil, errx.New(errx.BadRequest, "duplicate sender email_account_id")
+		}
+		seen[s.EmailAccountID] = struct{}{}
+		weight := config.CampaignSenderWeightDefault
+		if s.Weight != nil {
+			if err := validate.CampaignSenderWeight(*s.Weight); err != nil {
+				return nil, err
+			}
+			weight = *s.Weight
+		}
+		enabled := true
+		if s.Enabled != nil {
+			enabled = *s.Enabled
+		}
+		accountIDs = append(accountIDs, s.EmailAccountID)
+		weights[s.EmailAccountID] = weight
+		enabledFor[s.EmailAccountID] = enabled
+	}
+
+	// Ownership check: every referenced mailbox must be reachable in the
+	// campaign's context. Org-scoped campaigns (the org-gated senders route)
+	// validate against the organization, so any member with PermManageCampaigns
+	// can pick the org's mailboxes; a personal campaign with no org falls back to
+	// the owner's user_id. (ownerCol is a fixed literal, never user input.)
+	ownerCol, ownerVal := "user_id", userID
+	if orgID != "" {
+		ownerCol, ownerVal = "organization_id", orgID
+	}
+	var ownedCount int
+	if err := tx.QueryRow(ctx,
+		`SELECT COUNT(*) FROM email_accounts WHERE `+ownerCol+` = $1 AND id = ANY($2)`,
+		ownerVal, accountIDs,
+	).Scan(&ownedCount); err != nil {
+		db.CaptureError(err, "campaign_senders ownership", []any{ownerVal}, "queryrow")
+		return nil, errx.InternalError()
+	}
+	if ownedCount != len(accountIDs) {
+		return nil, errx.New(errx.BadRequest, "one or more sender mailboxes do not belong to this account")
+	}
+
+	// Delete rows that are no longer in the set (CASCADE-safe; preserves the
+	// surviving rows so their cursors carry over).
+	if _, err := tx.Exec(ctx,
+		`DELETE FROM campaign_senders WHERE campaign_id = $1 AND email_account_id <> ALL($2)`,
+		campaignID, accountIDs,
+	); err != nil {
+		db.CaptureError(err, "campaign_senders delete", []any{campaignID}, "exec")
+		return nil, errx.InternalError()
+	}
+
+	// Upsert the desired rows. ON CONFLICT updates weight/enabled but leaves
+	// rotation_position/last_sent_at untouched.
+	for _, id := range accountIDs {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO campaign_senders (campaign_id, email_account_id, weight, enabled)
+			VALUES ($1, $2, $3, $4)
+			ON CONFLICT (campaign_id, email_account_id)
+			DO UPDATE SET weight = EXCLUDED.weight, enabled = EXCLUDED.enabled
+		`, campaignID, id, weights[id], enabledFor[id]); err != nil {
+			db.CaptureError(err, "campaign_senders upsert", []any{campaignID, id}, "exec")
+			return nil, errx.InternalError()
+		}
+	}
+
+	return readCampaignSendersTx(ctx, tx, campaignID)
+}
+
+// campaignSenderQuerier is satisfied by both *db.DB (via the embedded pool) and
+// pgx.Tx, so readCampaignSendersTx works inside or outside a transaction.
+type campaignSenderQuerier interface {
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+}
+
+// readCampaignSendersTx loads the explicit sender pool inside a tx.
+func readCampaignSendersTx(ctx context.Context, q campaignSenderQuerier, campaignID uuid.UUID) ([]models.CampaignSender, *errx.Error) {
+	rows, err := q.Query(ctx, `
+		SELECT email_account_id, weight, last_sent_at, enabled
+		FROM campaign_senders
+		WHERE campaign_id = $1
+		ORDER BY created_at ASC, email_account_id ASC
+	`, campaignID)
+	if err != nil {
+		db.CaptureError(err, "campaign_senders select", []any{campaignID}, "query")
+		return nil, errx.InternalError()
+	}
+	defer rows.Close()
+
+	senders := make([]models.CampaignSender, 0)
+	for rows.Next() {
+		var s models.CampaignSender
+		if err := rows.Scan(&s.EmailAccountID, &s.Weight, &s.LastSentAt, &s.Enabled); err != nil {
+			db.CaptureError(err, "", nil, "scan")
+			return nil, errx.InternalError()
+		}
+		senders = append(senders, s)
+	}
+	if err := rows.Err(); err != nil {
+		db.CaptureError(err, "", nil, "rows")
+		return nil, errx.InternalError()
+	}
+	return senders, nil
+}
+
+// GetCampaignSenders returns the explicit sender pool for a campaign.
+func (r *campaignRepository) GetCampaignSenders(ctx context.Context, campaignID uuid.UUID) ([]models.CampaignSender, error) {
+	senders, xerr := readCampaignSendersTx(ctx, r.DB, campaignID)
+	if xerr != nil {
+		return nil, xerr
+	}
+	return senders, nil
+}
+
+// ReplaceCampaignSenders atomically swaps the explicit sender pool. An empty
+// list is rejected — clearing senders should be done by switching the campaign
+// back to sender_strategy='tags'.
+func (r *campaignRepository) ReplaceCampaignSenders(ctx context.Context, campaignID uuid.UUID, in []models.CampaignSenderInput) ([]models.CampaignSender, *errx.Error) {
+	// An empty list is allowed: it clears the explicit sender pool, so the
+	// campaign falls back to its email tags or, with neither, to every active
+	// mailbox of the owner. syncCampaignSendersTx handles the empty set safely
+	// (it deletes all current rows and inserts none).
+
+	// Resolve the campaign owner + organization so we can validate mailbox
+	// ownership against the org (the senders route is org-scoped).
+	var userID string
+	var orgID *uuid.UUID
+	if err := r.DB.QueryRow(ctx, `SELECT user_id, organization_id FROM campaigns WHERE id = $1`, campaignID).Scan(&userID, &orgID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, errx.ErrNotFound
+		}
+		db.CaptureError(err, "campaign owner lookup", []any{campaignID}, "queryrow")
+		return nil, errx.InternalError()
+	}
+	orgStr := ""
+	if orgID != nil {
+		orgStr = orgID.String()
+	}
+
+	tx, err := r.DB.Begin(ctx)
+	if err != nil {
+		db.CaptureError(err, "", nil, "begin")
+		return nil, errx.InternalError()
+	}
+	var committed bool
+	defer func() {
+		if !committed {
+			tx.Rollback(ctx)
+		}
+	}()
+
+	senders, xerr := syncCampaignSendersTx(ctx, tx, campaignID, userID, orgStr, in)
+	if xerr != nil {
+		return nil, xerr
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		db.CaptureError(err, "", nil, "commit")
+		return nil, errx.InternalError()
+	}
+	committed = true
+	return senders, nil
+}
+
+// AdvanceCampaignSender bumps the round-robin cursor and stamps last_sent_at in
+// a single atomic UPDATE (no read-modify-write), keeping cursors coherent when
+// multiple campaign tasks for the same campaign run concurrently.
+func (r *campaignRepository) AdvanceCampaignSender(ctx context.Context, campaignID, accountID uuid.UUID) error {
+	_, err := r.DB.Exec(ctx, `
+		UPDATE campaign_senders
+		SET rotation_position = rotation_position + 1, last_sent_at = NOW()
+		WHERE campaign_id = $1 AND email_account_id = $2
+	`, campaignID, accountID)
+	return err
+}
+
+// AdvanceRampLevel advances the persisted ramp level once per UTC day. It is a
+// no-op when ramp is off or already advanced today. Applied via min() in the
+// scheduler so it can only LOWER the effective per-mailbox cap.
+func (r *campaignRepository) AdvanceRampLevel(ctx context.Context, campaignID uuid.UUID) error {
+	_, err := r.DB.Exec(ctx, `
+		UPDATE campaigns
+		SET ramp_level = LEAST(ramp_ceiling, GREATEST(ramp_level, ramp_start) + ramp_increment),
+		    ramp_level_date = CURRENT_DATE
+		WHERE id = $1
+		  AND ramp_enabled
+		  AND (ramp_level_date IS NULL OR ramp_level_date < CURRENT_DATE)
+	`, campaignID)
+	return err
+}
+
+// IncrementCampaignDailySend bumps today's per-campaign send counters. newLead
+// also increments new_leads_started (a position-1 send) so the new-lead cap can
+// read it back.
+func (r *campaignRepository) IncrementCampaignDailySend(ctx context.Context, campaignID uuid.UUID, newLead bool) error {
+	newLeadInc := 0
+	if newLead {
+		newLeadInc = 1
+	}
+	_, err := r.DB.Exec(ctx, `
+		INSERT INTO campaign_daily_sends (campaign_id, send_date, emails_sent, new_leads_started)
+		VALUES ($1, CURRENT_DATE, 1, $2)
+		ON CONFLICT (campaign_id, send_date)
+		DO UPDATE SET emails_sent = campaign_daily_sends.emails_sent + 1,
+		              new_leads_started = campaign_daily_sends.new_leads_started + $2
+	`, campaignID, newLeadInc)
+	return err
+}
+
+// CountNewLeadsStartedToday returns new_leads_started for the current UTC day.
+func (r *campaignRepository) CountNewLeadsStartedToday(ctx context.Context, campaignID uuid.UUID) (int, error) {
+	var n int
+	err := r.DB.QueryRow(ctx, `
+		SELECT COALESCE(new_leads_started, 0)
+		FROM campaign_daily_sends
+		WHERE campaign_id = $1 AND send_date = CURRENT_DATE
+	`, campaignID).Scan(&n)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, nil
+	}
+	return n, err
+}
+
+// SetCampaignTrackingDomainVerified flips the verified flag/timestamp on the
+// campaign-scoped tracking-domain override.
+func (r *campaignRepository) SetCampaignTrackingDomainVerified(ctx context.Context, campaignID uuid.UUID, verified bool, at *time.Time) error {
+	_, err := r.DB.Exec(ctx, `
+		UPDATE campaigns
+		SET tracking_domain_verified = $2, tracking_domain_verified_at = $3, updated_at = NOW()
+		WHERE id = $1
+	`, campaignID, verified, at)
+	return err
 }
 
 // UpdateStatusWithLock updates campaign status using a PostgreSQL advisory lock to prevent concurrent updates.

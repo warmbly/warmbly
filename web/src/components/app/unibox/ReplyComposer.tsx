@@ -36,6 +36,7 @@ import useTemplates from "@/lib/api/hooks/app/templates/useTemplates";
 import useUniboxOverview from "@/lib/api/hooks/app/unibox/useUniboxOverview";
 import { useAppStore } from "@/stores";
 import type Template from "@/lib/api/models/app/templates/Template";
+import WriteWithAI from "@/components/app/campaigns/sequences/WriteWithAI";
 import type UniboxEmail from "@/lib/api/models/app/unibox/UniboxEmail";
 import {
     PopoverMenu,
@@ -545,6 +546,12 @@ export function ReplyComposer({ threadId, replyTo, mode, onClose }: ReplyCompose
                     )}
                     {isSending ? "Sending" : "Send"}
                 </button>
+
+                <WriteWithAI
+                    onInsert={(text) =>
+                        setBody((b) => (b.trim() ? `${b.trimEnd()}\n\n${text}` : text).slice(0, MAX_BODY_LEN))
+                    }
+                />
 
                 {/* Schedule picker. Direct button trigger (no Tooltip
                     wrapper) so PopoverMenuTrigger's asChild ref cloning

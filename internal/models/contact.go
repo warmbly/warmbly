@@ -39,9 +39,53 @@ type Contact struct {
 	IsCatchAll            bool       `json:"is_catch_all"`
 	VerificationCheckedAt *time.Time `json:"verification_checked_at,omitempty"`
 
+	// Recipient ESP/provider, derived in the control plane from the recipient
+	// domain (never an MX dial on the send hot path). '' | 'gmail' | 'outlook'
+	// | 'other'. Used by the campaign ESP-matching feature.
+	ESPProvider   string     `json:"esp_provider"`
+	ESPResolvedAt *time.Time `json:"esp_resolved_at,omitempty"`
+
+	// CampaignLead is this contact's processing state WITHIN a single campaign.
+	// Populated by Search ONLY when the query filters by exactly one campaign
+	// (the campaign Leads view); nil otherwise. Lets the Leads list show which
+	// leads are queued, in progress, replied, bounced, or unsubscribed.
+	CampaignLead *ContactCampaignProgress `json:"campaign_lead,omitempty"`
+
 	UpdatedAt time.Time `json:"updated_at"`
 	CreatedAt time.Time `json:"created_at"`
 }
+
+// ContactCampaignProgress is a contact's aggregate processing state inside one
+// campaign, derived from campaign_contact_progress (across all of the campaign's
+// steps) plus the contact's subscription flag.
+type ContactCampaignProgress struct {
+	// Status is the single derived state shown in the Leads list:
+	//   pending      — a lead, but no email sent yet (queued)
+	//   active       — at least one email sent, still progressing through the flow
+	//   replied      — the contact has replied (terminal/positive)
+	//   bounced      — a send hard-bounced (terminal/negative)
+	//   unsubscribed — the contact is unsubscribed/suppressed (terminal)
+	Status         string     `json:"status"`
+	Sent           int        `json:"sent"`
+	Opened         int        `json:"opened"`
+	Clicked        int        `json:"clicked"`
+	Replied        int        `json:"replied"`
+	Bounced        int        `json:"bounced"`
+	LastActivityAt *time.Time `json:"last_activity_at,omitempty"`
+	// CurrentStep is the label of the step the contact is on now — the latest
+	// step actually sent ("Email 2", a custom step name, or an action label).
+	// Empty when nothing has been sent yet (status "pending").
+	CurrentStep string `json:"current_step,omitempty"`
+}
+
+// Lead status constants for ContactCampaignProgress.Status.
+const (
+	LeadStatusPending      = "pending"
+	LeadStatusActive       = "active"
+	LeadStatusReplied      = "replied"
+	LeadStatusBounced      = "bounced"
+	LeadStatusUnsubscribed = "unsubscribed"
+)
 
 type ContactsResult struct {
 	Data       []Contact  `json:"data"`

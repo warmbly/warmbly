@@ -27,6 +27,12 @@ type schedulerService struct {
 	campaignProgressRepo repository.CampaignProgressRepository
 	emailRepo            repository.EmailRepository
 	campaignRepo         repository.CampaignRepository
+	// contactRepo is used only to read/cache the recipient ESP/provider for
+	// ESP matching (no MX dial on the hot path). nil-safe.
+	contactRepo repository.ContactRepository
+	// campaignLogRepo records send-path decision logs (e.g. ESP defer,
+	// new-lead cap). Optional/nil-safe so the scheduler keeps working without it.
+	campaignLogRepo repository.CampaignLogRepository
 }
 
 // NewSchedulerService creates a new scheduler service
@@ -36,6 +42,8 @@ func NewSchedulerService(
 	campaignProgressRepo repository.CampaignProgressRepository,
 	emailRepo repository.EmailRepository,
 	campaignRepo repository.CampaignRepository,
+	contactRepo repository.ContactRepository,
+	campaignLogRepo repository.CampaignLogRepository,
 ) SchedulerService {
 	return &schedulerService{
 		taskRepo:             taskRepo,
@@ -43,6 +51,8 @@ func NewSchedulerService(
 		campaignProgressRepo: campaignProgressRepo,
 		emailRepo:            emailRepo,
 		campaignRepo:         campaignRepo,
+		contactRepo:          contactRepo,
+		campaignLogRepo:      campaignLogRepo,
 	}
 }
 

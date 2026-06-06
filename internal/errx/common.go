@@ -99,9 +99,14 @@ var (
 	ErrCampaignLimit       = New(BadRequest, "You reached your limit for campaigns, please try again later.")
 
 	// Sequence
-	ErrSequenceName    = New(BadRequest, "Sequence name cannot be longer than 50 characters.")
-	ErrSequenceSubject = New(BadRequest, "Sequence subject cannot be longer than 100 characters.")
-	ErrSequenceBody    = New(BadRequest, fmt.Sprintf("Sequence body cannot be longer than %d characters.", config.SequenceBodyLimit))
+	ErrSequenceName      = New(BadRequest, "Sequence name cannot be longer than 50 characters.")
+	ErrSequenceSubject   = New(BadRequest, "Sequence subject cannot be longer than 100 characters.")
+	ErrSequenceBody      = New(BadRequest, fmt.Sprintf("Sequence body cannot be longer than %d characters.", config.SequenceBodyLimit))
+	ErrSequenceBranch    = New(BadRequest, "Invalid branching conditions.")
+	ErrSequenceBranchTo  = New(BadRequest, "Branch target must be another step in the same campaign and cannot create a cycle.")
+	ErrSequenceKind      = New(BadRequest, "Step kind must be email, action, or wait.")
+	ErrSequenceAction    = New(BadRequest, "Invalid action configuration for this step.")
+	ErrSequenceWaitAfter = New(BadRequest, fmt.Sprintf("Step wait must be between 0 and %d days.", config.SequenceWaitAfterMax))
 
 	// Contact
 	ErrContactSerialize = New(BadRequest, "Failed to serialize contact.")

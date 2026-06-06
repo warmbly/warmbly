@@ -34,3 +34,10 @@ func (s *service) emit(ctx context.Context, orgID uuid.UUID, eventType models.We
 	}
 	_, _ = s.dispatcher.Dispatch(ctx, orgID, eventType, data)
 }
+
+// EmitCampaignEvent dispatches a campaign event (e.g. from a sequence "notify"
+// action node) to customer webhooks and wired integrations. Best-effort — a
+// dispatch hiccup must never block the sending pipeline.
+func (s *service) EmitCampaignEvent(ctx context.Context, orgID uuid.UUID, eventType models.WebhookEventType, data map[string]any) {
+	s.emit(ctx, orgID, eventType, data)
+}

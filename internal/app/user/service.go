@@ -14,6 +14,7 @@ type UserService interface {
 	SaveUser(ctx context.Context, user *models.User) *errx.Error
 	GetUser(ctx context.Context, userID uuid.UUID) (*models.User, *errx.Error)
 	CompleteOnboarding(ctx context.Context, userID uuid.UUID, firstName, lastName, referralSource, role, teamSize string) *errx.Error
+	UpdateProfile(ctx context.Context, userID uuid.UUID, firstName, lastName string) *errx.Error
 }
 
 type userService struct {

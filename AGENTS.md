@@ -32,6 +32,12 @@ Commit hygiene:
 - when instructed to make a commit, use the subject format `feat: one line explanation`
 - commit messages on this repo do not include `Co-Authored-By:` or other AI/agent attribution footers. Keep messages to subject + body explaining the why. If a commit slips through with an attribution footer, rewrite it before opening or updating a PR.
 
+Data modeling / representation:
+
+- we are happiest with the most **type-safe** option, but the rule is: pick the **most effective option for the actual use case**, not type-safety for its own sake.
+- prefer real typed columns / enums when the data is fixed-shape, queried or filtered in SQL, or benefits from FK integrity.
+- a `jsonb` column is the right call when the data is a free-form, evolving, read-then-execute blob that isn't filtered in SQL (e.g. the `sequences.conditions` branching tree and `sequences.action` node config) — keep it type-safe at the app boundary with a Go struct + validation on write, and a DB `CHECK` on any discriminator column.
+
 ### Verification: what to run, what to skip
 
 Keep the loop fast. The signals that matter are formatting, lint, and typecheck — not local builds or browser automation.
@@ -91,6 +97,8 @@ Everything in the dashboard must use our own theme, not browser/library defaults
 - Theme tokens: slate borders (`border-slate-200`), sky accents (`focus:border-sky-400 focus:ring-sky-100`, `bg-sky-50 text-sky-700`), `rounded-md`, `text-[12.5px]` base, `h-7` controls, `10px uppercase tracking-[0.14em]` section labels.
 - Multi-select tables: when rows are selected, show a floating bottom-center selection bar with the count + bulk actions (mirror `SelectionBar` in contacts `ContactsTable.tsx`).
 - Row actions must be reachable on touch: never hide the only affordance behind `opacity-0 group-hover` with no mobile fallback. Use `opacity-100 md:opacity-0 md:group-hover:opacity-100`, or surface actions in the detail drawer.
+- Confirmations: never use the native `window.confirm` / `alert` / `prompt`. Use the in-app confirm: `const confirm = useConfirm()` (from `@/hooks/context/confirm`), then `confirm.show(text, onSubmit)`. `onSubmit` is awaited and the provider renders its own loading spinner, so pass an `async` callback (prefer `mutateAsync` over callback-style `mutate`). For the synchronous `if (!window.confirm(x)) return; act()` pattern, restructure to `confirm.show(x, act)`; for close-while-dirty guards, route every close path (Escape handler, backdrop `onMouseDown`, close button) through one `requestClose()` that calls `confirm.show(...)` when dirty. ConfirmProvider is mounted in `app/app/layout.tsx`, so `useConfirm()` works anywhere under `/app`.
+- Row interactions: list rows behave like the campaigns list — clicking anywhere on a row opens that item's detail (drawer or page); right-side action buttons (3-dots / "More") open a relevant detail/tab (e.g. the mailbox 3-dots opens the Settings tab of `InboxDetails`). Inner interactive controls (checkbox, dropdown trigger, action buttons) must `e.stopPropagation()` so they don't also fire the row's open handler.
 - Prefer realtime over polling: subscribe to the socket and `queryClient.invalidateQueries(...)` on the relevant event instead of `refetchInterval` where an event exists (see `useRealtimeEvents` / `RealtimeManager`).
 
 ## System Shape

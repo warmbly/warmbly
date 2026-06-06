@@ -32,6 +32,18 @@ export interface CreateCampaignInput {
     email_tag_ids?: string[];
     folder_ids?: string[];
 
+    // Net-new send controls (all optional; backend defaults reproduce today's behavior)
+    sender_strategy?: 'tags' | 'explicit';
+    rotation_mode?: 'weighted' | 'round_robin' | 'least_recently_used';
+    ramp_enabled?: boolean;
+    ramp_start?: number;
+    ramp_increment?: number;
+    ramp_ceiling?: number;
+    esp_match_mode?: 'off' | 'prefer' | 'strict';
+    max_new_leads_per_day?: number;
+    prioritize_new_leads?: boolean;
+    tracking_domain?: string;
+
     // Initial sequences (ordered)
     sequences?: Array<{
         name: string;

@@ -154,17 +154,10 @@ func Catalog() []models.IntegrationCatalogEntry {
 			Highlights:  []string{"We mint an inbound URL for you", "Booked meetings credit the originating campaign"},
 		},
 
-		// Data --------------------------------------------------------------
-		{
-			Provider:   models.IntegrationGoogleSheets,
-			Name:       "Google Sheets",
-			Tagline:    "Pull leads from a sheet; push reply / bounce / booked rows back.",
-			Category:   models.IntegrationCategoryData,
-			AuthMethod: string(models.IntegrationAuthOAuth),
-			DocsURL:    "https://developers.google.com/sheets/api",
-			BetaFlag:   true,
-			Highlights: []string{"One-click Google OAuth", "Append a row on reply / bounce"},
-			Events:     crmEvents,
-		},
+		// NOTE: Google Sheets is intentionally NOT a catalog integration. The
+		// google_sheets OAuth connection still exists (it powers the on-demand
+		// Lead Sync feature under Contacts), but it is no longer surfaced as an
+		// integration tile and has no event-driven append-row automation. See
+		// internal/app/leadsync.
 	}
 }

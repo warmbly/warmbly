@@ -28,6 +28,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/campaign"
 	"github.com/warmbly/warmbly/internal/app/cipher"
 	"github.com/warmbly/warmbly/internal/app/contact"
+	"github.com/warmbly/warmbly/internal/app/credits"
 	"github.com/warmbly/warmbly/internal/app/crm"
 	"github.com/warmbly/warmbly/internal/app/dailythrottle"
 	"github.com/warmbly/warmbly/internal/app/dangerzone"
@@ -40,6 +41,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/group"
 	idempotencyapp "github.com/warmbly/warmbly/internal/app/idempotency"
 	"github.com/warmbly/warmbly/internal/app/integration"
+	"github.com/warmbly/warmbly/internal/app/leadsync"
 	"github.com/warmbly/warmbly/internal/app/organization"
 	"github.com/warmbly/warmbly/internal/app/passkey"
 	"github.com/warmbly/warmbly/internal/app/placement"
@@ -123,6 +125,9 @@ func main() {
 	var advancedService advanced.Service
 	var warmupContentRepo repository.WarmupContentRepository
 	var warmupContentService warmupcontent.Service
+	var creditRepository repository.CreditRepository
+	var creditService credits.CreditService
+	var writingGenerator generation.WritingGenerator
 	var emailVerifyService emailverifyapp.Service
 	var placementRepository repository.PlacementRepository
 	var placementService placement.Service
@@ -184,6 +189,8 @@ func main() {
 	var webhookServiceForHandler webhook.Service
 	var integrationServiceForHandler integration.Service
 	var contactRepoForHandler repository.ContactRepository
+	var attachmentRepoForHandler repository.AttachmentRepository
+	var leadSyncServiceForHandler leadsync.Service
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -445,6 +452,7 @@ func main() {
 		campaignRepostory := repository.NewCampaignRepostory(primaryDB)
 		sequenceRepostory := repository.NewSequenceRepostory(primaryDB)
 		contactRepostory := repository.NewContactRepostory(primaryDB)
+		attachmentRepoForHandler = repository.NewAttachmentRepository(primaryDB)
 		uniboxRepository := repository.NewUniboxRepository(primaryDB)
 		encryptedKeys, err = encryptedkeys.FromEnv(
 			encryptedkeys.Deps{DB: primaryDB},
@@ -495,6 +503,18 @@ func main() {
 			generationClient = generation.NewClient(openaiKey)
 		}
 		warmupContentService = warmupcontent.NewService(warmupContentRepo, generationClient)
+
+		// AI writing assistant: prefer Anthropic (claude-haiku free / sonnet paid);
+		// fall back to the existing OpenAI client when ANTHROPIC_API_KEY is unset.
+		// If neither is configured, writingGenerator stays nil and the endpoint
+		// returns 503 "not configured".
+		if anthropicKey := cfg.GetSecretOptional(ctx, "ANTHROPIC_API_KEY", "anthropic_api_key", ""); anthropicKey != "" {
+			writingGenerator = generation.NewAnthropicClient(anthropicKey)
+		} else if generationClient != nil {
+			writingGenerator = generationClient
+		}
+		creditRepository = repository.NewCreditRepository(primaryDB)
+		creditService = credits.NewService(creditRepository, cache)
 		webhookRepository := repository.NewWebhookRepository(primaryDB.Pool)
 		webhookService := webhook.NewService(webhookRepository)
 		webhookServiceForHandler = webhookService
@@ -527,6 +547,13 @@ func main() {
 			dailyThrottleService = dailythrottle.NewService(cache)
 		}
 		organizationService = organization.NewService(organizationRepository, subscriptionRepository, userRepostory, dailyThrottleService)
+
+		// Plan-based webhook/integration fan-out throttle. The cap scales with
+		// the org's effective mailbox allowance (see WebhookDispatchLimit) so a
+		// campaign "notify" action can't flood a customer's endpoints. Wired here
+		// now that organizationService exists; the resolved cap is cached so this
+		// resolver is not hit on every dispatched event.
+		webhookServiceForHandler.WireThrottle(cache, organizationService.WebhookDispatchLimit)
 
 		// Load Stripe config and initialize service
 		stripeCfg, err := cfg.LoadStripeConfig(ctx)
@@ -766,6 +793,13 @@ func main() {
 		rateLimitService = ratelimit.NewService(cache, rateLimitRepository)
 		sequenceService = sequence.NewService(sequenceRepostory)
 		contactService = contact.NewService(contactRepostory, subscriptionRepository, planRepository, streamingPublisher)
+
+		// On-demand Google Sheets -> leads sync (backend-only / control plane).
+		// Reuses the integration service for the Google token + sheet reads and
+		// the contact service for the upsert. No worker / scheduler involvement.
+		leadSyncRepository := repository.NewLeadSyncRepository(primaryDB.Pool)
+		leadSyncServiceForHandler = leadsync.NewService(leadSyncRepository, integrationServiceForHandler, contactService)
+
 		apiKeyService = apikey.NewService(cache, apiKeyRepository)
 		crmService = crm.NewService(crmRepository)
 		socketService = socket.NewService(cache, tokenService)
@@ -785,7 +819,7 @@ func main() {
 
 		// Template & email send services
 		templateService = template.NewService(templateRepository)
-		schedulerService := scheduler.NewSchedulerService(taskRepository, warmupRepository, campaignProgressRepository, emailRepostory, campaignRepostory)
+		schedulerService := scheduler.NewSchedulerService(taskRepository, warmupRepository, campaignProgressRepository, emailRepostory, campaignRepostory, contactRepostory, campaignLogRepository)
 		campaignService = campaign.NewService(campaignRepostory, taskRepository, emailRepostory, campaignLogRepository, featureGateService, dailyThrottleService, schedulerService, tasksClient, streamingPublisher)
 		emailSendService = emailsend.NewService(taskRepository, emailRepostory, userRepostory, schedulerService, tasksClient, featureGateService, dailyThrottleService)
 		// uniboxService is constructed here (rather than alongside the
@@ -830,6 +864,7 @@ func main() {
 			contactRepostory,
 			campaignLogRepository,
 			advancedService,
+			attachmentRepoForHandler,
 		)
 
 		// Admin outreach composer — sends from the platform mailer
@@ -988,6 +1023,10 @@ func main() {
 		WarmupContentRepo:    warmupContentRepo,
 		WarmupContentService: warmupContentService,
 
+		// AI writing assistant + credit ledger
+		CreditService:    creditService,
+		WritingGenerator: writingGenerator,
+
 		// Pre-send email verification
 		EmailVerifyService: emailVerifyService,
 
@@ -999,6 +1038,9 @@ func main() {
 		IntegrationService: integrationServiceForHandler,
 		ContactRepo:        contactRepoForHandler,
 
+		// On-demand Google Sheets -> leads sync
+		LeadSyncService: leadSyncServiceForHandler,
+
 		WebsocketURI: websocketURI,
 
 		// Object storage + direct repository handles for handlers
@@ -1008,6 +1050,7 @@ func main() {
 		EmailMessageMap:          emailMessageMapForHandler,
 		UserRepo:                 userRepoForHandler,
 		OrgRepo:                  organizationRepoForHandler,
+		AttachmentRepo:           attachmentRepoForHandler,
 		StorageBackendRepo:       storageBackendRepo,
 		CloudCredentialRepo:      cloudCredentialRepo,
 		ProvisioningTemplateRepo: provisioningTemplateRepo,

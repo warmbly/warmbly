@@ -43,6 +43,14 @@ type EmailRepository interface {
 	Get(ctx context.Context, userID, emailAccountID string) (*models.Email, *errx.Error)
 	GetByID(ctx context.Context, emailAccountID uuid.UUID) (*models.Email, *errx.Error)
 	GetByTags(ctx context.Context, userID string, tags []string) ([]models.Email, *errx.Error)
+	// GetAllActiveByUser returns every active mailbox for a user (no tag/sender
+	// filter) — the "all" sender pool used when a campaign picks neither tags nor
+	// explicit accounts.
+	GetAllActiveByUser(ctx context.Context, userID string) ([]models.Email, *errx.Error)
+	// GetByCampaignSenders returns the active mailboxes in a campaign's explicit
+	// sender pool, carrying each sender's rotation metadata (weight,
+	// rotation_position, last_sent_at) for the scheduler's rotation modes.
+	GetByCampaignSenders(ctx context.Context, userID string, campaignID uuid.UUID) ([]CampaignSenderAccount, *errx.Error)
 	GetSMTPCredentials(ctx context.Context, emailAccountID uuid.UUID) (*SMTPCredentials, *errx.Error)
 	GetOAuthCredentials(ctx context.Context, emailAccountID uuid.UUID) (*OAuthCredentials, *errx.Error)
 	GetWorkerID(ctx context.Context, emailAccountID uuid.UUID) (*uuid.UUID, *errx.Error)
@@ -980,6 +988,121 @@ func (r *emailRepository) GetByTags(ctx context.Context, userID string, tags []s
 	}
 
 	return emails, nil
+}
+
+// GetAllActiveByUser returns every active mailbox for a user (the "all" sender
+// pool). Same projection as GetByTags, without the tag join.
+func (r *emailRepository) GetAllActiveByUser(ctx context.Context, userID string) ([]models.Email, *errx.Error) {
+	query := `
+		SELECT
+		 ea.id, ea.user_id, ea.email, ea.name, ea.signature_plain, ea.signature_html, ea.signature_sync, ea.signature_code,
+		 ea.provider, ea.status, COALESCE(ea.last_synced_at, ea.created_at) AS last_synced_at, ea.last_id, ea.campaign_limit,
+		 ea.min_wait_time, ea.reply_to, ea.tracking_domain, ea.tracking_domain_verified, ea.tracking_domain_verified_at, ea.warmup, ea.warmup_paused_at, ea.warmup_base,
+		 ea.warmup_max, ea.warmup_increase, ea.warmup_reply_rate, ea.warmup_tag,
+		 ea.warmup_start_time, ea.warmup_end_time, ea.warmup_days, ea.timezone,
+		 ea.created_at, ea.updated_at
+		FROM email_accounts ea
+		WHERE ea.user_id = $1
+		  AND ea.status = 'active'
+		ORDER BY ea.id
+	`
+
+	rows, err := r.DB.Query(ctx, query, userID)
+	if err != nil {
+		db.CaptureError(err, query, []any{userID}, "query")
+		return nil, errx.InternalError()
+	}
+	defer rows.Close()
+
+	var emails []models.Email
+	for rows.Next() {
+		var i models.Email
+		err := rows.Scan(
+			&i.ID, &i.UserID, &i.Email, &i.Name, &i.SignaturePlain, &i.SignatureHTML, &i.SignatureSync, &i.SignatureCode,
+			&i.Provider, &i.Status, &i.LastSyncedAt, &i.LastID, &i.CampaignLimit,
+			&i.MinWaitTime, &i.ReplyTo, &i.TrackingDomain, &i.TrackingDomainVerified, &i.TrackingDomainVerifiedAt, &i.Warmup, &i.WarmupPausedAt, &i.WarmupBase,
+			&i.WarmupMax, &i.WarmupIncrease, &i.WarmupReplyRate, &i.WarmupTag,
+			&i.WarmupStartTime, &i.WarmupEndTime, &i.WarmupDays, &i.Timezone,
+			&i.CreatedAt, &i.UpdatedAt,
+		)
+		if err != nil {
+			db.CaptureError(err, "", nil, "scan")
+			return nil, errx.InternalError()
+		}
+		i.Tags = []string{}
+		emails = append(emails, i)
+	}
+
+	return emails, nil
+}
+
+// CampaignSenderAccount pairs an active sender mailbox with its per-campaign
+// rotation metadata, so the scheduler's rotation modes (weighted / round_robin
+// / least_recently_used) can pick among them without a second query.
+type CampaignSenderAccount struct {
+	Account          models.Email
+	Weight           int
+	RotationPosition int
+	LastSentAt       *time.Time
+}
+
+// GetByCampaignSenders mirrors GetByTags but resolves accounts through the
+// explicit campaign_senders pool instead of email tags. Only enabled senders
+// backing an active mailbox are returned; the per-sender weight/cursor/last-send
+// ride along for rotation.
+func (r *emailRepository) GetByCampaignSenders(ctx context.Context, userID string, campaignID uuid.UUID) ([]CampaignSenderAccount, *errx.Error) {
+	query := `
+		SELECT
+		 ea.id, ea.user_id, ea.email, ea.name, ea.signature_plain, ea.signature_html, ea.signature_sync, ea.signature_code,
+		 ea.provider, ea.status, COALESCE(ea.last_synced_at, ea.created_at) AS last_synced_at, ea.last_id, ea.campaign_limit,
+		 ea.min_wait_time, ea.reply_to, ea.tracking_domain, ea.tracking_domain_verified, ea.tracking_domain_verified_at, ea.warmup, ea.warmup_paused_at, ea.warmup_base,
+		 ea.warmup_max, ea.warmup_increase, ea.warmup_reply_rate, ea.warmup_tag,
+		 ea.warmup_start_time, ea.warmup_end_time, ea.warmup_days, ea.timezone,
+		 ea.created_at, ea.updated_at,
+		 cs.weight, cs.rotation_position, cs.last_sent_at
+		FROM email_accounts ea
+		JOIN campaign_senders cs ON cs.email_account_id = ea.id
+		WHERE cs.campaign_id = $2
+		  AND cs.enabled
+		  AND ea.user_id = $1
+		  AND ea.status = 'active'
+		ORDER BY ea.id
+	`
+
+	rows, err := r.DB.Query(ctx, query, userID, campaignID)
+	if err != nil {
+		db.CaptureError(err, query, []any{userID, campaignID}, "query")
+		return nil, errx.InternalError()
+	}
+	defer rows.Close()
+
+	var out []CampaignSenderAccount
+	for rows.Next() {
+		var i models.Email
+		var sender CampaignSenderAccount
+		err := rows.Scan(
+			&i.ID, &i.UserID, &i.Email, &i.Name, &i.SignaturePlain, &i.SignatureHTML, &i.SignatureSync, &i.SignatureCode,
+			&i.Provider, &i.Status, &i.LastSyncedAt, &i.LastID, &i.CampaignLimit,
+			&i.MinWaitTime, &i.ReplyTo, &i.TrackingDomain, &i.TrackingDomainVerified, &i.TrackingDomainVerifiedAt, &i.Warmup, &i.WarmupPausedAt, &i.WarmupBase,
+			&i.WarmupMax, &i.WarmupIncrease, &i.WarmupReplyRate, &i.WarmupTag,
+			&i.WarmupStartTime, &i.WarmupEndTime, &i.WarmupDays, &i.Timezone,
+			&i.CreatedAt, &i.UpdatedAt,
+			&sender.Weight, &sender.RotationPosition, &sender.LastSentAt,
+		)
+		if err != nil {
+			db.CaptureError(err, "", nil, "scan")
+			return nil, errx.InternalError()
+		}
+		i.Tags = []string{}
+		sender.Account = i
+		out = append(out, sender)
+	}
+	if err := rows.Err(); err != nil {
+		db.CaptureError(err, "", nil, "rows")
+		return nil, errx.InternalError()
+	}
+
+	return out, nil
 }
 
 // GetSMTPCredentials retrieves SMTP/IMAP credentials for an email account

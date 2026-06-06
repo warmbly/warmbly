@@ -1,6 +1,6 @@
 // Multi-step connect drawer. The connect path depends on the provider's
 // auth method:
-//   - oauth (HubSpot, Slack, Google Sheets, Pipedrive, Salesforce): one-click
+//   - oauth (HubSpot, Slack, Pipedrive, Salesforce): one-click
 //     "Connect with X" → provider popup → encrypted tokens stored server-side.
 //     No credentials are ever pasted. Providers without server credentials
 //     render as "coming soon".
@@ -100,14 +100,6 @@ const FIELDS_BY_PROVIDER: Record<string, FieldDef[]> = {
             type: "password",
             required: true,
             helper: "Edit Channel → Integrations → Webhooks → New Webhook → Copy URL.",
-        },
-    ],
-    google_sheets: [
-        {
-            key: "sheet_id",
-            label: "Sheet ID",
-            placeholder: "1AbC…XyZ",
-            helper: "The long ID in the sheet URL between /d/ and /edit. Optional — set per automation later.",
         },
     ],
 };

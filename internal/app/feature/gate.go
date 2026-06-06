@@ -15,6 +15,12 @@ const (
 
 	// UnlimitedEmails indicates unlimited daily emails
 	UnlimitedEmails = -1
+
+	// Attachment storage quotas (overall bytes per organization). Generous by
+	// design; paid orgs get a much larger pool. Tunable per-plan later via a
+	// plans column without changing callers.
+	FreeTierStorageBytes int64 = 2 << 30  // 2 GiB for free / trial orgs
+	PaidStorageBytes     int64 = 50 << 30 // 50 GiB for paid orgs
 )
 
 type FeatureGateService interface {
@@ -43,6 +49,14 @@ type FeatureGateService interface {
 
 	// IsPaidOrganization checks if the organization has an active paid subscription
 	IsPaidOrganization(ctx context.Context, orgID uuid.UUID) (bool, *errx.Error)
+
+	// GetStorageLimitBytes returns the org's total attachment storage quota in
+	// bytes (generous; larger for paid orgs).
+	GetStorageLimitBytes(ctx context.Context, orgID uuid.UUID) (int64, *errx.Error)
+
+	// CanUseWritingAssistant reports whether the org may use the AI writing
+	// assistant (paid or in free trial; expired/no-subscription is blocked).
+	CanUseWritingAssistant(ctx context.Context, orgID uuid.UUID) (bool, *errx.Error)
 }
 
 // SubscriptionStatus contains status info for feature gating
@@ -213,6 +227,33 @@ func (s *featureGateService) GetSubscriptionStatus(ctx context.Context, orgID uu
 	}
 
 	return status, nil
+}
+
+// GetStorageLimitBytes returns the org's attachment storage quota. Paid orgs
+// get the larger pool; everyone else (trial or no subscription) gets the free
+// allowance so they can still attach files.
+func (s *featureGateService) GetStorageLimitBytes(ctx context.Context, orgID uuid.UUID) (int64, *errx.Error) {
+	sub, err := s.subRepo.GetByOrganizationID(ctx, orgID)
+	if err != nil {
+		return 0, errx.New(errx.Internal, "failed to get subscription")
+	}
+	if sub != nil && sub.HasPaidSubscription() {
+		return PaidStorageBytes, nil
+	}
+	return FreeTierStorageBytes, nil
+}
+
+// CanUseWritingAssistant — same trial allowance as warmup/unibox: paid
+// subscribers and orgs inside their free-trial window may use the AI assistant.
+func (s *featureGateService) CanUseWritingAssistant(ctx context.Context, orgID uuid.UUID) (bool, *errx.Error) {
+	sub, err := s.subRepo.GetByOrganizationID(ctx, orgID)
+	if err != nil {
+		return false, errx.New(errx.Internal, "failed to get subscription")
+	}
+	if sub == nil {
+		return false, nil
+	}
+	return sub.HasPaidSubscription() || sub.IsInFreeTrial(), nil
 }
 
 // IsPaidOrganization checks if the organization has an active paid subscription

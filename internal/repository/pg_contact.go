@@ -32,6 +32,10 @@ type ContactRepository interface {
 	// the batch scheduler can work them off a cap per tick.
 	UpdateContactVerification(ctx context.Context, contactID uuid.UUID, res emailverify.Result) *errx.Error
 	ListUnverifiedContacts(ctx context.Context, limit int) ([]models.Contact, *errx.Error)
+	// SetContactESP caches the recipient ESP/provider resolved from the contact's
+	// domain (control-plane only, no MX dial). Best-effort: a failure should not
+	// block sending.
+	SetContactESP(ctx context.Context, contactID uuid.UUID, provider string) error
 	GetByEmailsAndUser(ctx context.Context, userID uuid.UUID, emails []string) (map[string]models.Contact, *errx.Error)
 	Search(ctx context.Context, userID string, category, cursor *string, filters models.SearchContacts, limit int32) (*models.ContactsResult, *errx.Error)
 	ExportAll(ctx context.Context, userID string, filters *models.SearchContacts, contactIDs []string, max int) ([]models.Contact, *errx.Error)
@@ -340,7 +344,8 @@ func (r *contactRepository) GetByID(ctx context.Context, contactID uuid.UUID) (*
 		SELECT
 			c.id, c.first_name, c.last_name, c.email, c.company, c.phone,
 			c.custom_fields, c.subscribed, c.updated_at, c.created_at,
-			c.verification_status, c.verification_reason, c.is_catch_all, c.verification_checked_at
+			c.verification_status, c.verification_reason, c.is_catch_all, c.verification_checked_at,
+			c.esp_provider, c.esp_resolved_at
 		FROM contacts c
 		WHERE c.id = $1
 	`
@@ -351,6 +356,7 @@ func (r *contactRepository) GetByID(ctx context.Context, contactID uuid.UUID) (*
 		&contact.Company, &contact.Phone, &contact.CustomFields, &contact.Subscribed,
 		&contact.UpdatedAt, &contact.CreatedAt,
 		&contact.VerificationStatus, &contact.VerificationReason, &contact.IsCatchAll, &contact.VerificationCheckedAt,
+		&contact.ESPProvider, &contact.ESPResolvedAt,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -363,6 +369,19 @@ func (r *contactRepository) GetByID(ctx context.Context, contactID uuid.UUID) (*
 	contact.Campaigns = []models.MiniCampaign{}
 	contact.Categories = []models.MiniCategory{}
 	return &contact, nil
+}
+
+// SetContactESP caches the recipient ESP/provider on the contact row. It is a
+// single keyed UPDATE and intentionally tolerant: callers treat any error as a
+// best-effort cache miss and fall back to deriving the provider on the fly.
+func (r *contactRepository) SetContactESP(ctx context.Context, contactID uuid.UUID, provider string) error {
+	query := `
+		UPDATE contacts
+		SET esp_provider = $2, esp_resolved_at = NOW()
+		WHERE id = $1
+	`
+	_, err := r.DB.Exec(ctx, query, contactID, provider)
+	return err
 }
 
 // UpdateContactVerification stores the outcome of a verification pass on the
@@ -583,12 +602,20 @@ func (r *contactRepository) Search(
 	// -----------------------------
 	// Campaign IDs filter (must be in ALL specified campaigns)
 	// -----------------------------
+	// When filtering by exactly one campaign (the campaign Leads view), we also
+	// surface each contact's per-campaign processing state. Capture that single
+	// campaign's bound placeholder so the progress subquery can reuse it without
+	// appending another arg.
+	singleCampaignPlaceholder := ""
 	if len(filters.CampaignIDs) > 0 {
 		placeholders := make([]string, len(filters.CampaignIDs))
 		for i, id := range filters.CampaignIDs {
 			placeholders[i] = fmt.Sprintf("$%d", argIndex)
 			args = append(args, id)
 			argIndex++
+		}
+		if len(filters.CampaignIDs) == 1 {
+			singleCampaignPlaceholder = placeholders[0]
 		}
 		campaignClause := fmt.Sprintf(`
 			c.id IN (
@@ -703,6 +730,52 @@ func (r *contactRepository) Search(
 		}
 	}
 
+	// Per-campaign lead progress. Only computed in the single-campaign (Leads
+	// view) case; otherwise the column is NULL so the scan list stays fixed.
+	// `last_at` is the latest of any touchpoint timestamp (GREATEST skips NULLs);
+	// counts aggregate across every step the contact was sent in this campaign.
+	leadProgressSelect := "NULL::json"
+	if singleCampaignPlaceholder != "" {
+		leadProgressSelect = fmt.Sprintf(`(
+			SELECT json_build_object(
+				'sent',    COUNT(*) FILTER (WHERE p.sent_at IS NOT NULL),
+				'opened',  COUNT(*) FILTER (WHERE p.opened_at IS NOT NULL),
+				'clicked', COUNT(*) FILTER (WHERE p.clicked_at IS NOT NULL),
+				'replied', COUNT(*) FILTER (WHERE p.replied_at IS NOT NULL),
+				'bounced', COUNT(*) FILTER (WHERE p.bounced_at IS NOT NULL),
+				'last_at', MAX(GREATEST(p.sent_at, p.opened_at, p.clicked_at, p.replied_at, p.bounced_at)),
+				-- The step the contact is on now = the latest step actually sent.
+				-- Labelled the same way the canvas does: custom name, else
+				-- "Email N" (Nth email-kind step by position), else action label.
+				'step', (
+					SELECT CASE
+						WHEN NULLIF(BTRIM(s.name), '') IS NOT NULL THEN s.name
+						WHEN s.kind = 'email' THEN 'Email ' || (
+							SELECT COUNT(*) FROM sequences s2
+							WHERE s2.campaign_id = s.campaign_id AND s2.kind = 'email'
+							  AND (s2.position < s.position
+							       OR (s2.position = s.position AND s2.created_at <= s.created_at))
+						)::text
+						WHEN s.kind = 'action' THEN (CASE s.action->>'type'
+							WHEN 'add_tag'     THEN 'Add tag'
+							WHEN 'remove_tag'  THEN 'Remove tag'
+							WHEN 'unsubscribe' THEN 'Unsubscribe'
+							WHEN 'notify'      THEN 'Notify'
+							ELSE 'Action' END)
+						ELSE 'Step'
+					END
+					FROM campaign_contact_progress lp
+					JOIN sequences s ON s.id = lp.sequence_id
+					WHERE lp.campaign_id = %[1]s AND lp.contact_id = c.id AND lp.sent_at IS NOT NULL
+					ORDER BY lp.sent_at DESC
+					LIMIT 1
+				)
+			)
+			FROM campaign_contact_progress p
+			WHERE p.campaign_id = %[1]s AND p.contact_id = c.id
+		)`, singleCampaignPlaceholder)
+	}
+
 	// Main query.
 	//
 	// Both the `campaigns` and `categories` agg subqueries need the
@@ -732,7 +805,8 @@ func (r *contactRepository) Search(
 					WHERE cc.contact_id = c.id
 					AND cat.user_id = $%d
 				), '[]'::json
-			) AS categories
+			) AS categories,
+			%s AS lead_progress
 		FROM contacts c
 		LEFT JOIN (
 			SELECT contact_id, COUNT(campaign_id) AS campaign_count
@@ -742,7 +816,7 @@ func (r *contactRepository) Search(
 		%s
 		ORDER BY %s %s, c.id ASC
 		LIMIT $%d
-	`, argIndex, argIndex, whereSQL, sortBy, direction, argIndex+1)
+	`, argIndex, argIndex, leadProgressSelect, whereSQL, sortBy, direction, argIndex+1)
 
 	args = append(args, userID, limit+1)
 
@@ -787,14 +861,58 @@ func (r *contactRepository) Search(
 		var campaignCount int
 		var campaignsJSON []byte
 		var categoriesJSON []byte
+		var leadProgressJSON []byte
 
 		if err := rows.Scan(
 			&c.ID, &c.FirstName, &c.LastName, &c.Email,
 			&c.Company, &c.Phone, &c.CustomFields, &c.Subscribed,
-			&c.UpdatedAt, &c.CreatedAt, &campaignCount, &campaignsJSON, &categoriesJSON,
+			&c.UpdatedAt, &c.CreatedAt, &campaignCount, &campaignsJSON, &categoriesJSON, &leadProgressJSON,
 		); err != nil {
 			db.CaptureError(err, "", nil, "scan")
 			return nil, errx.InternalError()
+		}
+
+		// Per-campaign lead progress (single-campaign Leads view only). Derive
+		// the single display status from the counts + subscription flag.
+		if len(leadProgressJSON) > 0 {
+			var lp struct {
+				Sent    int        `json:"sent"`
+				Opened  int        `json:"opened"`
+				Clicked int        `json:"clicked"`
+				Replied int        `json:"replied"`
+				Bounced int        `json:"bounced"`
+				LastAt  *time.Time `json:"last_at"`
+				Step    *string    `json:"step"`
+			}
+			if err := json.Unmarshal(leadProgressJSON, &lp); err != nil {
+				sentry.CaptureException(err)
+				return nil, errx.InternalError()
+			}
+			status := models.LeadStatusPending
+			switch {
+			case !c.Subscribed:
+				status = models.LeadStatusUnsubscribed
+			case lp.Bounced > 0:
+				status = models.LeadStatusBounced
+			case lp.Replied > 0:
+				status = models.LeadStatusReplied
+			case lp.Sent > 0:
+				status = models.LeadStatusActive
+			}
+			currentStep := ""
+			if lp.Step != nil {
+				currentStep = *lp.Step
+			}
+			c.CampaignLead = &models.ContactCampaignProgress{
+				Status:         status,
+				Sent:           lp.Sent,
+				Opened:         lp.Opened,
+				Clicked:        lp.Clicked,
+				Replied:        lp.Replied,
+				Bounced:        lp.Bounced,
+				LastActivityAt: lp.LastAt,
+				CurrentStep:    currentStep,
+			}
 		}
 
 		if len(campaignsJSON) > 0 {

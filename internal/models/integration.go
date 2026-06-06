@@ -228,7 +228,6 @@ const (
 	IntegrationActionDiscordNotify      IntegrationAction = "discord.notify"
 	IntegrationActionHubSpotUpsert      IntegrationAction = "hubspot.upsert_contact"
 	IntegrationActionPipedriveUpsert    IntegrationAction = "pipedrive.upsert_person"
-	IntegrationActionSheetsAppend       IntegrationAction = "google_sheets.append_row"
 	IntegrationActionGenericWebhookPing IntegrationAction = "webhook.ping"
 )
 

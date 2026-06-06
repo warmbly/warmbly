@@ -124,6 +124,7 @@ export function FieldRow({ children, className }: { children: React.ReactNode; c
 export function NumberInput({
     value,
     onChange,
+    onCommit,
     min,
     max,
     step = 1,
@@ -135,6 +136,12 @@ export function NumberInput({
 }: {
     value: number;
     onChange: (value: number) => void;
+    // Optional "commit point" distinct from the live onChange: fires on blur,
+    // on Enter, and on each stepper click — but NOT on every keystroke. Use it
+    // when the consumer wants to persist (e.g. a network save) only once the
+    // user settles on a value, instead of mid-typing. Omitting it preserves the
+    // original onChange-only behavior for every existing call site.
+    onCommit?: (value: number) => void;
     min?: number;
     max?: number;
     step?: number;
@@ -150,9 +157,12 @@ export function NumberInput({
         if (max !== undefined && n > max) return max;
         return n;
     };
+    const commitValue = () => onCommit?.(clamp(Number.isFinite(value) ? value : min ?? 0));
     const bump = (dir: 1 | -1) => {
         if (disabled) return;
-        onChange(clamp((Number.isFinite(value) ? value : 0) + dir * step));
+        const next = clamp((Number.isFinite(value) ? value : 0) + dir * step);
+        onChange(next);
+        onCommit?.(next);
     };
     const atMax = max !== undefined && value >= max;
     const atMin = min !== undefined && value <= min;
@@ -174,6 +184,18 @@ export function NumberInput({
                     const raw = e.target.value;
                     onChange(raw === "" ? min ?? 0 : clamp(Number(raw)));
                 }}
+                onBlur={onCommit ? commitValue : undefined}
+                onKeyDown={
+                    onCommit
+                        ? (e) => {
+                              if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  commitValue();
+                                  (e.target as HTMLInputElement).blur();
+                              }
+                          }
+                        : undefined
+                }
                 className={cn(
                     "w-full min-w-0 h-full bg-transparent outline-none px-2.5 text-[12.5px] text-slate-900 tabular-nums disabled:text-slate-400",
                     "[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",

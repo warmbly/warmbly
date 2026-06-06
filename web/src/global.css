@@ -247,8 +247,82 @@ svg.loading circle {
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* 3x3 dot-grid activity indicator (adapted from Temani Afif's css-loaders
+   "l26"). Native geometry is a ~52px square block, so the dot + box-shadow
+   grid lives on a ::before that is scaled down (origin 0 0, after the
+   centering translateX) and centered inside a fixed 18px box so it sits
+   inline on a nav row. currentColor tints all nine dots. */
+.campaign-grid {
+  display: inline-block;
+  position: relative;
+  width: 14px;
+  height: 14px;
+  vertical-align: middle;
+}
+
+.campaign-grid::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  color: currentColor;
+  transform-origin: 0 0;
+  transform: scale(0.26) translateX(-38px);
+  box-shadow:
+    19px -19px 0 0px, 38px -19px 0 0px, 57px -19px 0 0px,
+    19px 0     0 5px, 38px 0     0 5px, 57px 0     0 5px,
+    19px 19px  0 0px, 38px 19px  0 0px, 57px 19px  0 0px;
+  animation: campaign-grid 3.5s infinite linear;
+}
+
+@keyframes campaign-grid {
+  12.5% { box-shadow:
+    19px -19px 0 0px, 38px -19px 0 0px, 57px -19px 0 5px,
+    19px 0     0 5px, 38px 0     0 0px, 57px 0     0 5px,
+    19px 19px  0 0px, 38px 19px  0 0px, 57px 19px  0 0px; }
+  25%   { box-shadow:
+    19px -19px 0 5px, 38px -19px 0 0px, 57px -19px 0 5px,
+    19px 0     0 0px, 38px 0     0 0px, 57px 0     0 0px,
+    19px 19px  0 0px, 38px 19px  0 5px, 57px 19px  0 0px; }
+  50%   { box-shadow:
+    19px -19px 0 5px, 38px -19px 0 5px, 57px -19px 0 0px,
+    19px 0     0 0px, 38px 0     0 0px, 57px 0     0 0px,
+    19px 19px  0 0px, 38px 19px  0 0px, 57px 19px  0 5px; }
+  62.5% { box-shadow:
+    19px -19px 0 0px, 38px -19px 0 0px, 57px -19px 0 0px,
+    19px 0     0 5px, 38px 0     0 0px, 57px 0     0 0px,
+    19px 19px  0 0px, 38px 19px  0 5px, 57px 19px  0 5px; }
+  75%   { box-shadow:
+    19px -19px 0 0px, 38px -19px 0 5px, 57px -19px 0 0px,
+    19px 0     0 0px, 38px 0     0 0px, 57px 0     0 5px,
+    19px 19px  0 0px, 38px 19px  0 0px, 57px 19px  0 5px; }
+  87.5% { box-shadow:
+    19px -19px 0 0px, 38px -19px 0 5px, 57px -19px 0 0px,
+    19px 0     0 0px, 38px 0     0 5px, 57px 0     0 0px,
+    19px 19px  0 5px, 38px 19px  0 0px, 57px 19px  0 0px; }
+}
+
+/* Flame flicker — the warmup ("heat") motif for the sidebar Accounts row.
+   Deliberately a DIFFERENT motion than .campaign-grid so each nav row reads
+   distinct. A small living-flame wobble: scale + tilt + opacity, anchored at
+   the base so it dances like a candle. Tint via currentColor (orange). */
+.flame-flicker {
+  transform-origin: center bottom;
+  animation: flame-flicker 1.1s ease-in-out infinite;
+}
+
+@keyframes flame-flicker {
+  0%, 100% { transform: scale(1) rotate(-1.5deg); opacity: 0.82; }
+  25%      { transform: scale(1.09) rotate(1.5deg); opacity: 1; }
+  50%      { transform: scale(0.97) rotate(-1deg); opacity: 0.9; }
+  75%      { transform: scale(1.05) rotate(1deg); opacity: 1; }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .sky-breathe, .sun-glow, .cloud-drift, .animate-card-float, .animate-fade-in { animation: none !important; }
+  .sky-breathe, .sun-glow, .cloud-drift, .animate-card-float, .animate-fade-in, .campaign-grid::before, .flame-flicker { animation: none !important; }
 }
 
 /* ── Utilities ─────────────────────── */
@@ -300,6 +374,32 @@ svg.loading circle {
 
 .tiptap p{
   margin: 0;
+}
+
+/* Campaign Step composer body (TipTap editor + the rendered Preview pane).
+   Tailwind preflight strips list markers + heading sizes, so restore them. */
+.tiptap-body { word-break: break-word; }
+.tiptap-body p { margin: 0 0 0.6em; }
+.tiptap-body p:last-child { margin-bottom: 0; }
+.tiptap-body h2 { font-size: 1.25rem; line-height: 1.3; font-weight: 600; margin: 0.5em 0 0.3em; color: #0f172a; }
+.tiptap-body h3 { font-size: 1.08rem; line-height: 1.3; font-weight: 600; margin: 0.5em 0 0.3em; color: #0f172a; }
+.tiptap-body ul { list-style: disc; padding-left: 1.25rem; margin: 0.4em 0; }
+.tiptap-body ol { list-style: decimal; padding-left: 1.25rem; margin: 0.4em 0; }
+.tiptap-body li { margin: 0.15em 0; }
+.tiptap-body li > p { margin: 0; }
+.tiptap-body a { color: #0284c7; text-decoration: underline; }
+.tiptap-body strong { font-weight: 600; }
+.tiptap-body:focus { outline: none; }
+
+/* Campaign flow canvas — smoothly glide nodes when the layout recomputes
+   (adding/deleting a step, "Tidy up"). The transition is killed while dragging
+   so node drag stays 1:1 with the cursor. Scoped to .campaign-flow so other
+   React Flow surfaces are unaffected. */
+.campaign-flow .react-flow__node {
+  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.campaign-flow.rf-dragging .react-flow__node {
+  transition: none;
 }
 
 @layer base {

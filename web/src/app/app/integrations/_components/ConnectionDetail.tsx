@@ -27,6 +27,7 @@ import {
 import toast from "react-hot-toast";
 
 import { Label, TextInput } from "@/components/ui/field";
+import { useConfirm } from "@/hooks/context/confirm";
 import useConnectionDetail from "@/lib/api/hooks/app/integrations/useConnectionDetail";
 import useDisconnectIntegration from "@/lib/api/hooks/app/integrations/useDisconnectIntegration";
 import {
@@ -70,6 +71,7 @@ export default function ConnectionDetail({
 
     const [adding, setAdding] = React.useState(false);
     const [busy, setBusy] = React.useState(false);
+    const confirm = useConfirm();
 
     const conn = detail.data?.connection ?? connection;
     const events = detail.data?.events ?? [];
@@ -94,15 +96,16 @@ export default function ConnectionDetail({
         }
     }
 
-    async function handleDisconnect() {
-        if (!window.confirm(`Disconnect ${conn.label}? Automations using it will stop.`)) return;
-        try {
-            await disconnect.mutateAsync(conn.id);
-            toast.success("Disconnected");
-            onClose();
-        } catch {
-            toast.error("Disconnect failed");
-        }
+    function handleDisconnect() {
+        confirm.show(`Disconnect ${conn.label}? Automations using it will stop.`, async () => {
+            try {
+                await disconnect.mutateAsync(conn.id);
+                toast.success("Disconnected");
+                onClose();
+            } catch {
+                toast.error("Disconnect failed");
+            }
+        });
     }
 
     async function addAutomation(eventType: string, config: Record<string, unknown>) {
@@ -284,7 +287,7 @@ function AutomationRow({ sub, onDelete }: { sub: IntegrationEventSubscription; o
     const intents = Array.isArray(cfg.intents) ? (cfg.intents as string[]) : [];
     const minConf = typeof cfg.min_confidence === "number" ? cfg.min_confidence : undefined;
     const dest =
-        (cfg.channel as string) || (cfg.sheet_id as string) || (cfg.url as string) || (cfg.webhook_url as string) || "";
+        (cfg.channel as string) || (cfg.url as string) || (cfg.webhook_url as string) || "";
     const tmpl = (cfg.message_template as string) || "";
 
     const filters: string[] = [];
@@ -345,8 +348,7 @@ function AddAutomation({
     const [template, setTemplate] = React.useState("");
 
     const needsChannel = provider === "slack";
-    const needsSheet = provider === "google_sheets";
-    const needsURL = provider !== "slack" && provider !== "google_sheets" && provider !== "discord" &&
+    const needsURL = provider !== "slack" && provider !== "discord" &&
         provider !== "hubspot" && provider !== "pipedrive";
     const isReplyTrigger = eventType === REPLY_EVENT;
     const destRequired = needsChannel || needsURL;
@@ -358,7 +360,6 @@ function AddAutomation({
     function buildConfig(): Record<string, unknown> {
         const cfg: Record<string, unknown> = {};
         if (needsChannel && dest.trim()) cfg.channel = dest.trim();
-        if (needsSheet && dest.trim()) cfg.sheet_id = dest.trim();
         if (needsURL && dest.trim()) cfg.url = dest.trim();
         if (isReplyTrigger && intents.length) cfg.intents = intents;
         if (isReplyTrigger && minConf > 0) cfg.min_confidence = minConf;
@@ -366,8 +367,8 @@ function AddAutomation({
         return cfg;
     }
 
-    const destLabel = needsChannel ? "Channel" : needsSheet ? "Sheet ID (optional)" : "Destination URL";
-    const destPlaceholder = needsChannel ? "#sales" : needsSheet ? "1AbC…XyZ" : "https://…";
+    const destLabel = needsChannel ? "Channel" : "Destination URL";
+    const destPlaceholder = needsChannel ? "#sales" : "https://…";
     const canSubmit = !busy && !(destRequired && !dest.trim());
 
     return (
@@ -426,14 +427,14 @@ function AddAutomation({
                 </div>
             )}
 
-            {(needsChannel || needsSheet || needsURL) && (
+            {(needsChannel || needsURL) && (
                 <div>
                     <Label>{destLabel}</Label>
                     <TextInput
                         value={dest}
                         onChange={setDest}
                         placeholder={destPlaceholder}
-                        className={needsSheet || needsURL ? "font-mono" : undefined}
+                        className={needsURL ? "font-mono" : undefined}
                     />
                 </div>
             )}
@@ -500,8 +501,6 @@ function actionForProvider(provider: string): string {
             return "hubspot.upsert_contact";
         case "pipedrive":
             return "pipedrive.upsert_person";
-        case "google_sheets":
-            return "google_sheets.append_row";
         default:
             return "webhook.ping";
     }

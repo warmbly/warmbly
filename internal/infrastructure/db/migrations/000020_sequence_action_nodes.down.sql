@@ -1,0 +1,3 @@
+ALTER TABLE sequences DROP CONSTRAINT IF EXISTS sequences_kind_chk;
+ALTER TABLE sequences DROP COLUMN IF EXISTS action;
+ALTER TABLE sequences DROP COLUMN IF EXISTS kind;

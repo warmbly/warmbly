@@ -59,6 +59,72 @@ func TestRenderTemplate_NoPlaceholders(t *testing.T) {
 	}
 }
 
+func TestRenderTemplate_ConditionalIfSet(t *testing.T) {
+	tmpl := "Hi {{.FirstName}},{{if .Company}} saw {{.Company}} is hiring.{{end}}"
+
+	with := RenderTemplate(tmpl, models.Contact{FirstName: "Alex", Company: "Acme"})
+	if with != "Hi Alex, saw Acme is hiring." {
+		t.Errorf("if-set (present) wrong: %q", with)
+	}
+
+	without := RenderTemplate(tmpl, models.Contact{FirstName: "Alex"})
+	if without != "Hi Alex," {
+		t.Errorf("if-set (absent) wrong: %q", without)
+	}
+}
+
+func TestRenderTemplate_IfElse(t *testing.T) {
+	tmpl := "{{if .FirstName}}Hi {{.FirstName}}{{else}}Hi there{{end}},"
+
+	if got := RenderTemplate(tmpl, models.Contact{FirstName: "Sam"}); got != "Hi Sam," {
+		t.Errorf("if branch wrong: %q", got)
+	}
+	if got := RenderTemplate(tmpl, models.Contact{}); got != "Hi there," {
+		t.Errorf("else branch wrong: %q", got)
+	}
+}
+
+func TestRenderTemplate_EqOnCustomField(t *testing.T) {
+	tmpl := `{{if eq .city "Berlin"}}in town{{else}}remote{{end}}`
+
+	yes := RenderTemplate(tmpl, models.Contact{CustomFields: map[string]string{"city": "Berlin"}})
+	if yes != "in town" {
+		t.Errorf("eq match wrong: %q", yes)
+	}
+	no := RenderTemplate(tmpl, models.Contact{CustomFields: map[string]string{"city": "Paris"}})
+	if no != "remote" {
+		t.Errorf("eq non-match wrong: %q", no)
+	}
+}
+
+func TestRenderTemplate_MissingKeyRendersEmpty(t *testing.T) {
+	// An unknown token renders empty (missingkey=zero) rather than leaking.
+	got := RenderTemplate("X{{.Nope}}Y", models.Contact{FirstName: "A"})
+	if got != "XY" {
+		t.Errorf("missing key should be empty: %q", got)
+	}
+}
+
+func TestRenderTemplate_MalformedFallsBack(t *testing.T) {
+	// An {{if}} with no {{end}} must not hard-fail; it falls back to naive
+	// substitution so standard variables still resolve.
+	got := RenderTemplate("Hi {{.FirstName}} {{if .Company}}oops", models.Contact{FirstName: "Bo", Company: "Acme"})
+	if !strings.Contains(got, "Bo") {
+		t.Errorf("malformed template should still substitute variables: %q", got)
+	}
+}
+
+func TestRenderTemplate_NonIdentifierCustomKey(t *testing.T) {
+	// Custom keys with spaces can't use selector syntax; the pre-pass substitutes
+	// {{.Job Title}} literally so it still renders.
+	got := RenderTemplate("Role: {{.Job Title}}", models.Contact{
+		CustomFields: map[string]string{"Job Title": "CTO"},
+	})
+	if got != "Role: CTO" {
+		t.Errorf("non-identifier custom key wrong: %q", got)
+	}
+}
+
 func TestGenerateConversationEmail_NewEmail(t *testing.T) {
 	conv := Conversation{
 		Theme:       "test",

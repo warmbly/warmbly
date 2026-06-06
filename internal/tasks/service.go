@@ -78,6 +78,7 @@ type tasksService struct {
 	campaignRepo         repository.CampaignRepository
 	contactRepo          repository.ContactRepository
 	campaignLogRepo      repository.CampaignLogRepository
+	attachmentRepo       repository.AttachmentRepository
 
 	// warmupSettings caches the warmup generation settings in-process so the
 	// per-send AI-vs-static decision doesn't hit Postgres on every warmup.
@@ -112,6 +113,7 @@ func NewService(
 	contactRepo repository.ContactRepository,
 	campaignLogRepo repository.CampaignLogRepository,
 	advanced advanced.Service,
+	attachmentRepo repository.AttachmentRepository,
 ) TasksService {
 	return &tasksService{
 		tasksClient:          tasksClient,
@@ -134,6 +136,7 @@ func NewService(
 		campaignRepo:         campaignRepo,
 		contactRepo:          contactRepo,
 		campaignLogRepo:      campaignLogRepo,
+		attachmentRepo:       attachmentRepo,
 		warmupSettings:       &warmupSettingsCache{},
 	}
 }

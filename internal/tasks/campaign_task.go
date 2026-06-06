@@ -2,6 +2,7 @@ package tasks
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -156,7 +157,7 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 				// Reschedule to the next day to keep campaign progression alive.
 				nextDay := time.Now().UTC().Truncate(24 * time.Hour).Add(24 * time.Hour).Add(5 * time.Minute)
 				_, _, nextAccountID, calcErr := s.scheduler.CalculateNextCampaignTime(ctx, *campaignTask.CampaignID)
-				if calcErr == nil {
+				if calcErr == nil || errors.Is(calcErr, scheduler.ErrCampaignDeferred) {
 					if err := s.createCampaignTask(ctx, campaign.ID, nextAccountID, nextDay); err != nil {
 						log.Warn().Err(err).Str("campaign_id", campaign.ID.String()).Str("task_id", taskID.String()).Msg("Failed to create next campaign task after daily limit")
 					}
@@ -175,6 +176,22 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 			executionStatus = "completed"
 			return nil
 		}
+		if errors.Is(err, scheduler.ErrCampaignDeferred) {
+			// A valid contact exists but no eligible mailbox right now (ESP-strict
+			// has no same-provider mailbox, or the daily new-lead cap is reached).
+			// Reschedule at the deferred slot WITHOUT sending and WITHOUT touching
+			// progress / daily counters / rotation — mirrors the daily-limit path.
+			scheduledNext := nextTime
+			if scheduledNext.IsZero() {
+				scheduledNext = time.Now().UTC().Add(1 * time.Hour)
+			}
+			if cerr := s.createCampaignTask(ctx, campaign.ID, accountID, scheduledNext); cerr != nil {
+				log.Warn().Err(cerr).Str("campaign_id", campaign.ID.String()).Str("task_id", taskID.String()).Msg("Failed to schedule deferred campaign task")
+			}
+			s.taskRepo.UpdateTaskStatus(ctx, taskID, "completed")
+			executionStatus = "completed"
+			return nil
+		}
 		if errors.Is(err, scheduler.ErrCampaignCompleted) {
 			s.campaignRepo.UpdateStatus(ctx, campaign.ID, "completed")
 			if s.campaignLogRepo != nil {
@@ -182,6 +199,19 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 					CampaignID: campaign.ID,
 					EventType:  "completed",
 					Message:    "Campaign completed: all emails sent",
+				})
+			}
+			// Broadcast live so the dashboard (and the sidebar campaign counters)
+			// flip from "sending" to "finished" without a manual refresh.
+			if s.streamingPublisher != nil {
+				s.streamingPublisher.PublishCampaignEvent(ctx, &pubsub.CampaignEvent{
+					BaseEvent: pubsub.BaseEvent{
+						EventType: pubsub.EventCampaignCompleted,
+						UserID:    campaign.UserID,
+					},
+					CampaignID: campaign.ID.String(),
+					Name:       campaign.Name,
+					Status:     "completed",
 				})
 			}
 		}
@@ -221,7 +251,9 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 
 	// Pre-send verification gate: drop addresses already known to be invalid
 	// (bad syntax / no MX / 550 RCPT) before a worker sends and earns a hard
-	// bounce. Only 'invalid' is dropped — 'risky'/'unknown'/'valid' still send.
+	// bounce. 'invalid' is always dropped; 'risky' is dropped only when the
+	// campaign's "send to risky emails" toggle is off (see the next gate).
+	// 'unknown'/'valid' always send.
 	if contact.VerificationStatus == "invalid" {
 		_ = s.taskRepo.UpdateTaskStatusWithLock(ctx, taskID, "skipped_suppressed")
 		if s.campaignLogRepo != nil {
@@ -237,10 +269,84 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 		return nil
 	}
 
+	// Risky-recipient gate: when "send to risky emails" is off, also drop
+	// addresses verification flagged 'risky' (catch-all / role / low-quality),
+	// which raise bounce risk. Enforces the campaign.RiskyEmails toggle that the
+	// settings UI exposes — without this the toggle is stored but inert.
+	if !campaign.RiskyEmails && contact.VerificationStatus == "risky" {
+		_ = s.taskRepo.UpdateTaskStatusWithLock(ctx, taskID, "skipped_suppressed")
+		if s.campaignLogRepo != nil {
+			_ = s.campaignLogRepo.CreateLog(ctx, &repository.CampaignLogEntry{
+				CampaignID: campaign.ID,
+				EventType:  "suppressed",
+				Message:    fmt.Sprintf("Risky recipient skipped (send to risky emails is off): %s", contact.Email),
+				Metadata:   map[string]interface{}{"reason": contact.VerificationReason},
+			})
+		}
+		_ = s.createCampaignTask(ctx, campaign.ID, accountID, nextTime)
+		executionStatus = "completed"
+		return nil
+	}
+
 	sequence, err := s.campaignRepo.GetSequenceByID(ctx, nextPair.SequenceID)
 	if err != nil {
 		sentry.CaptureException(err)
 		return errx.InternalError()
+	}
+
+	// STEP 7.6: Non-email nodes (action / wait). These run a control-plane side
+	// effect and route onward WITHOUT sending mail — the render/send block below
+	// is reached only for email nodes. We stamp the node visited so routing
+	// advances past it next tick, then schedule the next campaign tick (now for
+	// instant actions and "end", now+wait for a wait node). An "end" node has no
+	// outgoing connection, so the contact drops out of routing afterwards while
+	// the campaign keeps processing other contacts.
+	if sequence.Kind != "email" {
+		var cfg models.ActionConfig
+		if len(sequence.Action) > 0 {
+			_ = json.Unmarshal(sequence.Action, &cfg)
+		}
+		if aerr := s.executeActionNode(ctx, campaign, contact, &cfg); aerr != nil {
+			log.Warn().Err(aerr).Str("campaign_id", campaign.ID.String()).Str("task_id", taskID.String()).Str("action", cfg.Type).Msg("Action node execution failed")
+		}
+		resumeAt := nextTime
+		if cfg.Type == "wait" && cfg.WaitMinutes != nil && *cfg.WaitMinutes > 0 {
+			resumeAt = time.Now().UTC().Add(time.Duration(*cfg.WaitMinutes) * time.Minute)
+		}
+		if rerr := s.campaignProgressRepo.RecordEmailSent(ctx, campaign.ID, contact.ID, sequence.ID); rerr != nil {
+			log.Warn().Err(rerr).Str("campaign_id", campaign.ID.String()).Msg("Failed to record action node progress")
+		}
+		if cerr := s.createCampaignTask(ctx, campaign.ID, accountID, resumeAt); cerr != nil {
+			log.Warn().Err(cerr).Str("campaign_id", campaign.ID.String()).Msg("Failed to schedule next task after action node")
+		}
+		if s.campaignLogRepo != nil {
+			_ = s.campaignLogRepo.CreateLog(ctx, &repository.CampaignLogEntry{
+				CampaignID: campaign.ID,
+				EventType:  "action",
+				Message:    fmt.Sprintf("Ran '%s' action for %s", cfg.Type, contact.Email),
+			})
+		}
+		s.taskRepo.UpdateTaskStatus(ctx, taskID, "completed")
+		executionStatus = "completed"
+		return nil
+	}
+
+	// Load campaign attachments (campaign-wide; metadata only — the worker
+	// fetches the bytes from object storage by S3 key at send time).
+	var attachmentRefs []models.AttachmentRef
+	if s.attachmentRepo != nil {
+		atts, attErr := s.attachmentRepo.ListByCampaign(ctx, campaign.ID)
+		if attErr != nil {
+			log.Warn().Err(attErr).Str("campaign_id", campaign.ID.String()).Str("task_id", taskID.String()).Msg("Failed to load campaign attachments")
+		} else {
+			for _, a := range atts {
+				attachmentRefs = append(attachmentRefs, models.AttachmentRef{
+					S3Key:    a.S3Key,
+					Filename: a.Filename,
+					MimeType: a.MimeType,
+				})
+			}
+		}
 	}
 
 	// STEP 7.5: Update campaign task with contact_id and sequence_id for tracking
@@ -281,7 +387,7 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 	}
 
 	if s.advanced != nil && campaign.OrganizationID != nil {
-		selection, sxerr := s.advanced.SelectVariant(ctx, *campaign.OrganizationID, campaign.ID, contact.ID, subject, bodyHTML, bodyPlain)
+		selection, sxerr := s.advanced.SelectVariant(ctx, *campaign.OrganizationID, campaign.ID, contact.ID, sequence.ID, subject, bodyHTML, bodyPlain)
 		if sxerr != nil {
 			return sxerr
 		}
@@ -292,13 +398,31 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 		}
 	}
 
-	// STEP 11: Add tracking
+	// STEP 11: Add tracking. Resolve the tracking host once: a VERIFIED
+	// campaign-scoped override wins, otherwise the mailbox/default domain.
+	// Only a verified override is honored (an unresolved/unverified host could
+	// point tracking at a hijackable target — SSRF-adjacent), matching the
+	// webhook-safety posture.
+	trackingDomain := account.TrackingDomain
+	if campaign.TrackingDomain != "" {
+		if campaign.TrackingDomainVerified {
+			trackingDomain = campaign.TrackingDomain
+		} else if s.campaignLogRepo != nil {
+			s.campaignLogRepo.CreateLog(ctx, &repository.CampaignLogEntry{
+				CampaignID: campaign.ID,
+				EventType:  "tracking_domain_unverified",
+				Message:    "Campaign tracking domain not verified; using mailbox default",
+				Metadata:   map[string]interface{}{"tracking_domain": campaign.TrackingDomain},
+			})
+		}
+	}
+
 	if campaign.OpenTracking && bodyHTML != "" {
-		bodyHTML = AddOpenTrackingPixel(bodyHTML, taskID, account.TrackingDomain)
+		bodyHTML = AddOpenTrackingPixel(bodyHTML, taskID, trackingDomain)
 	}
 
 	if campaign.LinkTracking && bodyHTML != "" {
-		bodyHTML = WrapLinksForTracking(bodyHTML, taskID, account.TrackingDomain)
+		bodyHTML = WrapLinksForTracking(bodyHTML, taskID, trackingDomain)
 	}
 
 	// STEP 12: Add signature
@@ -339,13 +463,13 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 	// STEP 14: Generate Message-ID
 	messageID := generateMessageID(account.Email)
 
-	// STEP 15: Build tracking info
+	// STEP 15: Build tracking info (worker receives the already-resolved host).
 	var tracking *models.TrackingInfo
 	if campaign.OpenTracking || campaign.LinkTracking {
 		tracking = &models.TrackingInfo{
 			OpenTracking:   campaign.OpenTracking,
 			LinkTracking:   campaign.LinkTracking,
-			TrackingDomain: account.TrackingDomain,
+			TrackingDomain: trackingDomain,
 		}
 	}
 
@@ -370,6 +494,7 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 		Tracking:       tracking,
 		UserID:         userUUID,
 		UnsubscribeURL: unsubscribeURL,
+		Attachments:    attachmentRefs,
 	}
 
 	if err := s.emailSender.Send(ctx, taskID, emailMsg, *account); err != nil {
@@ -440,6 +565,13 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 		log.Warn().Err(err).Str("campaign_id", campaign.ID.String()).Str("task_id", taskID.String()).Msg("Failed to record email sent")
 	}
 
+	// Bump today's per-campaign counters. newLead counts ONLY a genuinely-sent
+	// position-1 (first-step) email, so the new-lead/day cap can never under-count
+	// and over-send. Skipped/suppressed/failed tasks never reach this point.
+	if err := s.campaignRepo.IncrementCampaignDailySend(ctx, campaign.ID, nextPair.IsNewLead); err != nil {
+		log.Warn().Err(err).Str("campaign_id", campaign.ID.String()).Str("task_id", taskID.String()).Msg("Failed to increment campaign daily send counter")
+	}
+
 	// Publish campaign progress summary to Pub/Sub for real-time dashboard updates
 	if s.streamingPublisher != nil {
 		if progress, pErr := s.campaignProgressRepo.GetCampaignProgress(ctx, campaign.ID); pErr == nil && progress != nil {
@@ -465,6 +597,15 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 	if err := s.taskRepo.UpdateTaskStatusWithLock(ctx, taskID, "completed"); err != nil {
 		sentry.CaptureException(err)
 		return errx.InternalError()
+	}
+
+	// STEP 18.5: Advance the explicit-sender rotation cursor on a GENUINE send
+	// only (single atomic UPDATE), so round_robin/least_recently_used cursors
+	// stay coherent and a send-failure/skip never bumps them. The UPDATE is
+	// scoped to (campaign_id, email_account_id), so it's a harmless no-op for
+	// tag/all-resolved mailboxes that have no campaign_senders row.
+	if err := s.campaignRepo.AdvanceCampaignSender(ctx, campaign.ID, account.ID); err != nil {
+		log.Warn().Err(err).Str("campaign_id", campaign.ID.String()).Str("task_id", taskID.String()).Msg("Failed to advance campaign sender cursor")
 	}
 
 	// Publish task completion to Pub/Sub
@@ -541,6 +682,62 @@ func (s *tasksService) autoPauseCampaign(ctx context.Context, campaignID, taskID
 			EventType:  "auto_paused",
 			Message:    "Campaign auto-paused: no active email accounts available",
 		})
+	}
+}
+
+// executeActionNode runs the control-plane side effect for a non-email node.
+// "wait" and "end" have no side effect (their behaviour is timing / routing
+// only); the others reuse existing repos/services. Everything here is
+// control-plane — the worker is never involved for an action node.
+func (s *tasksService) executeActionNode(ctx context.Context, campaign *models.Campaign, contact *models.Contact, cfg *models.ActionConfig) error {
+	switch cfg.Type {
+	case "wait", "end", "":
+		return nil
+	case "add_tag":
+		if cfg.CategoryID == nil {
+			return nil
+		}
+		if _, xerr := s.contactRepo.Update(ctx, campaign.UserID, contact.ID.String(), &models.UpdateContact{
+			AddCategories: []string{cfg.CategoryID.String()},
+		}); xerr != nil {
+			return xerr
+		}
+		return nil
+	case "remove_tag":
+		if cfg.CategoryID == nil {
+			return nil
+		}
+		if _, xerr := s.contactRepo.Update(ctx, campaign.UserID, contact.ID.String(), &models.UpdateContact{
+			RemoveCategories: []string{cfg.CategoryID.String()},
+		}); xerr != nil {
+			return xerr
+		}
+		return nil
+	case "unsubscribe":
+		if xerr := s.advanced.Unsubscribe(ctx, campaign.ID, contact.ID); xerr != nil {
+			return xerr
+		}
+		return nil
+	case "notify":
+		if s.advanced == nil || campaign.OrganizationID == nil {
+			return nil
+		}
+		event := models.WebhookEventCampaignAction
+		if cfg.NotifyEvent != "" {
+			event = models.WebhookEventType(cfg.NotifyEvent)
+		}
+		data := map[string]any{
+			"campaign_id":   campaign.ID.String(),
+			"contact_id":    contact.ID.String(),
+			"contact_email": contact.Email,
+		}
+		for k, v := range cfg.NotifyData {
+			data[k] = v
+		}
+		s.advanced.EmitCampaignEvent(ctx, *campaign.OrganizationID, event, data)
+		return nil
+	default:
+		return nil
 	}
 }
 

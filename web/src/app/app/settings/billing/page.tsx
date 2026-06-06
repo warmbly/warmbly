@@ -27,6 +27,7 @@ import useValidateDiscountCode from "@/lib/api/hooks/app/subscription/useValidat
 import useCreateCheckoutSession from "@/lib/api/hooks/app/subscription/useCreateCheckoutSession";
 import useChangePlan from "@/lib/api/hooks/app/subscription/useChangePlan";
 import usePlans from "@/lib/api/hooks/app/subscription/usePlans";
+import useUsageOverview from "@/lib/api/hooks/app/analytics/useUsageOverview";
 import { useAppStore } from "@/stores";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import type DiscountPreview from "@/lib/api/models/app/subscription/DiscountPreview";
@@ -47,6 +48,7 @@ export default function BillingSettingsPage() {
     const checkout = useCreateCheckoutSession();
     const changePlan = useChangePlan();
     const plansQuery = usePlans();
+    const usage = useUsageOverview().data;
     const [codeInput, setCodeInput] = React.useState("");
     const [applied, setApplied] = React.useState<DiscountPreview | null>(null);
     const [billingInterval, setBillingInterval] =
@@ -352,17 +354,17 @@ export default function BillingSettingsPage() {
                 eyebrow="Usage"
                 description="What this workspace is consuming this period."
             >
-                <UsageRow label="Mailboxes" current={0} max={"Unlimited"} />
+                <UsageRow label="Mailboxes" current={usage?.email_accounts.total ?? 0} max={"Unlimited"} />
                 <UsageRow
-                    label="Sends / day"
-                    current={0}
+                    label="Sends this period"
+                    current={usage?.campaigns.emails_sent ?? 0}
                     max={
                         currentPlan.sendsPerDay === Number.POSITIVE_INFINITY
                             ? "Custom"
                             : currentPlan.sendsPerDay
                     }
                 />
-                <UsageRow label="Warmup" current={0} max={"Unlimited"} />
+                <UsageRow label="Warmup" current={usage?.email_accounts.in_warmup ?? 0} max={"Unlimited"} />
                 <UsageRow
                     label="Dedicated IPs"
                     current={currentPlan.id === "business" ? 1 : 0}

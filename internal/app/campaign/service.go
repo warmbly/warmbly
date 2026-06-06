@@ -29,6 +29,14 @@ type CampaignService interface {
 
 	// Logs
 	GetLogs(ctx context.Context, userID, campaignID string, limit int, cursor *string) (*models.CampaignLogsResult, *errx.Error)
+
+	// Explicit sender pool (feature 1).
+	ListCampaignSenders(ctx context.Context, orgID uuid.UUID, campaignID string) ([]models.CampaignSender, *errx.Error)
+	ReplaceCampaignSenders(ctx context.Context, orgID uuid.UUID, campaignID string, in []models.CampaignSenderInput) ([]models.CampaignSender, *errx.Error)
+
+	// Campaign-scoped tracking domain (feature 5). Resolves the override's CNAME
+	// and flips verified on success; an unresolved record stays "pending".
+	VerifyCampaignTrackingDomain(ctx context.Context, orgID uuid.UUID, campaignID string) (*models.TrackingDomainStatus, *errx.Error)
 }
 
 type campaignService struct {

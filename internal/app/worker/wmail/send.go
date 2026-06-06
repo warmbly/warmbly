@@ -7,10 +7,19 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/client/goog"
+	"github.com/warmbly/warmbly/internal/client/smtpimap/smtp"
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 )
+
+// Attachment is a fully-resolved attachment ready to be MIME-encoded: the
+// worker has already fetched Data from object storage.
+type Attachment struct {
+	Filename string
+	MimeType string
+	Data     []byte
+}
 
 // SendRequest contains all parameters needed to send an email
 type SendRequest struct {
@@ -29,6 +38,9 @@ type SendRequest struct {
 	// UnsubscribeURL, when set (campaign sends with the unsubscribe header
 	// enabled), produces RFC 8058 one-click unsubscribe headers.
 	UnsubscribeURL string
+	// Attachments, when present, are encoded as multipart/mixed parts after the
+	// multipart/alternative text body. Warmup sends never carry attachments.
+	Attachments []Attachment
 }
 
 // buildSendHeaders assembles the outbound custom headers: the warmup
@@ -145,6 +157,10 @@ func (w *WMail) sendViaGmail(ctx context.Context, req *SendRequest, bodyHTML str
 	// Build custom headers (warmup token + RFC 8058 one-click unsubscribe).
 	customHeaders := buildSendHeaders(req)
 
+	// Convert resolved attachments to the goog transport shape (warmup sends
+	// carry none, but threading req.Attachments is harmless when empty).
+	attachments := toGoogAttachments(req.Attachments)
+
 	// Send via Gmail API
 	gmailMsg, err := w.GoogleData.Client.SendMessage(
 		ctx,
@@ -156,6 +172,7 @@ func (w *WMail) sendViaGmail(ctx context.Context, req *SendRequest, bodyHTML str
 		req.BodyPlain,
 		bodyHTML,
 		parent,
+		attachments,
 		customHeaders,
 	)
 	if err != nil {
@@ -200,32 +217,23 @@ func (w *WMail) sendViaSMTP(ctx context.Context, req *SendRequest, bodyHTML stri
 	// Build custom headers (warmup token + RFC 8058 one-click unsubscribe).
 	smtpCustomHeaders := buildSendHeaders(req)
 
-	// Send via SMTP
-	var merr *errx.MailError
-	if smtpCustomHeaders != nil {
-		merr = w.SmtpImapData.SmtpClient.Send(
-			ctx,
-			req.To,
-			req.Cc,
-			req.Bcc,
-			req.Subject,
-			req.BodyPlain,
-			bodyHTML,
-			req.InReplyTo,
-			smtpCustomHeaders,
-		)
-	} else {
-		merr = w.SmtpImapData.SmtpClient.Send(
-			ctx,
-			req.To,
-			req.Cc,
-			req.Bcc,
-			req.Subject,
-			req.BodyPlain,
-			bodyHTML,
-			req.InReplyTo,
-		)
-	}
+	// Convert resolved attachments to the SMTP transport shape.
+	smtpAttachments := toSMTPAttachments(req.Attachments)
+
+	// Send via SMTP. Attachments are passed explicitly (not variadic) so an
+	// empty list still selects the same code path.
+	merr := w.SmtpImapData.SmtpClient.Send(
+		ctx,
+		req.To,
+		req.Cc,
+		req.Bcc,
+		req.Subject,
+		req.BodyPlain,
+		bodyHTML,
+		req.InReplyTo,
+		smtpAttachments,
+		smtpCustomHeaders,
+	)
 	if merr != nil {
 		result.Error = merr
 		return result
@@ -235,6 +243,38 @@ func (w *WMail) sendViaSMTP(ctx context.Context, req *SendRequest, bodyHTML stri
 	result.MessageID = req.MessageID
 	result.ProviderMsgID = req.MessageID // SMTP uses the same message ID
 	return result
+}
+
+// toGoogAttachments maps wmail attachments to the Gmail transport shape.
+func toGoogAttachments(in []Attachment) []goog.Attachment {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]goog.Attachment, 0, len(in))
+	for _, a := range in {
+		out = append(out, goog.Attachment{
+			Filename: a.Filename,
+			MimeType: a.MimeType,
+			Data:     a.Data,
+		})
+	}
+	return out
+}
+
+// toSMTPAttachments maps wmail attachments to the SMTP transport shape.
+func toSMTPAttachments(in []Attachment) []smtp.Attachment {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]smtp.Attachment, 0, len(in))
+	for _, a := range in {
+		out = append(out, smtp.Attachment{
+			Filename: a.Filename,
+			MimeType: a.MimeType,
+			Data:     a.Data,
+		})
+	}
+	return out
 }
 
 // DetermineErrorEventType maps a MailError to the appropriate JobEventType

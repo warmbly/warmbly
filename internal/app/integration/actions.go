@@ -241,18 +241,6 @@ func pipedriveJSON(ctx context.Context, method, url, token string, body []byte, 
 	return nil
 }
 
-// sheetsAppendRow appends an event row to a connected Google Sheet using the
-// existing Sheets client wrapper.
-func sheetsAppendRow(ctx context.Context, token, sheetID string, data map[string]any) error {
-	client := NewSheetsClient(token)
-	row := []string{
-		time.Now().UTC().Format(time.RFC3339),
-		stringFromMap(data, "contact_email", "invitee_email", "email"),
-		stringFromMap(data, "subject", "event_name", "campaign_name"),
-	}
-	return client.AppendValues(ctx, sheetID, "A1", [][]string{row})
-}
-
 func shortURL(u string) string {
 	if i := len("https://api.hubapi.com"); len(u) > i {
 		return u[i:]

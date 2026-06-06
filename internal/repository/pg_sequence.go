@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -42,6 +43,9 @@ var SequenceSelections []string = []string{
 	"body_code",
 	"wait_after",
 	"position",
+	"conditions",
+	"kind",
+	"action",
 	"updated_at",
 	"created_at",
 }
@@ -64,7 +68,8 @@ var (
 func GetSequence(row db.Scannable, seq *models.Sequence) error {
 	return row.Scan(
 		&seq.ID, &seq.Name, &seq.Subject, &seq.BodyPlain, &seq.BodyHTML, &seq.BodySync,
-		&seq.BodyCode, &seq.WaitAfter, &seq.Position, &seq.UpdatedAt, &seq.CreatedAt,
+		&seq.BodyCode, &seq.WaitAfter, &seq.Position, &seq.Conditions, &seq.Kind, &seq.Action,
+		&seq.UpdatedAt, &seq.CreatedAt,
 	)
 }
 
@@ -233,8 +238,48 @@ func (r *sequenceRepository) Update(ctx context.Context, userID, campaignID, seq
 		argPos++
 	}
 	if data.WaitAfter != nil {
+		if *data.WaitAfter < 0 || *data.WaitAfter > config.SequenceWaitAfterMax {
+			return nil, errx.ErrSequenceWaitAfter
+		}
 		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", "wait_after", argPos))
 		args = append(args, *data.WaitAfter)
+		argPos++
+	}
+	if data.Conditions != nil {
+		// Validate shape (operators/fields/values) before persisting. Cross-step
+		// validation (targets-in-campaign + no cycles) happens in the service
+		// layer where the full sequence set is available.
+		if verr := validateBranchConditions(data.Conditions); verr != nil {
+			return nil, verr
+		}
+		raw, merr := json.Marshal(data.Conditions)
+		if merr != nil {
+			db.CaptureError(merr, "", nil, "marshal_conditions")
+			return nil, errx.InternalError()
+		}
+		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", "conditions", argPos))
+		args = append(args, raw)
+		argPos++
+	}
+	if data.Kind != nil {
+		if *data.Kind != "email" && *data.Kind != "action" && *data.Kind != "wait" {
+			return nil, errx.ErrSequenceKind
+		}
+		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", "kind", argPos))
+		args = append(args, *data.Kind)
+		argPos++
+	}
+	if data.Action != nil {
+		if verr := validateActionConfig(data.Action); verr != nil {
+			return nil, verr
+		}
+		raw, merr := json.Marshal(data.Action)
+		if merr != nil {
+			db.CaptureError(merr, "", nil, "marshal_action")
+			return nil, errx.InternalError()
+		}
+		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", "action", argPos))
+		args = append(args, raw)
 		argPos++
 	}
 

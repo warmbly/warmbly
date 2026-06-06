@@ -52,6 +52,7 @@ func seedPlans(ctx context.Context, pool *pgxpool.Pool, r *Result) error {
 		maxActiveCampaigns *int
 		maxTeamMembers     *int
 		maxEmailAccounts   *int
+		monthlyCredits     int
 	}
 
 	plans := []plan{
@@ -62,6 +63,7 @@ func seedPlans(ctx context.Context, pool *pgxpool.Pool, r *Result) error {
 			dedicatedWorkers: 0, dailyCampaignLimit: intPtr(20),
 			maxCampaigns: intPtr(2), maxActiveCampaigns: intPtr(1),
 			maxTeamMembers: intPtr(1), maxEmailAccounts: intPtr(2),
+			monthlyCredits: 50,
 		},
 		{
 			id: PlanStarterID, name: "Starter", maxContacts: 1_000, dailyEmails: 100,
@@ -70,6 +72,7 @@ func seedPlans(ctx context.Context, pool *pgxpool.Pool, r *Result) error {
 			dedicatedWorkers: 0, dailyCampaignLimit: intPtr(100),
 			maxCampaigns: intPtr(5), maxActiveCampaigns: intPtr(2),
 			maxTeamMembers: intPtr(2), maxEmailAccounts: intPtr(3),
+			monthlyCredits: 250,
 		},
 		{
 			id: PlanProMonthlyID, name: "Pro", maxContacts: 25_000, dailyEmails: 1_000,
@@ -78,6 +81,7 @@ func seedPlans(ctx context.Context, pool *pgxpool.Pool, r *Result) error {
 			dedicatedWorkers: 1, dailyCampaignLimit: intPtr(1_000),
 			maxCampaigns: intPtr(50), maxActiveCampaigns: intPtr(20),
 			maxTeamMembers: intPtr(10), maxEmailAccounts: intPtr(20),
+			monthlyCredits: 2_000,
 		},
 		{
 			id: PlanProYearlyID, name: "Pro (Annual)", maxContacts: 25_000, dailyEmails: 1_000,
@@ -86,6 +90,7 @@ func seedPlans(ctx context.Context, pool *pgxpool.Pool, r *Result) error {
 			dedicatedWorkers: 1, dailyCampaignLimit: intPtr(1_000),
 			maxCampaigns: intPtr(50), maxActiveCampaigns: intPtr(20),
 			maxTeamMembers: intPtr(10), maxEmailAccounts: intPtr(20),
+			monthlyCredits: 2_000,
 		},
 		{
 			id: PlanEnterpriseID, name: "Enterprise", maxContacts: 1_000_000, dailyEmails: 10_000,
@@ -94,6 +99,7 @@ func seedPlans(ctx context.Context, pool *pgxpool.Pool, r *Result) error {
 			dedicatedWorkers: 3, dailyCampaignLimit: intPtr(10_000),
 			maxCampaigns: nil, maxActiveCampaigns: nil,
 			maxTeamMembers: nil, maxEmailAccounts: nil,
+			monthlyCredits: 25_000,
 		},
 	}
 
@@ -103,8 +109,9 @@ func seedPlans(ctx context.Context, pool *pgxpool.Pool, r *Result) error {
 				id, name, max_contacts, daily_emails, ai_generation, account_limit,
 				price, discounted_price, duration_id, savings, public,
 				dedicated_workers, daily_campaign_limit,
-				max_campaigns, max_active_campaigns, max_team_members, max_email_accounts
-			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+				max_campaigns, max_active_campaigns, max_team_members, max_email_accounts,
+				monthly_credits
+			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
 			ON CONFLICT (id) DO UPDATE SET
 				name = EXCLUDED.name,
 				max_contacts = EXCLUDED.max_contacts,
@@ -122,12 +129,14 @@ func seedPlans(ctx context.Context, pool *pgxpool.Pool, r *Result) error {
 				max_active_campaigns = EXCLUDED.max_active_campaigns,
 				max_team_members = EXCLUDED.max_team_members,
 				max_email_accounts = EXCLUDED.max_email_accounts,
+				monthly_credits = EXCLUDED.monthly_credits,
 				updated_at = NOW()
 		`,
 			p.id, p.name, p.maxContacts, p.dailyEmails, p.ai, p.accountLimit,
 			p.price, p.discounted, p.duration, p.savings, p.public,
 			p.dedicatedWorkers, p.dailyCampaignLimit,
 			p.maxCampaigns, p.maxActiveCampaigns, p.maxTeamMembers, p.maxEmailAccounts,
+			p.monthlyCredits,
 		)
 		if err != nil {
 			return err

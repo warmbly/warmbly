@@ -21,6 +21,7 @@ import { CheckIcon, CopyIcon, Loader2Icon, XIcon } from "lucide-react";
 import toast from "react-hot-toast";
 import useUpdateContact from "@/lib/api/hooks/app/contacts/useUpdateContact";
 import useContact from "@/lib/api/hooks/app/contacts/useContact";
+import { useConfirm } from "@/hooks/context/confirm";
 import type Contact from "@/lib/api/models/app/contacts/Contact";
 import type MiniCampaign from "@/lib/api/models/app/campaigns/MiniCampaign";
 import type { AppError } from "@/lib/api/client/normalizeError";
@@ -38,10 +39,12 @@ export default function ContactEdit({
     contacts,
     active,
     setActive,
+    initialTab,
 }: {
     contacts: Contact[];
     active: string;
     setActive: React.Dispatch<React.SetStateAction<string>>;
+    initialTab?: ContactSlideTab;
 }) {
     const contact = React.useMemo(
         () => contacts.find((c) => c.id === active),
@@ -55,6 +58,7 @@ export default function ContactEdit({
                     key={contact.id}
                     contact={contact}
                     onClose={() => setActive("")}
+                    initialTab={initialTab}
                 />
             )}
         </AnimatePresence>
@@ -64,14 +68,17 @@ export default function ContactEdit({
 function ContactEditPanel({
     contact,
     onClose,
+    initialTab,
 }: {
     contact: Contact;
     onClose: () => void;
+    initialTab?: ContactSlideTab;
 }) {
     const update = useUpdateContact(contact.id);
     const detail = useContact(contact.id);
+    const confirm = useConfirm();
 
-    const [tab, setTab] = React.useState<ContactSlideTab>("overview");
+    const [tab, setTab] = React.useState<ContactSlideTab>(initialTab ?? "overview");
 
     const [firstName, setFirstName] = React.useState(contact.first_name);
     const [lastName, setLastName] = React.useState(contact.last_name);
@@ -162,16 +169,19 @@ function ContactEditPanel({
         }
     }
 
+    // Close, guarding unsaved edits behind the in-app confirm (never window.confirm).
+    const requestClose = React.useCallback(() => {
+        if (dirty) confirm.show("Discard unsaved changes?", onClose);
+        else onClose();
+    }, [dirty, onClose, confirm]);
+
     React.useEffect(() => {
         function onKey(e: KeyboardEvent) {
-            if (e.key === "Escape") {
-                if (dirty && !window.confirm("Discard unsaved changes?")) return;
-                onClose();
-            }
+            if (e.key === "Escape") requestClose();
         }
         window.addEventListener("keydown", onKey);
         return () => window.removeEventListener("keydown", onKey);
-    }, [dirty, onClose]);
+    }, [requestClose]);
 
     const displayName =
         firstName || lastName ? `${firstName} ${lastName}`.trim() : "Unnamed contact";
@@ -185,7 +195,7 @@ function ContactEditPanel({
             exit={{ opacity: 0 }}
             transition={{ duration: 0.15 }}
             className="fixed inset-0 z-[110] flex justify-end bg-slate-900/30 backdrop-blur-[2px]"
-            onMouseDown={onClose}
+            onMouseDown={requestClose}
         >
             <motion.aside
                 key="panel"
@@ -202,11 +212,7 @@ function ContactEditPanel({
                     subscribed={subscribed}
                     suppressed={suppressed}
                     dirty={dirty && tab === "details"}
-                    onClose={() =>
-                        dirty && !window.confirm("Discard unsaved changes?")
-                            ? undefined
-                            : onClose()
-                    }
+                    onClose={requestClose}
                 />
 
                 <TabStrip tab={tab} setTab={setTab} />

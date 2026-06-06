@@ -31,6 +31,14 @@ export default function ConfirmProvider({ children }: { children: React.ReactNod
         try {
             setLoading(true);
             await submitRef.current();
+            // Close on success. (Previously the dialog stayed open after a
+            // successful confirm unless the action happened to navigate away,
+            // so on many pages the popup never disappeared.)
+            setVisible(false);
+            submitRef.current = null;
+        } catch {
+            // Keep the dialog open on failure so the user can retry or cancel;
+            // the caller surfaces the error (toast). Loading is cleared below.
         } finally {
             setLoading(false);
         }

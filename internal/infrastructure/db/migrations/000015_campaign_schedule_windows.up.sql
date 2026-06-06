@@ -1,0 +1,13 @@
+-- Per-day, multi-interval campaign sending windows.
+--
+-- Supersedes the single (days bitmask + start_time + end_time) window: when
+-- this column is non-null it is the AUTHORITATIVE sending schedule. NULL means
+-- "derive from the legacy days/start_time/end_time columns" (back-compat for
+-- campaigns created before this migration).
+--
+-- Shape: a jsonb array of exactly 7 elements indexed by weekday
+-- (0 = Sunday .. 6 = Saturday, matching Go's time.Weekday). Each element is an
+-- array of {"start": <minute-of-day>, "end": <minute-of-day>} intervals, e.g.
+--   [[], [{"start":480,"end":600},{"start":720,"end":960}], [], [], [], [], []]
+-- = Monday 08:00–10:00 and 12:00–16:00, no other day.
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS schedule_windows jsonb;

@@ -1,8 +1,11 @@
 import React from "react";
+import toast from "react-hot-toast";
 import { useAppStore } from "@/stores";
 import { TextInput } from "@/components/ui/field";
 import { TopbarAction } from "@/components/layout/Page";
-import { comingSoon } from "@/lib/helper/comingSoon";
+import type { AppError } from "@/lib/api/client/normalizeError";
+import buildError from "@/lib/helper/buildError";
+import useUpdateOrganization from "@/lib/api/hooks/app/organizations/useUpdateOrganization";
 import { AvatarUploader } from "@/components/app/avatar/AvatarUploader";
 import {
     useDeleteOrgAvatar,
@@ -13,19 +16,28 @@ import { Row, Section, SectionShell, ToggleRow } from "../_components/SectionShe
 export default function WorkspaceSettingsPage() {
     const currentOrg = useAppStore((s) => s.currentOrganization);
     const [name, setName] = React.useState(currentOrg?.name ?? "");
-    const [domain, setDomain] = React.useState("");
 
     const uploadOrgAvatar = useUploadOrgAvatar();
     const removeOrgAvatar = useDeleteOrgAvatar();
+    const updateOrg = useUpdateOrganization();
 
     // Avatar changes are committed immediately by the uploader, so
     // they don't count toward the dirty flag — only fields that need
     // a "Save workspace" action do.
-    const dirty = name !== (currentOrg?.name ?? "") || domain !== "";
+    const dirty = name.trim() !== (currentOrg?.name ?? "");
 
     function discard() {
         setName(currentOrg?.name ?? "");
-        setDomain("");
+    }
+
+    async function save() {
+        if (!dirty || updateOrg.isPending) return;
+        try {
+            await updateOrg.mutateAsync({ name: name.trim() });
+            toast.success("Workspace saved");
+        } catch (err) {
+            toast.error(buildError(err as AppError));
+        }
     }
 
     return (
@@ -38,8 +50,8 @@ export default function WorkspaceSettingsPage() {
                         <TopbarAction variant="ghost" onClick={discard}>
                             Discard
                         </TopbarAction>
-                        <TopbarAction onClick={() => comingSoon("Workspace settings")}>
-                            Save workspace
+                        <TopbarAction onClick={save} disabled={updateOrg.isPending}>
+                            {updateOrg.isPending ? "Saving…" : "Save workspace"}
                         </TopbarAction>
                     </>
                 ) : null
@@ -87,23 +99,15 @@ export default function WorkspaceSettingsPage() {
                 eyebrow="Sending defaults"
                 description="Used by new campaigns unless overridden."
             >
-                <Row label="Default sender domain" description="Outgoing mail uses this domain by default.">
-                    <TextInput
-                        value={domain}
-                        onChange={setDomain}
-                        placeholder="company.com"
-                        className="w-full max-w-[280px]"
-                    />
-                </Row>
                 <Row
                     label="Default daily cap"
                     description="Built-in safety: 50/day per cold mailbox. Raise per-campaign if needed."
                 >
-                    <TextInput
-                        value="50"
-                        onChange={() => undefined}
-                        type="number"
-                        className="w-full max-w-[120px]"
+                    <input
+                        type="text"
+                        value="50 / day"
+                        disabled
+                        className="w-full max-w-[120px] h-7 px-2.5 rounded-md border border-slate-200 bg-slate-50 text-[12px] text-slate-500"
                     />
                 </Row>
             </Section>

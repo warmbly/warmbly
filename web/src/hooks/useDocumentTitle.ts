@@ -1,5 +1,7 @@
 import { useEffect } from "react";
 import { useLocation } from "react-router-dom";
+import { useCurrentOrg, useUnseenCount } from "@/stores";
+import { setFaviconBadge } from "@/lib/faviconBadge";
 
 /*
  * Dynamic document titles for the SPA.
@@ -84,17 +86,43 @@ function titleForPath(pathname: string): string {
   for (const [pattern, paramLabel] of PARAM_ROUTES) {
     if (pattern.test(pathname)) return `${paramLabel} | ${BRAND}`;
   }
-  return BRAND;
+  // Unmatched pathname = a genuine 404; surface that in the tab title.
+  return `Page not found | ${BRAND}`;
+}
+
+// Fold the current workspace in as context, before the brand:
+//   "Mailboxes | Warmbly"  ->  "Mailboxes · Acme | Warmbly"
+//   "Warmbly"              ->  "Acme | Warmbly"
+function withOrg(base: string, org?: string): string {
+  if (!org) return base;
+  const suffix = ` | ${BRAND}`;
+  if (base === BRAND) return `${org}${suffix}`;
+  if (base.endsWith(suffix)) return `${base.slice(0, -suffix.length)} · ${org}${suffix}`;
+  return `${base} · ${org}`;
 }
 
 /**
- * Sets document.title from the current route. Pass an explicit `override` to
+ * Sets document.title from the current route, folding in the current workspace
+ * and a leading unread-count prefix ("(3) …") on the dashboard, and mirrors the
+ * unread count onto the favicon as a red badge. Pass an explicit `override` to
  * title a page from loaded data (e.g. a campaign name) instead of the map.
  */
 export function useDocumentTitle(override?: string) {
   const { pathname } = useLocation();
+  const org = useCurrentOrg();
+  const unread = useUnseenCount();
 
   useEffect(() => {
-    document.title = override ? `${override} | ${BRAND}` : titleForPath(pathname);
-  }, [pathname, override]);
+    // Workspace context + the unread badge are dashboard-only; on auth /
+    // marketing routes (or with no selected workspace) use the plain title.
+    const onApp = pathname.startsWith("/app");
+    const count = onApp ? unread : 0;
+
+    const base = override ? `${override} | ${BRAND}` : titleForPath(pathname);
+    const titled = withOrg(base, onApp ? org?.name : undefined);
+    const prefix = count > 0 ? `(${count > 99 ? "99+" : count}) ` : "";
+    document.title = `${prefix}${titled}`;
+
+    setFaviconBadge(count);
+  }, [pathname, override, org?.name, unread]);
 }

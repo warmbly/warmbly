@@ -174,6 +174,7 @@ func Run(
 		protectedAuth.DELETE("/sessions/:id", h.SessionRevoke)
 
 		protectedAuth.GET("/me", h.GetUser)
+		protectedAuth.PATCH("/me", h.UpdateUserProfile)
 		protectedAuth.PATCH("/me/onboarding", h.CompleteOnboarding)
 		protectedAuth.POST("/me/avatar", h.UploadUserAvatar)
 		protectedAuth.DELETE("/me/avatar", h.DeleteUserAvatar)
@@ -256,6 +257,9 @@ func Run(
 			campaigns.POST("/:id/ab-variants", m.RequireOrganization(), m.RequireAccess(models.PermManageSettings, models.APIPermWriteCampaigns), h.CreateCampaignABVariant)
 			campaigns.PATCH("/:id/ab-variants/:variantId", m.RequireOrganization(), m.RequireAccess(models.PermManageSettings, models.APIPermWriteCampaigns), h.UpdateCampaignABVariant)
 			campaigns.DELETE("/:id/ab-variants/:variantId", m.RequireOrganization(), m.RequireAccess(models.PermManageSettings, models.APIPermWriteCampaigns), h.DeleteCampaignABVariant)
+			campaigns.GET("/:id/attachments", m.RequireOrganization(), m.RequireAccess(models.PermViewCampaigns, models.APIPermReadCampaigns), h.ListCampaignAttachments)
+			campaigns.POST("/:id/attachments", m.RequireOrganization(), m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.UploadCampaignAttachment)
+			campaigns.DELETE("/:id/attachments/:attachmentId", m.RequireOrganization(), m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.DeleteCampaignAttachment)
 			campaigns.POST("/:id/preflight", m.RequireOrganization(), m.RequireAccess(models.PermSendCampaigns, models.APIPermSendCampaigns), h.RunCampaignPreflight)
 			campaigns.GET("/:id/ab-analysis", m.RequireOrganization(), m.RequireAccess(models.PermViewAnalytics, models.APIPermReadAnalytics), h.GetCampaignABAnalysis)
 			campaigns.POST("/:id/test-email", m.RequireOrganization(), m.RequireAccess(models.PermSendCampaigns, models.APIPermSendCampaigns), h.SendTestEmail)
@@ -265,6 +269,13 @@ func Run(
 			campaigns.POST("/:id/stop", m.RequireOrganization(), m.RequireAccess(models.PermSendCampaigns, models.APIPermSendCampaigns), h.StopCampaign)
 			campaigns.GET("/:id/logs", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadCampaigns), h.GetCampaignLogs)
 
+			// Explicit sender pool (rotation/weighting).
+			campaigns.GET("/:id/senders", m.RequireOrganization(), m.RequireAccess(models.PermViewCampaigns, models.APIPermReadCampaigns), h.ListCampaignSenders)
+			campaigns.PUT("/:id/senders", m.RequireOrganization(), m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.ReplaceCampaignSenders)
+
+			// Campaign-scoped tracking-domain verification.
+			campaigns.POST("/:id/tracking-domain/verify", m.RequireOrganization(), m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.VerifyCampaignTrackingDomain)
+
 			sequences := campaigns.Group("/:id/sequences")
 			{
 				sequences.GET("", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadCampaigns), h.GetSequences)
@@ -272,6 +283,12 @@ func Run(
 				sequences.PATCH("/:sid", m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.UpdateSequence)
 				sequences.DELETE("/:sid", m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.DeleteSequence)
 			}
+		}
+
+		generation := protected.Group("/generation")
+		generation.Use(m.RateLimitMiddleware(models.RateLimitWrite))
+		{
+			generation.POST("/write", m.RequireOrganization(), m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.GenerateWriting)
 		}
 
 		contacts := protected.Group("/contacts")
@@ -441,6 +458,27 @@ func Run(
 			integrations.DELETE("/connections/:id/events/:eventId", h.DeleteConnectionEventSubscription)
 			integrations.GET("/connections/:id/runs", h.ListConnectionSyncRuns)
 			integrations.GET("/bookings", h.ListMeetingBookings)
+		}
+
+		// On-demand Google Sheets -> leads sync (org-scoped). A saved "sync
+		// source" the user re-runs with "Sync now"; new rows create contacts and
+		// existing rows (matched by email) update. Gated under the contacts
+		// write permissions because it ultimately upserts contacts. The Google
+		// account itself is connected via the existing /integrations/oauth flow
+		// with provider "google_sheets".
+		leadSync := protected.Group("/lead-sync")
+		leadSync.Use(m.RequireOrganization(), m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts), m.RateLimitMiddleware(models.RateLimitWrite))
+		{
+			leadSync.GET("/google/connection", h.GetLeadSyncGoogleConnection)
+			leadSync.POST("/google/spreadsheet", h.GetLeadSyncSpreadsheet)
+			leadSync.POST("/google/preview", h.PreviewLeadSync)
+
+			leadSync.GET("/sources", h.ListLeadSyncSources)
+			leadSync.POST("/sources", h.CreateLeadSyncSource)
+			leadSync.GET("/sources/:id", h.GetLeadSyncSource)
+			leadSync.PATCH("/sources/:id", h.UpdateLeadSyncSource)
+			leadSync.DELETE("/sources/:id", h.DeleteLeadSyncSource)
+			leadSync.POST("/sources/:id/sync", h.SyncLeadSyncSourceNow)
 		}
 
 		// Warmup routing rules (org-scoped). Lets customers define
