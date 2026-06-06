@@ -231,24 +231,22 @@ const chevronDownIcon = '<path d="m6 9 6 6 6-6"/>';
           <div class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">Step 1</div>
           <p class="mt-0.5 truncate text-[11px] text-slate-400">Compose the email this step sends.</p>
         </div>
-        <button type="button" class="cb-save h-7 px-3 rounded-md bg-sky-600 text-[12px] font-medium text-white inline-flex items-center gap-1.5 transition-colors">Save changes</button>
+        <button type="button" class="h-7 px-3 rounded-md bg-sky-600 text-[12px] font-medium text-white inline-flex items-center gap-1.5 transition-colors shrink-0 whitespace-nowrap">Save changes</button>
       </div>
-      <div class="mt-2 flex flex-wrap items-center gap-1.5">
-        <button type="button" class="h-7 px-2 rounded-md border border-slate-200 bg-white text-slate-700 inline-flex items-center gap-1.5 text-[12px] font-medium">
+      <div class="mt-2 flex items-center gap-1.5">
+        <button type="button" aria-label="Templates" title="Templates" class="h-7 px-2 rounded-md border border-slate-200 bg-white text-slate-700 inline-flex items-center gap-1 text-[12px] font-medium shrink-0 whitespace-nowrap">
           <span class="text-slate-400 shrink-0"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={sparklesIcon}></svg></span>
-          <span class="truncate">Templates</span>
           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="text-slate-400 shrink-0"><path d="M6 9l6 6 6-6"/></svg>
         </button>
-        <button type="button" class="h-7 px-2.5 inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white text-[12px] font-medium text-slate-700">
+        <button type="button" aria-label="Save as template" title="Save as template" class="h-7 w-7 inline-flex items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 shrink-0">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={bookmarkPlusIcon}></svg>
-          Save as template
         </button>
-        <button type="button" class="h-7 px-2.5 inline-flex items-center gap-1.5 rounded-md border border-sky-200 bg-sky-50 text-[12px] font-medium text-sky-700">
+        <button type="button" class="h-7 px-2.5 inline-flex items-center gap-1.5 rounded-md border border-sky-200 bg-sky-50 text-[12px] font-medium text-sky-700 shrink-0 whitespace-nowrap">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={sparklesIcon}></svg>
           Write with AI
         </button>
-        <div class="h-4 w-px bg-slate-200"></div>
-        <button type="button" class="h-7 px-2.5 rounded-md border border-slate-200 bg-white text-[12px] font-medium text-slate-700">Reset</button>
+        <div class="h-4 w-px bg-slate-200 shrink-0"></div>
+        <button type="button" class="h-7 px-2.5 rounded-md border border-slate-200 bg-white text-[12px] font-medium text-slate-700 shrink-0 whitespace-nowrap">Reset</button>
       </div>
     </div>
 
