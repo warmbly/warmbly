@@ -13,6 +13,9 @@ import { SectionBar, Stat, StatStrip } from "@/components/layout/Page";
 import { DailyBars, type ChartPoint } from "@/components/ui/charts";
 import AnalyticsShareButton from "@/components/app/analytics/AnalyticsShareButton";
 import TaskPreview from "@/components/app/campaigns/TaskPreview";
+import AnimatedNumber from "@/components/ui/AnimatedNumber";
+
+const pctFmt = (v: number) => `${v.toFixed(1)}%`;
 
 type Metric = "sent" | "opens" | "clicks" | "replies";
 
@@ -97,11 +100,33 @@ export default function CampaignOverview() {
                             />
                         </SectionBar>
                         <StatStrip cols={5}>
-                            <Stat label="Sent" value={loading ? "—" : num(summary?.emails_sent)} sub="emails" accent={hasSends} />
-                            <Stat label="Open rate" value={loading ? "—" : pct(summary?.open_rate)} sub="after delivery" />
-                            <Stat label="Click rate" value={loading ? "—" : pct(summary?.click_rate)} sub="of delivered" />
-                            <Stat label="Reply rate" value={loading ? "—" : pct(summary?.reply_rate)} sub="incl. positive" />
-                            <Stat label="Bounce rate" value={loading ? "—" : pct(summary?.bounce_rate)} sub="hard + soft" last />
+                            <Stat
+                                label="Sent"
+                                value={loading ? "—" : <AnimatedNumber value={summary?.emails_sent ?? 0} />}
+                                sub="emails"
+                                accent={hasSends}
+                            />
+                            <Stat
+                                label="Open rate"
+                                value={loading ? "—" : <AnimatedNumber value={summary?.open_rate ?? 0} format={pctFmt} />}
+                                sub="after delivery"
+                            />
+                            <Stat
+                                label="Click rate"
+                                value={loading ? "—" : <AnimatedNumber value={summary?.click_rate ?? 0} format={pctFmt} />}
+                                sub="of delivered"
+                            />
+                            <Stat
+                                label="Reply rate"
+                                value={loading ? "—" : <AnimatedNumber value={summary?.reply_rate ?? 0} format={pctFmt} />}
+                                sub="incl. positive"
+                            />
+                            <Stat
+                                label="Bounce rate"
+                                value={loading ? "—" : <AnimatedNumber value={summary?.bounce_rate ?? 0} format={pctFmt} />}
+                                sub="hard + soft"
+                                last
+                            />
                         </StatStrip>
                     </div>
 
@@ -188,19 +213,19 @@ export default function CampaignOverview() {
                                             <span className="text-[12.5px] text-slate-900 truncate">{s.name}</span>
                                         </span>
                                         <span className="w-14 text-right font-mono text-[11.5px] text-slate-700 tabular-nums">
-                                            {num(s.emails_sent)}
+                                            <AnimatedNumber value={s.emails_sent ?? 0} />
                                         </span>
                                         <span className="w-14 text-right font-mono text-[11.5px] text-emerald-600 tabular-nums">
-                                            {num(s.opens)}
+                                            <AnimatedNumber value={s.opens ?? 0} />
                                         </span>
                                         <span className="w-14 text-right font-mono text-[11.5px] text-violet-600 tabular-nums">
-                                            {num(s.clicks)}
+                                            <AnimatedNumber value={s.clicks ?? 0} />
                                         </span>
                                         <span className="w-14 text-right font-mono text-[11.5px] text-amber-600 tabular-nums">
-                                            {num(s.replies)}
+                                            <AnimatedNumber value={s.replies ?? 0} />
                                         </span>
                                         <span className="w-16 text-right font-mono text-[11.5px] text-rose-600 tabular-nums">
-                                            {num(s.bounces)}
+                                            <AnimatedNumber value={s.bounces ?? 0} />
                                         </span>
                                     </div>
                                 ))}
@@ -217,7 +242,7 @@ export default function CampaignOverview() {
                                     <span className={`size-1.5 rounded-full ${q.dot}`} />
                                     <span className="text-[12px] text-slate-700">{q.label}</span>
                                     <span className="ml-auto font-mono text-[11px] text-slate-500 tabular-nums">
-                                        {loading ? "—" : num(q.value)}
+                                        {loading ? "—" : <AnimatedNumber value={q.value ?? 0} />}
                                     </span>
                                 </div>
                             ))}
@@ -237,7 +262,7 @@ export default function CampaignOverview() {
                                     <span className={`size-1.5 rounded-full ${q.dot}`} />
                                     <span className="text-[12px] text-slate-700">{q.label}</span>
                                     <span className="ml-auto font-mono text-[11px] text-slate-500 tabular-nums">
-                                        {loading ? "—" : num(q.value)}
+                                        {loading ? "—" : <AnimatedNumber value={q.value ?? 0} />}
                                     </span>
                                 </div>
                             ))}
