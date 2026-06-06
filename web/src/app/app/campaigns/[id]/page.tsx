@@ -94,6 +94,15 @@ export default function CampaignOverview() {
                 <div className="space-y-5 min-w-0">
                     <div className="rounded-md border border-slate-200 overflow-hidden bg-white">
                         <SectionBar label="Performance">
+                            {campaign.status === "active" && (
+                                <span className="inline-flex items-center gap-1 text-[10.5px] font-medium text-emerald-600 mr-1">
+                                    <span className="relative flex size-1.5">
+                                        <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-60 animate-ping" />
+                                        <span className="relative inline-flex size-1.5 rounded-full bg-emerald-500" />
+                                    </span>
+                                    Live
+                                </span>
+                            )}
                             <AnalyticsShareButton
                                 data={shareData}
                                 filename={`warmbly-${campaign.id}.png`}
