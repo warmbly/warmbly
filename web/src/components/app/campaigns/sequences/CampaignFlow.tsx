@@ -17,6 +17,7 @@ import React from "react";
 import {
     ArrowRightLeftIcon,
     BellOffIcon,
+    AlertTriangleIcon,
     BracesIcon,
     CheckSquareIcon,
     ChevronDownIcon,
@@ -563,6 +564,32 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
     }, [sequences]);
 
     const invalidate = React.useCallback(() => qc.invalidateQueries({ queryKey: SEQ_KEY(campaignId) }), [qc, campaignId]);
+
+    // Does the campaign handle replies at all? True when any step has a branch
+    // routing on a positive reply signal. Drives the stop-on-reply warning copy.
+    const hasReplyBranch = React.useMemo(
+        () =>
+            (sequences ?? []).some((s) =>
+                (s.conditions?.branches ?? []).some((b) =>
+                    (b.conditions ?? []).some((c) => isPositiveReplyField(c.field)),
+                ),
+            ),
+        [sequences],
+    );
+
+    // Single place that flips stop_on_reply (optimistic + persisted). Shared by
+    // the toolbar toggle and the warning's "turn it on" shortcut.
+    const setStopOnReply = React.useCallback(
+        (next: boolean) => {
+            qc.setQueryData(["campaigns", campaignId], (old: unknown) =>
+                old ? { ...(old as object), stop_on_reply: next } : old,
+            );
+            updateCampaign
+                .mutateAsync({ stop_on_reply: next })
+                .catch((err) => toast.error(buildError(err as AppError)));
+        },
+        [qc, campaignId, updateCampaign],
+    );
 
     const openCondition = React.useCallback((sourceId: string, branchId: string) => {
         setSelectedEdge({ sourceId, branchId });
@@ -1253,31 +1280,29 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                 <Controls showInteractive={false} />
 
                 <Panel position="top-left">
-                    <div className="flex max-w-[calc(100vw-1.5rem)] flex-wrap items-center gap-1.5">
-                        <AddNodeMenu
-                            onAddEmail={addStep}
-                            onAddAction={addAction}
-                            disabled={adding || atMax}
-                            busy={adding}
-                        />
-                        <button
-                            type="button"
-                            onClick={() => setNodes((ns) => stackComponents(layoutGraph(ns, edges), edges))}
-                            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 text-[12px] font-medium text-slate-700 shadow-sm transition-colors hover:border-slate-300 hover:text-slate-900"
-                        >
-                            Tidy up
-                        </button>
-                        <StopOnReplyToggle
-                            on={!!campaign?.stop_on_reply}
-                            onToggle={(next) => {
-                                qc.setQueryData(["campaigns", campaignId], (old: unknown) =>
-                                    old ? { ...(old as object), stop_on_reply: next } : old,
-                                );
-                                updateCampaign
-                                    .mutateAsync({ stop_on_reply: next })
-                                    .catch((err) => toast.error(buildError(err as AppError)));
-                            }}
-                        />
+                    <div className="flex max-w-[calc(100vw-1.5rem)] flex-col gap-1.5">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                            <AddNodeMenu
+                                onAddEmail={addStep}
+                                onAddAction={addAction}
+                                disabled={adding || atMax}
+                                busy={adding}
+                            />
+                            <button
+                                type="button"
+                                onClick={() => setNodes((ns) => stackComponents(layoutGraph(ns, edges), edges))}
+                                className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 text-[12px] font-medium text-slate-700 shadow-sm transition-colors hover:border-slate-300 hover:text-slate-900"
+                            >
+                                Tidy up
+                            </button>
+                            <StopOnReplyToggle on={!!campaign?.stop_on_reply} onToggle={setStopOnReply} />
+                        </div>
+                        {campaign && !campaign.stop_on_reply && (sequences?.length ?? 0) > 1 && (
+                            <ReplyStopWarning
+                                hasReplyBranch={hasReplyBranch}
+                                onEnable={() => setStopOnReply(true)}
+                            />
+                        )}
                     </div>
                 </Panel>
 
@@ -1361,7 +1386,13 @@ function StopOnReplyToggle({ on, onToggle }: { on: boolean; onToggle: (next: boo
     return (
         <div
             className="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 shadow-sm"
-            title="Auto-replies and out-of-office messages don't count as a reply, so the sequence keeps going."
+            title={
+                "When a contact replies, the rest of the sequence stops for them, " +
+                "while the reply branch you connected to the email they answered still " +
+                "runs (it fires instantly). So on reply: that reply flow runs, every other " +
+                "remaining step is cancelled. Auto-replies and out-of-office messages don't " +
+                "count as a reply, so the sequence keeps going."
+            }
         >
             <span className="text-[11.5px] text-slate-600">Stop on reply</span>
             <button
@@ -1380,6 +1411,33 @@ function StopOnReplyToggle({ on, onToggle }: { on: boolean; onToggle: (next: boo
                     }`}
                 />
             </button>
+        </div>
+    );
+}
+
+// Shown on the canvas when stop-on-reply is OFF and the sequence keeps sending.
+// Continuing to cold-email a contact who replied is the classic deliverability
+// mistake; turning stop-on-reply on still runs the reply branches (routing is
+// reply-flow aware), so it is strictly safer. Copy adapts to whether the
+// campaign has any reply handling at all.
+function ReplyStopWarning({ hasReplyBranch, onEnable }: { hasReplyBranch: boolean; onEnable: () => void }) {
+    return (
+        <div className="flex max-w-[19rem] items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-700 shadow-sm">
+            <AlertTriangleIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />
+            <div className="space-y-1">
+                <p className="leading-snug">
+                    {hasReplyBranch
+                        ? "Stop on reply is off. Replies that don't match a reply branch (say, a reply to an older email) keep getting cold emails. Turning it on still runs your reply branches."
+                        : "No reply handling. With stop on reply off, contacts who reply keep moving through the cold sequence. Turn it on, or add a reply branch."}
+                </p>
+                <button
+                    type="button"
+                    onClick={onEnable}
+                    className="font-medium text-amber-800 underline underline-offset-2 hover:text-amber-900"
+                >
+                    Turn on stop on reply
+                </button>
+            </div>
         </div>
     );
 }
