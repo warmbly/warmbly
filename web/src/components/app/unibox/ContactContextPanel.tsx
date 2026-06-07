@@ -11,7 +11,9 @@ import React from "react";
 import toast from "react-hot-toast";
 import {
     BanIcon,
+    CalendarClockIcon,
     CheckIcon,
+    ChevronDownIcon,
     CircleDollarSignIcon,
     ExternalLinkIcon,
     Loader2Icon,
@@ -26,6 +28,13 @@ import {
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { TextInput } from "@/components/ui/field";
+import {
+    PopoverMenu,
+    PopoverMenuContent,
+    PopoverMenuItem,
+    PopoverMenuTrigger,
+} from "@/components/ui/popover-menu";
+import TaskTypePicker from "@/components/app/crm/TaskTypePicker";
 import useContactByEmail from "@/lib/api/hooks/app/contacts/useContactByEmail";
 import useContact from "@/lib/api/hooks/app/contacts/useContact";
 import useContactDeals from "@/lib/api/hooks/app/contacts/useContactDeals";
@@ -34,7 +43,9 @@ import useCreateContactNote from "@/lib/api/hooks/app/contacts/useCreateContactN
 import useCRMTasks from "@/lib/api/hooks/app/crm/tasks/useCRMTasks";
 import useCreateCRMTask from "@/lib/api/hooks/app/crm/tasks/useCreateCRMTask";
 import useCreateDeal from "@/lib/api/hooks/app/crm/deals/useCreateDeal";
+import useUpdateDeal from "@/lib/api/hooks/app/crm/deals/useUpdateDeal";
 import usePipelines from "@/lib/api/hooks/app/crm/pipelines/usePipelines";
+import type { Stage } from "@/lib/api/models/app/crm/Pipeline";
 import type Deal from "@/lib/api/models/app/crm/Deal";
 import type CRMTask from "@/lib/api/models/app/crm/CRMTask";
 import type { AppError } from "@/lib/api/client/normalizeError";
@@ -52,6 +63,13 @@ const PRIORITY_DOT: Record<CRMTask["priority"], string> = {
     medium: "bg-sky-500",
     low: "bg-slate-400",
 };
+
+const PRIORITY_OPTS: { id: CRMTask["priority"]; label: string }[] = [
+    { id: "low", label: "Low" },
+    { id: "medium", label: "Med" },
+    { id: "high", label: "High" },
+    { id: "urgent", label: "Urgent" },
+];
 
 export default function ContactContextPanel({
     email,
@@ -194,7 +212,7 @@ export default function ContactContextPanel({
                             campaignId={campaigns[0]?.id}
                             mailboxId={mailboxId}
                             pipelineId={dealDefault.pipelineId}
-                            stageId={dealDefault.stageId}
+                            stages={dealDefault.stages}
                         />
 
                         {/* Tasks */}
@@ -203,6 +221,9 @@ export default function ContactContextPanel({
                             tasks={(tasksQ.data?.data ?? []).filter((t) => t.status !== "completed" && t.status !== "cancelled")}
                             loading={tasksQ.isPending}
                             defaultTitle={`Follow up with ${name}`}
+                            contactName={name}
+                            company={contact.company}
+                            dealId={(dealsQ.data ?? []).find((d) => d.status === "open")?.id}
                         />
 
                         {/* Notes */}
@@ -220,8 +241,8 @@ export default function ContactContextPanel({
 function usePipelinesDefault() {
     const pipelines = usePipelines();
     const first = pipelines.data?.[0];
-    const stage = first ? [...(first.stages ?? [])].sort((a, b) => a.position - b.position)[0] : undefined;
-    return { pipelineId: first?.id, stageId: stage?.id };
+    const stages: Stage[] = first ? [...(first.stages ?? [])].sort((a, b) => a.position - b.position) : [];
+    return { pipelineId: first?.id, stageId: stages[0]?.id, stages };
 }
 
 function DealsSection({
@@ -232,7 +253,7 @@ function DealsSection({
     campaignId,
     mailboxId,
     pipelineId,
-    stageId,
+    stages,
 }: {
     contactId: string;
     deals: Deal[];
@@ -241,16 +262,19 @@ function DealsSection({
     campaignId?: string;
     mailboxId?: string;
     pipelineId?: string;
-    stageId?: string;
+    stages: Stage[];
 }) {
     const create = useCreateDeal();
+    const updateDeal = useUpdateDeal();
     const [open, setOpen] = React.useState(false);
     const [name, setName] = React.useState(defaultName);
     const [value, setValue] = React.useState("");
+    const [stageId, setStageId] = React.useState<string | undefined>(stages[0]?.id);
 
     React.useEffect(() => setName(defaultName), [defaultName]);
+    React.useEffect(() => setStageId((s) => s ?? stages[0]?.id), [stages]);
 
-    const canAdd = !!pipelineId && !!stageId;
+    const canAdd = !!pipelineId && stages.length > 0;
 
     async function submit() {
         if (!name.trim()) {
@@ -283,6 +307,17 @@ function DealsSection({
         }
     }
 
+    async function moveDeal(dealId: string, newStageId: string) {
+        try {
+            await toast.promise(
+                updateDeal.mutateAsync({ id: dealId, data: { stage_id: newStageId } as Partial<Deal> }),
+                { loading: "Moving…", success: "Moved", error: (e: AppError) => buildError(e) },
+            );
+        } catch {
+            /* surfaced */
+        }
+    }
+
     return (
         <Section
             label="Deals"
@@ -300,16 +335,8 @@ function DealsSection({
                 <div className="mb-2 rounded-md border border-slate-200 bg-white p-2 space-y-1.5">
                     <TextInput value={name} onChange={setName} placeholder="Deal name" className="w-full" autoFocus />
                     <div className="flex items-center gap-1.5">
-                        <TextInput value={value} onChange={setValue} placeholder="Value (optional)" className="w-full" />
-                        <button
-                            type="button"
-                            onClick={submit}
-                            disabled={create.isPending}
-                            className="h-7 px-2.5 rounded-md bg-slate-900 hover:bg-slate-800 text-white text-[11.5px] font-medium inline-flex items-center gap-1 transition-colors disabled:opacity-60 shrink-0"
-                        >
-                            {create.isPending ? <Loader2Icon className="w-3 h-3 animate-spin" /> : <CheckIcon className="w-3 h-3" />}
-                            Add
-                        </button>
+                        <StagePicker stages={stages} value={stageId} onChange={setStageId} className="flex-1" />
+                        <TextInput value={value} onChange={setValue} placeholder="Value" className="w-[88px]" />
                     </div>
                     {(campaignId || mailboxId) && (
                         <p className="text-[10px] text-slate-400 leading-snug">
@@ -318,6 +345,15 @@ function DealsSection({
                             {mailboxId ? "mailbox" : ""}.
                         </p>
                     )}
+                    <button
+                        type="button"
+                        onClick={submit}
+                        disabled={create.isPending}
+                        className="w-full h-7 rounded-md bg-slate-900 hover:bg-slate-800 text-white text-[11.5px] font-medium inline-flex items-center justify-center gap-1 transition-colors disabled:opacity-60"
+                    >
+                        {create.isPending ? <Loader2Icon className="w-3 h-3 animate-spin" /> : <CheckIcon className="w-3 h-3" />}
+                        Create deal
+                    </button>
                 </div>
             )}
             {loading ? (
@@ -328,6 +364,7 @@ function DealsSection({
                 <div className="space-y-1">
                     {deals.map((d) => {
                         const st = DEAL_STATUS[d.status];
+                        const canMove = d.status === "open" && stages.length > 0 && d.pipeline_id === pipelineId;
                         return (
                             <div
                                 key={d.id}
@@ -340,7 +377,16 @@ function DealsSection({
                                             <span className={`size-1.5 rounded-full ${st.dot}`} />
                                             {st.label}
                                         </span>
-                                        {d.stage?.name && <span className="text-[10px] text-slate-400 truncate">· {d.stage.name}</span>}
+                                        {canMove ? (
+                                            <StagePicker
+                                                stages={stages}
+                                                value={d.stage_id}
+                                                onChange={(s) => moveDeal(d.id, s)}
+                                                compact
+                                            />
+                                        ) : d.stage?.name ? (
+                                            <span className="text-[10px] text-slate-400 truncate">· {d.stage.name}</span>
+                                        ) : null}
                                     </div>
                                 </div>
                                 {d.value != null && (
@@ -357,20 +403,91 @@ function DealsSection({
     );
 }
 
+// Compact stage selector used both to place a new deal and to move an existing
+// open deal through the pipeline without leaving the inbox. `compact` renders
+// the inline text trigger used inside a deal row.
+function StagePicker({
+    stages,
+    value,
+    onChange,
+    className,
+    compact,
+}: {
+    stages: Stage[];
+    value?: string;
+    onChange: (stageId: string) => void;
+    className?: string;
+    compact?: boolean;
+}) {
+    const [open, setOpen] = React.useState(false);
+    const cur = stages.find((s) => s.id === value);
+
+    return (
+        <PopoverMenu open={open} onOpenChange={setOpen} align="start">
+            <PopoverMenuTrigger asChild>
+                <button
+                    type="button"
+                    className={
+                        compact
+                            ? "inline-flex items-center gap-1 text-[10px] text-slate-500 hover:text-slate-900 transition-colors"
+                            : `h-7 px-2 rounded-md border border-slate-200 hover:border-slate-300 bg-white text-[12px] text-slate-700 inline-flex items-center gap-1.5 transition-colors ${className ?? ""}`
+                    }
+                >
+                    <span
+                        className="size-1.5 rounded-full shrink-0"
+                        style={{ backgroundColor: cur?.color || "#94a3b8" }}
+                    />
+                    <span className={compact ? "truncate" : "truncate flex-1 text-left"}>
+                        {cur?.name ?? "Stage"}
+                    </span>
+                    <ChevronDownIcon className="w-3 h-3 text-slate-400 shrink-0" />
+                </button>
+            </PopoverMenuTrigger>
+            <PopoverMenuContent minWidth={170} className="max-h-56 overflow-y-auto">
+                {stages.map((s) => (
+                    <PopoverMenuItem
+                        key={s.id}
+                        onSelect={() => onChange(s.id)}
+                        selected={s.id === value}
+                        icon={
+                            <span
+                                className="size-2 rounded-full block"
+                                style={{ backgroundColor: s.color || "#94a3b8" }}
+                            />
+                        }
+                    >
+                        {s.name}
+                    </PopoverMenuItem>
+                ))}
+            </PopoverMenuContent>
+        </PopoverMenu>
+    );
+}
+
 function TasksSection({
     contactId,
     tasks,
     loading,
     defaultTitle,
+    contactName,
+    company,
+    dealId,
 }: {
     contactId: string;
     tasks: CRMTask[];
     loading: boolean;
     defaultTitle: string;
+    contactName: string;
+    company?: string;
+    dealId?: string;
 }) {
     const create = useCreateCRMTask();
     const [open, setOpen] = React.useState(false);
     const [title, setTitle] = React.useState(defaultTitle);
+    const [type, setType] = React.useState("");
+    const [priority, setPriority] = React.useState<CRMTask["priority"]>("medium");
+    const [due, setDue] = React.useState("");
+    const [desc, setDesc] = React.useState("");
 
     React.useEffect(() => setTitle(defaultTitle), [defaultTitle]);
 
@@ -379,12 +496,26 @@ function TasksSection({
             toast.error("Task title required");
             return;
         }
+        const data: Partial<CRMTask> = {
+            title: title.trim(),
+            contact_id: contactId,
+            priority,
+        };
+        if (type) data.type = type;
+        if (due) data.due_date = new Date(`${due}T09:00:00`).toISOString();
+        if (desc.trim()) data.description = desc.trim();
+        if (dealId) data.deal_id = dealId;
         try {
-            await toast.promise(
-                create.mutateAsync({ title: title.trim(), contact_id: contactId, priority: "medium" } as Partial<CRMTask>),
-                { loading: "Adding task…", success: "Task added", error: (e: AppError) => buildError(e) },
-            );
+            await toast.promise(create.mutateAsync(data), {
+                loading: "Adding task…",
+                success: "Task added",
+                error: (e: AppError) => buildError(e),
+            });
             setOpen(false);
+            setType("");
+            setPriority("medium");
+            setDue("");
+            setDesc("");
         } catch {
             /* surfaced */
         }
@@ -393,16 +524,64 @@ function TasksSection({
     return (
         <Section label="Tasks" action={<AddButton open={open} onClick={() => setOpen((o) => !o)} />}>
             {open && (
-                <div className="mb-2 rounded-md border border-slate-200 bg-white p-2 flex items-center gap-1.5">
-                    <TextInput value={title} onChange={setTitle} placeholder="Follow-up…" className="w-full" autoFocus />
+                <div className="mb-2 rounded-md border border-slate-200 bg-white p-2 space-y-1.5">
+                    <TextInput
+                        value={title}
+                        onChange={setTitle}
+                        placeholder={`Follow up with ${contactName}…`}
+                        className="w-full"
+                        autoFocus
+                    />
+                    <div className="flex items-center gap-1.5">
+                        <TaskTypePicker value={type} onChange={setType} className="flex-1" />
+                        <label className="h-7 px-2 rounded-md border border-slate-200 bg-white inline-flex items-center gap-1.5 shrink-0 cursor-pointer focus-within:border-sky-400 focus-within:ring-2 focus-within:ring-sky-100">
+                            <CalendarClockIcon className="w-3 h-3 text-slate-400 shrink-0" />
+                            <input
+                                type="date"
+                                value={due}
+                                onChange={(e) => setDue(e.target.value)}
+                                aria-label="Due date"
+                                className="bg-transparent outline-none text-[12px] text-slate-700 w-[104px]"
+                            />
+                        </label>
+                    </div>
+                    <div className="flex items-center gap-0.5">
+                        {PRIORITY_OPTS.map((p) => (
+                            <button
+                                key={p.id}
+                                type="button"
+                                onClick={() => setPriority(p.id)}
+                                className={`h-6 px-2 rounded text-[10.5px] font-medium inline-flex items-center gap-1 transition-colors ${
+                                    priority === p.id
+                                        ? "bg-slate-100 text-slate-900 ring-1 ring-slate-300"
+                                        : "text-slate-500 hover:text-slate-900"
+                                }`}
+                            >
+                                <span className={`size-1.5 rounded-full ${PRIORITY_DOT[p.id]}`} />
+                                {p.label}
+                            </button>
+                        ))}
+                    </div>
+                    <textarea
+                        value={desc}
+                        onChange={(e) => setDesc(e.target.value)}
+                        placeholder="Details (optional)"
+                        rows={2}
+                        className="w-full rounded-md border border-slate-200 px-2 py-1.5 text-[12px] text-slate-700 placeholder:text-slate-400 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 resize-none"
+                    />
+                    <p className="text-[10px] text-slate-400 leading-snug">
+                        Linked to {contactName}
+                        {company ? ` · ${company}` : ""}
+                        {dealId ? " · open deal" : ""}.
+                    </p>
                     <button
                         type="button"
                         onClick={submit}
                         disabled={create.isPending}
-                        className="h-7 px-2.5 rounded-md bg-slate-900 hover:bg-slate-800 text-white text-[11.5px] font-medium inline-flex items-center gap-1 transition-colors disabled:opacity-60 shrink-0"
+                        className="w-full h-7 rounded-md bg-slate-900 hover:bg-slate-800 text-white text-[11.5px] font-medium inline-flex items-center justify-center gap-1 transition-colors disabled:opacity-60"
                     >
                         {create.isPending ? <Loader2Icon className="w-3 h-3 animate-spin" /> : <CheckIcon className="w-3 h-3" />}
-                        Add
+                        Create task
                     </button>
                 </div>
             )}
