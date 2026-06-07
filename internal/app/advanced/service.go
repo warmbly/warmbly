@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/warmbly/warmbly/internal/app/replyclassify"
 	warmupapp "github.com/warmbly/warmbly/internal/app/warmup"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/infrastructure/gtasks"
@@ -475,6 +476,44 @@ func cleanMessageID(mid string) string {
 	return strings.TrimSpace(strings.Trim(mid, "<>"))
 }
 
+// buildReplyHeaders synthesizes the header map the reply classifier's Layer 1
+// (header) scan reads. EmailMessageStoreData does not carry the full raw header
+// block, but it does carry the structured fields the deterministic markers care
+// about (From, Reply-To) plus any custom headers the worker folded into Flags
+// using the "Header-Name:value" convention (the same encoding extractHeaderValue
+// relies on for the warmup token). That lets RFC 3834 / Precedence / X-Autoreply
+// markers reach the classifier when the worker forwarded them, while the From
+// (mailer-daemon / no-reply) and Subject ("Automatic reply") signals work from
+// the always-present structured fields.
+func buildReplyHeaders(msg *models.EmailMessageStoreData) map[string][]string {
+	if msg == nil {
+		return nil
+	}
+	h := map[string][]string{}
+	if len(msg.FromAddr) > 0 {
+		h["From"] = msg.FromAddr
+	}
+	if len(msg.ReplyTo) > 0 {
+		h["Reply-To"] = msg.ReplyTo
+	}
+	if msg.Subject != "" {
+		h["Subject"] = []string{msg.Subject}
+	}
+	// Custom headers the worker stored as "Header-Name:value" flags (auto-reply
+	// markers, Precedence, etc.). Split on the FIRST colon so header values that
+	// contain ':' survive intact.
+	for _, flag := range msg.Flags {
+		if i := strings.Index(flag, ":"); i > 0 {
+			name := strings.TrimSpace(flag[:i])
+			val := strings.TrimSpace(flag[i+1:])
+			if name != "" && !strings.HasPrefix(name, "\\") {
+				h[name] = append(h[name], val)
+			}
+		}
+	}
+	return h
+}
+
 func containsAnyKeyword(text string, keywords []string) bool {
 	if text == "" {
 		return false
@@ -572,6 +611,11 @@ func (s *service) ProcessIncomingReply(ctx context.Context, emailAccountID uuid.
 	text = strings.TrimSpace(text + "\n" + msg.Subject)
 	intent, confidence := classifyReply(text, settings.ReplyIntent)
 
+	// Layered reply classification (header -> lexicon -> optional model) is run
+	// further down, once the campaign context is known to store it on. Classifying
+	// only inside that block means a reply with no campaign match never spends a
+	// model call.
+
 	var campaignID *uuid.UUID
 	var sequenceID *uuid.UUID
 	var contactID *uuid.UUID
@@ -616,8 +660,45 @@ func (s *service) ProcessIncomingReply(ctx context.Context, emailAccountID uuid.
 	}
 
 	if campaignID != nil && contactID != nil && sequenceID != nil {
-		_ = s.campaignProgressRepo.RecordEmailReplied(ctx, *campaignID, *contactID, *sequenceID)
-		_ = s.repo.MarkVariantEvent(ctx, *campaignID, *contactID, string(models.DeliverabilityEventReply))
+		cID, ctID, sID := *campaignID, *contactID, *sequenceID
+
+		// Cost guard for the optional AI layer (Layer 3). Layers 1-2 (headers +
+		// lexicon) are free and always run; the paid model is only spent on a
+		// genuinely new, non-trivial, human-looking reply from a contact we have
+		// not already classified. So one contact spamming replies costs at most a
+		// single model call, and trivial/boilerplate bodies never reach the model.
+		gate := func() bool {
+			if !replyclassify.WorthModeling(replyclassify.Input{BodyText: msg.Snippet}) {
+				return false
+			}
+			if prior, perr := s.campaignProgressRepo.GetLatestReplyClass(ctx, ctID, cID); perr == nil &&
+				prior != "" && prior != replyclassify.ClassUnknown {
+				return false
+			}
+			return true
+		}
+
+		replyResult := replyclassify.ClassifyGated(ctx, replyclassify.Input{
+			Headers:  buildReplyHeaders(msg),
+			Subject:  msg.Subject,
+			BodyText: msg.Snippet,
+		}, gate)
+
+		// Always persist the classifier verdict so reply_* branches can route on
+		// it (including reply_automated for OOO / autoresponders). Layers 1-2 run
+		// for every reply, so OOO/unsubscribe stay correct even when the gate
+		// skipped the model.
+		_ = s.campaignProgressRepo.RecordReplyClassification(ctx, cID, ctID, sID, replyResult.Class, replyResult.Source, replyResult.Confidence)
+
+		// OOO trap fix: only a HUMAN reply stamps replied_at. An auto_reply /
+		// out_of_office must NOT count as a reply, or it would (a) trip
+		// stop_on_reply and silently halt the sequence, and (b) match the plain
+		// "replied" branch. Both stop_on_reply and the "replied" condition key off
+		// replied_at IS NOT NULL, so gating the stamp here fixes both at once.
+		if !replyclassify.IsAutomated(replyResult.Class) {
+			_ = s.campaignProgressRepo.RecordEmailReplied(ctx, cID, ctID, sID)
+			_ = s.repo.MarkVariantEvent(ctx, cID, ctID, string(models.DeliverabilityEventReply))
+		}
 	}
 
 	actionTaken := ""

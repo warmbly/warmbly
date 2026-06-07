@@ -43,7 +43,11 @@ func (s *JobsService) HandleNewEmail(ctx context.Context, e *models.JobEventNewE
 		s.StreamingPublisher.PublishEmailReceived(ctx, emailInboxEvent(e.UserID, e.Message))
 	}
 
-	// Advanced reply-intent automation is best-effort and should not block inbox ingest.
+	// Advanced reply-intent automation is best-effort and should not block inbox
+	// ingest. ProcessIncomingReply also runs the layered reply classifier
+	// (replyclassify) and persists reply_class/confidence/source on the contact's
+	// campaign progress, gating replied_at so automated replies (auto_reply /
+	// out_of_office) never count as a human reply for stop_on_reply / branching.
 	if s.AdvancedService != nil {
 		_ = s.AdvancedService.ProcessIncomingReply(ctx, e.Message.EmailID, e.Message)
 	}
