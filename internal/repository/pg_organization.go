@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -253,6 +254,8 @@ func (r *organizationRepository) GetMembers(ctx context.Context, orgID uuid.UUID
 			return nil, err
 		}
 		m.User = &u
+		m.Email = u.Email
+		m.Name = strings.TrimSpace(u.FirstName + " " + u.LastName)
 		members = append(members, m)
 	}
 	return members, nil

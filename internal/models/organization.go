@@ -46,6 +46,12 @@ type OrganizationMember struct {
 	// Joined data
 	User         *User         `json:"user,omitempty"`
 	Organization *Organization `json:"organization,omitempty"`
+
+	// Flattened convenience fields populated from the joined user, so clients
+	// can read member.email / member.name directly (the member list UIs,
+	// assignee pickers, and team pickers all rely on these).
+	Email string `json:"email"`
+	Name  string `json:"name"`
 }
 
 // HasPermission checks if the member has a specific permission
