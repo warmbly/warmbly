@@ -40,7 +40,10 @@ import {
     PopoverMenuItem,
 } from "@/components/ui/popover-menu";
 import usePipelines from "@/lib/api/hooks/app/crm/pipelines/usePipelines";
-import useDeals from "@/lib/api/hooks/app/crm/deals/useDeals";
+import useSearchDeals from "@/lib/api/hooks/app/crm/deals/useSearchDeals";
+import useDealsSummary from "@/lib/api/hooks/app/crm/deals/useDealsSummary";
+import { EMPTY_DEAL_SEARCH } from "@/lib/api/models/app/crm/SearchDeals";
+import type DealsSummary from "@/lib/api/models/app/crm/DealsSummary";
 import useCreateDeal from "@/lib/api/hooks/app/crm/deals/useCreateDeal";
 import useUpdateDeal from "@/lib/api/hooks/app/crm/deals/useUpdateDeal";
 import useDeleteDeal from "@/lib/api/hooks/app/crm/deals/useDeleteDeal";
@@ -70,7 +73,6 @@ export default function DealsPage() {
 
     const currentPipeline = list.find((p) => p.id === pipelineId);
     const stages = [...(currentPipeline?.stages ?? [])].sort((a, b) => a.position - b.position);
-    const deals = useDeals({ pipeline_id: pipelineId, limit: 100 });
     const updateDeal = useUpdateDeal();
 
     const [search, setSearch] = React.useState("");
@@ -89,32 +91,20 @@ export default function DealsPage() {
         return p ? [...(p.stages ?? [])].sort((a, b) => a.position - b.position) : stages;
     }, [editing, list, stages]);
 
-    const allDeals = deals.data?.data ?? [];
-    const filtered = search.trim()
-        ? allDeals.filter((d) =>
-              d.name.toLowerCase().includes(search.trim().toLowerCase()) ||
-              (d.contact?.email ?? "").toLowerCase().includes(search.trim().toLowerCase()),
-          )
-        : allDeals;
-
-    const totalValue = filtered.reduce((acc, d) => acc + (d.value ?? 0), 0);
-    const wonCount = filtered.filter((d) => d.status === "won").length;
-    const openCount = filtered.filter((d) => d.status === "open").length;
+    // The board reads totals + per-column counts/values from the server summary
+    // (computed over the whole pipeline, not the loaded cards), and each column
+    // pages its own deals — so it stays accurate and fast at any size.
+    const boardFilters = React.useMemo(
+        () => ({ ...EMPTY_DEAL_SEARCH, query: search, pipeline_ids: pipelineId ? [pipelineId] : [] }),
+        [search, pipelineId],
+    );
+    const boardSummary = useDealsSummary(boardFilters, view === "board" && !!pipelineId).data;
 
     async function moveDeal(dealId: string, newStageId: string) {
-        const cur = allDeals.find((d) => d.id === dealId);
-        if (!cur || cur.stage_id === newStageId) return;
         try {
             await toast.promise(
-                updateDeal.mutateAsync({
-                    id: dealId,
-                    data: { stage_id: newStageId } as Partial<Deal>,
-                }),
-                {
-                    loading: "Moving…",
-                    success: "Moved",
-                    error: (e: AppError) => buildError(e),
-                },
+                updateDeal.mutateAsync({ id: dealId, data: { stage_id: newStageId } as Partial<Deal> }),
+                { loading: "Moving…", success: "Moved", error: (e: AppError) => buildError(e) },
             );
         } catch {
             /* surfaced */
@@ -128,7 +118,9 @@ export default function DealsPage() {
                 subtitle={
                     list.length === 0
                         ? "Create a pipeline first to start tracking deals."
-                        : `${allDeals.length} ${allDeals.length === 1 ? "deal" : "deals"} on ${currentPipeline?.name ?? "—"}`
+                        : view === "board"
+                          ? (currentPipeline?.name ?? "—")
+                          : "Every deal, across all pipelines"
                 }
             >
                 {list.length > 0 && (
@@ -167,20 +159,30 @@ export default function DealsPage() {
             ) : (
                 <>
                     <StatStrip cols={4}>
-                        <Stat label="Open" value={openCount} sub="active deals" />
-                        <Stat label="Pipeline value" value={formatMoney(totalValue)} sub="loaded · this pipeline" />
-                        <Stat label="Won" value={wonCount} sub="this view" />
+                        <Stat label="Open" value={boardSummary ? boardSummary.open_count : "—"} sub="open deals" />
+                        <Stat
+                            label="Pipeline value"
+                            value={boardSummary ? formatMoney(boardSummary.open_value, boardSummary.currency) : "—"}
+                            sub={boardSummary?.mixed_currency ? "mixed currencies" : "open · server total"}
+                        />
+                        <Stat
+                            label="Won"
+                            value={boardSummary ? formatMoney(boardSummary.won_value, boardSummary.currency) : "—"}
+                            sub="closed won"
+                        />
                         <Stat label="Stages" value={stages.length} sub="on this pipeline" last />
                     </StatStrip>
 
-                    <SectionBar label={deals.isPending ? "Loading…" : `${stages.length} stages`} />
+                    <SectionBar label={`${stages.length} stages`} />
                     <PageBody className="px-5 py-5">
                         {!currentPipeline || stages.length === 0 ? (
                             <NoStagesYet />
                         ) : (
                             <Board
+                                pipelineId={pipelineId}
                                 stages={stages}
-                                deals={filtered}
+                                query={search}
+                                summary={boardSummary}
                                 onMove={moveDeal}
                                 onOpen={(d) => setEditing(d)}
                             />
@@ -240,23 +242,29 @@ function ViewToggle({
 }
 
 function Board({
+    pipelineId,
     stages,
-    deals,
+    query,
+    summary,
     onMove,
     onOpen,
 }: {
+    pipelineId?: string;
     stages: Stage[];
-    deals: Deal[];
+    query: string;
+    summary?: DealsSummary;
     onMove: (dealId: string, stageId: string) => void | Promise<void>;
     onOpen: (deal: Deal) => void;
 }) {
     return (
         <div className="grid gap-3 grid-flow-col auto-cols-[280px] overflow-x-auto pb-2">
             {stages.map((stage) => (
-                <Column
+                <BoardColumn
                     key={stage.id}
+                    pipelineId={pipelineId}
                     stage={stage}
-                    deals={deals.filter((d) => d.stage_id === stage.id)}
+                    query={query}
+                    stat={summary?.stages.find((s) => s.stage_id === stage.id)}
                     onDrop={(dealId) => onMove(dealId, stage.id)}
                     onOpen={onOpen}
                 />
@@ -265,19 +273,40 @@ function Board({
     );
 }
 
-function Column({
+// Each column is its own server-paginated query scoped to its stage, so a
+// 5,000-deal pipeline renders ~15 cards per column (with "load more") instead
+// of every node at once. The header count + open value come from the server
+// summary, so they stay accurate no matter how many are loaded.
+function BoardColumn({
+    pipelineId,
     stage,
-    deals,
+    query,
+    stat,
     onDrop,
     onOpen,
 }: {
+    pipelineId?: string;
     stage: Stage;
-    deals: Deal[];
+    query: string;
+    stat?: { count: number; value: number };
     onDrop: (dealId: string) => void;
     onOpen: (deal: Deal) => void;
 }) {
     const [hover, setHover] = React.useState(false);
-    const total = deals.reduce((acc, d) => acc + (d.value ?? 0), 0);
+    const filters = React.useMemo(
+        () => ({
+            ...EMPTY_DEAL_SEARCH,
+            query,
+            pipeline_ids: pipelineId ? [pipelineId] : [],
+            stage_ids: [stage.id],
+            sort_by: "updated_at" as const,
+        }),
+        [query, pipelineId, stage.id],
+    );
+    const q = useSearchDeals({ filters, limit: 15 });
+    const deals = q.deals ?? [];
+    const count = stat?.count ?? q.total;
+    const value = stat?.value ?? 0;
 
     return (
         <div
@@ -292,11 +321,11 @@ function Column({
                 const dealId = e.dataTransfer.getData("text/deal");
                 if (dealId) onDrop(dealId);
             }}
-            className={`flex flex-col rounded-md min-h-[300px] transition-colors ${
+            className={`flex flex-col rounded-md min-h-[300px] max-h-[calc(100vh-230px)] transition-colors ${
                 hover ? "bg-sky-50 border-sky-300" : "bg-slate-50 border-slate-200"
             } border`}
         >
-            <div className="h-9 px-3 flex items-center gap-2 border-b border-slate-200">
+            <div className="h-9 px-3 flex items-center gap-2 border-b border-slate-200 shrink-0">
                 <span
                     className="size-1.5 rounded-full shrink-0"
                     style={{ backgroundColor: stage.color || "#94a3b8" }}
@@ -304,24 +333,45 @@ function Column({
                 <span className="text-[11px] uppercase tracking-[0.1em] font-semibold text-slate-700 truncate">
                     {stage.name}
                 </span>
-                <span className="ml-auto font-mono text-[10.5px] text-slate-400 tabular-nums">
-                    {deals.length}
-                </span>
+                <span className="ml-auto font-mono text-[10.5px] text-slate-400 tabular-nums">{count}</span>
             </div>
-            {total > 0 && (
-                <div className="px-3 py-1 border-b border-slate-200/60 bg-white">
+            {value > 0 && (
+                <div className="px-3 py-1 border-b border-slate-200/60 bg-white shrink-0">
                     <span className="text-[10.5px] text-emerald-700 font-mono tabular-nums">
-                        {formatMoney(total)} total
+                        {formatMoney(value)} open
                     </span>
                 </div>
             )}
-            <div className="p-2 space-y-1.5 flex-1">
-                {deals.length === 0 ? (
+            <div className="p-2 space-y-1.5 flex-1 overflow-y-auto">
+                {q.isPending ? (
+                    <>
+                        <div className="h-16 rounded-md bg-white border border-slate-200 animate-pulse" />
+                        <div className="h-16 rounded-md bg-white border border-slate-200 animate-pulse" />
+                    </>
+                ) : deals.length === 0 ? (
                     <div className="h-20 rounded-md border border-dashed border-slate-200 flex items-center justify-center text-[10.5px] text-slate-400">
                         Drop deals here
                     </div>
                 ) : (
-                    deals.map((d) => <DealCard key={d.id} deal={d} onOpen={onOpen} />)
+                    <>
+                        {deals.map((d) => (
+                            <DealCard key={d.id} deal={d} onOpen={onOpen} />
+                        ))}
+                        {q.hasNextPage && (
+                            <button
+                                type="button"
+                                onClick={() => q.fetchNextPage()}
+                                disabled={q.isFetchingNextPage}
+                                className="w-full h-7 rounded-md border border-slate-200 hover:border-slate-300 text-[11px] text-slate-600 hover:text-slate-900 inline-flex items-center justify-center gap-1 transition-colors disabled:opacity-50"
+                            >
+                                {q.isFetchingNextPage ? (
+                                    <Loader2Icon className="w-3 h-3 animate-spin" />
+                                ) : (
+                                    `Load ${Math.max(0, count - deals.length)} more`
+                                )}
+                            </button>
+                        )}
+                    </>
                 )}
             </div>
         </div>
