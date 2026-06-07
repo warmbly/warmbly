@@ -70,6 +70,7 @@ import useUpdateCampaign from "@/lib/api/hooks/app/campaigns/useUpdateCampaign";
 import { useConfirm } from "@/hooks/context/confirm";
 import useClickOutside from "@/hooks/useClickOutside";
 import { NumberInput, Label, TextInput } from "@/components/ui/field";
+import { SelectMenu, type SelectOption } from "@/components/ui/select-menu";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import SequenceView from "./SequenceView";
@@ -1373,6 +1374,21 @@ function WaitRow({ value, onCommit }: { value: number; onCommit: (v: number) => 
 }
 
 // ── Connection editor (optional condition + wait behind a connection) ───────
+const BRANCH_PATH_OPTIONS: SelectOption[] = [
+    { value: "always", label: "always (right after the wait)" },
+    { value: "opened", label: "if opened the email", group: "Engagement" },
+    { value: "clicked", label: "if clicked a link", group: "Engagement" },
+    { value: "replied", label: "if replied", group: "Engagement" },
+    { value: "not_opened", label: "if didn't open", group: "Engagement" },
+    { value: "not_clicked", label: "if didn't click", group: "Engagement" },
+    { value: "not_replied", label: "if didn't reply", group: "Engagement" },
+    { value: "reply_positive", label: "if replied: positive", group: "Reply intent" },
+    { value: "reply_negative", label: "if replied: negative", group: "Reply intent" },
+    { value: "reply_neutral", label: "if replied: neutral", group: "Reply intent" },
+    { value: "reply_automated", label: "if auto-reply / out of office", group: "Reply intent" },
+    { value: "random", label: "random split" },
+];
+
 function ConnectionEditor({
     source,
     branch,
@@ -1402,8 +1418,6 @@ function ConnectionEditor({
     const [field, setField] = React.useState<string>(c0 ? c0.field : "always");
     const [value, setValue] = React.useState<number>(c0?.value ?? (c0?.field === "random" ? 50 : 3));
 
-    const sel =
-        "h-7 w-full rounded-md border border-slate-200 bg-white px-2 text-[12px] text-slate-800 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100";
     const isAlways = field === "always";
     const isRandom = field === "random";
     const isReply = isReplyBranchField(field as BranchField);
@@ -1477,34 +1491,17 @@ function ConnectionEditor({
 
                 <div>
                     <p className="mb-1 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">Take this path</p>
-                    <select
-                        className={sel}
+                    <SelectMenu
+                        className="w-full"
                         value={field}
-                        onChange={(e) => {
-                            const f = e.target.value;
+                        options={BRANCH_PATH_OPTIONS}
+                        onChange={(f) => {
                             setField(f);
                             if (f === "random") setValue((v) => (v >= 1 && v <= 99 ? v : 50));
                             else if (f !== "always" && !isReplyBranchField(f as BranchField))
                                 setValue((v) => (v >= 1 && v <= 60 ? v : 3));
                         }}
-                    >
-                        <option value="always">always (right after the wait)</option>
-                        <optgroup label="Engagement">
-                            <option value="opened">if opened the email</option>
-                            <option value="clicked">if clicked a link</option>
-                            <option value="replied">if replied</option>
-                            <option value="not_opened">if didn’t open</option>
-                            <option value="not_clicked">if didn’t click</option>
-                            <option value="not_replied">if didn’t reply</option>
-                        </optgroup>
-                        <optgroup label="Reply intent">
-                            <option value="reply_positive">if replied: positive</option>
-                            <option value="reply_negative">if replied: negative</option>
-                            <option value="reply_neutral">if replied: neutral</option>
-                            <option value="reply_automated">if auto-reply / out of office</option>
-                        </optgroup>
-                        <option value="random">random split</option>
-                    </select>
+                    />
                 </div>
 
                 {isRandom && (
