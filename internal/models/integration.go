@@ -148,6 +148,18 @@ type IntegrationCatalogEntry struct {
 	// can offer "notify on positive reply", etc).
 	Events []string `json:"events,omitempty"`
 
+	// ActionTypes lists the provider action identifiers that have a real
+	// backend handler. The dashboard reads this so the automation builder only
+	// offers actions Warmbly can actually execute (a provider with no action
+	// types should not surface an automation/subscription builder at all).
+	ActionTypes []string `json:"action_types,omitempty"`
+
+	// SupportsPush reports whether this provider can be the target of the
+	// synchronous "push selected contacts" action surfaced contextually in the
+	// dashboard (Contacts, Deals). True only for CRM providers with an upsert
+	// handler.
+	SupportsPush bool `json:"supports_push"`
+
 	// Configured reports whether the server has OAuth client credentials wired
 	// for this provider. OAuth providers without credentials render as
 	// "coming soon" instead of a dead Connect button.
@@ -228,6 +240,8 @@ const (
 	IntegrationActionDiscordNotify      IntegrationAction = "discord.notify"
 	IntegrationActionHubSpotUpsert      IntegrationAction = "hubspot.upsert_contact"
 	IntegrationActionPipedriveUpsert    IntegrationAction = "pipedrive.upsert_person"
+	IntegrationActionSalesforceUpsert   IntegrationAction = "salesforce.upsert_contact"
+	IntegrationActionCloseUpsert        IntegrationAction = "close.upsert_lead"
 	IntegrationActionGenericWebhookPing IntegrationAction = "webhook.ping"
 )
 

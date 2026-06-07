@@ -47,6 +47,12 @@ export interface IntegrationCatalogEntry {
     highlights?: string[];
     scopes?: string[];
     events?: string[];
+    /** Provider action identifiers that have a real backend handler. The
+     *  automation builder is only offered when this is non-empty. */
+    action_types?: string[];
+    /** Whether this provider can be a target of the contextual "push contacts"
+     *  action (CRM providers with an upsert handler). */
+    supports_push: boolean;
     /** Whether the server has OAuth client credentials wired for this provider. */
     configured: boolean;
 }
@@ -82,6 +88,8 @@ export type IntegrationAction =
     | "discord.notify"
     | "hubspot.upsert_contact"
     | "pipedrive.upsert_person"
+    | "salesforce.upsert_contact"
+    | "close.upsert_lead"
     | "webhook.ping";
 
 export interface IntegrationEventSubscription {
@@ -181,7 +189,19 @@ export function defaultActionForProvider(provider: IntegrationProvider): Integra
             return "hubspot.upsert_contact";
         case "pipedrive":
             return "pipedrive.upsert_person";
+        case "salesforce":
+            return "salesforce.upsert_contact";
+        case "close":
+            return "close.upsert_lead";
         default:
             return "webhook.ping";
     }
 }
+
+// CRM providers the contextual "push to CRM" action can target.
+export const PUSHABLE_PROVIDERS: IntegrationProvider[] = [
+    "hubspot",
+    "pipedrive",
+    "salesforce",
+    "close",
+];

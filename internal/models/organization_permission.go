@@ -68,6 +68,11 @@ const (
 	PermTransferOwnership
 	// PermManageAPIKeys allows managing organization API keys
 	PermManageAPIKeys
+	// PermUseIntegrations allows operating connected integrations (e.g. pushing
+	// contacts/deals to a connected CRM) without granting full settings access.
+	// This is the operational counterpart to PermManageSettings, which still
+	// gates connecting/disconnecting and editing integration configuration.
+	PermUseIntegrations
 )
 
 // Role represents predefined permission sets
@@ -89,7 +94,8 @@ var RolePermissions = map[Role]OrganizationPermission{
 	RoleAdmin: AllPermissions ^ PermTransferOwnership ^ 0, // Admin gets all except transfer
 	RoleManager: PermManageCampaigns | PermManageContacts | PermManageEmails |
 		PermSendCampaigns | PermManageSequences | PermViewAnalytics |
-		PermViewCampaigns | PermViewContacts | PermAccessUnibox,
+		PermViewCampaigns | PermViewContacts | PermAccessUnibox |
+		PermUseIntegrations,
 	RoleViewer: PermViewCampaigns | PermViewContacts | PermViewAnalytics,
 }
 
