@@ -8,8 +8,10 @@ export default function useCreateCRMTask() {
     return useMutation({
         mutationFn: (data: Partial<CRMTask>) => createCRMTask(data),
         onSuccess: () => {
+            // Broad prefix so the server-driven search list, the summary totals,
+            // and the sidebar overdue indicator all refresh on create.
             queryClient.invalidateQueries({
-                queryKey: ["crm", "tasks", "list"],
+                queryKey: ["crm", "tasks"],
             })
         }
     })
