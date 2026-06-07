@@ -5,7 +5,7 @@ export default function useMarkSeen() {
     const queryClient = useQueryClient();
 
     return useMutation({
-        mutationFn: (data: { ids: string[] }) => markSeen(data),
+        mutationFn: (data: { ids: string[]; seen?: boolean }) => markSeen(data),
         onSuccess: () => {
             queryClient.invalidateQueries({
                 queryKey: ["unibox"],
