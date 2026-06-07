@@ -7,12 +7,19 @@ export default function useCreateDeal() {
 
     return useMutation({
         mutationFn: (data: Partial<Deal>) => createDeal(data),
-        onSuccess: () => {
+        onSuccess: (_result, variables) => {
             // Broad prefix so the board list, the cross-pipeline search table,
             // and the summary aggregates all refresh.
             queryClient.invalidateQueries({
                 queryKey: ["crm", "deals"],
             })
+            // A deal created against a contact (e.g. from the unibox CRM panel)
+            // also lives under that contact's deal list + 360 timeline.
+            if (variables.contact_id) {
+                queryClient.invalidateQueries({
+                    queryKey: ["contacts", variables.contact_id],
+                })
+            }
         }
     })
 }

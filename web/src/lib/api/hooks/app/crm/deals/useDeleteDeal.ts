@@ -10,6 +10,10 @@ export default function useDeleteDeal() {
             queryClient.invalidateQueries({
                 queryKey: ["crm", "deals"],
             })
+            // Deals also render inside contacts (panel list + 360 timeline).
+            queryClient.invalidateQueries({
+                queryKey: ["contacts"],
+            })
         }
     })
 }

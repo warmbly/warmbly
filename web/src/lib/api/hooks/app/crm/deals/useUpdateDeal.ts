@@ -11,6 +11,11 @@ export default function useUpdateDeal() {
             queryClient.invalidateQueries({
                 queryKey: ["crm", "deals"],
             })
+            // Deals also render inside contacts (panel list + 360 timeline), so
+            // a stage move / edit must refresh any active contact queries too.
+            queryClient.invalidateQueries({
+                queryKey: ["contacts"],
+            })
         }
     })
 }
