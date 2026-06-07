@@ -290,6 +290,36 @@ func main() {
 	// or WorkerRepo are nil.
 	go jobsService.StartRiskRebalancer(ctx, 1*time.Hour)
 
+	// Tracking consumer (opens/clicks): a second Kafka consumer on the tracking
+	// topic. It records open/click engagement and fires INSTANT open/click action
+	// chains (advancedService), the open/click analog of the reply path. Wired
+	// best-effort: if the tracking config or connection isn't available in this
+	// environment, log and keep running the worker-event consumer rather than
+	// crashing — opens/clicks simply aren't consumed there.
+	if trackingCfg, terr := cfg.LoadTrackingConsumerConfig(ctx); terr != nil {
+		log.Println("tracking consumer config unavailable; opens/clicks not consumed:", terr)
+	} else if trackingConsumer, terr := jobs.NewTrackingConsumer(
+		trackingCfg,
+		avrov2Client,
+		taskRepo,
+		campaignProgressRepo,
+		campaignRepo,
+		contactRepo,
+		streamingPublisher,
+		repository.NewTrackingDedupeRepository(primaryDB.Pool),
+		advancedService,
+	); terr != nil {
+		log.Println("tracking consumer unavailable; opens/clicks not consumed:", terr)
+	} else {
+		defer trackingConsumer.Close()
+		go func() {
+			if err := trackingConsumer.Start(ctx); err != nil {
+				log.Println("tracking consumer stopped:", err)
+			}
+		}()
+		log.Println("Tracking consumer started, listening on", trackingCfg.Topic)
+	}
+
 	log.Println("Consumer started, listening on", kafka.TopicWorkerEvents)
 	jobsService.Start(ctx)
 	log.Println("Consumer stopped")

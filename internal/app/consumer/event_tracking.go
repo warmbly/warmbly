@@ -10,6 +10,7 @@ import (
 	ckf "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
+	"github.com/warmbly/warmbly/internal/app/advanced"
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/events"
 	"github.com/warmbly/warmbly/internal/infrastructure/kafka"
@@ -26,7 +27,12 @@ type TrackingConsumer struct {
 	contactRepo          repository.ContactRepository
 	streamingPublisher   *pubsub.StreamingPublisher
 	dedupeRepo           repository.TrackingDedupeRepository
-	topic                string
+	// advancedService fires INSTANT open/click action chains the moment a
+	// tracking event lands (the open/click analog of the reply path in
+	// ProcessIncomingReply). Best-effort and nil-safe: when unset, opens/clicks
+	// are still recorded and routed at the next step boundary by the scheduler.
+	advancedService advanced.Service
+	topic           string
 }
 
 // NewTrackingConsumer creates a new tracking consumer using existing Kafka infrastructure
@@ -40,6 +46,7 @@ func NewTrackingConsumer(
 	contactRepo repository.ContactRepository,
 	streamingPublisher *pubsub.StreamingPublisher,
 	dedupeRepo repository.TrackingDedupeRepository,
+	advancedService advanced.Service,
 ) (*TrackingConsumer, error) {
 	// Create Kafka consumer using existing infrastructure
 	consumerConfig := kafka.NewConsumer(cfg.Brokers)
@@ -77,6 +84,7 @@ func NewTrackingConsumer(
 		contactRepo:          contactRepo,
 		streamingPublisher:   streamingPublisher,
 		dedupeRepo:           dedupeRepo,
+		advancedService:      advancedService,
 		topic:                cfg.Topic,
 	}, nil
 }
@@ -151,18 +159,25 @@ func (tc *TrackingConsumer) HandleTrackingEvent(ctx context.Context, event *even
 		return nil
 	}
 
-	// Record the event
+	// Record the event, then fire any INSTANT open/click action chain for the
+	// contact's current step the moment the signal lands (the open/click analog of
+	// the reply path in ProcessIncomingReply). instantKind maps the tracking event
+	// to the matcher's eventKind. Firing happens AFTER the Record* write so the
+	// matcher reads the just-stamped opened_at / clicked_at off the progress row.
+	var instantKind string
 	switch event.EventType {
 	case events.EventTypeEmailOpened:
 		err = tc.campaignProgressRepo.RecordEmailOpened(ctx,
 			*campaignTask.CampaignID,
 			*campaignTask.ContactID,
 			*campaignTask.SequenceID)
+		instantKind = "open"
 	case events.EventTypeEmailClicked:
 		err = tc.campaignProgressRepo.RecordEmailClicked(ctx,
 			*campaignTask.CampaignID,
 			*campaignTask.ContactID,
 			*campaignTask.SequenceID)
+		instantKind = "click"
 	default:
 		// Unknown event type, skip
 		return nil
@@ -171,6 +186,19 @@ func (tc *TrackingConsumer) HandleTrackingEvent(ctx context.Context, event *even
 	if err != nil {
 		log.Error().Err(err).Str("task_id", event.TaskID).Str("event_type", string(event.EventType)).Msg("failed to record tracking event")
 		return nil
+	}
+
+	// INSTANT open/click trigger: best-effort and non-blocking, mirroring the
+	// reply path. A failure (or a nil service in a process that doesn't wire it)
+	// must never block tracking ingest; the scheduler still routes the matching
+	// opened/clicked branch at the next step boundary. Exactly-once per (step,
+	// eventKind) is enforced inside FireInstantActions via ClaimInstantFire.
+	if tc.advancedService != nil {
+		tc.advancedService.FireInstantActions(ctx,
+			*campaignTask.CampaignID,
+			*campaignTask.ContactID,
+			*campaignTask.SequenceID,
+			instantKind)
 	}
 
 	// Mark as processed for deduplication
