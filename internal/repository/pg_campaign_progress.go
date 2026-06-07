@@ -505,6 +505,70 @@ func (r *campaignProgressRepository) FindNextRoutedPair(ctx context.Context, cam
 	entry := steps[0].id
 	now := time.Now()
 
+	// Route-aware stop_on_reply. Rather than blanket-excluding every contact who
+	// has replied (which also kills the reply branch's OWN follow-up steps), a
+	// replied contact keeps moving ONLY while their next routed step is part of the
+	// REPLY FLOW: the subgraph downstream of a reply branch that is NOT also part
+	// of the cold sequence. The normal / fall-through cold sequence stops; the
+	// reply branch's path (its actions AND any follow-up emails) runs to
+	// completion. Compute the reply-flow step set once and load the flag.
+	var stopOnReply bool
+	if serr := r.db.QueryRow(ctx, `SELECT stop_on_reply FROM campaigns WHERE id = $1`, campaignID).Scan(&stopOnReply); serr != nil {
+		return nil, nil, serr
+	}
+	replyFlowSteps := map[uuid.UUID]bool{}
+	if stopOnReply {
+		// bfs walks a directed reachability closure from `seeds`, following the
+		// targets selected by `follow`, and records every visited step into `into`.
+		bfs := func(seeds []uuid.UUID, into map[uuid.UUID]bool, follow func(b *models.Branch) bool) {
+			queue := append([]uuid.UUID(nil), seeds...)
+			for _, s := range seeds {
+				into[s] = true
+			}
+			for len(queue) > 0 {
+				cur := queue[0]
+				queue = queue[1:]
+				idx, ok := idxByID[cur]
+				if !ok {
+					continue
+				}
+				for j := range steps[idx].bc.Branches {
+					b := &steps[idx].bc.Branches[j]
+					if b.TargetSequenceID == nil || into[*b.TargetSequenceID] || !follow(b) {
+						continue
+					}
+					into[*b.TargetSequenceID] = true
+					queue = append(queue, *b.TargetSequenceID)
+				}
+			}
+		}
+
+		// 1. Cold trunk: every step a NON-replier reaches from the entry, i.e.
+		//    following every branch EXCEPT the ones that route on a positive reply.
+		//    A step that also sits here (a reply branch merged back into the cold
+		//    sequence) is NOT reply flow — a replier must stop when they reach it.
+		coldReachable := map[uuid.UUID]bool{}
+		bfs([]uuid.UUID{entry}, coldReachable, func(b *models.Branch) bool {
+			return !branchHasPositiveReplyCondition(b)
+		})
+
+		// 2. Reply flow: everything reachable from a positive-reply branch target
+		//    (following ALL onward branches, so internal reply-flow branching is
+		//    kept), MINUS the cold trunk.
+		var seeds []uuid.UUID
+		for i := range steps {
+			for j := range steps[i].bc.Branches {
+				b := &steps[i].bc.Branches[j]
+				if b.TargetSequenceID != nil && branchHasPositiveReplyCondition(b) && !coldReachable[*b.TargetSequenceID] {
+					seeds = append(seeds, *b.TargetSequenceID)
+				}
+			}
+		}
+		bfs(seeds, replyFlowSteps, func(b *models.Branch) bool {
+			return b.TargetSequenceID != nil && !coldReachable[*b.TargetSequenceID]
+		})
+	}
+
 	// routeResult is the outcome of routing a contact out of their current step:
 	// send `target`, fully `stop`, or `wait` until a condition window elapses.
 	type routeResult struct {
@@ -554,6 +618,37 @@ func (r *campaignProgressRepository) FindNextRoutedPair(ctx context.Context, cam
 		return routeResult{stop: true}
 	}
 
+	// routeReplyOnly is the routing used for a contact who HAS REPLIED but is still
+	// on the cold trunk (stop_on_reply on). It considers ONLY positive-reply
+	// branches that lead into the reply flow, giving them priority regardless of
+	// declared order, and never waits on a cold window. The first such branch that
+	// matches right now routes the contact into the reply flow; anything else means
+	// "no reply handling here for this reply" -> STOP the cold sequence. This is
+	// what lets a non-instant reply branch fire even when an engagement branch is
+	// declared ahead of it, and stops a replier instead of deferring on a cold
+	// "did not open within N days" window forever.
+	routeReplyOnly := func(fromID uuid.UUID, prog *CampaignContactProgress, sentAt time.Time) routeResult {
+		idx, ok := idxByID[fromID]
+		if !ok {
+			return routeResult{stop: true}
+		}
+		for i := range steps[idx].bc.Branches {
+			b := &steps[idx].bc.Branches[i]
+			if b.TargetSequenceID == nil || !branchHasPositiveReplyCondition(b) || !replyFlowSteps[*b.TargetSequenceID] {
+				continue
+			}
+			if st, _ := evaluateBranchState(b, prog, sentAt, now); st != BranchMatch {
+				continue
+			}
+			if _, live := idxByID[*b.TargetSequenceID]; !live {
+				continue
+			}
+			t := *b.TargetSequenceID
+			return routeResult{target: &t}
+		}
+		return routeResult{stop: true}
+	}
+
 	// 2. Ordered candidate contacts + their last-sent step (with engagement) + sent set.
 	var contactOrder string
 	switch orderBy {
@@ -585,7 +680,11 @@ func (r *campaignProgressRepository) FindNextRoutedPair(ctx context.Context, cam
 	query := `
 		SELECT cl.contact_id,
 		       lp.sequence_id, lp.sent_at, lp.opened_at, lp.clicked_at, lp.replied_at, COALESCE(lp.reply_class, ''),
-		       COALESCE(ss.ids, '{}') AS sent_ids
+		       COALESCE(ss.ids, '{}') AS sent_ids,
+		       EXISTS (
+		         SELECT 1 FROM campaign_contact_progress rp
+		         WHERE rp.campaign_id = $1 AND rp.contact_id = cl.contact_id AND rp.replied_at IS NOT NULL
+		       ) AS has_replied
 		FROM campaign_leads cl
 		JOIN contacts c ON c.id = cl.contact_id
 		LEFT JOIN LATERAL (
@@ -603,14 +702,6 @@ func (r *campaignProgressRepository) FindNextRoutedPair(ctx context.Context, cam
 		  AND NOT EXISTS (
 		    SELECT 1 FROM campaign_contact_progress b
 		    WHERE b.contact_id = cl.contact_id AND b.bounced_at IS NOT NULL
-		  )
-		  AND NOT EXISTS (
-		    -- Global "stop on reply": when the campaign has it on, a contact who
-		    -- has already replied never surfaces as a candidate again.
-		    SELECT 1 FROM campaigns camp_sr
-		    JOIN campaign_contact_progress rp
-		      ON rp.contact_id = cl.contact_id AND rp.campaign_id = $1
-		    WHERE camp_sr.id = $1 AND camp_sr.stop_on_reply = true AND rp.replied_at IS NOT NULL
 		  )
 		  AND NOT EXISTS (
 		    SELECT 1 FROM suppressed_recipients sr
@@ -634,7 +725,8 @@ func (r *campaignProgressRepository) FindNextRoutedPair(ctx context.Context, cam
 		var sentAt, openedAt, clickedAt, repliedAt *time.Time
 		var replyClass string
 		var sentIDs []uuid.UUID
-		if serr := rows.Scan(&contactID, &lastSeq, &sentAt, &openedAt, &clickedAt, &repliedAt, &replyClass, &sentIDs); serr != nil {
+		var hasReplied bool
+		if serr := rows.Scan(&contactID, &lastSeq, &sentAt, &openedAt, &clickedAt, &repliedAt, &replyClass, &sentIDs, &hasReplied); serr != nil {
 			return nil, nil, serr
 		}
 
@@ -657,6 +749,22 @@ func (r *campaignProgressRepository) FindNextRoutedPair(ctx context.Context, cam
 				sa = *sentAt
 			}
 			res = routeNext(*lastSeq, prog, sa)
+
+			// Route-aware stop_on_reply for a contact who has replied:
+			//   - still on the cold trunk (lastSeq not in the reply flow): they may
+			//     only ENTER the reply flow via a positive-reply branch. Any cold
+			//     route, an undecided cold window, or a stop ends them here — no cold
+			//     sends and no deferring on a cold window.
+			//   - already inside the reply flow: keep the reply flow's own routing
+			//     (its waits are legitimate), but if it would route back out into the
+			//     cold sequence, stop instead.
+			if stopOnReply && hasReplied {
+				if !replyFlowSteps[*lastSeq] {
+					res = routeReplyOnly(*lastSeq, prog, sa)
+				} else if res.target != nil && !replyFlowSteps[*res.target] {
+					res = routeResult{stop: true}
+				}
+			}
 		}
 
 		if res.wait != nil {
@@ -668,7 +776,7 @@ func (r *campaignProgressRepository) FindNextRoutedPair(ctx context.Context, cam
 			continue
 		}
 		if res.stop || res.target == nil {
-			continue // reached the end / a STOP
+			continue // reached the end / a STOP (incl. a replied contact stopped above)
 		}
 		// Loop guard: never re-send a step the contact already received.
 		already := false
@@ -689,4 +797,19 @@ func (r *campaignProgressRepository) FindNextRoutedPair(ctx context.Context, cam
 	// Nobody sendable now. If contacts are waiting on a window, hand back the
 	// soonest re-check time so the scheduler defers rather than completing.
 	return nil, earliestWait, nil
+}
+
+// branchHasPositiveReplyCondition reports whether a branch is a "reply branch":
+// one that routes on a POSITIVE reply signal (a human reply, or a classified
+// reply intent). Its target seeds the reply flow used by route-aware
+// stop_on_reply. not_replied is deliberately excluded — it is the "did NOT
+// reply" continuation of the normal cold sequence, not the reply flow.
+func branchHasPositiveReplyCondition(b *models.Branch) bool {
+	for i := range b.Conditions {
+		switch b.Conditions[i].Field {
+		case "replied", "reply_positive", "reply_negative", "reply_neutral", "reply_automated":
+			return true
+		}
+	}
+	return false
 }

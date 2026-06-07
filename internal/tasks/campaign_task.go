@@ -358,18 +358,11 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 		log.Warn().Err(err).Str("campaign_id", campaign.ID.String()).Str("task_id", taskID.String()).Msg("Failed to update campaign task tracking")
 	}
 
-	// STEP 8: Check stop_on_reply
-	if campaign.StopOnReply {
-		hasReplied, err := s.campaignProgressRepo.CheckContactHasReplied(ctx, contact.ID, campaign.ID)
-		if err == nil && hasReplied {
-			// Contact has replied, skip
-			s.taskRepo.UpdateTaskStatus(ctx, taskID, "completed")
-			// Create next task anyway for next contact
-			s.createCampaignTask(ctx, campaign.ID, accountID, nextTime)
-			executionStatus = "completed"
-			return nil
-		}
-	}
+	// stop_on_reply is enforced inside FindNextRoutedPair (STEP 6), and it is now
+	// ROUTE-AWARE: a contact who replied is only handed back when their next step
+	// is part of the reply flow (the reply branch's own path). The normal cold
+	// sequence stops there, so there is no longer a blanket "contact has replied,
+	// skip" check here — that would also kill the reply branch's follow-up emails.
 
 	// STEP 9: Load email account
 	account, xerr := s.emailRepo.GetByID(ctx, accountID)
