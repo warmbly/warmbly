@@ -1071,18 +1071,18 @@ func (r *crmRepository) CreateCRMTask(ctx context.Context, orgID, userID uuid.UU
 	taskType := data.Type
 
 	query := `
-		INSERT INTO crm_tasks (organization_id, contact_id, deal_id, assigned_to, created_by, title, description, due_date, priority, type)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-		RETURNING id, organization_id, contact_id, deal_id, assigned_to, created_by, title, description,
+		INSERT INTO crm_tasks (organization_id, contact_id, deal_id, assigned_to, assigned_team_id, created_by, title, description, due_date, priority, type)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		RETURNING id, organization_id, contact_id, deal_id, assigned_to, assigned_team_id, created_by, title, description,
 		          due_date, priority, type, status, completed_at, created_at, updated_at
 	`
 	var task models.CRMTask
 	err := r.db.QueryRow(ctx, query,
-		orgID, data.ContactID, data.DealID, data.AssignedTo, userID,
+		orgID, data.ContactID, data.DealID, data.AssignedTo, data.AssignedTeamID, userID,
 		data.Title, data.Description, data.DueDate, priority, taskType,
 	).Scan(
 		&task.ID, &task.OrganizationID, &task.ContactID, &task.DealID,
-		&task.AssignedTo, &task.CreatedBy, &task.Title, &task.Description,
+		&task.AssignedTo, &task.AssignedTeamID, &task.CreatedBy, &task.Title, &task.Description,
 		&task.DueDate, &task.Priority, &task.Type, &task.Status, &task.CompletedAt,
 		&task.CreatedAt, &task.UpdatedAt,
 	)
@@ -1094,7 +1094,7 @@ func (r *crmRepository) CreateCRMTask(ctx context.Context, orgID, userID uuid.UU
 
 func (r *crmRepository) GetCRMTask(ctx context.Context, orgID, taskID uuid.UUID) (*models.CRMTask, error) {
 	query := `
-		SELECT id, organization_id, contact_id, deal_id, assigned_to, created_by, title, description,
+		SELECT id, organization_id, contact_id, deal_id, assigned_to, assigned_team_id, created_by, title, description,
 		       due_date, priority, type, status, completed_at, created_at, updated_at
 		FROM crm_tasks
 		WHERE organization_id = $1 AND id = $2
@@ -1102,7 +1102,7 @@ func (r *crmRepository) GetCRMTask(ctx context.Context, orgID, taskID uuid.UUID)
 	var task models.CRMTask
 	err := r.db.QueryRow(ctx, query, orgID, taskID).Scan(
 		&task.ID, &task.OrganizationID, &task.ContactID, &task.DealID,
-		&task.AssignedTo, &task.CreatedBy, &task.Title, &task.Description,
+		&task.AssignedTo, &task.AssignedTeamID, &task.CreatedBy, &task.Title, &task.Description,
 		&task.DueDate, &task.Priority, &task.Type, &task.Status, &task.CompletedAt,
 		&task.CreatedAt, &task.UpdatedAt,
 	)
@@ -1148,7 +1148,7 @@ func (r *crmRepository) ListCRMTasks(ctx context.Context, orgID uuid.UUID, conta
 	}
 
 	query := fmt.Sprintf(`
-		SELECT id, organization_id, contact_id, deal_id, assigned_to, created_by, title, description,
+		SELECT id, organization_id, contact_id, deal_id, assigned_to, assigned_team_id, created_by, title, description,
 		       due_date, priority, type, status, completed_at, created_at, updated_at
 		FROM crm_tasks
 		WHERE %s
@@ -1168,7 +1168,7 @@ func (r *crmRepository) ListCRMTasks(ctx context.Context, orgID uuid.UUID, conta
 		var task models.CRMTask
 		if err := rows.Scan(
 			&task.ID, &task.OrganizationID, &task.ContactID, &task.DealID,
-			&task.AssignedTo, &task.CreatedBy, &task.Title, &task.Description,
+			&task.AssignedTo, &task.AssignedTeamID, &task.CreatedBy, &task.Title, &task.Description,
 			&task.DueDate, &task.Priority, &task.Type, &task.Status, &task.CompletedAt,
 			&task.CreatedAt, &task.UpdatedAt,
 		); err != nil {
@@ -1225,6 +1225,19 @@ func taskSearchWhere(orgID uuid.UUID, f models.SearchTasks) ([]string, []any) {
 	appendIn("priority", f.Priorities)
 	appendIn("type", f.Types)
 	appendIn("assigned_to", f.AssignedTo)
+
+	// Team filter: a task matches when it is directly assigned to one of the
+	// given teams, OR its individual assignee is a member of one of them. Bound
+	// once as a uuid[] so the same predicate (and the same $N) is reused
+	// identically by the search rows query and the summary aggregate.
+	if len(f.TeamIDs) > 0 {
+		clauses = append(clauses, fmt.Sprintf(
+			"(t.assigned_team_id = ANY($%d) OR t.assigned_to IN (SELECT user_id FROM team_members WHERE team_id = ANY($%d)))",
+			pos, pos,
+		))
+		args = append(args, f.TeamIDs)
+		pos++
+	}
 
 	if f.ContactID != nil {
 		clauses = append(clauses, fmt.Sprintf("t.contact_id = $%d", pos))
@@ -1299,7 +1312,7 @@ func (r *crmRepository) SearchCRMTasks(ctx context.Context, orgID uuid.UUID, fil
 	limitPos := len(args) + 1
 	offsetPos := len(args) + 2
 	query := fmt.Sprintf(`
-		SELECT t.id, t.organization_id, t.contact_id, t.deal_id, t.assigned_to, t.created_by, t.title, t.description,
+		SELECT t.id, t.organization_id, t.contact_id, t.deal_id, t.assigned_to, t.assigned_team_id, t.created_by, t.title, t.description,
 		       t.due_date, t.priority, t.type, t.status, t.completed_at, t.created_at, t.updated_at
 		FROM crm_tasks t
 		WHERE %s
@@ -1319,7 +1332,7 @@ func (r *crmRepository) SearchCRMTasks(ctx context.Context, orgID uuid.UUID, fil
 		var task models.CRMTask
 		if err := rows.Scan(
 			&task.ID, &task.OrganizationID, &task.ContactID, &task.DealID,
-			&task.AssignedTo, &task.CreatedBy, &task.Title, &task.Description,
+			&task.AssignedTo, &task.AssignedTeamID, &task.CreatedBy, &task.Title, &task.Description,
 			&task.DueDate, &task.Priority, &task.Type, &task.Status, &task.CompletedAt,
 			&task.CreatedAt, &task.UpdatedAt,
 		); err != nil {
@@ -1387,6 +1400,11 @@ func (r *crmRepository) UpdateCRMTask(ctx context.Context, orgID, taskID uuid.UU
 		args = append(args, *data.AssignedTo)
 		argPos++
 	}
+	if data.AssignedTeamID != nil {
+		setClauses = append(setClauses, fmt.Sprintf("assigned_team_id = $%d", argPos))
+		args = append(args, *data.AssignedTeamID)
+		argPos++
+	}
 	if data.Title != nil {
 		setClauses = append(setClauses, fmt.Sprintf("title = $%d", argPos))
 		args = append(args, *data.Title)
@@ -1431,14 +1449,14 @@ func (r *crmRepository) UpdateCRMTask(ctx context.Context, orgID, taskID uuid.UU
 	query := fmt.Sprintf(`
 		UPDATE crm_tasks SET %s
 		WHERE organization_id = $1 AND id = $2
-		RETURNING id, organization_id, contact_id, deal_id, assigned_to, created_by, title, description,
+		RETURNING id, organization_id, contact_id, deal_id, assigned_to, assigned_team_id, created_by, title, description,
 		          due_date, priority, type, status, completed_at, created_at, updated_at
 	`, strings.Join(setClauses, ", "))
 
 	var task models.CRMTask
 	err := r.db.QueryRow(ctx, query, args...).Scan(
 		&task.ID, &task.OrganizationID, &task.ContactID, &task.DealID,
-		&task.AssignedTo, &task.CreatedBy, &task.Title, &task.Description,
+		&task.AssignedTo, &task.AssignedTeamID, &task.CreatedBy, &task.Title, &task.Description,
 		&task.DueDate, &task.Priority, &task.Type, &task.Status, &task.CompletedAt,
 		&task.CreatedAt, &task.UpdatedAt,
 	)

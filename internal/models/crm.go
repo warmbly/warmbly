@@ -319,6 +319,7 @@ type CRMTask struct {
 	ContactID      *uuid.UUID      `json:"contact_id,omitempty"`
 	DealID         *uuid.UUID      `json:"deal_id,omitempty"`
 	AssignedTo     *uuid.UUID      `json:"assigned_to,omitempty"`
+	AssignedTeamID *uuid.UUID      `json:"assigned_team_id,omitempty"`
 	CreatedBy      uuid.UUID       `json:"created_by"`
 	Title          string          `json:"title"`
 	Description    *string         `json:"description,omitempty"`
@@ -337,24 +338,26 @@ type CRMTasksResult struct {
 }
 
 type CreateCRMTask struct {
-	ContactID   *uuid.UUID `json:"contact_id,omitempty"`
-	DealID      *uuid.UUID `json:"deal_id,omitempty"`
-	AssignedTo  *uuid.UUID `json:"assigned_to,omitempty"`
-	Title       string     `json:"title" binding:"required,min=1,max=255"`
-	Description *string    `json:"description,omitempty"`
-	DueDate     *time.Time `json:"due_date,omitempty"`
-	Priority    string     `json:"priority,omitempty"`
-	Type        string     `json:"type,omitempty"`
+	ContactID      *uuid.UUID `json:"contact_id,omitempty"`
+	DealID         *uuid.UUID `json:"deal_id,omitempty"`
+	AssignedTo     *uuid.UUID `json:"assigned_to,omitempty"`
+	AssignedTeamID *uuid.UUID `json:"assigned_team_id,omitempty"`
+	Title          string     `json:"title" binding:"required,min=1,max=255"`
+	Description    *string    `json:"description,omitempty"`
+	DueDate        *time.Time `json:"due_date,omitempty"`
+	Priority       string     `json:"priority,omitempty"`
+	Type           string     `json:"type,omitempty"`
 }
 
 type UpdateCRMTask struct {
-	AssignedTo  *uuid.UUID `json:"assigned_to,omitempty"`
-	Title       *string    `json:"title,omitempty"`
-	Description *string    `json:"description,omitempty"`
-	DueDate     *time.Time `json:"due_date,omitempty"`
-	Priority    *string    `json:"priority,omitempty"`
-	Type        *string    `json:"type,omitempty"`
-	Status      *string    `json:"status,omitempty"`
+	AssignedTo     *uuid.UUID `json:"assigned_to,omitempty"`
+	AssignedTeamID *uuid.UUID `json:"assigned_team_id,omitempty"`
+	Title          *string    `json:"title,omitempty"`
+	Description    *string    `json:"description,omitempty"`
+	DueDate        *time.Time `json:"due_date,omitempty"`
+	Priority       *string    `json:"priority,omitempty"`
+	Type           *string    `json:"type,omitempty"`
+	Status         *string    `json:"status,omitempty"`
 }
 
 // =====================
@@ -367,18 +370,19 @@ type UpdateCRMTask struct {
 // that makes the tasks view correct at scale instead of paging a cursor and
 // reducing client-side.
 type SearchTasks struct {
-	Query      string     `json:"query"`       // title ILIKE
-	Statuses   []string   `json:"statuses"`    // pending | in_progress | completed | cancelled (any of)
-	Priorities []string   `json:"priorities"`  // low | medium | high | urgent (any of)
-	Types      []string   `json:"types"`       // task type NAME is any of
-	AssignedTo []string   `json:"assigned_to"` // assignee user id is any of
-	ContactID  *string    `json:"contact_id"`  // linked contact
-	DealID     *string    `json:"deal_id"`     // linked deal
-	DueAfter   *time.Time `json:"due_after"`   // due_date >=
-	DueBefore  *time.Time `json:"due_before"`  // due_date <=
-	Overdue    bool       `json:"overdue"`     // due_date < now() AND not completed/cancelled
-	SortBy     string     `json:"sort_by"`     // created_at|due_date|priority|title|updated_at
-	Reverse    bool       `json:"reverse"`     // true = ASC, false = DESC (default)
+	Query      string      `json:"query"`       // title ILIKE
+	Statuses   []string    `json:"statuses"`    // pending | in_progress | completed | cancelled (any of)
+	Priorities []string    `json:"priorities"`  // low | medium | high | urgent (any of)
+	Types      []string    `json:"types"`       // task type NAME is any of
+	AssignedTo []string    `json:"assigned_to"` // assignee user id is any of
+	TeamIDs    []uuid.UUID `json:"team_ids"`    // task team is any of, OR assignee is a member of any of
+	ContactID  *string     `json:"contact_id"`  // linked contact
+	DealID     *string     `json:"deal_id"`     // linked deal
+	DueAfter   *time.Time  `json:"due_after"`   // due_date >=
+	DueBefore  *time.Time  `json:"due_before"`  // due_date <=
+	Overdue    bool        `json:"overdue"`     // due_date < now() AND not completed/cancelled
+	SortBy     string      `json:"sort_by"`     // created_at|due_date|priority|title|updated_at
+	Reverse    bool        `json:"reverse"`     // true = ASC, false = DESC (default)
 }
 
 // TasksSearchResult is the offset-paginated result of POST /crm/tasks/search.
