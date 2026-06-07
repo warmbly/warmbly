@@ -1521,11 +1521,17 @@ function ConnectionEditor({
                     </div>
                 )}
                 {isReply && (
-                    <p className="text-[10.5px] text-slate-400">
-                        {field === "reply_automated"
-                            ? "Routes when the contact's reply is an auto-reply or out-of-office bounce, not a real human reply. Pair this with action steps (create deal, move stage, notify) to react."
-                            : "Routes when the contact's reply is classified this way. Chain action steps after it, for example create deal then move stage then notify."}
-                    </p>
+                    <div className="space-y-1">
+                        <div className="flex items-center gap-1.5 rounded-md bg-violet-50 px-2 py-1 text-[10.5px] font-medium text-violet-600 ring-1 ring-violet-200">
+                            <ZapIcon className="w-3 h-3 shrink-0" />
+                            Instant: runs the moment they reply (no wait)
+                        </div>
+                        <p className="text-[10.5px] text-slate-400">
+                            {field === "reply_automated"
+                                ? "Routes when the contact's reply is an auto-reply or out-of-office bounce, not a real human reply. Pair this with action steps (create deal, move stage, notify) to react."
+                                : "Routes when the contact's reply is classified this way. Chain action steps after it, for example create deal then move stage then notify."}
+                        </p>
+                    </div>
                 )}
                 {isNegative && (
                     <p className="text-[10.5px] text-slate-400">
@@ -1533,7 +1539,7 @@ function ConnectionEditor({
                     </p>
                 )}
 
-                {branch.target_sequence_id !== null && <WaitRow value={waitDays} onCommit={onSetWait} />}
+                {branch.target_sequence_id !== null && !isReply && <WaitRow value={waitDays} onCommit={onSetWait} />}
             </div>
 
             <div className="mt-3 flex items-center gap-2">
