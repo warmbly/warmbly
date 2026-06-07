@@ -8,8 +8,10 @@ export default function useCreateDeal() {
     return useMutation({
         mutationFn: (data: Partial<Deal>) => createDeal(data),
         onSuccess: () => {
+            // Broad prefix so the board list, the cross-pipeline search table,
+            // and the summary aggregates all refresh.
             queryClient.invalidateQueries({
-                queryKey: ["crm", "deals", "list"],
+                queryKey: ["crm", "deals"],
             })
         }
     })
