@@ -38,6 +38,12 @@ type ContactService interface {
 	// slide-over: hydrated contact + engagement summary + suppression.
 	GetDetail(ctx context.Context, userID uuid.UUID, orgID *uuid.UUID, contactID uuid.UUID) (*models.ContactDetail, *errx.Error)
 
+	// GetByEmail resolves a sender address to a contact within the
+	// organization (newest match wins). Returns (nil, nil) when the org has
+	// no contact for that address — a "not a known contact" is a normal,
+	// non-error outcome used by the unibox CRM panel.
+	GetByEmail(ctx context.Context, orgID *uuid.UUID, email string) (*models.Contact, *errx.Error)
+
 	// ListSentEmails enumerates every send (or attempted send) we made
 	// to the contact, newest first.
 	ListSentEmails(ctx context.Context, userID, contactID uuid.UUID, limit int, beforeSentAt *time.Time, beforeTaskID *uuid.UUID) (*models.ContactSentEmailsResult, *errx.Error)

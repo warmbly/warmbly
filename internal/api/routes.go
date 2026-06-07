@@ -308,6 +308,10 @@ func Run(
 			contacts.PATCH("/:id", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts), h.UpdateContact)
 			contacts.DELETE("/:id", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts), h.DeleteContact)
 
+			// Resolve a sender address to a contact (unibox CRM panel).
+			// Registered before /:id so the fixed path wins over the catch-all.
+			contacts.GET("/lookup", m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts), h.LookupContactByEmail)
+
 			// Contact 360 view: hydrated detail, every email sent to
 			// the contact, and the merged activity timeline.
 			contacts.GET("/:id", m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts), h.GetContact)

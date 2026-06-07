@@ -2,6 +2,7 @@ package contact
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -98,6 +99,15 @@ func (s *contactService) Delete(ctx context.Context, userID string, contactID st
 
 func (s *contactService) GetDetail(ctx context.Context, userID uuid.UUID, orgID *uuid.UUID, contactID uuid.UUID) (*models.ContactDetail, *errx.Error) {
 	return s.contactRepository.GetDetail(ctx, userID, orgID, contactID)
+}
+
+func (s *contactService) GetByEmail(ctx context.Context, orgID *uuid.UUID, email string) (*models.Contact, *errx.Error) {
+	if orgID == nil || strings.TrimSpace(email) == "" {
+		return nil, nil
+	}
+	// The repo already returns (nil, nil) when no contact matches, so an
+	// unknown sender flows through as a clean "no contact" rather than an error.
+	return s.contactRepository.GetByEmailAndOrganization(ctx, *orgID, email)
 }
 
 func (s *contactService) ListSentEmails(ctx context.Context, userID, contactID uuid.UUID, limit int, beforeSentAt *time.Time, beforeTaskID *uuid.UUID) (*models.ContactSentEmailsResult, *errx.Error) {

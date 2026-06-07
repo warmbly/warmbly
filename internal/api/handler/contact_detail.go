@@ -3,6 +3,7 @@ package handler
 import (
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -37,6 +38,28 @@ func (h *Handler) GetContact(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, detail)
+}
+
+// LookupContactByEmail resolves a sender address to a contact in the caller's
+// organization, for the unibox CRM panel. Returns {"contact": null} with 200
+// when no contact matches, so an unknown sender renders a clean empty state
+// rather than a 404.
+func (h *Handler) LookupContactByEmail(c *gin.Context) {
+	email := strings.TrimSpace(c.Query("email"))
+	if email == "" {
+		errx.Handle(c, errx.New(errx.BadRequest, "email is required"))
+		return
+	}
+
+	orgID := middleware.GetOrganizationID(c)
+
+	contact, xerr := h.ContactService.GetByEmail(c.Request.Context(), orgID, email)
+	if xerr != nil {
+		errx.Handle(c, xerr)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"contact": contact})
 }
 
 // ListContactEmails returns one row per email we sent (or tried to
