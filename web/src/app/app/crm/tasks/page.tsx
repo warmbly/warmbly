@@ -48,6 +48,9 @@ import type CRMTask from "@/lib/api/models/app/crm/CRMTask";
 import type { CRMTaskPriority, CRMTaskStatus } from "@/lib/api/models/app/crm/CRMTask";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
+import TaskTypePicker from "@/components/app/crm/TaskTypePicker";
+import useTaskTypes from "@/lib/api/hooks/app/crm/taskTypes/useTaskTypes";
+import { taskTypeColor } from "@/components/app/crm/taskTypes";
 
 const PRIORITIES: { id: CRMTaskPriority; label: string; dot: string; text: string }[] = [
     { id: "urgent", label: "Urgent", dot: "bg-red-500",     text: "text-red-700" },
@@ -138,8 +141,13 @@ export default function TasksPage() {
         return g;
     }, [visible, showCompleted]);
 
+    // Active = still actionable (not completed/cancelled). Priority breakdown is
+    // computed over the open work, mirroring the campaigns/accounts stat strips.
+    const activeTasks = all.filter((t) => t.status !== "completed" && t.status !== "cancelled");
     const stats = {
         overdue: grouped.overdue.length,
+        highPriority: activeTasks.filter((t) => t.priority === "urgent" || t.priority === "high").length,
+        otherPriority: activeTasks.filter((t) => t.priority === "medium" || t.priority === "low").length,
         today: grouped.today.length,
         week: grouped.this_week.length + grouped.tomorrow.length + grouped.today.length,
         completed: all.filter(
@@ -174,10 +182,11 @@ export default function TasksPage() {
                 </TopbarAction>
             </PageTopbar>
 
-            <StatStrip cols={4}>
+            <StatStrip cols={5}>
                 <Stat label="Overdue" value={stats.overdue} sub="needs attention" />
+                <Stat label="High priority" value={stats.highPriority} sub="urgent + high" accent={stats.highPriority > 0} />
+                <Stat label="Other" value={stats.otherPriority} sub="medium + low" />
                 <Stat label="Today" value={stats.today} sub="due today" />
-                <Stat label="This week" value={stats.week} sub="next 7 days" />
                 <Stat label="Completed (7d)" value={stats.completed} sub="last week" last />
             </StatStrip>
 
@@ -270,6 +279,7 @@ function TaskRow({ task, onOpen }: { task: CRMTask; onOpen: (t: CRMTask) => void
                     <SquareIcon className="w-3.5 h-3.5" />
                 )}
             </button>
+            <TaskTypeIcon type={task.type} done={isDone} />
             <span
                 className={`text-[12px] truncate flex-1 ${
                     isDone ? "text-slate-400 line-through" : "text-slate-900"
@@ -382,6 +392,7 @@ function TaskDialog({
     const [description, setDescription] = React.useState("");
     const [dueDate, setDueDate] = React.useState("");
     const [priority, setPriority] = React.useState<CRMTaskPriority>("medium");
+    const [type, setType] = React.useState<string>("");
     const [status, setStatus] = React.useState<CRMTaskStatus>("pending");
 
     React.useEffect(() => {
@@ -391,12 +402,14 @@ function TaskDialog({
             setDescription(editing.description ?? "");
             setDueDate(editing.due_date ? String(editing.due_date).split("T")[0] : "");
             setPriority(editing.priority);
+            setType(editing.type ?? "");
             setStatus(editing.status);
         } else {
             setTitle("");
             setDescription("");
             setDueDate("");
             setPriority("medium");
+            setType("");
             setStatus("pending");
         }
     }, [open, editing]);
@@ -409,6 +422,7 @@ function TaskDialog({
         const data: Partial<CRMTask> = {
             title: title.trim(),
             priority,
+            type,
         };
         if (description.trim()) data.description = description.trim();
         if (dueDate) data.due_date = new Date(dueDate).toISOString();
@@ -521,6 +535,10 @@ function TaskDialog({
                                     className="w-full px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-[12.5px] text-slate-900 placeholder:text-slate-400 outline-none transition-colors focus:border-sky-400 focus:ring-2 focus:ring-sky-100 resize-y"
                                 />
                             </div>
+                            <div>
+                                <Label>Task type</Label>
+                                <TaskTypePicker value={type} onChange={setType} />
+                            </div>
                             <div className="grid grid-cols-2 gap-2">
                                 <div>
                                     <Label>Due date</Label>
@@ -534,7 +552,7 @@ function TaskDialog({
                             {editing && (
                                 <div>
                                     <Label>Status</Label>
-                                    <div className="inline-flex rounded-md border border-slate-200 bg-white p-0.5 w-full">
+                                    <div className="inline-flex rounded-md bg-slate-100 p-0.5 w-full gap-0.5">
                                         {(
                                             [
                                                 ["pending", "Pending"],
@@ -549,7 +567,7 @@ function TaskDialog({
                                                 onClick={() => setStatus(id)}
                                                 className={`flex-1 h-6 px-2 rounded text-[11px] font-medium transition-colors ${
                                                     status === id
-                                                        ? "bg-slate-900 text-white"
+                                                        ? "bg-white text-slate-900 shadow-sm"
                                                         : "text-slate-500 hover:text-slate-900"
                                                 }`}
                                             >
@@ -623,6 +641,21 @@ function PriorityPill({
                 ))}
             </PopoverMenuContent>
         </PopoverMenu>
+    );
+}
+
+function TaskTypeIcon({ type, done }: { type: string | undefined; done: boolean }) {
+    const { data: types = [] } = useTaskTypes();
+    if (!type) return null;
+    const color = taskTypeColor(type, types);
+    return (
+        <span
+            title={type}
+            className="shrink-0 inline-flex items-center gap-1 text-[10.5px] text-slate-400 max-w-[90px]"
+        >
+            <span className="size-2 rounded-full" style={{ backgroundColor: done ? "#cbd5e1" : color }} />
+            <span className="truncate">{type}</span>
+        </span>
     );
 }
 

@@ -12,6 +12,8 @@ export default interface CRMTask {
     description?: string;
     due_date?: string;
     priority: CRMTaskPriority;
+    // The task type's name (user-managed; empty = no type).
+    type: string;
     status: CRMTaskStatus;
     completed_at?: string;
     created_at: string;
