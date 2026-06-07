@@ -48,6 +48,7 @@ func Run(ctx context.Context, pool *pgxpool.Pool) (*Result, error) {
 		{"campaign-progress", seedCampaignProgress},
 		{"campaign-logs", seedCampaignLogs},
 		{"crm-pipelines", seedCRMPipelines},
+		{"crm-task-types", seedCRMTaskTypes},
 		{"crm-deals", seedCRMDeals},
 		{"crm-tasks", seedCRMTasks},
 		{"contact-activity", seedContactActivity},

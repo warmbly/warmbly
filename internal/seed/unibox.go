@@ -63,7 +63,7 @@ func seedUnibox(ctx context.Context, pool *pgxpool.Pool, _ *Result) error {
 		{
 			id: UniboxAcmeOOOID, userID: UserOwnerID, emailID: EmailAcmeBobID,
 			threadID: "seed-thread-pied-piper-ooo", messageID: "<seed-pied-piper-ooo@piedpiper.test>",
-			uid: 204, flags: []string{"\\Seen"}, from: []string{"Carlos Diaz <carlos.diaz@piedpiper.test>"},
+			uid: 204, flags: []string{"\\Seen"}, from: []string{"Carlos Diaz <carlos.diaz@pied-piper.test>"},
 			to: []string{"Bob from Acme <bob@acme.test>"}, subject: "Automatic reply: Quick question",
 			snippet:      "I am away until Monday with limited access to email. For anything urgent, please contact the operations alias.",
 			seen:         true,
@@ -90,7 +90,7 @@ func seedUnibox(ctx context.Context, pool *pgxpool.Pool, _ *Result) error {
 		{
 			id: UniboxGlobexReplyID, userID: UserFounderID, emailID: EmailGlobexHansID,
 			threadID: "seed-thread-oldfriend", messageID: "<seed-oldfriend-reply@oldfriend.test>",
-			uid: 301, flags: []string{}, from: []string{"Ivan Petrov <ivan.petrov@oldfriend.test>"},
+			uid: 301, flags: []string{}, from: []string{"Ivan Petrov <ivan.petrov@oldfriend-co.test>"},
 			to: []string{"Hans Globex <hans@globex.test>"}, subject: "Re: Warmup pool policy",
 			snippet:      "The recovery pool approach makes sense. We should not put risky mailboxes back into the shared paid pool automatically.",
 			seen:         false,

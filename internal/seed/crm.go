@@ -43,18 +43,48 @@ func seedCRMPipelines(ctx context.Context, pool *pgxpool.Pool, _ *Result) error 
 	return nil
 }
 
+// seedCRMTaskTypes gives the demo orgs the same starter task types a real org
+// gets at creation, so the tasks UI has Call / Email / Meeting out of the box.
+func seedCRMTaskTypes(ctx context.Context, pool *pgxpool.Pool, _ *Result) error {
+	defaults := []struct {
+		name  string
+		color string
+	}{
+		{"Call", "#8b5cf6"},
+		{"Email", "#0ea5e9"},
+		{"Meeting", "#f59e0b"},
+	}
+	for _, orgID := range []uuid.UUID{OrgAcmeID, OrgGlobexID} {
+		for i, d := range defaults {
+			if _, err := pool.Exec(ctx, `
+				INSERT INTO crm_task_types (organization_id, name, color, position)
+				VALUES ($1, $2, $3, $4)
+				ON CONFLICT (organization_id, name) DO NOTHING
+			`, orgID, d.name, d.color, i); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func seedCRMDeals(ctx context.Context, pool *pgxpool.Pool, _ *Result) error {
 	type deal struct {
-		id     uuid.UUID
-		stage  uuid.UUID
-		name   string
-		value  float64
-		status string
-		won    bool
+		id      uuid.UUID
+		stage   uuid.UUID
+		name    string
+		value   float64
+		status  string
+		won     bool
+		contact uuid.UUID
 	}
 	deals := []deal{
-		{DealAcmeBigID, StageDemoID, "Northwind - team-wide rollout", 24_000, "open", false},
-		{DealAcmeWonID, StageWonID, "Initech - pilot extension", 6_000, "won", true},
+		{DealAcmeBigID, StageDemoID, "Northwind - team-wide rollout", 24_000, "open", false, contactID(0x01, 1)},
+		{DealAcmeWonID, StageWonID, "Initech - pilot extension", 6_000, "won", true, contactID(0x01, 1)},
+		// Deals tied to other contacts that also appear in the unibox, so opening
+		// their threads shows live pipeline in the CRM panel — not just Aiden's.
+		{uuid.MustParse("0000000d-0000-0000-0000-000000000003"), StageDemoID, "Vandelay - list hygiene retainer", 9_000, "open", false, contactID(0x01, 7)},
+		{uuid.MustParse("0000000d-0000-0000-0000-000000000004"), StageDemoID, "Hooli - deliverability pilot", 15_000, "open", false, contactID(0x01, 4)},
 	}
 	for _, d := range deals {
 		wonAt := "NULL"
@@ -65,7 +95,7 @@ func seedCRMDeals(ctx context.Context, pool *pgxpool.Pool, _ *Result) error {
 			INSERT INTO deals (id, organization_id, pipeline_id, stage_id, contact_id, name, value, currency, status, won_at, assigned_to, created_at, updated_at)
 			VALUES ($1, $2, $3, $4, $5, $6, $7, 'USD', $8, `+wonAt+`, $9, NOW(), NOW())
 			ON CONFLICT (id) DO UPDATE SET stage_id = EXCLUDED.stage_id, status = EXCLUDED.status, updated_at = NOW()
-		`, d.id, OrgAcmeID, PipelineSalesID, d.stage, contactID(0x01, 1), d.name, d.value, d.status, UserOwnerID)
+		`, d.id, OrgAcmeID, PipelineSalesID, d.stage, d.contact, d.name, d.value, d.status, UserOwnerID)
 		if err != nil {
 			return err
 		}
