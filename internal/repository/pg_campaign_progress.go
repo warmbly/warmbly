@@ -88,16 +88,20 @@ type CampaignProgressRepository interface {
 	// evaluator / callers that need only the class.
 	GetLatestReplyClass(ctx context.Context, contactID, campaignID uuid.UUID) (string, error)
 
-	// ClaimReplyActionFire atomically claims the one-time right to run the instant
-	// reply-triggered action chain for the contact's current step. It stamps
-	// reply_actions_fired_at = NOW() only when it is still NULL and reports whether
-	// THIS call won the claim (true) or it was already fired (false). This is the
-	// exactly-once gate behind instant reply automations: a redelivered reply event
-	// (or an auto-reply followed by a human reply on the same step) sees the stamp
-	// and is a no-op. The progress row already exists at call time because
-	// RecordReplyClassification upserts it just before, so a missing row (claimed ==
-	// false) safely means "nothing to fire".
-	ClaimReplyActionFire(ctx context.Context, campaignID, contactID, sequenceID uuid.UUID) (bool, error)
+	// ClaimInstantFire atomically claims the one-time right to run the instant
+	// action chain for the contact's current step FOR A SINGLE EVENT KIND
+	// ("reply" / "open" / "click"). It appends eventKind to the instant_fired
+	// array only when that kind is not already present and reports whether THIS
+	// call won the claim (true) or that kind had already fired (false). This is
+	// the per-(step, event) exactly-once gate behind instant automations: a
+	// redelivered event of the same kind (or an auto-reply followed by a human
+	// reply on the same step) sees the kind in the array and is a no-op, while a
+	// DIFFERENT kind on the same step (a contact who opens AND clicks AND replies)
+	// is still free to fire its own chain exactly once. The progress row already
+	// exists at call time (RecordReplyClassification / RecordEmailOpened /
+	// RecordEmailClicked upsert/update it just before), so a missing row
+	// (claimed == false) safely means "nothing to fire".
+	ClaimInstantFire(ctx context.Context, campaignID, contactID, sequenceID uuid.UUID, eventKind string) (bool, error)
 
 	// Query methods
 	GetCampaignProgress(ctx context.Context, campaignID uuid.UUID) (*CampaignProgress, error)
@@ -251,20 +255,22 @@ func (r *campaignProgressRepository) GetLatestReplyClass(ctx context.Context, co
 	return class, err
 }
 
-// ClaimReplyActionFire stamps reply_actions_fired_at exactly once per (campaign,
-// contact, step) progress row. The conditional WHERE ... IS NULL makes the claim
-// atomic under concurrent reply events: at most one UPDATE affects a row, so
-// RowsAffected() == 1 identifies the single caller that may run the chain.
-func (r *campaignProgressRepository) ClaimReplyActionFire(ctx context.Context, campaignID, contactID, sequenceID uuid.UUID) (bool, error) {
+// ClaimInstantFire appends eventKind to instant_fired exactly once per (campaign,
+// contact, step, eventKind). The conditional NOT ($4 = ANY(instant_fired)) makes
+// the claim atomic under concurrent events of the same kind: at most one UPDATE
+// affects a row for a given kind, so RowsAffected() == 1 identifies the single
+// caller that may run that kind's chain. Different kinds on the same step append
+// independently, so an open, a click, and a reply on one step each fire once.
+func (r *campaignProgressRepository) ClaimInstantFire(ctx context.Context, campaignID, contactID, sequenceID uuid.UUID, eventKind string) (bool, error) {
 	query := `
 		UPDATE campaign_contact_progress
-		SET reply_actions_fired_at = NOW()
+		SET instant_fired = array_append(instant_fired, $4)
 		WHERE campaign_id = $1
 		  AND contact_id = $2
 		  AND sequence_id = $3
-		  AND reply_actions_fired_at IS NULL
+		  AND NOT ($4 = ANY(instant_fired))
 	`
-	tag, err := r.db.Exec(ctx, query, campaignID, contactID, sequenceID)
+	tag, err := r.db.Exec(ctx, query, campaignID, contactID, sequenceID, eventKind)
 	if err != nil {
 		return false, err
 	}
