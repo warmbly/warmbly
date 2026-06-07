@@ -53,6 +53,12 @@ type Service interface {
 	ProcessIncomingReply(ctx context.Context, emailAccountID uuid.UUID, msg *models.EmailMessageStoreData) *errx.Error
 	GetABWinnerAnalysis(ctx context.Context, organizationID, campaignID uuid.UUID) (*models.ABWinnerAnalysis, *errx.Error)
 
+	// CreateContactTask creates a CRM task for a contact, used by the campaign
+	// "create task" action node. createdBy is the campaign owner; the task's
+	// AssignedTo (set in data) is the teammate chosen on the step. Records a
+	// task_created activity on the contact.
+	CreateContactTask(ctx context.Context, orgID, createdBy uuid.UUID, data *models.CreateCRMTask) (*models.CRMTask, *errx.Error)
+
 	// WireDispatcher attaches the event dispatcher that fans classified
 	// replies + deliverability events out to customer webhooks and third-party
 	// integration actions (Slack ping, CRM upsert).
@@ -281,6 +287,24 @@ func (s *service) ShouldSuppressRecipient(ctx context.Context, organizationID uu
 // Unsubscribe resolves the campaign + contact behind a List-Unsubscribe link and
 // suppresses the recipient org-wide. Always suppresses (an explicit recipient
 // request), then fans out the campaign.unsubscribed event for Slack/CRM.
+func (s *service) CreateContactTask(ctx context.Context, orgID, createdBy uuid.UUID, data *models.CreateCRMTask) (*models.CRMTask, *errx.Error) {
+	if s.crmRepo == nil {
+		return nil, errx.InternalError()
+	}
+	task, err := s.crmRepo.CreateCRMTask(ctx, orgID, createdBy, data)
+	if err != nil {
+		return nil, errx.InternalError()
+	}
+	if task.ContactID != nil {
+		_ = s.crmRepo.RecordActivity(ctx, orgID, *task.ContactID, &createdBy, models.ActivityTaskCreated, map[string]interface{}{
+			"task_id":    task.ID.String(),
+			"task_title": task.Title,
+			"source":     "campaign",
+		})
+	}
+	return task, nil
+}
+
 func (s *service) Unsubscribe(ctx context.Context, campaignID, contactID uuid.UUID) *errx.Error {
 	campaign, err := s.campaignRepo.GetByID(ctx, campaignID)
 	if err != nil || campaign == nil || campaign.OrganizationID == nil {

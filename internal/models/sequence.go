@@ -42,7 +42,7 @@ type Sequence struct {
 // ActionConfig is the persisted config for a non-email (action/wait) node. Type
 // is the switch the task executes on; the remaining fields are type-scoped.
 type ActionConfig struct {
-	Type string `json:"type"` // wait | add_tag | remove_tag | unsubscribe | notify | end
+	Type string `json:"type"` // wait | add_tag | remove_tag | unsubscribe | notify | create_task | end
 
 	// wait
 	WaitMinutes *int `json:"wait_minutes,omitempty"`
@@ -53,6 +53,15 @@ type ActionConfig struct {
 	// notify — webhook / integration fan-out
 	NotifyEvent string         `json:"notify_event,omitempty"`
 	NotifyData  map[string]any `json:"notify_data,omitempty"`
+
+	// create_task — open a CRM task for the lead when they reach this step
+	// (e.g. a Call task). TaskAssignedTo is the teammate chosen on the step;
+	// when nil the task falls back to the campaign owner.
+	TaskTitle         string     `json:"task_title,omitempty"`
+	TaskType          string     `json:"task_type,omitempty"`     // general | call | email | meeting
+	TaskPriority      string     `json:"task_priority,omitempty"` // low | medium | high | urgent
+	TaskAssignedTo    *uuid.UUID `json:"task_assigned_to,omitempty"`
+	TaskDueOffsetDays *int       `json:"task_due_offset_days,omitempty"` // due N days after the step fires
 }
 
 type UpdateSequence struct {

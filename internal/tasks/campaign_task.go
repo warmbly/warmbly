@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/getsentry/sentry-go"
@@ -735,6 +736,45 @@ func (s *tasksService) executeActionNode(ctx context.Context, campaign *models.C
 			data[k] = v
 		}
 		s.advanced.EmitCampaignEvent(ctx, *campaign.OrganizationID, event, data)
+		return nil
+	case "create_task":
+		if s.advanced == nil || campaign.OrganizationID == nil {
+			return nil
+		}
+		owner, perr := uuid.Parse(campaign.UserID)
+		if perr != nil {
+			return nil
+		}
+		title := strings.TrimSpace(cfg.TaskTitle)
+		if title == "" {
+			name := strings.TrimSpace(contact.FirstName + " " + contact.LastName)
+			if name == "" {
+				name = contact.Email
+			}
+			title = "Follow up: " + name
+		}
+		// Per-step assignee; fall back to the campaign owner when unset.
+		assignee := cfg.TaskAssignedTo
+		if assignee == nil {
+			assignee = &owner
+		}
+		// Task types are user-managed free text; pass the configured name
+		// through (empty = untyped).
+		cid := contact.ID
+		data := &models.CreateCRMTask{
+			ContactID:  &cid,
+			Title:      title,
+			Type:       cfg.TaskType,
+			Priority:   cfg.TaskPriority,
+			AssignedTo: assignee,
+		}
+		if cfg.TaskDueOffsetDays != nil {
+			due := time.Now().UTC().AddDate(0, 0, *cfg.TaskDueOffsetDays)
+			data.DueDate = &due
+		}
+		if _, xerr := s.advanced.CreateContactTask(ctx, *campaign.OrganizationID, owner, data); xerr != nil {
+			return xerr
+		}
 		return nil
 	default:
 		return nil
