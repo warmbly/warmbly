@@ -13,7 +13,7 @@
 // Awaiting reply are real backend scopes, not "soon" placeholders.
 
 import React from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ChevronLeftIcon, InboxIcon } from "lucide-react";
 
 import { ConversationList } from "@/components/app/unibox/ConversationList";
@@ -44,53 +44,53 @@ function startOfWeek(): Date {
 export default function UniboxPage() {
   const access = useFeatureAccess();
   const overview = useUniboxOverview();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const routeParams = useParams<{ scope?: string; threadId?: string }>();
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const [scopeSheetOpen, setScopeSheetOpen] = React.useState(false);
 
-  // ── URL state (deep-linkable threads + scope) ──────────────────
-  const urlThread = searchParams.get("thread");
-  const urlAccount = searchParams.get("account");
-  const urlScope = searchParams.get("scope") ?? "all";
+  // ── URL state ──────────────────────────────────────────────────
+  // Readable, path-based URLs: /app/unibox/<scope>[/<threadId>]. The scope is a
+  // path segment (all, unread, today, week, awaiting, snoozed, scheduled, or a
+  // mailbox/tag/category view); an open thread is the next segment; ref (the
+  // opaque mailbox/tag/label id for those scopes) is the only query param left.
+  // Accounts are no longer in the URL: the thread fetch scans every mailbox the
+  // user owns, which is the right default for a unified inbox.
+  const urlScope = routeParams.scope ?? "all";
+  const urlThread = routeParams.threadId ?? null;
   const urlScopeRef = searchParams.get("ref");
 
-  const setUrl = React.useCallback(
-    (next: {
-      thread?: string | null;
-      account?: string | null;
-      scope?: string | null;
-      ref?: string | null;
-    }) => {
-      setSearchParams(
-        (prev) => {
-          const sp = new URLSearchParams(prev);
-          for (const [k, v] of Object.entries(next)) {
-            if (v === null || v === undefined || v === "") sp.delete(k);
-            else sp.set(k, v);
-          }
-          return sp;
-        },
-        { replace: true },
-      );
+  // goTo writes the URL by merging the requested changes over the current path
+  // (an omitted field keeps its current value; pass null to clear).
+  const goTo = React.useCallback(
+    (next: { scope?: string; threadId?: string | null; ref?: string | null }) => {
+      const scope = next.scope ?? urlScope;
+      const threadId =
+        next.threadId === undefined ? urlThread : next.threadId;
+      const ref = next.ref === undefined ? urlScopeRef : next.ref;
+      let path = `/app/unibox/${scope || "all"}`;
+      if (threadId) path += `/${encodeURIComponent(threadId)}`;
+      if (ref) path += `?ref=${encodeURIComponent(ref)}`;
+      navigate(path, { replace: true });
     },
-    [setSearchParams],
+    [navigate, urlScope, urlThread, urlScopeRef],
   );
 
-  // Mirror URL ↔ store so ConversationItem clicks update the URL.
+  // Mirror URL → store (so a deep link / refresh restores the open thread) and
+  // store → URL (so a ConversationItem click, which sets the store, updates the
+  // path). The two stay in lock-step because each only writes on a real change.
   const setSelectedThreadId = useAppStore((s) => s.setSelectedThreadId);
-  const setSelectedAccountId = useAppStore((s) => s.setSelectedAccountId);
   React.useEffect(() => {
     setSelectedThreadId(urlThread);
-    setSelectedAccountId(urlAccount);
-  }, [urlThread, urlAccount, setSelectedThreadId, setSelectedAccountId]);
+  }, [urlThread, setSelectedThreadId]);
 
   const storeThread = useAppStore((s) => s.selectedThreadId);
-  const storeAccount = useAppStore((s) => s.selectedAccountId);
   React.useEffect(() => {
-    if (storeThread !== urlThread || storeAccount !== urlAccount) {
-      setUrl({ thread: storeThread, account: storeAccount });
+    if (storeThread !== urlThread) {
+      goTo({ threadId: storeThread });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storeThread, storeAccount]);
+  }, [storeThread]);
 
   // ── Scope (derived from URL + ref) ─────────────────────────────
   const scope: UniboxScope = React.useMemo(() => {
@@ -128,22 +128,22 @@ export default function UniboxPage() {
     (s: UniboxScope) => {
       switch (s.kind) {
         case "mailbox":
-          setUrl({ scope: "mailbox", ref: s.mailboxId });
+          goTo({ scope: "mailbox", ref: s.mailboxId });
           return;
         case "tag":
-          setUrl({ scope: "tag", ref: s.tagId });
+          goTo({ scope: "tag", ref: s.tagId });
           return;
         case "category":
-          setUrl({ scope: "category", ref: s.categoryId });
+          goTo({ scope: "category", ref: s.categoryId });
           return;
         case "all":
-          setUrl({ scope: null, ref: null });
+          goTo({ scope: "all", ref: null });
           return;
         default:
-          setUrl({ scope: s.kind, ref: null });
+          goTo({ scope: s.kind, ref: null });
       }
     },
-    [setUrl],
+    [goTo],
   );
 
   // ── Scope → server search params ───────────────────────────────
@@ -246,7 +246,7 @@ export default function UniboxPage() {
       bullets={[
         "Live overview: unread, awaiting reply, snoozed, today, week",
         "Scope rail with per-mailbox + per-tag unread counts",
-        "Deep-linkable threads via ?thread= in the URL",
+        "Deep-linkable threads as a clean URL path",
         "Snooze any thread to clear it from the inbox until later",
       ]}
     >
@@ -300,17 +300,14 @@ export default function UniboxPage() {
                   <>
                     <button
                       type="button"
-                      onClick={() => setUrl({ thread: null, account: null })}
+                      onClick={() => goTo({ threadId: null })}
                       className="md:hidden flex items-center gap-1 px-3 h-10 shrink-0 border-b border-slate-200 text-[13px] font-medium text-slate-600 hover:text-slate-900 active:bg-slate-50"
                     >
                       <ChevronLeftIcon className="w-4 h-4" />
                       Inbox
                     </button>
                     <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-                      <ThreadView
-                        threadId={urlThread}
-                        emailId={urlAccount ?? undefined}
-                      />
+                      <ThreadView threadId={urlThread} />
                     </div>
                   </>
                 ) : (
@@ -323,8 +320,8 @@ export default function UniboxPage() {
                         Select a conversation
                       </p>
                       <p className="text-[11.5px] text-slate-400 mt-1 max-w-[34ch] leading-relaxed">
-                        Pick a thread from the list — its id will appear in the
-                        URL so you can share or refresh.
+                        Pick a thread from the list. It opens in the URL path so
+                        you can share or refresh.
                       </p>
                     </div>
                   </div>

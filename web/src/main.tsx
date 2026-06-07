@@ -291,7 +291,9 @@ const router = createBrowserRouter([
             element: <Navigate to="/app/settings/billing" replace />,
           },
           {
-            path: "unibox",
+            // Path-based, readable inbox URLs: /app/unibox/<scope>[/<threadId>].
+            // Both segments optional, so /app/unibox is the default "all" view.
+            path: "unibox/:scope?/:threadId?",
             element: <UniboxPage />,
           },
           {
