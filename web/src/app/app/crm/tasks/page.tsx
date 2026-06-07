@@ -52,6 +52,8 @@ import {
     TopbarAction,
 } from "@/components/layout/Page";
 import { Label, SearchInput, TextInput } from "@/components/ui/field";
+import DueInDays from "@/components/app/crm/DueInDays";
+import { dueInDaysToISO, isoToDueInDays } from "@/lib/helper/dueDate";
 import {
     PopoverMenu,
     PopoverMenuContent,
@@ -1232,7 +1234,7 @@ function TaskDialog({
 
     const [title, setTitle] = React.useState("");
     const [description, setDescription] = React.useState("");
-    const [dueDate, setDueDate] = React.useState("");
+    const [dueDays, setDueDays] = React.useState<number | null>(null);
     const [priority, setPriority] = React.useState<CRMTaskPriority>("medium");
     const [type, setType] = React.useState<string>("");
     const [status, setStatus] = React.useState<CRMTaskStatus>("pending");
@@ -1243,7 +1245,7 @@ function TaskDialog({
         if (editing) {
             setTitle(editing.title);
             setDescription(editing.description ?? "");
-            setDueDate(editing.due_date ? String(editing.due_date).split("T")[0] : "");
+            setDueDays(isoToDueInDays(editing.due_date));
             setPriority(editing.priority);
             setType(editing.type ?? "");
             setStatus(editing.status);
@@ -1251,7 +1253,7 @@ function TaskDialog({
         } else {
             setTitle("");
             setDescription("");
-            setDueDate("");
+            setDueDays(null);
             setPriority("medium");
             setType("");
             setStatus("pending");
@@ -1270,7 +1272,7 @@ function TaskDialog({
             type,
         };
         if (description.trim()) data.description = description.trim();
-        if (dueDate) data.due_date = new Date(dueDate).toISOString();
+        if (dueDays !== null) data.due_date = dueInDaysToISO(dueDays);
         if (assignedTo) data.assigned_to = assignedTo;
         if (editing) data.status = status;
 
@@ -1398,7 +1400,7 @@ function TaskDialog({
                             <div className="grid grid-cols-2 gap-2">
                                 <div>
                                     <Label>Due date</Label>
-                                    <TextInput value={dueDate} onChange={setDueDate} type="date" className="w-full" />
+                                    <DueInDays value={dueDays} onChange={setDueDays} />
                                 </div>
                                 <div>
                                     <Label>Priority</Label>

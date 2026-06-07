@@ -11,7 +11,6 @@ import React from "react";
 import toast from "react-hot-toast";
 import {
     BanIcon,
-    CalendarClockIcon,
     CheckIcon,
     ChevronDownIcon,
     CircleDollarSignIcon,
@@ -35,6 +34,8 @@ import {
     PopoverMenuTrigger,
 } from "@/components/ui/popover-menu";
 import TaskTypePicker from "@/components/app/crm/TaskTypePicker";
+import DueInDays from "@/components/app/crm/DueInDays";
+import { dueInDaysToISO } from "@/lib/helper/dueDate";
 import useContactByEmail from "@/lib/api/hooks/app/contacts/useContactByEmail";
 import useContact from "@/lib/api/hooks/app/contacts/useContact";
 import useContactDeals from "@/lib/api/hooks/app/contacts/useContactDeals";
@@ -486,7 +487,7 @@ function TasksSection({
     const [title, setTitle] = React.useState(defaultTitle);
     const [type, setType] = React.useState("");
     const [priority, setPriority] = React.useState<CRMTask["priority"]>("medium");
-    const [due, setDue] = React.useState("");
+    const [dueDays, setDueDays] = React.useState<number | null>(3);
     const [desc, setDesc] = React.useState("");
 
     React.useEffect(() => setTitle(defaultTitle), [defaultTitle]);
@@ -502,7 +503,7 @@ function TasksSection({
             priority,
         };
         if (type) data.type = type;
-        if (due) data.due_date = new Date(`${due}T09:00:00`).toISOString();
+        if (dueDays !== null) data.due_date = dueInDaysToISO(dueDays);
         if (desc.trim()) data.description = desc.trim();
         if (dealId) data.deal_id = dealId;
         try {
@@ -514,7 +515,7 @@ function TasksSection({
             setOpen(false);
             setType("");
             setPriority("medium");
-            setDue("");
+            setDueDays(3);
             setDesc("");
         } catch {
             /* surfaced */
@@ -532,19 +533,8 @@ function TasksSection({
                         className="w-full"
                         autoFocus
                     />
-                    <div className="flex items-center gap-1.5">
-                        <TaskTypePicker value={type} onChange={setType} className="flex-1" />
-                        <label className="h-7 px-2 rounded-md border border-slate-200 bg-white inline-flex items-center gap-1.5 shrink-0 cursor-pointer focus-within:border-sky-400 focus-within:ring-2 focus-within:ring-sky-100">
-                            <CalendarClockIcon className="w-3 h-3 text-slate-400 shrink-0" />
-                            <input
-                                type="date"
-                                value={due}
-                                onChange={(e) => setDue(e.target.value)}
-                                aria-label="Due date"
-                                className="bg-transparent outline-none text-[12px] text-slate-700 w-[104px]"
-                            />
-                        </label>
-                    </div>
+                    <TaskTypePicker value={type} onChange={setType} className="w-full" />
+                    <DueInDays value={dueDays} onChange={setDueDays} />
                     <div className="flex items-center gap-0.5">
                         {PRIORITY_OPTS.map((p) => (
                             <button
