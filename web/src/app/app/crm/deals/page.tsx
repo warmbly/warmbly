@@ -216,7 +216,7 @@ function ViewToggle({
     onChange: (v: "table" | "board") => void;
 }) {
     return (
-        <div className="inline-flex rounded-md border border-slate-200 bg-white p-0.5">
+        <div className="inline-flex rounded-md bg-slate-100 p-0.5 gap-0.5">
             {(
                 [
                     ["table", "Table", Table2Icon],
@@ -229,7 +229,7 @@ function ViewToggle({
                     onClick={() => onChange(id)}
                     className={`h-6 px-2 rounded text-[11px] font-medium inline-flex items-center gap-1.5 transition-colors ${
                         view === id
-                            ? "bg-slate-900 text-white"
+                            ? "bg-white text-slate-900 shadow-sm"
                             : "text-slate-500 hover:text-slate-900"
                     }`}
                 >
@@ -703,7 +703,7 @@ function DealDialog({
                                 {editing && (
                                     <div>
                                         <Label>Status</Label>
-                                        <div className="inline-flex rounded-md border border-slate-200 bg-white p-0.5 w-full">
+                                        <div className="inline-flex rounded-md bg-slate-100 p-0.5 gap-0.5 w-full">
                                             {(["open", "won", "lost"] as const).map((s) => (
                                                 <button
                                                     key={s}
@@ -711,7 +711,7 @@ function DealDialog({
                                                     onClick={() => setStatus(s)}
                                                     className={`flex-1 h-6 px-2 rounded text-[11px] font-medium transition-colors ${
                                                         status === s
-                                                            ? "bg-slate-900 text-white"
+                                                            ? "bg-white text-slate-900 shadow-sm"
                                                             : "text-slate-500 hover:text-slate-900"
                                                     }`}
                                                 >
