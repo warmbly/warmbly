@@ -16,6 +16,7 @@
 import React from "react";
 import {
     BellOffIcon,
+    CheckSquareIcon,
     ChevronDownIcon,
     ChevronUpIcon,
     ClockIcon,
@@ -67,6 +68,8 @@ import buildError from "@/lib/helper/buildError";
 import SequenceView from "./SequenceView";
 import CategoryPicker from "@/components/app/contacts/CategoryPicker";
 import type { SequenceAction, SequenceActionType } from "@/lib/api/models/app/campaigns/sequences/Action";
+import TaskTypePicker from "@/components/app/crm/TaskTypePicker";
+import useMembers from "@/lib/api/hooks/app/organizations/useMembers";
 
 const STOP_ID = "__stop__";
 const IF_PREFIX = "if-";
@@ -308,6 +311,7 @@ function StopNode() {
 const ACTION_META: Record<string, { label: string; Icon: typeof ClockIcon; tint: string }> = {
     add_tag: { label: "Add tag", Icon: TagIcon, tint: "text-emerald-600" },
     remove_tag: { label: "Remove tag", Icon: TagIcon, tint: "text-amber-600" },
+    create_task: { label: "Create task", Icon: CheckSquareIcon, tint: "text-violet-600" },
     unsubscribe: { label: "Unsubscribe", Icon: BellOffIcon, tint: "text-rose-600" },
     notify: { label: "Notify", Icon: SendIcon, tint: "text-sky-600" },
 };
@@ -1356,6 +1360,7 @@ function ConnectionEditor({
 const ADD_ACTION_OPTIONS: { type: SequenceActionType; label: string }[] = [
     { type: "add_tag", label: "Add tag" },
     { type: "remove_tag", label: "Remove tag" },
+    { type: "create_task", label: "Create task" },
     { type: "unsubscribe", label: "Unsubscribe" },
     { type: "notify", label: "Notify (webhook)" },
 ];
@@ -1439,6 +1444,9 @@ function AddNodeMenu({
 
 // defaultActionFor returns a fresh action config for a newly-picked type.
 function defaultActionFor(type: SequenceActionType): SequenceAction {
+    if (type === "create_task") {
+        return { type, task_priority: "medium", task_due_offset_days: 1 };
+    }
     return { type };
 }
 
@@ -1595,6 +1603,70 @@ function ActionEditor({
                 </p>
             )}
 
+            {action.type === "create_task" && (
+                <div className="space-y-4">
+                    <div>
+                        <Label>Task title</Label>
+                        <TextInput
+                            value={action.task_title ?? ""}
+                            onChange={(v) => setAction((a) => ({ ...a, task_title: v }))}
+                            placeholder="e.g. Call this lead"
+                            className="w-full max-w-[320px]"
+                        />
+                        <p className="mt-1.5 text-[11px] text-slate-400">
+                            Left blank, it defaults to “Follow up: {"{contact}"}”.
+                        </p>
+                    </div>
+                    <div>
+                        <Label>Task type</Label>
+                        <TaskTypePicker
+                            value={action.task_type ?? ""}
+                            onChange={(name) => setAction((a) => ({ ...a, task_type: name }))}
+                            className="max-w-[280px]"
+                        />
+                    </div>
+                    <div className="flex flex-wrap items-end gap-4">
+                        <div>
+                            <Label>Priority</Label>
+                            <div className="inline-flex rounded-md border border-slate-200 bg-white p-0.5">
+                                {(["low", "medium", "high", "urgent"] as const).map((p) => (
+                                    <button
+                                        key={p}
+                                        type="button"
+                                        onClick={() => setAction((a) => ({ ...a, task_priority: p }))}
+                                        className={`h-7 px-2 rounded text-[11px] font-medium capitalize transition-colors ${
+                                            (action.task_priority ?? "medium") === p
+                                                ? "bg-slate-900 text-white"
+                                                : "text-slate-500 hover:text-slate-900"
+                                        }`}
+                                    >
+                                        {p}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                        <div>
+                            <Label>Due in (days)</Label>
+                            <NumberInput
+                                value={action.task_due_offset_days ?? 1}
+                                onChange={(n) => setAction((a) => ({ ...a, task_due_offset_days: n }))}
+                                min={0}
+                                max={365}
+                                className="w-28"
+                            />
+                        </div>
+                    </div>
+                    <div>
+                        <Label>Assign to</Label>
+                        <AssigneePicker
+                            value={action.task_assigned_to ?? null}
+                            onChange={(id) => setAction((a) => ({ ...a, task_assigned_to: id }))}
+                        />
+                        <p className="mt-1.5 text-[11px] text-slate-400">Unassigned falls back to the campaign owner.</p>
+                    </div>
+                </div>
+            )}
+
             <div className="flex items-center justify-end pt-1">
                 <button
                     type="button"
@@ -1605,6 +1677,66 @@ function ActionEditor({
                     {saving ? "Saving…" : "Save action"}
                 </button>
             </div>
+        </div>
+    );
+}
+
+// AssigneePicker — choose the teammate a campaign-created task is assigned to.
+// `null` means "campaign owner" (the executor's fallback). Values are user ids.
+function AssigneePicker({
+    value,
+    onChange,
+}: {
+    value: string | null;
+    onChange: (id: string | null) => void;
+}) {
+    const { data: members } = useMembers();
+    const [open, setOpen] = React.useState(false);
+    const ref = React.useRef<HTMLDivElement>(null);
+    useClickOutside(ref, () => setOpen(false));
+    const list = members ?? [];
+    const selected = list.find((m) => m.user_id === value);
+    const label = value === null ? "Campaign owner" : (selected?.email ?? "Unknown member");
+    return (
+        <div ref={ref} className="relative inline-flex">
+            <button
+                type="button"
+                onClick={() => setOpen((o) => !o)}
+                className="h-7 min-w-[200px] px-2.5 rounded-md border border-slate-200 hover:border-slate-300 bg-white text-[12px] text-slate-700 hover:text-slate-900 inline-flex items-center gap-1.5 transition-colors"
+            >
+                <span className="truncate flex-1 text-left">{label}</span>
+                <ChevronDownIcon className="w-3 h-3 text-slate-400" />
+            </button>
+            {open && (
+                <div className="absolute left-0 top-full z-30 mt-1 w-60 max-h-56 overflow-y-auto rounded-md border border-slate-200 bg-white py-1 shadow-[0_12px_32px_-8px_rgba(15,23,42,0.18)]">
+                    <button
+                        type="button"
+                        onClick={() => {
+                            onChange(null);
+                            setOpen(false);
+                        }}
+                        className={`flex w-full items-center px-2.5 py-1.5 text-left text-[12px] transition-colors hover:bg-slate-100 ${
+                            value === null ? "font-medium text-slate-900" : "text-slate-700"
+                        }`}
+                    >
+                        Campaign owner
+                    </button>
+                    {list.map((m) => (
+                        <button
+                            key={m.id}
+                            type="button"
+                            onClick={() => {
+                                onChange(m.user_id);
+                                setOpen(false);
+                            }}
+                            className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[12px] text-slate-700 transition-colors hover:bg-slate-100"
+                        >
+                            <span className="truncate flex-1">{m.email}</span>
+                            <span className="text-[10px] text-slate-400 capitalize">{m.role}</span>
+                        </button>
+                    ))}
+                </div>
+            )}
         </div>
     );
 }
