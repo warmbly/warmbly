@@ -216,6 +216,7 @@ type StepNodeData = {
     endsHere: boolean;
     orphan: boolean;
     onDelete: () => void;
+    onAddReply: () => void;
 };
 
 function StepNode({ data, selected }: NodeProps) {
@@ -266,6 +267,22 @@ function StepNode({ data, selected }: NodeProps) {
                     Ends here
                 </div>
             ) : null}
+            {/* Explicit, discoverable way to build a reply-triggered step (the
+                reply branch is otherwise only reachable via a connection's
+                condition dropdown). Creates an action step that fires instantly
+                on reply. */}
+            <button
+                type="button"
+                onClick={(e) => {
+                    e.stopPropagation();
+                    d.onAddReply();
+                }}
+                title="Create a step that runs the moment the contact replies"
+                className="nodrag flex w-full items-center gap-1.5 border-t border-slate-200/70 px-2.5 py-1.5 text-[10.5px] font-medium text-violet-600 transition-colors hover:bg-violet-50"
+            >
+                <ZapIcon className="w-3 h-3" />
+                On reply
+            </button>
             {/* Right dot = start an "if" branch; bottom dot = plain "go there". */}
             <Handle type="source" id="if" position={Position.Right} className="!h-3 !w-3 !border-2 !border-white !bg-amber-400" />
             <Handle type="source" id="s" position={Position.Bottom} className="!h-3 !w-3 !border-2 !border-white !bg-sky-500" />
@@ -273,14 +290,23 @@ function StepNode({ data, selected }: NodeProps) {
     );
 }
 
-type IfNodeData = { label: string; onDelete: () => void };
+type IfNodeData = { label: string; instant: boolean; onDelete: () => void };
 
 function IfNode({ data, selected }: NodeProps) {
     const d = data as IfNodeData;
+    // Reply-class branches fire the moment the contact replies, not at the next
+    // scheduled step. A violet "instant" badge distinguishes them from the
+    // engagement (opened / clicked / within-N-days) branches that are checked at
+    // the next step boundary. The whole node carries a tooltip explaining it.
     return (
         <div
+            title={
+                d.instant
+                    ? "Runs the moment the contact replies, not at the next scheduled step."
+                    : undefined
+            }
             className={`rounded-lg border bg-gradient-to-b from-sky-50 to-white px-2 py-1 shadow-sm transition-shadow duration-200 hover:shadow-md ${
-                selected ? "border-sky-400 ring-2 ring-sky-100" : "border-sky-200"
+                selected ? "border-sky-400 ring-2 ring-sky-100" : d.instant ? "border-violet-200" : "border-sky-200"
             }`}
         >
             <Handle type="target" position={Position.Top} className="!h-2 !w-2 !border-2 !border-white !bg-slate-300" />
@@ -290,6 +316,12 @@ function IfNode({ data, selected }: NodeProps) {
                 <GitBranchIcon className="w-3 h-3 shrink-0 text-sky-600" />
                 <span className="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-sky-500">if</span>
                 <span className="max-w-[150px] truncate text-[11px] font-medium text-sky-800">{d.label}</span>
+                {d.instant && (
+                    <span className="inline-flex shrink-0 items-center gap-0.5 rounded bg-violet-50 px-1 py-px text-[8.5px] font-semibold uppercase tracking-[0.1em] text-violet-600 ring-1 ring-violet-200/70">
+                        <ZapIcon className="w-2.5 h-2.5" />
+                        instant
+                    </span>
+                )}
                 <button
                     type="button"
                     onClick={(e) => {
@@ -656,6 +688,39 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
         },
         [adding, sequences.length, seqById, createSequence, saveBranches, openCondition],
     );
+    // "On reply" on a step: create a new action step + a reply branch that fires
+    // it the moment the contact replies, then open the branch so you can pick the
+    // reply type (positive/negative/automated) and build the action chain. Reuses
+    // the same instant reply-branch mechanism the backend executes on reply.
+    const addReplyStep = React.useCallback(
+        async (sourceId: string) => {
+            if (adding || sequences.length >= MAX_STEPS) return;
+            const src = seqById.get(sourceId);
+            setAdding(true);
+            try {
+                const created = (await createSequence.mutateAsync()) as Sequence;
+                await updateSequence(campaignId, created.id, {
+                    kind: "action",
+                    action: defaultActionFor("create_task"),
+                });
+                const branch: SequenceBranch = {
+                    branch_id: newBranchId(),
+                    target_sequence_id: created.id,
+                    conditions: [{ field: "reply_positive", operator: "ever" }],
+                };
+                await saveBranches(sourceId, [...(src?.conditions?.branches ?? []), branch]);
+                invalidate();
+                openCondition(sourceId, branch.branch_id);
+                toast.success("Reply step added. It runs the moment they reply.");
+            } catch {
+                toast.error("Couldn't add the reply step");
+            } finally {
+                setAdding(false);
+            }
+        },
+        [adding, sequences.length, seqById, createSequence, campaignId, saveBranches, openCondition, invalidate],
+    );
+
     // Drag an IF block's bottom dot to empty -> new step the if leads to.
     const retargetToNew = React.useCallback(
         async (sourceId: string, branchId: string) => {
@@ -710,10 +775,12 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
     // Node-data callbacks via refs so the layout effect deps don't churn.
     const deleteStepRef = React.useRef(deleteStep);
     const deleteBranchRef = React.useRef(deleteBranch);
+    const addReplyStepRef = React.useRef(addReplyStep);
     React.useEffect(() => {
         deleteStepRef.current = deleteStep;
         deleteBranchRef.current = deleteBranch;
-    }, [deleteStep, deleteBranch]);
+        addReplyStepRef.current = addReplyStep;
+    }, [deleteStep, deleteBranch, addReplyStep]);
 
     React.useEffect(() => {
         const waitTag = (targetId: string | null) => {
@@ -774,6 +841,7 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                     endsHere: branches.length === 0,
                     orphan: !reachable.has(s.id),
                     onDelete: () => deleteStepRef.current(s.id),
+                    onAddReply: () => addReplyStepRef.current(s.id),
                 } satisfies StepNodeData,
             };
         });
@@ -797,6 +865,8 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                     position: { x: 0, y: 0 },
                     data: {
                         label: conditionText(b),
+                        // Reply-class branches run instantly on reply; flag the node.
+                        instant: (b.conditions ?? []).some((c) => isReplyBranchField(c.field)),
                         onDelete: () => deleteBranchRef.current(s.id, b.branch_id),
                     } satisfies IfNodeData,
                 });
