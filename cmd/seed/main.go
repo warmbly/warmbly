@@ -147,6 +147,24 @@ func seedBaseline(ctx context.Context, pool *pgxpool.Pool) error {
 			return fmt.Errorf("dev pool join %s: %w", a.email, err)
 		}
 	}
+	// Dev-org contacts that match the unibox senders below, so opening those
+	// threads resolves to a real contact in the CRM panel instead of
+	// "Not a known contact". The mailer-daemon bounce stays a non-contact.
+	devContacts := []struct {
+		id             uuid.UUID
+		first, last    string
+		email, company string
+	}{
+		{uuid.MustParse("66666666-0000-0000-0000-0000dddc0001"), "Aiden", "Park", "aiden.park@northwind.test", "Northwind"},
+		{uuid.MustParse("66666666-0000-0000-0000-0000dddc0002"), "Beth", "Chen", "beth.chen@initech.test", "Initech"},
+		{uuid.MustParse("66666666-0000-0000-0000-0000dddc0003"), "Carlos", "Diaz", "carlos.diaz@piedpiper.test", "Pied Piper"},
+	}
+	for _, c := range devContacts {
+		if err := upsertContact(ctx, pool, c.id, userDev, orgDev, c.first, c.last, c.email, c.company, true); err != nil {
+			return fmt.Errorf("dev contact %s: %w", c.email, err)
+		}
+	}
+
 	if err := seedLegacyUnibox(ctx, pool, []legacyUniboxEmail{
 		{
 			id: uuid.MustParse("77777777-0000-0000-0000-000000000101"), userID: userDev,

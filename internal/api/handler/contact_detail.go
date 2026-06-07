@@ -46,6 +46,14 @@ func (h *Handler) GetContact(c *gin.Context) {
 // rather than a 404.
 func (h *Handler) LookupContactByEmail(c *gin.Context) {
 	email := strings.TrimSpace(c.Query("email"))
+	// Senders often arrive as "Display Name <addr@example.com>" (the unibox
+	// stores from_addr that way). Extract the bare address so it matches the
+	// contact's email, otherwise every named sender resolves to "not found".
+	if i := strings.LastIndex(email, "<"); i != -1 {
+		if j := strings.Index(email[i:], ">"); j != -1 {
+			email = strings.TrimSpace(email[i+1 : i+j])
+		}
+	}
 	if email == "" {
 		errx.Handle(c, errx.New(errx.BadRequest, "email is required"))
 		return
