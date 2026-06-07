@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { SelectMenu, type SelectOption } from "@/components/ui/select-menu";
 import {
     applyProfileToAll,
     checkReleases,
@@ -22,6 +23,11 @@ import type {
 } from "@/lib/api/models/app/admin/Credentials";
 
 type Tab = "aws" | "profiles";
+
+const APP_ENV_OPTIONS: SelectOption[] = [
+    { value: "prod", label: "prod" },
+    { value: "dev", label: "dev" },
+];
 
 export default function AdminCredentialsPage() {
     const [tab, setTab] = useState<Tab>("aws");
@@ -414,6 +420,14 @@ function ProfileForm({
     const [channel, setChannel] = useState<"pinned" | "stable" | "dev">(initial?.release_channel ?? "pinned");
     const [autoUpdate, setAutoUpdate] = useState<boolean>(initial?.auto_update ?? false);
 
+    const awsCredentialOptions = useMemo<SelectOption[]>(
+        () => [
+            { value: "", label: "(none)" },
+            ...awsOptions.map((a) => ({ value: a.id, label: `${a.name} (${a.region})` })),
+        ],
+        [awsOptions],
+    );
+
     const mut = useMutation({
         mutationFn: async () => {
             const res = initial
@@ -438,10 +452,12 @@ function ProfileForm({
 
             <div className="grid grid-cols-2 gap-3">
                 <Field label="App env">
-                    <select value={form.app_env} onChange={(e) => setForm({ ...form, app_env: e.target.value })} className={inp}>
-                        <option value="prod">prod</option>
-                        <option value="dev">dev</option>
-                    </select>
+                    <SelectMenu
+                        value={form.app_env ?? ""}
+                        onChange={(v) => setForm({ ...form, app_env: v })}
+                        options={APP_ENV_OPTIONS}
+                        className="w-full"
+                    />
                 </Field>
                 <Field label="Worker image">
                     <input value={form.worker_image} onChange={(e) => setForm({ ...form, worker_image: e.target.value })} className={inp} />
@@ -449,16 +465,12 @@ function ProfileForm({
             </div>
 
             <Field label="AWS credentials">
-                <select
+                <SelectMenu
                     value={form.aws_credential_id ?? ""}
-                    onChange={(e) => setForm({ ...form, aws_credential_id: e.target.value || null })}
-                    className={inp}
-                >
-                    <option value="">(none)</option>
-                    {awsOptions.map((a) => (
-                        <option key={a.id} value={a.id}>{a.name} ({a.region})</option>
-                    ))}
-                </select>
+                    onChange={(v) => setForm({ ...form, aws_credential_id: v || null })}
+                    options={awsCredentialOptions}
+                    className="w-full"
+                />
             </Field>
 
             <h4 className="font-semibold text-slate-600 text-sm mt-4 mb-1">Kafka</h4>

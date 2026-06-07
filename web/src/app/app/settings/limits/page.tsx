@@ -3,9 +3,10 @@
 // effective limit going up on the org; rejection surfaces with the
 // admin's notes attached to the row.
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
+import { SelectMenu, type SelectOption } from "@/components/ui/select-menu";
 import { Section, SectionShell } from "../_components/SectionShell";
 import getCurrentOrganization from "@/lib/api/client/app/organizations/getCurrentOrganization";
 import listLimitRequests from "@/lib/api/client/app/organizations/listLimitRequests";
@@ -50,6 +51,11 @@ export default function LimitsSettingsPage() {
     const [field, setField] = useState<LimitField>("max_email_accounts");
     const [requested, setRequested] = useState<string>("");
     const [reason, setReason] = useState<string>("");
+
+    const fieldSelectOptions = useMemo<SelectOption[]>(
+        () => FIELD_OPTIONS.map((opt) => ({ value: opt.value, label: opt.label })),
+        [],
+    );
 
     const submit = useMutation({
         mutationFn: () =>
@@ -108,17 +114,13 @@ export default function LimitsSettingsPage() {
                 <form onSubmit={onSubmit} className="space-y-3">
                     <div>
                         <label className="text-[12px] font-medium text-slate-700">Resource</label>
-                        <select
+                        <SelectMenu
                             value={field}
-                            onChange={(e) => setField(e.target.value as LimitField)}
-                            className="mt-1 block w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
-                        >
-                            {FIELD_OPTIONS.map((opt) => (
-                                <option key={opt.value} value={opt.value}>
-                                    {opt.label}
-                                </option>
-                            ))}
-                        </select>
+                            onChange={(v) => setField(v as LimitField)}
+                            options={fieldSelectOptions}
+                            className="mt-1 w-full"
+                            aria-label="Resource"
+                        />
                         <p className="text-[11px] text-slate-500 mt-1">
                             {FIELD_OPTIONS.find((o) => o.value === field)?.hint}
                         </p>

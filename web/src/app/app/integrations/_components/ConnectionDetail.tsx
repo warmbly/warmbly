@@ -27,6 +27,7 @@ import {
 import toast from "react-hot-toast";
 
 import { Label, TextInput } from "@/components/ui/field";
+import { SelectMenu, type SelectOption } from "@/components/ui/select-menu";
 import { useConfirm } from "@/hooks/context/confirm";
 import useConnectionDetail from "@/lib/api/hooks/app/integrations/useConnectionDetail";
 import useDisconnectIntegration from "@/lib/api/hooks/app/integrations/useDisconnectIntegration";
@@ -342,6 +343,10 @@ function AddAutomation({
     const [eventType, setEventType] = React.useState(
         availableEvents.includes(REPLY_EVENT) ? REPLY_EVENT : availableEvents[0] ?? REPLY_EVENT,
     );
+    const eventOptions = React.useMemo<SelectOption[]>(
+        () => availableEvents.map((ev) => ({ value: ev, label: EVENT_LABELS[ev] ?? ev })),
+        [availableEvents],
+    );
     const [dest, setDest] = React.useState("");
     const [intents, setIntents] = React.useState<string[]>([]);
     const [minConf, setMinConf] = React.useState(0);
@@ -375,17 +380,13 @@ function AddAutomation({
         <div className="rounded-md border border-sky-200 bg-sky-50/40 p-3 space-y-3">
             <div>
                 <Label>When this happens</Label>
-                <select
+                <SelectMenu
                     value={eventType}
-                    onChange={(e) => setEventType(e.target.value)}
-                    className="w-full h-7 px-2 rounded-md border border-slate-200 bg-white text-[12.5px] text-slate-900 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
-                >
-                    {availableEvents.map((ev) => (
-                        <option key={ev} value={ev}>
-                            {EVENT_LABELS[ev] ?? ev}
-                        </option>
-                    ))}
-                </select>
+                    onChange={setEventType}
+                    options={eventOptions}
+                    className="w-full"
+                    aria-label="When this happens"
+                />
             </div>
 
             {/* Reply-only filters */}

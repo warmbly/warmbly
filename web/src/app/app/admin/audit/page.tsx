@@ -2,6 +2,12 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { searchAdminAuditLogs } from "@/lib/api/client/app/admin/audit";
 import type { AdminAuditLog, AdminAuditLogSearch } from "@/lib/api/models/app/admin/Audit";
+import { SelectMenu, type SelectOption } from "@/components/ui/select-menu";
+
+const LIMIT_OPTIONS: SelectOption[] = [25, 50, 100].map((n) => ({
+    value: String(n),
+    label: String(n),
+}));
 
 // Free-form action / target_type strings used by handlers across the app.
 // These are populated dynamically from the result set too — anything new the
@@ -87,6 +93,22 @@ export default function AdminAuditPage() {
         return Array.from(set).sort();
     }, [data]);
 
+    const actionOptions = useMemo<SelectOption[]>(
+        () => [
+            { value: "", label: "(any)" },
+            ...allActions.map((a) => ({ value: a, label: a })),
+        ],
+        [allActions],
+    );
+
+    const entityTypeOptions = useMemo<SelectOption[]>(
+        () => [
+            { value: "", label: "(any)" },
+            ...allEntityTypes.map((t) => ({ value: t, label: t })),
+        ],
+        [allEntityTypes],
+    );
+
     return (
         <div>
             <div className="flex items-center justify-between mb-4">
@@ -120,28 +142,22 @@ export default function AdminAuditPage() {
             <div className="border rounded-lg p-3 mb-3 bg-slate-50">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                     <Field label="Action">
-                        <select
+                        <SelectMenu
                             value={filters.action ?? ""}
-                            onChange={(e) => applyFilter({ action: e.target.value || undefined })}
-                            className={inp}
-                        >
-                            <option value="">(any)</option>
-                            {allActions.map((a) => (
-                                <option key={a} value={a}>{a}</option>
-                            ))}
-                        </select>
+                            onChange={(v) => applyFilter({ action: v || undefined })}
+                            options={actionOptions}
+                            className="w-full"
+                            aria-label="Action"
+                        />
                     </Field>
                     <Field label="Target type">
-                        <select
+                        <SelectMenu
                             value={filters.target_type ?? ""}
-                            onChange={(e) => applyFilter({ target_type: e.target.value || undefined })}
-                            className={inp}
-                        >
-                            <option value="">(any)</option>
-                            {allEntityTypes.map((t) => (
-                                <option key={t} value={t}>{t}</option>
-                            ))}
-                        </select>
+                            onChange={(v) => applyFilter({ target_type: v || undefined })}
+                            options={entityTypeOptions}
+                            className="w-full"
+                            aria-label="Target type"
+                        />
                     </Field>
                     <Field label="Target ID">
                         <input
@@ -177,15 +193,15 @@ export default function AdminAuditPage() {
                     </Field>
                 </div>
                 <div className="flex items-center gap-3 mt-3">
-                    <div className="text-xs text-slate-500">
-                        Limit:{" "}
-                        <select
-                            value={filters.limit ?? 50}
-                            onChange={(e) => applyFilter({ limit: parseInt(e.target.value, 10) })}
-                            className="border rounded px-2 py-1 text-xs"
-                        >
-                            {[25, 50, 100].map((n) => <option key={n} value={n}>{n}</option>)}
-                        </select>
+                    <div className="flex items-center gap-2 text-xs text-slate-500">
+                        Limit:
+                        <SelectMenu
+                            value={String(filters.limit ?? 50)}
+                            onChange={(v) => applyFilter({ limit: parseInt(v, 10) })}
+                            options={LIMIT_OPTIONS}
+                            minWidth={80}
+                            aria-label="Result limit"
+                        />
                     </div>
                     <button
                         onClick={resetFilters}

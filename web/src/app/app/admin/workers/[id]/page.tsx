@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { SelectMenu, type SelectOption } from "@/components/ui/select-menu";
 import {
     convertWorkerToDedicated,
     deleteWorker,
@@ -81,6 +82,16 @@ export default function AdminWorkerDetailPage() {
     });
 
     const profiles = useQuery({ queryKey: ["admin", "profiles"], queryFn: listWorkerProfiles });
+    const profileOptions: SelectOption[] = useMemo(
+        () => [
+            { value: "", label: "(use backend env defaults)" },
+            ...(profiles.data?.data?.map((p) => ({
+                value: p.id,
+                label: `${p.name} · ${p.app_env}`,
+            })) ?? []),
+        ],
+        [profiles.data],
+    );
     const assignProfile = useMutation({
         mutationFn: (profileID: string | null) => assignWorkerProfile(id, profileID),
         ...opts("assign profile"),
@@ -261,19 +272,12 @@ export default function AdminWorkerDetailPage() {
 
             <Section title="Worker profile">
                 <div className="flex items-center gap-3">
-                    <select
+                    <SelectMenu
                         value={w.profile_id ?? ""}
-                        onChange={(e) => assignProfile.mutate(e.target.value || null)}
+                        onChange={(v) => assignProfile.mutate(v || null)}
+                        options={profileOptions}
                         disabled={assignProfile.isPending}
-                        className="border rounded px-3 py-1.5 text-sm"
-                    >
-                        <option value="">(use backend env defaults)</option>
-                        {profiles.data?.data?.map((p) => (
-                            <option key={p.id} value={p.id}>
-                                {p.name} · {p.app_env}
-                            </option>
-                        ))}
-                    </select>
+                    />
                     {w.profile_id && (
                         <Btn onClick={() => apply.mutate()} disabled={apply.isPending} primary>
                             Apply config & restart
@@ -389,20 +393,21 @@ export default function AdminWorkerDetailPage() {
                         .filter((other) => other.worker_type === w.worker_type && other.free_tier === w.free_tier)
                         .filter((other) => other.install_state === "installed")
                         .sort((a, b) => a.account_count - b.account_count);
+                    const rewireOptions: SelectOption[] = [
+                        { value: "", label: "— pick a target worker —" },
+                        ...candidates.map((c) => ({
+                            value: c.id,
+                            label: `${c.name || c.id.slice(0, 8)} · ${c.account_count} accounts · ${c.ssh_host || c.ip_addr}`,
+                        })),
+                    ];
                     return (
                         <div className="flex flex-wrap items-center gap-2">
-                            <select
+                            <SelectMenu
                                 value={rewireTarget}
-                                onChange={(e) => setRewireTarget(e.target.value)}
-                                className="border rounded px-3 py-1.5 text-sm w-full sm:min-w-[18rem]"
-                            >
-                                <option value="">— pick a target worker —</option>
-                                {candidates.map((c) => (
-                                    <option key={c.id} value={c.id}>
-                                        {c.name || c.id.slice(0, 8)} · {c.account_count} accounts · {c.ssh_host || c.ip_addr}
-                                    </option>
-                                ))}
-                            </select>
+                                onChange={(v) => setRewireTarget(v)}
+                                options={rewireOptions}
+                                className="w-full sm:min-w-[18rem]"
+                            />
                             <Btn onClick={rewireAll} disabled={!rewireTarget} primary>
                                 Move all {w.account_count} account{w.account_count === 1 ? "" : "s"}
                             </Btn>
@@ -454,26 +459,26 @@ export default function AdminWorkerDetailPage() {
                                         : "Drain target (not needed — this worker is empty)"
                                 }
                             >
-                                <select
+                                <SelectMenu
                                     value={convertDrain}
-                                    onChange={(e) => setConvertDrain(e.target.value)}
-                                    className="w-full border rounded px-3 py-1.5 text-sm"
-                                >
-                                    <option value="">— pick a target —</option>
-                                    {(allWorkers.data?.data ?? [])
-                                        .filter((other) =>
-                                            other.id !== id &&
-                                            other.worker_type === "shared" &&
-                                            other.install_state === "installed",
-                                        )
-                                        .sort((a, b) => a.account_count - b.account_count)
-                                        .map((c) => (
-                                            <option key={c.id} value={c.id}>
-                                                {c.name || c.id.slice(0, 8)} · {c.account_count} accounts ·{" "}
-                                                {c.free_tier ? "free" : "premium"}
-                                            </option>
-                                        ))}
-                                </select>
+                                    onChange={(v) => setConvertDrain(v)}
+                                    options={[
+                                        { value: "", label: "— pick a target —" },
+                                        ...(allWorkers.data?.data ?? [])
+                                            .filter(
+                                                (other) =>
+                                                    other.id !== id &&
+                                                    other.worker_type === "shared" &&
+                                                    other.install_state === "installed",
+                                            )
+                                            .sort((a, b) => a.account_count - b.account_count)
+                                            .map((c) => ({
+                                                value: c.id,
+                                                label: `${c.name || c.id.slice(0, 8)} · ${c.account_count} accounts · ${c.free_tier ? "free" : "premium"}`,
+                                            })),
+                                    ]}
+                                    className="w-full"
+                                />
                             </Field>
                             <div className="flex gap-2 mt-3">
                                 <Btn onClick={doConvertToDedicated} disabled={converting} primary>

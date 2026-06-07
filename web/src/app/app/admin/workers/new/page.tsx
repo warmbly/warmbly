@@ -13,7 +13,7 @@
 // from the purpose so the admin doesn't have to think about risk_pool and
 // worker_type independently from "what is this worker for."
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import {
@@ -27,6 +27,7 @@ import {
 } from "@/lib/api/client/app/admin/workers";
 import { assignWorkerProfile, listWorkerProfiles } from "@/lib/api/client/app/admin/credentials";
 import type { CreateWorkerResponse } from "@/lib/api/models/app/admin/Worker";
+import { SelectMenu, type SelectOption } from "@/components/ui/select-menu";
 import { API_URL } from "@/lib/information";
 
 type Purpose = "shared" | "dedicated" | "risky";
@@ -80,6 +81,17 @@ export default function AdminAddWorkerWizard() {
 
     const profiles = useQuery({ queryKey: ["admin", "profiles"], queryFn: listWorkerProfiles });
     const allWorkers = useQuery({ queryKey: ["admin", "workers", "managed"], queryFn: listManagedWorkers });
+
+    const profileOptions = useMemo<SelectOption[]>(
+        () => [
+            { value: "", label: "(use backend env defaults)" },
+            ...(profiles.data?.data?.map((p) => ({
+                value: p.id,
+                label: `${p.name} · ${p.app_env}`,
+            })) ?? []),
+        ],
+        [profiles.data?.data],
+    );
 
     // Steps shown depending on purpose. Dedicated adds an Owner step.
     const totalSteps = state.purpose === "dedicated" ? 5 : 4;
@@ -358,18 +370,13 @@ export default function AdminAddWorkerWizard() {
                     </div>
                     <div className="mt-3">
                         <label className={lbl}>Worker profile</label>
-                        <select
+                        <SelectMenu
                             value={state.profile_id}
-                            onChange={(e) => setState((s) => ({ ...s, profile_id: e.target.value }))}
-                            className={inp}
-                        >
-                            <option value="">(use backend env defaults)</option>
-                            {profiles.data?.data?.map((p) => (
-                                <option key={p.id} value={p.id}>
-                                    {p.name} · {p.app_env}
-                                </option>
-                            ))}
-                        </select>
+                            onChange={(v) => setState((s) => ({ ...s, profile_id: v }))}
+                            options={profileOptions}
+                            placeholder="(use backend env defaults)"
+                            className="w-full"
+                        />
                         <p className="text-slate-400 text-xs mt-1">
                             Supplies Kafka / Schema Registry / Redis / AWS keys at install time.
                         </p>

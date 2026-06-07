@@ -27,6 +27,7 @@ import toast from "react-hot-toast";
 import { useNavigate } from "react-router-dom";
 import useCreateCampaign from "@/lib/api/hooks/app/campaigns/useCreateCampaign";
 import { Label, TextInput } from "@/components/ui/field";
+import { SelectMenu, type SelectOption } from "@/components/ui/select-menu";
 import WeekdayBitmask from "@/components/app/campaigns/schedule/WeekdayBitmask";
 import TagSelector from "@/components/app/popup/select/TagSelector";
 import { useUserProfile } from "@/hooks/context/user";
@@ -449,21 +450,26 @@ function ScheduleStep({
     setEndTime: (v: string) => void;
 }) {
     const profile = useUserProfile();
+    const timezoneOptions = React.useMemo<SelectOption[]>(
+        () =>
+            (profile?.timezones || []).map((tz) => ({
+                value: tz.name,
+                label: tz.display_name,
+            })),
+        [profile?.timezones],
+    );
     return (
         <div className="space-y-5 max-w-[560px]">
             <div>
                 <Label>Sending timezone</Label>
-                <select
+                <SelectMenu
                     value={timezone}
-                    onChange={(e) => setTimezone(e.target.value)}
-                    className="w-full h-7 px-2 rounded-md border border-slate-200 bg-white text-[12.5px] text-slate-900 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
-                >
-                    {(profile?.timezones || []).map((tz) => (
-                        <option key={tz.name} value={tz.name}>
-                            {tz.display_name}
-                        </option>
-                    ))}
-                </select>
+                    onChange={(v) => setTimezone(v)}
+                    options={timezoneOptions}
+                    className="w-full"
+                    placeholder="Select a timezone"
+                    aria-label="Sending timezone"
+                />
                 <p className="text-[11px] text-slate-400 mt-1">
                     Sends are scheduled in this zone. Worker IPs spread distribution naturally.
                 </p>
