@@ -38,17 +38,21 @@ import {
 import {
     ReactFlow,
     Background,
+    BaseEdge,
     Controls,
+    EdgeLabelRenderer,
     Panel,
     Handle,
     MarkerType,
     Position,
+    getBezierPath,
     useNodesState,
     useEdgesState,
     type Node,
     type Edge,
     type Connection,
     type NodeProps,
+    type EdgeProps,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import dagre from "@dagrejs/dagre";
@@ -442,6 +446,70 @@ function ActionNode({ data, selected }: NodeProps) {
 }
 
 const nodeTypes = { step: StepNode, ifcond: IfNode, stop: StopNode, action: ActionNode };
+
+// Convergent edge.
+// Several branches can route to the same next step (many in -> one node). They
+// all terminate at the node's single top handle, so by default the curves pile
+// onto one point and the arrowheads stack. This edge fans the incoming lines
+// across the top of the target node by index, so each inbound connection lands
+// at its own point and stays readable. A lone inbound edge renders unchanged.
+//
+// data.conIndex / data.conTotal are filled in by the layout effect once it
+// knows how many edges share a target.
+type ConvergeEdgeData = { conIndex?: number; conTotal?: number };
+
+function ConvergeEdge({
+    sourceX,
+    sourceY,
+    targetX,
+    targetY,
+    sourcePosition,
+    targetPosition,
+    markerEnd,
+    style,
+    label,
+    labelStyle,
+    labelBgStyle,
+    data,
+}: EdgeProps) {
+    const d = (data ?? {}) as ConvergeEdgeData;
+    const total = d.conTotal ?? 1;
+    const index = d.conIndex ?? 0;
+    // Spread the landing points across ~70% of the node's width, centred on the
+    // handle. One inbound edge keeps dead-centre (offset 0).
+    const span = Math.min(170, NODE_W * 0.7);
+    const offset = total > 1 ? (index - (total - 1) / 2) * (span / Math.max(1, total - 1)) : 0;
+    const [path, labelX, labelY] = getBezierPath({
+        sourceX,
+        sourceY,
+        sourcePosition,
+        targetX: targetX + offset,
+        targetY,
+        targetPosition,
+    });
+    return (
+        <>
+            <BaseEdge path={path} markerEnd={markerEnd} style={style} />
+            {label ? (
+                <EdgeLabelRenderer>
+                    <div
+                        className="nodrag nopan pointer-events-none absolute rounded border px-1 py-px text-[10px]"
+                        style={{
+                            transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
+                            borderColor: (labelBgStyle as { stroke?: string } | undefined)?.stroke ?? "#e2e8f0",
+                            background: (labelBgStyle as { fill?: string } | undefined)?.fill ?? "#fff",
+                            color: (labelStyle as { fill?: string } | undefined)?.fill ?? "#475569",
+                        }}
+                    >
+                        {label}
+                    </div>
+                </EdgeLabelRenderer>
+            ) : null}
+        </>
+    );
+}
+
+const edgeTypes = { converge: ConvergeEdge };
 
 type IfMeta = { sourceId: string; branchId: string };
 
@@ -961,18 +1029,40 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
         const anyStop = sequences.some((s) => (s.conditions?.branches ?? []).some((b) => b.target_sequence_id === null));
         if (anyStop) allNodes.push({ id: STOP_ID, type: "stop", position: { x: 0, y: 0 }, data: {} });
 
+        // Convergence: more than one branch can route to the SAME next step, so
+        // a node can have several inbound edges. Count them per target and number
+        // each one, so the custom "converge" edge can fan the lines across the
+        // target's top instead of piling them all onto its single handle. Targets
+        // with one inbound edge stay on the plain bezier (no fan, no overhead).
+        const inboundCount = new Map<string, number>();
+        for (const e of flowEdges) inboundCount.set(e.target, (inboundCount.get(e.target) ?? 0) + 1);
+        const inboundSeen = new Map<string, number>();
+
         // Flowing curved (bezier) connectors with arrowheads — no boxy right
         // angles. The arrow takes the edge's own stroke colour.
-        const smoothEdges: Edge[] = flowEdges.map((e) => ({
-            ...e,
-            type: "default",
-            markerEnd: {
-                type: MarkerType.ArrowClosed,
-                width: 16,
-                height: 16,
-                color: (e.style as { stroke?: string } | undefined)?.stroke ?? "#94a3b8",
-            },
-        }));
+        const smoothEdges: Edge[] = flowEdges.map((e) => {
+            const total = inboundCount.get(e.target) ?? 1;
+            const index = inboundSeen.get(e.target) ?? 0;
+            inboundSeen.set(e.target, index + 1);
+            // Always use the converge edge type. With a single inbound edge it
+            // renders identically (offset 0); with several it fans them out. The
+            // point is the type NEVER changes in-session: when a second edge is
+            // added to a target, only conTotal updates (1 -> 2). Flipping an
+            // existing edge's `type` live makes React Flow drop the whole edge
+            // layer until reload. The "lines disappeared after I connected two to
+            // the same step" bug.
+            return {
+                ...e,
+                type: "converge",
+                data: { ...e.data, conIndex: index, conTotal: total },
+                markerEnd: {
+                    type: MarkerType.ArrowClosed,
+                    width: 16,
+                    height: 16,
+                    color: (e.style as { stroke?: string } | undefined)?.stroke ?? "#94a3b8",
+                },
+            };
+        });
 
         const laid = stackComponents(layoutGraph(allNodes, smoothEdges), smoothEdges);
         const sig =
@@ -1110,6 +1200,7 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                     })
                 }
                 nodeTypes={nodeTypes}
+                edgeTypes={edgeTypes}
                 onEdgeClick={(_, edge) => {
                     const d = edge.data as { sourceId?: string; branchId?: string } | undefined;
                     if (d?.sourceId && d?.branchId) openCondition(d.sourceId, d.branchId);
