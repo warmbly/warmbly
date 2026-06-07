@@ -124,6 +124,12 @@ type Branch struct {
 	// Conditions are ANDed together — every condition must hold for the branch
 	// to match. An empty list is an unconditional/catch-all branch ("otherwise").
 	Conditions []BranchCondition `json:"conditions,omitempty"`
+	// Instant, for a reply_* branch, controls whether its action chain fires the
+	// MOMENT the contact replies. nil or true = instant (the default); false =
+	// opt out, leaving the branch to route at the normal step boundary like an
+	// engagement branch. Ignored for non-reply branches. Stored in the
+	// sequences.conditions jsonb, so no migration is needed.
+	Instant *bool `json:"instant,omitempty"`
 }
 
 // BranchCondition is a single engagement predicate evaluated against the

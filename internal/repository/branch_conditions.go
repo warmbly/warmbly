@@ -231,42 +231,67 @@ func replyClassMatches(field, class string) bool {
 	}
 }
 
-// isReplyField reports whether a branch condition field is one of the
-// reply-classification predicates that fire instantly when a reply is classified
-// (as opposed to engagement predicates, which stay step-boundary).
-func isReplyField(field string) bool {
-	switch field {
-	case "reply_positive", "reply_negative", "reply_neutral", "reply_automated":
-		return true
-	default:
-		return false
+// fieldBelongsToEvent reports whether a branch condition field is one of the
+// positive "it happened" predicates owned by an instant trigger eventKind. These
+// are the only fields that can fire the instant the signal lands:
+//
+//   - "reply": the reply-classification predicates plus the plain "replied"
+//     (a human reply). A reply event carries the just-classified class on prog.
+//   - "open":  "opened".
+//   - "click": "clicked".
+//
+// Negative predicates (not_opened / not_clicked / not_replied) and time windows
+// are deliberately excluded here: you cannot instantly fire "did NOT happen", so
+// those stay step-boundary and are routed by the scheduler.
+func fieldBelongsToEvent(field, eventKind string) bool {
+	switch eventKind {
+	case "reply":
+		switch field {
+		// Only the reply_* intent fields fire instantly. The plain "replied" field
+		// carries a day window and the editor presents it as a step-boundary path
+		// with no instant toggle, so it must NOT instant-fire here (parity with the
+		// frontend's INSTANT_CAPABLE_FIELDS, which also excludes "replied").
+		case "reply_positive", "reply_negative", "reply_neutral", "reply_automated":
+			return true
+		}
+	case "open":
+		return field == "opened"
+	case "click":
+		return field == "clicked"
 	}
+	return false
 }
 
-// MatchReplyBranchTarget evaluates a step's branches at reply time and returns
-// the route out of the step for an INSTANT reply trigger. It walks branches in
-// declared order (first match wins, identical to the scheduler) and returns the
-// first branch that (a) carries at least one reply_* condition and (b) has ALL
-// of its conditions decidably matching right now against prog (which must carry
-// the just-classified ReplyClass).
+// MatchInstantBranchTarget evaluates a step's branches at signal time and returns
+// the route out of the step for an INSTANT trigger of the given eventKind
+// ("reply" / "open" / "click"). It walks branches in declared order (first match
+// wins, identical to the scheduler) and returns the first branch that (a) carries
+// at least one condition whose field belongs to this eventKind (reply -> the
+// reply_* intent fields; open -> "opened"; click -> "clicked"), and (b) has
+// ALL of its conditions decidably matching right now against prog (which must
+// carry the just-recorded signal: ReplyClass / OpenedAt / ClickedAt).
 //
 // Returns:
-//   - matched=false when no reply branch applies (caller does nothing instant);
+//   - matched=false when no instant branch for this eventKind applies (caller
+//     does nothing instant);
 //   - matched=true, target=nil for a STOP / deleted-target branch;
 //   - matched=true, target=<step id> for a branch that routes onward.
 //
 // It reuses conditionState (the same predicate evaluator the scheduler uses), so
-// matching lives in exactly one place. Engagement-only branches are skipped here
-// because they are not reply-driven; they keep firing at the step boundary. The
-// caller resolves whether target is a live step.
-func MatchReplyBranchTarget(bc *models.BranchConditions, prog *CampaignContactProgress) (matched bool, target *uuid.UUID) {
+// matching lives in exactly one place. Branches with no condition owned by this
+// eventKind are skipped here (a click event must not run a reply branch, and a
+// negative-only branch can never fire instantly); they keep being routed at the
+// step boundary by the scheduler. The caller resolves whether target is a live
+// step.
+func MatchInstantBranchTarget(bc *models.BranchConditions, prog *CampaignContactProgress, eventKind string) (matched bool, target *uuid.UUID, instant bool) {
 	if bc == nil || prog == nil {
-		return false, nil
+		return false, nil, false
 	}
-	// reply_* conditions decide off the stored class with no time window, so
-	// sentAt/now are immaterial for them. A fixed reference time keeps any
-	// engagement conditions ANDed alongside a reply_* condition decidable
-	// (Match/NoMatch) rather than Undecided at evaluation time.
+	// The instant-capable fields decide off stored state with no time window
+	// (reply_* off ReplyClass; opened/clicked/replied off their *At via the "ever"
+	// path when no within_days operator is set), so sentAt/now are immaterial for
+	// them. A fixed reference time keeps any window conditions ANDed alongside a
+	// signal condition decidable (Match/NoMatch) rather than Undecided here.
 	now := time.Now()
 	sentAt := now
 	if prog.SentAt != nil {
@@ -274,11 +299,11 @@ func MatchReplyBranchTarget(bc *models.BranchConditions, prog *CampaignContactPr
 	}
 	for i := range bc.Branches {
 		b := &bc.Branches[i]
-		hasReply := false
+		hasSignal := false
 		allMatch := true
 		for j := range b.Conditions {
-			if isReplyField(b.Conditions[j].Field) {
-				hasReply = true
+			if fieldBelongsToEvent(b.Conditions[j].Field, eventKind) {
+				hasSignal = true
 			}
 			cs, _ := conditionState(b.Conditions[j], prog, b.BranchID, sentAt, now)
 			if cs != BranchMatch {
@@ -286,11 +311,13 @@ func MatchReplyBranchTarget(bc *models.BranchConditions, prog *CampaignContactPr
 				break
 			}
 		}
-		if hasReply && allMatch {
-			return true, b.TargetSequenceID
+		if hasSignal && allMatch {
+			// Instant defaults to true for an instant-capable branch; an explicit
+			// false opts out, deferring the branch to the step-boundary scheduler.
+			return true, b.TargetSequenceID, b.Instant == nil || *b.Instant
 		}
 	}
-	return false, nil
+	return false, nil, false
 }
 
 // randomHolds deterministically routes Value% of contacts down a random-split
