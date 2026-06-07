@@ -15,13 +15,16 @@
 
 import React from "react";
 import {
+    ArrowRightLeftIcon,
     BellOffIcon,
+    BracesIcon,
     CheckSquareIcon,
     ChevronDownIcon,
     ChevronUpIcon,
     ClockIcon,
     FlagIcon,
     GitBranchIcon,
+    HandshakeIcon,
     Loader2Icon,
     MailIcon,
     PlusIcon,
@@ -69,7 +72,13 @@ import SequenceView from "./SequenceView";
 import CategoryPicker from "@/components/app/contacts/CategoryPicker";
 import type { SequenceAction, SequenceActionType } from "@/lib/api/models/app/campaigns/sequences/Action";
 import TaskTypePicker from "@/components/app/crm/TaskTypePicker";
+import DealStagePicker from "@/components/app/crm/DealStagePicker";
 import useMembers from "@/lib/api/hooks/app/organizations/useMembers";
+
+// Personalization tokens available in templated copy. Mirrors SequenceView's
+// VARIABLES so a deal name can use the same {{.FirstName}}/{{.Company}} tokens
+// every other campaign copy field does.
+const DEAL_NAME_VARIABLES = ["{{.FirstName}}", "{{.LastName}}", "{{.Company}}", "{{.Email}}"];
 
 const STOP_ID = "__stop__";
 const IF_PREFIX = "if-";
@@ -314,6 +323,8 @@ const ACTION_META: Record<string, { label: string; Icon: typeof ClockIcon; tint:
     add_tag: { label: "Add tag", Icon: TagIcon, tint: "text-emerald-600" },
     remove_tag: { label: "Remove tag", Icon: TagIcon, tint: "text-amber-600" },
     create_task: { label: "Create task", Icon: CheckSquareIcon, tint: "text-violet-600" },
+    create_deal: { label: "Create deal", Icon: HandshakeIcon, tint: "text-emerald-600" },
+    move_deal_stage: { label: "Move deal stage", Icon: ArrowRightLeftIcon, tint: "text-sky-600" },
     unsubscribe: { label: "Unsubscribe", Icon: BellOffIcon, tint: "text-rose-600" },
     notify: { label: "Notify", Icon: SendIcon, tint: "text-sky-600" },
 };
@@ -326,6 +337,10 @@ function actionSummary(a?: SequenceAction | null): string {
             return a.category_id ? "Add a tag" : "Pick a tag…";
         case "remove_tag":
             return a.category_id ? "Remove a tag" : "Pick a tag…";
+        case "create_deal":
+            return a.deal_pipeline_id && a.deal_stage_id ? "Create a CRM deal" : "Pick a pipeline and stage…";
+        case "move_deal_stage":
+            return a.deal_pipeline_id && a.deal_stage_id ? "Move the deal forward" : "Pick a pipeline and stage…";
         case "unsubscribe":
             return "Unsubscribe the contact";
         case "notify":
@@ -1385,6 +1400,8 @@ const ADD_ACTION_OPTIONS: { type: SequenceActionType; label: string }[] = [
     { type: "add_tag", label: "Add tag" },
     { type: "remove_tag", label: "Remove tag" },
     { type: "create_task", label: "Create task" },
+    { type: "create_deal", label: "Create deal" },
+    { type: "move_deal_stage", label: "Move deal stage" },
     { type: "unsubscribe", label: "Unsubscribe" },
     { type: "notify", label: "Notify (webhook)" },
 ];
@@ -1470,6 +1487,12 @@ function AddNodeMenu({
 function defaultActionFor(type: SequenceActionType): SequenceAction {
     if (type === "create_task") {
         return { type, task_priority: "medium", task_due_offset_days: 1 };
+    }
+    if (type === "create_deal") {
+        return { type, deal_currency: "USD", deal_name: "{{.Company}} ({{.FirstName}})" };
+    }
+    if (type === "move_deal_stage") {
+        return { type };
     }
     return { type };
 }
@@ -1691,6 +1714,72 @@ function ActionEditor({
                 </div>
             )}
 
+            {(action.type === "create_deal" || action.type === "move_deal_stage") && (
+                <div className="space-y-4">
+                    <div>
+                        <Label>{action.type === "create_deal" ? "Create the deal in" : "Move the deal to"}</Label>
+                        <DealStagePicker
+                            pipelineId={action.deal_pipeline_id}
+                            stageId={action.deal_stage_id}
+                            onChange={({ pipelineId, stageId }) =>
+                                setAction((a) => ({ ...a, deal_pipeline_id: pipelineId, deal_stage_id: stageId }))
+                            }
+                        />
+                        {action.type === "move_deal_stage" && (
+                            <p className="mt-1.5 text-[11px] text-slate-400">
+                                Moves the contact's most recent open deal in this pipeline to this stage. If they have no
+                                open deal here, nothing happens.
+                            </p>
+                        )}
+                    </div>
+
+                    {action.type === "create_deal" && (
+                        <>
+                            <div>
+                                <div className="mb-1.5 flex items-center justify-between gap-2">
+                                    <Label className="mb-0">Deal name</Label>
+                                    <DealNameVariableMenu
+                                        onPick={(token) =>
+                                            setAction((a) => ({ ...a, deal_name: (a.deal_name ?? "") + token }))
+                                        }
+                                    />
+                                </div>
+                                <TextInput
+                                    value={action.deal_name ?? ""}
+                                    onChange={(v) => setAction((a) => ({ ...a, deal_name: v }))}
+                                    placeholder="{{.Company}} ({{.FirstName}})"
+                                    className="w-full max-w-[320px]"
+                                />
+                                <p className="mt-1.5 text-[11px] text-slate-400">
+                                    Supports the same {"{{.FirstName}}"} / {"{{.Company}}"} variables as your email copy.
+                                </p>
+                            </div>
+                            <div className="flex flex-wrap items-end gap-4">
+                                <div>
+                                    <Label>Value (optional)</Label>
+                                    <NumberInput
+                                        value={action.deal_value ?? 0}
+                                        onChange={(n) =>
+                                            setAction((a) => ({ ...a, deal_value: n > 0 ? n : undefined }))
+                                        }
+                                        min={0}
+                                        max={1_000_000_000}
+                                        className="w-36"
+                                    />
+                                </div>
+                                <div>
+                                    <Label>Currency</Label>
+                                    <CurrencyPicker
+                                        value={action.deal_currency ?? "USD"}
+                                        onChange={(c) => setAction((a) => ({ ...a, deal_currency: c }))}
+                                    />
+                                </div>
+                            </div>
+                        </>
+                    )}
+                </div>
+            )}
+
             <div className="flex items-center justify-end pt-1">
                 <button
                     type="button"
@@ -1757,6 +1846,86 @@ function AssigneePicker({
                         >
                             <span className="truncate flex-1">{m.email}</span>
                             <span className="text-[10px] text-slate-400 capitalize">{m.role}</span>
+                        </button>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
+// DealNameVariableMenu — a compact "insert variable" trigger for the deal-name
+// field, mirroring the VariableMenu affordance the email subject/body use.
+// Appends a {{.Token}} into the deal name so it can personalize per contact.
+function DealNameVariableMenu({ onPick }: { onPick: (token: string) => void }) {
+    const [open, setOpen] = React.useState(false);
+    const ref = React.useRef<HTMLDivElement>(null);
+    useClickOutside(ref, () => setOpen(false));
+    return (
+        <div ref={ref} className="relative">
+            <button
+                type="button"
+                onClick={() => setOpen((o) => !o)}
+                title="Insert a personalization variable"
+                className="inline-flex h-7 items-center gap-1 rounded px-1.5 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
+            >
+                <BracesIcon className="w-3.5 h-3.5" />
+                <ChevronDownIcon className="w-3 h-3" />
+            </button>
+            {open && (
+                <div className="absolute right-0 top-full z-30 mt-1 w-44 overflow-hidden rounded-md border border-slate-200 bg-white py-1 shadow-[0_12px_32px_-8px_rgba(15,23,42,0.18)]">
+                    {DEAL_NAME_VARIABLES.map((v) => (
+                        <button
+                            key={v}
+                            type="button"
+                            onClick={() => {
+                                onPick(v);
+                                setOpen(false);
+                            }}
+                            className="flex w-full items-center px-2.5 py-1.5 text-left font-mono text-[11.5px] text-slate-700 transition-colors hover:bg-slate-100"
+                        >
+                            {v}
+                        </button>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
+// CurrencyPicker — a small themed dropdown for the deal currency (ISO code).
+// Defaults to USD; the value persisted is the bare ISO code (e.g. "USD").
+const DEAL_CURRENCIES = ["USD", "EUR", "GBP", "CAD", "AUD", "JPY", "CHF", "SEK", "INR", "BRL"];
+
+function CurrencyPicker({ value, onChange }: { value: string; onChange: (c: string) => void }) {
+    const [open, setOpen] = React.useState(false);
+    const ref = React.useRef<HTMLDivElement>(null);
+    useClickOutside(ref, () => setOpen(false));
+    return (
+        <div ref={ref} className="relative inline-flex">
+            <button
+                type="button"
+                onClick={() => setOpen((o) => !o)}
+                className="inline-flex h-7 w-24 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 text-[12px] text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900"
+            >
+                <span className="flex-1 truncate text-left">{value || "USD"}</span>
+                <ChevronDownIcon className="w-3 h-3 text-slate-400" />
+            </button>
+            {open && (
+                <div className="absolute left-0 top-full z-30 mt-1 max-h-56 w-24 overflow-y-auto rounded-md border border-slate-200 bg-white py-1 shadow-[0_12px_32px_-8px_rgba(15,23,42,0.18)]">
+                    {DEAL_CURRENCIES.map((c) => (
+                        <button
+                            key={c}
+                            type="button"
+                            onClick={() => {
+                                onChange(c);
+                                setOpen(false);
+                            }}
+                            className={`flex w-full items-center px-2.5 py-1.5 text-left text-[12px] transition-colors hover:bg-slate-100 ${
+                                c === value ? "font-medium text-slate-900" : "text-slate-700"
+                            }`}
+                        >
+                            {c}
                         </button>
                     ))}
                 </div>
