@@ -67,6 +67,10 @@ const (
 	EventAutomationDeleted EventType = "AUTOMATION_DELETED"
 	EventAutomationRun     EventType = "AUTOMATION_RUN"
 
+	// In-app notification feed (user-scoped). The web client refreshes the bell
+	// feed + may toast on any event type containing "NOTIFICATION".
+	EventNotificationCreated EventType = "NOTIFICATION_CREATED"
+
 	// Meetings. The frontend matches any event type containing "MEETING" /
 	// "BOOKING" to refresh the Meetings page, contact timeline, and sidebar.
 	EventMeetingBooked      EventType = "MEETING_BOOKED"
@@ -482,6 +486,41 @@ func (p *StreamingPublisher) PublishToUser(ctx context.Context, userID string, e
 
 	if err := p.client.Publish(ctx, TopicUserEvents, event, attrs); err != nil {
 		// Log error but don't fail
+	}
+}
+
+// NotificationEvent is the user-scoped realtime signal for a new in-app
+// notification (the bell). Best-effort; the feed table is the source of truth.
+type NotificationEvent struct {
+	BaseEvent
+	NotificationID string `json:"notification_id"`
+	Category       string `json:"category"`
+	Title          string `json:"title"`
+	Link           string `json:"link,omitempty"`
+}
+
+// PublishNotificationCreated pushes a new-notification event to a single user.
+func (p *StreamingPublisher) PublishNotificationCreated(ctx context.Context, userID, notifID, category, title, link string) {
+	if p == nil || p.client == nil || userID == "" {
+		return
+	}
+	event := &NotificationEvent{
+		BaseEvent: BaseEvent{
+			EventType: EventNotificationCreated,
+			UserID:    userID,
+			Timestamp: time.Now(),
+		},
+		NotificationID: notifID,
+		Category:       category,
+		Title:          title,
+		Link:           link,
+	}
+	attrs := map[string]string{
+		"user_id":    userID,
+		"event_type": string(EventNotificationCreated),
+	}
+	if err := p.client.Publish(ctx, TopicUserEvents, event, attrs); err != nil {
+		// Best-effort: realtime is a nicety, not a requirement.
 	}
 }
 

@@ -2,6 +2,7 @@ package advanced
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -40,4 +41,30 @@ func (s *service) emit(ctx context.Context, orgID uuid.UUID, eventType models.We
 // dispatch hiccup must never block the sending pipeline.
 func (s *service) EmitCampaignEvent(ctx context.Context, orgID uuid.UUID, eventType models.WebhookEventType, data map[string]any) {
 	s.emit(ctx, orgID, eventType, data)
+}
+
+// Notifier raises a per-user in-app notification (gated by the user's prefs).
+// Satisfied by *notification.Service. Local interface to avoid an import cycle;
+// wired post-construction in the consumer (where reply/bounce/complaint run).
+type Notifier interface {
+	Notify(ctx context.Context, userID uuid.UUID, orgID *uuid.UUID, category models.NotificationCategory, title, body, link string, meta map[string]any)
+}
+
+// WireNotifier attaches the notification service after construction.
+func (s *service) WireNotifier(n Notifier) {
+	s.notifier = n
+}
+
+// notify raises an in-app notification off the hot path. It detaches from the
+// request context (the ingest call may return first) and is best-effort.
+func (s *service) notify(userID uuid.UUID, orgID *uuid.UUID, category models.NotificationCategory, title, body, link string, meta map[string]any) {
+	if s.notifier == nil || userID == uuid.Nil {
+		return
+	}
+	// Detached + time-bounded so a slow DB can't accumulate notify goroutines.
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		s.notifier.Notify(ctx, userID, orgID, category, title, body, link, meta)
+	}()
 }
