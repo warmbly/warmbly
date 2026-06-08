@@ -175,6 +175,15 @@ export function useRealtimeEvents() {
         return
       }
 
+      // An automation was created/updated/deleted or fired: refresh the list and,
+      // for a specific automation, its detail + run history (live in the builder).
+      if (includes('AUTOMATION')) {
+        invalidate([['automations']])
+        const automationId = getString('automation_id')
+        if (automationId) invalidate([['automations', automationId], ['automations', automationId, 'runs']])
+        return
+      }
+
       if (includes('INTEGRATION', 'CONNECTION')) {
         invalidate([
           ['integrations', 'connections'],
