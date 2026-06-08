@@ -60,6 +60,13 @@ const (
 	// ['audit'] query on any event type containing "AUDIT".
 	EventAuditCreated EventType = "AUDIT_CREATED"
 
+	// Automation events (org-scoped). The web client invalidates the
+	// ['automations'] queries on any event type containing "AUTOMATION".
+	EventAutomationCreated EventType = "AUTOMATION_CREATED"
+	EventAutomationUpdated EventType = "AUTOMATION_UPDATED"
+	EventAutomationDeleted EventType = "AUTOMATION_DELETED"
+	EventAutomationRun     EventType = "AUTOMATION_RUN"
+
 	// Meetings. The frontend matches any event type containing "MEETING" /
 	// "BOOKING" to refresh the Meetings page, contact timeline, and sidebar.
 	EventMeetingBooked      EventType = "MEETING_BOOKED"
@@ -422,6 +429,42 @@ func (p *StreamingPublisher) PublishAuditCreated(ctx context.Context, orgID, act
 		"event_type": string(EventAuditCreated),
 	}
 
+	if err := p.client.Publish(ctx, TopicUserEvents, event, attrs); err != nil {
+		// Best-effort: realtime is a nicety, not a requirement.
+	}
+}
+
+// AutomationEvent is an org-scoped automation lifecycle/run signal. The web
+// client invalidates the ['automations'] queries on any "AUTOMATION" event.
+type AutomationEvent struct {
+	BaseEvent
+	OrgID          string `json:"org_id"`
+	AutomationID   string `json:"automation_id,omitempty"`
+	AutomationName string `json:"automation_name,omitempty"`
+	Status         string `json:"status,omitempty"`
+}
+
+// PublishAutomationEvent emits an org-scoped automation event. actorID may be
+// uuid.Nil for system-triggered runs (the event reaches org:<id> subscribers).
+func (p *StreamingPublisher) PublishAutomationEvent(ctx context.Context, orgID, actorID uuid.UUID, eventType EventType, automationID, name string) {
+	if p == nil || p.client == nil || orgID == uuid.Nil {
+		return
+	}
+	event := &AutomationEvent{
+		BaseEvent: BaseEvent{
+			EventType: eventType,
+			UserID:    actorID.String(),
+			Timestamp: time.Now(),
+		},
+		OrgID:          orgID.String(),
+		AutomationID:   automationID,
+		AutomationName: name,
+	}
+	attrs := map[string]string{
+		"user_id":    actorID.String(),
+		"org_id":     orgID.String(),
+		"event_type": string(eventType),
+	}
 	if err := p.client.Publish(ctx, TopicUserEvents, event, attrs); err != nil {
 		// Best-effort: realtime is a nicety, not a requirement.
 	}

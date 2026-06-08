@@ -27,21 +27,31 @@ var errReauthRequired = errors.New("reauth required")
 // blocks on a third-party round trip. Best-effort by design: a failing action
 // is recorded on the connection's health and in a sync run, never propagated.
 func (s *service) Dispatch(ctx context.Context, orgID uuid.UUID, eventType models.WebhookEventType, data map[string]any) {
+	// Legacy standalone subscriptions (automation_id IS NULL) + the branching
+	// automations whose trigger matches. The two paths are disjoint by design
+	// (MatchingDispatchTargets excludes automation-owned rows), so nothing
+	// double-fires.
 	targets, err := s.repo.MatchingDispatchTargets(ctx, orgID, string(eventType))
 	if err != nil {
 		log.Warn().Err(err).Str("event", string(eventType)).Msg("integration dispatch: failed to load targets")
+	}
+	autos, err := s.repo.ListEnabledAutomationsForEvent(ctx, orgID, string(eventType))
+	if err != nil {
+		log.Warn().Err(err).Str("event", string(eventType)).Msg("integration dispatch: failed to load automations")
+	}
+	if len(targets) == 0 && len(autos) == 0 {
 		return
 	}
-	if len(targets) == 0 {
-		return
-	}
-	go func(targets []repository.DispatchTarget) {
+	go func(targets []repository.DispatchTarget, autos []models.Automation) {
 		bg, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		for i := range targets {
 			s.runAction(bg, targets[i], data)
 		}
-	}(targets)
+		for i := range autos {
+			s.executeAutomationGraph(bg, autos[i], string(eventType), data)
+		}
+	}(targets, autos)
 }
 
 // DispatchAny forwards a loosely-typed event payload to Dispatch when it is a
@@ -53,13 +63,17 @@ func (s *service) DispatchAny(ctx context.Context, orgID uuid.UUID, eventType mo
 	}
 }
 
-func (s *service) runAction(ctx context.Context, target repository.DispatchTarget, data map[string]any) {
+// runAction executes one connection-backed action, logging a sync run and
+// updating connection health. It returns the action error (nil on success or a
+// filtered-out no-op) so callers like the automation executor can record the
+// per-node outcome; the legacy dispatch loop ignores it.
+func (s *service) runAction(ctx context.Context, target repository.DispatchTarget, data map[string]any) error {
 	sub := target.Subscription
 	// Per-subscription filter (e.g. only "positive" replies, or a minimum
 	// classifier confidence). Filtered-out events are a silent no-op — no sync
 	// run, no connection-health churn.
 	if !subscriptionMatchesFilter(sub, data) {
-		return
+		return nil
 	}
 	run := &models.IntegrationSyncRun{
 		ConnectionID:   sub.ConnectionID,
@@ -76,10 +90,11 @@ func (s *service) runAction(ctx context.Context, target repository.DispatchTarge
 			_ = s.repo.SetConnectionStatus(ctx, sub.ConnectionID, models.IntegrationStatusConnected, models.IntegrationHealthDegraded, truncate(err.Error(), 480))
 		}
 		log.Warn().Err(err).Str("action", string(sub.Action)).Str("connection", sub.ConnectionID.String()).Msg("integration action failed")
-		return
+		return err
 	}
 	_ = s.repo.FinishSyncRun(ctx, run.ID, "success", "", 1)
 	_ = s.repo.SetConnectionStatus(ctx, sub.ConnectionID, models.IntegrationStatusConnected, models.IntegrationHealthHealthy, "")
+	return nil
 }
 
 // execAction routes a subscription to its provider implementation, projecting
@@ -96,7 +111,7 @@ func (s *service) execAction(ctx context.Context, target repository.DispatchTarg
 
 	switch sub.Action {
 	case models.IntegrationActionSlackNotify:
-		channel := configString(sub.Config, "channel")
+		channel := renderTemplate(configString(sub.Config, "channel"), data)
 		token, terr := s.accessTokenFor(ctx, &target.Secrets)
 		if terr != nil {
 			return errReauthRequired
@@ -111,7 +126,13 @@ func (s *service) execAction(ctx context.Context, target repository.DispatchTarg
 		if url == "" {
 			return errors.New("no webhook url configured")
 		}
-		return webhookPost(ctx, url, msg)
+		// Render + SSRF re-validate EVERY outbound URL (sealed connection url or
+		// templatable action url) right before the request — the single guard.
+		rendered, rerr := renderOutboundURL(url, data)
+		if rerr != nil {
+			return rerr
+		}
+		return webhookPost(ctx, rendered, msg)
 
 	case models.IntegrationActionGenericWebhookPing:
 		url := stringFromMap(secretCfg, "webhook_url")
@@ -121,6 +142,11 @@ func (s *service) execAction(ctx context.Context, target repository.DispatchTarg
 		if url == "" {
 			return errors.New("no webhook url configured")
 		}
+		rendered, rerr := renderOutboundURL(url, data)
+		if rerr != nil {
+			return rerr
+		}
+		url = rendered
 		// Automation tools (Zapier/Make/n8n) get the full structured + signed
 		// payload; the signing secret is the connection's (empty => unsigned).
 		secret := configString(target.Secrets.Conn.ConfigCapabilities, "signing_secret")
@@ -303,24 +329,6 @@ func buildAutomationPayload(sub models.IntegrationEventSubscription, data map[st
 
 // renderTemplate substitutes {{key}} placeholders with values from the event
 // payload. Unknown placeholders render as empty so a typo can't leak braces.
-func renderTemplate(tmpl string, data map[string]any) string {
-	out := tmpl
-	for {
-		start := strings.Index(out, "{{")
-		if start < 0 {
-			break
-		}
-		end := strings.Index(out[start:], "}}")
-		if end < 0 {
-			break
-		}
-		end += start
-		key := strings.TrimSpace(out[start+2 : end])
-		val := stringFromMap(data, key)
-		out = out[:start] + val + out[end+2:]
-	}
-	return strings.TrimSpace(out)
-}
 
 func configString(raw json.RawMessage, key string) string {
 	if len(raw) == 0 {

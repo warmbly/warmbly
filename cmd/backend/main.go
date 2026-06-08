@@ -846,6 +846,15 @@ func main() {
 		// Fan reply + bounce events from the advanced-outreach brain out to
 		// customer webhooks AND third-party integration actions (Slack / CRM).
 		advancedService.WireDispatcher(webhookService)
+		// Wire native (Warmbly-internal) automation actions + realtime now that
+		// the advanced/contact/org services exist (the integration service was
+		// constructed earlier).
+		integrationServiceForHandler.SetNativeActions(nativeActionsAdapter{
+			adv:      advancedService,
+			contacts: contactRepostory,
+			orgs:     organizationRepository,
+		})
+		integrationServiceForHandler.SetPublisher(streamingPublisher)
 		emailSender := tasks.NewEmailSender(emailRepostory, eventsPublisher)
 		tasksService = tasks.NewService(
 			tasksClient,
@@ -869,6 +878,7 @@ func main() {
 			campaignLogRepository,
 			advancedService,
 			attachmentRepoForHandler,
+			integrationServiceForHandler, // AutomationRunner for campaign run_automation steps
 		)
 
 		// Admin outreach composer — sends from the platform mailer

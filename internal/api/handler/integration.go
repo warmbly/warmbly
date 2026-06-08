@@ -688,6 +688,7 @@ func (h *Handler) CreateAutomation(c *gin.Context) {
 		return
 	}
 	h.auditIntegration(c, userID, models.AuditActionCreate, a.ID, "automation")
+	h.StreamingPublisher.PublishAutomationEvent(c.Request.Context(), orgID, userID, pubsub.EventAutomationCreated, a.ID.String(), a.Name)
 	c.JSON(http.StatusCreated, gin.H{"automation": a})
 }
 
@@ -712,6 +713,7 @@ func (h *Handler) UpdateAutomation(c *gin.Context) {
 		return
 	}
 	h.auditIntegration(c, userID, models.AuditActionUpdate, id, "automation")
+	h.StreamingPublisher.PublishAutomationEvent(c.Request.Context(), orgID, userID, pubsub.EventAutomationUpdated, id.String(), a.Name)
 	c.JSON(http.StatusOK, gin.H{"automation": a})
 }
 
@@ -730,7 +732,55 @@ func (h *Handler) DeleteAutomation(c *gin.Context) {
 		return
 	}
 	h.auditIntegration(c, userID, models.AuditActionDelete, id, "automation")
+	h.StreamingPublisher.PublishAutomationEvent(c.Request.Context(), orgID, userID, pubsub.EventAutomationDeleted, id.String(), "")
 	c.JSON(http.StatusOK, gin.H{"deleted": true})
+}
+
+// TestAutomation runs the automation against sample (or provided) data without
+// side effects and returns the path + per-action previews (the builder "Test").
+func (h *Handler) TestAutomation(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "invalid id"))
+		return
+	}
+	var req models.DryRunRequest
+	_ = c.ShouldBindJSON(&req) // body is optional; server builds a sample if empty
+	res, derr := h.IntegrationService.DryRunAutomation(c.Request.Context(), orgID, id, req)
+	if derr != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, derr.Error()))
+		return
+	}
+	c.JSON(http.StatusOK, res)
+}
+
+// ListAutomationRuns returns recent run history for an automation.
+func (h *Handler) ListAutomationRuns(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "invalid id"))
+		return
+	}
+	limit := 50
+	if l := c.Query("limit"); l != "" {
+		if n, e := strconv.Atoi(l); e == nil {
+			limit = n
+		}
+	}
+	runs, rerr := h.IntegrationService.ListAutomationRuns(c.Request.Context(), orgID, id, limit)
+	if rerr != nil {
+		errx.JSON(c, errx.New(errx.Internal, "lookup failed"))
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"runs": runs})
 }
 
 // --- Inbound webhooks (Calendly / Cal.com) ----------------------------------

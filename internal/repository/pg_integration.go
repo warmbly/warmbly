@@ -76,6 +76,7 @@ type IntegrationRepository interface {
 	// runs them unchanged.
 	CreateAutomation(ctx context.Context, a *models.Automation) error
 	ListAutomations(ctx context.Context, orgID uuid.UUID) ([]models.Automation, error)
+	ListEnabledAutomationsForEvent(ctx context.Context, orgID uuid.UUID, eventType string) ([]models.Automation, error)
 	GetAutomation(ctx context.Context, orgID, id uuid.UUID) (*models.Automation, error)
 	UpdateAutomation(ctx context.Context, a *models.Automation) error
 	DeleteAutomation(ctx context.Context, orgID, id uuid.UUID) error
@@ -91,6 +92,10 @@ type IntegrationRepository interface {
 	CreateSyncRun(ctx context.Context, run *models.IntegrationSyncRun) error
 	FinishSyncRun(ctx context.Context, id uuid.UUID, status, detail string, records int) error
 	ListSyncRuns(ctx context.Context, orgID, connID uuid.UUID, limit int) ([]models.IntegrationSyncRun, error)
+
+	CreateAutomationRun(ctx context.Context, run *models.AutomationRun) error
+	FinishAutomationRun(ctx context.Context, id uuid.UUID, status, errorDetail string, nodeResults []models.AutomationNodeResult) error
+	ListAutomationRuns(ctx context.Context, orgID, automationID uuid.UUID, limit int) ([]models.AutomationRun, error)
 
 	// Bookings
 	UpsertMeetingBooking(ctx context.Context, b *models.MeetingBooking) error
@@ -433,19 +438,23 @@ func (r *integrationRepository) DeleteEventSubscription(ctx context.Context, org
 // insertAutomationSteps writes one event-subscription row per step, tagged with
 // the automation id + its trigger event + enabled flag (so the dispatcher runs
 // them). Caller has already merged the automation filter into each step Config.
-func insertAutomationSteps(ctx context.Context, tx pgx.Tx, a *models.Automation, now time.Time) error {
-	for _, step := range a.Steps {
-		cfg := step.Config
-		if len(cfg) == 0 {
-			cfg = json.RawMessage("{}")
-		}
-		if _, err := tx.Exec(ctx, `
-			INSERT INTO integration_event_subscriptions (
-				id, connection_id, organization_id, event_type, action, config, enabled, use_case, automation_id, created_at, updated_at
-			) VALUES ($1, $2, $3, $4, $5, $6, $7, 'automation', $8, $9, $9)`,
-			uuid.New(), step.ConnectionID, a.OrganizationID, a.TriggerEvent, string(step.Action), cfg, a.Enabled, a.ID, now); err != nil {
-			return err
-		}
+// automationCols is the shared projection for an automation row.
+const automationCols = `id, organization_id, name, enabled, trigger_event, filter, graph, created_at, updated_at`
+
+func scanAutomation(row pgx.Row, a *models.Automation) error {
+	var graph []byte
+	if err := row.Scan(&a.ID, &a.OrganizationID, &a.Name, &a.Enabled, &a.TriggerEvent, &a.Filter, &graph, &a.CreatedAt, &a.UpdatedAt); err != nil {
+		return err
+	}
+	a.Graph = models.AutomationGraph{Nodes: []models.AutomationNode{}, Edges: []models.AutomationEdge{}}
+	if len(graph) > 0 {
+		_ = json.Unmarshal(graph, &a.Graph)
+	}
+	if a.Graph.Nodes == nil {
+		a.Graph.Nodes = []models.AutomationNode{}
+	}
+	if a.Graph.Edges == nil {
+		a.Graph.Edges = []models.AutomationEdge{}
 	}
 	return nil
 }
@@ -461,22 +470,12 @@ func (r *integrationRepository) CreateAutomation(ctx context.Context, a *models.
 	if len(filter) == 0 {
 		filter = json.RawMessage("{}")
 	}
-	tx, err := r.db.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx)
-
-	if _, err := tx.Exec(ctx, `
-		INSERT INTO automations (id, organization_id, name, enabled, trigger_event, filter, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $7)`,
-		a.ID, a.OrganizationID, a.Name, a.Enabled, a.TriggerEvent, filter, now); err != nil {
-		return err
-	}
-	if err := insertAutomationSteps(ctx, tx, a, now); err != nil {
-		return err
-	}
-	return tx.Commit(ctx)
+	graph, _ := json.Marshal(a.Graph)
+	_, err := r.db.Exec(ctx, `
+		INSERT INTO automations (id, organization_id, name, enabled, trigger_event, filter, graph, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)`,
+		a.ID, a.OrganizationID, a.Name, a.Enabled, a.TriggerEvent, filter, graph, now)
+	return err
 }
 
 func (r *integrationRepository) UpdateAutomation(ctx context.Context, a *models.Automation) error {
@@ -486,130 +485,73 @@ func (r *integrationRepository) UpdateAutomation(ctx context.Context, a *models.
 	if len(filter) == 0 {
 		filter = json.RawMessage("{}")
 	}
-	tx, err := r.db.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx)
-
-	tag, err := tx.Exec(ctx, `
-		UPDATE automations SET name = $3, enabled = $4, trigger_event = $5, filter = $6, updated_at = $7
+	graph, _ := json.Marshal(a.Graph)
+	tag, err := r.db.Exec(ctx, `
+		UPDATE automations SET name = $3, enabled = $4, trigger_event = $5, filter = $6, graph = $7, updated_at = $8
 		WHERE id = $1 AND organization_id = $2`,
-		a.ID, a.OrganizationID, a.Name, a.Enabled, a.TriggerEvent, filter, now)
+		a.ID, a.OrganizationID, a.Name, a.Enabled, a.TriggerEvent, filter, graph, now)
 	if err != nil {
 		return err
 	}
 	if tag.RowsAffected() == 0 {
 		return errors.New("automation not found")
 	}
-	// Replace steps: drop the old step subscriptions, re-insert from the payload.
-	if _, err := tx.Exec(ctx,
-		`DELETE FROM integration_event_subscriptions WHERE automation_id = $1 AND organization_id = $2`,
-		a.ID, a.OrganizationID); err != nil {
-		return err
-	}
-	if err := insertAutomationSteps(ctx, tx, a, now); err != nil {
-		return err
-	}
-	return tx.Commit(ctx)
+	return nil
 }
 
 func (r *integrationRepository) DeleteAutomation(ctx context.Context, orgID, id uuid.UUID) error {
-	// Steps cascade via the automation_id FK.
 	_, err := r.db.Exec(ctx, `DELETE FROM automations WHERE id = $1 AND organization_id = $2`, id, orgID)
 	return err
 }
 
 func (r *integrationRepository) GetAutomation(ctx context.Context, orgID, id uuid.UUID) (*models.Automation, error) {
 	var a models.Automation
-	err := r.db.QueryRow(ctx, `
-		SELECT id, organization_id, name, enabled, trigger_event, filter, created_at, updated_at
-		FROM automations WHERE id = $1 AND organization_id = $2`, id, orgID).
-		Scan(&a.ID, &a.OrganizationID, &a.Name, &a.Enabled, &a.TriggerEvent, &a.Filter, &a.CreatedAt, &a.UpdatedAt)
-	if err != nil {
+	row := r.db.QueryRow(ctx, `SELECT `+automationCols+` FROM automations WHERE id = $1 AND organization_id = $2`, id, orgID)
+	if err := scanAutomation(row, &a); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
 		return nil, err
 	}
-	steps, err := r.automationSteps(ctx, []uuid.UUID{a.ID})
-	if err != nil {
-		return nil, err
-	}
-	a.Steps = steps[a.ID]
-	if a.Steps == nil {
-		a.Steps = []models.AutomationStep{}
-	}
 	return &a, nil
 }
 
 func (r *integrationRepository) ListAutomations(ctx context.Context, orgID uuid.UUID) ([]models.Automation, error) {
-	rows, err := r.db.Query(ctx, `
-		SELECT id, organization_id, name, enabled, trigger_event, filter, created_at, updated_at
-		FROM automations WHERE organization_id = $1 ORDER BY created_at DESC`, orgID)
+	rows, err := r.db.Query(ctx, `SELECT `+automationCols+` FROM automations WHERE organization_id = $1 ORDER BY created_at DESC`, orgID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-
 	out := []models.Automation{}
-	ids := []uuid.UUID{}
 	for rows.Next() {
 		var a models.Automation
-		if err := rows.Scan(&a.ID, &a.OrganizationID, &a.Name, &a.Enabled, &a.TriggerEvent, &a.Filter, &a.CreatedAt, &a.UpdatedAt); err != nil {
+		if err := scanAutomation(rows, &a); err != nil {
 			return nil, err
 		}
-		a.Steps = []models.AutomationStep{}
 		out = append(out, a)
-		ids = append(ids, a.ID)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	if len(ids) == 0 {
-		return out, nil
-	}
-	steps, err := r.automationSteps(ctx, ids)
-	if err != nil {
-		return nil, err
-	}
-	for i := range out {
-		if s := steps[out[i].ID]; s != nil {
-			out[i].Steps = s
-		}
-	}
-	return out, nil
+	return out, rows.Err()
 }
 
-// automationSteps loads the step subscriptions for a set of automation ids,
-// grouped by automation id.
-func (r *integrationRepository) automationSteps(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID][]models.AutomationStep, error) {
-	out := map[uuid.UUID][]models.AutomationStep{}
-	rows, err := r.db.Query(ctx, `
-		SELECT automation_id, id, connection_id, action, config
-		FROM integration_event_subscriptions
-		WHERE automation_id = ANY($1)
-		ORDER BY created_at`, ids)
+// ListEnabledAutomationsForEvent returns the enabled automations whose trigger
+// matches the fired event, for the graph executor to walk. The 'campaign.action'
+// trigger is excluded: those are manual / campaign-launched automations that
+// only ever run via RunAutomationByID, never by a real event fan-out.
+func (r *integrationRepository) ListEnabledAutomationsForEvent(ctx context.Context, orgID uuid.UUID, eventType string) ([]models.Automation, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT `+automationCols+` FROM automations WHERE organization_id = $1 AND trigger_event = $2 AND enabled AND trigger_event <> 'campaign.action'`,
+		orgID, eventType)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
+	out := []models.Automation{}
 	for rows.Next() {
-		var autoID, stepID, connID uuid.UUID
-		var action string
-		var cfg []byte
-		if err := rows.Scan(&autoID, &stepID, &connID, &action, &cfg); err != nil {
+		var a models.Automation
+		if err := scanAutomation(rows, &a); err != nil {
 			return nil, err
 		}
-		if len(cfg) == 0 {
-			cfg = []byte("{}")
-		}
-		out[autoID] = append(out[autoID], models.AutomationStep{
-			ID:           stepID,
-			ConnectionID: connID,
-			Action:       models.IntegrationAction(action),
-			Config:       cfg,
-		})
+		out = append(out, a)
 	}
 	return out, rows.Err()
 }
@@ -704,6 +646,7 @@ func (r *integrationRepository) MatchingDispatchTargets(ctx context.Context, org
 		FROM integration_event_subscriptions s
 		JOIN integration_connections c ON c.id = s.connection_id
 		WHERE s.organization_id = $1 AND s.event_type = $2 AND s.enabled
+		  AND s.automation_id IS NULL
 		  AND c.status IN ('connected', 'degraded')`, orgID, eventType)
 	if err != nil {
 		return nil, err
@@ -779,6 +722,65 @@ func (r *integrationRepository) ListSyncRuns(ctx context.Context, orgID, connID 
 		if err := rows.Scan(&run.ID, &run.ConnectionID, &run.OrganizationID, &run.Kind, &run.Status,
 			&run.Detail, &run.RecordsProcessed, &run.StartedAt, &run.FinishedAt); err != nil {
 			return nil, err
+		}
+		out = append(out, run)
+	}
+	return out, rows.Err()
+}
+
+func (r *integrationRepository) CreateAutomationRun(ctx context.Context, run *models.AutomationRun) error {
+	if run.ID == uuid.Nil {
+		run.ID = uuid.New()
+	}
+	run.StartedAt = time.Now().UTC()
+	if run.Status == "" {
+		run.Status = "running"
+	}
+	results, _ := json.Marshal(run.NodeResults)
+	if len(results) == 0 {
+		results = []byte("[]")
+	}
+	_, err := r.db.Exec(ctx, `
+		INSERT INTO automation_runs (id, automation_id, organization_id, trigger_event, status, node_results, started_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		run.ID, run.AutomationID, run.OrganizationID, run.TriggerEvent, run.Status, results, run.StartedAt)
+	return err
+}
+
+func (r *integrationRepository) FinishAutomationRun(ctx context.Context, id uuid.UUID, status, errorDetail string, nodeResults []models.AutomationNodeResult) error {
+	results, _ := json.Marshal(nodeResults)
+	if len(results) == 0 {
+		results = []byte("[]")
+	}
+	_, err := r.db.Exec(ctx, `
+		UPDATE automation_runs
+		SET status = $1, error_detail = $2, node_results = $3, finished_at = NOW()
+		WHERE id = $4`, status, errorDetail, results, id)
+	return err
+}
+
+func (r *integrationRepository) ListAutomationRuns(ctx context.Context, orgID, automationID uuid.UUID, limit int) ([]models.AutomationRun, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	rows, err := r.db.Query(ctx, `
+		SELECT id, automation_id, organization_id, trigger_event, status, node_results, error_detail, started_at, finished_at
+		FROM automation_runs
+		WHERE organization_id = $1 AND automation_id = $2 ORDER BY started_at DESC LIMIT $3`, orgID, automationID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []models.AutomationRun{}
+	for rows.Next() {
+		var run models.AutomationRun
+		var results []byte
+		if err := rows.Scan(&run.ID, &run.AutomationID, &run.OrganizationID, &run.TriggerEvent, &run.Status,
+			&results, &run.ErrorDetail, &run.StartedAt, &run.FinishedAt); err != nil {
+			return nil, err
+		}
+		if len(results) > 0 {
+			_ = json.Unmarshal(results, &run.NodeResults)
 		}
 		out = append(out, run)
 	}

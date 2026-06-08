@@ -833,6 +833,31 @@ func (s *tasksService) executeActionNode(ctx context.Context, campaign *models.C
 				Msg("move_deal_stage no-op: contact has no open deal in pipeline")
 		}
 		return nil
+	case "run_automation":
+		if s.automationRunner == nil || campaign.OrganizationID == nil || cfg.AutomationID == nil {
+			return nil
+		}
+		// Seed the automation's event data with the standard contact/campaign
+		// keys so its action templates ({{.contact_email}} etc.) work out of the
+		// box; the user-supplied values (rendered per contact) add/override extras.
+		data := map[string]any{
+			"campaign_id":   campaign.ID.String(),
+			"campaign_name": campaign.Name,
+			"contact_id":    contact.ID.String(),
+			"contact_email": contact.Email,
+			"first_name":    contact.FirstName,
+			"last_name":     contact.LastName,
+			"company":       contact.Company,
+			"phone":         contact.Phone,
+		}
+		for _, kv := range cfg.AutomationValues {
+			key := strings.TrimSpace(kv.Key)
+			if key == "" {
+				continue
+			}
+			data[key] = RenderTemplate(kv.Value, *contact)
+		}
+		return s.automationRunner.RunAutomationByID(ctx, *campaign.OrganizationID, *cfg.AutomationID, data)
 	default:
 		return nil
 	}

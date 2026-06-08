@@ -254,7 +254,28 @@ const (
 	IntegrationActionSalesforceUpsert   IntegrationAction = "salesforce.upsert_contact"
 	IntegrationActionCloseUpsert        IntegrationAction = "close.upsert_lead"
 	IntegrationActionGenericWebhookPing IntegrationAction = "webhook.ping"
+
+	// Native (Warmbly-internal) actions: CRM/contact mutations that need no
+	// external connection. Run against the contact resolved from the event data.
+	IntegrationActionAddTag        IntegrationAction = "warmbly.add_tag"
+	IntegrationActionRemoveTag     IntegrationAction = "warmbly.remove_tag"
+	IntegrationActionCreateTask    IntegrationAction = "warmbly.create_task"
+	IntegrationActionCreateDeal    IntegrationAction = "warmbly.create_deal"
+	IntegrationActionMoveDealStage IntegrationAction = "warmbly.move_deal_stage"
+	IntegrationActionUnsubscribe   IntegrationAction = "warmbly.unsubscribe"
 )
+
+// IsNativeAction reports whether an action is a Warmbly-internal CRM/contact
+// mutation (no external connection required).
+func IsNativeAction(a IntegrationAction) bool {
+	switch a {
+	case IntegrationActionAddTag, IntegrationActionRemoveTag, IntegrationActionCreateTask,
+		IntegrationActionCreateDeal, IntegrationActionMoveDealStage, IntegrationActionUnsubscribe:
+		return true
+	default:
+		return false
+	}
+}
 
 // IntegrationEventSubscription routes a Warmbly event to a provider action.
 type IntegrationEventSubscription struct {
@@ -275,40 +296,107 @@ type IntegrationEventSubscription struct {
 	UpdatedAt    time.Time  `json:"updated_at"`
 }
 
-// Automation is a named grouping of event-subscriptions that share one trigger
-// event: "when <trigger_event> fires, run these action steps". It's the data
-// behind the visual flow builder. Execution reuses the event-subscription
-// dispatcher — each step is an ordinary subscription tagged with this id.
+// Automation is a branching flow: "when <trigger_event> fires, walk this graph"
+// — the data behind the visual flow builder. The graph holds a trigger node,
+// condition (IF) nodes, and action nodes connected by edges; the executor walks
+// it on each matching event, evaluating conditions and running the action nodes
+// on the matched paths (reusing the event-subscription action handlers).
 type Automation struct {
-	ID             uuid.UUID       `json:"id"`
-	OrganizationID uuid.UUID       `json:"organization_id"`
-	Name           string          `json:"name"`
-	Enabled        bool            `json:"enabled"`
-	TriggerEvent   string          `json:"trigger_event"`
-	Filter         json.RawMessage `json:"filter,omitempty"`
-	CreatedAt      time.Time       `json:"created_at"`
-	UpdatedAt      time.Time       `json:"updated_at"`
-
-	// Steps is hydrated on read (the automation's action subscriptions).
-	Steps []AutomationStep `json:"steps"`
+	ID             uuid.UUID `json:"id"`
+	OrganizationID uuid.UUID `json:"organization_id"`
+	Name           string    `json:"name"`
+	Enabled        bool      `json:"enabled"`
+	TriggerEvent   string    `json:"trigger_event"`
+	// Filter is an optional automation-wide gate (intents / min_confidence)
+	// applied to every action, on top of any condition nodes.
+	Filter    json.RawMessage `json:"filter,omitempty"`
+	Graph     AutomationGraph `json:"graph"`
+	CreatedAt time.Time       `json:"created_at"`
+	UpdatedAt time.Time       `json:"updated_at"`
 }
 
-// AutomationStep is one action node of an automation: run Action on Connection
-// with Config (channel / message template / CRM object, etc.).
-type AutomationStep struct {
-	ID           uuid.UUID         `json:"id,omitempty"`
-	ConnectionID uuid.UUID         `json:"connection_id"`
-	Action       IntegrationAction `json:"action"`
-	Config       json.RawMessage   `json:"config,omitempty"`
+// AutomationGraph is the editable flow: nodes + the edges connecting them.
+type AutomationGraph struct {
+	Nodes []AutomationNode `json:"nodes"`
+	Edges []AutomationEdge `json:"edges"`
+}
+
+// AutomationNode is one node on the canvas. Type is "trigger" (exactly one, id
+// "trigger"), "condition" (an IF with true/false outgoing edges), or "action".
+type AutomationNode struct {
+	ID           string               `json:"id"`
+	Type         string               `json:"type"`
+	Action       IntegrationAction    `json:"action,omitempty"`        // action nodes
+	ConnectionID *uuid.UUID           `json:"connection_id,omitempty"` // action nodes
+	Config       json.RawMessage      `json:"config,omitempty"`        // action node config
+	Condition    *AutomationCondition `json:"condition,omitempty"`     // condition nodes
+	X            float64              `json:"x"`
+	Y            float64              `json:"y"`
+}
+
+// AutomationEdge connects two nodes. When is "" for plain edges (from the
+// trigger or after an action) and "true"/"false" for the two outgoing edges of
+// a condition node.
+type AutomationEdge struct {
+	ID     string `json:"id"`
+	Source string `json:"source"`
+	Target string `json:"target"`
+	When   string `json:"when,omitempty"`
+}
+
+// AutomationCondition is an IF test evaluated against the trigger event's data.
+// For the generic "field" type, Key names the event-data key to test.
+type AutomationCondition struct {
+	Field    string `json:"field"`
+	Key      string `json:"key,omitempty"`
+	Operator string `json:"operator"`
+	Value    any    `json:"value,omitempty"`
 }
 
 // AutomationWrite is the create/update payload from the flow builder.
 type AutomationWrite struct {
-	Name         string           `json:"name"`
-	Enabled      bool             `json:"enabled"`
-	TriggerEvent string           `json:"trigger_event"`
-	Filter       json.RawMessage  `json:"filter,omitempty"`
-	Steps        []AutomationStep `json:"steps"`
+	Name         string          `json:"name"`
+	Enabled      bool            `json:"enabled"`
+	TriggerEvent string          `json:"trigger_event"`
+	Filter       json.RawMessage `json:"filter,omitempty"`
+	Graph        AutomationGraph `json:"graph"`
+}
+
+// AutomationRun is one execution of an automation graph (per fired event or
+// manual launch), with per-node outcomes for the builder's history panel.
+type AutomationRun struct {
+	ID             uuid.UUID              `json:"id"`
+	AutomationID   uuid.UUID              `json:"automation_id"`
+	OrganizationID uuid.UUID              `json:"organization_id"`
+	TriggerEvent   string                 `json:"trigger_event"`
+	Status         string                 `json:"status"` // running | success | error
+	NodeResults    []AutomationNodeResult `json:"node_results"`
+	ErrorDetail    string                 `json:"error_detail,omitempty"`
+	StartedAt      time.Time              `json:"started_at"`
+	FinishedAt     *time.Time             `json:"finished_at,omitempty"`
+}
+
+// AutomationNodeResult is one node's outcome in a run (or a dry-run trace).
+type AutomationNodeResult struct {
+	NodeID  string         `json:"node_id"`
+	Type    string         `json:"type"`             // trigger | condition | action
+	Action  string         `json:"action,omitempty"` // action nodes
+	Label   string         `json:"label,omitempty"`  // human summary (e.g. "Slack · #sales")
+	Status  string         `json:"status"`           // success | error | skipped | branch_true | branch_false
+	Error   string         `json:"error,omitempty"`
+	Preview map[string]any `json:"preview,omitempty"` // dry-run: what the action would send
+}
+
+// DryRunRequest tests an automation without side effects. Data is the sample
+// event payload; when empty the server builds a sample from the trigger.
+type DryRunRequest struct {
+	Data map[string]any `json:"data,omitempty"`
+}
+
+// DryRunResponse is the trace of a dry run.
+type DryRunResponse struct {
+	Trace []AutomationNodeResult `json:"trace"`
+	Data  map[string]any         `json:"data"`
 }
 
 // IntegrationFieldMapping is one Warmbly-field -> provider-field mapping row.

@@ -20,7 +20,8 @@ func projectFields(entries []models.FieldMapEntry, source map[string]any) map[st
 	for _, e := range entries {
 		var val string
 		if e.Transform == models.FieldTransformStatic {
-			val = e.StaticValue
+			// Static values support {{.key}} templating against the event data.
+			val = renderTemplate(e.StaticValue, source)
 		} else {
 			val = applyTransform(e.Transform, warmblyValue(source, e.WarmblyField))
 		}

@@ -510,6 +510,8 @@ func Run(
 			automations.GET("/:id", aread, h.GetAutomation)
 			automations.PATCH("/:id", awrite, h.UpdateAutomation)
 			automations.DELETE("/:id", awrite, h.DeleteAutomation)
+			automations.POST("/:id/test", aread, h.TestAutomation)
+			automations.GET("/:id/runs", aread, h.ListAutomationRuns)
 		}
 
 		// On-demand Google Sheets -> leads sync (org-scoped). A saved "sync

@@ -75,6 +75,18 @@ type ActionConfig struct {
 	DealName       string     `json:"deal_name,omitempty"`
 	DealValue      *float64   `json:"deal_value,omitempty"`
 	DealCurrency   string     `json:"deal_currency,omitempty"`
+
+	// run_automation — launch an automation flow when the contact reaches this
+	// step, passing templated key/value inputs as the automation's event data.
+	// Values render against the contact ({{.FirstName}} / {{.Company}} etc.).
+	AutomationID     *uuid.UUID `json:"automation_id,omitempty"`
+	AutomationValues []ActionKV `json:"automation_values,omitempty"`
+}
+
+// ActionKV is one templated input passed to a launched automation.
+type ActionKV struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
 }
 
 type UpdateSequence struct {

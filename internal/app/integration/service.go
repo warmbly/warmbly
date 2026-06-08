@@ -14,6 +14,7 @@ import (
 
 	"github.com/warmbly/warmbly/internal/app/cipher"
 	"github.com/warmbly/warmbly/internal/app/webhook"
+	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
 )
@@ -69,6 +70,19 @@ type Service interface {
 	CreateAutomation(ctx context.Context, orgID uuid.UUID, w models.AutomationWrite) (*models.Automation, error)
 	UpdateAutomation(ctx context.Context, orgID, id uuid.UUID, w models.AutomationWrite) (*models.Automation, error)
 	DeleteAutomation(ctx context.Context, orgID, id uuid.UUID) error
+	// RunAutomationByID executes one automation graph on demand (e.g. launched
+	// from a campaign step), regardless of its configured trigger event. data is
+	// the synthetic event payload used for condition + template evaluation.
+	RunAutomationByID(ctx context.Context, orgID, automationID uuid.UUID, data map[string]any) error
+	// DryRunAutomation walks the graph against sample/provided data WITHOUT side
+	// effects, returning the path + per-action previews (the builder "Test").
+	DryRunAutomation(ctx context.Context, orgID, id uuid.UUID, req models.DryRunRequest) (*models.DryRunResponse, error)
+	// ListAutomationRuns returns recent run history for an automation.
+	ListAutomationRuns(ctx context.Context, orgID, id uuid.UUID, limit int) ([]models.AutomationRun, error)
+	// SetNativeActions wires the native CRM/contact action executor + the realtime
+	// publisher post-construction (they depend on services built after this one).
+	SetNativeActions(n NativeActions)
+	SetPublisher(p *pubsub.StreamingPublisher)
 
 	// ListSyncRuns returns recent observability records for a connection.
 	ListSyncRuns(ctx context.Context, orgID, connID uuid.UUID, limit int) ([]models.IntegrationSyncRun, error)
@@ -129,19 +143,26 @@ type Service interface {
 }
 
 type service struct {
-	repo   repository.IntegrationRepository
-	cipher cipher.CipherService
-	oauth  *OAuthManager
+	repo      repository.IntegrationRepository
+	cipher    cipher.CipherService
+	oauth     *OAuthManager
+	native    NativeActions
+	publisher *pubsub.StreamingPublisher
 }
 
 // NewService builds the integration service. cipherSvc seals provider secrets
 // with the connecting user's envelope DEK; oauth drives the OAuth handshakes.
+// Native actions + realtime publisher are wired post-construction (SetNativeActions
+// / SetPublisher) since they depend on services built after this one.
 func NewService(repo repository.IntegrationRepository, cipherSvc cipher.CipherService, oauth *OAuthManager) Service {
 	if oauth == nil {
 		oauth = NewOAuthManager()
 	}
 	return &service{repo: repo, cipher: cipherSvc, oauth: oauth}
 }
+
+func (s *service) SetNativeActions(n NativeActions)          { s.native = n }
+func (s *service) SetPublisher(p *pubsub.StreamingPublisher) { s.publisher = p }
 
 func (s *service) Repo() repository.IntegrationRepository { return s.repo }
 
@@ -511,40 +532,8 @@ func (s *service) buildAutomation(ctx context.Context, orgID uuid.UUID, w models
 		return nil, fmt.Errorf("unknown trigger event: %s", trigger)
 	}
 
-	steps := make([]models.AutomationStep, 0, len(w.Steps))
-	for _, step := range w.Steps {
-		conn, err := s.repo.GetConnectionByID(ctx, orgID, step.ConnectionID)
-		if err != nil {
-			return nil, err
-		}
-		if conn == nil {
-			return nil, errors.New("unknown connection in a step")
-		}
-		if strings.TrimSpace(string(step.Action)) == "" {
-			return nil, errors.New("a step is missing its action")
-		}
-		cfg := map[string]any{}
-		if len(step.Config) > 0 {
-			_ = json.Unmarshal(step.Config, &cfg)
-		}
-		if err := validateOutboundConfigURLs(cfg); err != nil {
-			return nil, err
-		}
-		// Merge the automation-level filter (intents / min_confidence) into the
-		// step config so subscriptionMatchesFilter applies it.
-		if len(w.Filter) > 0 {
-			f := map[string]any{}
-			_ = json.Unmarshal(w.Filter, &f)
-			for k, v := range f {
-				cfg[k] = v
-			}
-		}
-		merged, _ := json.Marshal(cfg)
-		steps = append(steps, models.AutomationStep{
-			ConnectionID: step.ConnectionID,
-			Action:       step.Action,
-			Config:       merged,
-		})
+	if err := s.validateAutomationGraph(ctx, orgID, w.Graph); err != nil {
+		return nil, err
 	}
 
 	filter := w.Filter
@@ -557,8 +546,139 @@ func (s *service) buildAutomation(ctx context.Context, orgID uuid.UUID, w models
 		Enabled:        w.Enabled,
 		TriggerEvent:   trigger,
 		Filter:         filter,
-		Steps:          steps,
+		Graph:          w.Graph,
 	}, nil
+}
+
+// validateAutomationGraph checks node/edge integrity: a single trigger, edges
+// referencing real nodes, action nodes pointing at org-owned connections (with
+// an SSRF check on any outbound URL), valid condition fields/operators, and no
+// cycles. An empty graph (just being drafted) is allowed.
+func (s *service) validateAutomationGraph(ctx context.Context, orgID uuid.UUID, g models.AutomationGraph) error {
+	byID := make(map[string]models.AutomationNode, len(g.Nodes))
+	triggers := 0
+	for _, n := range g.Nodes {
+		if n.ID == "" {
+			return errors.New("a node is missing its id")
+		}
+		if _, dup := byID[n.ID]; dup {
+			return fmt.Errorf("duplicate node id: %s", n.ID)
+		}
+		byID[n.ID] = n
+		switch n.Type {
+		case models.AutomationNodeTrigger:
+			triggers++
+		case models.AutomationNodeAction:
+			if strings.TrimSpace(string(n.Action)) == "" {
+				return errors.New("an action node is missing its action")
+			}
+			// Native (Warmbly-internal) actions run on the event's contact with no
+			// external connection — validate their own config instead.
+			if models.IsNativeAction(n.Action) {
+				if err := validateNativeActionConfig(n.Action, n.Config); err != nil {
+					return err
+				}
+				break
+			}
+			if n.ConnectionID == nil {
+				return errors.New("an action node has no integration selected")
+			}
+			conn, err := s.repo.GetConnectionByID(ctx, orgID, *n.ConnectionID)
+			if err != nil {
+				return err
+			}
+			if conn == nil {
+				return errors.New("an action node references an unknown integration")
+			}
+			cfg := map[string]any{}
+			if len(n.Config) > 0 {
+				_ = json.Unmarshal(n.Config, &cfg)
+			}
+			if err := validateOutboundConfigURLs(cfg); err != nil {
+				return err
+			}
+		case models.AutomationNodeCondition:
+			if n.Condition == nil {
+				return errors.New("a condition node has no condition set")
+			}
+			if !models.ValidAutomationConditionField(n.Condition.Field) {
+				return fmt.Errorf("unknown condition field: %s", n.Condition.Field)
+			}
+			if !models.ValidAutomationConditionOperator(n.Condition.Operator) {
+				return fmt.Errorf("unknown condition operator: %s", n.Condition.Operator)
+			}
+			if n.Condition.Field == models.AutoCondField && strings.TrimSpace(n.Condition.Key) == "" {
+				return errors.New("a condition is missing the field to test")
+			}
+		default:
+			return fmt.Errorf("unknown node type: %s", n.Type)
+		}
+	}
+	if len(g.Nodes) > 0 && triggers != 1 {
+		return errors.New("the flow must have exactly one trigger")
+	}
+
+	adj := map[string][]string{}
+	for _, e := range g.Edges {
+		src, ok := byID[e.Source]
+		if !ok {
+			return errors.New("an edge starts from a node that does not exist")
+		}
+		if _, ok := byID[e.Target]; !ok {
+			return errors.New("an edge points to a node that does not exist")
+		}
+		if e.Source == e.Target {
+			return errors.New("a node cannot connect to itself")
+		}
+		// Branch labels are only valid (and required) on edges out of a
+		// condition node; every other edge is an unconditional "then".
+		if src.Type == models.AutomationNodeCondition {
+			if e.When != "true" && e.When != "false" {
+				return errors.New("a condition's branches must be a yes or no path")
+			}
+		} else if e.When != "" {
+			return errors.New("only conditions can have yes/no branches")
+		}
+		adj[e.Source] = append(adj[e.Source], e.Target)
+	}
+	if hasCycle(byID, adj) {
+		return errors.New("the flow has a loop; remove the cycle")
+	}
+	return nil
+}
+
+// hasCycle does a DFS colour-walk over the node graph.
+func hasCycle(nodes map[string]models.AutomationNode, adj map[string][]string) bool {
+	const (
+		white = 0
+		gray  = 1
+		black = 2
+	)
+	color := map[string]int{}
+	var visit func(id string) bool
+	visit = func(id string) bool {
+		color[id] = gray
+		for _, m := range adj[id] {
+			switch color[m] {
+			case gray:
+				return true
+			case white:
+				if visit(m) {
+					return true
+				}
+			}
+		}
+		color[id] = black
+		return false
+	}
+	for id := range nodes {
+		if color[id] == white {
+			if visit(id) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (s *service) ListSyncRuns(ctx context.Context, orgID, connID uuid.UUID, limit int) ([]models.IntegrationSyncRun, error) {
@@ -748,6 +868,14 @@ func validateOutboundConfigURLs(config map[string]any) error {
 		}
 		s, ok := v.(string)
 		if !ok || strings.TrimSpace(s) == "" {
+			continue
+		}
+		// Only the action-level "url" is templatable (rendered + re-validated at
+		// dispatch by renderOutboundURL), so defer its strict check when it holds
+		// a {{ template. The connection's sealed "webhook_url" is NEVER templated,
+		// so it must pass full validation here — never skip it (else a {{-laced
+		// host could bypass the SSRF guard).
+		if k == "url" && strings.Contains(s, "{{") {
 			continue
 		}
 		if err := webhook.ValidateOutboundURL(s); err != nil {

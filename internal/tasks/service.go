@@ -52,6 +52,13 @@ type TasksService interface {
 	StartWarmupReconciler(ctx context.Context, interval time.Duration)
 }
 
+// AutomationRunner launches an automation graph by id. It's satisfied
+// structurally by integration.Service, so tasks needs no import of the
+// integration package (mirrors the advanced.EventDispatcher wiring pattern).
+type AutomationRunner interface {
+	RunAutomationByID(ctx context.Context, orgID, automationID uuid.UUID, data map[string]any) error
+}
+
 type tasksService struct {
 	// Infrastructure
 	tasksClient        *gtasks.Client
@@ -79,6 +86,9 @@ type tasksService struct {
 	contactRepo          repository.ContactRepository
 	campaignLogRepo      repository.CampaignLogRepository
 	attachmentRepo       repository.AttachmentRepository
+
+	// automationRunner launches automations from a campaign "run_automation" step.
+	automationRunner AutomationRunner
 
 	// warmupSettings caches the warmup generation settings in-process so the
 	// per-send AI-vs-static decision doesn't hit Postgres on every warmup.
@@ -114,6 +124,7 @@ func NewService(
 	campaignLogRepo repository.CampaignLogRepository,
 	advanced advanced.Service,
 	attachmentRepo repository.AttachmentRepository,
+	automationRunner AutomationRunner,
 ) TasksService {
 	return &tasksService{
 		tasksClient:          tasksClient,
@@ -137,6 +148,7 @@ func NewService(
 		contactRepo:          contactRepo,
 		campaignLogRepo:      campaignLogRepo,
 		attachmentRepo:       attachmentRepo,
+		automationRunner:     automationRunner,
 		warmupSettings:       &warmupSettingsCache{},
 	}
 }
