@@ -25,6 +25,7 @@ import {
     SettingsIcon,
     UsersIcon,
     XIcon,
+    ZapIcon,
 } from "lucide-react";
 import { type ReactNode, useMemo } from "react";
 import { useAppStore } from "@/stores";
@@ -136,6 +137,7 @@ const sections: NavSection[] = [
         items: [
             { title: "Templates", url: "/app/templates", icon: FileTextIcon, indicator: "templates" },
             { title: "Integrations", url: "/app/integrations", icon: CableIcon, indicator: "integrations" },
+            { title: "Automations", url: "/app/automations", icon: ZapIcon },
             { title: "API Keys", url: "/app/api-keys", icon: KeyIcon, indicator: "apikeys" },
             { title: "Audit log", url: "/app/audit", icon: ListChecksIcon, rolesAllowed: "manage" },
         ],

@@ -27,6 +27,8 @@ import MeetingsPage from './app/app/crm/meetings/page';
 import TemplatesPage from './app/app/templates/page';
 import APIKeysPage from './app/app/api-keys/page';
 import IntegrationsPage from './app/app/integrations/page';
+import AutomationsPage from './app/app/automations/page';
+import AutomationBuilderPage from './app/app/automations/[id]/page';
 import AuditPage from './app/app/audit/page';
 import SettingsLayout from './app/app/settings/layout';
 import ProfileSettingsPage from './app/app/settings/profile/page';
@@ -268,6 +270,14 @@ const router = createBrowserRouter([
           {
             path: "integrations",
             element: <IntegrationsPage />,
+          },
+          {
+            path: "automations",
+            element: <AutomationsPage />,
+          },
+          {
+            path: "automations/:id",
+            element: <AutomationBuilderPage />,
           },
           {
             path: "audit",
