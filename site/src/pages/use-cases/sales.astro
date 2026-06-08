@@ -735,7 +735,7 @@ const faq: [string, string][] = [
             <button type="button" class="faq-trigger group w-full flex items-start justify-between gap-4 py-3 text-left" aria-expanded="false">
               <span class="text-[15.5px] font-medium text-heading group-hover:text-[#0369a1] transition-colors">{q}</span>
               <span class="faq-icon shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-full bg-white ring-1 ring-[color:var(--border)] text-foreground/60 transition-transform duration-300 ease-out">
-                <Icon name="plus" size={12} />
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
               </span>
             </button>
             <div class="faq-panel grid grid-rows-[0fr] transition-[grid-template-rows] duration-300 ease-out">
@@ -768,9 +768,23 @@ const faq: [string, string][] = [
   </section>
 
   <CTA
-    title="Add reps. Add mailboxes. Volume follows."
-    description="Connect mailboxes, build a sender pool, route every positive reply to the right AE."
+    title="Set up a mailbox for every rep on the team."
+    description="Connect each BDR and AE mailbox, drop them into a sender pool, and route every positive reply on the inbound event."
     primaryLabel="Start free trial"
-    primaryHref="https://app.warmbly.com/register"
   />
+
+  <!-- Staggered reveal for the reply fan-out targets. -->
+  <style is:inline>
+    @keyframes sx1-fan-in {
+      from { opacity: 0.25; transform: translateY(4px); }
+      to   { opacity: 1;    transform: translateY(0); }
+    }
+    .fan-target {
+      animation: sx1-fan-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+      animation-delay: var(--d, 0ms);
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .fan-target { animation: none; opacity: 1; transform: none; }
+    }
+  </style>
 </Layout>
