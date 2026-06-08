@@ -4,172 +4,206 @@ import HeroAtmosphere from '../../components/HeroAtmosphere.astro';
 import Icon from '../../components/Icon.astro';
 import CTA from '../../components/CTA.astro';
 
-// Platform defaults referenced throughout, all from CLAUDE.md / config:
-//   internal/config/constants.go     · 100 / day cold cap, 600s gap
-//   internal/scheduler/warmup_scheduler.go · 40 / day warmup ceiling
-//   internal/repository/pg_worker.go · sender pool round-robin, health-aware
+// ===========================================================================
+// Sales-team use case. Every number is a real Warmbly constant, not a measured
+// outcome: cold cap default 50 / day and validated up to 100 max
+// (internal/config/constants.go, internal/repository/pg_email.go), 600s minimum
+// gap, four routing rules with documented fallbacks (round-robin, territory,
+// account owner, manual triage).
+//
+// Astro JSX caveat: no `<`, `>`, or `<=` may appear inside a {} expression, and
+// no literal `{{ }}` may appear in markup (it parses as an expression), so any
+// templating braces are written as {`{{...}}`} template literals where needed.
+// ===========================================================================
 
-// ===================== HERO MOCK · "Rep board" =====================
-// 8 BDRs/AEs, 2 mailboxes each, today's send count vs cap, reply spark, status.
-// Numbers stay below the 100/day platform cold cap, with realistic spread.
-type Status = 'healthy' | 'watch' | 'capped';
-type Mailbox = { addr: string; today: number; cap: number; status: Status };
-type Rep = { initials: string; tone: string; name: string; role: 'BDR' | 'AE'; territory: string; reply: number[]; mailboxes: [Mailbox, Mailbox] };
-
-const reps: Rep[] = [
-  { initials: 'BL', tone: 'bg-sky-100 text-sky-700',         name: 'Ben Lee',      role: 'BDR', territory: 'NA-East', reply: [2, 3, 2, 4, 5, 3, 4],
-    mailboxes: [
-      { addr: 'ben@acme.com',     today: 87, cap: 100, status: 'healthy' },
-      { addr: 'ben@acmeinc.io',   today: 64, cap: 100, status: 'healthy' },
-    ] },
-  { initials: 'SR', tone: 'bg-emerald-100 text-emerald-700', name: 'Sara Reyes',   role: 'BDR', territory: 'NA-West', reply: [3, 4, 4, 5, 6, 5, 7],
-    mailboxes: [
-      { addr: 'sara@acme.com',    today: 93, cap: 100, status: 'healthy' },
-      { addr: 'sara@acmeinc.io',  today: 51, cap: 100, status: 'healthy' },
-    ] },
-  { initials: 'MO', tone: 'bg-amber-100 text-amber-700',     name: 'Mark Okafor',  role: 'BDR', territory: 'EMEA',    reply: [1, 2, 2, 3, 2, 3, 3],
-    mailboxes: [
-      { addr: 'mark@acme.com',    today: 100, cap: 100, status: 'capped' },
-      { addr: 'mark@acmeinc.io',  today: 42,  cap: 100, status: 'healthy' },
-    ] },
-  { initials: 'KN', tone: 'bg-violet-100 text-violet-700',   name: 'Kai Nakamura', role: 'BDR', territory: 'APAC',    reply: [4, 5, 6, 5, 7, 6, 8],
-    mailboxes: [
-      { addr: 'kai@acme.com',     today: 71, cap: 100, status: 'healthy' },
-      { addr: 'kai@acmeinc.io',   today: 56, cap: 100, status: 'healthy' },
-    ] },
-  { initials: 'JP', tone: 'bg-rose-100 text-rose-700',       name: 'Jess Park',    role: 'BDR', territory: 'NA-East', reply: [2, 2, 1, 2, 3, 2, 2],
-    mailboxes: [
-      { addr: 'jess@acme.com',    today: 38, cap: 100, status: 'watch' },
-      { addr: 'jess@acmeinc.io',  today: 47, cap: 100, status: 'healthy' },
-    ] },
-  { initials: 'AN', tone: 'bg-teal-100 text-teal-700',       name: 'Amir Naseri',  role: 'BDR', territory: 'EMEA',    reply: [3, 3, 4, 4, 5, 4, 5],
-    mailboxes: [
-      { addr: 'amir@acme.com',    today: 81, cap: 100, status: 'healthy' },
-      { addr: 'amir@acmeinc.io',  today: 60, cap: 100, status: 'healthy' },
-    ] },
-  { initials: 'DV', tone: 'bg-indigo-100 text-indigo-700',   name: 'Dana Vasquez', role: 'AE',  territory: 'NA-West', reply: [5, 6, 5, 7, 6, 8, 7],
-    mailboxes: [
-      { addr: 'dana@acme.com',    today: 22, cap: 100, status: 'healthy' },
-      { addr: 'dana@acmeinc.io',  today: 14, cap: 100, status: 'healthy' },
-    ] },
-  { initials: 'TM', tone: 'bg-fuchsia-100 text-fuchsia-700', name: 'Tom Miller',   role: 'AE',  territory: 'NA-East', reply: [4, 5, 4, 6, 5, 7, 6],
-    mailboxes: [
-      { addr: 'tom@acme.com',     today: 18, cap: 100, status: 'healthy' },
-      { addr: 'tom@acmeinc.io',   today:  9, cap: 100, status: 'healthy' },
-    ] },
+// --- Section 1 · two senders --------------------------------------------------
+const specimens = [
+  {
+    label: 'Shared SDR alias',
+    ring: 'ring-rose-200',
+    tag: 'Promotions',
+    tagClass: 'bg-amber-50 text-amber-700 ring-amber-200',
+    avatar: 'S',
+    avatarClass: 'bg-rose-50 text-rose-600 ring-rose-200',
+    from: 'Sales at Acme',
+    addr: 'sales@acme.com',
+    subject: 'Quick question about your Q2 plans',
+    time: '9:02 AM',
+    connector: 'bg-rose-300',
+    dot: 'bg-rose-400',
+    callouts: [
+      'Sent from by the whole SDR team',
+      "Carries everyone's complaint history",
+      'No named person for the prospect to reply to',
+    ],
+  },
+  {
+    label: 'BDR mailbox',
+    ring: 'ring-[color:var(--sky-2)]',
+    tag: 'Primary',
+    tagClass: 'bg-[color:var(--sky-1)]/60 text-[#0369a1] ring-[color:var(--sky-2)]',
+    avatar: 'DV',
+    avatarClass: 'bg-[color:var(--brand-soft)] text-[#0369a1] ring-[color:var(--sky-2)]',
+    from: 'Dana Vasquez',
+    addr: 'dana@acme.com',
+    subject: 'Quick question about your Q2 plans',
+    time: '9:04 AM',
+    connector: 'bg-[color:var(--sky-2)]',
+    dot: 'bg-[#0284c7]',
+    callouts: [
+      'Belongs to one rep on the team',
+      'Builds its own sending history',
+      'Routes the reply back to a named AE',
+    ],
+  },
 ];
 
-// Pre-compute aggregates for the rep-board summary strip.
-let aggToday = 0;
-let aggCap = 0;
-let mboxCount = 0;
-let healthyCount = 0;
-for (const r of reps) {
-  for (const m of r.mailboxes) {
-    aggToday += m.today;
-    aggCap   += m.cap;
-    mboxCount += 1;
-    if (m.status === 'healthy') healthyCount += 1;
-  }
-}
-const aggPct = Math.round((aggToday / aggCap) * 100);
-
-// Status chip styling (frontmatter-only comparisons).
-const statusChip = (s: Status) => {
-  if (s === 'healthy') return { dot: 'bg-emerald-500', text: 'text-emerald-700', bg: 'bg-emerald-50',  label: 'healthy' };
-  if (s === 'watch')   return { dot: 'bg-amber-500',   text: 'text-amber-700',   bg: 'bg-amber-50',    label: 'watch'   };
-  return                       { dot: 'bg-rose-500',   text: 'text-rose-700',    bg: 'bg-rose-50',     label: 'capped'  };
-};
-
-// Sparkline geometry — pre-compute polyline points to avoid JSX math noise.
-const sparkPoints = (vals: number[]) => {
-  const w = 56, h = 16, max = Math.max(...vals, 1);
-  return vals.map((v, i) => {
-    const x = (i / (vals.length - 1)) * w;
-    const y = h - (v / max) * (h - 2) - 1;
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  }).join(' ');
-};
-
-// Cap utilisation tint for the per-mailbox bar.
-const capTint = (today: number, cap: number) => {
-  const pct = (today / cap) * 100;
-  if (pct >= 95) return 'bg-rose-500';
-  if (pct >= 80) return 'bg-amber-500';
-  return 'bg-[#0284c7]';
-};
-
-// ===================== ROUND-ROBIN FAN-OUT (8 mailboxes) =====================
-// Used by the diagram. Sorted by territory then by role so the visual lines up.
-const fanMailboxes = reps.flatMap((r) => r.mailboxes.map((m) => ({
-  addr: m.addr, role: r.role, today: m.today, cap: m.cap, initials: r.initials, tone: r.tone, status: m.status,
-})));
-
-// ===================== REPLY ROUTING POLICIES =====================
-const routingPolicies = [
-  { name: 'Round-robin',     body: 'Reply assigned to the next AE in the rotation, skipping those at quota.',  tone: 'bg-sky-50 text-sky-700' },
-  { name: 'By territory',    body: 'Reply assigned by the recipient domain or contact territory field on file.', tone: 'bg-violet-50 text-violet-700' },
-  { name: 'By account owner',body: 'Reply assigned to the named owner in HubSpot or Salesforce.',                tone: 'bg-emerald-50 text-emerald-700' },
-  { name: 'Manual',          body: 'Reply enters the team inbox triage queue. Manager assigns from there.',      tone: 'bg-slate-100 text-slate-700' },
+// --- Section 2 · how the two setups compare ----------------------------------
+const ownershipLedger = [
+  { label: 'Reputation',         shared: 'The alias itself, shared by every BDR.',          mine: 'The individual rep.' },
+  { label: 'One complaint',      shared: 'Affects every BDR sending from the alias.',       mine: 'Stays with that one mailbox.' },
+  { label: 'What the prospect sees', shared: 'A generic sales address.',                    mine: 'A named person on the team.' },
+  { label: 'If a rep leaves',    shared: 'Their threads stay stuck on the alias.',          mine: 'The mailbox leaves with them.' },
+  { label: 'Reply routing',      shared: 'A manager queue triages by hand.',                 mine: 'A rule on the sequence picks the AE on the inbound event.' },
 ];
 
-const autoActions = [
-  { label: 'Pause sequence',     detail: 'Sequence halts for this contact across every step.' },
-  { label: 'Slack notify',       detail: 'Channel ping to the assignee with reply preview and 1-click claim.' },
-  { label: 'Stage move',         detail: 'CRM deal stage advances from Sequenced to Replied · Awaiting AE.' },
-  { label: 'Calendar offer',     detail: 'Optional reply-handler step inserts the assignee\'s booking link.' },
+// --- Section 3 · sending limits per mailbox ----------------------------------
+const parameters = [
+  {
+    id: '01',
+    label: 'Recommended daily cap',
+    value: '50 / day',
+    fillPct: 50,
+    ceilingPct: 100,
+    ceiling: '100 max',
+    why: 'Most teams keep individual rep mailboxes around 50 a day on cold and grow team volume by adding mailboxes to the pool, not by raising the cap.',
+  },
+  {
+    id: '02',
+    label: 'Minimum gap between sends',
+    value: '600 s',
+    fillPct: 100,
+    ceilingPct: 100,
+    ceiling: 'every mailbox',
+    why: 'A 600 second gap between sends from one mailbox avoids the burst pattern provider heuristics associate with bulk sending tools.',
+  },
+  {
+    id: '03',
+    label: 'Watch-band volume',
+    value: 'halved',
+    fillPct: 50,
+    ceilingPct: 100,
+    ceiling: 'auto throttle',
+    why: 'A mailbox drifting into the watch band has its volume halved and its spacing widened. A quarantined mailbox leaves the pool until it requalifies.',
+  },
+  {
+    id: '04',
+    label: 'Reply routing latency',
+    value: '< 2 s',
+    fillPct: 92,
+    ceilingPct: 100,
+    ceiling: 'one event',
+    why: 'Classification, the routing rule, the CRM stage move and the Slack notification all fire on the same inbound event, not as a chain of queued jobs.',
+  },
 ];
 
-// ===================== CRM SYNC SPEC =====================
-type SyncMode = 'two-way' | 'inbound' | 'outbound';
-type SyncRow = { object: string; hubspot: SyncMode; salesforce: SyncMode; pipedrive: SyncMode; note: string };
-const crmSync: SyncRow[] = [
-  { object: 'Contact',  hubspot: 'two-way', salesforce: 'two-way', pipedrive: 'two-way', note: 'Email, name, title, custom fields. Dedup on email.' },
-  { object: 'Deal',     hubspot: 'two-way', salesforce: 'two-way', pipedrive: 'two-way', note: 'Created on positive reply. Stage transitions sync both ways.' },
-  { object: 'Activity', hubspot: 'outbound', salesforce: 'outbound', pipedrive: 'outbound', note: 'Every send, open, click, reply logged on the contact timeline.' },
-  { object: 'Stage',    hubspot: 'two-way', salesforce: 'two-way', pipedrive: 'two-way', note: 'CRM stage moves out of CRM pause the sequence here.' },
-  { object: 'Owner',    hubspot: 'two-way', salesforce: 'two-way', pipedrive: 'two-way', note: 'Reply routing reads CRM owner. Owner changes sync back.' },
+const paramFootnote =
+  'The 50 / day figure is the platform default, allowed up to 100 in the configuration. Raising the cap is safe once a mailbox has gone a few weeks without complaints, bounces or watch-band flags.';
+
+// --- Section 4 · routing rules + fallback chain -------------------------------
+type Rule = { id: string; name: string; tag: string; summary: string; chain: string[] };
+const rules: Rule[] = [
+  { id: '01', name: 'Round-robin',     tag: 'default',          summary: 'Next AE in the rotation. Quota skips on the same pass.', chain: ['Round-robin', 'Manual queue'] },
+  { id: '02', name: 'By territory',    tag: 'segmented teams',  summary: 'Match on recipient domain or contact territory field.',  chain: ['Territory', 'Round-robin', 'Manual queue'] },
+  { id: '03', name: 'By account owner',tag: 'named accounts',   summary: 'CRM owner attached to the contact gets the assignment.', chain: ['Owner', 'Round-robin', 'Manual queue'] },
+  { id: '04', name: 'Manual triage',   tag: 'controlled rollout', summary: 'Manager queue with an SLA timer. Bulk re-assign.',     chain: ['Manual queue'] },
 ];
 
-const modeBadge = (m: SyncMode) => {
-  if (m === 'two-way')  return { txt: 'two-way',  bg: 'bg-sky-50',     fg: 'text-[#0369a1]', dot: 'bg-[#0284c7]' };
-  if (m === 'inbound')  return { txt: 'inbound',  bg: 'bg-violet-50',  fg: 'text-violet-700', dot: 'bg-violet-500' };
-  return                        { txt: 'outbound', bg: 'bg-emerald-50', fg: 'text-emerald-700', dot: 'bg-emerald-500' };
+// --- Section 5 · plain text outbound -----------------------------------------
+const stripped = [
+  { name: 'Large logo banner image',     icon: 'layers',  why: 'reads as promotional' },
+  { name: 'Image-heavy product collage', icon: 'spark',   why: 'a link beats the embed' },
+  { name: 'HTML signature with socials', icon: 'contact', why: 'extra chrome looks bulk-y' },
+  { name: 'Tracking pixel on cold',      icon: 'search',  why: 'a spam signal on day one' },
+];
+
+const cleanLines = [
+  'Hi Maya,',
+  'Saw the Q2 launch and the role you stepped into.',
+  'Open to a 20-minute look next week?',
+];
+
+// --- Section 6 · templating (Go text/template) -------------------------------
+// Merge fields are plain string values, safe to render with {field}.
+const mergeFields = ['{{.FirstName}}', '{{.Company}}', '{{.Role}}', '{{.Industry}}', '{{.RecentEvent}}'];
+
+// --- Section 7 · CRM sync (dark window + rendered preview) -------------------
+// HubSpot two-way sync example. Available objects are listed as code chips.
+const crmObjects = ['Contact', 'Deal', 'Stage', 'Owner', 'Activity', 'Note'];
+
+// --- Section 8 · reply fan-out ----------------------------------------------
+const fanoutTargets = [
+  { label: 'sequence: acme-q2-outbound', kind: 'pause' },
+  { label: '#ae-na-west',                 kind: 'slack' },
+  { label: 'HubSpot · stage advance',     kind: 'crm'   },
+  { label: 'Unibox claim · Dana Vasquez', kind: 'inbox' },
+  { label: 'Deal timeline · note',        kind: 'crm'   },
+  { label: 'Webhook · reply.assigned',    kind: 'event' },
+];
+
+const fanoutKindLabel = (k: string) => {
+  if (k === 'pause') return 'paused';
+  if (k === 'slack') return 'ping';
+  if (k === 'crm')   return 'crm';
+  if (k === 'inbox') return 'claim';
+  return 'event';
 };
 
-// ===================== FAQ =====================
+const verdicts = [
+  { label: 'Meeting request', icon: 'spark', chip: 'bg-emerald-50 text-emerald-700 ring-emerald-200',                dot: 'bg-emerald-500',  does: 'Lands on the AE with the booking link in the auto-acknowledgement and the sequence paused for the contact.' },
+  { label: 'Soft pass',       icon: 'clock', chip: 'bg-amber-50 text-amber-700 ring-amber-200',                       dot: 'bg-amber-500',    does: 'Picked up by the AE for nurture. The sequence holds for 60 to 90 days, then resumes from the next step.' },
+  { label: 'Opt-out',         icon: 'lock',  chip: 'bg-[color:var(--sky-1)]/50 text-[#0369a1] ring-[color:var(--sky-2)]', dot: 'bg-[#0284c7]', does: 'Workspace suppression on the contact, the opt-out lands on the record, and the deal closes as lost-no-fit.' },
+];
+
+// --- FAQ ---------------------------------------------------------------------
 const faq: [string, string][] = [
-  ['How do we distribute volume across reps without crushing one mailbox?', 'Add the rep mailboxes to a sender pool. The scheduler round-robins sequence sends across the pool with awareness of each mailbox\'s 100 / day cold cap, the 600s spacing rule, and the current health band. A mailbox that hits its cap is skipped for the rest of the day. The campaign does not stall.'],
-  ['Where do positive replies go?', 'Replies are classified, routed by the rule on the sequence (round-robin, territory, CRM account owner, or manual), and an assignment event fires. The assignment lands as a Slack notification, a CRM stage move, and an inbox claim for the named AE. The originating sequence is paused for that contact at the same moment.'],
-  ['Can a rep\'s mailbox issue affect the rest of the team?', 'Per-mailbox reputation is isolated. A mailbox that drifts into the watch band has its sends throttled and spacing widened. If it crosses into quarantine it leaves the sender pool entirely until it requalifies. The rest of the pool keeps sending at full pace.'],
+  [
+    'How do we distribute volume across reps without crushing one mailbox?',
+    'Add the rep mailboxes to a sender pool. The scheduler round-robins sequence sends across the pool with awareness of each mailbox cold cap, the 600s spacing rule, and the current health band. A mailbox that hits its cap is skipped for the rest of the day, the campaign keeps moving against the healthy mailboxes that still have headroom.',
+  ],
+  [
+    'Where do positive replies go?',
+    'Replies are classified on arrival and routed by the rule on the sequence. The assignment lands as a Slack notification, a CRM stage move, and an Unibox claim for the named AE, all on the same event. The originating sequence is paused for that contact at the same moment.',
+  ],
+  [
+    'Can a rep mailbox issue affect the rest of the team?',
+    'Per-mailbox reputation is isolated. A mailbox that drifts into the watch band has its sends throttled and spacing widened. If it crosses into quarantine it leaves the sender pool entirely until it requalifies. The rest of the pool keeps sending at full pace.',
+  ],
 ];
-
-// Frontmatter helper to avoid `<` and `<=` in JSX expressions.
-const capRatio = (today: number, cap: number) => Math.min(100, Math.round((today / cap) * 100));
 ---
 <Layout
   title="Outreach for Sales Teams | Warmbly"
-  description="Distribute outbound across rep mailboxes with round-robin sender pools, route positive replies to the right AE, and keep CRM in sync."
+  description="A pool of rep mailboxes drives the sequence. Replies classify and route to the right AE on the inbound event. Two-way CRM sync with HubSpot, Salesforce and Pipedrive."
 >
   <!-- ============================================================
-       HERO · HeroAtmosphere, identical pattern to warmup / campaigns
+       HERO · stands alone, no floating anchor
   ============================================================ -->
   <section class="relative isolate overflow-hidden">
     <HeroAtmosphere />
 
-    <div class="container-page relative pt-16 md:pt-24 pb-44 md:pb-56 text-center">
+    <div class="container-page relative pt-16 md:pt-24 pb-20 md:pb-28 text-center">
       <div class="inline-flex items-center gap-2 h-7 pl-1 pr-3 rounded-full bg-white/15 backdrop-blur ring-1 ring-white/25 text-[12px] text-white/95 shadow-[0_4px_14px_-4px_rgba(0,0,0,0.25)]">
         <span class="inline-flex items-center h-5 px-1.5 rounded-full text-[10.5px] font-semibold uppercase tracking-[0.06em] bg-white" style="color:#0369a1;">
           Sales teams
         </span>
-        Built for teams of BDRs and AEs working a shared pipeline
+        Outbound from every rep mailbox, replies to the right AE
       </div>
 
       <h1 class="mt-8 md:mt-10 text-[44px] sm:text-6xl md:text-[72px] lg:text-[80px] font-semibold tracking-[-0.04em] leading-[0.98] text-white max-w-5xl mx-auto">
-        More reps. More mailboxes.<br/>Volume follows.
+        Every rep sends from<br/>their own mailbox.
       </h1>
       <p class="mt-6 text-[17px] md:text-[19px] text-white/80 max-w-2xl mx-auto leading-relaxed">
-        A sales team should not get outbound volume by squeezing each rep’s inbox. It should get volume by spreading sends across many healthy mailboxes and by routing every positive reply to the right AE in seconds.
+        Each BDR and AE connects their own inbox. The sequence sends through the pool of those mailboxes under a per-mailbox cap, and every positive reply lands on a named AE on the same event the classifier emits.
       </p>
 
       <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
@@ -179,404 +213,521 @@ const capRatio = (today: number, cap: number) => Math.min(100, Math.round((today
             <path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>
           </svg>
         </a>
-        <a href="/use-cases/" class="inline-flex h-11 px-5 items-center rounded-[10px] text-[14.5px] font-medium bg-white/10 backdrop-blur ring-1 ring-white/40 text-white hover:bg-white/20 hover:-translate-y-0.5 transition-all duration-200 ease-out">
-          See more use cases
+        <a href="/learn/cold-email-rules/" class="inline-flex h-11 px-5 items-center rounded-[10px] text-[14.5px] font-medium bg-white/10 backdrop-blur ring-1 ring-white/40 text-white hover:bg-white/20 hover:-translate-y-0.5 transition-all duration-200 ease-out">
+          Read the outreach guide
         </a>
       </div>
     </div>
   </section>
 
   <!-- ============================================================
-       FLOATING "REP BOARD" · floats up into the hero (-mt-36 md:-mt-44)
+       SECTION 1 · where the sequence sends from
   ============================================================ -->
-  <section class="relative -mt-36 md:-mt-44 pb-16 md:pb-24 z-10">
-    <div class="container-page">
-      <div class="rounded-[18px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden shadow-[0_40px_90px_-30px_rgba(2,32,71,0.35),0_12px_30px_-12px_rgba(15,23,42,0.12)]">
-
-        <!-- Header strip -->
-        <div class="px-6 md:px-7 py-4 border-b border-[color:var(--border)] bg-[color:var(--surface-1)]/70 flex flex-wrap items-baseline justify-between gap-3">
-          <div class="flex items-baseline gap-3">
-            <div class="text-[13px] font-semibold text-heading">Rep board · acme</div>
-            <span class="inline-flex items-center gap-1.5 h-5 px-2 rounded-full bg-emerald-50 text-emerald-700 text-[10.5px] font-medium font-mono uppercase tracking-[0.08em]">
-              <span class="w-1 h-1 rounded-full bg-emerald-500"></span>
-              Live · today
-            </span>
-            <span class="text-[10.5px] font-mono uppercase tracking-[0.14em] text-muted-foreground">{reps.length} reps · {mboxCount} mailboxes</span>
-          </div>
-          <div class="flex items-center gap-4 text-[10.5px] font-mono text-muted-foreground">
-            <span>{aggToday} sent today</span>
-            <span class="w-1 h-1 rounded-full bg-[color:var(--border)]"></span>
-            <span>{aggCap - aggToday} headroom</span>
-            <span class="w-1 h-1 rounded-full bg-[color:var(--border)]"></span>
-            <span>{aggPct}% pool util.</span>
-            <span class="w-1 h-1 rounded-full bg-[color:var(--border)]"></span>
-            <span>{healthyCount}/{mboxCount} healthy</span>
-          </div>
-        </div>
-
-        <!-- Table head -->
-        <div class="hidden md:grid grid-cols-[1.4fr_1.6fr_0.7fr_0.6fr] px-7 py-2.5 bg-white border-b border-[color:var(--border)] text-[10px] uppercase tracking-[0.16em] font-mono text-muted-foreground">
-          <div>Rep · Territory</div>
-          <div>Mailboxes · today / cap</div>
-          <div>Reply rate · 7d</div>
-          <div class="text-right">Status</div>
-        </div>
-
-        <!-- Rep rows -->
-        <div class="divide-y divide-[color:var(--border)]">
-          {reps.map((r) => {
-            const worst = r.mailboxes.reduce((acc: Status, m) => {
-              if (m.status === 'capped' || acc === 'capped') return 'capped';
-              if (m.status === 'watch'  || acc === 'watch')  return 'watch';
-              return 'healthy';
-            }, 'healthy' as Status);
-            const chip = statusChip(worst);
-            return (
-              <div class="grid grid-cols-[1fr] md:grid-cols-[1.4fr_1.6fr_0.7fr_0.6fr] gap-2 md:gap-0 px-6 md:px-7 py-3.5 items-center hover:bg-[color:var(--surface-1)]/60 transition-colors">
-                <!-- Rep identity -->
-                <div class="flex items-center gap-3">
-                  <span class={`w-8 h-8 rounded-full inline-flex items-center justify-center text-[11px] font-semibold font-mono ${r.tone}`}>{r.initials}</span>
-                  <div>
-                    <div class="text-[13.5px] font-medium text-heading leading-tight">{r.name}</div>
-                    <div class="mt-0.5 text-[10.5px] font-mono uppercase tracking-[0.14em] text-muted-foreground">{r.role} · {r.territory}</div>
-                  </div>
-                </div>
-
-                <!-- Mailboxes -->
-                <div class="space-y-1.5">
-                  {r.mailboxes.map((m) => {
-                    const pct = capRatio(m.today, m.cap);
-                    return (
-                      <div class="grid grid-cols-[1fr_70px_40px] items-center gap-3">
-                        <div class="font-mono text-[11.5px] text-foreground/85 truncate">{m.addr}</div>
-                        <div class="h-1.5 rounded-full overflow-hidden bg-[color:var(--surface-1)]">
-                          <div class={`h-full ${capTint(m.today, m.cap)}`} style={`width: ${pct}%`}></div>
-                        </div>
-                        <div class="text-right font-mono text-[11px] text-foreground/70 tabular-nums">{m.today}/{m.cap}</div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                <!-- Sparkline -->
-                <div class="flex items-center gap-2">
-                  <svg viewBox="0 0 56 16" class="w-14 h-4">
-                    <polyline points={sparkPoints(r.reply)} fill="none" stroke="#0284c7" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                  </svg>
-                  <span class="text-[11px] font-mono text-foreground/65 tabular-nums">{r.reply[r.reply.length - 1]}%</span>
-                </div>
-
-                <!-- Status -->
-                <div class="md:text-right">
-                  <span class={`inline-flex items-center gap-1.5 h-5 px-2 rounded-full text-[10px] font-mono font-semibold uppercase tracking-[0.08em] ${chip.bg} ${chip.text}`}>
-                    <span class={`w-1 h-1 rounded-full ${chip.dot}`}></span>
-                    {chip.label}
-                  </span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        <!-- Footer hint -->
-        <div class="px-7 py-3 border-t border-[color:var(--border)] bg-[color:var(--surface-1)]/60 flex items-center justify-between text-[11px] font-mono text-muted-foreground">
-          <span>Per-mailbox cap: 100 / day · spacing 600s · enforced server-side</span>
-          <span class="hidden md:inline">Capped mailboxes are skipped, not stalled</span>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ============================================================
-       ROUND-ROBIN DISTRIBUTION · 1 campaign -> 8 mailboxes
-  ============================================================ -->
-  <section class="border-y border-[color:var(--border)] py-20 md:py-28">
-    <div class="container-page">
-      <div class="grid lg:grid-cols-[1fr_1.5fr] gap-12 lg:gap-20 items-start">
-        <div class="lg:sticky lg:top-24" style="align-self: start;">
-          <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-muted-foreground mb-3">Round-robin pool</div>
-          <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
-            One campaign.<br/>Eight rep mailboxes.
-          </h2>
-          <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed max-w-md">
-            A sequence is bound to a sender pool, not a mailbox. The scheduler distributes recipients across every mailbox in the pool, respects the per-mailbox 100 / day cap, holds to the 600s spacing rule, and skips any mailbox that has dropped out of the healthy band.
-          </p>
-          <ul class="mt-6 space-y-2.5 text-[14px] text-foreground/85">
-            <li class="flex items-start gap-2"><Icon name="check" size={13} class="text-[#0284c7] mt-1 shrink-0"/><span>Cap-aware: a 100 / 100 mailbox is skipped for the day.</span></li>
-            <li class="flex items-start gap-2"><Icon name="check" size={13} class="text-[#0284c7] mt-1 shrink-0"/><span>Health-aware: a mailbox in the watch band gets fewer sends.</span></li>
-            <li class="flex items-start gap-2"><Icon name="check" size={13} class="text-[#0284c7] mt-1 shrink-0"/><span>Spacing-aware: sends from one mailbox sit ~10 minutes apart.</span></li>
-            <li class="flex items-start gap-2"><Icon name="check" size={13} class="text-[#0284c7] mt-1 shrink-0"/><span>Pool grows when you add reps, not when you raise a cap.</span></li>
-          </ul>
-        </div>
-
-        <!-- Fan-out diagram -->
-        <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden">
-          <div class="px-6 py-3 border-b border-[color:var(--border)] flex items-center justify-between">
-            <div class="text-[11.5px] font-mono text-muted-foreground">sequence: acme-q2-outbound</div>
-            <div class="text-[11.5px] font-mono text-muted-foreground">pool size: {fanMailboxes.length}</div>
-          </div>
-          <div class="relative p-6 md:p-8">
-            <svg viewBox="0 0 900 460" class="w-full h-auto max-h-[520px]" aria-label="One sequence distributing sends round-robin to eight rep mailboxes">
-              <defs>
-                <linearGradient id="flowLineSales" x1="0%" y1="0%" x2="100%" y2="0%">
-                  <stop offset="0%" stop-color="#0284c7" stop-opacity="0.5"/>
-                  <stop offset="100%" stop-color="#0284c7" stop-opacity="0.12"/>
-                </linearGradient>
-              </defs>
-
-              <!-- Campaign source on the left -->
-              <g>
-                <rect x="20" y="200" width="190" height="64" rx="12" fill="#0c4a6e"/>
-                <text x="115" y="225" text-anchor="middle" fill="#7dd3fc" font-size="9" font-family="ui-monospace,monospace" letter-spacing="2">SEQUENCE</text>
-                <text x="115" y="245" text-anchor="middle" fill="#ffffff" font-size="13" font-weight="600">acme-q2-outbound</text>
-                <text x="115" y="259" text-anchor="middle" fill="#7dd3fc" font-size="9" font-family="ui-monospace,monospace">412 recipients</text>
-              </g>
-
-              <!-- Center scheduler glyph -->
-              <g>
-                <circle cx="380" cy="232" r="36" fill="#ffffff" stroke="#0284c7" stroke-width="1.5"/>
-                <text x="380" y="229" text-anchor="middle" fill="#0369a1" font-size="9" font-family="ui-monospace,monospace" letter-spacing="2">RR</text>
-                <text x="380" y="243" text-anchor="middle" fill="#0c4a6e" font-size="9" font-family="ui-monospace,monospace">cap+health</text>
-                <line x1="210" y1="232" x2="344" y2="232" stroke="#0284c7" stroke-width="1.5" stroke-dasharray="3 3" opacity="0.6"/>
-              </g>
-
-              <!-- 8 mailbox cards on the right -->
-              {fanMailboxes.map((m, i) => {
-                const yTop = 18 + i * 53;
-                const dur = 4 + (i % 4) * 0.4;
-                const begin = (i * 0.45).toFixed(2);
-                const capColor = m.status === 'capped' ? '#f43f5e' : m.status === 'watch' ? '#f59e0b' : '#0284c7';
-                return (
-                  <g>
-                    <rect x="540" y={yTop} width="340" height="42" rx="10" fill="#f8fafc" stroke="#e6ebf2"/>
-                    <circle cx="560" cy={yTop + 21} r="11" fill="#e0f2fe"/>
-                    <text x="560" y={yTop + 24} text-anchor="middle" fill="#0369a1" font-size="8.5" font-family="ui-monospace,monospace" font-weight="700">{m.initials}</text>
-                    <text x="580" y={yTop + 18} fill="#0f172a" font-size="11.5" font-family="ui-monospace,monospace" font-weight="600">{m.addr}</text>
-                    <text x="580" y={yTop + 33} fill="#64748b" font-size="9.5" font-family="ui-monospace,monospace">{m.role} · {m.today}/{m.cap}</text>
-                    <rect x="780" y={yTop + 14} width="86" height="14" rx="4" fill="#ffffff" stroke="#e6ebf2"/>
-                    <rect x="781" y={yTop + 15} width={84 * (m.today / m.cap)} height="12" rx="3" fill={capColor} opacity="0.85"/>
-                    <line x1="416" y1="232" x2="540" y2={yTop + 21} stroke="url(#flowLineSales)" stroke-width="1.5"/>
-                    {m.status !== 'capped' && (
-                      <circle r="3" fill="#0284c7" opacity="0.95">
-                        <animateMotion dur={`${dur}s`} repeatCount="indefinite" begin={`${begin}s`}
-                          path={`M 416 232 L 540 ${yTop + 21}`}/>
-                      </circle>
-                    )}
-                  </g>
-                );
-              })}
-            </svg>
-          </div>
-          <div class="px-6 py-3 border-t border-[color:var(--border)] bg-[color:var(--surface-1)]/60 flex items-center justify-between text-[11.5px] font-mono text-muted-foreground">
-            <span>Round-robin · cap-aware · health-aware</span>
-            <span>Capped lanes paused, sends rebalance to healthy mailboxes</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ============================================================
-       REPLY ROUTING · 3-step diagram + policy chips + auto-actions
-  ============================================================ -->
-  <section class="bg-[color:var(--surface-1)]/40 border-b border-[color:var(--border)] py-20 md:py-28">
+  <section class="bg-white border-t border-[color:var(--border)] py-20 md:py-28">
     <div class="container-page">
       <div class="max-w-2xl mb-12">
-        <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-muted-foreground mb-3">Reply routing</div>
-        <h2 class="text-[32px] md:text-[44px] font-semibold tracking-[-0.03em] leading-[1.05] text-heading">
-          A positive reply lands in the right AE’s lap in seconds.
+        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Section 1 &middot; Where the sequence sends from</div>
+        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
+          A shared sales alias has nobody behind it.
         </h2>
-        <p class="mt-4 text-[15.5px] text-foreground/70 leading-relaxed">
-          Every reply runs through classification, then the routing rule on the sequence picks the assignee. The platform fires a fixed set of actions on the same event so nothing relies on a human noticing first.
+        <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed">
+          When a whole team sends from sales@ or sdr@, every BDR ends up sharing the same complaint history and the prospect has no name to reply to. A mailbox per rep means each one builds its own sending history and every reply comes back to a real person.
         </p>
       </div>
 
-      <!-- 3-step diagram -->
-      <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] p-7 md:p-10 mb-6">
-        <div class="grid lg:grid-cols-[1fr_auto_1.05fr_auto_1.05fr] gap-4 lg:gap-2 items-stretch">
-          <!-- Step 1 · Reply lands -->
-          <div class="rounded-[12px] bg-[color:var(--surface-1)]/70 ring-1 ring-[color:var(--border)] p-5">
-            <div class="flex items-center gap-2 mb-3">
-              <span class="w-6 h-6 rounded-full bg-[#0c4a6e] text-white text-[10px] font-mono font-semibold inline-flex items-center justify-center">01</span>
-              <span class="text-[10.5px] font-mono uppercase tracking-[0.16em] text-muted-foreground">Reply lands</span>
-            </div>
-            <div class="text-[14px] font-semibold text-heading">Inbound to rep mailbox</div>
-            <div class="mt-3 rounded-[8px] bg-white ring-1 ring-[color:var(--border)] p-3">
-              <div class="text-[11.5px] font-mono text-muted-foreground">from: <span class="text-heading">dana.li@northwind.io</span></div>
-              <div class="text-[11.5px] font-mono text-muted-foreground">to:   <span class="text-heading">ben@acme.com</span></div>
-              <div class="mt-2 text-[12.5px] text-foreground/80 leading-snug">“Yes, this is timely. Could we put 20 minutes on the calendar next week?”</div>
-            </div>
-            <div class="mt-3 text-[11px] font-mono text-muted-foreground">in-reply-to: seq:acme-q2-outbound · step 03</div>
-          </div>
-
-          <!-- Arrow -->
-          <div class="hidden lg:flex items-center justify-center">
-            <svg width="22" height="14" viewBox="0 0 22 14"><path d="M0 7h18m-4-5 5 5-5 5" fill="none" stroke="#0284c7" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </div>
-
-          <!-- Step 2 · Classified -->
-          <div class="rounded-[12px] bg-[color:var(--surface-1)]/70 ring-1 ring-[color:var(--border)] p-5">
-            <div class="flex items-center gap-2 mb-3">
-              <span class="w-6 h-6 rounded-full bg-[#0c4a6e] text-white text-[10px] font-mono font-semibold inline-flex items-center justify-center">02</span>
-              <span class="text-[10.5px] font-mono uppercase tracking-[0.16em] text-muted-foreground">Classified</span>
-            </div>
-            <div class="text-[14px] font-semibold text-heading">Intent + sentiment</div>
-            <ul class="mt-3 space-y-1.5 text-[12.5px]">
-              <li class="flex items-center justify-between"><span class="text-foreground/70">Intent</span><span class="font-mono text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">meeting_request</span></li>
-              <li class="flex items-center justify-between"><span class="text-foreground/70">Sentiment</span><span class="font-mono text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">positive</span></li>
-              <li class="flex items-center justify-between"><span class="text-foreground/70">OOO</span><span class="font-mono text-slate-600 bg-slate-100 px-2 py-0.5 rounded">false</span></li>
-              <li class="flex items-center justify-between"><span class="text-foreground/70">Unsubscribe</span><span class="font-mono text-slate-600 bg-slate-100 px-2 py-0.5 rounded">false</span></li>
-            </ul>
-            <div class="mt-3 text-[11px] font-mono text-muted-foreground">Routed by territory</div>
-          </div>
-
-          <!-- Arrow -->
-          <div class="hidden lg:flex items-center justify-center">
-            <svg width="22" height="14" viewBox="0 0 22 14"><path d="M0 7h18m-4-5 5 5-5 5" fill="none" stroke="#0284c7" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </div>
-
-          <!-- Step 3 · Routed -->
-          <div class="rounded-[12px] bg-white ring-1 ring-[#0284c7]/35 p-5 shadow-[0_20px_40px_-20px_rgba(2,132,199,0.3)]">
-            <div class="flex items-center gap-2 mb-3">
-              <span class="w-6 h-6 rounded-full bg-[#0284c7] text-white text-[10px] font-mono font-semibold inline-flex items-center justify-center">03</span>
-              <span class="text-[10.5px] font-mono uppercase tracking-[0.16em] text-[#0369a1]">Routed</span>
-            </div>
-            <div class="text-[14px] font-semibold text-[#0369a1]">Assigned to AE</div>
-            <div class="mt-3 flex items-center gap-3">
-              <span class="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 text-[11px] font-mono font-semibold inline-flex items-center justify-center">DV</span>
-              <div>
-                <div class="text-[13px] font-semibold text-heading leading-tight">Dana Vasquez</div>
-                <div class="text-[10.5px] font-mono uppercase tracking-[0.14em] text-muted-foreground">AE · NA-West</div>
+      <div class="space-y-5">
+        {specimens.map((s) => (
+          <div class="grid lg:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)] gap-5 lg:gap-8 items-center">
+            <div class={`rounded-[14px] bg-white ring-1 ${s.ring} overflow-hidden`}>
+              <div class="px-4 py-2 border-b border-[color:var(--border)] bg-[color:var(--surface-1)]/50 flex items-center justify-between">
+                <span class="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">{s.label}</span>
+                <span class={`inline-flex items-center h-5 px-1.5 rounded text-[10px] font-mono uppercase tracking-[0.08em] ring-1 ${s.tagClass}`}>{s.tag}</span>
               </div>
-            </div>
-            <div class="mt-4 space-y-1.5">
-              <div class="flex items-center justify-between text-[11.5px] font-mono">
-                <span class="text-muted-foreground">sequence</span>
-                <span class="text-rose-700">paused</span>
-              </div>
-              <div class="flex items-center justify-between text-[11.5px] font-mono">
-                <span class="text-muted-foreground">slack</span>
-                <span class="text-emerald-700">#ae-na-west pinged</span>
-              </div>
-              <div class="flex items-center justify-between text-[11.5px] font-mono">
-                <span class="text-muted-foreground">crm stage</span>
-                <span class="text-[#0369a1]">replied → awaiting ae</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Policy chips + auto-actions -->
-      <div class="grid lg:grid-cols-[1.1fr_1fr] gap-6">
-        <!-- Routing policies -->
-        <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden">
-          <div class="px-6 py-3 border-b border-[color:var(--border)] text-[10.5px] uppercase tracking-[0.18em] font-mono text-muted-foreground">Routing policies</div>
-          <div class="divide-y divide-[color:var(--border)]">
-            {routingPolicies.map((p) => (
-              <div class="px-6 py-4 grid grid-cols-[140px_1fr] gap-4 items-start">
-                <span class={`inline-flex items-center h-6 px-2.5 rounded-full text-[11px] font-mono font-semibold ${p.tone}`}>{p.name}</span>
-                <p class="text-[13px] text-foreground/80 leading-snug">{p.body}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <!-- Auto-actions -->
-        <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden">
-          <div class="px-6 py-3 border-b border-[color:var(--border)] text-[10.5px] uppercase tracking-[0.18em] font-mono text-muted-foreground">Auto-actions fired on assignment</div>
-          <ul class="divide-y divide-[color:var(--border)]">
-            {autoActions.map((a, i) => (
-              <li class="px-6 py-4 grid grid-cols-[36px_1fr] gap-3 items-start">
-                <span class="font-mono text-[11px] text-[#0284c7] font-semibold pt-1">{String(i + 1).padStart(2, '0')}</span>
-                <div>
-                  <div class="text-[13.5px] font-semibold text-heading">{a.label}</div>
-                  <p class="mt-1 text-[12.5px] text-foreground/65 leading-snug">{a.detail}</p>
+              <div class="px-4 py-3.5 flex items-center gap-3">
+                <span class={`inline-grid place-items-center w-9 h-9 rounded-full ring-1 text-[12px] font-semibold shrink-0 ${s.avatarClass}`}>{s.avatar}</span>
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-baseline gap-2">
+                    <span class="text-[13.5px] font-semibold text-heading truncate">{s.from}</span>
+                    <span class="font-mono text-[11px] text-muted-foreground truncate">{s.addr}</span>
+                  </div>
+                  <div class="text-[12.5px] text-foreground/65 truncate">{s.subject}</div>
                 </div>
-              </li>
-            ))}
-          </ul>
-          <div class="px-6 py-3 border-t border-[color:var(--border)] bg-[color:var(--surface-1)]/60 text-[11px] font-mono text-muted-foreground">
-            All four fire on the same event. No human-in-the-loop delay between them.
+                <span class="font-mono text-[10.5px] text-muted-foreground shrink-0">{s.time}</span>
+              </div>
+            </div>
+
+            <ul class="space-y-2.5">
+              {s.callouts.map((c) => (
+                <li class="flex items-center gap-3">
+                  <span class={`h-px w-7 shrink-0 ${s.connector}`}></span>
+                  <span class={`w-1.5 h-1.5 rounded-full shrink-0 -ml-2 ${s.dot}`}></span>
+                  <span class="text-[12.5px] text-foreground/75 leading-snug">{c}</span>
+                </li>
+              ))}
+            </ul>
           </div>
-        </div>
+        ))}
       </div>
     </div>
   </section>
 
   <!-- ============================================================
-       CRM SYNC SPEC SHEET · 5 rows, HubSpot / Salesforce / Pipedrive
+       SECTION 2 · how the two setups compare
   ============================================================ -->
-  <section class="py-20 md:py-28">
+  <section class="bg-[color:var(--surface-1)]/40 border-y border-[color:var(--border)] py-20 md:py-28">
     <div class="container-page">
-      <div class="max-w-2xl mb-12">
-        <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-muted-foreground mb-3">CRM sync</div>
-        <h2 class="text-[32px] md:text-[44px] font-semibold tracking-[-0.03em] leading-[1.05] text-heading">
-          CRM of record stays the source of truth.
+      <div class="max-w-2xl mx-auto text-center mb-12">
+        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Section 2 &middot; Who owns the reputation</div>
+        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
+          Comparing the two setups.
         </h2>
-        <p class="mt-4 text-[15.5px] text-foreground/70 leading-relaxed">
-          The sales team’s CRM does not get a separate copy of pipeline. Warmbly syncs contacts, deals, activity, stage, and ownership both ways with HubSpot, Salesforce, and Pipedrive. A stage moved in the CRM is honoured here on the next pass.
+        <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed">
+          With a shared alias, every complaint and every reply belongs to no one in particular. With a mailbox per rep, both stay with the person they came from. It changes who handles a reply, who carries the reputation, and what happens when a rep leaves the team.
         </p>
       </div>
 
       <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden">
-        <!-- Head -->
-        <div class="grid grid-cols-[1.1fr_1fr_1fr_1fr_1.6fr] px-6 md:px-7 py-3 border-b border-[color:var(--border)] bg-[color:var(--surface-1)]/70 text-[10.5px] uppercase tracking-[0.18em] font-mono text-muted-foreground">
-          <div>Object</div>
-          <div>HubSpot</div>
-          <div>Salesforce</div>
-          <div>Pipedrive</div>
-          <div>Notes</div>
+        <div class="grid grid-cols-[1fr_104px_1fr] md:grid-cols-[1fr_180px_1fr] border-b border-[color:var(--border)]">
+          <div class="px-5 py-3 bg-rose-50/40 text-[11px] font-mono uppercase tracking-[0.16em] text-rose-700/80">Shared sales@</div>
+          <div class="px-2 py-3 text-center text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground bg-[color:var(--surface-1)]/60"></div>
+          <div class="px-5 py-3 bg-[color:var(--sky-1)]/25 text-[11px] font-mono uppercase tracking-[0.16em] text-[#0369a1] text-right">Per-rep mailboxes</div>
         </div>
-        <div class="divide-y divide-[color:var(--border)]">
-          {crmSync.map((row) => {
-            const h = modeBadge(row.hubspot);
-            const s = modeBadge(row.salesforce);
-            const p = modeBadge(row.pipedrive);
-            return (
-              <div class="grid grid-cols-[1.1fr_1fr_1fr_1fr_1.6fr] px-6 md:px-7 py-4 items-center text-[13px]">
-                <div class="font-semibold text-heading">{row.object}</div>
-                <div>
-                  <span class={`inline-flex items-center gap-1.5 h-5 px-2 rounded-full text-[10.5px] font-mono font-semibold ${h.bg} ${h.fg}`}>
-                    <span class={`w-1 h-1 rounded-full ${h.dot}`}></span>{h.txt}
-                  </span>
+
+        {ownershipLedger.map((r) => (
+          <div class="grid grid-cols-[1fr_104px_1fr] md:grid-cols-[1fr_180px_1fr] border-b border-[color:var(--border)] last:border-b-0 items-stretch">
+            <div class="px-5 py-4 bg-rose-50/20 text-[12.5px] md:text-[13px] text-foreground/60 leading-snug flex items-center">{r.shared}</div>
+            <div class="px-1 py-4 flex items-center justify-center">
+              <span class="text-center text-[9.5px] md:text-[10px] font-mono uppercase tracking-[0.12em] text-muted-foreground leading-tight">{r.label}</span>
+            </div>
+            <div class="px-5 py-4 bg-[color:var(--sky-1)]/15 text-[12.5px] md:text-[13px] font-medium text-heading leading-snug flex items-center justify-end text-right">{r.mine}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       SECTION 3 · sending limits per mailbox
+  ============================================================ -->
+  <section class="bg-white border-b border-[color:var(--border)] py-20 md:py-28">
+    <div class="container-page grid lg:grid-cols-[1fr_1.5fr] gap-12 lg:gap-20 items-start">
+      <div class="lg:sticky lg:top-24" style="align-self: start;">
+        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Section 3 &middot; Daily volume</div>
+        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
+          Sending limits the platform ships with.
+        </h2>
+        <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed max-w-md">
+          Team volume scales with the size of the pool, not with the cap on any one mailbox. The defaults sit well under the 100 a day per-mailbox ceiling, so the team can compound throughput by adding healthy mailboxes instead of pushing any individual rep past their safe band.
+        </p>
+        <ul class="mt-6 space-y-2.5 text-[14px] text-foreground/85">
+          <li class="flex items-start gap-2"><Icon name="check" size={13} class="text-[#0284c7] mt-1 shrink-0" /><span>A mailbox at cap is skipped for the day, the campaign keeps moving against the rest of the pool.</span></li>
+          <li class="flex items-start gap-2"><Icon name="check" size={13} class="text-[#0284c7] mt-1 shrink-0" /><span>Per-mailbox reputation is isolated, so a watch-band flag on one rep does not slow the others down.</span></li>
+        </ul>
+      </div>
+
+      <div>
+        <div class="divide-y divide-[color:var(--border)] border-y border-[color:var(--border)]">
+          {parameters.map((p) => (
+            <div class="py-5">
+              <div class="flex items-baseline justify-between gap-4">
+                <div class="flex items-baseline gap-2.5">
+                  <span class="font-mono text-[11px] text-[#0284c7] font-semibold">PARAM {p.id}</span>
+                  <span class="text-[14.5px] font-semibold text-heading">{p.label}</span>
                 </div>
-                <div>
-                  <span class={`inline-flex items-center gap-1.5 h-5 px-2 rounded-full text-[10.5px] font-mono font-semibold ${s.bg} ${s.fg}`}>
-                    <span class={`w-1 h-1 rounded-full ${s.dot}`}></span>{s.txt}
-                  </span>
-                </div>
-                <div>
-                  <span class={`inline-flex items-center gap-1.5 h-5 px-2 rounded-full text-[10.5px] font-mono font-semibold ${p.bg} ${p.fg}`}>
-                    <span class={`w-1 h-1 rounded-full ${p.dot}`}></span>{p.txt}
-                  </span>
-                </div>
-                <div class="text-foreground/70 text-[12.5px] leading-snug">{row.note}</div>
+                <span class="font-mono tabular-nums text-[22px] md:text-[28px] font-semibold tracking-[-0.02em] text-heading whitespace-nowrap">{p.value}</span>
               </div>
-            );
-          })}
+              <div class="mt-3 relative h-1.5 rounded-full bg-[color:var(--sky-1)]/40">
+                <div class="absolute inset-y-0 left-0 rounded-full bg-[#0284c7]" style={`width:${p.fillPct}%`}></div>
+                <div class="absolute inset-y-[-3px] w-px bg-[color:var(--border-strong)]" style={`left:${p.ceilingPct}%`}></div>
+              </div>
+              <div class="mt-2 flex items-baseline justify-between gap-4">
+                <p class="text-[12.5px] text-foreground/65 leading-relaxed max-w-md">{p.why}</p>
+                <span class="font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground whitespace-nowrap shrink-0">{p.ceiling}</span>
+              </div>
+            </div>
+          ))}
         </div>
-        <div class="px-6 md:px-7 py-3 border-t border-[color:var(--border)] bg-[color:var(--surface-1)]/60 flex items-center justify-between text-[11px] font-mono text-muted-foreground">
-          <span>Dedup on email. Last-writer-wins on stage and owner.</span>
-          <span>Webhook events for every sync transition.</span>
+        <p class="mt-5 text-[11.5px] font-mono italic text-muted-foreground leading-relaxed">{paramFootnote}</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       SECTION 4 · routing rules with documented fallbacks
+  ============================================================ -->
+  <section class="bg-[color:var(--surface-1)]/40 border-b border-[color:var(--border)] py-20 md:py-28">
+    <div class="container-page">
+      <div class="max-w-2xl mb-12">
+        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Section 4 &middot; Reply routing</div>
+        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
+          Four routing rules, four fallback chains.
+        </h2>
+        <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed">
+          Pick one rule per sequence. The platform never silently changes who owns a reply. Every rule reaches an explicit terminal fallback, so a reply that does not match never disappears into a manager queue without a record of it landing there.
+        </p>
+      </div>
+
+      <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden">
+        <div class="grid md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-[color:var(--border)]">
+          {rules.slice(0, 2).map((r) => (
+            <div class="p-6 md:p-7 border-b md:border-b-0 border-[color:var(--border)]">
+              <div class="flex items-baseline justify-between mb-3">
+                <div class="flex items-baseline gap-2.5">
+                  <span class="font-mono text-[11px] text-[#0284c7] font-semibold">RULE {r.id}</span>
+                  <span class="text-[15px] md:text-[16px] font-semibold text-heading">{r.name}</span>
+                </div>
+                <span class="text-[10.5px] font-mono uppercase tracking-[0.16em] text-muted-foreground">{r.tag}</span>
+              </div>
+              <p class="text-[13px] text-foreground/70 leading-relaxed">{r.summary}</p>
+              <div class="mt-5 pt-4 border-t border-[color:var(--border)]">
+                <div class="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground mb-2.5">Fallback chain</div>
+                <div class="flex flex-wrap items-center gap-1.5">
+                  {r.chain.map((c, j) => (
+                    <>
+                      <span class={`inline-flex items-center h-6 px-2.5 rounded text-[11px] font-mono ${j === 0 ? 'bg-[color:var(--sky-1)]/60 text-[#0369a1] font-semibold' : j === r.chain.length - 1 ? 'bg-slate-100 text-slate-700' : 'bg-white ring-1 ring-[color:var(--border)] text-foreground/70'}`}>{c}</span>
+                      {j < r.chain.length - 1 && (
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="text-foreground/30"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+                      )}
+                    </>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div class="grid md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-[color:var(--border)] border-t border-[color:var(--border)]">
+          {rules.slice(2).map((r) => (
+            <div class="p-6 md:p-7 border-b md:border-b-0 border-[color:var(--border)]">
+              <div class="flex items-baseline justify-between mb-3">
+                <div class="flex items-baseline gap-2.5">
+                  <span class="font-mono text-[11px] text-[#0284c7] font-semibold">RULE {r.id}</span>
+                  <span class="text-[15px] md:text-[16px] font-semibold text-heading">{r.name}</span>
+                </div>
+                <span class="text-[10.5px] font-mono uppercase tracking-[0.16em] text-muted-foreground">{r.tag}</span>
+              </div>
+              <p class="text-[13px] text-foreground/70 leading-relaxed">{r.summary}</p>
+              <div class="mt-5 pt-4 border-t border-[color:var(--border)]">
+                <div class="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground mb-2.5">Fallback chain</div>
+                <div class="flex flex-wrap items-center gap-1.5">
+                  {r.chain.map((c, j) => (
+                    <>
+                      <span class={`inline-flex items-center h-6 px-2.5 rounded text-[11px] font-mono ${j === 0 ? 'bg-[color:var(--sky-1)]/60 text-[#0369a1] font-semibold' : j === r.chain.length - 1 ? 'bg-slate-100 text-slate-700' : 'bg-white ring-1 ring-[color:var(--border)] text-foreground/70'}`}>{c}</span>
+                      {j < r.chain.length - 1 && (
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="text-foreground/30"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+                      )}
+                    </>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div class="px-6 py-3 border-t border-[color:var(--border)] bg-[color:var(--surface-1)]/60 flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono text-muted-foreground">
+          <span>Idempotent on (message-id, rule version)</span>
+          <span>Manual queue carries its own SLA timer</span>
         </div>
       </div>
     </div>
   </section>
 
   <!-- ============================================================
-       FAQ · grid-rows accordion, same as warmup / campaigns
+       SECTION 5 · plain text outbound
   ============================================================ -->
-  <section class="bg-[color:var(--surface-1)]/40 border-t border-[color:var(--border)] py-20 md:py-24">
+  <section class="bg-white border-b border-[color:var(--border)] py-20 md:py-28">
+    <div class="container-page">
+      <div class="max-w-2xl mb-12">
+        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Section 5 &middot; Formatting</div>
+        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
+          Plain text emails.
+        </h2>
+        <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed">
+          When a BDR writes to one prospect, they do not add a banner or a tracking pixel. Those are the signals filters use to classify marketing mail, so a cold email carrying them tends to land in Promotions. Plain text reads like a normal note and is more likely to reach the main inbox.
+        </p>
+      </div>
+
+      <div class="relative grid md:grid-cols-2 rounded-[14px] ring-1 ring-[color:var(--border)] overflow-hidden bg-white">
+        <div class="hidden md:grid place-items-center absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 w-9 h-9 rounded-full bg-white ring-1 ring-[color:var(--border)] shadow-[0_4px_14px_-4px_rgba(15,23,42,0.2)]">
+          <Icon name="arrowRight" size={14} class="text-[#0284c7]" />
+        </div>
+
+        <div class="p-6 md:p-7 bg-rose-50/20 border-b md:border-b-0 md:border-r border-[color:var(--border)]">
+          <div class="text-[10.5px] font-mono uppercase tracking-[0.16em] text-rose-700/80 mb-4">What a lot of cold-email tools send</div>
+          <div class="rounded-[12px] ring-1 ring-rose-200/70 bg-white p-3 space-y-2">
+            {stripped.map((b) => (
+              <div class="relative overflow-hidden rounded-[8px] bg-rose-50/50 px-3 py-2.5 flex items-center gap-2.5">
+                <span class="absolute inset-0 pointer-events-none" style="background: repeating-linear-gradient(45deg, rgba(244,63,94,0.10) 0 5px, transparent 5px 11px);"></span>
+                <Icon name={b.icon} size={14} class="relative text-rose-400 shrink-0" />
+                <span class="relative text-[12.5px] text-rose-700/70 line-through decoration-rose-300">{b.name}</span>
+                <span class="relative ml-auto text-[9.5px] font-mono uppercase tracking-[0.12em] text-rose-500/80">stripped</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div class="p-6 md:p-7">
+          <div class="text-[10.5px] font-mono uppercase tracking-[0.16em] text-[#0369a1] mb-4">What Warmbly sends</div>
+          <div class="rounded-[12px] ring-1 ring-[color:var(--sky-2)] bg-white p-4">
+            <div class="space-y-1.5">
+              {cleanLines.map((l) => (
+                <div class="text-[13px] text-foreground/75 leading-relaxed">{l}</div>
+              ))}
+            </div>
+            <div class="mt-4 pt-4 border-t border-[color:var(--border)] flex items-center gap-2">
+              <span class="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-[8px] bg-[color:var(--sky-1)]/50 ring-1 ring-[color:var(--sky-2)] text-[#0369a1] text-[12px] font-medium">
+                <Icon name="link" size={12} />
+                View the deck
+              </span>
+              <span class="text-[11px] font-mono text-muted-foreground">links to a hosted page</span>
+            </div>
+          </div>
+          <p class="mt-4 text-[12px] text-foreground/60 leading-relaxed">
+            The deck lives on a hosted page, so the email stays light and reads like a note from a person.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       SECTION 6 · templating
+  ============================================================ -->
+  <section class="bg-[color:var(--surface-1)]/40 border-b border-[color:var(--border)] py-20 md:py-28">
+    <div class="container-page grid lg:grid-cols-[1fr_1.3fr] gap-12 lg:gap-16 items-start">
+      <div class="lg:sticky lg:top-24" style="align-self: start;">
+        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Section 6 &middot; Templating</div>
+        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
+          Personalisation with Go templates.
+        </h2>
+        <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed max-w-md">
+          Every step is a Go text/template, the same syntax used across the rest of Warmbly. Pull in a prospect's details with a leading dot, branch on a field with if / else, and the template renders per prospect at send time.
+        </p>
+        <ul class="mt-6 space-y-2.5 text-[14px] text-foreground/85">
+          <li class="flex items-start gap-2"><Icon name="check" size={13} class="text-[#0284c7] mt-1 shrink-0" /><span>An empty field renders as nothing, so a missing trigger or company never leaves a broken sentence behind.</span></li>
+          <li class="flex items-start gap-2"><Icon name="check" size={13} class="text-[#0284c7] mt-1 shrink-0" /><span>Wrap an optional detail in an if, and it only appears when the field is set on the contact record.</span></li>
+        </ul>
+
+        <div class="mt-6">
+          <div class="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground mb-2">Available fields</div>
+          <div class="flex flex-wrap gap-1.5">
+            {mergeFields.map((f) => (
+              <code class="inline-flex items-center h-6 px-2 rounded-md bg-[#0c1224] text-[11.5px] font-mono text-sky-300 ring-1 ring-white/10">{f}</code>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden">
+        <!-- Template source -->
+        <div class="bg-[#0c1224]">
+          <div class="px-4 py-2.5 border-b border-white/10 flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-[#ff5f56]/80"></span>
+            <span class="w-2.5 h-2.5 rounded-full bg-[#ffbd2e]/80"></span>
+            <span class="w-2.5 h-2.5 rounded-full bg-[#27c93f]/80"></span>
+            <span class="ml-2 text-[11px] font-mono text-white/55">first touch &middot; body</span>
+          </div>
+          <div class="p-5 font-mono text-[12.5px] leading-[1.85] text-white/85">
+            <div>Hi <span class="text-sky-300">{`{{.FirstName}}`}</span>,</div>
+            <div class="h-3.5"></div>
+            <div class="whitespace-pre-wrap">Saw <span class="text-violet-300">{`{{if .RecentEvent}}`}</span><span class="text-sky-300">{`{{.RecentEvent}}`}</span> at <span class="text-violet-300">{`{{end}}`}</span><span class="text-sky-300">{`{{.Company}}`}</span> and the <span class="text-sky-300">{`{{.Role}}`}</span> role lined up with what we usually help land.</div>
+            <div class="h-3.5"></div>
+            <div>Worth a 20-minute look next week?</div>
+            <div class="h-3.5"></div>
+            <div>Dana</div>
+          </div>
+        </div>
+
+        <!-- Rendered preview -->
+        <div class="p-5">
+          <div class="flex items-center gap-2 mb-3 text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
+            <Icon name="arrowRight" size={12} class="text-[#0284c7]" />
+            Renders for Maya, with no RecentEvent on file
+          </div>
+          <div class="rounded-[10px] bg-[color:var(--surface-1)]/60 ring-1 ring-[color:var(--border)] p-4 text-[13px] leading-[1.85] text-foreground/80">
+            <div>Hi <span class="text-[#0369a1] font-medium">Maya</span>,</div>
+            <div class="h-3"></div>
+            <div>Saw <span class="text-[#0369a1] font-medium">Northwind</span> and the <span class="text-[#0369a1] font-medium">VP RevOps</span> role lined up with what we usually help land.</div>
+            <div class="h-3"></div>
+            <div>Worth a 20-minute look next week?</div>
+            <div class="h-3"></div>
+            <div>Dana</div>
+          </div>
+          <p class="mt-3 text-[12px] text-foreground/60 leading-relaxed">
+            Her RecentEvent was blank, so the if skips the "at" clause and the sentence flows without a stray gap.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       SECTION 7 · CRM sync (dark window + rendered preview)
+  ============================================================ -->
+  <section class="bg-white border-b border-[color:var(--border)] py-20 md:py-28">
+    <div class="container-page grid lg:grid-cols-[1fr_1.3fr] gap-12 lg:gap-16 items-start">
+      <div class="lg:sticky lg:top-24" style="align-self: start;">
+        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Section 7 &middot; CRM</div>
+        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
+          The CRM stays the source of truth.
+        </h2>
+        <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed max-w-md">
+          Two-way sync with HubSpot, Salesforce or Pipedrive on contacts, deals, stage and owner. The activity feed is outbound only, so the CRM is never fought over. A stage moved over there is honoured here on the next pass.
+        </p>
+        <ul class="mt-6 space-y-2.5 text-[14px] text-foreground/85">
+          <li class="flex items-start gap-2"><Icon name="check" size={13} class="text-[#0284c7] mt-1 shrink-0" /><span>An assignment writes the owner, the stage and the activity on the same event the Slack ping fires from.</span></li>
+          <li class="flex items-start gap-2"><Icon name="check" size={13} class="text-[#0284c7] mt-1 shrink-0" /><span>Webhooks are HMAC-signed and idempotent on (message-id, rule version).</span></li>
+        </ul>
+
+        <div class="mt-6">
+          <div class="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground mb-2">Synced objects</div>
+          <div class="flex flex-wrap gap-1.5">
+            {crmObjects.map((o) => (
+              <code class="inline-flex items-center h-6 px-2 rounded-md bg-[#0c1224] text-[11.5px] font-mono text-sky-300 ring-1 ring-white/10">{o}</code>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden">
+        <div class="bg-[#0c1224]">
+          <div class="px-4 py-2.5 border-b border-white/10 flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-[#ff5f56]/80"></span>
+            <span class="w-2.5 h-2.5 rounded-full bg-[#ffbd2e]/80"></span>
+            <span class="w-2.5 h-2.5 rounded-full bg-[#27c93f]/80"></span>
+            <span class="ml-2 text-[11px] font-mono text-white/55">assignment event &middot; payload</span>
+          </div>
+          <div class="p-5 font-mono text-[12.5px] leading-[1.85] text-white/85">
+            <div><span class="text-white/45">{'{'}</span></div>
+            <div class="pl-4"><span class="text-sky-300">"event"</span><span class="text-white/55">: </span><span class="text-emerald-300">"reply.assigned"</span><span class="text-white/55">,</span></div>
+            <div class="pl-4"><span class="text-sky-300">"rule"</span><span class="text-white/55">: </span><span class="text-emerald-300">"territory"</span><span class="text-white/55">,</span></div>
+            <div class="pl-4"><span class="text-sky-300">"assignee"</span><span class="text-white/55">: </span><span class="text-emerald-300">"dana@acme.com"</span><span class="text-white/55">,</span></div>
+            <div class="pl-4"><span class="text-sky-300">"crm"</span><span class="text-white/55">: </span><span class="text-violet-300">{'{'}</span></div>
+            <div class="pl-8"><span class="text-sky-300">"provider"</span><span class="text-white/55">: </span><span class="text-emerald-300">"hubspot"</span><span class="text-white/55">,</span></div>
+            <div class="pl-8"><span class="text-sky-300">"stage_from"</span><span class="text-white/55">: </span><span class="text-emerald-300">"Sequenced"</span><span class="text-white/55">,</span></div>
+            <div class="pl-8"><span class="text-sky-300">"stage_to"</span><span class="text-white/55">: </span><span class="text-emerald-300">"Replied &middot; Awaiting AE"</span></div>
+            <div class="pl-4"><span class="text-violet-300">{'}'}</span><span class="text-white/55">,</span></div>
+            <div class="pl-4"><span class="text-sky-300">"slack_channel"</span><span class="text-white/55">: </span><span class="text-emerald-300">"#ae-na-west"</span><span class="text-white/55">,</span></div>
+            <div class="pl-4"><span class="text-sky-300">"idempotency_key"</span><span class="text-white/55">: </span><span class="text-emerald-300">"msg-9af2:rule-v3"</span></div>
+            <div><span class="text-white/45">{'}'}</span></div>
+          </div>
+        </div>
+
+        <div class="p-5">
+          <div class="flex items-center gap-2 mb-3 text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
+            <Icon name="arrowRight" size={12} class="text-[#0284c7]" />
+            What lands in HubSpot
+          </div>
+          <div class="rounded-[10px] bg-[color:var(--surface-1)]/60 ring-1 ring-[color:var(--border)] p-4 space-y-3">
+            <div class="flex items-baseline justify-between text-[12.5px]">
+              <span class="text-foreground/65">Deal stage</span>
+              <span class="inline-flex items-center gap-2 font-mono text-[11.5px]">
+                <span class="inline-flex items-center h-5 px-2 rounded bg-slate-100 text-slate-600">Sequenced</span>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="text-foreground/30"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+                <span class="inline-flex items-center h-5 px-2 rounded bg-amber-50 text-amber-700">Replied &middot; Awaiting AE</span>
+              </span>
+            </div>
+            <div class="flex items-baseline justify-between text-[12.5px]">
+              <span class="text-foreground/65">Owner</span>
+              <span class="font-mono text-[12px] text-heading">Dana Vasquez</span>
+            </div>
+            <div class="flex items-baseline justify-between text-[12.5px]">
+              <span class="text-foreground/65">Activity</span>
+              <span class="font-mono text-[12px] text-foreground/70">reply &middot; meeting_request</span>
+            </div>
+          </div>
+          <p class="mt-3 text-[12px] text-foreground/60 leading-relaxed">
+            The CRM picks up the stage change, the owner and the activity off the same event the Slack ping fires from.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       SECTION 8 · what happens when a reply lands
+  ============================================================ -->
+  <section class="bg-[color:var(--surface-1)]/40 border-b border-[color:var(--border)] py-20 md:py-28">
+    <div class="container-page">
+      <div class="max-w-2xl mb-12">
+        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Section 8 &middot; Reply fan-out</div>
+        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
+          One reply, every surface updated at once.
+        </h2>
+        <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed">
+          When a positive reply arrives, the assignment, the Slack ping, the CRM stage move, the deal note, the Unibox claim and the webhook all fire from the same event. The AE picks up the conversation on a single notification, and the rest of the surfaces are already in sync by the time they look.
+        </p>
+      </div>
+
+      <div class="grid lg:grid-cols-[340px_1fr] gap-6 lg:gap-10 items-center">
+        <div>
+          <div class="rounded-[14px] bg-white ring-1 ring-emerald-200 overflow-hidden">
+            <div class="px-4 py-2 border-b border-[color:var(--border)] bg-emerald-50/40 flex items-center justify-between">
+              <span class="text-[10px] font-mono uppercase tracking-[0.16em] text-emerald-700/80">Inbound reply</span>
+              <span class="inline-flex items-center gap-1.5 h-5 px-1.5 rounded text-[10px] font-mono uppercase tracking-[0.08em] bg-emerald-100 text-emerald-700">
+                <Icon name="reply" size={10} />
+                positive
+              </span>
+            </div>
+            <div class="px-4 py-3.5">
+              <div class="flex items-center gap-2.5">
+                <span class="inline-grid place-items-center w-8 h-8 rounded-full bg-emerald-50 ring-1 ring-emerald-200 text-emerald-600 text-[11px] font-semibold">DL</span>
+                <div class="text-[12.5px] font-semibold text-heading">dana.li@northwind.io</div>
+              </div>
+              <p class="mt-2.5 text-[13px] text-foreground/70 leading-snug">"Yes, this is timely. Could we put 20 minutes on the calendar next week?"</p>
+            </div>
+          </div>
+          <div class="mt-3 flex flex-wrap gap-1.5">
+            <span class="inline-flex items-center h-5 px-1.5 rounded bg-white ring-1 ring-[color:var(--border)] text-[10px] font-mono uppercase tracking-[0.06em] text-foreground/65">intent: meeting_request</span>
+            <span class="inline-flex items-center h-5 px-1.5 rounded bg-white ring-1 ring-[color:var(--border)] text-[10px] font-mono uppercase tracking-[0.06em] text-foreground/65">sentiment: positive</span>
+            <span class="inline-flex items-center h-5 px-1.5 rounded bg-white ring-1 ring-[color:var(--border)] text-[10px] font-mono uppercase tracking-[0.06em] text-foreground/65">rule: territory</span>
+          </div>
+          <div class="mt-2.5 text-[10.5px] font-mono uppercase tracking-[0.12em] text-emerald-700">assigned to dana@acme.com</div>
+        </div>
+
+        <div>
+          <div class="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground mb-3">Fanned out on the same event</div>
+          <div class="grid sm:grid-cols-2 gap-2.5">
+            {fanoutTargets.map((e, i) => (
+              <div class="fan-target flex items-center gap-2.5 rounded-[10px] bg-[color:var(--surface-1)]/50 ring-1 ring-[color:var(--border)] px-3 py-2.5" style={`--d:${i * 90}ms`}>
+                <span class="h-px w-5 bg-[color:var(--border-strong)] shrink-0"></span>
+                <Icon name="zap" size={12} class="text-[#0284c7] shrink-0" />
+                <span class="font-mono text-[12px] text-foreground/70 truncate">{e.label}</span>
+                <span class="ml-auto text-[9px] font-mono uppercase tracking-[0.1em] text-muted-foreground shrink-0">{fanoutKindLabel(e.kind)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-10 grid md:grid-cols-3 gap-px bg-[color:var(--border)] rounded-[14px] overflow-hidden ring-1 ring-[color:var(--border)]">
+        {verdicts.map((v) => (
+          <div class="bg-white p-5">
+            <div class="flex items-center justify-between">
+              <span class={`inline-flex items-center gap-1.5 h-6 px-2 rounded-full text-[10.5px] font-mono uppercase tracking-[0.1em] ring-1 ${v.chip}`}>
+                <span class={`w-1.5 h-1.5 rounded-full ${v.dot}`}></span>
+                {v.label}
+              </span>
+              <Icon name={v.icon} size={15} class="text-foreground/45" />
+            </div>
+            <p class="mt-3 text-[13px] text-foreground/70 leading-relaxed">{v.does}</p>
+          </div>
+        ))}
+      </div>
+      <p class="mt-4 text-[12px] text-foreground/55 leading-relaxed max-w-2xl">
+        Each reply class has its own path. The fan-out above is the positive case, the strip names the three other classes you will see most often.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       FAQ · shared accordion pattern
+  ============================================================ -->
+  <section class="bg-white border-b border-[color:var(--border)] py-20 md:py-24">
     <div class="container-page grid lg:grid-cols-[1fr_1.8fr] gap-12 lg:gap-20 items-start">
       <div class="lg:sticky lg:top-24" style="align-self: start;">
-        <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-muted-foreground mb-3">Sales team FAQ</div>
+        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Sales team FAQ</div>
         <h2 class="text-[28px] md:text-[36px] font-semibold tracking-[-0.025em] leading-[1.08] text-heading">
-          Three questions sales ops asks first.
+          A few questions sales ops asks first.
         </h2>
-        <p class="mt-4 text-[14.5px] text-foreground/70 leading-relaxed">
-          More detail in the <a class="text-[#0369a1] hover:text-[#075985] font-medium" href="/campaigns/">campaigns</a> and <a class="text-[#0369a1] hover:text-[#075985] font-medium" href="/inbox/">inbox</a> pages.
-        </p>
       </div>
       <div class="divide-y divide-[color:var(--border)]" data-faq>
         {faq.map(([q, a]) => (
@@ -584,7 +735,7 @@ const capRatio = (today: number, cap: number) => Math.min(100, Math.round((today
             <button type="button" class="faq-trigger group w-full flex items-start justify-between gap-4 py-3 text-left" aria-expanded="false">
               <span class="text-[15.5px] font-medium text-heading group-hover:text-[#0369a1] transition-colors">{q}</span>
               <span class="faq-icon shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-full bg-white ring-1 ring-[color:var(--border)] text-foreground/60 transition-transform duration-300 ease-out">
-                <Icon name="plus" size={12} />
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
               </span>
             </button>
             <div class="faq-panel grid grid-rows-[0fr] transition-[grid-template-rows] duration-300 ease-out">
@@ -617,9 +768,23 @@ const capRatio = (today: number, cap: number) => Math.min(100, Math.round((today
   </section>
 
   <CTA
-    title="Add reps. Add mailboxes. Volume follows."
-    description="Connect mailboxes, build a sender pool, route every positive reply to the right AE."
+    title="Set up a mailbox for every rep on the team."
+    description="Connect each BDR and AE mailbox, drop them into a sender pool, and route every positive reply on the inbound event."
     primaryLabel="Start free trial"
-    primaryHref="https://app.warmbly.com/register"
   />
+
+  <!-- Staggered reveal for the reply fan-out targets. -->
+  <style is:inline>
+    @keyframes sx1-fan-in {
+      from { opacity: 0.25; transform: translateY(4px); }
+      to   { opacity: 1;    transform: translateY(0); }
+    }
+    .fan-target {
+      animation: sx1-fan-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+      animation-delay: var(--d, 0ms);
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .fan-target { animation: none; opacity: 1; transform: none; }
+    }
+  </style>
 </Layout>
