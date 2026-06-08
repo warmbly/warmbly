@@ -21,6 +21,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/group"
 	"github.com/warmbly/warmbly/internal/app/integration"
 	"github.com/warmbly/warmbly/internal/app/leadsync"
+	"github.com/warmbly/warmbly/internal/app/notification"
 	"github.com/warmbly/warmbly/internal/app/organization"
 	"github.com/warmbly/warmbly/internal/app/passkey"
 	"github.com/warmbly/warmbly/internal/app/placement"
@@ -34,6 +35,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/template"
 	"github.com/warmbly/warmbly/internal/app/token"
 	"github.com/warmbly/warmbly/internal/app/trial"
+	"github.com/warmbly/warmbly/internal/app/twofa"
 	"github.com/warmbly/warmbly/internal/app/tz"
 	"github.com/warmbly/warmbly/internal/app/unibox"
 	"github.com/warmbly/warmbly/internal/app/user"
@@ -67,9 +69,11 @@ type Handler struct {
 	TagService      group.GroupService
 	CategoryService group.GroupService
 
-	TzService     tz.TzService
-	SocketService socket.SocketService
-	TasksService  tasks.TasksService
+	TzService           tz.TzService
+	SocketService       socket.SocketService
+	TasksService        tasks.TasksService
+	NotificationService notification.Service
+	TwoFAService        twofa.Service
 
 	// New services
 	APIKeyService    apikey.APIKeyService

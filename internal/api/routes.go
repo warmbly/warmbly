@@ -159,6 +159,11 @@ func Run(
 		// resolves, and the challenge + signature are the protection.
 		auth.POST("/passkey/login/begin", h.PasskeyLoginBegin)
 		auth.POST("/passkey/login/finish", h.PasskeyLoginFinish)
+
+		// 2FA login challenge (PUBLIC): exchanges a single-use pending token +
+		// TOTP/recovery code for a real session. Rate-limited in the service
+		// (no user context here, so RateLimitMiddleware would be a no-op).
+		auth.POST("/2fa/verify", h.TwoFAVerifyLogin)
 	}
 
 	protectedAuth := auth.Group("")
@@ -178,6 +183,19 @@ func Run(
 		protectedAuth.PATCH("/me/onboarding", h.CompleteOnboarding)
 		protectedAuth.POST("/me/avatar", h.UploadUserAvatar)
 		protectedAuth.DELETE("/me/avatar", h.DeleteUserAvatar)
+
+		// Notification preferences + in-app feed (user-scoped, no org gate).
+		protectedAuth.GET("/me/notification-preferences", h.GetNotificationPreferences)
+		protectedAuth.PUT("/me/notification-preferences", h.UpdateNotificationPreferences)
+		protectedAuth.GET("/me/notifications", h.ListNotifications)
+		protectedAuth.PUT("/me/notifications", h.MarkAllNotificationsRead)
+		protectedAuth.POST("/me/notifications/:id/read", h.MarkNotificationRead)
+
+		// 2FA enrollment + management (user-scoped, behind a live session).
+		protectedAuth.GET("/2fa/status", h.TwoFAStatus)
+		protectedAuth.POST("/2fa/enroll/start", h.TwoFAEnrollStart)
+		protectedAuth.POST("/2fa/enroll/confirm", h.TwoFAEnrollConfirm)
+		protectedAuth.DELETE("/2fa", h.TwoFADisable)
 
 		// Passkey enrollment + management require an authenticated session.
 		protectedAuth.POST("/passkey/register/begin", h.PasskeyRegisterBegin)
