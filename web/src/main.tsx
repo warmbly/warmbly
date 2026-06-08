@@ -352,7 +352,8 @@ function AdminLayoutWithOutlet() {
   return <AdminLayout><Outlet /></AdminLayout>;
 }
 
-createRoot(document.getElementById('root')!).render(
+const rootEl = document.getElementById('root')!
+createRoot(rootEl).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
@@ -361,3 +362,11 @@ createRoot(document.getElementById('root')!).render(
     </QueryClientProvider>
   </StrictMode>,
 )
+
+// Reveal the app only once its CSS is in effect (the stylesheet is imported
+// above, so it's applied by the first frame after render). This removes the
+// brief flash of unstyled content. The timeout is a safety net so the page can
+// never stay hidden if a frame callback is missed.
+const revealApp = () => rootEl.classList.add('app-ready')
+requestAnimationFrame(() => requestAnimationFrame(revealApp))
+setTimeout(revealApp, 1500)
