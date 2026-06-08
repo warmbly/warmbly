@@ -30,7 +30,6 @@ import {
 import toast from "react-hot-toast";
 
 import { Label, TextInput } from "@/components/ui/field";
-import { SelectMenu, type SelectOption } from "@/components/ui/select-menu";
 import { useConfirm } from "@/hooks/context/confirm";
 import useConnectionDetail from "@/lib/api/hooks/app/integrations/useConnectionDetail";
 import useDisconnectIntegration from "@/lib/api/hooks/app/integrations/useDisconnectIntegration";
@@ -38,19 +37,11 @@ import {
     useFinishIntegrationOAuth,
     useReauthIntegration,
 } from "@/lib/api/hooks/app/integrations/useIntegrationOAuth";
-import {
-    useCreateConnectionEvent,
-    useDeleteConnectionEvent,
-} from "@/lib/api/hooks/app/integrations/useConnectionEvents";
 import { openOAuthPopup } from "@/lib/integrations/oauthPopup";
 import {
-    defaultActionForProvider,
-    EVENT_LABELS,
-    REPLY_INTENT_OPTIONS,
     type CapabilityObject,
     type IntegrationCatalogEntry,
     type IntegrationConnection,
-    type IntegrationEventSubscription,
 } from "@/lib/api/models/app/integrations/Integration";
 import { useFieldMappings, useUpdateConnectionConfig } from "@/lib/api/hooks/app/integrations/useFieldMappings";
 import { useRevealWebhookSecret, useTestConnection } from "@/lib/api/hooks/app/integrations/useConnectionWebhookTools";
@@ -59,8 +50,6 @@ import { cn } from "@/lib/utils";
 import { Drawer, SectionLabel } from "./ConnectDrawer";
 import FieldMapEditor from "./FieldMapEditor";
 import StatusPill, { HealthDot } from "./StatusPill";
-
-const REPLY_EVENT = "campaign.reply_received";
 
 // Providers whose deliveries we can test (notify + generic webhook). Automation
 // tools additionally expose an HMAC signing secret for verification.
@@ -80,10 +69,7 @@ export default function ConnectionDetail({
     const disconnect = useDisconnectIntegration();
     const reauth = useReauthIntegration();
     const finishOAuth = useFinishIntegrationOAuth();
-    const createEvent = useCreateConnectionEvent();
-    const deleteEvent = useDeleteConnectionEvent();
 
-    const [adding, setAdding] = React.useState(false);
     const [busy, setBusy] = React.useState(false);
     const confirm = useConfirm();
 
@@ -91,9 +77,6 @@ export default function ConnectionDetail({
     const events = detail.data?.events ?? [];
     const runs = detail.data?.runs ?? [];
 
-    // Only offer events the provider actually has a handler for; an empty list
-    // means this connection has no automations (e.g. a meeting provider).
-    const availableEvents = entry?.events ?? [];
     const capability = entry?.capability;
     const crmObject = capability?.objects?.[0];
     const isOAuth = conn.auth_method === "oauth";
@@ -126,22 +109,6 @@ export default function ConnectionDetail({
         });
     }
 
-    async function addAutomation(eventType: string, config: Record<string, unknown>) {
-        try {
-            await createEvent.mutateAsync({
-                connectionId: conn.id,
-                event_type: eventType,
-                action: defaultActionForProvider(conn.provider),
-                config,
-                enabled: true,
-            });
-            toast.success("Automation added");
-            setAdding(false);
-            detail.refetch();
-        } catch (err: unknown) {
-            toast.error(msg(err) ?? "Could not add automation");
-        }
-    }
 
     return (
         <Drawer title="Manage" name={conn.label} provider={conn.provider} onClose={onClose}>
@@ -194,54 +161,6 @@ export default function ConnectionDetail({
                                 </span>
                             ))}
                         </div>
-                    </div>
-                )}
-
-                {/* Automations — the core "how you use it" surface */}
-                {(availableEvents.length > 0 || events.length > 0) && (
-                    <div className="px-5 py-4 border-b border-slate-200 space-y-3">
-                        <div className="flex items-center justify-between">
-                            <SectionLabel>Automations</SectionLabel>
-                            {!adding && availableEvents.length > 0 && (
-                                <button
-                                    type="button"
-                                    onClick={() => setAdding(true)}
-                                    className="h-6 px-2 rounded text-[11px] text-sky-700 hover:bg-sky-50 inline-flex items-center gap-1 transition-colors"
-                                >
-                                    <PlusIcon className="w-3 h-3" />
-                                    New rule
-                                </button>
-                            )}
-                        </div>
-
-                        {events.length === 0 && !adding && (
-                            <p className="text-[11.5px] text-slate-400 leading-relaxed">
-                                No automations yet. Add a rule to push Warmbly events into {entry?.name ?? conn.label} —
-                                e.g. ping a channel when a prospect replies, or upsert a contact in your CRM.
-                            </p>
-                        )}
-
-                        {events.map((ev) => (
-                            <AutomationRow
-                                key={ev.id}
-                                sub={ev}
-                                onDelete={() =>
-                                    deleteEvent
-                                        .mutateAsync({ connectionId: conn.id, eventId: ev.id })
-                                        .then(() => detail.refetch())
-                                }
-                            />
-                        ))}
-
-                        {adding && (
-                            <AddAutomation
-                                provider={conn.provider}
-                                availableEvents={availableEvents}
-                                onCancel={() => setAdding(false)}
-                                onAdd={addAutomation}
-                                busy={createEvent.isPending}
-                            />
-                        )}
                     </div>
                 )}
 
@@ -325,206 +244,6 @@ export default function ConnectionDetail({
                 )}
             </div>
         </Drawer>
-    );
-}
-
-// AutomationRow renders one configured rule with a human summary of its
-// trigger, filters, destination, and custom message.
-function AutomationRow({ sub, onDelete }: { sub: IntegrationEventSubscription; onDelete: () => void }) {
-    const cfg = (sub.config ?? {}) as Record<string, unknown>;
-    const intents = Array.isArray(cfg.intents) ? (cfg.intents as string[]) : [];
-    const minConf = typeof cfg.min_confidence === "number" ? cfg.min_confidence : undefined;
-    const dest =
-        (cfg.channel as string) || (cfg.url as string) || (cfg.webhook_url as string) || "";
-    const tmpl = (cfg.message_template as string) || "";
-
-    const filters: string[] = [];
-    if (intents.length) filters.push(intents.join(", "));
-    if (minConf) filters.push(`≥${Math.round(minConf * 100)}%`);
-
-    return (
-        <div className="rounded-md border border-slate-200 px-2.5 py-2">
-            <div className="flex items-center gap-2">
-                <ZapIcon className="w-3.5 h-3.5 text-sky-500 shrink-0" />
-                <div className="min-w-0 flex-1">
-                    <div className="text-[12px] text-slate-800 truncate">
-                        {EVENT_LABELS[sub.event_type] ?? sub.event_type}
-                    </div>
-                    <div className="text-[10px] text-slate-400 font-mono truncate">
-                        {dest || sub.action}
-                        {filters.length > 0 && ` · ${filters.join(" · ")}`}
-                    </div>
-                </div>
-                <button
-                    type="button"
-                    onClick={onDelete}
-                    aria-label="Remove automation"
-                    className="h-6 w-6 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 inline-flex items-center justify-center transition-colors"
-                >
-                    <Trash2Icon className="w-3.5 h-3.5" />
-                </button>
-            </div>
-            {tmpl && (
-                <p className="mt-1.5 pl-5 text-[10.5px] text-slate-500 italic truncate">“{tmpl}”</p>
-            )}
-        </div>
-    );
-}
-
-// AddAutomation is the rule builder. Everything a user needs to customize a
-// behaviour lives here: trigger, reply-intent + confidence filters, the
-// destination, and a custom message template.
-function AddAutomation({
-    provider,
-    availableEvents,
-    onAdd,
-    onCancel,
-    busy,
-}: {
-    provider: string;
-    availableEvents: string[];
-    onAdd: (eventType: string, config: Record<string, unknown>) => void;
-    onCancel: () => void;
-    busy: boolean;
-}) {
-    const [eventType, setEventType] = React.useState(
-        availableEvents.includes(REPLY_EVENT) ? REPLY_EVENT : availableEvents[0] ?? REPLY_EVENT,
-    );
-    const eventOptions = React.useMemo<SelectOption[]>(
-        () => availableEvents.map((ev) => ({ value: ev, label: EVENT_LABELS[ev] ?? ev })),
-        [availableEvents],
-    );
-    const [dest, setDest] = React.useState("");
-    const [intents, setIntents] = React.useState<string[]>([]);
-    const [minConf, setMinConf] = React.useState(0);
-    const [template, setTemplate] = React.useState("");
-
-    const needsChannel = provider === "slack";
-    const needsURL =
-        provider === "discord" || provider === "zapier" || provider === "make" || provider === "n8n";
-    const isReplyTrigger = eventType === REPLY_EVENT;
-    const destRequired = needsChannel || needsURL;
-
-    function toggleIntent(v: string) {
-        setIntents((cur) => (cur.includes(v) ? cur.filter((x) => x !== v) : [...cur, v]));
-    }
-
-    function buildConfig(): Record<string, unknown> {
-        const cfg: Record<string, unknown> = {};
-        if (needsChannel && dest.trim()) cfg.channel = dest.trim();
-        if (needsURL && dest.trim()) cfg.url = dest.trim();
-        if (isReplyTrigger && intents.length) cfg.intents = intents;
-        if (isReplyTrigger && minConf > 0) cfg.min_confidence = minConf;
-        if (template.trim()) cfg.message_template = template.trim();
-        return cfg;
-    }
-
-    const destLabel = needsChannel ? "Channel" : "Destination URL";
-    const destPlaceholder = needsChannel ? "#sales" : "https://…";
-    const canSubmit = !busy && !(destRequired && !dest.trim());
-
-    return (
-        <div className="rounded-md border border-sky-200 bg-sky-50/40 p-3 space-y-3">
-            <div>
-                <Label>When this happens</Label>
-                <SelectMenu
-                    value={eventType}
-                    onChange={setEventType}
-                    options={eventOptions}
-                    className="w-full"
-                    aria-label="When this happens"
-                />
-            </div>
-
-            {/* Reply-only filters */}
-            {isReplyTrigger && (
-                <div className="space-y-2">
-                    <Label>Only for these reply types (optional)</Label>
-                    <div className="flex flex-wrap gap-1">
-                        {REPLY_INTENT_OPTIONS.map((opt) => {
-                            const on = intents.includes(opt.value);
-                            return (
-                                <button
-                                    key={opt.value}
-                                    type="button"
-                                    onClick={() => toggleIntent(opt.value)}
-                                    className={cn(
-                                        "h-6 px-2 rounded-full text-[10.5px] border transition-colors",
-                                        on
-                                            ? "bg-sky-600 border-sky-600 text-white"
-                                            : "bg-white border-slate-200 text-slate-600 hover:border-slate-300",
-                                    )}
-                                >
-                                    {opt.label}
-                                </button>
-                            );
-                        })}
-                    </div>
-                    <div>
-                        <Label>Minimum confidence: {Math.round(minConf * 100)}%</Label>
-                        <input
-                            type="range"
-                            min={0}
-                            max={100}
-                            step={5}
-                            value={Math.round(minConf * 100)}
-                            onChange={(e) => setMinConf(Number(e.target.value) / 100)}
-                            className="w-full accent-sky-600"
-                        />
-                    </div>
-                </div>
-            )}
-
-            {(needsChannel || needsURL) && (
-                <div>
-                    <Label>{destLabel}</Label>
-                    <TextInput
-                        value={dest}
-                        onChange={setDest}
-                        placeholder={destPlaceholder}
-                        className={needsURL ? "font-mono" : undefined}
-                    />
-                </div>
-            )}
-
-            {/* Custom message (for notification-style actions) */}
-            {(needsChannel || provider === "discord" || needsURL) && (
-                <div>
-                    <Label>Custom message (optional)</Label>
-                    <textarea
-                        value={template}
-                        onChange={(e) => setTemplate(e.target.value)}
-                        rows={2}
-                        placeholder="🔥 {{contact_email}} replied — {{subject}}"
-                        className="w-full px-2 py-1.5 rounded-md border border-slate-200 bg-white text-[12px] text-slate-900 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 resize-none"
-                    />
-                    <p className="text-[10px] text-slate-400 mt-1">
-                        Use {"{{contact_email}}"}, {"{{subject}}"}, {"{{intent}}"}, {"{{campaign_id}}"}, {"{{reason}}"}.
-                    </p>
-                </div>
-            )}
-
-            <div className="flex items-center justify-end gap-2 pt-0.5">
-                <button
-                    type="button"
-                    onClick={onCancel}
-                    className="h-6 px-2.5 rounded text-[11.5px] text-slate-600 hover:text-slate-900"
-                >
-                    Cancel
-                </button>
-                <button
-                    type="button"
-                    disabled={!canSubmit}
-                    onClick={() => onAdd(eventType, buildConfig())}
-                    className={cn(
-                        "h-6 px-2.5 rounded text-[11.5px] font-medium text-white bg-sky-600 hover:bg-sky-700 transition-colors",
-                        !canSubmit && "opacity-60",
-                    )}
-                >
-                    {busy ? "Adding…" : "Add automation"}
-                </button>
-            </div>
-        </div>
     );
 }
 
