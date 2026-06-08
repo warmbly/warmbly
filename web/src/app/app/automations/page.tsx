@@ -27,6 +27,7 @@ import {
 import useIntegrationConnections from "@/lib/api/hooks/app/integrations/useIntegrationConnections";
 import type { Automation, AutomationWrite } from "@/lib/api/models/app/automations/Automation";
 import { triggerLabel } from "@/lib/api/models/app/automations/meta";
+import { AUTOMATION_TEMPLATES, type AutomationTemplate } from "@/lib/api/models/app/automations/templates";
 import { cn } from "@/lib/utils";
 import ProviderGlyph from "@/app/app/integrations/_components/ProviderGlyph";
 
@@ -36,8 +37,13 @@ function toWrite(a: Automation): AutomationWrite {
         enabled: a.enabled,
         trigger_event: a.trigger_event,
         filter: a.filter,
-        steps: a.steps.map((s) => ({ connection_id: s.connection_id, action: s.action, config: s.config })),
+        graph: a.graph,
     };
+}
+
+// Count the action nodes in a graph (the "steps" of the flow).
+function actionCount(a: Automation): number {
+    return (a.graph?.nodes ?? []).filter((n) => n.type === "action").length;
 }
 
 export default function AutomationsPage() {
@@ -47,11 +53,26 @@ export default function AutomationsPage() {
     const automations = data?.automations ?? [];
 
     const enabledCount = automations.filter((a) => a.enabled).length;
-    const stepCount = automations.reduce((n, a) => n + a.steps.length, 0);
+    const stepCount = automations.reduce((n, a) => n + actionCount(a), 0);
 
     const newAutomation = () => {
         create.mutate(
-            { name: "New automation", enabled: false, trigger_event: "meeting.booked", steps: [] },
+            {
+                name: "New automation",
+                enabled: false,
+                trigger_event: "meeting.booked",
+                graph: { nodes: [{ id: "trigger", type: "trigger", x: 0, y: 0 }], edges: [] },
+            },
+            {
+                onSuccess: (res) => navigate(`/app/automations/${res.automation.id}`),
+                onError: () => toast.error("Could not create automation"),
+            },
+        );
+    };
+
+    const newFromTemplate = (t: AutomationTemplate) => {
+        create.mutate(
+            { name: t.name, enabled: false, trigger_event: t.trigger_event, graph: t.graph },
             {
                 onSuccess: (res) => navigate(`/app/automations/${res.automation.id}`),
                 onError: () => toast.error("Could not create automation"),
@@ -99,8 +120,39 @@ export default function AutomationsPage() {
                         ))}
                     </div>
                 )}
+
+                <div className="mt-8">
+                    <SectionBar label="Start from a template" />
+                    <TemplateGallery onPick={newFromTemplate} busy={create.isPending} />
+                </div>
             </PageBody>
         </Page>
+    );
+}
+
+// TemplateGallery — one-click prebuilt automations (start points the user tweaks).
+function TemplateGallery({ onPick, busy }: { onPick: (t: AutomationTemplate) => void; busy: boolean }) {
+    return (
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-px bg-slate-200/60 border-b border-slate-200/60">
+            {AUTOMATION_TEMPLATES.map((t) => (
+                <button
+                    key={t.id}
+                    type="button"
+                    disabled={busy}
+                    onClick={() => onPick(t)}
+                    className="text-left bg-white p-4 hover:bg-slate-50/60 transition-colors disabled:opacity-60"
+                >
+                    <div className="flex items-center gap-2">
+                        <span className="inline-flex size-6 shrink-0 items-center justify-center rounded-md bg-indigo-50 text-indigo-600 ring-1 ring-indigo-200/60">
+                            <ZapIcon className="w-3.5 h-3.5" />
+                        </span>
+                        <span className="text-[12.5px] font-medium text-slate-800">{t.name}</span>
+                    </div>
+                    <p className="mt-1.5 text-[11.5px] text-slate-500 leading-relaxed">{t.description}</p>
+                    <div className="mt-2 text-[10px] uppercase tracking-[0.14em] text-slate-400">{triggerLabel(t.trigger_event)}</div>
+                </button>
+            ))}
+        </div>
     );
 }
 
@@ -124,7 +176,15 @@ function AutomationCard({
     }, [connData]);
 
     const a = automation;
-    const providers = Array.from(new Set(a.steps.map((s) => connById[s.connection_id]).filter(Boolean)));
+    const steps = actionCount(a);
+    const providers = Array.from(
+        new Set(
+            (a.graph?.nodes ?? [])
+                .filter((n) => n.type === "action" && n.connection_id)
+                .map((n) => connById[n.connection_id as string])
+                .filter(Boolean),
+        ),
+    );
 
     const toggle = (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -174,7 +234,7 @@ function AutomationCard({
 
             <div className="mt-2 flex items-center gap-2">
                 <span className="text-[11px] text-slate-400">
-                    {a.steps.length} action{a.steps.length === 1 ? "" : "s"}
+                    {steps} action{steps === 1 ? "" : "s"}
                 </span>
                 <div className="flex -space-x-1">
                     {providers.slice(0, 5).map((p) => (

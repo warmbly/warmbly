@@ -18,7 +18,9 @@ export default function AutomationBuilderPage() {
 
     const back = () => navigate("/app/automations");
 
-    if (autoQ.isLoading) {
+    // Wait for connections + catalog too: the canvas seeds action-node labels
+    // (integration name, glyph, available actions) from them once on mount.
+    if (autoQ.isLoading || connQ.isLoading || catQ.isLoading) {
         return (
             <div className="h-full flex items-center justify-center">
                 <Loader2Icon className="w-5 h-5 text-slate-300 animate-spin" />
