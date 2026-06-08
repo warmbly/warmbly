@@ -532,40 +532,85 @@ const faq: [string, string][] = [
           </p>
         </div>
       </div>
+    </div>
+  </section>
 
-      <div class="rounded-[14px] overflow-hidden ring-1 ring-[color:var(--border)]">
-        <div class="flex items-center gap-2 px-4 py-2.5 bg-[#0c1224] border-b border-white/10">
-          <span class="w-2.5 h-2.5 rounded-full bg-[#ff5f56]/80"></span>
-          <span class="w-2.5 h-2.5 rounded-full bg-[#ffbd2e]/80"></span>
-          <span class="w-2.5 h-2.5 rounded-full bg-[#27c93f]/80"></span>
-          <span class="ml-3 text-[11.5px] font-mono text-white/60">First touch · body</span>
-        </div>
-        <pre class="bg-[#0c1224] text-white/85 p-5 text-[12.5px] leading-[1.65] font-mono overflow-x-auto"><code>Hi &#123;&#123; first_name | fallback: <span style="color:#fde68a">"there"</span> &#125;&#125;,
-
-I came across your work at &#123;&#123;
-  current_company | fallback: <span style="color:#fde68a">"your current team"</span>
-&#125;&#125; and &#123;&#123;
-  custom.why_now | fallback: <span style="color:#fde68a">"the work you have been shipping"</span>
-&#125;&#125;.
-
-We are hiring for a &#123;&#123;
-  open_role | fallback: <span style="color:#fde68a">"role on the platform side"</span>
-&#125;&#125; that mirrors what you are doing as &#123;&#123;
-  current_role | fallback: <span style="color:#fde68a">"an engineer"</span>
-&#125;&#125;, reporting to the &#123;&#123;
-  hiring_manager_title | fallback: <span style="color:#fde68a">"VP Engineering"</span>
-&#125;&#125;.
-
-&#123;<span style="color:#7dd3fc">% if custom.connection %</span>&#125;
-We were both at &#123;&#123; custom.connection &#125;&#125; <span style="color:#94a3b8"># shown only when set</span>
-&#123;<span style="color:#7dd3fc">% endif %</span>&#125;
-
-Open to a 20-minute call next week?
-
-Thanks,
-&#123;&#123; sender.first_name &#125;&#125;
-&#123;&#123; sender.title | fallback: <span style="color:#fde68a">"Recruiter"</span> &#125;&#125; · &#123;&#123; sender.agency &#125;&#125;</code></pre>
+  <!-- ============================================================
+       SECTION 7 · opt-outs (suppression fan-out + verdicts)
+  ============================================================ -->
+  <section class="bg-white border-b border-[color:var(--border)] py-20 md:py-28">
+    <div class="container-page">
+      <div class="max-w-2xl mb-12">
+        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Section 7 · Opt-outs</div>
+        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
+          An opt-out applies across the whole workspace.
+        </h2>
+        <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed">
+          When a candidate replies with STOP, REMOVE, or not interested, or their mailbox sends an out-of-office bounce, Warmbly adds them to the suppression list for the whole workspace. After that, no other recruiter or sequence will contact them. So a candidate who has opted out won't be contacted again by another recruiter on the team.
+        </p>
       </div>
+
+      <div class="grid lg:grid-cols-[340px_1fr] gap-6 lg:gap-10 items-center">
+        <!-- Hub: the matched reply -->
+        <div>
+          <div class="rounded-[14px] bg-white ring-1 ring-rose-200 overflow-hidden">
+            <div class="px-4 py-2 border-b border-[color:var(--border)] bg-rose-50/40 flex items-center justify-between">
+              <span class="text-[10px] font-mono uppercase tracking-[0.16em] text-rose-700/80">Inbound reply</span>
+              <span class="inline-flex items-center gap-1.5 h-5 px-1.5 rounded text-[10px] font-mono uppercase tracking-[0.08em] bg-rose-100 text-rose-700">
+                <Icon name="reply" size={10} />
+                matched
+              </span>
+            </div>
+            <div class="px-4 py-3.5">
+              <div class="flex items-center gap-2.5">
+                <span class="inline-grid place-items-center w-8 h-8 rounded-full bg-rose-50 ring-1 ring-rose-200 text-rose-600 text-[11px] font-semibold">M</span>
+                <div class="text-[12.5px] font-semibold text-heading">Maya · candidate</div>
+              </div>
+              <p class="mt-2.5 text-[13px] text-foreground/70 leading-snug">"Thanks, but I'm not interested right now."</p>
+            </div>
+          </div>
+          <div class="mt-3 flex flex-wrap gap-1.5">
+            {suppressTriggers.map((t) => (
+              <span class="inline-flex items-center h-5 px-1.5 rounded bg-white ring-1 ring-[color:var(--border)] text-[10px] font-mono uppercase tracking-[0.06em] text-foreground/65">{t}</span>
+            ))}
+          </div>
+          <div class="mt-2.5 text-[10.5px] font-mono uppercase tracking-[0.12em] text-rose-600">added to the suppression list</div>
+        </div>
+
+        <!-- Fan-out: every surface flips to suppressed -->
+        <div>
+          <div class="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground mb-3">Suppressed across the workspace</div>
+          <div class="grid sm:grid-cols-2 gap-2.5">
+            {suppressEndpoints.map((e, i) => (
+              <div class="supp-endpoint flex items-center gap-2.5 rounded-[10px] bg-[color:var(--surface-1)]/50 ring-1 ring-[color:var(--border)] px-3 py-2.5" style={`--d:${i * 90}ms`}>
+                <span class="h-px w-5 bg-[color:var(--border-strong)] shrink-0"></span>
+                <Icon name="lock" size={12} class="text-muted-foreground shrink-0" />
+                <span class="font-mono text-[12px] text-foreground/70 truncate">{e.label}</span>
+                <span class="ml-auto text-[9px] font-mono uppercase tracking-[0.1em] text-muted-foreground shrink-0">{e.kind}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <!-- Three-verdict strip -->
+      <div class="mt-10 grid md:grid-cols-3 gap-px bg-[color:var(--border)] rounded-[14px] overflow-hidden ring-1 ring-[color:var(--border)]">
+        {verdicts.map((v) => (
+          <div class="bg-white p-5">
+            <div class="flex items-center justify-between">
+              <span class={`inline-flex items-center gap-1.5 h-6 px-2 rounded-full text-[10.5px] font-mono uppercase tracking-[0.1em] ring-1 ${v.chip}`}>
+                <span class={`w-1.5 h-1.5 rounded-full ${v.dot}`}></span>
+                {v.label}
+              </span>
+              <Icon name={v.icon} size={15} class="text-foreground/45" />
+            </div>
+            <p class="mt-3 text-[13px] text-foreground/70 leading-relaxed">{v.does}</p>
+          </div>
+        ))}
+      </div>
+      <p class="mt-4 text-[12px] text-foreground/55 leading-relaxed max-w-2xl">
+        Warmbly tags each reply so the recruiter can act on it. An opt-out is just one of those outcomes; most replies route back to the recruiter to answer.
+      </p>
     </div>
   </section>
 
