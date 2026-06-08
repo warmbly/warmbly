@@ -10,7 +10,7 @@ import React from "react";
 import { Loader2Icon, PlusIcon, Trash2Icon } from "lucide-react";
 import toast from "react-hot-toast";
 
-import { Label, TextInput } from "@/components/ui/field";
+import { TextInput } from "@/components/ui/field";
 import { SelectMenu, type SelectOption } from "@/components/ui/select-menu";
 import { useReplaceFieldMappings } from "@/lib/api/hooks/app/integrations/useFieldMappings";
 import type {

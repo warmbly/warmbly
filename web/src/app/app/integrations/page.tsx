@@ -11,7 +11,6 @@
 import React from "react";
 import { motion } from "framer-motion";
 import { CalendarCheckIcon, ExternalLinkIcon, RefreshCwIcon, SettingsIcon } from "lucide-react";
-import toast from "react-hot-toast";
 
 import {
     EmptyBlock,
