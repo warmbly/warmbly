@@ -104,13 +104,13 @@ export default function DeliverabilityPage() {
                     <div className="grid lg:grid-cols-[1fr_320px] min-h-0 flex-1">
                         <section className="flex flex-col min-h-0 lg:border-r lg:border-slate-200">
                             <SectionBar label="Over time">
-                                <div className="inline-flex items-center gap-0.5 rounded-md border border-slate-200 bg-white p-0.5">
+                                <div className="inline-flex items-center gap-0.5 rounded-md bg-slate-100 p-0.5">
                                     {METRICS.map((m) => (
                                         <button
                                             key={m.key}
                                             onClick={() => setMetric(m.key)}
                                             className={`h-6 px-2 rounded text-[11px] font-medium transition-colors ${
-                                                metric === m.key ? "bg-slate-900 text-white" : "text-slate-500 hover:text-slate-900"
+                                                metric === m.key ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-900"
                                             }`}
                                         >
                                             {m.label}
@@ -231,13 +231,13 @@ export default function DeliverabilityPage() {
 
 function RangeTabs({ value, onChange }: { value: Range; onChange: (r: Range) => void }) {
     return (
-        <div className="inline-flex items-center gap-0.5 rounded-md border border-slate-200 bg-white p-0.5">
+        <div className="inline-flex items-center gap-0.5 rounded-md bg-slate-100 p-0.5">
             {(Object.keys(RANGE_LABEL) as Range[]).map((r) => (
                 <button
                     key={r}
                     onClick={() => onChange(r)}
                     className={`h-7 px-2.5 rounded text-[12px] font-medium transition-colors ${
-                        value === r ? "bg-slate-900 text-white" : "text-slate-500 hover:text-slate-900"
+                        value === r ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-900"
                     }`}
                 >
                     {r}
