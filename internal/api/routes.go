@@ -497,6 +497,21 @@ func Run(
 			meetings.DELETE("/:id", meetingsWrite, h.DeleteMeeting)
 		}
 
+		// Automations (org-scoped). The visual flow builder: a trigger event +
+		// action steps across integrations. Reads reachable by operational
+		// integration users; creating/editing is a settings action.
+		automations := protected.Group("/automations")
+		automations.Use(m.RequireOrganization(), m.RateLimitMiddleware(models.RateLimitWrite))
+		{
+			aread := m.RequireAnyAccess(models.APIPermIntegrations, models.PermManageSettings, models.PermUseIntegrations)
+			awrite := m.RequireAccess(models.PermManageSettings, models.APIPermIntegrations)
+			automations.GET("", aread, h.ListAutomations)
+			automations.POST("", awrite, h.CreateAutomation)
+			automations.GET("/:id", aread, h.GetAutomation)
+			automations.PATCH("/:id", awrite, h.UpdateAutomation)
+			automations.DELETE("/:id", awrite, h.DeleteAutomation)
+		}
+
 		// On-demand Google Sheets -> leads sync (org-scoped). A saved "sync
 		// source" the user re-runs with "Sync now"; new rows create contacts and
 		// existing rows (matched by email) update. Gated under the contacts

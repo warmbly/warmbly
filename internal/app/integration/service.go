@@ -61,6 +61,15 @@ type Service interface {
 	CreateEventSubscription(ctx context.Context, orgID, connID uuid.UUID, eventType string, action models.IntegrationAction, config map[string]any, enabled bool) (*models.IntegrationEventSubscription, error)
 	DeleteEventSubscription(ctx context.Context, orgID, id uuid.UUID) error
 
+	// Automations: the visual flow builder. An automation is a trigger event +
+	// action steps; steps persist as automation-tagged event-subscriptions and
+	// run through the same dispatcher.
+	ListAutomations(ctx context.Context, orgID uuid.UUID) ([]models.Automation, error)
+	GetAutomation(ctx context.Context, orgID, id uuid.UUID) (*models.Automation, error)
+	CreateAutomation(ctx context.Context, orgID uuid.UUID, w models.AutomationWrite) (*models.Automation, error)
+	UpdateAutomation(ctx context.Context, orgID, id uuid.UUID, w models.AutomationWrite) (*models.Automation, error)
+	DeleteAutomation(ctx context.Context, orgID, id uuid.UUID) error
+
 	// ListSyncRuns returns recent observability records for a connection.
 	ListSyncRuns(ctx context.Context, orgID, connID uuid.UUID, limit int) ([]models.IntegrationSyncRun, error)
 
@@ -450,6 +459,106 @@ func (s *service) CreateEventSubscription(ctx context.Context, orgID, connID uui
 
 func (s *service) DeleteEventSubscription(ctx context.Context, orgID, id uuid.UUID) error {
 	return s.repo.DeleteEventSubscription(ctx, orgID, id)
+}
+
+// --- Automations ------------------------------------------------------------
+
+func (s *service) ListAutomations(ctx context.Context, orgID uuid.UUID) ([]models.Automation, error) {
+	return s.repo.ListAutomations(ctx, orgID)
+}
+
+func (s *service) GetAutomation(ctx context.Context, orgID, id uuid.UUID) (*models.Automation, error) {
+	return s.repo.GetAutomation(ctx, orgID, id)
+}
+
+func (s *service) CreateAutomation(ctx context.Context, orgID uuid.UUID, w models.AutomationWrite) (*models.Automation, error) {
+	a, err := s.buildAutomation(ctx, orgID, w)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.repo.CreateAutomation(ctx, a); err != nil {
+		return nil, err
+	}
+	return s.repo.GetAutomation(ctx, orgID, a.ID)
+}
+
+func (s *service) UpdateAutomation(ctx context.Context, orgID, id uuid.UUID, w models.AutomationWrite) (*models.Automation, error) {
+	a, err := s.buildAutomation(ctx, orgID, w)
+	if err != nil {
+		return nil, err
+	}
+	a.ID = id
+	if err := s.repo.UpdateAutomation(ctx, a); err != nil {
+		return nil, err
+	}
+	return s.repo.GetAutomation(ctx, orgID, id)
+}
+
+func (s *service) DeleteAutomation(ctx context.Context, orgID, id uuid.UUID) error {
+	return s.repo.DeleteAutomation(ctx, orgID, id)
+}
+
+// buildAutomation validates a write payload (trigger event, step connections,
+// SSRF on step URLs) and merges the automation-level filter into each step's
+// config so the existing subscription filter logic applies to every step.
+func (s *service) buildAutomation(ctx context.Context, orgID uuid.UUID, w models.AutomationWrite) (*models.Automation, error) {
+	name := strings.TrimSpace(w.Name)
+	if name == "" {
+		name = "Automation"
+	}
+	trigger := strings.TrimSpace(w.TriggerEvent)
+	if !models.IsValidWebhookEventType(trigger) {
+		return nil, fmt.Errorf("unknown trigger event: %s", trigger)
+	}
+
+	steps := make([]models.AutomationStep, 0, len(w.Steps))
+	for _, step := range w.Steps {
+		conn, err := s.repo.GetConnectionByID(ctx, orgID, step.ConnectionID)
+		if err != nil {
+			return nil, err
+		}
+		if conn == nil {
+			return nil, errors.New("unknown connection in a step")
+		}
+		if strings.TrimSpace(string(step.Action)) == "" {
+			return nil, errors.New("a step is missing its action")
+		}
+		cfg := map[string]any{}
+		if len(step.Config) > 0 {
+			_ = json.Unmarshal(step.Config, &cfg)
+		}
+		if err := validateOutboundConfigURLs(cfg); err != nil {
+			return nil, err
+		}
+		// Merge the automation-level filter (intents / min_confidence) into the
+		// step config so subscriptionMatchesFilter applies it.
+		if len(w.Filter) > 0 {
+			f := map[string]any{}
+			_ = json.Unmarshal(w.Filter, &f)
+			for k, v := range f {
+				cfg[k] = v
+			}
+		}
+		merged, _ := json.Marshal(cfg)
+		steps = append(steps, models.AutomationStep{
+			ConnectionID: step.ConnectionID,
+			Action:       step.Action,
+			Config:       merged,
+		})
+	}
+
+	filter := w.Filter
+	if len(filter) == 0 {
+		filter = json.RawMessage("{}")
+	}
+	return &models.Automation{
+		OrganizationID: orgID,
+		Name:           name,
+		Enabled:        w.Enabled,
+		TriggerEvent:   trigger,
+		Filter:         filter,
+		Steps:          steps,
+	}, nil
 }
 
 func (s *service) ListSyncRuns(ctx context.Context, orgID, connID uuid.UUID, limit int) ([]models.IntegrationSyncRun, error) {

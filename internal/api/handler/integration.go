@@ -635,6 +635,104 @@ func (h *Handler) TestConnection(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"sent": sent})
 }
 
+// --- Automations (visual flow builder) --------------------------------------
+
+func (h *Handler) ListAutomations(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
+	list, err := h.IntegrationService.ListAutomations(c.Request.Context(), orgID)
+	if err != nil {
+		errx.JSON(c, errx.New(errx.Internal, "list failed"))
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"automations": list})
+}
+
+func (h *Handler) GetAutomation(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "invalid id"))
+		return
+	}
+	a, err := h.IntegrationService.GetAutomation(c.Request.Context(), orgID, id)
+	if err != nil {
+		errx.JSON(c, errx.New(errx.Internal, "lookup failed"))
+		return
+	}
+	if a == nil {
+		errx.JSON(c, errx.New(errx.NotFound, "automation not found"))
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"automation": a})
+}
+
+func (h *Handler) CreateAutomation(c *gin.Context) {
+	orgID, userID, ok := h.requireIntegrationActor(c, true)
+	if !ok {
+		return
+	}
+	var w models.AutomationWrite
+	if err := c.ShouldBindJSON(&w); err != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "invalid payload"))
+		return
+	}
+	a, err := h.IntegrationService.CreateAutomation(c.Request.Context(), orgID, w)
+	if err != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, err.Error()))
+		return
+	}
+	h.auditIntegration(c, userID, models.AuditActionCreate, a.ID, "automation")
+	c.JSON(http.StatusCreated, gin.H{"automation": a})
+}
+
+func (h *Handler) UpdateAutomation(c *gin.Context) {
+	orgID, userID, ok := h.requireIntegrationActor(c, true)
+	if !ok {
+		return
+	}
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "invalid id"))
+		return
+	}
+	var w models.AutomationWrite
+	if err := c.ShouldBindJSON(&w); err != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "invalid payload"))
+		return
+	}
+	a, err := h.IntegrationService.UpdateAutomation(c.Request.Context(), orgID, id, w)
+	if err != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, err.Error()))
+		return
+	}
+	h.auditIntegration(c, userID, models.AuditActionUpdate, id, "automation")
+	c.JSON(http.StatusOK, gin.H{"automation": a})
+}
+
+func (h *Handler) DeleteAutomation(c *gin.Context) {
+	orgID, userID, ok := h.requireIntegrationActor(c, true)
+	if !ok {
+		return
+	}
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "invalid id"))
+		return
+	}
+	if err := h.IntegrationService.DeleteAutomation(c.Request.Context(), orgID, id); err != nil {
+		errx.JSON(c, errx.New(errx.Internal, "delete failed"))
+		return
+	}
+	h.auditIntegration(c, userID, models.AuditActionDelete, id, "automation")
+	c.JSON(http.StatusOK, gin.H{"deleted": true})
+}
+
 // --- Inbound webhooks (Calendly / Cal.com) ----------------------------------
 
 func (h *Handler) InboundCalendly(c *gin.Context) {
