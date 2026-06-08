@@ -453,34 +453,49 @@ func Run(
 			webhooks.GET("/:id/deliveries", h.ListWebhookDeliveries)
 		}
 
-		// Third-party integrations (org-scoped). Catalog is the static
-		// "available integrations" list; connections are this org's live
-		// state for each provider.
+		// Third-party integrations (org-scoped). Reads are reachable by both
+		// settings managers AND operational integration users (PermUseIntegrations)
+		// so contextual integration actions show up everywhere they belong;
+		// connecting + configuring stays gated on PermManageSettings. Pushing
+		// records on demand is an operational action (PermUseIntegrations).
 		integrations := protected.Group("/integrations")
-		integrations.Use(m.RequireOrganization(), m.RequireAccess(models.PermManageSettings, models.APIPermIntegrations), m.RateLimitMiddleware(models.RateLimitWrite))
+		integrations.Use(m.RequireOrganization(), m.RateLimitMiddleware(models.RateLimitWrite))
 		{
-			integrations.GET("/catalog", h.ListIntegrationCatalog)
-			integrations.GET("/connections", h.ListIntegrationConnections)
-			integrations.POST("/connections", h.ConnectIntegration)
-			integrations.GET("/connections/:id", h.GetIntegrationConnection)
-			integrations.DELETE("/connections/:id", h.DisconnectIntegration)
-			integrations.GET("/connections/:id/events", h.ListConnectionEventSubscriptions)
-			integrations.POST("/connections/:id/events", h.CreateConnectionEventSubscription)
-			integrations.DELETE("/connections/:id/events/:eventId", h.DeleteConnectionEventSubscription)
-			integrations.GET("/connections/:id/runs", h.ListConnectionSyncRuns)
-			integrations.GET("/bookings", h.ListMeetingBookings)
+			read := m.RequireAnyAccess(models.APIPermIntegrations, models.PermManageSettings, models.PermUseIntegrations)
+			write := m.RequireAccess(models.PermManageSettings, models.APIPermIntegrations)
+			operate := m.RequireAccess(models.PermUseIntegrations, models.APIPermIntegrations)
+
+			integrations.GET("/catalog", read, h.ListIntegrationCatalog)
+			integrations.GET("/connections", read, h.ListIntegrationConnections)
+			integrations.POST("/connections", write, h.ConnectIntegration)
+			integrations.GET("/connections/:id", read, h.GetIntegrationConnection)
+			integrations.PATCH("/connections/:id/config", write, h.UpdateConnectionConfig)
+			integrations.DELETE("/connections/:id", write, h.DisconnectIntegration)
+			integrations.GET("/connections/:id/events", read, h.ListConnectionEventSubscriptions)
+			integrations.POST("/connections/:id/events", write, h.CreateConnectionEventSubscription)
+			integrations.DELETE("/connections/:id/events/:eventId", write, h.DeleteConnectionEventSubscription)
+			integrations.GET("/connections/:id/field-mappings", read, h.ListConnectionFieldMappings)
+			integrations.PUT("/connections/:id/field-mappings", write, h.ReplaceConnectionFieldMappings)
+			integrations.GET("/connections/:id/runs", read, h.ListConnectionSyncRuns)
+			integrations.GET("/connections/:id/webhook-secret", write, h.GetConnectionWebhookSecret)
+			integrations.POST("/connections/:id/test", write, h.TestConnection)
+			integrations.POST("/connections/:id/push", operate, h.PushContactsToIntegration)
+			integrations.GET("/bookings", read, h.ListMeetingBookings)
 		}
 
-		// Operating a connected integration (pushing contacts to a CRM on
-		// demand) is an operational action, gated on the lower-privilege
-		// PermUseIntegrations rather than the PermManageSettings the rest of the
-		// integrations group requires for connecting/configuring. Registered on
-		// `protected` directly so it does not inherit the group's settings gate.
-		protected.POST("/integrations/connections/:id/push",
-			m.RequireOrganization(),
-			m.RequireAccess(models.PermUseIntegrations, models.APIPermIntegrations),
-			m.RateLimitMiddleware(models.RateLimitWrite),
-			h.PushContactsToIntegration)
+		// Meetings (org-scoped). Booked calls from connected scheduling
+		// providers (Calendly / Cal.com), surfaced as a first-class CRM list.
+		// Read-only and reachable by anyone who can view contacts.
+		meetings := protected.Group("/meetings")
+		meetings.Use(m.RequireOrganization(), m.RateLimitMiddleware(models.RateLimitWrite))
+		{
+			meetingsRead := m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts)
+			meetingsWrite := m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts)
+			meetings.GET("", meetingsRead, h.SearchMeetings)
+			meetings.GET("/summary", meetingsRead, h.MeetingsSummary)
+			meetings.POST("", meetingsWrite, h.CreateMeeting)
+			meetings.DELETE("/:id", meetingsWrite, h.DeleteMeeting)
+		}
 
 		// On-demand Google Sheets -> leads sync (org-scoped). A saved "sync
 		// source" the user re-runs with "Sync now"; new rows create contacts and

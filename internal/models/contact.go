@@ -176,6 +176,13 @@ const (
 	TimelineDeliverability ContactTimelineEventType = "deliverability"
 	TimelineSuppressed     ContactTimelineEventType = "suppressed"
 	TimelineNote           ContactTimelineEventType = "note"
+
+	// Meetings booked through a connected scheduling provider (Calendly /
+	// Cal.com). The event time is when the booking arrived; ScheduledFor holds
+	// when the call itself is set for.
+	TimelineMeetingBooked      ContactTimelineEventType = "meeting_booked"
+	TimelineMeetingRescheduled ContactTimelineEventType = "meeting_rescheduled"
+	TimelineMeetingCanceled    ContactTimelineEventType = "meeting_canceled"
 )
 
 // ContactTimelineEvent is one entry in the merged activity feed. The
@@ -202,11 +209,16 @@ type ContactTimelineEvent struct {
 	Subject *string    `json:"subject,omitempty"`
 
 	// Type-specific.
-	Reason   *string `json:"reason,omitempty"`   // deliverability / suppression
-	Source   *string `json:"source,omitempty"`   // suppression: bounce/complaint/unsubscribe
+	Reason   *string `json:"reason,omitempty"`   // deliverability / suppression / meeting cancellation
+	Source   *string `json:"source,omitempty"`   // suppression: bounce/complaint/unsubscribe; meeting: calendly/cal_com
 	Provider *string `json:"provider,omitempty"` // deliverability provider
 	Intent   *string `json:"intent,omitempty"`   // reply_intent classification
 	Content  *string `json:"content,omitempty"`  // note body
+
+	// Meeting events (meeting_booked / rescheduled / canceled).
+	ScheduledFor *time.Time `json:"scheduled_for,omitempty"` // when the call is set for
+	JoinURL      *string    `json:"join_url,omitempty"`      // video/conference link
+	MeetingState *string    `json:"meeting_state,omitempty"` // booked / rescheduled / canceled
 
 	// Author (notes).
 	UserID *uuid.UUID `json:"user_id,omitempty"`

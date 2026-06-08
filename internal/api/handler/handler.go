@@ -45,6 +45,7 @@ import (
 	"github.com/warmbly/warmbly/internal/pkg/generation"
 
 	"github.com/warmbly/warmbly/internal/infrastructure/encryptedkeys"
+	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/infrastructure/storage"
 	"github.com/warmbly/warmbly/internal/notify"
 	"github.com/warmbly/warmbly/internal/repository"
@@ -145,6 +146,11 @@ type Handler struct {
 	// SNDS, Cloudflare, GoDaddy, Namecheap, Google Sheets).
 	IntegrationService integration.Service
 	ContactRepo        repository.ContactRepository
+
+	// Realtime publisher for handler paths that emit live dashboard events
+	// directly (inbound meeting webhooks have no service layer of their own).
+	// nil-safe: realtime is a nicety, not a requirement.
+	StreamingPublisher *pubsub.StreamingPublisher
 
 	// On-demand Google Sheets -> leads sync. Reuses the google_sheets OAuth
 	// connection's token to read sheets and the contact import path to upsert.

@@ -160,6 +160,10 @@ type IntegrationCatalogEntry struct {
 	// handler.
 	SupportsPush bool `json:"supports_push"`
 
+	// Capability is the configurable-action descriptor the dashboard renders the
+	// onboarding + field-mapping UI from. Nil for providers with no descriptor.
+	Capability *ProviderCapability `json:"capability,omitempty"`
+
 	// Configured reports whether the server has OAuth client credentials wired
 	// for this provider. OAuth providers without credentials render as
 	// "coming soon" instead of a dead Connect button.
@@ -177,6 +181,13 @@ type IntegrationConnection struct {
 	Status         IntegrationStatus   `json:"status"`
 	AuthMethod     string              `json:"auth_method"`
 	DisplayFields  json.RawMessage     `json:"display_fields"`
+
+	// ConfigCapabilities is the per-connection onboarding/capability snapshot
+	// (selected objects, enabled use-cases, picker selections). Non-secret, read
+	// before execution. Distinct from the sealed secrets in config_encrypted.
+	ConfigCapabilities json.RawMessage `json:"config_capabilities,omitempty"`
+	// SyncDirection is the connection's data-flow direction: push | pull | both.
+	SyncDirection string `json:"sync_direction"`
 
 	ConnectedByUserID   *uuid.UUID `json:"connected_by_user_id,omitempty"`
 	ExternalAccountID   string     `json:"external_account_id,omitempty"`
@@ -254,8 +265,29 @@ type IntegrationEventSubscription struct {
 	Action         IntegrationAction `json:"action"`
 	Config         json.RawMessage   `json:"config"`
 	Enabled        bool              `json:"enabled"`
-	CreatedAt      time.Time         `json:"created_at"`
-	UpdatedAt      time.Time         `json:"updated_at"`
+	// UseCase is a discriminator describing what this automation is for (e.g.
+	// "crm_sync", "notify", "custom"). Drives projection + which handler runs.
+	UseCase   string    `json:"use_case"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// IntegrationFieldMapping is one Warmbly-field -> provider-field mapping row.
+// SubscriptionID scopes a mapping to a single automation; when nil the mapping
+// is a connection default applied to every automation for that object/direction.
+type IntegrationFieldMapping struct {
+	ID             uuid.UUID  `json:"id"`
+	ConnectionID   uuid.UUID  `json:"connection_id"`
+	OrganizationID uuid.UUID  `json:"organization_id"`
+	SubscriptionID *uuid.UUID `json:"subscription_id,omitempty"`
+	Direction      string     `json:"direction"`
+	ObjectName     string     `json:"object_name"`
+	WarmblyField   string     `json:"warmbly_field"`
+	ExternalField  string     `json:"external_field"`
+	Transform      string     `json:"transform"`
+	StaticValue    string     `json:"static_value"`
+	IsDefault      bool       `json:"is_default"`
+	CreatedAt      time.Time  `json:"created_at"`
 }
 
 // IntegrationSyncRun is one observability record of work done against a
@@ -272,18 +304,76 @@ type IntegrationSyncRun struct {
 	FinishedAt       *time.Time `json:"finished_at,omitempty"`
 }
 
-// MeetingBooking represents one booked meeting from Calendly/Cal.com.
+// MeetingBookingStatus is the lifecycle state of a booked meeting.
+type MeetingBookingStatus string
+
+const (
+	MeetingBooked      MeetingBookingStatus = "booked"
+	MeetingRescheduled MeetingBookingStatus = "rescheduled"
+	MeetingCanceled    MeetingBookingStatus = "canceled"
+	MeetingCompleted   MeetingBookingStatus = "completed"
+	MeetingNoShow      MeetingBookingStatus = "no_show"
+)
+
+// MeetingBooking represents one booked meeting from Calendly/Cal.com, tracked
+// through its full lifecycle (booked -> rescheduled / canceled).
 type MeetingBooking struct {
-	ID              uuid.UUID       `json:"id"`
-	OrganizationID  uuid.UUID       `json:"organization_id"`
-	Source          string          `json:"source"`
-	ExternalEventID string          `json:"external_event_id"`
-	InviteeEmail    string          `json:"invitee_email"`
-	InviteeName     string          `json:"invitee_name"`
-	EventName       string          `json:"event_name"`
-	ScheduledFor    *time.Time      `json:"scheduled_for,omitempty"`
-	ContactID       *uuid.UUID      `json:"contact_id,omitempty"`
-	CampaignID      *uuid.UUID      `json:"campaign_id,omitempty"`
-	RawPayload      json.RawMessage `json:"raw_payload,omitempty"`
-	CreatedAt       time.Time       `json:"created_at"`
+	ID              uuid.UUID            `json:"id"`
+	OrganizationID  uuid.UUID            `json:"organization_id"`
+	Source          string               `json:"source"`
+	ExternalEventID string               `json:"external_event_id"`
+	Status          MeetingBookingStatus `json:"status"`
+	InviteeEmail    string               `json:"invitee_email"`
+	InviteeName     string               `json:"invitee_name"`
+	EventName       string               `json:"event_name"`
+	EventType       string               `json:"event_type,omitempty"`
+	ScheduledFor    *time.Time           `json:"scheduled_for,omitempty"`
+	EndTime         *time.Time           `json:"end_time,omitempty"`
+	JoinURL         string               `json:"join_url,omitempty"`
+	Location        string               `json:"location,omitempty"`
+	CancelURL       string               `json:"cancel_url,omitempty"`
+	RescheduleURL   string               `json:"reschedule_url,omitempty"`
+	CanceledReason  string               `json:"canceled_reason,omitempty"`
+	ContactID       *uuid.UUID           `json:"contact_id,omitempty"`
+	CampaignID      *uuid.UUID           `json:"campaign_id,omitempty"`
+	RawPayload      json.RawMessage      `json:"raw_payload,omitempty"`
+	CreatedAt       time.Time            `json:"created_at"`
+	UpdatedAt       time.Time            `json:"updated_at"`
+
+	// Joined for list display (not stored on the row).
+	ContactName string `json:"contact_name,omitempty"`
+}
+
+// MeetingBookingFilter scopes a Meetings-page search.
+type MeetingBookingFilter struct {
+	// Timeframe: "upcoming" (scheduled_for >= now, not canceled),
+	// "past" (scheduled_for < now), or "" for all.
+	Timeframe string
+	Status    string // exact status filter, or "" for any
+	Search    string // matches invitee name/email or event name
+	Limit     int
+	Offset    int
+}
+
+// MeetingBookingSummary powers the sidebar count + page header stats.
+type MeetingBookingSummary struct {
+	Upcoming int `json:"upcoming"`
+	Today    int `json:"today"`
+	Total    int `json:"total"`
+	Canceled int `json:"canceled"`
+}
+
+// MeetingBookingPage is an offset-paginated meetings result (Total is exact so
+// the UI can show "N of M").
+type MeetingBookingPage struct {
+	Data       []MeetingBooking         `json:"data"`
+	Pagination MeetingBookingPagination `json:"pagination"`
+}
+
+type MeetingBookingPagination struct {
+	Total      int64 `json:"total"`
+	Limit      int   `json:"limit"`
+	Offset     int   `json:"offset"`
+	HasMore    bool  `json:"has_more"`
+	NextOffset *int  `json:"next_offset,omitempty"`
 }

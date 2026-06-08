@@ -1044,6 +1044,7 @@ func main() {
 		// Third-party integrations
 		IntegrationService: integrationServiceForHandler,
 		ContactRepo:        contactRepoForHandler,
+		StreamingPublisher: streamingPublisher,
 
 		// On-demand Google Sheets -> leads sync
 		LeadSyncService: leadSyncServiceForHandler,

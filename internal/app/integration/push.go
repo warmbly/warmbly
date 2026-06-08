@@ -2,6 +2,7 @@ package integration
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -101,6 +102,13 @@ func (s *service) PushContacts(ctx context.Context, orgID, connID uuid.UUID, con
 		}
 	}
 
+	// Resolve the connection's effective field map once for the whole batch — it
+	// is the same for every contact, so the push respects the user's configured
+	// mapping instead of a fixed shape.
+	object := defaultObject(conn.Provider)
+	mapRows, _ := s.repo.ListFieldMappings(ctx, orgID, connID)
+	fieldMap := effectiveFieldMap(conn.Provider, object, mapRows, "", nil)
+
 	run := &models.IntegrationSyncRun{
 		ConnectionID:   connID,
 		OrganizationID: orgID,
@@ -120,17 +128,17 @@ func (s *service) PushContacts(ctx context.Context, orgID, connID uuid.UUID, con
 			result.Results = append(result.Results, rr)
 			continue
 		}
-		data := pushDataMap(ct)
+		props := projectFields(fieldMap, contactSource(ct))
 		var aerr error
 		switch conn.Provider {
 		case models.IntegrationHubSpot:
-			aerr = hubspotUpsertContact(ctx, token, data, pushMessage(ct))
+			aerr = hubspotUpsertContact(ctx, token, ct.Email, props, "Synced from Warmbly")
 		case models.IntegrationPipedrive:
-			aerr = pipedriveUpsertPerson(ctx, token, data)
+			aerr = pipedriveUpsertPerson(ctx, token, ct.Email, props)
 		case models.IntegrationSalesforce:
-			aerr = salesforceUpsertContact(ctx, token, instanceURL, data)
+			aerr = salesforceUpsertContact(ctx, token, instanceURL, ct.Email, props)
 		case models.IntegrationClose:
-			aerr = closeUpsertLead(ctx, apiKey, data)
+			aerr = closeUpsertLead(ctx, apiKey, ct.Email, props)
 		default:
 			aerr = ErrPushUnsupported
 		}
@@ -165,6 +173,56 @@ func (s *service) PushContacts(ctx context.Context, orgID, connID uuid.UUID, con
 	return result, nil
 }
 
+// ListFieldMappings returns every field mapping for a connection.
+func (s *service) ListFieldMappings(ctx context.Context, orgID, connID uuid.UUID) ([]models.IntegrationFieldMapping, error) {
+	return s.repo.ListFieldMappings(ctx, orgID, connID)
+}
+
+// ReplaceFieldMappings swaps the connection-default push map for one object
+// (defaulting the object to the provider's primary object when unspecified).
+func (s *service) ReplaceFieldMappings(ctx context.Context, orgID, connID uuid.UUID, object string, mappings []models.IntegrationFieldMapping) error {
+	conn, err := s.repo.GetConnectionByID(ctx, orgID, connID)
+	if err != nil {
+		return err
+	}
+	if conn == nil {
+		return errors.New("connection not found")
+	}
+	if object == "" {
+		object = defaultObject(conn.Provider)
+	}
+	return s.repo.ReplaceConnectionFieldMappings(ctx, orgID, connID, object, mappings)
+}
+
+// UpdateConnectionConfig persists the onboarding/capability snapshot + direction.
+func (s *service) UpdateConnectionConfig(ctx context.Context, orgID, connID uuid.UUID, configCapabilities map[string]any, syncDirection string) (*models.IntegrationConnection, error) {
+	conn, err := s.repo.GetConnectionByID(ctx, orgID, connID)
+	if err != nil {
+		return nil, err
+	}
+	if conn == nil {
+		return nil, errors.New("connection not found")
+	}
+	switch models.SyncDirection(syncDirection) {
+	case models.SyncDirectionPush, models.SyncDirectionPull, models.SyncDirectionBoth:
+	case "":
+		syncDirection = conn.SyncDirection
+		if syncDirection == "" {
+			syncDirection = string(models.SyncDirectionPush)
+		}
+	default:
+		return nil, fmt.Errorf("invalid sync direction %q", syncDirection)
+	}
+	raw, err := json.Marshal(configCapabilities)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.repo.UpdateConnectionConfig(ctx, orgID, connID, raw, syncDirection); err != nil {
+		return nil, err
+	}
+	return s.repo.GetConnectionByID(ctx, orgID, connID)
+}
+
 // providerSupportsPush reports whether a provider can be a push target, reading
 // the same catalog metadata the dashboard uses to render the action.
 func providerSupportsPush(p models.IntegrationProvider) bool {
@@ -176,7 +234,9 @@ func providerSupportsPush(p models.IntegrationProvider) bool {
 	return false
 }
 
-func pushDataMap(ct PushContact) map[string]any {
+// contactSource normalizes a PushContact into the Warmbly source vocabulary the
+// field map projects from.
+func contactSource(ct PushContact) map[string]any {
 	return map[string]any{
 		"email":      ct.Email,
 		"first_name": ct.FirstName,
@@ -184,13 +244,5 @@ func pushDataMap(ct PushContact) map[string]any {
 		"company":    ct.Company,
 		"phone":      ct.Phone,
 		"name":       strings.TrimSpace(ct.FirstName + " " + ct.LastName),
-	}
-}
-
-func pushMessage(ct PushContact) eventMessage {
-	return eventMessage{
-		Title:  "Synced from Warmbly",
-		Email:  ct.Email,
-		Detail: strings.TrimSpace(ct.FirstName + " " + ct.LastName),
 	}
 }

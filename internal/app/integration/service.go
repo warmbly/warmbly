@@ -69,6 +69,23 @@ type Service interface {
 	// results are returned so the UI can report exactly what synced.
 	PushContacts(ctx context.Context, orgID, connID uuid.UUID, contacts []PushContact) (*PushResult, error)
 
+	// Field mappings drive how Warmbly fields project onto provider fields.
+	ListFieldMappings(ctx context.Context, orgID, connID uuid.UUID) ([]models.IntegrationFieldMapping, error)
+	// ReplaceFieldMappings swaps the connection-default map for one object.
+	ReplaceFieldMappings(ctx context.Context, orgID, connID uuid.UUID, object string, mappings []models.IntegrationFieldMapping) error
+	// UpdateConnectionConfig persists the onboarding/capability snapshot + sync
+	// direction for a connection.
+	UpdateConnectionConfig(ctx context.Context, orgID, connID uuid.UUID, configCapabilities map[string]any, syncDirection string) (*models.IntegrationConnection, error)
+
+	// WebhookSigningSecret returns the HMAC signing secret for an automation
+	// connection's outbound webhook deliveries, generating + persisting one on
+	// first request so the user can configure signature verification on their end.
+	WebhookSigningSecret(ctx context.Context, orgID, connID uuid.UUID) (string, error)
+	// SendTestEvent delivers a synthetic event through the connection's
+	// configured notify/webhook automations so the user can verify the wiring.
+	// Returns how many automations it fired.
+	SendTestEvent(ctx context.Context, orgID, connID uuid.UUID) (int, error)
+
 	// MarkSynced records a successful/failed round-trip against a connection.
 	MarkSynced(ctx context.Context, id uuid.UUID, status models.IntegrationStatus, displayFields map[string]any, errMsg string) error
 
@@ -132,6 +149,9 @@ func (s *service) Catalog() []models.IntegrationCatalogEntry {
 			// api-key and webhook providers are always usable.
 			e.Configured = true
 		}
+		// Attach the configurable-action descriptor so the dashboard can render
+		// the onboarding + field-mapping UI generically.
+		e.Capability = models.CapabilityFor(e.Provider)
 	}
 	return entries
 }
@@ -198,14 +218,18 @@ func (s *service) Connect(ctx context.Context, orgID, userID uuid.UUID, provider
 	}
 
 	status := models.IntegrationStatusPending
-	switch provider {
-	case models.IntegrationCalendly, models.IntegrationCalCom:
+	switch {
+	case provider == models.IntegrationCalendly || provider == models.IntegrationCalCom:
 		// Inbound providers are "connected" once the URL exists.
 		status = models.IntegrationStatusConnected
-	default:
-		if hasAnyCredential(config) {
-			status = models.IntegrationStatusConnected
-		}
+	case isAutomationProvider(provider):
+		// Automation tools (Zapier/Make/n8n) need no credential to connect: we
+		// fan events to a per-automation webhook URL, and the reverse direction
+		// (the tool calling us) authenticates with a Warmbly API key created in
+		// the API-keys page, not stored here. So connecting is one click.
+		status = models.IntegrationStatusConnected
+	case hasAnyCredential(config):
+		status = models.IntegrationStatusConnected
 	}
 
 	df, _ := json.Marshal(displayFields)
@@ -644,6 +668,115 @@ func catalogAuthMethod(provider models.IntegrationProvider) string {
 	return string(models.IntegrationAuthAPIKey)
 }
 
+// isAutomationProvider reports whether a provider is a generic outbound-webhook
+// automation tool (Zapier / Make / n8n).
+func isAutomationProvider(p models.IntegrationProvider) bool {
+	return p == models.IntegrationZapier || p == models.IntegrationMake || p == models.IntegrationN8N
+}
+
+// generateSigningSecret returns a Stripe-style `whsec_`-prefixed 32-byte hex
+// HMAC key for outbound webhook signatures.
+func generateSigningSecret() (string, error) {
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return "whsec_" + hex.EncodeToString(buf), nil
+}
+
+// WebhookSigningSecret returns the connection's outbound-webhook HMAC secret,
+// generating + persisting one (into the non-secret config_capabilities, matching
+// how customer-webhook signing secrets are stored) on first request.
+func (s *service) WebhookSigningSecret(ctx context.Context, orgID, connID uuid.UUID) (string, error) {
+	conn, err := s.repo.GetConnectionByID(ctx, orgID, connID)
+	if err != nil {
+		return "", err
+	}
+	if conn == nil {
+		return "", fmt.Errorf("connection not found")
+	}
+	cc := map[string]any{}
+	if len(conn.ConfigCapabilities) > 0 {
+		_ = json.Unmarshal(conn.ConfigCapabilities, &cc)
+	}
+	if existing, ok := cc["signing_secret"].(string); ok && existing != "" {
+		return existing, nil
+	}
+	secret, err := generateSigningSecret()
+	if err != nil {
+		return "", err
+	}
+	cc["signing_secret"] = secret
+	raw, _ := json.Marshal(cc)
+	dir := conn.SyncDirection
+	if dir == "" {
+		dir = "push"
+	}
+	if err := s.repo.UpdateConnectionConfig(ctx, orgID, connID, raw, dir); err != nil {
+		return "", err
+	}
+	return secret, nil
+}
+
+// SendTestEvent fires a synthetic event through the connection's notify/webhook
+// automations (Slack, Discord, generic webhook), reusing the real delivery path
+// so signing + payload shape match production. CRM-upsert automations are
+// skipped so a test never writes a junk record into the customer's CRM.
+func (s *service) SendTestEvent(ctx context.Context, orgID, connID uuid.UUID) (int, error) {
+	conn, err := s.repo.GetConnectionByID(ctx, orgID, connID)
+	if err != nil {
+		return 0, err
+	}
+	if conn == nil {
+		return 0, fmt.Errorf("connection not found")
+	}
+	// Ensure a signing secret first so an automation test is signed like prod.
+	if isAutomationProvider(conn.Provider) {
+		if _, err := s.WebhookSigningSecret(ctx, orgID, connID); err != nil {
+			return 0, err
+		}
+	}
+	subs, err := s.repo.ListEventSubscriptions(ctx, orgID, connID)
+	if err != nil {
+		return 0, err
+	}
+	sec, err := s.repo.GetConnectionSecrets(ctx, connID)
+	if err != nil {
+		return 0, err
+	}
+	if sec == nil {
+		return 0, fmt.Errorf("connection not found")
+	}
+
+	sample := map[string]any{
+		"test":          true,
+		"event_name":    "Test event",
+		"contact_email": "test@warmbly.com",
+		"invitee_email": "test@warmbly.com",
+		"subject":       "Warmbly test event",
+		"intent":        "positive",
+		"content":       "This is a test event from Warmbly.",
+	}
+
+	count := 0
+	for _, sub := range subs {
+		switch sub.Action {
+		case models.IntegrationActionSlackNotify,
+			models.IntegrationActionDiscordNotify,
+			models.IntegrationActionGenericWebhookPing:
+			target := repository.DispatchTarget{Subscription: sub, Secrets: *sec}
+			if err := s.execAction(ctx, target, sample); err != nil {
+				return count, err
+			}
+			count++
+		}
+	}
+	if count == 0 {
+		return 0, fmt.Errorf("add a notification or webhook automation first, then send a test")
+	}
+	return count, nil
+}
+
 // generateInboundSecret returns a prefixed 24-byte hex string.
 func generateInboundSecret(provider models.IntegrationProvider) (string, error) {
 	buf := make([]byte, 24)
@@ -685,7 +818,10 @@ func buildDisplayFields(provider models.IntegrationProvider, config map[string]a
 	}
 	switch provider {
 	case models.IntegrationCalendly, models.IntegrationCalCom:
-		pick("organization_uri")
+		// scheduling_url is the user's public booking link, surfaced so the
+		// contextual "Book a call" button can open it prefilled. It is opened by
+		// the browser, never POSTed to, so it isn't an SSRF surface.
+		pick("organization_uri", "scheduling_url")
 	case models.IntegrationGoogleSheets:
 		pick("sheet_id", "sheet_title")
 	case models.IntegrationHubSpot, models.IntegrationSalesforce, models.IntegrationPipedrive, models.IntegrationClose:

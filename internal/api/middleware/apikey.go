@@ -217,6 +217,63 @@ func (h *Handler) RequireAccess(orgPerm models.OrganizationPermission, apiPerm u
 	}
 }
 
+// RequireAnyAccess is like RequireAccess but a JWT caller passes if they hold
+// ANY of the listed organization permissions (the API-key path is unchanged: it
+// checks the single apiPerm). Use on read routes reachable by multiple roles —
+// e.g. integration reads allowed for both settings managers and operational
+// integration users.
+func (h *Handler) RequireAnyAccess(apiPerm uint64, orgPerms ...models.OrganizationPermission) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		switch c.GetString(AuthTypeKey) {
+		case AuthTypeAPIKey:
+			perms, exists := c.Get(APIKeyPermissionsKey)
+			if !exists {
+				errx.Handle(c, errx.ErrForbidden)
+				c.Abort()
+				return
+			}
+			permissions, ok := perms.(uint64)
+			if !ok || !models.HasAPIPermission(permissions, apiPerm) {
+				errx.Handle(c, errx.New(errx.Forbidden, "insufficient API key permissions"))
+				c.Abort()
+				return
+			}
+			c.Next()
+		default:
+			if h.OrganizationService == nil {
+				c.Next()
+				return
+			}
+			userID, err := GetUserUUID(c)
+			if err != nil {
+				errx.JSON(c, errx.ErrUnauthorized)
+				c.Abort()
+				return
+			}
+			orgID := GetOrganizationID(c)
+			if orgID == nil {
+				errx.JSON(c, errx.New(errx.BadRequest, "no organization selected"))
+				c.Abort()
+				return
+			}
+			for _, p := range orgPerms {
+				has, xerr := h.OrganizationService.HasPermission(c.Request.Context(), *orgID, userID, p)
+				if xerr != nil {
+					errx.JSON(c, xerr)
+					c.Abort()
+					return
+				}
+				if has {
+					c.Next()
+					return
+				}
+			}
+			errx.JSON(c, errx.ErrForbidden)
+			c.Abort()
+		}
+	}
+}
+
 // RequireAPIKeyEmailAccountParam enforces an API key's optional
 // allowed_email_accounts allowlist against a route parameter. JWT callers and
 // unrestricted API keys pass through.

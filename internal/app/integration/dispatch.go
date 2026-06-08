@@ -82,14 +82,17 @@ func (s *service) runAction(ctx context.Context, target repository.DispatchTarge
 	_ = s.repo.SetConnectionStatus(ctx, sub.ConnectionID, models.IntegrationStatusConnected, models.IntegrationHealthHealthy, "")
 }
 
-// execAction routes a subscription to its provider implementation.
+// execAction routes a subscription to its provider implementation, projecting
+// the event payload through the connection's configured field map for CRM
+// upserts so behaviour follows the user's configuration instead of a fixed shape.
 func (s *service) execAction(ctx context.Context, target repository.DispatchTarget, data map[string]any) error {
 	sub := target.Subscription
-	cfg, err := s.openConfig(ctx, &target.Secrets)
+	secretCfg, err := s.openConfig(ctx, &target.Secrets)
 	if err != nil {
 		return fmt.Errorf("decrypt config: %w", err)
 	}
 	msg := renderEventMessage(sub, data)
+	autoCfg, _ := models.ParseAutomationConfig(sub.Config)
 
 	switch sub.Action {
 	case models.IntegrationActionSlackNotify:
@@ -100,8 +103,8 @@ func (s *service) execAction(ctx context.Context, target repository.DispatchTarg
 		}
 		return slackPostMessage(ctx, token, channel, msg)
 
-	case models.IntegrationActionDiscordNotify, models.IntegrationActionGenericWebhookPing:
-		url := stringFromMap(cfg, "webhook_url")
+	case models.IntegrationActionDiscordNotify:
+		url := stringFromMap(secretCfg, "webhook_url")
 		if url == "" {
 			url = configString(sub.Config, "url")
 		}
@@ -110,19 +113,34 @@ func (s *service) execAction(ctx context.Context, target repository.DispatchTarg
 		}
 		return webhookPost(ctx, url, msg)
 
+	case models.IntegrationActionGenericWebhookPing:
+		url := stringFromMap(secretCfg, "webhook_url")
+		if url == "" {
+			url = configString(sub.Config, "url")
+		}
+		if url == "" {
+			return errors.New("no webhook url configured")
+		}
+		// Automation tools (Zapier/Make/n8n) get the full structured + signed
+		// payload; the signing secret is the connection's (empty => unsigned).
+		secret := configString(target.Secrets.Conn.ConfigCapabilities, "signing_secret")
+		return automationDeliver(ctx, url, secret, sub.EventType, buildAutomationPayload(sub, data, msg))
+
 	case models.IntegrationActionHubSpotUpsert:
 		token, terr := s.accessTokenFor(ctx, &target.Secrets)
 		if terr != nil {
 			return errReauthRequired
 		}
-		return hubspotUpsertContact(ctx, token, data, msg)
+		props := s.crmProps(ctx, sub, models.IntegrationHubSpot, data, autoCfg)
+		return hubspotUpsertContact(ctx, token, contactEmail(data), props, msg.plainText())
 
 	case models.IntegrationActionPipedriveUpsert:
 		token, terr := s.accessTokenFor(ctx, &target.Secrets)
 		if terr != nil {
 			return errReauthRequired
 		}
-		return pipedriveUpsertPerson(ctx, token, data)
+		props := s.crmProps(ctx, sub, models.IntegrationPipedrive, data, autoCfg)
+		return pipedriveUpsertPerson(ctx, token, contactEmail(data), props)
 
 	case models.IntegrationActionSalesforceUpsert:
 		token, terr := s.accessTokenFor(ctx, &target.Secrets)
@@ -130,18 +148,30 @@ func (s *service) execAction(ctx context.Context, target repository.DispatchTarg
 			return errReauthRequired
 		}
 		instanceURL := configString(target.Secrets.Conn.DisplayFields, "instance_url")
-		return salesforceUpsertContact(ctx, token, instanceURL, data)
+		props := s.crmProps(ctx, sub, models.IntegrationSalesforce, data, autoCfg)
+		return salesforceUpsertContact(ctx, token, instanceURL, contactEmail(data), props)
 
 	case models.IntegrationActionCloseUpsert:
-		apiKey := stringFromMap(cfg, "api_key", "api_token")
+		apiKey := stringFromMap(secretCfg, "api_key", "api_token")
 		if apiKey == "" {
 			return errors.New("no close api key configured")
 		}
-		return closeUpsertLead(ctx, apiKey, data)
+		props := s.crmProps(ctx, sub, models.IntegrationClose, data, autoCfg)
+		return closeUpsertLead(ctx, apiKey, contactEmail(data), props)
 
 	default:
 		return fmt.Errorf("unknown action: %s", sub.Action)
 	}
+}
+
+// crmProps resolves the effective field map for a CRM upsert (provider defaults
+// < connection-default rows < subscription rows < inline config) and projects
+// the event payload into provider properties.
+func (s *service) crmProps(ctx context.Context, sub models.IntegrationEventSubscription, provider models.IntegrationProvider, data map[string]any, autoCfg models.AutomationConfig) map[string]any {
+	rows, _ := s.repo.ListFieldMappings(ctx, sub.OrganizationID, sub.ConnectionID)
+	object := defaultObject(provider)
+	fm := effectiveFieldMap(provider, object, rows, sub.ID.String(), autoCfg.FieldMap)
+	return projectFields(fm, eventSource(data))
 }
 
 // subscriptionMatchesFilter applies the optional, user-defined filters stored
@@ -214,6 +244,12 @@ func renderEventMessage(sub models.IntegrationEventSubscription, data map[string
 		m.Title = "🌡️ Warmup health changed"
 	case models.WebhookEventDeliverabilityComplaint:
 		m.Title = "❗ Spam complaint"
+	case models.WebhookEventMeetingBooked:
+		m.Title = "📅 Meeting booked"
+	case models.WebhookEventMeetingRescheduled:
+		m.Title = "🔁 Meeting rescheduled"
+	case models.WebhookEventMeetingCanceled:
+		m.Title = "❌ Meeting canceled"
 	default:
 		m.Title = "Warmbly event: " + string(eventType)
 	}
@@ -243,6 +279,26 @@ func (m eventMessage) plainText() string {
 		return m.Title
 	}
 	return m.Title + " — " + m.Detail
+}
+
+// buildAutomationPayload assembles the structured webhook body for a generic
+// automation delivery: a stable delivery id, the event discriminator, the full
+// structured event data, and the legacy flat fields for backward compatibility.
+func buildAutomationPayload(sub models.IntegrationEventSubscription, data map[string]any, msg eventMessage) automationEventPayload {
+	if data == nil {
+		data = map[string]any{}
+	}
+	return automationEventPayload{
+		ID:        newDeliveryID(),
+		Event:     sub.EventType,
+		Version:   "1",
+		CreatedAt: time.Now().UTC().Format(time.RFC3339),
+		Data:      data,
+		Content:   msg.plainText(),
+		Email:     msg.Email,
+		Subject:   msg.Subject,
+		Title:     msg.Title,
+	}
 }
 
 // renderTemplate substitutes {{key}} placeholders with values from the event

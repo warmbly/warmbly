@@ -59,6 +59,12 @@ const (
 	// Audit trail events (org-scoped). The web client invalidates the
 	// ['audit'] query on any event type containing "AUDIT".
 	EventAuditCreated EventType = "AUDIT_CREATED"
+
+	// Meetings. The frontend matches any event type containing "MEETING" /
+	// "BOOKING" to refresh the Meetings page, contact timeline, and sidebar.
+	EventMeetingBooked      EventType = "MEETING_BOOKED"
+	EventMeetingRescheduled EventType = "MEETING_RESCHEDULED"
+	EventMeetingCanceled    EventType = "MEETING_CANCELED"
 )
 
 // BaseEvent contains common fields for all events
@@ -169,6 +175,39 @@ type TaskProgressEvent struct {
 	Progress       int    `json:"progress"` // Percentage 0-100
 	TotalContacts  int    `json:"total_contacts"`
 	ProcessedCount int    `json:"processed_count"`
+}
+
+// MeetingEvent for booked / rescheduled / canceled meetings from Calendly /
+// Cal.com. Carries just enough for the dashboard to refresh the right surfaces.
+type MeetingEvent struct {
+	BaseEvent
+	BookingID    string `json:"booking_id"`
+	ContactID    string `json:"contact_id,omitempty"`
+	InviteeEmail string `json:"invitee_email,omitempty"`
+	EventName    string `json:"event_name,omitempty"`
+	ScheduledFor string `json:"scheduled_for,omitempty"`
+	Source       string `json:"source,omitempty"` // calendly / cal_com
+	State        string `json:"state,omitempty"`  // booked / rescheduled / canceled
+}
+
+// PublishMeeting notifies the lead owner that a meeting was booked, rescheduled,
+// or canceled so the Meetings page, contact timeline, and sidebar update live.
+func (p *StreamingPublisher) PublishMeeting(ctx context.Context, userID string, eventType EventType, event *MeetingEvent) {
+	if p == nil || p.client == nil || userID == "" {
+		return
+	}
+	event.BaseEvent = BaseEvent{
+		EventType: eventType,
+		UserID:    userID,
+		Timestamp: time.Now(),
+	}
+	attrs := map[string]string{
+		"user_id":    userID,
+		"event_type": string(eventType),
+	}
+	if err := p.client.Publish(ctx, TopicUserEvents, event, attrs); err != nil {
+		// Best-effort: realtime is a nicety, not a requirement.
+	}
 }
 
 // New publish methods
