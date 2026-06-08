@@ -133,13 +133,14 @@ const softwareJsonLd = {
     <HeroAtmosphere />
 
     <div class="container-page relative pt-16 md:pt-24 pb-8 md:pb-12 text-center">
-      <a href="https://github.com/warmbly/warmbly" target="_blank" rel="noopener noreferrer" class="group inline-flex items-center gap-2 h-7 pl-1 pr-3 rounded-full bg-white/15 backdrop-blur border border-white/25 text-[12px] text-white/95 shadow-[0_4px_14px_-4px_rgba(0,0,0,0.25)]">
-        <span class="inline-flex items-center gap-1 h-5 px-1.5 rounded-full text-[10.5px] font-semibold uppercase tracking-[0.06em] bg-white text-[color:var(--sky-6)]">
+      <a href="https://github.com/warmbly/warmbly" target="_blank" rel="noopener noreferrer" class="group inline-flex max-w-full items-center gap-2 h-7 pl-1 pr-3 rounded-full bg-white/15 backdrop-blur border border-white/25 text-[11.5px] sm:text-[12px] text-white/95 whitespace-nowrap shadow-[0_4px_14px_-4px_rgba(0,0,0,0.25)]">
+        <span class="inline-flex items-center gap-1 h-5 px-1.5 shrink-0 rounded-full text-[10.5px] font-semibold uppercase tracking-[0.06em] bg-white text-[color:var(--sky-6)]">
           <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.8 10.9.6.1.8-.2.8-.5v-2c-3.2.7-3.9-1.4-3.9-1.4-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.4-2.3 1.2-3.2-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2 1-.3 2-.4 3-.4s2 .1 3 .4c2.3-1.5 3.3-1.2 3.3-1.2.7 1.6.2 2.9.1 3.1.8.8 1.2 1.9 1.2 3.2 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.5 4.6-1.5 7.8-5.8 7.8-10.9C23.5 5.7 18.3.5 12 .5z"/></svg>
           Open source
         </span>
-        Self-host the platform · Apache 2.0
-        <Icon name="arrowUpRight" size={12} class="text-white/80 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+        <span class="hidden sm:inline">Self-host the platform · Apache 2.0</span>
+        <span class="sm:hidden">Apache 2.0</span>
+        <Icon name="arrowUpRight" size={12} class="shrink-0 text-white/80 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
       </a>
 
       <h1 class="mt-8 md:mt-10 text-[44px] sm:text-6xl md:text-[72px] lg:text-[84px] font-semibold tracking-[-0.04em] leading-[0.98] text-white max-w-5xl mx-auto">
@@ -168,12 +169,19 @@ const softwareJsonLd = {
     </div>
 
     <!-- Dashboard mock — full width inside container, overlaps down -->
-    <div class="container-page relative pt-6 md:pt-10 -mb-[140px] md:-mb-[200px] lg:-mb-[240px]">
+    <div class="container-page relative pt-6 md:pt-10 -mb-10 md:-mb-[200px] lg:-mb-[240px]">
       <div
         class="relative rounded-[14px] overflow-hidden ring-1 ring-black/[0.08]"
         style="box-shadow: var(--shadow-xl);"
       >
-        <DashboardMock />
+        <!-- Desktop layout, scaled uniformly to fit its width: full-size on
+             desktop, a clean shrunk-down version on mobile (same scale-to-fit
+             the feature windows use), so it always shows the real desktop app. -->
+        <div class="hero-fit relative w-full overflow-hidden">
+          <div class="hero-screen w-[1360px] absolute top-0 left-0 origin-top-left md:static md:w-full">
+            <DashboardMock />
+          </div>
+        </div>
 
         <!-- Floating live notification on top of the mock -->
         <div class="hidden md:block absolute bottom-5 right-5 w-[280px] rounded-[10px] bg-white shadow-[0_10px_30px_-10px_rgba(15,23,42,0.35)] ring-1 ring-slate-200 p-3 animate-toast-in" style="animation-delay: 1.2s; animation-fill-mode: backwards;">
@@ -201,7 +209,7 @@ const softwareJsonLd = {
   <!-- ============================================================
        Spacer for the overlap, then sections
   ============================================================ -->
-  <div class="bg-white" style="padding-top: 160px;">
+  <div class="bg-white pt-12 md:pt-40">
 
     <!-- ============================================================
          Minimal facts strip — fills the white gap, low-key
@@ -355,16 +363,17 @@ const softwareJsonLd = {
 
     <FeatureSection
       eyebrow="CRM"
-      title="Replies become a pipeline, not a pile."
-      description="A positive reply can open a deal. Drag it across stages, assign an owner, and keep tasks and notes right next to the conversation that started it."
+      title="From positive reply to closed won."
+      description="When a reply lands positive, Warmbly opens the deal and pauses the sequence on its own. From there you get one timeline that threads every send, open, reply, and stage change back to the exact sequence step that started it."
       side="left"
       bg="wallpaper"
       url="app.warmbly.com/crm/deals"
       cursor="d"
       callouts={[
-        { label: 'Visual pipelines', text: 'Drag deals across stages; stage totals update as you go.' },
-        { label: 'Owners and tasks', text: 'Assign teammates, set follow-up tasks, and never drop a thread.' },
-        { label: 'Tied to the inbox', text: 'Each deal links back to the reply that created it.' },
+        { label: 'Born from the reply', text: 'A reply classified positive in the unibox opens the deal and pauses the sequence, so nothing keeps sending to someone who already said yes.' },
+        { label: 'One timeline, traced to the send', text: 'Every send, open, reply, and stage change lands on the deal, each tagged with the sequence step and mailbox it came from.' },
+        { label: 'Pipeline and forecast in one view', text: 'Move deals across your stages on the board while value, weighted total, and probability stay current on the record.' },
+        { label: 'Tasks with a type and an owner', text: 'A positive reply spins up a typed follow-up task on the deal, assigned to a teammate with a due date, so the next step never slips.' },
       ]}
       cta={{ text: 'See the CRM', href: '/crm/' }}
     >
@@ -1005,5 +1014,41 @@ const softwareJsonLd = {
       // Default selection — annual, no animation on initial paint
       requestAnimationFrame(() => apply('annual', false));
     }
+  </script>
+
+  <script>
+    // Hero dashboard mock: render the full desktop layout, uniformly scaled to
+    // fit its container at every width (full-size on desktop, a clean shrunk
+    // miniature on mobile) - the same scale-to-fit the feature windows use.
+    // Below md (768px) the desktop mock is shown at a readable scale and bleeds
+    // off the right edge - the way Linear / Stripe / Vercel show a desktop app
+    // shot on a phone, instead of shrinking the whole thing to a microscopic
+    // full-width thumbnail. HERO_MOBILE_VISIBLE = how many of the mock's design
+    // px fill the phone width; the rest crops off the right. At md+ it falls
+    // back to the fluid desktop layout (CSS: md:static md:w-full), so desktop
+    // stays full-size and overlaps the section below.
+    const HERO_MOBILE_VISIBLE = 720;
+    function fitHero(screen: HTMLElement) {
+      const box = screen.parentElement as HTMLElement | null;
+      if (!box) return;
+      if (window.innerWidth >= 768) {
+        screen.style.transform = '';
+        box.style.height = '';
+        return;
+      }
+      const s = box.clientWidth / HERO_MOBILE_VISIBLE;
+      screen.style.transform = `scale(${s})`;
+      box.style.height = `${screen.offsetHeight * s}px`;
+    }
+    function runHero() {
+      document.querySelectorAll<HTMLElement>('.hero-screen').forEach((s) => fitHero(s));
+    }
+    document.querySelectorAll<HTMLElement>('.hero-screen').forEach((screen) => {
+      if (screen.parentElement) new ResizeObserver(() => fitHero(screen)).observe(screen.parentElement);
+    });
+    runHero();
+    requestAnimationFrame(runHero);
+    window.addEventListener('load', runHero);
+    window.addEventListener('resize', runHero);
   </script>
 </Layout>

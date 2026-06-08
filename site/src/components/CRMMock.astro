@@ -1,27 +1,32 @@
 ---
 /**
- * Pixel-faithful mock of the Warmbly /app/crm/deals screen (the CRM kanban board).
+ * Pixel-faithful mock of the Warmbly /app/crm/deals screen, in its most
+ * load-bearing state: the kanban board (breadth) with a deal-detail drawer
+ * open over it (depth + the differentiator that sets this CRM apart, i.e. it
+ * lives next to your sending).
  *
- * Maps 1:1 to the real components:
- *   - web/src/app/app/crm/deals/page.tsx        (the board page: PageTopbar / StatStrip / SectionBar / Board)
- *   - web/src/components/layout/Page.tsx          (PageTopbar h-12, StatStrip, Stat, SectionBar, TopbarAction)
- *   - the Board / Column / DealCard primitives inside deals/page.tsx
+ * Maps 1:1 to the real source:
+ *   - web/src/app/app/crm/deals/page.tsx     PageTopbar / StatStrip / SectionBar / Board / Column / DealCard
+ *   - web/src/components/layout/Page.tsx       PageTopbar (h-12) / StatStrip / Stat / SectionBar / TopbarAction
+ *   - the deal-detail drawer + tab bar follow the shared drawer pattern
+ *     (web/src/components/app/emails/InboxDetails, contacts/contact-edit):
+ *     a shrink-0 px-3 tab bar with a bg-sky-600 underline on the active tab
+ *   - the activity timeline + send/reply attribution mirror the data shown on
+ *     site/src/pages/crm.astro (dealActivity), where every event traces back
+ *     to the exact sequence step + mailbox it came from
  *
- * Renders only the in-app screen content (page topbar + stat strip + section bar
- * + the horizontal kanban). The marketing page wraps this in its own browser
- * frame, so there is no global sidebar / app header / window chrome here. The
- * board overflows the frame on purpose; the parent crops with overflow-hidden,
- * so the load-bearing content sits top-left.
+ * The marketing page (FeatureSection) draws the browser frame and crops
+ * overflow, so there is no window chrome here. The board is full width behind
+ * the drawer; the drawer covers the right columns and the timeline overflows
+ * the bottom on purpose (record depth). No CSS variables: every token is the
+ * in-app literal (border-slate-200, sky/emerald accents), so the mock is
+ * self-contained.
  *
- * Tokens copied verbatim from the real source:
- *   - PageTopbar:  h-12 px-5 border-b border-slate-200, eyebrow text-[10px] uppercase
- *                  tracking-[0.14em] text-slate-400, h-4 w-px divider, subtitle text-[12.5px]
- *   - TopbarAction: h-7 px-2.5 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-[12px]
- *   - Stat:        label text-[10px] uppercase tracking-[0.14em], value text-[26px] font-light
- *   - Column head: h-9 px-3, size-1.5 color dot, name text-[11px] uppercase tracking-[0.1em]
- *                  font-semibold text-slate-700, count font-mono text-[10.5px]
- *   - DealCard:    rounded-lg bg-white border border-slate-200, name text-[12.5px] font-medium,
- *                  value font-mono text-[12px] text-slate-700
+ * DEMO SCENE (cd- prefix, 11s loop, persistent end state, reduced-motion safe):
+ *   press #1 -> click the Stratech card  -> the deal drawer slides in
+ *   press #2 -> click "Log activity"     -> a new activity entry appends on top
+ * Both reactions hold open until the loop resets. prefers-reduced-motion shows
+ * the drawer open statically (it is the load-bearing state) and hides the cursor.
  */
 
 // Money formatter, mirrors formatMoney() in deals/page.tsx.
@@ -32,7 +37,7 @@ const money = (n: number) =>
     maximumFractionDigits: 0,
   }).format(n);
 
-// ── Sample dataset: one pipeline, four stages, eight deals ─────────
+// ── Board dataset: one pipeline, four stages, eight deals ──────────
 type Tag = { color: string; label: string };
 type Deal = {
   name: string;
@@ -40,9 +45,10 @@ type Deal = {
   contact: string;
   owner: string; // initials for the avatar
   gradient: string; // tailwind gradient classes for the owner avatar
-  status?: "won";
-  close?: string;
   tags: Tag[];
+  status?: "won";
+  hero?: boolean; // the open deal (press target #1) + carries a Source chip
+  source?: string;
 };
 
 type Stage = {
@@ -54,17 +60,18 @@ type Stage = {
 
 const stages: Stage[] = [
   {
-    name: "Lead",
-    color: "#94a3b8", // slate-400
+    name: "Qualified",
+    color: "#0ea5e9", // sky-500
     deals: [
       {
-        name: "Acme Co",
-        value: 12000,
-        contact: "dana@acme.co",
-        owner: "MO",
-        gradient: "from-violet-400 to-indigo-500",
-        close: "Jun 18",
-        tags: [{ color: "#3b82f6", label: "Inbound" }],
+        name: "Stratech",
+        value: 45000,
+        contact: "rowan@stratech.io",
+        owner: "BH",
+        gradient: "from-teal-400 to-emerald-500",
+        tags: [{ color: "#8b5cf6", label: "Enterprise" }],
+        hero: true,
+        source: "Sequence · acme-fy26-q2",
       },
       {
         name: "Northwind",
@@ -72,7 +79,6 @@ const stages: Stage[] = [
         contact: "ravi@northwind.dev",
         owner: "JS",
         gradient: "from-sky-400 to-blue-500",
-        close: "Jun 21",
         tags: [{ color: "#f59e0b", label: "Outbound" }],
       },
       {
@@ -86,8 +92,8 @@ const stages: Stage[] = [
     ],
   },
   {
-    name: "Qualified",
-    color: "#0ea5e9", // sky-500
+    name: "Proposal",
+    color: "#8b5cf6", // violet-500
     deals: [
       {
         name: "Helio",
@@ -95,7 +101,6 @@ const stages: Stage[] = [
         contact: "founder@helio.gen",
         owner: "MO",
         gradient: "from-violet-400 to-indigo-500",
-        close: "Jul 02",
         tags: [
           { color: "#8b5cf6", label: "Enterprise" },
           { color: "#3b82f6", label: "Inbound" },
@@ -107,14 +112,13 @@ const stages: Stage[] = [
         contact: "ops@tidewater.io",
         owner: "CR",
         gradient: "from-teal-400 to-emerald-500",
-        close: "Jul 09",
         tags: [{ color: "#f59e0b", label: "Outbound" }],
       },
     ],
   },
   {
-    name: "Proposal",
-    color: "#8b5cf6", // violet-500
+    name: "Negotiation",
+    color: "#f59e0b", // amber-500
     deals: [
       {
         name: "Brightfold",
@@ -122,7 +126,6 @@ const stages: Stage[] = [
         contact: "priya@brightfold.com",
         owner: "JS",
         gradient: "from-sky-400 to-blue-500",
-        close: "Jul 15",
         tags: [
           { color: "#8b5cf6", label: "Enterprise" },
           { color: "#ef4444", label: "Hot" },
@@ -134,7 +137,6 @@ const stages: Stage[] = [
         contact: "sam@mapleco.com",
         owner: "AM",
         gradient: "from-rose-400 to-pink-500",
-        close: "Jul 20",
         tags: [{ color: "#3b82f6", label: "Inbound" }],
       },
     ],
@@ -151,11 +153,7 @@ const stages: Stage[] = [
         owner: "MO",
         gradient: "from-violet-400 to-indigo-500",
         status: "won",
-        close: "Jun 03",
-        tags: [
-          { color: "#8b5cf6", label: "Enterprise" },
-          { color: "#10b981", label: "Closed" },
-        ],
+        tags: [{ color: "#10b981", label: "Closed" }],
       },
     ],
   },
@@ -163,19 +161,66 @@ const stages: Stage[] = [
 
 // ── Derived strip values, mirrors the page's reduce()s ─────────────
 const allDeals = stages.flatMap((s) => s.deals);
-const totalValue = allDeals.reduce((a, d) => a + d.value, 0);
+const openValue = allDeals
+  .filter((d) => d.status !== "won")
+  .reduce((a, d) => a + d.value, 0);
 const openCount = allDeals.filter((d) => d.status !== "won").length;
-const wonCount = allDeals.filter((d) => d.status === "won").length;
+const wonValue = allDeals.filter((d) => d.status === "won").reduce((a, d) => a + d.value, 0);
 const stageTotal = (s: Stage) => s.deals.reduce((a, d) => a + d.value, 0);
 
 const stats = [
   { label: "Open", value: String(openCount), sub: "active deals", last: false },
-  { label: "Pipeline value", value: money(totalValue), sub: "all filtered", last: false },
-  { label: "Won", value: String(wonCount), sub: "this view", last: false },
+  { label: "Pipeline value", value: money(openValue), sub: "open · all stages", last: false },
+  { label: "Won", value: money(wonValue), sub: "closed won", last: false },
   { label: "Stages", value: String(stages.length), sub: "on this pipeline", last: true },
 ];
+
+// ── Open deal (drawer): forecast + activity timeline ───────────────
+const forecast: [string, string][] = [
+  ["Value", money(45000)],
+  ["Close", "Jul 15"],
+  ["Weighted", money(18000)],
+  ["Probability", "40%"],
+];
+
+// Lucide icon inner-paths, copied verbatim from site/src/components/Icon.astro
+// (eye is inlined; Icon.astro has no eye). Used by the activity timeline nodes.
+const ICONS: Record<string, string> = {
+  reply: '<polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/>',
+  workflow:
+    '<rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="15" width="6" height="6" rx="1"/><path d="M6 9v4a2 2 0 0 0 2 2h7"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  list: '<line x1="8" x2="21" y1="6" y2="6"/><line x1="8" x2="21" y1="12" y2="12"/><line x1="8" x2="21" y1="18" y2="18"/><line x1="3" x2="3.01" y1="6" y2="6"/><line x1="3" x2="3.01" y1="12" y2="12"/><line x1="3" x2="3.01" y1="18" y2="18"/>',
+  send: '<path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.5.5 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/><path d="m21.854 2.147-10.94 10.939"/>',
+  eye: '<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0z"/><circle cx="12" cy="12" r="3"/>',
+};
+
+// `label` overrides the chip text (so a task can show its TYPE, e.g. "Follow-up",
+// rather than the generic kind word). Defaults to `type` when unset.
+type Activity = { type: string; who: string; t: string; body: string; label?: string };
+
+// Newest first. Every row threads back to the send/sequence that produced it;
+// the top three are the auto-actions a positive reply triggers.
+const activity: Activity[] = [
+  { type: "reply", who: "Rowan Cole", t: "2m ago", body: "Replied positively. Classified Positive, sequence auto-paused." },
+  { type: "stage", who: "system", t: "2m ago", body: "Deal opened in Qualified, linked to the reply." },
+  { type: "task", who: "Ben Hsu", t: "2m ago", label: "Follow-up", body: "Auto-created from the reply, due Jun 10." },
+  { type: "note", who: "Ben Hsu", t: "Jun 05", body: "Two opens on the Step 02 thread, no reply yet." },
+  { type: "send", who: "sequence", t: "Jun 05", body: "Step 02 soft follow-up, variant B, from ben@acme.com." },
+  { type: "open", who: "system", t: "Jun 04", body: "Opened Step 01, tracked near San Francisco." },
+  { type: "send", who: "sequence", t: "Jun 02", body: "Step 01 initial outreach, variant A, from ben@acme.com." },
+];
+
+const activityTone = (k: string) => {
+  if (k === "reply") return { chip: "bg-emerald-50 text-emerald-700", icon: ICONS.reply };
+  if (k === "stage") return { chip: "bg-sky-50 text-sky-700", icon: ICONS.workflow };
+  if (k === "task") return { chip: "bg-slate-100 text-slate-700", icon: ICONS.check };
+  if (k === "note") return { chip: "bg-amber-50 text-amber-700", icon: ICONS.list };
+  if (k === "open") return { chip: "bg-violet-50 text-violet-700", icon: ICONS.eye };
+  return { chip: "bg-slate-100 text-slate-600", icon: ICONS.send };
+};
 ---
-<div class="relative w-full flex flex-col bg-white text-slate-900" style="min-height:500px;">
+<div class="relative w-full flex flex-col bg-white text-slate-900" style="min-height:560px;">
   <!-- ─────────────────────────────────────────────────────────────
        1) PAGE TOPBAR (PageTopbar, h-12)
   ────────────────────────────────────────────────────────────── -->
@@ -185,6 +230,17 @@ const stats = [
     <span class="text-[12.5px] text-slate-600 truncate">8 deals on Sales pipeline</span>
 
     <div class="ml-auto flex items-center gap-1.5">
+      <!-- view toggle (Table | Board), Board active -->
+      <div class="inline-flex rounded-md bg-slate-100 p-0.5 gap-0.5 shrink-0">
+        <span class="h-6 px-2 rounded text-[11px] font-medium inline-flex items-center gap-1.5 text-slate-500">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h18v18H3z"/><path d="M3 9h18"/><path d="M3 15h18"/></svg>
+          Table
+        </span>
+        <span class="h-6 px-2 rounded text-[11px] font-medium inline-flex items-center gap-1.5 bg-white text-slate-900 shadow-sm">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="18" x="3" y="3" rx="1"/><rect width="7" height="18" x="14" y="3" rx="1"/></svg>
+          Board
+        </span>
+      </div>
       <!-- pipeline picker (PipelinePicker) -->
       <button
         type="button"
@@ -193,25 +249,18 @@ const stats = [
         Sales pipeline
         <span class="text-slate-400">▾</span>
       </button>
-      <!-- total-value pill -->
-      <span
-        class="h-7 px-2.5 rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700 text-[12px] font-mono tabular-nums inline-flex items-center gap-1.5 whitespace-nowrap shrink-0"
-      >
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 18V6"/></svg>
-        {money(totalValue)}
-      </span>
       <!-- search pill (SearchPill) -->
       <div class="h-7 px-2 rounded-md border border-slate-200 bg-white flex items-center gap-1.5 whitespace-nowrap shrink-0">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-slate-400" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-        <span class="w-[120px] text-[12px] text-slate-400">Search deals…</span>
+        <span class="w-[96px] text-[12px] text-slate-400">Search deals…</span>
       </div>
-      <!-- primary action (TopbarAction, sky-600); cr-target shows the press feedback -->
+      <!-- primary action (TopbarAction, sky-600) -->
       <button
         type="button"
-        class="cr-target h-7 px-2.5 rounded-md inline-flex items-center gap-1.5 text-[12px] font-medium bg-sky-600 text-white whitespace-nowrap shrink-0"
+        class="h-7 px-2.5 rounded-md inline-flex items-center gap-1.5 text-[12px] font-medium bg-sky-600 text-white whitespace-nowrap shrink-0"
       >
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-        Add deal
+        New deal
       </button>
     </div>
   </div>
@@ -248,149 +297,246 @@ const stats = [
   </div>
 
   <!-- ─────────────────────────────────────────────────────────────
-       4) KANBAN BOARD (Board / Column / DealCard)
-       (real: grid grid-flow-col auto-cols-[280px]; here we use flex
-        gap-3 p-5 so columns sit edge to edge and the parent crops)
+       4) BOARD REGION (kanban behind, deal drawer over the right)
+       (board is full width; the drawer crops the right columns and the
+        cursor demo is anchored to this region's box)
   ────────────────────────────────────────────────────────────── -->
-  <div class="flex-1 min-h-0 flex gap-3 p-5 overflow-hidden">
-    {stages.map((stage) => (
-      <div
-        class={`flex flex-col rounded-md min-h-[300px] w-[280px] shrink-0 border ${
-          stage.won ? "bg-emerald-50/50 border-emerald-200" : "bg-slate-50 border-slate-200"
-        }`}
-      >
-        <!-- Column header -->
-        <div class="h-9 px-3 flex items-center gap-2 border-b border-slate-200">
-          <span class="size-1.5 rounded-full shrink-0" style={`background-color:${stage.color};`}></span>
-          <span class="text-[11px] uppercase tracking-[0.1em] font-semibold text-slate-700 truncate">{stage.name}</span>
-          <span class="ml-auto font-mono text-[10.5px] text-slate-400 tabular-nums">{stage.deals.length}</span>
-        </div>
+  <div class="relative flex-1 min-h-0">
+    <!-- (4a) KANBAN BOARD (Board / Column / DealCard) -->
+    <div class="flex gap-3 p-5 h-full overflow-hidden">
+      {stages.map((stage) => (
+        <div
+          class={`flex flex-col rounded-md min-h-[400px] w-[280px] shrink-0 border ${
+            stage.won ? "bg-emerald-50/50 border-emerald-200" : "bg-slate-50 border-slate-200"
+          }`}
+        >
+          <!-- Column header -->
+          <div class="h-9 px-3 flex items-center gap-2 border-b border-slate-200">
+            <span class="size-1.5 rounded-full shrink-0" style={`background-color:${stage.color};`}></span>
+            <span class="text-[11px] uppercase tracking-[0.1em] font-semibold text-slate-700 truncate">{stage.name}</span>
+            <span class="ml-auto font-mono text-[10.5px] text-slate-400 tabular-nums">{stage.deals.length}</span>
+          </div>
 
-        <!-- Stage total value -->
-        <div class={`px-3 py-1 border-b ${stage.won ? "border-emerald-200/60 bg-emerald-50/40" : "border-slate-200/60 bg-white"}`}>
-          <span class="text-[10.5px] text-emerald-700 font-mono tabular-nums">{money(stageTotal(stage))} total</span>
-        </div>
+          <!-- Stage total value -->
+          <div class={`px-3 py-1 border-b ${stage.won ? "border-emerald-200/60 bg-emerald-50/40" : "border-slate-200/60 bg-white"}`}>
+            <span class="text-[10.5px] text-emerald-700 font-mono tabular-nums">{money(stageTotal(stage))} {stage.won ? "total" : "open"}</span>
+          </div>
 
-        <!-- Deal cards -->
-        <div class="p-2 space-y-1.5 flex-1">
-          {stage.deals.map((d) => (
-            <div class="rounded-lg bg-white border border-slate-200 hover:border-slate-300 shadow-sm transition-all p-3">
-              <!-- name + won badge -->
-              <div class="flex items-center gap-1.5 mb-1">
-                <div class="text-[12.5px] font-medium text-slate-900 truncate flex-1">{d.name}</div>
-                {d.status === "won" && (
-                  <span class="text-[9.5px] uppercase tracking-[0.08em] font-semibold text-emerald-700">Won</span>
+          <!-- Deal cards -->
+          <div class="p-2 space-y-1.5 flex-1">
+            {stage.deals.map((d) => (
+              <div class={`rounded-lg bg-white border border-slate-200 shadow-sm transition-all p-3 ${d.hero ? "cd-card" : "hover:border-slate-300"}`}>
+                <!-- name + won badge -->
+                <div class="flex items-center gap-1.5 mb-1">
+                  <div class="text-[12.5px] font-medium text-slate-900 truncate flex-1">{d.name}</div>
+                  {d.status === "won" && (
+                    <span class="text-[9.5px] uppercase tracking-[0.08em] font-semibold text-emerald-700">Won</span>
+                  )}
+                </div>
+
+                <!-- deal value (emerald + circle-dollar, mirrors the real DealCard) -->
+                <div class="flex items-center gap-1 font-mono text-[12px] text-emerald-600 tabular-nums mb-1.5">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="shrink-0" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 18V6"/></svg>
+                  {money(d.value)}
+                </div>
+
+                <!-- contact line -->
+                <div class="flex items-center gap-1 text-[10.5px] text-slate-500 truncate mb-2">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="shrink-0" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                  <span class="truncate">{d.contact}</span>
+                </div>
+
+                <!-- source attribution chip (hero card only) -->
+                {d.source && (
+                  <div class="mb-2">
+                    <span class="inline-flex items-center gap-1 h-5 px-1.5 rounded bg-white border border-slate-200 text-[10.5px] text-slate-600 truncate max-w-full">
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="shrink-0 text-slate-400" stroke-linecap="round" stroke-linejoin="round"><path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>
+                      <span class="truncate">{d.source}</span>
+                    </span>
+                  </div>
                 )}
-              </div>
 
-              <!-- deal value -->
-              <div class="font-mono text-[12px] text-slate-700 tabular-nums mb-1.5">{money(d.value)}</div>
-
-              <!-- contact line -->
-              <div class="flex items-center gap-1 text-[10.5px] text-slate-500 truncate mb-2">
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="shrink-0" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                <span class="truncate">{d.contact}</span>
+                <!-- owner avatar + tag chips -->
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <span class={`size-6 rounded-full bg-gradient-to-br ${d.gradient} flex items-center justify-center shrink-0 text-[9px] font-semibold text-white`}>{d.owner}</span>
+                  {d.tags.map((t) => (
+                    <span
+                      class="inline-flex items-center gap-1 h-4 pl-1 pr-1.5 rounded-sm border bg-white text-[10px] font-medium text-slate-700 truncate max-w-[110px]"
+                      style={`border-color:${t.color}60;background-color:${t.color}12;`}
+                    >
+                      <span class="block size-2 rounded-full shrink-0" style={`background-color:${t.color};`}></span>
+                      {t.label}
+                    </span>
+                  ))}
+                </div>
               </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
 
-              <!-- owner avatar + tag chips -->
-              <div class="flex items-center gap-1.5 flex-wrap">
-                <span class={`size-6 rounded-full bg-gradient-to-br ${d.gradient} flex items-center justify-center shrink-0 text-[9px] font-semibold text-white`}>{d.owner}</span>
-                {d.tags.map((t) => (
-                  <span
-                    class="inline-flex items-center gap-1 h-4 pl-1 pr-1.5 rounded-sm border bg-white text-[10px] font-medium text-slate-700 truncate max-w-[110px]"
-                    style={`border-color:${t.color}60;background-color:${t.color}12;`}
-                  >
-                    <span class="block size-2 rounded-full shrink-0" style={`background-color:${t.color};`}></span>
-                    {t.label}
-                  </span>
-                ))}
-                {d.close && (
-                  <span class="ml-auto inline-flex items-center gap-1 text-[10px] text-slate-400 shrink-0">
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg>
-                    {d.close}
-                  </span>
-                )}
+    <!-- (4b) DEAL DRAWER (front layer, slides in on press #1) -->
+    <div class="cd-drawer absolute inset-y-0 right-0 w-[560px] bg-white border-l border-slate-200 shadow-[-8px_0_30px_-12px_rgba(15,23,42,0.25)] flex flex-col overflow-hidden">
+      <!-- header -->
+      <div class="px-5 py-4 border-b border-slate-200 flex items-start gap-3 shrink-0">
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-2.5">
+            <span class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">Deal</span>
+            <span class="text-[10px] font-mono text-slate-400">DEAL-2026-0184</span>
+          </div>
+          <h3 class="mt-2 text-[18px] font-semibold text-slate-900 leading-tight">Stratech</h3>
+          <div class="mt-2 flex items-center gap-2.5 flex-wrap">
+            <span class="inline-flex items-center gap-1 h-5 px-1.5 rounded text-[10px] font-medium bg-sky-50 text-sky-700">
+              <span class="size-1.5 rounded-full bg-sky-500"></span>
+              Qualified
+            </span>
+            <span class="text-[12px] text-slate-500">Rowan Cole · VP Platform</span>
+          </div>
+        </div>
+        <!-- primary action (press target #2) -->
+        <button
+          type="button"
+          class="cd-logbtn h-7 px-2.5 rounded-md bg-slate-900 text-white text-[12px] font-medium inline-flex items-center gap-1.5 shrink-0"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Log activity
+        </button>
+      </div>
+
+      <!-- forecast row -->
+      <div class="px-5 py-3 border-b border-slate-200 grid grid-cols-4 gap-3 shrink-0">
+        {forecast.map(([k, v]) => (
+          <div>
+            <div class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">{k}</div>
+            <div class="mt-1 font-mono text-[13px] text-slate-900 tabular-nums">{v}</div>
+          </div>
+        ))}
+      </div>
+
+      <!-- tab bar (drawer pattern: sky-600 underline on active) -->
+      <div class="shrink-0 px-3 flex items-center gap-1 border-b border-slate-200">
+        <span class="relative h-10 px-2.5 inline-flex items-center gap-1.5 text-[12.5px] text-slate-900 font-medium">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="8" x2="21" y1="6" y2="6"/><line x1="8" x2="21" y1="12" y2="12"/><line x1="8" x2="21" y1="18" y2="18"/><line x1="3" x2="3.01" y1="6" y2="6"/><line x1="3" x2="3.01" y1="12" y2="12"/><line x1="3" x2="3.01" y1="18" y2="18"/></svg>
+          Activity
+          <span class="absolute left-1.5 right-1.5 -bottom-px h-0.5 rounded-full bg-sky-600"></span>
+        </span>
+        <span class="relative h-10 px-2.5 inline-flex items-center gap-1.5 text-[12.5px] text-slate-500">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 9h6"/><path d="M9 13h6"/></svg>
+          Fields
+        </span>
+        <span class="relative h-10 px-2.5 inline-flex items-center gap-1.5 text-[12.5px] text-slate-500">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m9 11 3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+          Tasks
+        </span>
+      </div>
+
+      <!-- activity header -->
+      <div class="px-5 pt-4 pb-2 flex items-baseline justify-between shrink-0">
+        <span class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">Activity · last 14 days</span>
+        <span class="relative inline-flex items-center">
+          <span class="cd-count-base font-mono text-[10.5px] text-slate-400 tabular-nums">7 events</span>
+          <span class="cd-count-new absolute right-0 font-mono text-[10.5px] text-emerald-600 tabular-nums whitespace-nowrap">8 events</span>
+        </span>
+      </div>
+
+      <!-- timeline (overflows the drawer bottom on purpose) -->
+      <ol class="relative px-5 pb-5">
+        <div class="absolute left-[35px] top-2 bottom-2 w-px bg-slate-200"></div>
+
+        <!-- appended entry (press #2 reaction) -->
+        <li class="cd-newrow relative overflow-hidden">
+          <div class="grid grid-cols-[32px_1fr_auto] gap-4 py-3 items-baseline">
+            <span class="relative z-10 size-8 rounded-full bg-white ring-1 ring-amber-200 inline-flex items-center justify-center text-amber-600 self-start">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" set:html={ICONS.list}></svg>
+            </span>
+            <div class="min-w-0">
+              <div class="flex items-baseline gap-2 flex-wrap">
+                <span class="inline-flex items-center h-4 px-1.5 rounded text-[10px] font-medium font-mono uppercase tracking-[0.08em] bg-amber-50 text-amber-700">note</span>
+                <span class="text-[11px] font-mono text-slate-500">Ben Hsu</span>
               </div>
+              <p class="mt-1.5 text-[13px] text-slate-700 leading-snug">Logged a call with Rowan. Sending the seat-tiered proposal.</p>
             </div>
-          ))}
-        </div>
-      </div>
-    ))}
+            <span class="text-[10.5px] font-mono text-slate-400 whitespace-nowrap self-start pt-1">just now</span>
+          </div>
+        </li>
 
-    <!-- ghost 5th column (parent crops it) so the board reads as scrollable -->
-    <div class="flex flex-col rounded-md min-h-[300px] w-[280px] shrink-0 border border-dashed border-slate-200 bg-slate-50/40">
-      <div class="h-9 px-3 flex items-center gap-2 border-b border-slate-200/60">
-        <span class="size-1.5 rounded-full shrink-0 bg-slate-300"></span>
-        <span class="text-[11px] uppercase tracking-[0.1em] font-semibold text-slate-400 truncate">Lost</span>
-        <span class="ml-auto font-mono text-[10.5px] text-slate-300 tabular-nums">0</span>
-      </div>
-      <div class="p-2 flex-1">
-        <div class="h-20 rounded-md border border-dashed border-slate-200 flex items-center justify-center text-[10.5px] text-slate-400">
-          Drop deals here
-        </div>
-      </div>
+        {activity.map((a) => {
+          const k = activityTone(a.type);
+          return (
+            <li class="relative grid grid-cols-[32px_1fr_auto] gap-4 py-3 items-baseline">
+              <span class="relative z-10 size-8 rounded-full bg-white ring-1 ring-slate-200 inline-flex items-center justify-center text-slate-500 self-start">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" set:html={k.icon}></svg>
+              </span>
+              <div class="min-w-0">
+                <div class="flex items-baseline gap-2 flex-wrap">
+                  <span class={`inline-flex items-center h-4 px-1.5 rounded text-[10px] font-medium font-mono uppercase tracking-[0.08em] ${k.chip}`}>{a.label ?? a.type}</span>
+                  <span class="text-[11px] font-mono text-slate-500">{a.who}</span>
+                </div>
+                <p class="mt-1.5 text-[13px] text-slate-700 leading-snug">{a.body}</p>
+              </div>
+              <span class="text-[10.5px] font-mono text-slate-400 whitespace-nowrap self-start pt-1">{a.t}</span>
+            </li>
+          );
+        })}
+      </ol>
     </div>
   </div>
 
   <!-- ─────────────────────────────────────────────────────────────
-       DEMO SCENE: cursor glides to "Add deal", presses it, and a new
-       deal card appears at the top of the Lead column (cause → effect).
-       Static Astro only; pure CSS, 11s infinite loop.
+       DEMO SCENE: cursor clicks the Stratech card (drawer slides in),
+       then clicks "Log activity" (a new entry appends on top). Static
+       Astro only; pure CSS, 11s infinite loop, persistent end state.
   ────────────────────────────────────────────────────────────── -->
-
-  <!-- (b) reaction overlay: a NEW Beacon Labs deal card near the Lead column top -->
-  <div class="cr-react" style="left:6.5%;top:33%;width:248px;">
-    <div class="rounded-lg bg-white border border-slate-200 shadow-sm p-3">
-      <div class="flex items-center gap-1.5 mb-1">
-        <div class="text-[12.5px] font-medium text-slate-900 truncate flex-1">Beacon Labs</div>
-        <span class="text-[9.5px] uppercase tracking-[0.08em] font-semibold text-sky-600">New</span>
-      </div>
-      <div class="font-mono text-[12px] text-slate-700 tabular-nums mb-1.5">$9,400</div>
-      <div class="flex items-center gap-1 text-[10.5px] text-slate-500 truncate mb-2">
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="shrink-0" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-        <span class="truncate">ops@beaconlabs.io</span>
-      </div>
-      <div class="flex items-center gap-1.5 flex-wrap">
-        <span class="size-6 rounded-full bg-gradient-to-br from-sky-400 to-blue-500 flex items-center justify-center shrink-0 text-[9px] font-semibold text-white">MO</span>
-        <span class="inline-flex items-center gap-1 h-4 pl-1 pr-1.5 rounded-sm border bg-white text-[10px] font-medium text-slate-700 truncate max-w-[110px]" style="border-color:#3b82f660;background-color:#3b82f612;">
-          <span class="block size-2 rounded-full shrink-0" style="background-color:#3b82f6;"></span>
-          Inbound
-        </span>
-      </div>
-    </div>
-  </div>
-
-  <!-- tiny "Deal added" toast, rides the same reaction reveal -->
-  <div class="cr-toast" style="left:6.5%;top:25%;">
-    <span class="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md bg-slate-900 text-white text-[11px] font-medium shadow-sm">
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-      Deal added
-    </span>
-  </div>
-
-  <!-- (a) cursor -->
-  <div class="cr-cursor" aria-hidden="true">
-    <span class="cr-ripple"></span>
+  <div class="cd-cursor" aria-hidden="true">
+    <span class="cd-ripple"></span>
     <svg width="23" height="27" viewBox="0 0 23 27" fill="none"><path d="M3 2.2 L3 20.4 L7.7 16 L10.9 23.2 L14 21.8 L10.9 14.8 L17.2 14.6 Z" fill="#ffffff" stroke="#0f172a" stroke-width="1.4" stroke-linejoin="round"/></svg>
   </div>
 
-  <!-- (c) one style block -->
   <style>
-    .cr-cursor{position:absolute;z-index:50;width:23px;height:27px;pointer-events:none;filter:drop-shadow(0 4px 6px rgba(15,23,42,.4));animation:cr-move 11s cubic-bezier(.5,0,.2,1) infinite;}
-    .cr-cursor svg{display:block;transform-origin:3px 2px;animation:cr-press 11s ease-in-out infinite;}
-    .cr-ripple{position:absolute;left:-6px;top:-6px;width:32px;height:32px;border-radius:9999px;background:rgba(2,132,199,.5);transform:scale(0);opacity:0;animation:cr-rip 11s ease-out infinite;}
-    .cr-react{position:absolute;z-index:40;opacity:0;animation:cr-react 11s ease-out infinite;}
-    .cr-toast{position:absolute;z-index:45;opacity:0;animation:cr-react 11s ease-out infinite;}
-    /* Press #1 (28%) lands on the "Add deal" button center (834.5px,24px on the
-       900x~522 mock => 92.5%,4.2% after the 3px/2px cursor hotspot). Press #2
-       (64%) lands on the new Beacon Labs card, which PERSISTS (shown 33%->88%). */
-    @keyframes cr-move{0%{left:46%;top:62%}22%{left:92.5%;top:4.2%}32%{left:92.5%;top:4.2%}58%{left:20%;top:43%}68%{left:20%;top:43%}88%{left:46%;top:62%}100%{left:46%;top:62%}}
-    @keyframes cr-press{0%,26%{transform:scale(1)}28%{transform:scale(.82)}31%,62%{transform:scale(1)}64%{transform:scale(.82)}67%,100%{transform:scale(1)}}
-    @keyframes cr-rip{0%,26%{transform:scale(0);opacity:0}29%{transform:scale(.25);opacity:.7}41%{transform:scale(1.9);opacity:0}60%{transform:scale(0);opacity:0}63%{transform:scale(.25);opacity:.7}75%{transform:scale(1.9);opacity:0}100%{transform:scale(0);opacity:0}}
-    @keyframes cr-react{0%,29%{opacity:0;transform:scale(.92) translateY(-6px)}33%{opacity:1;transform:scale(1) translateY(0)}88%{opacity:1;transform:scale(1) translateY(0)}95%{opacity:0;transform:scale(.92) translateY(-6px)}100%{opacity:0;transform:scale(.92) translateY(-6px)}}
-    /* target press-feedback: the "Add deal" button dips at press #1 (28%) */
-    .cr-target{animation:cr-target 11s ease-in-out infinite;}
-    @keyframes cr-target{0%,26%{transform:scale(1);background-color:#0284c7}28%{transform:scale(.96);background-color:#0369a1}31%,100%{transform:scale(1);background-color:#0284c7}}
-    @media (prefers-reduced-motion: reduce){.cr-cursor{display:none}.cr-react{display:none}.cr-toast{display:none}.cr-target{animation:none}}
+    /* ── cursor + ripple ─────────────────────────────────────────── */
+    .cd-cursor{position:absolute;z-index:50;width:23px;height:27px;pointer-events:none;filter:drop-shadow(0 4px 6px rgba(15,23,42,.4));animation:cd-move 11s cubic-bezier(.5,0,.2,1) infinite;}
+    .cd-cursor svg{display:block;transform-origin:3px 2px;animation:cd-press 11s ease-in-out infinite;}
+    .cd-ripple{position:absolute;left:-6px;top:-6px;width:32px;height:32px;border-radius:9999px;background:rgba(2,132,199,.5);transform:scale(0);opacity:0;animation:cd-rip 11s ease-out infinite;}
+
+    /* press #1 lands on the Stratech card (Qualified column center ~17.5%,51%);
+       press #2 lands on the "Log activity" button in the drawer header (~91.5%,32%). */
+    @keyframes cd-move{0%{left:50%;top:20%}22%{left:17.5%;top:51%}32%{left:17.5%;top:51%}58%{left:91.5%;top:32%}68%{left:91.5%;top:32%}88%{left:50%;top:20%}100%{left:50%;top:20%}}
+    @keyframes cd-press{0%,26%{transform:scale(1)}28%{transform:scale(.82)}31%,62%{transform:scale(1)}64%{transform:scale(.82)}67%,100%{transform:scale(1)}}
+    @keyframes cd-rip{0%,26%{transform:scale(0);opacity:0}29%{transform:scale(.25);opacity:.7}41%{transform:scale(1.9);opacity:0}60%{transform:scale(0);opacity:0}63%{transform:scale(.25);opacity:.7}75%{transform:scale(1.9);opacity:0}100%{transform:scale(0);opacity:0}}
+
+    /* card press-feedback: sky ring flash on press #1, then a held selected ring while the drawer is open */
+    .cd-card{box-shadow:0 1px 2px 0 rgba(15,23,42,.05);animation:cd-card 11s ease-out infinite;}
+    @keyframes cd-card{0%,26%{box-shadow:0 1px 2px 0 rgba(15,23,42,.05)}28%{box-shadow:0 0 0 4px rgba(125,211,252,.9)}33%{box-shadow:0 0 0 2px rgba(56,189,248,.95)}88%{box-shadow:0 0 0 2px rgba(56,189,248,.95)}95%{box-shadow:0 1px 2px 0 rgba(15,23,42,.05)}100%{box-shadow:0 1px 2px 0 rgba(15,23,42,.05)}}
+
+    /* drawer is the persistent reaction: slides in at 33%, holds to 88% */
+    .cd-drawer{animation:cd-drawer 11s ease-out infinite;}
+    @keyframes cd-drawer{0%,29%{opacity:0;transform:translateX(40px)}33%{opacity:1;transform:translateX(0)}88%{opacity:1;transform:translateX(0)}95%{opacity:0;transform:translateX(40px)}100%{opacity:0;transform:translateX(40px)}}
+
+    /* "Log activity" button dip on press #2 */
+    .cd-logbtn{animation:cd-logbtn 11s ease-in-out infinite;}
+    @keyframes cd-logbtn{0%,62%{transform:scale(1);background-color:#0f172a}64%{transform:scale(.96);background-color:#1e293b}67%,100%{transform:scale(1);background-color:#0f172a}}
+
+    /* appended activity entry expands in on press #2, holds to 88% */
+    .cd-newrow{max-height:0;opacity:0;animation:cd-newrow 11s ease-out infinite;}
+    @keyframes cd-newrow{0%,63%{max-height:0;opacity:0}67%{max-height:64px;opacity:1}88%{max-height:64px;opacity:1}94%{max-height:0;opacity:0}100%{max-height:0;opacity:0}}
+
+    /* event count swaps 7 -> 8 with the appended entry */
+    .cd-count-base{animation:cd-count-base 11s ease-out infinite;}
+    .cd-count-new{opacity:0;animation:cd-count-new 11s ease-out infinite;}
+    @keyframes cd-count-base{0%,63%{opacity:1}67%{opacity:0}88%{opacity:0}94%{opacity:1}100%{opacity:1}}
+    @keyframes cd-count-new{0%,63%{opacity:0}67%{opacity:1}88%{opacity:1}94%{opacity:0}100%{opacity:0}}
+
+    /* reduced motion: keep the drawer open statically (the load-bearing state),
+       drop the cursor + the loop reactions, keep the card looking selected */
+    @media (prefers-reduced-motion: reduce){
+      .cd-cursor{display:none}
+      .cd-card{animation:none;box-shadow:0 0 0 2px rgba(56,189,248,.95)}
+      .cd-drawer{animation:none;opacity:1;transform:none}
+      .cd-logbtn{animation:none}
+      .cd-newrow{display:none}
+      .cd-count-base{animation:none;opacity:1}
+      .cd-count-new{display:none}
+    }
   </style>
 </div>
