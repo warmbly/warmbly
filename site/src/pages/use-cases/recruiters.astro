@@ -217,65 +217,54 @@ const faq: [string, string][] = [
   </section>
 
   <!-- ============================================================
-       FLOATING CANDIDATE SEQUENCE PREVIEW · floats up into hero
+       SECTION 1 · where the email comes from
   ============================================================ -->
-  <section class="relative -mt-36 md:-mt-44 pb-16 md:pb-24 z-10">
+  <section class="bg-white border-t border-[color:var(--border)] py-20 md:py-28">
     <div class="container-page">
-      <div class="rounded-[18px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden shadow-[0_40px_90px_-30px_rgba(2,32,71,0.35),0_12px_30px_-12px_rgba(15,23,42,0.12)]">
+      <div class="max-w-2xl mb-12">
+        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Section 1 · Where the email comes from</div>
+        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
+          A shared inbox doesn't build its own reputation.
+        </h2>
+        <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed">
+          When a whole team sends from careers@ or talent@, every recruiter ends up sharing the same complaint history, and the message tends to read like a mass careers update. Sending from an individual mailbox means each recruiter builds up their own sending history.
+        </p>
+      </div>
 
-        <!-- Header strip -->
-        <div class="px-7 py-4 border-b border-[color:var(--border)] bg-[color:var(--surface-1)]/70 flex flex-wrap items-baseline justify-between gap-3">
-          <div class="flex items-baseline gap-3">
-            <div class="text-[13px] font-semibold text-heading">Sequence preview</div>
-            <span class="inline-flex items-center gap-1.5 h-5 px-2 rounded-full bg-[color:var(--sky-1)] text-[#0369a1] text-[10.5px] font-medium font-mono uppercase tracking-[0.08em]">
-              <span class="w-1 h-1 rounded-full bg-[#0284c7]"></span>
-              Plain text
-            </span>
-            <span class="text-[10.5px] font-mono uppercase tracking-[0.14em] text-muted-foreground">3 steps</span>
-          </div>
-          <div class="flex items-center gap-4 text-[10.5px] font-mono text-muted-foreground">
-            <span>From recruiter mailbox</span>
-            <span class="w-1 h-1 rounded-full bg-[color:var(--border)]"></span>
-            <span>To candidate</span>
-          </div>
-        </div>
+      <div class="space-y-5">
+        {specimens.map((s) => (
+          <div class="grid lg:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)] gap-5 lg:gap-8 items-center">
+            <!-- The specimen inbox row -->
+            <div class={`rounded-[14px] bg-white ring-1 ${s.ring} overflow-hidden`}>
+              <div class="px-4 py-2 border-b border-[color:var(--border)] bg-[color:var(--surface-1)]/50 flex items-center justify-between">
+                <span class="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">{s.label}</span>
+                <span class={`inline-flex items-center h-5 px-1.5 rounded text-[10px] font-mono uppercase tracking-[0.08em] ring-1 ${s.tagClass}`}>{s.tag}</span>
+              </div>
+              <div class="px-4 py-3.5 flex items-center gap-3">
+                <span class={`inline-grid place-items-center w-9 h-9 rounded-full ring-1 text-[12px] font-semibold shrink-0 ${s.avatarClass}`}>{s.avatar}</span>
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-baseline gap-2">
+                    <span class="text-[13.5px] font-semibold text-heading truncate">{s.from}</span>
+                    <span class="font-mono text-[11px] text-muted-foreground truncate">{s.addr}</span>
+                  </div>
+                  <div class="text-[12.5px] text-foreground/65 truncate">{s.subject}</div>
+                </div>
+                <span class="font-mono text-[10.5px] text-muted-foreground shrink-0">{s.time}</span>
+              </div>
+            </div>
 
-        <!-- 3 step preview cards laid out vertically with a connecting spine -->
-        <div class="px-5 sm:px-7 py-6 md:py-8">
-          <div class="relative">
-            <div class="absolute left-[18px] top-3 bottom-3 w-px bg-[color:var(--border)]"></div>
-            <ol class="space-y-5">
-              {sequence.map((s, i) => (
-                <li class="grid grid-cols-[40px_1fr] gap-4 items-start">
-                  <!-- Day chip on the spine -->
-                  <div class="relative">
-                    <div class="relative w-9 h-9 rounded-full bg-white ring-1 ring-[color:var(--sky-2)] text-[10.5px] font-mono font-semibold text-[#0369a1] inline-flex items-center justify-center">
-                      {`0${i + 1}`}
-                    </div>
-                  </div>
-                  <div class="rounded-[12px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden">
-                    <div class="px-5 py-2.5 bg-[color:var(--surface-1)]/60 border-b border-[color:var(--border)] flex flex-wrap items-baseline justify-between gap-2">
-                      <div class="flex items-baseline gap-3">
-                        <span class="text-[10.5px] font-mono uppercase tracking-[0.18em] text-[#0369a1] font-semibold">{s.day}</span>
-                        <span class="text-[13px] font-medium text-heading">{s.label}</span>
-                      </div>
-                      <span class="text-[10.5px] font-mono text-muted-foreground">subject: <span class="text-foreground/85">{s.subject}</span></span>
-                    </div>
-                    <pre class="px-5 py-4 text-[13px] leading-[1.65] text-foreground/85 whitespace-pre-wrap font-sans">{s.body}</pre>
-                  </div>
+            <!-- Leader-line callouts -->
+            <ul class="space-y-2.5">
+              {s.callouts.map((c) => (
+                <li class="flex items-center gap-3">
+                  <span class={`h-px w-7 shrink-0 ${s.connector}`}></span>
+                  <span class={`w-1.5 h-1.5 rounded-full shrink-0 -ml-2 ${s.dot}`}></span>
+                  <span class="text-[12.5px] text-foreground/75 leading-snug">{c}</span>
                 </li>
               ))}
-            </ol>
+            </ul>
           </div>
-
-          <!-- Variables expansion footer -->
-          <div class="mt-7 pt-5 border-t border-[color:var(--border)] grid sm:grid-cols-2 lg:grid-cols-4 gap-3 text-[11.5px] font-mono">
-            <div><span class="text-muted-foreground">first_name</span> <span class="text-heading">candidate first name</span></div>
-            <div><span class="text-muted-foreground">current_company</span> <span class="text-heading">where they work now</span></div>
-            <div><span class="text-muted-foreground">open_role</span> <span class="text-heading">role you are hiring</span></div>
-            <div><span class="text-muted-foreground">sender.first_name</span> <span class="text-heading">recruiter signature</span></div>
-          </div>
-        </div>
+        ))}
       </div>
     </div>
   </section>
