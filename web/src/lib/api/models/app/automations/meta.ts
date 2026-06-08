@@ -116,6 +116,9 @@ export interface TriggerFieldDef {
 // Sentinel field key for the random-split pseudo-condition.
 export const RANDOM_FIELD_KEY = "__random__";
 
+// Sentinel field key for the advanced free-form expression condition.
+export const EXPRESSION_FIELD_KEY = "__expression__";
+
 export const WARMUP_STATES = [
     { value: "healthy", label: "Healthy" },
     { value: "watch", label: "Watch" },
@@ -183,9 +186,17 @@ const RANDOM_FIELD: TriggerFieldDef = {
     defaultOperator: "chance",
 };
 
-// The condition fields offered for a trigger: its payload fields + random split.
+const EXPRESSION_FIELD: TriggerFieldDef = {
+    key: EXPRESSION_FIELD_KEY,
+    label: "Advanced expression",
+    type: "string",
+    defaultOperator: "",
+};
+
+// The condition fields offered for a trigger: its payload fields + random split
+// + the advanced free-form expression escape hatch.
 export function triggerConditionFields(triggerEvent: string): TriggerFieldDef[] {
-    return [...(TRIGGER_FIELDS[triggerEvent] ?? GENERIC_FIELDS), RANDOM_FIELD];
+    return [...(TRIGGER_FIELDS[triggerEvent] ?? GENERIC_FIELDS), RANDOM_FIELD, EXPRESSION_FIELD];
 }
 
 export function triggerFieldDef(triggerEvent: string, key: string): TriggerFieldDef | undefined {
@@ -196,6 +207,7 @@ export function triggerFieldDef(triggerEvent: string, key: string): TriggerField
 // everything else -> a generic field test with the field's default operator).
 export function conditionFromFieldKey(triggerEvent: string, key: string): AutomationCondition {
     if (key === RANDOM_FIELD_KEY) return { field: "random", operator: "chance", value: 50 };
+    if (key === EXPRESSION_FIELD_KEY) return { field: "expression", operator: "", expression: "" };
     const def = triggerFieldDef(triggerEvent, key);
     return { field: "field", key, operator: def?.defaultOperator ?? "equals" };
 }
@@ -209,6 +221,7 @@ export function defaultConditionForTrigger(triggerEvent: string): AutomationCond
 // The select value representing a condition's chosen field.
 export function conditionFieldKey(c: AutomationCondition): string {
     if (c.field === "random") return RANDOM_FIELD_KEY;
+    if (c.field === "expression") return EXPRESSION_FIELD_KEY;
     if (c.field === "field") return c.key ?? "";
     return c.field; // legacy
 }
@@ -278,6 +291,12 @@ export function conditionLabel(c?: AutomationCondition): string {
     if (!c || !c.field) return "Set a condition";
     // Random split (its own field type).
     if (c.field === "random") return `${Number(c.value ?? 50)}% random`;
+    // Advanced free-form expression.
+    if (c.field === "expression") {
+        const e = (c.expression ?? "").trim();
+        if (!e) return "Set an expression";
+        return `if ${e.length > 30 ? e.slice(0, 30) + "…" : e}`;
+    }
     // Generic field condition.
     if (c.field === "field") {
         const key = c.key ?? "";

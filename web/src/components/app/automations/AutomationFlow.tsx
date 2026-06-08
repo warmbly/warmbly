@@ -1007,9 +1007,11 @@ function ConditionEditor({
     const pickField = (key: string) => onChange(conditionFromFieldKey(trigger, key));
 
     const isRandom = condition.field === "random";
+    const isExpression = condition.field === "expression";
     const op = condition.operator;
     const needsValue = !isRandom && op !== "exists" && op !== "is_true";
     const isConfidence = selectedKey === "confidence";
+    const vars = triggerVariables(trigger);
 
     return (
         <div className="space-y-3">
@@ -1018,8 +1020,8 @@ function ConditionEditor({
                 <SelectMenu value={selectedKey} onChange={pickField} options={fieldOptions} className="w-full" fullWidth />
             </div>
 
-            {/* Operator — data fields only (random is a fixed chance split). */}
-            {!isRandom && def && (
+            {/* Operator — data fields only (random + expression don't use one). */}
+            {!isRandom && !isExpression && def && (
                 <div>
                     <Label>Condition</Label>
                     <SelectMenu
@@ -1033,7 +1035,39 @@ function ConditionEditor({
             )}
 
             {/* Value editor, by field type + operator. */}
-            {isRandom ? (
+            {isExpression ? (
+                <div className="space-y-2">
+                    <Label>Expression</Label>
+                    <textarea
+                        value={String(condition.expression ?? "")}
+                        onChange={(e) => set({ expression: e.target.value })}
+                        rows={3}
+                        placeholder={`and (gtf .confidence 0.8) (eq .intent "positive")`}
+                        className="w-full px-2.5 py-1.5 rounded-md border border-slate-200 bg-white font-mono text-[12px] text-slate-900 placeholder:text-slate-400 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 resize-y leading-relaxed"
+                    />
+                    {vars.length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                            {vars.map((v) => (
+                                <button
+                                    key={v}
+                                    type="button"
+                                    onClick={() => set({ expression: `${condition.expression ?? ""} .${v}`.replace(/^\s+/, "") })}
+                                    className="px-1.5 py-0.5 rounded border border-slate-200 bg-slate-50 font-mono text-[10.5px] text-slate-600 hover:border-sky-300 hover:text-sky-700"
+                                >
+                                    .{v}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                    <p className="text-[10.5px] text-slate-400 leading-relaxed">
+                        Passes the “yes” branch when truthy. Reference fields as <code className="font-mono">.field</code>; use{" "}
+                        <code className="font-mono">eq gt lt and or not</code>, numeric{" "}
+                        <code className="font-mono">gtf ltf add sub mul div</code>, and{" "}
+                        <code className="font-mono">contains lower</code>. Example:{" "}
+                        <code className="font-mono">{`and (gtf .confidence 0.8) (eq .intent "positive")`}</code>.
+                    </p>
+                </div>
+            ) : isRandom ? (
                 <div>
                     <Label>Take the “yes” path</Label>
                     <NumberInput

@@ -1,12 +1,14 @@
 import type { IntegrationAction } from "@/lib/api/models/app/integrations/Integration";
 
 // A condition (IF) tested against the trigger event's data. For the generic
-// "field" type, `key` names the event-data key to test.
+// "field" type, `key` names the event-data key to test. For the "expression"
+// type, `expression` is a free-form Go-template predicate (truthy = pass).
 export interface AutomationCondition {
     field: string;
     key?: string;
     operator: string;
     value?: unknown;
+    expression?: string;
 }
 
 // One node on the flow canvas. "trigger" is the single entry (id "trigger");
