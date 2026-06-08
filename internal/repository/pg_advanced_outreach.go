@@ -516,7 +516,238 @@ func (r *advancedOutreachRepository) GetDeliverabilityDashboard(ctx context.Cont
 		return nil, err
 	}
 
+	// Rate denominator: completed campaign sends in the window. Best-effort — a
+	// rate/breakdown query failing must not break the (already-built) core rollup.
+	sentQuery := `
+		SELECT COUNT(*) FROM tasks t
+		JOIN email_accounts ea ON ea.id = t.email_account_id
+		WHERE ea.organization_id = $1 AND t.task_type = 'campaign' AND t.status = 'completed'
+		  AND t.completed_at >= $2 AND t.completed_at <= $3`
+	_ = r.db.QueryRow(ctx, sentQuery, organizationID, from, to).Scan(&out.EmailsSent)
+	out.BounceRate = models.Rate(out.BounceCount, out.EmailsSent)
+	out.ComplaintRate = models.Rate(out.ComplaintCount, out.EmailsSent)
+	out.OpenRate = models.Rate(out.OpenCount, out.EmailsSent)
+	out.ClickRate = models.Rate(out.ClickCount, out.EmailsSent)
+	out.ReplyRate = models.Rate(out.ReplyCount, out.EmailsSent)
+
+	out.Timeseries = r.deliverabilityTimeseries(ctx, organizationID, from, to)
+	out.ByCampaign = r.deliverabilityByCampaign(ctx, organizationID, from, to)
+	out.ByMailbox = r.deliverabilityByMailbox(ctx, organizationID, from, to)
+
+	// Seed inbox-placement (optional — nil rates when there are no seed samples).
+	var spam, inbox, placementTotal int
+	placementQuery := `
+		SELECT pr.folder, COUNT(*)
+		FROM placement_results pr JOIN placement_tests pt ON pt.id = pr.test_id
+		WHERE pt.organization_id = $1 AND pr.detected_at >= $2 AND pr.detected_at <= $3 AND pr.folder <> 'pending'
+		GROUP BY pr.folder`
+	if rows, perr := r.db.Query(ctx, placementQuery, organizationID, from, to); perr == nil {
+		for rows.Next() {
+			var folder string
+			var n int
+			if rows.Scan(&folder, &n) == nil {
+				placementTotal += n
+				switch folder {
+				case "spam":
+					spam = n
+				case "inbox":
+					inbox = n
+				}
+			}
+		}
+		rows.Close()
+	}
+	out.PlacementSamples = placementTotal
+	spamRate := 0.0
+	if placementTotal > 0 {
+		sr := models.Rate(spam, placementTotal)
+		ir := models.Rate(inbox, placementTotal)
+		out.SpamPlacementRate = &sr
+		out.InboxPlacementRate = &ir
+		spamRate = sr
+	}
+
+	out.Band = models.DeliverabilityBand(out.BounceRate, out.ComplaintRate, spamRate)
 	return out, nil
+}
+
+// deliverabilityTimeseries returns gap-filled UTC daily points for the window.
+func (r *advancedOutreachRepository) deliverabilityTimeseries(ctx context.Context, orgID uuid.UUID, from, to time.Time) []models.DeliverabilityDailyPoint {
+	byDay := map[string]*models.DeliverabilityDailyPoint{}
+	// Bucket by UTC calendar day explicitly (created_at::date alone uses the DB
+	// session timezone) so the SQL days line up with the Go gap-fill loop below.
+	evQ := `
+		SELECT (created_at AT TIME ZONE 'UTC')::date,
+			COUNT(*) FILTER (WHERE event_type='bounce'),
+			COUNT(*) FILTER (WHERE event_type='complaint'),
+			COUNT(*) FILTER (WHERE event_type='open'),
+			COUNT(*) FILTER (WHERE event_type='click'),
+			COUNT(*) FILTER (WHERE event_type='reply'),
+			COUNT(*) FILTER (WHERE event_type='unsubscribe')
+		FROM deliverability_events
+		WHERE organization_id=$1 AND created_at >= $2 AND created_at <= $3
+		GROUP BY 1`
+	if rows, err := r.db.Query(ctx, evQ, orgID, from, to); err == nil {
+		for rows.Next() {
+			var d time.Time
+			var b, c, o, cl, rep, u int
+			if rows.Scan(&d, &b, &c, &o, &cl, &rep, &u) == nil {
+				key := d.Format("2006-01-02")
+				byDay[key] = &models.DeliverabilityDailyPoint{Date: key, Bounces: b, Complaints: c, Opens: o, Clicks: cl, Replies: rep, Unsubscribes: u}
+			}
+		}
+		rows.Close()
+	}
+	sentQ := `
+		SELECT (t.completed_at AT TIME ZONE 'UTC')::date, COUNT(*)
+		FROM tasks t JOIN email_accounts ea ON ea.id = t.email_account_id
+		WHERE ea.organization_id=$1 AND t.task_type='campaign' AND t.status='completed'
+		  AND t.completed_at >= $2 AND t.completed_at <= $3
+		GROUP BY 1`
+	if rows, err := r.db.Query(ctx, sentQ, orgID, from, to); err == nil {
+		for rows.Next() {
+			var d time.Time
+			var s int
+			if rows.Scan(&d, &s) == nil {
+				key := d.Format("2006-01-02")
+				if p := byDay[key]; p != nil {
+					p.Sent = s
+				} else {
+					byDay[key] = &models.DeliverabilityDailyPoint{Date: key, Sent: s}
+				}
+			}
+		}
+		rows.Close()
+	}
+	out := []models.DeliverabilityDailyPoint{}
+	for d := from.UTC().Truncate(24 * time.Hour); !d.After(to.UTC()); d = d.Add(24 * time.Hour) {
+		key := d.Format("2006-01-02")
+		if p := byDay[key]; p != nil {
+			out = append(out, *p)
+		} else {
+			out = append(out, models.DeliverabilityDailyPoint{Date: key})
+		}
+	}
+	return out
+}
+
+// deliverabilityByCampaign ranks campaigns by bounce+complaint in the window,
+// with the per-campaign sent denominator from campaign_contact_progress.
+func (r *advancedOutreachRepository) deliverabilityByCampaign(ctx context.Context, orgID uuid.UUID, from, to time.Time) []models.CampaignDeliverability {
+	out := []models.CampaignDeliverability{}
+	q := `
+		SELECT de.campaign_id, c.name,
+			COUNT(*) FILTER (WHERE de.event_type='bounce'),
+			COUNT(*) FILTER (WHERE de.event_type='complaint')
+		FROM deliverability_events de JOIN campaigns c ON c.id = de.campaign_id
+		WHERE de.organization_id=$1 AND de.created_at >= $2 AND de.created_at <= $3 AND de.campaign_id IS NOT NULL
+		GROUP BY de.campaign_id, c.name
+		ORDER BY (COUNT(*) FILTER (WHERE de.event_type='bounce') + COUNT(*) FILTER (WHERE de.event_type='complaint')) DESC
+		LIMIT 20`
+	rows, err := r.db.Query(ctx, q, orgID, from, to)
+	if err != nil {
+		return out
+	}
+	type rec struct {
+		id   uuid.UUID
+		name string
+		b, c int
+	}
+	items := []rec{}
+	for rows.Next() {
+		var x rec
+		if rows.Scan(&x.id, &x.name, &x.b, &x.c) == nil {
+			items = append(items, x)
+		}
+	}
+	rows.Close()
+	if len(items) == 0 {
+		return out
+	}
+	sent := map[uuid.UUID]int{}
+	sq := `
+		SELECT ccp.campaign_id, COUNT(*)
+		FROM campaign_contact_progress ccp JOIN campaigns c ON c.id = ccp.campaign_id
+		WHERE c.organization_id=$1 AND ccp.sent_at IS NOT NULL AND ccp.sent_at >= $2 AND ccp.sent_at <= $3
+		GROUP BY ccp.campaign_id`
+	if srows, serr := r.db.Query(ctx, sq, orgID, from, to); serr == nil {
+		for srows.Next() {
+			var id uuid.UUID
+			var n int
+			if srows.Scan(&id, &n) == nil {
+				sent[id] = n
+			}
+		}
+		srows.Close()
+	}
+	for _, x := range items {
+		s := sent[x.id]
+		br := models.Rate(x.b, s)
+		cr := models.Rate(x.c, s)
+		out = append(out, models.CampaignDeliverability{CampaignID: x.id, Name: x.name, Sent: s, Bounces: x.b, Complaints: x.c, BounceRate: br, ComplaintRate: cr, Band: models.DeliverabilityBand(br, cr, 0)})
+	}
+	return out
+}
+
+// deliverabilityByMailbox ranks mailboxes by bounce+complaint in the window,
+// with the per-mailbox sent denominator from completed campaign tasks.
+func (r *advancedOutreachRepository) deliverabilityByMailbox(ctx context.Context, orgID uuid.UUID, from, to time.Time) []models.MailboxDeliverability {
+	out := []models.MailboxDeliverability{}
+	q := `
+		SELECT ea.id, ea.email,
+			COUNT(*) FILTER (WHERE de.event_type='bounce'),
+			COUNT(*) FILTER (WHERE de.event_type='complaint')
+		FROM deliverability_events de
+		JOIN tasks t ON t.id = de.task_id
+		JOIN email_accounts ea ON ea.id = t.email_account_id
+		WHERE de.organization_id=$1 AND de.created_at >= $2 AND de.created_at <= $3 AND de.task_id IS NOT NULL
+		GROUP BY ea.id, ea.email
+		ORDER BY (COUNT(*) FILTER (WHERE de.event_type='bounce') + COUNT(*) FILTER (WHERE de.event_type='complaint')) DESC
+		LIMIT 50`
+	rows, err := r.db.Query(ctx, q, orgID, from, to)
+	if err != nil {
+		return out
+	}
+	type rec struct {
+		id    uuid.UUID
+		email string
+		b, c  int
+	}
+	items := []rec{}
+	for rows.Next() {
+		var x rec
+		if rows.Scan(&x.id, &x.email, &x.b, &x.c) == nil {
+			items = append(items, x)
+		}
+	}
+	rows.Close()
+	if len(items) == 0 {
+		return out
+	}
+	sent := map[uuid.UUID]int{}
+	sq := `
+		SELECT t.email_account_id, COUNT(*)
+		FROM tasks t JOIN email_accounts ea ON ea.id = t.email_account_id
+		WHERE ea.organization_id=$1 AND t.task_type='campaign' AND t.status='completed'
+		  AND t.completed_at >= $2 AND t.completed_at <= $3
+		GROUP BY t.email_account_id`
+	if srows, serr := r.db.Query(ctx, sq, orgID, from, to); serr == nil {
+		for srows.Next() {
+			var id uuid.UUID
+			var n int
+			if srows.Scan(&id, &n) == nil {
+				sent[id] = n
+			}
+		}
+		srows.Close()
+	}
+	for _, x := range items {
+		s := sent[x.id]
+		br := models.Rate(x.b, s)
+		cr := models.Rate(x.c, s)
+		out = append(out, models.MailboxDeliverability{EmailAccountID: x.id, Email: x.email, Sent: s, Bounces: x.b, Complaints: x.c, BounceRate: br, ComplaintRate: cr, Band: models.DeliverabilityBand(br, cr, 0)})
+	}
+	return out
 }
 
 // executionLockTTL is the maximum time an in_progress execution lock is considered valid.
