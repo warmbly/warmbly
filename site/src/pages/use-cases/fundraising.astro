@@ -4,77 +4,47 @@ import HeroAtmosphere from '../../components/HeroAtmosphere.astro';
 import Icon from '../../components/Icon.astro';
 import CTA from '../../components/CTA.astro';
 
-// All numbers reflect platform defaults from CLAUDE.md:
-// warmup ramp 10 → 40 / day, cold cap 100 / day, 600s gap, +1 / day ramp.
-
-// Six-week raise timeline: warmup ramp through week -1, then a short send window.
-// Astro JSX caveat: pre-compute < / <= comparisons in frontmatter, not in templates.
-const RAMP_START = 10;
-const RAMP_PER_DAY = 1;
-const RAMP_CEILING = 40;
-const COLD_DAILY_CAP = 100;
-const SEND_GAP_SECONDS = 600;
-
-const timeline = [
-  { week: 'Week -6', phase: 'warmup',  volume: 10, label: 'Mailbox connected. Warmup begins.', detail: 'First warmup send. Reads as normal individual activity to any provider.' },
-  { week: 'Week -5', phase: 'warmup',  volume: 15, label: 'Ramp · +1 per business day',         detail: 'No deck talk, no sending. Build behaviour history while the deck is still in revision.' },
-  { week: 'Week -4', phase: 'warmup',  volume: 22, label: 'Mid-ramp',                            detail: 'Verification tokens land at vetted partners. Positive placement signal accrues.' },
-  { week: 'Week -3', phase: 'warmup',  volume: 30, label: 'Ramp continues',                      detail: 'Recipient pool is rotated. Recent partners excluded for 7 days.' },
-  { week: 'Week -2', phase: 'warmup',  volume: 38, label: 'Approaching ceiling',                 detail: 'Health band confirmed Healthy. Mailbox eligible to send cold next week.' },
-  { week: 'Week -1', phase: 'warmup',  volume: 40, label: 'Ceiling. Holds at 40 / day.',         detail: 'Warmup continues in parallel. Cold sending starts only once this floor is stable.' },
-  { week: 'Week 0',  phase: 'send',    volume: 40, label: 'Day 0 · first touch',                 detail: 'Plain text, 3 to 4 sentences. Spread across recipient business hours.' },
-  { week: 'Week +1', phase: 'send',    volume: 40, label: 'Day 5 · second touch',                detail: 'Single follow-up only on no-reply. Sequence pauses on any reply.' },
-];
-
 // Three real traps for VC outreach + the corresponding platform defence.
 const traps = [
   {
     n: '01',
     trap: 'Mailbox set up the same week as the raise',
-    detail: 'A fresh mailbox sending cold to a partner list looks like the worst-case sender. Providers default to suspicion. First catastrophic event can hit within days.',
+    detail: 'A mailbox you connected this week has no history, so the first thing it ever does is cold-email strangers. That is the textbook spammer pattern, and you can taint the domain for the whole raise in a couple of days.',
     defence: 'Warmup',
-    fix: 'Connect and start warmup 4 to 6 weeks before the raise. Ramp from 10 to 40 per day so the mailbox has behaviour history before the first cold send.',
+    fix: 'Connect the mailbox four to six weeks out and let warmup run. It climbs from 10 to 40 sends a day, so by the time you write the first partner the mailbox already looks lived-in.',
     link: '/warmup/',
     linkLabel: 'See warmup ramp',
   },
   {
     n: '02',
     trap: 'CC the co-founders on every send',
-    detail: 'CC chains on cold sends normalise a behaviour Gmail treats as bulk. The partner sees an internal cast list before they see your one-line ask.',
+    detail: 'CC-ing your co-founders does two bad things at once: Gmail reads the chain as bulk mail, and the partner opens to a wall of names instead of a two-line ask from one person.',
     defence: 'Sender pool',
-    fix: 'Each cold message goes from one sender to one recipient. If a co-founder needs to be in the loop, route through the inbox once a reply lands. Keep the cold surface clean.',
+    fix: 'Send one to one, one founder to one partner. If someone on your side needs to be in the loop, bring them in from the shared inbox once the partner replies, not on the cold send.',
     link: '/inbox/',
     linkLabel: 'How inbox routing works',
   },
   {
     n: '03',
     trap: 'Blast 80 partners at 9am Tuesday',
-    detail: 'Sending to a partner list in the same minute is the loudest possible spam signal. It bursts the same mailbox past safe spacing and trips volume anomaly heuristics.',
+    detail: 'Firing the whole list at 9am Tuesday is the loudest spam tell there is. One mailbox sends dozens of near-identical emails in the same minute, which is not something a person ever does.',
     defence: 'Business-hour scheduling · 600s gap',
-    fix: 'Distribute sends across each recipient business window in their own time zone. Default 600 second gap keeps the send pattern natural and within the per-mailbox cap.',
+    fix: 'Spread the sends across each partner’s own working hours, with a gap between them (600 seconds by default). It paces out like someone working through a list, and stays under the mailbox’s daily cap.',
     link: '/campaigns/',
     linkLabel: 'Scheduling rules',
   },
 ];
 
-// The two-step sequence, deliberately minimal.
-const sequence = [
-  {
-    idx: 1, kind: 'send', delay: 'D0', label: 'First touch · plain text',
-    note: '3 to 4 sentences. No deck attached. One sentence on traction, one on the ask.',
-    body: 'Hi {{ first_name }},\n\n{{ company.name }} backs early-stage {{ thesis }}. We are {{ traction_one_line }} and raising a {{ round }}.\n\nDeck on reply if it is interesting?\n\n— {{ sender.first_name }}',
-  },
-  {
-    idx: 2, kind: 'wait', delay: '+5 business days', label: 'Wait · 5 business days',
-    note: 'Pause on any reply, bounce, suppression, or auto-classified OOO.',
-    body: null,
-  },
-  {
-    idx: 3, kind: 'send', delay: 'D5', label: 'Second touch · breakup',
-    note: 'One short follow-up. After this, the sequence ends. No third send.',
-    body: 'Hi {{ first_name }},\n\nQuick bump on the {{ round }} note above. Closing the round in {{ weeks_remaining }} weeks. Worth a 10 minute call?\n\nDeck attached on reply.\n\n— {{ sender.first_name }}',
-  },
-];
+// The two emails in the example flow below. {{.FirstName}} / {{.Company}} are
+// the real contact tokens the campaign editor uses (here the contact is the
+// investor, {{.Company}} is their fund). The founder's own details are written
+// straight into the template.
+const email1Subject = '{{.Company}} <> Atlas';
+const email1Body =
+  'Hi {{.FirstName}},\n\nSaw {{.Company}} leads a lot of seed dev-tools rounds. We launched Atlas 14 weeks ago, just crossed $40k MRR, growing about 30% month over month, and are opening a small seed.\n\nWorth a look? I’ll send the deck if it’s a fit for you.\n\nThanks,\nMara';
+const email2Subject = 're: {{.Company}} <> Atlas';
+const email2Body =
+  'Hi {{.FirstName}},\n\nLast nudge on this, then I’ll leave you alone. Two more design partners signed since I wrote, and the round is filling faster than I expected.\n\nIf it isn’t for {{.Company}}, no hard feelings at all. If it is, I can have the deck in your inbox today.\n\nMara';
 
 // Reputation bands lifted from CLAUDE.md "Recommended internal policy for shared paid pools".
 const bands = [
@@ -89,23 +59,15 @@ const toneClass = (t: string) => {
   return                       { dot: 'bg-rose-500',    text: 'text-rose-700',    soft: 'bg-rose-50' };
 };
 
-// Single-row visual scale of timeline weeks (warmup vs send), pre-computed so JSX stays simple.
-const maxVolume = RAMP_CEILING;
-const timelineRows = timeline.map((t) => {
-  const widthPct = Math.round((t.volume / maxVolume) * 100);
-  const isSend = t.phase === 'send';
-  return { ...t, widthPct, isSend };
-});
-
 const faq = [
   ['How long before the raise should I connect the mailbox?', 'Four to six weeks. The ramp from 10 to 40 per day takes about 30 business days, and warmup needs at least 20 deliveries in the pool before the mailbox is rated Healthy.'],
-  ['Why only two steps?', 'Investor inboxes are saturated. A short two-step sequence respects that. Longer sequences push the same mailbox past safe spacing and read as automation. Two steps is a recommendation, not a measured outcome.'],
-  ['Should I attach the deck on the first send?', 'No. Cold attachments hurt deliverability and remove the reason to reply. Send the deck on reply, not before. The first touch is three sentences and an ask.'],
+  ['How short should an investor sequence be?', 'Shorter than you think. Partners get hundreds of these a week, so one strong first touch and a single follow-up does most of the work. You can build more, the editor goes up to 50 steps with branching, but for a raise we would not. A fourth and fifth email mostly buys you complaints.'],
+  ['Should I attach the deck on the first send?', 'No. A cold attachment hurts deliverability and, honestly, it takes away their reason to reply. Send three or four sentences and an ask, then send the deck once they answer. The reply is the whole point of the first email.'],
 ];
 ---
 <Layout
   title="Investor Outreach for Fundraising | Warmbly"
-  description="Plan a focused cold investor sequence that lands in the inbox. Warm the mailbox 4 to 6 weeks ahead, send a clean two-step sequence, then watch reputation as the raise runs."
+  description="Run a focused cold investor sequence that lands in the inbox. Warm the mailbox weeks before the raise, build a short branching flow that stops the moment a partner replies, and watch reputation while you send."
 >
   <!-- ============================================================
        HERO · HeroAtmosphere, shared with home / pricing / warmup
@@ -113,7 +75,7 @@ const faq = [
   <section class="relative isolate overflow-hidden">
     <HeroAtmosphere />
 
-    <div class="container-page relative pt-16 md:pt-24 pb-44 md:pb-56 text-center">
+    <div class="container-page relative pt-16 md:pt-24 pb-24 md:pb-32 text-center">
       <div class="inline-flex items-center gap-2 h-7 pl-1 pr-3 rounded-full bg-white/15 backdrop-blur ring-1 ring-white/25 text-[12px] text-white/95 shadow-[0_4px_14px_-4px_rgba(0,0,0,0.25)]">
         <span class="inline-flex items-center h-5 px-1.5 rounded-full text-[10.5px] font-semibold uppercase tracking-[0.06em] bg-white" style="color:#0369a1;">
           Fundraising
@@ -121,11 +83,11 @@ const faq = [
         Warm the mailbox before the deck is finished
       </div>
 
-      <h1 class="mt-8 md:mt-10 text-[44px] sm:text-6xl md:text-[72px] lg:text-[80px] font-semibold tracking-[-0.04em] leading-[0.98] text-white max-w-4xl mx-auto">
-        Land in the partner inbox,<br/>not the founder graveyard.
+      <h1 class="mt-8 md:mt-10 text-[44px] sm:text-6xl md:text-[72px] lg:text-[80px] font-semibold tracking-[-0.04em] leading-[0.98] text-white max-w-5xl mx-auto">
+        Get your raise emails<br/>read by the partner.
       </h1>
       <p class="mt-6 text-[17px] md:text-[19px] text-white/80 max-w-2xl mx-auto leading-relaxed">
-        Cold mail to VCs is small-volume, high-stakes. The mailbox should be warmed weeks before the raise, the sequence should be two steps, and the send pattern should look like a founder typing, not a tool blasting.
+        You only get a handful of these emails, and one bad sending pattern can burn the whole list. So warm the mailbox weeks ahead, keep the follow-up light, and make the send look like a founder typing at their desk, not a tool firing on a schedule.
       </p>
 
       <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
@@ -143,81 +105,6 @@ const faq = [
   </section>
 
   <!-- ============================================================
-       RAISE TIMELINE · floating into the hero
-  ============================================================ -->
-  <section class="relative -mt-36 md:-mt-44 pb-16 md:pb-24 z-10">
-    <div class="container-page">
-      <div class="rounded-[18px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden shadow-[0_40px_90px_-30px_rgba(2,32,71,0.35),0_12px_30px_-12px_rgba(15,23,42,0.12)]">
-        <!-- Header strip -->
-        <div class="px-7 py-4 border-b border-[color:var(--border)] bg-[color:var(--surface-1)]/70 flex flex-wrap items-baseline justify-between gap-3">
-          <div class="flex items-baseline gap-3">
-            <div class="text-[13px] font-semibold text-heading">raise-timeline.fy26</div>
-            <span class="inline-flex items-center gap-1.5 h-5 px-2 rounded-full bg-[color:var(--sky-1)] text-[#0369a1] text-[10.5px] font-medium font-mono uppercase tracking-[0.08em]">
-              <span class="w-1 h-1 rounded-full bg-[#0284c7]"></span>
-              6 weeks · 1 mailbox
-            </span>
-          </div>
-          <div class="flex items-center gap-4 text-[10.5px] font-mono text-muted-foreground">
-            <span>Warmup ramp: {RAMP_START} → {RAMP_CEILING} / day</span>
-            <span class="w-1 h-1 rounded-full bg-[color:var(--border)]"></span>
-            <span>Cold cap: {COLD_DAILY_CAP} / day</span>
-            <span class="w-1 h-1 rounded-full bg-[color:var(--border)]"></span>
-            <span>{SEND_GAP_SECONDS}s spacing</span>
-          </div>
-        </div>
-
-        <!-- Phase legend -->
-        <div class="px-7 pt-5 flex flex-wrap items-center gap-x-5 gap-y-2 text-[11px] font-mono text-muted-foreground">
-          <span class="inline-flex items-center gap-1.5">
-            <span class="w-3 h-3 rounded-sm bg-[#7dd3fc]"></span>
-            Warmup phase
-          </span>
-          <span class="inline-flex items-center gap-1.5">
-            <span class="w-3 h-3 rounded-sm bg-[#075985]"></span>
-            Cold send phase
-          </span>
-          <span class="ml-auto inline-flex items-center gap-1.5 text-[#0369a1]">
-            <Icon name="check" size={10} />
-            Warmup continues in parallel during send weeks
-          </span>
-        </div>
-
-        <!-- Horizontal timeline rows -->
-        <div class="px-7 pt-4 pb-7">
-          <div class="space-y-1.5">
-            {timelineRows.map((t) => (
-              <div class="grid grid-cols-[88px_60px_1fr_220px] gap-4 items-center py-2">
-                <div class="text-[11px] font-mono text-muted-foreground uppercase tracking-[0.14em]">{t.week}</div>
-                <div class="text-right">
-                  <span class="font-mono text-[13px] font-semibold text-heading">{t.volume}</span>
-                  <span class="font-mono text-[10.5px] text-muted-foreground"> /day</span>
-                </div>
-                <div class="relative h-6 rounded-[4px] bg-[color:var(--surface-1)] overflow-hidden">
-                  <div
-                    class="absolute left-0 top-0 bottom-0 rounded-[4px]"
-                    style={`width: ${t.widthPct}%; background: ${t.isSend ? 'linear-gradient(90deg, #0284c7 0%, #075985 100%)' : 'linear-gradient(90deg, #bae6fd 0%, #7dd3fc 100%)'};`}
-                  ></div>
-                  <div class="absolute inset-0 flex items-center px-3">
-                    <span class={`text-[11px] font-medium ${t.isSend ? 'text-white' : 'text-[#0c4a6e]'}`}>{t.label}</span>
-                  </div>
-                </div>
-                <div class="text-[12px] text-foreground/65 leading-snug">{t.detail}</div>
-              </div>
-            ))}
-          </div>
-
-          <div class="mt-6 pt-4 border-t border-[color:var(--border)] flex flex-wrap items-center justify-between gap-3 text-[11.5px] font-mono text-muted-foreground">
-            <span>Plan numbers come from platform defaults, not a guarantee of outcomes.</span>
-            <a href="/warmup/" class="inline-flex items-center gap-1 text-[#0369a1] hover:text-[#075985]">
-              See the full warmup ramp <Icon name="arrowRight" size={11} />
-            </a>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ============================================================
        THREE TRAPS · what kills VC reply rate
   ============================================================ -->
   <section class="border-y border-[color:var(--border)] bg-[color:var(--surface-1)]/40 py-20 md:py-28">
@@ -228,7 +115,7 @@ const faq = [
           The three patterns that kill an investor sequence.
         </h2>
         <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed">
-          The mistakes are not creative. They are the same three founders make every raise. Each has a specific platform defence so the mailbox stays out of promotions and the sequence keeps moving.
+          None of these are exotic. They are the same three mistakes founders make on almost every raise, and each one has a setting in Warmbly that quietly keeps it from happening.
         </p>
       </div>
 
@@ -262,80 +149,176 @@ const faq = [
   </section>
 
   <!-- ============================================================
-       THE TWO-STEP SEQUENCE · the actual structure
+       THE SEQUENCE · the real branching flow, not a drip list
   ============================================================ -->
   <section class="border-b border-[color:var(--border)] py-20 md:py-28">
-    <div class="container-page grid lg:grid-cols-[1fr_1.6fr] gap-12 lg:gap-16 items-start">
+    <div class="container-page grid lg:grid-cols-[1fr_1.55fr] gap-12 lg:gap-16 items-start">
       <div class="lg:sticky lg:top-24" style="align-self: start;">
         <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">The sequence</div>
         <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
-          Two steps. Plain text. Deck on reply.
+          You draw a flow, not a drip list.
         </h2>
         <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed max-w-md">
-          Investor inboxes are saturated. A short sequence respects that. Day 0 is three to four sentences and one ask. Day 5 is a one-paragraph breakup. After that, the sequence ends.
+          A campaign is a small canvas. Each step holds for as long as you set, sends, then splits on what the
+          investor actually did. There is no separate wait block to babysit, the wait sits on the step itself. A
+          reply can stop the chase on the spot, open a task, or ping you. For a raise we keep it to two emails, but
+          it is the same builder every campaign runs on.
         </p>
-        <ul class="mt-6 space-y-2.5 text-[14px] text-foreground/85">
-          <li class="flex items-start gap-2"><Icon name="check" size={13} class="text-[#0284c7] mt-1 shrink-0"/><span>Pauses on any reply, bounce, or suppression.</span></li>
-          <li class="flex items-start gap-2"><Icon name="check" size={13} class="text-[#0284c7] mt-1 shrink-0"/><span>No deck attached. Deck link sent on reply only.</span></li>
-          <li class="flex items-start gap-2"><Icon name="check" size={13} class="text-[#0284c7] mt-1 shrink-0"/><span>Sends spread across recipient business hours, never the same minute.</span></li>
+        <ul class="mt-6 space-y-3.5 text-[14px] text-foreground/85">
+          <li class="flex items-start gap-3">
+            <span class="mt-px inline-flex size-6 shrink-0 items-center justify-center rounded-md bg-[color:var(--sky-1)] text-[#0369a1]"><Icon name="clock" size={13} /></span>
+            <span><span class="font-medium text-heading">The wait lives on the step.</span> Each one holds for the number of days you give it, then sends. Nothing to wire up in between.</span>
+          </li>
+          <li class="flex items-start gap-3">
+            <span class="mt-px inline-flex size-6 shrink-0 items-center justify-center rounded-md bg-[color:var(--sky-1)] text-[#0369a1]"><Icon name="workflow" size={13} /></span>
+            <span><span class="font-medium text-heading">Branches read behaviour.</span> Opened, clicked, replied, or a reply we have read as interested, not interested, or out of office: each can take its own path.</span>
+          </li>
+          <li class="flex items-start gap-3">
+            <span class="mt-px inline-flex size-6 shrink-0 items-center justify-center rounded-md bg-violet-50 text-violet-600"><Icon name="zap" size={13} /></span>
+            <span><span class="font-medium text-heading">A reply cuts the line.</span> The moment a partner answers, the cold steps stop and a step can run right then: tag them, open a CRM deal, or drop you a notification.</span>
+          </li>
         </ul>
         <p class="mt-6 text-[12px] text-muted-foreground italic">
-          Two steps is a recommendation, not a measured outcome. Override in settings if you have data that says otherwise.
+          Two emails is our call for a raise, not a ceiling. The same canvas branches up to 50 steps when a campaign needs it.
         </p>
       </div>
 
+      <!-- Flow canvas — mirrors the in-app campaign builder: email steps with a
+           per-step wait, behaviour branches, an instant reply path, and action
+           nodes (task / notify / tag) that end in Stop. -->
       <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden">
-        <!-- Header strip -->
-        <div class="px-6 py-3.5 border-b border-[color:var(--border)] bg-[color:var(--surface-1)]/70 flex flex-wrap items-baseline justify-between gap-3">
+        <div class="px-5 py-3.5 border-b border-[color:var(--border)] bg-[color:var(--surface-1)]/70 flex flex-wrap items-center justify-between gap-3">
           <div class="flex items-baseline gap-3">
             <div class="text-[13px] font-semibold text-heading">vc-seed-fy26</div>
             <span class="inline-flex items-center gap-1.5 h-5 px-2 rounded-full bg-[color:var(--sky-1)] text-[#0369a1] text-[10.5px] font-medium font-mono uppercase tracking-[0.08em]">
               <span class="w-1 h-1 rounded-full bg-[#0284c7]"></span>
-              2 steps · 1 sender
+              2 emails · 2 actions
             </span>
           </div>
-          <span class="text-[10.5px] font-mono uppercase tracking-[0.14em] text-muted-foreground">plain text · no attachments</span>
+          <span class="inline-flex items-center gap-1.5 text-[10.5px] font-mono uppercase tracking-[0.12em] text-[#0369a1]">
+            <Icon name="reply" size={11} /> stop on reply: on
+          </span>
         </div>
 
-        <!-- Steps -->
-        <div class="divide-y divide-[color:var(--border)]">
-          {sequence.map((s, i) => {
-            const isSend = s.kind === 'send';
-            const isWait = s.kind === 'wait';
-            return (
-              <div class="p-6">
-                <div class="grid grid-cols-[36px_1fr_auto] gap-4 items-center">
-                  <div class={`w-8 h-8 rounded-full inline-flex items-center justify-center text-[11px] font-mono font-semibold ${isSend ? 'bg-[#0284c7] text-white' : 'bg-slate-200 text-slate-600'}`}>
-                    {s.idx}
+        <div class="p-4 sm:p-5">
+          <!-- ── Email 1 ─────────────────────────────────────────── -->
+          <div class="rounded-xl border border-slate-200 bg-white shadow-sm">
+            <div class="flex items-center gap-2 rounded-t-xl border-b border-slate-200/70 bg-gradient-to-r from-sky-50/80 to-white px-3 py-2">
+              <span class="inline-flex size-6 shrink-0 items-center justify-center rounded-md bg-sky-100 text-sky-600 ring-1 ring-sky-200/70"><Icon name="mail" size={13} /></span>
+              <span class="min-w-0 flex-1 truncate text-[13px] font-semibold text-slate-800">First touch</span>
+              <span class="shrink-0 rounded bg-sky-600 px-1.5 py-px text-[9px] font-semibold uppercase tracking-[0.12em] text-white">Start</span>
+            </div>
+            <div class="px-3 py-2.5">
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-slate-300">Email 1</span>
+                <span class="text-[10px] font-mono text-slate-400">sends on entry</span>
+              </div>
+              <div class="mt-1.5 text-[12px] text-slate-500"><span class="text-slate-400">Subject&nbsp;&nbsp;</span><span class="text-slate-700">{email1Subject}</span></div>
+              <div class="mt-2.5 rounded-lg bg-slate-50 ring-1 ring-slate-200/70 p-3 font-mono text-[11.5px] leading-[1.65] text-slate-600 whitespace-pre-wrap">{email1Body}</div>
+            </div>
+          </div>
+
+          <!-- branches out of Email 1 -->
+          <div class="ml-3.5 border-l-2 border-dashed border-slate-200 pl-4 sm:pl-5 pt-3 space-y-3">
+            <!-- reply → instant action chain -->
+            <div>
+              <div class="flex flex-wrap items-center gap-1.5">
+                <span class="inline-flex items-center gap-1.5 h-6 px-2 rounded-md bg-[color:var(--sky-1)] ring-1 ring-sky-200/70 text-[11px] font-medium text-[#0369a1]">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="11" height="11" aria-hidden="true"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>
+                  if they reply
+                </span>
+                <span class="inline-flex items-center gap-1 h-5 px-1.5 rounded bg-violet-50 ring-1 ring-violet-200/70 text-[9.5px] font-semibold uppercase tracking-[0.1em] text-violet-600"><Icon name="zap" size={10} /> instant</span>
+              </div>
+              <div class="mt-2 rounded-lg border border-slate-200 bg-slate-50/50 overflow-hidden">
+                <div class="flex items-center gap-1.5 border-b border-slate-200/70 px-3 py-1.5 text-[9.5px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                  <Icon name="zap" size={11} class="text-violet-500" /> the moment a reply lands
+                </div>
+                <div class="divide-y divide-slate-200/70">
+                  <div class="flex items-center gap-2 px-3 py-2 text-[12px] text-slate-600">
+                    <span class="inline-flex size-5 shrink-0 items-center justify-center rounded bg-violet-50 text-violet-600 ring-1 ring-violet-200/70"><Icon name="check" size={11} /></span>
+                    <span><span class="text-slate-400">Create task</span>&nbsp;&nbsp;Send the deck, book the call</span>
                   </div>
-                  <div>
-                    <div class="text-[15px] font-semibold text-heading">{s.label}</div>
-                    <div class="mt-0.5 text-[12px] text-foreground/55">{s.note}</div>
-                  </div>
-                  <div class="text-right">
-                    <span class={`inline-flex items-center h-5 px-2 rounded text-[10px] font-mono font-semibold tracking-[0.08em] ${isSend ? 'bg-[color:var(--sky-1)] text-[#0369a1]' : 'bg-slate-100 text-slate-700'}`}>
-                      {s.delay}
-                    </span>
+                  <div class="flex items-center gap-2 px-3 py-2 text-[12px] text-slate-600">
+                    <span class="inline-flex size-5 shrink-0 items-center justify-center rounded bg-sky-50 text-sky-600 ring-1 ring-sky-200/70"><Icon name="send" size={11} /></span>
+                    <span><span class="text-slate-400">Notify</span>&nbsp;&nbsp;Ping me in Slack</span>
                   </div>
                 </div>
-
-                {s.body && (
-                  <div class="mt-4 ml-12 rounded-[10px] bg-[color:var(--surface-1)]/60 ring-1 ring-[color:var(--border)] p-4 font-mono text-[12.5px] text-foreground/85 whitespace-pre-wrap leading-[1.65]">{s.body}</div>
-                )}
-
-                {isWait && (
-                  <div class="mt-3 ml-12 text-[11.5px] font-mono text-muted-foreground">
-                    On reply · pause · auto-route to <a href="/inbox/" class="text-[#0369a1] hover:text-[#075985]">inbox</a>
-                  </div>
-                )}
+                <div class="flex items-center gap-1.5 border-t border-slate-200/70 bg-white px-3 py-1.5 text-[11px] font-medium text-rose-600">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="11" height="11" aria-hidden="true"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/></svg>
+                  Sequence stops here
+                </div>
               </div>
-            );
-          })}
+            </div>
+
+            <!-- no reply → wait → Email 2 -->
+            <div class="flex flex-wrap items-center gap-1.5">
+              <span class="inline-flex items-center gap-1.5 h-6 px-2 rounded-md bg-slate-100 text-[11px] font-medium text-slate-600">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="11" height="11" aria-hidden="true"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>
+                no reply
+              </span>
+              <span class="inline-flex items-center gap-1 h-5 px-1.5 rounded bg-slate-100 text-[10px] font-mono text-slate-500"><Icon name="clock" size={10} /> waits 5 days</span>
+              <span class="text-slate-300"><Icon name="arrowRight" size={12} /></span>
+              <span class="text-[11px] font-medium text-slate-500">down to Email 2</span>
+            </div>
+          </div>
+
+          <!-- ── Email 2 ─────────────────────────────────────────── -->
+          <div class="mt-3 rounded-xl border border-slate-200 bg-white shadow-sm">
+            <div class="flex items-center gap-2 rounded-t-xl border-b border-slate-200/70 bg-gradient-to-r from-sky-50/80 to-white px-3 py-2">
+              <span class="inline-flex size-6 shrink-0 items-center justify-center rounded-md bg-sky-100 text-sky-600 ring-1 ring-sky-200/70"><Icon name="mail" size={13} /></span>
+              <span class="min-w-0 flex-1 truncate text-[13px] font-semibold text-slate-800">One follow-up</span>
+              <span class="inline-flex items-center gap-1 shrink-0 rounded bg-slate-100 px-1.5 py-px text-[10px] font-mono text-slate-500"><Icon name="clock" size={10} /> 5d</span>
+            </div>
+            <div class="px-3 py-2.5">
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-slate-300">Email 2</span>
+                <span class="text-[10px] font-mono text-slate-400">same subject → same thread</span>
+              </div>
+              <div class="mt-1.5 text-[12px] text-slate-500"><span class="text-slate-400">Subject&nbsp;&nbsp;</span><span class="text-slate-700">{email2Subject}</span></div>
+              <div class="mt-2.5 rounded-lg bg-slate-50 ring-1 ring-slate-200/70 p-3 font-mono text-[11.5px] leading-[1.65] text-slate-600 whitespace-pre-wrap">{email2Body}</div>
+            </div>
+          </div>
+
+          <!-- branches out of Email 2 -->
+          <div class="ml-3.5 border-l-2 border-dashed border-slate-200 pl-4 sm:pl-5 pt-3 space-y-3">
+            <!-- opened, no reply → tag → stop -->
+            <div>
+              <div class="flex flex-wrap items-center gap-1.5">
+                <span class="inline-flex items-center gap-1.5 h-6 px-2 rounded-md bg-[color:var(--sky-1)] ring-1 ring-sky-200/70 text-[11px] font-medium text-[#0369a1]">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="11" height="11" aria-hidden="true"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>
+                  if they opened it but never replied
+                </span>
+                <span class="inline-flex items-center gap-1 h-5 px-1.5 rounded bg-slate-100 text-[10px] font-mono text-slate-500"><Icon name="clock" size={10} /> within 4 days</span>
+              </div>
+              <div class="mt-2 rounded-lg border border-slate-200 bg-slate-50/50 overflow-hidden">
+                <div class="flex items-center gap-2 px-3 py-2 text-[12px] text-slate-600">
+                  <span class="inline-flex size-5 shrink-0 items-center justify-center rounded bg-emerald-50 text-emerald-600 ring-1 ring-emerald-200/70">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="11" height="11" aria-hidden="true"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/></svg>
+                  </span>
+                  <span><span class="text-slate-400">Add tag</span>&nbsp;&nbsp;warm · no reply, follow up after the raise</span>
+                </div>
+                <div class="flex items-center gap-1.5 border-t border-slate-200/70 bg-white px-3 py-1.5 text-[11px] font-medium text-rose-600">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="11" height="11" aria-hidden="true"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/></svg>
+                  Sequence stops here
+                </div>
+              </div>
+            </div>
+
+            <!-- everyone else → stop -->
+            <div class="flex flex-wrap items-center gap-1.5">
+              <span class="inline-flex items-center gap-1.5 h-6 px-2 rounded-md bg-slate-100 text-[11px] font-medium text-slate-600">everyone else</span>
+              <span class="text-slate-300"><Icon name="arrowRight" size={12} /></span>
+              <span class="inline-flex items-center gap-1 h-5 px-1.5 rounded bg-rose-50 ring-1 ring-rose-200/70 text-[10px] font-medium text-rose-600">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="10" height="10" aria-hidden="true"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/></svg>
+                Stop
+              </span>
+            </div>
+          </div>
         </div>
 
-        <div class="px-6 py-3 border-t border-[color:var(--border)] bg-[color:var(--surface-1)]/60 flex flex-wrap items-center justify-between gap-2 text-[11.5px] font-mono text-muted-foreground">
-          <span>After step 2 · sequence ends · no third send</span>
-          <span class="text-[#0369a1]">Reply pauses for that contact only</span>
+        <div class="px-5 py-3 border-t border-[color:var(--border)] bg-[color:var(--surface-1)]/60 flex flex-wrap items-center justify-between gap-2 text-[11.5px] font-mono text-muted-foreground">
+          <span>Drawn on the campaign canvas · up to 50 steps</span>
+          <span class="text-[#0369a1]">A reply stops it for that contact only</span>
         </div>
       </div>
     </div>
