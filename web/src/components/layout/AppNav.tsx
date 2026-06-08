@@ -23,6 +23,7 @@ import {
     MailIcon,
     MegaphoneIcon,
     SettingsIcon,
+    ShieldCheckIcon,
     UsersIcon,
     XIcon,
     ZapIcon,
@@ -121,6 +122,7 @@ const sections: NavSection[] = [
             { title: "Campaigns", url: "/app/campaigns", icon: MegaphoneIcon, indicator: "campaigns" },
             { title: "Contacts", url: "/app/contacts", icon: UsersIcon, indicator: "contacts" },
             { title: "Analytics", url: "/app/analytics", icon: BarChart3Icon, indicator: "analytics" },
+            { title: "Deliverability", url: "/app/deliverability", icon: ShieldCheckIcon },
         ],
     },
     {

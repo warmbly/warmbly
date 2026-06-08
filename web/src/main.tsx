@@ -20,6 +20,7 @@ import CampaignPreferences from './app/app/campaigns/[id]/preferences/page';
 import CampaignSchedule from './app/app/campaigns/[id]/schedule/page';
 import CampaignSequences from './app/app/campaigns/[id]/sequences/page';
 import AnalyticsPage from './app/app/analytics/page';
+import DeliverabilityPage from './app/app/deliverability/page';
 import PipelinesPage from './app/app/crm/pipelines/page';
 import DealsPage from './app/app/crm/deals/page';
 import TasksPage from './app/app/crm/tasks/page';
@@ -233,6 +234,10 @@ const router = createBrowserRouter([
           {
             path: "analytics",
             element: <AnalyticsPage />,
+          },
+          {
+            path: "deliverability",
+            element: <DeliverabilityPage />,
           },
           {
             path: "crm",
