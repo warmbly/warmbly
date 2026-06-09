@@ -194,8 +194,16 @@ function AutomationCard({
     const remove = (e: React.MouseEvent) => {
         e.stopPropagation();
         confirm.show(`Delete "${a.name}"? Its steps will stop running.`, async () => {
-            await del.mutateAsync(a.id);
-            toast.success("Automation deleted");
+            try {
+                await del.mutateAsync(a.id);
+                toast.success("Automation deleted");
+            } catch (err) {
+                // e.g. 409 when the automation is still used by campaign "Run
+                // automation" steps — surface the server's actionable message and
+                // keep the dialog open (re-throw) so the user can cancel.
+                toast.error((err as { message?: string })?.message || "Could not delete automation");
+                throw err;
+            }
         });
     };
 
