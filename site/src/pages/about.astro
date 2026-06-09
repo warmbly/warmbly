@@ -85,8 +85,8 @@ const positioning = [
     closed: 'Undocumented. You find out when your reputation is gone.',
   },
   {
-    label: 'Roadmap',
-    warmbly: 'Public board. Shipped, in progress, researching.',
+    label: 'Changelog',
+    warmbly: 'Public, dated changelog. Every entry maps to a commit.',
     closed: 'Internal. Released on announcement cadence.',
   },
   {
@@ -117,16 +117,16 @@ const surface = [
 const involve = [
   { label: 'GitHub',     href: 'https://github.com/warmbly/warmbly', note: 'Source, issues, pull requests.',          icon: 'arrowUpRight' },
   { label: 'Developers', href: '/developers/',                       note: 'API, webhooks, scopes, idempotency.',     icon: 'arrowRight' },
-  { label: 'Roadmap',    href: '/roadmap/',                          note: 'Shipped, in progress, researching.',      icon: 'arrowRight' },
   { label: 'Changelog',  href: '/changelog/',                        note: 'Every release, dated, plain wording.',    icon: 'arrowRight' },
+  { label: 'Trust',      href: '/trust/',                            note: 'Encryption, subprocessors, security.',    icon: 'arrowRight' },
 ];
 ---
 <Layout
   title="About - The Open Cold Email Engine | Warmbly"
-  description="Warmbly is an open-source email warmup and cold outreach platform. Control plane and distributed workers. Per-mailbox safety. Public roadmap."
+  description="Warmbly is an open-source email warmup and cold outreach platform. Control plane and distributed workers. Per-mailbox safety. Public changelog."
 >
   <!-- ============================================================
-       HERO · HeroAtmosphere (matches sending, warmup, developers, roadmap)
+       HERO · HeroAtmosphere (matches sending, warmup, developers)
   ============================================================ -->
   <section class="relative isolate overflow-hidden">
     <HeroAtmosphere />
@@ -136,7 +136,7 @@ const involve = [
         <span class="inline-flex items-center h-5 px-1.5 rounded-full text-[10.5px] font-semibold uppercase tracking-[0.06em] bg-white" style="color:#0369a1;">
           About
         </span>
-        Open source. Apache 2.0. Public roadmap.
+        Open source. Apache 2.0. Public changelog.
       </div>
 
       <h1 class="mt-8 md:mt-10 text-[44px] sm:text-6xl md:text-[72px] lg:text-[80px] font-semibold tracking-[-0.04em] leading-[0.98] text-white max-w-4xl mx-auto">
@@ -191,7 +191,7 @@ const involve = [
         </p>
 
         <p>
-          We are a small team with a public roadmap. We do not hide what we are working on. We do not invent metrics. We do not pretend to be larger than we are. The product gets better in public.
+          We are a small team building in public. We do not hide what we are working on. We do not invent metrics. We do not pretend to be larger than we are. The product gets better in public.
         </p>
       </div>
     </div>
@@ -319,7 +319,7 @@ const involve = [
       </div>
 
       <p class="mt-4 text-[11.5px] font-mono text-muted-foreground">
-        Comparison reflects how Warmbly is built. We do not speak for any other vendor's roadmap or pricing.
+        Comparison reflects how Warmbly is built. We do not speak for any other vendor's plans or pricing.
       </p>
     </div>
   </section>
@@ -366,7 +366,7 @@ const involve = [
       <div class="lg:sticky lg:top-24 self-start">
         <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7] mb-3">The team</div>
         <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
-          Small team. Public roadmap. Open source.
+          Small team. Built in public. Open source.
         </h2>
       </div>
 
@@ -378,14 +378,14 @@ const involve = [
           Because the team is small, the constraints we put on the codebase have to do the heavy lifting. Safe defaults, conservative warmup, layered abuse controls, encryption everywhere we touch user secrets. We would rather ship one fewer feature than ship a feature that puts your sending reputation at risk.
         </p>
         <p>
-          You can follow the work in public. Open issues, pull requests, the roadmap board, the changelog. Everything that matters is visible.
+          You can follow the work in public. Open issues, pull requests, and the changelog. Everything that matters is visible.
         </p>
 
         <div class="mt-8 grid sm:grid-cols-3 gap-3">
-          <a href="/roadmap/" class="group rounded-[12px] bg-white ring-1 ring-[color:var(--border)] hover:ring-[#0284c7]/40 transition-all p-5 block">
-            <div class="text-[10.5px] uppercase tracking-[0.18em] font-mono text-muted-foreground">Roadmap</div>
-            <div class="mt-2 text-[14.5px] font-semibold text-heading">What is next</div>
-            <div class="mt-1 text-[12px] text-foreground/60">Shipped, in progress, researched.</div>
+          <a href="/trust/" class="group rounded-[12px] bg-white ring-1 ring-[color:var(--border)] hover:ring-[#0284c7]/40 transition-all p-5 block">
+            <div class="text-[10.5px] uppercase tracking-[0.18em] font-mono text-muted-foreground">Trust</div>
+            <div class="mt-2 text-[14.5px] font-semibold text-heading">How it is secured</div>
+            <div class="mt-1 text-[12px] text-foreground/60">Encryption, subprocessors, posture.</div>
           </a>
           <a href="/changelog/" class="group rounded-[12px] bg-white ring-1 ring-[color:var(--border)] hover:ring-[#0284c7]/40 transition-all p-5 block">
             <div class="text-[10.5px] uppercase tracking-[0.18em] font-mono text-muted-foreground">Changelog</div>

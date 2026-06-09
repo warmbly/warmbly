@@ -18,13 +18,13 @@ import CTA from '../components/CTA.astro';
      - internal/repository/pg_warmup.go
 
    Tone: factual. No fake compliance badges. No fake metrics.
-   No customer quotes. Roadmap items marked as roadmap.
+   No customer quotes. Planned items are marked as planned, not shipped.
 
    Astro parser quirk: any `<` or `<=` comparison inside `{}` blocks
    breaks the parser. Hoist them up here.
    ----------------------------------------------------------------- */
 
-// Posture badges. Honest about what is shipped vs roadmap.
+// Posture badges. Honest about what is shipped vs planned.
 // `state` drives the dot color in the JSX below.
 const posture = [
   {
@@ -50,12 +50,12 @@ const posture = [
   {
     label: 'SOC 2 Type II',
     note: 'Controls in place. Audit window opens with our auditor.',
-    state: 'roadmap',
+    state: 'planned',
   },
   {
     label: 'ISO 27001',
     note: 'Under evaluation. No certification claimed today.',
-    state: 'roadmap',
+    state: 'planned',
   },
 ];
 
@@ -221,7 +221,7 @@ const disclosure = [
         <div class="px-5 md:px-7 py-4 border-b border-slate-200 flex items-center gap-3">
           <div>
             <div class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">Posture</div>
-            <div class="mt-0.5 text-[13px] text-slate-900 font-medium">What we have shipped, and what is on the roadmap.</div>
+            <div class="mt-0.5 text-[13px] text-slate-900 font-medium">What we have shipped, and what is still planned.</div>
           </div>
           <a href="/changelog/" class="ml-auto text-[12px] font-medium text-[color:var(--brand)] hover:text-[color:var(--brand-strong)] inline-flex items-center gap-1">
             Changelog <Icon name="arrowUpRight" size={11} />
@@ -233,7 +233,7 @@ const disclosure = [
             const shipped = p.state === 'shipped';
             const dot = shipped ? 'bg-emerald-500' : 'bg-amber-500';
             const pillBg = shipped ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700';
-            const stateLabel = shipped ? 'Shipped' : 'Roadmap';
+            const stateLabel = shipped ? 'Shipped' : 'Planned';
             const borderRight = (i % 3) !== 2 ? 'lg:border-r' : '';
             const borderBottomLg = i < 3 ? 'lg:border-b' : '';
             return (
@@ -253,7 +253,7 @@ const disclosure = [
       </div>
 
       <p class="mt-4 text-center text-[12px] text-muted-foreground max-w-2xl mx-auto">
-        We do not claim certifications we do not hold. SOC 2 and ISO 27001 are listed as roadmap items because they are honestly roadmap items.
+        We do not claim certifications we do not hold. SOC 2 and ISO 27001 are listed as planned because they are honestly not in place yet.
       </p>
     </div>
   </section>

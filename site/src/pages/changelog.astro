@@ -3,84 +3,14 @@ import Layout from '../layouts/Layout.astro';
 import HeroAtmosphere from '../components/HeroAtmosphere.astro';
 import Icon from '../components/Icon.astro';
 import CTA from '../components/CTA.astro';
+import { getChangelog } from '../lib/changelog';
 
-// Seeded entries (from the prior changelog) plus 3 new ones grounded
-// in the real codebase / CLAUDE.md (SOC 2 in progress, BYOK / KMS,
-// SSO, worker assignment, tracking edge, warmup token validation).
-const entries = [
-  {
-    date: '2026-05-26',
-    title: 'BYOK envelope encryption for self-host',
-    tag: 'shipped',
-    body: 'Self-hosted deployments can now register their own AWS KMS key as the root of trust for the per-user DEK envelope. Existing encrypted material is re-wrapped on first key activation. Plaintext DEKs continue to live only in the Redis cache with a bounded TTL.',
-  },
-  {
-    date: '2026-05-22',
-    title: 'SAML SSO for Business plans',
-    tag: 'shipped',
-    body: 'Workspace owners on Business can connect Okta, Azure AD, or any SAML 2.0 IdP. Just-in-time provisioning is on by default and admins can pin a default role for new sign-ins.',
-  },
-  {
-    date: '2026-05-20',
-    title: 'API keys dashboard',
-    tag: 'shipped',
-    body: 'New API keys page in Settings. Per-key scopes, last-used timestamps, and one-click rotation. Existing keys auto-migrated to full-access scope. Rotate when you can.',
-  },
-  {
-    date: '2026-05-15',
-    title: 'Per-mailbox health bands',
-    tag: 'shipped',
-    body: 'Mailboxes now surface a health band: healthy, watch, quarantined, or blocked. Bands are driven by rolling placement, complaint, and bounce signals. Pool selection skips anything not healthy.',
-  },
-  {
-    date: '2026-05-05',
-    title: 'Contacts power tools',
-    tag: 'shipped',
-    body: 'CSV, XLSX, and JSON export with a field picker and a scope toggle. A CSV / XLSX import wizard handles column mapping, dedup, and category assignment. Categories replace Tags in the contact model.',
-  },
-  {
-    date: '2026-04-25',
-    title: 'Recovery pool',
-    tag: 'shipped',
-    body: 'Quarantined mailboxes move to a separate recovery pool, isolated from the main paid pool. 7-day cooldown plus a 20-delivery probation window before any re-entry into premium warmup traffic.',
-  },
-  {
-    date: '2026-04-18',
-    title: 'SOC 2 Type I in progress',
-    tag: 'changed',
-    body: 'We engaged an external auditor for SOC 2 Type I. Trust center now lists subprocessors, the data flow, and the encryption model. Type II observation window starts after the Type I report lands.',
-  },
-  {
-    date: '2026-04-12',
-    title: 'Worker concentration warnings',
-    tag: 'shipped',
-    body: 'Workspace surfaces a warning when a shared worker is carrying too much active cold volume. We add workers and rebalance before forcing any one machine to do more.',
-  },
-  {
-    date: '2026-04-01',
-    title: 'Plain-text default',
-    tag: 'changed',
-    body: 'New sequences default to plain text. HTML is opt-in per step. Existing sequences are untouched, but new templates inherit the plain-text default.',
-  },
-  {
-    date: '2026-03-22',
-    title: 'Microsoft 365 OAuth refresh',
-    tag: 'fixed',
-    body: 'Resolved an intermittent token-refresh failure for Microsoft mailboxes with mandatory MFA. Affected mailboxes auto-reconnect on the next sync window with no manual reauth.',
-  },
-  {
-    date: '2026-03-10',
-    title: 'Sequence A/B variants',
-    tag: 'shipped',
-    body: 'Up to four subject and body variants per step. Per-variant reply-rate reporting, with significance hints once each variant has enough sample.',
-  },
-  {
-    date: '2026-03-01',
-    title: 'Tracking edge upgrade',
-    tag: 'changed',
-    body: 'The tracking edge now dedupes by task and IP at the edge, and again in the consumer. Drops a class of replay-driven noise from analytics without losing real engagement events.',
-  },
-];
+// Entries are pulled at build time from the real merged pull requests on
+// warmbly/warmbly. There are no tagged releases or a CHANGELOG.md, so merged
+// PRs into main are the source of truth, and PR granularity keeps it to one
+// entry per shippable change rather than one per commit. Curation rules and
+// the offline fallback live in src/lib/changelog.ts.
+const entries = await getChangelog();
 
 const tagStyle = (t) => {
   if (t === 'shipped') return { dot: 'bg-emerald-500', chip: 'bg-emerald-50 text-emerald-700', accent: 'text-emerald-700' };
@@ -96,10 +26,9 @@ const counts = {
 };
 
 // Hoisted to avoid `<` / `<=` inside JSX expressions (Astro JSX parser is fragile).
-const monthEntries  = entries.filter(e => e.date.startsWith('2026-05'));
-const monthCount    = monthEntries.length;
-const ytdEntries    = entries.filter(e => e.date.startsWith('2026-'));
-const ytdCount      = ytdEntries.length;
+const recentEntries = entries.slice(0, 3);
+const recentCount   = recentEntries.length;
+const totalCount    = entries.length;
 const shippedCount  = counts.shipped;
 const changedCount  = counts.changed;
 const fixedCount    = counts.fixed;
@@ -130,14 +59,14 @@ const fixedCount    = counts.fixed;
       </p>
 
       <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
-        <a href="/changelog/feed.xml" class="inline-flex h-11 px-5 items-center gap-2 rounded-[10px] text-[14.5px] font-semibold bg-white hover:bg-white hover:-translate-y-0.5 hover:shadow-[0_12px_28px_-6px_rgba(0,0,0,0.3)] transition-all duration-200 ease-out shadow-[0_4px_14px_-2px_rgba(0,0,0,0.18)]">
-          <span style="color:#075985;">Subscribe to the feed</span>
+        <a href="https://github.com/warmbly/warmbly/pulls?q=is%3Apr+is%3Amerged+base%3Amain" class="inline-flex h-11 px-5 items-center gap-2 rounded-[10px] text-[14.5px] font-semibold bg-white hover:bg-white hover:-translate-y-0.5 hover:shadow-[0_12px_28px_-6px_rgba(0,0,0,0.3)] transition-all duration-200 ease-out shadow-[0_4px_14px_-2px_rgba(0,0,0,0.18)]">
+          <span style="color:#075985;">View the pull requests</span>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#075985" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>
           </svg>
         </a>
-        <a href="/roadmap/" class="inline-flex h-11 px-5 items-center rounded-[10px] text-[14.5px] font-medium bg-white/10 backdrop-blur ring-1 ring-white/40 text-white hover:bg-white/20 hover:-translate-y-0.5 transition-all duration-200 ease-out">
-          See the roadmap
+        <a href="https://github.com/warmbly/warmbly" class="inline-flex h-11 px-5 items-center rounded-[10px] text-[14.5px] font-medium bg-white/10 backdrop-blur ring-1 ring-white/40 text-white hover:bg-white/20 hover:-translate-y-0.5 transition-all duration-200 ease-out">
+          Star on GitHub
         </a>
       </div>
     </div>
@@ -150,21 +79,21 @@ const fixedCount    = counts.fixed;
     <div class="container-page">
       <div class="flex flex-wrap items-end justify-between gap-6 mb-10 md:mb-12">
         <div>
-          <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Shipped this month</div>
+          <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Latest releases</div>
           <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
             The latest production work.
           </h2>
           <p class="mt-3 text-[14.5px] md:text-[15px] text-foreground/70 leading-relaxed max-w-2xl">
-            {monthCount} entries in May 2026. Trust and infrastructure work led the month, with BYOK envelope encryption, SAML SSO, and a new API keys dashboard all landing within two weeks.
+            The {recentCount} most recent merged pull requests. Each entry links straight to the PR it shipped in.
           </p>
         </div>
         <div class="text-[11.5px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
-          <span class="text-heading font-semibold">{monthCount}</span> / {ytdCount} year to date
+          <span class="text-heading font-semibold">{recentCount}</span> / {totalCount} total
         </div>
       </div>
 
       <div class="space-y-4">
-        {monthEntries.map((e) => {
+        {recentEntries.map((e) => {
           const t = tagStyle(e.tag);
           return (
             <article class="grid grid-cols-1 md:grid-cols-[140px_110px_1fr] gap-x-8 gap-y-3 bg-white ring-1 ring-[color:var(--border)] rounded-[14px] p-6 md:p-7 items-baseline hover:ring-[#0284c7]/40 transition-all">
@@ -182,6 +111,10 @@ const fixedCount    = counts.fixed;
                   {e.title}
                 </h3>
                 <p class="mt-2.5 text-[14.5px] text-foreground/75 leading-relaxed max-w-3xl">{e.body}</p>
+                <a href={e.url} class="mt-3 inline-flex items-center gap-1 text-[11.5px] font-mono text-[#0369a1] hover:text-[#075985]">
+                  #{e.number}
+                  <Icon name="arrowUpRight" size={11} />
+                </a>
               </div>
             </article>
           );
@@ -238,9 +171,12 @@ const fixedCount    = counts.fixed;
                 </span>
               </div>
               <div>
-                <h3 class="text-[15.5px] md:text-[16.5px] font-semibold text-heading tracking-[-0.01em]">
-                  {e.title}
-                </h3>
+                <a href={e.url} class="group inline-flex items-baseline gap-1.5">
+                  <h3 class="text-[15.5px] md:text-[16.5px] font-semibold text-heading tracking-[-0.01em] group-hover:text-[#0369a1] transition-colors">
+                    {e.title}
+                  </h3>
+                  <span class="text-[11px] font-mono text-muted-foreground group-hover:text-[#0369a1] transition-colors">#{e.number}</span>
+                </a>
                 <p class="mt-1.5 text-[13.5px] text-foreground/70 leading-relaxed max-w-3xl line-clamp-2">{e.body}</p>
               </div>
             </article>
@@ -249,44 +185,44 @@ const fixedCount    = counts.fixed;
       </div>
 
       <div class="mt-8 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11.5px] font-mono text-muted-foreground">
-        <span>Older than 90 days?</span>
-        <a href="https://github.com/warmbly/warmbly/blob/main/CHANGELOG.md" class="text-[#0369a1] hover:text-[#075985]">CHANGELOG.md on GitHub</a>
+        <span>Want the full detail?</span>
+        <a href="https://github.com/warmbly/warmbly/pulls?q=is%3Apr+is%3Amerged+base%3Amain" class="text-[#0369a1] hover:text-[#075985]">Merged pull requests on GitHub</a>
         <span class="w-1 h-1 rounded-full bg-[color:var(--border)]"></span>
-        <span>Every entry maps to a commit SHA.</span>
+        <span>Each entry links to the pull request that shipped it.</span>
       </div>
     </div>
   </section>
 
   <!-- ============================================================
-       SUBSCRIBE · editorial split with feed URL + GitHub follow
+       SUBSCRIBE · editorial split with GitHub follow
   ============================================================ -->
   <section class="border-t border-[color:var(--border)] bg-[color:var(--surface-1)]/40 py-20 md:py-24">
     <div class="container-page grid lg:grid-cols-[1fr_1.4fr] gap-12 lg:gap-20 items-start">
       <div class="lg:sticky lg:top-24" style="align-self: start;">
         <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Follow along</div>
         <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
-          Get the changelog<br/>in your reader.
+          Follow every<br/>release as it ships.
         </h2>
         <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed max-w-md">
-          The feed updates within minutes of an entry going live. No email signup, no tracking pixels, no batching. Just a plain RSS feed and the public GitHub repository.
+          Every entry links to the pull request that shipped it. Watch or star the repository to hear about the next release, and open a discussion on what we build next. No email signup, no tracking pixels.
         </p>
       </div>
 
       <div class="grid sm:grid-cols-2 gap-4">
-        <!-- Feed card -->
-        <a href="/changelog/feed.xml" class="group rounded-[14px] bg-white ring-1 ring-[color:var(--border)] p-6 hover:ring-[#0284c7]/40 hover:shadow-[0_18px_36px_-18px_rgba(2,132,199,0.3)] transition-all">
+        <!-- Merged pull requests card -->
+        <a href="https://github.com/warmbly/warmbly/pulls?q=is%3Apr+is%3Amerged+base%3Amain" class="group rounded-[14px] bg-white ring-1 ring-[color:var(--border)] p-6 hover:ring-[#0284c7]/40 hover:shadow-[0_18px_36px_-18px_rgba(2,132,199,0.3)] transition-all">
           <div class="flex items-center justify-between mb-5">
             <div class="inline-flex items-center justify-center w-10 h-10 rounded-[10px] bg-sky-50 text-[#0369a1] ring-1 ring-sky-100">
-              <Icon name="bell" size={18} />
+              <Icon name="list" size={18} />
             </div>
             <Icon name="arrowUpRight" size={14} class="text-muted-foreground group-hover:text-[#0369a1] transition-colors" />
           </div>
-          <div class="text-[16px] font-semibold text-heading tracking-[-0.01em]">RSS feed</div>
+          <div class="text-[16px] font-semibold text-heading tracking-[-0.01em]">Merged pull requests</div>
           <p class="mt-1.5 text-[13px] text-foreground/65 leading-relaxed">
-            Subscribe in any RSS reader. Entries arrive in publication order, with the full body inline.
+            The full record on main, in the order it reached production. Every changelog entry traces back to one of these.
           </p>
           <div class="mt-4 inline-flex items-center gap-1.5 text-[11.5px] font-mono text-[#0369a1] bg-sky-50 px-2 py-1 rounded">
-            /changelog/feed.xml
+            warmbly/warmbly · pulls
           </div>
         </a>
 
@@ -307,20 +243,20 @@ const fixedCount    = counts.fixed;
           </div>
         </a>
 
-        <!-- Roadmap card -->
-        <a href="/roadmap/" class="group rounded-[14px] bg-white ring-1 ring-[color:var(--border)] p-6 hover:ring-[#0284c7]/40 hover:shadow-[0_18px_36px_-18px_rgba(2,132,199,0.3)] transition-all">
+        <!-- Discussions card -->
+        <a href="https://github.com/warmbly/warmbly/discussions" class="group rounded-[14px] bg-white ring-1 ring-[color:var(--border)] p-6 hover:ring-[#0284c7]/40 hover:shadow-[0_18px_36px_-18px_rgba(2,132,199,0.3)] transition-all">
           <div class="flex items-center justify-between mb-5">
             <div class="inline-flex items-center justify-center w-10 h-10 rounded-[10px] bg-amber-50 text-amber-700 ring-1 ring-amber-100">
-              <Icon name="layers" size={18} />
+              <Icon name="users" size={18} />
             </div>
             <Icon name="arrowUpRight" size={14} class="text-muted-foreground group-hover:text-[#0369a1] transition-colors" />
           </div>
-          <div class="text-[16px] font-semibold text-heading tracking-[-0.01em]">Public roadmap</div>
+          <div class="text-[16px] font-semibold text-heading tracking-[-0.01em]">Discussions</div>
           <p class="mt-1.5 text-[13px] text-foreground/65 leading-relaxed">
-            What is shipping next, what is in flight, and what we are still thinking about. Open for comment.
+            Request a feature, report a bug, or open an RFC. We read every thread and respond in the open.
           </p>
           <div class="mt-4 inline-flex items-center gap-1.5 text-[11.5px] font-mono text-amber-700 bg-amber-50 px-2 py-1 rounded">
-            /roadmap
+            /discussions
           </div>
         </a>
 
