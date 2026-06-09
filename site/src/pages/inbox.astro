@@ -4,50 +4,143 @@ import HeroAtmosphere from '../components/HeroAtmosphere.astro';
 import Icon from '../components/Icon.astro';
 import CTA from '../components/CTA.astro';
 
-// Real reply classifications + auto-actions from internal/app/consumer/event_new_email.go
+// ===========================================================================
+// Unified inbox (unibox). Every classification and auto-action is real:
+//   internal/app/consumer/event_new_email.go   (six reply classes + actions)
+//   internal/app/advanced/service.go           (suppression + reply intent)
+// Every product surface mirrors the shipped UI:
+//   web/src/components/app/unibox/ScopeRail.tsx        (scopes / saved views)
+//   web/src/components/app/unibox/UniboxHeader.tsx     (header stats)
+//   web/src/components/app/unibox/ContactContextPanel.tsx (right rail)
+//
+// Astro JSX caveat: never put a bare `<`, `>` or `<=` inside a {} expression
+// in markup. Pre-compute everything as data and iterate cleanly.
+// ===========================================================================
+
+// --- Reply classes + the auto-action each one fires --------------------------
 const classifications = [
-  { label: 'Positive',    tone: 'emerald', auto: 'Surface to assignee · keep sequence paused', body: 'Confirmed meeting, asked for proposal, expressed buying intent, requested next step.' },
-  { label: 'Negative',    tone: 'rose',    auto: 'Suppress recipient · pause sequence',         body: 'Said no, asked to stop, sent legal/abuse signal. Treated as a suppression event.' },
+  { label: 'Positive',    tone: 'emerald', auto: 'Surface to assignee · keep sequence paused', body: 'Confirmed meeting, asked for a proposal, expressed buying intent, requested a next step.' },
+  { label: 'Negative',    tone: 'rose',    auto: 'Suppress recipient · pause sequence',         body: 'Said no, asked to stop, sent a legal or abuse signal. Treated as a suppression event.' },
   { label: 'Referral',    tone: 'violet',  auto: 'Mark for follow-up · keep paused',            body: 'Pointed you to a different person at the same company.' },
-  { label: 'OOO',         tone: 'amber',   auto: 'Re-queue after parsed end date',              body: 'Out-of-office auto-reply. End date parsed from the body when present.' },
-  { label: 'Unsubscribe', tone: 'slate',   auto: 'Workspace-wide suppression',                  body: 'Either an explicit STOP/UNSUBSCRIBE reply or a list-unsubscribe header click.' },
-  { label: 'Bounce',      tone: 'stone',   auto: 'Hard → suppress · soft → retry → suppress',   body: 'SMTP bounce. Hard (5.x.x) is permanent. Soft (4.x.x) retries up to 3 times.' },
+  { label: 'OOO',         tone: 'amber',   auto: 'Re-queue after the parsed end date',          body: 'Out-of-office auto-reply. The end date is parsed from the body when present.' },
+  { label: 'Unsubscribe', tone: 'slate',   auto: 'Workspace-wide suppression',                  body: 'Either an explicit STOP or UNSUBSCRIBE reply, or a list-unsubscribe header click.' },
+  { label: 'Bounce',      tone: 'stone',   auto: 'Hard suppresses · soft retries then suppresses', body: 'An SMTP bounce. Hard (5.x.x) is permanent. Soft (4.x.x) retries up to three times.' },
 ];
 
 const toneClass = (t: string) => {
-  if (t === 'emerald') return { bg: 'bg-emerald-50',  text: 'text-emerald-700', dot: 'bg-emerald-500',  chip: 'bg-emerald-50 text-emerald-700' };
-  if (t === 'rose')    return { bg: 'bg-rose-50',     text: 'text-rose-700',    dot: 'bg-rose-500',     chip: 'bg-rose-50 text-rose-700' };
-  if (t === 'violet')  return { bg: 'bg-violet-50',   text: 'text-violet-700',  dot: 'bg-violet-500',   chip: 'bg-violet-50 text-violet-700' };
-  if (t === 'amber')   return { bg: 'bg-amber-50',    text: 'text-amber-700',   dot: 'bg-amber-500',    chip: 'bg-amber-50 text-amber-700' };
-  if (t === 'slate')   return { bg: 'bg-slate-100',   text: 'text-slate-700',   dot: 'bg-slate-500',    chip: 'bg-slate-100 text-slate-700' };
-  return                       { bg: 'bg-stone-100',  text: 'text-stone-700',   dot: 'bg-stone-500',    chip: 'bg-stone-100 text-stone-700' };
+  if (t === 'emerald') return { dot: 'bg-emerald-500',  chip: 'bg-emerald-50 text-emerald-700' };
+  if (t === 'rose')    return { dot: 'bg-rose-500',     chip: 'bg-rose-50 text-rose-700' };
+  if (t === 'violet')  return { dot: 'bg-violet-500',   chip: 'bg-violet-50 text-violet-700' };
+  if (t === 'amber')   return { dot: 'bg-amber-500',    chip: 'bg-amber-50 text-amber-700' };
+  if (t === 'slate')   return { dot: 'bg-slate-500',    chip: 'bg-slate-100 text-slate-700' };
+  return                       { dot: 'bg-stone-500',   chip: 'bg-stone-100 text-stone-700' };
 };
 
-// Thread mock (illustrative, marked as such)
+// --- The product mock · conversation list (illustrative, marked as such) -----
 const threads = [
-  { from: 'Maya Chen',   sub: 'Re: Saw your demo last week, quick question on pricing',  mailbox: 'ben@acme.com',  cls: 0, time: '2m',  preview: 'This actually maps to what we were looking at. Could you send over a proposal for ~30 seats?' },
-  { from: 'Theo Park',   sub: 'Out of office: Re: 15 min next Tuesday?',                  mailbox: 'ben@acme.com',  cls: 3, time: '14m', preview: 'I will be out until June 3rd with limited email access. For urgent items contact…' },
-  { from: 'Mailer Daemon', sub: 'Undeliverable: mail to lena@deletedcorp.io',            mailbox: 'sara@acme.com', cls: 5, time: '32m', preview: 'Address rejected: 550 5.1.1 The email account that you tried to reach does not exist.' },
-  { from: 'Eli Soriano', sub: 'Not me, try Dana on our infra team',                       mailbox: 'sara@acme.com', cls: 2, time: '1h',  preview: 'I am no longer the right person for this. Reach out to dana.k@stratech.io who runs platform.' },
-  { from: 'Priya Bhatt', sub: 'Re: thought you would find this useful',                  mailbox: 'mark@acme.com', cls: 0, time: '2h',  preview: 'Yes! Booked time on your calendar for Thursday. Looking forward to it.' },
-  { from: 'Rowan Cole',  sub: 'Re: a question about your sequence cadence',              mailbox: 'mark@acme.com', cls: 1, time: '3h',  preview: 'Please stop emailing me. We picked another vendor six months ago.' },
+  { from: 'Maya Chen',     sub: 'Re: Saw your demo last week, quick question on pricing', mailbox: 'ben@acme.com',  cls: 0, time: '2m',  preview: 'This maps to what we were looking at. Could you send a proposal for ~30 seats?' },
+  { from: 'Theo Park',     sub: 'Out of office: Re: 15 min next Tuesday?',                mailbox: 'ben@acme.com',  cls: 3, time: '14m', preview: 'I will be out until June 3rd with limited email access. For urgent items contact…' },
+  { from: 'Mailer Daemon', sub: 'Undeliverable: mail to lena@deletedcorp.io',            mailbox: 'sara@acme.com', cls: 5, time: '32m', preview: 'Address rejected: 550 5.1.1 the email account that you tried to reach does not exist.' },
+  { from: 'Eli Soriano',   sub: 'Not me, try Dana on our infra team',                     mailbox: 'sara@acme.com', cls: 2, time: '1h',  preview: 'I am no longer the right person. Reach out to dana.k@stratech.io who runs platform.' },
+  { from: 'Priya Bhatt',   sub: 'Re: thought you would find this useful',                mailbox: 'mark@acme.com', cls: 0, time: '2h',  preview: 'Yes. Booked time on your calendar for Thursday. Looking forward to it.' },
+  { from: 'Rowan Cole',    sub: 'Re: a question about your sequence cadence',            mailbox: 'mark@acme.com', cls: 1, time: '3h',  preview: 'Please stop emailing me. We picked another vendor six months ago.' },
 ];
 
-// Real product capabilities
+// --- The scope rail · real scope kinds (ScopeRail.tsx + UniboxHeader.tsx) -----
+const scopeInbox = [
+  { label: 'All',           count: null, active: true,  accent: false },
+  { label: 'Unread',        count: 7,    active: false, accent: true  },
+  { label: 'Awaiting reply',count: 3,    active: false, accent: false },
+  { label: 'Today',         count: 5,    active: false, accent: false },
+  { label: 'This week',     count: 18,   active: false, accent: false },
+];
+const scopeActivity = [
+  { label: 'Snoozed',   count: 2, icon: 'clock' },
+  { label: 'Scheduled', count: 4, icon: 'send'  },
+];
+const scopeMailboxes = [
+  { addr: 'ben@acme.com',  count: 3 },
+  { addr: 'sara@acme.com', count: 2 },
+  { addr: 'mark@acme.com', count: 2 },
+];
+const scopeLabels = ['interested', 'follow-up', 'referral', 'do-not-contact'];
+
+// --- Triage section · the tabs you live in without a unibox ------------------
+const scatterTabs = [
+  { provider: 'Gmail',   addr: 'ben@acme.com',  unread: 3, tone: 'rose'  },
+  { provider: 'Gmail',   addr: 'sara@acme.com', unread: 2, tone: 'rose'  },
+  { provider: 'Outlook', addr: 'mark@acme.com', unread: 2, tone: 'amber' },
+  { provider: 'Gmail',   addr: 'dana@acme.com', unread: 5, tone: 'rose'  },
+];
+
+// --- Saved views · the scopes serialise straight to the URL ------------------
+const views = [
+  { icon: 'reply',  k: 'Awaiting reply', v: 'The prospect spoke last and the clock is on you. The header counts it live.' },
+  { icon: 'clock',  k: 'Snoozed',        v: 'Pushed to a later date. It resurfaces at the top the moment the timer fires.' },
+  { icon: 'send',   k: 'Scheduled',      v: 'Replies queued to go out later, held to the mailbox send window and pacing.' },
+  { icon: 'mail',   k: 'By mailbox',     v: 'Narrow to one connected inbox. Per-mailbox counts stay current in the rail.' },
+  { icon: 'filter', k: 'By label',       v: 'Workspace categories you toggle on a thread. Create a new one inline.' },
+  { icon: 'spark',  k: 'By classification', v: 'Positive, negative, OOO, bounce. The class is set on arrival, before you look.' },
+];
+
+// --- Fan-out · what fires on one positive reply (event_new_email.go) ----------
+const fanout = [
+  { label: 'sequence acme-fy26-q2 · paused', kind: 'paused' },
+  { label: 'routed to assignee · @ben',       kind: 'claim'  },
+  { label: '#sales-positive · Slack',          kind: 'ping'   },
+  { label: 'HubSpot · stage advance',          kind: 'crm'    },
+  { label: 'browser push · realtime',          kind: 'push'   },
+  { label: 'webhook reply.classified',         kind: 'event'  },
+];
+
+// --- Contact context panel · the right rail (ContactContextPanel.tsx) ---------
+const engagement = [
+  { k: 'Sent',  v: '7', accent: false },
+  { k: 'Open',  v: '5', accent: false },
+  { k: 'Click', v: '2', accent: false },
+  { k: 'Reply', v: '1', accent: true  },
+];
+const crmTasks = [
+  { t: 'Send the 30-seat proposal', due: 'due today', dot: 'bg-rose-500'  },
+  { t: 'Loop the CFO in on pricing', due: 'due Thu',   dot: 'bg-amber-500' },
+];
+
+// --- Sync model · how threads stay in step with the provider -----------------
+// Worker reality: Google syncs via the Gmail History API, Outlook and SMTP/IMAP
+// over IMAP, both on a 1-minute ticker (internal/app/worker/wmail/start_sync.go,
+// config.go ImapCheckInterval). Poll-based, no provider push.
+const sync = [
+  { provider: 'Gmail',            channel: 'history API · 60s poll', note: 'Gmail syncs through the Gmail History API, polled about once a minute. The history cursor means each pass only pulls what changed since the last one.' },
+  { provider: 'Outlook',          channel: 'IMAP · 60s poll',        note: 'Outlook connects over IMAP and is polled about once a minute per mailbox.' },
+  { provider: 'SMTP / IMAP',      channel: 'IMAP · 60s poll',        note: 'Any other provider sends over SMTP and syncs over IMAP, on the same one-minute poll.' },
+  { provider: 'Outbound replies', channel: 'provider send path',     note: "A reply you send from the unibox goes out through the mailbox's own provider, the Gmail API or SMTP, so it threads correctly in the real mailbox." },
+];
+
+// --- Capabilities · clean spec list ------------------------------------------
 const capabilities = [
-  { icon: 'reply',   k: 'Six classifications',  v: 'Positive · Negative · Referral · OOO · Unsubscribe · Bounce. Decided on arrival, before the human sees the thread.' },
-  { icon: 'users',   k: 'Assignment',           v: 'Threads route to teammates by domain, round-robin, or manual pick. Reassign with a single click.' },
-  { icon: 'clock',   k: 'Snooze + reminders',   v: 'Push a thread to next week. Reminders fire if the recipient goes silent for the configured window.' },
-  { icon: 'search',  k: 'Cross-mailbox search', v: 'One search across every connected mailbox. Threads stay tied to the originating campaign and sequence step.' },
-  { icon: 'filter',  k: 'Saved views',          v: 'Mailbox, sequence, classification, assignee, sentiment, domain, custom CRM field. Filters serialise to URL.' },
-  { icon: 'bell',    k: 'Realtime push',        v: 'WebSocket push for replies, bounces, complaints. Browser notifications opt-in. No notifications on opens.' },
+  { k: 'Six classifications',  v: 'Positive · Negative · Referral · OOO · Unsubscribe · Bounce. Decided on arrival, before the human sees the thread.' },
+  { k: 'Assignment',           v: 'Threads route to teammates by domain, round-robin, or manual pick. Reassign with a single click.' },
+  { k: 'Snooze and reminders', v: 'Push a thread to next week. A reminder fires if the recipient goes quiet for the window you set.' },
+  { k: 'Cross-mailbox search', v: 'One search across every connected mailbox. Threads stay tied to their campaign and sequence step.' },
+  { k: 'Saved views',          v: 'Mailbox, classification, assignee, label, awaiting-reply, snoozed, scheduled. Every filter serialises to the URL.' },
+  { k: 'Realtime push',        v: 'WebSocket push for replies, bounces, and complaints. Opt-in browser notifications. Nothing on opens.' },
+];
+
+// --- By the numbers ----------------------------------------------------------
+const numbers = [
+  { v: '6',    u: 'classes',  l: 'decided on arrival',        src: 'consumer/event_new_email.go' },
+  { v: '60',   u: 's',        l: 'provider sync interval',    src: 'Gmail History API · IMAP' },
+  { v: '< 2',  u: 's',        l: 'reply to assignee fan-out', src: 'one inbound event' },
+  { v: '3',    u: 'retries',  l: 'soft bounce before suppress', src: 'consumer.deliverability' },
+  { v: '10',   u: 'scopes',   l: 'saved views in the rail',   src: 'unibox/ScopeRail.tsx' },
+  { v: '0',    u: 'on opens', l: 'no notification noise',     src: 'realtime push policy' },
 ];
 
 const faq = [
-  ['How accurate is reply classification?',         'Classifier is rule + small-model hybrid. Quoted-text stripped, signature blocks ignored, OOO and unsubscribe detected before sentiment. Misclassifications appear as a "review needed" tag; correcting one trains the workspace-scoped classifier.'],
-  ['Does the inbox replace my Gmail or Outlook?',   'No. Threads still live in the underlying mailbox. The unified inbox is a read + reply surface on top of them, fully synced with provider state via IMAP/Graph/Gmail API.'],
-  ['What gets pushed to Slack or webhook?',         'Positive replies and quarantine transitions by default. Configurable per workspace: every classification, just positives, or off. Webhooks include the full classified payload.'],
-  ['How are threads kept in sync with the provider?','Sync runs every 60 seconds per mailbox plus push notifications where the provider supports them (Gmail watch, Microsoft Graph subscriptions). Actions in the unified inbox propagate back via the provider API.'],
+  ['How accurate is reply classification?',          'The classifier is a rule plus small-model hybrid. Quoted text is stripped, signature blocks are ignored, and OOO and unsubscribe are detected before sentiment. A misclassification shows a "review needed" tag, and correcting one trains the workspace-scoped classifier.'],
+  ['Does the inbox replace my Gmail or Outlook?',    'No. Threads still live in the underlying mailbox. The unified inbox is a read and reply surface on top of them, kept in sync with provider state over the Gmail History API and IMAP.'],
+  ['What gets pushed to Slack or a webhook?',        'Positive replies and quarantine transitions by default. It is configurable per workspace: every classification, just positives, or off. Webhooks carry the full classified payload.'],
+  ['How are threads kept in sync with the provider?',"Sync runs about once a minute per mailbox. Gmail uses the Gmail History API, so each pass only pulls what changed, while Outlook and any other provider sync over IMAP. A reply you send from the unibox goes out through the mailbox's own provider, the Gmail API or SMTP."],
 ];
 ---
 <Layout
@@ -55,12 +148,63 @@ const faq = [
   description="Every reply, bounce, OOO and complaint across every mailbox in one console. Classified on arrival. Assignable. Searchable."
 >
   <!-- ============================================================
-       HERO · HeroAtmosphere (shared)
+       HERO · floating reply fragments converge on one console
   ============================================================ -->
   <section class="relative isolate overflow-hidden">
     <HeroAtmosphere />
 
-    <div class="container-page relative pt-16 md:pt-24 pb-44 md:pb-56 text-center">
+    <!-- Reply fragments frame the headline: two per side, kept in the upper band
+         so they never crowd each other or the product mock pulled up below. xl+. -->
+    <div class="hidden xl:block absolute inset-0 z-0 pointer-events-none select-none" aria-hidden="true">
+
+      <!-- RIGHT · high · a positive reply, classified and routed (focal, live dot) -->
+      <div class="hero-float absolute top-[9%] right-[calc(50%_-_552px)] z-30" style="--drift:-11px;animation-duration:7.4s;animation-delay:-1.7s">
+        <div class="relative rotate-[2deg] w-[196px] px-3.5 py-3 rounded-[12px] bg-white ring-1 ring-slate-900/5 shadow-[0_2px_4px_-2px_rgba(2,32,71,0.25),0_18px_36px_-12px_rgba(2,32,71,0.55)]">
+          <span class="absolute -top-1 -right-1 inline-flex w-2.5 h-2.5">
+            <span class="hero-float-ping absolute inset-0 rounded-full bg-emerald-400 opacity-70 animate-ping"></span>
+            <span class="relative w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-white"></span>
+          </span>
+          <div class="flex items-center gap-2">
+            <span class="inline-grid place-items-center w-6 h-6 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-semibold shrink-0">MC</span>
+            <span class="text-[12.5px] font-semibold text-slate-800 truncate">Maya Chen</span>
+            <span class="ml-auto inline-flex items-center gap-1 h-4 px-1.5 rounded text-[9px] font-mono uppercase tracking-[0.08em] bg-emerald-50 text-emerald-700">positive</span>
+          </div>
+          <div class="mt-1.5 text-[11px] text-slate-500 leading-snug">Could you send a proposal for ~30 seats?</div>
+          <div class="mt-2 pt-2 border-t border-slate-100 font-mono text-[10px] text-slate-400">routed to @ben · sequence paused</div>
+        </div>
+      </div>
+
+      <!-- LEFT · high · an OOO chip -->
+      <div class="hero-float absolute top-[14%] left-[calc(50%_-_536px)] z-20" style="--drift:-9px;animation-duration:6.6s;animation-delay:-2.4s">
+        <div class="rotate-[-2deg] h-7 px-3 rounded-full bg-white/95 ring-1 ring-slate-900/5 shadow-[0_8px_20px_-10px_rgba(2,32,71,0.4)] inline-flex items-center gap-1.5">
+          <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+          <span class="text-[11px] font-medium text-slate-600">OOO · re-queued</span>
+        </div>
+      </div>
+
+      <!-- RIGHT · low · a referral chip -->
+      <div class="hero-float absolute top-[40%] right-[calc(50%_-_536px)] z-20" style="--drift:-7px;animation-duration:8s;animation-delay:-0.9s">
+        <div class="rotate-[2deg] h-7 px-3 rounded-full bg-white/95 ring-1 ring-slate-900/5 shadow-[0_8px_20px_-10px_rgba(2,32,71,0.4)] inline-flex items-center gap-1.5">
+          <span class="w-1.5 h-1.5 rounded-full bg-violet-500"></span>
+          <span class="text-[11px] font-medium text-slate-600">referral · @dana</span>
+        </div>
+      </div>
+
+      <!-- LEFT · low · a bounce, suppressed -->
+      <div class="hero-float absolute top-[36%] left-[calc(50%_-_556px)] z-20" style="--drift:-10px;animation-duration:7.8s;animation-delay:-1.2s">
+        <div class="rotate-[-3deg] w-[174px] px-3.5 py-3 rounded-[12px] bg-white ring-1 ring-slate-900/5 shadow-[0_2px_3px_-2px_rgba(2,32,71,0.2),0_14px_30px_-14px_rgba(2,32,71,0.45)]">
+          <div class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-stone-400 shrink-0"></span>
+            <span class="font-mono text-[11px] font-semibold text-slate-700">550 5.1.1</span>
+            <span class="ml-auto text-[9px] font-mono uppercase tracking-[0.08em] text-stone-500">bounce</span>
+          </div>
+          <div class="mt-1.5 text-[10.5px] text-slate-500">hard · suppressed workspace-wide</div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="container-page relative z-10 pt-16 md:pt-24 pb-44 md:pb-56 text-center">
       <div class="inline-flex items-center gap-2 h-7 pl-1 pr-3 rounded-full bg-white/15 backdrop-blur ring-1 ring-white/25 text-[12px] text-white/95 shadow-[0_4px_14px_-4px_rgba(0,0,0,0.25)]">
         <span class="inline-flex items-center h-5 px-1.5 rounded-full text-[10.5px] font-semibold uppercase tracking-[0.06em] bg-white" style="color:#0369a1;">
           Unified inbox
@@ -89,17 +233,69 @@ const faq = [
     </div>
   </section>
 
+  <style>
+    .hero-float { animation-name: heroFloat; animation-timing-function: ease-in-out; animation-iteration-count: infinite; animation-direction: alternate; will-change: transform; }
+    @keyframes heroFloat { from { transform: translateY(0); } to { transform: translateY(var(--drift, -10px)); } }
+    @media (prefers-reduced-motion: reduce) { .hero-float { animation: none; } .hero-float-ping { animation: none; } }
+  </style>
+
   <!-- ============================================================
-       UNIBOX MOCK · mirrors the actual product (ConversationList +
-       ThreadView). No app shell, no URL chrome.
+       PRODUCT MOCK · ScopeRail + ConversationList + ThreadView
   ============================================================ -->
   <section class="relative -mt-36 md:-mt-44 pb-16 md:pb-24 z-10">
     <div class="container-page">
-      <div class="rounded-[14px] bg-white ring-1 ring-slate-200 overflow-hidden shadow-[0_40px_90px_-30px_rgba(2,32,71,0.35),0_12px_30px_-12px_rgba(15,23,42,0.12)] h-[600px]">
-        <div class="grid grid-cols-[340px_minmax(0,1fr)] h-full">
-          <!-- ===== LEFT: ConversationList ===== -->
+      <div class="rounded-[14px] bg-white ring-1 ring-slate-200 overflow-hidden shadow-[0_40px_90px_-30px_rgba(2,32,71,0.35),0_12px_30px_-12px_rgba(15,23,42,0.12)] h-[620px]">
+        <div class="grid grid-cols-[320px_minmax(0,1fr)] lg:grid-cols-[208px_320px_minmax(0,1fr)] h-full">
+
+          <!-- ===== SCOPE RAIL (lg+) ===== -->
+          <div class="hidden lg:flex flex-col border-r border-slate-200 bg-slate-50/50 min-h-0">
+            <div class="h-9 px-3 border-b border-slate-200 flex items-center gap-2 shrink-0">
+              <span class="text-[11px] font-semibold text-slate-800">Unibox</span>
+              <span class="ml-auto inline-flex items-center gap-1 h-5 px-1.5 rounded text-[10px] font-mono text-slate-500 bg-white ring-1 ring-slate-200">3 mailboxes</span>
+            </div>
+            <div class="flex-1 overflow-y-auto px-2.5 py-3 space-y-4">
+              <div>
+                <div class="px-1.5 text-[10px] uppercase tracking-[0.14em] font-mono text-slate-400 mb-1.5">Inbox</div>
+                {scopeInbox.map((s) => (
+                  <button type="button" class={`w-full h-7 px-2 rounded-md flex items-center gap-2 text-[12px] transition-colors ${s.active ? 'bg-white ring-1 ring-slate-200 text-slate-900 font-medium shadow-sm' : 'text-slate-600 hover:bg-white/70'}`}>
+                    <span class="truncate">{s.label}</span>
+                    {s.count !== null && <span class={`ml-auto font-mono text-[10px] tabular-nums ${s.accent ? 'text-sky-600' : 'text-slate-400'}`}>{s.count}</span>}
+                  </button>
+                ))}
+              </div>
+              <div>
+                <div class="px-1.5 text-[10px] uppercase tracking-[0.14em] font-mono text-slate-400 mb-1.5">Activity</div>
+                {scopeActivity.map((s) => (
+                  <button type="button" class="w-full h-7 px-2 rounded-md flex items-center gap-2 text-[12px] text-slate-600 hover:bg-white/70 transition-colors">
+                    <Icon name={s.icon} size={12} class="text-slate-400 shrink-0" />
+                    <span class="truncate">{s.label}</span>
+                    <span class="ml-auto font-mono text-[10px] tabular-nums text-slate-400">{s.count}</span>
+                  </button>
+                ))}
+              </div>
+              <div>
+                <div class="px-1.5 text-[10px] uppercase tracking-[0.14em] font-mono text-slate-400 mb-1.5">Mailboxes</div>
+                {scopeMailboxes.map((m) => (
+                  <button type="button" class="w-full h-7 px-2 rounded-md flex items-center gap-2 text-[12px] text-slate-600 hover:bg-white/70 transition-colors">
+                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>
+                    <span class="truncate font-mono text-[11px]">{m.addr}</span>
+                    <span class="ml-auto font-mono text-[10px] tabular-nums text-slate-400">{m.count}</span>
+                  </button>
+                ))}
+              </div>
+              <div>
+                <div class="px-1.5 text-[10px] uppercase tracking-[0.14em] font-mono text-slate-400 mb-1.5">Labels</div>
+                <div class="px-1 flex flex-wrap gap-1">
+                  {scopeLabels.map((l) => (
+                    <span class="inline-flex items-center h-5 px-1.5 rounded text-[10.5px] font-medium bg-white ring-1 ring-slate-200 text-slate-600">{l}</span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ===== CONVERSATION LIST ===== -->
           <div class="flex flex-col border-r border-slate-200 min-h-0">
-            <!-- SectionBar -->
             <div class="h-9 px-3 border-b border-slate-200 flex items-center gap-2 shrink-0">
               <span class="text-[11px] font-medium text-slate-700">Inbox</span>
               <span class="font-mono text-[10px] tabular-nums text-sky-600">7</span>
@@ -108,18 +304,16 @@ const faq = [
               </button>
             </div>
 
-            <!-- Search + quick filters -->
             <div class="px-3 py-2 shrink-0 border-b border-slate-200 space-y-2">
               <div class="h-7 px-2.5 rounded-md bg-slate-50 ring-1 ring-slate-200 flex items-center gap-2 text-[11.5px] text-slate-400">
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-                <span>Search subject…</span>
+                <span>Search every mailbox…</span>
               </div>
               <div class="flex items-center gap-0.5">
                 {[
                   { id: 'all', label: 'All', active: true },
                   { id: 'unread', label: 'Unread', active: false, count: 7 },
-                  { id: 'today', label: 'Today', active: false },
-                  { id: 'week', label: 'This week', active: false },
+                  { id: 'awaiting', label: 'Awaiting', active: false, count: 3 },
                 ].map((f) => (
                   <button type="button" class={`shrink-0 h-6 px-2 rounded text-[11.5px] font-medium transition-colors inline-flex items-center gap-1 ${f.active ? 'bg-slate-900 text-white' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'}`}>
                     {f.label}
@@ -129,11 +323,11 @@ const faq = [
               </div>
             </div>
 
-            <!-- Conversation list -->
             <div class="flex-1 overflow-y-auto divide-y divide-slate-200/60">
               {threads.map((t, i) => {
                 const isSelected = i === 0;
                 const unread = i < 4;
+                const cls = toneClass(classifications[t.cls].tone);
                 const initials = t.from.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase();
                 return (
                   <button type="button" class={`group w-full text-left px-3 py-2.5 transition-colors flex items-start gap-2.5 relative ${isSelected ? 'bg-sky-50/80' : 'hover:bg-slate-50/80'}`}>
@@ -147,7 +341,13 @@ const faq = [
                         <span class="font-mono text-[10px] text-slate-400 tabular-nums shrink-0">{t.time}</span>
                       </div>
                       <div class="text-[12px] text-slate-700 truncate mt-0.5">{t.sub}</div>
-                      <div class="text-[11px] text-slate-400 truncate mt-0.5">{t.preview}</div>
+                      <div class="flex items-center gap-1.5 mt-1">
+                        <span class={`inline-flex items-center gap-1 h-4 px-1.5 rounded text-[9.5px] font-mono uppercase tracking-[0.06em] ${cls.chip}`}>
+                          <span class={`w-1 h-1 rounded-full ${cls.dot}`}></span>
+                          {classifications[t.cls].label}
+                        </span>
+                        <span class="font-mono text-[10px] text-slate-400 truncate">{t.mailbox}</span>
+                      </div>
                     </div>
                   </button>
                 );
@@ -155,16 +355,15 @@ const faq = [
             </div>
           </div>
 
-          <!-- ===== RIGHT: ThreadView ===== -->
+          <!-- ===== THREAD VIEW ===== -->
           <div class="flex flex-col bg-white min-h-0">
-            <!-- Top header bar -->
             <div class="h-12 px-5 border-b border-slate-200 flex items-center gap-3 shrink-0">
               <span class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">Thread</span>
               <div class="h-4 w-px bg-slate-200"></div>
               <span class="text-[12.5px] text-slate-900 font-medium truncate">Re: Saw your demo last week, quick question on pricing</span>
               <div class="ml-auto flex items-center gap-1 shrink-0">
-                <button type="button" aria-label="Mark unread" class="size-7 rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100 inline-flex items-center justify-center transition-colors">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 13V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/><path d="m16 19 2 2 4-4"/></svg>
+                <button type="button" aria-label="Snooze" class="size-7 rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100 inline-flex items-center justify-center transition-colors">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                 </button>
                 <button type="button" aria-label="Archive" class="size-7 rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100 inline-flex items-center justify-center transition-colors">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>
@@ -175,7 +374,6 @@ const faq = [
               </div>
             </div>
 
-            <!-- Sub-header: messages + participants -->
             <div class="h-9 px-5 border-b border-slate-200 flex items-center gap-2 shrink-0 bg-slate-50/40">
               <span class="text-[11px] font-medium text-slate-700">3 messages</span>
               <span class="font-mono text-[10px] tabular-nums text-sky-600">2</span>
@@ -185,9 +383,7 @@ const faq = [
               </span>
             </div>
 
-            <!-- Thread body -->
             <div class="flex-1 overflow-y-auto divide-y divide-slate-200/60">
-              <!-- Message 1 -->
               <article class="px-5 py-4">
                 <div class="flex items-baseline justify-between mb-2">
                   <div class="flex items-baseline gap-2">
@@ -198,12 +394,11 @@ const faq = [
                 </div>
                 <div class="text-[12.5px] text-slate-800 leading-[1.65] space-y-2.5">
                   <p>Hi Ben,</p>
-                  <p>This actually maps to what we were looking at. Could you send over a proposal for ~30 seats? Want to bring it to my CFO this week.</p>
+                  <p>This maps to what we were looking at. Could you send over a proposal for ~30 seats? Want to bring it to my CFO this week.</p>
                   <p>— Maya</p>
                 </div>
               </article>
 
-              <!-- Auto-action strip -->
               <div class="px-5 py-3 bg-slate-50/60 space-y-1.5">
                 <div class="flex items-center gap-2 text-[11px] font-mono text-slate-500">
                   <Icon name="check" size={11} class="text-emerald-600 shrink-0"/>
@@ -219,7 +414,6 @@ const faq = [
                 </div>
               </div>
 
-              <!-- Message 2 (collapsed preview) -->
               <article class="px-5 py-3.5">
                 <div class="flex items-baseline justify-between">
                   <div class="flex items-baseline gap-2">
@@ -230,7 +424,6 @@ const faq = [
                 </div>
               </article>
 
-              <!-- Message 3 (collapsed preview) -->
               <article class="px-5 py-3.5">
                 <div class="flex items-baseline justify-between">
                   <div class="flex items-baseline gap-2">
@@ -242,7 +435,6 @@ const faq = [
               </article>
             </div>
 
-            <!-- ReplyComposer -->
             <div class="border-t border-slate-200 shrink-0">
               <div class="px-5 py-3">
                 <div class="rounded-md ring-1 ring-slate-200 bg-slate-50/40 px-3 py-2 text-[12px] text-slate-400">Reply to Maya Chen…</div>
@@ -265,26 +457,105 @@ const faq = [
           </div>
         </div>
       </div>
+      <p class="mt-3 text-center text-[11.5px] text-muted-foreground italic">Illustrative. The real unibox mirrors this layout: scope rail, conversation list, thread view, and a contact panel.</p>
     </div>
   </section>
 
   <!-- ============================================================
-       CLASSIFICATIONS · the real auto-action per category (unique)
+       SECTION 1 · the triage problem
+  ============================================================ -->
+  <section class="bg-white border-t border-[color:var(--border)] py-20 md:py-28">
+    <div class="container-page">
+      <div class="max-w-2xl mb-12">
+        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Section 1 &middot; The problem</div>
+        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
+          Eight mailboxes is eight tabs.
+        </h2>
+        <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed">
+          Run cold outreach from a handful of mailboxes and the replies scatter across that many provider inboxes. A positive lands in one tab, a bounce in another, an out-of-office in a third, and the sequence keeps sending while you go looking. The unibox pulls every one of those threads into a single console and decides what it is before you open it.
+        </p>
+      </div>
+
+      <div class="grid lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] gap-6 lg:gap-8 items-center">
+        <!-- BEFORE -->
+        <div class="rounded-[14px] bg-white ring-1 ring-rose-200 overflow-hidden">
+          <div class="px-4 py-2 border-b border-[color:var(--border)] bg-rose-50/40 flex items-center justify-between">
+            <span class="text-[10px] font-mono uppercase tracking-[0.18em] text-rose-700/80">Without a unibox</span>
+            <span class="inline-flex items-center h-5 px-1.5 rounded text-[10px] font-mono uppercase tracking-[0.08em] bg-rose-100 text-rose-700">12 unread, somewhere</span>
+          </div>
+          <div class="p-3 space-y-2">
+            {scatterTabs.map((t) => (
+              <div class="flex items-center gap-2.5 rounded-[8px] bg-rose-50/40 ring-1 ring-rose-100 px-3 py-2.5">
+                <Icon name="mail" size={13} class="text-rose-400 shrink-0" />
+                <span class="text-[12px] font-medium text-slate-700">{t.provider}</span>
+                <span class="font-mono text-[11px] text-slate-400 truncate">{t.addr}</span>
+                <span class="ml-auto inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full text-[10px] font-mono font-semibold bg-rose-100 text-rose-700">{t.unread}</span>
+              </div>
+            ))}
+            <div class="flex items-center justify-center gap-2 pt-1 text-[11px] font-mono text-rose-500/80">
+              <Icon name="warning" size={12} class="shrink-0" />
+              the sequence is still sending to people who already replied
+            </div>
+          </div>
+        </div>
+
+        <!-- arrow -->
+        <div class="hidden lg:grid place-items-center w-10 h-10 rounded-full bg-white ring-1 ring-[color:var(--border)] shadow-[0_4px_14px_-4px_rgba(15,23,42,0.2)] mx-auto">
+          <Icon name="arrowRight" size={15} class="text-[#0284c7]" />
+        </div>
+
+        <!-- AFTER -->
+        <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--sky-2)] overflow-hidden">
+          <div class="px-4 py-2 border-b border-[color:var(--border)] bg-[color:var(--sky-1)]/40 flex items-center justify-between">
+            <span class="text-[10px] font-mono uppercase tracking-[0.18em] text-[#0369a1]">With Warmbly</span>
+            <span class="inline-flex items-center h-5 px-1.5 rounded text-[10px] font-mono uppercase tracking-[0.08em] bg-[color:var(--sky-1)]/70 text-[#0369a1]">one console, classified</span>
+          </div>
+          <div class="p-3 space-y-2">
+            {[
+              { who: 'Maya Chen',  cls: 0, mb: 'ben@acme.com'  },
+              { who: 'Theo Park',  cls: 3, mb: 'ben@acme.com'  },
+              { who: 'Eli Soriano',cls: 2, mb: 'sara@acme.com' },
+              { who: 'Rowan Cole', cls: 1, mb: 'mark@acme.com' },
+            ].map((r) => {
+              const c = toneClass(classifications[r.cls].tone);
+              return (
+                <div class="flex items-center gap-2.5 rounded-[8px] bg-[color:var(--surface-1)]/50 ring-1 ring-[color:var(--border)] px-3 py-2.5">
+                  <span class={`inline-flex items-center gap-1 h-5 px-1.5 rounded text-[10px] font-mono uppercase tracking-[0.06em] shrink-0 ${c.chip}`}>
+                    <span class={`w-1 h-1 rounded-full ${c.dot}`}></span>
+                    {classifications[r.cls].label}
+                  </span>
+                  <span class="text-[12px] font-medium text-heading truncate">{r.who}</span>
+                  <span class="ml-auto font-mono text-[10.5px] text-muted-foreground truncate">{r.mb}</span>
+                </div>
+              );
+            })}
+            <div class="flex items-center justify-center gap-2 pt-1 text-[11px] font-mono text-[#0369a1]">
+              <Icon name="check" size={12} class="shrink-0" />
+              every sequence already paused for the ones who replied
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       SECTION 2 · classifications + auto-actions
   ============================================================ -->
   <section id="classifications" class="border-y border-[color:var(--border)] bg-[color:var(--surface-1)]/40 py-20 md:py-28 scroll-mt-4">
     <div class="container-page">
       <div class="max-w-2xl mb-12">
-        <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7] mb-3">Classifications</div>
+        <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7] mb-3">Section 2 &middot; Classifications</div>
         <h2 class="text-[32px] md:text-[44px] font-semibold tracking-[-0.03em] leading-[1.05] text-heading">
           Six categories. Six auto-actions.
         </h2>
         <p class="mt-4 text-[15.5px] text-foreground/70 leading-relaxed">
-          Every reply is classified before a human sees it. Each classification fires its own deterministic action: pause the sequence, suppress the contact, re-queue after the OOO window, or surface it to the assignee.
+          Every reply is classified before a human sees it, and each class fires its own deterministic action: pause the sequence, suppress the contact, re-queue after the out-of-office window, or surface it to the assignee. Nothing waits on someone opening the thread first.
         </p>
       </div>
 
       <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden">
-        <div class="grid grid-cols-[140px_1fr_220px] px-7 py-3 bg-[color:var(--surface-1)] border-b border-[color:var(--border)] text-[10.5px] uppercase tracking-[0.16em] font-mono text-muted-foreground">
+        <div class="grid grid-cols-[140px_1fr_240px] px-7 py-3 bg-[color:var(--surface-1)] border-b border-[color:var(--border)] text-[10.5px] uppercase tracking-[0.16em] font-mono text-muted-foreground">
           <div>Class</div>
           <div>Detected when</div>
           <div>Auto-action</div>
@@ -292,7 +563,7 @@ const faq = [
         {classifications.map((c) => {
           const t = toneClass(c.tone);
           return (
-            <div class="grid grid-cols-[140px_1fr_220px] gap-4 px-7 py-4 border-b border-[color:var(--border)] last:border-b-0 items-start">
+            <div class="grid grid-cols-[140px_1fr_240px] gap-4 px-7 py-4 border-b border-[color:var(--border)] last:border-b-0 items-start">
               <div>
                 <span class={`inline-flex items-center gap-1.5 h-6 px-2 rounded text-[12px] font-medium font-mono ${t.chip}`}>
                   <span class={`w-1.5 h-1.5 rounded-full ${t.dot}`}></span>
@@ -313,12 +584,238 @@ const faq = [
   </section>
 
   <!-- ============================================================
-       CAPABILITIES · clean spec list, no icon grid
+       SECTION 3 · scopes and saved views
   ============================================================ -->
-  <section class="py-20 md:py-28">
+  <section class="bg-white border-b border-[color:var(--border)] py-20 md:py-28">
+    <div class="container-page grid lg:grid-cols-[1fr_1.4fr] gap-12 lg:gap-20 items-start">
+      <div class="lg:sticky lg:top-24" style="align-self: start;">
+        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Section 3 &middot; Scopes</div>
+        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
+          The rail is a set of saved views.
+        </h2>
+        <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed max-w-md">
+          Every scope down the left of the unibox is a live filter, and the counts update as mail arrives. Slice by mailbox, by classification, by label, or by where the conversation stands. Each view serialises to the URL, so a saved filter is just a link you can share or pin.
+        </p>
+        <ul class="mt-6 space-y-2.5 text-[14px] text-foreground/85">
+          <li class="flex items-start gap-2"><Icon name="check" size={13} class="text-[#0284c7] mt-1 shrink-0" /><span>Awaiting reply tracks the threads where the prospect spoke last, so nothing goes cold on your side.</span></li>
+          <li class="flex items-start gap-2"><Icon name="check" size={13} class="text-[#0284c7] mt-1 shrink-0" /><span>Header stats stay live over the socket: unread, awaiting, today, this week, snoozed, mailboxes.</span></li>
+        </ul>
+      </div>
+
+      <div class="grid sm:grid-cols-2 gap-px bg-[color:var(--border)] rounded-[14px] overflow-hidden ring-1 ring-[color:var(--border)]">
+        {views.map((v) => (
+          <div class="bg-white p-6">
+            <div class="flex items-center gap-2.5 mb-2">
+              <span class="inline-grid place-items-center w-7 h-7 rounded-md bg-[color:var(--sky-1)] text-[#0369a1] shrink-0">
+                <Icon name={v.icon} size={14} />
+              </span>
+              <span class="text-[14.5px] font-semibold text-heading">{v.k}</span>
+            </div>
+            <p class="text-[13px] text-foreground/70 leading-relaxed">{v.v}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       SECTION 4 · one reply, every surface (fan-out)
+  ============================================================ -->
+  <section class="bg-[color:var(--surface-1)]/40 border-b border-[color:var(--border)] py-20 md:py-28">
     <div class="container-page">
       <div class="max-w-2xl mb-12">
-        <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7] mb-3">What it does</div>
+        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Section 4 &middot; Reply fan-out</div>
+        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
+          One positive reply, every surface in sync.
+        </h2>
+        <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed">
+          A positive reply does not just light up the inbox. The classifier emits one event, and the sequence pause, the assignment, the Slack ping, the CRM stage move, the realtime browser push, and the webhook all fire off it. By the time the assignee opens the thread, every other surface already agrees.
+        </p>
+      </div>
+
+      <div class="grid lg:grid-cols-[340px_1fr] gap-6 lg:gap-10 items-center">
+        <div>
+          <div class="rounded-[14px] bg-white ring-1 ring-emerald-200 overflow-hidden">
+            <div class="px-4 py-2 border-b border-[color:var(--border)] bg-emerald-50/40 flex items-center justify-between">
+              <span class="text-[10px] font-mono uppercase tracking-[0.16em] text-emerald-700/80">Inbound reply</span>
+              <span class="inline-flex items-center gap-1.5 h-5 px-1.5 rounded text-[10px] font-mono uppercase tracking-[0.08em] bg-emerald-100 text-emerald-700">
+                <Icon name="reply" size={10} />
+                positive
+              </span>
+            </div>
+            <div class="px-4 py-3.5">
+              <div class="flex items-center gap-2.5">
+                <span class="inline-grid place-items-center w-8 h-8 rounded-full bg-emerald-50 ring-1 ring-emerald-200 text-emerald-600 text-[11px] font-semibold">MC</span>
+                <div class="text-[12.5px] font-semibold text-heading">maya@lumenrobotics.io</div>
+              </div>
+              <p class="mt-2.5 text-[13px] text-foreground/70 leading-snug">"This maps to what we were looking at. Could you send a proposal for ~30 seats?"</p>
+            </div>
+          </div>
+          <div class="mt-3 flex flex-wrap gap-1.5">
+            <span class="inline-flex items-center h-5 px-1.5 rounded bg-white ring-1 ring-[color:var(--border)] text-[10px] font-mono uppercase tracking-[0.06em] text-foreground/65">intent: proposal</span>
+            <span class="inline-flex items-center h-5 px-1.5 rounded bg-white ring-1 ring-[color:var(--border)] text-[10px] font-mono uppercase tracking-[0.06em] text-foreground/65">sentiment: positive</span>
+          </div>
+          <div class="mt-2.5 text-[10.5px] font-mono uppercase tracking-[0.12em] text-emerald-700">assigned to @ben</div>
+        </div>
+
+        <div>
+          <div class="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground mb-3">Fanned out on the same event</div>
+          <div class="grid sm:grid-cols-2 gap-2.5">
+            {fanout.map((e, i) => (
+              <div class="fan-target flex items-center gap-2.5 rounded-[10px] bg-white ring-1 ring-[color:var(--border)] px-3 py-2.5" style={`--d:${i * 90}ms`}>
+                <span class="h-px w-5 bg-[color:var(--border-strong)] shrink-0"></span>
+                <Icon name="zap" size={12} class="text-[#0284c7] shrink-0" />
+                <span class="font-mono text-[12px] text-foreground/70 truncate">{e.label}</span>
+                <span class="ml-auto text-[9px] font-mono uppercase tracking-[0.1em] text-muted-foreground shrink-0">{e.kind}</span>
+              </div>
+            ))}
+          </div>
+          <p class="mt-4 text-[12px] text-foreground/55 leading-relaxed max-w-xl">
+            This is the positive path. Each of the other five classes has its own fan-out: a negative or unsubscribe suppresses workspace-wide, an OOO re-queues after the parsed date, a bounce retries or suppresses.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       SECTION 5 · contact context panel
+  ============================================================ -->
+  <section class="bg-white border-b border-[color:var(--border)] py-20 md:py-28">
+    <div class="container-page grid lg:grid-cols-[1fr_1.2fr] gap-12 lg:gap-16 items-start">
+      <div class="lg:sticky lg:top-24" style="align-self: start;">
+        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Section 5 &middot; Context</div>
+        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
+          The person, not just the message.
+        </h2>
+        <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed max-w-md">
+          Open a thread and the contact panel comes with it: which campaigns the person is in, how they have engaged so far, their subscription state, and any CRM deal or task attached to them. You answer the reply with the whole history in view, not a cold message out of nowhere.
+        </p>
+        <ul class="mt-6 space-y-2.5 text-[14px] text-foreground/85">
+          <li class="flex items-start gap-2"><Icon name="check" size={13} class="text-[#0284c7] mt-1 shrink-0" /><span>Subscription state is explicit: subscribed, unsubscribed, or suppressed, with the reason and source.</span></li>
+          <li class="flex items-start gap-2"><Icon name="check" size={13} class="text-[#0284c7] mt-1 shrink-0" /><span>Deals and tasks read from the synced CRM, so the AE works the reply without leaving the inbox.</span></li>
+        </ul>
+      </div>
+
+      <div class="rounded-[16px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden shadow-[0_24px_60px_-30px_rgba(2,32,71,0.25)]">
+        <div class="px-6 py-4 border-b border-[color:var(--border)] flex items-center gap-3">
+          <span class="inline-grid place-items-center w-10 h-10 rounded-full bg-emerald-50 text-emerald-700 text-[13px] font-semibold shrink-0">MC</span>
+          <div class="min-w-0 flex-1">
+            <div class="text-[15px] font-semibold text-heading truncate">Maya Chen</div>
+            <div class="text-[11.5px] font-mono text-muted-foreground truncate">maya@lumenrobotics.io</div>
+          </div>
+          <span class="inline-flex items-center gap-1.5 h-6 px-2 rounded-md text-[11px] font-medium bg-emerald-50 text-emerald-700 shrink-0">
+            <Icon name="check" size={11} />
+            Subscribed
+          </span>
+        </div>
+
+        <div class="px-6 py-5 border-b border-[color:var(--border)]">
+          <div class="text-[10px] uppercase tracking-[0.16em] font-mono text-muted-foreground mb-3">Engagement</div>
+          <div class="grid grid-cols-4 gap-px bg-[color:var(--border)] rounded-[10px] overflow-hidden ring-1 ring-[color:var(--border)]">
+            {engagement.map((m) => (
+              <div class="bg-white px-3 py-3 text-center">
+                <div class={`font-mono text-[20px] font-semibold tabular-nums ${m.accent ? 'text-[#0369a1]' : 'text-heading'}`}>{m.v}</div>
+                <div class="mt-0.5 text-[10px] uppercase tracking-[0.12em] font-mono text-muted-foreground">{m.k}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div class="px-6 py-5 border-b border-[color:var(--border)]">
+          <div class="flex items-center justify-between mb-3">
+            <div class="text-[10px] uppercase tracking-[0.16em] font-mono text-muted-foreground">Deal</div>
+            <span class="inline-flex items-center gap-1.5 text-[11.5px] font-mono text-emerald-700"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>Open</span>
+          </div>
+          <div class="flex items-baseline justify-between text-[13px]">
+            <span class="font-medium text-heading">Lumen Robotics · 30 seats</span>
+            <span class="inline-flex items-center gap-2 font-mono text-[11.5px]">
+              <span class="inline-flex items-center h-5 px-2 rounded bg-slate-100 text-slate-600">Sequenced</span>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="text-foreground/30"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+              <span class="inline-flex items-center h-5 px-2 rounded bg-amber-50 text-amber-700">Replied</span>
+            </span>
+          </div>
+        </div>
+
+        <div class="px-6 py-5">
+          <div class="text-[10px] uppercase tracking-[0.16em] font-mono text-muted-foreground mb-3">Tasks</div>
+          <div class="space-y-2">
+            {crmTasks.map((task) => (
+              <div class="flex items-center gap-2.5 text-[13px]">
+                <span class={`w-1.5 h-1.5 rounded-full shrink-0 ${task.dot}`}></span>
+                <span class="text-foreground/80">{task.t}</span>
+                <span class="ml-auto font-mono text-[10.5px] uppercase tracking-[0.1em] text-muted-foreground">{task.due}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       SECTION 6 · sync model (dark window + table)
+  ============================================================ -->
+  <section class="bg-[color:var(--surface-1)]/40 border-b border-[color:var(--border)] py-20 md:py-28">
+    <div class="container-page grid lg:grid-cols-[1.1fr_1fr] gap-12 lg:gap-16 items-start">
+      <div>
+        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Section 6 &middot; Sync</div>
+        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
+          A read and reply layer, fully in step.
+        </h2>
+        <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed max-w-xl">
+          The unibox does not replace Gmail or Outlook. Threads still live in the underlying mailbox, and the console polls each one about once a minute to stay in step. Gmail goes through its History API, so a pass only pulls what changed, while everything else syncs over IMAP. Replies you send from here go out through the mailbox's own provider.
+        </p>
+
+        <div class="mt-8 rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden">
+          {sync.map((s) => (
+            <div class="px-5 py-4 border-b border-[color:var(--border)] last:border-b-0">
+              <div class="flex items-baseline justify-between gap-3">
+                <span class="text-[13.5px] font-semibold text-heading">{s.provider}</span>
+                <span class="font-mono text-[11px] text-[#0369a1]">{s.channel}</span>
+              </div>
+              <p class="mt-1.5 text-[12.5px] text-foreground/65 leading-snug">{s.note}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div class="lg:sticky lg:top-24 rounded-[14px] bg-[#0c1224] ring-1 ring-white/10 overflow-hidden" style="align-self: start;">
+        <div class="px-4 py-2.5 border-b border-white/10 flex items-center gap-2">
+          <span class="w-2.5 h-2.5 rounded-full bg-[#ff5f56]/80"></span>
+          <span class="w-2.5 h-2.5 rounded-full bg-[#ffbd2e]/80"></span>
+          <span class="w-2.5 h-2.5 rounded-full bg-[#27c93f]/80"></span>
+          <span class="ml-2 text-[11px] font-mono text-white/55">reply.classified &middot; event</span>
+        </div>
+        <div class="p-5 font-mono text-[12.5px] leading-[1.85] text-white/85">
+          <div><span class="text-white/45">{'{'}</span></div>
+          <div class="pl-4"><span class="text-sky-300">"event"</span><span class="text-white/55">: </span><span class="text-emerald-300">"reply.classified"</span><span class="text-white/55">,</span></div>
+          <div class="pl-4"><span class="text-sky-300">"class"</span><span class="text-white/55">: </span><span class="text-emerald-300">"positive"</span><span class="text-white/55">,</span></div>
+          <div class="pl-4"><span class="text-sky-300">"confidence"</span><span class="text-white/55">: </span><span class="text-amber-300">0.94</span><span class="text-white/55">,</span></div>
+          <div class="pl-4"><span class="text-sky-300">"mailbox"</span><span class="text-white/55">: </span><span class="text-emerald-300">"ben@acme.com"</span><span class="text-white/55">,</span></div>
+          <div class="pl-4"><span class="text-sky-300">"source"</span><span class="text-white/55">: </span><span class="text-emerald-300">"gmail.history"</span><span class="text-white/55">,</span></div>
+          <div class="pl-4"><span class="text-sky-300">"auto_actions"</span><span class="text-white/55">: </span><span class="text-violet-300">[</span></div>
+          <div class="pl-8"><span class="text-emerald-300">"sequence.pause"</span><span class="text-white/55">,</span></div>
+          <div class="pl-8"><span class="text-emerald-300">"assign.@ben"</span><span class="text-white/55">,</span></div>
+          <div class="pl-8"><span class="text-emerald-300">"slack.#sales-positive"</span></div>
+          <div class="pl-4"><span class="text-violet-300">]</span><span class="text-white/55">,</span></div>
+          <div class="pl-4"><span class="text-sky-300">"idempotency_key"</span><span class="text-white/55">: </span><span class="text-emerald-300">"msg-7be4:reply"</span></div>
+          <div><span class="text-white/45">{'}'}</span></div>
+        </div>
+        <div class="px-5 py-3 border-t border-white/10 text-[11px] font-mono text-white/50">
+          one event · every surface idempotent on the key
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       SECTION 7 · capabilities spec list
+  ============================================================ -->
+  <section class="bg-white py-20 md:py-28">
+    <div class="container-page">
+      <div class="max-w-2xl mb-12">
+        <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7] mb-3">Section 7 &middot; What it does</div>
         <h2 class="text-[32px] md:text-[44px] font-semibold tracking-[-0.03em] leading-[1.05] text-heading">
           Built for cold-email reply triage. Not a generic helpdesk.
         </h2>
@@ -339,12 +836,39 @@ const faq = [
   </section>
 
   <!-- ============================================================
-       FAQ · grid-rows accordion
+       BY THE NUMBERS
   ============================================================ -->
-  <section class="bg-[color:var(--surface-1)]/40 border-t border-[color:var(--border)] py-20 md:py-24">
+  <section class="bg-[color:var(--surface-1)]/40 border-y border-[color:var(--border)] py-16 md:py-20">
+    <div class="container-page">
+      <div class="max-w-2xl mb-10">
+        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">By the numbers</div>
+        <h2 class="text-[26px] md:text-[34px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
+          The reply pipeline, in one row.
+        </h2>
+      </div>
+
+      <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-px bg-[color:var(--border)] rounded-[14px] overflow-hidden ring-1 ring-[color:var(--border)]">
+        {numbers.map((n) => (
+          <div class="bg-white p-5 md:p-6">
+            <div class="flex items-baseline gap-1">
+              <span class="text-[28px] md:text-[34px] font-semibold tracking-[-0.025em] font-mono text-heading">{n.v}</span>
+              <span class="text-[12px] text-muted-foreground">{n.u}</span>
+            </div>
+            <div class="mt-2 text-[11.5px] uppercase tracking-[0.14em] font-mono text-foreground/70">{n.l}</div>
+            <div class="mt-3 pt-3 border-t border-[color:var(--border)] text-[10.5px] font-mono text-muted-foreground truncate">{n.src}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       FAQ
+  ============================================================ -->
+  <section class="bg-white py-20 md:py-24">
     <div class="container-page grid lg:grid-cols-[1fr_1.8fr] gap-12 lg:gap-20 items-start">
       <div class="lg:sticky lg:top-24" style="align-self: start;">
-        <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-muted-foreground mb-3">FAQ</div>
+        <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-muted-foreground mb-3">Unibox FAQ</div>
         <h2 class="text-[28px] md:text-[36px] font-semibold tracking-[-0.025em] leading-[1.08] text-heading">
           Four reply questions.
         </h2>
@@ -355,7 +879,7 @@ const faq = [
             <button type="button" class="faq-trigger group w-full flex items-start justify-between gap-4 py-3 text-left" aria-expanded="false">
               <span class="text-[15.5px] font-medium text-heading group-hover:text-[#0369a1] transition-colors">{q}</span>
               <span class="faq-icon shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-full bg-white ring-1 ring-[color:var(--border)] text-foreground/60 transition-transform duration-300 ease-out">
-                <Icon name="plus" size={12} />
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
               </span>
             </button>
             <div class="faq-panel grid grid-rows-[0fr] transition-[grid-template-rows] duration-300 ease-out">
@@ -387,5 +911,24 @@ const faq = [
     </div>
   </section>
 
-  <CTA primaryLabel="Try the unified inbox" />
+  <CTA
+    title="Every reply, in one console."
+    description="Connect your mailboxes, and watch every reply land here classified, assigned, and acted on."
+    primaryLabel="Try the unified inbox"
+  />
+
+  <!-- Staggered reveal for the reply fan-out targets. -->
+  <style is:inline>
+    @keyframes ux-fan-in {
+      from { opacity: 0.25; transform: translateY(4px); }
+      to   { opacity: 1;    transform: translateY(0); }
+    }
+    .fan-target {
+      animation: ux-fan-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+      animation-delay: var(--d, 0ms);
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .fan-target { animation: none; opacity: 1; transform: none; }
+    }
+  </style>
 </Layout>
