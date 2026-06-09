@@ -3,44 +3,14 @@ import Layout from '../layouts/Layout.astro';
 import HeroAtmosphere from '../components/HeroAtmosphere.astro';
 import Icon from '../components/Icon.astro';
 import CTA from '../components/CTA.astro';
+import { getChangelog } from '../lib/changelog';
 
-// Entries are grounded in the real git history of warmbly/warmbly. There are
-// no published releases or tags yet, so the commit log is the source of truth.
-// We do not log every release: each entry groups the related work that shipped
-// a milestone, dated when it landed on main. Add an entry here when a feature
-// area is worth telling customers about, not for every commit.
-const entries = [
-  {
-    date: '2026-06-09',
-    title: 'Automation builder',
-    tag: 'shipped',
-    body: 'Build branching automation flows in a visual graph builder, launch them straight from a campaign, and run multi-step graphs with conditional expressions. Live flows are protected by execution safeguards, and delete conflicts are surfaced before they break a running automation.',
-  },
-  {
-    date: '2026-06-08',
-    title: 'Reply classification and campaign branching',
-    tag: 'shipped',
-    body: 'Inbound campaign replies are classified by intent and stored against the campaign, so a sequence can branch on what a reply actually says. Reply branches fire instantly off tracking events, new campaigns stop on reply by default, and reporting surfaces the winning A/B variant per step.',
-  },
-  {
-    date: '2026-06-08',
-    title: 'Two-factor auth and in-app notifications',
-    tag: 'shipped',
-    body: 'Members can enable two-factor authentication from security settings, required at login once it is on. A new notification center surfaces account and workflow events in realtime, with per-member preferences and a dedicated channel for security events.',
-  },
-  {
-    date: '2026-06-08',
-    title: 'Deliverability dashboard',
-    tag: 'shipped',
-    body: 'A dedicated deliverability dashboard with expanded metrics: placement, complaints, bounces, and warmup health, surfaced per mailbox.',
-  },
-  {
-    date: '2026-06-07',
-    title: 'CRM, unified inbox, and integrations',
-    tag: 'shipped',
-    body: 'A server-driven CRM with a paged deals board, deal sequence actions, team task assignment, and searchable task types, wired into the unified inbox. Inbox routing and seen-state handling were reworked, and a new integrations and meetings dashboard can push contacts out to connected systems.',
-  },
-];
+// Entries are pulled at build time from the real merged pull requests on
+// warmbly/warmbly. There are no tagged releases or a CHANGELOG.md, so merged
+// PRs into main are the source of truth, and PR granularity keeps it to one
+// entry per shippable change rather than one per commit. Curation rules and
+// the offline fallback live in src/lib/changelog.ts.
+const entries = await getChangelog();
 
 const tagStyle = (t) => {
   if (t === 'shipped') return { dot: 'bg-emerald-500', chip: 'bg-emerald-50 text-emerald-700', accent: 'text-emerald-700' };
@@ -89,8 +59,8 @@ const fixedCount    = counts.fixed;
       </p>
 
       <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
-        <a href="https://github.com/warmbly/warmbly/commits/main" class="inline-flex h-11 px-5 items-center gap-2 rounded-[10px] text-[14.5px] font-semibold bg-white hover:bg-white hover:-translate-y-0.5 hover:shadow-[0_12px_28px_-6px_rgba(0,0,0,0.3)] transition-all duration-200 ease-out shadow-[0_4px_14px_-2px_rgba(0,0,0,0.18)]">
-          <span style="color:#075985;">View the commits</span>
+        <a href="https://github.com/warmbly/warmbly/pulls?q=is%3Apr+is%3Amerged+base%3Amain" class="inline-flex h-11 px-5 items-center gap-2 rounded-[10px] text-[14.5px] font-semibold bg-white hover:bg-white hover:-translate-y-0.5 hover:shadow-[0_12px_28px_-6px_rgba(0,0,0,0.3)] transition-all duration-200 ease-out shadow-[0_4px_14px_-2px_rgba(0,0,0,0.18)]">
+          <span style="color:#075985;">View the pull requests</span>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#075985" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>
           </svg>
@@ -114,7 +84,7 @@ const fixedCount    = counts.fixed;
             The latest production work.
           </h2>
           <p class="mt-3 text-[14.5px] md:text-[15px] text-foreground/70 leading-relaxed max-w-2xl">
-            The {recentCount} most recent milestones. The automation builder, reply classification, and two-factor auth all landed in early June 2026.
+            The {recentCount} most recent merged pull requests. Each entry links straight to the PR it shipped in.
           </p>
         </div>
         <div class="text-[11.5px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
@@ -141,6 +111,10 @@ const fixedCount    = counts.fixed;
                   {e.title}
                 </h3>
                 <p class="mt-2.5 text-[14.5px] text-foreground/75 leading-relaxed max-w-3xl">{e.body}</p>
+                <a href={e.url} class="mt-3 inline-flex items-center gap-1 text-[11.5px] font-mono text-[#0369a1] hover:text-[#075985]">
+                  #{e.number}
+                  <Icon name="arrowUpRight" size={11} />
+                </a>
               </div>
             </article>
           );
@@ -197,9 +171,12 @@ const fixedCount    = counts.fixed;
                 </span>
               </div>
               <div>
-                <h3 class="text-[15.5px] md:text-[16.5px] font-semibold text-heading tracking-[-0.01em]">
-                  {e.title}
-                </h3>
+                <a href={e.url} class="group inline-flex items-baseline gap-1.5">
+                  <h3 class="text-[15.5px] md:text-[16.5px] font-semibold text-heading tracking-[-0.01em] group-hover:text-[#0369a1] transition-colors">
+                    {e.title}
+                  </h3>
+                  <span class="text-[11px] font-mono text-muted-foreground group-hover:text-[#0369a1] transition-colors">#{e.number}</span>
+                </a>
                 <p class="mt-1.5 text-[13.5px] text-foreground/70 leading-relaxed max-w-3xl line-clamp-2">{e.body}</p>
               </div>
             </article>
@@ -209,9 +186,9 @@ const fixedCount    = counts.fixed;
 
       <div class="mt-8 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11.5px] font-mono text-muted-foreground">
         <span>Want the full detail?</span>
-        <a href="https://github.com/warmbly/warmbly/commits/main" class="text-[#0369a1] hover:text-[#075985]">Commit history on GitHub</a>
+        <a href="https://github.com/warmbly/warmbly/pulls?q=is%3Apr+is%3Amerged+base%3Amain" class="text-[#0369a1] hover:text-[#075985]">Merged pull requests on GitHub</a>
         <span class="w-1 h-1 rounded-full bg-[color:var(--border)]"></span>
-        <span>Every entry maps to commits on main.</span>
+        <span>Each entry links to the pull request that shipped it.</span>
       </div>
     </div>
   </section>
@@ -227,25 +204,25 @@ const fixedCount    = counts.fixed;
           Follow every<br/>release as it ships.
         </h2>
         <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed max-w-md">
-          Every entry maps to commits on main. Watch or star the repository to hear about the next release, and open a discussion on what we build next. No email signup, no tracking pixels.
+          Every entry links to the pull request that shipped it. Watch or star the repository to hear about the next release, and open a discussion on what we build next. No email signup, no tracking pixels.
         </p>
       </div>
 
       <div class="grid sm:grid-cols-2 gap-4">
-        <!-- Commit history card -->
-        <a href="https://github.com/warmbly/warmbly/commits/main" class="group rounded-[14px] bg-white ring-1 ring-[color:var(--border)] p-6 hover:ring-[#0284c7]/40 hover:shadow-[0_18px_36px_-18px_rgba(2,132,199,0.3)] transition-all">
+        <!-- Merged pull requests card -->
+        <a href="https://github.com/warmbly/warmbly/pulls?q=is%3Apr+is%3Amerged+base%3Amain" class="group rounded-[14px] bg-white ring-1 ring-[color:var(--border)] p-6 hover:ring-[#0284c7]/40 hover:shadow-[0_18px_36px_-18px_rgba(2,132,199,0.3)] transition-all">
           <div class="flex items-center justify-between mb-5">
             <div class="inline-flex items-center justify-center w-10 h-10 rounded-[10px] bg-sky-50 text-[#0369a1] ring-1 ring-sky-100">
               <Icon name="list" size={18} />
             </div>
             <Icon name="arrowUpRight" size={14} class="text-muted-foreground group-hover:text-[#0369a1] transition-colors" />
           </div>
-          <div class="text-[16px] font-semibold text-heading tracking-[-0.01em]">Commit history</div>
+          <div class="text-[16px] font-semibold text-heading tracking-[-0.01em]">Merged pull requests</div>
           <p class="mt-1.5 text-[13px] text-foreground/65 leading-relaxed">
-            The full record on main, in the order it reached production. Every changelog entry traces back here.
+            The full record on main, in the order it reached production. Every changelog entry traces back to one of these.
           </p>
           <div class="mt-4 inline-flex items-center gap-1.5 text-[11.5px] font-mono text-[#0369a1] bg-sky-50 px-2 py-1 rounded">
-            warmbly/warmbly · main
+            warmbly/warmbly · pulls
           </div>
         </a>
 

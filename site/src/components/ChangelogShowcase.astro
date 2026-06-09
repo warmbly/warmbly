@@ -1,13 +1,14 @@
 ---
 import Icon from './Icon.astro';
+import { getChangelog, type ChangelogTag } from '../lib/changelog';
 
 /**
  * ChangelogShowcase - a landing-page CHANGELOG section.
  *
- * A clean vertical timeline of the latest releases. Content is grounded in the
- * real entries on /changelog/ (dates, change bullets) so the section
- * never drifts from the actual product history. Self-contained, no props, no
- * client JS, no app-window frame - this is a content section, not a mock.
+ * A clean vertical timeline of the latest releases. Content is the same
+ * build-time data that powers /changelog/ (the most recent merged pull
+ * requests on warmbly/warmbly), so the section never drifts from the actual
+ * product history. Self-contained, no props, no client JS.
  *
  * Category chips map the changelog tag vocabulary to a reader-friendly set:
  *   shipped -> New      (sky)
@@ -19,52 +20,26 @@ interface Release {
   date: string;
   category: 'New' | 'Improved' | 'Fixed';
   title: string;
+  url: string;
+  number: number;
   bullets: string[];
 }
 
-// Latest releases, taken from /changelog/ (which is derived from the real
-// git history) and split into 2-3 bullet lines.
-const releases: Release[] = [
-  {
-    date: '2026-06-09',
-    category: 'New',
-    title: 'Automation builder',
-    bullets: [
-      'Build branching flows in a visual graph builder.',
-      'Launch automations straight from a campaign.',
-      'Execution safeguards protect every live flow.',
-    ],
-  },
-  {
-    date: '2026-06-08',
-    category: 'New',
-    title: 'Reply classification and campaign branching',
-    bullets: [
-      'Inbound replies are classified by intent.',
-      'Sequences branch on what a reply actually says.',
-      'New campaigns stop on reply by default.',
-    ],
-  },
-  {
-    date: '2026-06-08',
-    category: 'New',
-    title: 'Two-factor auth and notifications',
-    bullets: [
-      'Two-factor authentication, required at login once on.',
-      'A realtime notification center with per-member preferences.',
-    ],
-  },
-  {
-    date: '2026-06-07',
-    category: 'New',
-    title: 'CRM, unified inbox, and integrations',
-    bullets: [
-      'Server-driven CRM with a deals board and team tasks.',
-      'Reworked unified inbox routing and seen-state.',
-      'Integrations and meetings dashboard.',
-    ],
-  },
-];
+const categoryByTag: Record<ChangelogTag, Release['category']> = {
+  shipped: 'New',
+  changed: 'Improved',
+  fixed: 'Fixed',
+};
+
+// The latest few entries, pulled at build time from the real merged PRs.
+const releases: Release[] = (await getChangelog()).slice(0, 4).map((e) => ({
+  date: e.date,
+  category: categoryByTag[e.tag],
+  title: e.title,
+  url: e.url,
+  number: e.number,
+  bullets: e.bullets.length ? e.bullets : [e.body],
+}));
 
 const categoryStyle = (c: Release['category']) => {
   if (c === 'New') {
@@ -135,6 +110,9 @@ const categoryStyle = (c: Release['category']) => {
                 <span class="text-[11.5px] font-mono uppercase tracking-[0.14em] text-muted-foreground tabular-nums">
                   {r.date}
                 </span>
+                <a href={r.url} class="text-[11.5px] font-mono text-muted-foreground hover:text-[color:var(--brand-strong)] transition-colors tabular-nums">
+                  #{r.number}
+                </a>
                 <span class={`ml-auto inline-flex items-center gap-1.5 h-5 px-2 rounded-full ring-1 text-[10px] font-semibold uppercase tracking-[0.1em] ${s.chip}`}>
                   <span class={`w-1 h-1 rounded-full ${s.dot}`}></span>
                   {r.category}
