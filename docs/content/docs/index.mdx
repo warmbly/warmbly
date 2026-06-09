@@ -1,81 +1,92 @@
 ---
 title: Introduction
-description: Welcome to the Warmbly API documentation. Learn how to integrate with our platform.
+description: Guides and reference for Warmbly — email warmup, cold outreach, and CRM.
 ---
 
-# Warmbly API Documentation
+# Warmbly Documentation
 
-Welcome to the Warmbly API documentation. This guide will help you integrate your applications with Warmbly's powerful email outreach platform.
+Warmbly is an email warmup and cold outreach platform. It manages your sender mailboxes, warms them up to build reputation, sends campaigns safely across many mailboxes, and tracks replies, deliverability, and your pipeline in one place. These guides walk through every part of the product, followed by the API reference.
 
-## Quick Start
+## Guides
 
-### 1. Get an API Key
+<Cards>
+  <Card title="Mailboxes" href="/mailboxes">
+    Connect sender accounts and set per-mailbox sending limits.
+  </Card>
+  <Card title="Warmup" href="/warmup">
+    Build sender reputation with gradual, spaced warmup traffic.
+  </Card>
+  <Card title="Campaigns" href="/campaigns">
+    Create and send cold outreach safely, within the guardrails.
+  </Card>
+  <Card title="Sequences & steps" href="/sequences">
+    Follow-ups, A/B variants, and reply branching.
+  </Card>
+  <Card title="Personalization & expressions" href="/expressions">
+    Merge fields, conditionals, functions, fallbacks, and spintax.
+  </Card>
+  <Card title="Deliverability" href="/deliverability">
+    Bounce, complaint, and inbox-placement health.
+  </Card>
+  <Card title="Contacts & CRM" href="/contacts-crm">
+    Import contacts, custom fields, deals, and pipelines.
+  </Card>
+  <Card title="Unibox" href="/unibox">
+    A unified inbox across all your connected mailboxes.
+  </Card>
+  <Card title="Automations" href="/automations">
+    Trigger-based flows that act across your integrations.
+  </Card>
+  <Card title="Integrations" href="/integrations">
+    Connect third-party tools over OAuth and webhooks.
+  </Card>
+  <Card title="Meetings" href="/meetings">
+    Calendly and Cal.com scheduling, booking links, and timelines.
+  </Card>
+  <Card title="Analytics" href="/analytics">
+    Campaign and account performance metrics.
+  </Card>
+  <Card title="Notifications" href="/notifications">
+    The in-app feed and per-category preferences.
+  </Card>
+  <Card title="Security" href="/security">
+    Two-factor authentication, passkeys, and sessions.
+  </Card>
+  <Card title="Team & roles" href="/team-roles">
+    Invite members and control access with roles.
+  </Card>
+</Cards>
 
-First, create an API key from your [Warmbly dashboard](https://app.warmbly.com/app/api-keys). You'll need the `API_KEYS` permission to create and manage API keys programmatically.
+## Using the API
 
-### 2. Make Your First Request
-
-All API requests require authentication using a Bearer token:
+The Warmbly API uses Bearer token authentication. Create a key in your dashboard under Settings, then include it on every request:
 
 ```bash
-curl -X GET "https://api.warmbly.com/api-keys" \
+curl -X GET "https://api.warmbly.com/campaigns" \
   -H "Authorization: Bearer wmbly_your_api_key_here" \
   -H "Content-Type: application/json"
 ```
 
-### 3. Handle the Response
-
-API responses are returned in JSON format:
+List endpoints return a consistent `data` plus `pagination` shape:
 
 ```json
 {
-  "data": [...],
-  "pagination": {
-    "total": 10,
-    "has_more": false,
-    "next_cursor": null
-  }
+  "data": [],
+  "pagination": { "has_more": false, "next_cursor": null }
 }
 ```
 
-## Base URL
-
-All API requests should be made to:
-
-```
-https://api.warmbly.com
-```
-
-## Authentication
-
-The Warmbly API uses Bearer token authentication. Include your API key in the `Authorization` header of every request:
-
-```
-Authorization: Bearer wmbly_<your_key>
-```
-
-API keys are prefixed with `wmbly_` and have specific permissions assigned to them. See the [Authentication](/authentication) guide for more details.
-
-## Rate Limits
-
-API requests are rate limited to ensure fair usage:
-
-- **Standard tier**: 100 requests per minute
-- **Professional tier**: 500 requests per minute
-- **Enterprise tier**: Custom limits
-
-When you exceed the rate limit, the API returns a `429 Too Many Requests` response.
-
-## What's Next?
-
 <Cards>
   <Card title="Authentication" href="/authentication">
-    Learn about API key permissions and security best practices.
+    API key format, permissions, and security.
   </Card>
-  <Card title="API Keys" href="/api-keys">
-    Manage your API keys programmatically.
+  <Card title="Permissions" href="/permissions">
+    Every API permission and what it grants.
   </Card>
-  <Card title="Permissions Reference" href="/reference/permissions">
-    Explore all available API permissions.
+  <Card title="Endpoints" href="/endpoints">
+    The full endpoint reference.
+  </Card>
+  <Card title="Error codes" href="/error-codes">
+    Stable machine-readable error codes.
   </Card>
 </Cards>

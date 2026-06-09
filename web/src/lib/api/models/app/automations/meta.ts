@@ -264,9 +264,9 @@ export function defaultOperatorFor(field: string): string {
     }
 }
 
-// --- Template variables per trigger (for the {{insert}} menus) --------------
-// The keys present in each trigger's event payload, offered as {{key}} inserts
-// in action message/URL/value fields.
+// --- Template variables per trigger (for the insert menus) ------------------
+// The keys present in each trigger's event payload, offered as {{.key}} inserts
+// (standard Go-template dotted field access) in action message/URL/value fields.
 export const TRIGGER_VARIABLES: Record<string, string[]> = {
     "campaign.reply_received": ["contact_email", "contact_id", "campaign_id", "intent", "confidence", "subject", "snippet"],
     "meeting.booked": ["invitee_name", "invitee_email", "event_name", "scheduled_for", "join_url", "source", "contact_id"],

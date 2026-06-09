@@ -85,6 +85,7 @@ import {
     type TriggerFieldDef,
 } from "@/lib/api/models/app/automations/meta";
 import CategoryPicker from "@/components/app/contacts/CategoryPicker";
+import { ExpressionReference } from "@/components/app/automations/ExpressionReference";
 import DealStagePicker from "@/components/app/crm/DealStagePicker";
 import ProviderGlyph from "@/app/app/integrations/_components/ProviderGlyph";
 import { cn } from "@/lib/utils";
@@ -1037,7 +1038,10 @@ function ConditionEditor({
             {/* Value editor, by field type + operator. */}
             {isExpression ? (
                 <div className="space-y-2">
-                    <Label>Expression</Label>
+                    <div className="flex items-center justify-between gap-2">
+                        <Label className="mb-0">Expression</Label>
+                        <ExpressionReference />
+                    </div>
                     <textarea
                         value={String(condition.expression ?? "")}
                         onChange={(e) => set({ expression: e.target.value })}
@@ -1144,7 +1148,7 @@ function ActionEditor({
     const vars = triggerVariables(trigger);
     const setConfig = (k: string, v: unknown) => onAction({ config: { ...config, [k]: v } });
     const patchConfig = (p: Record<string, unknown>) => onAction({ config: { ...config, ...p } });
-    const insertInto = (k: string, token: string) => setConfig(k, `${String(config[k] ?? "")}{{${token}}}`);
+    const insertInto = (k: string, token: string) => setConfig(k, `${String(config[k] ?? "")}{{.${token}}}`);
 
     const isNative = isNativeAction(data.action ?? "");
     const selectedConn = isNative ? NATIVE_CONNECTION : (data.connection_id ?? "");
@@ -1216,14 +1220,15 @@ function ActionEditor({
                             <TextInput
                                 value={String(config.message_template ?? "")}
                                 onChange={(v) => setConfig("message_template", v)}
-                                placeholder="New reply from {{contact_email}}"
+                                placeholder="New reply from {{.contact_email}}"
                                 className="w-full"
                             />
                             <VarChips vars={vars} onPick={(t) => insertInto("message_template", t)} />
                         </div>
                     )}
                     <p className="text-[11px] text-slate-400 leading-relaxed">
-                        Values support <span className="font-mono text-slate-500">{"{{variable}}"}</span> tokens from the trigger, rendered when the automation runs.
+                        Values are full Go templates: <span className="font-mono text-slate-500">{"{{.variable}}"}</span> fields plus{" "}
+                        <span className="font-mono text-slate-500">{"{{if}}"}</span>, helpers, and pipelines, rendered against the trigger data when the automation runs.
                     </p>
                 </>
             )}
@@ -1272,10 +1277,12 @@ function NativeActionConfig({
                         <TextInput
                             value={String(config.deal_name ?? "")}
                             onChange={(v) => patchConfig({ deal_name: v })}
-                            placeholder="{{company}} ({{contact_email}})"
+                            placeholder="{{.company}} ({{.contact_email}})"
                             className="w-full"
                         />
-                        <p className="mt-1.5 text-[11px] text-slate-400">Supports {"{{variable}}"} tokens from the trigger.</p>
+                        <p className="mt-1.5 text-[11px] text-slate-400">
+                            Full Go template: {"{{.variable}}"} fields plus {"{{if}}"}, helpers, and pipelines from the trigger data.
+                        </p>
                     </div>
                 )}
                 {action === "warmbly.move_deal_stage" && (
@@ -1293,10 +1300,12 @@ function NativeActionConfig({
                 <TextInput
                     value={String(config.task_title ?? "")}
                     onChange={(v) => patchConfig({ task_title: v })}
-                    placeholder="Follow up with {{contact_email}}"
+                    placeholder="Follow up with {{.contact_email}}"
                     className="w-full"
                 />
-                <p className="mt-1.5 text-[11px] text-slate-400">The task is assigned to the workspace owner.</p>
+                <p className="mt-1.5 text-[11px] text-slate-400">
+                    Full Go template: {"{{.variable}}"} fields plus {"{{if}}"}, helpers, and pipelines. The task is assigned to the workspace owner.
+                </p>
             </div>
         );
     }
@@ -1307,7 +1316,7 @@ function NativeActionConfig({
     );
 }
 
-// VarChips — clickable {{variable}} tokens that insert into a templatable field.
+// VarChips — clickable {{.variable}} fields that insert into a templatable field.
 function VarChips({ vars, onPick }: { vars: string[]; onPick: (v: string) => void }) {
     if (!vars.length) return null;
     return (
@@ -1317,10 +1326,10 @@ function VarChips({ vars, onPick }: { vars: string[]; onPick: (v: string) => voi
                     key={v}
                     type="button"
                     onClick={() => onPick(v)}
-                    title={`Insert {{${v}}}`}
+                    title={`Insert {{.${v}}}`}
                     className="h-5 rounded border border-slate-200 bg-slate-50 px-1.5 font-mono text-[10.5px] text-slate-500 transition-colors hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700"
                 >
-                    {`{{${v}}}`}
+                    {`{{.${v}}}`}
                 </button>
             ))}
         </div>

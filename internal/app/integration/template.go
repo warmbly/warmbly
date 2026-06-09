@@ -3,7 +3,6 @@ package integration
 import (
 	"bytes"
 	"fmt"
-	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -85,11 +84,16 @@ func ValidExpression(expr string) error {
 }
 
 // Templating for automation/integration action values (message bodies, channels,
-// webhook URLs, CRM static field values). Renders Go text/template against the
-// flat event-data map so users can write {{.contact_email}} (or bare
-// {{contact_email}}) plus conditionals/pipelines. Unknown keys render empty.
-// Never hard-fails: any parse/exec error falls back to naive {{key}}
-// substitution, preserving the simple syntax users already typed.
+// webhook URLs, CRM static field values). Renders the FULL, standard Go
+// text/template engine against the NATIVE event-data map — the same data
+// conditions evaluate against — so an action value can do everything a Go
+// template can, not just substitute a value: conditionals/else, {{range}} over
+// lists, {{with}}, nested dotted access ({{.lead.company}}), pipelines, and the
+// shared helper funcs, with numbers and booleans keeping their type (so native
+// {{if gt .confidence 0.8}} works, no coercion needed). Variables use standard
+// dotted field access ({{.contact_email}}); there is no bare-{{key}} shorthand —
+// the template is plain Go text/template. Unknown keys render empty. Never
+// hard-fails: any parse/exec error falls back to naive {{.key}} substitution.
 
 var tmplCache sync.Map // string -> *template.Template, or the badTemplate sentinel
 
@@ -101,38 +105,6 @@ var tmplCacheCount atomic.Int64
 const tmplCacheCap = 4096
 
 var badTemplate = &template.Template{}
-
-// bareKeyRe matches a standalone {{ identifier }} action (no leading dot, no
-// spaces inside the name) so we can rewrite it to {{ .identifier }}. Pipelines,
-// dotted fields, and control actions ({{if ...}}) are left untouched.
-var bareKeyRe = regexp.MustCompile(`{{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*}}`)
-
-// templateKeywords are the Go-template control words / built-ins that can appear
-// as a bare {{word}} (or that we must not turn into a field reference). Without
-// this guard the rewrite turns {{end}} into {{.end}}, breaking every
-// {{if}}…{{end}} block in an action value (Slack message, webhook body, CRM
-// field) and silently shipping the literal {{if}}.
-var templateKeywords = map[string]bool{
-	"if": true, "else": true, "end": true, "range": true, "with": true,
-	"template": true, "define": true, "block": true, "break": true, "continue": true,
-	"nil": true, "true": true, "false": true,
-	"and": true, "or": true, "not": true, "eq": true, "ne": true,
-	"lt": true, "le": true, "gt": true, "ge": true, "len": true, "index": true,
-	"print": true, "printf": true, "println": true, "call": true,
-}
-
-// rewriteBareKeys turns {{field}} into {{.field}} but leaves template keywords
-// ({{end}}, {{else}}, …) and helper-function names alone, so conditionals and
-// pipelines survive in action templates.
-func rewriteBareKeys(tmpl string) string {
-	return bareKeyRe.ReplaceAllStringFunc(tmpl, func(m string) string {
-		key := strings.TrimSpace(m[2 : len(m)-2])
-		if templateKeywords[key] {
-			return m
-		}
-		return "{{." + key + "}}"
-	})
-}
 
 // renderOutboundURL renders a (possibly templated) outbound webhook URL and
 // re-validates the result against the SSRF/HTTPS guard. A non-empty input that
@@ -148,7 +120,7 @@ func renderOutboundURL(raw string, data map[string]any) (string, error) {
 	return url, nil
 }
 
-// renderTemplate renders tmpl against the event data map.
+// renderTemplate renders tmpl against the native event data map.
 func renderTemplate(tmpl string, data map[string]any) string {
 	if !strings.Contains(tmpl, "{{") {
 		return strings.TrimSpace(tmpl)
@@ -158,10 +130,22 @@ func renderTemplate(tmpl string, data map[string]any) string {
 		return naiveRenderTemplate(tmpl, data)
 	}
 	var buf bytes.Buffer
-	if err := t.Execute(&buf, flattenForTemplate(data)); err != nil {
+	if err := t.Execute(&buf, data); err != nil {
 		return naiveRenderTemplate(tmpl, data)
 	}
-	return strings.TrimSpace(buf.String())
+	return strings.TrimSpace(stripNoValue(buf.String()))
+}
+
+// stripNoValue removes the text/template "<no value>" sentinel that
+// missingkey=zero emits for an absent key on a map[string]any (its element type
+// is interface{}, whose zero value prints as that sentinel). Stripping it keeps
+// the documented contract — an unknown placeholder renders empty — instead of
+// leaking "<no value>" into a customer-facing Slack/webhook/CRM value.
+func stripNoValue(s string) string {
+	if !strings.Contains(s, "<no value>") {
+		return s
+	}
+	return strings.ReplaceAll(s, "<no value>", "")
 }
 
 func compileTemplate(tmpl string) *template.Template {
@@ -171,7 +155,7 @@ func compileTemplate(tmpl string) *template.Template {
 		}
 		return v.(*template.Template)
 	}
-	t, err := template.New("action").Funcs(exprFuncs).Option("missingkey=zero").Parse(rewriteBareKeys(tmpl))
+	t, err := template.New("action").Funcs(exprFuncs).Option("missingkey=zero").Parse(tmpl)
 	if err != nil {
 		cacheStore(tmpl, badTemplate)
 		return nil
@@ -191,18 +175,9 @@ func cacheStore(tmpl string, t *template.Template) {
 	}
 }
 
-// flattenForTemplate renders every event-data value to a string so templates see
-// a uniform map[string]string (dot access works; missing keys are "").
-func flattenForTemplate(data map[string]any) map[string]string {
-	out := make(map[string]string, len(data))
-	for k, v := range data {
-		out[k] = valueString(v)
-	}
-	return out
-}
-
-// naiveRenderTemplate is the original literal {{key}} substitution, used as a
-// safe fallback when a template can't compile/execute.
+// naiveRenderTemplate is a literal {{.key}} substitution (a leading dot is
+// optional here), used as a safe fallback when a template can't compile/execute
+// so a single malformed block never blanks the whole value.
 func naiveRenderTemplate(tmpl string, data map[string]any) string {
 	out := tmpl
 	for {

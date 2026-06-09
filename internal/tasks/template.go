@@ -33,16 +33,16 @@ type TemplateVariables struct {
 	Custom    map[string]string
 }
 
-// identifierKey matches a Go-template-safe selector key: a leading letter or
-// underscore followed by letters, digits, or underscores. Only keys matching
-// this can be referenced via the {{.Key}} selector syntax; non-identifier
-// custom-field keys (e.g. "job title", "first-name") are substituted literally
-// by a pre-pass before the template engine parses the body.
-var identifierKey = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+// templateAction matches a single {{ ... }} action (no nested braces).
+var templateAction = regexp.MustCompile(`\{\{[^{}]*\}\}`)
 
-// legacyDotToken matches a single {{.<anything-but-brace>}} token. Used by the
-// pre-pass to find tokens whose key is a known but non-identifier custom field.
-var legacyDotToken = regexp.MustCompile(`\{\{\.([^{}]+)\}\}`)
+// spacedFieldRefAt matches, anchored at the start of the slice, a dotted field
+// reference whose key contains an internal space or dash (e.g. ".job title" or
+// ".first-name"). Such a key is not a valid Go-template identifier, so it cannot
+// be written as a `.Selector`. We rewrite it to the equivalent `(index . "key")`,
+// which IS valid everywhere — standalone, inside {{if}}, and inside eq/and/... —
+// giving custom fields with spaces full Go-template support.
+var spacedFieldRefAt = regexp.MustCompile(`^\.[A-Za-z0-9_]+(?:[ \-]+[A-Za-z0-9_]+)+`)
 
 // tmplCache caches parsed templates keyed by the raw template string. A stored
 // nil *template.Template is a "known-bad" sentinel: that body failed to parse,
@@ -68,24 +68,57 @@ func buildTemplateData(contact models.Contact) map[string]string {
 	return data
 }
 
-// rewriteNonIdentifierTokens substitutes {{.<key>}} tokens whose key exists in
-// data but is NOT a valid Go-template identifier (so the selector syntax can't
-// reference it, e.g. "job title"). Identifier tokens are left for the engine so
-// they remain usable inside {{if}}/{{eq}}.
-func rewriteNonIdentifierTokens(tmpl string, data map[string]string) string {
-	if !strings.Contains(tmpl, "{{.") {
+// rewriteSpacedFieldRefs rewrites a dotted custom-field reference whose key has
+// a space or dash (`.job title`, `.first-name`) into `(index . "key")` inside
+// each {{ }} action, so those fields work EVERYWHERE — standalone, inside
+// {{if}}, and inside eq/and/printf/... — not just as a literal substitution.
+// Plain identifier selectors ({{.FirstName}}) and any text outside an action are
+// left untouched, and quoted string literals inside an action are skipped so a
+// value like ".NET" is never mangled. No data is needed: the rewrite is purely
+// syntactic, so it works identically at render time and at validation time.
+func rewriteSpacedFieldRefs(tmpl string) string {
+	if !strings.Contains(tmpl, "{{") {
 		return tmpl
 	}
-	return legacyDotToken.ReplaceAllStringFunc(tmpl, func(match string) string {
-		key := strings.TrimSpace(legacyDotToken.FindStringSubmatch(match)[1])
-		if identifierKey.MatchString(key) {
-			return match // engine resolves it (and it may be used in if/eq)
+	return templateAction.ReplaceAllStringFunc(tmpl, rewriteSpacedInAction)
+}
+
+func rewriteSpacedInAction(action string) string {
+	var b strings.Builder
+	b.Grow(len(action))
+	var quote byte // 0 = not in a string literal; '"' or '`' otherwise
+	for i := 0; i < len(action); {
+		c := action[i]
+		switch {
+		case quote != 0:
+			b.WriteByte(c)
+			if c == '\\' && quote == '"' && i+1 < len(action) {
+				b.WriteByte(action[i+1]) // keep an escaped char verbatim
+				i += 2
+				continue
+			}
+			if c == quote {
+				quote = 0
+			}
+			i++
+		case c == '"' || c == '`':
+			quote = c
+			b.WriteByte(c)
+			i++
+		case c == '.':
+			if m := spacedFieldRefAt.FindString(action[i:]); m != "" {
+				b.WriteString(`(index . "` + m[1:] + `")`)
+				i += len(m)
+				continue
+			}
+			b.WriteByte(c)
+			i++
+		default:
+			b.WriteByte(c)
+			i++
 		}
-		if v, ok := data[key]; ok {
-			return v // legacy literal substitution for non-identifier keys
-		}
-		return match // unknown + non-identifier: leave for engine/missingkey
-	})
+	}
+	return b.String()
 }
 
 // compiledTemplate returns a parsed, cached template for tmpl, or nil if the
@@ -109,22 +142,15 @@ func compiledTemplate(tmpl string) *template.Template {
 
 // TemplateError returns a parse error when a template's control syntax is
 // malformed (e.g. an {{if}} with no {{end}}, or a bad {{eq}}), or nil when it is
-// valid. Non-identifier {{.key}} tokens (custom fields with spaces) are
-// neutralized first — the renderer substitutes those per contact, so they must
-// not false-fail validation. Used to block starting a campaign with a template
-// that would otherwise degrade to literal {{if}} text in the sent email.
+// valid. Spaced/dashed custom-field references are rewritten to their `index`
+// form first (exactly as the renderer does), so a valid template that uses them
+// inside {{if}} does not false-fail validation. Used to block starting a
+// campaign with a template that would degrade to literal {{if}} text on send.
 func TemplateError(tmpl string) error {
 	if tmpl == "" {
 		return nil
 	}
-	prepared := legacyDotToken.ReplaceAllStringFunc(tmpl, func(match string) string {
-		key := strings.TrimSpace(legacyDotToken.FindStringSubmatch(match)[1])
-		if identifierKey.MatchString(key) {
-			return match
-		}
-		return "" // non-identifier custom key: substituted per contact at render
-	})
-	_, err := template.New("validate").Funcs(tmplfuncs.FuncMap()).Option("missingkey=zero").Parse(prepared)
+	_, err := template.New("validate").Funcs(tmplfuncs.FuncMap()).Option("missingkey=zero").Parse(rewriteSpacedFieldRefs(tmpl))
 	return err
 }
 
@@ -140,7 +166,7 @@ func RenderTemplate(tmpl string, contact models.Contact) string {
 	}
 
 	data := buildTemplateData(contact)
-	prepared := rewriteNonIdentifierTokens(tmpl, data)
+	prepared := rewriteSpacedFieldRefs(tmpl)
 
 	t := compiledTemplate(prepared)
 	if t == nil {

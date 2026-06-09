@@ -39,7 +39,7 @@ export const AUTOMATION_TEMPLATES: AutomationTemplate[] = [
         graph: {
             nodes: [
                 { id: "trigger", type: "trigger", x: 0, y: 0 },
-                { id: "a1", type: "action", x: 0, y: 150, action: "warmbly.create_deal", config: { deal_name: "{{invitee_name}} — {{event_name}}" } },
+                { id: "a1", type: "action", x: 0, y: 150, action: "warmbly.create_deal", config: { deal_name: "{{.invitee_name}} - {{.event_name}}" } },
             ],
             edges: [{ id: "e1", source: "trigger", target: "a1", when: "" }],
         },
@@ -66,7 +66,7 @@ export const AUTOMATION_TEMPLATES: AutomationTemplate[] = [
             nodes: [
                 { id: "trigger", type: "trigger", x: 0, y: 0 },
                 { id: "c1", type: "condition", x: 0, y: 150, condition: { field: "field", key: "intent", operator: "equals", value: "positive" } },
-                { id: "a1", type: "action", x: 0, y: 300, action: "slack.notify", config: { message_template: "🔥 Positive reply from {{contact_email}}" } },
+                { id: "a1", type: "action", x: 0, y: 300, action: "slack.notify", config: { message_template: "🔥 Positive reply from {{.contact_email}}" } },
             ],
             edges: [
                 { id: "e1", source: "trigger", target: "c1", when: "" },
