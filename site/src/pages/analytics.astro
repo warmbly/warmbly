@@ -1,66 +1,161 @@
 ---
 import Layout from '../layouts/Layout.astro';
 import HeroAtmosphere from '../components/HeroAtmosphere.astro';
-import Icon from '../components/Icon.astro';
 import CTA from '../components/CTA.astro';
+import ShareCardMock from '../components/ShareCardMock.astro';
 
-// Source: CLAUDE.md analytics + admin sections, internal/repository/*
+// Source anchors for everything claimed on this page:
+//   web/src/app/app/analytics/page.tsx            (the real dashboard this mirrors)
+//   realtime/lib/realtime/*                        (the websocket fanout)
+//   tracking/src/handlers.rs                       (open/click capture + dedupe)
+//   internal/app/consumer/*                        (reply classify, deliverability)
+//   internal/app/advanced/service.go               (suppression)
+//   internal/repository/pg_*                       (the aggregates the dashboard reads)
 
-// What we lead with vs what we treat as noise
+// =========================================================================
+// What we lead with vs what we treat as noise.
+// =========================================================================
 const signal = [
-  { k: 'Inbox placement rate',  why: 'Probed via warmup pool partners. The only number that tells you mail is actually being read.' },
-  { k: 'Complaint rate',         why: 'ARF feedback loops + Gmail Postmaster Tools, aggregated per mailbox. Hard ceiling at 0.10%.' },
-  { k: 'Bounce rate',            why: 'Hard vs soft split per mailbox. SES enforcement begins at 5%, suspension at 10%.' },
-  { k: 'Reply rate',             why: 'Per sequence, per step, per variant. The metric a cold-mail program is actually optimising for.' },
-  { k: 'Positive-reply rate',    why: 'Replies classified as positive (vs OOO, negative, unsubscribe). Strips noise from reply rate.' },
-  { k: 'Suppression growth',     why: 'Share of contacted recipients added to suppression per period. Spikes are a leading indicator.' },
+  { k: 'Inbox placement rate',  why: 'Probed through warmup pool partners. The only number that says mail is actually being read.' },
+  { k: 'Reply rate',            why: 'Per sequence, per step, per variant. The metric a cold program is genuinely optimising for.' },
+  { k: 'Positive-reply rate',   why: 'Replies classified positive, stripped of OOO, negative, and opt-out. The real one.' },
+  { k: 'Complaint rate',        why: 'FBL and ARF loops plus Postmaster, per mailbox. Hard ceiling at 0.10%.' },
+  { k: 'Bounce rate',           why: 'Hard and soft, split per mailbox. SES review at 5%, pause at 10%.' },
+  { k: 'Suppression growth',    why: 'Share of contacted recipients suppressed per period. A spike leads the bad news.' },
 ];
 
 const noise = [
-  { k: 'Open rate',                 why: 'Apple Mail Privacy proxies opens for ~25-45% of B2B inboxes. Gmail caches images. The number is noise dominated.' },
-  { k: 'Cold first-touch CTR',      why: 'Most well-written cold mail has no links. Optimising for clicks incentivises link-heavy content, which is itself a spam-folder signal.' },
-  { k: '"Deliverability score"',    why: 'From vendors who will not publish the formula. Unauditable and gameable.' },
+  { k: 'Open rate',              why: 'Apple Mail Privacy prefetches pixels for a big share of B2B inboxes, so the number reads near 100% within minutes. We show it, we never decide on it.' },
+  { k: 'First-touch click rate', why: 'Good cold mail has no links. Optimising for clicks pushes you toward link-heavy mail, which is itself a spam signal.' },
+  { k: '"Deliverability score"', why: 'A single vendor number with an unpublished formula. Unauditable and easy to game.' },
 ];
 
-// Real export surfaces
+// =========================================================================
+// Drill path. Every workspace KPI resolves down to one recipient event.
+// =========================================================================
+const drill = [
+  { k: 'Workspace',  v: 'one number',     d: 'The KPI strip: sent, reply rate, bounce rate, placement.' },
+  { k: 'Campaign',   v: 'top performers', d: 'Which campaigns carry the result, ranked by reply rate.' },
+  { k: 'Sequence',   v: 'per step',       d: 'Step one against the follow-ups. Where replies actually come from.' },
+  { k: 'Variant',    v: 'A / B',          d: 'Subject and body variants, scored on positive replies.' },
+  { k: 'Mailbox',    v: 'per sender',     d: 'The same metrics per mailbox, pool, and worker IP.' },
+  { k: 'Recipient',  v: 'one event',      d: 'The exact open, reply, or bounce behind the number.' },
+];
+
+// =========================================================================
+// What updates live, over the websocket fanout.
+// =========================================================================
+const live = [
+  { k: 'Counts and KPIs', d: 'Sent, replies, and bounce rate tick up the moment events arrive.' },
+  { k: 'Lists',           d: 'Campaign and mailbox tables reorder themselves without a refresh.' },
+  { k: 'Detail panes',    d: 'An open drawer keeps updating while you are reading it.' },
+  { k: 'Activity feed',   d: 'New opens, clicks, and replies appear at the top instantly.' },
+  { k: 'Account health',  d: 'A mailbox slipping into watch shows the second it crosses.' },
+];
+
+// =========================================================================
+// Exactly what each headline number is, and where it comes from.
+// =========================================================================
+const definitions = [
+  { k: 'Reply rate',      f: 'replies ÷ delivered',            src: 'consumer.reply' },
+  { k: 'Positive reply',  f: 'positive ÷ delivered',           src: 'consumer.reply.classifier' },
+  { k: 'Inbox placement', f: 'inbox ÷ (inbox + spam + promo)', src: 'warmup pool probe' },
+  { k: 'Complaint rate',  f: 'complaints ÷ delivered',         src: 'consumer.deliverability' },
+  { k: 'Bounce rate',     f: '(hard + soft) ÷ sent',           src: 'consumer.deliverability' },
+  { k: 'Open rate',       f: 'opens ÷ delivered',              src: 'tracking.handlers' },
+];
+
+// =========================================================================
+// Real export surfaces.
+// =========================================================================
 const exports = [
-  { k: 'On-demand download', v: 'CSV · XLSX · JSON',  why: 'Pick a report, choose fields, download. No row caps.' },
-  { k: 'Scheduled email',    v: 'Daily · weekly',     why: 'Workspace-level summary or a specific saved view to your inbox.' },
-  { k: 'Webhooks',           v: 'HMAC-signed',        why: 'Per-event push for replies, bounces, complaints, suppression and band transitions.' },
-  { k: 'REST API',           v: 'GET / events',       why: 'Pull events into your warehouse. Idempotency keys + rate limits surfaced in headers.' },
-  { k: 'S3 push',            v: 'Hourly · gzipped',   why: 'Newline-delimited JSON to your bucket. Schemas versioned in the event payload.' },
+  { k: 'On-demand download', v: 'CSV · XLSX · JSON', why: 'Pick a report, choose fields, download. No row caps.' },
+  { k: 'Scheduled email',    v: 'Daily · weekly',    why: 'A workspace summary or a saved view, dropped in your inbox.' },
+  { k: 'Webhooks',           v: 'HMAC-signed',       why: 'Per-event push for replies, bounces, complaints, suppression, and band changes.' },
+  { k: 'REST API',           v: 'GET / events',      why: 'Pull events into your warehouse. Idempotency keys and rate limits in the headers.' },
+  { k: 'S3 push',            v: 'Hourly · gzipped',  why: 'Newline-delimited JSON to your bucket. Schema versioned in the payload.' },
 ];
 
 const faq = [
-  ['Why no open rate as a headline number?',     'Apple Mail Privacy Protection prefetches all tracking pixels through Apple proxies for a large share of B2B recipients. The reported open rate is functionally 100% for those mailboxes within minutes of delivery. We surface opens but never use them for deliverability decisions or ranking.'],
-  ['Where does placement data come from?',       'Warmbly\'s warmup pool double-serves as a placement probe. When a partner mailbox receives a warmup message, it reports the folder (Inbox / Promotions / Spam) along with a verification token. That feeds the placement signal for the sending mailbox.'],
-  ['How long is data retained?',                  'Per-event records (sends, replies, opens, bounces) for 18 months by default. Aggregates retained indefinitely. Custom retention available on Enterprise.'],
-  ['Can I export raw events to my warehouse?',    'Yes. Webhooks for real-time push, S3 hourly drops for batched ingestion, or pull through the events API with cursor pagination. Same event schema across all three.'],
+  ['Why is open rate not a headline number?',
+   'Apple Mail Privacy Protection prefetches every tracking pixel through Apple proxies for a large share of B2B recipients, so the reported open rate is effectively 100% for those mailboxes within minutes of delivery. We still surface opens, but we never use them for deliverability decisions or ranking.'],
+  ['Where does placement data come from?',
+   'The warmup pool double-serves as a placement probe. When a partner mailbox receives a warmup message, it reports the folder it landed in (Inbox, Promotions, or Spam) along with a signed verification token. That feeds the placement signal for the sending mailbox.'],
+  ['Is everything really realtime?',
+   'Yes. Opens, clicks, replies, and bounces stream into the dashboard over a websocket as the consumer processes them, so counts, lists, and the activity feed update without a refresh. Exports and rollups run on top of the same events.'],
+  ['How long is data retained?',
+   'Per-event records (sends, replies, opens, bounces) for 18 months by default, aggregates indefinitely. Custom retention is available on Enterprise.'],
+  ['Can I get the raw events into my warehouse?',
+   'Yes. Webhooks for realtime push, hourly gzipped S3 drops for batch ingestion, or pull through the events API with cursor pagination. The same event schema is used across all three.'],
 ];
 ---
 <Layout
-  title="Deliverability Analytics & Placement | Warmbly"
-  description="Deliverability-aware analytics: per-mailbox placement, complaint and bounce rates, warmup health, sequence conversion. No vanity opens."
+  title="Deliverability analytics, down to the recipient | Warmbly"
+  description="Signal-first analytics: placement, reply and positive-reply rate, complaints, bounces, suppression. Every number drills to the recipient behind it, and the whole dashboard updates live."
 >
   <!-- ============================================================
-       HERO · same HeroAtmosphere pattern
+       HERO
   ============================================================ -->
   <section class="relative isolate overflow-hidden">
     <HeroAtmosphere />
 
-    <div class="container-page relative pt-16 md:pt-24 pb-44 md:pb-56 text-center">
+    <!-- a few tasteful floating signals: ones we trust, one we don't -->
+    <div class="hidden xl:block absolute inset-0 z-0 pointer-events-none select-none" aria-hidden="true">
+      <!-- positive reply (signal) -->
+      <div class="hero-float absolute top-[10%] right-[calc(50%_-_462px)] z-30" style="--drift:-10px;animation-duration:7.2s;animation-delay:-1.4s">
+        <div class="rotate-[2deg] px-3.5 py-2.5 rounded-[12px] bg-white ring-1 ring-slate-900/5 shadow-[0_2px_4px_-2px_rgba(2,32,71,0.25),0_16px_34px_-12px_rgba(2,32,71,0.5)]">
+          <div class="flex items-center gap-2">
+            <span class="inline-flex size-5 items-center justify-center rounded-md bg-emerald-50 ring-1 ring-emerald-200 text-emerald-600 shrink-0">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>
+            </span>
+            <span class="text-[12px] font-semibold text-slate-800">positive reply</span>
+            <span class="font-mono text-[12px] font-semibold text-emerald-600 tabular-nums">+1</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- placement (signal) -->
+      <div class="hero-float absolute top-[82%] right-[calc(50%_-_444px)] z-20" style="--drift:-7px;animation-duration:8.1s;animation-delay:-0.7s">
+        <div class="rotate-[-2deg] h-7 px-3 rounded-full bg-white/95 ring-1 ring-slate-900/5 shadow-[0_8px_20px_-10px_rgba(2,32,71,0.4)] inline-flex items-center gap-1.5">
+          <span class="w-1.5 h-1.5 rounded-full bg-sky-500"></span>
+          <span class="text-[11px] font-medium text-slate-600">inbox placement</span>
+          <span class="font-mono text-[11px] font-semibold text-slate-800 tabular-nums">94%</span>
+        </div>
+      </div>
+
+      <!-- open (noise) -->
+      <div class="hero-float absolute top-[12%] left-[calc(50%_-_452px)] z-20" style="--drift:-9px;animation-duration:6.8s;animation-delay:-2.2s">
+        <div class="rotate-[-3deg] px-3 py-2 rounded-[12px] bg-white/90 ring-1 ring-slate-900/5 shadow-[0_2px_3px_-2px_rgba(2,32,71,0.2),0_12px_28px_-14px_rgba(2,32,71,0.4)]">
+          <div class="flex items-center gap-2">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2" class="shrink-0" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+            <span class="text-[12px] font-medium text-slate-400 line-through decoration-slate-300">open rate</span>
+            <span class="rounded bg-slate-100 px-1 py-px text-[8.5px] font-semibold uppercase tracking-[0.1em] text-slate-400">noise</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- bounce -> suppressed (signal) -->
+      <div class="hero-float absolute top-[85%] left-[calc(50%_-_446px)] z-10" style="--drift:-8px;animation-duration:7.6s;animation-delay:-3s">
+        <div class="rotate-[2.5deg] h-7 px-3 rounded-full bg-white/95 ring-1 ring-slate-900/5 shadow-[0_8px_20px_-10px_rgba(2,32,71,0.4)] inline-flex items-center gap-1.5">
+          <span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+          <span class="text-[11px] font-medium text-slate-600">bounced, suppressed</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="container-page relative z-10 pt-16 md:pt-24 pb-32 md:pb-44 text-center">
       <div class="inline-flex items-center gap-2 h-7 pl-1 pr-3 rounded-full bg-white/15 backdrop-blur ring-1 ring-white/25 text-[12px] text-white/95 shadow-[0_4px_14px_-4px_rgba(0,0,0,0.25)]">
         <span class="inline-flex items-center h-5 px-1.5 rounded-full text-[10.5px] font-semibold uppercase tracking-[0.06em] bg-white" style="color:#0369a1;">
           Analytics
         </span>
-        Numbers we trust. Not vanity opens.
+        Signal, not vanity opens.
       </div>
 
       <h1 class="mt-8 md:mt-10 text-[44px] sm:text-6xl md:text-[72px] lg:text-[80px] font-semibold tracking-[-0.04em] leading-[0.98] text-white max-w-4xl mx-auto">
-        Numbers we trust.<br/>Not vanity opens.
+        Numbers you can<br/>actually act on.
       </h1>
       <p class="mt-6 text-[17px] md:text-[19px] text-white/80 max-w-2xl mx-auto leading-relaxed">
-        Placement, complaints, bounces, reply rate, positive-reply rate, suppression growth. Per mailbox, per pool, per worker, per sequence. Drill from a workspace KPI to the exact recipient behind it.
+        Placement, reply and positive-reply rate, complaints, bounces, suppression. Every number drills from a workspace KPI to the exact recipient behind it, and the whole dashboard updates live.
       </p>
 
       <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
@@ -70,153 +165,31 @@ const faq = [
             <path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>
           </svg>
         </a>
-        <a href="/learn/deliverability/" class="inline-flex h-11 px-5 items-center rounded-[10px] text-[14.5px] font-medium bg-white/10 backdrop-blur ring-1 ring-white/40 text-white hover:bg-white/20 hover:-translate-y-0.5 transition-all duration-200 ease-out">
-          Read the handbook
+        <a href="#signal" class="inline-flex h-11 px-5 items-center rounded-[10px] text-[14.5px] font-medium bg-white/10 backdrop-blur ring-1 ring-white/40 text-white hover:bg-white/20 hover:-translate-y-0.5 transition-all duration-200 ease-out">
+          What we measure
         </a>
       </div>
     </div>
   </section>
 
-  <!-- ============================================================
-       DASHBOARD MOCK · floats below the hero, mirrors the real
-       product page (web/src/app/app/analytics/page.tsx).
-  ============================================================ -->
-  <section class="relative -mt-36 md:-mt-44 pb-16 md:pb-24 z-10">
-    <div class="container-page">
-      <div class="rounded-[14px] bg-white ring-1 ring-slate-200 overflow-hidden shadow-[0_40px_90px_-30px_rgba(2,32,71,0.35),0_12px_30px_-12px_rgba(15,23,42,0.12)] flex flex-col">
-
-        <!-- PageTopbar -->
-        <div class="h-14 px-5 border-b border-slate-200 flex items-center gap-3 shrink-0 bg-white">
-          <div>
-            <div class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">Analytics</div>
-            <div class="mt-0.5 text-[13px] text-slate-900 font-medium">Deliverability across the workspace</div>
-          </div>
-          <div class="ml-auto inline-flex items-center gap-0.5 rounded-md border border-slate-200 bg-white p-0.5">
-            {['7d', '30d', '90d'].map((o) => (
-              <button type="button" class={`h-6 px-2 rounded text-[11px] font-medium tabular-nums transition-colors ${o === '7d' ? 'bg-slate-900 text-white' : 'text-slate-500 hover:text-slate-900'}`}>
-                {o}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <!-- StatStrip · 4 cols -->
-        <div class="grid grid-cols-2 lg:grid-cols-4 border-b border-slate-200">
-          {[
-            { label: 'Total sent',  value: '12,847', sub: 'last 7 days' },
-            { label: 'Open rate',   value: '34.2%',  sub: 'after delivery' },
-            { label: 'Reply rate',  value: '6.1%',   sub: 'incl. positive' },
-            { label: 'Bounce rate', value: '1.8%',   sub: 'hard + soft' },
-          ].map((s, i) => (
-            <div class={`p-5 ${i < 3 ? 'lg:border-r border-slate-200' : ''} ${i < 2 ? 'border-b lg:border-b-0 border-slate-200' : ''}`}>
-              <div class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">{s.label}</div>
-              <div class="mt-1.5 text-[24px] font-semibold tracking-[-0.02em] text-slate-900 leading-none font-mono tabular-nums">{s.value}</div>
-              <div class="mt-1.5 text-[11px] text-slate-400 font-mono">{s.sub}</div>
-            </div>
-          ))}
-        </div>
-
-        <!-- Body: chart + breakdown -->
-        <div class="grid lg:grid-cols-[1fr_320px] min-h-0">
-          <section class="flex flex-col min-h-0 lg:border-r border-slate-200">
-            <div class="h-9 px-4 border-b border-slate-200 flex items-center gap-2 shrink-0">
-              <span class="text-[11px] font-medium text-slate-700">Email performance</span>
-            </div>
-            <div class="flex-1 flex flex-col px-5 py-4">
-              <div class="h-52 flex items-end gap-0.5">
-                {Array.from({ length: 28 }).map((_, i) => {
-                  const v = 22 + Math.sin(i * 0.5) * 18 + ((i * 13) % 17);
-                  return (
-                    <div class="flex-1 flex items-end">
-                      <div class="w-full rounded-sm bg-sky-100" style={`height: ${v}%`}></div>
-                    </div>
-                  );
-                })}
-              </div>
-              <div class="flex justify-between mt-2 font-mono text-[10px] text-slate-400">
-                <span>7d ago</span>
-                <span>today</span>
-              </div>
-            </div>
-          </section>
-
-          <aside class="flex flex-col min-h-0 bg-slate-50/40">
-            <div class="h-9 px-4 border-b border-slate-200 flex items-center gap-2 shrink-0">
-              <span class="text-[11px] font-medium text-slate-700">Breakdown</span>
-            </div>
-            <div class="divide-y divide-slate-200/60">
-              {[
-                { label: 'Delivered', dot: 'bg-emerald-500', v: '12,847' },
-                { label: 'Opened',    dot: 'bg-sky-500',     v: '4,394' },
-                { label: 'Replied',   dot: 'bg-violet-500',  v: '783' },
-                { label: 'Bounced',   dot: 'bg-amber-500',   v: '231' },
-                { label: 'Spam',      dot: 'bg-red-500',     v: '5' },
-              ].map((q) => (
-                <div class="h-9 px-4 flex items-center gap-2">
-                  <span class={`w-1.5 h-1.5 rounded-full ${q.dot}`}></span>
-                  <span class="text-[12px] text-slate-700">{q.label}</span>
-                  <span class="ml-auto font-mono text-[11px] text-slate-500 tabular-nums">{q.v}</span>
-                </div>
-              ))}
-            </div>
-          </aside>
-        </div>
-
-        <!-- Warmup section bar + mailbox strip -->
-        <div class="h-9 px-4 border-t border-b border-slate-200 flex items-center gap-2 shrink-0">
-          <span class="text-[11px] font-medium text-slate-700">Warmup</span>
-          <a href="#" class="ml-auto inline-flex items-center gap-1 text-[11px] text-slate-500 hover:text-slate-900 transition-colors">
-            All accounts
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg>
-          </a>
-        </div>
-        <div class="px-5 py-5 grid grid-cols-2 lg:grid-cols-4 gap-3">
-          {[
-            { mb: 'ben@acme.com',  day: 22, today: 32, cap: 40, state: 'healthy' },
-            { mb: 'sara@acme.com', day: 14, today: 24, cap: 40, state: 'healthy' },
-            { mb: 'mark@acme.com', day: 31, today: 40, cap: 40, state: 'watch'   },
-            { mb: 'kai@acme.com',  day:  9, today: 19, cap: 40, state: 'healthy' },
-          ].map((m) => {
-            const pct = Math.round((m.today / m.cap) * 100);
-            const chip = m.state === 'watch' ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700';
-            const dot  = m.state === 'watch' ? 'bg-amber-500' : 'bg-emerald-500';
-            const bar  = m.state === 'watch' ? 'bg-amber-500' : 'bg-sky-500';
-            return (
-              <div class="rounded-md ring-1 ring-slate-200 bg-white p-3">
-                <div class="flex items-baseline justify-between gap-2">
-                  <span class="font-mono text-[11px] text-slate-700 truncate">{m.mb}</span>
-                  <span class={`inline-flex items-center gap-1 h-4 px-1 rounded text-[9.5px] font-medium ${chip}`}>
-                    <span class={`w-1 h-1 rounded-full ${dot}`}></span>
-                    {m.state}
-                  </span>
-                </div>
-                <div class="mt-2 flex items-baseline gap-1 font-mono">
-                  <span class="text-[18px] font-semibold text-slate-900 tabular-nums">{m.today}</span>
-                  <span class="text-[10px] text-slate-400">/ {m.cap} today · D{m.day}</span>
-                </div>
-                <div class="mt-2 h-1 rounded-full bg-slate-100 overflow-hidden">
-                  <div class={`h-full ${bar}`} style={`width: ${pct}%`}></div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </div>
-  </section>
+  <style>
+    .hero-float { animation-name: heroFloat; animation-timing-function: ease-in-out; animation-iteration-count: infinite; animation-direction: alternate; will-change: transform; }
+    @keyframes heroFloat { from { transform: translateY(0); } to { transform: translateY(var(--drift, -10px)); } }
+    @media (prefers-reduced-motion: reduce) { .hero-float { animation: none; } }
+  </style>
 
   <!-- ============================================================
-       SIGNAL vs NOISE · what we measure, what we ignore
+       SIGNAL vs NOISE
   ============================================================ -->
-  <section class="border-y border-[color:var(--border)] bg-[color:var(--surface-1)]/40 py-20 md:py-28">
+  <section id="signal" class="border-y border-[color:var(--border)] bg-[color:var(--surface-2)]/50 py-20 md:py-28 scroll-mt-4">
     <div class="container-page">
       <div class="max-w-3xl mb-12">
         <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7] mb-3">Signal vs noise</div>
         <h2 class="text-[32px] md:text-[44px] font-semibold tracking-[-0.03em] leading-[1.05] text-heading">
-          We lead with six metrics. Three we ignore.
+          Six numbers we lead with. Three we ignore.
         </h2>
         <p class="mt-4 text-[15.5px] text-foreground/70 leading-relaxed">
-          A metric is a signal only if it is reliable and acts on. Open rate fails both tests today. Click rate on cold first-touch fails the second. Vendor "scores" fail the first.
+          A metric earns the headline only if it is reliable and you can act on it. Open rate fails the first test today. First-touch click rate fails the second. Vendor "scores" fail both.
         </p>
       </div>
 
@@ -232,7 +205,7 @@ const faq = [
           </div>
           <ul class="divide-y divide-[color:var(--border)]">
             {signal.map((s) => (
-              <li class="px-6 py-4 grid grid-cols-[180px_1fr] gap-4 items-baseline">
+              <li class="px-6 py-4 grid grid-cols-[170px_1fr] gap-4 items-baseline">
                 <div class="text-[13.5px] font-semibold text-heading">{s.k}</div>
                 <div class="text-[12.5px] text-foreground/65 leading-snug">{s.why}</div>
               </li>
@@ -262,11 +235,182 @@ const faq = [
     </div>
   </section>
 
+  <!-- ============================================================
+       SHARE IMAGE · pixel-perfect demo of the in-app feature
+  ============================================================ -->
+  <section class="bg-white border-b border-[color:var(--border)] py-20 md:py-28">
+    <div class="container-page grid lg:grid-cols-[1fr_1.4fr] gap-12 lg:gap-16 items-center">
+      <!-- left: narrative + how it works -->
+      <div>
+        <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7] mb-3">Share image</div>
+        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
+          Post your numbers without a screenshot.
+        </h2>
+        <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed max-w-md">
+          One tap turns the workspace view into a branded image: your headline metrics and the sends trend on a clean Warmbly sky card. Pick an aspect, preview it exactly as it will export, then copy or download a crisp PNG.
+        </p>
+        <div class="mt-7 space-y-4 max-w-md">
+          {[
+            { k: 'Pick an aspect',     d: '1:1 for social, 3:2 for slides, 16:9 for a banner.' },
+            { k: 'Preview live',       d: 'The card renders exactly as it exports, every metric in place.' },
+            { k: 'Copy or download',   d: 'Straight to the clipboard, or a high-resolution PNG to disk.' },
+          ].map((s, i) => (
+            <div class="flex items-start gap-3">
+              <span class="mt-px w-5 shrink-0 font-mono text-[11px] text-[#0284c7] font-semibold tabular-nums">{String(i + 1).padStart(2, '0')}</span>
+              <div>
+                <div class="text-[14px] font-semibold text-heading">{s.k}</div>
+                <p class="mt-0.5 text-[13px] text-foreground/65 leading-relaxed">{s.d}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <!-- right: the exported card, up close (the static artifact) -->
+      <div class="w-full">
+        <div class="mx-auto w-full max-w-[440px]">
+          <div class="rounded-[14px] overflow-hidden ring-1 ring-slate-200 shadow-[0_34px_80px_-30px_rgba(2,32,71,0.5),0_10px_24px_-12px_rgba(15,23,42,0.12)]">
+            <ShareCardMock />
+          </div>
+          <!-- export controls, slim -->
+          <div class="mt-4 flex flex-wrap items-center justify-between gap-3">
+            <div class="inline-flex items-center gap-1 rounded-md bg-slate-100 p-0.5">
+              <span class="h-7 px-3 inline-flex items-center rounded text-[12px] font-medium bg-sky-600 text-white shadow-sm">1:1</span>
+              <span class="h-7 px-3 inline-flex items-center rounded text-[12px] font-medium text-slate-500">3:2</span>
+              <span class="h-7 px-3 inline-flex items-center rounded text-[12px] font-medium text-slate-500">16:9</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="h-8 px-3 inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white text-slate-700 text-[12px] font-medium">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                Copy
+              </span>
+              <span class="h-8 px-3 inline-flex items-center gap-1.5 rounded-md bg-slate-900 text-white text-[12px] font-medium">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Download PNG
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
 
   <!-- ============================================================
-       EXPORTS · 2-col spec sheet (warmup defaults pattern)
+       DRILL-DOWN · workspace KPI to one recipient (numbered rail)
   ============================================================ -->
-  <section class="bg-[color:var(--surface-1)]/40 border-b border-[color:var(--border)] py-20 md:py-28">
+  <section class="border-y border-[color:var(--border)] bg-[color:var(--surface-2)]/50 py-20 md:py-28">
+    <div class="container-page grid lg:grid-cols-[1fr_1.5fr] gap-12 lg:gap-20 items-start">
+      <div class="lg:sticky lg:top-24" style="align-self: start;">
+        <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7] mb-3">Drill down</div>
+        <h2 class="text-[32px] md:text-[44px] font-semibold tracking-[-0.03em] leading-[1.05] text-heading">
+          Every number opens up.
+        </h2>
+        <p class="mt-4 text-[15.5px] text-foreground/70 leading-relaxed max-w-md">
+          A KPI you cannot explain is a KPI you cannot fix. Each headline number unfolds one level at a time, from the workspace strip all the way to the single recipient event behind it. No dead ends.
+        </p>
+      </div>
+
+      <div class="relative">
+        <div class="absolute left-[18px] top-3 bottom-3 w-px bg-[color:var(--border)]"></div>
+        <div class="space-y-3">
+          {drill.map((r, i) => (
+            <div class="grid grid-cols-[40px_1fr] gap-4 items-start">
+              <div class="relative">
+                <div class="w-9 h-9 rounded-full bg-white ring-1 ring-[color:var(--sky-2)] text-[12px] font-mono text-[#0369a1] inline-flex items-center justify-center font-semibold">
+                  {String(i + 1).padStart(2, '0')}
+                </div>
+              </div>
+              <div class="rounded-[12px] bg-white ring-1 ring-[color:var(--border)] p-4 md:p-5" style="box-shadow: var(--shadow-sm);">
+                <div class="flex items-baseline justify-between gap-3">
+                  <div class="text-[15px] font-semibold text-heading">{r.k}</div>
+                  <div class="text-[11px] font-mono uppercase tracking-[0.14em] text-muted-foreground shrink-0">{r.v}</div>
+                </div>
+                <p class="mt-1.5 text-[13px] text-foreground/70 leading-relaxed">{r.d}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       REALTIME · sticky narrative + live list (suppression pattern)
+  ============================================================ -->
+  <section class="bg-white border-b border-[color:var(--border)] py-20 md:py-28">
+    <div class="container-page grid lg:grid-cols-[1fr_1.6fr] gap-12 lg:gap-20 items-start">
+      <div class="lg:sticky lg:top-24" style="align-self: start;">
+        <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7] mb-3">Realtime</div>
+        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
+          It updates while you watch.
+        </h2>
+        <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed max-w-md">
+          Events fan out over a websocket the moment the consumer processes them, so the dashboard stays current on its own. No refresh button, no five-minute polling lag. It feels closer to a chat app than a report.
+        </p>
+        <span class="mt-6 inline-flex items-center gap-2 h-7 px-2.5 rounded-md bg-emerald-50 text-emerald-700 text-[11.5px] font-medium ring-1 ring-emerald-100">
+          <span class="relative inline-flex size-2">
+            <span class="motion-safe:animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-70"></span>
+            <span class="relative inline-flex size-2 rounded-full bg-emerald-500"></span>
+          </span>
+          Live by default
+        </span>
+      </div>
+
+      <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden" style="box-shadow: var(--shadow-sm);">
+        {live.map((l) => (
+          <div class="flex items-start gap-3 px-6 py-4 border-b border-[color:var(--border)] last:border-b-0">
+            <span class="mt-1.5 size-2 rounded-full bg-emerald-500 shrink-0"></span>
+            <div>
+              <div class="text-[14px] font-semibold text-heading">{l.k}</div>
+              <p class="mt-0.5 text-[13px] text-foreground/65 leading-relaxed">{l.d}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       DEFINITIONS · exactly what each number is + where it's computed
+  ============================================================ -->
+  <section class="border-y border-[color:var(--border)] bg-[color:var(--surface-2)]/50 py-20 md:py-28">
+    <div class="container-page">
+      <div class="max-w-2xl mb-12">
+        <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-muted-foreground mb-3">Definitions</div>
+        <h2 class="text-[32px] md:text-[44px] font-semibold tracking-[-0.03em] leading-[1.05] text-heading">
+          No mystery math.
+        </h2>
+        <p class="mt-4 text-[15.5px] text-foreground/70 leading-relaxed">
+          Every metric is a plain ratio over a denominator we name, computed in a codepath you can point at. Nothing is smoothed, weighted, or hidden behind a single blended "score".
+        </p>
+      </div>
+
+      <div class="grid md:grid-cols-2 gap-x-12 gap-y-px">
+        {definitions.map((d, i) => (
+          <div class="grid grid-cols-[1fr_auto] gap-6 py-5 border-b border-[color:var(--border)] items-baseline hover:bg-white/60 -mx-3 px-3 rounded-[6px] transition-colors">
+            <div>
+              <div class="text-[10.5px] uppercase tracking-[0.22em] font-mono text-muted-foreground">
+                {String(i + 1).padStart(2, '0')} · {d.k}
+              </div>
+              <div class="mt-2 font-mono text-[10.5px] text-[#0369a1]">{d.src}</div>
+            </div>
+            <div class="text-right">
+              <div class="text-[15px] md:text-[17px] font-semibold tracking-[-0.01em] text-heading font-mono whitespace-nowrap">{d.f}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <p class="mt-8 text-[11.5px] font-mono text-muted-foreground">
+        Mirrors the real dashboard: <span class="text-foreground/75">web/src/app/app/analytics/page.tsx</span>
+      </p>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       EXPORTS · 2-col spec sheet
+  ============================================================ -->
+  <section class="bg-white border-b border-[color:var(--border)] py-20 md:py-28">
     <div class="container-page">
       <div class="max-w-2xl mb-12">
         <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7] mb-3">Exports</div>
@@ -274,13 +418,13 @@ const faq = [
           Your data is yours.
         </h2>
         <p class="mt-4 text-[15.5px] text-foreground/70 leading-relaxed">
-          Five ways to get the data out. Same event schema across all of them, versioned in the payload.
+          Five ways to get the data out, same event schema across all of them, versioned in the payload.
         </p>
       </div>
 
       <div class="grid md:grid-cols-2 gap-x-12 gap-y-px">
         {exports.map((d, i) => (
-          <div class="grid grid-cols-[1fr_auto] gap-6 py-6 border-b border-[color:var(--border)] items-baseline hover:bg-white/40 -mx-3 px-3 rounded-[6px] transition-colors">
+          <div class="grid grid-cols-[1fr_auto] gap-6 py-6 border-b border-[color:var(--border)] items-baseline hover:bg-[color:var(--surface-2)]/60 -mx-3 px-3 rounded-[6px] transition-colors">
             <div>
               <div class="text-[10.5px] uppercase tracking-[0.22em] font-mono text-muted-foreground">
                 {String(i + 1).padStart(2, '0')} · {d.k}
@@ -297,14 +441,14 @@ const faq = [
   </section>
 
   <!-- ============================================================
-       FAQ · grid-rows accordion
+       FAQ · sticky title + accordion
   ============================================================ -->
-  <section class="py-20 md:py-24">
+  <section class="border-y border-[color:var(--border)] bg-[color:var(--surface-2)]/50 py-20 md:py-24">
     <div class="container-page grid lg:grid-cols-[1fr_1.8fr] gap-12 lg:gap-20 items-start">
       <div class="lg:sticky lg:top-24" style="align-self: start;">
         <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-muted-foreground mb-3">FAQ</div>
         <h2 class="text-[28px] md:text-[36px] font-semibold tracking-[-0.025em] leading-[1.08] text-heading">
-          Four reporting questions.
+          Five reporting questions.
         </h2>
       </div>
       <div class="divide-y divide-[color:var(--border)]" data-faq>
@@ -312,8 +456,8 @@ const faq = [
           <div class="faq-row py-2">
             <button type="button" class="faq-trigger group w-full flex items-start justify-between gap-4 py-3 text-left" aria-expanded="false">
               <span class="text-[15.5px] font-medium text-heading group-hover:text-[#0369a1] transition-colors">{q}</span>
-              <span class="faq-icon shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-full bg-[color:var(--surface-1)] ring-1 ring-[color:var(--border)] text-foreground/60 transition-transform duration-300 ease-out">
-                <Icon name="plus" size={12} />
+              <span class="faq-icon shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-full bg-white ring-1 ring-[color:var(--border)] text-foreground/60 transition-transform duration-300 ease-out">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
               </span>
             </button>
             <div class="faq-panel grid grid-rows-[0fr] transition-[grid-template-rows] duration-300 ease-out">
@@ -345,5 +489,12 @@ const faq = [
     </div>
   </section>
 
-  <CTA />
+  <CTA
+    title="See where every number comes from."
+    description="Connect a mailbox and watch the first events land in the dashboard, live, within minutes."
+    primaryLabel="See your dashboard"
+    primaryHref="https://app.warmbly.com/register"
+    secondaryLabel="How deliverability works"
+    secondaryHref="/deliverability/"
+  />
 </Layout>

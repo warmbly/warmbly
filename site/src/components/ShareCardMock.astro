@@ -1,0 +1,157 @@
+---
+// Pixel-perfect static recreation of the in-app "Share image" card
+// (web/src/components/app/analytics/StatsShareCard.tsx, 1:1 preset).
+//
+// Every dimension is expressed in container-query width units (cqw), mapped
+// 1:1 from the real 1080px design (px / 1080 * 100), so the card stays exact at
+// any rendered width and on any device. No JS, no fixed pixels.
+interface Props {
+  title?: string;
+  subtitle?: string;
+  date?: string;
+  metrics?: { label: string; value: string; sub?: string }[];
+}
+const {
+  title = 'Workspace performance',
+  subtitle = 'Last 7 days',
+  date = 'Jun 9, 2026',
+  metrics = [
+    { label: 'Sent',        value: '12,847', sub: 'emails' },
+    { label: 'Open rate',   value: '34.2%' },
+    { label: 'Reply rate',  value: '6.1%' },
+    { label: 'Bounce rate', value: '1.8%' },
+  ],
+} = Astro.props;
+
+// Area-chart geometry — identical math to ShareAreaChart in the app.
+const vals = [22, 30, 24, 38, 33, 45, 40, 29, 48, 55, 50, 58, 64, 60, 69, 76, 72, 66, 79, 86, 81, 74, 88, 94, 90, 83, 96, 100];
+const W = 1000, H = 320, padX = 4, padTop = 14;
+const baseY = H - 6;
+const max = Math.max(1, ...vals);
+const w = W - padX * 2, h = baseY - padTop;
+const step = w / (vals.length - 1);
+const pts = vals.map((v, i) => [padX + i * step, baseY - (v / max) * h] as [number, number]);
+const line = pts.map(([x, y], i) => `${i === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`).join(' ');
+const lastX = padX + (vals.length - 1) * step;
+const area = `${line} L ${lastX.toFixed(1)} ${baseY} L ${padX} ${baseY} Z`;
+const cols = metrics.length || 1;
+---
+<div class="sc-card">
+  <div class="sc-backdrop">
+    <div class="sc-breathe"></div>
+    <div class="sc-haze"></div>
+  </div>
+
+  <div class="sc-inner">
+    <!-- logo + date on the sky -->
+    <div class="sc-top">
+      <div class="sc-brand">
+        <svg class="sc-logo" viewBox="0 0 746 764" fill="none" aria-hidden="true">
+          <path d="M222.805 644.772L186.274 108.881L704.5 451.158L484.5 451.158L245.5 196.158L444 463.5L222.805 644.772Z" fill="currentColor" />
+        </svg>
+        <span class="sc-word">Warmbly</span>
+      </div>
+      <span class="sc-date">{date}</span>
+    </div>
+
+    <!-- the single white panel -->
+    <div class="sc-panel">
+      <div class="sc-panelpad">
+        <div class="sc-subtitle">{subtitle}</div>
+        <h3 class="sc-title">{title}</h3>
+
+        <div class="sc-metrics" style={`grid-template-columns: repeat(${cols}, minmax(0,1fr));`}>
+          {metrics.map((m) => (
+            <div class="sc-metric">
+              <div class="sc-mlabel">{m.label}</div>
+              <div class="sc-mvalue">{m.value}</div>
+              {m.sub && <div class="sc-msub">{m.sub}</div>}
+            </div>
+          ))}
+        </div>
+
+        <div class="sc-hr"></div>
+
+        <div class="sc-chartlabel">Sends over time</div>
+        <div class="sc-chartwrap">
+          <div class="sc-chartsvg">
+            <svg viewBox="0 0 1000 320" preserveAspectRatio="none" width="100%" height="100%">
+              <defs>
+                <linearGradient id="scArea" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#0ea5e9" stop-opacity="0.28" />
+                  <stop offset="100%" stop-color="#0ea5e9" stop-opacity="0" />
+                </linearGradient>
+              </defs>
+              <path d={area} fill="url(#scArea)" />
+              <path d={line} fill="none" stroke="#0284c7" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke" />
+              <line x1={padX} y1={baseY} x2={W - padX} y2={baseY} stroke="#cbd5e1" stroke-width="2" vector-effect="non-scaling-stroke" />
+            </svg>
+          </div>
+          <div class="sc-chartdates">
+            <span>May 13</span>
+            <span>Jun 9</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- footer on the sky -->
+    <div class="sc-foot">
+      <span class="sc-foot-l">warmbly.com</span>
+      <span class="sc-foot-r">Cold email, warmed up.</span>
+    </div>
+  </div>
+</div>
+
+<style>
+  .sc-card {
+    container-type: inline-size;
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    overflow: hidden;
+    border-radius: 0;
+    font-family: var(--font-sans);
+    background: radial-gradient(ellipse 125% 105% at 50% -12%, #9fe0fb 0%, #74cef7 30%, #4ec1f6 58%, #2fb6f2 82%, #18abed 100%);
+  }
+  .sc-backdrop { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+  .sc-breathe { position: absolute; inset: 0; opacity: 0.6;
+    background: radial-gradient(ellipse 125% 105% at 50% -12%, rgba(224,242,254,0.85) 0%, rgba(125,211,252,0.38) 24%, rgba(56,189,248,0.14) 46%, transparent 64%); }
+  .sc-haze { position: absolute; left: 0; right: 0; bottom: 0; height: 55%;
+    background: linear-gradient(to top, rgba(186,230,253,0.40) 0%, rgba(125,211,252,0.16) 42%, transparent 100%); }
+
+  .sc-inner { position: relative; z-index: 10; display: flex; flex-direction: column; height: 100%; padding: 4.444cqw; }
+
+  .sc-top { display: flex; align-items: center; justify-content: space-between; }
+  .sc-brand { display: inline-flex; align-items: center; gap: 1.296cqw; }
+  .sc-logo { width: 5cqw; height: 5cqw; color: #fff; display: block; }
+  .sc-word { color: #fff; font-family: var(--font-display); font-weight: 800; letter-spacing: -0.02em; font-size: 3.333cqw; line-height: 1; }
+  .sc-date { font-family: var(--font-mono); font-size: 1.389cqw; color: rgba(255,255,255,0.85); font-variant-numeric: tabular-nums; }
+
+  .sc-panel { margin-top: 2.222cqw; flex: 1; min-height: 0; display: flex; flex-direction: column;
+    background: #fff; border-radius: 2.407cqw; border: 1px solid rgba(255,255,255,0.85); }
+  .sc-panelpad { display: flex; flex-direction: column; height: 100%; padding: 3.704cqw; }
+
+  .sc-subtitle { font-size: 1.296cqw; font-weight: 600; text-transform: uppercase; letter-spacing: 0.16em; color: #0284c7; }
+  .sc-title { margin-top: 0.741cqw; font-size: 3.704cqw; font-weight: 600; line-height: 1.15; letter-spacing: -0.02em; color: #0f172a; }
+
+  .sc-metrics { margin-top: 2.963cqw; display: grid; }
+  .sc-metric { padding: 0 2.593cqw; border-left: 1px solid #e2e8f0; }
+  .sc-metric:first-child { padding-left: 0; border-left: 0; }
+  .sc-metric:last-child { padding-right: 0; }
+  .sc-mlabel { font-size: 1.296cqw; font-weight: 500; text-transform: uppercase; letter-spacing: 0.14em; color: #94a3b8; }
+  .sc-mvalue { margin-top: 0.926cqw; font-family: var(--font-mono); font-size: 4.259cqw; line-height: 1; color: #0f172a; font-variant-numeric: tabular-nums; }
+  .sc-msub { margin-top: 0.741cqw; font-size: 1.296cqw; color: #94a3b8; }
+
+  .sc-hr { margin-top: 2.963cqw; height: 1px; background: rgba(226,232,240,0.7); }
+
+  .sc-chartlabel { margin-top: 2.222cqw; font-size: 1.296cqw; font-weight: 500; text-transform: uppercase; letter-spacing: 0.14em; color: #94a3b8; }
+  .sc-chartwrap { margin-top: 1.481cqw; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .sc-chartsvg { position: relative; flex: 1; min-height: 0; }
+  .sc-chartsvg svg { display: block; width: 100%; height: 100%; }
+  .sc-chartdates { margin-top: 1.111cqw; display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 1.111cqw; color: #94a3b8; font-variant-numeric: tabular-nums; }
+
+  .sc-foot { margin-top: 1.852cqw; display: flex; align-items: center; justify-content: space-between; font-size: 1.481cqw; }
+  .sc-foot-l { color: #fff; font-weight: 600; }
+  .sc-foot-r { color: rgba(255,255,255,0.8); }
+</style>
