@@ -77,6 +77,8 @@ type Service interface {
 	// replies + deliverability events out to customer webhooks and third-party
 	// integration actions (Slack ping, CRM upsert).
 	WireDispatcher(d EventDispatcher)
+	// WireNotifier attaches the in-app notification gate (reply/bounce/complaint).
+	WireNotifier(n Notifier)
 
 	// EmitCampaignEvent dispatches a campaign event (e.g. from a sequence
 	// "notify" action node) to customer webhooks and wired integrations.
@@ -109,6 +111,7 @@ type service struct {
 	tasksClient          *gtasks.Client
 	warmupService        warmupapp.Service
 	dispatcher           EventDispatcher
+	notifier             Notifier
 }
 
 func NewService(
@@ -884,6 +887,17 @@ func (s *service) ProcessIncomingReply(ctx context.Context, emailAccountID uuid.
 		}
 	}
 
+	// Raise an in-app notification to the mailbox owner (gated by their prefs).
+	if uid, perr := uuid.Parse(account.UserID); perr == nil {
+		cat := models.NotifInboundReply
+		title := "New reply from " + sender
+		if intent == models.ReplyIntentOutOfOffice {
+			cat = models.NotifInboundOOO
+			title = "Out-of-office from " + sender
+		}
+		s.notify(uid, account.OrganizationID, cat, title, msg.Subject, "/app/unibox", map[string]any{"intent": string(intent)})
+	}
+
 	return nil
 }
 
@@ -1014,6 +1028,23 @@ func (s *service) IngestDeliverabilityEvent(ctx context.Context, organizationID 
 		s.emit(ctx, organizationID, models.WebhookEventDeliverabilityComplaint, payload)
 	case models.DeliverabilityEventUnsubscribe:
 		s.emit(ctx, organizationID, models.WebhookEventCampaignUnsubscribed, payload)
+	}
+
+	// In-app notification to the campaign owner for bounce/complaint (gated by
+	// their prefs). Resolvable only when the event is tied to a campaign.
+	if (eventType == models.DeliverabilityEventBounce || eventType == models.DeliverabilityEventComplaint) && req.CampaignID != nil {
+		if camp, cerr := s.campaignRepo.GetByID(ctx, *req.CampaignID); cerr == nil && camp != nil {
+			if uid, perr := uuid.Parse(camp.UserID); perr == nil {
+				cat := models.NotifHealthBounce
+				title := "Bounce: " + req.RecipientEmail
+				if eventType == models.DeliverabilityEventComplaint {
+					cat = models.NotifHealthComplaint
+					title = "Spam complaint: " + req.RecipientEmail
+				}
+				org := organizationID
+				s.notify(uid, &org, cat, title, req.Reason, "/app/deliverability", map[string]any{"provider": provider})
+			}
+		}
 	}
 
 	return nil

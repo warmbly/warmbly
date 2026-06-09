@@ -259,6 +259,88 @@ type DeliverabilityDashboard struct {
 	IntentOOO            int       `json:"intent_out_of_office"`
 	IntentQuestion       int       `json:"intent_question"`
 	IntentNeutral        int       `json:"intent_neutral"`
+
+	// Computed rates (percent, 0-100; 0 when no sends in the window). EmailsSent
+	// is the count of completed campaign sends in the window (rate denominator).
+	EmailsSent    int     `json:"emails_sent"`
+	BounceRate    float64 `json:"bounce_rate"`
+	ComplaintRate float64 `json:"complaint_rate"`
+	OpenRate      float64 `json:"open_rate"`
+	ClickRate     float64 `json:"click_rate"`
+	ReplyRate     float64 `json:"reply_rate"`
+
+	// Seed inbox-placement (nil when there are no seed samples in the window).
+	SpamPlacementRate  *float64 `json:"spam_placement_rate,omitempty"`
+	InboxPlacementRate *float64 `json:"inbox_placement_rate,omitempty"`
+	PlacementSamples   int      `json:"placement_samples"`
+
+	// Overall health band for the org window (from the documented thresholds).
+	Band string `json:"band"`
+
+	Timeseries []DeliverabilityDailyPoint `json:"timeseries"`
+	ByMailbox  []MailboxDeliverability    `json:"by_mailbox"`
+	ByCampaign []CampaignDeliverability   `json:"by_campaign"`
+}
+
+// DeliverabilityDailyPoint is one UTC day in the deliverability timeseries.
+type DeliverabilityDailyPoint struct {
+	Date         string `json:"date"` // YYYY-MM-DD (UTC)
+	Sent         int    `json:"sent"`
+	Bounces      int    `json:"bounces"`
+	Complaints   int    `json:"complaints"`
+	Opens        int    `json:"opens"`
+	Clicks       int    `json:"clicks"`
+	Replies      int    `json:"replies"`
+	Unsubscribes int    `json:"unsubscribes"`
+}
+
+// MailboxDeliverability is one mailbox's bounce/complaint posture in the window.
+type MailboxDeliverability struct {
+	EmailAccountID uuid.UUID `json:"email_account_id"`
+	Email          string    `json:"email"`
+	Sent           int       `json:"sent"`
+	Bounces        int       `json:"bounces"`
+	Complaints     int       `json:"complaints"`
+	BounceRate     float64   `json:"bounce_rate"`
+	ComplaintRate  float64   `json:"complaint_rate"`
+	Band           string    `json:"band"`
+}
+
+// CampaignDeliverability is one campaign's bounce/complaint posture in the window.
+type CampaignDeliverability struct {
+	CampaignID    uuid.UUID `json:"campaign_id"`
+	Name          string    `json:"name"`
+	Sent          int       `json:"sent"`
+	Bounces       int       `json:"bounces"`
+	Complaints    int       `json:"complaints"`
+	BounceRate    float64   `json:"bounce_rate"`
+	ComplaintRate float64   `json:"complaint_rate"`
+	Band          string    `json:"band"`
+}
+
+// DeliverabilityBand maps bounce%/complaint%/spam-placement% to a health band
+// using the documented shared-pool thresholds (see CLAUDE.md). Rates are on the
+// percent scale (0-100), so complaintRate>=0.03 means 0.03% (3 basis points),
+// bounceRate>=10 means 10%. Worst band wins.
+func DeliverabilityBand(bounceRate, complaintRate, spamRate float64) string {
+	switch {
+	case complaintRate >= 0.30 || bounceRate >= 10 || spamRate >= 40:
+		return "blocked"
+	case complaintRate >= 0.10 || bounceRate >= 5 || spamRate >= 20:
+		return "quarantine"
+	case complaintRate >= 0.03 || spamRate >= 10:
+		return "warning"
+	default:
+		return "healthy"
+	}
+}
+
+// Rate is a divide-by-zero-safe percentage (count/total*100).
+func Rate(count, total int) float64 {
+	if total <= 0 {
+		return 0
+	}
+	return float64(count) / float64(total) * 100
 }
 
 type ABVariantStats struct {

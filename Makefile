@@ -26,7 +26,7 @@ PROTO_GEN_FILES := $(PROTO_DIR)/tasks.pb.go
         up sim seed seed-plan reset logs status stop down tools test-seed \
         restart restart-go restart-all infra infra-down app app-down app-logs \
         backend consumer worker run tracking realtime web \
-        admin site grant-admin revoke-admin
+        admin site docs grant-admin revoke-admin
 
 setup-tools:
 	@echo "Installing required Go tools into $(GO_BIN)"
@@ -494,6 +494,12 @@ admin:
 
 site:
 	cd site && pnpm dev $(VITE_HOST_FLAG)
+
+# Engineering docs (Fumadocs / Next.js). Port 4322 — :3000 is the tracking
+# service and :4321 is the marketing site. http://localhost:4322
+# Next.js reads PORT from the env (passing -p through pnpm gets mangled).
+docs:
+	cd docs && PORT=4322 pnpm dev
 
 # ─── admin bootstrap (local/test only) ──────────────────────────────────
 #

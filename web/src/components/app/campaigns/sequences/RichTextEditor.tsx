@@ -404,6 +404,7 @@ export function VariableMenu({ onPick, variables }: { onPick: (token: string) =>
                                     { label: "If set", code: "{{if .Company}}{{end}}" },
                                     { label: "If / else", code: "{{if .Company}}{{else}}{{end}}" },
                                     { label: "If equals", code: '{{if eq .Company "Acme"}}{{end}}' },
+                                    { label: "Fallback", code: '{{.FirstName | default "there"}}' },
                                 ].map((s) => (
                                     <button
                                         key={s.label}
@@ -425,7 +426,8 @@ export function VariableMenu({ onPick, variables }: { onPick: (token: string) =>
                             </div>
                             <p className="px-1 pt-1.5 text-[10px] text-slate-400">
                                 Type text between the tags. Every <code className="font-mono">{"{{if}}"}</code> needs an{" "}
-                                <code className="font-mono">{"{{end}}"}</code>; missing fields count as empty.
+                                <code className="font-mono">{"{{end}}"}</code>; missing fields count as empty. Use{" "}
+                                <code className="font-mono">| default &quot;…&quot;</code> for a fallback when a field is blank.
                             </p>
                         </div>
 

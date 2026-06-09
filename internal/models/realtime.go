@@ -42,6 +42,12 @@ const (
 	EventAnalyticsEmailClick RealtimeEventType = "analytics.email_click"
 	EventAnalyticsEmailReply RealtimeEventType = "analytics.email_reply"
 	EventAnalyticsBounce     RealtimeEventType = "analytics.email_bounce"
+
+	// Meetings (booked / rescheduled / canceled via Calendly / Cal.com). Drives
+	// live updates on the Meetings page, the contact timeline, and the sidebar.
+	EventMeetingBooked      RealtimeEventType = "meeting.booked"
+	EventMeetingRescheduled RealtimeEventType = "meeting.rescheduled"
+	EventMeetingCanceled    RealtimeEventType = "meeting.canceled"
 )
 
 // RealtimeEventPriority represents the priority of realtime events

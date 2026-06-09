@@ -7,7 +7,10 @@ export type ContactTimelineEventType =
     | "reply_received"
     | "deliverability"
     | "suppressed"
-    | "note";
+    | "note"
+    | "meeting_booked"
+    | "meeting_rescheduled"
+    | "meeting_canceled";
 
 export default interface ContactTimelineEvent {
     type: ContactTimelineEventType;
@@ -30,6 +33,11 @@ export default interface ContactTimelineEvent {
     provider?: string | null;
     intent?: string | null;
     content?: string | null;
+
+    // Meeting events (meeting_booked / rescheduled / canceled).
+    scheduled_for?: string | null;
+    join_url?: string | null;
+    meeting_state?: string | null;
 
     user_id?: string | null;
 }

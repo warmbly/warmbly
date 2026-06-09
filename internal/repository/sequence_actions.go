@@ -14,7 +14,7 @@ func validateActionConfig(a *models.ActionConfig) *errx.Error {
 		return nil
 	}
 	switch a.Type {
-	case "wait", "add_tag", "remove_tag", "unsubscribe", "notify", "create_task", "create_deal", "move_deal_stage", "end":
+	case "wait", "add_tag", "remove_tag", "unsubscribe", "notify", "create_task", "create_deal", "move_deal_stage", "run_automation", "end":
 		// Type must be known. Sub-config (wait minutes, tag) is filled in the
 		// editor; an unconfigured node is a harmless no-op at send time, so we
 		// don't block creating a draft node here.

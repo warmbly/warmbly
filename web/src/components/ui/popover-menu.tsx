@@ -140,10 +140,13 @@ export function PopoverMenuContent({
     children,
     className,
     minWidth = 200,
+    matchTriggerWidth = false,
 }: {
     children: React.ReactNode;
     className?: string;
     minWidth?: number;
+    /** Pin the panel to the trigger's measured width (for full-width selects). */
+    matchTriggerWidth?: boolean;
 }) {
     const { open, setOpen, triggerRef, side, align, sideOffset } = useMenu();
     const ref = useRef<HTMLDivElement>(null);
@@ -265,6 +268,7 @@ export function PopoverMenuContent({
                         top: pos?.top ?? -9999,
                         left: pos?.left ?? -9999,
                         minWidth,
+                        width: matchTriggerWidth ? pos?.width : undefined,
                         visibility: pos ? "visible" : "hidden",
                         zIndex: 100,
                         transformOrigin,

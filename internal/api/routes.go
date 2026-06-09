@@ -159,6 +159,11 @@ func Run(
 		// resolves, and the challenge + signature are the protection.
 		auth.POST("/passkey/login/begin", h.PasskeyLoginBegin)
 		auth.POST("/passkey/login/finish", h.PasskeyLoginFinish)
+
+		// 2FA login challenge (PUBLIC): exchanges a single-use pending token +
+		// TOTP/recovery code for a real session. Rate-limited in the service
+		// (no user context here, so RateLimitMiddleware would be a no-op).
+		auth.POST("/2fa/verify", h.TwoFAVerifyLogin)
 	}
 
 	protectedAuth := auth.Group("")
@@ -178,6 +183,19 @@ func Run(
 		protectedAuth.PATCH("/me/onboarding", h.CompleteOnboarding)
 		protectedAuth.POST("/me/avatar", h.UploadUserAvatar)
 		protectedAuth.DELETE("/me/avatar", h.DeleteUserAvatar)
+
+		// Notification preferences + in-app feed (user-scoped, no org gate).
+		protectedAuth.GET("/me/notification-preferences", h.GetNotificationPreferences)
+		protectedAuth.PUT("/me/notification-preferences", h.UpdateNotificationPreferences)
+		protectedAuth.GET("/me/notifications", h.ListNotifications)
+		protectedAuth.PUT("/me/notifications", h.MarkAllNotificationsRead)
+		protectedAuth.POST("/me/notifications/:id/read", h.MarkNotificationRead)
+
+		// 2FA enrollment + management (user-scoped, behind a live session).
+		protectedAuth.GET("/2fa/status", h.TwoFAStatus)
+		protectedAuth.POST("/2fa/enroll/start", h.TwoFAEnrollStart)
+		protectedAuth.POST("/2fa/enroll/confirm", h.TwoFAEnrollConfirm)
+		protectedAuth.DELETE("/2fa", h.TwoFADisable)
 
 		// Passkey enrollment + management require an authenticated session.
 		protectedAuth.POST("/passkey/register/begin", h.PasskeyRegisterBegin)
@@ -240,6 +258,11 @@ func Run(
 			integrationsOAuth.POST("/finish", h.FinishIntegrationOAuth)
 			integrationsOAuth.POST("/reauth/:id", h.ReauthIntegration)
 		}
+
+		// Template preview/validation (no campaign id; can't be a static sibling
+		// of /campaigns/:id, so it lives one level up). Renders against a sample
+		// contact — read-level access, no side effects.
+		protected.POST("/campaign-template-preview", m.RequireOrganization(), m.RequireAccess(models.PermViewCampaigns, models.APIPermReadCampaigns), h.PreviewCampaignTemplate)
 
 		campaigns := protected.Group("/campaigns")
 		campaigns.Use(m.RateLimitMiddleware(models.RateLimitWrite))
@@ -453,22 +476,65 @@ func Run(
 			webhooks.GET("/:id/deliveries", h.ListWebhookDeliveries)
 		}
 
-		// Third-party integrations (org-scoped). Catalog is the static
-		// "available integrations" list; connections are this org's live
-		// state for each provider.
+		// Third-party integrations (org-scoped). Reads are reachable by both
+		// settings managers AND operational integration users (PermUseIntegrations)
+		// so contextual integration actions show up everywhere they belong;
+		// connecting + configuring stays gated on PermManageSettings. Pushing
+		// records on demand is an operational action (PermUseIntegrations).
 		integrations := protected.Group("/integrations")
-		integrations.Use(m.RequireOrganization(), m.RequireAccess(models.PermManageSettings, models.APIPermIntegrations), m.RateLimitMiddleware(models.RateLimitWrite))
+		integrations.Use(m.RequireOrganization(), m.RateLimitMiddleware(models.RateLimitWrite))
 		{
-			integrations.GET("/catalog", h.ListIntegrationCatalog)
-			integrations.GET("/connections", h.ListIntegrationConnections)
-			integrations.POST("/connections", h.ConnectIntegration)
-			integrations.GET("/connections/:id", h.GetIntegrationConnection)
-			integrations.DELETE("/connections/:id", h.DisconnectIntegration)
-			integrations.GET("/connections/:id/events", h.ListConnectionEventSubscriptions)
-			integrations.POST("/connections/:id/events", h.CreateConnectionEventSubscription)
-			integrations.DELETE("/connections/:id/events/:eventId", h.DeleteConnectionEventSubscription)
-			integrations.GET("/connections/:id/runs", h.ListConnectionSyncRuns)
-			integrations.GET("/bookings", h.ListMeetingBookings)
+			read := m.RequireAnyAccess(models.APIPermIntegrations, models.PermManageSettings, models.PermUseIntegrations)
+			write := m.RequireAccess(models.PermManageSettings, models.APIPermIntegrations)
+			operate := m.RequireAccess(models.PermUseIntegrations, models.APIPermIntegrations)
+
+			integrations.GET("/catalog", read, h.ListIntegrationCatalog)
+			integrations.GET("/connections", read, h.ListIntegrationConnections)
+			integrations.POST("/connections", write, h.ConnectIntegration)
+			integrations.GET("/connections/:id", read, h.GetIntegrationConnection)
+			integrations.PATCH("/connections/:id/config", write, h.UpdateConnectionConfig)
+			integrations.DELETE("/connections/:id", write, h.DisconnectIntegration)
+			integrations.GET("/connections/:id/events", read, h.ListConnectionEventSubscriptions)
+			integrations.POST("/connections/:id/events", write, h.CreateConnectionEventSubscription)
+			integrations.DELETE("/connections/:id/events/:eventId", write, h.DeleteConnectionEventSubscription)
+			integrations.GET("/connections/:id/field-mappings", read, h.ListConnectionFieldMappings)
+			integrations.PUT("/connections/:id/field-mappings", write, h.ReplaceConnectionFieldMappings)
+			integrations.GET("/connections/:id/runs", read, h.ListConnectionSyncRuns)
+			integrations.GET("/connections/:id/webhook-secret", write, h.GetConnectionWebhookSecret)
+			integrations.POST("/connections/:id/test", write, h.TestConnection)
+			integrations.POST("/connections/:id/push", operate, h.PushContactsToIntegration)
+			integrations.GET("/bookings", read, h.ListMeetingBookings)
+		}
+
+		// Meetings (org-scoped). Booked calls from connected scheduling
+		// providers (Calendly / Cal.com), surfaced as a first-class CRM list.
+		// Read-only and reachable by anyone who can view contacts.
+		meetings := protected.Group("/meetings")
+		meetings.Use(m.RequireOrganization(), m.RateLimitMiddleware(models.RateLimitWrite))
+		{
+			meetingsRead := m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts)
+			meetingsWrite := m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts)
+			meetings.GET("", meetingsRead, h.SearchMeetings)
+			meetings.GET("/summary", meetingsRead, h.MeetingsSummary)
+			meetings.POST("", meetingsWrite, h.CreateMeeting)
+			meetings.DELETE("/:id", meetingsWrite, h.DeleteMeeting)
+		}
+
+		// Automations (org-scoped). The visual flow builder: a trigger event +
+		// action steps across integrations. Reads reachable by operational
+		// integration users; creating/editing is a settings action.
+		automations := protected.Group("/automations")
+		automations.Use(m.RequireOrganization(), m.RateLimitMiddleware(models.RateLimitWrite))
+		{
+			aread := m.RequireAnyAccess(models.APIPermIntegrations, models.PermManageSettings, models.PermUseIntegrations)
+			awrite := m.RequireAccess(models.PermManageSettings, models.APIPermIntegrations)
+			automations.GET("", aread, h.ListAutomations)
+			automations.POST("", awrite, h.CreateAutomation)
+			automations.GET("/:id", aread, h.GetAutomation)
+			automations.PATCH("/:id", awrite, h.UpdateAutomation)
+			automations.DELETE("/:id", awrite, h.DeleteAutomation)
+			automations.POST("/:id/test", aread, h.TestAutomation)
+			automations.GET("/:id/runs", aread, h.ListAutomationRuns)
 		}
 
 		// On-demand Google Sheets -> leads sync (org-scoped). A saved "sync

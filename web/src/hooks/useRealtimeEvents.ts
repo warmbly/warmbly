@@ -162,7 +162,36 @@ export function useRealtimeEvents() {
         return
       }
 
-      if (includes('INTEGRATION', 'CONNECTION', 'BOOKING', 'MEETING')) {
+      // A meeting was booked / rescheduled / canceled (Calendly / Cal.com):
+      // refresh the Meetings page list + summary, the integrations bookings
+      // list, and the originating contact's timeline so the call appears live.
+      if (includes('MEETING', 'BOOKING')) {
+        invalidate([
+          ['meetings'],
+          ['meetings', 'summary'],
+          ['integrations', 'bookings'],
+        ])
+        if (contactId) invalidate([['contacts', contactId, 'timeline']])
+        return
+      }
+
+      // A new in-app notification for this user: refresh the bell feed live
+      // (invalidate-only — the badge updates without a toast, to avoid burst spam).
+      if (includes('NOTIFICATION')) {
+        invalidate([['notifications', 'feed']])
+        return
+      }
+
+      // An automation was created/updated/deleted or fired: refresh the list and,
+      // for a specific automation, its detail + run history (live in the builder).
+      if (includes('AUTOMATION')) {
+        invalidate([['automations']])
+        const automationId = getString('automation_id')
+        if (automationId) invalidate([['automations', automationId], ['automations', automationId, 'runs']])
+        return
+      }
+
+      if (includes('INTEGRATION', 'CONNECTION')) {
         invalidate([
           ['integrations', 'connections'],
           ['integrations', 'catalog'],

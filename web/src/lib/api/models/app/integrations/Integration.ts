@@ -47,8 +47,77 @@ export interface IntegrationCatalogEntry {
     highlights?: string[];
     scopes?: string[];
     events?: string[];
+    /** Provider action identifiers that have a real backend handler. The
+     *  automation builder is only offered when this is non-empty. */
+    action_types?: string[];
+    /** Whether this provider can be a target of the contextual "push contacts"
+     *  action (CRM providers with an upsert handler). */
+    supports_push: boolean;
+    /** Configurable-action descriptor the onboarding + field-mapping UI renders
+     *  from. Absent for providers with no descriptor. */
+    capability?: ProviderCapability;
     /** Whether the server has OAuth client credentials wired for this provider. */
     configured: boolean;
+}
+
+export type SyncDirection = "push" | "pull" | "both";
+
+export interface FieldDef {
+    key: string;
+    label: string;
+}
+
+export interface CapabilityObject {
+    name: string;
+    label: string;
+    dedupe_keys: string[];
+    required: string[];
+    warmbly_fields: FieldDef[];
+    external_fields: FieldDef[];
+    dynamic_fields: boolean;
+}
+
+export interface CapabilityAction {
+    id: IntegrationAction;
+    label: string;
+    description: string;
+    object?: string;
+    needs_pipeline?: boolean;
+    needs_channel?: boolean;
+    needs_url?: boolean;
+}
+
+export interface CapabilityPicker {
+    key: string;
+    label: string;
+    endpoint?: string;
+    depends_on?: string;
+}
+
+export interface ProviderCapability {
+    provider: IntegrationProvider;
+    directions: SyncDirection[];
+    objects?: CapabilityObject[];
+    actions?: CapabilityAction[];
+    pickers?: CapabilityPicker[];
+    supports_booking_link: boolean;
+}
+
+export type FieldTransform = "none" | "static" | "uppercase" | "lowercase" | "trim";
+
+export interface IntegrationFieldMapping {
+    id: string;
+    connection_id: string;
+    organization_id: string;
+    subscription_id?: string | null;
+    direction: string;
+    object_name: string;
+    warmbly_field: string;
+    external_field: string;
+    transform: string;
+    static_value: string;
+    is_default: boolean;
+    created_at: string;
 }
 
 export interface IntegrationConnection {
@@ -73,6 +142,12 @@ export interface IntegrationConnection {
     created_at: string;
     updated_at: string;
 
+    /** Per-connection onboarding/capability snapshot (selected use-cases, picker
+     *  selections, scheduling_url for meeting providers). */
+    config_capabilities?: Record<string, unknown>;
+    /** Data-flow direction: push | pull | both. */
+    sync_direction?: SyncDirection;
+
     /** Returned once at create time for inbound-webhook providers. */
     inbound_webhook_url?: string;
 }
@@ -82,7 +157,16 @@ export type IntegrationAction =
     | "discord.notify"
     | "hubspot.upsert_contact"
     | "pipedrive.upsert_person"
-    | "webhook.ping";
+    | "salesforce.upsert_contact"
+    | "close.upsert_lead"
+    | "webhook.ping"
+    // Native (Warmbly built-in) automation actions — no external connection.
+    | "warmbly.add_tag"
+    | "warmbly.remove_tag"
+    | "warmbly.create_task"
+    | "warmbly.create_deal"
+    | "warmbly.move_deal_stage"
+    | "warmbly.unsubscribe";
 
 export interface IntegrationEventSubscription {
     id: string;
@@ -119,18 +203,67 @@ export interface IntegrationConnectionDetail {
     runs: IntegrationSyncRun[];
 }
 
+export type MeetingStatus = "booked" | "rescheduled" | "canceled" | "completed" | "no_show";
+
 export interface MeetingBooking {
     id: string;
     organization_id: string;
-    source: "calendly" | "cal_com";
+    source: "calendly" | "cal_com" | "manual";
     external_event_id: string;
+    status: MeetingStatus;
     invitee_email: string;
     invitee_name: string;
     event_name: string;
+    event_type?: string;
     scheduled_for?: string;
+    end_time?: string;
+    join_url?: string;
+    location?: string;
+    cancel_url?: string;
+    reschedule_url?: string;
+    canceled_reason?: string;
     contact_id?: string;
     campaign_id?: string;
+    contact_name?: string;
     created_at: string;
+    updated_at?: string;
+}
+
+export interface MeetingsSummary {
+    upcoming: number;
+    today: number;
+    total: number;
+    canceled: number;
+}
+
+export interface MeetingsPage {
+    data: MeetingBooking[];
+    pagination: {
+        total: number;
+        limit: number;
+        offset: number;
+        has_more: boolean;
+        next_offset?: number;
+    };
+}
+
+export interface MeetingsSearch {
+    timeframe?: "upcoming" | "past" | "";
+    status?: MeetingStatus | "";
+    q?: string;
+}
+
+// Payload for a manually-created meeting (source "manual"). The contact is
+// attributed by an explicit id or, failing that, an org-scoped email match.
+export interface CreateMeetingInput {
+    title: string;
+    invitee_name: string;
+    invitee_email: string;
+    scheduled_for: string; // RFC3339
+    duration_minutes?: number;
+    location?: string;
+    join_url?: string;
+    contact_id?: string;
 }
 
 // --- presentation helpers (shared by cards + drawers) ----------------------
@@ -168,6 +301,10 @@ export const EVENT_LABELS: Record<string, string> = {
     "campaign.unsubscribed": "Contact unsubscribes",
     "warmup.health_changed": "Warmup health changes",
     "deliverability.complaint": "Spam complaint",
+    "meeting.booked": "Meeting booked",
+    "meeting.rescheduled": "Meeting rescheduled",
+    "meeting.canceled": "Meeting canceled",
+    "campaign.action": "Launched by a campaign step",
 };
 
 // Which action a provider performs for an event subscription.
@@ -181,7 +318,67 @@ export function defaultActionForProvider(provider: IntegrationProvider): Integra
             return "hubspot.upsert_contact";
         case "pipedrive":
             return "pipedrive.upsert_person";
+        case "salesforce":
+            return "salesforce.upsert_contact";
+        case "close":
+            return "close.upsert_lead";
         default:
             return "webhook.ping";
+    }
+}
+
+// CRM providers the contextual "push to CRM" action can target.
+export const PUSHABLE_PROVIDERS: IntegrationProvider[] = [
+    "hubspot",
+    "pipedrive",
+    "salesforce",
+    "close",
+];
+
+// Display names for providers, used by contextual menus that list connections.
+export const PROVIDER_LABELS: Record<IntegrationProvider, string> = {
+    hubspot: "HubSpot",
+    salesforce: "Salesforce",
+    pipedrive: "Pipedrive",
+    close: "Close",
+    zapier: "Zapier",
+    make: "Make",
+    n8n: "n8n",
+    slack: "Slack",
+    discord: "Discord",
+    calendly: "Calendly",
+    cal_com: "Cal.com",
+};
+
+// A connection is bookable when it's a connected scheduling provider with a
+// stored scheduling_url. Returns the URL or null.
+export function bookingURL(conn: IntegrationConnection): string | null {
+    if (conn.provider !== "calendly" && conn.provider !== "cal_com") return null;
+    if (conn.status !== "connected" && conn.status !== "degraded") return null;
+    const fromConfig = conn.config_capabilities?.scheduling_url;
+    const fromDisplay = conn.display_fields?.scheduling_url;
+    const url = (typeof fromConfig === "string" && fromConfig) || (typeof fromDisplay === "string" && fromDisplay) || "";
+    return /^https?:\/\//i.test(url) ? url : null;
+}
+
+// prefilledBookingURL appends Calendly/Cal.com-style email + name prefill params
+// to a scheduling link so the contact's details are filled in for them. When a
+// contactId is given we also embed it as utm_content: both providers echo this
+// back in the booking webhook, letting us attribute the meeting to the exact
+// contact even if they book with a different email.
+export function prefilledBookingURL(
+    base: string,
+    email?: string,
+    name?: string,
+    contactId?: string,
+): string {
+    try {
+        const u = new URL(base);
+        if (email) u.searchParams.set("email", email);
+        if (name) u.searchParams.set("name", name);
+        if (contactId) u.searchParams.set("utm_content", contactId);
+        return u.toString();
+    } catch {
+        return base;
     }
 }

@@ -22,6 +22,9 @@ export interface SelectOption {
     /** Optional section header. Consecutive options sharing a group are grouped. */
     group?: string;
     disabled?: boolean;
+    /** Optional leading glyph (e.g. a tinted lucide icon), shown in the trigger
+     *  and the option row. */
+    icon?: React.ReactNode;
 }
 
 export function SelectMenu({
@@ -33,6 +36,7 @@ export function SelectMenu({
     minWidth = 220,
     align = "start",
     disabled,
+    fullWidth = false,
     "aria-label": ariaLabel,
 }: {
     value: string;
@@ -43,6 +47,9 @@ export function SelectMenu({
     minWidth?: number;
     align?: "start" | "end" | "center";
     disabled?: boolean;
+    // When true the trigger stretches to its container and the dropdown matches
+    // the trigger's measured width (no 220px floor).
+    fullWidth?: boolean;
     "aria-label"?: string;
 }) {
     const [open, setOpen] = React.useState(false);
@@ -63,15 +70,16 @@ export function SelectMenu({
                     type="button"
                     disabled={disabled}
                     aria-label={ariaLabel}
-                    className={`h-7 px-2.5 rounded-md border border-slate-200 hover:border-slate-300 bg-white text-[12px] text-slate-700 inline-flex items-center gap-1.5 transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${className ?? ""}`}
+                    className={`h-7 px-2.5 rounded-md border border-slate-200 hover:border-slate-300 bg-white text-[12px] text-slate-700 ${fullWidth ? "flex w-full" : "inline-flex"} items-center gap-1.5 transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${className ?? ""}`}
                 >
+                    {current?.icon && <span className="inline-flex shrink-0 items-center">{current.icon}</span>}
                     <span className={`truncate flex-1 text-left ${current ? "" : "text-slate-400"}`}>
                         {current?.label ?? placeholder}
                     </span>
                     <ChevronDownIcon className="w-3 h-3 text-slate-400 shrink-0" />
                 </button>
             </PopoverMenuTrigger>
-            <PopoverMenuContent minWidth={minWidth} className="max-h-72 overflow-y-auto">
+            <PopoverMenuContent minWidth={fullWidth ? 0 : minWidth} matchTriggerWidth={fullWidth} className="max-h-72 overflow-y-auto">
                 {groups.map((grp, gi) => (
                     <React.Fragment key={gi}>
                         {grp.group && (
@@ -86,7 +94,14 @@ export function SelectMenu({
                                 selected={o.value === value}
                                 onSelect={() => onChange(o.value)}
                             >
-                                {o.label}
+                                {o.icon ? (
+                                    <span className="flex items-center gap-1.5">
+                                        <span className="inline-flex shrink-0 items-center">{o.icon}</span>
+                                        <span className="truncate">{o.label}</span>
+                                    </span>
+                                ) : (
+                                    o.label
+                                )}
                             </PopoverMenuItem>
                         ))}
                     </React.Fragment>

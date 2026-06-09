@@ -9,7 +9,15 @@ export type SequenceActionType =
     | "notify"
     | "create_task"
     | "create_deal"
-    | "move_deal_stage";
+    | "move_deal_stage"
+    | "run_automation";
+
+// One templated input passed to a launched automation (value supports the same
+// {{.FirstName}}/{{.Company}} contact templating campaign copy uses).
+export interface ActionKV {
+    key: string;
+    value: string;
+}
 
 export interface SequenceAction {
     type: SequenceActionType;
@@ -23,6 +31,7 @@ export interface SequenceAction {
     task_type?: string; // task type name (user-managed)
     task_priority?: "low" | "medium" | "high" | "urgent";
     task_assigned_to?: string | null;
+    task_assigned_team_id?: string | null;
     task_due_offset_days?: number | null;
     // create_deal / move_deal_stage — CRM deal automation. create_deal opens a
     // new deal for the contact in deal_pipeline_id/deal_stage_id; move_deal_stage
@@ -35,4 +44,8 @@ export interface SequenceAction {
     deal_name?: string;
     deal_value?: number;
     deal_currency?: string; // ISO code, defaults to "USD"
+    // run_automation — launch an automation when the lead reaches this step,
+    // passing templated key/value inputs as the automation's event data.
+    automation_id?: string | null;
+    automation_values?: ActionKV[];
 }

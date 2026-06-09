@@ -11,6 +11,7 @@ import React from "react";
 import toast from "react-hot-toast";
 import {
     BanIcon,
+    CalendarPlusIcon,
     CheckIcon,
     ChevronDownIcon,
     CircleDollarSignIcon,
@@ -27,6 +28,8 @@ import {
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { TextInput } from "@/components/ui/field";
+import NewMeetingDialog from "@/components/app/meetings/NewMeetingDialog";
+import BookACallButton from "@/components/app/integrations/BookACallButton";
 import {
     PopoverMenu,
     PopoverMenuContent,
@@ -84,6 +87,7 @@ export default function ContactContextPanel({
     const lookup = useContactByEmail(email);
     const contact = lookup.data ?? null;
     const contactId = contact?.id;
+    const [meetingOpen, setMeetingOpen] = React.useState(false);
 
     const detailQ = useContact(contactId ?? "", !!contactId);
     const detail = detailQ.data;
@@ -164,6 +168,20 @@ export default function ContactContextPanel({
                                     <ExternalLinkIcon className="w-2.5 h-2.5" />
                                 </Link>
                             </div>
+                            {/* Meeting actions: schedule a call right here (native,
+                                no calendar needed), plus a self-serve booking link
+                                when a Calendly / Cal.com calendar is connected. */}
+                            <div className="mt-2.5 flex items-center gap-1.5">
+                                <button
+                                    type="button"
+                                    onClick={() => setMeetingOpen(true)}
+                                    className="h-7 px-2 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-[11.5px] font-medium inline-flex items-center gap-1.5 transition-colors"
+                                >
+                                    <CalendarPlusIcon className="w-3 h-3" />
+                                    Schedule call
+                                </button>
+                                <BookACallButton email={contact.email} name={name} contactId={contact.id} />
+                            </div>
                             {supp && (
                                 <div className="mt-2 rounded-md border border-red-200 bg-red-50/60 px-2 py-1.5 flex items-start gap-1.5">
                                     <MailWarningIcon className="w-3 h-3 text-red-600 mt-px shrink-0" />
@@ -232,6 +250,18 @@ export default function ContactContextPanel({
                     </div>
                 )}
             </div>
+            {contact && (
+                <NewMeetingDialog
+                    open={meetingOpen}
+                    onClose={() => setMeetingOpen(false)}
+                    prefill={{
+                        title: name ? `Call with ${name}` : "Call",
+                        name,
+                        email: contact.email,
+                        contactId: contact.id,
+                    }}
+                />
+            )}
         </aside>
     );
 }

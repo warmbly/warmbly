@@ -12,6 +12,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Warmbly</title>
     <meta name="apple-mobile-web-app-title" content="Warmbly" />
+    <style>
+      /* Prevent a flash of unstyled content: paint the app background
+         immediately and keep #root hidden until the stylesheet has applied
+         (main.tsx adds .app-ready on the first frame after render). */
+      html { background-color: #ffffff; }
+      #root { opacity: 0; }
+      #root.app-ready { opacity: 1; transition: opacity 120ms ease-out; }
+    </style>
   </head>
   <body>
     <div id="root"></div>

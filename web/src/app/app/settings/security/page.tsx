@@ -2,32 +2,21 @@ import { comingSoon } from "@/lib/helper/comingSoon";
 import { RowLink, Section, SectionShell } from "../_components/SectionShell";
 import PasskeyManager from "./PasskeyManager";
 import SessionManager from "./SessionManager";
+import TwoFactorManager from "./TwoFactorManager";
 
 export default function SecuritySettingsPage() {
     return (
         <SectionShell title="Security" description="Sign-in protection for your account.">
             <PasskeyManager />
 
-            <Section eyebrow="Authentication" description="How you prove it's you when signing in.">
-                <RowLink
-                    title="Two-factor authentication"
-                    description="Add a one-time code to every sign-in."
-                    cta="Enable 2FA"
-                    statusLabel="Off"
-                    statusTone="muted"
-                    onClick={() => comingSoon("Two-factor authentication")}
-                />
+            <TwoFactorManager />
+
+            <Section eyebrow="Password" description="The credential you sign in with.">
                 <RowLink
                     title="Change password"
                     description="Use 12+ characters with mixed case and a number."
                     cta="Change"
                     onClick={() => comingSoon("Change password")}
-                />
-                <RowLink
-                    title="Backup codes"
-                    description="One-time codes you can use if you lose access to your 2FA device."
-                    cta="Generate"
-                    onClick={() => comingSoon("Backup codes")}
                 />
             </Section>
 

@@ -57,11 +57,12 @@ type ActionConfig struct {
 	// create_task — open a CRM task for the lead when they reach this step
 	// (e.g. a Call task). TaskAssignedTo is the teammate chosen on the step;
 	// when nil the task falls back to the campaign owner.
-	TaskTitle         string     `json:"task_title,omitempty"`
-	TaskType          string     `json:"task_type,omitempty"`     // general | call | email | meeting
-	TaskPriority      string     `json:"task_priority,omitempty"` // low | medium | high | urgent
-	TaskAssignedTo    *uuid.UUID `json:"task_assigned_to,omitempty"`
-	TaskDueOffsetDays *int       `json:"task_due_offset_days,omitempty"` // due N days after the step fires
+	TaskTitle          string     `json:"task_title,omitempty"`
+	TaskType           string     `json:"task_type,omitempty"`     // general | call | email | meeting
+	TaskPriority       string     `json:"task_priority,omitempty"` // low | medium | high | urgent
+	TaskAssignedTo     *uuid.UUID `json:"task_assigned_to,omitempty"`
+	TaskAssignedTeamID *uuid.UUID `json:"task_assigned_team_id,omitempty"` // assign to a whole team instead of one user
+	TaskDueOffsetDays  *int       `json:"task_due_offset_days,omitempty"`  // due N days after the step fires
 
 	// create_deal / move_deal_stage — CRM deal automation off a reply branch.
 	//   create_deal: open a new deal for the contact in DealPipelineID/DealStageID.
@@ -75,6 +76,18 @@ type ActionConfig struct {
 	DealName       string     `json:"deal_name,omitempty"`
 	DealValue      *float64   `json:"deal_value,omitempty"`
 	DealCurrency   string     `json:"deal_currency,omitempty"`
+
+	// run_automation — launch an automation flow when the contact reaches this
+	// step, passing templated key/value inputs as the automation's event data.
+	// Values render against the contact ({{.FirstName}} / {{.Company}} etc.).
+	AutomationID     *uuid.UUID `json:"automation_id,omitempty"`
+	AutomationValues []ActionKV `json:"automation_values,omitempty"`
+}
+
+// ActionKV is one templated input passed to a launched automation.
+type ActionKV struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
 }
 
 type UpdateSequence struct {

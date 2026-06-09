@@ -1,5 +1,5 @@
 import type ABVariant from "@/lib/api/models/app/campaigns/ABVariant";
-import type { CreateABVariantInput, UpdateABVariantInput } from "@/lib/api/models/app/campaigns/ABVariant";
+import type { ABWinnerAnalysis, CreateABVariantInput, UpdateABVariantInput } from "@/lib/api/models/app/campaigns/ABVariant";
 import Request from "../../Request";
 
 export async function listABVariants(campaignId: string): Promise<ABVariant[]> {
@@ -37,6 +37,15 @@ export async function deleteABVariant(campaignId: string, variantId: string): Pr
     await Request<void>({
         method: "DELETE",
         url: `/campaigns/${campaignId}/ab-variants/${variantId}`,
+        authorization: true,
+    });
+}
+
+// Per-variant performance + winner (bare object, no {data} envelope).
+export async function getABAnalysis(campaignId: string): Promise<ABWinnerAnalysis> {
+    return await Request<ABWinnerAnalysis>({
+        method: "GET",
+        url: `/campaigns/${campaignId}/ab-analysis`,
         authorization: true,
     });
 }

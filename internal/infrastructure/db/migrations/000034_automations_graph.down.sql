@@ -1,0 +1,1 @@
+ALTER TABLE automations DROP COLUMN IF EXISTS graph;

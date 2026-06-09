@@ -2,10 +2,26 @@
   "title": "Documentation",
   "pages": [
     "index",
-    "authentication",
-    "---API Keys---",
-    "api-keys",
+    "---Guides---",
+    "mailboxes",
+    "warmup",
+    "campaigns",
+    "sequences",
+    "deliverability",
+    "contacts-crm",
+    "unibox",
+    "automations",
+    "integrations",
+    "meetings",
+    "analytics",
+    "notifications",
+    "security",
+    "team-roles",
     "---Reference---",
-    "reference"
+    "authentication",
+    "permissions",
+    "endpoints",
+    "error-codes",
+    "expressions"
   ]
 }

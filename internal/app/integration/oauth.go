@@ -110,7 +110,7 @@ func NewOAuthManager() *OAuthManager {
 	register(models.IntegrationSalesforce, "SALESFORCE", oauth2.Endpoint{
 		AuthURL:  "https://login.salesforce.com/services/oauth2/authorize",
 		TokenURL: "https://login.salesforce.com/services/oauth2/token",
-	}, []string{"api", "refresh_token"}, true, identifyGeneric)
+	}, []string{"api", "refresh_token"}, true, identifySalesforce)
 
 	return m
 }
@@ -193,7 +193,16 @@ func (m *OAuthManager) Exchange(ctx context.Context, p models.IntegrationProvide
 		exp := tok.Expiry.UTC()
 		tokens.ExpiresAt = &exp
 	}
-	return tokens, extAccount{ID: extID, Name: extName}, nil
+
+	acct := extAccount{ID: extID, Name: extName}
+	// Salesforce (and other per-tenant APIs) return the org's API host as an
+	// "instance_url" extra on the token. Capture it so action handlers know
+	// which host to call — the value is persisted in the connection's
+	// non-secret display fields by OAuthFinish.
+	if iu, ok := tok.Extra("instance_url").(string); ok {
+		acct.InstanceURL = strings.TrimRight(strings.TrimSpace(iu), "/")
+	}
+	return tokens, acct, nil
 }
 
 // RefreshIfNeeded returns a valid access token for the connection, refreshing
@@ -237,6 +246,9 @@ func (m *OAuthManager) RefreshIfNeeded(ctx context.Context, p models.Integration
 type extAccount struct {
 	ID   string
 	Name string
+	// InstanceURL is the provider-specific API host returned at token-exchange
+	// time (Salesforce's per-org domain). Empty for providers with a fixed host.
+	InstanceURL string
 }
 
 // --- identity resolvers -----------------------------------------------------
@@ -306,11 +318,30 @@ func identifyPipedrive(ctx context.Context, m *OAuthManager, tok *oauth2.Token) 
 	return fmt.Sprintf("%d", out.Data.ID), name, nil, nil
 }
 
-// identifyGeneric is the fallback for providers whose identity lookup we don't
-// model yet (e.g. Salesforce). The connection still works; it just shows no
-// external account name until a richer resolver lands.
-func identifyGeneric(_ context.Context, _ *OAuthManager, _ *oauth2.Token) (string, string, []string, error) {
-	return "", "", nil, nil
+// identifySalesforce resolves the connected Salesforce org + username by GETting
+// the identity URL Salesforce returns as the token's "id" extra. Best-effort:
+// the connection is usable even if this lookup hiccups (the caller treats an
+// error as "no profile" and still persists the token). The org's API host is
+// captured separately from the token's "instance_url" extra in Exchange.
+func identifySalesforce(ctx context.Context, m *OAuthManager, tok *oauth2.Token) (string, string, []string, error) {
+	idURL, _ := tok.Extra("id").(string)
+	idURL = strings.TrimSpace(idURL)
+	if idURL == "" {
+		return "", "", nil, nil
+	}
+	var out struct {
+		OrganizationID string `json:"organization_id"`
+		Username       string `json:"username"`
+		DisplayName    string `json:"display_name"`
+	}
+	if err := m.getJSON(ctx, idURL, tok.AccessToken, &out); err != nil {
+		return "", "", nil, err
+	}
+	name := out.Username
+	if name == "" {
+		name = out.DisplayName
+	}
+	return out.OrganizationID, name, nil, nil
 }
 
 // --- helpers ----------------------------------------------------------------

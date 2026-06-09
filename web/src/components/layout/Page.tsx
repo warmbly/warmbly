@@ -19,7 +19,14 @@
 //   </Page>
 
 import React from "react";
+import { Link } from "react-router-dom";
 import { cn } from "@/lib/utils";
+
+// Internal app paths navigate client-side (React Router Link, no full reload);
+// external URLs (http..., mailto:, //) stay as a plain anchor.
+function isInternalHref(href: string): boolean {
+    return href.startsWith("/") && !href.startsWith("//");
+}
 
 /**
  * Page — outer frame. Fills its parent (the white content panel) without
@@ -100,14 +107,20 @@ export function TopbarAction({
             ? "bg-sky-600 hover:bg-sky-700 text-white"
             : "border border-slate-200 hover:border-slate-300 text-slate-700 hover:text-slate-900 bg-white";
     if (href) {
+        const actionCls = cn(
+            "h-7 px-2.5 rounded-md inline-flex items-center gap-1.5 text-[12px] font-medium transition-colors",
+            cls,
+        );
+        if (isInternalHref(href)) {
+            return (
+                <Link to={href} className={actionCls}>
+                    {icon}
+                    {children}
+                </Link>
+            );
+        }
         return (
-            <a
-                href={href}
-                className={cn(
-                    "h-7 px-2.5 rounded-md inline-flex items-center gap-1.5 text-[12px] font-medium transition-colors",
-                    cls,
-                )}
-            >
+            <a href={href} className={actionCls}>
                 {icon}
                 {children}
             </a>
@@ -197,7 +210,11 @@ export function Stat({
         (href || onClick) && "hover:bg-slate-50 cursor-pointer",
     );
     if (href) {
-        return (
+        return isInternalHref(href) ? (
+            <Link to={href} className={cls}>
+                {inner}
+            </Link>
+        ) : (
             <a href={href} className={cls}>
                 {inner}
             </a>
@@ -286,7 +303,13 @@ export function Row({
         (href || onClick) && "hover:bg-slate-50/80 cursor-pointer",
         className,
     );
-    if (href) return <a href={href} className={cls}>{children}</a>;
+    if (href) {
+        return isInternalHref(href) ? (
+            <Link to={href} className={cls}>{children}</Link>
+        ) : (
+            <a href={href} className={cls}>{children}</a>
+        );
+    }
     if (onClick) return <button onClick={onClick} className={cn(cls, "w-full text-left")}>{children}</button>;
     return <div className={cls}>{children}</div>;
 }

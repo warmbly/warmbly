@@ -19,6 +19,7 @@ import {
     AlertOctagonIcon,
     BellIcon,
     BriefcaseIcon,
+    CableIcon,
     CreditCardIcon,
     GaugeIcon,
     ShieldCheckIcon,
@@ -106,6 +107,15 @@ export default function SettingsLayout() {
                             )}
                         </NavLink>
                     ))}
+                    {/* Integrations is a top-level surface, not a settings sub-page;
+                        cross-link out to it so people who look here still find it. */}
+                    <NavLink
+                        to="/app/integrations"
+                        className="group shrink-0 md:w-[calc(100%-0.75rem)] md:mx-1.5 md:my-px flex items-center gap-2 px-3 md:px-2 h-7 rounded text-[12.5px] whitespace-nowrap text-left text-slate-600 hover:text-slate-900 hover:bg-slate-200/40 transition-colors"
+                    >
+                        <CableIcon className="w-[14px] h-[14px] shrink-0 text-slate-400 group-hover:text-slate-600" />
+                        <span className="truncate">Integrations</span>
+                    </NavLink>
                 </nav>
 
                 <div className="flex-1 min-w-0 overflow-y-auto">

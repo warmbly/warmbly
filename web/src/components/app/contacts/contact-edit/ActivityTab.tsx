@@ -19,6 +19,9 @@ import {
     AlertOctagonIcon,
     BanIcon,
     CalendarIcon,
+    CalendarClockIcon,
+    CalendarPlusIcon,
+    CalendarXIcon,
     Loader2Icon,
     MailIcon,
     MailOpenIcon,
@@ -36,7 +39,7 @@ import type { ContactTimelineEventType } from "@/lib/api/models/app/contacts/Con
 import useClickOutside from "@/hooks/useClickOutside";
 import { fmtAbsolute, fmtRelative } from "./format";
 
-type FilterId = "all" | "emails" | "replies" | "deliv" | "notes";
+type FilterId = "all" | "emails" | "replies" | "deliv" | "notes" | "meetings";
 
 const FILTERS: { id: FilterId; label: string }[] = [
     { id: "all", label: "All" },
@@ -44,6 +47,7 @@ const FILTERS: { id: FilterId; label: string }[] = [
     { id: "replies", label: "Replies" },
     { id: "deliv", label: "Deliv." },
     { id: "notes", label: "Notes" },
+    { id: "meetings", label: "Meetings" },
 ];
 
 const EMAIL_TYPES: ContactTimelineEventType[] = [
@@ -51,6 +55,12 @@ const EMAIL_TYPES: ContactTimelineEventType[] = [
     "email_opened",
     "email_clicked",
     "email_bounced",
+];
+
+const MEETING_TYPES: ContactTimelineEventType[] = [
+    "meeting_booked",
+    "meeting_rescheduled",
+    "meeting_canceled",
 ];
 
 export default function ActivityTab({ contactId }: { contactId: string }) {
@@ -214,6 +224,9 @@ function applyFilters(
                 break;
             case "notes":
                 if (e.type !== "note") return false;
+                break;
+            case "meetings":
+                if (!MEETING_TYPES.includes(e.type)) return false;
                 break;
             case "all":
                 break;
@@ -521,6 +534,46 @@ function EventMeta({
     event: ContactTimelineEvent;
     highlight: string;
 }) {
+    // Meetings get a dedicated meta line: when the call is set for, which
+    // calendar it came from, and a one-click join link (when not canceled).
+    if (event.type.startsWith("meeting_")) {
+        const when = event.scheduled_for
+            ? new Date(event.scheduled_for).toLocaleString(undefined, {
+                  month: "short",
+                  day: "numeric",
+                  hour: "numeric",
+                  minute: "2-digit",
+              })
+            : null;
+        const providerLabel = event.source === "cal_com" ? "Cal.com" : event.source === "calendly" ? "Calendly" : event.source;
+        return (
+            <div className="text-[11px] text-slate-500 mt-0.5 flex gap-1.5 flex-wrap items-center">
+                {when && <span>for {when}</span>}
+                {when && providerLabel && <span className="text-slate-300">·</span>}
+                {providerLabel && <span>via {providerLabel}</span>}
+                {event.reason && (
+                    <>
+                        <span className="text-slate-300">·</span>
+                        <span className="text-slate-700">{event.reason}</span>
+                    </>
+                )}
+                {event.type !== "meeting_canceled" && event.join_url && (
+                    <>
+                        <span className="text-slate-300">·</span>
+                        <a
+                            href={event.join_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-sky-600 hover:text-sky-700 font-medium"
+                        >
+                            Join
+                        </a>
+                    </>
+                )}
+            </div>
+        );
+    }
+
     const parts: React.ReactNode[] = [];
 
     if (event.email_account_email) {
@@ -618,6 +671,12 @@ function visualFor(type: ContactTimelineEventType): {
             return { Icon: BanIcon, label: "Suppressed" };
         case "note":
             return { Icon: StickyNoteIcon, label: "Note added" };
+        case "meeting_booked":
+            return { Icon: CalendarPlusIcon, label: "Meeting booked" };
+        case "meeting_rescheduled":
+            return { Icon: CalendarClockIcon, label: "Meeting rescheduled" };
+        case "meeting_canceled":
+            return { Icon: CalendarXIcon, label: "Meeting canceled" };
         default:
             return { Icon: MailIcon, label: type };
     }

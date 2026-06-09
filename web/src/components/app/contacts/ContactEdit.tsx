@@ -17,7 +17,7 @@
 
 import React from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { CheckIcon, CopyIcon, Loader2Icon, XIcon } from "lucide-react";
+import { CalendarPlusIcon, CheckIcon, CopyIcon, Loader2Icon, XIcon } from "lucide-react";
 import toast from "react-hot-toast";
 import useUpdateContact from "@/lib/api/hooks/app/contacts/useUpdateContact";
 import useContact from "@/lib/api/hooks/app/contacts/useContact";
@@ -26,6 +26,8 @@ import type Contact from "@/lib/api/models/app/contacts/Contact";
 import type MiniCampaign from "@/lib/api/models/app/campaigns/MiniCampaign";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
+import BookACallButton from "@/components/app/integrations/BookACallButton";
+import NewMeetingDialog from "@/components/app/meetings/NewMeetingDialog";
 import OverviewTab from "./contact-edit/OverviewTab";
 import ActivityTab from "./contact-edit/ActivityTab";
 import NotesTab from "./contact-edit/NotesTab";
@@ -298,6 +300,7 @@ function ContactHeader({
     onClose: () => void;
 }) {
     const [copied, setCopied] = React.useState(false);
+    const [meetingOpen, setMeetingOpen] = React.useState(false);
     function copy() {
         navigator.clipboard.writeText(contact.email).then(() => {
             setCopied(true);
@@ -324,7 +327,8 @@ function ContactHeader({
     }
 
     return (
-        <header className="px-4 pt-4 pb-3 border-b border-slate-200 flex items-start gap-3 shrink-0">
+        <>
+            <header className="px-4 pt-4 pb-3 border-b border-slate-200 flex items-start gap-3 shrink-0">
             <div className="size-9 rounded-full bg-slate-100 flex items-center justify-center text-[12px] font-semibold text-slate-700 shrink-0">
                 {initials}
             </div>
@@ -360,13 +364,39 @@ function ContactHeader({
             </div>
             <button
                 type="button"
+                onClick={() => setMeetingOpen(true)}
+                className="shrink-0 h-7 px-2 rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100 inline-flex items-center gap-1.5 transition-colors text-[12px]"
+                title="Schedule a call with this contact"
+            >
+                <CalendarPlusIcon className="w-3.5 h-3.5" />
+                Schedule call
+            </button>
+            <BookACallButton
+                email={contact.email}
+                name={displayName}
+                contactId={contact.id}
+                className="shrink-0"
+            />
+            <button
+                type="button"
                 onClick={onClose}
                 aria-label="Close"
                 className="size-7 rounded-md text-slate-400 hover:text-slate-900 hover:bg-slate-100 inline-flex items-center justify-center transition-colors shrink-0"
             >
                 <XIcon className="w-3.5 h-3.5" />
             </button>
-        </header>
+            </header>
+            <NewMeetingDialog
+                open={meetingOpen}
+                onClose={() => setMeetingOpen(false)}
+                prefill={{
+                    title: displayName ? `Call with ${displayName}` : "Call",
+                    name: displayName,
+                    email: contact.email,
+                    contactId: contact.id,
+                }}
+            />
+        </>
     );
 }
 

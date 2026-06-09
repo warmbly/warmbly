@@ -9,7 +9,69 @@ import (
 	"github.com/warmbly/warmbly/internal/api/middleware"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/tasks"
 )
+
+// templatePreviewRequest is the composer's preview/validate payload: the raw
+// templates plus an optional sample contact to render against.
+type templatePreviewRequest struct {
+	Subject   string `json:"subject"`
+	BodyHTML  string `json:"body_html"`
+	BodyPlain string `json:"body_plain"`
+	Contact   *struct {
+		FirstName    string            `json:"first_name"`
+		LastName     string            `json:"last_name"`
+		Email        string            `json:"email"`
+		Company      string            `json:"company"`
+		Phone        string            `json:"phone"`
+		CustomFields map[string]string `json:"custom_fields"`
+	} `json:"contact"`
+}
+
+func sampleContact() models.Contact {
+	return models.Contact{
+		FirstName:    "Alex",
+		LastName:     "Rivera",
+		Email:        "alex.rivera@example.com",
+		Company:      "Acme Inc",
+		Phone:        "+1 555 0142",
+		CustomFields: map[string]string{"role": "Head of Growth"},
+	}
+}
+
+// PreviewCampaignTemplate renders subject/body against a sample (or supplied)
+// contact EXACTLY as the send path would, returning the output plus any parse
+// errors and unresolved tokens. No side effects — powers the composer's live
+// preview + inline validation.
+func (h *Handler) PreviewCampaignTemplate(c *gin.Context) {
+	var req templatePreviewRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		errx.JSON(c, errx.ErrInvalid)
+		return
+	}
+	contact := sampleContact()
+	if rc := req.Contact; rc != nil {
+		if rc.FirstName != "" {
+			contact.FirstName = rc.FirstName
+		}
+		if rc.LastName != "" {
+			contact.LastName = rc.LastName
+		}
+		if rc.Email != "" {
+			contact.Email = rc.Email
+		}
+		if rc.Company != "" {
+			contact.Company = rc.Company
+		}
+		if rc.Phone != "" {
+			contact.Phone = rc.Phone
+		}
+		for k, v := range rc.CustomFields {
+			contact.CustomFields[k] = v
+		}
+	}
+	c.JSON(http.StatusOK, tasks.PreviewTemplates(req.Subject, req.BodyHTML, req.BodyPlain, contact))
+}
 
 func (h *Handler) CreateCampaign(c *gin.Context) {
 	userIDStr := middleware.GetUserID(c)

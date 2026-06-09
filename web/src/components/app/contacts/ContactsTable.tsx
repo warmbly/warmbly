@@ -15,6 +15,7 @@ import {
     AlertTriangleIcon,
     BanIcon,
     Building2Icon,
+    CableIcon,
     CheckIcon,
     ClockIcon,
     CornerUpLeftIcon,
@@ -36,6 +37,13 @@ import { useConfirm } from "@/hooks/context/confirm";
 import useSearchContacts from "@/lib/api/hooks/app/contacts/useSearchContacts";
 import type SearchContacts from "@/lib/api/models/app/contacts/SearchContacts";
 import useDeleteContacts from "@/lib/api/hooks/app/contacts/useDeleteContacts";
+import useIntegrationConnections from "@/lib/api/hooks/app/integrations/useIntegrationConnections";
+import { usePushContacts } from "@/lib/api/hooks/app/integrations/usePushContacts";
+import {
+    PROVIDER_LABELS,
+    PUSHABLE_PROVIDERS,
+    type IntegrationConnection,
+} from "@/lib/api/models/app/integrations/Integration";
 import toast from "react-hot-toast";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
@@ -107,6 +115,41 @@ export default function ContactsTable({
     });
     const contactsData = useSearchContacts({ options: searchProps });
     const contactsBulkDelete = useDeleteContacts();
+
+    // Connected CRM targets the "Push to CRM" bulk action can reach. Driven by
+    // the org's live connections (backend enforces the push permission).
+    const connectionsQuery = useIntegrationConnections();
+    const pushContacts = usePushContacts();
+    const pushTargets = React.useMemo<IntegrationConnection[]>(
+        () =>
+            (connectionsQuery.data?.connections ?? []).filter(
+                (c) =>
+                    PUSHABLE_PROVIDERS.includes(c.provider) &&
+                    (c.status === "connected" || c.status === "degraded"),
+            ),
+        [connectionsQuery.data],
+    );
+
+    async function pushToCRM(connectionId: string, providerLabel: string) {
+        if (selected.length === 0 || pushContacts.isPending) return;
+        const ids = selected;
+        const t = toast.loading(`Pushing ${ids.length} to ${providerLabel}…`);
+        try {
+            const res = await pushContacts.mutateAsync({ connectionId, contact_ids: ids });
+            if (res.pushed === 0) {
+                toast.error(
+                    `Couldn't push to ${providerLabel}${res.failed ? ` (${res.failed} failed)` : ""}`,
+                    { id: t },
+                );
+            } else if (res.failed > 0) {
+                toast.success(`Pushed ${res.pushed} to ${providerLabel}, ${res.failed} failed`, { id: t });
+            } else {
+                toast.success(`Pushed ${res.pushed} to ${providerLabel}`, { id: t });
+            }
+        } catch (err) {
+            toast.error(buildError(err as AppError), { id: t });
+        }
+    }
 
     const contacts = contactsData.contacts;
     const total = contactsData.data?.pages[0]?.pagination.total ?? 0;
@@ -266,6 +309,9 @@ export default function ContactsTable({
                     <SelectionBar
                         count={selected.length}
                         deleting={del}
+                        pushTargets={pushTargets}
+                        pushing={pushContacts.isPending}
+                        onPush={pushToCRM}
                         onBulkEdit={() => setBulkEdit(true)}
                         onDelete={() =>
                             confirm?.show(
@@ -445,6 +491,9 @@ export default function ContactsTable({
             <SelectionBar
                 count={selected.length}
                 deleting={del}
+                pushTargets={pushTargets}
+                pushing={pushContacts.isPending}
+                onPush={pushToCRM}
                 onBulkEdit={() => setBulkEdit(true)}
                 onDelete={() =>
                     confirm?.show(
@@ -968,12 +1017,18 @@ function StripChip({
 function SelectionBar({
     count,
     deleting,
+    pushTargets,
+    pushing,
+    onPush,
     onBulkEdit,
     onDelete,
     onClear,
 }: {
     count: number;
     deleting: boolean;
+    pushTargets: IntegrationConnection[];
+    pushing: boolean;
+    onPush: (connectionId: string, providerLabel: string) => void;
     onBulkEdit: () => void;
     onDelete: () => void;
     onClear: () => void;
@@ -985,6 +1040,37 @@ function SelectionBar({
                 <CheckIcon className="w-3 h-3" />
                 <span>{count} selected</span>
             </div>
+            {pushTargets.length > 0 && (
+                <PopoverMenu side="top" align="center">
+                    <PopoverMenuTrigger asChild>
+                        <button
+                            type="button"
+                            disabled={pushing}
+                            className="h-7 px-2.5 rounded text-[12px] text-slate-700 hover:text-slate-900 hover:bg-slate-100 font-medium inline-flex items-center gap-1.5 transition-colors disabled:opacity-60"
+                        >
+                            {pushing ? (
+                                <Loader2Icon className="w-3 h-3 animate-spin" />
+                            ) : (
+                                <CableIcon className="w-3 h-3" />
+                            )}
+                            Push to CRM
+                        </button>
+                    </PopoverMenuTrigger>
+                    <PopoverMenuContent>
+                        <PopoverMenuLabel>Push {count} to</PopoverMenuLabel>
+                        {pushTargets.map((t) => {
+                            const label = PROVIDER_LABELS[t.provider];
+                            const custom = t.label && t.label.toLowerCase() !== t.provider ? ` · ${t.label}` : "";
+                            return (
+                                <PopoverMenuItem key={t.id} onSelect={() => onPush(t.id, label)}>
+                                    {label}
+                                    {custom}
+                                </PopoverMenuItem>
+                            );
+                        })}
+                    </PopoverMenuContent>
+                </PopoverMenu>
+            )}
             <button
                 type="button"
                 onClick={onBulkEdit}

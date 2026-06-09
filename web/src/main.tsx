@@ -20,12 +20,16 @@ import CampaignPreferences from './app/app/campaigns/[id]/preferences/page';
 import CampaignSchedule from './app/app/campaigns/[id]/schedule/page';
 import CampaignSequences from './app/app/campaigns/[id]/sequences/page';
 import AnalyticsPage from './app/app/analytics/page';
+import DeliverabilityPage from './app/app/deliverability/page';
 import PipelinesPage from './app/app/crm/pipelines/page';
 import DealsPage from './app/app/crm/deals/page';
 import TasksPage from './app/app/crm/tasks/page';
+import MeetingsPage from './app/app/crm/meetings/page';
 import TemplatesPage from './app/app/templates/page';
 import APIKeysPage from './app/app/api-keys/page';
 import IntegrationsPage from './app/app/integrations/page';
+import AutomationsPage from './app/app/automations/page';
+import AutomationBuilderPage from './app/app/automations/[id]/page';
 import AuditPage from './app/app/audit/page';
 import SettingsLayout from './app/app/settings/layout';
 import ProfileSettingsPage from './app/app/settings/profile/page';
@@ -232,6 +236,10 @@ const router = createBrowserRouter([
             element: <AnalyticsPage />,
           },
           {
+            path: "deliverability",
+            element: <DeliverabilityPage />,
+          },
+          {
             path: "crm",
             children: [
               {
@@ -249,6 +257,10 @@ const router = createBrowserRouter([
               {
                 path: "tasks",
                 element: <TasksPage />,
+              },
+              {
+                path: "meetings",
+                element: <MeetingsPage />,
               }
             ]
           },
@@ -263,6 +275,14 @@ const router = createBrowserRouter([
           {
             path: "integrations",
             element: <IntegrationsPage />,
+          },
+          {
+            path: "automations",
+            element: <AutomationsPage />,
+          },
+          {
+            path: "automations/:id",
+            element: <AutomationBuilderPage />,
           },
           {
             path: "audit",
@@ -332,7 +352,8 @@ function AdminLayoutWithOutlet() {
   return <AdminLayout><Outlet /></AdminLayout>;
 }
 
-createRoot(document.getElementById('root')!).render(
+const rootEl = document.getElementById('root')!
+createRoot(rootEl).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
@@ -341,3 +362,11 @@ createRoot(document.getElementById('root')!).render(
     </QueryClientProvider>
   </StrictMode>,
 )
+
+// Reveal the app only once its CSS is in effect (the stylesheet is imported
+// above, so it's applied by the first frame after render). This removes the
+// brief flash of unstyled content. The timeout is a safety net so the page can
+// never stay hidden if a frame callback is missed.
+const revealApp = () => rootEl.classList.add('app-ready')
+requestAnimationFrame(() => requestAnimationFrame(revealApp))
+setTimeout(revealApp, 1500)

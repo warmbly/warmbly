@@ -9,8 +9,8 @@
 "use client";
 
 import React from "react";
+import { motion } from "framer-motion";
 import { CalendarCheckIcon, ExternalLinkIcon, RefreshCwIcon, SettingsIcon } from "lucide-react";
-import toast from "react-hot-toast";
 
 import {
     EmptyBlock,
@@ -51,8 +51,11 @@ export default function IntegrationsPage() {
     const [inboundUrl, setInboundUrl] = React.useState<{ provider: IntegrationProvider; url: string } | null>(null);
     const [query, setQuery] = React.useState("");
 
-    const catalog = catalogQuery.data?.catalog ?? [];
-    const connections = connectionsQuery.data?.connections ?? [];
+    const catalog = React.useMemo(() => catalogQuery.data?.catalog ?? [], [catalogQuery.data?.catalog]);
+    const connections = React.useMemo(
+        () => connectionsQuery.data?.connections ?? [],
+        [connectionsQuery.data?.connections],
+    );
     const bookings = bookingsQuery.data?.bookings ?? [];
 
     const entryByProvider = React.useMemo(() => {
@@ -132,9 +135,10 @@ export default function IntegrationsPage() {
                     <section>
                         <SectionBar label="Your connections" count={connections.length} />
                         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-px bg-slate-200/60 border-b border-slate-200/60">
-                            {connections.map((c) => (
+                            {connections.map((c, i) => (
                                 <ConnectionCard
                                     key={c.id}
+                                    index={i}
                                     connection={c}
                                     entry={entryByProvider[c.provider]}
                                     onManage={() => setManageTarget(c)}
@@ -152,9 +156,10 @@ export default function IntegrationsPage() {
                         <section key={category}>
                             <SectionBar label={CATEGORY_LABELS[category]} count={entries.length} />
                             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-px bg-slate-200/60 border-b border-slate-200/60">
-                                {entries.map((entry) => (
+                                {entries.map((entry, i) => (
                                     <CatalogCard
                                         key={entry.provider}
+                                        index={i}
                                         entry={entry}
                                         connection={firstConnByProvider[entry.provider]}
                                         onClick={() => onCardClick(entry)}
@@ -239,17 +244,22 @@ function CatalogCard({
     entry,
     connection,
     onClick,
+    index = 0,
 }: {
     entry: IntegrationCatalogEntry;
     connection?: IntegrationConnection;
     onClick: () => void;
+    index?: number;
 }) {
     const connected = !!connection;
     const comingSoon = entry.auth_method === "oauth" && !entry.configured && !connected;
     return (
-        <button
+        <motion.button
             type="button"
             onClick={onClick}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1], delay: Math.min(index, 12) * 0.03 }}
             className="text-left bg-white p-5 flex flex-col min-h-[150px] hover:bg-slate-50/60 transition-colors group"
         >
             <div className="flex items-start justify-between gap-3">
@@ -305,7 +315,7 @@ function CatalogCard({
                     )}
                 </span>
             </div>
-        </button>
+        </motion.button>
     );
 }
 
@@ -313,10 +323,12 @@ function ConnectionCard({
     connection,
     entry,
     onManage,
+    index = 0,
 }: {
     connection: IntegrationConnection;
     entry?: IntegrationCatalogEntry;
     onManage: () => void;
+    index?: number;
 }) {
     const account =
         connection.external_account_name ||
@@ -325,9 +337,12 @@ function ConnectionCard({
         (connection.display_fields as Record<string, string>)?.channel ||
         "";
     return (
-        <button
+        <motion.button
             type="button"
             onClick={onManage}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1], delay: Math.min(index, 12) * 0.03 }}
             className="text-left bg-white p-4 flex items-center gap-3 hover:bg-slate-50/60 transition-colors"
         >
             <ProviderGlyph provider={connection.provider} name={entry?.name ?? connection.label} />
@@ -336,7 +351,7 @@ function ConnectionCard({
                 <div className="text-[11px] text-slate-400 truncate">{account || (entry?.name ?? connection.provider)}</div>
             </div>
             <StatusPill status={connection.status} />
-        </button>
+        </motion.button>
     );
 }
 

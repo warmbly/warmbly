@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -69,14 +71,43 @@ type IntegrationRepository interface {
 	DeleteEventSubscription(ctx context.Context, orgID, id uuid.UUID) error
 	MatchingDispatchTargets(ctx context.Context, orgID uuid.UUID, eventType string) ([]DispatchTarget, error)
 
+	// Automations (named groups of subscriptions sharing a trigger). Steps are
+	// persisted as automation-tagged event-subscription rows, so the dispatcher
+	// runs them unchanged.
+	CreateAutomation(ctx context.Context, a *models.Automation) error
+	ListAutomations(ctx context.Context, orgID uuid.UUID) ([]models.Automation, error)
+	ListEnabledAutomationsForEvent(ctx context.Context, orgID uuid.UUID, eventType string) ([]models.Automation, error)
+	GetAutomation(ctx context.Context, orgID, id uuid.UUID) (*models.Automation, error)
+	UpdateAutomation(ctx context.Context, a *models.Automation) error
+	DeleteAutomation(ctx context.Context, orgID, id uuid.UUID) error
+	// CampaignsUsingAutomation returns the names of campaigns whose sequence has a
+	// "run_automation" step pointing at this automation (so deletion can refuse to
+	// orphan those steps). Capped; order is stable for a readable message.
+	CampaignsUsingAutomation(ctx context.Context, orgID, automationID uuid.UUID) ([]string, error)
+
+	// Field mappings (Warmbly field -> provider field). ListFieldMappings returns
+	// every mapping for a connection; ReplaceConnectionFieldMappings swaps the
+	// connection-default (unscoped) push map for one object atomically.
+	ListFieldMappings(ctx context.Context, orgID, connID uuid.UUID) ([]models.IntegrationFieldMapping, error)
+	ReplaceConnectionFieldMappings(ctx context.Context, orgID, connID uuid.UUID, object string, mappings []models.IntegrationFieldMapping) error
+	UpdateConnectionConfig(ctx context.Context, orgID, connID uuid.UUID, configCapabilities []byte, syncDirection string) error
+
 	// Sync runs
 	CreateSyncRun(ctx context.Context, run *models.IntegrationSyncRun) error
 	FinishSyncRun(ctx context.Context, id uuid.UUID, status, detail string, records int) error
 	ListSyncRuns(ctx context.Context, orgID, connID uuid.UUID, limit int) ([]models.IntegrationSyncRun, error)
 
+	CreateAutomationRun(ctx context.Context, run *models.AutomationRun) error
+	FinishAutomationRun(ctx context.Context, id uuid.UUID, status, errorDetail string, nodeResults []models.AutomationNodeResult) error
+	ListAutomationRuns(ctx context.Context, orgID, automationID uuid.UUID, limit int) ([]models.AutomationRun, error)
+
 	// Bookings
 	UpsertMeetingBooking(ctx context.Context, b *models.MeetingBooking) error
 	ListMeetingBookings(ctx context.Context, orgID uuid.UUID, limit int) ([]models.MeetingBooking, error)
+	SearchMeetingBookings(ctx context.Context, orgID uuid.UUID, f models.MeetingBookingFilter) (*models.MeetingBookingPage, error)
+	MeetingBookingSummary(ctx context.Context, orgID uuid.UUID) (*models.MeetingBookingSummary, error)
+	GetMeetingBooking(ctx context.Context, orgID, id uuid.UUID) (*models.MeetingBooking, error)
+	DeleteMeetingBooking(ctx context.Context, orgID, id uuid.UUID) error
 }
 
 type integrationRepository struct {
@@ -93,7 +124,8 @@ const connectionPublicCols = `
 	id, organization_id, provider, label, status, auth_method, display_fields,
 	connected_by_user_id, COALESCE(external_account_id, ''), COALESCE(external_account_name, ''),
 	granted_scopes, token_expires_at, health, health_detail, health_checked_at,
-	last_synced_at, last_error, last_error_at, created_at, updated_at`
+	last_synced_at, last_error, last_error_at, created_at, updated_at,
+	COALESCE(config_capabilities, '{}'::jsonb), COALESCE(sync_direction, 'push')`
 
 func (r *integrationRepository) UpsertConnection(ctx context.Context, w *ConnectionWrite) error {
 	c := w.Conn
@@ -364,19 +396,24 @@ func (r *integrationRepository) CreateEventSubscription(ctx context.Context, sub
 	if len(cfg) == 0 {
 		cfg = json.RawMessage("{}")
 	}
+	useCase := sub.UseCase
+	if useCase == "" {
+		useCase = "custom"
+	}
+	// Plain insert (no ON CONFLICT): the framework allows several differently
+	// filtered automations per (connection, event, action), so each is a row.
 	_, err := r.db.Exec(ctx, `
 		INSERT INTO integration_event_subscriptions (
-			id, connection_id, organization_id, event_type, action, config, enabled, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)
-		ON CONFLICT (connection_id, event_type, action) DO UPDATE SET
-			config = EXCLUDED.config, enabled = EXCLUDED.enabled, updated_at = EXCLUDED.updated_at`,
-		sub.ID, sub.ConnectionID, sub.OrganizationID, sub.EventType, string(sub.Action), cfg, sub.Enabled, now)
+			id, connection_id, organization_id, event_type, action, config, enabled, use_case, automation_id, created_at, updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)`,
+		sub.ID, sub.ConnectionID, sub.OrganizationID, sub.EventType, string(sub.Action), cfg, sub.Enabled, useCase, sub.AutomationID, now)
+	sub.UseCase = useCase
 	return err
 }
 
 func (r *integrationRepository) ListEventSubscriptions(ctx context.Context, orgID, connID uuid.UUID) ([]models.IntegrationEventSubscription, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT id, connection_id, organization_id, event_type, action, config, enabled, created_at, updated_at
+		SELECT id, connection_id, organization_id, event_type, action, config, enabled, created_at, updated_at, use_case
 		FROM integration_event_subscriptions
 		WHERE organization_id = $1 AND connection_id = $2 ORDER BY created_at DESC`, orgID, connID)
 	if err != nil {
@@ -400,15 +437,245 @@ func (r *integrationRepository) DeleteEventSubscription(ctx context.Context, org
 	return err
 }
 
+// --- Automations ------------------------------------------------------------
+
+// insertAutomationSteps writes one event-subscription row per step, tagged with
+// the automation id + its trigger event + enabled flag (so the dispatcher runs
+// them). Caller has already merged the automation filter into each step Config.
+// automationCols is the shared projection for an automation row.
+const automationCols = `id, organization_id, name, enabled, trigger_event, filter, graph, created_at, updated_at`
+
+func scanAutomation(row pgx.Row, a *models.Automation) error {
+	var graph []byte
+	if err := row.Scan(&a.ID, &a.OrganizationID, &a.Name, &a.Enabled, &a.TriggerEvent, &a.Filter, &graph, &a.CreatedAt, &a.UpdatedAt); err != nil {
+		return err
+	}
+	a.Graph = models.AutomationGraph{Nodes: []models.AutomationNode{}, Edges: []models.AutomationEdge{}}
+	if len(graph) > 0 {
+		_ = json.Unmarshal(graph, &a.Graph)
+	}
+	if a.Graph.Nodes == nil {
+		a.Graph.Nodes = []models.AutomationNode{}
+	}
+	if a.Graph.Edges == nil {
+		a.Graph.Edges = []models.AutomationEdge{}
+	}
+	return nil
+}
+
+func (r *integrationRepository) CreateAutomation(ctx context.Context, a *models.Automation) error {
+	if a.ID == uuid.Nil {
+		a.ID = uuid.New()
+	}
+	now := time.Now().UTC()
+	a.CreatedAt = now
+	a.UpdatedAt = now
+	filter := a.Filter
+	if len(filter) == 0 {
+		filter = json.RawMessage("{}")
+	}
+	graph, _ := json.Marshal(a.Graph)
+	_, err := r.db.Exec(ctx, `
+		INSERT INTO automations (id, organization_id, name, enabled, trigger_event, filter, graph, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)`,
+		a.ID, a.OrganizationID, a.Name, a.Enabled, a.TriggerEvent, filter, graph, now)
+	return err
+}
+
+func (r *integrationRepository) UpdateAutomation(ctx context.Context, a *models.Automation) error {
+	now := time.Now().UTC()
+	a.UpdatedAt = now
+	filter := a.Filter
+	if len(filter) == 0 {
+		filter = json.RawMessage("{}")
+	}
+	graph, _ := json.Marshal(a.Graph)
+	tag, err := r.db.Exec(ctx, `
+		UPDATE automations SET name = $3, enabled = $4, trigger_event = $5, filter = $6, graph = $7, updated_at = $8
+		WHERE id = $1 AND organization_id = $2`,
+		a.ID, a.OrganizationID, a.Name, a.Enabled, a.TriggerEvent, filter, graph, now)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return errors.New("automation not found")
+	}
+	return nil
+}
+
+func (r *integrationRepository) DeleteAutomation(ctx context.Context, orgID, id uuid.UUID) error {
+	_, err := r.db.Exec(ctx, `DELETE FROM automations WHERE id = $1 AND organization_id = $2`, id, orgID)
+	return err
+}
+
+func (r *integrationRepository) CampaignsUsingAutomation(ctx context.Context, orgID, automationID uuid.UUID) ([]string, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT DISTINCT c.name
+		FROM sequences s
+		JOIN campaigns c ON c.id = s.campaign_id
+		WHERE c.organization_id = $1
+		  AND s.action->>'type' = 'run_automation'
+		  AND s.action->>'automation_id' = $2::text
+		ORDER BY c.name
+		LIMIT 20`, orgID, automationID.String())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var names []string
+	for rows.Next() {
+		var n string
+		if err := rows.Scan(&n); err != nil {
+			return nil, err
+		}
+		names = append(names, n)
+	}
+	return names, rows.Err()
+}
+
+func (r *integrationRepository) GetAutomation(ctx context.Context, orgID, id uuid.UUID) (*models.Automation, error) {
+	var a models.Automation
+	row := r.db.QueryRow(ctx, `SELECT `+automationCols+` FROM automations WHERE id = $1 AND organization_id = $2`, id, orgID)
+	if err := scanAutomation(row, &a); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &a, nil
+}
+
+func (r *integrationRepository) ListAutomations(ctx context.Context, orgID uuid.UUID) ([]models.Automation, error) {
+	rows, err := r.db.Query(ctx, `SELECT `+automationCols+` FROM automations WHERE organization_id = $1 ORDER BY created_at DESC`, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []models.Automation{}
+	for rows.Next() {
+		var a models.Automation
+		if err := scanAutomation(rows, &a); err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
+// ListEnabledAutomationsForEvent returns the enabled automations whose trigger
+// matches the fired event, for the graph executor to walk. The 'campaign.action'
+// trigger is excluded: those are manual / campaign-launched automations that
+// only ever run via RunAutomationByID, never by a real event fan-out.
+func (r *integrationRepository) ListEnabledAutomationsForEvent(ctx context.Context, orgID uuid.UUID, eventType string) ([]models.Automation, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT `+automationCols+` FROM automations WHERE organization_id = $1 AND trigger_event = $2 AND enabled AND trigger_event <> 'campaign.action'`,
+		orgID, eventType)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []models.Automation{}
+	for rows.Next() {
+		var a models.Automation
+		if err := scanAutomation(rows, &a); err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
+// --- Field mappings ---------------------------------------------------------
+
+const fieldMappingCols = `id, connection_id, organization_id, subscription_id, direction, object_name, warmbly_field, external_field, transform, static_value, is_default, created_at`
+
+func (r *integrationRepository) ListFieldMappings(ctx context.Context, orgID, connID uuid.UUID) ([]models.IntegrationFieldMapping, error) {
+	rows, err := r.db.Query(ctx, `SELECT `+fieldMappingCols+`
+		FROM integration_field_mappings WHERE organization_id = $1 AND connection_id = $2
+		ORDER BY created_at`, orgID, connID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []models.IntegrationFieldMapping{}
+	for rows.Next() {
+		var m models.IntegrationFieldMapping
+		if err := rows.Scan(&m.ID, &m.ConnectionID, &m.OrganizationID, &m.SubscriptionID, &m.Direction,
+			&m.ObjectName, &m.WarmblyField, &m.ExternalField, &m.Transform, &m.StaticValue, &m.IsDefault, &m.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
+// ReplaceConnectionFieldMappings atomically swaps the connection-default
+// (subscription_id NULL, direction push) mappings for one object with the
+// provided set. Per-automation scoped mappings are left untouched.
+func (r *integrationRepository) ReplaceConnectionFieldMappings(ctx context.Context, orgID, connID uuid.UUID, object string, mappings []models.IntegrationFieldMapping) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	if _, err := tx.Exec(ctx, `
+		DELETE FROM integration_field_mappings
+		WHERE organization_id = $1 AND connection_id = $2 AND object_name = $3
+		  AND subscription_id IS NULL AND direction = 'push'`, orgID, connID, object); err != nil {
+		return err
+	}
+	// Dedupe by destination field (last wins) so a repeated external_field can't
+	// trip the per-destination unique index mid-transaction.
+	seen := make(map[string]struct{}, len(mappings))
+	for i := len(mappings) - 1; i >= 0; i-- {
+		if _, dup := seen[mappings[i].ExternalField]; dup {
+			mappings = append(mappings[:i], mappings[i+1:]...)
+			continue
+		}
+		seen[mappings[i].ExternalField] = struct{}{}
+	}
+	for _, m := range mappings {
+		transform := m.Transform
+		if transform == "" {
+			transform = "none"
+		}
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO integration_field_mappings
+				(id, connection_id, organization_id, subscription_id, direction, object_name,
+				 warmbly_field, external_field, transform, static_value, is_default, created_at)
+			VALUES (gen_random_uuid(), $1, $2, NULL, 'push', $3, $4, $5, $6, $7, true, now())`,
+			connID, orgID, object, m.WarmblyField, m.ExternalField, transform, m.StaticValue); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
+}
+
+func (r *integrationRepository) UpdateConnectionConfig(ctx context.Context, orgID, connID uuid.UUID, configCapabilities []byte, syncDirection string) error {
+	if len(configCapabilities) == 0 {
+		configCapabilities = []byte("{}")
+	}
+	if syncDirection == "" {
+		syncDirection = "push"
+	}
+	_, err := r.db.Exec(ctx, `
+		UPDATE integration_connections
+		SET config_capabilities = $1, sync_direction = $2, updated_at = now()
+		WHERE organization_id = $3 AND id = $4`, configCapabilities, syncDirection, orgID, connID)
+	return err
+}
+
 // MatchingDispatchTargets returns enabled subscriptions for an org+event whose
 // connection is usable, each hydrated with the connection's encrypted secrets.
 // Dispatch volume is per-event and low, so the secrets fetch is done per row.
 func (r *integrationRepository) MatchingDispatchTargets(ctx context.Context, orgID uuid.UUID, eventType string) ([]DispatchTarget, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT s.id, s.connection_id, s.organization_id, s.event_type, s.action, s.config, s.enabled, s.created_at, s.updated_at
+		SELECT s.id, s.connection_id, s.organization_id, s.event_type, s.action, s.config, s.enabled, s.created_at, s.updated_at, s.use_case
 		FROM integration_event_subscriptions s
 		JOIN integration_connections c ON c.id = s.connection_id
 		WHERE s.organization_id = $1 AND s.event_type = $2 AND s.enabled
+		  AND s.automation_id IS NULL
 		  AND c.status IN ('connected', 'degraded')`, orgID, eventType)
 	if err != nil {
 		return nil, err
@@ -490,6 +757,65 @@ func (r *integrationRepository) ListSyncRuns(ctx context.Context, orgID, connID 
 	return out, rows.Err()
 }
 
+func (r *integrationRepository) CreateAutomationRun(ctx context.Context, run *models.AutomationRun) error {
+	if run.ID == uuid.Nil {
+		run.ID = uuid.New()
+	}
+	run.StartedAt = time.Now().UTC()
+	if run.Status == "" {
+		run.Status = "running"
+	}
+	results, _ := json.Marshal(run.NodeResults)
+	if len(results) == 0 {
+		results = []byte("[]")
+	}
+	_, err := r.db.Exec(ctx, `
+		INSERT INTO automation_runs (id, automation_id, organization_id, trigger_event, status, node_results, started_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		run.ID, run.AutomationID, run.OrganizationID, run.TriggerEvent, run.Status, results, run.StartedAt)
+	return err
+}
+
+func (r *integrationRepository) FinishAutomationRun(ctx context.Context, id uuid.UUID, status, errorDetail string, nodeResults []models.AutomationNodeResult) error {
+	results, _ := json.Marshal(nodeResults)
+	if len(results) == 0 {
+		results = []byte("[]")
+	}
+	_, err := r.db.Exec(ctx, `
+		UPDATE automation_runs
+		SET status = $1, error_detail = $2, node_results = $3, finished_at = NOW()
+		WHERE id = $4`, status, errorDetail, results, id)
+	return err
+}
+
+func (r *integrationRepository) ListAutomationRuns(ctx context.Context, orgID, automationID uuid.UUID, limit int) ([]models.AutomationRun, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	rows, err := r.db.Query(ctx, `
+		SELECT id, automation_id, organization_id, trigger_event, status, node_results, error_detail, started_at, finished_at
+		FROM automation_runs
+		WHERE organization_id = $1 AND automation_id = $2 ORDER BY started_at DESC LIMIT $3`, orgID, automationID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []models.AutomationRun{}
+	for rows.Next() {
+		var run models.AutomationRun
+		var results []byte
+		if err := rows.Scan(&run.ID, &run.AutomationID, &run.OrganizationID, &run.TriggerEvent, &run.Status,
+			&results, &run.ErrorDetail, &run.StartedAt, &run.FinishedAt); err != nil {
+			return nil, err
+		}
+		if len(results) > 0 {
+			_ = json.Unmarshal(results, &run.NodeResults)
+		}
+		out = append(out, run)
+	}
+	return out, rows.Err()
+}
+
 // --- scanning helpers -------------------------------------------------------
 
 type scanner interface {
@@ -507,6 +833,7 @@ func scanConnectionInto(row scanner, c *models.IntegrationConnection) error {
 		&c.ConnectedByUserID, &c.ExternalAccountID, &c.ExternalAccountName,
 		&c.GrantedScopes, &c.TokenExpiresAt, &c.Health, &c.HealthDetail, &c.HealthCheckedAt,
 		&c.LastSyncedAt, &c.LastError, &c.LastErrorAt, &c.CreatedAt, &c.UpdatedAt,
+		&c.ConfigCapabilities, &c.SyncDirection,
 	); err != nil {
 		return err
 	}
@@ -514,6 +841,9 @@ func scanConnectionInto(row scanner, c *models.IntegrationConnection) error {
 	c.Status = models.IntegrationStatus(status)
 	if len(c.DisplayFields) == 0 {
 		c.DisplayFields = json.RawMessage("{}")
+	}
+	if len(c.ConfigCapabilities) == 0 {
+		c.ConfigCapabilities = json.RawMessage("{}")
 	}
 	return nil
 }
@@ -525,6 +855,7 @@ func scanConnectionSecretsInto(row scanner, sec *ConnectionSecrets) error {
 		&sec.Conn.ConnectedByUserID, &sec.Conn.ExternalAccountID, &sec.Conn.ExternalAccountName,
 		&sec.Conn.GrantedScopes, &sec.Conn.TokenExpiresAt, &sec.Conn.Health, &sec.Conn.HealthDetail, &sec.Conn.HealthCheckedAt,
 		&sec.Conn.LastSyncedAt, &sec.Conn.LastError, &sec.Conn.LastErrorAt, &sec.Conn.CreatedAt, &sec.Conn.UpdatedAt,
+		&sec.Conn.ConfigCapabilities, &sec.Conn.SyncDirection,
 		&sec.ConfigEncrypted, &sec.AccessTokenEnc, &sec.RefreshTokenEnc,
 	); err != nil {
 		return err
@@ -534,6 +865,9 @@ func scanConnectionSecretsInto(row scanner, sec *ConnectionSecrets) error {
 	if len(sec.Conn.DisplayFields) == 0 {
 		sec.Conn.DisplayFields = json.RawMessage("{}")
 	}
+	if len(sec.Conn.ConfigCapabilities) == 0 {
+		sec.Conn.ConfigCapabilities = json.RawMessage("{}")
+	}
 	return nil
 }
 
@@ -541,7 +875,7 @@ func scanEventSubscription(row scanner) (*models.IntegrationEventSubscription, e
 	var s models.IntegrationEventSubscription
 	var action string
 	var cfg []byte
-	if err := row.Scan(&s.ID, &s.ConnectionID, &s.OrganizationID, &s.EventType, &action, &cfg, &s.Enabled, &s.CreatedAt, &s.UpdatedAt); err != nil {
+	if err := row.Scan(&s.ID, &s.ConnectionID, &s.OrganizationID, &s.EventType, &action, &cfg, &s.Enabled, &s.CreatedAt, &s.UpdatedAt, &s.UseCase); err != nil {
 		return nil, err
 	}
 	s.Action = models.IntegrationAction(action)
@@ -552,11 +886,35 @@ func scanEventSubscription(row scanner) (*models.IntegrationEventSubscription, e
 	return &s, nil
 }
 
-// --- Meeting bookings (unchanged behaviour) ---------------------------------
+// --- Meeting bookings -------------------------------------------------------
+
+// meetingCols is the shared column projection (with a contacts join for the
+// display name) so List/Search scan identically.
+const meetingCols = `
+	mb.id, mb.organization_id, mb.source, mb.external_event_id, mb.status,
+	mb.invitee_email, mb.invitee_name, mb.event_name, mb.event_type,
+	mb.scheduled_for, mb.end_time, mb.join_url, mb.location,
+	mb.cancel_url, mb.reschedule_url, mb.canceled_reason,
+	mb.contact_id, mb.campaign_id, mb.created_at, mb.updated_at,
+	COALESCE(NULLIF(TRIM(CONCAT_WS(' ', c.first_name, c.last_name)), ''), '') AS contact_name`
+
+func scanMeetingBooking(row pgx.Row, b *models.MeetingBooking) error {
+	return row.Scan(
+		&b.ID, &b.OrganizationID, &b.Source, &b.ExternalEventID, &b.Status,
+		&b.InviteeEmail, &b.InviteeName, &b.EventName, &b.EventType,
+		&b.ScheduledFor, &b.EndTime, &b.JoinURL, &b.Location,
+		&b.CancelURL, &b.RescheduleURL, &b.CanceledReason,
+		&b.ContactID, &b.CampaignID, &b.CreatedAt, &b.UpdatedAt,
+		&b.ContactName,
+	)
+}
 
 func (r *integrationRepository) UpsertMeetingBooking(ctx context.Context, b *models.MeetingBooking) error {
 	if b.ID == uuid.Nil {
 		b.ID = uuid.New()
+	}
+	if b.Status == "" {
+		b.Status = models.MeetingBooked
 	}
 	raw := b.RawPayload
 	if len(raw) == 0 {
@@ -564,20 +922,36 @@ func (r *integrationRepository) UpsertMeetingBooking(ctx context.Context, b *mod
 	}
 	_, err := r.db.Exec(ctx, `
 		INSERT INTO meeting_bookings (
-			id, organization_id, source, external_event_id,
-			invitee_email, invitee_name, event_name, scheduled_for,
-			contact_id, campaign_id, raw_payload, created_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
+			id, organization_id, source, external_event_id, status,
+			invitee_email, invitee_name, event_name, event_type,
+			scheduled_for, end_time, join_url, location,
+			cancel_url, reschedule_url, canceled_reason,
+			contact_id, campaign_id, raw_payload, created_at, updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, NOW(), NOW())
 		ON CONFLICT (organization_id, source, external_event_id) DO UPDATE SET
+			-- never let a re-delivered "booked" un-cancel a canceled meeting.
+			status = CASE
+				WHEN meeting_bookings.status = 'canceled' AND EXCLUDED.status = 'booked'
+				THEN meeting_bookings.status ELSE EXCLUDED.status END,
 			invitee_email = EXCLUDED.invitee_email,
 			invitee_name = EXCLUDED.invitee_name,
 			event_name = EXCLUDED.event_name,
+			event_type = EXCLUDED.event_type,
 			scheduled_for = EXCLUDED.scheduled_for,
+			end_time = EXCLUDED.end_time,
+			join_url = EXCLUDED.join_url,
+			location = EXCLUDED.location,
+			cancel_url = EXCLUDED.cancel_url,
+			reschedule_url = EXCLUDED.reschedule_url,
+			canceled_reason = EXCLUDED.canceled_reason,
 			contact_id = COALESCE(EXCLUDED.contact_id, meeting_bookings.contact_id),
 			campaign_id = COALESCE(EXCLUDED.campaign_id, meeting_bookings.campaign_id),
-			raw_payload = EXCLUDED.raw_payload`,
-		b.ID, b.OrganizationID, b.Source, b.ExternalEventID,
-		b.InviteeEmail, b.InviteeName, b.EventName, b.ScheduledFor,
+			raw_payload = EXCLUDED.raw_payload,
+			updated_at = NOW()`,
+		b.ID, b.OrganizationID, b.Source, b.ExternalEventID, string(b.Status),
+		b.InviteeEmail, b.InviteeName, b.EventName, b.EventType,
+		b.ScheduledFor, b.EndTime, b.JoinURL, b.Location,
+		b.CancelURL, b.RescheduleURL, b.CanceledReason,
 		b.ContactID, b.CampaignID, raw)
 	return err
 }
@@ -587,10 +961,10 @@ func (r *integrationRepository) ListMeetingBookings(ctx context.Context, orgID u
 		limit = 50
 	}
 	rows, err := r.db.Query(ctx, `
-		SELECT id, organization_id, source, external_event_id,
-		       invitee_email, invitee_name, event_name, scheduled_for,
-		       contact_id, campaign_id, created_at
-		FROM meeting_bookings WHERE organization_id = $1 ORDER BY created_at DESC LIMIT $2`, orgID, limit)
+		SELECT `+meetingCols+`
+		FROM meeting_bookings mb
+		LEFT JOIN contacts c ON c.id = mb.contact_id
+		WHERE mb.organization_id = $1 ORDER BY mb.created_at DESC LIMIT $2`, orgID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -599,12 +973,146 @@ func (r *integrationRepository) ListMeetingBookings(ctx context.Context, orgID u
 	out := []models.MeetingBooking{}
 	for rows.Next() {
 		var b models.MeetingBooking
-		if err := rows.Scan(&b.ID, &b.OrganizationID, &b.Source, &b.ExternalEventID,
-			&b.InviteeEmail, &b.InviteeName, &b.EventName, &b.ScheduledFor,
-			&b.ContactID, &b.CampaignID, &b.CreatedAt); err != nil {
+		if err := scanMeetingBooking(rows, &b); err != nil {
 			return nil, err
 		}
 		out = append(out, b)
 	}
 	return out, rows.Err()
+}
+
+// SearchMeetingBookings powers the Meetings page: timeframe (upcoming/past),
+// status, and free-text filters with offset pagination and an honest total.
+func (r *integrationRepository) SearchMeetingBookings(ctx context.Context, orgID uuid.UUID, f models.MeetingBookingFilter) (*models.MeetingBookingPage, error) {
+	limit := f.Limit
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	offset := f.Offset
+	if offset < 0 {
+		offset = 0
+	}
+
+	where := []string{"mb.organization_id = $1"}
+	args := []any{orgID}
+	add := func(clause string, val any) {
+		args = append(args, val)
+		where = append(where, fmt.Sprintf(clause, len(args)))
+	}
+
+	switch f.Timeframe {
+	case "upcoming":
+		where = append(where, "mb.scheduled_for >= NOW()", "mb.status <> 'canceled'")
+	case "past":
+		where = append(where, "(mb.scheduled_for < NOW() OR mb.status = 'canceled')")
+	}
+	if f.Status != "" {
+		add("mb.status = $%d", f.Status)
+	}
+	if s := strings.TrimSpace(f.Search); s != "" {
+		args = append(args, "%"+s+"%")
+		idx := len(args) // one arg backs all three ILIKE placeholders
+		where = append(where, fmt.Sprintf("(mb.invitee_name ILIKE $%d OR mb.invitee_email ILIKE $%d OR mb.event_name ILIKE $%d)", idx, idx, idx))
+	}
+
+	whereSQL := strings.Join(where, " AND ")
+
+	var total int
+	if err := r.db.QueryRow(ctx,
+		`SELECT COUNT(*) FROM meeting_bookings mb WHERE `+whereSQL, args...,
+	).Scan(&total); err != nil {
+		return nil, err
+	}
+
+	order := "mb.scheduled_for DESC NULLS LAST, mb.created_at DESC"
+	if f.Timeframe == "upcoming" {
+		order = "mb.scheduled_for ASC NULLS LAST, mb.created_at DESC"
+	}
+
+	query := fmt.Sprintf(`
+		SELECT %s
+		FROM meeting_bookings mb
+		LEFT JOIN contacts c ON c.id = mb.contact_id
+		WHERE %s
+		ORDER BY %s
+		LIMIT $%d OFFSET $%d`, meetingCols, whereSQL, order, len(args)+1, len(args)+2)
+	args = append(args, limit, offset)
+
+	rows, err := r.db.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	data := []models.MeetingBooking{}
+	for rows.Next() {
+		var b models.MeetingBooking
+		if err := scanMeetingBooking(rows, &b); err != nil {
+			return nil, err
+		}
+		data = append(data, b)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	hasMore := offset+len(data) < total
+	page := &models.MeetingBookingPage{
+		Data: data,
+		Pagination: models.MeetingBookingPagination{
+			Total:   int64(total),
+			Limit:   limit,
+			Offset:  offset,
+			HasMore: hasMore,
+		},
+	}
+	if hasMore {
+		next := offset + limit
+		page.Pagination.NextOffset = &next
+	}
+	return page, nil
+}
+
+// GetMeetingBooking fetches one booking (with contact name) scoped to the org.
+func (r *integrationRepository) GetMeetingBooking(ctx context.Context, orgID, id uuid.UUID) (*models.MeetingBooking, error) {
+	var b models.MeetingBooking
+	row := r.db.QueryRow(ctx, `
+		SELECT `+meetingCols+`
+		FROM meeting_bookings mb
+		LEFT JOIN contacts c ON c.id = mb.contact_id
+		WHERE mb.organization_id = $1 AND mb.id = $2`, orgID, id)
+	if err := scanMeetingBooking(row, &b); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &b, nil
+}
+
+// DeleteMeetingBooking removes a booking (used to delete a manually-created
+// meeting). Org-scoped so a member can't delete another org's row.
+func (r *integrationRepository) DeleteMeetingBooking(ctx context.Context, orgID, id uuid.UUID) error {
+	_, err := r.db.Exec(ctx,
+		`DELETE FROM meeting_bookings WHERE organization_id = $1 AND id = $2`, orgID, id)
+	return err
+}
+
+// MeetingBookingSummary returns the counts the sidebar + page header show.
+func (r *integrationRepository) MeetingBookingSummary(ctx context.Context, orgID uuid.UUID) (*models.MeetingBookingSummary, error) {
+	var s models.MeetingBookingSummary
+	err := r.db.QueryRow(ctx, `
+		SELECT
+			COUNT(*) FILTER (WHERE scheduled_for >= NOW() AND status <> 'canceled') AS upcoming,
+			COUNT(*) FILTER (WHERE scheduled_for >= date_trunc('day', NOW())
+				AND scheduled_for < date_trunc('day', NOW()) + interval '1 day'
+				AND status <> 'canceled') AS today,
+			COUNT(*) AS total,
+			COUNT(*) FILTER (WHERE status = 'canceled') AS canceled
+		FROM meeting_bookings WHERE organization_id = $1`, orgID).
+		Scan(&s.Upcoming, &s.Today, &s.Total, &s.Canceled)
+	if err != nil {
+		return nil, err
+	}
+	return &s, nil
 }

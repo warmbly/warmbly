@@ -16,6 +16,7 @@ import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp
 
 import useLogin from "@/lib/api/hooks/auth/useLogin";
 import useLoginConfirm from "@/lib/api/hooks/auth/useLoginConfirm";
+import { useTwoFactorVerify } from "@/lib/api/hooks/auth/useTwoFactor";
 import useRegister from "@/lib/api/hooks/auth/useRegister";
 import useRegisterConfirm from "@/lib/api/hooks/auth/useRegisterConfirm";
 import { saveTokens } from "@/lib/auth";
@@ -145,7 +146,7 @@ function useCountdown(seconds: number) {
    Main multi-step auth page
    ═══════════════════════════════════════════ */
 
-type Step = "email" | "signin" | "signup" | "verify";
+type Step = "email" | "signin" | "signup" | "verify" | "2fa";
 type PasskeyStatus = "preparing" | "ready" | "waiting" | "timeout" | "not-found" | "error";
 
 export default function LoginPage() {
@@ -171,6 +172,7 @@ export default function LoginPage() {
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [session, setSession] = useState("");
+    const [pendingToken, setPendingToken] = useState("");
     const [direction, setDirection] = useState(0);
     const pendingRef = useRef<((token: string) => void) | null>(null);
     const tokenRef = useRef<string>("");
@@ -182,6 +184,7 @@ export default function LoginPage() {
     const loginMutation = useLogin();
     const registerMutation = useRegister();
     const loginConfirmMutation = useLoginConfirm();
+    const verify2FAMutation = useTwoFactorVerify();
     const registerConfirmMutation = useRegisterConfirm();
 
     const pending = captchaLoading ||
@@ -430,6 +433,21 @@ export default function LoginPage() {
             try {
                 if (mode === "signin") {
                     const res = await loginConfirmMutation.mutateAsync({ session, code, turnstile: token });
+                    // 2FA gate: instead of a session we got a single-use pending
+                    // token — collect the TOTP/recovery code in a dedicated step.
+                    if (res.two_fa_required) {
+                        if (!res.pending_token) {
+                            toast.error("Something went wrong, please try again.");
+                            return;
+                        }
+                        setPendingToken(res.pending_token);
+                        goTo("2fa");
+                        return;
+                    }
+                    if (!res.access_token) {
+                        toast.error("Something went wrong, please try again.");
+                        return;
+                    }
                     toast.success("Welcome back!");
                     // Nudge passwordless enrollment once the dashboard loads.
                     try { sessionStorage.setItem(SUGGEST_PASSKEY_FLAG, "1"); } catch { /* storage unavailable */ }
@@ -447,6 +465,20 @@ export default function LoginPage() {
                 toast.error(buildError(e as AppError));
             }
         });
+    };
+
+    /* ── Step 4: 2FA (TOTP / recovery) ───── */
+    // No captcha here: captcha was already spent at sign-in and the verify
+    // endpoint is rate-limited server-side.
+    const handle2FA = async (code: string) => {
+        try {
+            const token = await verify2FAMutation.mutateAsync({ pending_token: pendingToken, code });
+            toast.success("Welcome back!");
+            try { sessionStorage.setItem(SUGGEST_PASSKEY_FLAG, "1"); } catch { /* storage unavailable */ }
+            await completeSession(token);
+        } catch (e) {
+            toast.error(buildError(e as AppError));
+        }
     };
 
     /* ── Resend OTP ─────────────────────── */
@@ -509,6 +541,19 @@ export default function LoginPage() {
                             onBack={() => goTo(mode === "signin" ? "signin" : "signup", -1)}
                             onSubmit={handleVerify}
                             onResend={handleResend}
+                        />
+                    </MotionWrap>
+                )}
+
+                {step === "2fa" && (
+                    <MotionWrap key="2fa" direction={direction}>
+                        <TwoFactorStep
+                            pending={verify2FAMutation.isPending}
+                            onBack={() => {
+                                setPendingToken("");
+                                goTo("verify", -1);
+                            }}
+                            onSubmit={handle2FA}
                         />
                     </MotionWrap>
                 )}
@@ -975,6 +1020,95 @@ function VerifyStep({
 
                 <div onClick={() => !pending && onSubmit(otp)}>
                     <AuthButton loading={pending}>Verify</AuthButton>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+/* ── 2FA step ────────────────────────── */
+
+function TwoFactorStep({
+    pending,
+    onBack,
+    onSubmit,
+}: {
+    pending: boolean;
+    onBack: () => void;
+    onSubmit: (code: string) => void;
+}) {
+    const [otp, setOtp] = useState("");
+    const [useRecovery, setUseRecovery] = useState(false);
+    const [recovery, setRecovery] = useState("");
+
+    // Auto-submit a complete 6-digit TOTP code.
+    useEffect(() => {
+        if (!useRecovery && otp.length === 6 && !pending) onSubmit(otp);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [otp]);
+
+    return (
+        <div>
+            <BackButton onClick={onBack} />
+            <div className="text-center mb-6">
+                <div className="mx-auto w-14 h-14 rounded-2xl bg-sky-50 flex items-center justify-center mb-4">
+                    <svg className="w-7 h-7 text-sky-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+                    </svg>
+                </div>
+                <h1 className="text-[28px] font-bold text-slate-900 tracking-tight leading-tight">Two-factor authentication</h1>
+                <p className="text-sm text-slate-400 mt-1.5">
+                    {useRecovery ? "Enter one of your recovery codes." : "Enter the 6-digit code from your authenticator app."}
+                </p>
+            </div>
+
+            <div className="space-y-5">
+                {useRecovery ? (
+                    <form
+                        onSubmit={(e) => {
+                            e.preventDefault();
+                            if (recovery.trim()) onSubmit(recovery.trim());
+                        }}
+                        className="space-y-4"
+                    >
+                        <input
+                            value={recovery}
+                            onChange={(e) => setRecovery(e.target.value)}
+                            placeholder="xxxxx-xxxxx"
+                            autoFocus
+                            autoComplete="off"
+                            className="w-full h-12 px-3 rounded-lg border border-slate-200 text-center font-mono tracking-wider text-slate-900 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-400/15"
+                        />
+                        <AuthButton loading={pending}>Verify</AuthButton>
+                    </form>
+                ) : (
+                    <div className="flex justify-center">
+                        <InputOTP maxLength={6} value={otp} onChange={(v) => setOtp(v)} containerClassName="gap-2.5">
+                            <InputOTPGroup className="gap-2.5">
+                                {[0, 1, 2, 3, 4, 5].map((i) => (
+                                    <InputOTPSlot
+                                        key={i}
+                                        index={i}
+                                        className="!w-12 !h-14 !rounded-lg !border-slate-200 text-lg font-semibold data-[active=true]:!border-sky-400 data-[active=true]:!ring-sky-400/15 !shadow-none first:!rounded-lg last:!rounded-lg !border"
+                                    />
+                                ))}
+                            </InputOTPGroup>
+                        </InputOTP>
+                    </div>
+                )}
+
+                <div className="text-center">
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setUseRecovery((v) => !v);
+                            setOtp("");
+                            setRecovery("");
+                        }}
+                        className="text-sm text-sky-500 hover:text-sky-600 font-medium transition-colors"
+                    >
+                        {useRecovery ? "Use your authenticator app" : "Use a recovery code"}
+                    </button>
                 </div>
             </div>
         </div>

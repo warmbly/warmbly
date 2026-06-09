@@ -25,6 +25,14 @@ type ContactRepository interface {
 	Add(ctx context.Context, userID string, contacts []models.AddContact) ([]models.Contact, *errx.Error)
 	GetByID(ctx context.Context, contactID uuid.UUID) (*models.Contact, *errx.Error)
 	GetByEmailAndOrganization(ctx context.Context, organizationID uuid.UUID, email string) (*models.Contact, *errx.Error)
+	// GetByIDsAndOrganization fetches the org's contacts for a set of IDs. Used
+	// by the synchronous "push to CRM" action so a member can only push contacts
+	// that belong to their organization. Foreign/missing IDs are omitted.
+	GetByIDsAndOrganization(ctx context.Context, organizationID uuid.UUID, ids []uuid.UUID) ([]models.Contact, *errx.Error)
+	// OwnerUserID returns the user that owns a contact (contacts.user_id), used
+	// to route a per-user realtime event (e.g. "a lead booked a meeting"). nil
+	// when the contact is missing or not in the org.
+	OwnerUserID(ctx context.Context, organizationID, contactID uuid.UUID) (*uuid.UUID, error)
 
 	// Pre-send email verification round-trip. UpdateContactVerification stores
 	// the outcome of a verify pass; ListUnverifiedContacts returns contacts that
@@ -495,6 +503,61 @@ func (r *contactRepository) GetByEmailAndOrganization(ctx context.Context, organ
 	contact.Campaigns = []models.MiniCampaign{}
 	contact.Categories = []models.MiniCategory{}
 	return &contact, nil
+}
+
+func (r *contactRepository) OwnerUserID(ctx context.Context, organizationID, contactID uuid.UUID) (*uuid.UUID, error) {
+	var userID uuid.UUID
+	err := r.DB.QueryRow(ctx,
+		`SELECT user_id FROM contacts WHERE id = $1 AND organization_id = $2`,
+		contactID, organizationID,
+	).Scan(&userID)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &userID, nil
+}
+
+func (r *contactRepository) GetByIDsAndOrganization(ctx context.Context, organizationID uuid.UUID, ids []uuid.UUID) ([]models.Contact, *errx.Error) {
+	if len(ids) == 0 {
+		return []models.Contact{}, nil
+	}
+	query := `
+		SELECT
+			c.id, c.first_name, c.last_name, c.email, c.company, c.phone,
+			c.custom_fields, c.subscribed, c.updated_at, c.created_at
+		FROM contacts c
+		WHERE c.organization_id = $1 AND c.id = ANY($2)
+	`
+	rows, err := r.DB.Query(ctx, query, organizationID, ids)
+	if err != nil {
+		db.CaptureError(err, query, []any{organizationID, ids}, "query")
+		return nil, errx.InternalError()
+	}
+	defer rows.Close()
+
+	out := make([]models.Contact, 0, len(ids))
+	for rows.Next() {
+		var c models.Contact
+		if err := rows.Scan(
+			&c.ID, &c.FirstName, &c.LastName, &c.Email,
+			&c.Company, &c.Phone, &c.CustomFields, &c.Subscribed,
+			&c.UpdatedAt, &c.CreatedAt,
+		); err != nil {
+			db.CaptureError(err, "", nil, "GetByIDsAndOrganization scan")
+			return nil, errx.InternalError()
+		}
+		c.Campaigns = []models.MiniCampaign{}
+		c.Categories = []models.MiniCategory{}
+		out = append(out, c)
+	}
+	if err := rows.Err(); err != nil {
+		db.CaptureError(err, "", nil, "GetByIDsAndOrganization rows")
+		return nil, errx.InternalError()
+	}
+	return out, nil
 }
 
 func (r *contactRepository) Search(
@@ -2191,6 +2254,59 @@ func (r *contactRepository) ListTimeline(ctx context.Context, userID uuid.UUID, 
 			events = append(events, ev)
 		}
 		nrows.Close()
+
+		// 6. Meetings booked through a connected scheduling provider. The event
+		//    time is when the booking arrived; scheduled_for carries the call
+		//    window so the UI can render "Meeting on <date>".
+		meetingQuery := `
+			SELECT created_at, status, source, event_name, scheduled_for, join_url, canceled_reason
+			FROM meeting_bookings
+			WHERE contact_id = $1
+			  AND organization_id = $2
+			  AND created_at < $3
+			ORDER BY created_at DESC
+			LIMIT $4
+		`
+		mrows, err := r.DB.Query(ctx, meetingQuery, contactID, *orgID, bound, limit)
+		if err != nil {
+			db.CaptureError(err, meetingQuery, nil, "ListTimeline meetings")
+			return nil, errx.InternalError()
+		}
+		for mrows.Next() {
+			var ev models.ContactTimelineEvent
+			var status, source, eventName, joinURL, canceledReason string
+			var scheduledFor *time.Time
+			if err := mrows.Scan(&ev.At, &status, &source, &eventName, &scheduledFor, &joinURL, &canceledReason); err != nil {
+				mrows.Close()
+				db.CaptureError(err, "", nil, "ListTimeline meetings scan")
+				return nil, errx.InternalError()
+			}
+			switch status {
+			case "rescheduled":
+				ev.Type = models.TimelineMeetingRescheduled
+			case "canceled":
+				ev.Type = models.TimelineMeetingCanceled
+			default:
+				ev.Type = models.TimelineMeetingBooked
+			}
+			if eventName != "" {
+				ev.Subject = &eventName
+			}
+			if source != "" {
+				ev.Source = &source
+			}
+			if joinURL != "" {
+				ev.JoinURL = &joinURL
+			}
+			if canceledReason != "" {
+				ev.Reason = &canceledReason
+			}
+			ev.ScheduledFor = scheduledFor
+			st := status
+			ev.MeetingState = &st
+			events = append(events, ev)
+		}
+		mrows.Close()
 	}
 
 	// Merge sort: newest first.

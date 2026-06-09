@@ -36,3 +36,24 @@ func spinClean(s string) string {
 	out = strings.ReplaceAll(out, "  ", " ")
 	return strings.TrimSpace(out)
 }
+
+// spintaxAlt matches an innermost {a|b|…} group that actually contains a '|'.
+var spintaxAlt = regexp.MustCompile(`\{([^{}]*\|[^{}]*)\}`)
+
+// expandSpintax expands ONLY real alternation groups — those containing a '|' —
+// choosing one option at random per group. Brace runs without a '|' (CSS in an
+// HTML body, JSON, an unrelated "{...}") are left verbatim, so this is safe to
+// run over campaign HTML/plaintext. Repeated passes resolve nesting
+// innermost-first. Use this (not spin) for user-authored campaign bodies.
+func expandSpintax(s string) string {
+	if !strings.Contains(s, "|") {
+		return s
+	}
+	for i := 0; i < 20 && spintaxAlt.MatchString(s); i++ {
+		s = spintaxAlt.ReplaceAllStringFunc(s, func(m string) string {
+			opts := strings.Split(m[1:len(m)-1], "|")
+			return opts[rand.Intn(len(opts))]
+		})
+	}
+	return s
+}

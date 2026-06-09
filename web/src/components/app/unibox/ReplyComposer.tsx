@@ -16,6 +16,7 @@
 import React from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
+    CalendarPlusIcon,
     CheckIcon,
     ChevronDownIcon,
     ClockIcon,
@@ -34,6 +35,8 @@ import toast from "react-hot-toast";
 import sendReply from "@/lib/api/client/app/unibox/sendReply";
 import useTemplates from "@/lib/api/hooks/app/templates/useTemplates";
 import useUniboxOverview from "@/lib/api/hooks/app/unibox/useUniboxOverview";
+import useIntegrationConnections from "@/lib/api/hooks/app/integrations/useIntegrationConnections";
+import { bookingURL, prefilledBookingURL } from "@/lib/api/models/app/integrations/Integration";
 import { useAppStore } from "@/stores";
 import type Template from "@/lib/api/models/app/templates/Template";
 import WriteWithAI from "@/components/app/campaigns/sequences/WriteWithAI";
@@ -119,6 +122,39 @@ function formatFriendly(d: Date): string {
 
 function looksLikeEmail(s: string): boolean {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim());
+}
+
+// InsertBookingLink drops the org's scheduling link (prefilled with the
+// recipient's email) into the reply body. Renders only when a Calendly /
+// Cal.com link is configured, so the action never shows as a dead button.
+function InsertBookingLink({
+    email,
+    onInsert,
+}: {
+    email?: string;
+    onInsert: (text: string) => void;
+}) {
+    const { data } = useIntegrationConnections();
+    const url = (data?.connections ?? [])
+        .map((c) => bookingURL(c))
+        .find((u): u is string => !!u);
+    if (!url) return null;
+
+    const cleanEmail = email ? bareEmail(email) : undefined;
+    return (
+        <button
+            type="button"
+            title="Insert your booking link, prefilled for this contact"
+            onClick={() => {
+                onInsert(prefilledBookingURL(url, cleanEmail));
+                toast.success("Booking link added");
+            }}
+            className="h-7 px-2 rounded-md border border-slate-200 hover:border-slate-300 text-slate-700 hover:text-slate-900 text-[12px] inline-flex items-center gap-1 transition-colors"
+        >
+            <CalendarPlusIcon className="w-3 h-3" />
+            Booking link
+        </button>
+    );
 }
 
 function nameFromAddr(s: string): string {
@@ -675,6 +711,13 @@ export function ReplyComposer({ threadId, replyTo, mode, onClose }: ReplyCompose
                         />
                     </PopoverMenuContent>
                 </PopoverMenu>
+
+                <InsertBookingLink
+                    email={to[0]}
+                    onInsert={(text) =>
+                        setBody((b) => (b.trim() ? `${b.trimEnd()}\n\n${text}` : text).slice(0, MAX_BODY_LEN))
+                    }
+                />
 
                 {body && (
                     <button

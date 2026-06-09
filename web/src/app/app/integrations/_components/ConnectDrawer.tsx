@@ -16,6 +16,7 @@
 "use client";
 
 import React from "react";
+import { motion } from "framer-motion";
 import {
     ArrowRightIcon,
     CheckCircle2Icon,
@@ -65,33 +66,10 @@ const FIELDS_BY_PROVIDER: Record<string, FieldDef[]> = {
             helper: "Settings → Developer → API Keys in Close.",
         },
     ],
-    zapier: [
-        {
-            key: "api_token",
-            label: "Warmbly API key",
-            type: "password",
-            required: true,
-            helper: "Create a scoped key under Settings → API keys, then paste it into Zapier.",
-        },
-    ],
-    make: [
-        {
-            key: "api_token",
-            label: "Warmbly API key",
-            type: "password",
-            required: true,
-            helper: "Create a scoped key under Settings → API keys, then paste it into Make.",
-        },
-    ],
-    n8n: [
-        {
-            key: "api_token",
-            label: "Warmbly API key",
-            type: "password",
-            required: true,
-            helper: "Create a scoped key under Settings → API keys, then paste it into n8n.",
-        },
-    ],
+    // Zapier / Make / n8n need no credential to connect — see the note in the
+    // overview step. We fan events to a per-automation webhook URL, and the
+    // reverse direction authenticates with a Warmbly API key created in the
+    // API-keys page (pasted into the tool, not here).
     discord: [
         { key: "server", label: "Server name", placeholder: "Acme" },
         {
@@ -124,7 +102,11 @@ export default function ConnectDrawer({
 
     const isOAuth = entry.auth_method === "oauth";
     const isInbound = entry.provider === "calendly" || entry.provider === "cal_com";
+    const isAutomation =
+        entry.provider === "zapier" || entry.provider === "make" || entry.provider === "n8n";
     const fields = FIELDS_BY_PROVIDER[entry.provider] ?? [];
+    // Only providers with real credential fields take the extra credentials step.
+    const needsCredentials = !isOAuth && !isInbound && fields.length > 0;
 
     function update(key: string, value: string) {
         setConfig((c) => ({ ...c, [key]: value }));
@@ -212,6 +194,19 @@ export default function ConnectDrawer({
                             </div>
                         )}
 
+                        {isAutomation && (
+                            <div className="rounded-md border border-sky-200 bg-sky-50/50 px-3 py-2.5 space-y-1.5">
+                                <p className="text-[12px] text-slate-700 leading-relaxed">
+                                    No key needed to connect. After connecting, add an automation that
+                                    sends Warmbly events to your {entry.name} webhook URL.
+                                </p>
+                                <p className="text-[11px] text-slate-500 leading-relaxed">
+                                    Want {entry.name} to call Warmbly back (e.g. create a contact)? Create a
+                                    scoped key under Settings → API keys and paste it into {entry.name}.
+                                </p>
+                            </div>
+                        )}
+
                         <div>
                             <Label>Connection label (optional)</Label>
                             <TextInput value={label} onChange={setLabel} placeholder={entry.name} />
@@ -251,10 +246,20 @@ export default function ConnectDrawer({
                                 {busy ? <Loader2Icon className="w-3.5 h-3.5 animate-spin" /> : <ArrowRightIcon className="w-3.5 h-3.5" />}
                                 {busy ? "Creating…" : "Create inbound URL"}
                             </button>
-                        ) : (
+                        ) : needsCredentials ? (
                             <button type="button" onClick={() => setStep("credentials")} className={primaryBtn}>
                                 <KeyRoundIcon className="w-3.5 h-3.5" />
                                 Continue
+                            </button>
+                        ) : (
+                            <button
+                                type="button"
+                                disabled={busy}
+                                onClick={() => void submitCredentials(new Event("submit") as unknown as React.FormEvent)}
+                                className={cn(primaryBtn, busy && "opacity-60")}
+                            >
+                                {busy ? <Loader2Icon className="w-3.5 h-3.5 animate-spin" /> : <ArrowRightIcon className="w-3.5 h-3.5" />}
+                                {busy ? "Connecting…" : `Connect ${entry.name}`}
                             </button>
                         )}
                     </DrawerFooter>
@@ -323,13 +328,21 @@ export function Drawer({
 }) {
     return (
         <div className="fixed inset-0 z-40 flex">
-            <button
+            <motion.button
                 type="button"
                 aria-label="Close"
                 onClick={onClose}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.18 }}
                 className="absolute inset-0 bg-slate-900/30 backdrop-blur-[2px]"
             />
-            <div className="ml-auto h-full w-[480px] max-w-[92vw] bg-white shadow-xl flex flex-col z-10 relative animate-[slidein_.18s_ease-out]">
+            <motion.div
+                initial={{ x: 28, opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
+                className="ml-auto h-full w-[480px] max-w-[92vw] bg-white shadow-xl flex flex-col z-10 relative"
+            >
                 <div className="h-12 px-5 border-b border-slate-200 flex items-center gap-3 shrink-0">
                     <ProviderGlyph provider={provider} name={name} size={7} />
                     <div className="min-w-0 flex-1">
@@ -346,7 +359,7 @@ export function Drawer({
                     </button>
                 </div>
                 {children}
-            </div>
+            </motion.div>
         </div>
     );
 }

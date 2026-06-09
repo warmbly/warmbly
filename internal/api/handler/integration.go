@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -14,6 +17,7 @@ import (
 	"github.com/warmbly/warmbly/internal/api/middleware"
 	"github.com/warmbly/warmbly/internal/app/integration"
 	"github.com/warmbly/warmbly/internal/errx"
+	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/models"
 )
 
@@ -361,6 +365,426 @@ func (h *Handler) ListConnectionSyncRuns(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"runs": runs})
 }
 
+// --- Synchronous contact push -----------------------------------------------
+
+type pushContactsPayload struct {
+	ContactIDs []string `json:"contact_ids"`
+}
+
+// PushContactsToIntegration synchronously upserts the given org contacts into a
+// connected CRM (HubSpot, Pipedrive, Salesforce, Close). This is the contextual
+// "push to CRM" action surfaced in Contacts. It is gated on the operational
+// PermUseIntegrations / APIPermIntegrations (see routes.go) rather than the
+// settings permission, so an operator can push without full settings access.
+//
+// Retries are naturally safe: every provider upsert is keyed by email, so a
+// repeated push converges rather than duplicating records — no Idempotency-Key
+// bookkeeping is required. Per-record results are returned so the dashboard can
+// report exactly which contacts synced.
+func (h *Handler) PushContactsToIntegration(c *gin.Context) {
+	orgID, userID, ok := h.requireIntegrationActor(c, true)
+	if !ok {
+		return
+	}
+	connID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "invalid id"))
+		return
+	}
+	var p pushContactsPayload
+	if err := c.ShouldBindJSON(&p); err != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "invalid payload"))
+		return
+	}
+
+	// Parse + dedupe the requested contact IDs.
+	seen := make(map[uuid.UUID]struct{}, len(p.ContactIDs))
+	ids := make([]uuid.UUID, 0, len(p.ContactIDs))
+	for _, raw := range p.ContactIDs {
+		id, perr := uuid.Parse(strings.TrimSpace(raw))
+		if perr != nil {
+			errx.JSON(c, errx.New(errx.BadRequest, "invalid contact id: "+raw))
+			return
+		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		errx.JSON(c, errx.New(errx.BadRequest, "no contacts provided"))
+		return
+	}
+	if len(ids) > 500 {
+		errx.JSON(c, errx.New(errx.BadRequest, "too many contacts in one push (max 500)"))
+		return
+	}
+	if h.ContactRepo == nil {
+		errx.JSON(c, errx.New(errx.Internal, "contacts unavailable"))
+		return
+	}
+
+	contacts, xerr := h.ContactRepo.GetByIDsAndOrganization(c.Request.Context(), orgID, ids)
+	if xerr != nil {
+		errx.JSON(c, xerr)
+		return
+	}
+	if len(contacts) == 0 {
+		errx.JSON(c, errx.New(errx.NotFound, "no matching contacts found"))
+		return
+	}
+
+	push := make([]integration.PushContact, 0, len(contacts))
+	for _, ct := range contacts {
+		push = append(push, integration.PushContact{
+			ID:        ct.ID,
+			Email:     ct.Email,
+			FirstName: ct.FirstName,
+			LastName:  ct.LastName,
+			Company:   ct.Company,
+			Phone:     ct.Phone,
+		})
+	}
+
+	res, perr := h.IntegrationService.PushContacts(c.Request.Context(), orgID, connID, push)
+	if perr != nil {
+		switch {
+		case errors.Is(perr, integration.ErrPushReauth):
+			errx.JSON(c, errx.New(errx.Conflict, perr.Error()))
+		default:
+			errx.JSON(c, errx.New(errx.BadRequest, perr.Error()))
+		}
+		return
+	}
+	h.auditIntegration(c, userID, models.AuditActionUpdate, connID, fmt.Sprintf("push:%d", res.Pushed))
+	c.JSON(http.StatusOK, res)
+}
+
+// --- Field mappings + connection config -------------------------------------
+
+// ListConnectionFieldMappings returns the field maps configured for a connection
+// (readable by operational integration users, not only settings managers).
+func (h *Handler) ListConnectionFieldMappings(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
+	connID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "invalid id"))
+		return
+	}
+	rows, err := h.IntegrationService.ListFieldMappings(c.Request.Context(), orgID, connID)
+	if err != nil {
+		errx.JSON(c, errx.New(errx.Internal, "failed to list field mappings"))
+		return
+	}
+	if rows == nil {
+		rows = []models.IntegrationFieldMapping{}
+	}
+	c.JSON(http.StatusOK, gin.H{"mappings": rows})
+}
+
+type fieldMappingPayload struct {
+	WarmblyField  string `json:"warmbly_field"`
+	ExternalField string `json:"external_field"`
+	Transform     string `json:"transform"`
+	StaticValue   string `json:"static_value"`
+}
+
+type replaceFieldMappingsPayload struct {
+	Object   string                `json:"object"`
+	Mappings []fieldMappingPayload `json:"mappings"`
+}
+
+// ReplaceConnectionFieldMappings swaps the connection-default field map for an
+// object. A full replace is naturally idempotent, so retries are safe without an
+// Idempotency-Key.
+func (h *Handler) ReplaceConnectionFieldMappings(c *gin.Context) {
+	orgID, userID, ok := h.requireIntegrationActor(c, true)
+	if !ok {
+		return
+	}
+	connID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "invalid id"))
+		return
+	}
+	var p replaceFieldMappingsPayload
+	if err := c.ShouldBindJSON(&p); err != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "invalid payload"))
+		return
+	}
+	mappings := make([]models.IntegrationFieldMapping, 0, len(p.Mappings))
+	for _, m := range p.Mappings {
+		if strings.TrimSpace(m.ExternalField) == "" {
+			errx.JSON(c, errx.New(errx.BadRequest, "every mapping needs a destination field"))
+			return
+		}
+		transform := strings.TrimSpace(m.Transform)
+		switch models.FieldTransform(transform) {
+		case "", models.FieldTransformNone, models.FieldTransformStatic,
+			models.FieldTransformUppercase, models.FieldTransformLowercase, models.FieldTransformTrim:
+		default:
+			errx.JSON(c, errx.New(errx.BadRequest, "invalid transform: "+transform))
+			return
+		}
+		if models.FieldTransform(transform) == models.FieldTransformStatic {
+			if strings.TrimSpace(m.StaticValue) == "" {
+				errx.JSON(c, errx.New(errx.BadRequest, "static mapping for "+m.ExternalField+" needs a value"))
+				return
+			}
+		} else if strings.TrimSpace(m.WarmblyField) == "" {
+			errx.JSON(c, errx.New(errx.BadRequest, "mapping for "+m.ExternalField+" needs a Warmbly field"))
+			return
+		}
+		mappings = append(mappings, models.IntegrationFieldMapping{
+			WarmblyField:  strings.TrimSpace(m.WarmblyField),
+			ExternalField: strings.TrimSpace(m.ExternalField),
+			Transform:     transform,
+			StaticValue:   m.StaticValue,
+		})
+	}
+	if err := h.IntegrationService.ReplaceFieldMappings(c.Request.Context(), orgID, connID, strings.TrimSpace(p.Object), mappings); err != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, err.Error()))
+		return
+	}
+	h.auditIntegration(c, userID, models.AuditActionUpdate, connID, "field_mappings")
+	rows, _ := h.IntegrationService.ListFieldMappings(c.Request.Context(), orgID, connID)
+	if rows == nil {
+		rows = []models.IntegrationFieldMapping{}
+	}
+	c.JSON(http.StatusOK, gin.H{"mappings": rows})
+}
+
+type updateConnectionConfigPayload struct {
+	ConfigCapabilities map[string]any `json:"config_capabilities"`
+	SyncDirection      string         `json:"sync_direction"`
+}
+
+// UpdateConnectionConfig saves a connection's onboarding/capability snapshot and
+// sync direction (the "what is this integration for" settings).
+func (h *Handler) UpdateConnectionConfig(c *gin.Context) {
+	orgID, userID, ok := h.requireIntegrationActor(c, true)
+	if !ok {
+		return
+	}
+	connID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "invalid id"))
+		return
+	}
+	var p updateConnectionConfigPayload
+	if err := c.ShouldBindJSON(&p); err != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "invalid payload"))
+		return
+	}
+	conn, err := h.IntegrationService.UpdateConnectionConfig(c.Request.Context(), orgID, connID, p.ConfigCapabilities, strings.TrimSpace(p.SyncDirection))
+	if err != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, err.Error()))
+		return
+	}
+	h.auditIntegration(c, userID, models.AuditActionUpdate, connID, "config")
+	c.JSON(http.StatusOK, gin.H{"connection": conn})
+}
+
+// GetConnectionWebhookSecret returns (generating on first call) the HMAC signing
+// secret for an automation connection, plus the scheme, so the user can verify
+// our webhook signatures on their end.
+func (h *Handler) GetConnectionWebhookSecret(c *gin.Context) {
+	orgID, _, ok := h.requireIntegrationActor(c, true)
+	if !ok {
+		return
+	}
+	connID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "invalid id"))
+		return
+	}
+	secret, err := h.IntegrationService.WebhookSigningSecret(c.Request.Context(), orgID, connID)
+	if err != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, err.Error()))
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"signing_secret":   secret,
+		"signature_header": "X-Warmbly-Signature",
+		"scheme":           "HMAC-SHA256 of \"{t}.{body}\", sent as t=<unix>,v1=<hex>",
+	})
+}
+
+// TestConnection fires a synthetic event through the connection's notify/webhook
+// automations so the user can confirm their Zap/scenario/channel is wired.
+func (h *Handler) TestConnection(c *gin.Context) {
+	orgID, userID, ok := h.requireIntegrationActor(c, true)
+	if !ok {
+		return
+	}
+	connID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "invalid id"))
+		return
+	}
+	sent, err := h.IntegrationService.SendTestEvent(c.Request.Context(), orgID, connID)
+	if err != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, err.Error()))
+		return
+	}
+	h.auditIntegration(c, userID, models.AuditActionUpdate, connID, "test")
+	c.JSON(http.StatusOK, gin.H{"sent": sent})
+}
+
+// --- Automations (visual flow builder) --------------------------------------
+
+func (h *Handler) ListAutomations(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
+	list, err := h.IntegrationService.ListAutomations(c.Request.Context(), orgID)
+	if err != nil {
+		errx.JSON(c, errx.New(errx.Internal, "list failed"))
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"automations": list})
+}
+
+func (h *Handler) GetAutomation(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "invalid id"))
+		return
+	}
+	a, err := h.IntegrationService.GetAutomation(c.Request.Context(), orgID, id)
+	if err != nil {
+		errx.JSON(c, errx.New(errx.Internal, "lookup failed"))
+		return
+	}
+	if a == nil {
+		errx.JSON(c, errx.New(errx.NotFound, "automation not found"))
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"automation": a})
+}
+
+func (h *Handler) CreateAutomation(c *gin.Context) {
+	orgID, userID, ok := h.requireIntegrationActor(c, true)
+	if !ok {
+		return
+	}
+	var w models.AutomationWrite
+	if err := c.ShouldBindJSON(&w); err != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "invalid payload"))
+		return
+	}
+	a, err := h.IntegrationService.CreateAutomation(c.Request.Context(), orgID, w)
+	if err != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, err.Error()))
+		return
+	}
+	h.auditIntegration(c, userID, models.AuditActionCreate, a.ID, "automation")
+	h.StreamingPublisher.PublishAutomationEvent(c.Request.Context(), orgID, userID, pubsub.EventAutomationCreated, a.ID.String(), a.Name)
+	c.JSON(http.StatusCreated, gin.H{"automation": a})
+}
+
+func (h *Handler) UpdateAutomation(c *gin.Context) {
+	orgID, userID, ok := h.requireIntegrationActor(c, true)
+	if !ok {
+		return
+	}
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "invalid id"))
+		return
+	}
+	var w models.AutomationWrite
+	if err := c.ShouldBindJSON(&w); err != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "invalid payload"))
+		return
+	}
+	a, err := h.IntegrationService.UpdateAutomation(c.Request.Context(), orgID, id, w)
+	if err != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, err.Error()))
+		return
+	}
+	h.auditIntegration(c, userID, models.AuditActionUpdate, id, "automation")
+	h.StreamingPublisher.PublishAutomationEvent(c.Request.Context(), orgID, userID, pubsub.EventAutomationUpdated, id.String(), a.Name)
+	c.JSON(http.StatusOK, gin.H{"automation": a})
+}
+
+func (h *Handler) DeleteAutomation(c *gin.Context) {
+	orgID, userID, ok := h.requireIntegrationActor(c, true)
+	if !ok {
+		return
+	}
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "invalid id"))
+		return
+	}
+	if err := h.IntegrationService.DeleteAutomation(c.Request.Context(), orgID, id); err != nil {
+		// Propagate a typed error (e.g. Conflict when the automation is still used
+		// by campaign steps) with its message; anything else becomes a 500.
+		errx.Handle(c, err)
+		return
+	}
+	h.auditIntegration(c, userID, models.AuditActionDelete, id, "automation")
+	h.StreamingPublisher.PublishAutomationEvent(c.Request.Context(), orgID, userID, pubsub.EventAutomationDeleted, id.String(), "")
+	c.JSON(http.StatusOK, gin.H{"deleted": true})
+}
+
+// TestAutomation runs the automation against sample (or provided) data without
+// side effects and returns the path + per-action previews (the builder "Test").
+func (h *Handler) TestAutomation(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "invalid id"))
+		return
+	}
+	var req models.DryRunRequest
+	_ = c.ShouldBindJSON(&req) // body is optional; server builds a sample if empty
+	res, derr := h.IntegrationService.DryRunAutomation(c.Request.Context(), orgID, id, req)
+	if derr != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, derr.Error()))
+		return
+	}
+	c.JSON(http.StatusOK, res)
+}
+
+// ListAutomationRuns returns recent run history for an automation.
+func (h *Handler) ListAutomationRuns(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "invalid id"))
+		return
+	}
+	limit := 50
+	if l := c.Query("limit"); l != "" {
+		if n, e := strconv.Atoi(l); e == nil {
+			limit = n
+		}
+	}
+	runs, rerr := h.IntegrationService.ListAutomationRuns(c.Request.Context(), orgID, id, limit)
+	if rerr != nil {
+		errx.JSON(c, errx.New(errx.Internal, "lookup failed"))
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"runs": runs})
+}
+
 // --- Inbound webhooks (Calendly / Cal.com) ----------------------------------
 
 func (h *Handler) InboundCalendly(c *gin.Context) {
@@ -388,52 +812,120 @@ func (h *Handler) handleInboundBooking(c *gin.Context, provider models.Integrati
 		return
 	}
 
-	matcher := integration.NewBookingMatcher(func(ctx context.Context, orgID uuid.UUID, email string) (*uuid.UUID, error) {
-		if h.ContactRepo == nil {
-			return nil, nil
-		}
-		contact, xerr := h.ContactRepo.GetByEmailAndOrganization(ctx, orgID, email)
-		if xerr != nil {
-			return nil, xerr
-		}
-		if contact == nil {
-			return nil, nil
-		}
-		return &contact.ID, nil
-	})
+	matcher := h.bookingMatcher()
 
-	var booking *models.MeetingBooking
+	var (
+		booking   *models.MeetingBooking
+		lifecycle integration.MeetingLifecycle
+	)
 	switch provider {
 	case models.IntegrationCalendly:
-		booking, err = integration.HandleCalendlyEvent(c.Request.Context(), h.IntegrationService.Repo(), matcher, conn.OrganizationID, body)
+		booking, lifecycle, err = integration.HandleCalendlyEvent(c.Request.Context(), h.IntegrationService.Repo(), matcher, conn.OrganizationID, body)
 	case models.IntegrationCalCom:
-		booking, err = integration.HandleCalComEvent(c.Request.Context(), h.IntegrationService.Repo(), matcher, conn.OrganizationID, body)
+		booking, lifecycle, err = integration.HandleCalComEvent(c.Request.Context(), h.IntegrationService.Repo(), matcher, conn.OrganizationID, body)
 	}
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	if booking != nil {
-		data := map[string]any{
-			"source":        booking.Source,
-			"invitee_email": booking.InviteeEmail,
-			"event_name":    booking.EventName,
-			"scheduled_for": booking.ScheduledFor,
-			"contact_id":    booking.ContactID,
-			"booking_id":    booking.ID,
-			"trigger":       "meeting_booked",
-		}
-		// WebhookService.Dispatch fans the booking out to customer webhooks AND,
-		// via the wired sink, to integration event actions (Slack ping, CRM upsert).
-		if h.WebhookService != nil {
-			_, _ = h.WebhookService.Dispatch(c.Request.Context(), conn.OrganizationID, models.WebhookEventCampaignReplyReceived, data)
-		}
+	// Ignored events (e.g. the cancel half of a reschedule) return no booking.
+	if booking != nil && lifecycle != integration.LifecycleIgnore {
+		h.fanoutBooking(c.Request.Context(), conn.OrganizationID, booking, lifecycle)
 	}
 	c.JSON(http.StatusOK, gin.H{"received": true})
 }
 
-// ListMeetingBookings surfaces booked meetings for the integrations page.
+// bookingMatcher wires the org-scoped contact lookup (by email) and id-hint
+// verification the booking parsers use to attribute a meeting to a contact.
+func (h *Handler) bookingMatcher() *integration.BookingMatcher {
+	byEmail := func(ctx context.Context, orgID uuid.UUID, email string) (*uuid.UUID, error) {
+		if h.ContactRepo == nil {
+			return nil, nil
+		}
+		contact, xerr := h.ContactRepo.GetByEmailAndOrganization(ctx, orgID, email)
+		if xerr != nil || contact == nil {
+			return nil, nil
+		}
+		return &contact.ID, nil
+	}
+	verify := func(ctx context.Context, orgID, contactID uuid.UUID) (bool, error) {
+		if h.ContactRepo == nil {
+			return false, nil
+		}
+		rows, xerr := h.ContactRepo.GetByIDsAndOrganization(ctx, orgID, []uuid.UUID{contactID})
+		if xerr != nil {
+			return false, nil
+		}
+		return len(rows) > 0, nil
+	}
+	return integration.NewBookingMatcher(byEmail, verify)
+}
+
+// fanoutBooking dispatches the lifecycle event to customer webhooks + configured
+// integration automations (Slack ping, CRM upsert), and pushes a live update to
+// the lead owner's dashboard. Best-effort: a meeting is already persisted.
+func (h *Handler) fanoutBooking(ctx context.Context, orgID uuid.UUID, b *models.MeetingBooking, lifecycle integration.MeetingLifecycle) {
+	webhookEvent, realtimeEvent := meetingEventTypes(lifecycle)
+
+	if h.WebhookService != nil {
+		data := map[string]any{
+			"source":         b.Source,
+			"status":         string(b.Status),
+			"invitee_email":  b.InviteeEmail,
+			"invitee_name":   b.InviteeName,
+			"event_name":     b.EventName,
+			"scheduled_for":  b.ScheduledFor,
+			"join_url":       b.JoinURL,
+			"cancel_url":     b.CancelURL,
+			"reschedule_url": b.RescheduleURL,
+			"contact_id":     b.ContactID,
+			"booking_id":     b.ID,
+		}
+		_, _ = h.WebhookService.Dispatch(ctx, orgID, webhookEvent, data)
+	}
+
+	// Live dashboard update, routed to the lead owner.
+	h.emitMeetingRealtime(ctx, orgID, b, realtimeEvent)
+}
+
+// emitMeetingRealtime pushes a live meeting event to the lead owner so the
+// Meetings page, contact timeline, and sidebar update without a refresh.
+func (h *Handler) emitMeetingRealtime(ctx context.Context, orgID uuid.UUID, b *models.MeetingBooking, realtimeEvent pubsub.EventType) {
+	if h.StreamingPublisher == nil || b.ContactID == nil || h.ContactRepo == nil {
+		return
+	}
+	ownerID, oerr := h.ContactRepo.OwnerUserID(ctx, orgID, *b.ContactID)
+	if oerr != nil || ownerID == nil {
+		return
+	}
+	ev := &pubsub.MeetingEvent{
+		BookingID:    b.ID.String(),
+		ContactID:    b.ContactID.String(),
+		InviteeEmail: b.InviteeEmail,
+		EventName:    b.EventName,
+		Source:       b.Source,
+		State:        string(b.Status),
+	}
+	if b.ScheduledFor != nil {
+		ev.ScheduledFor = b.ScheduledFor.Format(time.RFC3339)
+	}
+	h.StreamingPublisher.PublishMeeting(ctx, ownerID.String(), realtimeEvent, ev)
+}
+
+// meetingEventTypes maps a lifecycle to its (webhook, realtime) event pair.
+func meetingEventTypes(l integration.MeetingLifecycle) (models.WebhookEventType, pubsub.EventType) {
+	switch l {
+	case integration.LifecycleRescheduled:
+		return models.WebhookEventMeetingRescheduled, pubsub.EventMeetingRescheduled
+	case integration.LifecycleCanceled:
+		return models.WebhookEventMeetingCanceled, pubsub.EventMeetingCanceled
+	default:
+		return models.WebhookEventMeetingBooked, pubsub.EventMeetingBooked
+	}
+}
+
+// ListMeetingBookings surfaces recent booked meetings for the integrations page.
 func (h *Handler) ListMeetingBookings(c *gin.Context) {
 	orgID, ok := requireOrgID(c)
 	if !ok {
@@ -445,6 +937,151 @@ func (h *Handler) ListMeetingBookings(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"bookings": rows})
+}
+
+// SearchMeetings is the Meetings page list: timeframe + status + text filters
+// with offset pagination. Reachable by anyone who can view contacts.
+func (h *Handler) SearchMeetings(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
+	limit, _ := strconv.Atoi(c.Query("limit"))
+	offset, _ := strconv.Atoi(c.Query("offset"))
+	filter := models.MeetingBookingFilter{
+		Timeframe: strings.TrimSpace(c.Query("timeframe")),
+		Status:    strings.TrimSpace(c.Query("status")),
+		Search:    strings.TrimSpace(c.Query("q")),
+		Limit:     limit,  // repo clamps to 1..200
+		Offset:    offset, // repo clamps to >= 0
+	}
+	switch filter.Timeframe {
+	case "", "upcoming", "past":
+		// ok
+	default:
+		errx.JSON(c, errx.New(errx.BadRequest, "invalid timeframe"))
+		return
+	}
+	page, err := h.IntegrationService.Repo().SearchMeetingBookings(c.Request.Context(), orgID, filter)
+	if err != nil {
+		errx.JSON(c, errx.New(errx.Internal, "search failed"))
+		return
+	}
+	c.JSON(http.StatusOK, page)
+}
+
+// MeetingsSummary returns the counts the Meetings page header + sidebar show.
+func (h *Handler) MeetingsSummary(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
+	summary, err := h.IntegrationService.Repo().MeetingBookingSummary(c.Request.Context(), orgID)
+	if err != nil {
+		errx.JSON(c, errx.New(errx.Internal, "summary failed"))
+		return
+	}
+	c.JSON(http.StatusOK, summary)
+}
+
+type createMeetingPayload struct {
+	Title           string `json:"title"`
+	InviteeName     string `json:"invitee_name"`
+	InviteeEmail    string `json:"invitee_email"`
+	ScheduledFor    string `json:"scheduled_for"` // RFC3339
+	DurationMinutes int    `json:"duration_minutes"`
+	Location        string `json:"location"`
+	JoinURL         string `json:"join_url"`
+	ContactID       string `json:"contact_id"` // optional explicit link
+}
+
+// CreateMeeting creates a meeting the user schedules/logs by hand (source
+// "manual"). It lives alongside the auto-captured Calendly/Cal.com bookings on
+// the Meetings page + the contact timeline. The contact is attributed by an
+// explicit (verified) id or by an org-scoped email match.
+func (h *Handler) CreateMeeting(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
+	var p createMeetingPayload
+	if err := c.ShouldBindJSON(&p); err != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "invalid payload"))
+		return
+	}
+	p.InviteeName = strings.TrimSpace(p.InviteeName)
+	p.InviteeEmail = strings.ToLower(strings.TrimSpace(p.InviteeEmail))
+	if p.InviteeName == "" && p.InviteeEmail == "" {
+		errx.JSON(c, errx.New(errx.BadRequest, "a name or email is required"))
+		return
+	}
+	scheduledFor, terr := time.Parse(time.RFC3339, strings.TrimSpace(p.ScheduledFor))
+	if terr != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "a valid date and time is required"))
+		return
+	}
+
+	contactID := h.bookingMatcher().Resolve(c.Request.Context(), orgID, p.InviteeEmail, strings.TrimSpace(p.ContactID))
+
+	title := strings.TrimSpace(p.Title)
+	if title == "" {
+		title = "Call"
+	}
+	booking := &models.MeetingBooking{
+		OrganizationID:  orgID,
+		Source:          "manual",
+		ExternalEventID: uuid.New().String(),
+		Status:          models.MeetingBooked,
+		InviteeEmail:    p.InviteeEmail,
+		InviteeName:     p.InviteeName,
+		EventName:       title,
+		Location:        strings.TrimSpace(p.Location),
+		JoinURL:         strings.TrimSpace(p.JoinURL),
+		ScheduledFor:    &scheduledFor,
+		ContactID:       contactID,
+	}
+	if p.DurationMinutes > 0 {
+		end := scheduledFor.Add(time.Duration(p.DurationMinutes) * time.Minute)
+		booking.EndTime = &end
+	}
+	if err := h.IntegrationService.Repo().UpsertMeetingBooking(c.Request.Context(), booking); err != nil {
+		errx.JSON(c, errx.New(errx.Internal, "could not create meeting"))
+		return
+	}
+
+	// Live update only (no webhook-automation fanout: a meeting the user logs
+	// by hand shouldn't fire "a prospect booked a call" alerts back at them).
+	h.emitMeetingRealtime(c.Request.Context(), orgID, booking, pubsub.EventMeetingBooked)
+
+	c.JSON(http.StatusCreated, gin.H{"meeting": booking})
+}
+
+// DeleteMeeting removes a meeting booking (used for manually-created ones).
+func (h *Handler) DeleteMeeting(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "invalid id"))
+		return
+	}
+	existing, gerr := h.IntegrationService.Repo().GetMeetingBooking(c.Request.Context(), orgID, id)
+	if gerr != nil {
+		errx.JSON(c, errx.New(errx.Internal, "lookup failed"))
+		return
+	}
+	if existing == nil {
+		errx.JSON(c, errx.New(errx.NotFound, "meeting not found"))
+		return
+	}
+	if err := h.IntegrationService.Repo().DeleteMeetingBooking(c.Request.Context(), orgID, id); err != nil {
+		errx.JSON(c, errx.New(errx.Internal, "delete failed"))
+		return
+	}
+	h.emitMeetingRealtime(c.Request.Context(), orgID, existing, pubsub.EventMeetingCanceled)
+	c.JSON(http.StatusOK, gin.H{"deleted": true})
 }
 
 // auditIntegration is a thin best-effort audit-log wrapper.

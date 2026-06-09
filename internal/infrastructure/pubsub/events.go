@@ -59,6 +59,23 @@ const (
 	// Audit trail events (org-scoped). The web client invalidates the
 	// ['audit'] query on any event type containing "AUDIT".
 	EventAuditCreated EventType = "AUDIT_CREATED"
+
+	// Automation events (org-scoped). The web client invalidates the
+	// ['automations'] queries on any event type containing "AUTOMATION".
+	EventAutomationCreated EventType = "AUTOMATION_CREATED"
+	EventAutomationUpdated EventType = "AUTOMATION_UPDATED"
+	EventAutomationDeleted EventType = "AUTOMATION_DELETED"
+	EventAutomationRun     EventType = "AUTOMATION_RUN"
+
+	// In-app notification feed (user-scoped). The web client refreshes the bell
+	// feed + may toast on any event type containing "NOTIFICATION".
+	EventNotificationCreated EventType = "NOTIFICATION_CREATED"
+
+	// Meetings. The frontend matches any event type containing "MEETING" /
+	// "BOOKING" to refresh the Meetings page, contact timeline, and sidebar.
+	EventMeetingBooked      EventType = "MEETING_BOOKED"
+	EventMeetingRescheduled EventType = "MEETING_RESCHEDULED"
+	EventMeetingCanceled    EventType = "MEETING_CANCELED"
 )
 
 // BaseEvent contains common fields for all events
@@ -169,6 +186,39 @@ type TaskProgressEvent struct {
 	Progress       int    `json:"progress"` // Percentage 0-100
 	TotalContacts  int    `json:"total_contacts"`
 	ProcessedCount int    `json:"processed_count"`
+}
+
+// MeetingEvent for booked / rescheduled / canceled meetings from Calendly /
+// Cal.com. Carries just enough for the dashboard to refresh the right surfaces.
+type MeetingEvent struct {
+	BaseEvent
+	BookingID    string `json:"booking_id"`
+	ContactID    string `json:"contact_id,omitempty"`
+	InviteeEmail string `json:"invitee_email,omitempty"`
+	EventName    string `json:"event_name,omitempty"`
+	ScheduledFor string `json:"scheduled_for,omitempty"`
+	Source       string `json:"source,omitempty"` // calendly / cal_com
+	State        string `json:"state,omitempty"`  // booked / rescheduled / canceled
+}
+
+// PublishMeeting notifies the lead owner that a meeting was booked, rescheduled,
+// or canceled so the Meetings page, contact timeline, and sidebar update live.
+func (p *StreamingPublisher) PublishMeeting(ctx context.Context, userID string, eventType EventType, event *MeetingEvent) {
+	if p == nil || p.client == nil || userID == "" {
+		return
+	}
+	event.BaseEvent = BaseEvent{
+		EventType: eventType,
+		UserID:    userID,
+		Timestamp: time.Now(),
+	}
+	attrs := map[string]string{
+		"user_id":    userID,
+		"event_type": string(eventType),
+	}
+	if err := p.client.Publish(ctx, TopicUserEvents, event, attrs); err != nil {
+		// Best-effort: realtime is a nicety, not a requirement.
+	}
 }
 
 // New publish methods
@@ -388,6 +438,42 @@ func (p *StreamingPublisher) PublishAuditCreated(ctx context.Context, orgID, act
 	}
 }
 
+// AutomationEvent is an org-scoped automation lifecycle/run signal. The web
+// client invalidates the ['automations'] queries on any "AUTOMATION" event.
+type AutomationEvent struct {
+	BaseEvent
+	OrgID          string `json:"org_id"`
+	AutomationID   string `json:"automation_id,omitempty"`
+	AutomationName string `json:"automation_name,omitempty"`
+	Status         string `json:"status,omitempty"`
+}
+
+// PublishAutomationEvent emits an org-scoped automation event. actorID may be
+// uuid.Nil for system-triggered runs (the event reaches org:<id> subscribers).
+func (p *StreamingPublisher) PublishAutomationEvent(ctx context.Context, orgID, actorID uuid.UUID, eventType EventType, automationID, name string) {
+	if p == nil || p.client == nil || orgID == uuid.Nil {
+		return
+	}
+	event := &AutomationEvent{
+		BaseEvent: BaseEvent{
+			EventType: eventType,
+			UserID:    actorID.String(),
+			Timestamp: time.Now(),
+		},
+		OrgID:          orgID.String(),
+		AutomationID:   automationID,
+		AutomationName: name,
+	}
+	attrs := map[string]string{
+		"user_id":    actorID.String(),
+		"org_id":     orgID.String(),
+		"event_type": string(eventType),
+	}
+	if err := p.client.Publish(ctx, TopicUserEvents, event, attrs); err != nil {
+		// Best-effort: realtime is a nicety, not a requirement.
+	}
+}
+
 // PublishToUser publishes a generic event to a user
 func (p *StreamingPublisher) PublishToUser(ctx context.Context, userID string, event interface{}) {
 	if p.client == nil {
@@ -400,6 +486,41 @@ func (p *StreamingPublisher) PublishToUser(ctx context.Context, userID string, e
 
 	if err := p.client.Publish(ctx, TopicUserEvents, event, attrs); err != nil {
 		// Log error but don't fail
+	}
+}
+
+// NotificationEvent is the user-scoped realtime signal for a new in-app
+// notification (the bell). Best-effort; the feed table is the source of truth.
+type NotificationEvent struct {
+	BaseEvent
+	NotificationID string `json:"notification_id"`
+	Category       string `json:"category"`
+	Title          string `json:"title"`
+	Link           string `json:"link,omitempty"`
+}
+
+// PublishNotificationCreated pushes a new-notification event to a single user.
+func (p *StreamingPublisher) PublishNotificationCreated(ctx context.Context, userID, notifID, category, title, link string) {
+	if p == nil || p.client == nil || userID == "" {
+		return
+	}
+	event := &NotificationEvent{
+		BaseEvent: BaseEvent{
+			EventType: EventNotificationCreated,
+			UserID:    userID,
+			Timestamp: time.Now(),
+		},
+		NotificationID: notifID,
+		Category:       category,
+		Title:          title,
+		Link:           link,
+	}
+	attrs := map[string]string{
+		"user_id":    userID,
+		"event_type": string(EventNotificationCreated),
+	}
+	if err := p.client.Publish(ctx, TopicUserEvents, event, attrs); err != nil {
+		// Best-effort: realtime is a nicety, not a requirement.
 	}
 }
 

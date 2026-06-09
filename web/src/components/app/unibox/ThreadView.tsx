@@ -30,6 +30,7 @@ import { MessageBubble } from "./MessageBubble";
 import { ReplyComposer, type ReplyMode } from "./ReplyComposer";
 import { ThreadLabelMenu } from "./ThreadLabelMenu";
 import ContactContextPanel from "./ContactContextPanel";
+import BookACallButton from "@/components/app/integrations/BookACallButton";
 import { CategoryChip } from "@/components/app/contacts/CategoryPicker";
 import { SectionBar } from "@/components/layout/Page";
 import useThread from "@/lib/api/hooks/app/unibox/useThread";
@@ -355,6 +356,7 @@ export function ThreadView({ threadId, emailId }: ThreadViewProps) {
           >
             <UserIcon className="w-3.5 h-3.5" />
           </button>
+          <BookACallButton email={contactEmail} className="hidden sm:inline-flex" />
           <ThreadLabelMenu
             threadId={threadId}
             open={labelMenuOpen}

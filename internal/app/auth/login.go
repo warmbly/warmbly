@@ -82,7 +82,7 @@ func (s *authService) LoginStart(ctx context.Context, data *AuthData, ipaddr str
 	}, nil
 }
 
-func (s *authService) LoginConfirm(ctx context.Context, data *ConfirmData, session, ipaddr string, userAgent string) (*models.Token, *errx.Error) {
+func (s *authService) LoginConfirm(ctx context.Context, data *ConfirmData, session, ipaddr string, userAgent string) (*models.LoginResult, *errx.Error) {
 	atoken, err := s.tokenService.VerifyToken(session)
 	if err != nil {
 		return nil, err
@@ -124,10 +124,27 @@ func (s *authService) LoginConfirm(ctx context.Context, data *ConfirmData, sessi
 		}
 	}
 
+	// 2FA gate: after the email-code + ban check, if the user has TOTP enabled,
+	// issue a single-use pending challenge instead of a full session. The FE
+	// distinguishes on two_fa_required and POSTs /auth/2fa/verify next.
+	if s.twofa != nil {
+		if enabled, _ := s.twofa.IsEnabled(ctx, atoken.UserID); enabled {
+			pendTok, expiresIn, perr := s.twofa.CreatePendingChallenge(ctx, atoken.UserID)
+			if perr != nil {
+				return nil, perr
+			}
+			// Consume the email login session so it can't be re-confirmed to mint
+			// fresh pending tokens (which would reset the per-pending 2FA attempt
+			// counter). One email confirmation => exactly one 2FA challenge.
+			_ = s.cache.Del(ctx, getLoginSessionKey(atoken.SessionID)).Err()
+			return &models.LoginResult{TwoFARequired: true, PendingToken: pendTok, ExpiresIn: expiresIn}, nil
+		}
+	}
+
 	newToken, err := s.tokenService.GenerateSession(ctx, atoken.UserID, "", ipaddr, userAgent, token.AuthProviderEmail)
 	if err != nil {
 		return nil, err
 	}
 
-	return newToken, nil
+	return &models.LoginResult{Token: newToken}, nil
 }

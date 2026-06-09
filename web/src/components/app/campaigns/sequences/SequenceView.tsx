@@ -16,6 +16,8 @@ import {
 import toast from "react-hot-toast";
 import type Sequence from "@/lib/api/models/app/campaigns/sequences/Sequence";
 import RichTextEditor, { VariableMenu } from "./RichTextEditor";
+import { useTemplatePreview } from "@/lib/api/hooks/app/campaigns/useTemplatePreview";
+import type { TemplatePreview } from "@/lib/api/client/app/campaigns/previewTemplate";
 import WriteWithAI from "./WriteWithAI";
 import ContentScore from "../ContentScore";
 import { Label, TextInput } from "@/components/ui/field";
@@ -221,6 +223,25 @@ export default function SequenceView({
     const tplIssue =
         templateIssue(draft.subject) || templateIssue(draft.body_html) || templateIssue(draft.body_plain);
 
+    // Authoritative preview: render through the REAL send-time engine (functions,
+    // conditionals, spintax all run) against a sample contact, debounced. The
+    // local renderPreview is the instant fallback shown while the request is in
+    // flight; the server result is the source of truth for errors + unresolved
+    // tokens.
+    const previewMut = useTemplatePreview();
+    const runPreview = previewMut.mutateAsync;
+    const [serverPreview, setServerPreview] = React.useState<TemplatePreview | null>(null);
+    React.useEffect(() => {
+        if (tab !== "preview") return;
+        const t = setTimeout(() => {
+            runPreview({ subject: draft.subject, body_html: draft.body_html, body_plain: draft.body_plain })
+                .then(setServerPreview)
+                .catch(() => setServerPreview(null));
+        }, 250);
+        return () => clearTimeout(t);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [tab, draft.subject, draft.body_html, draft.body_plain]);
+
     async function submit() {
         if (load || !savable) return;
         setLoad(true);
@@ -414,22 +435,35 @@ export default function SequenceView({
                         <div className="rounded-md border border-slate-200 bg-white">
                             <div className="border-b border-slate-200/70 px-3 py-2 text-[12.5px]">
                                 <span className="text-slate-400">Subject: </span>
-                                <span className="text-slate-800">{renderPreview(draft.subject) || "—"}</span>
+                                <span className="text-slate-800">{(serverPreview?.subject ?? renderPreview(draft.subject)) || "—"}</span>
                             </div>
                             <div
                                 className="tiptap-body min-h-[200px] px-3 py-2.5 text-[13px] leading-relaxed text-slate-800"
-                                dangerouslySetInnerHTML={{ __html: renderPreview(draft.body_html) || '<p class="text-slate-300">Nothing to preview yet.</p>' }}
+                                dangerouslySetInnerHTML={{ __html: (serverPreview?.body_html ?? renderPreview(draft.body_html)) || '<p class="text-slate-300">Nothing to preview yet.</p>' }}
                             />
                             <p className="border-t border-slate-200/70 px-3 py-1.5 text-[10.5px] text-slate-400">
-                                Preview uses sample data ({SAMPLE.FirstName} at {SAMPLE.Company}); if/else conditionals
-                                are evaluated against it and spintax shows the first option.
+                                Rendered with the real send engine against sample data ({SAMPLE.FirstName} at {SAMPLE.Company}) — conditionals, functions, and spintax all run.
                             </p>
                         </div>
                     )}
-                    {tplIssue && (
+                    {(serverPreview?.errors?.length ?? 0) > 0 ? (
+                        <p className="mt-1.5 flex items-start gap-1.5 text-[11px] text-rose-600">
+                            <AlertCircleIcon className="mt-px w-3.5 h-3.5 shrink-0" />
+                            <span>{serverPreview!.errors!.join(" · ")} — fix before sending.</span>
+                        </p>
+                    ) : tplIssue ? (
                         <p className="mt-1.5 flex items-center gap-1.5 text-[11px] text-amber-600">
                             <AlertCircleIcon className="w-3.5 h-3.5 shrink-0" />
                             {tplIssue} It'll fall back to plain text — fix it before sending.
+                        </p>
+                    ) : null}
+                    {(serverPreview?.unresolved?.length ?? 0) > 0 && (
+                        <p className="mt-1.5 flex items-start gap-1.5 text-[11px] text-amber-600">
+                            <AlertCircleIcon className="mt-px w-3.5 h-3.5 shrink-0" />
+                            <span>
+                                These won&apos;t resolve and would send literally:{" "}
+                                <span className="font-mono">{serverPreview!.unresolved!.join(", ")}</span>
+                            </span>
                         </p>
                     )}
                 </div>

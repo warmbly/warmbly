@@ -16,6 +16,7 @@ import { ChevronRight, Menu, Search } from "lucide-react";
 import { Logo } from "@/components/svg";
 import { useAppStore } from "@/stores";
 import { ConnectionIndicator } from "@/components/shared/ConnectionIndicator";
+import { NotificationBell } from "./NotificationBell";
 import { OrgSwitcher } from "./OrgSwitcher";
 import { PlanPill } from "./PlanPill";
 
@@ -130,6 +131,7 @@ export function AppHeader({ onMenu }: { onMenu?: () => void }) {
                     <div className="h-4 w-px bg-slate-200/80" />
                 </div>
                 <ConnectionIndicator />
+                <NotificationBell />
                 <button
                     onClick={() => setCommandPaletteOpen(true)}
                     className="flex items-center gap-2 px-2 h-7 rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-200/60 transition-colors text-[12.5px]"

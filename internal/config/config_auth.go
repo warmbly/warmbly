@@ -21,6 +21,11 @@ type AuthConfig struct {
 	TurnstileSecret string
 	TurnstileBypass string
 
+	// TwoFASecret is the server-wide key the TOTP secret is sealed with (AES-GCM).
+	// Must be set when 2FA is in use; falls back to AuthSecret when unset so a
+	// deployment without the env var still functions (sealed under the auth key).
+	TwoFASecret string
+
 	// WebAuthn / passkey relying-party configuration.
 	//
 	// WebAuthnRPID is the relying-party ID a passkey is cryptographically
@@ -84,6 +89,10 @@ func (c *Config) LoadAuthConfig(ctx context.Context) (*AuthConfig, error) {
 	}
 	turnstileBypass := c.GetSecretOptional(ctx, "TURNSTILE_BYPASS_TOKEN", "turnstile/bypass_token", "")
 
+	// 2FA sealing key. Optional: falls back to AUTH_SECRET so existing
+	// deployments keep working; rotating it invalidates enrolled TOTP secrets.
+	twoFASecret := c.GetSecretOptional(ctx, "TWOFA_SECRET", "twofa_secret", authSecret)
+
 	rpDisplayName := c.GetStringOptional(ctx, "WEBAUTHN_RP_DISPLAY_NAME", "webauthn/rp_display_name", "Warmbly")
 	rpIDRaw := c.GetStringOptional(ctx, "WEBAUTHN_RP_ID", "webauthn/rp_id", "")
 	rpOriginsRaw := c.GetStringOptional(ctx, "WEBAUTHN_RP_ORIGINS", "webauthn/rp_origins", "")
@@ -102,6 +111,7 @@ func (c *Config) LoadAuthConfig(ctx context.Context) (*AuthConfig, error) {
 		AuthSecret:      authSecret,
 		TurnstileSecret: turnstileSecret,
 		TurnstileBypass: turnstileBypass,
+		TwoFASecret:     twoFASecret,
 
 		WebAuthnRPID:          rpID,
 		WebAuthnRPDisplayName: rpDisplayName,

@@ -13,6 +13,26 @@ type Token struct {
 	RefreshTokenExpiresAt time.Time `json:"refresh_token_expires_at"`
 }
 
+// LoginResult is what LoginConfirm returns: either the full token pair, or a
+// 2FA challenge (a short-lived, single-use pending token instead of a session).
+// The embedded *Token is nil when TwoFARequired (its fields are then omitted).
+type LoginResult struct {
+	*Token
+	TwoFARequired bool   `json:"two_fa_required,omitempty"`
+	PendingToken  string `json:"pending_token,omitempty"`
+	ExpiresIn     int    `json:"expires_in,omitempty"`
+}
+
+// TwoFAPending is the Redis-backed state for an in-flight 2FA login challenge,
+// keyed by the pending session id. It binds the pending JWT's nonce (single-use)
+// and counts attempts (brute-force guard, since RateLimitMiddleware is a no-op
+// pre-login).
+type TwoFAPending struct {
+	UserID uuid.UUID `json:"user_id"`
+	Nonce  string    `json:"nonce"`
+	Tries  int       `json:"tries"`
+}
+
 type Session struct {
 	ID     uuid.UUID `json:"id"`
 	UserID uuid.UUID `json:"user_id"`

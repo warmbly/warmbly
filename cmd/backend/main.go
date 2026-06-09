@@ -42,6 +42,7 @@ import (
 	idempotencyapp "github.com/warmbly/warmbly/internal/app/idempotency"
 	"github.com/warmbly/warmbly/internal/app/integration"
 	"github.com/warmbly/warmbly/internal/app/leadsync"
+	"github.com/warmbly/warmbly/internal/app/notification"
 	"github.com/warmbly/warmbly/internal/app/organization"
 	"github.com/warmbly/warmbly/internal/app/passkey"
 	"github.com/warmbly/warmbly/internal/app/placement"
@@ -57,6 +58,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/template"
 	"github.com/warmbly/warmbly/internal/app/token"
 	"github.com/warmbly/warmbly/internal/app/trial"
+	"github.com/warmbly/warmbly/internal/app/twofa"
 	"github.com/warmbly/warmbly/internal/app/tz"
 	"github.com/warmbly/warmbly/internal/app/unibox"
 	"github.com/warmbly/warmbly/internal/app/user"
@@ -190,6 +192,8 @@ func main() {
 	var warmupRoutingRepoForHandler repository.WarmupRoutingRepository
 	var webhookServiceForHandler webhook.Service
 	var integrationServiceForHandler integration.Service
+	var notificationService notification.Service
+	var twofaService twofa.Service
 	var contactRepoForHandler repository.ContactRepository
 	var attachmentRepoForHandler repository.AttachmentRepository
 	var leadSyncServiceForHandler leadsync.Service
@@ -587,6 +591,11 @@ func main() {
 			userRepostory,
 			userService,
 		)
+		// TOTP 2FA: the secret is sealed with a server-wide key (the per-user DEK
+		// is unreachable at login time). Wire the challenger into auth so the login
+		// gate can issue a pending challenge.
+		twofaService = twofa.NewService(repository.NewTOTPRepository(primaryDB.Pool), userRepostory, tokenService, cache, twofa.DeriveKey(authCfg.TwoFASecret))
+		authService.WireTwoFA(twofaService)
 		var passkeyErr error
 		passkeyService, passkeyErr = passkey.New(passkey.Deps{
 			Repo:          webauthnRepository,
@@ -846,6 +855,20 @@ func main() {
 		// Fan reply + bounce events from the advanced-outreach brain out to
 		// customer webhooks AND third-party integration actions (Slack / CRM).
 		advancedService.WireDispatcher(webhookService)
+		// Wire native (Warmbly-internal) automation actions + realtime now that
+		// the advanced/contact/org services exist (the integration service was
+		// constructed earlier).
+		integrationServiceForHandler.SetNativeActions(nativeActionsAdapter{
+			adv:      advancedService,
+			contacts: contactRepostory,
+			orgs:     organizationRepository,
+		})
+		integrationServiceForHandler.SetPublisher(streamingPublisher)
+		// In-app notifications: API reads/writes happen here; also wire the gate
+		// onto the backend's advanced service (deliverability webhooks can ingest
+		// here too).
+		notificationService = notification.NewService(repository.NewNotificationRepository(primaryDB.Pool), streamingPublisher)
+		advancedService.WireNotifier(notificationService)
 		emailSender := tasks.NewEmailSender(emailRepostory, eventsPublisher)
 		tasksService = tasks.NewService(
 			tasksClient,
@@ -869,6 +892,7 @@ func main() {
 			campaignLogRepository,
 			advancedService,
 			attachmentRepoForHandler,
+			integrationServiceForHandler, // AutomationRunner for campaign run_automation steps
 		)
 
 		// Admin outreach composer — sends from the platform mailer
@@ -975,9 +999,11 @@ func main() {
 		TagService:      tagService,
 		CategoryService: categoryService,
 
-		TzService:     tzService,
-		SocketService: socketService,
-		TasksService:  tasksService,
+		TzService:           tzService,
+		SocketService:       socketService,
+		TasksService:        tasksService,
+		NotificationService: notificationService,
+		TwoFAService:        twofaService,
 
 		// API Keys
 		APIKeyService: apiKeyService,
@@ -1044,6 +1070,7 @@ func main() {
 		// Third-party integrations
 		IntegrationService: integrationServiceForHandler,
 		ContactRepo:        contactRepoForHandler,
+		StreamingPublisher: streamingPublisher,
 
 		// On-demand Google Sheets -> leads sync
 		LeadSyncService: leadSyncServiceForHandler,

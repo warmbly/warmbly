@@ -21,6 +21,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/group"
 	"github.com/warmbly/warmbly/internal/app/integration"
 	"github.com/warmbly/warmbly/internal/app/leadsync"
+	"github.com/warmbly/warmbly/internal/app/notification"
 	"github.com/warmbly/warmbly/internal/app/organization"
 	"github.com/warmbly/warmbly/internal/app/passkey"
 	"github.com/warmbly/warmbly/internal/app/placement"
@@ -34,6 +35,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/template"
 	"github.com/warmbly/warmbly/internal/app/token"
 	"github.com/warmbly/warmbly/internal/app/trial"
+	"github.com/warmbly/warmbly/internal/app/twofa"
 	"github.com/warmbly/warmbly/internal/app/tz"
 	"github.com/warmbly/warmbly/internal/app/unibox"
 	"github.com/warmbly/warmbly/internal/app/user"
@@ -45,6 +47,7 @@ import (
 	"github.com/warmbly/warmbly/internal/pkg/generation"
 
 	"github.com/warmbly/warmbly/internal/infrastructure/encryptedkeys"
+	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/infrastructure/storage"
 	"github.com/warmbly/warmbly/internal/notify"
 	"github.com/warmbly/warmbly/internal/repository"
@@ -66,9 +69,11 @@ type Handler struct {
 	TagService      group.GroupService
 	CategoryService group.GroupService
 
-	TzService     tz.TzService
-	SocketService socket.SocketService
-	TasksService  tasks.TasksService
+	TzService           tz.TzService
+	SocketService       socket.SocketService
+	TasksService        tasks.TasksService
+	NotificationService notification.Service
+	TwoFAService        twofa.Service
 
 	// New services
 	APIKeyService    apikey.APIKeyService
@@ -145,6 +150,11 @@ type Handler struct {
 	// SNDS, Cloudflare, GoDaddy, Namecheap, Google Sheets).
 	IntegrationService integration.Service
 	ContactRepo        repository.ContactRepository
+
+	// Realtime publisher for handler paths that emit live dashboard events
+	// directly (inbound meeting webhooks have no service layer of their own).
+	// nil-safe: realtime is a nicety, not a requirement.
+	StreamingPublisher *pubsub.StreamingPublisher
 
 	// On-demand Google Sheets -> leads sync. Reuses the google_sheets OAuth
 	// connection's token to read sheets and the contact import path to upsert.

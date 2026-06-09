@@ -14,6 +14,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/cipher"
 	jobs "github.com/warmbly/warmbly/internal/app/consumer"
 	"github.com/warmbly/warmbly/internal/app/integration"
+	"github.com/warmbly/warmbly/internal/app/notification"
 	warmupapp "github.com/warmbly/warmbly/internal/app/warmup"
 	"github.com/warmbly/warmbly/internal/app/webhook"
 	workerapp "github.com/warmbly/warmbly/internal/app/worker"
@@ -222,6 +223,12 @@ func main() {
 		warmupService,
 	)
 	advancedService.WireDispatcher(webhookService)
+	// In-app notifications: the reply/bounce/complaint gate fires in THIS
+	// process (inbox ingest + deliverability ingest run in the consumer), so the
+	// notifier must be wired here. Missing this = notifications silently never
+	// created.
+	notificationService := notification.NewService(repository.NewNotificationRepository(primaryDB.Pool), streamingPublisher)
+	advancedService.WireNotifier(notificationService)
 
 	// Events publisher — wraps the existing Kafka producer in an EventBus,
 	// wraps Avrov2 in a Codec. Once EVENTBUS_PROVIDER=nats is exercised in

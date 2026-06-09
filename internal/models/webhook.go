@@ -45,6 +45,13 @@ const (
 	// Deliverability
 	WebhookEventDeliverabilityBounce    WebhookEventType = "deliverability.bounce"
 	WebhookEventDeliverabilityComplaint WebhookEventType = "deliverability.complaint"
+
+	// Meetings (inbound from Calendly / Cal.com). A booked call is one of the
+	// most actionable signals an outbound team gets, so it is a first-class
+	// event other connections can subscribe to (Slack ping, CRM upsert).
+	WebhookEventMeetingBooked      WebhookEventType = "meeting.booked"
+	WebhookEventMeetingRescheduled WebhookEventType = "meeting.rescheduled"
+	WebhookEventMeetingCanceled    WebhookEventType = "meeting.canceled"
 )
 
 // AllWebhookEventTypes lists every emitted event so the CRUD endpoint can
@@ -71,6 +78,9 @@ var AllWebhookEventTypes = []WebhookEventType{
 	WebhookEventWarmupBlocked,
 	WebhookEventDeliverabilityBounce,
 	WebhookEventDeliverabilityComplaint,
+	WebhookEventMeetingBooked,
+	WebhookEventMeetingRescheduled,
+	WebhookEventMeetingCanceled,
 }
 
 func IsValidWebhookEventType(s string) bool {

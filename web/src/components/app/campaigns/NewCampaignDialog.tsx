@@ -720,16 +720,17 @@ function SequencesStep({
                             onChange={(e) => update(i, { body_plain: e.target.value })}
                             placeholder={
                                 i === 0
-                                    ? "Hi {{first_name}},\n\nNoticed {{company}} is …"
+                                    ? "Hi {{.FirstName}},\n\nNoticed {{.Company}} is …"
                                     : "Just bumping this up in case it slipped past."
                             }
                             rows={6}
                             className="w-full px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-[12.5px] text-slate-900 placeholder:text-slate-400 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 resize-y leading-relaxed"
                         />
                         <p className="text-[10.5px] text-slate-400 mt-1">
-                            Use <code className="font-mono">{`{{first_name}}`}</code>,{" "}
-                            <code className="font-mono">{`{{company}}`}</code>, and other contact
-                            fields. HTML is generated automatically.
+                            Use <code className="font-mono">{`{{.FirstName}}`}</code>,{" "}
+                            <code className="font-mono">{`{{.Company}}`}</code>, custom fields like{" "}
+                            <code className="font-mono">{`{{.role}}`}</code>, and conditionals like{" "}
+                            <code className="font-mono">{`{{if .Company}}…{{end}}`}</code>. HTML is generated automatically.
                         </p>
                     </div>
                 </div>

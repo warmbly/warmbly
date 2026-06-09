@@ -4,14 +4,16 @@
 // "original"; sends split across the original + active variants by weight.
 
 import React from "react";
-import { PlusIcon, Loader2Icon, Trash2Icon, FlaskConicalIcon } from "lucide-react";
+import { PlusIcon, Loader2Icon, Trash2Icon, FlaskConicalIcon, TrophyIcon } from "lucide-react";
 import toast from "react-hot-toast";
 import type ABVariant from "@/lib/api/models/app/campaigns/ABVariant";
+import type { ABVariantStats } from "@/lib/api/models/app/campaigns/ABVariant";
 import { Label, TextInput, NumberInput } from "@/components/ui/field";
 import { Toggle } from "../preferences/components/CampaignPreferenceBoolBox";
 import RichTextEditor, { VariableMenu } from "./RichTextEditor";
 import {
     useCampaignABVariants,
+    useCampaignABAnalysis,
     useCreateABVariant,
     useUpdateABVariant,
     useDeleteABVariant,
@@ -47,6 +49,16 @@ export default function StepVariants({
     const { data: all, isLoading } = useCampaignABVariants(campaignId);
     const create = useCreateABVariant(campaignId);
     const variants = (all ?? []).filter((v) => v.sequence_id === sequenceId);
+
+    // Per-variant performance + the campaign winner (only fetched once variants exist).
+    const { data: analysis } = useCampaignABAnalysis(campaignId, (all ?? []).length > 0);
+    const statsById = React.useMemo(() => {
+        const m = new Map<string, ABVariantStats>();
+        for (const s of analysis?.variants ?? []) m.set(s.variant_id, s);
+        return m;
+    }, [analysis]);
+    const winnerId = analysis?.winner_id ?? null;
+    const stepHasWinner = !!winnerId && variants.some((v) => v.id === winnerId);
 
     const addVariant = () => {
         const name = `Variant ${LETTERS[variants.length] ?? variants.length + 1}`;
@@ -94,6 +106,16 @@ export default function StepVariants({
                     Add variant
                 </button>
             </div>
+            {stepHasWinner && (
+                <div className="flex items-center gap-1.5 border-b border-amber-200/70 bg-amber-50/60 px-3 py-1.5">
+                    <TrophyIcon className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                    <span className="text-[11.5px] text-amber-800">
+                        Winner: <span className="font-medium">{analysis?.winner_name || "a variant"}</span>
+                        {analysis?.winning_rule ? ` · by ${analysis.winning_rule}` : ""}
+                        {analysis?.confidence ? ` · ${analysis.confidence} confidence` : ""}
+                    </span>
+                </div>
+            )}
             {isLoading ? (
                 <div className="px-3 py-4 text-[11.5px] text-slate-400">Loading variants…</div>
             ) : variants.length === 0 ? (
@@ -103,7 +125,13 @@ export default function StepVariants({
             ) : (
                 <div className="divide-y divide-slate-200/60">
                     {variants.map((v) => (
-                        <VariantCard key={v.id} campaignId={campaignId} variant={v} />
+                        <VariantCard
+                            key={v.id}
+                            campaignId={campaignId}
+                            variant={v}
+                            stats={statsById.get(v.id)}
+                            isWinner={winnerId === v.id}
+                        />
                     ))}
                 </div>
             )}
@@ -111,7 +139,17 @@ export default function StepVariants({
     );
 }
 
-function VariantCard({ campaignId, variant }: { campaignId: string; variant: ABVariant }) {
+function VariantCard({
+    campaignId,
+    variant,
+    stats,
+    isWinner,
+}: {
+    campaignId: string;
+    variant: ABVariant;
+    stats?: ABVariantStats;
+    isWinner?: boolean;
+}) {
     const update = useUpdateABVariant(campaignId);
     const del = useDeleteABVariant(campaignId);
     const confirm = useConfirm();
@@ -168,7 +206,20 @@ function VariantCard({ campaignId, variant }: { campaignId: string; variant: ABV
     };
 
     return (
-        <div className="p-3 space-y-3">
+        <div className={`p-3 space-y-3 ${isWinner ? "bg-amber-50/40" : ""}`}>
+            {stats && stats.total_sent > 0 && (
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md bg-slate-50 px-2.5 py-1.5 text-[11px]">
+                    {isWinner && (
+                        <span className="inline-flex items-center gap-1 text-amber-700 font-medium">
+                            <TrophyIcon className="w-3 h-3" /> Winner
+                        </span>
+                    )}
+                    <Metric label="Sent" value={stats.total_sent.toLocaleString()} />
+                    <Metric label="Open" value={`${stats.open_rate.toFixed(1)}%`} tone="text-emerald-600" />
+                    <Metric label="Reply" value={`${stats.reply_rate.toFixed(1)}%`} tone="text-sky-600" />
+                    <Metric label="Bounce" value={`${stats.bounce_rate.toFixed(1)}%`} tone="text-rose-600" />
+                </div>
+            )}
             <div className="flex flex-wrap items-end gap-3">
                 <div className="w-[160px]">
                     <Label>Variant name</Label>
@@ -223,5 +274,15 @@ function VariantCard({ campaignId, variant }: { campaignId: string; variant: ABV
                 />
             </div>
         </div>
+    );
+}
+
+// Metric — a compact "label value" pair in the variant performance strip.
+function Metric({ label, value, tone }: { label: string; value: string; tone?: string }) {
+    return (
+        <span className="inline-flex items-center gap-1 tabular-nums">
+            <span className="text-slate-400">{label}</span>
+            <span className={`font-medium ${tone ?? "text-slate-700"}`}>{value}</span>
+        </span>
     );
 }
