@@ -4,378 +4,643 @@ import HeroAtmosphere from '../components/HeroAtmosphere.astro';
 import Icon from '../components/Icon.astro';
 import CTA from '../components/CTA.astro';
 
-// Provider list mirrors internal/app/integration/catalog.go.
+// ===========================================================================
+// Integrations page. Every provider, auth method, event and guarantee here is
+// real, sourced from:
+//   internal/app/integration/catalog.go   (11 providers · 4 categories)
+//   internal/models/integration.go        (oauth | api_key | webhook)
+//   internal/models/webhook.go            (AllWebhookEventTypes · 21 events)
+//   internal/app/webhook/service.go        (HMAC-SHA256 signing + backoff)
+//
+// The page is built around one idea: a single Warmbly event fans out to every
+// connected tool at once. That framing (not a flat provider directory) drives
+// the structure: the bus diagram, the three connect methods, a filterable
+// marketplace, the signed event stream, and the delivery anatomy.
+//
+// Astro/JSX note (mirrors crm.astro): index comparisons like `i < n - 1` are
+// fine inside {} and ${}; literal `{{ }}` in markup is not.
+// ===========================================================================
 
-const categories = [
+// --- Per-brand glyph tints (mirror IntegrationsMock.astro / ProviderGlyph) ---
+const brand: Record<string, { bg: string; ring: string; text: string }> = {
+  hubspot:    { bg: 'bg-orange-50',  ring: 'ring-orange-200',  text: 'text-orange-600' },
+  salesforce: { bg: 'bg-sky-50',     ring: 'ring-sky-200',     text: 'text-sky-600' },
+  pipedrive:  { bg: 'bg-emerald-50', ring: 'ring-emerald-200', text: 'text-emerald-600' },
+  close:      { bg: 'bg-blue-50',    ring: 'ring-blue-200',    text: 'text-blue-600' },
+  zapier:     { bg: 'bg-orange-50',  ring: 'ring-orange-200',  text: 'text-orange-600' },
+  make:       { bg: 'bg-violet-50',  ring: 'ring-violet-200',  text: 'text-violet-600' },
+  n8n:        { bg: 'bg-rose-50',    ring: 'ring-rose-200',    text: 'text-rose-600' },
+  slack:      { bg: 'bg-fuchsia-50', ring: 'ring-fuchsia-200', text: 'text-fuchsia-600' },
+  discord:    { bg: 'bg-indigo-50',  ring: 'ring-indigo-200',  text: 'text-indigo-600' },
+  calendly:   { bg: 'bg-cyan-50',    ring: 'ring-cyan-200',    text: 'text-cyan-600' },
+  cal_com:    { bg: 'bg-slate-100',  ring: 'ring-slate-300',   text: 'text-slate-700' },
+  webhooks:   { bg: 'bg-slate-100',  ring: 'ring-slate-300',   text: 'text-slate-700' },
+};
+
+// --- The catalog · real providers from catalog.go ----------------------------
+const authLabel: Record<string, string> = {
+  oauth: 'OAuth',
+  api_key: 'API key',
+  webhook: 'Webhook URL',
+};
+
+type Provider = {
+  key: string; name: string; initial: string; cat: string;
+  auth: 'oauth' | 'api_key' | 'webhook'; tagline: string; docs: string;
+};
+
+const providers: Provider[] = [
+  // CRM
+  { key: 'hubspot',    name: 'HubSpot',    initial: 'H', cat: 'crm', auth: 'oauth',   tagline: 'Push positive replies and new leads straight into your CRM.', docs: 'https://developers.hubspot.com/docs/api/overview' },
+  { key: 'salesforce', name: 'Salesforce', initial: 'S', cat: 'crm', auth: 'oauth',   tagline: 'Sync leads, contacts, and email activity to Salesforce.',     docs: 'https://developer.salesforce.com/docs' },
+  { key: 'pipedrive',  name: 'Pipedrive',  initial: 'P', cat: 'crm', auth: 'oauth',   tagline: 'Persons, deals, and an activity timeline that stays in sync.', docs: 'https://developers.pipedrive.com' },
+  { key: 'close',      name: 'Close',      initial: 'C', cat: 'crm', auth: 'api_key', tagline: 'Leads, contacts, and inbox activity for Close.',              docs: 'https://developer.close.com' },
+  // Automation
+  { key: 'zapier',     name: 'Zapier',     initial: 'Z', cat: 'automation', auth: 'api_key', tagline: 'Triggers and actions across 8,000+ apps.', docs: 'https://zapier.com/apps' },
+  { key: 'make',       name: 'Make',       initial: 'M', cat: 'automation', auth: 'api_key', tagline: 'Visual automation scenarios.',             docs: 'https://www.make.com/en/integrations' },
+  { key: 'n8n',        name: 'n8n',        initial: 'n', cat: 'automation', auth: 'api_key', tagline: 'Self-hosted automation workflows.',        docs: 'https://docs.n8n.io' },
+  // Notifications
+  { key: 'slack',      name: 'Slack',      initial: 'S', cat: 'notifications', auth: 'oauth',   tagline: 'Real-time alerts for positive replies, bounces, and deliverability.', docs: 'https://api.slack.com' },
+  { key: 'discord',    name: 'Discord',    initial: 'D', cat: 'notifications', auth: 'webhook', tagline: 'Webhook-based notifications to a server channel.',                     docs: 'https://discord.com/developers/docs/resources/webhook' },
+  // Meetings
+  { key: 'calendly',   name: 'Calendly',   initial: 'C', cat: 'meetings', auth: 'webhook', tagline: 'Attribute booked meetings to the campaign that surfaced the lead.', docs: 'https://developer.calendly.com/api-docs/' },
+  { key: 'cal_com',    name: 'Cal.com',    initial: 'C', cat: 'meetings', auth: 'webhook', tagline: 'Same attribution path, open-source booking edition.',               docs: 'https://cal.com/docs/core-features/webhooks' },
+];
+
+const catMeta: { key: string; label: string }[] = [
+  { key: 'all',           label: 'All' },
+  { key: 'crm',           label: 'CRM' },
+  { key: 'automation',    label: 'Automation' },
+  { key: 'notifications', label: 'Notifications' },
+  { key: 'meetings',      label: 'Meetings' },
+];
+const catLabel: Record<string, string> = {
+  crm: 'CRM', automation: 'Automation', notifications: 'Notifications', meetings: 'Meetings',
+};
+
+// --- Fan-out · one event, every destination ----------------------------------
+const fanout: { key: string; name: string; icon?: string; initial?: string; tag: string; does: string }[] = [
+  { key: 'hubspot',  name: 'HubSpot',      initial: 'H',           tag: 'CRM',           does: 'Contact upserted, the reply logged as a timeline note.' },
+  { key: 'slack',    name: 'Slack',        initial: 'S',           tag: 'Notifications', does: 'A channel pinged with the prospect, mailbox, and thread.' },
+  { key: 'zapier',   name: 'Zapier',       initial: 'Z',           tag: 'Automation',    does: 'Your Zap fires and branches across 8,000+ apps.' },
+  { key: 'webhooks', name: 'Your endpoint', icon: 'webhook',       tag: 'Webhook',       does: 'A signed POST lands on your own server in real time.' },
+];
+
+// --- Three connect methods · real auth methods -------------------------------
+const methods = [
   {
-    id: 'crm',
-    eyebrow: 'CRM',
-    headline: 'Sync contacts and activity to your system of record.',
-    body: 'Connect the CRM your team already runs the pipeline in. Replies, bounces, and meeting bookings flow back as timeline events without manual logging.',
-    items: [
-      {
-        name: 'HubSpot',
-        tagline: 'Two-way sync for contacts and activities.',
-        body: 'OAuth into HubSpot. Contacts can be pulled into campaigns and outbound activity is written back as engagement events on the contact record.',
-        auth: 'OAuth',
-        beta: false,
-      },
-      {
-        name: 'Salesforce',
-        tagline: 'Leads, contacts, and email activity.',
-        body: 'OAuth with the standard Salesforce API. Outbound mail is logged on the lead or contact, and replies fire as task events for the assigned owner.',
-        auth: 'OAuth',
-        beta: false,
-      },
-      {
-        name: 'Pipedrive',
-        tagline: 'Persons, deals, and activity timeline.',
-        body: 'Use a Pipedrive API token. Recipients are mapped to persons, replies create activities, and deals can be advanced based on reply intent.',
-        auth: 'API token',
-        beta: false,
-      },
-      {
-        name: 'Close',
-        tagline: 'Leads, contacts, and inbox activity.',
-        body: 'Close API key. Replies and bounces sync as inbox activity, and contacts can be created or updated as campaigns send.',
-        auth: 'API key',
-        beta: false,
-      },
-    ],
+    n: '01', icon: 'lock', name: 'OAuth',
+    used: 'HubSpot · Salesforce · Pipedrive · Slack',
+    body: 'A one-click authorization handshake. You approve scopes inside the provider, and Warmbly stores only the encrypted token. Revoke from either side at any time.',
+    foot: 'Token sealed with AES-256-GCM',
   },
   {
-    id: 'automation',
-    eyebrow: 'Automation',
-    headline: 'Route Warmbly events through your existing automation stack.',
-    body: 'Generate a Warmbly API token, paste it into your automation platform of choice, and trigger off any event Warmbly emits.',
-    items: [
-      {
-        name: 'Zapier',
-        tagline: 'Triggers and actions across 8,000+ apps.',
-        body: 'A Warmbly API token authenticates the Zapier app. Triggers are available for every event Warmbly emits, and actions cover campaign management, contact updates, and suppression.',
-        auth: 'API token',
-        beta: false,
-      },
-      {
-        name: 'Make',
-        tagline: 'Visual automation scenarios.',
-        body: 'Same Warmbly API token, used inside Make scenarios. Useful for branching logic that goes beyond what a flat trigger or action provides.',
-        auth: 'API token',
-        beta: false,
-      },
-      {
-        name: 'n8n',
-        tagline: 'Self-hosted automation workflows.',
-        body: 'For customers who run n8n on their own infrastructure. The same API token authenticates against Warmbly endpoints.',
-        auth: 'API token',
-        beta: false,
-      },
-    ],
+    n: '02', icon: 'key', name: 'API key',
+    used: 'Close · Zapier · Make · n8n',
+    body: 'For account-scoped tools and automation platforms. Paste a provider key, or mint a scoped Warmbly key for Zapier, Make and n8n to authenticate against your data.',
+    foot: 'Stored opaque, never returned',
   },
   {
-    id: 'notifications',
-    eyebrow: 'Notifications',
-    headline: 'Pipe replies and bounces into your team chat.',
-    body: 'Positive replies, bounces, complaints, and meeting bookings can fan out to a Slack or Discord channel so the right person sees them without checking the dashboard.',
-    items: [
-      {
-        name: 'Slack',
-        tagline: 'Channels for positive replies, bounces, and meeting bookings.',
-        body: 'Connect Slack with OAuth or paste an incoming-webhook URL. Choose which events post to which channel, with separate channels for replies versus deliverability alerts if needed.',
-        auth: 'OAuth',
-        beta: false,
-      },
-      {
-        name: 'Discord',
-        tagline: 'Webhook-based notifications to a server channel.',
-        body: 'Paste a Discord channel webhook URL. The same event filters that apply to Slack apply here, so the two can run in parallel if a team uses both.',
-        auth: 'Webhook URL',
-        beta: false,
-      },
-    ],
-  },
-  {
-    id: 'meetings',
-    eyebrow: 'Meetings',
-    headline: 'Attribute booked meetings to the campaign that surfaced the lead.',
-    body: 'Calendly and Cal.com post a webhook when a recipient books. The booking is recorded, joined to the originating contact and campaign, and surfaced in reporting alongside replies.',
-    items: [
-      {
-        name: 'Calendly',
-        tagline: 'invitee.created webhook.',
-        body: 'Paste the URL minted for your organization into Calendly. When a recipient books, the booking is recorded and a campaign.reply_received event fires with trigger=meeting_booked so downstream subscribers see which campaign earned the meeting.',
-        auth: 'Webhook URL',
-        beta: false,
-      },
-      {
-        name: 'Cal.com',
-        tagline: 'BOOKING_CREATED webhook. Cloud and self-hosted.',
-        body: 'The Cal.com payload uses a different shape than Calendly. Both are normalized into one MeetingBooking record so reporting and downstream automations do not need to branch by source.',
-        auth: 'Webhook URL',
-        beta: false,
-      },
-    ],
-  },
-  {
-    id: 'data',
-    eyebrow: 'Data',
-    headline: 'Lead lists in. Status updates out.',
-    body: 'Most lead lists live in a spreadsheet. The Sheets integration reads leads for a campaign and writes send, reply, bounce, and booked events back to the same sheet.',
-    items: [
-      {
-        name: 'Google Sheets',
-        tagline: 'Two-way: read leads, write status updates.',
-        body: 'OAuth a Google account with Sheets scope. Provide a sheet ID. Rows are read starting from row 2 (header convention) and a status column is appended on the right. The same sheet acts as both the lead source and the real-time status report.',
-        auth: 'OAuth',
-        beta: true,
-      },
-    ],
+    n: '03', icon: 'webhook', name: 'Webhook URL',
+    used: 'Calendly · Cal.com · Discord',
+    body: 'Warmbly mints an inbound URL per organization. Paste it into the provider, and their POSTs route to you by the secret in the path. Rotate it to invalidate instantly.',
+    foot: 'Per-org URL · rotate to revoke',
   },
 ];
 
-// Real event types from internal/models/webhook.go.
-const webhookEvents = [
-  { name: 'campaign.email_sent',         desc: 'A campaign step was dispatched to a recipient.' },
-  { name: 'campaign.email_delivered',    desc: 'The receiver acknowledged delivery (250 OK or DSN-equivalent).' },
-  { name: 'campaign.email_opened',       desc: 'Open pixel resolved. Open data is unreliable at major receivers.' },
-  { name: 'campaign.email_clicked',      desc: 'A tracked link was clicked. Deduplicated per recipient.' },
-  { name: 'campaign.email_bounced',      desc: 'Hard or soft bounce. Suppression follows automatically.' },
-  { name: 'campaign.reply_received',     desc: 'Recipient replied, or a meeting was booked via Calendly or Cal.com.' },
-  { name: 'campaign.unsubscribed',       desc: 'One-click unsubscribe or inbound STOP / REMOVE reply.' },
-  { name: 'campaign.started',            desc: 'Campaign moved into the running state.' },
-  { name: 'campaign.paused',             desc: 'Campaign auto-paused on bounce or complaint spike, or paused manually.' },
-  { name: 'campaign.completed',          desc: 'Last sequence step was dispatched for the last recipient.' },
-  { name: 'warmup.health_changed',       desc: 'A mailbox transitioned between healthy, watch, throttled, quarantined, or blocked.' },
-  { name: 'warmup.placement_in_spam',    desc: 'A warmup probe landed in junk on a recipient mailbox.' },
-  { name: 'warmup.quarantined',          desc: 'Mailbox dropped to the recovery pool. 7-day cooldown.' },
-  { name: 'warmup.blocked',              desc: 'Mailbox hard-blocked from the shared pool. 30-day cooldown.' },
-  { name: 'deliverability.bounce',       desc: 'External deliverability event was ingested.' },
-  { name: 'deliverability.complaint',    desc: 'External complaint event was ingested.' },
-  { name: 'email_account.connected',     desc: 'A new mailbox finished onboarding.' },
-  { name: 'email_account.removed',       desc: 'A mailbox was removed from the workspace.' },
+// --- The signed event stream · 21 real webhook event types -------------------
+const eventGroups: { domain: string; color: string; events: [string, string][] }[] = [
+  {
+    domain: 'Account', color: '#0ea5e9',
+    events: [
+      ['email_account.connected', 'A mailbox finished onboarding.'],
+      ['email_account.removed',   'A mailbox left the workspace.'],
+    ],
+  },
+  {
+    domain: 'Campaign', color: '#6366f1',
+    events: [
+      ['campaign.email_sent',              'A sequence step dispatched to a recipient.'],
+      ['campaign.email_delivered',         'The receiver acknowledged delivery.'],
+      ['campaign.email_opened',            'Open pixel resolved. Unreliable at scale.'],
+      ['campaign.email_clicked',           'A tracked link was clicked, deduped per recipient.'],
+      ['campaign.email_bounced',           'Hard or soft bounce. Suppression follows.'],
+      ['campaign.reply_received',          'A prospect replied, or a meeting was booked.'],
+      ['campaign.unsubscribed',            'One-click unsubscribe or a STOP reply.'],
+      ['campaign.started',                 'Campaign moved into the running state.'],
+      ['campaign.paused',                  'Auto-paused on a spike, or paused by hand.'],
+      ['campaign.completed',               'The last step dispatched for the last recipient.'],
+      ['campaign.deliverability_warning',  'A campaign tripped a deliverability guardrail.'],
+      ['campaign.action',                  'A sequence action node executed.'],
+    ],
+  },
+  {
+    domain: 'Warmup', color: '#f59e0b',
+    events: [
+      ['warmup.email_sent',        'A warmup message went out to a pool partner.'],
+      ['warmup.health_changed',    'A mailbox moved between health states.'],
+      ['warmup.placement_in_spam', 'A warmup probe landed in junk.'],
+      ['warmup.quarantined',       'Mailbox dropped to the recovery pool. 7-day cooldown.'],
+      ['warmup.blocked',           'Mailbox hard-blocked from the pool. 30-day cooldown.'],
+    ],
+  },
+  {
+    domain: 'Deliverability', color: '#10b981',
+    events: [
+      ['deliverability.bounce',    'An external bounce event was ingested.'],
+      ['deliverability.complaint', 'An external complaint event was ingested.'],
+    ],
+  },
+];
+const eventCount = eventGroups.reduce((a, g) => a + g.events.length, 0);
+
+// --- Delivery anatomy · real backoff from webhook/service.go -----------------
+// backoffFor: attempt 1 → 30s, then 1m, 2m, 4m, 8m, 16m, 32m, capped 60m.
+const backoff = ['30s', '1m', '2m', '4m', '8m', '16m', '32m', '1h'];
+
+const guarantees = [
+  { icon: 'lock',  k: 'HMAC-SHA256 signed', v: 'X-Warmbly-Signature', d: 'Every POST carries t=<unix>,v1=<hex>, the same scheme Stripe uses. Verify the digest before you trust the body.' },
+  { icon: 'clock', k: 'Retried with backoff', v: 'up to 8 attempts', d: 'A non-2xx doubles the wait each try, capped at one hour, then gives up. Nothing is dropped silently.' },
+  { icon: 'shuffle', k: 'Idempotent + deduped', v: 'replay-safe', d: 'Each delivery carries a stable id, and SKIP LOCKED keeps two replicas from fanning the same event out twice.' },
+  { icon: 'list',  k: 'Full audit trail', v: 'every attempt', d: 'Status, response, and a body excerpt are recorded per attempt. Replay any delivery from the dashboard.' },
 ];
 
-const steps = [
-  { n: '01', t: 'Authenticate', d: 'OAuth, an API token, or a webhook URL minted for your organization. The connect drawer surfaces the right method per provider.' },
-  { n: '02', t: 'Route',        d: 'The connection is recorded against your organization. Inbound traffic is routed by the secret in the URL path. Outbound traffic uses the encrypted token.' },
-  { n: '03', t: 'Live',         d: 'Status moves to connected. The dashboard shows the last sync time, the last error if any, and a one-click secret rotation. Disconnect cascades to dependent data.' },
-];
-
-const numbers = [
-  { v: '12',          u: 'providers',      l: 'CRM, automation, notifications, meetings, data',     src: 'integration/catalog.go' },
-  { v: '18',          u: 'webhook events', l: 'campaign, warmup, deliverability, account lifecycle', src: 'models/webhook.go' },
-  { v: 'HMAC-SHA256', u: '',               l: 'every outbound webhook is signed',                    src: 'app/webhook/service.go' },
-  { v: '8',           u: 'max attempts',   l: 'capped exponential backoff up to one hour',           src: 'app/webhook/service.go' },
-];
-
+// --- Security ----------------------------------------------------------------
 const security = [
-  { t: 'OAuth tokens encrypted at rest',    d: 'AES-256-GCM with per-user data encryption keys wrapped by AWS KMS. The encrypted blob is stored in PostgreSQL. Plaintext is only held in a TTL-bounded cache during active use.' },
-  { t: 'API tokens stored as opaque blobs', d: 'CRM, automation, and notification keys are never serialized back to the API consumer. The dashboard sees only the public display fields (workspace, channel, account email).' },
-  { t: 'Inbound URLs are per-organization', d: 'A leaked URL only affects one organization. Rotating the secret invalidates the old one immediately.' },
-  { t: 'Outbound delivery audit trail',     d: 'Every webhook dispatch attempt is recorded with response status and body excerpt. Replays are supported. SKIP LOCKED prevents duplicate fanout across replicas.' },
+  { icon: 'lock',   t: 'OAuth tokens encrypted at rest',     d: 'AES-256-GCM with a per-user data key wrapped by AWS KMS. Plaintext lives only in a TTL-bounded cache during active use.' },
+  { icon: 'key',    t: 'API keys are opaque blobs',          d: 'CRM, automation and notification keys are never serialized back to the API. The dashboard sees only public display fields.' },
+  { icon: 'link',   t: 'Inbound URLs are per-organization',  d: 'A leaked URL touches one organization. Rotating the secret invalidates the old path immediately.' },
+  { icon: 'shield', t: 'SSRF-guarded by default',            d: 'Outbound webhook targets are HTTPS-only and blocked from obvious internal addresses. Self-hosted can opt into unsafe URLs.' },
 ];
 
-const faq = [
+// --- FAQ ---------------------------------------------------------------------
+const faq: [string, string][] = [
+  ['How does one event reach four tools at once?',
+   'Every state change Warmbly makes publishes one internal event. Connected integrations and your own webhook endpoints each subscribe to the event types they care about, and the fan-out runs on an internal queue. A single campaign.reply_received can upsert a HubSpot contact, ping Slack, fire a Zap, and POST your endpoint, all from one reply.'],
   ['Do you support OAuth for every provider?',
-   'No. OAuth is used where the provider exposes a per-user identity, such as HubSpot, Salesforce, Google Sheets, and Slack. For account-scoped credentials such as Pipedrive or Close API tokens, a static token is simpler and more appropriate. The connect drawer uses the right method per provider.'],
+   'No, and on purpose. OAuth is used where the provider exposes a per-user identity: HubSpot, Salesforce, Pipedrive and Slack. Account-scoped tools like Close, and automation platforms like Zapier, Make and n8n, authenticate with an API key. Calendly, Cal.com and Discord use a webhook URL. The connect drawer picks the right method per provider.'],
   ['What happens when a token expires or is revoked?',
-   'The connection status moves to degraded and the dashboard shows the provider error. Degraded connections stop attempting new fanout until the credentials are rotated or re-authenticated.'],
-  ['Can I have more than one of the same provider?',
-   'Yes. A connection is unique per (organization, provider, label). One organization can hold a HubSpot connection per workspace, or a Slack connection per channel.'],
-  ['How fast is the inbound webhook path?',
-   'Calendly and Cal.com POSTs are accepted, persisted, and acknowledged inside the same request. Fanout to outbound subscribers runs on the internal event queue, with a default tick of two seconds.'],
+   'The connection moves to a degraded state and the dashboard surfaces the provider error. Degraded connections stop attempting new fan-out until you rotate the key or re-authenticate, so a dead token never silently drops events on the floor.'],
+  ['How are booked meetings attributed to a campaign?',
+   'Calendly POSTs invitee.created and Cal.com POSTs BOOKING_CREATED to the URL we mint. Both are normalized into one booking record, joined to the originating contact and campaign, and a campaign.reply_received fires with trigger=meeting_booked so downstream subscribers see which sequence earned the meeting.'],
+  ['Can I run more than one of the same provider?',
+   'Yes. A connection is unique per organization, provider and label, so you can hold a HubSpot connection per workspace or a Slack connection per channel, side by side.'],
   ['What if you do not list a provider I need?',
-   'Subscribe to the webhook stream and build the integration directly, or run it through Zapier, Make, or n8n. The eighteen event types cover every state transition that is emitted internally.'],
+   'Subscribe to the webhook stream and build it directly, or route it through Zapier, Make or n8n. The twenty-one event types cover every state transition Warmbly emits internally, each HMAC-signed in the same format Stripe uses.'],
 ];
 ---
 <Layout
   title="Integrations, Webhooks & API | Warmbly"
-  description="CRM, automation, notifications, meetings, and data integrations for Warmbly. Plus a signed webhook stream and developer API."
+  description="One Warmbly event fans out to your whole stack. CRM, automation, notifications and meeting integrations over OAuth, API keys or webhooks, plus a signed 21-event stream you can build on."
 >
-  <!-- HERO -->
+  <!-- ============================================================
+       HERO
+  ============================================================ -->
   <section class="relative isolate overflow-hidden">
     <HeroAtmosphere />
 
-    <div class="container-page relative pt-16 md:pt-24 pb-20 md:pb-28 text-center">
+    <div class="container-page relative z-10 pt-16 md:pt-24 pb-20 md:pb-28 text-center">
       <div class="inline-flex items-center gap-2 h-7 pl-1 pr-3 rounded-full bg-white/15 backdrop-blur ring-1 ring-white/25 text-[12px] text-white/95 shadow-[0_4px_14px_-4px_rgba(0,0,0,0.25)]">
         <span class="inline-flex items-center h-5 px-1.5 rounded-full text-[10.5px] font-semibold uppercase tracking-[0.06em] bg-white" style="color:#0369a1;">
           Integrations
         </span>
-        Connect your stack to Warmbly
+        Eleven providers, one signed event stream
       </div>
 
       <h1 class="mt-8 md:mt-10 text-[44px] sm:text-6xl md:text-[72px] lg:text-[80px] font-semibold tracking-[-0.04em] leading-[0.98] text-white max-w-4xl mx-auto">
-        Integrations.
+        One reply, everywhere<br/>your team already works.
       </h1>
       <p class="mt-6 text-[17px] md:text-[19px] text-white/80 max-w-2xl mx-auto leading-relaxed">
-        HubSpot, Salesforce, Pipedrive, and Close for CRM. Zapier, Make, and n8n for automation. Slack and Discord for team notifications. Calendly and Cal.com for meeting attribution. Google Sheets for two-way lead lists. Plus a signed webhook stream for everything else.
+        Every event Warmbly fires rides one wire to your whole stack. A positive reply upserts your CRM, pings Slack, fires a Zap, and POSTs your own endpoint, all at once. Connect over OAuth, an API key, or a webhook URL, then build the rest on a signed stream.
       </p>
 
       <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
         <a href="https://app.warmbly.com/register" class="inline-flex h-11 px-5 items-center gap-2 rounded-[10px] text-[14.5px] font-semibold bg-white hover:bg-white hover:-translate-y-0.5 hover:shadow-[0_12px_28px_-6px_rgba(0,0,0,0.3)] transition-all duration-200 ease-out shadow-[0_4px_14px_-2px_rgba(0,0,0,0.18)]">
-          <span style="color:#075985;">Get started</span>
+          <span style="color:#075985;">Connect your stack</span>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#075985" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>
           </svg>
         </a>
-        <a href="#crm" class="inline-flex h-11 px-5 items-center rounded-[10px] text-[14.5px] font-medium bg-white/10 backdrop-blur ring-1 ring-white/40 text-white hover:bg-white/20 hover:-translate-y-0.5 transition-all duration-200 ease-out">
-          Browse integrations
+        <a href="#catalog" class="inline-flex h-11 px-5 items-center rounded-[10px] text-[14.5px] font-medium bg-white/10 backdrop-blur ring-1 ring-white/40 text-white hover:bg-white/20 hover:-translate-y-0.5 transition-all duration-200 ease-out">
+          Browse the catalog
         </a>
       </div>
     </div>
   </section>
 
-  <!-- HOW IT WORKS -->
-  <section class="border-y border-[color:var(--border)] py-20 md:py-28">
+  <!-- ============================================================
+       THE WIRE · one event, every destination
+  ============================================================ -->
+  <section class="border-y border-[color:var(--border)] bg-[color:var(--surface-1)]/40 py-20 md:py-28">
     <div class="container-page">
-      <div class="max-w-3xl mb-12">
-        <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7] mb-3">How it works</div>
+      <div class="max-w-2xl mb-12">
+        <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7] mb-3">The wire</div>
         <h2 class="text-[32px] md:text-[44px] font-semibold tracking-[-0.03em] leading-[1.05] text-heading">
-          Connect in three steps.
+          One event. Every destination.
         </h2>
         <p class="mt-4 text-[15.5px] text-foreground/70 leading-relaxed">
-          Every provider goes through the same connect drawer. The fields change per provider, the flow does not.
+          Integrations are not bolt-on connectors that each poll for changes. Every state change publishes one internal event, and each connected tool subscribes to what it cares about. A single positive reply reaches your CRM, your team chat, your automation platform, and your own server in the same beat.
         </p>
       </div>
 
-      <div class="rounded-[14px] bg-[#0c1224] ring-1 ring-white/10 overflow-hidden">
-        <div class="px-6 py-3 border-b border-white/10 flex items-center justify-between text-[10.5px] font-mono text-white/55">
-          <span>connect drawer</span>
-          <span>same flow, every provider</span>
+      <div class="rounded-[16px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden" style="box-shadow: var(--shadow-sm);">
+        <div class="grid lg:grid-cols-[minmax(0,360px)_1fr]">
+          <!-- source event -->
+          <div class="relative bg-[#0c1224] p-6 md:p-8 flex flex-col justify-center lg:border-r border-white/10">
+            <div class="inline-flex items-center gap-2 text-[10.5px] font-mono text-white/55 mb-4">
+              <span class="relative flex size-2">
+                <span class="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60 animate-ping"></span>
+                <span class="relative inline-flex size-2 rounded-full bg-emerald-400"></span>
+              </span>
+              event fired
+            </div>
+            <code class="text-[15px] md:text-[16px] font-mono text-[#7dd3fc] font-semibold tracking-tight">campaign.reply_received</code>
+            <div class="mt-4 rounded-lg bg-black/30 ring-1 ring-white/10 p-3.5 font-mono text-[11.5px] leading-[1.7] text-white/80">
+              <div><span class="text-white/40">"trigger"</span>: <span class="text-emerald-300">"positive_reply"</span>,</div>
+              <div><span class="text-white/40">"contact"</span>: <span class="text-emerald-300">"rowan@northwind.co"</span>,</div>
+              <div><span class="text-white/40">"campaign"</span>: <span class="text-emerald-300">"q1-outbound"</span>,</div>
+              <div><span class="text-white/40">"mailbox"</span>: <span class="text-emerald-300">"ben@acme.com"</span></div>
+            </div>
+            <div class="mt-4 inline-flex items-center gap-2 text-[11px] font-mono text-white/45">
+              fans out to {fanout.length} subscribers
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-[#38bdf8]" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+            </div>
+          </div>
+
+          <!-- destinations bus -->
+          <div class="relative p-5 md:p-7">
+            <span class="hidden lg:block absolute left-7 top-10 bottom-10 w-px bg-gradient-to-b from-sky-200 via-sky-400 to-sky-200"></span>
+            <span class="hidden lg:block ig-bus-pulse absolute left-7 -ml-[3px] size-[7px] rounded-full bg-sky-500 shadow-[0_0_0_4px_rgba(14,165,233,0.18)]"></span>
+            <div class="flex flex-col gap-3">
+              {fanout.map((d) => {
+                const b = brand[d.key] ?? brand.webhooks;
+                return (
+                  <div class="relative lg:pl-14">
+                    <span class="hidden lg:block absolute left-7 top-1/2 -translate-y-1/2 w-7 h-px bg-sky-200"></span>
+                    <span class="hidden lg:block absolute left-7 top-1/2 -translate-y-1/2 -ml-[4px] size-2 rounded-full bg-white ring-2 ring-sky-400 z-10"></span>
+                    <div class="flex items-center gap-3.5 rounded-xl border border-slate-200 bg-white p-3.5 hover:border-sky-200 hover:shadow-[0_8px_24px_-14px_rgba(2,132,199,0.45)] transition-all">
+                      <div class={`w-10 h-10 rounded-lg ring-1 inline-flex items-center justify-center font-semibold uppercase shrink-0 ${b.bg} ${b.ring} ${b.text}`}>
+                        {d.icon ? <Icon name={d.icon} size={17} /> : <span class="text-[14px]">{d.initial}</span>}
+                      </div>
+                      <div class="min-w-0 flex-1">
+                        <div class="flex items-center gap-2">
+                          <span class="text-[14px] font-semibold text-heading truncate">{d.name}</span>
+                          <span class="shrink-0 inline-flex items-center h-4 px-1.5 rounded text-[9.5px] uppercase tracking-[0.08em] font-medium bg-slate-100 text-slate-500">{d.tag}</span>
+                        </div>
+                        <p class="mt-0.5 text-[12.5px] text-foreground/65 leading-snug">{d.does}</p>
+                      </div>
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-emerald-500 shrink-0" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
 
-        <div class="grid md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-white/10">
-          {steps.map((s) => (
-            <div class="p-7 md:p-9">
-              <div class="flex items-baseline gap-3">
-                <span class="font-mono text-[11.5px] text-[#7dd3fc] font-semibold tabular-nums tracking-[0.08em]">{s.n}</span>
-                <span class="text-[18px] md:text-[20px] font-semibold tracking-[-0.02em] text-white">{s.t}</span>
-              </div>
-              <p class="mt-3 text-[13.5px] text-white/65 leading-relaxed">{s.d}</p>
-            </div>
-          ))}
+        <div class="px-6 py-3 border-t border-[color:var(--border)] bg-[color:var(--surface-1)]/60 flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono text-muted-foreground">
+          <span>{eventCount} event types ride the same wire</span>
+          <span>Fan-out runs on the internal event queue</span>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- CATEGORY SECTIONS -->
-  {categories.map((cat, idx) => (
-    <section id={cat.id} class={`scroll-mt-4 py-20 md:py-28 ${idx % 2 === 0 ? 'bg-white' : 'border-y border-[color:var(--border)] bg-[color:var(--surface-1)]/40'}`}>
-      <div class="container-page">
-        <div class="max-w-2xl mb-12">
-          <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7] mb-3">{cat.eyebrow}</div>
-          <h2 class="text-[32px] md:text-[44px] font-semibold tracking-[-0.03em] leading-[1.05] text-heading">
-            {cat.headline}
-          </h2>
-          <p class="mt-4 text-[15.5px] text-foreground/70 leading-relaxed">{cat.body}</p>
-        </div>
+  <!-- ============================================================
+       THREE WAYS TO CONNECT · the real auth methods
+  ============================================================ -->
+  <section class="border-b border-[color:var(--border)] py-20 md:py-28">
+    <div class="container-page">
+      <div class="max-w-2xl mb-12">
+        <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7] mb-3">Connecting</div>
+        <h2 class="text-[32px] md:text-[44px] font-semibold tracking-[-0.03em] leading-[1.05] text-heading">
+          Three ways in. One connect drawer.
+        </h2>
+        <p class="mt-4 text-[15.5px] text-foreground/70 leading-relaxed">
+          The method follows the provider, not the other way around. OAuth where there is a per-user identity, an API key for account-scoped tools and automation platforms, and a minted webhook URL for inbound bookings. The drawer surfaces the right one; the flow is the same every time.
+        </p>
+      </div>
 
-        <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-px bg-[color:var(--border)] rounded-[14px] overflow-hidden ring-1 ring-[color:var(--border)]" style="box-shadow: var(--shadow-sm);">
-          {cat.items.map((it) => (
-            <div class="bg-white p-6 flex flex-col">
-              <div class="flex items-start justify-between gap-3">
-                <div class="flex items-center gap-2.5">
-                  <div class="w-10 h-10 rounded-md bg-[color:var(--sky-1)] ring-1 ring-[color:var(--sky-2)] text-[#0369a1] inline-flex items-center justify-center text-[14px] font-semibold uppercase">
-                    {it.name.charAt(0)}
-                  </div>
-                  <div>
-                    <div class="text-[15px] font-semibold text-heading">{it.name}</div>
-                    <div class="mt-0.5 text-[10.5px] uppercase tracking-[0.08em] text-muted-foreground font-mono">
-                      {it.auth}{it.beta && <span class="ml-1.5 text-amber-600">· beta</span>}
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <p class="mt-3 text-[13px] text-foreground/65 leading-relaxed">{it.tagline}</p>
-              <p class="mt-4 pt-4 border-t border-[color:var(--border)] text-[12.5px] text-foreground/65 leading-relaxed">{it.body}</p>
+      <div class="grid md:grid-cols-3 gap-px bg-[color:var(--border)] rounded-[14px] overflow-hidden ring-1 ring-[color:var(--border)]" style="box-shadow: var(--shadow-sm);">
+        {methods.map((m) => (
+          <div class="bg-white p-7 flex flex-col">
+            <div class="flex items-center justify-between">
+              <span class="w-11 h-11 rounded-[12px] bg-[color:var(--brand-soft)] text-[#0369a1] inline-flex items-center justify-center shrink-0">
+                <Icon name={m.icon} size={19} />
+              </span>
+              <span class="font-mono text-[11px] text-[#0284c7] font-semibold tabular-nums">{m.n}</span>
             </div>
+            <div class="mt-5 text-[18px] font-semibold tracking-[-0.015em] text-heading">{m.name}</div>
+            <div class="mt-1.5 text-[11px] font-mono text-muted-foreground">{m.used}</div>
+            <p class="mt-3 text-[13.5px] text-foreground/70 leading-relaxed flex-1">{m.body}</p>
+            <div class="mt-5 pt-4 border-t border-[color:var(--border)] inline-flex items-center gap-2 text-[12px] text-foreground/75">
+              <Icon name="shield" size={13} class="text-[#0284c7] shrink-0" />
+              {m.foot}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       CATALOG · filterable marketplace
+  ============================================================ -->
+  <section id="catalog" class="scroll-mt-4 bg-[color:var(--surface-1)]/40 border-b border-[color:var(--border)] py-20 md:py-28">
+    <div class="container-page" data-catalog>
+      <div class="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6 mb-10">
+        <div class="max-w-2xl">
+          <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7] mb-3">Catalog</div>
+          <h2 class="text-[32px] md:text-[44px] font-semibold tracking-[-0.03em] leading-[1.05] text-heading">
+            Eleven providers, four categories.
+          </h2>
+          <p class="mt-4 text-[15.5px] text-foreground/70 leading-relaxed">
+            The whole directory the dashboard renders, in catalog order. Filter by what you are wiring up. Each tile shows the real authentication method, so you know what you will paste before you start.
+          </p>
+        </div>
+        <!-- filter pills -->
+        <div class="flex flex-wrap gap-1.5 shrink-0">
+          {catMeta.map((c) => (
+            <button type="button" data-filter={c.key} data-active={c.key === 'all' ? 'true' : 'false'}
+              class="ig-pill inline-flex items-center gap-1.5 h-8 px-3.5 rounded-full border border-slate-200 bg-white text-[12.5px] font-medium text-slate-600 hover:border-slate-300 transition-colors">
+              {c.label}
+            </button>
           ))}
         </div>
       </div>
-    </section>
-  ))}
 
-  <!-- WEBHOOKS + API -->
-  <section class="bg-white py-20 md:py-28">
-    <div class="container-page">
-      <div class="grid lg:grid-cols-[1fr_1.8fr] gap-12 lg:gap-20 items-start">
-        <div class="lg:sticky lg:top-24" style="align-self: start;">
-          <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Webhooks &amp; API</div>
-          <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
-            Build your own with a signed event stream.
-          </h2>
-          <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed">
-            Eighteen event types, signed with HMAC-SHA256 in the same format Stripe uses, retried with capped exponential backoff, and recorded with full delivery history per endpoint. Subscribe to all events or filter by type.
-          </p>
-          <ul class="mt-6 space-y-2 text-[13.5px] text-foreground/80">
-            <li class="flex items-start gap-2"><Icon name="check" size={13} class="text-[#0284c7] mt-1 shrink-0" /><span><span class="font-mono">X-Warmbly-Signature: t=&lt;unix&gt;,v1=&lt;hex&gt;</span> on every POST.</span></li>
-            <li class="flex items-start gap-2"><Icon name="check" size={13} class="text-[#0284c7] mt-1 shrink-0" /><span>Per-endpoint filter by event type.</span></li>
-            <li class="flex items-start gap-2"><Icon name="check" size={13} class="text-[#0284c7] mt-1 shrink-0" /><span>Up to 8 attempts, exponential backoff, full audit trail.</span></li>
-            <li class="flex items-start gap-2"><Icon name="check" size={13} class="text-[#0284c7] mt-1 shrink-0" /><span>Rotating a secret invalidates the old one immediately.</span></li>
-          </ul>
+      <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {providers.map((p) => {
+          const b = brand[p.key] ?? brand.webhooks;
+          return (
+            <div data-cat={p.cat} class="ig-tile group relative rounded-[14px] border border-slate-200 bg-white p-5 flex flex-col hover:border-sky-200 hover:shadow-[0_14px_36px_-20px_rgba(2,132,199,0.5)] transition-all">
+              <div class="flex items-start justify-between gap-3">
+                <div class="flex items-center gap-3 min-w-0">
+                  <div class={`w-11 h-11 rounded-[12px] ring-1 inline-flex items-center justify-center font-semibold uppercase shrink-0 text-[15px] ${b.bg} ${b.ring} ${b.text}`}>{p.initial}</div>
+                  <div class="min-w-0">
+                    <div class="text-[15px] font-semibold text-heading truncate">{p.name}</div>
+                    <div class="mt-0.5 text-[10px] uppercase tracking-[0.1em] text-muted-foreground font-mono">{catLabel[p.cat]}</div>
+                  </div>
+                </div>
+                <span class="shrink-0 inline-flex items-center gap-1 h-5 px-1.5 rounded text-[9.5px] uppercase tracking-[0.07em] font-medium bg-sky-50 text-sky-700">
+                  {authLabel[p.auth]}
+                </span>
+              </div>
+              <p class="mt-4 text-[13px] text-foreground/65 leading-relaxed flex-1">{p.tagline}</p>
+              <div class="mt-4 pt-3.5 border-t border-slate-100 flex items-center justify-between">
+                <a href={p.docs} target="_blank" rel="noopener noreferrer" class="text-[11.5px] text-slate-400 hover:text-[#0369a1] inline-flex items-center gap-1 transition-colors">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
+                  Docs
+                </a>
+                <span class="inline-flex items-center gap-1 text-[12px] font-medium text-[#0369a1] opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                  Connect
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+                </span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <p class="mt-6 text-[12.5px] text-muted-foreground leading-relaxed">
+        Plus on-demand <span class="text-foreground/80 font-medium">Google Sheets</span> lead sync, which reads a spreadsheet into your contacts from the Contacts tab rather than the catalog.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       MEETINGS SPOTLIGHT · booking → attribution
+  ============================================================ -->
+  <section class="bg-white border-b border-[color:var(--border)] py-20 md:py-28">
+    <div class="container-page grid lg:grid-cols-[1fr_1.25fr] gap-12 lg:gap-16 items-start">
+      <div class="lg:sticky lg:top-24" style="align-self: start;">
+        <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7] mb-3">Meetings</div>
+        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
+          A booked meeting knows which campaign earned it.
+        </h2>
+        <p class="mt-5 text-[15px] text-foreground/70 leading-relaxed max-w-md">
+          Calendly and Cal.com are two different webhook shapes. Warmbly normalizes both into one booking record, joins it to the contact and the campaign that surfaced the lead, and fires a reply event so the rest of your stack treats a booking like the win it is.
+        </p>
+        <ul class="mt-6 space-y-2.5 text-[14px] text-foreground/85">
+          <li class="flex items-start gap-2"><Icon name="check" size={13} class="text-[#0284c7] mt-1 shrink-0" /><span>One inbound URL per organization, minted for you. Paste it into the provider.</span></li>
+          <li class="flex items-start gap-2"><Icon name="check" size={13} class="text-[#0284c7] mt-1 shrink-0" /><span><span class="font-mono text-[12.5px]">invitee.created</span> and <span class="font-mono text-[12.5px]">BOOKING_CREATED</span> become one record.</span></li>
+          <li class="flex items-start gap-2"><Icon name="check" size={13} class="text-[#0284c7] mt-1 shrink-0" /><span>Reporting credits the meeting to the sequence and mailbox that opened the door.</span></li>
+        </ul>
+      </div>
+
+      <div class="space-y-0">
+        <!-- booking card -->
+        <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden" style="box-shadow: var(--shadow-sm);">
+          <div class="px-5 py-3 border-b border-slate-200 flex items-center gap-2.5 bg-[color:var(--surface-1)]/60">
+            <span class="w-8 h-8 rounded-lg bg-cyan-50 ring-1 ring-cyan-200 text-cyan-600 inline-flex items-center justify-center shrink-0">
+              <Icon name="clock" size={15} />
+            </span>
+            <div class="min-w-0">
+              <div class="text-[13px] font-semibold text-heading">Calendly · invitee.created</div>
+              <div class="text-[10.5px] font-mono text-muted-foreground">inbound webhook received</div>
+            </div>
+            <span class="ml-auto inline-flex items-center gap-1.5 h-5 px-2 rounded text-[10px] uppercase tracking-[0.08em] font-medium bg-emerald-50 text-emerald-700">
+              <span class="size-1.5 rounded-full bg-emerald-500"></span> booked
+            </span>
+          </div>
+          <div class="grid sm:grid-cols-2 gap-px bg-[color:var(--border)]">
+            {[['Invitee', 'rowan@northwind.co'], ['Event', '30 min intro'], ['Scheduled', 'Jun 12 · 4:00 PM'], ['Campaign', 'q1-outbound']].map(([k, v]) => (
+              <div class="bg-white px-5 py-3 flex items-baseline justify-between gap-3">
+                <span class="text-[10.5px] uppercase tracking-[0.16em] font-mono text-muted-foreground">{k}</span>
+                <span class="font-mono text-[12px] text-heading text-right truncate">{v}</span>
+              </div>
+            ))}
+          </div>
         </div>
 
-        <div class="space-y-5">
-          <div class="rounded-[14px] bg-[#0c1224] ring-1 ring-white/10 overflow-hidden">
-            <div class="px-5 py-2.5 border-b border-white/10 flex items-center justify-between text-[10.5px] font-mono text-white/55">
-              <span>POST your webhook endpoint</span>
-              <span>application/json</span>
-            </div>
-            <pre class="px-5 py-4 text-[12px] leading-relaxed text-white/85 font-mono whitespace-pre overflow-x-auto"><code>{`{
+        <!-- connector -->
+        <div class="flex justify-center py-2.5">
+          <span class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-white ring-1 ring-[color:var(--border)] text-[#0284c7] shadow-[0_2px_6px_-2px_rgba(15,23,42,0.12)]">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>
+          </span>
+        </div>
+
+        <!-- emitted reply event -->
+        <div class="rounded-[14px] bg-[#0c1224] ring-1 ring-white/10 overflow-hidden">
+          <div class="px-4 py-2.5 border-b border-white/10 flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-[#ff5f56]/80"></span>
+            <span class="w-2.5 h-2.5 rounded-full bg-[#ffbd2e]/80"></span>
+            <span class="w-2.5 h-2.5 rounded-full bg-[#27c93f]/80"></span>
+            <span class="ml-2 text-[11px] font-mono text-white/55">emitted event</span>
+          </div>
+          <div class="p-5 font-mono text-[12.5px] leading-[1.85] text-white/85">
+            <div><span class="text-white/45">{'{'}</span></div>
+            <div class="pl-4"><span class="text-sky-300">"event_type"</span><span class="text-white/55">: </span><span class="text-emerald-300">"campaign.reply_received"</span><span class="text-white/55">,</span></div>
+            <div class="pl-4"><span class="text-sky-300">"trigger"</span><span class="text-white/55">: </span><span class="text-emerald-300">"meeting_booked"</span><span class="text-white/55">,</span></div>
+            <div class="pl-4"><span class="text-sky-300">"source"</span><span class="text-white/55">: </span><span class="text-emerald-300">"calendly"</span><span class="text-white/55">,</span></div>
+            <div class="pl-4"><span class="text-sky-300">"campaign_id"</span><span class="text-white/55">: </span><span class="text-emerald-300">"cmp · q1-outbound"</span></div>
+            <div><span class="text-white/45">{'}'}</span></div>
+          </div>
+          <div class="px-5 py-3 border-t border-white/10 flex items-center justify-between text-[11px] font-mono text-white/45">
+            <span>Calendly + Cal.com → one record</span>
+            <span>credited to the campaign</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       WEBHOOKS & API · the signed event stream
+  ============================================================ -->
+  <section class="bg-white border-b border-[color:var(--border)] py-20 md:py-28">
+    <div class="container-page grid lg:grid-cols-[1fr_1.5fr] gap-12 lg:gap-16 items-start">
+      <div class="lg:sticky lg:top-24" style="align-self: start;">
+        <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7] mb-3">Webhooks &amp; API</div>
+        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
+          Not on the list? Subscribe to the stream.
+        </h2>
+        <p class="mt-5 text-[15px] text-foreground/70 leading-relaxed max-w-md">
+          {eventCount} event types, signed with HMAC-SHA256 in the same format Stripe uses, retried with capped exponential backoff, and recorded with full delivery history per endpoint. Subscribe to everything, or filter to the handful you act on.
+        </p>
+        <ul class="mt-6 space-y-2 text-[13.5px] text-foreground/80">
+          <li class="flex items-start gap-2"><Icon name="check" size={13} class="text-[#0284c7] mt-1 shrink-0" /><span><span class="font-mono text-[12.5px]">X-Warmbly-Signature: t=&lt;unix&gt;,v1=&lt;hex&gt;</span> on every POST.</span></li>
+          <li class="flex items-start gap-2"><Icon name="check" size={13} class="text-[#0284c7] mt-1 shrink-0" /><span>Per-endpoint filter by event type.</span></li>
+          <li class="flex items-start gap-2"><Icon name="check" size={13} class="text-[#0284c7] mt-1 shrink-0" /><span>Rotate a secret and the old one dies immediately.</span></li>
+        </ul>
+        <a href="/developers/" class="mt-7 inline-flex items-center gap-1.5 text-[13.5px] font-medium text-[#0369a1] hover:text-[#075985] pb-px border-b border-[#0369a1]/30 hover:border-[#0369a1]">
+          Read the developer docs
+          <Icon name="arrowUpRight" size={13} />
+        </a>
+      </div>
+
+      <div class="space-y-5">
+        <!-- signed payload -->
+        <div class="rounded-[14px] bg-[#0c1224] ring-1 ring-white/10 overflow-hidden">
+          <div class="px-5 py-2.5 border-b border-white/10 flex items-center justify-between text-[10.5px] font-mono text-white/55">
+            <span>POST your endpoint</span>
+            <span>application/json</span>
+          </div>
+          <pre class="px-5 py-4 text-[12px] leading-relaxed text-white/85 font-mono whitespace-pre overflow-x-auto"><code>{`POST /your/webhook  HTTP/1.1
+X-Warmbly-Signature: t=1748443269,v1=9f2a…c1b7
+
+{
   "id": "f4a07e0c-a4b1-4dc8-9c5d-2c1b3e29c7b1",
   "event_type": "campaign.reply_received",
-  "organization_id": "8c4e7c3d-...-",
+  "organization_id": "8c4e7c3d-…",
   "created_at": "2026-05-28T14:21:09Z",
-  "data": {
-    "source": "calendly",
-    "invitee_email": "lead@target.co",
-    "event_name": "30 min intro",
-    "scheduled_for": "2026-06-02T16:00:00Z",
-    "contact_id": "c1f...",
-    "booking_id": "b91...",
-    "trigger": "meeting_booked"
-  }
+  "data": { "trigger": "positive_reply", "campaign": "q1-outbound" }
 }`}</code></pre>
-          </div>
+        </div>
 
-          <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden">
-            <div class="px-5 py-3 bg-[color:var(--surface-1)] border-b border-[color:var(--border)] flex items-baseline justify-between gap-2">
-              <div class="text-[10.5px] uppercase tracking-[0.18em] font-mono text-muted-foreground">Event types</div>
-              <span class="text-[11px] font-mono text-foreground/55 tabular-nums">{webhookEvents.length} live</span>
-            </div>
-            <div class="divide-y divide-[color:var(--border)] max-h-[420px] overflow-y-auto">
-              {webhookEvents.map((e) => (
-                <div class="grid grid-cols-[minmax(0,1.4fr)_minmax(0,2fr)] gap-4 px-5 py-2.5">
-                  <code class="font-mono text-[11.5px] text-[#0369a1] truncate">{e.name}</code>
-                  <span class="text-[12px] text-foreground/65 leading-snug">{e.desc}</span>
+        <!-- event catalog, grouped -->
+        <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden">
+          <div class="px-5 py-3 bg-[color:var(--surface-1)] border-b border-[color:var(--border)] flex items-baseline justify-between gap-2">
+            <div class="text-[10.5px] uppercase tracking-[0.18em] font-mono text-muted-foreground">Event types</div>
+            <span class="text-[11px] font-mono text-foreground/55 tabular-nums">{eventCount} live</span>
+          </div>
+          <div class="max-h-[460px] overflow-y-auto">
+            {eventGroups.map((g) => (
+              <div>
+                <div class="sticky top-0 px-5 py-1.5 bg-[color:var(--surface-1)]/95 backdrop-blur border-b border-[color:var(--border)] flex items-center gap-2">
+                  <span class="size-1.5 rounded-full" style={`background:${g.color}`}></span>
+                  <span class="text-[10px] uppercase tracking-[0.14em] font-mono text-muted-foreground">{g.domain}</span>
+                  <span class="ml-auto font-mono text-[10px] text-muted-foreground/70 tabular-nums">{g.events.length}</span>
+                </div>
+                <div class="divide-y divide-[color:var(--border)]">
+                  {g.events.map(([name, desc]) => (
+                    <div class="grid grid-cols-[minmax(0,1.5fr)_minmax(0,2fr)] gap-4 px-5 py-2.5">
+                      <code class="font-mono text-[11.5px] text-[#0369a1] truncate">{name}</code>
+                      <span class="text-[12px] text-foreground/65 leading-snug">{desc}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       DELIVERY ANATOMY · sign, retry, dedupe, audit
+  ============================================================ -->
+  <section class="bg-[color:var(--surface-1)]/40 border-b border-[color:var(--border)] py-20 md:py-28">
+    <div class="container-page">
+      <div class="max-w-2xl mb-12">
+        <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7] mb-3">Delivery</div>
+        <h2 class="text-[32px] md:text-[44px] font-semibold tracking-[-0.03em] leading-[1.05] text-heading">
+          What happens after we POST you.
+        </h2>
+        <p class="mt-4 text-[15.5px] text-foreground/70 leading-relaxed">
+          A webhook you cannot trust or cannot recover is not a webhook. Every delivery is signed so you can verify it, retried so a blip never costs you an event, deduped so a retry never doubles up, and recorded so you can replay it.
+        </p>
+      </div>
+
+      <!-- retry timeline -->
+      <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden mb-3" style="box-shadow: var(--shadow-sm);">
+        <div class="px-5 py-3 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
+          <div class="inline-flex items-center gap-2">
+            <Icon name="clock" size={14} class="text-[#0284c7]" />
+            <span class="text-[12.5px] font-semibold text-heading">Capped exponential backoff</span>
+          </div>
+          <span class="text-[11px] font-mono text-muted-foreground">non-2xx → retry · doubles each time · cap 1h · 8 attempts</span>
+        </div>
+        <div class="p-5 md:p-6">
+          <div class="relative">
+            <div class="absolute left-0 right-0 top-[7px] h-px bg-[color:var(--border)]"></div>
+            <div class="relative grid grid-cols-4 sm:grid-cols-8 gap-y-6">
+              {backoff.map((w, i) => (
+                <div class="flex flex-col items-center text-center px-1">
+                  <span class={`relative z-10 size-3.5 rounded-full ring-2 ring-white ${i === 0 ? 'bg-emerald-500' : i === backoff.length - 1 ? 'bg-rose-400' : 'bg-sky-500'}`}></span>
+                  <span class="mt-2.5 font-mono text-[12.5px] tabular-nums text-heading">{w}</span>
+                  <span class="mt-0.5 text-[9.5px] uppercase tracking-[0.1em] font-mono text-muted-foreground">{i === 0 ? 'send' : `retry ${i}`}</span>
                 </div>
               ))}
             </div>
           </div>
+          <div class="mt-6 pt-4 border-t border-slate-100 flex flex-wrap items-center gap-x-5 gap-y-1 text-[11px] font-mono text-muted-foreground">
+            <span class="inline-flex items-center gap-1.5"><span class="size-2 rounded-full bg-emerald-500"></span>first attempt</span>
+            <span class="inline-flex items-center gap-1.5"><span class="size-2 rounded-full bg-sky-500"></span>backoff window</span>
+            <span class="inline-flex items-center gap-1.5"><span class="size-2 rounded-full bg-rose-400"></span>final attempt, then given up</span>
+          </div>
         </div>
+      </div>
+
+      <!-- guarantee grid -->
+      <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-px bg-[color:var(--border)] rounded-[14px] overflow-hidden ring-1 ring-[color:var(--border)]" style="box-shadow: var(--shadow-sm);">
+        {guarantees.map((g) => (
+          <div class="bg-white p-6 flex flex-col">
+            <span class="w-9 h-9 rounded-[10px] bg-[color:var(--brand-soft)] text-[#0369a1] inline-flex items-center justify-center shrink-0">
+              <Icon name={g.icon} size={16} />
+            </span>
+            <div class="mt-4 text-[14.5px] font-semibold text-heading">{g.k}</div>
+            <code class="mt-1 inline-block text-[11px] font-mono text-[#0284c7]">{g.v}</code>
+            <p class="mt-2.5 text-[12.5px] text-foreground/65 leading-relaxed flex-1">{g.d}</p>
+          </div>
+        ))}
       </div>
     </div>
   </section>
 
-  <!-- SECURITY -->
-  <section class="border-y border-[color:var(--border)] bg-[color:var(--surface-1)]/40 py-20 md:py-24">
-    <div class="container-page">
-      <div class="max-w-2xl mb-10">
-        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Security</div>
+  <!-- ============================================================
+       SECURITY
+  ============================================================ -->
+  <section class="bg-white border-b border-[color:var(--border)] py-20 md:py-24">
+    <div class="container-page grid lg:grid-cols-[1fr_1.4fr] gap-12 lg:gap-16 items-start">
+      <div class="lg:sticky lg:top-24" style="align-self: start;">
+        <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7] mb-3">Security</div>
         <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
-          How credentials are stored.
+          Credentials are sealed, not stored.
         </h2>
-        <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed">
-          Integration credentials use the same encryption envelope as mailbox OAuth tokens. Per-user data encryption keys are wrapped by AWS KMS, and plaintext keys are never persisted.
+        <p class="mt-5 text-[15px] text-foreground/70 leading-relaxed max-w-md">
+          Integration credentials use the same encryption envelope as mailbox OAuth tokens. Per-user data encryption keys are wrapped by AWS KMS, and plaintext keys are never written to disk.
         </p>
       </div>
 
-      <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-px bg-[color:var(--border)] rounded-[14px] overflow-hidden ring-1 ring-[color:var(--border)]" style="box-shadow: var(--shadow-sm);">
+      <div class="grid sm:grid-cols-2 gap-px bg-[color:var(--border)] rounded-[14px] overflow-hidden ring-1 ring-[color:var(--border)]" style="box-shadow: var(--shadow-sm);">
         {security.map((s) => (
           <div class="bg-white p-6">
-            <Icon name="check" size={14} class="text-[#0284c7]" />
-            <div class="mt-3 text-[15px] font-semibold text-heading">{s.t}</div>
+            <span class="w-9 h-9 rounded-[10px] bg-[color:var(--brand-soft)] text-[#0369a1] inline-flex items-center justify-center shrink-0">
+              <Icon name={s.icon} size={16} />
+            </span>
+            <div class="mt-4 text-[15px] font-semibold text-heading">{s.t}</div>
             <p class="mt-2 text-[13px] text-foreground/65 leading-relaxed">{s.d}</p>
           </div>
         ))}
@@ -383,44 +648,20 @@ const faq = [
     </div>
   </section>
 
-  <!-- AT A GLANCE -->
-  <section class="bg-white py-16 md:py-20">
-    <div class="container-page">
-      <div class="max-w-2xl mb-10">
-        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">At a glance</div>
-        <h2 class="text-[26px] md:text-[34px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
-          What the catalog covers.
-        </h2>
-      </div>
-
-      <div class="grid grid-cols-2 md:grid-cols-4 gap-px bg-[color:var(--border)] rounded-[14px] overflow-hidden ring-1 ring-[color:var(--border)]">
-        {numbers.map((n) => (
-          <div class="bg-white p-5 md:p-6">
-            <div class="flex items-baseline gap-1">
-              <span class="text-[26px] md:text-[32px] font-semibold tracking-[-0.025em] font-mono text-heading">{n.v}</span>
-              {n.u && <span class="text-[12px] text-muted-foreground">{n.u}</span>}
-            </div>
-            <div class="mt-2 text-[11.5px] uppercase tracking-[0.14em] font-mono text-foreground/70">{n.l}</div>
-            <div class="mt-3 pt-3 border-t border-[color:var(--border)] text-[10.5px] font-mono text-muted-foreground truncate">{n.src}</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  </section>
-
-  <!-- FAQ -->
-  <section class="bg-[color:var(--surface-1)]/40 border-y border-[color:var(--border)] py-20 md:py-24">
+  <!-- ============================================================
+       FAQ
+  ============================================================ -->
+  <section class="bg-[color:var(--surface-1)]/40 py-20 md:py-24">
     <div class="container-page grid lg:grid-cols-[1fr_1.8fr] gap-12 lg:gap-20 items-start">
       <div class="lg:sticky lg:top-24" style="align-self: start;">
-        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">FAQ</div>
+        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Integrations FAQ</div>
         <h2 class="text-[28px] md:text-[36px] font-semibold tracking-[-0.025em] leading-[1.08] text-heading">
-          Common questions.
+          The questions we get a lot.
         </h2>
         <p class="mt-4 text-[14.5px] text-foreground/70 leading-relaxed">
           More detail in the <a class="text-[#0369a1] hover:text-[#075985] font-medium" href="/developers/">developer docs</a>.
         </p>
       </div>
-
       <div class="divide-y divide-[color:var(--border)]" data-faq>
         {faq.map(([q, a]) => (
           <div class="faq-row py-2">
@@ -460,11 +701,49 @@ const faq = [
   </section>
 
   <CTA
-    title="Get started with Warmbly."
-    description="Connect your providers, or read the developer docs to build a custom integration."
-    primaryLabel="Get started"
+    title="Wire Warmbly into your stack."
+    description="Connect a provider in two clicks, or subscribe to the signed event stream and build the integration yourself."
+    primaryLabel="Connect your stack"
     primaryHref="https://app.warmbly.com/register"
     secondaryLabel="See the API"
     secondaryHref="/developers/"
   />
+
+  <!-- catalog category filter -->
+  <script is:inline>
+    (function () {
+      var root = document.querySelector('[data-catalog]');
+      if (!root) return;
+      var pills = root.querySelectorAll('[data-filter]');
+      var tiles = root.querySelectorAll('[data-cat]');
+      pills.forEach(function (pill) {
+        pill.addEventListener('click', function () {
+          var f = pill.getAttribute('data-filter');
+          pills.forEach(function (q) { q.setAttribute('data-active', String(q === pill)); });
+          tiles.forEach(function (t) {
+            var show = f === 'all' || t.getAttribute('data-cat') === f;
+            t.classList.toggle('hidden', !show);
+          });
+        });
+      });
+    })();
+  </script>
+
+  <style>
+    .ig-pill[data-active="true"] {
+      background: #0284c7;
+      border-color: #0284c7;
+      color: #ffffff;
+    }
+    @keyframes ig-bus-travel {
+      0%   { top: 2.5rem; opacity: 0; }
+      12%  { opacity: 1; }
+      88%  { opacity: 1; }
+      100% { top: calc(100% - 2.5rem); opacity: 0; }
+    }
+    .ig-bus-pulse { top: 2.5rem; animation: ig-bus-travel 3.6s ease-in-out infinite; }
+    @media (prefers-reduced-motion: reduce) {
+      .ig-bus-pulse { display: none; }
+    }
+  </style>
 </Layout>
