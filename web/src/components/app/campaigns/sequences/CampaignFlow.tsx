@@ -79,9 +79,10 @@ import StepVariants from "./StepVariants";
 import CategoryPicker from "@/components/app/contacts/CategoryPicker";
 import type { ActionKV, SequenceAction, SequenceActionType } from "@/lib/api/models/app/campaigns/sequences/Action";
 import { useAutomations } from "@/lib/api/hooks/app/automations/useAutomations";
+import { triggerLabel } from "@/lib/api/models/app/automations/meta";
 import TaskTypePicker from "@/components/app/crm/TaskTypePicker";
+import AssigneeTeamPicker, { type AssigneeValue } from "@/components/app/crm/AssigneeTeamPicker";
 import DealStagePicker from "@/components/app/crm/DealStagePicker";
-import useMembers from "@/lib/api/hooks/app/organizations/useMembers";
 
 // Personalization tokens available in templated copy. Mirrors SequenceView's
 // VARIABLES so a deal name can use the same {{.FirstName}}/{{.Company}} tokens
@@ -2016,10 +2017,10 @@ function ActionEditor({
                                         key={p}
                                         type="button"
                                         onClick={() => setAction((a) => ({ ...a, task_priority: p }))}
-                                        className={`h-7 px-2 rounded text-[11px] font-medium capitalize transition-colors ${
+                                        className={`h-7 px-2.5 rounded text-[11px] font-medium capitalize transition-colors ${
                                             (action.task_priority ?? "medium") === p
-                                                ? "bg-slate-900 text-white"
-                                                : "text-slate-500 hover:text-slate-900"
+                                                ? "bg-sky-600 text-white shadow-sm"
+                                                : "text-slate-500 hover:bg-slate-50 hover:text-slate-700"
                                         }`}
                                     >
                                         {p}
@@ -2040,11 +2041,15 @@ function ActionEditor({
                     </div>
                     <div>
                         <Label>Assign to</Label>
-                        <AssigneePicker
-                            value={action.task_assigned_to ?? null}
-                            onChange={(id) => setAction((a) => ({ ...a, task_assigned_to: id }))}
+                        <AssigneeTeamPicker
+                            className="w-full max-w-[320px]"
+                            fallbackLabel="Campaign owner"
+                            value={{ userId: action.task_assigned_to ?? null, teamId: action.task_assigned_team_id ?? null }}
+                            onChange={(v: AssigneeValue) =>
+                                setAction((a) => ({ ...a, task_assigned_to: v.userId ?? null, task_assigned_team_id: v.teamId ?? null }))
+                            }
                         />
-                        <p className="mt-1.5 text-[11px] text-slate-400">Unassigned falls back to the campaign owner.</p>
+                        <p className="mt-1.5 text-[11px] text-slate-400">Assign to a teammate or a whole team. Unassigned falls back to the campaign owner.</p>
                     </div>
                 </div>
             )}
@@ -2142,7 +2147,11 @@ function RunAutomationFields({
 }) {
     const { data } = useAutomations();
     const automations = data?.automations ?? [];
-    const options: SelectOption[] = automations.map((a) => ({ value: a.id, label: a.name || "Untitled automation" }));
+    const options: SelectOption[] = automations.map((a) => ({
+        value: a.id,
+        label: (a.name || "Untitled automation") + (a.enabled ? "" : " · disabled"),
+    }));
+    const selected = automations.find((a) => a.id === action.automation_id);
     const values = action.automation_values ?? [];
     const setValues = (next: ActionKV[]) => setAction((a) => ({ ...a, automation_values: next }));
     const updateRow = (i: number, patch: Partial<ActionKV>) =>
@@ -2168,9 +2177,21 @@ function RunAutomationFields({
                     <span className="font-mono text-slate-500">first_name</span>,{" "}
                     <span className="font-mono text-slate-500">last_name</span>,{" "}
                     <span className="font-mono text-slate-500">company</span>,{" "}
-                    <span className="font-mono text-slate-500">campaign_name</span> plus your values below — reference them as{" "}
-                    <span className="font-mono text-slate-500">{"{{key}}"}</span> in the automation's actions.
+                    <span className="font-mono text-slate-500">campaign_name</span> plus your values below. Reference them as{" "}
+                    <span className="font-mono text-slate-500">{"{{.key}}"}</span> in the automation's actions.
                 </p>
+                {selected && !selected.enabled && (
+                    <p className="mt-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] leading-relaxed text-amber-700">
+                        This automation is disabled, so this step will be skipped (and logged) until you enable it.
+                    </p>
+                )}
+                {selected && selected.enabled && selected.trigger_event !== "campaign.action" && (
+                    <p className="mt-1.5 rounded-md border border-sky-200 bg-sky-50 px-2 py-1.5 text-[11px] leading-relaxed text-sky-700">
+                        Built for the "{triggerLabel(selected.trigger_event)}" trigger. It still runs here, but only contact and
+                        campaign variables are filled in. Its trigger-specific variables (like{" "}
+                        <span className="font-mono">{"{{.invitee_name}}"}</span>) will be empty.
+                    </p>
+                )}
             </div>
 
             <div>
@@ -2219,66 +2240,6 @@ function RunAutomationFields({
                     </div>
                 )}
             </div>
-        </div>
-    );
-}
-
-// AssigneePicker — choose the teammate a campaign-created task is assigned to.
-// `null` means "campaign owner" (the executor's fallback). Values are user ids.
-function AssigneePicker({
-    value,
-    onChange,
-}: {
-    value: string | null;
-    onChange: (id: string | null) => void;
-}) {
-    const { data: members } = useMembers();
-    const [open, setOpen] = React.useState(false);
-    const ref = React.useRef<HTMLDivElement>(null);
-    useClickOutside(ref, () => setOpen(false));
-    const list = members ?? [];
-    const selected = list.find((m) => m.user_id === value);
-    const label = value === null ? "Campaign owner" : (selected?.email ?? "Unknown member");
-    return (
-        <div ref={ref} className="relative inline-flex">
-            <button
-                type="button"
-                onClick={() => setOpen((o) => !o)}
-                className="h-7 min-w-[200px] px-2.5 rounded-md border border-slate-200 hover:border-slate-300 bg-white text-[12px] text-slate-700 hover:text-slate-900 inline-flex items-center gap-1.5 transition-colors"
-            >
-                <span className="truncate flex-1 text-left">{label}</span>
-                <ChevronDownIcon className="w-3 h-3 text-slate-400" />
-            </button>
-            {open && (
-                <div className="absolute left-0 top-full z-30 mt-1 w-60 max-h-56 overflow-y-auto rounded-md border border-slate-200 bg-white py-1 shadow-[0_12px_32px_-8px_rgba(15,23,42,0.18)]">
-                    <button
-                        type="button"
-                        onClick={() => {
-                            onChange(null);
-                            setOpen(false);
-                        }}
-                        className={`flex w-full items-center px-2.5 py-1.5 text-left text-[12px] transition-colors hover:bg-slate-100 ${
-                            value === null ? "font-medium text-slate-900" : "text-slate-700"
-                        }`}
-                    >
-                        Campaign owner
-                    </button>
-                    {list.map((m) => (
-                        <button
-                            key={m.id}
-                            type="button"
-                            onClick={() => {
-                                onChange(m.user_id);
-                                setOpen(false);
-                            }}
-                            className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[12px] text-slate-700 transition-colors hover:bg-slate-100"
-                        >
-                            <span className="truncate flex-1">{m.email}</span>
-                            <span className="text-[10px] text-slate-400 capitalize">{m.role}</span>
-                        </button>
-                    ))}
-                </div>
-            )}
         </div>
     );
 }

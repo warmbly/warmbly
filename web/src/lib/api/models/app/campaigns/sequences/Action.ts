@@ -31,6 +31,7 @@ export interface SequenceAction {
     task_type?: string; // task type name (user-managed)
     task_priority?: "low" | "medium" | "high" | "urgent";
     task_assigned_to?: string | null;
+    task_assigned_team_id?: string | null;
     task_due_offset_days?: number | null;
     // create_deal / move_deal_stage — CRM deal automation. create_deal opens a
     // new deal for the contact in deal_pipeline_id/deal_stage_id; move_deal_stage
