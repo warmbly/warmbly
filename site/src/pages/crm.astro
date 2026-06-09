@@ -4,80 +4,216 @@ import HeroAtmosphere from '../components/HeroAtmosphere.astro';
 import Icon from '../components/Icon.astro';
 import CTA from '../components/CTA.astro';
 
-// Real product entities from CLAUDE.md + internal/repository/*
-const objects = [
-  { name: 'Contacts',    rel: 'belongs_to: workspace',                              count: 'unlimited',  body: 'Imported, deduped, categorised. Suppression-aware everywhere they appear.' },
-  { name: 'Categories',  rel: 'reuses the existing group table (no parallel tags)', count: 'unlimited',  body: 'Reuse the existing category group table. No parallel "tags" system to drift out of sync.' },
-  { name: 'Pipelines',   rel: 'belongs_to: workspace',                              count: 'per team',   body: 'Pick a pipeline template or build your own. Drag-and-drop stages with weighted forecast.' },
-  { name: 'Deals',       rel: 'belongs_to: contact, pipeline',                      count: 'per pipe',   body: 'Value, close date, owner, custom fields, activity log. Linked to the contact and the campaign.' },
-  { name: 'Tasks',       rel: 'belongs_to: contact, deal, sequence step',           count: 'reminder',   body: 'Reminder tasks tied to a contact, deal, or sequence step. Due-date roll-up at the workspace level.' },
-  { name: 'Templates',   rel: 'belongs_to: workspace',                              count: 'shared',     body: 'Saved templates for replies, intros and sequence steps. Same variable engine as sequences.' },
+// ===========================================================================
+// CRM page. Every entity, field and default here is real, sourced from:
+//   internal/models/crm.go          (Pipeline / Deal / CRMTask / Activity)
+//   internal/repository/pg_crm.go   (faceted search + summary)
+//   internal/seed/crm.go            (Sales pipeline stages, task types, deals)
+//   internal/infrastructure/db/migrations/000022_deal_attribution.up.sql
+//   web/src/app/app/crm/{deals,pipelines,tasks}/page.tsx
+//
+// Astro JSX caveat (mirrors sales.astro): no `<`, `>` or `<=` may appear inside
+// a {} expression, and no literal `{{ }}` may appear in markup, so any number
+// comparisons are pre-computed in the frontmatter and iterated cleanly in JSX.
+// ===========================================================================
+
+const money = (n: number) =>
+  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
+
+// --- Hero board mock: the Sales pipeline, four live stages -------------------
+// Stage colours are the real seeded hexes (internal/seed/crm.go).
+type Tag = { label: string; color: string };
+type Deal = {
+  name: string; value: number; contact: string; owner: string; gradient: string;
+  tags: Tag[]; source?: string; won?: boolean;
+};
+type Stage = { name: string; color: string; won?: boolean; deals: Deal[] };
+
+const board: Stage[] = [
+  {
+    name: 'New', color: '#3b82f6',
+    deals: [
+      { name: 'Vela Logistics', value: 7500, contact: 'eli@vela.cargo', owner: 'AM', gradient: 'from-rose-400 to-pink-500', tags: [{ label: 'Outbound', color: '#f59e0b' }] },
+      { name: 'Glasshouse Labs', value: 5200, contact: 'priya@glasshouse.dev', owner: 'JS', gradient: 'from-sky-400 to-blue-500', tags: [{ label: 'Inbound', color: '#3b82f6' }] },
+    ],
+  },
+  {
+    name: 'Qualified', color: '#a855f7',
+    deals: [
+      { name: 'Northwind rollout', value: 24000, contact: 'rowan@northwind.co', owner: 'BH', gradient: 'from-teal-400 to-emerald-500', tags: [{ label: 'Enterprise', color: '#8b5cf6' }], source: 'Sequence · q1-outbound' },
+      { name: 'Penna Health', value: 12000, contact: 'lena@pennahealth.com', owner: 'MO', gradient: 'from-violet-400 to-indigo-500', tags: [{ label: 'Outbound', color: '#f59e0b' }] },
+    ],
+  },
+  {
+    name: 'Demo booked', color: '#f59e0b',
+    deals: [
+      { name: 'Stratech platform', value: 45000, contact: 'dana@stratech.io', owner: 'BH', gradient: 'from-teal-400 to-emerald-500', tags: [{ label: 'Enterprise', color: '#8b5cf6' }, { label: 'Hot', color: '#ef4444' }] },
+      { name: 'Nimbus Ops', value: 9800, contact: 'sam@nimbusops.dev', owner: 'JS', gradient: 'from-sky-400 to-blue-500', tags: [{ label: 'Inbound', color: '#3b82f6' }] },
+    ],
+  },
+  {
+    name: 'Won', color: '#10b981', won: true,
+    deals: [
+      { name: 'Initech pilot', value: 6000, contact: 'ceo@initech.com', owner: 'MO', gradient: 'from-violet-400 to-indigo-500', won: true, tags: [{ label: 'Closed', color: '#10b981' }] },
+    ],
+  },
 ];
 
+const allDeals = board.flatMap((s) => s.deals);
+const openValue = allDeals.filter((d) => !d.won).reduce((a, d) => a + d.value, 0);
+const wonValue = allDeals.filter((d) => d.won).reduce((a, d) => a + d.value, 0);
+const stageTotal = (s: Stage) => s.deals.reduce((a, d) => a + d.value, 0);
+
+const headerStats = [
+  { label: 'Open', value: String(allDeals.filter((d) => !d.won).length), sub: 'active deals' },
+  { label: 'Pipeline value', value: money(openValue), sub: 'open · all stages', live: true },
+  { label: 'Won', value: money(wonValue), sub: 'closed won' },
+  { label: 'Stages', value: String(board.length), sub: 'on this pipeline' },
+];
+
+// --- Section: the loop · how a reply becomes a record ------------------------
+const loop = [
+  { icon: 'contact',  k: 'Contact',  d: 'Imported, deduped and categorised. Suppression-aware everywhere it appears.' },
+  { icon: 'send',     k: 'Sequence', d: 'A campaign step sends from a warmed mailbox under its per-mailbox cap.' },
+  { icon: 'reply',    k: 'Reply',    d: 'The classifier reads the inbound reply, tags it positive, and pauses the sequence.' },
+  { icon: 'workflow', k: 'Deal',     d: 'A deal opens on the pipeline, attributed to the campaign and mailbox that earned it.' },
+  { icon: 'check',    k: 'Task',     d: 'A follow-up task lands on a named owner, and the board updates live.' },
+];
+
+// --- Section: attribution ----------------------------------------------------
+const attrFields = [
+  ['Deal',      'Northwind rollout'],
+  ['Value',     '$24,000'],
+  ['Stage',     'Qualified'],
+  ['Owner',     'Ben Hsu'],
+  ['Campaign',  'q1-outbound'],
+  ['Mailbox',   'ben@acme.com'],
+];
+
+// --- Section: pipelines & stages ---------------------------------------------
+// Real seeded Sales-pipeline stages + deal counts.
+const stages = [
+  { name: 'New',         color: '#3b82f6', deals: 18 },
+  { name: 'Qualified',   color: '#a855f7', deals: 11 },
+  { name: 'Demo booked', color: '#f59e0b', deals: 6 },
+  { name: 'Won',         color: '#10b981', deals: 9 },
+  { name: 'Lost',        color: '#ef4444', deals: 4 },
+];
+// The full stage palette a workspace can recolour to (web pipelines/page.tsx).
+const palette = ['#94a3b8', '#0ea5e9', '#8b5cf6', '#f59e0b', '#10b981', '#f43f5e', '#6366f1', '#14b8a6'];
+
+// --- Section: deals at scale · faceted search + summary ----------------------
+const dealRows = [
+  { name: 'Stratech platform', stage: 'Demo booked', stageColor: '#f59e0b', owner: 'Ben Hsu',     value: '$45,000', source: 'q1-outbound' },
+  { name: 'Northwind rollout', stage: 'Qualified',   stageColor: '#a855f7', owner: 'Ben Hsu',     value: '$24,000', source: 'q1-outbound' },
+  { name: 'Penna Health',      stage: 'Qualified',   stageColor: '#a855f7', owner: 'Mara Osei',    value: '$12,000', source: 'fy26-named' },
+  { name: 'Nimbus Ops',        stage: 'Demo booked', stageColor: '#f59e0b', owner: 'Jules Stein',  value: '$9,800',  source: 'inbound-q1' },
+  { name: 'Vela Logistics',    stage: 'New',         stageColor: '#3b82f6', owner: 'Ada Mwangi',   value: '$7,500',  source: 'q1-outbound' },
+];
+
+// --- Section: tasks · grouped by due date ------------------------------------
+const taskBuckets = [
+  {
+    label: 'Overdue', tone: 'red',
+    tasks: [
+      { title: 'Send proposal to Northwind', type: 'Email',   typeColor: '#0ea5e9', who: 'BH', prio: 'High',   prioDot: 'bg-amber-500', prioText: 'text-amber-700', due: 'Jun 06' },
+    ],
+  },
+  {
+    label: 'Today', tone: 'sky',
+    tasks: [
+      { title: 'Demo call · Stratech', type: 'Meeting', typeColor: '#f59e0b', who: 'BH', prio: 'Urgent', prioDot: 'bg-red-500',   prioText: 'text-red-700',   due: '2:30 PM' },
+      { title: 'Follow up with Penna Health', type: 'Call', typeColor: '#8b5cf6', who: 'MO', prio: 'Medium', prioDot: 'bg-sky-500', prioText: 'text-sky-700', due: '4:00 PM' },
+    ],
+  },
+  {
+    label: 'This week', tone: 'slate',
+    tasks: [
+      { title: 'Schedule QBR with Initech', type: 'Meeting', typeColor: '#f59e0b', who: 'MG', prio: 'Medium', prioDot: 'bg-sky-500',   prioText: 'text-sky-700',   due: 'Jun 12' },
+      { title: 'Recap notes to Nimbus Ops',  type: 'Email',   typeColor: '#0ea5e9', who: 'JS', prio: 'Low',    prioDot: 'bg-slate-400', prioText: 'text-slate-600', due: 'Jun 13' },
+    ],
+  },
+];
+
+const taskStats = [
+  { label: 'Overdue',       value: '1', sub: 'needs attention', accent: true },
+  { label: 'High priority', value: '2', sub: 'urgent + high' },
+  { label: 'Pending',       value: '7', sub: 'not started' },
+  { label: 'Completed',     value: '24', sub: 'done' },
+];
+
+// --- Section: contacts + suppression -----------------------------------------
 const stageTone = (t: string) => {
-  if (t === 'slate')   return { dot: 'bg-slate-400', chip: 'bg-slate-100 text-slate-700' };
-  if (t === 'sky')     return { dot: 'bg-sky-500',   chip: 'bg-sky-50 text-sky-700' };
-  if (t === 'violet')  return { dot: 'bg-violet-500',chip: 'bg-violet-50 text-violet-700' };
-  if (t === 'amber')   return { dot: 'bg-amber-500', chip: 'bg-amber-50 text-amber-700' };
-  return                      { dot: 'bg-emerald-500',chip: 'bg-emerald-50 text-emerald-700' };
+  if (t === 'New')         return 'bg-blue-50 text-blue-700';
+  if (t === 'Qualified')   return 'bg-violet-50 text-violet-700';
+  if (t === 'Demo booked') return 'bg-amber-50 text-amber-700';
+  if (t === 'Won')         return 'bg-emerald-50 text-emerald-700';
+  return 'bg-slate-100 text-slate-600';
 };
-
-// Real deal detail view: one deal with its full activity timeline
-const dealFields = [
-  ['Value',       '$45,000'],
-  ['Close date',  '2026-06-30'],
-  ['Owner',       'Ben Cole'],
-  ['Stage',       'Negotiation'],
-  ['Source',      'Sequence · acme-fy26-q2'],
-  ['Probability', '60%'],
+const contacts = [
+  { name: 'Rowan Cole',    email: 'rowan@northwind.co',     co: 'Northwind Co.',   stage: 'Qualified' },
+  { name: 'Dana Vasquez',  email: 'dana@stratech.io',       co: 'Stratech',        stage: 'Demo booked' },
+  { name: 'Eli Soriano',   email: 'eli@vela.cargo',         co: 'Vela Logistics',  stage: 'New' },
+  { name: 'Lena Park',     email: 'lena@pennahealth.com',   co: 'Penna Health',    stage: 'Qualified' },
+  { name: 'Sam Iverson',   email: 'sam@nimbusops.dev',      co: 'Nimbus Ops',      stage: 'Demo booked' },
+  { name: 'Maya Chen',     email: 'maya@lumenrobotics.io',  co: 'Lumen Robotics',  stage: 'Won' },
 ];
 
-const dealActivity = [
-  { t: '2026-05-27 · 09:14', type: 'reply',      who: 'Rowan Cole',  body: 'Replied positively · classified as Positive · sequence auto-paused' },
-  { t: '2026-05-26 · 11:02', type: 'note',       who: 'Ben Cole',    body: 'Sent over the seat-tiered proposal. Asked about CSV import for legacy records.' },
-  { t: '2026-05-25 · 14:38', type: 'meeting',    who: 'Ben Cole',    body: 'Demo · 30 min · attended by Rowan + Dana (infra lead)' },
-  { t: '2026-05-22 · 16:01', type: 'stage',      who: 'system',      body: 'Moved from Demoed → Negotiation by Ben Cole' },
-  { t: '2026-05-21 · 08:46', type: 'task',       who: 'Ben Cole',    body: 'Created task · Send proposal · due 2026-05-26' },
-  { t: '2026-05-19 · 10:12', type: 'reply',      who: 'Rowan Cole',  body: 'Replied · classified as Positive · "yes please send slides"' },
-  { t: '2026-05-15 · 09:00', type: 'send',       who: 'sequence',    body: 'Step 02 · soft follow-up · variant B · sent from ben@acme.com' },
-  { t: '2026-05-12 · 09:00', type: 'send',       who: 'sequence',    body: 'Step 01 · initial outreach · variant A · sent from ben@acme.com' },
+const suppression = [
+  { trigger: 'Hard bounce',          note: 'The recipient drops off every campaign in the workspace.' },
+  { trigger: 'Spam complaint',       note: 'Suppressed, and the mailbox health score takes the hit.' },
+  { trigger: 'One-click unsubscribe',note: 'Honoured per RFC 8058 before the confirmation page loads.' },
+  { trigger: 'Reply: STOP / REMOVE', note: 'The reply classifier opts them out with nobody in the loop.' },
 ];
 
-const activityKind = (k: string) => {
-  if (k === 'reply')   return { icon: 'reply',    chip: 'bg-emerald-50 text-emerald-700', dot: 'bg-emerald-500' };
-  if (k === 'meeting') return { icon: 'users',    chip: 'bg-violet-50 text-violet-700',   dot: 'bg-violet-500' };
-  if (k === 'note')    return { icon: 'list',     chip: 'bg-amber-50 text-amber-700',     dot: 'bg-amber-500' };
-  if (k === 'stage')   return { icon: 'workflow', chip: 'bg-sky-50 text-sky-700',         dot: 'bg-sky-500' };
-  if (k === 'task')    return { icon: 'check',    chip: 'bg-slate-100 text-slate-700',    dot: 'bg-slate-500' };
-  return                       { icon: 'send',     chip: 'bg-slate-100 text-slate-700',    dot: 'bg-slate-400' };
-};
-
-// Real contacts power-tools (CSV/XLSX import + JSON export + dedup + bulk)
 const power = [
-  { k: 'Import wizard', v: 'CSV · XLSX',          why: 'Column mapping with custom-field detection. Dedup pass before a single row hits the table.' },
-  { k: 'Export',        v: 'CSV · XLSX · JSON',   why: 'Field picker. Scope to current view, current segment, or the whole workspace.' },
-  { k: 'Dedup',         v: 'email · domain · key', why: 'Pick the dedup key. Merge conflicting fields with a per-attribute winner.' },
-  { k: 'Bulk update',   v: 'from saved view',     why: 'Categories, owners, custom fields, suppression state. Reversible.' },
+  { k: 'Import wizard', v: 'CSV · XLSX',         why: 'Column mapping with custom-field detection. A dedup pass runs before a single row lands.' },
+  { k: 'Export',        v: 'CSV · XLSX · JSON',  why: 'Field picker. Scope to the current view, a saved segment, or the whole workspace.' },
+  { k: 'Dedup',         v: 'email · domain',     why: 'Pick the dedup key. Merge conflicting fields with a per-attribute winner.' },
+  { k: 'Bulk update',   v: 'from a saved view',  why: 'Categories, owners, custom fields, suppression state. Every change is reversible.' },
 ];
 
-const faq = [
-  ['Will this replace Salesforce or HubSpot?',           'No, and it does not try. The CRM is built for the cold-outbound workflow: contact → sequence → reply → meeting. If you already run on Salesforce, two-way sync keeps both in step.'],
-  ['Does suppression cross over from sequences?',         'Yes. Marking a contact as suppressed or having one auto-suppressed by a reply applies workspace-wide. No sequence in the workspace will ever retry that contact.'],
-  ['Can I use multiple pipelines at once?',               'Yes. Each pipeline is its own board with its own stages. A deal lives in one pipeline at a time. Common templates: SDR pipeline, AE pipeline, partner pipeline.'],
-  ['What syncs with my Gmail or Outlook?',                'Replies received in the unified inbox attach to the matching contact and deal. Sent messages from the platform also attach. We do not pull every email in the mailbox.'],
+// --- Section: the six objects (real Postgres tables) -------------------------
+const objects = [
+  { icon: 'contact',  name: 'Contacts',  table: 'contacts',         body: 'People and companies, deduped and categorised, suppression-aware across every campaign.' },
+  { icon: 'workflow', name: 'Pipelines', table: 'pipelines',        body: 'Named stage flows you build per workflow. Each stage carries its own colour and order.' },
+  { icon: 'chart',    name: 'Deals',     table: 'deals',            body: 'Value, close date, owner, status, and the campaign + mailbox that produced the reply.' },
+  { icon: 'check',    name: 'Tasks',     table: 'crm_tasks',        body: 'Follow-ups tied to a contact or deal, assigned to a person or a team, due-date bucketed.' },
+  { icon: 'list',     name: 'Notes',     table: 'contact_notes',    body: 'Free-text notes on a contact. Plain, searchable, and stamped with who wrote them.' },
+  { icon: 'zap',      name: 'Activity',  table: 'contact_activities', body: 'A typed timeline: sends, opens, replies, stage moves, won and lost, all on one record.' },
+];
+
+// --- Section: two-way sync ---------------------------------------------------
+const syncObjects = ['Contact', 'Deal', 'Stage', 'Owner', 'Activity', 'Note'];
+const providers = ['HubSpot', 'Salesforce', 'Pipedrive'];
+
+// --- FAQ ---------------------------------------------------------------------
+const faq: [string, string][] = [
+  ['Is this trying to replace Salesforce or HubSpot?',
+   'No. The CRM is built for one job: the cold-outbound workflow, contact to sequence to reply to deal. It is light on purpose. If you already run on Salesforce or HubSpot, two-way sync keeps contacts, deals, stages and owners in step rather than asking you to switch.'],
+  ['What does "attribution" actually store on a deal?',
+   'Two nullable foreign keys: the campaign and the source mailbox that produced the reply the deal was opened from. Both are ON DELETE SET NULL, so cleaning up an old campaign or mailbox never erases the won-revenue history that traces back to it.'],
+  ['Does suppression from sequences carry into the CRM?',
+   'Yes, it is the same workspace-wide list. A bounce, complaint, unsubscribe or STOP reply on a contact suppresses them everywhere at once. No campaign in the workspace queues to a suppressed contact again.'],
+  ['Are the deal and task totals accurate at scale?',
+   'Yes. The board headers and task counts come from a server-side summary computed over the whole filtered set, a true SUM and COUNT, never a reduce over the first page of rows. Search, filter and sort all run on the server, and the list pages with "N of M loaded".'],
+  ['Can I run more than one pipeline?',
+   'Yes. Each pipeline is its own board with its own stages and colours. A deal lives in one pipeline at a time. Common splits are an SDR pipeline, an AE pipeline, and a partner pipeline.'],
+  ['Does the board update on its own?',
+   'It is realtime by default. When a reply lands, a deal moves stage, or a task is completed, the board, the counts and the activity feed update live over the socket, with no manual refresh.'],
 ];
 ---
 <Layout
-  title="Built-In CRM for Outbound | Warmbly"
-  description="A light CRM that does not pretend to be Salesforce. Pipelines, deals, tasks, contacts and templates that live next to your sending."
+  title="Built-in CRM for cold outbound | Warmbly"
+  description="Pipelines, deals, tasks, contacts and notes in one workspace, wired to your sending. A positive reply opens a deal and attributes it to the campaign and mailbox that earned it."
 >
   <!-- ============================================================
-       HERO · HeroAtmosphere (shared)
+       HERO · HeroAtmosphere + corner CRM fragments
   ============================================================ -->
   <section class="relative isolate overflow-hidden">
     <HeroAtmosphere />
 
-    <div class="container-page relative pt-16 md:pt-24 pb-44 md:pb-56 text-center">
+    <div class="container-page relative z-10 pt-16 md:pt-24 pb-44 md:pb-56 text-center">
       <div class="inline-flex items-center gap-2 h-7 pl-1 pr-3 rounded-full bg-white/15 backdrop-blur ring-1 ring-white/25 text-[12px] text-white/95 shadow-[0_4px_14px_-4px_rgba(0,0,0,0.25)]">
         <span class="inline-flex items-center h-5 px-1.5 rounded-full text-[10.5px] font-semibold uppercase tracking-[0.06em] bg-white" style="color:#0369a1;">
           CRM
@@ -86,10 +222,10 @@ const faq = [
       </div>
 
       <h1 class="mt-8 md:mt-10 text-[44px] sm:text-6xl md:text-[72px] lg:text-[80px] font-semibold tracking-[-0.04em] leading-[0.98] text-white max-w-4xl mx-auto">
-        A CRM that lives<br/>next to your sending.
+        Your pipeline, built<br/>from the replies you earn.
       </h1>
       <p class="mt-6 text-[17px] md:text-[19px] text-white/80 max-w-2xl mx-auto leading-relaxed">
-        Six entities, one workspace. Built for the cold-outbound workflow: contact → sequence → reply → meeting. No four-week implementation. No 200-page admin guide.
+        Contacts, pipelines, deals, tasks and notes in one workspace, wired to your campaigns. A positive reply opens a deal, attributes it to the campaign and mailbox that earned it, and the board stays live as your outbound runs.
       </p>
 
       <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
@@ -99,194 +235,480 @@ const faq = [
             <path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>
           </svg>
         </a>
-        <a href="#data-model" class="inline-flex h-11 px-5 items-center rounded-[10px] text-[14.5px] font-medium bg-white/10 backdrop-blur ring-1 ring-white/40 text-white hover:bg-white/20 hover:-translate-y-0.5 transition-all duration-200 ease-out">
-          See the data model
+        <a href="#loop" class="inline-flex h-11 px-5 items-center rounded-[10px] text-[14.5px] font-medium bg-white/10 backdrop-blur ring-1 ring-white/40 text-white hover:bg-white/20 hover:-translate-y-0.5 transition-all duration-200 ease-out">
+          See how it works
         </a>
       </div>
     </div>
   </section>
 
   <!-- ============================================================
-       DEAL DETAIL VIEW · the real record screen, not a kanban
+       BOARD SHOT · the real deals board, overlapping the hero
   ============================================================ -->
   <section class="relative -mt-36 md:-mt-44 pb-16 md:pb-24 z-10">
     <div class="container-page">
       <div class="rounded-[16px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden shadow-[0_40px_90px_-30px_rgba(2,32,71,0.35),0_12px_30px_-12px_rgba(15,23,42,0.12)]">
-        <!-- Deal header -->
-        <div class="px-8 py-6 border-b border-[color:var(--border)] grid lg:grid-cols-[1fr_auto] gap-6 items-center">
-          <div>
-            <div class="flex items-center gap-3 flex-wrap">
-              <span class="text-[10.5px] uppercase tracking-[0.22em] font-mono text-muted-foreground">Deal</span>
-              <span class="text-[10.5px] font-mono text-muted-foreground/70">DEAL-2026-0184</span>
-            </div>
-            <h3 class="mt-2 text-[24px] md:text-[28px] font-semibold tracking-[-0.025em] text-heading leading-[1.1]">
-              Stratech
-            </h3>
-            <div class="mt-2 flex items-center gap-2.5 flex-wrap">
-              <span class="inline-flex items-center gap-1.5 h-6 px-2 rounded-full bg-amber-50 text-amber-700 text-[11px] font-medium font-mono uppercase tracking-[0.08em]">
-                <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-                Negotiation
-              </span>
-              <span class="text-[12.5px] text-foreground/60">Rowan Cole · VP Platform</span>
-            </div>
+        <!-- browser chrome -->
+        <div class="flex items-center gap-2.5 px-3.5 h-10 border-b border-slate-200 bg-gradient-to-b from-[#f7f8fa] to-[#eceef1]">
+          <span class="w-3 h-3 rounded-full bg-[#ff5f57]"></span>
+          <span class="w-3 h-3 rounded-full bg-[#febc2e]"></span>
+          <span class="w-3 h-3 rounded-full bg-[#28c840]"></span>
+          <div class="mx-auto inline-flex items-center gap-2 h-6 px-3 rounded-md bg-white ring-1 ring-slate-200 text-[11.5px] text-slate-500 font-mono">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" class="text-emerald-500"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            app.warmbly.com/crm/deals
           </div>
-          <div class="grid grid-cols-1 sm:grid-cols-3 gap-x-8 gap-y-1 text-right">
-            <div>
-              <div class="text-[10px] uppercase tracking-[0.18em] font-mono text-muted-foreground">Value</div>
-              <div class="mt-1 text-[24px] font-semibold tracking-[-0.02em] text-heading font-mono">$45k</div>
-            </div>
-            <div>
-              <div class="text-[10px] uppercase tracking-[0.18em] font-mono text-muted-foreground">Close</div>
-              <div class="mt-1 text-[14px] font-medium text-heading font-mono pt-1.5">Jun 30</div>
-            </div>
-            <div>
-              <div class="text-[10px] uppercase tracking-[0.18em] font-mono text-muted-foreground">Weighted</div>
-              <div class="mt-1 text-[14px] font-medium text-heading font-mono pt-1.5">$27k</div>
-            </div>
+          <div class="w-12"></div>
+        </div>
+
+        <!-- page topbar -->
+        <div class="h-11 px-5 border-b border-slate-200 flex items-center gap-3 bg-white">
+          <span class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">Deals</span>
+          <div class="h-4 w-px bg-slate-200"></div>
+          <span class="text-[12.5px] text-slate-600 truncate">{allDeals.length} deals on Sales pipeline</span>
+          <div class="ml-auto hidden sm:inline-flex items-center gap-1.5 text-[11px] text-emerald-600 font-medium">
+            <span class="relative flex size-1.5">
+              <span class="absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-60 animate-ping"></span>
+              <span class="relative inline-flex size-1.5 rounded-full bg-emerald-500"></span>
+            </span>
+            live
           </div>
         </div>
 
-        <!-- Body: 2-column (fields | activity) -->
-        <div class="grid lg:grid-cols-[300px_1fr]">
-          <!-- LEFT: fields + contact -->
-          <aside class="border-b lg:border-b-0 lg:border-r border-[color:var(--border)] flex flex-col bg-[color:var(--surface-1)]/30">
-            <!-- Fields block -->
-            <div class="p-7">
-              <div class="text-[10px] uppercase tracking-[0.22em] font-mono text-muted-foreground mb-4">Fields</div>
-              <dl class="space-y-3 text-[12.5px]">
-                {dealFields.map(([k, v]) => (
-                  <div class="flex items-baseline justify-between gap-3">
-                    <dt class="text-foreground/55">{k}</dt>
-                    <dd class="text-foreground font-mono">{v}</dd>
+        <!-- stat strip -->
+        <div class="grid grid-cols-2 md:grid-cols-4 border-b border-slate-200 bg-white">
+          {headerStats.map((s, i) => (
+            <div class={`px-5 py-4 ${i < headerStats.length - 1 ? 'md:border-r border-slate-200' : ''} ${i < 2 ? 'border-b md:border-b-0 border-slate-200' : ''}`}>
+              <div class="flex items-center gap-2">
+                <span class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">{s.label}</span>
+                {s.live && <span class="size-1.5 rounded-full bg-sky-500 animate-pulse"></span>}
+              </div>
+              <div class="text-[24px] md:text-[26px] text-slate-900 font-light leading-none mt-2 tabular-nums">{s.value}</div>
+              <div class="text-[10px] text-slate-400 mt-1.5 font-mono truncate">{s.sub}</div>
+            </div>
+          ))}
+        </div>
+
+        <!-- the board -->
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 p-4 md:p-5 bg-[#fafbfc]">
+          {board.map((stage) => (
+            <div class={`flex flex-col rounded-md border ${stage.won ? 'bg-emerald-50/50 border-emerald-200' : 'bg-white border-slate-200'}`}>
+              <div class="h-9 px-3 flex items-center gap-2 border-b border-slate-200">
+                <span class="size-1.5 rounded-full shrink-0" style={`background-color:${stage.color}`}></span>
+                <span class="text-[11px] uppercase tracking-[0.1em] font-semibold text-slate-700 truncate">{stage.name}</span>
+                <span class="ml-auto font-mono text-[10.5px] text-slate-400 tabular-nums">{stage.deals.length}</span>
+              </div>
+              <div class="px-3 py-1 border-b border-slate-200/60">
+                <span class="text-[10.5px] text-emerald-700 font-mono tabular-nums">{money(stageTotal(stage))} {stage.won ? 'total' : 'open'}</span>
+              </div>
+              <div class="p-2 space-y-1.5 flex-1">
+                {stage.deals.map((d) => (
+                  <div class="rounded-lg bg-white border border-slate-200 shadow-sm p-3">
+                    <div class="flex items-center gap-1.5 mb-1">
+                      <div class="text-[12.5px] font-medium text-slate-900 truncate flex-1">{d.name}</div>
+                      {d.won && <span class="text-[9.5px] uppercase tracking-[0.08em] font-semibold text-emerald-700">Won</span>}
+                    </div>
+                    <div class="flex items-center gap-1 font-mono text-[12px] text-emerald-600 tabular-nums mb-1.5">
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="shrink-0" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 18V6"/></svg>
+                      {money(d.value)}
+                    </div>
+                    <div class="flex items-center gap-1 text-[10.5px] text-slate-500 truncate mb-2">
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="shrink-0" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                      <span class="truncate">{d.contact}</span>
+                    </div>
+                    {d.source && (
+                      <div class="mb-2">
+                        <span class="inline-flex items-center gap-1 h-5 px-1.5 rounded bg-white border border-slate-200 text-[10.5px] text-slate-600 truncate max-w-full">
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="shrink-0 text-slate-400" stroke-linecap="round" stroke-linejoin="round"><path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>
+                          <span class="truncate">{d.source}</span>
+                        </span>
+                      </div>
+                    )}
+                    <div class="flex items-center gap-1.5 flex-wrap">
+                      <span class={`size-6 rounded-full bg-gradient-to-br ${d.gradient} flex items-center justify-center shrink-0 text-[9px] font-semibold text-white`}>{d.owner}</span>
+                      {d.tags.map((t) => (
+                        <span class="inline-flex items-center gap-1 h-4 pl-1 pr-1.5 rounded-sm border bg-white text-[10px] font-medium text-slate-700 truncate max-w-[110px]" style={`border-color:${t.color}60;background-color:${t.color}12;`}>
+                          <span class="block size-2 rounded-full shrink-0" style={`background-color:${t.color};`}></span>
+                          {t.label}
+                        </span>
+                      ))}
+                    </div>
                   </div>
                 ))}
-              </dl>
-            </div>
-
-            <!-- Contact block -->
-            <div class="px-7 py-6 border-t border-[color:var(--border)]">
-              <div class="text-[10px] uppercase tracking-[0.22em] font-mono text-muted-foreground mb-4">Primary contact</div>
-              <div class="flex items-center gap-3">
-                <div class="w-10 h-10 rounded-full bg-emerald-100 text-emerald-700 inline-flex items-center justify-center text-[13px] font-semibold shrink-0">RC</div>
-                <div class="min-w-0 flex-1">
-                  <div class="text-[14px] font-semibold text-heading truncate">Rowan Cole</div>
-                  <div class="text-[11.5px] text-foreground/55 truncate">VP Platform · Stratech</div>
-                </div>
-              </div>
-              <div class="mt-4 space-y-1.5 text-[12px] font-mono text-foreground/65">
-                <div class="truncate">rowan@stratech.io</div>
-                <div>+1 415 555 0162</div>
-              </div>
-              <div class="mt-3 flex flex-wrap gap-1.5">
-                {['enterprise', 'platform', 'q2-list'].map((tag) => (
-                  <span class="inline-flex items-center h-5 px-1.5 rounded text-[10.5px] font-mono bg-white ring-1 ring-[color:var(--border)] text-foreground/65">{tag}</span>
-                ))}
               </div>
             </div>
-
-            <!-- Actions: full-width, clean -->
-            <div class="mt-auto p-7 border-t border-[color:var(--border)] grid grid-cols-2 gap-2">
-              <button type="button" class="inline-flex justify-center items-center h-9 px-3 rounded-[8px] bg-foreground text-background text-[12.5px] font-semibold hover:bg-[#1f2937] transition-colors">Log activity</button>
-              <button type="button" class="inline-flex justify-center items-center h-9 px-3 rounded-[8px] bg-white ring-1 ring-[color:var(--border)] text-foreground text-[12.5px] font-medium hover:bg-[color:var(--surface-2)] transition-colors">Add task</button>
-            </div>
-          </aside>
-
-          <!-- RIGHT: activity timeline -->
-          <div class="p-7 md:p-8">
-            <div class="flex items-baseline justify-between mb-5">
-              <div class="text-[10px] uppercase tracking-[0.22em] font-mono text-muted-foreground">Activity · last 14 days</div>
-              <div class="text-[11px] font-mono text-muted-foreground">{dealActivity.length} events</div>
-            </div>
-
-            <ol class="relative">
-              <div class="absolute left-[15px] top-2 bottom-2 w-px bg-[color:var(--border)]"></div>
-              {dealActivity.map((a) => {
-                const k = activityKind(a.type);
-                return (
-                  <li class="relative grid grid-cols-[32px_1fr_auto] gap-4 py-3.5 items-baseline">
-                    <span class="relative z-10 w-8 h-8 rounded-full bg-white ring-1 ring-[color:var(--border)] inline-flex items-center justify-center text-foreground/65 self-start">
-                      <Icon name={k.icon} size={13} />
-                    </span>
-                    <div>
-                      <div class="flex items-baseline gap-2 flex-wrap">
-                        <span class={`inline-flex items-center gap-1 h-4.5 px-1.5 rounded text-[10px] font-medium font-mono uppercase tracking-[0.08em] ${k.chip}`}>
-                          {a.type}
-                        </span>
-                        <span class="text-[11px] font-mono text-foreground/55">{a.who}</span>
-                      </div>
-                      <p class="mt-1.5 text-[13.5px] text-foreground/80 leading-snug">{a.body}</p>
-                    </div>
-                    <span class="text-[10.5px] font-mono text-muted-foreground/70 whitespace-nowrap self-start pt-1">{a.t}</span>
-                  </li>
-                );
-              })}
-            </ol>
-          </div>
-        </div>
-
-        <div class="px-8 py-3 border-t border-[color:var(--border)] bg-[color:var(--surface-1)]/60 flex items-center justify-between text-[11px] font-mono text-muted-foreground">
-          <span>Two-way sync · HubSpot · Salesforce · Pipedrive</span>
-          <span>Activity logged via webhook</span>
+          ))}
         </div>
       </div>
     </div>
   </section>
 
   <!-- ============================================================
-       DATA MODEL · 6 entities laid out as a real ER table (unique)
+       THE LOOP · how a reply becomes a record
   ============================================================ -->
-  <section id="data-model" class="border-y border-[color:var(--border)] bg-[color:var(--surface-1)]/40 py-20 md:py-28 scroll-mt-4">
+  <section id="loop" class="border-y border-[color:var(--border)] bg-[color:var(--surface-1)]/40 py-20 md:py-28 scroll-mt-4">
     <div class="container-page">
       <div class="max-w-2xl mb-12">
-        <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7] mb-3">Data model</div>
+        <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7] mb-3">How it works</div>
         <h2 class="text-[32px] md:text-[44px] font-semibold tracking-[-0.03em] leading-[1.05] text-heading">
-          Six entities. Six tables. No magic.
+          A reply does not sit in an inbox.
         </h2>
         <p class="mt-4 text-[15.5px] text-foreground/70 leading-relaxed">
-          The CRM is built around six real entities. Each maps to a Postgres table you can query through the API. Categories reuse the existing group table so tagging never drifts out of sync.
+          Most CRMs start where the deal already exists. This one starts at the send. The same event that classifies a reply opens the deal, links the contact, and drops a follow-up on a named owner. You manage the pipeline, not the data entry.
         </p>
       </div>
 
-      <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden">
-        <div class="grid grid-cols-[160px_1fr_140px] px-7 py-3 bg-[color:var(--surface-1)] border-b border-[color:var(--border)] text-[10.5px] uppercase tracking-[0.16em] font-mono text-muted-foreground">
-          <div>Entity</div>
-          <div>Relations + description</div>
-          <div class="text-right">Cardinality</div>
+      <div class="relative">
+        <div class="hidden lg:block absolute left-0 right-0 top-[34px] h-px bg-[color:var(--border)]"></div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 lg:gap-5">
+          {loop.map((s, i) => (
+            <div class="relative">
+              <div class="flex items-center gap-3 lg:block">
+                <span class="relative z-10 w-[34px] h-[34px] shrink-0 rounded-full bg-white ring-1 ring-[color:var(--border)] inline-flex items-center justify-center text-[#0369a1] shadow-[0_2px_6px_-2px_rgba(15,23,42,0.12)]">
+                  <Icon name={s.icon} size={15} />
+                </span>
+                <div class="lg:mt-4 flex items-baseline gap-2">
+                  <span class="font-mono text-[11px] text-[#0284c7] font-semibold tabular-nums">{String(i + 1).padStart(2, '0')}</span>
+                  <span class="text-[14.5px] font-semibold tracking-[-0.015em] text-heading">{s.k}</span>
+                </div>
+              </div>
+              <p class="mt-2 lg:pr-3 text-[13px] text-foreground/65 leading-relaxed">{s.d}</p>
+            </div>
+          ))}
         </div>
-        {objects.map((o, i) => (
-          <div class="grid grid-cols-[160px_1fr_140px] gap-4 px-7 py-4 border-b border-[color:var(--border)] last:border-b-0 items-baseline">
-            <div>
-              <div class="text-[14px] font-semibold text-heading">{o.name}</div>
-              <div class="mt-1 text-[10.5px] font-mono text-[#0284c7]">{String(i + 1).padStart(2, '0')}</div>
-            </div>
-            <div>
-              <div class="text-[11px] font-mono text-muted-foreground">{o.rel}</div>
-              <p class="mt-1.5 text-[13.5px] text-foreground/80 leading-relaxed">{o.body}</p>
-            </div>
-            <div class="text-right text-[12px] font-mono text-foreground/65">{o.count}</div>
-          </div>
-        ))}
+      </div>
+
+      <div class="mt-10 flex flex-wrap items-center gap-x-6 gap-y-1 text-[11.5px] font-mono text-muted-foreground">
+        <span>Classification, deal and task fire on one inbound event</span>
+        <span class="w-1 h-1 rounded-full bg-[color:var(--border-strong)]"></span>
+        <span>Sequence auto-pauses for the contact</span>
+        <span class="w-1 h-1 rounded-full bg-[color:var(--border-strong)]"></span>
+        <span>Board updates live</span>
       </div>
     </div>
   </section>
 
   <!-- ============================================================
-       CONTACTS POWER TOOLS · split with mini contacts table
+       ATTRIBUTION · deal record + payload
   ============================================================ -->
   <section class="border-b border-[color:var(--border)] py-20 md:py-28">
     <div class="container-page grid lg:grid-cols-[1fr_1.3fr] gap-12 lg:gap-16 items-start">
       <div class="lg:sticky lg:top-24" style="align-self: start;">
-        <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7] mb-3">Contacts power tools</div>
+        <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7] mb-3">Attribution</div>
         <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
-          Import, dedup, export, bulk update.
+          Every deal remembers where it came from.
         </h2>
         <p class="mt-5 text-[15px] text-foreground/70 leading-relaxed max-w-md">
-          Contacts is where the spreadsheet usually wins. Not here. CSV / XLSX import with a column-mapping wizard, dedup before rows land, JSON export with a field picker.
+          A deal carries the campaign and the sender mailbox that produced the reply it was opened from. Won revenue traces straight back to the outreach that created it, so you can tell which sequences and which mailboxes actually close.
+        </p>
+        <ul class="mt-6 space-y-2.5 text-[14px] text-foreground/85">
+          <li class="flex items-start gap-2"><Icon name="check" size={13} class="text-[#0284c7] mt-1 shrink-0" /><span>Both links are nullable and editable. It is a best guess at creation, not locked ground truth.</span></li>
+          <li class="flex items-start gap-2"><Icon name="check" size={13} class="text-[#0284c7] mt-1 shrink-0" /><span><span class="font-mono text-[12.5px]">ON DELETE SET NULL</span> keeps won-revenue history when an old campaign or mailbox is cleaned up.</span></li>
+          <li class="flex items-start gap-2"><Icon name="check" size={13} class="text-[#0284c7] mt-1 shrink-0" /><span>Filter the whole pipeline by attributed campaign to see revenue per sequence.</span></li>
+        </ul>
+      </div>
+
+      <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden">
+        <!-- deal header -->
+        <div class="px-6 py-4 border-b border-[color:var(--border)] flex items-center gap-3">
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-2.5">
+              <span class="text-[10px] uppercase tracking-[0.14em] text-muted-foreground font-mono">Deal</span>
+              <span class="text-[10px] font-mono text-muted-foreground/70">DEAL-2026-0184</span>
+            </div>
+            <div class="mt-1.5 text-[16px] font-semibold text-heading leading-tight">Northwind rollout</div>
+          </div>
+          <span class="inline-flex items-center gap-1.5 h-6 px-2 rounded-md text-[11px] font-medium bg-violet-50 text-violet-700 shrink-0">
+            <span class="w-1.5 h-1.5 rounded-full" style="background:#a855f7"></span>
+            Qualified
+          </span>
+        </div>
+
+        <!-- fields -->
+        <div class="grid sm:grid-cols-2 gap-px bg-[color:var(--border)]">
+          {attrFields.map(([k, v]) => (
+            <div class="bg-white px-6 py-3.5 flex items-baseline justify-between gap-3">
+              <span class="text-[10.5px] uppercase tracking-[0.16em] font-mono text-muted-foreground">{k}</span>
+              <span class="font-mono text-[12px] text-heading text-right truncate">{v}</span>
+            </div>
+          ))}
+        </div>
+
+        <!-- attribution payload -->
+        <div class="bg-[#0c1224]">
+          <div class="px-4 py-2.5 border-b border-white/10 flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-[#ff5f56]/80"></span>
+            <span class="w-2.5 h-2.5 rounded-full bg-[#ffbd2e]/80"></span>
+            <span class="w-2.5 h-2.5 rounded-full bg-[#27c93f]/80"></span>
+            <span class="ml-2 text-[11px] font-mono text-white/55">deals row · attribution</span>
+          </div>
+          <div class="p-5 font-mono text-[12.5px] leading-[1.85] text-white/85">
+            <div><span class="text-white/45">{'{'}</span></div>
+            <div class="pl-4"><span class="text-sky-300">"id"</span><span class="text-white/55">: </span><span class="text-emerald-300">"deal_2f9a…0184"</span><span class="text-white/55">,</span></div>
+            <div class="pl-4"><span class="text-sky-300">"status"</span><span class="text-white/55">: </span><span class="text-emerald-300">"open"</span><span class="text-white/55">,</span></div>
+            <div class="pl-4"><span class="text-sky-300">"value"</span><span class="text-white/55">: </span><span class="text-amber-300">24000</span><span class="text-white/55">,</span></div>
+            <div class="pl-4"><span class="text-sky-300">"campaign_id"</span><span class="text-white/55">: </span><span class="text-emerald-300">"cmp · q1-outbound"</span><span class="text-white/55">,</span></div>
+            <div class="pl-4"><span class="text-sky-300">"source_mailbox_id"</span><span class="text-white/55">: </span><span class="text-emerald-300">"ben@acme.com"</span></div>
+            <div><span class="text-white/45">{'}'}</span></div>
+          </div>
+        </div>
+        <div class="px-6 py-3 border-t border-[color:var(--border)] bg-[color:var(--surface-1)]/60 flex items-center justify-between text-[11px] font-mono text-muted-foreground">
+          <span>migration 000022 · deal_attribution</span>
+          <span>FK → campaigns · email_accounts</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       PIPELINES & STAGES
+  ============================================================ -->
+  <section class="bg-[color:var(--surface-1)]/40 border-b border-[color:var(--border)] py-20 md:py-28">
+    <div class="container-page grid lg:grid-cols-[1fr_1.3fr] gap-12 lg:gap-16 items-start">
+      <div class="lg:sticky lg:top-24" style="align-self: start;">
+        <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7] mb-3">Pipelines &amp; stages</div>
+        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
+          Build the stages your deals actually move through.
+        </h2>
+        <p class="mt-5 text-[15px] text-foreground/70 leading-relaxed max-w-md">
+          A pipeline is a named flow of stages. Start from a template or build your own, rename and recolour stages inline, and reorder them as your motion changes. Each stage tracks its own deal count for an at-a-glance forecast.
+        </p>
+        <div class="mt-7">
+          <div class="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground mb-2.5">Stage colours</div>
+          <div class="flex flex-wrap gap-1.5">
+            {palette.map((c) => (
+              <span class="w-6 h-6 rounded-full ring-1 ring-black/5" style={`background:${c}`}></span>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <!-- pipeline editor mock -->
+      <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden" style="box-shadow: var(--shadow-sm);">
+        <div class="h-10 px-3 border-b border-slate-200 flex items-center gap-2">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" class="text-slate-400 shrink-0" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/></svg>
+          <span class="text-[12.5px] font-semibold text-slate-900">Sales pipeline</span>
+          <span class="text-[10.5px] font-mono text-slate-400 tabular-nums">{stages.length} stages</span>
+          <span class="ml-auto inline-flex items-center gap-1 h-6 px-2 rounded-md border border-slate-200 text-[11px] text-slate-700">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Stage
+          </span>
+        </div>
+        <div class="p-4 flex flex-wrap items-stretch gap-2">
+          {stages.map((s, i) => (
+            <>
+              <div class="group min-w-[132px] rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2">
+                <div class="flex items-center gap-1.5 mb-1">
+                  <span class="size-1.5 rounded-full shrink-0" style={`background:${s.color}`}></span>
+                  <span class="text-[11.5px] font-medium text-slate-900 truncate">{s.name}</span>
+                </div>
+                <div class="text-[10px] text-slate-400 tabular-nums font-mono">{s.deals} {s.deals === 1 ? 'deal' : 'deals'}</div>
+              </div>
+              {i < stages.length - 1 && (
+                <div class="flex items-center text-slate-300">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+                </div>
+              )}
+            </>
+          ))}
+        </div>
+        <div class="px-4 py-3 border-t border-slate-200 bg-[color:var(--surface-1)]/60 flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono text-muted-foreground">
+          <span>Double-click to rename · drag to reorder</span>
+          <span>One deal lives in one pipeline</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       DEALS AT SCALE · faceted search + summary
+  ============================================================ -->
+  <section class="bg-white border-b border-[color:var(--border)] py-20 md:py-28">
+    <div class="container-page">
+      <div class="max-w-2xl mb-12">
+        <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7] mb-3">Deals at scale</div>
+        <h2 class="text-[32px] md:text-[44px] font-semibold tracking-[-0.03em] leading-[1.05] text-heading">
+          Totals stay true past the first page.
+        </h2>
+        <p class="mt-4 text-[15.5px] text-foreground/70 leading-relaxed">
+          Search, filter and sort run on the server, so the board works the same with twelve deals or twelve thousand. Every header total is a real SUM and COUNT over the whole matching set, never a reduce over the rows that happen to be loaded.
+        </p>
+      </div>
+
+      <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden" style="box-shadow: var(--shadow-sm);">
+        <!-- faceted filter bar -->
+        <div class="px-4 py-2.5 border-b border-slate-200 flex flex-wrap items-center gap-1.5 bg-[color:var(--surface-1)]/50">
+          <div class="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border border-slate-200 bg-white text-[12px] text-slate-400">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-slate-400" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            Search deals…
+          </div>
+          <span class="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border border-sky-300 bg-sky-50 text-[12px] text-sky-700">Status · open <span class="text-slate-400">▾</span></span>
+          <span class="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border border-slate-200 text-[12px] text-slate-600">Owner · anyone <span class="text-slate-400">▾</span></span>
+          <span class="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border border-sky-300 bg-sky-50 text-[12px] text-sky-700">Campaign · q1-outbound <span class="text-slate-400">▾</span></span>
+          <span class="ml-auto inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border border-slate-200 text-[12px] text-slate-600">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 16-4 4-4-4"/><path d="M17 20V4"/><path d="m3 8 4-4 4 4"/><path d="M7 4v16"/></svg>
+            Value · high → low
+          </span>
+        </div>
+        <!-- table header -->
+        <div class="grid grid-cols-[1.6fr_1fr_1fr_auto] md:grid-cols-[1.8fr_1fr_1fr_1.1fr_auto] gap-3 px-5 py-2.5 border-b border-slate-200 bg-white text-[10px] font-mono uppercase tracking-[0.14em] text-slate-400">
+          <div>Deal</div>
+          <div>Stage</div>
+          <div class="hidden md:block">Owner</div>
+          <div>Source</div>
+          <div class="text-right">Value</div>
+        </div>
+        <div class="divide-y divide-slate-200/60">
+          {dealRows.map((r) => (
+            <div class="grid grid-cols-[1.6fr_1fr_1fr_auto] md:grid-cols-[1.8fr_1fr_1fr_1.1fr_auto] gap-3 px-5 py-3 items-center hover:bg-slate-50/80 transition-colors">
+              <div class="text-[13px] font-medium text-slate-900 truncate">{r.name}</div>
+              <div>
+                <span class="inline-flex items-center gap-1.5 text-[11.5px] text-slate-600">
+                  <span class="size-1.5 rounded-full" style={`background:${r.stageColor}`}></span>
+                  {r.stage}
+                </span>
+              </div>
+              <div class="hidden md:block text-[12px] text-slate-600 truncate">{r.owner}</div>
+              <div class="font-mono text-[11px] text-slate-500 truncate">{r.source}</div>
+              <div class="text-right font-mono text-[12.5px] text-emerald-600 tabular-nums">{r.value}</div>
+            </div>
+          ))}
+        </div>
+        <div class="px-5 py-3 border-t border-slate-200 bg-[color:var(--surface-1)]/60 flex items-center justify-between text-[11px] font-mono text-muted-foreground">
+          <span>Server-side · POST /crm/deals/search</span>
+          <span class="tabular-nums">5 of 248 loaded</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       TASKS · grouped by due date
+  ============================================================ -->
+  <section class="bg-[color:var(--surface-1)]/40 border-b border-[color:var(--border)] py-20 md:py-28">
+    <div class="container-page grid lg:grid-cols-[1fr_1.4fr] gap-12 lg:gap-16 items-start">
+      <div class="lg:sticky lg:top-24" style="align-self: start;">
+        <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7] mb-3">Tasks &amp; follow-ups</div>
+        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
+          Nothing waiting on a reply slips.
+        </h2>
+        <p class="mt-5 text-[15px] text-foreground/70 leading-relaxed max-w-md">
+          Tasks attach to a contact or a deal and go to a person or a whole team. Group them by due date so overdue work surfaces first, set a type and a priority, and check them off inline. The counts above are a server-side summary, so overdue is overdue across the whole org.
         </p>
 
-        <div class="mt-7 divide-y divide-[color:var(--border)] border-y border-[color:var(--border)]">
+        <div class="mt-7 grid grid-cols-2 gap-px bg-[color:var(--border)] rounded-[10px] overflow-hidden ring-1 ring-[color:var(--border)]">
+          {taskStats.map((s) => (
+            <div class="bg-white px-4 py-3.5">
+              <div class="flex items-center gap-1.5">
+                <span class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">{s.label}</span>
+                {s.accent && <span class="size-1.5 rounded-full bg-rose-500"></span>}
+              </div>
+              <div class={`text-[22px] font-light leading-none mt-2 tabular-nums ${s.accent ? 'text-rose-600' : 'text-slate-900'}`}>{s.value}</div>
+              <div class="text-[10px] text-slate-400 mt-1.5 font-mono">{s.sub}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <!-- grouped tasks mock -->
+      <div class="space-y-3">
+        {taskBuckets.map((b) => (
+          <div class="rounded-md border border-slate-200 bg-white overflow-hidden">
+            <div class="h-8 px-3 border-b border-slate-200 flex items-center gap-1.5">
+              <span class={`size-1.5 rounded-full ${b.tone === 'red' ? 'bg-red-500' : b.tone === 'sky' ? 'bg-sky-500' : 'bg-slate-400'}`}></span>
+              <span class={`text-[11px] uppercase tracking-[0.1em] font-semibold ${b.tone === 'red' ? 'text-red-600' : b.tone === 'sky' ? 'text-sky-600' : 'text-slate-700'}`}>{b.label}</span>
+              <span class="ml-auto font-mono text-[10.5px] text-slate-400 tabular-nums">{b.tasks.length}</span>
+            </div>
+            <div class="divide-y divide-slate-200/60">
+              {b.tasks.map((t) => (
+                <div class="h-11 px-3 flex items-center gap-2.5 hover:bg-slate-50 transition-colors">
+                  <span class="size-3.5 rounded border border-slate-300 inline-flex items-center justify-center shrink-0"></span>
+                  <span class="shrink-0 inline-flex items-center gap-1 rounded h-[18px] px-1.5 text-[10.5px] font-medium" style={`background-color:${t.typeColor}1f;color:${t.typeColor};`}>
+                    <span class="w-1.5 h-1.5 rounded-full shrink-0" style={`background-color:${t.typeColor};`}></span>
+                    {t.type}
+                  </span>
+                  <span class="text-[12.5px] text-slate-900 truncate flex-1">{t.title}</span>
+                  <span class="size-5 shrink-0 rounded-full bg-sky-50 border border-sky-200 text-sky-700 text-[9px] font-semibold inline-flex items-center justify-center uppercase tracking-tight">{t.who}</span>
+                  <span class={`hidden sm:inline-flex items-center gap-1 text-[10.5px] uppercase tracking-[0.08em] font-semibold ${t.prioText}`}>
+                    <span class={`size-1.5 rounded-full ${t.prioDot}`}></span>
+                    {t.prio}
+                  </span>
+                  <span class={`inline-flex items-center gap-1 font-mono text-[10.5px] tabular-nums w-16 justify-end ${b.tone === 'red' ? 'text-red-600' : 'text-slate-400'}`}>
+                    {b.tone === 'red' && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m10.29 3.86-8.47 14a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3l-8.47-14a2 2 0 0 0-3.42 0Z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12.01" y1="17" y2="17"/></svg>}
+                    {t.due}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+        <div class="flex items-center gap-2 px-1 text-[11px] font-mono text-muted-foreground">
+          <span class="inline-flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full" style="background:#8b5cf6"></span>Call</span>
+          <span class="inline-flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full" style="background:#0ea5e9"></span>Email</span>
+          <span class="inline-flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full" style="background:#f59e0b"></span>Meeting</span>
+          <span class="ml-auto">Types are yours to rename, recolour, add</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       CONTACTS + WORKSPACE-WIDE SUPPRESSION
+  ============================================================ -->
+  <section class="bg-white border-b border-[color:var(--border)] py-20 md:py-28">
+    <div class="container-page grid lg:grid-cols-[1.3fr_1fr] gap-12 lg:gap-16 items-start">
+      <!-- contacts table -->
+      <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden order-2 lg:order-1" style="box-shadow: var(--shadow-sm);">
+        <div class="flex items-center justify-between px-5 py-3 border-b border-slate-200 bg-[color:var(--surface-1)]/70">
+          <div class="text-[11.5px] font-mono text-slate-500">app.warmbly.com / contacts</div>
+          <div class="inline-flex items-center gap-1 text-[11.5px] font-mono text-emerald-700">
+            <span class="w-1 h-1 rounded-full bg-emerald-500"></span>
+            2,431 rows · 0 dupes
+          </div>
+        </div>
+        <div class="grid grid-cols-[1.4fr_1.4fr_1fr_auto] text-[10px] font-mono uppercase tracking-[0.14em] text-slate-400 px-5 py-2.5 bg-white border-b border-slate-200">
+          <div>Name</div><div>Email</div><div class="hidden sm:block">Company</div><div>Stage</div>
+        </div>
+        <div class="divide-y divide-slate-200/60">
+          {contacts.map((c) => (
+            <div class="grid grid-cols-[1.4fr_1.4fr_1fr_auto] gap-3 px-5 py-2.5 items-center hover:bg-slate-50/80 transition-colors">
+              <div class="text-[13px] font-medium text-slate-900 truncate">{c.name}</div>
+              <div class="text-[12px] font-mono text-slate-500 truncate">{c.email}</div>
+              <div class="hidden sm:block text-[12.5px] text-slate-700 truncate">{c.co}</div>
+              <div><span class={`inline-flex items-center h-5 px-1.5 rounded text-[10.5px] font-medium ${stageTone(c.stage)}`}>{c.stage}</span></div>
+            </div>
+          ))}
+        </div>
+        <div class="px-5 py-3 border-t border-slate-200 bg-[color:var(--surface-1)]/60 flex items-center justify-between text-[11px] font-mono text-muted-foreground">
+          <span>Bulk select · categories / owner / suppression</span>
+          <span>Export →</span>
+        </div>
+      </div>
+
+      <div class="order-1 lg:order-2 lg:sticky lg:top-24" style="align-self: start;">
+        <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7] mb-3">Contacts</div>
+        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
+          One contact list, suppression-aware.
+        </h2>
+        <p class="mt-5 text-[15px] text-foreground/70 leading-relaxed">
+          Contacts is where the spreadsheet usually wins. Not here. Import with a mapping wizard, dedup before rows land, and the moment a contact bounces, complains or opts out, they drop off every campaign in the workspace at once.
+        </p>
+
+        <div class="mt-6 rounded-[12px] ring-1 ring-[color:var(--border)] overflow-hidden">
+          <div class="px-4 py-2.5 bg-[color:var(--surface-1)]/60 border-b border-[color:var(--border)] text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground">Workspace-wide suppression</div>
+          {suppression.map((s) => (
+            <div class="px-4 py-3 border-b border-[color:var(--border)] last:border-b-0 flex items-start gap-3">
+              <Icon name="shield" size={14} class="text-[#0284c7] mt-0.5 shrink-0" />
+              <div>
+                <div class="text-[13px] font-semibold text-heading">{s.trigger}</div>
+                <p class="mt-0.5 text-[12.5px] text-foreground/65 leading-snug">{s.note}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div class="mt-6 divide-y divide-[color:var(--border)] border-y border-[color:var(--border)]">
           {power.map((p, i) => (
-            <div class="grid grid-cols-[32px_1fr_auto] gap-3 py-3 items-baseline">
+            <div class="grid grid-cols-[28px_1fr_auto] gap-3 py-3 items-baseline">
               <span class="text-[10.5px] font-mono text-muted-foreground tracking-[0.16em]">{String(i + 1).padStart(2, '0')}</span>
               <div>
                 <div class="text-[13.5px] font-semibold text-heading">{p.k}</div>
@@ -297,64 +719,89 @@ const faq = [
           ))}
         </div>
       </div>
+    </div>
+  </section>
 
-      <!-- Mini contacts table -->
-      <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden" style="box-shadow: var(--shadow-sm);">
-        <div class="flex items-center justify-between px-5 py-3 border-b border-[color:var(--border)] bg-[color:var(--surface-1)]/70">
-          <div class="text-[11.5px] font-mono text-muted-foreground">app.warmbly.com / contacts</div>
-          <div class="flex items-center gap-2 text-[11.5px] font-mono">
-            <span class="inline-flex items-center gap-1 text-emerald-700">
-              <span class="w-1 h-1 rounded-full bg-emerald-500"></span>
-              2,431 rows · 0 dupes
-            </span>
+  <!-- ============================================================
+       THE SIX OBJECTS · real Postgres tables
+  ============================================================ -->
+  <section class="bg-[color:var(--surface-1)]/40 border-b border-[color:var(--border)] py-20 md:py-28">
+    <div class="container-page">
+      <div class="max-w-2xl mb-12">
+        <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7] mb-3">Data model</div>
+        <h2 class="text-[32px] md:text-[44px] font-semibold tracking-[-0.03em] leading-[1.05] text-heading">
+          Six objects. Six tables. No magic.
+        </h2>
+        <p class="mt-4 text-[15.5px] text-foreground/70 leading-relaxed">
+          The CRM is built around six real entities. Each maps to a Postgres table you can read through the public API. Categories reuse the existing group table, so tagging never drifts into a parallel system.
+        </p>
+      </div>
+
+      <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-px bg-[color:var(--border)] rounded-[14px] overflow-hidden ring-1 ring-[color:var(--border)]" style="box-shadow: var(--shadow-sm);">
+        {objects.map((o, i) => (
+          <div class="bg-white p-6">
+            <div class="flex items-center justify-between">
+              <span class="w-9 h-9 rounded-[10px] bg-[color:var(--brand-soft)] text-[#0369a1] inline-flex items-center justify-center shrink-0">
+                <Icon name={o.icon} size={16} />
+              </span>
+              <span class="font-mono text-[11px] text-[#0284c7] font-semibold tabular-nums">{String(i + 1).padStart(2, '0')}</span>
+            </div>
+            <div class="mt-4 text-[16px] font-semibold tracking-[-0.015em] text-heading">{o.name}</div>
+            <code class="mt-1.5 inline-block text-[11px] font-mono text-muted-foreground">→ {o.table}</code>
+            <p class="mt-3 text-[13px] text-foreground/70 leading-relaxed">{o.body}</p>
           </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       TWO-WAY SYNC
+  ============================================================ -->
+  <section class="bg-white border-b border-[color:var(--border)] py-20 md:py-24">
+    <div class="container-page grid lg:grid-cols-[1fr_1fr] gap-10 lg:gap-16 items-center">
+      <div>
+        <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7] mb-3">Two-way sync</div>
+        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
+          Already on a CRM? Keep it.
+        </h2>
+        <p class="mt-5 text-[15px] text-foreground/70 leading-relaxed max-w-md">
+          Two-way sync with HubSpot, Salesforce and Pipedrive on contacts, deals, stage and owner. A stage moved over there is honoured here on the next pass. Webhooks are HMAC-signed and idempotent, so a retry never double-books a deal.
+        </p>
+        <div class="mt-6 flex flex-wrap gap-2">
+          {providers.map((p) => (
+            <span class="inline-flex items-center h-8 px-3 rounded-[10px] bg-white ring-1 ring-[color:var(--border)] text-[13px] font-medium text-heading">{p}</span>
+          ))}
         </div>
-        <div class="grid grid-cols-[1.5fr_1.2fr_1fr_auto] text-[10px] font-mono uppercase tracking-[0.14em] text-muted-foreground px-5 py-2.5 bg-[color:var(--surface-1)]/40 border-b border-[color:var(--border)]">
-          <div>Name</div><div>Email</div><div>Company</div><div>Stage</div>
+      </div>
+
+      <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] p-6 md:p-7" style="box-shadow: var(--shadow-sm);">
+        <div class="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground mb-4">Synced objects</div>
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+          {syncObjects.map((o) => (
+            <div class="flex items-center gap-2 rounded-[10px] bg-[color:var(--surface-1)]/50 ring-1 ring-[color:var(--border)] px-3 py-2.5">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-[#0284c7] shrink-0" stroke-linecap="round" stroke-linejoin="round"><path d="m21 16-4 4-4-4"/><path d="M17 20V4"/><path d="m3 8 4-4 4 4"/><path d="M7 4v16"/></svg>
+              <span class="font-mono text-[12px] text-foreground/75">{o}</span>
+            </div>
+          ))}
         </div>
-        <div class="divide-y divide-[color:var(--border)]">
-          {[
-            { name: 'Maya Chen',     email: 'maya@lumenrobotics.io',  co: 'Lumen Robotics',  stage: 'Demoed',      tone: 'violet' },
-            { name: 'Theo Park',     email: 'theo@northwind.co',      co: 'Northwind Co.',   stage: 'Reached',     tone: 'sky' },
-            { name: 'Eli Soriano',   email: 'eli@vela.cargo',         co: 'Vela Logistics',  stage: 'New',         tone: 'slate' },
-            { name: 'Priya Bhatt',   email: 'priya@glasshouse.dev',   co: 'Glasshouse Labs', stage: 'Demoed',      tone: 'violet' },
-            { name: 'Rowan Cole',    email: 'rowan@stratech.io',      co: 'Stratech',        stage: 'Negotiation', tone: 'amber' },
-            { name: 'Dana Kowalski', email: 'dana.k@stratech.io',     co: 'Stratech',        stage: 'Reached',     tone: 'sky' },
-            { name: 'Lena Park',     email: 'lena@pennahealth.com',   co: 'Penna Health',    stage: 'Closed won',  tone: 'emerald' },
-            { name: 'Sam Iverson',   email: 'sam@nimbusops.dev',      co: 'Nimbus Ops',      stage: 'Demoed',      tone: 'violet' },
-          ].map((r) => {
-            const t = stageTone(r.tone);
-            return (
-              <div class="grid grid-cols-[1.5fr_1.2fr_1fr_auto] gap-3 px-5 py-2.5 items-center hover:bg-[color:var(--sky-1)]/30 transition-colors">
-                <div class="text-[13px] font-medium text-foreground truncate">{r.name}</div>
-                <div class="text-[12px] font-mono text-foreground/70 truncate">{r.email}</div>
-                <div class="text-[12.5px] text-foreground/85 truncate">{r.co}</div>
-                <div>
-                  <span class={`inline-flex items-center gap-1 h-5 px-1.5 rounded text-[10.5px] font-medium ${t.chip}`}>
-                    {r.stage}
-                  </span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-        <div class="px-5 py-3 border-t border-[color:var(--border)] bg-[color:var(--surface-1)]/60 flex items-center justify-between text-[11px] font-mono text-muted-foreground">
-          <span>Bulk select · update categories / owner / suppression</span>
-          <span>Export →</span>
+        <div class="mt-5 pt-4 border-t border-[color:var(--border)] flex items-center justify-between text-[11px] font-mono text-muted-foreground">
+          <span>HMAC-signed webhooks</span>
+          <span>Idempotency-Key on every write</span>
         </div>
       </div>
     </div>
   </section>
 
   <!-- ============================================================
-       FAQ · grid-rows accordion
+       FAQ · sticky title + accordion
   ============================================================ -->
   <section class="bg-[color:var(--surface-1)]/40 py-20 md:py-24">
     <div class="container-page grid lg:grid-cols-[1fr_1.8fr] gap-12 lg:gap-20 items-start">
       <div class="lg:sticky lg:top-24" style="align-self: start;">
-        <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-muted-foreground mb-3">FAQ</div>
+        <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-muted-foreground mb-3">CRM FAQ</div>
         <h2 class="text-[28px] md:text-[36px] font-semibold tracking-[-0.025em] leading-[1.08] text-heading">
-          Four CRM questions.
+          The questions we get a lot.
         </h2>
       </div>
       <div class="divide-y divide-[color:var(--border)]" data-faq>
@@ -363,7 +810,7 @@ const faq = [
             <button type="button" class="faq-trigger group w-full flex items-start justify-between gap-4 py-3 text-left" aria-expanded="false">
               <span class="text-[15.5px] font-medium text-heading group-hover:text-[#0369a1] transition-colors">{q}</span>
               <span class="faq-icon shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-full bg-white ring-1 ring-[color:var(--border)] text-foreground/60 transition-transform duration-300 ease-out">
-                <Icon name="plus" size={12} />
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
               </span>
             </button>
             <div class="faq-panel grid grid-rows-[0fr] transition-[grid-template-rows] duration-300 ease-out">
@@ -395,5 +842,12 @@ const faq = [
     </div>
   </section>
 
-  <CTA />
+  <CTA
+    title="Open a pipeline next to your sending."
+    description="Connect a mailbox, start a campaign, and watch the first positive reply open a deal on its own."
+    primaryLabel="Open a pipeline"
+    primaryHref="https://app.warmbly.com/register"
+    secondaryLabel="See pricing"
+    secondaryHref="/pricing/"
+  />
 </Layout>
