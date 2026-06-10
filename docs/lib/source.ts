@@ -18,6 +18,18 @@ export function getPageImage(page: InferPageType<typeof source>) {
   };
 }
 
+// Raw-Markdown mirror of a page. The last segment always carries the `.mdx`
+// extension so the static export emits real files (see app/llms.mdx/docs).
+export function getPageMarkdown(page: InferPageType<typeof source>) {
+  const slugs = page.slugs.length > 0 ? page.slugs : ['index'];
+  const segments = [...slugs.slice(0, -1), `${slugs.at(-1)}.mdx`];
+
+  return {
+    segments,
+    url: `/llms.mdx/docs/${segments.join('/')}`,
+  };
+}
+
 export async function getLLMText(page: InferPageType<typeof source>) {
   const processed = await page.data.getText('processed');
 

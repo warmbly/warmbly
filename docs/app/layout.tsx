@@ -14,7 +14,7 @@ export const metadata: Metadata = {
     template: '%s | Warmbly Docs',
     default: 'Warmbly Documentation',
   },
-  description: 'Guides and reference for Warmbly — email warmup, cold outreach, and CRM.',
+  description: 'Guides and API reference for Warmbly: email warmup, cold outreach, and CRM.',
 };
 
 export default function Layout({ children }: { children: React.ReactNode }) {

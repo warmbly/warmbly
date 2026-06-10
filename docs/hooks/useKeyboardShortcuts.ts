@@ -38,10 +38,10 @@ export function useKeyboardShortcuts({ onOpenShortcuts, onOpenSearch }: UseKeybo
   }, [clearSequence]);
 
   const navigationShortcuts: Record<string, string> = {
-    'g,h': '/',
-    'g,a': '/api-keys',
-    'g,p': '/reference/permissions',
-    'g,e': '/reference/error-codes',
+    'g,h': '/guides/mailboxes',
+    'g,a': '/api',
+    'g,p': '/api/permissions',
+    'g,e': '/api/error-codes',
   };
 
   const handleKeyDown = useCallback(
@@ -127,10 +127,10 @@ export function useKeyboardShortcuts({ onOpenShortcuts, onOpenSearch }: UseKeybo
 
 export const shortcutDefinitions = {
   navigation: [
-    { keys: ['g', 'h'], description: 'Go to Home' },
-    { keys: ['g', 'a'], description: 'Go to API Keys' },
-    { keys: ['g', 'p'], description: 'Go to Permissions' },
-    { keys: ['g', 'e'], description: 'Go to Error Codes' },
+    { keys: ['g', 'h'], description: 'Go to guides' },
+    { keys: ['g', 'a'], description: 'Go to API reference' },
+    { keys: ['g', 'p'], description: 'Go to permissions' },
+    { keys: ['g', 'e'], description: 'Go to error codes' },
   ],
   scroll: [
     { keys: ['j'], description: 'Scroll down' },
