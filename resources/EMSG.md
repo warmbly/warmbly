@@ -11,21 +11,12 @@ EMSG provides a lightweight alternative to JSON for storing email bodies, with:
 
 ## Binary Layout
 
-```
-┌──────────────────────────────────────────┐
-│ Magic Number (4 bytes): "EMSG"           │
-├──────────────────────────────────────────┤
-│ Version (1 byte): 0x01                   │
-├──────────────────────────────────────────┤
-│ Flags (4 bytes): bitmask of sections     │
-├──────────────────────────────────────────┤
-│ Section 1: [Length 4B][Data...]          │
-├──────────────────────────────────────────┤
-│ Section 2: [Length 4B][Data...]          │
-├──────────────────────────────────────────┤
-│ ...                                      │
-└──────────────────────────────────────────┘
-```
+| Field | Size | Value |
+|-------|------|-------|
+| Magic number | 4 bytes | `"EMSG"` |
+| Version | 1 byte | `0x01` |
+| Flags | 4 bytes | Bitmask of the sections that follow |
+| Section 1..N | 4 bytes + data each | `[Length 4B][Data...]`, one per flag bit set |
 
 ## Flags
 

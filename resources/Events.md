@@ -4,17 +4,7 @@ Warmbly uses Apache Kafka for asynchronous event streaming between services, wit
 
 ## Overview
 
-```
-┌─────────────┐     ┌─────────────┐     ┌─────────────────┐
-│  Tracking   │────>│    Kafka    │────>│    Consumer     │
-│   Service   │     │             │     │                 │
-└─────────────┘     │             │     └─────────────────┘
-                    │             │
-┌─────────────┐     │             │     ┌─────────────────┐
-│   Backend   │────>│             │────>│     Worker      │
-│             │     │             │     │                 │
-└─────────────┘     └─────────────┘     └─────────────────┘
-```
+Two producers write to Kafka and two consumers read from it: the tracking service publishes events that the consumer processes, and the backend publishes commands that the workers execute.
 
 ## Kafka Topics
 
