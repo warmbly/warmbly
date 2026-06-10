@@ -1,0 +1,98 @@
+---
+title: "Notifications"
+description: "In-app notification feed and per-category preferences."
+icon: Bell
+---
+
+Notifications keep you on top of what is happening across your sending without watching every page. Warmbly raises an in-app notification when something meaningful occurs, like a campaign starting to bounce or a sender worker going quiet, and surfaces it in a feed you reach from the bell in the dashboard chrome.
+
+This guide explains the bell and the feed, the categories Warmbly notifies on, how to control each one, and the defaults that ship out of the box.
+
+## The bell and the feed
+
+The bell lives in the dashboard chrome and is available from anywhere under the app. It shows a count of your unread notifications, and opening it reveals your feed: a list of recent notifications, newest first.
+
+Each notification has a short title and, where relevant, a bit more detail and a link that takes you straight to the thing it is about (for example, the affected campaign or mailbox). Reading or opening a notification marks it as read, which clears it from the unread count.
+
+The feed is per user. Notifications are scoped to you, not shared across your whole organization, so two people in the same workspace can have different things in their feeds depending on what they own and what they have turned on.
+
+<Callout type="info" title="Realtime by default">
+The feed updates live. When a notification is raised, it appears in your feed and the bell count moves without you refreshing the page, the same way replies, contacts, and counts stay current everywhere else in the dashboard.
+</Callout>
+
+## Categories
+
+Warmbly notifies on a fixed set of categories, grouped by what they tell you. They fall into two groups: inbound activity and health.
+
+### Inbound activity
+
+These categories are about replies and responses coming back from recipients of your cold email.
+
+- **Reply received**: a recipient replied to one of your cold emails.
+- **Out-of-office detected**: an auto-responder hit one of your sends.
+
+### Health
+
+These are deliverability and infrastructure alerts. They are about your sending staying safe and your senders staying online.
+
+- **Bounce detected**: a campaign starts bouncing. This notifies the campaign owner.
+- **Spam complaint**: a complaint event landed on one of your campaigns.
+- **Worker downtime**: a sender worker stops responding.
+
+For more on what bounces and complaints mean for your reputation, and the thresholds Warmbly acts on, see [Deliverability](/guides/deliverability).
+
+## Per-category preferences
+
+You control notifications per category from **Settings → Notifications**. Each category has its own toggle, so you can keep the ones that matter to you and silence the rest.
+
+The settings page groups the toggles the same way as above:
+
+- **Inbound activity** Reply received, Out-of-office detected.
+- **Health** Bounce detected, Spam complaint, Worker downtime.
+
+Changes are not saved as you click. When you flip a toggle, a **Save** and a **Discard** action appear; your changes only take effect once you press Save. Discard returns the toggles to their last saved state.
+
+## Defaults
+
+The defaults are chosen to be useful without being noisy. The shipped defaults are:
+
+| Category | Group | Default |
+| --- | --- | --- |
+| Bounce detected | Health | On |
+| Spam complaint | Health | On |
+| Worker downtime | Health | On |
+| Reply received | Inbound | Off |
+| Out-of-office detected | Inbound | Off |
+
+Health categories default **on** because they are operationally important and low volume: you want to know right away if a campaign is bouncing or a worker has gone down.
+
+Inbound categories default **off** on purpose. A large campaign can generate a reply or auto-responder for many recipients, and a notification per recipient would flood your feed. If you are running smaller, higher-touch campaigns and want to be pinged on every reply, turn **Reply received** on. For high-volume work, leave it off and read replies in the [Unibox](/guides/unibox) instead.
+
+<Callout type="info" title="Where to read replies">
+Even with the reply notification off, you never miss responses. Every reply still lands in your unified inbox. The notification is just an optional ping on top of it.
+</Callout>
+
+## Channels
+
+The settings page also shows where notifications are delivered.
+
+- **In-app**: the bell in the dashboard. This is the channel that is live today, and it is controlled by the per-category toggles above.
+- **Email**: delivery to your account email. Marked **Coming soon**.
+- **Slack**: delivery through a connected Slack integration. Marked **Coming soon**.
+
+For now, the in-app feed is the delivery channel. If you want event-driven Slack or webhook delivery in the meantime, that is what [Automations](/guides/automations) are for: you can route events like replies, bookings, and record changes to outside tools there.
+
+## Practical tips
+
+- Leave the three health categories on. They are the early-warning signals that protect your sending reputation, and they stay quiet unless something is actually wrong.
+- Turn **Reply received** on only if your volume is low enough that one ping per reply is helpful. Otherwise work from the [Unibox](/guides/unibox).
+- A growing unread count on the bell with several **Bounce** or **Spam complaint** entries is your cue to open the [Deliverability](/guides/deliverability) dashboard and find the campaign or list behind it.
+- Remember preferences are per user. If a teammate is not seeing alerts you expect them to act on, check their own Notifications settings.
+
+## Related guides
+
+<Cards>
+  <Card title="Deliverability" href="/guides/deliverability" />
+  <Card title="Unibox" href="/guides/unibox" />
+  <Card title="Automations" href="/guides/automations" />
+</Cards>

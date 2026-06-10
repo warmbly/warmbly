@@ -1,0 +1,163 @@
+---
+title: "Sequences & steps"
+description: "Multi-step sequences, follow-ups, A/B variants, and reply branching."
+icon: ListOrdered
+---
+
+A campaign sends a sequence of steps to each contact. Most steps are emails: the first email, then follow-ups spaced out over days. You build the sequence on a visual flow canvas, where each step is a card and the lines between cards decide who goes where next.
+
+This guide covers how steps connect, how spacing works, how to follow up, how to run A/B variants, and how to branch on what a contact does (opened, clicked, replied).
+
+## The flow canvas
+
+Open a campaign and go to its flow. You will see your steps laid out top to bottom, with the first step marked `Start`. Lines connect each step to whatever comes next.
+
+A few things to know:
+
+- A step does nothing automatically. You connect steps yourself by dragging a connector dot from one card to another.
+- A step with no outgoing line ends the sequence for that contact. The card shows `Ends here`, and unconnected paths show as `Stop`.
+- Click any step card to open its editor on the right. Click a line to edit that connection.
+- You can have up to 50 steps in one sequence.
+
+Each card has two source dots:
+
+- The **bottom dot** makes a plain "just go there" connection: the contact moves to the next step after a wait.
+- The **right (amber) dot** starts an **if** branch: a condition that routes the contact based on what they did.
+
+Drag a dot onto another card to connect to it, or drag to empty space to create a new step already connected. If a card ever shows a dashed amber border and `Not connected`, it lost its incoming line (for example, an upstream step was deleted). Drag a line back into it to re-link it.
+
+## Email steps
+
+Click a step to open the composer. An email step has:
+
+- A **step name**: an internal label only. Recipients never see it.
+- A **subject**, with a variable menu to insert merge fields like `{{.FirstName}}`.
+- A **body**, edited with a rich text editor, with an Edit and a Preview tab.
+
+The Preview tab renders your subject and body through the real send engine against a sample contact, so merge fields, conditionals, and spintax all resolve exactly as they will at send time. If a template is malformed (for example an `{{if}}` with no matching `{{end}}`), you will see a warning, and any tokens that would send literally are flagged before you start the campaign.
+
+For everything you can put in subjects and bodies (merge fields, fallbacks, conditionals, and spintax), see [Personalization](/guides/expressions).
+
+<Callout type="info" title="Templates">
+You can apply a saved template to a step, or save the current step as a reusable template from the composer. Templates live in your shared template library and carry their subject and body.
+</Callout>
+
+### Action steps (not just emails)
+
+A step does not have to send an email. From the add menu (the chevron next to "Add step"), or by switching a step's type in its editor, a step can instead perform an action when a contact reaches it:
+
+- Add tag or remove tag
+- Create task
+- Create deal or move deal stage
+- Unsubscribe the contact
+- Notify (sends an event to your connected webhooks and integrations, such as Slack or a CRM)
+- Run automation
+
+Action steps connect the same way as email steps and are most useful at the end of a reply branch (for example: on a positive reply, create a deal and notify your team).
+
+## Wait and spacing
+
+Spacing between steps is a property of the **target** step, not a separate node. There is no standalone "wait" block on the canvas. Instead, when a contact follows a connection into a step, that step's wait determines how long they pause first.
+
+To set spacing, click the connection line that leads into a step. The connection editor shows a "wait N days before it" control. Set it in days (0 to 60). The wait is shown on the line as a label like `wait 3d`.
+
+Because the wait belongs to the target step, every path that leads into that step uses the same wait. Spacing your follow-ups out (rather than sending them back to back) keeps your sending pattern natural and protects deliverability. See [Deliverability](/guides/deliverability) for guidance on safe pacing.
+
+<Callout type="info" title="Instant branches skip the wait">
+When a path runs instantly (see reply and engagement branches below), it fires the moment the event happens, so the target step's wait does not apply. The connection editor hides the wait control in that case.
+</Callout>
+
+## Follow-ups and threading
+
+A follow-up is just the next email step in the sequence. Warmbly threads follow-ups onto the previous step's email so they land as a reply in the same conversation, the way a real person follows up.
+
+The key rule:
+
+- A follow-up threads on the **previous step's subject**.
+- If you change a follow-up's subject, it starts a **new thread** instead of replying in the existing one.
+
+So to keep a follow-up in the same thread, leave its subject matching the email it follows up on. To deliberately start a fresh conversation, give it a new subject.
+
+## A/B variants
+
+Each email step can test alternate copy. Open the step and find the **A/B variants** panel below the composer.
+
+How it works:
+
+- The step's own subject and body are the **original**. It always sends until you add a variant.
+- Click **Add variant** to add Variant B (then C, D, E, F). You can have up to 5 variants per step, on top of the original.
+- Each variant has its own **name**, **weight**, **active** toggle, **subject**, and **body**. Leave a variant's subject or body blank to reuse the step's own.
+- Sends split across the original and the active variants by **weight** (1 to 100). Higher weight means a larger share of contacts. Turning a variant **inactive** stops it from receiving new sends without deleting it.
+
+### Performance and the winner
+
+Once variants have sent, each variant card shows a performance strip: Sent, Open rate, Reply rate, and Bounce rate. Warmbly also evaluates a campaign **winner** across the variants. When a winner is found for a step, a banner names it along with the rule and confidence used to pick it, and the winning variant card is highlighted with a trophy.
+
+Use the winner as a signal to keep your best-performing copy and retire the rest.
+
+## Branching: routing on what a contact does
+
+A plain connection sends everyone to the next step. A **branch** routes contacts differently based on a condition. To add one, drag the right (amber) dot from a step, which creates an `if` block, then click it to choose the condition.
+
+Branches are checked in order, top to bottom, like `if` / `else if` / `else`. The first matching branch wins. Any contact who matches no condition follows the unconditional ("else" / "just go there") path, and if there is none, the sequence stops for them.
+
+### Available conditions
+
+In the connection editor, "Take this path" offers:
+
+| Condition | Meaning |
+| --- | --- |
+| `always` | Right after the wait, unconditionally |
+| `if opened the email` | Opened within N days (Engagement) |
+| `if clicked a link` | Clicked within N days (Engagement) |
+| `if replied` | Replied (Engagement) |
+| `if didn't open` | Still hasn't opened after N days |
+| `if didn't click` | Still hasn't clicked after N days |
+| `if didn't reply` | Still hasn't replied after N days |
+| `if replied: positive` | Reply classified positive (Reply intent) |
+| `if replied: negative` | Reply classified negative (Reply intent) |
+| `if replied: neutral` | Reply classified neutral (Reply intent) |
+| `if auto-reply / out of office` | Reply was automated, not a human reply |
+| `random split` | A percentage of contacts, chosen at random |
+
+Notes on each kind:
+
+- **Engagement windows** (`opened`, `clicked`, plus the `didn't` versions) take a number of days, 1 to 60. For `opened` and `clicked`, the contact must do it within that window. For the `didn't` versions, Warmbly waits the full window and then takes the path only if it still hasn't happened.
+- **Reply intent** conditions (`positive`, `negative`, `neutral`, `auto-reply / out of office`) have no day window. They are checked once, based on how the contact's reply is classified.
+- **Random split** takes a percentage (1 to 99) and routes that share of contacts at random. Useful for splitting traffic between two follow-up paths.
+
+### Instant vs at-the-next-step
+
+Some conditions can fire **instantly**: reply intent, `opened`, and `clicked`. By default, an instant-capable branch runs the moment the event lands (the reply is recorded, or the open or click is tracked) rather than waiting for the next scheduled step. Instant branches show a violet `instant` badge on the canvas.
+
+In the connection editor you can toggle this off so the path is checked at the next step boundary instead. For an engagement branch, "instant" still respects the window: it runs the moment they open or click, as long as they do so within the N-day window. If they never do, the path simply never runs.
+
+## Reply branches
+
+A reply branch handles what happens when a contact actually replies. The fastest way to add one is the **On reply** button on a step card: it creates an action step and connects it with a reply branch that fires the instant the contact replies, so you can build out the follow-on actions (create deal, move stage, notify).
+
+Important details about how replies route:
+
+- A reply triggers the reply path of the **specific email it answers**, matched by the reply's threading headers. That means the earlier email the contact actually replied to, not necessarily your latest step, and never both.
+- If the reply can't be matched to a thread, Warmbly falls back to the latest step.
+- Auto-replies and out-of-office messages are **not** treated as a human reply. They do not trigger the human-reply paths and do not stop the sequence. Use the `auto-reply / out of office` condition if you want to react to them.
+
+## Stop on reply
+
+`Stop on reply` is a campaign-level toggle in the flow toolbar. When it is on and a contact replies:
+
+- The rest of the cold sequence stops for that contact.
+- The reply branch you connected to the email they answered still runs (it fires instantly).
+
+So with stop on reply on, a human reply runs your reply flow and cancels every other remaining step. This is the safer default: continuing to cold-email someone who already replied is a classic deliverability mistake.
+
+<Callout type="warn" title="Turn on stop on reply">
+If stop on reply is off and your sequence has more than one step, Warmbly warns you on the canvas. Replies that don't match a reply branch (for example a reply to an older email) would otherwise keep getting cold follow-ups. Turning it on still runs your reply branches, so it is strictly safer.
+</Callout>
+
+## Related
+
+<Cards>
+<Card title="Personalization & expressions" href="/guides/expressions" />
+<Card title="Deliverability" href="/guides/deliverability" />
+</Cards>

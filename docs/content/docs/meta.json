@@ -1,27 +1,8 @@
 {
   "title": "Documentation",
   "pages": [
-    "index",
-    "---Guides---",
-    "mailboxes",
-    "warmup",
-    "campaigns",
-    "sequences",
-    "deliverability",
-    "contacts-crm",
-    "unibox",
-    "automations",
-    "integrations",
-    "meetings",
-    "analytics",
-    "notifications",
-    "security",
-    "team-roles",
-    "---Reference---",
-    "authentication",
-    "permissions",
-    "endpoints",
-    "error-codes",
-    "expressions"
+    "guides",
+    "learn",
+    "api"
   ]
 }

@@ -1,0 +1,139 @@
+---
+title: Campaigns
+description: "Create and send cold outreach campaigns safely."
+icon: Send
+---
+
+A campaign is a sequence of emails that Warmbly sends to a list of contacts on your behalf, spread across your connected mailboxes. Warmbly handles the timing, the volume limits, and the rotation between mailboxes so your sending looks natural and stays safe.
+
+This guide walks through creating a campaign, choosing which mailboxes send it, setting limits and a schedule, and starting or pausing it. It also explains the safety posture Warmbly applies by default so your sender reputation stays healthy.
+
+<Callout type="info" title="Before you start">
+You need at least one connected, active mailbox and a list of contacts. We also recommend warming up new mailboxes before you run cold campaigns from them. See the [Deliverability](/guides/deliverability) guide.
+</Callout>
+
+## Create a campaign
+
+From the **Campaigns** page, click **New campaign**. A short wizard walks you through the essentials, and you can skip any optional step. Only a name is required to create the campaign; you can fill in everything else afterward from the campaign's settings.
+
+The wizard has four steps:
+
+1. **Basics**: the campaign name and an optional description.
+2. **Schedule**: the timezone, which days of the week may send, and the start and end time of day.
+3. **Sender pool**: which mailboxes send this campaign.
+4. **First email**: the subject and body of your first step.
+
+After it is created, the campaign opens to its detail view, where you can edit settings, add more steps, review schedule windows, and watch live performance.
+
+A campaign starts in the **draft** state. Nothing sends until you start it.
+
+## Add mailboxes and senders
+
+A campaign sends from one or more of your connected mailboxes. You choose which mailboxes from the **Sending accounts** section of the campaign's settings. There are three ways to select them, and you can combine the first two:
+
+- **By tag**: every active mailbox carrying a tag you pick is included. New mailboxes you tag later are added automatically.
+- **Individually**: pick specific mailboxes by hand.
+- **All active mailboxes**: if you select neither a tag nor any specific mailbox, the campaign sends from every active mailbox you own.
+
+<Callout type="info" title="Follow-ups stay on the same mailbox">
+Each mailbox stays within its own daily limit, and follow-up steps always send from the same mailbox that sent the first email to that contact, so every thread stays consistent.
+</Callout>
+
+### Rotation
+
+When a campaign has several mailboxes, Warmbly decides which one sends each email. You control this with the **Rotation** setting:
+
+- **Even spacing** (recommended): always picks the mailbox that has been idle longest, for the most natural pattern.
+- **Round-robin**: cycles through your mailboxes in order: `A`, then `B`, then `C`, then back to `A`.
+- **Weighted**: sends more from your healthiest, higher-limit mailboxes.
+
+### ESP matching
+
+You can optionally align the sending mailbox's provider with each recipient's provider (for example, sending Gmail-to-Gmail). This is the **ESP matching** setting:
+
+- **Prefer same**: use a same-provider mailbox when one is free, otherwise fall back to any mailbox.
+- **Strict same**: only ever send from a same-provider mailbox. If none is available, the contact waits rather than sending cross-provider.
+
+If a recipient's provider is unknown (a custom domain), matching never blocks the send.
+
+## Sending limits
+
+Warmbly is mailbox-first: safe volume is the sum of each mailbox's budget, spread across many mailboxes, rather than one large global limit. Several limits stack, and the **smallest one always wins** for any given mailbox.
+
+| Limit | Default | What it does |
+| --- | --- | --- |
+| Per-mailbox cold cap | `50` / day | The hard ceiling for cold campaign mail from one mailbox. |
+| Minimum gap | `600` seconds | The shortest spacing between two sends from the same mailbox. |
+| Campaign daily limit | set per campaign | A per-mailbox cap for this campaign, validated between `3` and `100`. |
+
+The campaign daily limit is applied as a minimum against the per-mailbox cold cap, so it can lower a mailbox's volume for this campaign but never raise it above the `50`/day default cold cap. The `600`-second minimum gap is always enforced between sends from the same mailbox.
+
+<Callout type="warn" title="Don't push past the defaults casually">
+Anything above `50`/day per cold mailbox should be backed by positive reputation signals and a low complaint rate, not set as a starting point. Adding more mailboxes is safer than forcing a few to send more.
+</Callout>
+
+### Daily ramp-up
+
+Instead of starting a mailbox at its full limit on day one, you can turn on **Daily ramp-up** to grow volume gradually. You set three values:
+
+- **Ramp start**: how many emails per mailbox on the first day (default `10`).
+- **Ramp increment**: how much to add each day (default `5`).
+- **Ramp ceiling**: the highest the ramp will climb to (default `50`).
+
+The ramp is applied as another minimum on top of the per-mailbox cap, so it only ever lowers today's volume while the campaign is still ramping. Ramp-up is separate from mailbox warmup; the two work together.
+
+### Lead flow
+
+You can also throttle how many brand-new contacts a campaign starts each day with **Max new leads per day** (set to `0` for no limit, up to `1000`). When the cap is reached, Warmbly keeps sending follow-ups to contacts already in flight and resumes adding new leads the next day. You can optionally prioritize new leads over follow-ups, and choose whether to attempt delivery to addresses flagged risky by verification.
+
+## Scheduling windows
+
+A campaign only sends inside the **weekly sending windows** you define, expressed in the campaign's timezone. Each day of the week is independent: you can set different hours per day, or several separate windows in one day. Presets like `Mon–Fri 9–5` are available, or you can drag the windows directly on the grid.
+
+Within an allowed window, Warmbly spreads the day's planned emails evenly across the available time, adds small random jitter, and rounds to natural send times so sending does not arrive in obvious bursts. If a mailbox has its own timezone, Warmbly also keeps its sends inside that mailbox's local business hours (`8am`–`8pm`).
+
+You can optionally set **campaign dates**, a start date and an end date that bound when the campaign may send. Leave both blank to run open-ended while the campaign is active.
+
+<Callout type="info" title="Day indexing">
+The schedule grid is Monday-first. Set your windows visually on the grid rather than worrying about the underlying day numbering.
+</Callout>
+
+## Start and stop a campaign
+
+From the **Campaigns** list, the row's play button starts a draft or paused campaign, and the pause button stops a running one. You can also start or stop from the campaign's detail view.
+
+- Starting moves the campaign to **active** ("running"). Warmbly begins scheduling sends inside your windows and limits.
+- Pausing stops new scheduling immediately. You can resume later from where it left off.
+
+A campaign can also pause itself. If it loses all of its sending accounts it becomes **paused — no accounts**, and if a trial expires it becomes **paused — trial expired**. When every contact has finished the sequence, the campaign moves to **finished** (completed).
+
+If you have configured it to do so, a campaign can stop sending follow-ups to a contact as soon as that contact replies, so you do not keep emailing someone who is already in a conversation with you.
+
+## Safety posture
+
+Warmbly defaults are deliberately conservative. The goal is a low complaint rate and a low spam rate, not maximum throughput.
+
+- **Spacing over bursts.** The minimum gap and even distribution keep each mailbox sending at a natural cadence.
+- **Spread, don't concentrate.** Volume is split across many mailboxes and many worker IP addresses rather than concentrated in one place.
+- **Ramp gradually.** Use ramp-up for new mailboxes and raise volume only while performance stays healthy.
+- **Health gating.** A mailbox showing deliverability trouble has its cold volume reduced or paused automatically, so a struggling inbox does not keep blasting.
+
+A practical starting band for most cold mailboxes is `30`–`50`/day once they are warmed. Start newer mailboxes lower, around `10`–`20`/day, and ramp from there.
+
+<Callout type="warn" title="Keep warmup running">
+Keep mailbox warmup active even after campaigns begin. A mailbox that stops warming and only sends cold mail loses the natural activity that protects its reputation.
+</Callout>
+
+## Related guides
+
+<Cards>
+  <Card title="Personalization & expressions" href="/guides/expressions">
+    Merge fields, fallbacks, conditionals, and spintax for your campaign emails.
+  </Card>
+  <Card title="Deliverability" href="/guides/deliverability">
+    Warmup, authentication, tracking, and keeping your sender reputation healthy.
+  </Card>
+  <Card title="Sequences" href="/guides/sequences">
+    Build multi-step follow-ups with delays and branching conditions.
+  </Card>
+</Cards>

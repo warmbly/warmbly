@@ -1,0 +1,64 @@
+---
+title: Warmup pools
+description: How shared warmup pools work, why pool quality beats pool size, and what "dedicated" should mean.
+icon: Waves
+---
+
+A warmup pool is a group of mailboxes that send warmup mail to one another. Your mailbox sends a short message to another mailbox in the pool. That mailbox opens it, sometimes replies, and the pattern reverses with mail from another pool member.
+
+## What a warmup pool is
+
+From a mailbox provider's point of view, the pattern looks like normal individual mailbox activity: low volume, conversational, mixed senders.
+
+## Why pool quality matters more than size
+
+Some tools advertise "5,000+ inboxes in the pool". Sounds impressive. It almost always isn't.
+
+A pool of 5,000 mailboxes mostly assembled from free-tier signups and throwaway providers gives you essentially zero positive signal. Modern mailbox providers either ignore signals from low-trust addresses entirely, or treat them as negative ("why is this mailbox corresponding with so many disposable inboxes?").
+
+A pool of 500 vetted, warmed, monitored mailboxes across the major receivers is dramatically more useful.
+
+## What a healthy pool looks like
+
+- **Diverse**: spans Gmail, Outlook, Yahoo, iCloud, and a representative share of self-hosted IMAP servers.
+- **Monitored**: every member has spam-score tracking; misbehaviour removes the mailbox from the pool.
+- **Conversational**: reply rate inside the pool ~30%; the pool exchanges threads, not one-off blasts.
+- **Avoidance-aware**: the same two mailboxes don't pair up over and over (recent-partner gap of 7 days or more).
+- **Token-verified**: every message carries a verification token; invalid tokens flag the sender.
+
+## Free vs premium pools
+
+Free pools are useful for testing the mechanics but include higher-risk members. Premium pools should:
+
+- Only include warmed mailboxes meeting reputation criteria.
+- Apply stricter quarantine thresholds than free pools.
+- Keep a separate recovery pool for senders coming back from quarantine.
+- Never silently mix free-tier mailboxes into the premium recipient set.
+
+In Warmbly, free and premium pools are physically separated. Dedicated-worker customers still participate in the premium pool by default: dedicated infrastructure is for isolation and IP control, not a reputation shortcut.
+
+## What "dedicated" should mean
+
+A dedicated worker is a worker process and IP allocated to your organisation. It gives you:
+
+- Predictable sending IP.
+- Isolation from other tenants' bad days.
+- The ability to negotiate IP allowlisting with specific partners.
+
+It does _not_:
+
+- Bypass per-mailbox health rules.
+- Let you ignore complaint or bounce thresholds.
+- Magically warm a brand-new IP. Dedicated IPs need their own warmup ramp.
+
+## Re-entry after quarantine
+
+A quarantined mailbox shouldn't automatically re-enter the pool just because time elapsed. Re-entry should require:
+
+- Healthy SPF, DKIM, DMARC.
+- No recent complaints or hard-bounce spikes.
+- No recent invalid warmup-token attempts.
+- Spam-folder placement under 10% on a probation sample.
+- Gradual ramp on re-entry, starting at 5–10/day warmup.
+
+> Pool quality is shared infrastructure. A platform that lets one bad mailbox keep participating to avoid an awkward support conversation taxes every other paying customer.

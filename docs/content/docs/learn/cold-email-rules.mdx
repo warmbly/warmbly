@@ -1,0 +1,82 @@
+---
+title: Cold email rules
+description: What CAN-SPAM, GDPR, PECR, CASL and the Spam Act actually say, and how to send cold mail compliantly.
+icon: Scale
+---
+
+## Why this matters
+
+Cold email is not illegal in most jurisdictions, but the rules around it vary. Getting them wrong invites both fines and the worse outcome: spam complaints that damage your sender reputation across the entire contact list.
+
+<Callout type="info" title="Not legal advice">
+This guide is general information, not legal advice. If you're sending at scale to regulated jurisdictions, run your specific approach past counsel.
+</Callout>
+
+## United States: CAN-SPAM (2003)
+
+CAN-SPAM applies to "commercial electronic mail messages". It does *not* require prior consent for cold B2B email. It does require:
+
+- Truthful "From" and routing information.
+- Subject lines that aren't misleading.
+- Identification as an advertisement (interpreted loosely for B2B context).
+- A valid physical postal address.
+- A clear unsubscribe mechanism honoured within 10 business days.
+
+For Warmbly's defaults, this means: include a physical address in your sender profile, never spoof a name or domain, and ensure unsubscribe replies are auto-suppressed.
+
+## European Union and UK: GDPR + PECR
+
+GDPR applies to personal data of EU/UK residents. PECR (in the UK) and ePrivacy directives in EU member states specifically cover electronic marketing.
+
+### B2B cold mail
+
+Cold mail to **corporate** recipients (a named role at a company) is generally permitted under "legitimate interest" if:
+
+- The recipient has a clear business reason to receive the message (relevance test).
+- You can demonstrate you've considered their rights and interests (balancing test).
+- You provide a clear opt-out mechanism.
+- You honour opt-outs immediately.
+- You can tell them, on request, where you obtained their contact details.
+
+### B2C marketing mail
+
+Generally requires prior consent. Cold marketing to consumer addresses in the EU/UK is risky without it.
+
+### Data processing record
+
+Keep a record of where you sourced each contact and the legitimate interest you relied on. Warmbly's contact import wizard captures source and import notes for exactly this.
+
+## Canada: CASL (2014)
+
+CASL is the strictest of the major regimes. It requires *express or implied consent* before sending commercial electronic messages to Canadian recipients.
+
+Implied consent exists where the recipient has a relevant existing business relationship, conspicuously published their business email without an explicit "no marketing" statement, or asked for information from your business in the last 6 months.
+
+Every message must include sender identification, contact info, and a working unsubscribe. Penalties for non-compliance can reach CAD $10M per violation for organisations.
+
+## Australia: Spam Act 2003
+
+Requires consent (express, inferred or implied), accurate sender identification and a functional unsubscribe. Inferred consent is generous for B2B but not consumer marketing.
+
+## Practical cold-mail compliance checklist
+
+1. Use a real From: name and a domain you actually own.
+2. Include a physical mailing address in your sender profile or footer.
+3. Provide a clear opt-out, such as "Reply STOP to opt out" or a one-click link.
+4. Auto-suppress recipients who opt out, across all future sequences and campaigns.
+5. Record where each contact was sourced and your basis for contacting them.
+6. Only contact role accounts and named business addresses for B2B; avoid personal addresses unless you have explicit consent.
+7. Customise the message for relevance: boilerplate to thousands of strangers is the loudest possible compliance and reputation risk.
+8. Skip Canadian and EU consumer-mail recipients unless you have documented consent.
+9. Honour opt-outs within 24 hours, not the legal maximum.
+10. If you operate a privacy policy, link to it from your footer.
+
+## How Warmbly helps
+
+- Sender profiles include physical address fields that render in every send.
+- Opt-out detection on incoming replies (STOP, unsubscribe, "please remove me").
+- Workspace-wide suppression list shared across [sequences](/guides/sequences).
+- Contact source captured at [import](/guides/contacts-crm); preserved through merges.
+- Region-aware sending windows so you don't accidentally blast at 3am local time.
+
+> Compliance and reputation are the same conversation. Senders who skip the basics burn through contact lists and end up in spam filters whether or not the regulator ever shows up.

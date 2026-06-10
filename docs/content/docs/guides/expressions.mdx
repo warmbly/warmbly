@@ -1,0 +1,281 @@
+---
+title: "Personalization & Expressions"
+description: "Merge fields, conditionals, fallbacks, functions, spintax, and automation expressions: the templating language shared by campaign emails and automations."
+icon: Variable
+---
+
+Warmbly lets you write one email (or one automation message) and have it come out personalized for every contact. You do this with merge fields like `{{.FirstName}}`, plus a small set of helpers for fallbacks, conditions, and simple math. This guide covers everything you can use, with copy-paste examples.
+
+You do not need to know Go or any programming language. Just match the patterns below.
+
+## Quick reference
+
+| You want to... | Write |
+| --- | --- |
+| Insert a contact's first name | `{{.FirstName}}` |
+| Use a backup when a field is empty | `{{.FirstName \| default "there"}}` |
+| Show different text by condition | `{{if eq .Company "Acme"}}...{{else}}...{{end}}` |
+| Randomize wording in a campaign | `{a\|b\|c}` |
+| Filter an automation by a number | `gtf .confidence 0.8` |
+
+## Variables (merge fields)
+
+A merge field is a placeholder that gets replaced with the contact's real data when the email is sent.
+
+### Standard contact fields
+
+In campaign emails (subject, HTML body, plain-text body), use these exact names. They are **capitalized**, with a leading dot:
+
+```
+{{.FirstName}}
+{{.LastName}}
+{{.Email}}
+{{.Company}}
+{{.Phone}}
+```
+
+Example:
+
+```
+Hi {{.FirstName}}, I noticed {{.Company}} is hiring and wanted to reach out.
+```
+
+If the contact is "Dana" at "Acme", that sends as:
+
+```
+Hi Dana, I noticed Acme is hiring and wanted to reach out.
+```
+
+<Callout type="warn" title="Field names are case-sensitive">
+`{{.FirstName}}` works. `{{.firstname}}`, `{{.firstName}}`, and `{{.FIRSTNAME}}` do **not** resolve and will leave an empty value (or a leftover `{{...}}` token) in your email. Copy the exact capitalization from the list above.
+</Callout>
+
+### Custom fields
+
+Any custom field you imported on a contact is also available. How you reference it depends on the field's name:
+
+- **Simple names** (letters, numbers, underscores, starting with a letter or underscore) work just like standard fields with a dot:
+
+  ```
+  {{.industry}}
+  {{.account_owner}}
+  {{.City}}
+  ```
+
+  These can also be used inside conditions and helpers (see below).
+
+- **Names with spaces or dashes** (for example `job title`, `first-name`) work too. Write them with the dot, exactly as the field is named:
+
+  ```
+  {{if .job title}}Your role as {{.job title}} at {{.Company}} caught my eye.{{end}}
+  ```
+
+  These resolve **everywhere** (standalone, inside `{{if}}`, and inside helpers like `{{eq}}`), so any custom field can be used in a condition regardless of its name. (Internally Warmbly rewrites `.job title` to the equivalent `index` lookup, so you do not have to.)
+
+### Automation variables (per trigger)
+
+Automations are not about a contact's saved fields. Each automation **trigger** carries its own data, and you reference those by the field's key (already lowercase, no capitalization rules).
+
+In automation **action** text (a Slack message, a webhook body, a CRM field value), reference each variable with standard dotted field access, `{{.key}}` (the leading dot is required; it's plain Go `text/template`):
+
+```
+New reply from {{.contact_email}} on campaign {{.campaign_id}} ({{.intent}})
+```
+
+Action text is a **full template, not just token substitution**. It renders the same way an automation condition does, against the live trigger data: conditionals (`{{if}}` / `{{else}}`), pipelines, helper functions, `{{range}}` over a list, and nested fields (`{{.lead.company}}`) all work, and values keep their type. Because numbers stay numbers, native `{{if gt .confidence 0.8}}` works directly in a message body, not only in a condition. Reach for the coercing `gtf` / `ltf` variants only when a value might arrive as text. A malformed template never blocks the action: it falls back to plain `{{.key}}` substitution.
+
+Which keys are available depends on the trigger. The variable picker in the builder lists them for you. The full set per trigger:
+
+| Trigger | Available variables |
+| --- | --- |
+| Reply received | `contact_email`, `contact_id`, `campaign_id`, `intent`, `confidence`, `subject`, `snippet` |
+| Meeting booked | `invitee_name`, `invitee_email`, `event_name`, `scheduled_for`, `join_url`, `source`, `contact_id` |
+| Meeting rescheduled | `invitee_name`, `invitee_email`, `event_name`, `scheduled_for`, `join_url`, `source`, `contact_id` |
+| Meeting canceled | `invitee_name`, `invitee_email`, `event_name`, `scheduled_for`, `source`, `contact_id` |
+| Email bounced | `contact_email`, `campaign_id`, `contact_id`, `event_type`, `provider`, `reason` |
+| Deliverability complaint | `contact_email`, `campaign_id`, `contact_id`, `event_type`, `provider`, `reason` |
+| Unsubscribed | `contact_email`, `contact_id`, `campaign_id`, `source` |
+| Warmup health changed | `email`, `new_state`, `previous_state`, `reason` |
+| Campaign action | `contact_email`, `contact_id`, `campaign_id`, `campaign_name`, `first_name`, `last_name`, `company`, `phone` |
+
+A key that isn't part of the trigger's data renders empty, so referencing one you aren't sure about is safe, but prefer the keys listed for your trigger.
+
+## Fallbacks (default values)
+
+Some contacts will be missing a field. To avoid an awkward "Hi ," use `default` to supply a backup. Put the field first, then a pipe, then `default` and your backup text in quotes:
+
+```
+Hi {{.FirstName | default "there"}},
+```
+
+- If `FirstName` is "Dana" you get "Hi Dana,"
+- If `FirstName` is blank you get "Hi there,"
+
+More examples:
+
+```
+Hope things are going well at {{.Company | default "your company"}}.
+Following up about {{.industry | default "your space"}}.
+```
+
+`default` treats an empty field as "use the backup". It works on standard fields, simple custom fields, and automation variables.
+
+## Conditionals
+
+Use `{{if}}` ... `{{end}}` to include text only when something is true. Add `{{else}}` for the other case. Every `{{if}}` must be closed with `{{end}}`.
+
+Show a line only when a field has a value:
+
+```
+{{if .Company}}I see you're at {{.Company}}.{{end}}
+```
+
+Pick one of two openings:
+
+```
+{{if .FirstName}}Hi {{.FirstName}},{{else}}Hi there,{{end}}
+```
+
+### Comparing values with eq
+
+`eq` means "equals". Use it to compare a field to a specific value (in quotes):
+
+```
+{{if eq .Company "Acme"}}Great to connect with the Acme team.{{else}}Great to connect.{{end}}
+```
+
+Companion to `eq`: `ne` means "not equals".
+
+```
+{{if ne .source "manual"}}Auto-booked meeting.{{end}}
+```
+
+## Functions
+
+The same helper set is available in campaign emails, automation conditions, and automation action text. You can work with numbers and text without worrying about exact data types: the helpers coerce strings to numbers where needed.
+
+### Math
+
+| Function | Meaning | Example |
+| --- | --- | --- |
+| `add a b` | a plus b | `{{add .seats 5}}` |
+| `sub a b` | a minus b | `{{sub 100 .used}}` |
+| `mul a b` | a times b | `{{mul .price .qty}}` |
+| `div a b` | a over b | `{{div .total .count}}` |
+| `mod a b` | remainder | `{{mod .n 2}}` |
+| `num a` | force a value to a number | `{{num .confidence}}` |
+
+Division or modulo by zero returns 0 instead of erroring, so these never break your email.
+
+### Numeric comparisons
+
+There are two ways to compare numbers, and the difference matters.
+
+- **Native compares**: `gt` (greater than), `lt` (less than), `ge` (greater or equal), `le` (less or equal), plus `eq` / `ne`. These compare values as-is and work directly when the value is **already a number** (common with automation trigger data like `confidence`).
+- **Coercing compares**: `gtf`, `ltf`, `gef`, `lef`. The trailing `f` means "treat both sides as numbers first". Use these when a value might be a **string** (common for contact custom fields, which arrive as text).
+
+<Callout title="Rule of thumb">
+Comparing automation numeric data like `confidence`? Native `gt` / `ge` works. Comparing a custom field or anything that might be text? Use the `f` versions (`gtf`, `gef`, ...) so `"42"` is read as the number 42. When in doubt, the `f` versions are the safe choice.
+</Callout>
+
+```
+{{if gtf .deal_size 10000}}Enterprise prospect{{end}}
+{{if gef .confidence 0.8}}High confidence reply{{end}}
+```
+
+### String helpers
+
+| Function | What it does | Example |
+| --- | --- | --- |
+| `lower` | lowercase | `{{lower .Company}}` |
+| `upper` | UPPERCASE | `{{upper .Company}}` |
+| `title` | Title Case | `{{title .FirstName}}` |
+| `trim` | remove surrounding spaces | `{{trim .City}}` |
+| `contains` | does it contain (case-insensitive)? | `{{if contains .Email "gmail"}}...{{end}}` |
+| `hasPrefix` | does it start with (case-sensitive)? | `{{if hasPrefix .Phone "+1"}}...{{end}}` |
+| `hasSuffix` | does it end with (case-sensitive)? | `{{if hasSuffix .Email ".edu"}}...{{end}}` |
+
+`contains` ignores case; `hasPrefix` and `hasSuffix` are case-sensitive.
+
+```
+{{if hasSuffix .Email ".edu"}}As someone in academia, {{end}}I thought this might help.
+```
+
+## Spintax (randomized wording)
+
+Spintax lets one email come out worded slightly differently for each recipient, which keeps a batch of sends from looking identical. Write alternatives inside single braces, separated by pipes:
+
+```
+{Hi|Hey|Hello} {{.FirstName}}, {hope you're well|hope things are good}.
+```
+
+Each send randomly picks one option from each group, for example "Hey Dana, hope things are good."
+
+<Callout type="warn" title="Spintax rules">
+Spintax is **campaign-only** (subject + body); it does not run in automation conditions or action text. Use a **single** pair of braces, not the double braces of merge fields. Only groups that actually contain a pipe are treated as spintax; a brace run with no pipe (CSS, JSON in an HTML email) is left exactly as written, so it's safe in HTML bodies.
+</Callout>
+
+## Automation advanced expressions
+
+Most automation conditions are built with the visual picker (field, operator, value). For anything the picker can't express, choose **Advanced expression** to write a free-form condition.
+
+### The truthy rule
+
+An advanced expression passes when it renders to something "truthy". It is treated as **false** when the result is empty, `false`, `0`, `no`, `off`, or `<no value>`. Anything else counts as **true**. If an expression is broken or fails to evaluate, it is treated as false, so a broken condition never silently passes.
+
+### Two ways to write it
+
+1. **Bare pipeline** (shortest). Just write the test; Warmbly wraps it for you:
+
+   ```
+   gt .confidence 0.8
+   ```
+
+2. **Full template** when you need branching or `{{else}}`:
+
+   ```
+   {{if gt .confidence 0.8}}yes{{end}}
+   ```
+
+Both forms mean the same thing. The bare form is recommended for simple conditions.
+
+### Real examples
+
+```
+and (gtf .confidence 0.8) (eq .intent "positive")
+or (eq .intent "positive") (eq .intent "neutral")
+not (eq .intent "negative")
+hasSuffix .contact_email "@acme.com"
+ge .confidence 0.5
+```
+
+When you mix multiple groups, wrap each test in parentheses (as in the `and` example). `and`, `or`, and `not` take whole tests as their inputs.
+
+## Where each thing applies
+
+| Surface | Variables | Conditionals / functions | `default` | Spintax |
+| --- | --- | --- | --- | --- |
+| Campaign email subject & body | Yes (contact fields) | Yes | Yes | Yes |
+| Automation condition (Advanced expression) | Yes (trigger keys) | Yes | Yes | No |
+| Automation action text (Slack / webhook / CRM) | Yes (trigger keys, with the dot) | Yes | Yes | No |
+
+- In campaign emails, variables are contact fields. In automations, variables are the trigger's data keys (see the table above).
+- Spintax only runs in campaigns.
+- In automation action text, always keep the leading dot: `{{.contact_email}}` (and the same inside conditionals and helpers, `{{if eq .intent "positive"}}`). It is standard Go `text/template`; a bare `{{contact_email}}` is not valid.
+
+## Gotchas
+
+- **Capitalization of standard fields**: `{{.FirstName}}` works, `{{.firstname}}` does not.
+- **Custom fields with spaces** (`{{.job title}}`) work everywhere, including inside `{{if}}` and helpers; Warmbly resolves the dotted form for you.
+- **Single vs double braces**: `{a|b}` is spintax (campaigns only); `{{...}}` is a variable, condition, or function.
+- **Always close `{{if}}` with `{{end}}`.**
+- **Quote your text values**: `eq .intent "positive"`, not `eq .intent positive`.
+- **Numbers from text**: if a comparison on a custom field behaves oddly, switch from `gt`/`lt` to `gtf`/`ltf` (or wrap the value in `num`).
+- **Unknown variables render empty**; they don't error. A leftover `{{...}}` in your output usually means a typo or wrong capitalization.
+
+## Preview and validation
+
+Warmbly checks your templates before they go out.
+
+- **Campaigns**: the composer's live **Preview** renders your subject and body against a sample contact exactly the way the real send does (variables, conditionals, functions, then spintax). It flags **errors** (a broken `{{if}}`; these block launching) and **unresolved tokens** (any `{{...}}` left after rendering, usually a misspelled or wrongly capitalized field).
+- **Automations**: an advanced expression is **validated when you save**, so an automation can't be saved with a condition that doesn't parse. The "Reference" button next to the expression box lists every variable and function inline.

@@ -1,0 +1,111 @@
+---
+title: "Unibox"
+description: "A unified inbox across all connected mailboxes, with categories and threading."
+icon: MessagesSquare
+---
+
+The Unibox is one inbox for every mailbox you have connected to Warmbly. Instead of logging into each account separately, you read, sort, and reply to every inbound message from a single screen. Conversations are grouped into threads, you can label them with your own categories, and the whole view stays live as new mail arrives.
+
+It is laid out in three columns:
+
+- A **scope rail** on the left for picking what to look at (All, Unread, a single mailbox, a tag, a category, and more).
+- A **conversation list** in the middle, with one row per conversation.
+- A **thread view** on the right that opens the conversation you click, where you read and reply.
+
+## The unified inbox
+
+Every connected mailbox feeds the same list. By default the Unibox shows everything across all of your accounts, newest first. The scope rail on the left lets you narrow that down without leaving the page.
+
+The Inbox section of the rail has these views, each with a live count:
+
+| View | Shows |
+| --- | --- |
+| All | Every conversation across every mailbox |
+| Unread | Conversations with at least one unread message |
+| Today | Conversations with activity today |
+| This week | Conversations from the last 7 days |
+| Awaiting reply | Conversations where the other side is waiting on you |
+| Snoozed | Conversations you have snoozed for later |
+| Scheduled | Replies you have queued to send later |
+
+Below that, the rail lists each connected mailbox with its own unread count, plus your **Categories** and **Tags**. Click any of them to filter the list to just that mailbox, category, or tag. When you have a lot of mailboxes or tags, each section collapses to the first few with a `Show all` toggle and an inline filter box, so the rail never becomes a wall of scrolling.
+
+All of the counts in the rail come from the server in a single request, so they match the rows you see. The view you are looking at, and the conversation you have open, are both stored in the page URL (for example `/app/unibox/unread`), so you can refresh, bookmark, or share a link and land back in the same place.
+
+### Searching and filtering
+
+The search box at the top of the conversation list searches within whatever scope you are in. Press `/` to jump straight to it. For more precise filtering, open the filters (the settings icon next to search) to narrow by sender, mailbox, tag, category, date range, and read state.
+
+## Threading
+
+The Unibox collapses messages into conversations the way Gmail does: each row in the list is one thread, not one message. If a conversation has several back-and-forth messages, you still see a single row for it, with a small count badge showing how many messages are inside.
+
+Open a conversation and the thread view shows every message in order, with the participants and the mailbox the thread belongs to. A reply you send, or a new inbound message on the same conversation, lands in the same thread rather than creating a new row.
+
+When you have several conversations open over time, the list also groups rows under date headers (`Today`, `Yesterday`, `This week`, `Earlier`) so scanning down the list reads like a timeline.
+
+<Callout type="info" title="Keyboard navigation">
+The conversation list is keyboard-friendly. Use `j` and `k` to move between rows, `Enter` to open the focused conversation, `Esc` to close it, and `/` to focus search. A small cheat sheet sits at the bottom of the list.
+</Callout>
+
+## Categories and labels
+
+Categories are your own labels for conversations. They are the same categories you use elsewhere in Warmbly (for example on contacts), so a label like `Interested` or `Follow up` means the same thing everywhere.
+
+To label a conversation, open it and use the **Label** button in the thread header, or press `c`. A small menu opens where you can search your existing categories, tick the ones that apply, and create a new category on the spot by typing a name and choosing **Create**. Labels are assigned per conversation, and a conversation can carry more than one.
+
+Once a conversation is labeled:
+
+- Its labels show as colored chips on the row in the list and in the thread header.
+- The category appears in the rail under **Categories**, with its own count, so you can filter the whole inbox down to just that category in one click.
+
+Categories are assigned manually. Warmbly does not auto-tag conversations for you, so a label only appears when you put it there.
+
+<Callout type="info" title="Categories vs. tags">
+Categories are labels you apply to conversations inside the Unibox. Tags are labels on the mailboxes themselves (for example grouping accounts by client or domain). Both appear as filters in the rail, but they describe different things.
+</Callout>
+
+## Seen and unread
+
+A conversation is unread when any message inside it has not been seen yet. Unread conversations stand out two ways at once: a bright bar down the left edge of the row, and bolder text. This makes them easy to spot from a distance, and it keeps the **Unread** count in the rail honest.
+
+When you open a conversation, its unread messages are marked as seen automatically, and the unread count, the bolding, and the collapsed row all update to match. Read state is kept in sync with the mailbox provider, so marking something read or unread in the underlying account is reflected in the Unibox too.
+
+## Replying
+
+Open a conversation and you reply right inside the thread view. There is a **Reply** button at the bottom, and a **Forward** button next to it. You can also hover any individual message to reply to that specific message in the thread. The composer only appears once you ask for it, so a conversation you are just reading stays clean.
+
+Replies go out from the mailbox that owns the thread, keeping the conversation on the same account it started on. You can apply a saved **template** or use **Insert booking link** to drop in a scheduling link; the reply is sent as you write it.
+
+### Scheduling a send
+
+Instead of sending immediately, you can queue a reply to go out later. Scheduled sends appear inline at the bottom of the thread (with a dashed card and the time they will fire) and also in the **Scheduled** view in the rail. You can cancel a scheduled send any time before it goes out. There is a cap on how many sends you can have queued at once; the rail shows a small usage meter as you approach it.
+
+### Snoozing
+
+Snoozing clears a conversation out of your inbox until a time you pick, then brings it back. Use the **Snooze** button in the thread header for quick presets (in 1 hour, tomorrow at 9:00, next week, and so on) or pick a custom date and time. Snoozed conversations live in the **Snoozed** view until they return. You can snooze up to 90 days out, and **Un-snooze now** brings a conversation back immediately.
+
+## How it stays realtime
+
+The Unibox is live. You do not need to refresh it.
+
+- When a new message arrives, it appears in the list, the matching thread updates if you have it open, and the unread count goes up on its own.
+- When read state changes, or a message is updated, the affected conversation and the counts refresh.
+- Replies, scheduled sends, snoozes, and label changes all update the relevant views right away.
+
+This keeps the rail counts, the conversation list, the open thread, and the per-mailbox and per-category counts all consistent with each other in real time.
+
+<Callout type="info" title="Keeping inboxes healthy">
+Replying promptly and keeping conversations organized supports sender reputation, which is what warmup and good deliverability practices protect. See the [Deliverability](/guides/deliverability) guide for how Warmbly tracks the health of each mailbox.
+</Callout>
+
+## Related
+
+<Cards>
+  <Card title="Meetings" href="/guides/meetings">
+    Connect Calendly or Cal.com and drop booking links into your replies.
+  </Card>
+  <Card title="Deliverability" href="/guides/deliverability">
+    How mailbox health and sending reputation are tracked.
+  </Card>
+</Cards>

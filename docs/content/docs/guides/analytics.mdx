@@ -1,0 +1,144 @@
+---
+title: "Analytics"
+description: "Campaign and account performance metrics."
+icon: ChartLine
+---
+
+Analytics is how Warmbly tells you whether your sending is working. It rolls up every send, open, click, reply, bounce, and complaint into rates you can act on, broken down by workspace, by campaign, and by individual mailbox.
+
+This guide covers the metrics Warmbly tracks, where each breakdown lives, and how A/B analysis picks a winner. For the bounce, complaint, and spam-placement side of reporting (health bands and the thresholds Warmbly acts on), see the [Deliverability](/guides/deliverability) guide.
+
+## The metrics Warmbly tracks
+
+Every campaign send produces a set of events. Warmbly counts them and turns the counts into rates:
+
+| Metric | What it counts | Rate it feeds |
+| --- | --- | --- |
+| Sent | Emails actually sent | the denominator for every rate below |
+| Opens | Recipients who opened the email | Open rate |
+| Clicks | Recipients who clicked a tracked link | Click rate |
+| Replies | Human replies received | Reply rate |
+| Bounces | Emails that bounced (hard or soft) | Bounce rate |
+| Complaints | Recipients who marked the mail as spam | Complaint rate |
+
+A few things worth knowing about how the counts behave:
+
+- **Open and click tracking** only work when the campaign has open tracking or link tracking turned on, and when the sender mailboxes have a tracking domain configured. With tracking off, opens and clicks stay at zero even though sends and replies are still counted. See [Deliverability](/guides/deliverability) for the pre-send checks that flag missing tracking domains.
+- **Replies are human replies.** An out-of-office auto-reply or an autoresponder does not count as a reply and does not stamp the contact as having replied. This keeps reply rate honest and stops an auto-reply from silently tripping a sequence's stop-on-reply rule.
+- **Rates are percentages of sent.** Open rate, click rate, reply rate, and bounce rate are all computed against the number of emails sent in the selected window.
+
+## The workspace dashboard
+
+The Analytics page (`Analytics` in the dashboard) is your workspace-wide overview. It updates live as new events come in, so you do not need to refresh. You can scope the whole page to a time window with the range tabs: `7d`, `30d`, or `90d`.
+
+### Headline rates
+
+Four headline numbers sit at the top, all scoped to the selected window:
+
+- **Total sent**: the raw number of emails sent.
+- **Open rate**: opens as a percentage of sent.
+- **Reply rate**: replies as a percentage, including positive replies.
+- **Bounce rate**: bounces (hard and soft) as a percentage.
+
+### Performance chart
+
+The "Email performance" chart plots one metric per day across the window. Switch which metric is drawn between **Sent**, **Opens**, **Clicks**, and **Replies**. This is the fastest way to spot a spike or a drop on a specific day, which usually points back to one campaign or one imported list.
+
+### Breakdown and account health
+
+A side panel lists the raw window totals behind the rates: Sent, Opens, Clicks, Replies, and Bounces.
+
+Below that, **Account health** summarizes your mailboxes into three counts: Healthy, At risk, and Issues. This is a quick read on whether any senders need attention before you push more volume. The full per-mailbox detail lives on the [Deliverability](/guides/deliverability) dashboard.
+
+### Top campaigns
+
+The **Top campaigns** list ranks your best-performing campaigns in the window. Each row shows emails sent, open rate, and reply rate, with a status dot (active, paused, or other). Clicking a row opens that campaign.
+
+### Recent activity
+
+The **Recent activity** feed streams individual events as they happen: who an email was sent to, who opened it, who clicked, who replied, and what bounced. It is the live pulse of your sending.
+
+## Per-campaign breakdown
+
+Open any campaign to see its own analytics, scoped to that campaign alone. The campaign summary reports:
+
+- total contacts, emails sent, and emails still pending
+- unique opens, unique clicks, replies, bounces, and unsubscribes
+- open rate, click rate, reply rate, and bounce rate
+
+### Per-sequence step stats
+
+A campaign's analytics also break performance down by sequence step. For each step you see emails sent, opens, clicks, replies, and bounces. This tells you which step in a multi-touch sequence is actually pulling the replies, and which follow-ups are dead weight. For how sequence steps are built, see the [Sequences](/guides/sequences) guide.
+
+### Daily and hourly trends
+
+Per-campaign daily stats (sent, opens, clicks, replies per day) drive the campaign trend chart. Hourly stats are also available, which is useful for seeing when in the day your sends land and get engagement.
+
+### Comparing campaigns
+
+Warmbly can compare campaigns side by side so you can see which one is performing better on the same metrics, rather than eyeballing two separate pages.
+
+## Per-mailbox breakdown
+
+Every mailbox reports its own status and usage so you can tell a healthy sender from a struggling one:
+
+- **Health**: a status of healthy, warning, or error, plus a score and any specific issues.
+- **Daily usage**: how many campaign emails the mailbox has sent today against its `campaign_limit`, and its warmup sent and warmup limit. The default cold campaign cap is `50` emails per mailbox per day.
+- **Warmup status**: whether warmup is on, its current volume, and its target and max volume.
+- **Warmup health**: the mailbox's warmup-pool reputation: its state (healthy, watch, throttled, quarantined, or blocked), spam score, and any block expiry.
+
+Use this to find the one mailbox dragging down a campaign's bounce rate, rather than blaming the whole campaign. The thresholds that move a mailbox between health states are documented in [Deliverability](/guides/deliverability).
+
+## A/B analysis
+
+A/B testing lets you run more than one version of a message and let the data pick the winner. You create variants on a campaign (different subject lines, bodies, or both), and Warmbly splits traffic across the active variants. Variants can be scoped to a single sequence step or to the whole campaign.
+
+A/B testing is on by default in a workspace's outreach settings, but a campaign only runs an experiment when it has at least two active variants configured.
+
+### How a contact gets assigned a variant
+
+- **Step-scoped variants** are assigned deterministically per contact and step. The same contact always sees the same variant for that step, so the test stays consistent across retries.
+- **Campaign-level variants** assign a contact to one variant on first send (a weighted random draw) and keep them on it for the rest of the campaign.
+
+Each variant carries a `weight` that controls how much traffic it gets. If you do not set a weight, it defaults to an even split.
+
+### Variant stats
+
+For each variant, Warmbly tracks the same core metrics as a campaign: total sent, opened, clicked, replied, and bounced, along with the open rate, click rate, reply rate, and bounce rate computed from them.
+
+### Picking the winner
+
+The A/B analysis view names a winner based on a winning rule. The default rule is **reply rate**, and you can also rank by **open rate** or **click rate**. Warmbly scores every variant on the chosen rule and the top scorer is the candidate winner.
+
+Warmbly will not call a winner on a tiny sample. It requires a minimum sample size before declaring one (the default is `30` sends for the leading variant) and reports a confidence level:
+
+| Confidence | When you see it |
+| --- | --- |
+| `none` | No variant data yet |
+| `low` | The leading variant is below the minimum sample size |
+| `medium` | The leading variant has reached the minimum sample |
+| `high` | The leading variant has at least three times the minimum sample |
+
+<Callout type="info" title="Let the test run before you trust it">
+A variant can look like the winner after a handful of sends and then flip once more data arrives. Wait for `medium` or `high` confidence before promoting a winner. The minimum sample size is configurable in your outreach settings if `30` is not right for your volume.
+</Callout>
+
+## How to read your numbers
+
+A practical loop for using analytics:
+
+1. Start on the workspace dashboard. Check the four headline rates for the window you care about.
+2. If a rate looks off, switch the performance chart to that metric and find the day it moved. That usually points at one campaign or one list.
+3. Open the campaign behind it and read the per-step stats to see which touch is responsible.
+4. If the problem is bounces or complaints, drop into the per-mailbox breakdown and the [Deliverability](/guides/deliverability) dashboard to find the specific sender at fault.
+5. For subject and copy decisions, lean on A/B analysis rather than guessing, and wait for real confidence before locking in a winner.
+
+The habit that matters most: a clean reply rate with a low bounce and complaint rate beats a big open-rate screenshot every time.
+
+## Related guides
+
+<Cards>
+  <Card title="Deliverability" href="/guides/deliverability" />
+  <Card title="Sequences" href="/guides/sequences" />
+  <Card title="Personalization & expressions" href="/guides/expressions" />
+</Cards>

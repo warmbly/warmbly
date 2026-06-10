@@ -1,0 +1,23 @@
+{
+  "title": "Guides",
+  "description": "Using the Warmbly product",
+  "icon": "BookOpen",
+  "root": true,
+  "pages": [
+    "mailboxes",
+    "warmup",
+    "campaigns",
+    "sequences",
+    "expressions",
+    "deliverability",
+    "contacts-crm",
+    "unibox",
+    "automations",
+    "integrations",
+    "meetings",
+    "analytics",
+    "notifications",
+    "security",
+    "team-roles"
+  ]
+}

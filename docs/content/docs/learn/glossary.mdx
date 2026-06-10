@@ -1,0 +1,123 @@
+---
+title: Glossary
+description: Plain-English definitions of cold email and deliverability terms, from SPF and DKIM to inbox placement, warmup, and complaint rate.
+icon: BookA
+---
+
+## A
+
+### ARF (Abuse Reporting Format)
+
+The standardised format mailbox providers use to report spam complaints back to senders. Warmbly ingests ARF reports where available.
+
+### Alignment
+
+The DMARC requirement that the authenticated domain (from SPF or DKIM) match the visible "From:" domain. Relaxed alignment matches at the organisational level; strict requires exact equality.
+
+## B
+
+### Bounce
+
+A failed delivery. Hard bounces (invalid mailbox, blocked domain) suppress immediately. Soft bounces (mailbox full, temporary outage) are retried with backoff and suppressed if persistent.
+
+### BIMI
+
+Brand Indicators for Message Identification. Lets you publish a verified logo that some clients display next to your messages. Requires DMARC `p=quarantine` or stricter, plus a VMC certificate for full display.
+
+## C
+
+### Cold email
+
+Unsolicited mail to a recipient with whom you have no prior relationship. Distinct from spam by intent: cold mail is targeted, relevant, and gives the recipient a real way to say no.
+
+### Complaint rate
+
+Percentage of delivered messages marked as spam by recipients. Google's bulk-sender threshold is 0.10%. Above 0.30% is in the danger zone.
+
+## D
+
+### DKIM
+
+Cryptographic signature that proves a message was authorised by the domain's key holder and not modified in transit. See [SPF, DKIM and DMARC](/learn/spf-dkim-dmarc).
+
+### DMARC
+
+The policy that ties SPF and DKIM to the visible From: domain and tells receivers what to do on failure. See [SPF, DKIM and DMARC](/learn/spf-dkim-dmarc).
+
+## F
+
+### FBL (Feedback Loop)
+
+A direct channel from a mailbox provider that forwards spam-complaint events to the sender so they can suppress the recipient.
+
+## H
+
+### HMAC signature
+
+The cryptographic signature on a webhook delivery that lets you verify the call really came from Warmbly and wasn't tampered with.
+
+## I
+
+### Inbox placement
+
+Share of accepted messages that land in the recipient's primary inbox (not spam, not promotions). The metric that actually matters. See [Inbox placement](/learn/inbox-placement).
+
+### IP warmup
+
+Gradually increasing send volume from a new IP so receivers learn its behaviour. Required for dedicated IPs; not required for shared IPs you're sending through.
+
+## M
+
+### MTA (Mail Transfer Agent)
+
+The server that sends and routes mail. In cold-email tools, the "sending engine" is effectively the MTA.
+
+## O
+
+### OOO (Out of Office)
+
+Auto-reply indicating the recipient is unavailable. Warmbly classifies OOO replies and suppresses them from sequence engagement metrics.
+
+## P
+
+### Pool (warmup)
+
+A group of warmed mailboxes that send warmup mail to one another. Quality of the pool matters more than size. See [Warmup pools](/learn/warmup-pools).
+
+### PTR (Reverse DNS)
+
+The DNS record that resolves an IP back to a hostname. Mailbox providers expect outbound mail to come from IPs with matching PTRs.
+
+## Q
+
+### Quarantine
+
+The state of a mailbox temporarily removed from the warmup pool and cold sending. Triggered by reputation warning thresholds.
+
+## R
+
+### Reply detection
+
+Identifying a recipient's reply to a sent message, even when the reply chain has been forwarded or quoted text changes.
+
+## S
+
+### SPF
+
+DNS record listing the servers and services authorised to send mail for a domain. See [SPF, DKIM and DMARC](/learn/spf-dkim-dmarc).
+
+### Suppression
+
+Excluding a recipient from future sends. Triggered by hard bounce, complaint, unsubscribe, or manual addition.
+
+## T
+
+### TLS
+
+Transport-layer encryption used between mail servers (and between Warmbly and your mailbox provider).
+
+## U
+
+### Unified inbox
+
+A single interface that shows replies across every connected mailbox in a workspace. See the [Unibox guide](/guides/unibox).

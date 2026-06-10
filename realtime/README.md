@@ -4,17 +4,7 @@ WebSocket gateway for real-time events in Warmbly. Built with Phoenix Channels a
 
 ## Architecture
 
-```
-┌─────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│  Go Backend │────>│  Google Pub/Sub │────>│ Elixir Realtime │
-└─────────────┘     └─────────────────┘     └────────┬────────┘
-                                                     │
-                                                     │ WebSocket
-                                                     v
-                                            ┌─────────────────┐
-                                            │  React Frontend │
-                                            └─────────────────┘
-```
+The Go backend publishes events to Google Pub/Sub. The Elixir realtime service consumes them and fans each event out to the React frontend over Phoenix Channel WebSockets.
 
 ## Channels
 

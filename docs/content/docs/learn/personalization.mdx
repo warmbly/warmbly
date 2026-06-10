@@ -1,0 +1,169 @@
+---
+title: Personalization that works
+description: Merge variables, conditionals, fallbacks, functions, and spintax so one cold-email template reads naturally for every recipient.
+icon: PenLine
+---
+
+Every subject line and email body in Warmbly supports merge variables and simple conditionals. They're rendered separately for each recipient when the email actually sends, so a single template can read naturally for your whole list.
+
+<Callout type="info" title="Full syntax reference">
+  This page covers the ideas and how to combine them. The complete syntax reference (every field, helper, and rule) lives in the [Expressions guide](/guides/expressions).
+</Callout>
+
+## Variables
+
+Insert a variable and it's replaced with that contact's detail on send. The standard contact fields are `{{.FirstName}}`, `{{.LastName}}`, `{{.Email}}`, `{{.Company}}`, and `{{.Phone}}`:
+
+```
+Hi {{.FirstName}},
+
+Thanks for the work you're doing at {{.Company}}.
+```
+
+If a contact is missing a value, it renders as nothing (blank). Write so the sentence still reads, or guard it with a conditional (below).
+
+## Custom fields
+
+Any custom field on your contacts works too. Reference it by its exact name. For a field called `role`:
+
+```
+You're the {{.role}} at {{.Company}}, right?
+```
+
+Fields whose name has spaces or punctuation (for example `Job Title`) work the same way with the dot. Write them exactly as named, and they work everywhere, including inside conditionals:
+
+```
+{{if .Job Title}}Role: {{.Job Title}}{{end}}
+```
+
+The equivalent `index` form (`{{index . "Job Title"}}`) also works if you prefer it. Both spellings are covered in the [Expressions guide](/guides/expressions).
+
+The name must match a field that exists on the contact; if it doesn't, the value is blank. So pair custom fields with a conditional whenever the surrounding text depends on them.
+
+## Conditionals (if / else)
+
+Wrap text so it only appears when a field has a value, or matches a specific value.
+
+Show text only when a field is set:
+
+```
+Hi {{.FirstName}},{{if .Company}} I saw {{.Company}} is hiring.{{end}}
+```
+
+That renders as "Hi Alex, I saw Acme is hiring." when Company is set, and "Hi Alex," when it's blank.
+
+Provide a fallback with `else`:
+
+```
+{{if .FirstName}}Hi {{.FirstName}}{{else}}Hi there{{end}},
+```
+
+Match a specific value with `eq`:
+
+```
+{{if eq .city "Berlin"}}I'll be in Berlin next week.{{else}}Let's set up a call.{{end}}
+```
+
+`eq` compares exact text and is case-sensitive: `eq .Company "acme"` will not match "Acme".
+
+You can chain options with `else if` and combine checks with `and` / `or`:
+
+```
+{{if eq .plan "enterprise"}}your team's size{{else if eq .plan "pro"}}your growing team{{else}}teams like yours{{end}}
+```
+
+```
+{{if and (.FirstName) (eq .Company "Acme")}}Hi {{.FirstName}} at Acme{{end}}
+```
+
+A missing or empty field counts as "not set" (false). The full list of supported keywords and operators is in the [Expressions guide](/guides/expressions#conditionals).
+
+## A complete, complex template
+
+Here's everything together: one template whose subject, greeting, opening line (by role), city aside, and call to action (by plan) all adapt per recipient. It uses three custom fields (`role`, `city`, `plan`) alongside the standard ones:
+
+```
+Subject: {{if .Company}}quick idea for {{.Company}}{{else}}a quick idea{{end}}
+
+Hi {{if .FirstName}}{{.FirstName}}{{else}}there{{end}},
+
+{{if eq .role "Founder"}}As the founder, you probably feel {{else if eq .role "Marketing"}}On the marketing side, you've likely noticed {{else}}You've probably run into {{end}}the cost of {{if .Company}}{{.Company}}'s{{else}}your{{end}} cold email landing in spam instead of the inbox.
+
+{{if and (.city) (eq .city "Berlin")}}I'm in Berlin next week and happy to grab a coffee. {{end}}We get teams to the inbox with gradual warmup and per-mailbox limits, no gimmicks.
+
+{{if eq .plan "enterprise"}}Given your volume, worth a 15-minute call?{{else if eq .plan "pro"}}Want the 2-line version of how it works?{{else}}Open to a quick look, or not a priority right now?{{end}}
+
+Best,
+Sam
+```
+
+Build these up gradually and lean on the editor's Preview tab. It evaluates your conditionals against sample data so you can see each branch before you send.
+
+## Fallbacks
+
+When a field might be blank, give it a fallback with `default` instead of a full `{{if}}` block. The value goes first, the fallback second:
+
+```
+Hi {{.FirstName | default "there"}},
+```
+
+That renders as "Hi Alex," when the first name is set and "Hi there," when it's blank. This is the cleanest fix for the classic "Hi ," problem. Use `| default "…"` anywhere a field could be empty.
+
+## Functions
+
+A handful of helpers let you reshape text and work with numbers. They go inside any `{{ }}` or condition:
+
+- Text: `upper`, `lower`, `title` (change case), `trim`, `contains`, `hasPrefix`, `hasSuffix`
+- Numbers: `add`, `sub`, `mul`, `div`, `mod`, `num`, and the coercing comparisons `gtf`, `ltf`, `gef`, `lef`, which treat a value as a number even if it arrives as text
+
+```
+{{upper .Company}} team - {{title .role}}
+```
+
+```
+{{if gtf .score 80}}You're in our top tier.{{end}}
+```
+
+Tip: prefer `gtf`/`ltf` over the plain `gt`/`lt` whenever a value might be text. They convert first, so you never hit a type error. See the [Expressions guide](/guides/expressions#functions) for the complete helper list and details.
+
+## Spintax: vary your wording
+
+Wrap a few options in braces separated by `|` and Warmbly picks one at random for each recipient. Varying your phrasing keeps a large send from looking like one identical blast, which helps [deliverability](/learn/deliverability).
+
+```
+{Hi|Hey|Hello} {{.FirstName | default "there"}},
+
+{Hope your week is going well|Hope you're doing well} over at {{.Company}}.
+```
+
+Only groups that contain a `|` are touched, so ordinary braces (links, snippets, styling) are left exactly as you wrote them. Spintax is expanded after your variables render, so you can mix the two freely.
+
+## Automation conditions: advanced expressions
+
+Automation **IF** steps have an **Advanced expression** mode for logic the dropdowns can't express. Write a condition that passes the "yes" branch whenever it's true, either in the bare form (`gt .confidence 0.8`) or combined with `and` / `or` / `not`:
+
+```
+and (gtf .confidence 0.8) (eq .intent "positive")
+```
+
+Reference event fields with a leading dot (`.confidence`, `.intent`); the variables available depend on the trigger. Action values (a Slack message, webhook body, or CRM field) render the same way conditions do, against the live trigger data: numbers stay numbers, so plain `gt` works, and you have the full template (conditionals, nested fields, and `{{range}}` all work). Reach for `gtf` only when a value might arrive as text, like a contact custom field:
+
+```
+{{if gt .confidence 0.8}}hot lead{{else}}follow up{{end}}
+```
+
+The "Reference" button next to the expression box lists every variable and function inline, and the [Expressions guide](/guides/expressions#automation-advanced-expressions) covers the details.
+
+## If something goes wrong
+
+Warmbly guards against broken templates at three points:
+
+- While editing, an unbalanced conditional (an `{{if}}` with no `{{end}}`) shows an inline warning.
+- A campaign won't start if any step's template is malformed. You get an error naming the step, so recipients never receive raw `{{if ...}}` text.
+- If a broken template ever reaches sending, it falls back to plain variable substitution rather than failing the send.
+
+Always check Preview and send yourself a test email before launching.
+
+## Quick reference
+
+For the condensed cheat sheet of every variable form, conditional, helper, and spintax rule, see the [Expressions guide](/guides/expressions#quick-reference).

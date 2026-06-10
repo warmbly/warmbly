@@ -1,0 +1,181 @@
+---
+title: Mailboxes
+description: "Connect sender accounts, providers, and how they are assigned to workers."
+icon: Inbox
+---
+
+A mailbox is a sender account you connect to Warmbly. Every warmup message and every campaign email goes out through a mailbox you own, so connecting and configuring them well is the foundation of safe sending.
+
+This guide covers how to connect accounts, which providers are supported, the per-mailbox sending controls, how Warmbly assigns each mailbox to a sending worker, and how to read mailbox health.
+
+## Connecting an email account
+
+Open the **Accounts** page in the dashboard and choose **Add account**. Warmbly supports two connection methods.
+
+### OAuth (Gmail and Outlook)
+
+For Google (Gmail / Google Workspace) and Microsoft (Outlook / Microsoft 365), Warmbly uses OAuth. You authorize Warmbly directly with your provider, and we receive a token instead of your password.
+
+The flow is:
+
+1. Pick the provider. The dashboard starts an OAuth round trip and sends you to your provider's consent screen.
+2. Sign in and grant access.
+3. Your provider redirects back to Warmbly, which finishes the connection and creates the mailbox.
+
+OAuth is the recommended method when it is available. It survives password changes, does not require you to manage app passwords or server settings, and keeps tokens encrypted at rest.
+
+<Callout type="info" title="Tokens are encrypted">
+  Warmbly seals your OAuth tokens and any stored credentials with envelope encryption before they touch storage. Plaintext secrets are never written to disk.
+</Callout>
+
+### IMAP / SMTP (any other provider)
+
+For providers without OAuth, or for self-hosted and custom mail servers, connect over IMAP and SMTP. You supply server settings for both directions:
+
+- **SMTP** for sending: host, port, username, and password.
+- **IMAP** for syncing inbound mail: host, port, username, and password.
+
+A typical entry looks like this:
+
+```text
+SMTP   host: smtp.yourprovider.com   port: 465   username: you@yourdomain.com
+IMAP   host: imap.yourprovider.com   port: 993   username: you@yourdomain.com
+```
+
+If your provider requires an app password (common when two-factor authentication is on), generate one in your provider's security settings and use it here instead of your normal login password.
+
+<Callout type="warn" title="Authentication runs on connect">
+  Warmbly validates the credentials and the SMTP/IMAP connection when you add the account. If the settings are wrong, the connection fails immediately rather than silently failing later when you try to send.
+</Callout>
+
+### Provider support at a glance
+
+| Provider | Method | Notes |
+|----------|--------|-------|
+| Gmail / Google Workspace | OAuth (`gmail`) | Recommended. No password stored. |
+| Outlook / Microsoft 365 | OAuth (`outlook`) | Recommended. No password stored. |
+| Any IMAP/SMTP server | IMAP + SMTP (`smtp_imap`) | Use for custom domains, self-hosted, or providers without OAuth. |
+
+## How many mailboxes you can connect
+
+Connecting many mailboxes is how you scale cold outreach safely, because volume is spread across accounts and sending identities rather than concentrated in one.
+
+There are two limits to know about:
+
+- **Total mailboxes per workspace:** the default ceiling is `200` connected mailboxes. Larger allowances are granted per workspace through a limit-increase request so the change is reviewed and recorded.
+- **New mailboxes per day:** you can connect up to `5` new mailboxes per workspace per day. This is an abuse guardrail, not a product cap, and it resets daily.
+
+If you need to onboard a large batch at once, spread it across days or request a higher allowance.
+
+## Per-mailbox sending controls
+
+Each mailbox carries its own sending budget. You set these on the mailbox's **Settings** tab in the detail drawer. They apply to new sends, so changes take effect on the next scheduled email rather than retroactively.
+
+### Daily campaign cap
+
+The maximum number of cold-campaign emails this mailbox will send per day.
+
+- Default: `50` emails per day.
+- Allowed range when you edit it: `0` to `100`.
+
+The default of `50` is deliberately conservative. Raise it only for a mailbox with proven reputation and low complaint and bounce rates. A normal safe band for most cold mailboxes is `30` to `50` per day, and a fresh mailbox should start lower, around `10` to `20` per day, and ramp up slowly.
+
+<Callout type="warn" title="Do not jump a new mailbox to a high cap">
+  A brand-new or recently connected mailbox has no reputation yet. Start low and increase gradually. Sudden high volume from a cold inbox is one of the fastest ways to land in spam.
+</Callout>
+
+### Minimum gap between sends
+
+The smallest delay Warmbly will leave between two sends from the same mailbox. Spacing sends out makes traffic look natural and avoids bursty patterns that trip provider filters.
+
+- Default: `600` seconds, which is `10` minutes between sends.
+
+The scheduler treats this value as a hard floor and adds jitter on top, so real gaps are usually a bit larger than the minimum. The mailbox detail view shows this control alongside the daily cap.
+
+### Other mailbox settings
+
+The Settings tab also lets you configure:
+
+- **Display name** shown on outgoing mail.
+- **Reply-to** address. Leave it empty to use the mailbox address itself.
+- **Signature** in plain text and HTML, optionally applied to replies too.
+- **Tags** for grouping and filtering mailboxes.
+- **Custom tracking domain.** Track opens and clicks through your own subdomain instead of the shared host, which helps deliverability. Warmbly gives you a `CNAME` record to add at your DNS provider and verifies it on save. See [Deliverability](/guides/deliverability) for why this matters.
+
+## Warmup
+
+New mailboxes should warm up before they carry campaign volume. Warmup sends low, gradually increasing traffic to build sender reputation. The defaults per mailbox are:
+
+- Starting volume: `10` warmup emails per day.
+- Ceiling: `40` warmup emails per day.
+- Ramp: `+1` email per day until the ceiling is reached.
+
+Warmup runs from the **Warmup** tab on each mailbox, where you can start, pause, resume, or stop it. Pausing keeps your ramp progress; stopping resets it, so a restart begins again at the base volume. You can also start or pause warmup for several mailboxes at once from the selection bar on the Accounts page.
+
+<Callout type="info" title="Warmup is a paid feature">
+  Warmup is available on paid plans. The mailbox model still supports separate free and premium warmup pools, but access to warmup itself is gated to paid workspaces today.
+</Callout>
+
+Keep warmup running even after campaigns begin rather than switching it off the moment a mailbox looks ready. Steady warmup traffic helps maintain reputation over time.
+
+## How mailboxes are assigned to workers
+
+You do not pick a worker. When you connect a mailbox, Warmbly's control plane assigns it to a sending worker automatically, and it can move mailboxes between workers later as your plan or the mailbox's health changes.
+
+Workers are the machines that actually send and sync mail. Spreading mailboxes across many workers spreads sending across different network identities and IP addresses, which is healthier than routing everything through one runtime.
+
+### What decides the assignment
+
+Assignment depends on your subscription and the mailbox's risk band:
+
+- **Free / trial workspaces** are placed on shared **free-tier** workers.
+- **Paid workspaces** are placed on shared **premium** workers.
+- **Plans that include dedicated workers** get a dedicated worker bound to the workspace, and the mailbox is assigned there. If no dedicated worker is free yet, Warmbly allocates one on demand, and falls back to shared premium placement if it cannot, then retries later.
+
+Within a tier, Warmbly picks the least-loaded healthy worker that still has capacity, rather than packing mailboxes onto whichever worker is first. Each mailbox contributes a load weight, so a worker's planned volume tracks the sum of the budgets of the mailboxes it holds.
+
+### Risk segregation
+
+Workers are also separated by risk. A healthy mailbox lands on a clean worker alongside other trusted inboxes. A mailbox that has degraded into a risky or quarantined state is never placed on a clean worker next to trusted ones. Warmbly keeps that traffic on a matching worker pool instead, so one struggling mailbox cannot drag down the reputation other mailboxes depend on.
+
+### When assignments change
+
+Mailboxes are migrated automatically when the situation changes, for example:
+
+- A trial workspace upgrades to a paid plan, so its mailboxes move from free to premium workers.
+- A paid subscription ends, so mailboxes move back to free-tier workers.
+- A workspace moves to or from a dedicated worker.
+- A mailbox's risk band changes and it needs to move to a different pool.
+
+You do not need to take action for these moves; the platform handles them.
+
+## Mailbox health
+
+Warmbly continuously evaluates each mailbox and surfaces a health signal on the Accounts list and in the mailbox detail view. The list groups mailboxes into:
+
+- **Healthy:** sending normally.
+- **Warming:** ramping up through warmup.
+- **Needs attention:** paused, failing, or otherwise not sending.
+
+Each row also shows a live health state with a score. If a mailbox's health drops between refreshes, the dashboard notifies you proactively rather than waiting for you to notice.
+
+### Authentication check
+
+The mailbox detail drawer runs a live check of your sending domain's `SPF`, `DKIM`, and `DMARC` records and tells you whether they are aligned. Aligned authentication is required by major providers for bulk and cold mail, so confirm this is green before you send. See [Deliverability](/guides/deliverability) for the full picture.
+
+### Health states and warmup pools
+
+Under the hood, mailbox health moves through states such as `healthy`, `watch`, `throttled`, `quarantined`, and `blocked`. These feed warmup pool selection: a mailbox that is not healthy can be lowered in volume, removed from the shared warmup pool, or blocked from it entirely, and pool selection only picks healthy mailboxes as warmup partners.
+
+If a mailbox is blocked from the warmup pool, the Warmup tab shows the reason and, where applicable, an appeal option. A blocked mailbox is not restored just because time passes; it has to requalify on a fresh probation sample with healthy authentication and low complaint, bounce, and spam-placement signals before it re-enters at low volume.
+
+<Callout type="info" title="Health is about protecting the pool">
+  These controls act earlier than the point where mailbox providers start penalizing senders. A low complaint rate and low spam-folder placement matter more than chasing maximum throughput.
+</Callout>
+
+## Related guides
+
+<Cards>
+  <Card title="Deliverability" href="/guides/deliverability" />
+  <Card title="Personalization & Expressions" href="/guides/expressions" />
+</Cards>

@@ -1,0 +1,13 @@
+{
+  "title": "API Reference",
+  "description": "Build on the Warmbly API",
+  "icon": "Braces",
+  "root": true,
+  "pages": [
+    "index",
+    "authentication",
+    "permissions",
+    "endpoints",
+    "error-codes"
+  ]
+}

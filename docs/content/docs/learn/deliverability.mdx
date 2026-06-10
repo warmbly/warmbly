@@ -1,0 +1,154 @@
+---
+title: Deliverability handbook
+description: A full mental model for getting cold mail into the inbox, and keeping it there.
+icon: ShieldCheck
+---
+
+A full mental model for getting cold mail into the inbox, and keeping it there: authentication, warmup, volume, reputation.
+
+## What deliverability actually means
+
+A message goes through three gates after you hand it to a mailbox provider. **Acceptance**: the SMTP server returns 250 and writes a queue ID. **Filtering**: spam scoring decides whether to deliver, defer, or reject. **Placement**: the surviving message lands in Inbox, Promotions, Spam, or a user-defined folder.
+
+| Gate | Decided by | What it checks |
+| --- | --- | --- |
+| Acceptance | SMTP 250 | RFC validity, rate limit, basic IP block |
+| Filtering | Spam score | Auth alignment, content scan, reputation lookup |
+| Placement | User-visible | Inbox, Promotions, Spam, or a user rule |
+
+"Delivery rate" almost always reports gate one only. A Gmail or Microsoft endpoint will accept 99% of validly-formed mail and then quietly route it to Spam if reputation is poor. The SMTP transaction never tells you that happened. Postfix logs the 250. Your tool shows a green check.
+
+The only way to know placement after the fact is to probe it: warmup pool partners reporting where mail landed (`X-Warmbly-Seed: probe`), Gmail Postmaster Tools showing the IP and domain reputation buckets, or a seed-list service like GlockApps/MailGenius. None of those are inferable from the SMTP response.
+
+<Callout type="info" title="Working definition">
+**Deliverability = P(placement = Inbox | acceptance).** Everything in this handbook moves that conditional probability.
+</Callout>
+
+## The signals that decide placement
+
+### Authentication alignment
+
+DMARC asks: does the domain in the visible From header match either the SPF Return-Path domain OR the DKIM `d=` tag? Strict alignment requires an exact match; relaxed (the default) allows organisational-domain match. A DMARC `p=none` with passing alignment is treated very differently from `p=reject` with passing alignment. Both are different from a misalignment that DMARC allows through but Gmail still penalises. See the [SPF/DKIM/DMARC guide](/learn/spf-dkim-dmarc).
+
+### Sender reputation, three vectors
+
+Providers score three independent reputations: sending IP, From domain, and increasingly, the `d=` signing domain. Gmail Postmaster Tools surfaces them as four buckets each: *High*, *Medium*, *Low*, *Bad*. A clean domain on a poisoned shared IP can still drop to Spam; a clean IP on a poisoned domain can also. The unbalanced case (clean domain, dirty IP) is the most common silent failure for cold-mail tools that pool customers onto shared infrastructure.
+
+### Engagement signals, weighted
+
+Not all engagement weighs equally. A reply within 24 hours is the strongest positive signal a recipient can give. Moving a message from Spam to Inbox is second. Adding the sender to contacts is third. Reading and not replying is weakly positive. Mark-as-spam is the worst negative; delete-without-reading is mildly negative. Bulk-archive of unread mail at the message level is read by Gmail as "this is noise", and that pattern propagates across the sender for that recipient.
+
+### Content fingerprints
+
+Filters score plain-text mail more leniently than HTML for cold first-touch. Specific patterns spike the score: link domains different from the sending domain, URL shorteners (bit.ly, t.co), TLDs in `.top` / `.click` / `.zip`, image-to-text ratios above 60%, fonts other than system stacks, hidden Unicode, and unsubscribe footers added by sending tools but absent from the visible body. The fastest way to drop a healthy mailbox into Spam is to change its content fingerprint suddenly: a sender that has only ever sent plain text and then drops in a Mailchimp-style template gets re-scored as a different sender.
+
+### Volume cadence as anomaly detection
+
+Gmail and Microsoft both model "normal" per mailbox: typical hourly send rate, typical daily volume, typical recipient overlap. Deviations more than 2-3 standard deviations trip volume-anomaly heuristics. The common failure is a mailbox that ramped warmup nicely to 40/day and then suddenly sends 200 cold sends in one hour: the absolute number is small, but the rate-of-change is huge, and that is what gets flagged.
+
+| Signal | Weight |
+| --- | --- |
+| Authentication | Mandatory |
+| Sender reputation | High |
+| Recipient engagement | High |
+| Content | Medium |
+| Volume and pattern | High |
+
+Weights are directional, not absolute. Providers do not publish formulas.
+
+## The thresholds you must respect
+
+The numbers below are not estimates. They come from each provider's own published guidance: Google's "Email sender guidelines" (the Feb 2024 bulk-sender update), Amazon SES's Account-Level Reputation documentation, and Microsoft's Exchange Online sending policy.
+
+| Provider and metric | Warning | Killswitch |
+| --- | --- | --- |
+| Google, spam rate | 0.10% | 0.30% |
+| Amazon SES, complaints | 0.10% | 0.50% |
+| Amazon SES, bounces | 5.0% | 10% |
+| Microsoft Exchange Online | discretionary | bulk = specialist |
+
+The complaint rate that matters for Gmail is the *user-reported* rate that surfaces in Postmaster Tools, not the ARF feedback-loop rate. ARF complaints from Yahoo/Comcast/etc. arrive as MIME message/feedback-report parts and are a separate, more reliable signal. Both should stay below 0.1%.
+
+SES bounces split into hard and soft. Hard bounces (5.x.x) count immediately; soft bounces (4.x.x) only count if persistent. SES specifically excludes soft bounces from rate calculations after the first 48 hours.
+
+Microsoft does not publish a complaint threshold; their position is that Exchange Online is not a bulk-commercial-email service. The Exchange Online Protection limits (e.g. 30 messages/min per connection, 10,000 recipients/day) apply to the sending tenant, not to the bulk-mail use case.
+
+## Why mailbox-first beats worker-first
+
+Reputation does not live at the worker. It lives at the IP, the domain, and the From mailbox. A worker that holds 200 mailboxes is 200 reputations, not one. Reasoning about a worker as a unit (`worker.cap = 5000`) ignores where the actual reputation signal accrues.
+
+Warmbly's defaults reflect this: the cold-send cap is per mailbox (50/day by default, raisable to at most 100/day with positive reputation evidence) and the per-send gap is per mailbox (600 seconds). A worker's outbound budget is computed as `Σ mailbox.coldBudget` over its assigned mailboxes. The system surfaces a concentration warning when a shared worker holds more than ~10 actively-sending cold mailboxes at default settings (~500 cold sends/day), because past that point a single bad mailbox poisons the worker's IP for everyone else on it.
+
+Scaling volume up means adding mailboxes, not raising per-mailbox caps. A campaign that wants 5,000 cold sends/day should be assigned to 100+ healthy mailboxes at the 50/day default, not 5 mailboxes pushed to 1,000/day. The first plan is invisible to any anomaly heuristic; the second is the textbook example.
+
+| Framing | Model | Why |
+| --- | --- | --- |
+| Wrong | `worker.cap = 5000` | Flat per-worker ceilings ignore where reputation lives |
+| Right | `worker.cap = Σ mailbox.coldBudget` | Volume scales by adding healthy mailboxes, not cranking existing ones |
+
+## The cold-email send recipe
+
+1. Use a sub-domain for cold sending (outreach.acme.com). Reputation issues stay scoped.
+2. Configure SPF, DKIM and DMARC on the sub-domain. Start at `p=none`, then quarantine after 2 weeks.
+3. Warm every cold sending mailbox for at least 3 weeks before campaigns start.
+4. Cap each mailbox at 50 cold emails per day (up to 100 only with proven reputation) with a 10-minute minimum gap.
+5. Spread campaign sends across multiple mailboxes. Do not concentrate volume.
+6. Plain text by default. No tracking pixels unless you need opens.
+7. Two or three follow-ups, not eight.
+8. Suppression aware. Bounces, complaints and unsubscribes propagate.
+9. Monitor placement weekly. Act on watch band, not catastrophe.
+10. Keep warmup running in parallel with cold campaigns.
+
+The sub-domain isolation matters because reputation cascades up the organisational domain. A blown `outreach.acme.com` does not poison `acme.com` transactional mail in the short term, but a blown bare `acme.com` does. Run cold mail on a sub-domain whose only purpose is cold mail.
+
+The DMARC ramp matters: start at `p=none; rua=mailto:dmarc@yourdomain`, watch reports for 14 days to confirm no third-party services were quietly relying on your domain (this is the most common surprise), then move to `p=quarantine; pct=10` for a week, then increase pct to 100, then `p=reject`. Skipping `pct` ramping is how legitimate mail gets quarantined by an aggressive DMARC change.
+
+The 50/day default per-mailbox cap (raisable to 100/day only with positive reputation evidence) and the 600-second gap are not magic numbers. They are derived from observing that mailboxes which send a new message every 10+ minutes look indistinguishable from human typing cadence to the receiver, and from the empirical observation that Gmail's anomaly model starts flagging mailboxes sending more than ~150/day from a previously low baseline.
+
+## What to measure
+
+Per-mailbox first, then aggregated. Workspace averages hide failures: a workspace with 0.05% complaint rate could have one mailbox at 0.4% and nine at 0.01%, and the 0.4% mailbox is the one Gmail will flag and reputation-debit.
+
+| Metric | How |
+| --- | --- |
+| Inbox placement rate | Probed via warmup partners and seed lists |
+| Complaint rate | Per mailbox and per workspace |
+| Bounce rate | Hard vs soft split |
+| Reply rate | Per sequence, per step, per variant |
+| Positive-reply rate | Strips OOO, unsubscribe, negative noise |
+| Suppression growth | As a share of contacted recipients |
+
+Inbox placement is the headline metric but the hardest to measure without probes. Warmbly's warmup pool double-serves here: when a partner mailbox in the pool receives a warmup message, it reports the folder (Inbox/Spam/Promotions) along with a verification token, which feeds the placement signal for the sending mailbox. The probe sample size matters: act on the **watch** band only after at least 20 deliveries to the same sender in the past 7 days, otherwise you over-react to noise.
+
+Complaint rate has two sources: ARF feedback loops (Yahoo, Comcast, AOL, Apple) arrive as RFC 5965 messages, and Google's "Spam-Marked" rate which is only visible through Postmaster Tools at the domain or IP level. Warmbly aggregates both into a single per-mailbox complaint score.
+
+## What not to measure
+
+Open rate is the metric that survives in cold-email tools because it produces a number that looks like a result. It is not. Apple Mail Privacy Protection (iOS 15.4+, macOS 12.3+) prefetches all tracking pixels through Apple-hosted proxies regardless of whether the user opens the message. The reported open rate from any Apple Mail recipient is functionally 100% within minutes of "delivery", and the share of Apple Mail in B2B inboxes ranges 25-45%. Pixel opens were never a great signal; today they are noise dominated.
+
+Click-through on cold first-touch is bad in a different way. Most well-written cold mail has zero links: a link is a tracking pixel's bigger sibling, and a recipient who clicks "anything" in an unsolicited message is rare. Optimising for clicks on cold first-touch incentivises link-heavy content, which is itself a spam-folder signal.
+
+Vendor "deliverability scores" without a published formula are unauditable and gameable. If you cannot reproduce the number from your own data, do not let it drive operational decisions.
+
+<Callout type="warn" title="Metrics to ignore">
+- **Open rate**: Apple Mail Privacy proxies opens, Gmail caches images. The number is noise.
+- **Click-through (cold first-touch)**: most cold mail has no links, and "click anything" is itself a spam-folder signal.
+- **"Deliverability score"**: from vendors who will not tell you the formula.
+</Callout>
+
+## When you spot a problem
+
+The trigger to run this playbook is any one of: spam placement above 10% on a 20-delivery rolling window, complaint rate above 0.03% on at least 100 delivered messages, hard bounce rate above 1%, or three or more invalid warmup-token attempts in 24 hours (Warmbly's specific tripwire for token forgery).
+
+1. Pause campaigns from the affected mailbox immediately.
+2. Check the mailbox health band. If "watch" or worse, do not resume yet.
+3. Verify SPF, DKIM, DMARC alignment has not drifted.
+4. Drop warmup volume on the mailbox to 5 or 10 per day for a week.
+5. If quarantined, expect a 7-day cooldown. If blocked, expect 30 days plus manual review.
+6. Run the recovery playbook.
+
+The DMARC alignment check on step three is the one most often skipped. A common silent failure: someone adds a new sending service (Stripe, Notion, support tool) that uses your domain in the From address but does not have its DKIM key added to your DNS. DMARC starts failing for that sub-population, the reputation lookup pulls a "this domain is sending unaligned mail" signal, and your unrelated cold mailboxes suffer.
+
+For the full recovery workflow once a mailbox has hit the quarantine or block band, read [the recovery playbook](/learn/reputation-recovery).
+
+Fix deliverability before you have a problem. Act on the watch band, not the catastrophe band.

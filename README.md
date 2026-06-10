@@ -180,11 +180,6 @@ sudo ./scripts/install-worker.sh \
   --ips 5.6.7.11,5.6.7.12,5.6.7.13,5.6.7.14
 ```
 
-Full runbook: [docs/MULTI_IP_WORKERS.md](docs/MULTI_IP_WORKERS.md).
-
-For the complete dependency audit and how to replace each cloud service, see
-[docs/VENDOR_LOCKIN.md](docs/VENDOR_LOCKIN.md).
-
 ## Stack
 
 | Component   | Tech                                   |
@@ -221,7 +216,7 @@ realtime/       Elixir WebSocket gateway
 web/            user dashboard (Vite + React)
 admin/          admin UI (Vite + React)
 scripts/        worker installer and dev tooling
-docs/           operator docs (auth, lock-in, multi-IP)
+docs/           documentation site (docs.warmbly.com)
 resources/      architecture and design notes
 ```
 
@@ -246,9 +241,6 @@ cd realtime && mix test
 
 | Doc | What it covers |
 |-----|----------------|
-| [docs/VENDOR_LOCKIN.md](docs/VENDOR_LOCKIN.md) | Every external dependency and how to replace it |
-| [docs/INTERNAL_API_AUTH.md](docs/INTERNAL_API_AUTH.md) | How workers authenticate to the backend |
-| [docs/MULTI_IP_WORKERS.md](docs/MULTI_IP_WORKERS.md) | Many-IP worker deployment recipe |
 | [resources/architecture.md](resources/architecture.md) | Control plane vs execution plane, encryption model |
 | [resources/local-development.md](resources/local-development.md) | Docker Compose, profiles, seeding |
 | [resources/deployment-guide.md](resources/deployment-guide.md) | Production control plane + worker fleet |
@@ -261,8 +253,7 @@ cd realtime && mix test
 Found a vulnerability? Email `security@warmbly.com` rather than opening a public
 issue. We prefer responsible disclosure and credit reporters in the release
 notes. The encryption model is documented in
-[resources/architecture.md](resources/architecture.md) and the internal-API auth
-model in [docs/INTERNAL_API_AUTH.md](docs/INTERNAL_API_AUTH.md).
+[resources/architecture.md](resources/architecture.md).
 
 ## License
 

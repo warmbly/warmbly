@@ -2,18 +2,60 @@
 @import 'fumadocs-ui/css/neutral.css';
 @import 'fumadocs-ui/css/preset.css';
 
+/* Warmbly brand theme mirroring site/: slate text and borders, sky accent. */
 :root {
-  --primary: oklch(0.588 0.158 241.966);
-  --primary-foreground: oklch(0.985 0 0);
-  --ring: oklch(0.588 0.158 241.966);
-  --accent: oklch(0.968 0.007 247.858);
-  --accent-foreground: oklch(0.205 0 0);
+  --color-fd-background: #ffffff;
+  --color-fd-foreground: #0f172a;
+  --color-fd-muted: #f5f8fc;
+  --color-fd-muted-foreground: #64748b;
+  --color-fd-popover: #ffffff;
+  --color-fd-popover-foreground: #0f172a;
+  --color-fd-card: #ffffff;
+  --color-fd-card-foreground: #0f172a;
+  --color-fd-border: #e2e8f0;
+  --color-fd-primary: #0284c7;
+  --color-fd-primary-foreground: #ffffff;
+  --color-fd-secondary: #f1f5f9;
+  --color-fd-secondary-foreground: #0f172a;
+  --color-fd-accent: #f1f5f9;
+  --color-fd-accent-foreground: #0f172a;
+  --color-fd-ring: #0ea5e9;
 }
 
 .dark {
-  --primary: oklch(0.588 0.158 241.966);
-  --primary-foreground: oklch(0.985 0 0);
-  --ring: oklch(0.588 0.158 241.966);
-  --accent: oklch(0.279 0.029 256.848);
-  --accent-foreground: oklch(0.985 0 0);
+  --color-fd-background: oklch(0.13 0.01 260);
+  --color-fd-foreground: oklch(0.95 0.005 260);
+  --color-fd-muted: oklch(0.2 0.01 260);
+  --color-fd-muted-foreground: oklch(0.65 0.01 260);
+  --color-fd-popover: oklch(0.16 0.01 260);
+  --color-fd-popover-foreground: oklch(0.95 0.005 260);
+  --color-fd-card: oklch(0.16 0.01 260);
+  --color-fd-card-foreground: oklch(0.95 0.005 260);
+  --color-fd-border: oklch(0.26 0.01 260);
+  --color-fd-primary: oklch(0.72 0.15 250);
+  --color-fd-primary-foreground: oklch(0.13 0.01 260);
+  --color-fd-secondary: oklch(0.18 0.01 260);
+  --color-fd-secondary-foreground: oklch(0.95 0.005 260);
+  --color-fd-accent: oklch(0.22 0.01 260);
+  --color-fd-accent-foreground: oklch(0.95 0.005 260);
+  --color-fd-ring: oklch(0.62 0.02 252);
+}
+
+/* Keep the dark sidebar on the slate-blue palette, not the preset's gray. */
+.dark #nd-sidebar {
+  --color-fd-muted: oklch(0.2 0.01 260);
+  --color-fd-secondary: oklch(0.22 0.01 260);
+  --color-fd-muted-foreground: oklch(0.7 0.01 260);
+}
+
+body {
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: color-mix(in oklab, var(--color-fd-primary) 25%, transparent);
+  color: var(--color-fd-foreground);
 }

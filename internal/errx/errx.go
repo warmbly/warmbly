@@ -26,7 +26,7 @@ func New(code Code, message string) *Error {
 // --- Predefined errors (exported) ---
 var (
 	ErrUnauthorized  = New(Unauthorized, "Token not found.")
-	ErrForbidden     = New(Forbidden, "You doesn't have access to this feature.")
+	ErrForbidden     = New(Forbidden, "You don't have access to this feature.")
 	ErrNotFound      = New(NotFound, "Resource not found.")
 	ErrConflict      = New(Conflict, "resource already exists")
 	ErrUnprocessable = New(Unprocessable, "validation failed")

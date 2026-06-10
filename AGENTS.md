@@ -27,14 +27,27 @@ Other CI-touching rules:
 - never push without first re-running the relevant `*build*` / `*typecheck*` / `*lint*` step on the affected tree
 - a `make lint` (or `gofmt -l`) failure is always a real CI failure; do not push hoping it will pass
 
+Docs stay in sync:
+
+- the customer docs site lives in `docs/` (Fumadocs, served at docs.warmbly.com); content is MDX under `docs/content/docs/` in three sections: `guides/` (product behavior), `learn/` (fundamentals), `api/` (API reference)
+- any change that alters user-visible behavior must update the matching docs page in the same change: a new or changed endpoint updates `api/endpoints.mdx` (scope map) and, where relevant, `api/authentication.mdx`; a new or changed API permission updates `api/permissions.mdx` including the permission table, presets, and all three language tabs in the constants section; a new or changed error code updates `api/error-codes.mdx`; a new or changed product feature, default, limit, or setting updates the relevant `guides/` page (or adds one, registered in `guides/meta.json` with an `icon`)
+- removing or renaming a feature, endpoint, or permission means removing or updating its docs too; do not leave stale docs behind
+- follow the docs conventions: frontmatter `title` is the H1 (no `#` heading in the body), every page has a lucide `icon`, sentence-case headings, no em dashes in prose, internal links use trailing slashes (`/guides/mailboxes/`)
+- verify with `pnpm types:check` and `pnpm lint` in `docs/` (the site is a fully static export; `pnpm build` writes `out/`)
+
 Commit hygiene:
 
-- when instructed to make a commit, use the subject format `feat: one line explanation`
-- commit messages on this repo do not include `Co-Authored-By:` or other AI/agent attribution footers. Keep messages to subject + body explaining the why. If a commit slips through with an attribution footer, rewrite it before opening or updating a PR.
+- when instructed to make a commit, use the subject format `feat: <explanation>`
+- one line, no body. Make the line long and specific (what changed and where), not a stub like `feat: fix docs`
+- no `Co-Authored-By:` or other AI/agent attribution footers; rewrite any commit that has one before opening or updating a PR
 
 Copy / writing style:
 
 - do not lean on em dashes (`—`). Use them sparingly, only when one is genuinely the clearest option; prefer a period, comma, colon, or parentheses instead. This applies to user-facing copy and microcopy in `site/` and `web/`, and to docs. Overusing em dashes reads as machine-written.
+
+Code comments:
+
+- keep them short: one line stating the non-obvious constraint or intent. No multi-line essays; if a comment needs a paragraph, the explanation belongs in docs or the PR description
 
 Data modeling / representation:
 

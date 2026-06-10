@@ -1,0 +1,41 @@
+---
+title: API overview
+description: Base URL, conventions, and a quickstart for the Warmbly API.
+icon: Rocket
+---
+
+The Warmbly API lets you drive everything you can do in the dashboard programmatically: mailboxes, campaigns, contacts, the unibox, and more. It is a JSON API over HTTPS.
+
+```
+https://api.warmbly.com
+```
+
+## Quickstart
+
+Create an API key in your dashboard under Settings, then pass it as a Bearer token on every request:
+
+```bash
+curl -X GET "https://api.warmbly.com/campaigns" \
+  -H "Authorization: Bearer wmbly_your_api_key_here" \
+  -H "Content-Type: application/json"
+```
+
+See [Authentication](/api/authentication) for the key format, scoping, and security guidance.
+
+## Conventions
+
+- **Permissions**: every key carries an explicit permission set; a request beyond the key's permissions returns `403`. The full list is in the [permissions reference](/api/permissions).
+- **List responses**: list endpoints return a consistent `data` plus `pagination` shape with opaque cursors.
+- **Errors**: error responses carry a machine-readable `code` and a `request_id` alongside the human-readable text. Client logic should branch on `code` and HTTP status, never on message text. See [error codes](/api/error-codes).
+- **Endpoint coverage**: the [endpoint scope map](/api/endpoints) lists every route, whether it accepts API keys, and which permission it requires.
+
+```json
+{
+  "data": [],
+  "pagination": { "has_more": false, "next_cursor": null }
+}
+```
+
+## Client libraries
+
+There are no official client libraries yet; any HTTP client works against the API directly. Official libraries (Node.js, Python, Go) will get their own sections in these docs when they ship.
