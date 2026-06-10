@@ -196,7 +196,7 @@ export default function MeetingsPage() {
                         value={searchRaw}
                         onChange={(v) => setSearchRaw(v)}
                         placeholder="Search name, email, or event…"
-                        className="w-56"
+                        className="w-full sm:w-56"
                     />
                 </SectionBar>
 
@@ -222,12 +222,12 @@ export default function MeetingsPage() {
                 ) : (
                     <div>
                         <div className="h-8 px-5 flex items-center gap-3 border-b border-slate-200 bg-slate-50/60 text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">
-                            <span className="w-40 shrink-0">When</span>
+                            <span className="w-28 md:w-40 shrink-0">When</span>
                             <span className="flex-1 min-w-0">Contact</span>
                             <span className="hidden md:block flex-1 min-w-0">Meeting</span>
-                            <span className="w-24 shrink-0">Source</span>
-                            <span className="w-28 shrink-0">Status</span>
-                            <span className="w-28 shrink-0 text-right">Actions</span>
+                            <span className="hidden md:block w-24 shrink-0">Source</span>
+                            <span className="w-20 md:w-28 shrink-0">Status</span>
+                            <span className="w-auto md:w-28 shrink-0 text-right">Actions</span>
                         </div>
                         {rows.map((m) => (
                             <MeetingRow key={m.id} m={m} />
@@ -271,7 +271,7 @@ function MeetingRow({ m }: { m: MeetingBooking }) {
 
     return (
         <div className="group min-h-11 px-5 py-1.5 flex items-center gap-3 border-b border-slate-200/60 hover:bg-slate-50/80 transition-colors">
-            <div className="w-40 shrink-0">
+            <div className="w-28 md:w-40 shrink-0">
                 <div className="flex items-center gap-1.5 text-[12.5px] text-slate-800">
                     <CalendarClockIcon className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                     <span className="truncate">{when.date}</span>
@@ -292,19 +292,19 @@ function MeetingRow({ m }: { m: MeetingBooking }) {
                 {m.location && <div className="text-[11px] text-slate-400 truncate">{m.location}</div>}
             </div>
 
-            <div className="w-24 shrink-0">
+            <div className="hidden md:block w-24 shrink-0">
                 <span className="text-[11.5px] text-slate-500">
                     {isManual ? "Manual" : PROVIDER_LABELS[m.source as keyof typeof PROVIDER_LABELS] ?? m.source}
                 </span>
             </div>
 
-            <div className="w-28 shrink-0">
+            <div className="w-20 md:w-28 shrink-0">
                 <span className={cn("inline-flex items-center h-5 px-2 rounded border text-[10.5px] font-medium", status.cls)}>
                     {status.label}
                 </span>
             </div>
 
-            <div className="w-28 shrink-0 flex items-center justify-end gap-1">
+            <div className="w-auto md:w-28 shrink-0 flex items-center justify-end gap-1">
                 {!canceled && m.scheduled_for && (
                     <PopoverMenu align="end" side="bottom">
                         <PopoverMenuTrigger asChild>

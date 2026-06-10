@@ -122,6 +122,10 @@ export default function IntegrationsPage() {
                 </div>
             </PageTopbar>
 
+            <div className="sm:hidden px-4 py-2 border-b border-slate-200">
+                <SearchInput value={query} onChange={setQuery} placeholder="Search integrations" />
+            </div>
+
             <StatStrip cols={4}>
                 <Stat label="Available" value={catalog.length} sub="providers" />
                 <Stat label="Connected" value={connectedCount} sub={`${connections.length} total`} accent={connectedCount > 0} />
@@ -193,10 +197,15 @@ export default function IntegrationsPage() {
                                         b.source === "calendly" ? "bg-rose-400" : "bg-indigo-400",
                                     )}
                                 />
-                                <span className="font-medium text-slate-900 truncate w-32 sm:w-60">{b.invitee_email}</span>
+                                <span className="font-medium text-slate-900 truncate max-w-[40%] sm:max-w-none sm:w-60">{b.invitee_email}</span>
                                 <span className="text-slate-500 truncate flex-1">{b.event_name}</span>
-                                <span className="font-mono text-[10.5px] text-slate-400 tabular-nums">
-                                    {b.scheduled_for ? new Date(b.scheduled_for).toLocaleString() : "tbd"}
+                                <span className="font-mono text-[10.5px] text-slate-400 tabular-nums shrink-0">
+                                    <span className="sm:hidden">
+                                        {b.scheduled_for ? new Date(b.scheduled_for).toLocaleDateString() : "tbd"}
+                                    </span>
+                                    <span className="hidden sm:inline">
+                                        {b.scheduled_for ? new Date(b.scheduled_for).toLocaleString() : "tbd"}
+                                    </span>
                                 </span>
                             </div>
                         ))}

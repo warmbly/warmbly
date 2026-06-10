@@ -227,8 +227,8 @@ function ScheduledRow({
                     )}
 
                     <div className="mt-1.5 flex items-center gap-2">
-                        <span className="text-[10.5px] font-mono text-slate-500 bg-slate-100 px-1.5 h-4 inline-flex items-center rounded">
-                            {item.account_email}
+                        <span className="text-[10.5px] font-mono text-slate-500 bg-slate-100 px-1.5 h-4 inline-flex items-center rounded min-w-0 max-w-[180px] md:max-w-none">
+                            <span className="truncate">{item.account_email}</span>
                         </span>
                         {item.thread_id && (
                             <span className="text-[10.5px] text-slate-400">

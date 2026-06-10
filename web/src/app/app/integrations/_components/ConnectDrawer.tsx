@@ -158,8 +158,8 @@ export default function ConnectDrawer({
     return (
         <Drawer title="Connect" name={entry.name} provider={entry.provider} onClose={onClose}>
             {step === "overview" && (
-                <div className="flex-1 overflow-auto flex flex-col">
-                    <div className="px-5 py-5 space-y-5">
+                <>
+                    <div className="flex-1 overflow-y-auto px-5 py-5 space-y-5">
                         <p className="text-[12.5px] text-slate-600 leading-relaxed">{entry.tagline}</p>
 
                         {entry.highlights && entry.highlights.length > 0 && (
@@ -224,7 +224,6 @@ export default function ConnectDrawer({
                             </div>
                         )}
                     </div>
-
                     <DrawerFooter onClose={onClose}>
                         {isOAuth ? (
                             <button
@@ -263,12 +262,12 @@ export default function ConnectDrawer({
                             </button>
                         )}
                     </DrawerFooter>
-                </div>
+                </>
             )}
 
             {step === "credentials" && (
-                <form onSubmit={submitCredentials} className="flex-1 overflow-auto flex flex-col">
-                    <div className="px-5 py-5 space-y-4">
+                <form onSubmit={submitCredentials} className="flex-1 min-h-0 flex flex-col">
+                    <div className="flex-1 overflow-y-auto px-5 py-5 space-y-4">
                         {fields.map((f) => (
                             <div key={f.key}>
                                 <Label>
@@ -341,7 +340,7 @@ export function Drawer({
                 initial={{ x: 28, opacity: 0 }}
                 animate={{ x: 0, opacity: 1 }}
                 transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
-                className="ml-auto h-full w-[480px] max-w-[92vw] bg-white shadow-xl flex flex-col z-10 relative"
+                className="ml-auto h-full w-full sm:w-[480px] sm:max-w-[92vw] bg-white shadow-xl flex flex-col z-10 relative"
             >
                 <div className="h-12 px-5 border-b border-slate-200 flex items-center gap-3 shrink-0">
                     <ProviderGlyph provider={provider} name={name} size={7} />

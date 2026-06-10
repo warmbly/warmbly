@@ -99,9 +99,9 @@ export default function ScheduleDeletionModal({
                         onClick={(e) => e.stopPropagation()}
                         role="alertdialog"
                         aria-modal="true"
-                        className="w-full max-w-[460px] rounded-lg bg-white border border-slate-200 shadow-[0_24px_48px_-12px_rgba(15,23,42,0.18),0_8px_16px_-8px_rgba(15,23,42,0.1)] overflow-hidden"
+                        className="w-full max-w-[460px] max-h-[calc(100dvh-2rem)] flex flex-col rounded-lg bg-white border border-slate-200 shadow-[0_24px_48px_-12px_rgba(15,23,42,0.18),0_8px_16px_-8px_rgba(15,23,42,0.1)] overflow-hidden"
                     >
-                        <div className="h-12 px-4 border-b border-slate-200 flex items-center gap-2.5">
+                        <div className="shrink-0 h-12 px-4 border-b border-slate-200 flex items-center gap-2.5">
                             <div className="size-5 rounded bg-red-50 text-red-600 flex items-center justify-center">
                                 <AlertTriangleIcon className="w-3 h-3" />
                             </div>
@@ -123,7 +123,7 @@ export default function ScheduleDeletionModal({
                             </button>
                         </div>
 
-                        <div className="px-4 py-4 space-y-4">
+                        <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-4">
                             <div className="text-[12.5px] text-slate-700 leading-relaxed">
                                 {body}
                             </div>
@@ -138,7 +138,7 @@ export default function ScheduleDeletionModal({
                             <div className="space-y-1.5">
                                 <Label>
                                     Type{" "}
-                                    <code className="font-mono text-[12px] text-slate-900 bg-slate-100 px-1 rounded">
+                                    <code className="font-mono text-[12px] text-slate-900 bg-slate-100 px-1 rounded break-all">
                                         {confirmationHint}
                                     </code>{" "}
                                     to confirm
@@ -147,7 +147,10 @@ export default function ScheduleDeletionModal({
                                     value={confirmation}
                                     onChange={setConfirmation}
                                     placeholder={confirmationHint}
-                                    autoFocus
+                                    // Only autofocus with a pointer device; on touch it
+                                    // would pop the keyboard and shrink the viewport
+                                    // before the user has read the warning.
+                                    autoFocus={window.matchMedia("(pointer: fine)").matches}
                                 />
                             </div>
 
@@ -161,7 +164,7 @@ export default function ScheduleDeletionModal({
                             </div>
                         </div>
 
-                        <div className="px-3 h-12 border-t border-slate-200 flex items-center gap-1.5">
+                        <div className="shrink-0 px-3 h-12 border-t border-slate-200 flex items-center gap-1.5">
                             <button
                                 type="button"
                                 onClick={() => !loading && onClose()}

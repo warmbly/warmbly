@@ -69,7 +69,7 @@ export default function KeyDetailDrawer({
                         animate={{ x: 0 }}
                         exit={{ x: "100%" }}
                         transition={{ type: "tween", ease: "easeOut", duration: 0.2 }}
-                        className="fixed right-0 top-0 bottom-0 z-50 w-[640px] max-w-[100vw] bg-white border-l border-slate-200 shadow-[-20px_0_40px_-12px_rgba(15,23,42,0.16)] flex flex-col"
+                        className="fixed right-0 top-0 bottom-0 z-50 w-[640px] max-w-full bg-white border-l border-slate-200 shadow-[-20px_0_40px_-12px_rgba(15,23,42,0.16)] flex flex-col"
                     >
                         <Inner apiKey={apiKey} onClose={onClose} />
                     </motion.aside>
@@ -285,7 +285,7 @@ function Inner({ apiKey, onClose }: { apiKey: APIKey; onClose: () => void }) {
                                     {e.error_count > 0 && (
                                         <span className="text-[10px] text-rose-600 tabular-nums">{e.error_count} err</span>
                                     )}
-                                    <span className="text-[10px] text-slate-400 tabular-nums w-12 text-right">{Math.round(e.avg_latency_ms)}ms</span>
+                                    <span className="hidden sm:inline text-[10px] text-slate-400 tabular-nums w-12 text-right">{Math.round(e.avg_latency_ms)}ms</span>
                                 </div>
                             ))}
                         </div>
@@ -365,13 +365,16 @@ function Inner({ apiKey, onClose }: { apiKey: APIKey; onClose: () => void }) {
                             {logs.data.data.map((l) => (
                                 <div key={l.id} className="px-1.5 py-1.5 flex items-center gap-2">
                                     <StatusDot status={l.response_code} />
-                                    <span className="font-mono text-[10px] tabular-nums text-slate-500 w-32 shrink-0">
+                                    <span className="hidden sm:inline font-mono text-[10px] tabular-nums text-slate-500 w-32 shrink-0">
                                         {fmtFull(l.created_at)}
+                                    </span>
+                                    <span className="sm:hidden font-mono text-[10px] tabular-nums text-slate-500 w-14 shrink-0">
+                                        {fmtTime(l.created_at)}
                                     </span>
                                     <span className="text-[10px] uppercase font-mono text-slate-400 w-10 shrink-0">{l.method}</span>
                                     <span className="font-mono text-[11px] text-slate-900 truncate flex-1">{l.endpoint}</span>
                                     <span className="font-mono text-[10px] text-slate-500 tabular-nums w-10 text-right">{l.response_code}</span>
-                                    <span className="font-mono text-[10px] text-slate-400 tabular-nums w-12 text-right">{l.response_time_ms}ms</span>
+                                    <span className="hidden sm:inline font-mono text-[10px] text-slate-400 tabular-nums w-12 text-right">{l.response_time_ms}ms</span>
                                 </div>
                             ))}
                         </div>
@@ -449,7 +452,7 @@ function QuickStat({
     last?: boolean;
 }) {
     return (
-        <div className={`px-5 py-3 ${!last ? "border-r border-slate-200/60" : ""}`}>
+        <div className={`px-3 md:px-5 py-3 ${!last ? "border-r border-slate-200/60" : ""}`}>
             <div className="flex items-center gap-1.5">
                 <span className={`text-[10px] uppercase tracking-[0.14em] font-medium ${accent === "rose" ? "text-rose-500" : "text-slate-400"}`}>
                     {label}
@@ -514,6 +517,17 @@ function fmtFull(iso: string): string {
     try {
         const d = new Date(iso);
         return d.toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    } catch {
+        return "—";
+    }
+}
+
+// Compact HH:MM for the mobile activity log, where the full timestamp
+// would crowd out the endpoint path.
+function fmtTime(iso: string): string {
+    try {
+        const d = new Date(iso);
+        return d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
     } catch {
         return "—";
     }

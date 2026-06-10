@@ -26,6 +26,7 @@ import {
     FlagIcon,
     GitBranchIcon,
     HandshakeIcon,
+    InfoIcon,
     Loader2Icon,
     MailIcon,
     PlusIcon,
@@ -72,6 +73,7 @@ import { useConfirm } from "@/hooks/context/confirm";
 import useClickOutside from "@/hooks/useClickOutside";
 import { NumberInput, Label, TextInput } from "@/components/ui/field";
 import { SelectMenu, type SelectOption } from "@/components/ui/select-menu";
+import { PopoverMenu, PopoverMenuContent, PopoverMenuTrigger } from "@/components/ui/popover-menu";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import SequenceView from "./SequenceView";
@@ -315,8 +317,8 @@ function StepNode({ data, selected }: NodeProps) {
                 On reply
             </button>
             {/* Right dot = start an "if" branch; bottom dot = plain "go there". */}
-            <Handle type="source" id="if" position={Position.Right} className="!h-3 !w-3 !border-2 !border-white !bg-amber-400" />
-            <Handle type="source" id="s" position={Position.Bottom} className="!h-3 !w-3 !border-2 !border-white !bg-sky-500" />
+            <Handle type="source" id="if" position={Position.Right} className="!h-3 !w-3 pointer-coarse:!h-5 pointer-coarse:!w-5 !border-2 !border-white !bg-amber-400" />
+            <Handle type="source" id="s" position={Position.Bottom} className="!h-3 !w-3 pointer-coarse:!h-5 pointer-coarse:!w-5 !border-2 !border-white !bg-sky-500" />
         </div>
     );
 }
@@ -343,7 +345,7 @@ function IfNode({ data, selected }: NodeProps) {
         >
             <Handle type="target" position={Position.Top} className="!h-2 !w-2 !border-2 !border-white !bg-slate-300" />
             {/* Right dot = the THEN path: where this if leads (drag to change). */}
-            <Handle type="source" id="out" position={Position.Right} className="!h-3 !w-3 !border-2 !border-white !bg-sky-500" />
+            <Handle type="source" id="out" position={Position.Right} className="!h-3 !w-3 pointer-coarse:!h-5 pointer-coarse:!w-5 !border-2 !border-white !bg-sky-500" />
             <div className="flex items-center gap-1.5">
                 <GitBranchIcon className="w-3 h-3 shrink-0 text-sky-600" />
                 <span className="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-sky-500">if</span>
@@ -367,7 +369,7 @@ function IfNode({ data, selected }: NodeProps) {
                 </button>
             </div>
             {/* Bottom dot = the ELSE path: drag to add the next condition (else-if). */}
-            <Handle type="source" id="else" position={Position.Bottom} className="!h-3 !w-3 !border-2 !border-white !bg-slate-400" />
+            <Handle type="source" id="else" position={Position.Bottom} className="!h-3 !w-3 pointer-coarse:!h-5 pointer-coarse:!w-5 !border-2 !border-white !bg-slate-400" />
         </div>
     );
 }
@@ -470,8 +472,8 @@ function ActionNode({ data, selected }: NodeProps) {
                 </div>
             ) : null}
             {/* Same handles as a step: right = "if" branch, bottom = "go there". */}
-            <Handle type="source" id="if" position={Position.Right} className="!h-3 !w-3 !border-2 !border-white !bg-amber-400" />
-            <Handle type="source" id="s" position={Position.Bottom} className="!h-3 !w-3 !border-2 !border-white !bg-sky-500" />
+            <Handle type="source" id="if" position={Position.Right} className="!h-3 !w-3 pointer-coarse:!h-5 pointer-coarse:!w-5 !border-2 !border-white !bg-amber-400" />
+            <Handle type="source" id="s" position={Position.Bottom} className="!h-3 !w-3 pointer-coarse:!h-5 pointer-coarse:!w-5 !border-2 !border-white !bg-sky-500" />
         </div>
     );
 }
@@ -1217,7 +1219,7 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
 
     return (
         <div
-            className={`campaign-flow relative h-[70vh] w-full overflow-hidden rounded-md border border-slate-200 bg-slate-50/40 sm:h-[78vh] ${
+            className={`campaign-flow relative h-[70dvh] w-full overflow-hidden rounded-md border border-slate-200 bg-slate-50/40 sm:h-[78vh] ${
                 dragging ? "rf-dragging" : ""
             }`}
         >
@@ -1313,7 +1315,10 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                 </Panel>
 
                 <Panel position="bottom-center">
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md bg-white/95 px-3 py-1.5 text-[11px] text-slate-500 shadow-sm">
+                    {/* Mouse/keyboard-only instructions; hidden on phones where the
+                        narrow auto-width panel would wrap into a tall block over the
+                        canvas (touch users remove edges via the editor's Disconnect). */}
+                    <div className="hidden md:flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md bg-white/95 px-3 py-1.5 text-[11px] text-slate-500 shadow-sm">
                         <span className="text-slate-400">
                             step: bottom dot = go there, right (amber) dot = add an “if” · IF block: right dot = then, bottom (gray) dot = else / just go there · click a line then press Delete to remove it · no match = stop
                         </span>
@@ -1353,7 +1358,7 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
             )}
 
             {editStep && (
-                <div className="absolute inset-y-0 right-0 z-10 w-full max-w-[760px] overflow-y-auto overflow-x-hidden border-l border-slate-200 bg-white shadow-[0_0_40px_-12px_rgba(15,23,42,0.25)] xl:max-w-[880px]">
+                <div className="fixed inset-0 z-30 w-full overflow-y-auto overflow-x-hidden bg-white md:absolute md:left-auto md:z-10 md:max-w-[760px] md:border-l md:border-slate-200 md:shadow-[0_0_40px_-12px_rgba(15,23,42,0.25)] xl:max-w-[880px]">
                     <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-white px-3 py-2">
                         <span className="truncate text-[12.5px] font-medium text-slate-700">Edit “{stepName(editStep)}”</span>
                         <div className="flex items-center gap-1">
@@ -1396,19 +1401,36 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
 }
 
 // ── Stop-on-reply toggle ────────────────────────────────────────────────────
+const STOP_ON_REPLY_HELP =
+    "When a contact replies, the rest of the sequence stops for them, " +
+    "while the reply branch you connected to the email they answered still " +
+    "runs (it fires instantly). So on reply: that reply flow runs, every other " +
+    "remaining step is cancelled. Auto-replies and out-of-office messages don't " +
+    "count as a reply, so the sequence keeps going.";
+
 function StopOnReplyToggle({ on, onToggle }: { on: boolean; onToggle: (next: boolean) => void }) {
     return (
         <div
             className="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 shadow-sm"
-            title={
-                "When a contact replies, the rest of the sequence stops for them, " +
-                "while the reply branch you connected to the email they answered still " +
-                "runs (it fires instantly). So on reply: that reply flow runs, every other " +
-                "remaining step is cancelled. Auto-replies and out-of-office messages don't " +
-                "count as a reply, so the sequence keeps going."
-            }
+            title={STOP_ON_REPLY_HELP}
         >
             <span className="text-[11.5px] text-slate-600">Stop on reply</span>
+            {/* Tooltips never show on touch; surface the same copy on tap. Hidden
+                at md+ where the title attribute keeps desktop pixel-identical. */}
+            <PopoverMenu align="start">
+                <PopoverMenuTrigger asChild>
+                    <button
+                        type="button"
+                        aria-label="What does stop on reply do?"
+                        className="inline-flex size-5 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-600 md:hidden"
+                    >
+                        <InfoIcon className="w-3.5 h-3.5" />
+                    </button>
+                </PopoverMenuTrigger>
+                <PopoverMenuContent minWidth={240} className="max-w-[280px] p-2.5">
+                    <p className="text-[11.5px] leading-relaxed text-slate-600">{STOP_ON_REPLY_HELP}</p>
+                </PopoverMenuContent>
+            </PopoverMenu>
             <button
                 type="button"
                 role="switch"
@@ -1553,7 +1575,7 @@ function ConnectionEditor({
         });
 
     return (
-        <div className="absolute right-3 top-3 z-20 w-[300px] max-w-[calc(100vw-1.5rem)] rounded-md border border-slate-200 bg-white p-3 shadow-[0_12px_32px_-8px_rgba(15,23,42,0.18)]">
+        <div className="absolute right-3 top-3 z-20 w-[300px] max-w-[calc(100vw-1.5rem)] max-h-[calc(100%-1.5rem)] overflow-y-auto rounded-md border border-slate-200 bg-white p-3 shadow-[0_12px_32px_-8px_rgba(15,23,42,0.18)]">
             <div className="mb-2 flex items-center justify-between">
                 <span className="truncate text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">
                     From “{stepName(source)}”
@@ -1884,7 +1906,7 @@ function NodeTypeSwitcher({
     return (
         <div className="mb-4">
             <Label>Step type</Label>
-            <div className="grid grid-cols-3 gap-1.5">
+            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
                 {items.map((it) => {
                     const active = it.value === current;
                     const Icon = it.Icon;

@@ -210,11 +210,11 @@ export default function BillingSettingsPage() {
                 {sub.isPending ? (
                     <div className="h-20 rounded bg-slate-100 animate-pulse" />
                 ) : (
-                    <div className="flex items-start gap-4">
+                    <div className="flex flex-wrap items-start gap-4">
                         <div className={`size-9 rounded-md flex items-center justify-center shrink-0 border ${currentAccent.pill}`}>
                             <SparklesIcon className="w-4 h-4" />
                         </div>
-                        <div className="min-w-0 flex-1">
+                        <div className="min-w-0 flex-1 basis-[200px]">
                             <div className="flex items-center gap-2 flex-wrap">
                                 <span className="text-[15px] font-semibold text-slate-900">
                                     {currentPlan.label}
@@ -247,7 +247,7 @@ export default function BillingSettingsPage() {
                         </button>
                     </div>
                 )}
-                <ul className="grid grid-cols-2 gap-x-6 gap-y-1.5 mt-1 text-[11.5px] max-w-md">
+                <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 mt-1 text-[11.5px] max-w-md">
                     {currentPlan.bullets.map((b) => (
                         <li key={b} className="flex items-start gap-1.5">
                             <CheckIcon className="w-3 h-3 text-emerald-600 mt-0.5 shrink-0" />

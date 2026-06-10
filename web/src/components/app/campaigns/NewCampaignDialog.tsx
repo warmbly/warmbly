@@ -26,7 +26,7 @@ import {
 import toast from "react-hot-toast";
 import { useNavigate } from "react-router-dom";
 import useCreateCampaign from "@/lib/api/hooks/app/campaigns/useCreateCampaign";
-import { Label, TextInput } from "@/components/ui/field";
+import { Label, NumberInput, TextInput } from "@/components/ui/field";
 import { SelectMenu, type SelectOption } from "@/components/ui/select-menu";
 import WeekdayBitmask from "@/components/app/campaigns/schedule/WeekdayBitmask";
 import TagSelector from "@/components/app/popup/select/TagSelector";
@@ -185,7 +185,7 @@ export function NewCampaignDialog({ open, onClose }: Props) {
                         exit={{ y: 8, opacity: 0 }}
                         transition={{ duration: 0.16 }}
                         onClick={(e) => e.stopPropagation()}
-                        className="w-full max-w-[720px] rounded-lg bg-white border border-slate-200 shadow-[0_24px_48px_-12px_rgba(15,23,42,0.18),0_8px_16px_-8px_rgba(15,23,42,0.1)] overflow-hidden flex flex-col max-h-[88vh]"
+                        className="w-full max-w-[720px] rounded-lg bg-white border border-slate-200 shadow-[0_24px_48px_-12px_rgba(15,23,42,0.18),0_8px_16px_-8px_rgba(15,23,42,0.1)] overflow-hidden flex flex-col max-h-[88dvh]"
                     >
                         <Header onClose={onClose} step={step} />
 
@@ -281,7 +281,7 @@ function Header({ onClose, step }: { onClose: () => void; step: Step }) {
 
 function StepRail({ step, setStep }: { step: Step; setStep: (s: Step) => void }) {
     return (
-        <div className="px-4 h-9 border-b border-slate-100 flex items-center gap-1 shrink-0">
+        <div className="px-4 h-9 border-b border-slate-100 flex items-center gap-1 shrink-0 overflow-x-auto no-scrollbar">
             {STEPS.map((s, i) => {
                 const Icon = s.icon;
                 const active = s.key === step;
@@ -291,7 +291,7 @@ function StepRail({ step, setStep }: { step: Step; setStep: (s: Step) => void })
                         key={s.key}
                         type="button"
                         onClick={() => setStep(s.key)}
-                        className={`h-6 px-2 rounded-md text-[11.5px] font-medium inline-flex items-center gap-1.5 transition-colors ${
+                        className={`h-6 px-2 rounded-md text-[11.5px] font-medium inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors ${
                             active
                                 ? "bg-slate-900 text-white"
                                 : done
@@ -334,7 +334,7 @@ function Footer({
 }) {
     const isLast = step === STEPS.length - 1;
     return (
-        <div className="px-3 h-12 border-t border-slate-200 flex items-center gap-1.5 shrink-0">
+        <div className="px-3 min-h-12 h-auto py-1.5 sm:py-0 sm:h-12 border-t border-slate-200 flex flex-wrap sm:flex-nowrap items-center gap-1.5 shrink-0">
             {step > 0 && (
                 <button
                     type="button"
@@ -353,7 +353,8 @@ function Footer({
                         onChange={(e) => setLaunchImmediately(e.target.checked)}
                         className="size-3 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
                     />
-                    Open & launch after create
+                    <span className="sm:hidden">Launch after create</span>
+                    <span className="hidden sm:inline">Open & launch after create</span>
                 </label>
             )}
             <div className="ml-auto flex items-center gap-1.5">
@@ -570,13 +571,12 @@ function SenderStep({
 
             <div>
                 <Label>Daily limit per mailbox</Label>
-                <input
-                    type="number"
+                <NumberInput
+                    value={dailyLimit}
                     min={3}
                     max={100}
-                    value={dailyLimit}
-                    onChange={(e) => setDailyLimit(Number(e.target.value))}
-                    className="w-32 h-7 px-2 rounded-md border border-slate-200 bg-white text-[12.5px] text-slate-900 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+                    onChange={setDailyLimit}
+                    className="w-32"
                 />
                 <p className="text-[11px] text-slate-400 mt-1">
                     3–100. Default 50. Stay conservative until reputation is proven.
@@ -676,15 +676,12 @@ function SequencesStep({
                             <>
                                 <div className="h-3 w-px bg-slate-200" />
                                 <span className="text-[11px] text-slate-500">Wait</span>
-                                <input
-                                    type="number"
+                                <NumberInput
+                                    value={seq.wait_after}
                                     min={0}
                                     max={60}
-                                    value={seq.wait_after}
-                                    onChange={(e) =>
-                                        update(i, { wait_after: Number(e.target.value) })
-                                    }
-                                    className="w-16 h-6 px-1.5 rounded border border-slate-200 bg-white text-[11.5px] text-slate-900 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+                                    onChange={(v) => update(i, { wait_after: v })}
+                                    className="w-20"
                                 />
                                 <span className="text-[11px] text-slate-500">days after previous</span>
                             </>

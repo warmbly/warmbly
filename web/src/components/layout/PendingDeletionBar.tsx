@@ -143,7 +143,7 @@ function Banner({
     return (
         <div
             role="alert"
-            className="bg-red-600 text-white px-4 py-2 flex items-center gap-3 border-b border-red-800/50 shadow-[0_1px_0_rgba(0,0,0,0.05)]"
+            className="bg-red-600 text-white px-4 py-2 flex flex-wrap items-center gap-3 md:flex-nowrap border-b border-red-800/50 shadow-[0_1px_0_rgba(0,0,0,0.05)]"
         >
             <div className="size-5 rounded bg-white/15 flex items-center justify-center shrink-0">
                 <AlertOctagonIcon className="w-3 h-3" />
@@ -156,7 +156,7 @@ function Banner({
                     {detail}
                 </div>
             </div>
-            <div className="flex items-center gap-1.5 shrink-0">
+            <div className="flex items-center gap-1.5 w-full justify-end md:w-auto md:shrink-0">
                 {showCancel && (
                     <button
                         type="button"

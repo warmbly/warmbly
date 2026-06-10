@@ -159,7 +159,7 @@ export default function DetailsTab({
                                         )
                                     }
                                     placeholder="key"
-                                    className="w-[140px]"
+                                    className="w-[110px] md:w-[140px]"
                                 />
                                 <TextInput
                                     value={f.value}
@@ -188,7 +188,7 @@ export default function DetailsTab({
             </Section>
 
             <Section title="Metadata">
-                <div className="grid grid-cols-2 gap-3 text-[11.5px]">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-[11.5px]">
                     <MetaRow
                         icon={<CalendarIcon className="w-3 h-3 text-slate-400" />}
                         label="Created"

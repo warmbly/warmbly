@@ -157,34 +157,40 @@ export default function AuditPage() {
     const activeFilterCount =
         (action ? 1 : 0) + (entityType ? 1 : 0) + (date ? 1 : 0) + (search ? 1 : 0);
 
+    const filterControls = (
+        <>
+            <SearchPill value={search} onChange={setSearch} />
+            <FilterPopover
+                label="Action"
+                value={action ?? ""}
+                options={ACTIONS}
+                onChange={(v) => setAction(v ? (v as AuditAction) : undefined)}
+            />
+            <FilterPopover
+                label="Entity"
+                value={entityType ?? ""}
+                options={ENTITY_TYPES}
+                onChange={(v) => setEntityType(v ? (v as AuditEntityType) : undefined)}
+            />
+            <DatePill value={date} onChange={setDate} />
+            {activeFilterCount > 0 && (
+                <button
+                    type="button"
+                    onClick={reset}
+                    title="Clear filters"
+                    className="h-7 px-2 rounded-md border border-slate-200 hover:border-slate-300 text-[11.5px] text-slate-500 hover:text-slate-900 inline-flex items-center gap-1 transition-colors"
+                >
+                    <FilterXIcon className="w-3 h-3" />
+                    Clear ({activeFilterCount})
+                </button>
+            )}
+        </>
+    );
+
     return (
         <Page>
             <PageTopbar eyebrow="Audit log" subtitle="Mutating actions on this workspace · last 90 days">
-                <SearchPill value={search} onChange={setSearch} />
-                <FilterPopover
-                    label="Action"
-                    value={action ?? ""}
-                    options={ACTIONS}
-                    onChange={(v) => setAction(v ? (v as AuditAction) : undefined)}
-                />
-                <FilterPopover
-                    label="Entity"
-                    value={entityType ?? ""}
-                    options={ENTITY_TYPES}
-                    onChange={(v) => setEntityType(v ? (v as AuditEntityType) : undefined)}
-                />
-                <DatePill value={date} onChange={setDate} />
-                {activeFilterCount > 0 && (
-                    <button
-                        type="button"
-                        onClick={reset}
-                        title="Clear filters"
-                        className="h-7 px-2 rounded-md border border-slate-200 hover:border-slate-300 text-[11.5px] text-slate-500 hover:text-slate-900 inline-flex items-center gap-1 transition-colors"
-                    >
-                        <FilterXIcon className="w-3 h-3" />
-                        Clear ({activeFilterCount})
-                    </button>
-                )}
+                <div className="hidden md:contents">{filterControls}</div>
                 <button
                     type="button"
                     onClick={() => audit.refetch()}
@@ -198,6 +204,10 @@ export default function AuditPage() {
                     )}
                 </button>
             </PageTopbar>
+
+            <div className="flex md:hidden flex-wrap items-center gap-1.5 px-5 py-2 border-b border-slate-200">
+                {filterControls}
+            </div>
 
             <StatStrip cols={4}>
                 <Stat label="Total events" value={stats.total ?? 0} sub="this page" />
@@ -233,12 +243,12 @@ export default function AuditPage() {
                             <thead className="border-b border-slate-200">
                                 <tr>
                                     <th className="w-6"></th>
-                                    <Th className="w-40">When</Th>
-                                    <Th className="w-48">Who</Th>
-                                    <Th className="w-32">Action</Th>
+                                    <Th className="md:w-40">When</Th>
+                                    <Th className="md:w-48">Who</Th>
+                                    <Th className="md:w-32">Action</Th>
                                     <Th>Entity</Th>
-                                    <Th className="w-32">IP</Th>
-                                    <th className="w-12" aria-label="Details"></th>
+                                    <Th className="hidden md:table-cell w-32">IP</Th>
+                                    <th className="hidden md:table-cell w-12" aria-label="Details"></th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -345,10 +355,10 @@ function AuditRow({ log }: { log: AuditLog }) {
                         )}
                     </div>
                 </td>
-                <td className="px-3 font-mono text-[10.5px] text-slate-500 truncate">
+                <td className="hidden md:table-cell px-3 font-mono text-[10.5px] text-slate-500 truncate">
                     {log.ip_address || "—"}
                 </td>
-                <td className="px-3 text-right">
+                <td className="hidden md:table-cell px-3 text-right">
                     {hasDetails && (
                         <InfoIcon className="w-3 h-3 text-slate-300 group-hover:text-slate-500 inline" />
                     )}
@@ -368,7 +378,7 @@ function AuditRow({ log }: { log: AuditLog }) {
                             {log.user_agent && (
                                 <div className="text-[11px] text-slate-500">
                                     <span className="text-slate-400">User agent: </span>
-                                    <span className="font-mono">{log.user_agent}</span>
+                                    <span className="font-mono break-all">{log.user_agent}</span>
                                 </div>
                             )}
                         </div>
@@ -429,7 +439,7 @@ function SearchPill({ value, onChange }: { value: string; onChange: (v: string) 
                 value={value}
                 onChange={(e) => onChange(e.target.value)}
                 placeholder="Search…"
-                className="w-[140px] h-5 bg-transparent text-[12px] text-slate-900 placeholder:text-slate-400 outline-none"
+                className="w-[100px] sm:w-[140px] h-5 bg-transparent text-[12px] text-slate-900 placeholder:text-slate-400 outline-none"
             />
             {value && (
                 <button

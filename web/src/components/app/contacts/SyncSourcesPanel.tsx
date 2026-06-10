@@ -99,7 +99,7 @@ export default function SyncSourcesPanel({
                             exit={{ y: 8, opacity: 0 }}
                             transition={{ duration: 0.18 }}
                             onClick={(e) => e.stopPropagation()}
-                            className="w-full max-w-[720px] rounded-lg bg-white border border-slate-200 shadow-[0_24px_48px_-12px_rgba(15,23,42,0.18),0_8px_16px_-8px_rgba(15,23,42,0.1)] overflow-hidden flex flex-col max-h-[85vh]"
+                            className="w-full max-w-[720px] rounded-lg bg-white border border-slate-200 shadow-[0_24px_48px_-12px_rgba(15,23,42,0.18),0_8px_16px_-8px_rgba(15,23,42,0.1)] overflow-hidden flex flex-col max-h-[85dvh]"
                         >
                             <header className="h-12 px-4 border-b border-slate-200 flex items-center gap-2.5 shrink-0">
                                 <div className="size-5 rounded bg-emerald-50 text-emerald-600 flex items-center justify-center">
@@ -111,7 +111,7 @@ export default function SyncSourcesPanel({
                                 {campaign && (
                                     <>
                                         <div className="h-4 w-px bg-slate-200" />
-                                        <span className="text-[12.5px] text-slate-900 font-medium truncate max-w-[200px]">
+                                        <span className="text-[12.5px] text-slate-900 font-medium truncate min-w-0 max-w-[110px] md:max-w-[200px]">
                                             {campaign.name}
                                         </span>
                                     </>
@@ -119,10 +119,14 @@ export default function SyncSourcesPanel({
                                 <button
                                     type="button"
                                     onClick={() => setWizardOpen(true)}
+                                    aria-label={campaign ? "Connect a Google Sheet" : "New sync"}
                                     className="ml-auto h-7 px-2.5 rounded-md bg-slate-900 hover:bg-slate-800 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors"
                                 >
                                     <PlusIcon className="w-3 h-3" />
-                                    {campaign ? "Connect a Google Sheet" : "New sync"}
+                                    <span className="hidden md:inline">
+                                        {campaign ? "Connect a Google Sheet" : "New sync"}
+                                    </span>
+                                    <span className="md:hidden">New</span>
                                 </button>
                                 <button
                                     type="button"
@@ -279,6 +283,7 @@ function SourceRow({
                     type="button"
                     onClick={onSync}
                     disabled={syncing}
+                    aria-label="Sync now"
                     className="h-7 px-2.5 rounded-md bg-slate-900 hover:bg-slate-800 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors disabled:opacity-60"
                 >
                     {syncing ? (
@@ -286,7 +291,7 @@ function SourceRow({
                     ) : (
                         <RefreshCwIcon className="w-3 h-3" />
                     )}
-                    Sync now
+                    <span className="hidden md:inline">Sync now</span>
                 </button>
                 <button
                     type="button"

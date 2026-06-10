@@ -66,7 +66,7 @@ function Overlay({ children, onClose }: { children: React.ReactNode; onClose: ()
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 p-4" onMouseDown={onClose}>
             <div
-                className="w-full max-w-sm rounded-xl border border-slate-200 bg-white shadow-xl"
+                className="w-full max-w-sm max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl"
                 onMouseDown={(e) => e.stopPropagation()}
             >
                 {children}

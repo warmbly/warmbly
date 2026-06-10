@@ -92,7 +92,7 @@ export function ThreadLabelMenu({ threadId, open, onOpenChange }: Props) {
           ) : (
             <TagIcon className="w-3.5 h-3.5" />
           )}
-          Label
+          <span className="hidden sm:inline">Label</span>
           {current.length > 0 && (
             <span className="font-mono tabular-nums text-[10px] text-slate-400">
               {current.length}

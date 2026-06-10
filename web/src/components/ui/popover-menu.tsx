@@ -172,6 +172,10 @@ export function PopoverMenuContent({
                 top = r.top - ch - sideOffset;
                 if (top < 8) top = r.bottom + sideOffset;
             }
+            // Never let the top edge leave the viewport (a flipped-up panel
+            // taller than the space above would otherwise be clipped with no
+            // way to scroll to it); the panel's max-height handles the rest.
+            if (top < 8) top = 8;
             let left: number;
             if (align === "end") left = r.right - cw;
             else if (align === "center") left = r.left + r.width / 2 - cw / 2;
@@ -267,15 +271,25 @@ export function PopoverMenuContent({
                         position: "fixed",
                         top: pos?.top ?? -9999,
                         left: pos?.left ?? -9999,
-                        minWidth,
+                        // Clamp to the visual viewport so wide menus (long
+                        // mailbox emails, campaign names) never run off a
+                        // phone screen; desktop menus never approach this.
+                        minWidth: Math.min(minWidth, window.innerWidth - 16),
+                        maxWidth: "calc(100vw - 16px)",
                         width: matchTriggerWidth ? pos?.width : undefined,
                         visibility: pos ? "visible" : "hidden",
-                        zIndex: 100,
+                        // Above the contact/import drawers (z-110..130) but
+                        // below the global confirm dialog (z-200).
+                        zIndex: 150,
                         transformOrigin,
                         willChange: "transform, opacity",
                     }}
                     className={cn(
                         "rounded-md border border-slate-200 bg-white shadow-[0_4px_12px_-2px_rgba(15,23,42,0.08),0_2px_4px_rgba(15,23,42,0.04)] overflow-hidden py-1",
+                        // Default viewport cap so tall menus scroll instead of
+                        // clipping off a phone screen; callers with a tighter
+                        // max-h still win via the cn merge below.
+                        "max-h-[calc(100dvh-16px)] overflow-y-auto",
                         className,
                     )}
                     onClick={(e) => e.stopPropagation()}

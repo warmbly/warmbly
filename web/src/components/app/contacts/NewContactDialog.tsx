@@ -94,9 +94,9 @@ export function NewContactDialog({ open, onClose, campaign }: Props) {
                         exit={{ y: 8, opacity: 0 }}
                         transition={{ duration: 0.16 }}
                         onClick={(e) => e.stopPropagation()}
-                        className="w-full max-w-[460px] rounded-lg bg-white border border-slate-200 shadow-[0_24px_48px_-12px_rgba(15,23,42,0.18),0_8px_16px_-8px_rgba(15,23,42,0.1)] overflow-hidden"
+                        className="w-full max-w-[460px] rounded-lg bg-white border border-slate-200 shadow-[0_24px_48px_-12px_rgba(15,23,42,0.18),0_8px_16px_-8px_rgba(15,23,42,0.1)] overflow-hidden flex flex-col max-h-[calc(100dvh-2rem)]"
                     >
-                        <div className="h-12 px-4 border-b border-slate-200 flex items-center gap-2.5">
+                        <div className="h-12 px-4 border-b border-slate-200 flex items-center gap-2.5 shrink-0">
                             <div className="size-5 rounded bg-slate-100 text-slate-600 flex items-center justify-center">
                                 <UserPlusIcon className="w-3 h-3" />
                             </div>
@@ -122,7 +122,7 @@ export function NewContactDialog({ open, onClose, campaign }: Props) {
                                 e.preventDefault();
                                 submit();
                             }}
-                            className="px-4 py-4 space-y-3"
+                            className="px-4 py-4 space-y-3 flex-1 min-h-0 overflow-y-auto"
                         >
                             <div>
                                 <Label>Email</Label>
@@ -159,7 +159,7 @@ export function NewContactDialog({ open, onClose, campaign }: Props) {
                             </div>
                         </form>
 
-                        <div className="px-3 h-12 border-t border-slate-200 flex items-center gap-1.5">
+                        <div className="px-3 h-12 border-t border-slate-200 flex items-center gap-1.5 shrink-0">
                             <button
                                 type="button"
                                 onClick={onClose}

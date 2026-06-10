@@ -341,7 +341,7 @@ function TemplateRow({
                     <span className="text-[12.5px] font-semibold text-slate-900 truncate">
                         {template.name}
                     </span>
-                    <span className="text-[10.5px] font-mono text-slate-400 tabular-nums shrink-0">
+                    <span className="hidden sm:inline text-[10.5px] font-mono text-slate-400 tabular-nums shrink-0">
                         edited {formatRelative(template.updated_at)}
                     </span>
                 </div>
@@ -352,7 +352,7 @@ function TemplateRow({
                     </div>
                 )}
                 {preview && (
-                    <div className="text-[11px] text-slate-500 line-clamp-2 leading-relaxed">
+                    <div className="text-[11px] text-slate-500 line-clamp-2 leading-relaxed break-words">
                         {preview}
                     </div>
                 )}
@@ -589,7 +589,7 @@ function TemplateEditor({
                             </button>
                         </div>
 
-                        <div className="px-4 py-4 space-y-3 max-h-[68vh] overflow-y-auto">
+                        <div className="px-4 py-4 space-y-3 max-h-[calc(100dvh-8rem)] md:max-h-[68vh] overflow-y-auto">
                             {!isEdit && (
                                 <PresetStrip
                                     activeId={activePresetId}
@@ -746,11 +746,11 @@ function PresetStrip({
 }) {
     return (
         <div className="rounded-md border border-slate-200 bg-slate-50/60 px-2.5 py-2">
-            <div className="flex items-center gap-2 mb-1.5">
+            <div className="flex flex-wrap items-center gap-2 mb-1.5 min-w-0">
                 <span className="text-[10.5px] uppercase tracking-[0.1em] font-medium text-slate-500">
                     Start from a template
                 </span>
-                <span className="text-[10.5px] text-slate-400">
+                <span className="hidden sm:inline text-[10.5px] text-slate-400">
                     or skip this and start blank
                 </span>
                 {activeId && (

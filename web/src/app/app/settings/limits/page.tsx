@@ -7,6 +7,7 @@ import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { SelectMenu, type SelectOption } from "@/components/ui/select-menu";
+import { NumberInput } from "@/components/ui/field";
 import { Section, SectionShell } from "../_components/SectionShell";
 import getCurrentOrganization from "@/lib/api/client/app/organizations/getCurrentOrganization";
 import listLimitRequests from "@/lib/api/client/app/organizations/listLimitRequests";
@@ -49,7 +50,7 @@ export default function LimitsSettingsPage() {
     });
 
     const [field, setField] = useState<LimitField>("max_email_accounts");
-    const [requested, setRequested] = useState<string>("");
+    const [requested, setRequested] = useState<number>(Number.NaN);
     const [reason, setReason] = useState<string>("");
 
     const fieldSelectOptions = useMemo<SelectOption[]>(
@@ -61,13 +62,13 @@ export default function LimitsSettingsPage() {
         mutationFn: () =>
             submitLimitRequest(orgId!, {
                 field,
-                requested: Number(requested),
+                requested,
                 reason,
             }),
         onSuccess: () => {
             toast.success("Request submitted — an admin will review shortly.");
             qc.invalidateQueries({ queryKey: ["app", "organizations", orgId, "limit-requests"] });
-            setRequested("");
+            setRequested(Number.NaN);
             setReason("");
         },
         onError: (err: Error) => {
@@ -90,7 +91,7 @@ export default function LimitsSettingsPage() {
 
     function onSubmit(e: React.FormEvent) {
         e.preventDefault();
-        const n = Number(requested);
+        const n = requested;
         if (!Number.isInteger(n) || n <= 0) {
             toast.error("Requested value must be a positive integer");
             return;
@@ -129,12 +130,11 @@ export default function LimitsSettingsPage() {
                         <label className="text-[12px] font-medium text-slate-700">
                             Requested value
                         </label>
-                        <input
-                            type="number"
+                        <NumberInput
                             min={1}
                             value={requested}
-                            onChange={(e) => setRequested(e.target.value)}
-                            className="mt-1 block w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm tabular-nums"
+                            onChange={setRequested}
+                            className="mt-1 flex w-full"
                             placeholder="e.g. 50"
                         />
                     </div>
@@ -194,11 +194,11 @@ export default function LimitsSettingsPage() {
                                                 {" → "}
                                                 {r.requested.toLocaleString()}
                                             </div>
-                                            <div className="text-[11px] text-slate-500 mt-1">
+                                            <div className="text-[11px] text-slate-500 mt-1 break-words">
                                                 {new Date(r.submitted_at).toLocaleDateString()} · "{r.reason}"
                                             </div>
                                             {r.review_notes && r.status !== "pending" && (
-                                                <div className="text-[11px] text-slate-600 mt-1 italic">
+                                                <div className="text-[11px] text-slate-600 mt-1 italic break-words">
                                                     Reviewer: "{r.review_notes}"
                                                 </div>
                                             )}

@@ -166,12 +166,12 @@ export default function DealsTable({
                         <thead className="sticky top-0 bg-white z-[1]">
                             <tr className="border-b border-slate-200">
                                 <Th className="text-left">Deal</Th>
-                                <Th className="text-left">Contact</Th>
-                                <Th className="text-left">Pipeline</Th>
+                                <Th className="text-left hidden md:table-cell">Contact</Th>
+                                <Th className="text-left hidden md:table-cell">Pipeline</Th>
                                 <Th className="text-left">Stage</Th>
                                 <Th className="text-right">Value</Th>
-                                <Th className="text-left">Status</Th>
-                                <Th className="text-left">Close</Th>
+                                <Th className="text-left hidden md:table-cell">Status</Th>
+                                <Th className="text-left hidden md:table-cell">Close</Th>
                             </tr>
                         </thead>
                         <tbody>
@@ -244,7 +244,7 @@ function DealRow({
             <td className="px-3 max-w-0">
                 <div className="text-[12.5px] font-medium text-slate-900 truncate">{deal.name}</div>
             </td>
-            <td className="px-3 max-w-0">
+            <td className="px-3 max-w-0 hidden md:table-cell">
                 {contactLabel ? (
                     <div className="flex items-center gap-1.5 text-[11.5px] text-slate-500 truncate">
                         <UserIcon className="w-3 h-3 shrink-0 text-slate-400" />
@@ -254,7 +254,7 @@ function DealRow({
                     <span className="text-slate-300 text-[11.5px]">—</span>
                 )}
             </td>
-            <td className="px-3 whitespace-nowrap">
+            <td className="px-3 whitespace-nowrap hidden md:table-cell">
                 <span className="inline-flex items-center gap-1.5 text-[11.5px] text-slate-500">
                     <GitBranchIcon className="w-3 h-3 text-slate-400" />
                     {pipelineName ?? "—"}
@@ -282,13 +282,13 @@ function DealRow({
                     <span className="text-slate-300">—</span>
                 )}
             </td>
-            <td className="px-3 whitespace-nowrap">
+            <td className="px-3 whitespace-nowrap hidden md:table-cell">
                 <span className={`inline-flex items-center gap-1.5 text-[11px] font-medium ${status.cls}`}>
                     <span className={`size-1.5 rounded-full ${status.dot}`} />
                     {status.label}
                 </span>
             </td>
-            <td className="px-3 whitespace-nowrap">
+            <td className="px-3 whitespace-nowrap hidden md:table-cell">
                 {deal.expected_close_date ? (
                     <span className="inline-flex items-center gap-1 font-mono text-[11px] text-slate-400 tabular-nums">
                         <CalendarIcon className="w-2.5 h-2.5" />
@@ -533,7 +533,7 @@ function SkeletonRow() {
     return (
         <tr className="h-11 border-b border-slate-200/60">
             {Array.from({ length: 7 }).map((_, i) => (
-                <td key={i} className="px-3">
+                <td key={i} className={`px-3 ${[1, 2, 5, 6].includes(i) ? "hidden md:table-cell" : ""}`}>
                     <div className="h-3 bg-slate-100 rounded animate-pulse" style={{ width: `${50 + ((i * 13) % 40)}%` }} />
                 </td>
             ))}

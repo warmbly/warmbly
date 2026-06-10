@@ -170,7 +170,7 @@ function NoteRow({
                 >
                     {fmtRelative(note.created_at)}
                 </span>
-                <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="flex items-center gap-0.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                     {!editing && (
                         <button
                             type="button"

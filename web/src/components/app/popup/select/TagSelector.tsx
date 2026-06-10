@@ -3,15 +3,21 @@
 // dropdown with a search header + checkbox-square rows), so tag and
 // category pickers look identical across the app.
 //
+// The dropdown renders through the PopoverMenu portal so it escapes
+// overflow-hidden / overflow-y-auto ancestors (e.g. the campaign
+// dialog body) instead of being clipped by them.
+//
 // Tags live on the user profile (no inline create here); a "Manage
 // tags" footer opens the tag editor.
 
 import React from "react";
-import { AnimatePresence, motion } from "framer-motion";
 import { CheckIcon, PlusIcon, XIcon, SlidersHorizontalIcon } from "lucide-react";
 import { useUserProfile } from "@/hooks/context/user";
-import useClickOutside from "@/hooks/useClickOutside";
-import useFlipPlacement from "@/hooks/useFlipPlacement";
+import {
+    PopoverMenu,
+    PopoverMenuContent,
+    PopoverMenuTrigger,
+} from "@/components/ui/popover-menu";
 
 export default function TagSelector({
     onAdd,
@@ -30,10 +36,6 @@ export default function TagSelector({
 
     const [open, setOpen] = React.useState(false);
     const [query, setQuery] = React.useState("");
-    const ref = React.useRef<HTMLDivElement>(null);
-    const triggerRef = React.useRef<HTMLDivElement>(null);
-    useClickOutside(ref, () => setOpen(false));
-    const placement = useFlipPlacement(triggerRef, open, 270);
 
     const byId = React.useMemo(() => {
         const m = new Map<string, (typeof tags)[number]>();
@@ -57,117 +59,102 @@ export default function TagSelector({
     }
 
     return (
-        <div ref={ref} className="relative">
-            <div ref={triggerRef} className="rounded-md border border-slate-200 bg-white min-h-[34px]">
-                {selectedChips.length === 0 ? (
-                    <div
-                        onClick={() => setOpen((o) => !o)}
-                        className="px-3 py-2 text-[11.5px] text-slate-400 cursor-pointer hover:text-slate-600"
-                    >
-                        Click to add tags…
-                    </div>
-                ) : (
-                    <div className="px-2 py-2 flex flex-wrap gap-1">
-                        {selectedChips.map((t) => (
-                            <span
-                                key={t.id}
-                                className="inline-flex items-center gap-1 h-5 pl-1.5 pr-1 rounded text-[11px] font-medium"
-                                style={{
-                                    backgroundColor: hexToRgba(t.color, 0.12),
-                                    color: t.color,
-                                    border: `1px solid ${hexToRgba(t.color, 0.25)}`,
-                                }}
-                            >
-                                <span className="size-2 rounded-full shrink-0" style={{ backgroundColor: t.color }} />
-                                <span className="truncate">{t.title}</span>
-                                <button
-                                    type="button"
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        onRemove(t.id);
-                                    }}
-                                    className="opacity-70 hover:opacity-100"
-                                    aria-label={`Remove ${t.title}`}
-                                >
-                                    <XIcon className="w-2.5 h-2.5" />
-                                </button>
-                            </span>
-                        ))}
-                        <button
-                            type="button"
-                            onClick={() => setOpen((o) => !o)}
-                            className="inline-flex items-center gap-1 h-5 px-1.5 rounded text-[11px] font-medium border border-dashed border-slate-300 text-slate-500 hover:border-slate-400 hover:text-slate-700"
-                        >
-                            <PlusIcon className="w-2.5 h-2.5" />
-                            Add
-                        </button>
-                    </div>
-                )}
-            </div>
-
-            <AnimatePresence>
-                {open && (
-                    <motion.div
-                        initial={{ opacity: 0, y: placement === "top" ? 4 : -4 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: placement === "top" ? 4 : -4 }}
-                        transition={{ duration: 0.12 }}
-                        className={`absolute left-0 right-0 z-30 rounded-md border border-slate-200 bg-white shadow-[0_12px_32px_-8px_rgba(15,23,42,0.18)] overflow-hidden ${
-                            placement === "top" ? "bottom-full mb-1" : "top-full mt-1"
-                        }`}
-                    >
-                        <div className="px-2 py-1.5 border-b border-slate-200">
-                            <input
-                                value={query}
-                                onChange={(e) => setQuery(e.target.value)}
-                                placeholder="Search…"
-                                autoFocus
-                                className="w-full h-5 bg-transparent text-[12px] text-slate-900 placeholder:text-slate-400 outline-none"
-                            />
+        <PopoverMenu open={open} onOpenChange={setOpen}>
+            <PopoverMenuTrigger asChild>
+                <div className="rounded-md border border-slate-200 bg-white min-h-[34px] cursor-pointer">
+                    {selectedChips.length === 0 ? (
+                        <div className="px-3 py-2 text-[11.5px] text-slate-400 hover:text-slate-600">
+                            Click to add tags…
                         </div>
-                        <div className="max-h-56 overflow-y-auto py-1">
-                            {filtered.length === 0 && (
-                                <div className="px-3 py-3 text-[11.5px] text-slate-400 text-center">
-                                    {tags.length === 0 ? "No tags yet." : "No matches."}
-                                </div>
-                            )}
-                            {filtered.map((t) => {
-                                const checked = selected.includes(t.id);
-                                return (
+                    ) : (
+                        <div className="px-2 py-2 flex flex-wrap gap-1">
+                            {selectedChips.map((t) => (
+                                <span
+                                    key={t.id}
+                                    className="inline-flex items-center gap-1 h-5 pl-1.5 pr-1 rounded text-[11px] font-medium"
+                                    style={{
+                                        backgroundColor: hexToRgba(t.color, 0.12),
+                                        color: t.color,
+                                        border: `1px solid ${hexToRgba(t.color, 0.25)}`,
+                                    }}
+                                >
+                                    <span className="size-2 rounded-full shrink-0" style={{ backgroundColor: t.color }} />
+                                    <span className="truncate">{t.title}</span>
                                     <button
-                                        key={t.id}
                                         type="button"
-                                        onClick={() => toggle(t.id)}
-                                        className="w-full px-2.5 h-7 flex items-center gap-2 text-[12px] text-slate-700 hover:bg-slate-100 transition-colors"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            onRemove(t.id);
+                                        }}
+                                        className="opacity-70 hover:opacity-100 p-1 -m-1 md:p-0 md:m-0"
+                                        aria-label={`Remove ${t.title}`}
                                     >
-                                        <span
-                                            className={`size-3.5 rounded border flex items-center justify-center transition-colors shrink-0 ${
-                                                checked ? "border-slate-900 bg-slate-900" : "border-slate-300 bg-white"
-                                            }`}
-                                        >
-                                            {checked && <CheckIcon className="w-2 h-2 text-white" />}
-                                        </span>
-                                        <span className="size-2.5 rounded-full shrink-0" style={{ backgroundColor: t.color }} />
-                                        <span className="truncate">{t.title}</span>
+                                        <XIcon className="w-2.5 h-2.5" />
                                     </button>
-                                );
-                            })}
+                                </span>
+                            ))}
                             <button
                                 type="button"
-                                onClick={() => {
-                                    profile?.setTagsEdit(true);
-                                    setOpen(false);
-                                }}
-                                className="w-full px-2.5 h-7 flex items-center gap-2 text-[12px] text-slate-500 hover:bg-slate-50 hover:text-slate-800 border-t border-slate-100 transition-colors"
+                                className="inline-flex items-center gap-1 h-5 px-1.5 rounded text-[11px] font-medium border border-dashed border-slate-300 text-slate-500 hover:border-slate-400 hover:text-slate-700"
                             >
-                                <SlidersHorizontalIcon className="w-3 h-3" />
-                                Manage tags
+                                <PlusIcon className="w-2.5 h-2.5" />
+                                Add
                             </button>
                         </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
-        </div>
+                    )}
+                </div>
+            </PopoverMenuTrigger>
+            <PopoverMenuContent matchTriggerWidth minWidth={220} className="py-0">
+                <div className="px-2 py-1.5 border-b border-slate-200">
+                    <input
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                        placeholder="Search…"
+                        autoFocus
+                        className="w-full h-5 bg-transparent text-[12px] text-slate-900 placeholder:text-slate-400 outline-none"
+                    />
+                </div>
+                <div className="max-h-56 overflow-y-auto py-1">
+                    {filtered.length === 0 && (
+                        <div className="px-3 py-3 text-[11.5px] text-slate-400 text-center">
+                            {tags.length === 0 ? "No tags yet." : "No matches."}
+                        </div>
+                    )}
+                    {filtered.map((t) => {
+                        const checked = selected.includes(t.id);
+                        return (
+                            <button
+                                key={t.id}
+                                type="button"
+                                onClick={() => toggle(t.id)}
+                                className="w-full px-2.5 h-7 flex items-center gap-2 text-[12px] text-slate-700 hover:bg-slate-100 transition-colors"
+                            >
+                                <span
+                                    className={`size-3.5 rounded border flex items-center justify-center transition-colors shrink-0 ${
+                                        checked ? "border-slate-900 bg-slate-900" : "border-slate-300 bg-white"
+                                    }`}
+                                >
+                                    {checked && <CheckIcon className="w-2 h-2 text-white" />}
+                                </span>
+                                <span className="size-2.5 rounded-full shrink-0" style={{ backgroundColor: t.color }} />
+                                <span className="truncate">{t.title}</span>
+                            </button>
+                        );
+                    })}
+                    <button
+                        type="button"
+                        onClick={() => {
+                            profile?.setTagsEdit(true);
+                            setOpen(false);
+                        }}
+                        className="w-full px-2.5 h-7 flex items-center gap-2 text-[12px] text-slate-500 hover:bg-slate-50 hover:text-slate-800 border-t border-slate-100 transition-colors"
+                    >
+                        <SlidersHorizontalIcon className="w-3 h-3" />
+                        Manage tags
+                    </button>
+                </div>
+            </PopoverMenuContent>
+        </PopoverMenu>
     );
 }
 

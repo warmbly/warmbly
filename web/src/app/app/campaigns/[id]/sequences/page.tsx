@@ -73,5 +73,5 @@ function SequencesBuilder({ campaignId }: { campaignId: string }) {
 }
 
 function SequencesSkeleton() {
-    return <div className="h-[74vh] w-full animate-pulse rounded-md border border-slate-200 bg-slate-100/60" />;
+    return <div className="h-[74dvh] w-full animate-pulse rounded-md border border-slate-200 bg-slate-100/60" />;
 }

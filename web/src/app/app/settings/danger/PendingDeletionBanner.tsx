@@ -100,7 +100,7 @@ export default function PendingDeletionBanner({
                 />
             </div>
 
-            <div className="px-3 h-11 border-t border-red-200/70 bg-red-100/30 flex items-center gap-1.5">
+            <div className="px-3 min-h-11 py-2 sm:py-0 sm:h-11 border-t border-red-200/70 bg-red-100/30 flex items-center flex-wrap sm:flex-nowrap gap-1.5">
                 <span className="text-[11.5px] text-red-700/80">
                     Cancel any time before then to keep everything intact.
                 </span>

@@ -243,6 +243,24 @@ function TypeRow({
     const [renaming, setRenaming] = React.useState(false);
     const [name, setName] = React.useState(type.name);
     const [swatches, setSwatches] = React.useState(false);
+    // When the row sits in the lower half of the scrollable type list, the
+    // top-anchored swatch popover would be clipped by the list's
+    // overflow-y-auto, so flip it above the row instead.
+    const [swatchAbove, setSwatchAbove] = React.useState(false);
+    const rowRef = React.useRef<HTMLDivElement>(null);
+
+    function toggleSwatches(e: React.MouseEvent) {
+        e.stopPropagation();
+        const row = rowRef.current;
+        const scroller = row?.parentElement;
+        if (row && scroller) {
+            const rowRect = row.getBoundingClientRect();
+            const listRect = scroller.getBoundingClientRect();
+            // ~96px: the palette's approximate height incl. padding.
+            setSwatchAbove(rowRect.bottom + 96 > listRect.bottom);
+        }
+        setSwatches((s) => !s);
+    }
 
     React.useEffect(() => {
         setName(type.name);
@@ -328,6 +346,7 @@ function TypeRow({
 
     return (
         <div
+            ref={rowRef}
             className={`group relative px-2.5 h-7 flex items-center gap-2 text-[12px] cursor-pointer transition-colors hover:bg-slate-100 ${
                 selected ? "text-slate-900 font-medium" : "text-slate-700"
             }`}
@@ -335,10 +354,7 @@ function TypeRow({
         >
             <button
                 type="button"
-                onClick={(e) => {
-                    e.stopPropagation();
-                    setSwatches((s) => !s);
-                }}
+                onClick={toggleSwatches}
                 aria-label="Recolour type"
                 className="size-2.5 rounded-full shrink-0 ring-offset-1 hover:ring-2 hover:ring-slate-300 transition-shadow"
                 style={{ backgroundColor: type.color }}
@@ -372,6 +388,7 @@ function TypeRow({
                     <SwatchPopover
                         value={type.color}
                         usedColors={usedColors}
+                        above={swatchAbove}
                         onPick={recolour}
                         onClose={() => setSwatches(false)}
                     />
@@ -388,11 +405,13 @@ function TypeRow({
 function SwatchPopover({
     value,
     usedColors,
+    above = false,
     onPick,
     onClose,
 }: {
     value: string;
     usedColors: string[];
+    above?: boolean;
     onPick: (color: string) => void;
     onClose: () => void;
 }) {
@@ -407,7 +426,9 @@ function SwatchPopover({
             exit={{ opacity: 0, scale: 0.96 }}
             transition={{ duration: 0.1 }}
             onClick={(e) => e.stopPropagation()}
-            className="absolute left-1.5 top-full mt-1 z-40 rounded-md border border-slate-200 bg-white p-1.5 shadow-[0_12px_32px_-8px_rgba(15,23,42,0.18)]"
+            className={`absolute left-1.5 z-40 rounded-md border border-slate-200 bg-white p-1.5 shadow-[0_12px_32px_-8px_rgba(15,23,42,0.18)] ${
+                above ? "bottom-full mb-1" : "top-full mt-1"
+            }`}
         >
             <div className="grid grid-cols-4 gap-1.5">
                 {TASK_TYPE_COLORS.map((c) => {

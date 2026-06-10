@@ -513,7 +513,7 @@ export default function CampaignsPage() {
                                     <span className="text-[12.5px] text-slate-900 font-medium truncate max-w-[40%]">
                                         {c.name}
                                     </span>
-                                    <span className="font-mono text-[10.5px] text-slate-400 tabular-nums shrink-0">
+                                    <span className="font-mono text-[10.5px] text-slate-400 tabular-nums shrink-0 hidden sm:inline">
                                         {c.id.slice(0, 8)}
                                     </span>
                                     <CampaignFolderChips campaign={c} folders={folders} />
@@ -525,7 +525,7 @@ export default function CampaignsPage() {
                                     <span className={cn("ml-auto text-[10px] uppercase tracking-[0.1em] font-medium shrink-0", statusTone(cstatus))}>
                                         {stateLabel}
                                     </span>
-                                    <span className="font-mono text-[10.5px] text-slate-400 tabular-nums flex items-center gap-1 shrink-0">
+                                    <span className="font-mono text-[10.5px] text-slate-400 tabular-nums items-center gap-1 shrink-0 hidden sm:flex">
                                         <CalendarIcon className="w-3 h-3" />
                                         {c.created_at
                                             ? new Date(c.created_at).toLocaleDateString("en-US", {

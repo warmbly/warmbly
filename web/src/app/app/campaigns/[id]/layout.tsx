@@ -49,7 +49,7 @@ export default function CampaignLayout() {
                     <div className="h-6 w-56 bg-slate-100 rounded-md animate-pulse" />
                     <div className="h-3 w-40 bg-slate-100 rounded animate-pulse" />
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 overflow-hidden">
                     {[...Array(5)].map((_, i) => (
                         <div key={i} className="h-8 w-20 bg-slate-100 rounded-md animate-pulse" />
                     ))}

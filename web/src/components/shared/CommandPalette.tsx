@@ -15,7 +15,6 @@ import {
   MoonIcon,
   SunIcon,
   MonitorIcon,
-  PanelLeftIcon,
 } from 'lucide-react'
 import {
   CommandDialog,
@@ -40,7 +39,6 @@ export function CommandPalette() {
   const open = useAppStore((state) => state.commandPaletteOpen)
   const setOpen = useAppStore((state) => state.setCommandPaletteOpen)
   const setTheme = useAppStore((state) => state.setTheme)
-  const toggleSidebar = useAppStore((state) => state.toggleSidebar)
   const setShortcutsModalOpen = useAppStore((state) => state.setShortcutsModalOpen)
 
   const runCommand = (command: () => void) => {
@@ -70,7 +68,14 @@ export function CommandPalette() {
   ]
 
   return (
-    <CommandDialog open={open} onOpenChange={setOpen}>
+    <CommandDialog
+      open={open}
+      onOpenChange={setOpen}
+      // Anchor near the top on phones so the soft keyboard (opened by the
+      // autofocused input) doesn't cover the results; md+ keeps the exact
+      // default centered placement.
+      className="top-[10%] translate-y-0 md:top-[50%] md:translate-y-[-50%]"
+    >
       <CommandInput placeholder="Type a command or search..." />
       <CommandList>
         <CommandEmpty>No results found.</CommandEmpty>
@@ -109,11 +114,6 @@ export function CommandPalette() {
         <CommandSeparator />
 
         <CommandGroup heading="Actions">
-          <CommandItem onSelect={() => runCommand(toggleSidebar)}>
-            <PanelLeftIcon className="mr-2 size-4" />
-            <span>Toggle sidebar</span>
-            <span className="ml-auto text-xs text-muted-foreground">b</span>
-          </CommandItem>
           <CommandItem onSelect={() => runCommand(() => setShortcutsModalOpen(true))}>
             <KeyIcon className="mr-2 size-4" />
             <span>Keyboard shortcuts</span>

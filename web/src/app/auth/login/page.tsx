@@ -976,7 +976,7 @@ function VerifyStep({
                 </div>
                 <h1 className="text-[28px] font-bold text-slate-900 tracking-tight leading-tight">Check your email</h1>
                 <p className="text-sm text-slate-400 mt-1.5">
-                    We sent a 6-digit code to <span className="text-slate-600 font-medium">{email}</span>
+                    We sent a 6-digit code to <span className="text-slate-600 font-medium break-all">{email}</span>
                 </p>
             </div>
 
@@ -987,14 +987,14 @@ function VerifyStep({
                         maxLength={6}
                         value={otp}
                         onChange={(v) => setOtp(v)}
-                        containerClassName="gap-2.5"
+                        containerClassName="gap-1.5 lg:gap-2.5"
                     >
-                        <InputOTPGroup className="gap-2.5">
+                        <InputOTPGroup className="gap-1.5 lg:gap-2.5">
                             {[0, 1, 2, 3, 4, 5].map((i) => (
                                 <InputOTPSlot
                                     key={i}
                                     index={i}
-                                    className="!w-12 !h-14 !rounded-lg !border-slate-200 text-lg font-semibold data-[active=true]:!border-sky-400 data-[active=true]:!ring-sky-400/15 !shadow-none first:!rounded-lg last:!rounded-lg !border"
+                                    className="!w-10 !h-12 lg:!w-12 lg:!h-14 !rounded-lg !border-slate-200 text-lg font-semibold data-[active=true]:!border-sky-400 data-[active=true]:!ring-sky-400/15 !shadow-none first:!rounded-lg last:!rounded-lg !border"
                                 />
                             ))}
                         </InputOTPGroup>
@@ -1083,13 +1083,13 @@ function TwoFactorStep({
                     </form>
                 ) : (
                     <div className="flex justify-center">
-                        <InputOTP maxLength={6} value={otp} onChange={(v) => setOtp(v)} containerClassName="gap-2.5">
-                            <InputOTPGroup className="gap-2.5">
+                        <InputOTP maxLength={6} value={otp} onChange={(v) => setOtp(v)} containerClassName="gap-1.5 lg:gap-2.5">
+                            <InputOTPGroup className="gap-1.5 lg:gap-2.5">
                                 {[0, 1, 2, 3, 4, 5].map((i) => (
                                     <InputOTPSlot
                                         key={i}
                                         index={i}
-                                        className="!w-12 !h-14 !rounded-lg !border-slate-200 text-lg font-semibold data-[active=true]:!border-sky-400 data-[active=true]:!ring-sky-400/15 !shadow-none first:!rounded-lg last:!rounded-lg !border"
+                                        className="!w-10 !h-12 lg:!w-12 lg:!h-14 !rounded-lg !border-slate-200 text-lg font-semibold data-[active=true]:!border-sky-400 data-[active=true]:!ring-sky-400/15 !shadow-none first:!rounded-lg last:!rounded-lg !border"
                                     />
                                 ))}
                             </InputOTPGroup>

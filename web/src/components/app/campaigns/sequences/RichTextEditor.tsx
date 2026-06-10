@@ -320,7 +320,7 @@ export function VariableMenu({ onPick, variables }: { onPick: (token: string) =>
                                   }
                                 : undefined
                         }
-                        className="fixed z-40 max-h-[76vh] overflow-y-auto rounded-md border border-slate-200 bg-white shadow-[0_12px_32px_-8px_rgba(15,23,42,0.18)] sm:max-h-[80vh]"
+                        className="fixed z-40 max-h-[76dvh] overflow-y-auto rounded-md border border-slate-200 bg-white shadow-[0_12px_32px_-8px_rgba(15,23,42,0.18)] sm:max-h-[80vh]"
                     >
                         <div className="px-3 py-2 border-b border-slate-100">
                             <p className="text-[12px] font-medium text-slate-800">Personalization</p>

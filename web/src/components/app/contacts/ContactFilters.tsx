@@ -28,7 +28,7 @@ import {
     XIcon,
 } from "lucide-react";
 
-import { SearchInput, TextInput } from "@/components/ui/field";
+import { NumberInput, SearchInput, TextInput } from "@/components/ui/field";
 import {
     PopoverMenu,
     PopoverMenuContent,
@@ -375,12 +375,12 @@ function FilterRow({
     onRemove: () => void;
 }) {
     return (
-        <div className="flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5 sm:flex-nowrap">
             <TextInput
                 value={value.name}
                 onChange={(v) => onChange({ ...value, name: v })}
                 placeholder="field"
-                className="flex-1"
+                className="min-w-[140px] flex-1 sm:min-w-0"
             />
             <PopoverMenu align="start">
                 <PopoverMenuTrigger asChild>
@@ -404,7 +404,7 @@ function FilterRow({
                 value={value.value}
                 onChange={(v) => onChange({ ...value, value: v })}
                 placeholder="value"
-                className="flex-1"
+                className="min-w-[140px] flex-1 sm:min-w-0"
             />
             <button
                 type="button"
@@ -475,20 +475,14 @@ function RangeRow({
                 {enabled && <CheckIcon className="w-2.5 h-2.5" />}
             </button>
             <span className="text-[12px] text-slate-700 w-20 shrink-0">{label}</span>
-            <TextInput
-                value={value !== undefined ? String(value) : ""}
-                onChange={(v) => {
-                    if (v === "") {
-                        onChange(0);
-                        return;
-                    }
-                    const n = parseInt(v, 10);
-                    if (!Number.isNaN(n) && n >= 0) onChange(n);
-                }}
-                type="number"
+            <NumberInput
+                value={value ?? Number.NaN}
+                onChange={(n) => onChange(n)}
+                min={0}
+                align="right"
                 placeholder="0"
                 disabled={!enabled}
-                className="w-20 text-right tabular-nums"
+                className="w-20"
             />
             <span className="text-[11.5px] text-slate-400">{suffix}</span>
         </div>

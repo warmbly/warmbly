@@ -166,7 +166,7 @@ export default function AddEmailModal() {
                         exit={{ y: 8, opacity: 0 }}
                         transition={{ duration: 0.16 }}
                         onClick={(e) => e.stopPropagation()}
-                        className="w-full max-w-[560px] rounded-lg bg-white border border-slate-200 shadow-[0_24px_48px_-12px_rgba(15,23,42,0.18),0_8px_16px_-8px_rgba(15,23,42,0.1)] overflow-hidden flex flex-col max-h-[88vh]"
+                        className="w-full max-w-[560px] rounded-lg bg-white border border-slate-200 shadow-[0_24px_48px_-12px_rgba(15,23,42,0.18),0_8px_16px_-8px_rgba(15,23,42,0.1)] overflow-hidden flex flex-col max-h-[88dvh]"
                     >
                         <Header view={view} onBack={() => setView("pick")} onClose={() => user.setAddEmail(false)} />
                         <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden relative">

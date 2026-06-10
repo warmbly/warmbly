@@ -287,8 +287,8 @@ export default function AddContacts() {
                 >
                     <RiCloseLine className="w-5" />
                 </div>
-                <h1 className="text-5xl text-slate-600 font-bold font-inter mb-9 mr-4 text-center mt-12">Upload Contacts</h1>
-                <p className="text-xl text-slate-400 font-inter max-w-5xl mx-auto text-center mb-14">Easily grow your contact list by adding new people in two ways: manually enter individual details, or quickly import multiple contacts at once using a .csv file. Choose the option that best fits your workflow to start organizing and reaching your audience faster.</p>
+                <h1 className="text-3xl md:text-5xl text-slate-600 font-bold font-inter mb-9 mr-4 text-center mt-12">Upload Contacts</h1>
+                <p className="text-base md:text-xl text-slate-400 font-inter max-w-5xl mx-auto text-center mb-14">Easily grow your contact list by adding new people in two ways: manually enter individual details, or quickly import multiple contacts at once using a .csv file. Choose the option that best fits your workflow to start organizing and reaching your audience faster.</p>
                 <div className="flex flex-col md:flex-row justify-center gap-8 mb-8">
                     <UploadOption
                         onClick={() => setUploadMethod('manual')}
@@ -448,7 +448,7 @@ export default function AddContacts() {
                                     reverse
                                 />
                             </div>)}
-                        <div className="flex justify-end gap-3">
+                        <div className="flex flex-wrap justify-end gap-3">
                             <button
                                 onClick={() => setManual(DEFAULT_CONTACT)}
                                 className="ripple rounded-lg bg-slate-200 cursor-pointer hover:bg-slate-300 transition text-slate-500 h-10 w-20">
@@ -600,7 +600,7 @@ export default function AddContacts() {
                                         reverse
                                     />
                                 </div>)}
-                            <div className="flex justify-end gap-3">
+                            <div className="flex flex-wrap justify-end gap-3">
                                 <button
                                     onClick={() => setCSValues({})}
                                     className="ripple rounded-lg bg-slate-200 cursor-pointer hover:bg-slate-300 transition text-slate-500 h-10 w-20">
@@ -760,9 +760,9 @@ function CSVSelector({
     useClickOutside(dropRef, () => setDrop(false))
 
     return (<>
-        <div className="flex items-center gap-5 justify-between">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-5 sm:justify-between">
             <h1 className="break-all">{column}</h1>
-            <div className="relative max-w-sm w-full shrink-0" ref={dropRef}>
+            <div className="relative w-full sm:max-w-sm sm:shrink-0" ref={dropRef}>
                 <Selector show={drop} setShow={(v) => setDrop(v)} caret>
                     {(() => {
                         const item = selectOptions.find((o) => o.value === selection);

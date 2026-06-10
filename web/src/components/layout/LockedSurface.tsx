@@ -73,8 +73,8 @@ export function LockedSurface({
             </div>
 
             {/* Frosted overlay + centered upgrade card. */}
-            <div className="absolute inset-0 bg-gradient-to-b from-white/50 via-white/70 to-white/90 backdrop-blur-[6px] flex items-center justify-center px-4">
-                <div className="w-full max-w-[460px] rounded-lg bg-white border border-slate-200 shadow-[0_24px_48px_-12px_rgba(15,23,42,0.12),0_8px_16px_-8px_rgba(15,23,42,0.06)] overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-b from-white/50 via-white/70 to-white/90 backdrop-blur-[6px] flex items-center justify-center px-4 overflow-y-auto py-4">
+                <div className="w-full max-w-[460px] my-auto rounded-lg bg-white border border-slate-200 shadow-[0_24px_48px_-12px_rgba(15,23,42,0.12),0_8px_16px_-8px_rgba(15,23,42,0.06)] overflow-hidden">
                     {/* Header row */}
                     <div className="h-12 px-4 border-b border-slate-200 flex items-center gap-2.5">
                         <div className="size-5 rounded bg-amber-50 text-amber-600 flex items-center justify-center">
@@ -122,7 +122,7 @@ export function LockedSurface({
                     <div className="px-3 h-12 border-t border-slate-200 flex items-center gap-1.5">
                         {isOwner ? (
                             <>
-                                <span className="text-[11px] text-slate-400">
+                                <span className="hidden sm:inline text-[11px] text-slate-400">
                                     Upgrade unlocks it instantly
                                 </span>
                                 <Link

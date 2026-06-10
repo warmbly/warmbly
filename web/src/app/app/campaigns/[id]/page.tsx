@@ -209,9 +209,9 @@ export default function CampaignOverview() {
                                     <span className="flex-1 min-w-0">Step</span>
                                     <span className="w-14 text-right">Sent</span>
                                     <span className="w-14 text-right">Opens</span>
-                                    <span className="w-14 text-right">Clicks</span>
+                                    <span className="w-14 text-right hidden md:block">Clicks</span>
                                     <span className="w-14 text-right">Replies</span>
-                                    <span className="w-16 text-right">Bounces</span>
+                                    <span className="w-16 text-right hidden md:block">Bounces</span>
                                 </div>
                                 {sequences.map((s) => (
                                     <div key={s.sequence_id} className="h-11 px-5 flex items-center gap-3">
@@ -227,13 +227,13 @@ export default function CampaignOverview() {
                                         <span className="w-14 text-right font-mono text-[11.5px] text-emerald-600 tabular-nums">
                                             <AnimatedNumber value={s.opens ?? 0} />
                                         </span>
-                                        <span className="w-14 text-right font-mono text-[11.5px] text-violet-600 tabular-nums">
+                                        <span className="w-14 text-right font-mono text-[11.5px] text-violet-600 tabular-nums hidden md:block">
                                             <AnimatedNumber value={s.clicks ?? 0} />
                                         </span>
                                         <span className="w-14 text-right font-mono text-[11.5px] text-amber-600 tabular-nums">
                                             <AnimatedNumber value={s.replies ?? 0} />
                                         </span>
-                                        <span className="w-16 text-right font-mono text-[11.5px] text-rose-600 tabular-nums">
+                                        <span className="w-16 text-right font-mono text-[11.5px] text-rose-600 tabular-nums hidden md:block">
                                             <AnimatedNumber value={s.bounces ?? 0} />
                                         </span>
                                     </div>

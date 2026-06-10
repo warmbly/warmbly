@@ -104,7 +104,7 @@ export default function DeliverabilityPage() {
                     <div className="grid lg:grid-cols-[1fr_320px] min-h-0 flex-1">
                         <section className="flex flex-col min-h-0 lg:border-r lg:border-slate-200">
                             <SectionBar label="Over time">
-                                <div className="inline-flex items-center gap-0.5 rounded-md bg-slate-100 p-0.5">
+                                <div className="inline-flex items-center gap-0.5 rounded-md bg-slate-100 p-0.5 max-w-full overflow-x-auto">
                                     {METRICS.map((m) => (
                                         <button
                                             key={m.key}
@@ -185,10 +185,10 @@ export default function DeliverabilityPage() {
                                 <div key={m.email_account_id} className="h-11 px-5 flex items-center gap-3">
                                     <span className={`size-1.5 rounded-full shrink-0 ${BAND_DOT[m.band]}`} />
                                     <span className="text-[12.5px] font-medium text-slate-900 truncate max-w-[36%]">{m.email}</span>
-                                    <span className="ml-auto flex items-center gap-4 font-mono text-[11px] text-slate-500 tabular-nums shrink-0">
-                                        <span title="Sent">{num(m.sent)} sent</span>
+                                    <span className="ml-auto flex items-center gap-2 md:gap-4 font-mono text-[11px] text-slate-500 tabular-nums shrink-0">
+                                        <span title="Sent" className="hidden md:inline">{num(m.sent)} sent</span>
                                         <span title="Bounce rate" className="text-rose-600">{pct(m.bounce_rate)} bounce</span>
-                                        <span title="Complaint rate" className="text-amber-600">{pct(m.complaint_rate)} spam</span>
+                                        <span title="Complaint rate" className="hidden md:inline text-amber-600">{pct(m.complaint_rate)} spam</span>
                                     </span>
                                     <BandChip band={m.band} />
                                 </div>
@@ -212,10 +212,10 @@ export default function DeliverabilityPage() {
                                     >
                                         <span className={`size-1.5 rounded-full shrink-0 ${BAND_DOT[c.band]}`} />
                                         <span className="text-[12.5px] font-medium text-slate-900 truncate max-w-[36%]">{c.name}</span>
-                                        <span className="ml-auto flex items-center gap-4 font-mono text-[11px] text-slate-500 tabular-nums shrink-0">
-                                            <span title="Sent">{num(c.sent)} sent</span>
+                                        <span className="ml-auto flex items-center gap-2 md:gap-4 font-mono text-[11px] text-slate-500 tabular-nums shrink-0">
+                                            <span title="Sent" className="hidden md:inline">{num(c.sent)} sent</span>
                                             <span title="Bounce rate" className="text-rose-600">{pct(c.bounce_rate)} bounce</span>
-                                            <span title="Complaint rate" className="text-amber-600">{pct(c.complaint_rate)} spam</span>
+                                            <span title="Complaint rate" className="hidden md:inline text-amber-600">{pct(c.complaint_rate)} spam</span>
                                         </span>
                                         <BandChip band={c.band} />
                                     </Link>

@@ -49,7 +49,7 @@ export function MessageBubble({ email, onReply, onForward }: MessageBubbleProps)
     const addr = fromAddr(email.from);
 
     return (
-        <article className="group px-5 py-4">
+        <article className="group px-3 sm:px-5 py-4">
             <header className="flex items-start gap-3 mb-3">
                 <div className="size-7 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center text-[10px] font-semibold shrink-0">
                     {initials(email.from)}
@@ -66,7 +66,7 @@ export function MessageBubble({ email, onReply, onForward }: MessageBubbleProps)
                         )}
                     </div>
                     <div className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1.5">
-                        <span>to {email.to}</span>
+                        <span className="truncate min-w-0">to {email.to}</span>
                     </div>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
@@ -100,7 +100,7 @@ export function MessageBubble({ email, onReply, onForward }: MessageBubbleProps)
                 </div>
             </header>
             <div
-                className="text-[13px] text-slate-800 leading-relaxed prose prose-sm max-w-none prose-p:my-2 prose-a:text-sky-600"
+                className="text-[13px] text-slate-800 leading-relaxed prose prose-sm max-w-none break-words prose-p:my-2 prose-a:text-sky-600"
                 dangerouslySetInnerHTML={{ __html: email.body }}
             />
         </article>

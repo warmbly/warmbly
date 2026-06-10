@@ -51,7 +51,7 @@ export default function OverviewTab({
             )}
 
             <Section title="Engagement">
-                <div className="grid grid-cols-3 gap-1.5">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-1.5">
                     <StatTile
                         icon={<MailIcon className="w-3 h-3" />}
                         label="Sent"

@@ -21,6 +21,7 @@ import {
     getBezierPath,
     useNodesState,
     useEdgesState,
+    useReactFlow,
     type Node,
     type Edge,
     type Connection,
@@ -28,6 +29,7 @@ import {
     type EdgeProps,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import { AnimatePresence, motion } from "framer-motion";
 import dagre from "@dagrejs/dagre";
 import {
     ArrowLeftIcon,
@@ -47,6 +49,7 @@ import {
     TriangleAlertIcon,
     Trash2Icon,
     UserMinusIcon,
+    WandSparklesIcon,
     XCircleIcon,
     XIcon,
     ZapIcon,
@@ -213,7 +216,7 @@ function TriggerNode({ data, selected }: NodeProps) {
             <div className="px-2.5 py-2">
                 <div className="truncate text-[12.5px] font-semibold text-slate-800">{d.label}</div>
             </div>
-            <Handle type="source" id="s" position={Position.Bottom} className="!h-3 !w-3 !border-2 !border-white !bg-sky-500" />
+            <Handle type="source" id="s" position={Position.Bottom} className="!h-4 !w-4 md:!h-3 md:!w-3 !border-2 !border-white !bg-sky-500" />
         </div>
     );
 }
@@ -227,9 +230,9 @@ function ConditionNode({ data, selected }: NodeProps) {
                 selected ? "border-sky-400 ring-2 ring-sky-100" : "border-sky-200",
             )}
         >
-            <Handle type="target" position={Position.Top} className="!h-2 !w-2 !border-2 !border-white !bg-slate-300" />
+            <Handle type="target" position={Position.Top} className="!h-3 !w-3 md:!h-2 md:!w-2 !border-2 !border-white !bg-slate-300" />
             {/* Right dot = the YES (true) path */}
-            <Handle type="source" id="out" position={Position.Right} className="!h-3 !w-3 !border-2 !border-white !bg-sky-500" />
+            <Handle type="source" id="out" position={Position.Right} className="!h-4 !w-4 md:!h-3 md:!w-3 !border-2 !border-white !bg-sky-500" />
             <div className="flex items-center gap-1.5">
                 <GitBranchIcon className="w-3 h-3 shrink-0 text-sky-600" />
                 <span className="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-sky-500">if</span>
@@ -247,7 +250,7 @@ function ConditionNode({ data, selected }: NodeProps) {
                 </button>
             </div>
             {/* Bottom dot = the NO (false) path */}
-            <Handle type="source" id="else" position={Position.Bottom} className="!h-3 !w-3 !border-2 !border-white !bg-slate-400" />
+            <Handle type="source" id="else" position={Position.Bottom} className="!h-4 !w-4 md:!h-3 md:!w-3 !border-2 !border-white !bg-slate-400" />
         </div>
     );
 }
@@ -261,7 +264,7 @@ function ActionNode({ data, selected }: NodeProps) {
                 selected ? "border-sky-400 ring-2 ring-sky-100" : "border-slate-200",
             )}
         >
-            <Handle type="target" position={Position.Top} className="!h-2 !w-2 !border-2 !border-white !bg-slate-300" />
+            <Handle type="target" position={Position.Top} className="!h-3 !w-3 md:!h-2 md:!w-2 !border-2 !border-white !bg-slate-300" />
             <div className="flex items-center gap-2 rounded-t-xl border-b border-slate-200/70 bg-gradient-to-r from-slate-50 to-white px-2.5 py-1.5">
                 {d.provider ? (
                     <ProviderGlyph provider={d.provider} name={d.provider} size={7} />
@@ -291,7 +294,7 @@ function ActionNode({ data, selected }: NodeProps) {
                 <div className="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-slate-300">Then</div>
                 <div className="mt-0.5 truncate text-[11.5px] text-slate-500">{d.sub || "Pick an integration…"}</div>
             </div>
-            <Handle type="source" id="s" position={Position.Bottom} className="!h-3 !w-3 !border-2 !border-white !bg-sky-500" />
+            <Handle type="source" id="s" position={Position.Bottom} className="!h-4 !w-4 md:!h-3 md:!w-3 !border-2 !border-white !bg-sky-500" />
         </div>
     );
 }
@@ -300,6 +303,7 @@ const nodeTypes = { trigger: TriggerNode, condition: ConditionNode, action: Acti
 
 // ── Convergent edge (labeled bezier), mirrored from CampaignFlow ─────────────
 function ConvergeEdge({
+    id,
     sourceX,
     sourceY,
     targetX,
@@ -311,7 +315,9 @@ function ConvergeEdge({
     label,
     labelStyle,
     labelBgStyle,
+    selected,
 }: EdgeProps) {
+    const { deleteElements } = useReactFlow();
     const [path, labelX, labelY] = getBezierPath({
         sourceX,
         sourceY,
@@ -323,18 +329,40 @@ function ConvergeEdge({
     return (
         <>
             <BaseEdge path={path} markerEnd={markerEnd} style={style} />
-            {label ? (
+            {label || selected ? (
                 <EdgeLabelRenderer>
                     <div
-                        className="nodrag nopan pointer-events-none absolute rounded border px-1 py-px text-[10px]"
-                        style={{
-                            transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
-                            borderColor: (labelBgStyle as { stroke?: string } | undefined)?.stroke ?? "#e2e8f0",
-                            background: (labelBgStyle as { fill?: string } | undefined)?.fill ?? "#fff",
-                            color: (labelStyle as { fill?: string } | undefined)?.fill ?? "#475569",
-                        }}
+                        className="nodrag nopan pointer-events-none absolute flex items-center gap-1"
+                        style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }}
                     >
-                        {label}
+                        {label ? (
+                            <div
+                                className="rounded border px-1 py-px text-[10px]"
+                                style={{
+                                    borderColor: (labelBgStyle as { stroke?: string } | undefined)?.stroke ?? "#e2e8f0",
+                                    background: (labelBgStyle as { fill?: string } | undefined)?.fill ?? "#fff",
+                                    color: (labelStyle as { fill?: string } | undefined)?.fill ?? "#475569",
+                                }}
+                            >
+                                {label}
+                            </div>
+                        ) : null}
+                        {/* Touch-reachable delete: phones have no Delete key, so a
+                            selected edge shows an X (deleteKeyCode still works on desktop). */}
+                        {selected ? (
+                            <button
+                                type="button"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    void deleteElements({ edges: [{ id }] });
+                                }}
+                                aria-label="Remove connection"
+                                title="Remove connection"
+                                className="pointer-events-auto inline-flex size-5 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400 shadow-sm hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
+                            >
+                                <XIcon className="w-3 h-3" />
+                            </button>
+                        ) : null}
                     </div>
                 </EdgeLabelRenderer>
             ) : null}
@@ -691,7 +719,7 @@ export default function AutomationFlow({
 
     return (
         <div className="h-full flex flex-col">
-            <header className="h-12 px-3 border-b border-slate-200 flex items-center gap-2 shrink-0 bg-white">
+            <header className="min-h-12 py-1.5 md:h-12 md:py-0 px-3 border-b border-slate-200 flex flex-wrap md:flex-nowrap items-center gap-2 gap-y-1.5 shrink-0 bg-white">
                 <button
                     type="button"
                     onClick={guardedBack}
@@ -704,7 +732,7 @@ export default function AutomationFlow({
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     placeholder="Automation name"
-                    className="h-7 px-2 w-56 max-w-[36vw] rounded-md text-[13px] font-medium text-slate-900 outline-none hover:bg-slate-50 focus:bg-white focus:border-sky-400 focus:ring-2 focus:ring-sky-100 border border-transparent"
+                    className="h-7 px-2 w-56 max-w-[30vw] md:max-w-[36vw] rounded-md text-[13px] font-medium text-slate-900 outline-none hover:bg-slate-50 focus:bg-white focus:border-sky-400 focus:ring-2 focus:ring-sky-100 border border-transparent"
                 />
                 <button
                     type="button"
@@ -739,34 +767,39 @@ export default function AutomationFlow({
                             setSelectedId(null);
                             setPanel((p) => (p === "history" ? null : "history"));
                         }}
+                        aria-label="History"
                         className={cn(
                             "h-7 px-2.5 rounded-md border text-[12px] inline-flex items-center gap-1.5 transition-colors",
                             panel === "history" ? "border-sky-300 bg-sky-50 text-sky-700" : "border-slate-200 hover:border-slate-300 text-slate-700 hover:text-slate-900",
                         )}
                     >
                         <HistoryIcon className="w-3.5 h-3.5" />
-                        History
+                        <span className="hidden md:inline">History</span>
                     </button>
                     <button
                         type="button"
                         onClick={runTest}
                         disabled={test.isPending || update.isPending}
+                        aria-label="Test"
                         className="h-7 px-2.5 rounded-md border border-slate-200 hover:border-slate-300 text-slate-700 hover:text-slate-900 text-[12px] inline-flex items-center gap-1.5 transition-colors disabled:opacity-60"
                     >
                         {test.isPending ? <Loader2Icon className="w-3.5 h-3.5 animate-spin" /> : <PlayIcon className="w-3.5 h-3.5" />}
-                        Test
+                        <span className="hidden md:inline">Test</span>
                     </button>
                     <button
                         type="button"
                         onClick={() => setNodes((ns) => stackComponents(layoutGraph(ns, edges), edges))}
+                        aria-label="Tidy up"
                         className="h-7 px-2.5 rounded-md border border-slate-200 hover:border-slate-300 text-slate-700 hover:text-slate-900 text-[12px] inline-flex items-center transition-colors"
                     >
-                        Tidy up
+                        <WandSparklesIcon className="w-3.5 h-3.5 md:hidden" />
+                        <span className="hidden md:inline">Tidy up</span>
                     </button>
                     <button
                         type="button"
                         onClick={save}
                         disabled={!dirty || update.isPending}
+                        aria-label={dirty ? "Save" : "Saved"}
                         title={dirty ? "Save changes" : "No unsaved changes"}
                         className={cn(
                             "h-7 px-3 rounded-md text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors",
@@ -782,7 +815,7 @@ export default function AutomationFlow({
                         ) : (
                             <CheckIcon className="w-3.5 h-3.5 text-slate-300" />
                         )}
-                        {dirty ? "Save" : "Saved"}
+                        <span className="hidden md:inline">{dirty ? "Save" : "Saved"}</span>
                     </button>
                 </div>
             </header>
@@ -842,13 +875,15 @@ export default function AutomationFlow({
                         </div>
                     </Panel>
                     <Panel position="bottom-center">
-                        <div className="rounded-md bg-white/95 px-3 py-1.5 text-[11px] text-slate-500 shadow-sm">
+                        <div className="hidden md:block rounded-md bg-white/95 px-3 py-1.5 text-[11px] text-slate-500 shadow-sm">
                             drag a node's dot to connect · IF block: right dot = yes, bottom dot = no · drag to empty canvas for a new action · click a line then Delete to remove
                         </div>
                     </Panel>
                 </ReactFlow>
 
+                <AnimatePresence>
                 {selectedNode && !panel && (
+                    <SidePanel key="editor">
                     <NodeEditor
                         key={selectedNode.id}
                         node={selectedNode}
@@ -869,9 +904,11 @@ export default function AutomationFlow({
                         providerOf={providerOf}
                         onAction={(patch) => updateNodeData(selectedNode.id, patch)}
                     />
+                    </SidePanel>
                 )}
 
                 {panel && (
+                    <SidePanel key="insights">
                     <InsightsPanel
                         mode={panel}
                         automationId={automation.id}
@@ -879,9 +916,28 @@ export default function AutomationFlow({
                         testing={test.isPending}
                         onClose={() => setPanel(null)}
                     />
+                    </SidePanel>
                 )}
+                </AnimatePresence>
             </div>
         </div>
+    );
+}
+
+// ── Side panels ──────────────────────────────────────────────────────────────
+// Shared slide-in wrapper for the builder's right-side panels (node editor,
+// test run, history). Same motion language as the app's other sheets.
+function SidePanel({ children }: { children: React.ReactNode }) {
+    return (
+        <motion.div
+            initial={{ x: "100%" }}
+            animate={{ x: 0 }}
+            exit={{ x: "100%" }}
+            transition={{ type: "spring", stiffness: 300, damping: 32 }}
+            className="absolute top-0 right-0 h-full w-full md:w-80 md:max-w-[88vw] bg-white border-l border-slate-200 shadow-xl flex flex-col z-10"
+        >
+            {children}
+        </motion.div>
     );
 }
 
@@ -937,7 +993,7 @@ function InsightsPanel({
 }) {
     const runs = useAutomationRuns(automationId, mode === "history");
     return (
-        <div className="absolute top-0 right-0 h-full w-80 max-w-[88vw] bg-white border-l border-slate-200 shadow-xl flex flex-col z-10">
+        <div className="flex h-full min-h-0 flex-col">
             <div className="h-11 px-3 flex items-center border-b border-slate-200 shrink-0">
                 <span className="text-[12.5px] font-medium text-slate-900">{mode === "test" ? "Test run" : "Run history"}</span>
                 <button
@@ -950,7 +1006,13 @@ function InsightsPanel({
                 </button>
             </div>
 
-            <div className="flex-1 overflow-auto p-3 space-y-2">
+            <motion.div
+                key={mode}
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.15 }}
+                className="flex-1 overflow-auto p-3 space-y-2"
+            >
                 {mode === "test" ? (
                     testing ? (
                         <div className="flex items-center gap-2 text-[12px] text-slate-400">
@@ -979,14 +1041,14 @@ function InsightsPanel({
                 ) : (
                     runs.data!.runs.map((run: AutomationRun) => (
                         <div key={run.id} className="rounded-md border border-slate-200 p-2 space-y-1">
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex items-center gap-1.5 min-w-0">
                                 {run.status === "error" ? (
-                                    <XCircleIcon className="w-3.5 h-3.5 text-rose-500" />
+                                    <XCircleIcon className="w-3.5 h-3.5 shrink-0 text-rose-500" />
                                 ) : (
-                                    <CheckCircle2Icon className="w-3.5 h-3.5 text-emerald-500" />
+                                    <CheckCircle2Icon className="w-3.5 h-3.5 shrink-0 text-emerald-500" />
                                 )}
-                                <span className="text-[11.5px] font-medium text-slate-700 capitalize">{run.status}</span>
-                                <span className="ml-auto text-[10.5px] text-slate-400">{new Date(run.started_at).toLocaleString()}</span>
+                                <span className="min-w-0 truncate text-[11.5px] font-medium text-slate-700 capitalize">{run.status}</span>
+                                <span className="ml-auto shrink-0 whitespace-nowrap tabular-nums text-[10.5px] text-slate-400">{new Date(run.started_at).toLocaleString()}</span>
                             </div>
                             {run.node_results?.filter((r) => r.type === "action").map((r, i) => (
                                 <div key={`${run.id}-${i}`} className="flex items-center gap-1.5 pl-1">
@@ -1002,7 +1064,7 @@ function InsightsPanel({
                         </div>
                     ))
                 )}
-            </div>
+            </motion.div>
         </div>
     );
 }
@@ -1039,7 +1101,12 @@ function NodeEditor({
     const triggerOptions: SelectOption[] = TRIGGER_EVENTS.map((ev) => ({ value: ev, label: triggerLabel(ev) }));
 
     return (
-        <div className="absolute top-0 right-0 h-full w-80 max-w-[88vw] bg-white border-l border-slate-200 shadow-xl flex flex-col z-10">
+        <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.15 }}
+            className="flex h-full min-h-0 flex-col"
+        >
             <div className="h-11 px-3 flex items-center border-b border-slate-200 shrink-0">
                 <span className="text-[12.5px] font-medium text-slate-900">
                     {isTrigger ? "Trigger" : isCondition ? "Condition" : "Action"}
@@ -1084,7 +1151,7 @@ function NodeEditor({
                     />
                 )}
             </div>
-        </div>
+        </motion.div>
     );
 }
 
@@ -1326,6 +1393,15 @@ function ActionEditor({
                 <SelectMenu value={data.action ?? ""} onChange={pickAction} options={actionOptions} className="w-full" fullWidth />
             </div>
 
+            {/* Config fields swap when the action/target changes; the keyed
+                fade keeps that swap from feeling like a hard cut. */}
+            <motion.div
+                key={`${selectedConn}:${data.action ?? ""}`}
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.15 }}
+                className="space-y-3"
+            >
             {isNative ? (
                 <NativeActionConfig action={data.action ?? ""} config={config} patchConfig={patchConfig} selfId={selfId} />
             ) : (
@@ -1361,6 +1437,7 @@ function ActionEditor({
                     </p>
                 </>
             )}
+            </motion.div>
         </div>
     );
 }

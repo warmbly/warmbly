@@ -87,7 +87,7 @@ export function DailyBars({
 
     return (
         <div className={cn("relative w-full select-none", className)} style={{ height }}>
-            <div className="absolute inset-x-0 top-0 flex items-end gap-[2px]" style={{ height: barAreaH }}>
+            <div className="absolute inset-x-0 top-0 flex items-end gap-px md:gap-[2px]" style={{ height: barAreaH }}>
                 {points.map((p, i) => {
                     const h = p.value > 0 ? Math.max(2, (p.value / max) * barAreaH) : 0;
                     return (
@@ -96,6 +96,9 @@ export function DailyBars({
                             className="relative flex-1 flex items-end justify-center h-full"
                             onMouseEnter={() => setHover(i)}
                             onMouseLeave={() => setHover(null)}
+                            // Touch affordance: tap toggles the tooltip (hover
+                            // emulation on touch devices is unreliable).
+                            onClick={() => setHover((cur) => (cur === i ? null : i))}
                         >
                             <div
                                 className={cn(
@@ -109,7 +112,18 @@ export function DailyBars({
                                 style={{ height: h, maxWidth: 64 }}
                             />
                             {hover === i && (
-                                <div className="absolute -top-7 left-1/2 -translate-x-1/2 z-10 whitespace-nowrap rounded bg-slate-900 px-1.5 py-0.5 text-[10px] font-medium text-white shadow-sm">
+                                <div
+                                    className={cn(
+                                        "absolute -top-7 z-10 whitespace-nowrap rounded bg-slate-900 px-1.5 py-0.5 text-[10px] font-medium text-white shadow-sm",
+                                        // Pin edge tooltips inward so they don't
+                                        // poke past the viewport on the first/last bar.
+                                        i === 0
+                                            ? "left-0"
+                                            : i === points.length - 1
+                                              ? "right-0"
+                                              : "left-1/2 -translate-x-1/2",
+                                    )}
+                                >
                                     {formatValue(p.value)} · {shortDate(p.label)}
                                 </div>
                             )}

@@ -107,7 +107,15 @@ export default function ContactContextPanel({
         "";
 
     return (
-        <aside className="hidden lg:flex w-80 shrink-0 flex-col border-l border-slate-200 bg-slate-50/40 min-h-0">
+        <>
+            {/* Below lg the panel renders as a right-side overlay drawer; this
+                backdrop dims the thread behind it and closes on tap. */}
+            <div
+                className="lg:hidden fixed inset-0 z-[55] bg-slate-900/30"
+                onClick={onClose}
+                aria-hidden
+            />
+            <aside className="fixed inset-y-0 right-0 z-[60] flex w-[min(20rem,90vw)] shrink-0 flex-col border-l border-slate-200 bg-white min-h-0 shadow-xl lg:static lg:z-auto lg:w-80 lg:bg-slate-50/40 lg:shadow-none">
             <div className="h-12 px-3 border-b border-slate-200 flex items-center gap-2 shrink-0 bg-white">
                 <UserIcon className="w-3.5 h-3.5 text-slate-400" />
                 <span className="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">
@@ -262,7 +270,8 @@ export default function ContactContextPanel({
                     }}
                 />
             )}
-        </aside>
+            </aside>
+        </>
     );
 }
 
@@ -460,7 +469,7 @@ function StagePicker({
                     type="button"
                     className={
                         compact
-                            ? "inline-flex items-center gap-1 text-[10px] text-slate-500 hover:text-slate-900 transition-colors"
+                            ? "inline-flex items-center gap-1 min-w-0 max-w-[110px] text-[10px] text-slate-500 hover:text-slate-900 transition-colors"
                             : `h-7 px-2 rounded-md border border-slate-200 hover:border-slate-300 bg-white text-[12px] text-slate-700 inline-flex items-center gap-1.5 transition-colors ${className ?? ""}`
                     }
                 >

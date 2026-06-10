@@ -9,6 +9,12 @@ import {
 } from "@remixicon/react";
 import { useRef, useState } from "react";
 import { cn } from "@/lib/utils";
+import { TextInput } from "@/components/ui/field";
+import {
+    PopoverMenu,
+    PopoverMenuContent,
+    PopoverMenuTrigger,
+} from "@/components/ui/popover-menu";
 
 // htmlToPlain renders the HTML signature down to a plain-text equivalent,
 // turning block elements and <br> into line breaks. Used to keep the plain
@@ -47,6 +53,33 @@ export default function EmailEditor({
 }: EmailEditorProps) {
     const editorRef = useRef<HTMLDivElement>(null);
     const [activeTab, setActiveTab] = useState<"html" | "plain">("html");
+    const [urlPopover, setUrlPopover] = useState<"link" | "image" | null>(null);
+    const [url, setUrl] = useState("");
+    // The contentEditable selection is lost as soon as the popover's text
+    // input takes focus, so we snapshot the range on the toolbar button's
+    // mousedown and restore it right before running the command.
+    const savedRange = useRef<Range | null>(null);
+
+    function saveSelection() {
+        const sel = window.getSelection();
+        savedRange.current =
+            sel && sel.rangeCount > 0 ? sel.getRangeAt(0).cloneRange() : null;
+    }
+
+    function applyUrl() {
+        const u = url.trim();
+        const kind = urlPopover;
+        setUrl("");
+        setUrlPopover(null);
+        if (!u || !kind) return;
+        editorRef.current?.focus();
+        const sel = window.getSelection();
+        if (savedRange.current && sel) {
+            sel.removeAllRanges();
+            sel.addRange(savedRange.current);
+        }
+        exec(kind === "image" ? "insertImage" : "createLink", u);
+    }
 
     // commitHtml writes the HTML signature and, while sync is on, keeps the
     // plain-text version derived from it so the two stay identical.
@@ -77,7 +110,7 @@ export default function EmailEditor({
 
     return (
         <div className="rounded-md border border-slate-200 overflow-hidden bg-white">
-            <div className="flex items-center gap-0.5 px-2 h-9 border-b border-slate-200 bg-slate-50/60">
+            <div className="flex flex-wrap items-center gap-0.5 px-2 py-1 min-h-9 md:flex-nowrap md:py-0 md:h-9 border-b border-slate-200 bg-slate-50/60">
                 {/* HTML / Plain segmented toggle */}
                 <div className="flex items-center gap-0.5 p-0.5 rounded-md bg-slate-100/70 mr-1">
                     <button type="button" onClick={() => setActiveTab("html")} className={tabBtn(activeTab === "html")}>
@@ -105,30 +138,66 @@ export default function EmailEditor({
                             </button>
                         ))}
                         <div className="w-px h-4 bg-slate-200 mx-1" />
-                        <button
-                            type="button"
-                            onMouseDown={(e) => {
-                                e.preventDefault();
-                                const url = prompt("Enter URL:");
-                                if (url) exec("createLink", url);
+                        <PopoverMenu
+                            open={urlPopover === "link"}
+                            onOpenChange={(o) => {
+                                setUrl("");
+                                setUrlPopover(o ? "link" : null);
                             }}
-                            title="Insert link"
-                            className={iconBtn}
                         >
-                            <RiLink className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                            type="button"
-                            onMouseDown={(e) => {
-                                e.preventDefault();
-                                const url = prompt("Enter image URL:");
-                                if (url) exec("insertImage", url);
+                            <PopoverMenuTrigger asChild>
+                                <button
+                                    type="button"
+                                    onMouseDown={(e) => {
+                                        e.preventDefault();
+                                        saveSelection();
+                                    }}
+                                    title="Insert link"
+                                    className={iconBtn}
+                                >
+                                    <RiLink className="w-3.5 h-3.5" />
+                                </button>
+                            </PopoverMenuTrigger>
+                            <PopoverMenuContent minWidth={240} className="p-2">
+                                <UrlForm
+                                    placeholder="https://example.com"
+                                    url={url}
+                                    setUrl={setUrl}
+                                    onApply={applyUrl}
+                                    onCancel={() => setUrlPopover(null)}
+                                />
+                            </PopoverMenuContent>
+                        </PopoverMenu>
+                        <PopoverMenu
+                            open={urlPopover === "image"}
+                            onOpenChange={(o) => {
+                                setUrl("");
+                                setUrlPopover(o ? "image" : null);
                             }}
-                            title="Insert image"
-                            className={iconBtn}
                         >
-                            <RiImage2Line className="w-3.5 h-3.5" />
-                        </button>
+                            <PopoverMenuTrigger asChild>
+                                <button
+                                    type="button"
+                                    onMouseDown={(e) => {
+                                        e.preventDefault();
+                                        saveSelection();
+                                    }}
+                                    title="Insert image"
+                                    className={iconBtn}
+                                >
+                                    <RiImage2Line className="w-3.5 h-3.5" />
+                                </button>
+                            </PopoverMenuTrigger>
+                            <PopoverMenuContent minWidth={240} className="p-2">
+                                <UrlForm
+                                    placeholder="https://…/image.png"
+                                    url={url}
+                                    setUrl={setUrl}
+                                    onApply={applyUrl}
+                                    onCancel={() => setUrlPopover(null)}
+                                />
+                            </PopoverMenuContent>
+                        </PopoverMenu>
                     </>
                 )}
 
@@ -157,7 +226,8 @@ export default function EmailEditor({
                             }}
                             className="w-3 h-3 rounded accent-sky-600"
                         />
-                        Sync HTML &amp; plain
+                        <span className="hidden sm:inline">Sync HTML &amp; plain</span>
+                        <span className="sm:hidden">Sync</span>
                     </label>
                 </div>
             </div>
@@ -198,6 +268,48 @@ export default function EmailEditor({
                     dangerouslySetInnerHTML={{ __html: htmlText }}
                 />
             )}
+        </div>
+    );
+}
+
+// UrlForm — the small themed popover body used by the insert-link and
+// insert-image toolbar buttons (replaces the native prompt()).
+function UrlForm({
+    placeholder,
+    url,
+    setUrl,
+    onApply,
+    onCancel,
+}: {
+    placeholder: string;
+    url: string;
+    setUrl: (v: string) => void;
+    onApply: () => void;
+    onCancel: () => void;
+}) {
+    return (
+        <div className="flex items-center gap-1.5">
+            <TextInput
+                value={url}
+                onChange={setUrl}
+                placeholder={placeholder}
+                autoFocus
+                className="flex-1"
+                onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                        e.preventDefault();
+                        onApply();
+                    }
+                    if (e.key === "Escape") onCancel();
+                }}
+            />
+            <button
+                type="button"
+                onClick={onApply}
+                className="h-7 px-2.5 rounded-md bg-slate-900 hover:bg-slate-800 text-white text-[12px] font-medium transition-colors shrink-0"
+            >
+                Apply
+            </button>
         </div>
     );
 }

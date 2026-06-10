@@ -235,7 +235,7 @@ export function CategoryChip({
                 className={`${compact ? "size-1.5" : "size-2"} rounded-full shrink-0`}
                 style={{ backgroundColor: category.color }}
             />
-            <span className="truncate">{category.title}</span>
+            <span className="truncate max-w-[72px] md:max-w-none">{category.title}</span>
             {onRemove && (
                 <button
                     type="button"

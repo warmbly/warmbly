@@ -69,7 +69,7 @@ function StatCard({ label, value, sub, accent }: { label: string; value: React.R
         <div className="px-4 py-3.5">
             <Eyebrow>{label}</Eyebrow>
             <div className={cn("mt-1 text-[24px] font-light leading-none tabular-nums", accent ? "text-sky-600" : "text-slate-900")}>{value}</div>
-            {sub && <div className="mt-1.5 text-[10.5px] text-slate-400 font-mono">{sub}</div>}
+            {sub && <div className="mt-1.5 text-[10.5px] text-slate-400 font-mono truncate">{sub}</div>}
         </div>
     );
 }
@@ -237,7 +237,7 @@ function Detail({ mailbox, onClose, initialTab = "overview", canWarmup = true }:
             </div>
 
             {/* Tabs */}
-            <div className="shrink-0 px-3 flex items-center gap-1 border-b border-slate-200">
+            <div className="shrink-0 px-3 flex items-center gap-1 border-b border-slate-200 overflow-x-auto">
                 {TABS.map((t) => {
                     const active = tab === t.key;
                     return (
@@ -245,7 +245,7 @@ function Detail({ mailbox, onClose, initialTab = "overview", canWarmup = true }:
                             key={t.key}
                             onClick={() => setTab(t.key)}
                             className={cn(
-                                "relative h-10 px-2.5 inline-flex items-center gap-1.5 text-[12.5px] transition-colors",
+                                "relative h-10 px-2.5 inline-flex shrink-0 items-center gap-1.5 text-[12.5px] transition-colors",
                                 active ? "text-slate-900 font-medium" : "text-slate-500 hover:text-slate-800",
                             )}
                         >
@@ -393,6 +393,8 @@ function OverviewTab({ status, loading, mailbox }: { status?: import("@/lib/api/
 /* ── Analytics ─────────────────────── */
 
 function AnalyticsTab({ warmup, loading }: { warmup?: import("@/lib/api/models/app/analytics/WarmupAnalytics").default; loading: boolean }) {
+    // Tap affordance for touch devices, where the native title tooltip never fires.
+    const [selectedDay, setSelectedDay] = useState<string | null>(null);
     if (loading) {
         return <div className="py-20 flex items-center justify-center"><Loading className="w-5 h-5 text-sky-500" /></div>;
     }
@@ -427,12 +429,26 @@ function AnalyticsTab({ warmup, loading }: { warmup?: import("@/lib/api/models/a
                 </div>
                 <div className="flex items-end gap-0.5 h-28">
                     {warmup.daily_stats.map((d) => (
-                        <div key={d.date} className="flex-1 min-w-0 relative h-full flex items-end group" title={`${d.date}: ${d.emails_sent} sent / ${d.target_volume} target · ${d.emails_replied} replies`}>
-                            <div className="absolute inset-x-0 bottom-0 rounded-sm bg-slate-100" style={{ height: `${(d.target_volume / max) * 100}%` }} />
-                            <div className="relative w-full rounded-sm bg-sky-500 group-hover:bg-sky-600 transition-colors" style={{ height: `${(d.emails_sent / max) * 100}%`, minHeight: d.emails_sent > 0 ? 2 : 0 }} />
+                        <div
+                            key={d.date}
+                            className="flex-1 min-w-0 relative h-full flex items-end group cursor-pointer"
+                            title={`${d.date}: ${d.emails_sent} sent / ${d.target_volume} target · ${d.emails_replied} replies`}
+                            onClick={() => setSelectedDay((cur) => (cur === d.date ? null : d.date))}
+                        >
+                            <div className={cn("absolute inset-x-0 bottom-0 rounded-sm", selectedDay === d.date ? "bg-slate-200" : "bg-slate-100")} style={{ height: `${(d.target_volume / max) * 100}%` }} />
+                            <div className={cn("relative w-full rounded-sm transition-colors", selectedDay === d.date ? "bg-sky-700" : "bg-sky-500 group-hover:bg-sky-600")} style={{ height: `${(d.emails_sent / max) * 100}%`, minHeight: d.emails_sent > 0 ? 2 : 0 }} />
                         </div>
                     ))}
                 </div>
+                {selectedDay && (() => {
+                    const d = warmup.daily_stats.find((s) => s.date === selectedDay);
+                    if (!d) return null;
+                    return (
+                        <p className="mt-2 text-[11px] text-slate-500 font-mono tabular-nums">
+                            {d.date}: {d.emails_sent} sent / {d.target_volume} target · {d.emails_replied} replies
+                        </p>
+                    );
+                })()}
             </div>
         </div>
     );
@@ -1053,7 +1069,7 @@ function SettingsTab({ form, update, mailbox }: { form: Inbox; update: (p: Parti
 
             <TrackingDomainCard mailbox={mailbox} />
 
-            <div className="flex items-center gap-1.5 px-5 py-3 text-[11px] text-slate-400">
+            <div className="flex flex-wrap items-center gap-1.5 px-5 py-3 text-[11px] text-slate-400">
                 <SendIcon className="w-3 h-3" /> Changes apply to new sends. <ReplyIcon className="w-3 h-3 ml-1" /> Signature applies to replies too.
             </div>
         </div>

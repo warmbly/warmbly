@@ -89,7 +89,7 @@ export default function WorkspaceSettingsPage() {
                     <input
                         type="text"
                         value={currentOrg?.id ?? ""}
-                        disabled
+                        readOnly
                         className="w-full max-w-[300px] h-7 px-2.5 rounded-md border border-slate-200 bg-slate-50 text-[12px] text-slate-500 font-mono"
                     />
                 </Row>

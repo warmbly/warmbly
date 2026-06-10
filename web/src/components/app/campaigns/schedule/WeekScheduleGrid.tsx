@@ -218,7 +218,7 @@ export default function WeekScheduleGrid({
                                     type="button"
                                     title="Add a window"
                                     onClick={() => addDefault(i)}
-                                    className="absolute left-1 top-1.5 inline-flex size-4 items-center justify-center rounded text-slate-400 transition-opacity hover:bg-white hover:text-sky-600 opacity-100 md:opacity-0 md:group-hover/h:opacity-100"
+                                    className="absolute left-1 top-1/2 -translate-y-1/2 md:top-1.5 md:translate-y-0 inline-flex size-6 md:size-4 items-center justify-center rounded text-slate-400 transition-opacity hover:bg-white hover:text-sky-600 opacity-100 md:opacity-0 md:group-hover/h:opacity-100"
                                 >
                                     <PlusIcon className="w-2.5 h-2.5" />
                                 </button>
@@ -227,7 +227,7 @@ export default function WeekScheduleGrid({
                                         type="button"
                                         title="Copy this day to every day"
                                         onClick={() => copyToAll(i)}
-                                        className="absolute right-1 top-1.5 size-4 rounded text-slate-400 hover:text-sky-600 hover:bg-white inline-flex items-center justify-center opacity-100 md:opacity-0 md:group-hover/h:opacity-100 transition-opacity"
+                                        className="absolute right-1 top-1/2 -translate-y-1/2 md:top-1.5 md:translate-y-0 size-6 md:size-4 rounded text-slate-400 hover:text-sky-600 hover:bg-white inline-flex items-center justify-center opacity-100 md:opacity-0 md:group-hover/h:opacity-100 transition-opacity"
                                     >
                                         <CopyIcon className="w-2.5 h-2.5" />
                                     </button>
@@ -345,7 +345,7 @@ function Block({
                     e.stopPropagation();
                     onRemove();
                 }}
-                className="absolute right-0.5 top-0.5 size-4 rounded text-sky-700/70 hover:text-rose-600 hover:bg-white/80 inline-flex items-center justify-center opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity"
+                className="absolute right-0.5 top-0.5 size-6 md:size-4 rounded text-sky-700/70 hover:text-rose-600 hover:bg-white/80 inline-flex items-center justify-center opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity"
             >
                 <XIcon className="w-2.5 h-2.5" />
             </button>

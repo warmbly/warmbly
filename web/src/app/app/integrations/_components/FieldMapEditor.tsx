@@ -125,7 +125,7 @@ export default function FieldMapEditor({
                 <div className="space-y-2">
                     {rows.map((row, i) => (
                         <div key={i} className="rounded-md border border-slate-200 p-2 space-y-1.5">
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex flex-col items-stretch gap-1.5 sm:flex-row sm:items-center">
                                 <div className="flex-1 min-w-0">
                                     {row.transform === "static" ? (
                                         <TextInput
@@ -143,7 +143,7 @@ export default function FieldMapEditor({
                                         />
                                     )}
                                 </div>
-                                <span className="text-slate-400 text-[11px] shrink-0">→</span>
+                                <span className="text-slate-400 text-[11px] shrink-0 self-center rotate-90 sm:rotate-0 sm:self-auto">→</span>
                                 <div className="flex-1 min-w-0">
                                     <SelectMenu
                                         value={row.external_custom ? CUSTOM : row.external_field}
@@ -161,25 +161,25 @@ export default function FieldMapEditor({
                                     type="button"
                                     onClick={() => removeRow(i)}
                                     aria-label="Remove mapping"
-                                    className="h-6 w-6 shrink-0 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 inline-flex items-center justify-center transition-colors"
+                                    className="h-6 w-6 shrink-0 self-end sm:self-auto rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 inline-flex items-center justify-center transition-colors"
                                 >
                                     <Trash2Icon className="w-3.5 h-3.5" />
                                 </button>
                             </div>
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center">
                                 {row.external_custom && (
                                     <TextInput
                                         value={row.external_field}
                                         onChange={(v) => patch(i, { external_field: v })}
                                         placeholder="Provider field API name"
-                                        className="flex-1 font-mono"
+                                        className="w-full sm:flex-1 font-mono"
                                     />
                                 )}
                                 <SelectMenu
                                     value={row.transform}
                                     onChange={(v) => patch(i, { transform: v })}
                                     options={TRANSFORMS}
-                                    className={row.external_custom ? "w-36" : "w-full"}
+                                    className={row.external_custom ? "w-full sm:w-36" : "w-full"}
                                     aria-label="Transform"
                                 />
                             </div>

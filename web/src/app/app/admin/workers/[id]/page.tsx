@@ -27,11 +27,13 @@ import {
     listWorkerProfiles,
 } from "@/lib/api/client/app/admin/credentials";
 import { SmartLabel, TagEditor, smartLabels } from "../../_components/WorkerLabels";
+import { useConfirm } from "@/hooks/context/confirm";
 
 export default function AdminWorkerDetailPage() {
     const { id = "" } = useParams();
     const nav = useNavigate();
     const qc = useQueryClient();
+    const confirmDialog = useConfirm();
 
     const worker = useQuery({
         queryKey: ["admin", "worker", id],
@@ -107,6 +109,7 @@ export default function AdminWorkerDetailPage() {
     const removeWorker = useMutation({
         mutationFn: () => deleteWorker(id),
         onSuccess: () => nav("/app/admin/workers"),
+        onError: (e: any) => setActionMsg(`delete: ${e?.message || "failed"}`),
     });
 
     async function fetchLogs() {
@@ -118,37 +121,43 @@ export default function AdminWorkerDetailPage() {
         }
     }
 
-    async function runSystemUpdate() {
-        if (!confirm("Run OS package upgrade on this worker? This can take several minutes.")) return;
-        setSysUpdateOut("running…");
-        setSysRebootNeeded(false);
-        try {
-            const r = await systemUpdateWorker(id);
-            setSysUpdateOut(r.output);
-            setSysRebootNeeded(r.reboot_required);
-        } catch (e: any) {
-            setSysUpdateOut("error: " + (e?.message || "failed"));
-        }
+    function runSystemUpdate() {
+        confirmDialog.show("Run OS package upgrade on this worker? This can take several minutes.", () => {
+            setSysUpdateOut("running…");
+            setSysRebootNeeded(false);
+            void (async () => {
+                try {
+                    const r = await systemUpdateWorker(id);
+                    setSysUpdateOut(r.output);
+                    setSysRebootNeeded(r.reboot_required);
+                } catch (e: any) {
+                    setSysUpdateOut("error: " + (e?.message || "failed"));
+                }
+            })();
+        });
     }
 
-    async function rewireAll() {
+    function rewireAll() {
         if (!rewireTarget) return;
-        if (!confirm("Move every email account on this worker to the selected target?")) return;
-        setRewireMsg("fetching accounts…");
-        try {
-            const emails = await listWorkerEmails(id);
-            if (emails.data.length === 0) {
-                setRewireMsg("no accounts to move");
-                return;
-            }
-            setRewireMsg(`moving ${emails.data.length} account${emails.data.length === 1 ? "" : "s"}…`);
-            await reassignEmailsToWorker(rewireTarget, emails.data.map((e) => e.id));
-            setRewireMsg(`✓ ${emails.data.length} moved`);
-            refresh();
-            allWorkers.refetch();
-        } catch (e: any) {
-            setRewireMsg("error: " + (e?.message || "failed"));
-        }
+        confirmDialog.show("Move every email account on this worker to the selected target?", () => {
+            setRewireMsg("fetching accounts…");
+            void (async () => {
+                try {
+                    const emails = await listWorkerEmails(id);
+                    if (emails.data.length === 0) {
+                        setRewireMsg("no accounts to move");
+                        return;
+                    }
+                    setRewireMsg(`moving ${emails.data.length} account${emails.data.length === 1 ? "" : "s"}…`);
+                    await reassignEmailsToWorker(rewireTarget, emails.data.map((e) => e.id));
+                    setRewireMsg(`✓ ${emails.data.length} moved`);
+                    refresh();
+                    allWorkers.refetch();
+                } catch (e: any) {
+                    setRewireMsg("error: " + (e?.message || "failed"));
+                }
+            })();
+        });
     }
 
     async function doConvertToDedicated() {
@@ -176,14 +185,15 @@ export default function AdminWorkerDetailPage() {
         }
     }
 
-    async function rebootHost() {
-        if (!confirm("Reboot the VPS? It will be offline for ~1 minute.")) return;
-        try {
-            await rebootWorker(id);
-            setActionMsg("reboot scheduled (≈60s)");
-        } catch (e: any) {
-            setActionMsg("reboot: " + (e?.message || "failed"));
-        }
+    function rebootHost() {
+        confirmDialog.show("Reboot the VPS? It will be offline for ~1 minute.", async () => {
+            try {
+                await rebootWorker(id);
+                setActionMsg("reboot scheduled (≈60s)");
+            } catch (e: any) {
+                setActionMsg("reboot: " + (e?.message || "failed"));
+            }
+        });
     }
 
     async function fetchLiveStatus() {
@@ -243,10 +253,10 @@ export default function AdminWorkerDetailPage() {
                     <dt className="text-slate-500">Port</dt><dd className="font-mono">{w.ssh_port}</dd>
                     <dt className="text-slate-500">User</dt><dd className="font-mono">{w.ssh_user}</dd>
                     <dt className="text-slate-500">Host fingerprint</dt>
-                    <dd className="font-mono text-xs">{w.ssh_host_fingerprint || "(not yet pinned — click Test)"}</dd>
+                    <dd className="font-mono text-xs break-all">{w.ssh_host_fingerprint || "(not yet pinned — click Test)"}</dd>
                 </dl>
                 {w.last_error && (
-                    <pre className="mt-3 bg-red-50 text-red-700 text-xs p-2 rounded whitespace-pre-wrap">{w.last_error}</pre>
+                    <pre className="mt-3 bg-red-50 text-red-700 text-xs p-2 rounded whitespace-pre-wrap break-all">{w.last_error}</pre>
                 )}
             </Section>
 
@@ -271,7 +281,7 @@ export default function AdminWorkerDetailPage() {
             </Section>
 
             <Section title="Worker profile">
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-3">
                     <SelectMenu
                         value={w.profile_id ?? ""}
                         onChange={(v) => assignProfile.mutate(v || null)}
@@ -331,12 +341,20 @@ export default function AdminWorkerDetailPage() {
                     <Btn onClick={() => upgrade.mutate()} disabled={upgrade.isPending}>Pull latest & restart</Btn>
                     <Btn onClick={() => uninstall.mutate()} disabled={uninstall.isPending}>Uninstall</Btn>
                     <Btn onClick={() => rotate.mutate()} disabled={rotate.isPending}>Rotate SSH keys</Btn>
-                    <Btn onClick={() => { if (confirm("Delete this worker?")) removeWorker.mutate(); }} disabled={removeWorker.isPending} danger>
+                    <Btn
+                        onClick={() => {
+                            confirmDialog.show("Delete this worker?", async () => {
+                                await removeWorker.mutateAsync().catch(() => {});
+                            });
+                        }}
+                        disabled={removeWorker.isPending}
+                        danger
+                    >
                         Delete
                     </Btn>
                 </div>
                 {actionMsg && (
-                    <pre className="mt-3 bg-slate-100 text-xs p-2 rounded whitespace-pre-wrap">{actionMsg}</pre>
+                    <pre className="mt-3 bg-slate-100 text-xs p-2 rounded whitespace-pre-wrap break-all">{actionMsg}</pre>
                 )}
             </Section>
 
@@ -358,8 +376,9 @@ export default function AdminWorkerDetailPage() {
                                 key={p}
                                 onClick={() => {
                                     if (p === w.risk_pool) return;
-                                    if (!confirm(`Move this worker to the ${p} pool? The rebalancer will redistribute mailboxes on the next tick.`)) return;
-                                    setPool.mutate(p);
+                                    confirmDialog.show(`Move this worker to the ${p} pool? The rebalancer will redistribute mailboxes on the next tick.`, async () => {
+                                        await setPool.mutateAsync(p).catch(() => {});
+                                    });
                                 }}
                                 disabled={setPool.isPending}
                                 className={`px-3 py-1.5 rounded text-sm border disabled:opacity-50 ${
@@ -420,7 +439,7 @@ export default function AdminWorkerDetailPage() {
                     );
                 })()}
                 {rewireMsg && (
-                    <pre className="mt-3 bg-slate-100 text-xs p-2 rounded whitespace-pre-wrap">{rewireMsg}</pre>
+                    <pre className="mt-3 bg-slate-100 text-xs p-2 rounded whitespace-pre-wrap break-all">{rewireMsg}</pre>
                 )}
             </Section>
 

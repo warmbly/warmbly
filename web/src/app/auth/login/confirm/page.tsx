@@ -19,7 +19,7 @@ export default function LoginConfirmPage() {
                 <h1 className="text-[28px] font-bold text-slate-900 tracking-tight leading-tight">Check your email</h1>
                 <p className="text-sm text-slate-400 mt-1.5">
                     We sent a 6-digit code{mail ? " to " : ""}
-                    {mail && <span className="text-slate-600 font-medium">{mail}</span>}
+                    {mail && <span className="text-slate-600 font-medium break-all">{mail}</span>}
                 </p>
             </div>
 

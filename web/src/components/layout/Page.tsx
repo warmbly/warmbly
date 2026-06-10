@@ -64,7 +64,9 @@ export function PageTopbar({
     return (
         <div
             className={cn(
-                "h-12 px-5 border-b border-slate-200 flex items-center gap-3 shrink-0 bg-white sticky top-0 z-10",
+                // Single 48px row on >=md; on mobile it wraps so action
+                // clusters drop to a second line instead of widening the page.
+                "min-h-12 md:h-12 px-5 py-1.5 md:py-0 border-b border-slate-200 flex flex-wrap md:flex-nowrap items-center gap-3 gap-y-1.5 shrink-0 bg-white sticky top-0 z-10",
                 className,
             )}
         >
@@ -79,7 +81,7 @@ export function PageTopbar({
                     </span>
                 </>
             )}
-            {children && <div className="ml-auto flex items-center gap-1.5">{children}</div>}
+            {children && <div className="ml-auto flex items-center gap-1.5 min-w-0 flex-wrap justify-end md:flex-nowrap">{children}</div>}
         </div>
     );
 }
@@ -94,6 +96,7 @@ export function TopbarAction({
     icon,
     variant = "primary",
     disabled = false,
+    className,
 }: {
     children: React.ReactNode;
     onClick?: () => void;
@@ -101,6 +104,7 @@ export function TopbarAction({
     icon?: React.ReactNode;
     variant?: "primary" | "ghost";
     disabled?: boolean;
+    className?: string;
 }) {
     const cls =
         variant === "primary"
@@ -110,6 +114,7 @@ export function TopbarAction({
         const actionCls = cn(
             "h-7 px-2.5 rounded-md inline-flex items-center gap-1.5 text-[12px] font-medium transition-colors",
             cls,
+            className,
         );
         if (isInternalHref(href)) {
             return (
@@ -133,6 +138,7 @@ export function TopbarAction({
             className={cn(
                 "h-7 px-2.5 rounded-md inline-flex items-center gap-1.5 text-[12px] font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed",
                 cls,
+                className,
             )}
         >
             {icon}
@@ -148,12 +154,20 @@ export function TopbarAction({
 export function StatStrip({ children, cols = 4 }: { children: React.ReactNode; cols?: 2 | 3 | 4 | 5 }) {
     const gridCls = {
         2: "grid-cols-2",
-        3: "grid-cols-2 md:grid-cols-3",
+        3: "grid-cols-2 md:grid-cols-3 max-md:[&>*:last-child]:col-span-2",
         4: "grid-cols-2 md:grid-cols-4",
-        5: "grid-cols-2 md:grid-cols-5",
+        5: "grid-cols-2 md:grid-cols-5 max-md:[&>*:last-child]:col-span-2",
     }[cols];
     return (
-        <div className={cn("grid border-b border-slate-200 shrink-0 bg-white", gridCls)}>
+        <div
+            className={cn(
+                "grid border-b border-slate-200 shrink-0 bg-white",
+                // On the mobile 2-col layout, drop the right-hand hairline on
+                // cells that end a row so no stray rule hugs the panel edge.
+                "max-md:[&>*:nth-child(2n)]:border-r-0 max-md:[&>*:last-child]:border-r-0",
+                gridCls,
+            )}
+        >
             {children}
         </div>
     );
@@ -236,7 +250,7 @@ export function Stat({
  */
 export function PageBody({ children, className }: { children: React.ReactNode; className?: string }) {
     return (
-        <div className={cn("flex-1 min-h-0 overflow-auto", className)}>{children}</div>
+        <div className={cn("flex-1 min-h-0 overflow-auto overscroll-x-contain", className)}>{children}</div>
     );
 }
 

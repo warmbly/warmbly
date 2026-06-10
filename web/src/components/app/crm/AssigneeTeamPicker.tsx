@@ -70,7 +70,7 @@ export default function AssigneeTeamPicker({
                 <ChevronDownIcon className="w-3 h-3 shrink-0 text-slate-400" />
             </button>
             {open && (
-                <div className="absolute left-0 top-full z-30 mt-1 max-h-64 w-full min-w-[15rem] overflow-y-auto rounded-md border border-slate-200 bg-white py-1 shadow-[0_12px_32px_-8px_rgba(15,23,42,0.18)]">
+                <div className="absolute right-0 md:right-auto md:left-0 top-full z-30 mt-1 max-h-64 w-full min-w-[15rem] max-w-[calc(100vw-2rem)] overflow-y-auto rounded-md border border-slate-200 bg-white py-1 shadow-[0_12px_32px_-8px_rgba(15,23,42,0.18)]">
                     <button
                         type="button"
                         onClick={() => pick({ userId: null, teamId: null })}

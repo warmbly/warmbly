@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { SelectMenu, type SelectOption } from "@/components/ui/select-menu";
+import { useConfirm } from "@/hooks/context/confirm";
 import {
     applyProfileToAll,
     checkReleases,
@@ -68,9 +69,11 @@ function TabBtn({ active, onClick, children }: { active: boolean; onClick: () =>
 
 function AWSCredsTab() {
     const qc = useQueryClient();
+    const confirmDialog = useConfirm();
     const { data, isLoading } = useQuery({ queryKey: ["admin", "aws-creds"], queryFn: listAWSCredentials });
     const [editing, setEditing] = useState<AWSCredentials | null>(null);
     const [creating, setCreating] = useState(false);
+    const [errMsg, setErrMsg] = useState<string | null>(null);
 
     return (
         <div>
@@ -84,6 +87,7 @@ function AWSCredsTab() {
             </div>
 
             {isLoading && <p className="text-slate-400 text-sm">Loading…</p>}
+            {errMsg && <p className="text-red-600 text-sm mb-2">{errMsg}</p>}
 
             <div className="overflow-x-auto">
             <table className="w-full text-sm border rounded overflow-hidden">
@@ -109,14 +113,15 @@ function AWSCredsTab() {
                             <td className="px-3 py-2 text-right">
                                 <button onClick={() => setEditing(c)} className="text-blue-600 text-sm hover:underline mr-3">Edit</button>
                                 <button
-                                    onClick={async () => {
-                                        if (!confirm(`Delete ${c.name}? Worker profiles referencing it will block this.`)) return;
-                                        try {
-                                            await deleteAWSCredentials(c.id);
-                                            qc.invalidateQueries({ queryKey: ["admin", "aws-creds"] });
-                                        } catch (e: any) {
-                                            alert(e?.message || "delete failed");
-                                        }
+                                    onClick={() => {
+                                        confirmDialog.show(`Delete ${c.name}? Worker profiles referencing it will block this.`, async () => {
+                                            try {
+                                                await deleteAWSCredentials(c.id);
+                                                qc.invalidateQueries({ queryKey: ["admin", "aws-creds"] });
+                                            } catch (e: any) {
+                                                setErrMsg(e?.message || "delete failed");
+                                            }
+                                        });
                                     }}
                                     className="text-red-600 text-sm hover:underline"
                                 >
@@ -219,6 +224,7 @@ function AWSCredsForm({
 
 function ProfilesTab() {
     const qc = useQueryClient();
+    const confirmDialog = useConfirm();
     const { data, isLoading } = useQuery({ queryKey: ["admin", "profiles"], queryFn: listWorkerProfiles });
     const aws = useQuery({ queryKey: ["admin", "aws-creds"], queryFn: listAWSCredentials });
     const releases = useQuery({ queryKey: ["admin", "releases-state"], queryFn: getReleasesState });
@@ -232,21 +238,22 @@ function ProfilesTab() {
             qc.invalidateQueries({ queryKey: ["admin", "releases-state"] });
             qc.invalidateQueries({ queryKey: ["admin", "profiles"] });
         } catch (e: any) {
-            alert(e?.message || "check failed");
+            setApplyMsg(e?.message || "check failed");
         }
     }
 
-    async function applyAll(p: WorkerProfile) {
-        if (!confirm(`Re-apply config to all workers using ${p.name}?`)) return;
-        try {
-            const r = await applyProfileToAll(p.id);
-            const okCount = r.results.filter((x) => x.ok).length;
-            setApplyMsg(`${p.name}: ${okCount}/${r.results.length} workers applied. ${
-                r.results.filter((x) => !x.ok).map((x) => x.error || x.skipped).join("; ")
-            }`);
-        } catch (e: any) {
-            setApplyMsg(e?.message || "apply failed");
-        }
+    function applyAll(p: WorkerProfile) {
+        confirmDialog.show(`Re-apply config to all workers using ${p.name}?`, async () => {
+            try {
+                const r = await applyProfileToAll(p.id);
+                const okCount = r.results.filter((x) => x.ok).length;
+                setApplyMsg(`${p.name}: ${okCount}/${r.results.length} workers applied. ${
+                    r.results.filter((x) => !x.ok).map((x) => x.error || x.skipped).join("; ")
+                }`);
+            } catch (e: any) {
+                setApplyMsg(e?.message || "apply failed");
+            }
+        });
     }
 
     return (
@@ -257,11 +264,11 @@ function ProfilesTab() {
                         <div>
                             <h3 className="text-slate-700 font-semibold text-sm">Releases</h3>
                             <p className="text-slate-500 text-xs">
-                                Tracking <code className="bg-white px-1 rounded">{releases.data.github_repo}</code>
-                                {" → "}<code className="bg-white px-1 rounded">{releases.data.image_repo}</code>
+                                Tracking <code className="bg-white px-1 rounded break-all">{releases.data.github_repo}</code>
+                                {" → "}<code className="bg-white px-1 rounded break-all">{releases.data.image_repo}</code>
                             </p>
                         </div>
-                        <button onClick={manualCheck} className="border px-2 py-1 rounded text-xs hover:bg-white">
+                        <button onClick={manualCheck} className="shrink-0 border px-2 py-1 rounded text-xs hover:bg-white">
                             Check now
                         </button>
                     </div>
@@ -311,6 +318,7 @@ function ProfilesTab() {
             {isLoading && <p className="text-slate-400 text-sm">Loading…</p>}
             {applyMsg && <pre className="bg-slate-100 text-xs p-2 rounded mb-3 whitespace-pre-wrap">{applyMsg}</pre>}
 
+            <div className="overflow-x-auto">
             <table className="w-full text-sm border rounded overflow-hidden">
                 <thead className="bg-slate-50 text-xs uppercase text-slate-500">
                     <tr>
@@ -353,14 +361,15 @@ function ProfilesTab() {
                                     <button onClick={() => applyAll(p)} className="text-amber-700 text-sm hover:underline mr-3">Apply</button>
                                     <button onClick={() => setEditing(p)} className="text-blue-600 text-sm hover:underline mr-3">Edit</button>
                                     <button
-                                        onClick={async () => {
-                                            if (!confirm(`Delete ${p.name}?`)) return;
-                                            try {
-                                                await deleteWorkerProfile(p.id);
-                                                qc.invalidateQueries({ queryKey: ["admin", "profiles"] });
-                                            } catch (e: any) {
-                                                alert(e?.message || "delete failed");
-                                            }
+                                        onClick={() => {
+                                            confirmDialog.show(`Delete ${p.name}?`, async () => {
+                                                try {
+                                                    await deleteWorkerProfile(p.id);
+                                                    qc.invalidateQueries({ queryKey: ["admin", "profiles"] });
+                                                } catch (e: any) {
+                                                    setApplyMsg(e?.message || "delete failed");
+                                                }
+                                            });
                                         }}
                                         className="text-red-600 text-sm hover:underline"
                                     >
@@ -375,6 +384,7 @@ function ProfilesTab() {
                     )}
                 </tbody>
             </table>
+            </div>
 
             {(creating || editing) && (
                 <ProfileForm
@@ -450,7 +460,7 @@ function ProfileForm({
                 <input value={form.description ?? ""} onChange={(e) => setForm({ ...form, description: e.target.value })} className={inp} />
             </Field>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <Field label="App env">
                     <SelectMenu
                         value={form.app_env ?? ""}
@@ -477,7 +487,7 @@ function ProfileForm({
             <Field label="Bootstrap servers">
                 <input value={form.kafka_bootstrap_servers} onChange={(e) => setForm({ ...form, kafka_bootstrap_servers: e.target.value })} className={inp} />
             </Field>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <Field label="SASL username">
                     <input value={form.kafka_sasl_username} onChange={(e) => setForm({ ...form, kafka_sasl_username: e.target.value })} className={inp} />
                 </Field>
@@ -496,7 +506,7 @@ function ProfileForm({
             <Field label="URL">
                 <input value={form.schema_registry_url} onChange={(e) => setForm({ ...form, schema_registry_url: e.target.value })} className={inp} />
             </Field>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <Field label="Key">
                     <input value={form.schema_registry_key} onChange={(e) => setForm({ ...form, schema_registry_key: e.target.value })} className={inp} />
                 </Field>
@@ -602,9 +612,9 @@ function Modal({
     wide?: boolean;
 }) {
     return (
-        <div className="fixed inset-0 bg-black/40 flex items-start justify-center pt-12 z-50" onClick={onClose}>
+        <div className="fixed inset-0 bg-black/40 flex items-start justify-center p-4 pt-6 md:pt-12 z-50" onClick={onClose}>
             <div
-                className={`bg-white rounded-lg shadow-xl p-6 w-full ${wide ? "max-w-2xl" : "max-w-lg"} max-h-[90vh] overflow-auto`}
+                className={`bg-white rounded-lg shadow-xl p-6 w-full ${wide ? "max-w-2xl" : "max-w-lg"} max-h-[calc(100dvh-3rem)] md:max-h-[90vh] overflow-auto`}
                 onClick={(e) => e.stopPropagation()}
             >
                 <h3 className="text-slate-700 font-semibold text-base mb-4">{title}</h3>

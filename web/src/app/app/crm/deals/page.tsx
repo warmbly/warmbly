@@ -127,14 +127,14 @@ export default function DealsPage() {
                     <>
                         <ViewToggle view={view} onChange={setView} />
                         {view === "board" && (
-                            <>
+                            <div className="hidden md:contents">
                                 <PipelinePicker
                                     pipelines={list}
                                     currentId={pipelineId}
                                     onChange={setPipelineId}
                                 />
                                 <SearchPill value={search} onChange={setSearch} />
-                            </>
+                            </div>
                         )}
                         <TopbarAction
                             icon={<PlusIcon className="w-3 h-3" />}
@@ -173,7 +173,16 @@ export default function DealsPage() {
                         <Stat label="Stages" value={stages.length} sub="on this pipeline" last />
                     </StatStrip>
 
-                    <SectionBar label={`${stages.length} stages`} />
+                    <SectionBar label={`${stages.length} stages`}>
+                        <div className="contents md:hidden">
+                            <PipelinePicker
+                                pipelines={list}
+                                currentId={pipelineId}
+                                onChange={setPipelineId}
+                            />
+                            <SearchPill value={search} onChange={setSearch} />
+                        </div>
+                    </SectionBar>
                     <PageBody className="px-5 py-5">
                         {!currentPipeline || stages.length === 0 ? (
                             <NoStagesYet />
@@ -321,7 +330,7 @@ function BoardColumn({
                 const dealId = e.dataTransfer.getData("text/deal");
                 if (dealId) onDrop(dealId);
             }}
-            className={`flex flex-col rounded-md min-h-[300px] max-h-[calc(100vh-230px)] transition-colors ${
+            className={`flex flex-col rounded-md min-h-[300px] max-h-[calc(100dvh-320px)] md:max-h-[calc(100dvh-230px)] transition-colors ${
                 hover ? "bg-sky-50 border-sky-300" : "bg-slate-50 border-slate-200"
             } border`}
         >
@@ -443,9 +452,9 @@ function PipelinePicker({
             <PopoverMenuTrigger asChild>
                 <button
                     type="button"
-                    className="h-7 px-2.5 rounded-md border border-slate-200 hover:border-slate-300 text-[12px] text-slate-700 hover:text-slate-900 transition-colors inline-flex items-center gap-1.5"
+                    className="h-7 px-2.5 rounded-md border border-slate-200 hover:border-slate-300 text-[12px] text-slate-700 hover:text-slate-900 transition-colors inline-flex items-center gap-1.5 min-w-0"
                 >
-                    {cur?.name ?? "Pick pipeline"}
+                    <span className="truncate max-w-[110px] md:max-w-[200px]">{cur?.name ?? "Pick pipeline"}</span>
                     <span className="text-slate-400">▾</span>
                 </button>
             </PopoverMenuTrigger>
@@ -472,7 +481,7 @@ function SearchPill({ value, onChange }: { value: string; onChange: (v: string) 
                 value={value}
                 onChange={(e) => onChange(e.target.value)}
                 placeholder="Search deals…"
-                className="w-[160px] h-5 bg-transparent text-[12px] text-slate-900 placeholder:text-slate-400 outline-none"
+                className="w-[120px] md:w-[160px] h-5 bg-transparent text-[12px] text-slate-900 placeholder:text-slate-400 outline-none"
             />
             {value && (
                 <button type="button" onClick={() => onChange("")} aria-label="Clear" className="text-slate-400 hover:text-slate-700">
@@ -485,7 +494,7 @@ function SearchPill({ value, onChange }: { value: string; onChange: (v: string) 
 
 function BoardSkeleton() {
     return (
-        <div className="grid gap-3 grid-flow-col auto-cols-[280px]">
+        <div className="grid gap-3 grid-flow-col auto-cols-[280px] overflow-x-auto pb-2">
             {[0, 1, 2, 3].map((i) => (
                 <div key={i} className="h-72 rounded-md border border-slate-200 bg-slate-50">
                     <div className="h-9 border-b border-slate-200 px-3 flex items-center">
@@ -659,9 +668,9 @@ function DealDialog({
                         exit={{ y: 8, opacity: 0 }}
                         transition={{ duration: 0.16 }}
                         onClick={(e) => e.stopPropagation()}
-                        className="w-full max-w-[480px] rounded-lg bg-white border border-slate-200 shadow-[0_24px_48px_-12px_rgba(15,23,42,0.18)] overflow-hidden"
+                        className="w-full max-w-[480px] max-h-[calc(100dvh-2rem)] flex flex-col rounded-lg bg-white border border-slate-200 shadow-[0_24px_48px_-12px_rgba(15,23,42,0.18)] overflow-hidden"
                     >
-                        <div className="h-12 px-4 border-b border-slate-200 flex items-center gap-2.5">
+                        <div className="h-12 shrink-0 px-4 border-b border-slate-200 flex items-center gap-2.5">
                             <div className="size-5 rounded bg-slate-100 text-slate-600 flex items-center justify-center">
                                 <TrophyIcon className="w-3 h-3" />
                             </div>
@@ -690,7 +699,7 @@ function DealDialog({
                             </button>
                         </div>
 
-                        <div className="px-4 py-4 space-y-3">
+                        <div className="px-4 py-4 space-y-3 min-h-0 overflow-y-auto">
                             <div>
                                 <Label>Deal name</Label>
                                 <TextInput value={name} onChange={setName} placeholder="e.g. Q1 outbound · Acme" autoFocus className="w-full" />
@@ -723,7 +732,7 @@ function DealDialog({
                                 )}
                             </div>
                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                                <div className="col-span-2">
+                                <div className="sm:col-span-2">
                                     <Label>Value</Label>
                                     <TextInput value={value} onChange={setValue} placeholder="12000" className="w-full" />
                                 </div>
@@ -732,7 +741,7 @@ function DealDialog({
                                     <TextInput value={currency} onChange={setCurrency} placeholder="USD" className="w-full uppercase" />
                                 </div>
                             </div>
-                            <div className="grid grid-cols-2 gap-2">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                 <div>
                                     <Label>Expected close</Label>
                                     <TextInput value={closeDate} onChange={setCloseDate} type="date" className="w-full" />
@@ -744,7 +753,7 @@ function DealDialog({
                             </div>
                         </div>
 
-                        <div className="px-3 h-12 border-t border-slate-200 flex items-center gap-1.5">
+                        <div className="px-3 h-12 shrink-0 border-t border-slate-200 flex items-center gap-1.5">
                             <button
                                 type="button"
                                 onClick={onClose}

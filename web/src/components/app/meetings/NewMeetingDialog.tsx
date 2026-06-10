@@ -100,9 +100,9 @@ export default function NewMeetingDialog({
                         exit={{ opacity: 0, scale: 0.97, y: 8 }}
                         transition={{ duration: 0.15 }}
                         onMouseDown={(e) => e.stopPropagation()}
-                        className="w-full max-w-md bg-white rounded-xl border border-slate-200 shadow-xl overflow-hidden"
+                        className="w-full max-w-md max-h-[calc(100dvh-2rem)] flex flex-col bg-white rounded-xl border border-slate-200 shadow-xl overflow-hidden"
                     >
-                        <div className="h-11 px-4 flex items-center border-b border-slate-200">
+                        <div className="h-11 shrink-0 px-4 flex items-center border-b border-slate-200">
                             <span className="text-[13px] font-medium text-slate-900">New meeting</span>
                             <button
                                 type="button"
@@ -113,12 +113,12 @@ export default function NewMeetingDialog({
                             </button>
                         </div>
 
-                        <div className="p-4 space-y-3">
+                        <div className="p-4 space-y-3 overflow-y-auto min-h-0 flex-1">
                             <div>
                                 <Label>Title</Label>
                                 <TextInput value={title} onChange={setTitle} placeholder="Discovery call" />
                             </div>
-                            <div className="grid grid-cols-2 gap-3">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 <div>
                                     <Label>Contact name</Label>
                                     <TextInput value={name} onChange={setName} placeholder="Jane Doe" />
@@ -133,7 +133,7 @@ export default function NewMeetingDialog({
                                     We link the meeting to a contact by email when one matches.
                                 </p>
                             )}
-                            <div className="grid grid-cols-2 gap-3">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 <div>
                                     <Label>When</Label>
                                     <input
@@ -158,7 +158,7 @@ export default function NewMeetingDialog({
                             </div>
                         </div>
 
-                        <div className="h-12 px-4 flex items-center justify-end gap-2 border-t border-slate-200 bg-slate-50/60">
+                        <div className="h-12 shrink-0 px-4 flex items-center justify-end gap-2 border-t border-slate-200 bg-slate-50/60">
                             <button
                                 type="button"
                                 onClick={onClose}

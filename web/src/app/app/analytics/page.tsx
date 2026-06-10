@@ -103,7 +103,7 @@ export default function AnalyticsPage() {
                     <div className="grid lg:grid-cols-[1fr_300px] min-h-0 flex-1">
                         <section className="flex flex-col min-h-0 lg:border-r lg:border-slate-200">
                             <SectionBar label="Email performance">
-                                <div className="inline-flex items-center gap-0.5 rounded-md border border-slate-200 bg-white p-0.5">
+                                <div className="inline-flex items-center gap-0.5 rounded-md border border-slate-200 bg-white p-0.5 max-w-full overflow-x-auto">
                                     {METRICS.map((m) => (
                                         <button
                                             key={m.key}
@@ -193,9 +193,9 @@ export default function AnalyticsPage() {
                                     >
                                         <span className={`size-1.5 rounded-full shrink-0 ${dot}`} />
                                         <span className="text-[12.5px] font-medium text-slate-900 truncate max-w-[40%]">{c.name}</span>
-                                        <span className="ml-auto flex items-center gap-4 font-mono text-[11px] text-slate-500 tabular-nums shrink-0">
+                                        <span className="ml-auto flex items-center gap-2 md:gap-4 font-mono text-[11px] text-slate-500 tabular-nums shrink-0">
                                             <span title="Emails sent">{num(c.emails_sent)} sent</span>
-                                            <span title="Open rate" className="text-emerald-600">{pct(c.open_rate)} open</span>
+                                            <span title="Open rate" className="hidden md:inline text-emerald-600">{pct(c.open_rate)} open</span>
                                             <span title="Reply rate" className="text-amber-600">{pct(c.reply_rate)} reply</span>
                                         </span>
                                     </Link>
@@ -258,7 +258,12 @@ function ActivityRow({ a }: { a: { type: string; campaign_name: string; contact_
             </span>
             <span className="text-[11.5px] text-slate-400 truncate hidden md:inline">{a.campaign_name}</span>
             <span className="ml-auto font-mono text-[10.5px] text-slate-400 tabular-nums shrink-0">
-                {new Date(a.timestamp).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                <span className="md:hidden">
+                    {new Date(a.timestamp).toLocaleString("en-US", { month: "short", day: "numeric" })}
+                </span>
+                <span className="hidden md:inline">
+                    {new Date(a.timestamp).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                </span>
             </span>
         </div>
     );

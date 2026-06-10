@@ -215,7 +215,7 @@ function PipelineCard({ pipeline }: { pipeline: Pipeline }) {
             <div className="h-10 px-3 border-b border-slate-200 flex items-center gap-2">
                 <Settings2Icon className="w-3 h-3 text-slate-400 shrink-0" />
                 {renaming ? (
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1 flex-1 min-w-0">
                         <TextInput
                             value={name}
                             onChange={setName}
@@ -227,7 +227,7 @@ function PipelineCard({ pipeline }: { pipeline: Pipeline }) {
                                 }
                             }}
                             autoFocus
-                            className="h-6 text-[12px]"
+                            className="h-6 text-[12px] w-full"
                         />
                         <button
                             type="button"
@@ -410,7 +410,7 @@ function StageCell({ stage, pipelineId: _pipelineId }: { stage: Stage; pipelineI
                         <button
                             type="button"
                             aria-label="Change color"
-                            className={`size-1.5 rounded-full ${color.bg}`}
+                            className={`size-1.5 rounded-full ${color.bg} relative max-md:after:absolute max-md:after:-inset-2.5 max-md:after:content-['']`}
                         />
                     </PopoverMenuTrigger>
                     <PopoverMenuContent minWidth={1} className="p-1.5">
@@ -453,6 +453,16 @@ function StageCell({ stage, pipelineId: _pipelineId }: { stage: Stage; pipelineI
                         className="text-[11.5px] font-medium text-slate-900 truncate text-left"
                     >
                         {stage.name}
+                    </button>
+                )}
+                {!editing && (
+                    <button
+                        type="button"
+                        onClick={() => setEditing(true)}
+                        aria-label="Rename stage"
+                        className="md:hidden size-4 rounded text-slate-300 hover:text-slate-600 hover:bg-slate-100 inline-flex items-center justify-center transition-colors shrink-0"
+                    >
+                        <PencilIcon className="w-2.5 h-2.5" />
                     </button>
                 )}
                 <button

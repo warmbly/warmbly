@@ -97,7 +97,7 @@ export default function BulkWarmupDialog({
                             animate={{ opacity: 1, scale: 1, y: 0 }}
                             exit={{ opacity: 0, scale: 0.97, y: 8 }}
                             transition={{ duration: 0.2 }}
-                            className="pointer-events-auto w-full max-w-[440px] max-h-[88vh] overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-[0_24px_60px_-12px_rgba(15,23,42,0.35)]"
+                            className="pointer-events-auto w-full max-w-[440px] max-h-[88dvh] overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-[0_24px_60px_-12px_rgba(15,23,42,0.35)]"
                         >
                             {/* Header */}
                             <div className="px-5 h-14 flex items-center gap-3 border-b border-slate-200">
@@ -130,7 +130,7 @@ export default function BulkWarmupDialog({
                                 </label>
 
                                 <div className={customize ? "space-y-4" : "space-y-4 opacity-40 pointer-events-none"}>
-                                    <div className="grid grid-cols-3 gap-3">
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                                         <div>
                                             <Label>Start</Label>
                                             <NumberInput value={base} min={1} max={500} onChange={setBase} suffix="/day" />

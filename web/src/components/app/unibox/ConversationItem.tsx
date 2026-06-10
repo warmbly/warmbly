@@ -174,7 +174,7 @@ function TagChip({ title, color }: { title: string; color: string }) {
   // carries the colour, the chip carries the name.
   return (
     <span
-      className="inline-flex items-center gap-1 h-4 pl-1 pr-1.5 rounded-sm border bg-white text-[10px] font-medium text-slate-700 truncate max-w-[120px]"
+      className="inline-flex items-center gap-1 h-4 pl-1 pr-1.5 rounded-sm border bg-white text-[10px] font-medium text-slate-700 overflow-hidden max-w-[120px]"
       style={{
         borderColor: color ? `${color}60` : "rgb(226 232 240)",
         backgroundColor: color ? `${color}12` : "white",
@@ -186,7 +186,7 @@ function TagChip({ title, color }: { title: string; color: string }) {
         className="block size-2 rounded-full shrink-0"
         style={{ backgroundColor: color || "#94a3b8" }}
       />
-      {title}
+      <span className="truncate">{title}</span>
     </span>
   );
 }

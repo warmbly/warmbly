@@ -12,8 +12,9 @@ import React from "react";
 import { SearchIcon, XIcon, ChevronUpIcon, ChevronDownIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+// 16px on mobile so iOS Safari doesn't auto-zoom on focus; 12.5px from md up.
 const base =
-    "h-7 px-2.5 rounded-md border border-slate-200 bg-white text-[12.5px] text-slate-900 placeholder:text-slate-400 outline-none transition-colors focus:border-sky-400 focus:ring-2 focus:ring-sky-100 disabled:bg-slate-50 disabled:text-slate-400";
+    "h-7 px-2.5 rounded-md border border-slate-200 bg-white text-[16px] md:text-[12.5px] text-slate-900 placeholder:text-slate-400 outline-none transition-colors focus:border-sky-400 focus:ring-2 focus:ring-sky-100 disabled:bg-slate-50 disabled:text-slate-400";
 
 export function TextInput({
     value,
@@ -80,7 +81,7 @@ export function SearchInput({
                     if (e.key === "Enter") onSubmit?.(value);
                     onKeyDown?.(e);
                 }}
-                className="flex-1 min-w-0 h-full bg-transparent outline-none text-[12.5px] text-slate-900 placeholder:text-slate-400"
+                className="flex-1 min-w-0 h-full bg-transparent outline-none text-[16px] md:text-[12.5px] text-slate-900 placeholder:text-slate-400"
             />
             {value && (
                 <button
@@ -197,7 +198,7 @@ export function NumberInput({
                         : undefined
                 }
                 className={cn(
-                    "w-full min-w-0 h-full bg-transparent outline-none px-2.5 text-[12.5px] text-slate-900 tabular-nums disabled:text-slate-400",
+                    "w-full min-w-0 h-full bg-transparent outline-none px-2.5 text-[16px] md:text-[12.5px] text-slate-900 tabular-nums disabled:text-slate-400",
                     "[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",
                     align === "right" && "text-right",
                     align === "center" && "text-center",

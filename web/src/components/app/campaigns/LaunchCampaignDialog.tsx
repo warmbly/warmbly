@@ -155,7 +155,7 @@ export default function LaunchCampaignDialog({
                         exit={{ y: 8, opacity: 0, scale: 0.98 }}
                         transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
                         onClick={(e) => e.stopPropagation()}
-                        className="w-full max-w-[440px] rounded-lg bg-white border border-slate-200 shadow-[0_24px_48px_-12px_rgba(15,23,42,0.18),0_8px_16px_-8px_rgba(15,23,42,0.1)] overflow-hidden"
+                        className="w-full max-w-[440px] rounded-lg bg-white border border-slate-200 shadow-[0_24px_48px_-12px_rgba(15,23,42,0.18),0_8px_16px_-8px_rgba(15,23,42,0.1)] overflow-hidden max-h-[90dvh] overflow-y-auto"
                     >
                         <AnimatePresence mode="wait">
                             {phase === "done" ? (

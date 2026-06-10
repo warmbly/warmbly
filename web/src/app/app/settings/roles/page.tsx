@@ -97,7 +97,7 @@ export default function RolesSettingsPage() {
 
             <Section
                 eyebrow="Permission matrix"
-                description="Every capability and which role grants it. Hover a cell for the description."
+                description="Every capability and which role grants it."
             >
                 <TableSurface>
                     <MatrixTable />
@@ -156,7 +156,7 @@ function MatrixTable() {
             <table className="w-full text-left">
                 <thead className="sticky top-0 z-10 bg-white">
                     <tr className="border-b border-slate-200">
-                        <th className="px-4 py-2 text-[10px] font-medium text-slate-400 uppercase tracking-[0.14em]">
+                        <th className="px-4 py-2 text-[10px] font-medium text-slate-400 uppercase tracking-[0.14em] max-md:sticky max-md:left-0 max-md:z-[1] max-md:bg-white">
                             Capability
                         </th>
                         {cols.map((r) => {
@@ -164,8 +164,7 @@ function MatrixTable() {
                             return (
                                 <th
                                     key={r.id}
-                                    className="px-2 py-2 text-center"
-                                    style={{ minWidth: 100 }}
+                                    className="px-2 py-2 text-center min-w-[76px] md:min-w-[100px]"
                                 >
                                     <div className="flex items-center justify-center gap-1.5">
                                         <span className={`size-1.5 rounded-full ${a.dot}`} />
@@ -187,10 +186,12 @@ function MatrixTable() {
                                         colSpan={cols.length + 1}
                                         className="px-4 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500"
                                     >
-                                        {CATEGORY_LABEL[cat].label}
-                                        <span className="ml-2 normal-case tracking-normal text-slate-400 font-normal">
-                                            {CATEGORY_LABEL[cat].description}
-                                        </span>
+                                        <div className="max-md:sticky max-md:left-0 max-md:w-fit max-md:max-w-[calc(100vw-4rem)]">
+                                            {CATEGORY_LABEL[cat].label}
+                                            <span className="ml-2 normal-case tracking-normal text-slate-400 font-normal">
+                                                {CATEGORY_LABEL[cat].description}
+                                            </span>
+                                        </div>
                                     </td>
                                 </tr>
                                 {perms.map((p) => (
@@ -198,11 +199,11 @@ function MatrixTable() {
                                         key={p.key}
                                         className="border-b border-slate-200/60 last:border-0 hover:bg-slate-50/40 transition-colors"
                                     >
-                                        <td className="px-4 py-2.5 align-top">
-                                            <div className="text-[12px] text-slate-900 font-medium leading-tight">
+                                        <td className="px-4 py-2.5 align-top max-md:sticky max-md:left-0 max-md:z-[1] max-md:bg-white">
+                                            <div className="text-[12px] text-slate-900 font-medium leading-tight max-md:max-w-[180px]">
                                                 {p.label}
                                             </div>
-                                            <div className="text-[11px] text-slate-500 leading-tight mt-0.5">
+                                            <div className="text-[11px] text-slate-500 leading-tight mt-0.5 max-md:max-w-[180px]">
                                                 {p.description}
                                             </div>
                                         </td>

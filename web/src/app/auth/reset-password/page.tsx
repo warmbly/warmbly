@@ -19,7 +19,7 @@ export default function ResetPasswordPage() {
                     <h2 className="text-[24px] font-bold text-slate-900 tracking-tight">Check your inbox</h2>
                     <p className="text-sm text-slate-400 mt-1.5">
                         We sent a reset link to{" "}
-                        <span className="text-slate-600 font-medium">{mail}</span>
+                        <span className="text-slate-600 font-medium break-all">{mail}</span>
                     </p>
                 </div>
                 <Link

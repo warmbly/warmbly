@@ -206,7 +206,7 @@ function ContactEditPanel({
                 exit={{ x: 32, opacity: 0 }}
                 transition={{ duration: 0.2, ease: [0.32, 0.72, 0, 1] }}
                 onMouseDown={(e) => e.stopPropagation()}
-                className="flex flex-col w-[32rem] max-w-[95%] h-full bg-white border-l border-slate-200 shadow-[-12px_0_24px_-12px_rgba(15,23,42,0.08)]"
+                className="flex flex-col w-full max-w-full md:w-[32rem] md:max-w-[95%] h-full bg-white border-l border-slate-200 shadow-[-12px_0_24px_-12px_rgba(15,23,42,0.08)]"
             >
                 <ContactHeader
                     contact={contact}
@@ -367,9 +367,10 @@ function ContactHeader({
                 onClick={() => setMeetingOpen(true)}
                 className="shrink-0 h-7 px-2 rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100 inline-flex items-center gap-1.5 transition-colors text-[12px]"
                 title="Schedule a call with this contact"
+                aria-label="Schedule call"
             >
                 <CalendarPlusIcon className="w-3.5 h-3.5" />
-                Schedule call
+                <span className="hidden md:inline">Schedule call</span>
             </button>
             <BookACallButton
                 email={contact.email}
@@ -408,7 +409,7 @@ function TabStrip({
     setTab: (t: ContactSlideTab) => void;
 }) {
     return (
-        <nav className="shrink-0 px-3 flex items-center gap-1 border-b border-slate-200">
+        <nav className="shrink-0 px-3 flex items-center gap-1 border-b border-slate-200 overflow-x-auto md:overflow-visible">
             {CONTACT_SLIDE_TABS.map((t) => {
                 const isActive = tab === t.id;
                 return (

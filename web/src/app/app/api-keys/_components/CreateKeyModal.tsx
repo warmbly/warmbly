@@ -66,7 +66,7 @@ export default function CreateKeyModal({ open, onClose }: { open: boolean; onClo
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: 8, scale: 0.99 }}
                         transition={{ duration: 0.18 }}
-                        className="fixed left-1/2 top-[10vh] z-50 -translate-x-1/2 w-[560px] max-w-[92vw] bg-white rounded-lg border border-slate-200 shadow-[0_24px_60px_-12px_rgba(15,23,42,0.25)] overflow-hidden"
+                        className="fixed left-1/2 top-[10dvh] z-50 -translate-x-1/2 w-[560px] max-w-[92vw] bg-white rounded-lg border border-slate-200 shadow-[0_24px_60px_-12px_rgba(15,23,42,0.25)] overflow-hidden"
                     >
                         {step === "configure" ? (
                             <ConfigureStep
@@ -174,7 +174,7 @@ function ConfigureStep({
                 </button>
             </div>
 
-            <div className="px-5 py-4 space-y-4 max-h-[70vh] overflow-y-auto">
+            <div className="px-5 py-4 space-y-4 max-h-[70dvh] overflow-y-auto">
                 <Field label="Name" hint="Shown in the dashboard. e.g. production-server, ci-pipeline.">
                     <input
                         autoFocus
@@ -286,7 +286,7 @@ function ConfigureStep({
             </div>
 
             <div className="h-12 px-4 border-t border-slate-200 flex items-center gap-2 bg-slate-50/40">
-                <span className="text-[11px] text-slate-500 inline-flex items-center gap-1.5">
+                <span className="hidden md:inline-flex text-[11px] text-slate-500 items-center gap-1.5">
                     <LockIcon className="w-3 h-3" />
                     The secret will be shown once. Save it somewhere safe.
                 </span>

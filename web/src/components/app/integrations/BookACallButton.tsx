@@ -58,9 +58,10 @@ export default function BookACallButton({
                 onClick={() => open(targets[0].url)}
                 className={cn(TRIGGER_CLASS, className)}
                 title="Open your scheduling page (prefilled) so the prospect can pick a time"
+                aria-label="Booking link"
             >
                 <CalendarPlusIcon className="w-3.5 h-3.5" />
-                Booking link
+                <span className="hidden md:inline">Booking link</span>
             </button>
         );
     }
@@ -68,9 +69,9 @@ export default function BookACallButton({
     return (
         <PopoverMenu align="end" side="bottom">
             <PopoverMenuTrigger asChild>
-                <button type="button" className={cn(TRIGGER_CLASS, className)}>
+                <button type="button" className={cn(TRIGGER_CLASS, className)} aria-label="Booking link">
                     <CalendarPlusIcon className="w-3.5 h-3.5" />
-                    Booking link
+                    <span className="hidden md:inline">Booking link</span>
                 </button>
             </PopoverMenuTrigger>
             <PopoverMenuContent>

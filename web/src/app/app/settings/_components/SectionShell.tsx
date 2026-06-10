@@ -36,8 +36,8 @@ export function SectionShell({
 }) {
     return (
         <div>
-            <div className="px-8 pt-7 pb-5 flex items-start gap-4 border-b border-slate-200/70">
-                <div className="min-w-0 flex-1">
+            <div className="px-4 pt-5 pb-4 md:px-8 md:pt-7 md:pb-5 flex flex-wrap md:flex-nowrap items-start gap-4 border-b border-slate-200/70">
+                <div className="min-w-0 flex-1 basis-48 md:basis-0">
                     <h2 className="text-[16px] font-semibold text-slate-900 tracking-tight">
                         {title}
                     </h2>
@@ -73,7 +73,7 @@ export function Section({
     className?: string;
 }) {
     return (
-        <section className={`px-8 py-6 grid grid-cols-1 lg:grid-cols-[220px_1fr] gap-6 ${className ?? ""}`}>
+        <section className={`px-4 py-5 md:px-8 md:py-6 grid grid-cols-1 lg:grid-cols-[220px_1fr] gap-6 ${className ?? ""}`}>
             <header className="flex flex-col">
                 <div className="flex items-center gap-2 mb-1">
                     <h3 className="text-[12.5px] font-semibold text-slate-900 tracking-tight">
@@ -156,7 +156,7 @@ export function Toggle({
             onClick={() => onChange(!on)}
             role="switch"
             aria-checked={on}
-            className={`relative h-4 w-7 rounded-full transition-colors shrink-0 ${
+            className={`relative h-4 w-7 rounded-full transition-colors shrink-0 after:absolute after:-inset-3 after:content-[''] ${
                 on ? "bg-slate-900" : "bg-slate-200"
             }`}
         >
@@ -252,7 +252,7 @@ export function RowLink({
 export function TableSurface({ children }: { children: React.ReactNode }) {
     return (
         <div className="rounded-md border border-slate-200 overflow-hidden bg-white">
-            {children}
+            <div className="overflow-x-auto">{children}</div>
         </div>
     );
 }

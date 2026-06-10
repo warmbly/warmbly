@@ -1,0 +1,56 @@
+---
+/**
+ * Post cover art. Uses the frontmatter `cover` image when one is set;
+ * otherwise composes a deterministic sky scene from the post id, so every
+ * post gets stable, on-brand artwork without anyone designing it.
+ */
+import Cloud from '../Cloud.astro';
+import type { BlogPost } from '../../lib/blog';
+
+interface Props {
+  post: BlogPost;
+  /** Lazy-load by default; the featured card should pass eager. */
+  eager?: boolean;
+}
+const { post, eager = false } = Astro.props;
+
+let hash = 0;
+for (const ch of post.id) hash = (hash * 31 + ch.charCodeAt(0)) % 9973;
+
+const skies = [
+  // bright hero sky
+  'radial-gradient(ellipse 140% 140% at 72% 25%, #7dd3fc 0%, #38bdf8 18%, #0ea5e9 36%, #0284c7 58%, #075985 82%)',
+  // deep band
+  'radial-gradient(ellipse 130% 140% at 72% 28%, #0284c7 0%, #0369a1 25%, #075985 50%, #0c4a6e 80%, #0a3d5c 100%)',
+  // morning
+  'radial-gradient(ellipse 130% 120% at 30% 0%, #bae6fd 0%, #7dd3fc 35%, #38bdf8 70%, #0ea5e9 100%)',
+  // dusk
+  'radial-gradient(ellipse 130% 120% at 70% 10%, #a5b4fc 0%, #818cf8 30%, #38bdf8 70%, #0284c7 100%)',
+  // noon
+  'radial-gradient(ellipse 150% 130% at 50% -20%, #e0f2fe 0%, #7dd3fc 40%, #0ea5e9 80%, #0284c7 100%)',
+];
+
+const sky = skies[hash % skies.length];
+const cloudA = ((hash % 5) + 1) as 1 | 2 | 3 | 4 | 5;
+const cloudB = (((hash >> 3) % 5) + 1) as 1 | 2 | 3 | 4 | 5;
+const flip = hash % 2 === 0;
+---
+{post.data.cover ? (
+  <img
+    src={post.data.cover}
+    alt=""
+    class="absolute inset-0 w-full h-full object-cover"
+    loading={eager ? 'eager' : 'lazy'}
+    decoding="async"
+  />
+) : (
+  <div class="absolute inset-0 overflow-hidden" style={`background: ${sky};`}>
+    <div class={`absolute w-[60%] opacity-70 pointer-events-none cloud-drift cloud-1 ${flip ? 'top-[8%] left-[-12%]' : 'top-[10%] right-[-14%]'}`} style="mix-blend-mode: screen;">
+      <Cloud variant={cloudA} opacity={0.95} eager={eager} />
+    </div>
+    <div class={`absolute w-[48%] opacity-55 pointer-events-none cloud-drift cloud-2 ${flip ? 'bottom-[-6%] right-[-8%]' : 'bottom-[-8%] left-[-10%]'}`} style="mix-blend-mode: screen;">
+      <Cloud variant={cloudB} opacity={0.85} eager={eager} />
+    </div>
+    <div class="absolute inset-0" style="background: linear-gradient(to top, rgba(2,32,71,0.18), transparent 45%);"></div>
+  </div>
+)}

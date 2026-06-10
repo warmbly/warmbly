@@ -293,7 +293,7 @@ export function ConversationList({
 
       {/* Keyboard cheat-sheet footer. Slim and unobtrusive but
                 makes the shortcuts discoverable without a help menu. */}
-      <div className="h-6 px-2 shrink-0 border-t border-slate-200/80 bg-slate-50/60 flex items-center gap-2 text-[10px] text-slate-500 overflow-x-auto">
+      <div className="h-6 px-2 shrink-0 border-t border-slate-200/80 bg-slate-50/60 hidden md:flex items-center gap-2 text-[10px] text-slate-500 overflow-x-auto">
         <Kbd>j</Kbd>/<Kbd>k</Kbd>
         <span className="text-slate-400">move</span>
         <Kbd>↵</Kbd>

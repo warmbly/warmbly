@@ -11,10 +11,10 @@ import StatsShareCard, { type ShareAspect, type ShareCardData } from "./StatsSha
 // a PNG. The user picks an aspect preset (1:1 / 3:2 / 16:9) and previews it
 // before choosing to download or copy.
 
-const ASPECTS: { value: ShareAspect; label: string; ratio: string; suffix: string }[] = [
-    { value: "1:1", label: "1:1", ratio: "1 / 1", suffix: "1x1" },
-    { value: "3:2", label: "3:2", ratio: "3 / 2", suffix: "3x2" },
-    { value: "16:9", label: "16:9", ratio: "16 / 9", suffix: "16x9" },
+const ASPECTS: { value: ShareAspect; label: string; ratio: string; num: number; suffix: string }[] = [
+    { value: "1:1", label: "1:1", ratio: "1 / 1", num: 1, suffix: "1x1" },
+    { value: "3:2", label: "3:2", ratio: "3 / 2", num: 3 / 2, suffix: "3x2" },
+    { value: "16:9", label: "16:9", ratio: "16 / 9", num: 16 / 9, suffix: "16x9" },
 ];
 
 // Apply a preset suffix before the ".png" extension (e.g. "warmbly-x.png" ->
@@ -108,10 +108,11 @@ export default function AnalyticsShareButton({
             <button
                 type="button"
                 onClick={() => setOpen(true)}
+                aria-label={label}
                 className="h-7 px-2.5 rounded-md border border-slate-200 hover:border-slate-300 text-slate-700 hover:text-slate-900 bg-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors"
             >
                 <ImageIcon className="w-3.5 h-3.5" />
-                {label}
+                <span className="hidden sm:inline">{label}</span>
             </button>
 
             <AnimatePresence>
@@ -129,7 +130,7 @@ export default function AnalyticsShareButton({
                             exit={{ opacity: 0, scale: 0.97, y: 8 }}
                             transition={{ duration: 0.18, ease: "easeOut" }}
                             onMouseDown={(e) => e.stopPropagation()}
-                            className="w-full max-w-[min(94vw,860px)] rounded-lg bg-white border border-slate-200 shadow-[0_24px_48px_-12px_rgba(15,23,42,0.18),0_8px_16px_-8px_rgba(15,23,42,0.1)] overflow-hidden"
+                            className="w-full max-w-[min(94vw,860px)] max-h-[calc(100dvh-2rem)] flex flex-col rounded-lg bg-white border border-slate-200 shadow-[0_24px_48px_-12px_rgba(15,23,42,0.18),0_8px_16px_-8px_rgba(15,23,42,0.1)] overflow-hidden"
                         >
                             <div className="h-12 px-4 border-b border-slate-200 flex items-center gap-2 shrink-0">
                                 <span className="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">
@@ -150,7 +151,7 @@ export default function AnalyticsShareButton({
                             </div>
 
                             {/* aspect preset selector (house theme segmented control) */}
-                            <div className="px-4 pt-3 flex items-center gap-2">
+                            <div className="px-4 pt-3 flex items-center gap-2 shrink-0">
                                 <span className="text-[11px] text-slate-500 font-medium">Aspect</span>
                                 <div className="inline-flex items-center gap-1 rounded-md bg-slate-100 p-0.5">
                                     {ASPECTS.map((a) => {
@@ -174,16 +175,19 @@ export default function AnalyticsShareButton({
                                 </div>
                             </div>
 
-                            <div className="px-4 py-4 bg-slate-50/40 flex justify-center">
+                            <div className="px-4 py-4 bg-slate-50/40 flex-1 min-h-0 overflow-y-auto flex justify-center items-start">
                                 <div
                                     className="relative max-w-full rounded-md border border-slate-200 bg-white overflow-hidden"
-                                    style={{ aspectRatio: current.ratio, height: "min(460px, 58vh)" }}
+                                    style={{
+                                        aspectRatio: current.ratio,
+                                        width: `min(100%, calc(min(460px, 58dvh) * ${current.num}))`,
+                                    }}
                                 >
                                     {url ? (
                                         <img
                                             src={url}
                                             alt="Analytics share preview"
-                                            className="block w-full h-full object-fill"
+                                            className="block w-full h-full object-contain"
                                         />
                                     ) : (
                                         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-slate-400">
@@ -194,7 +198,7 @@ export default function AnalyticsShareButton({
                                 </div>
                             </div>
 
-                            <div className="px-4 py-3 border-t border-slate-200 flex items-center justify-end gap-2">
+                            <div className="px-4 py-3 border-t border-slate-200 flex items-center justify-end gap-2 shrink-0">
                                 <button
                                     type="button"
                                     onClick={copy}

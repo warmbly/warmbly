@@ -88,7 +88,7 @@ export default function APIKeysPage() {
                     <RefreshCwIcon className={`w-3 h-3 ${summary.isFetching ? "animate-spin" : ""}`} />
                 </button>
                 <TopbarAction icon={<PlusIcon className="w-3 h-3" />} onClick={() => setCreateOpen(true)}>
-                    Create key
+                    <span className="hidden sm:inline">Create key</span>
                 </TopbarAction>
             </PageTopbar>
 
@@ -221,11 +221,11 @@ function KeyRow({ apiKey, onClick }: { apiKey: APIKey; onClick: () => void }) {
             </span>
             <StatusPill status={status} />
             <span className="ml-auto flex items-center gap-3 shrink-0">
-                <span className="text-[10.5px] text-slate-400 tabular-nums">
+                <span className="hidden sm:inline text-[10.5px] text-slate-400 tabular-nums">
                     <GaugeIcon className="inline w-3 h-3 mr-1 align-[-2px]" />
                     {apiKey.rate_limit_per_minute}/m
                 </span>
-                <span className="font-mono text-[10.5px] text-slate-400 tabular-nums w-32 text-right truncate">
+                <span className="hidden md:inline font-mono text-[10.5px] text-slate-400 tabular-nums w-32 text-right truncate">
                     {apiKey.last_used_at ? `used ${fmtRelative(apiKey.last_used_at)}` : "never used"}
                 </span>
             </span>
@@ -296,7 +296,7 @@ function SearchPill({ value, onChange }: { value: string; onChange: (v: string) 
                 value={value}
                 onChange={(e) => onChange(e.target.value)}
                 placeholder="Search…"
-                className="w-full sm:w-[140px] h-5 bg-transparent text-[12px] text-slate-900 placeholder:text-slate-400 outline-none"
+                className="w-[100px] sm:w-[140px] h-5 bg-transparent text-[12px] text-slate-900 placeholder:text-slate-400 outline-none"
             />
             {value && (
                 <button

@@ -34,7 +34,7 @@ export function UniboxHeader({
                     type="button"
                     onClick={onOpenScopeSheet}
                     aria-label="Switch scope"
-                    className="lg:hidden inline-flex items-center gap-1 h-6 px-1.5 rounded-md border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 text-[11.5px] font-medium transition-colors shrink-0"
+                    className="lg:hidden sticky left-0 z-10 bg-white inline-flex items-center gap-1 h-6 px-1.5 rounded-md border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 text-[11.5px] font-medium transition-colors shrink-0"
                 >
                     <LayoutGridIcon className="w-3 h-3" />
                     Scope
@@ -52,8 +52,8 @@ export function UniboxHeader({
                     className="inline-flex items-center gap-1 h-5 pl-1.5 pr-1 rounded bg-sky-50 text-sky-700 text-[11px] font-medium hover:bg-sky-100 transition-colors shrink-0"
                     aria-label="Clear scope"
                 >
-                    {scopeLabel}
-                    <XIcon className="w-2.5 h-2.5" />
+                    <span className="truncate max-w-[45vw] md:max-w-none">{scopeLabel}</span>
+                    <XIcon className="w-2.5 h-2.5 shrink-0" />
                 </button>
             )}
 
@@ -69,8 +69,18 @@ export function UniboxHeader({
                 <Stat label="awaiting" value={data?.awaiting_reply ?? 0} />
                 <Stat label="today" value={data?.today ?? 0} />
                 <Stat label="week" value={data?.week ?? 0} />
-                <Stat label="snoozed" value={data?.snoozed ?? 0} muted />
-                <Stat label="mailboxes" value={data?.mailboxes.length ?? 0} muted />
+                <Stat
+                    label="snoozed"
+                    value={data?.snoozed ?? 0}
+                    muted
+                    className="hidden sm:inline-flex"
+                />
+                <Stat
+                    label="mailboxes"
+                    value={data?.mailboxes.length ?? 0}
+                    muted
+                    className="hidden sm:inline-flex"
+                />
             </div>
 
             <div className="ml-auto inline-flex items-center gap-1.5 text-[11px] text-emerald-600 font-medium shrink-0">
@@ -89,14 +99,16 @@ function Stat({
     value,
     tone = "default",
     muted,
+    className,
 }: {
     label: string;
     value: number;
     tone?: "default" | "accent";
     muted?: boolean;
+    className?: string;
 }) {
     return (
-        <div className="inline-flex items-baseline gap-1 shrink-0">
+        <div className={cn("inline-flex items-baseline gap-1 shrink-0", className)}>
             <span
                 className={cn(
                     "font-mono tabular-nums text-[12.5px] font-semibold",

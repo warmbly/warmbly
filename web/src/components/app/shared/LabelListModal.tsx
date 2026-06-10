@@ -226,7 +226,7 @@ export function LabelListModal({
                         exit={{ y: 8, opacity: 0 }}
                         transition={{ duration: 0.16 }}
                         onClick={(e) => e.stopPropagation()}
-                        className="w-full max-w-[480px] rounded-lg bg-white border border-slate-200 shadow-[0_24px_48px_-12px_rgba(15,23,42,0.18),0_8px_16px_-8px_rgba(15,23,42,0.1)] overflow-hidden flex flex-col max-h-[80vh]"
+                        className="w-full max-w-[480px] rounded-lg bg-white border border-slate-200 shadow-[0_24px_48px_-12px_rgba(15,23,42,0.18),0_8px_16px_-8px_rgba(15,23,42,0.1)] overflow-hidden flex flex-col max-h-[80dvh]"
                     >
                         {/* Header */}
                         <div className="h-12 px-4 border-b border-slate-200 flex items-center gap-2.5 shrink-0">
@@ -459,7 +459,7 @@ function ItemRow({
         <div className="group px-3 h-10 flex items-center gap-2.5 hover:bg-slate-50/80 transition-colors">
             <span aria-hidden className="size-2 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
             <span className="text-[12.5px] text-slate-900 font-medium truncate flex-1">{item.title}</span>
-            <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+            <div className="flex items-center gap-0.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                 <button
                     type="button"
                     onClick={() => setEditing(true)}

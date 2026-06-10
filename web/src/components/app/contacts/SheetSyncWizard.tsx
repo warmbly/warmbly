@@ -261,7 +261,7 @@ export default function SheetSyncWizard({ open, onClose, lockedCampaign, onSaved
                         exit={{ y: 8, opacity: 0 }}
                         transition={{ duration: 0.18 }}
                         onClick={(e) => e.stopPropagation()}
-                        className="w-full max-w-[760px] rounded-lg bg-white border border-slate-200 shadow-[0_24px_48px_-12px_rgba(15,23,42,0.18),0_8px_16px_-8px_rgba(15,23,42,0.1)] overflow-hidden flex flex-col max-h-[90vh]"
+                        className="w-full max-w-[760px] rounded-lg bg-white border border-slate-200 shadow-[0_24px_48px_-12px_rgba(15,23,42,0.18),0_8px_16px_-8px_rgba(15,23,42,0.1)] overflow-hidden flex flex-col max-h-[90dvh]"
                     >
                         <header className="h-12 px-4 border-b border-slate-200 flex items-center gap-2.5 shrink-0">
                             <div className="size-5 rounded bg-emerald-50 text-emerald-600 flex items-center justify-center">
@@ -272,7 +272,7 @@ export default function SheetSyncWizard({ open, onClose, lockedCampaign, onSaved
                             </span>
                             <div className="h-4 w-px bg-slate-200" />
                             <span className="text-[12.5px] text-slate-900 font-medium">Google Sheet</span>
-                            <div className="flex items-center gap-1 ml-2">
+                            <div className="hidden sm:flex items-center gap-1 ml-2">
                                 {visibleSteps.map((_, idx) => (
                                     <span
                                         key={idx}
@@ -338,7 +338,7 @@ export default function SheetSyncWizard({ open, onClose, lockedCampaign, onSaved
                             )}
                         </div>
 
-                        <footer className="h-12 px-3 border-t border-slate-200 flex items-center gap-1.5 shrink-0 bg-slate-50/30">
+                        <footer className="min-h-12 py-1.5 md:py-0 px-3 border-t border-slate-200 flex flex-wrap items-center gap-1.5 shrink-0 bg-slate-50/30">
                             {step === "connect" && (
                                 <span className="ml-auto text-[11px] text-slate-400">
                                     We use your existing Google Sheets authorization.

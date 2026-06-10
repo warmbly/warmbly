@@ -60,7 +60,7 @@ export default function WorkerHealthAlert() {
     if (summary.inProgress > 0) parts.push(`${summary.inProgress} in progress`);
 
     return (
-        <div className={`border rounded-lg px-3 py-2 mb-4 text-sm flex items-center justify-between ${toneCls}`}>
+        <div className={`border rounded-lg px-3 py-2 mb-4 text-sm flex flex-wrap items-center justify-between gap-x-3 gap-y-1 ${toneCls}`}>
             <div>
                 <span className="font-semibold">
                     {summary.total} worker{summary.total === 1 ? "" : "s"} need attention
@@ -69,7 +69,7 @@ export default function WorkerHealthAlert() {
             </div>
             <Link
                 to="/app/admin/workers"
-                className="text-xs font-medium underline hover:no-underline"
+                className="shrink-0 text-xs font-medium underline hover:no-underline"
             >
                 review →
             </Link>

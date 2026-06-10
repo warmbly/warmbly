@@ -98,7 +98,7 @@ export default function SyncSourceEditDrawer({
                     animate={{ x: 0, opacity: 1 }}
                     exit={{ x: 24, opacity: 0 }}
                     transition={{ duration: 0.18 }}
-                    className="ml-auto h-full w-[440px] max-w-[92vw] bg-white shadow-xl flex flex-col z-10 relative"
+                    className="ml-auto h-full w-full max-w-full md:w-[440px] md:max-w-[92vw] bg-white shadow-xl flex flex-col z-10 relative"
                 >
                     <div className="h-12 px-5 border-b border-slate-200 flex items-center gap-3 shrink-0">
                         <div className="min-w-0 flex-1">

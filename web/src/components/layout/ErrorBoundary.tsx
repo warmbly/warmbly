@@ -51,7 +51,7 @@ function BoundaryFallback({ error, info, reset }: { error: Error; info: React.Er
     const navigate = useNavigate();
     return (
         <div className="flex flex-col min-h-full bg-white">
-            <div className="h-12 px-5 border-b border-slate-200 flex items-center gap-3 shrink-0 bg-white">
+            <div className="min-h-12 md:h-12 px-5 py-1.5 md:py-0 border-b border-slate-200 flex flex-wrap md:flex-nowrap items-center gap-3 gap-y-1.5 shrink-0 bg-white">
                 <span className="text-[10px] uppercase tracking-[0.14em] text-red-500 font-medium">
                     Page error
                 </span>

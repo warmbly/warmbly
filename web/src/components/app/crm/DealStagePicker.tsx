@@ -53,7 +53,7 @@ export default function DealStagePicker({
     }
 
     return (
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <div>
                 <p className="mb-1 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">Pipeline</p>
                 <PipelineSelect

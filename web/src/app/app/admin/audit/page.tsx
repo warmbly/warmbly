@@ -111,7 +111,7 @@ export default function AdminAuditPage() {
 
     return (
         <div>
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
                 <div>
                     <h2 className="text-slate-700 font-semibold text-lg">Audit Log</h2>
                     <p className="text-slate-400 text-sm">
@@ -225,7 +225,7 @@ export default function AdminAuditPage() {
                             <th className="text-left px-3 py-2">Admin</th>
                             <th className="text-left px-3 py-2">Action</th>
                             <th className="text-left px-3 py-2">Target</th>
-                            <th className="text-left px-3 py-2">IP</th>
+                            <th className="hidden md:table-cell text-left px-3 py-2">IP</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -309,12 +309,12 @@ function Row({ row }: { row: AdminAuditLog }) {
                 <td className="px-3 py-2 text-xs">
                     <div className="text-slate-700">{row.target_type}</div>
                     {row.target_id !== "00000000-0000-0000-0000-000000000000" && (
-                        <div className="font-mono text-[10px] text-slate-400">
+                        <div className="font-mono text-[10px] text-slate-400 max-w-[120px] truncate md:max-w-none">
                             {row.target_id}
                         </div>
                     )}
                 </td>
-                <td className="px-3 py-2 text-xs text-slate-500 font-mono">
+                <td className="hidden md:table-cell px-3 py-2 text-xs text-slate-500 font-mono">
                     {row.ip_address || "—"}
                 </td>
             </tr>

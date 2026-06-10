@@ -410,3 +410,10 @@ svg.loading circle {
     @apply bg-background text-foreground;
   }
 }
+
+/* iOS Safari auto-zooms the page when a focused control has font-size < 16px.
+   Force 16px on phones (!important beats Tailwind text-[12.5px] utilities);
+   desktop type is untouched. */
+@media (max-width: 767px) {
+  input, select, textarea, [contenteditable="true"] { font-size: max(16px, 1em) !important; }
+}

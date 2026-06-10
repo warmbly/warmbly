@@ -203,7 +203,7 @@ export default function ExportDialog({
                         exit={{ y: 8, opacity: 0 }}
                         transition={{ duration: 0.18 }}
                         onClick={(e) => e.stopPropagation()}
-                        className="w-full max-w-[640px] rounded-lg bg-white border border-slate-200 shadow-[0_24px_48px_-12px_rgba(15,23,42,0.18),0_8px_16px_-8px_rgba(15,23,42,0.1)] overflow-hidden flex flex-col max-h-[90vh]"
+                        className="w-full max-w-[640px] rounded-lg bg-white border border-slate-200 shadow-[0_24px_48px_-12px_rgba(15,23,42,0.18),0_8px_16px_-8px_rgba(15,23,42,0.1)] overflow-hidden flex flex-col max-h-[90dvh]"
                     >
                         <header className="h-12 px-4 border-b border-slate-200 flex items-center gap-2.5 shrink-0">
                             <div className="size-5 rounded bg-slate-100 text-slate-600 flex items-center justify-center">
@@ -228,7 +228,7 @@ export default function ExportDialog({
 
                         <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-5">
                             <Section title="Format" subtitle="What the downloaded file should be.">
-                                <div className="grid grid-cols-3 gap-2">
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                                     {FORMATS.map(({ id, label, sub, Icon }) => (
                                         <button
                                             key={id}
@@ -251,7 +251,7 @@ export default function ExportDialog({
                             </Section>
 
                             <Section title="Scope" subtitle={`${scopeCount.toLocaleString()} contacts will be exported.`}>
-                                <div className="grid grid-cols-3 gap-2">
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                                     <ScopeButton
                                         active={scope === "all"}
                                         onClick={() => setScope("all")}
@@ -276,7 +276,7 @@ export default function ExportDialog({
                             </Section>
 
                             <Section title="Columns" subtitle="Pick a preset or build a custom set.">
-                                <div className="grid grid-cols-4 gap-2 mb-3">
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
                                     {PRESETS.map((p) => (
                                         <button
                                             key={p.id}
@@ -377,7 +377,7 @@ export default function ExportDialog({
                         </div>
 
                         <footer className="h-12 px-3 border-t border-slate-200 flex items-center gap-1.5 shrink-0 bg-slate-50/30">
-                            <span className="text-[11px] text-slate-400">
+                            <span className="text-[11px] text-slate-400 truncate min-w-0">
                                 {scopeCount.toLocaleString()} contacts · {fields.length + customFieldKeys.length} columns
                             </span>
                             <button

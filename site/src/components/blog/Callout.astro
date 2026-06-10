@@ -1,0 +1,41 @@
+---
+/**
+ * Inline callout for MDX blog posts.
+ *
+ *   import Callout from '../../components/blog/Callout.astro';
+ *   <Callout title="Why this matters">...</Callout>
+ *
+ * Variants: 'note' (sky), 'warn' (amber).
+ */
+interface Props {
+  title?: string;
+  variant?: 'note' | 'warn';
+}
+const { title, variant = 'note' } = Astro.props;
+
+const tone =
+  variant === 'warn'
+    ? { ring: 'ring-amber-200', bg: 'bg-amber-50/60', label: 'text-amber-700', bar: 'bg-amber-400' }
+    : { ring: 'ring-sky-200', bg: 'bg-sky-50/60', label: 'text-sky-700', bar: 'bg-sky-400' };
+---
+<aside class={`relative my-8 rounded-[12px] ring-1 ${tone.ring} ${tone.bg} overflow-hidden`}>
+  <span class={`absolute left-0 top-0 bottom-0 w-1 ${tone.bar}`}></span>
+  <div class="pl-6 pr-5 py-4">
+    {title && (
+      <div class={`text-[10.5px] uppercase tracking-[0.18em] font-mono font-semibold ${tone.label} mb-1.5`}>{title}</div>
+    )}
+    <div class="callout-body text-[14px] leading-relaxed text-foreground/80">
+      <slot />
+    </div>
+  </div>
+</aside>
+
+<style>
+  /* Markdown wraps slot text in <p>; keep callout copy compact. */
+  .callout-body :global(p) {
+    margin-top: 0.5rem;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+  .callout-body :global(p:first-child) { margin-top: 0; }
+</style>

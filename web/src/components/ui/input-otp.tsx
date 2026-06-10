@@ -34,6 +34,9 @@ function InputOTPGroup({ className, ...props }: React.ComponentProps<"div">) {
   )
 }
 
+// Sizing note: keep slot width overrides responsive. Six fixed slots must fit
+// a ~278px column on 360px phones, so prefer the default w-9 (or e.g.
+// `w-9 md:w-12`) over a fixed `!w-12` on every slot.
 function InputOTPSlot({
   index,
   className,

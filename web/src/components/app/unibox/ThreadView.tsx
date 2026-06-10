@@ -20,6 +20,7 @@ import {
   Loader2Icon,
   MailCheckIcon,
   MoonIcon,
+  MoreVerticalIcon,
   SendIcon,
   TrashIcon,
   UserIcon,
@@ -163,9 +164,14 @@ export function ThreadView({ threadId, emailId }: ThreadViewProps) {
   const threadLabels = useThreadLabels(threadId);
   const [labelMenuOpen, setLabelMenuOpen] = React.useState(false);
 
-  // CRM context rail (right side). Open by default on wide screens; the panel
-  // itself is hidden below `lg`, so the toggle only matters there.
-  const [crmOpen, setCrmOpen] = React.useState(true);
+  // CRM context rail (right side). Open by default on wide screens (lg+),
+  // where it renders as a static rail. Below lg it renders as an overlay
+  // drawer, so it starts closed and is opened from the header toggle.
+  const [crmOpen, setCrmOpen] = React.useState(
+    () =>
+      typeof window !== "undefined" &&
+      window.matchMedia("(min-width: 1024px)").matches,
+  );
 
   // `c` opens the label menu while a thread is open — ignored while
   // typing into the composer / any input so it never eats keystrokes.
@@ -348,7 +354,7 @@ export function ThreadView({ threadId, emailId }: ThreadViewProps) {
             onClick={() => setCrmOpen((o) => !o)}
             aria-label={crmOpen ? "Hide contact panel" : "Show contact panel"}
             className={
-              "hidden lg:inline-flex size-7 rounded-md items-center justify-center transition-colors " +
+              "inline-flex size-7 rounded-md items-center justify-center transition-colors " +
               (crmOpen
                 ? "text-sky-700 bg-sky-50"
                 : "text-slate-500 hover:text-slate-900 hover:bg-slate-100")
@@ -382,7 +388,7 @@ export function ThreadView({ threadId, emailId }: ThreadViewProps) {
                 ) : (
                   <MoonIcon className="w-3.5 h-3.5" />
                 )}
-                Snooze
+                <span className="hidden sm:inline">Snooze</span>
                 <ChevronDownIcon className="w-3 h-3 text-slate-400" />
               </button>
             </PopoverMenuTrigger>
@@ -459,19 +465,48 @@ export function ThreadView({ threadId, emailId }: ThreadViewProps) {
             </PopoverMenuContent>
           </PopoverMenu>
 
-          <IconAction
-            label="Mark as unread"
-            icon={<MailCheckIcon className="w-3.5 h-3.5" />}
-          />
-          <IconAction
-            label="Archive thread"
-            icon={<ArchiveIcon className="w-3.5 h-3.5" />}
-          />
-          <IconAction
-            label="Delete thread"
-            danger
-            icon={<TrashIcon className="w-3.5 h-3.5" />}
-          />
+          <div className="hidden sm:flex items-center gap-1">
+            <IconAction
+              label="Mark as unread"
+              icon={<MailCheckIcon className="w-3.5 h-3.5" />}
+            />
+            <IconAction
+              label="Archive thread"
+              icon={<ArchiveIcon className="w-3.5 h-3.5" />}
+            />
+            <IconAction
+              label="Delete thread"
+              danger
+              icon={<TrashIcon className="w-3.5 h-3.5" />}
+            />
+          </div>
+          <PopoverMenu align="end" side="bottom">
+            <PopoverMenuTrigger asChild>
+              <button
+                type="button"
+                aria-label="More thread actions"
+                className="sm:hidden size-7 rounded-md inline-flex items-center justify-center text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors"
+              >
+                <MoreVerticalIcon className="w-3.5 h-3.5" />
+              </button>
+            </PopoverMenuTrigger>
+            <PopoverMenuContent>
+              <PopoverMenuItem
+                icon={<MailCheckIcon className="w-3.5 h-3.5" />}
+              >
+                Mark as unread
+              </PopoverMenuItem>
+              <PopoverMenuItem icon={<ArchiveIcon className="w-3.5 h-3.5" />}>
+                Archive thread
+              </PopoverMenuItem>
+              <PopoverMenuItem
+                danger
+                icon={<TrashIcon className="w-3.5 h-3.5" />}
+              >
+                Delete thread
+              </PopoverMenuItem>
+            </PopoverMenuContent>
+          </PopoverMenu>
         </div>
       </div>
 

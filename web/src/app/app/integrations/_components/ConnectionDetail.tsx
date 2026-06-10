@@ -316,8 +316,8 @@ function BookingLinkBlock({ connection, onSaved }: { connection: IntegrationConn
 function Row({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
     return (
         <div className="flex items-center justify-between gap-3">
-            <span className="text-[10.5px] uppercase tracking-[0.1em] text-slate-400">{label}</span>
-            <span className={cn("text-[12px] text-slate-700 truncate", mono && "font-mono")}>{value}</span>
+            <span className="text-[10.5px] uppercase tracking-[0.1em] text-slate-400 shrink-0">{label}</span>
+            <span className={cn("text-[12px] text-slate-700 truncate min-w-0", mono && "font-mono")}>{value}</span>
         </div>
     );
 }

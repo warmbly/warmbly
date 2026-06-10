@@ -159,14 +159,14 @@ export default function MembersSettingsPage() {
                 ) : memberList.length === 0 ? (
                     <p className="text-[11.5px] text-slate-400 py-2">No members yet.</p>
                 ) : (
-                    <div className="overflow-x-auto">
                     <TableSurface>
+                    <div className="overflow-x-auto">
                         <table className="w-full text-left">
                             <thead>
                                 <tr className="border-b border-slate-200">
                                     <Th>Member</Th>
-                                    <Th className="w-44">Role</Th>
-                                    <Th className="w-40">Joined</Th>
+                                    <Th className="md:w-44">Role</Th>
+                                    <Th className="w-40 hidden md:table-cell">Joined</Th>
                                     <th className="w-12 px-3 py-2"></th>
                                 </tr>
                             </thead>
@@ -218,7 +218,7 @@ export default function MembersSettingsPage() {
                                                     <RolePill role={m.role} />
                                                 )}
                                             </td>
-                                            <td className="px-3 font-mono text-[11px] text-slate-500 tabular-nums">
+                                            <td className="px-3 font-mono text-[11px] text-slate-500 tabular-nums hidden md:table-cell">
                                                 {m.joined_at
                                                     ? new Date(m.joined_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
                                                     : "—"}
@@ -240,8 +240,8 @@ export default function MembersSettingsPage() {
                                 })}
                             </tbody>
                         </table>
-                    </TableSurface>
                     </div>
+                    </TableSurface>
                 )}
             </Section>
 
@@ -254,15 +254,15 @@ export default function MembersSettingsPage() {
                 ) : inviteList.length === 0 ? (
                     <p className="text-[11.5px] text-slate-400 py-2">Nothing pending. Invite somebody above.</p>
                 ) : (
-                    <div className="overflow-x-auto">
                     <TableSurface>
+                    <div className="overflow-x-auto">
                         <table className="w-full text-left">
                             <thead>
                                 <tr className="border-b border-slate-200">
                                     <Th>Email</Th>
                                     <Th className="w-32">Role</Th>
-                                    <Th className="w-40">Expires</Th>
-                                    <th className="w-32 px-3 py-2"></th>
+                                    <Th className="w-40 hidden md:table-cell">Expires</Th>
+                                    <th className="w-16 md:w-32 px-3 py-2"></th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -282,7 +282,7 @@ export default function MembersSettingsPage() {
                                         <td className="px-3">
                                             <RolePill role={inv.role} />
                                         </td>
-                                        <td className="px-3 font-mono text-[11px] text-slate-500 tabular-nums">
+                                        <td className="px-3 font-mono text-[11px] text-slate-500 tabular-nums hidden md:table-cell">
                                             {new Date(inv.expires_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
                                         </td>
                                         <td className="px-3">
@@ -313,8 +313,8 @@ export default function MembersSettingsPage() {
                                 ))}
                             </tbody>
                         </table>
-                    </TableSurface>
                     </div>
+                    </TableSurface>
                 )}
             </Section>
         </SectionShell>
@@ -505,18 +505,18 @@ function InviteFlow({
                         {chips.map((c) => (
                             <span
                                 key={c.email}
-                                className={`inline-flex items-center gap-1 h-5 px-1.5 rounded text-[11px] font-medium ${
+                                className={`inline-flex items-center gap-1 h-5 px-1.5 rounded text-[11px] font-medium max-w-full min-w-0 ${
                                     c.valid ? "bg-slate-100 text-slate-700" : "bg-red-50 text-red-700"
                                 }`}
                             >
-                                {c.email}
+                                <span className="truncate min-w-0">{c.email}</span>
                                 <button
                                     type="button"
                                     onClick={(ev) => {
                                         ev.stopPropagation();
                                         removeChip(c.email);
                                     }}
-                                    className="opacity-60 hover:opacity-100"
+                                    className="opacity-60 hover:opacity-100 shrink-0"
                                     aria-label={`Remove ${c.email}`}
                                 >
                                     <XIcon className="w-2.5 h-2.5" />

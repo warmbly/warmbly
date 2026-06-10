@@ -154,7 +154,7 @@ function CreateTeamForm({
         <div className="space-y-3">
             <div>
                 <Label>Name</Label>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                     <div className="flex items-center gap-1.5 shrink-0">
                         {TEAM_COLORS.map((c) => (
                             <button
@@ -184,7 +184,7 @@ function CreateTeamForm({
                                 submit();
                             }
                         }}
-                        className="flex-1"
+                        className="flex-1 min-w-[160px]"
                     />
                     <button
                         type="button"

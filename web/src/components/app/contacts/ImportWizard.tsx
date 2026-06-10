@@ -160,7 +160,7 @@ export default function ImportWizard({ open, onClose, lockedCampaign }: Props) {
                         exit={{ y: 8, opacity: 0 }}
                         transition={{ duration: 0.18 }}
                         onClick={(e) => e.stopPropagation()}
-                        className="w-full max-w-[760px] rounded-lg bg-white border border-slate-200 shadow-[0_24px_48px_-12px_rgba(15,23,42,0.18),0_8px_16px_-8px_rgba(15,23,42,0.1)] overflow-hidden flex flex-col max-h-[90vh]"
+                        className="w-full max-w-[760px] rounded-lg bg-white border border-slate-200 shadow-[0_24px_48px_-12px_rgba(15,23,42,0.18),0_8px_16px_-8px_rgba(15,23,42,0.1)] overflow-hidden flex flex-col max-h-[90dvh]"
                     >
                         <header className="h-12 px-4 border-b border-slate-200 flex items-center gap-2.5 shrink-0">
                             <div className="size-5 rounded bg-slate-100 text-slate-600 flex items-center justify-center">
@@ -219,7 +219,7 @@ export default function ImportWizard({ open, onClose, lockedCampaign }: Props) {
                             )}
                         </div>
 
-                        <footer className="h-12 px-3 border-t border-slate-200 flex items-center gap-1.5 shrink-0 bg-slate-50/30">
+                        <footer className="min-h-12 py-1.5 md:py-0 px-3 border-t border-slate-200 flex flex-wrap items-center gap-1.5 shrink-0 bg-slate-50/30">
                             {step === "upload" && (
                                 <>
                                     <span className="text-[11px] text-slate-400">
@@ -318,7 +318,7 @@ function StepDots({ step }: { step: Step }) {
     const order: Step[] = ["upload", "map", "options", "result"];
     const i = order.indexOf(step);
     return (
-        <div className="flex items-center gap-1 ml-2">
+        <div className="hidden sm:flex items-center gap-1 ml-2">
             {order.map((_, idx) => (
                 <span
                     key={idx}
@@ -473,14 +473,14 @@ export function MapStep({
                 </label>
             </div>
 
-            <div className="rounded-md border border-slate-200 overflow-hidden">
+            <div className="rounded-md border border-slate-200 overflow-x-auto">
                 <table className="w-full text-left">
                     <thead className="bg-slate-50/60">
                         <tr className="border-b border-slate-200">
                             <th className="px-3 py-2 text-[10px] font-medium text-slate-400 uppercase tracking-[0.14em] w-12">#</th>
                             <th className="px-3 py-2 text-[10px] font-medium text-slate-400 uppercase tracking-[0.14em]">Column</th>
-                            <th className="px-3 py-2 text-[10px] font-medium text-slate-400 uppercase tracking-[0.14em]">Sample</th>
-                            <th className="px-3 py-2 text-[10px] font-medium text-slate-400 uppercase tracking-[0.14em] w-56">Maps to</th>
+                            <th className="hidden md:table-cell px-3 py-2 text-[10px] font-medium text-slate-400 uppercase tracking-[0.14em]">Sample</th>
+                            <th className="px-3 py-2 text-[10px] font-medium text-slate-400 uppercase tracking-[0.14em] md:w-56">Maps to</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -493,7 +493,7 @@ export function MapStep({
                                     <td className="px-3 py-2 text-[12px] text-slate-900 font-medium truncate max-w-[140px]">
                                         {col}
                                     </td>
-                                    <td className="px-3 py-2 text-[11.5px] text-slate-500 truncate max-w-[200px] font-mono">
+                                    <td className="hidden md:table-cell px-3 py-2 text-[11.5px] text-slate-500 truncate max-w-[200px] font-mono">
                                         {sample || <span className="text-slate-300">—</span>}
                                     </td>
                                     <td className="px-3 py-2">
@@ -573,7 +573,7 @@ export function TargetPicker({
                         onChange({ index: value.index, target: "custom", custom_key: v })
                     }
                     placeholder="field name"
-                    className="w-32"
+                    className="w-24 md:w-32"
                 />
             )}
         </div>
@@ -694,7 +694,7 @@ export function ResultStep({ result, filename }: { result: ImportResult; filenam
                 </div>
             </div>
 
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                 <StatCard label="Imported"  value={result.imported} accent="emerald" />
                 <StatCard label="Updated"   value={result.updated}  accent="sky" />
                 <StatCard label="Skipped"   value={result.skipped}  accent="slate" />
@@ -724,7 +724,7 @@ export function ResultStep({ result, filename }: { result: ImportResult; filenam
                             <thead className="bg-white sticky top-0">
                                 <tr className="border-b border-slate-100">
                                     <th className="px-3 py-1.5 text-[10px] font-medium text-slate-400 uppercase tracking-[0.14em] w-12">Line</th>
-                                    <th className="px-3 py-1.5 text-[10px] font-medium text-slate-400 uppercase tracking-[0.14em]">Email</th>
+                                    <th className="hidden md:table-cell px-3 py-1.5 text-[10px] font-medium text-slate-400 uppercase tracking-[0.14em]">Email</th>
                                     <th className="px-3 py-1.5 text-[10px] font-medium text-slate-400 uppercase tracking-[0.14em]">Reason</th>
                                 </tr>
                             </thead>
@@ -732,7 +732,7 @@ export function ResultStep({ result, filename }: { result: ImportResult; filenam
                                 {result.errors.slice(0, 200).map((e, i) => (
                                     <tr key={i} className="border-b border-slate-100 last:border-b-0">
                                         <td className="px-3 py-1.5 text-[11px] text-slate-500 font-mono">{e.line}</td>
-                                        <td className="px-3 py-1.5 text-[11.5px] text-slate-700 truncate max-w-[180px]">
+                                        <td className="hidden md:table-cell px-3 py-1.5 text-[11.5px] text-slate-700 truncate max-w-[180px]">
                                             {e.email || <span className="text-slate-300">—</span>}
                                         </td>
                                         <td className="px-3 py-1.5 text-[11.5px] text-slate-700 leading-snug">{e.reason}</td>

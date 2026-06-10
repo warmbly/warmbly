@@ -350,10 +350,10 @@ function FlatView({
             <thead className="sticky top-0 bg-white z-[1]">
                 <tr className="border-b border-slate-200">
                     <Th className="text-left">Task</Th>
-                    <Th className="text-left">Type</Th>
-                    <Th className="text-left">Assignee</Th>
+                    <Th className="text-left hidden md:table-cell">Type</Th>
+                    <Th className="text-left hidden md:table-cell">Assignee</Th>
                     <Th className="text-left">Priority</Th>
-                    <Th className="text-left">Status</Th>
+                    <Th className="text-left hidden md:table-cell">Status</Th>
                     <Th className="text-left">Due</Th>
                     <Th className="text-right"> </Th>
                 </tr>
@@ -447,10 +447,10 @@ function FlatRow({
                     </span>
                 </div>
             </td>
-            <td className="px-3 whitespace-nowrap">
+            <td className="px-3 whitespace-nowrap hidden md:table-cell">
                 <TaskTypeTag type={task.type} types={types} done={isDone} />
             </td>
-            <td className="px-3 whitespace-nowrap">
+            <td className="px-3 whitespace-nowrap hidden md:table-cell">
                 <AssigneeCell
                     member={member}
                     assignedTo={task.assigned_to}
@@ -466,7 +466,7 @@ function FlatRow({
                     {priority.label}
                 </span>
             </td>
-            <td className="px-3 whitespace-nowrap">
+            <td className="px-3 whitespace-nowrap hidden md:table-cell">
                 <StatusTag status={task.status} />
             </td>
             <td className="px-3 whitespace-nowrap">
@@ -670,7 +670,7 @@ function GroupedRow({
                 compact
             />
             <span
-                className={`inline-flex items-center gap-1 text-[10.5px] uppercase tracking-[0.08em] font-semibold ${priority.text}`}
+                className={`hidden md:inline-flex items-center gap-1 text-[10.5px] uppercase tracking-[0.08em] font-semibold ${priority.text}`}
             >
                 <span className={`size-1.5 rounded-full ${priority.dot}`} />
                 {priority.label}
@@ -1495,9 +1495,9 @@ function TaskDialog({
                         exit={{ y: 8, opacity: 0 }}
                         transition={{ duration: 0.16 }}
                         onClick={(e) => e.stopPropagation()}
-                        className="w-full max-w-[480px] rounded-lg bg-white border border-slate-200 shadow-[0_24px_48px_-12px_rgba(15,23,42,0.18)] overflow-hidden"
+                        className="w-full max-w-[480px] max-h-[calc(100dvh-2rem)] flex flex-col rounded-lg bg-white border border-slate-200 shadow-[0_24px_48px_-12px_rgba(15,23,42,0.18)] overflow-hidden"
                     >
-                        <div className="h-12 px-4 border-b border-slate-200 flex items-center gap-2.5">
+                        <div className="h-12 shrink-0 px-4 border-b border-slate-200 flex items-center gap-2.5">
                             <div className="size-5 rounded bg-slate-100 text-slate-600 flex items-center justify-center">
                                 <CheckSquareIcon className="w-3 h-3" />
                             </div>
@@ -1526,7 +1526,7 @@ function TaskDialog({
                             </button>
                         </div>
 
-                        <div className="px-4 py-4 space-y-3">
+                        <div className="px-4 py-4 space-y-3 overflow-y-auto min-h-0 flex-1">
                             <div>
                                 <Label>Title</Label>
                                 <TextInput
@@ -1547,7 +1547,7 @@ function TaskDialog({
                                     className="w-full px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-[12.5px] text-slate-900 placeholder:text-slate-400 outline-none transition-colors focus:border-sky-400 focus:ring-2 focus:ring-sky-100 resize-y"
                                 />
                             </div>
-                            <div className="grid grid-cols-2 gap-2">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                 <div>
                                     <Label>Task type</Label>
                                     <TaskTypePicker value={type} onChange={setType} />
@@ -1564,7 +1564,7 @@ function TaskDialog({
                                     />
                                 </div>
                             </div>
-                            <div className="grid grid-cols-2 gap-2">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                 <div>
                                     <Label>Due date</Label>
                                     <DueInDays value={dueDays} onChange={setDueDays} />
@@ -1604,7 +1604,7 @@ function TaskDialog({
                             )}
                         </div>
 
-                        <div className="px-3 h-12 border-t border-slate-200 flex items-center gap-1.5">
+                        <div className="px-3 h-12 shrink-0 border-t border-slate-200 flex items-center gap-1.5">
                             <button
                                 type="button"
                                 onClick={onClose}

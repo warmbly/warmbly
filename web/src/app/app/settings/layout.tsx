@@ -14,6 +14,7 @@
 // /profile so a deep link or back-button always lands on a real
 // section.
 
+import React from "react";
 import { Navigate, NavLink, Outlet, useLocation } from "react-router-dom";
 import {
     AlertOctagonIcon,
@@ -54,6 +55,17 @@ const SECTIONS: SectionDef[] = [
 export default function SettingsLayout() {
     const location = useLocation();
     const access = useFeatureAccess();
+    const navRef = React.useRef<HTMLElement>(null);
+
+    // On phones the nav is a horizontal tab strip; deep links or
+    // navigation to a later section should bring the active tab into
+    // view, otherwise the strip sits scrolled to the start with no
+    // hint of where you are. No-op on >=md where the rail is vertical.
+    React.useEffect(() => {
+        if (window.matchMedia("(min-width: 768px)").matches) return;
+        const el = navRef.current?.querySelector<HTMLElement>('[aria-current="page"]');
+        el?.scrollIntoView({ inline: "center", block: "nearest" });
+    }, [location.pathname]);
 
     // When user hits bare /app/settings, route them to the default
     // section so the URL stays meaningful. Done at layout level so
@@ -80,7 +92,7 @@ export default function SettingsLayout() {
             <div className="flex-1 min-h-0 flex flex-col md:flex-row">
                 {/* Mobile: a horizontally-scrollable tab strip across the top.
                     >=md: the vertical left rail. */}
-                <nav className="flex md:block shrink-0 gap-1 md:gap-0 overflow-x-auto md:overflow-y-auto border-b md:border-b-0 md:border-r border-slate-200/70 px-2 md:px-0 py-2 md:w-[220px]">
+                <nav ref={navRef} className="flex md:block shrink-0 gap-1 md:gap-0 overflow-x-auto md:overflow-y-auto border-b md:border-b-0 md:border-r border-slate-200/70 px-2 md:px-0 py-2 md:w-[220px]">
                     {visibleSections.map((s) => (
                         <NavLink
                             key={s.path}

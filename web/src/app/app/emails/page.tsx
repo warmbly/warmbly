@@ -301,7 +301,7 @@ export default function AddressesPage() {
                                 </th>
                                 <th className="px-3 py-2 text-[10px] font-medium text-slate-400 uppercase tracking-[0.14em]">Account</th>
                                 <th className="px-3 py-2 text-[10px] font-medium text-slate-400 uppercase tracking-[0.14em] w-24 text-right">Warmup</th>
-                                <th className="px-3 py-2 text-[10px] font-medium text-slate-400 uppercase tracking-[0.14em] w-32">Health</th>
+                                <th className="px-3 py-2 text-[10px] font-medium text-slate-400 uppercase tracking-[0.14em] w-10 md:w-32"><span className="hidden md:inline">Health</span></th>
                                 <th className="px-3 py-2 w-16"></th>
                             </tr>
                         </thead>
@@ -326,7 +326,7 @@ export default function AddressesPage() {
                 )}
 
                 {selected.length > 0 && (
-                    <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 rounded-md border border-slate-200 bg-white shadow-[0_6px_20px_-4px_rgba(15,23,42,0.12),0_2px_4px_rgba(15,23,42,0.04)] px-2 py-1.5">
+                    <div className="fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-30 flex flex-wrap justify-center max-w-[calc(100vw-1rem)] items-center gap-1.5 rounded-md border border-slate-200 bg-white shadow-[0_6px_20px_-4px_rgba(15,23,42,0.12),0_2px_4px_rgba(15,23,42,0.04)] px-2 py-1.5">
                         <div className="inline-flex items-center gap-1.5 px-2 h-7 rounded bg-sky-50 text-sky-700 text-[12px] font-medium">
                             <CheckIcon className="w-3 h-3" />
                             <span>{selected.length} selected</span>
@@ -464,8 +464,8 @@ function MailboxRow({
                     onClick={(e) => e.stopPropagation()}
                 />
             </td>
-            <td className="px-3">
-                <button type="button" onClick={(e) => { e.stopPropagation(); onOpen(box.id); }} className="flex items-center gap-2.5 text-left">
+            <td className="px-3 max-w-0 md:max-w-none">
+                <button type="button" onClick={(e) => { e.stopPropagation(); onOpen(box.id); }} className="flex w-full min-w-0 items-center gap-2.5 text-left">
                     <div className="w-6 h-6 rounded-full bg-sky-100 flex items-center justify-center shrink-0">
                         <span className="text-[9.5px] font-semibold text-sky-700">
                             {box.email.slice(0, 2).toUpperCase()}
@@ -505,7 +505,7 @@ function MailboxRow({
                         )}
                         <span className={`relative inline-flex w-1.5 h-1.5 rounded-full ${tone.dot}`} />
                     </span>
-                    <span className="uppercase tracking-[0.08em]">{tone.label}</span>
+                    <span className="uppercase tracking-[0.08em] hidden md:inline">{tone.label}</span>
                 </button>
             </td>
             <td className="px-3">

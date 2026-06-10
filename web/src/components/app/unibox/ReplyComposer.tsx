@@ -424,7 +424,10 @@ export function ReplyComposer({ threadId, replyTo, mode, onClose }: ReplyCompose
                             <span className="text-[12.5px] text-slate-900 font-medium truncate">
                                 {mailbox.name || mailbox.email}
                             </span>
-                            <span className="font-mono text-[10.5px] text-slate-500 bg-slate-50 px-1.5 h-4 inline-flex items-center rounded border border-slate-200 shrink-0">
+                            <span
+                                className="font-mono text-[10.5px] text-slate-500 bg-slate-50 px-1.5 h-4 inline-flex items-center rounded border border-slate-200 min-w-0 truncate"
+                                title={mailbox.email}
+                            >
                                 {mailbox.email}
                             </span>
                         </div>
@@ -540,7 +543,7 @@ export function ReplyComposer({ threadId, replyTo, mode, onClose }: ReplyCompose
                             from {mailbox?.email ?? "this mailbox"}
                         </span>
                     </div>
-                    <pre className="px-3 py-2 m-0 font-sans text-[11.5px] text-slate-700 whitespace-pre-wrap leading-relaxed">
+                    <pre className="px-3 py-2 m-0 font-sans text-[11.5px] text-slate-700 whitespace-pre-wrap leading-relaxed max-h-28 overflow-y-auto md:max-h-none">
                         {signatureState.preview}
                     </pre>
                 </div>
@@ -1018,19 +1021,19 @@ function RecipientField({
                 <span
                     key={v}
                     className={cn(
-                        "inline-flex items-center gap-1 h-5 pl-1.5 pr-0.5 rounded-md text-[11px] font-medium shrink-0 border",
+                        "inline-flex items-center gap-1 h-5 pl-1.5 pr-0.5 rounded-md text-[11px] font-medium max-w-full min-w-0 border",
                         looksLikeEmail(v)
                             ? "bg-sky-50 text-sky-800 border-sky-200"
                             : "bg-rose-50 text-rose-800 border-rose-200",
                     )}
                     title={v}
                 >
-                    <span className="font-mono">{v}</span>
+                    <span className="font-mono truncate">{v}</span>
                     <button
                         type="button"
                         onClick={() => onChange(value.filter((x) => x !== v))}
                         aria-label={`Remove ${v}`}
-                        className="size-4 inline-flex items-center justify-center rounded hover:bg-black/10"
+                        className="size-4 shrink-0 inline-flex items-center justify-center rounded hover:bg-black/10"
                     >
                         <XIcon className="w-2.5 h-2.5" />
                     </button>

@@ -132,7 +132,7 @@ export default function AdminWorkersPage() {
 
     return (
         <div>
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
                 <div>
                     <h2 className="text-slate-700 font-semibold text-lg">Managed Workers</h2>
                     <p className="text-slate-400 text-sm">
@@ -141,7 +141,7 @@ export default function AdminWorkersPage() {
                 </div>
                 <Link
                     to="/app/admin/workers/new"
-                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium"
+                    className="self-start sm:self-auto shrink-0 whitespace-nowrap bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium"
                 >
                     + Add Worker
                 </Link>
@@ -232,14 +232,14 @@ export default function AdminWorkersPage() {
                         <tr>
                             <th className="text-left px-3 py-2">Name</th>
                             <th className="text-left px-3 py-2">Host</th>
-                            <th className="text-left px-3 py-2">Tier</th>
+                            <th className="hidden md:table-cell text-left px-3 py-2">Tier</th>
                             <th className="text-left px-3 py-2">Install</th>
                             <th className="text-left px-3 py-2">Pool</th>
-                            <th className="text-left px-3 py-2">Version</th>
+                            <th className="hidden md:table-cell text-left px-3 py-2">Version</th>
                             <th className="text-left px-3 py-2">Live</th>
                             <th className="text-left px-3 py-2">Accounts</th>
-                            <th className="text-left px-3 py-2">Tags</th>
-                            <th className="text-left px-3 py-2">Last seen</th>
+                            <th className="hidden md:table-cell text-left px-3 py-2">Tags</th>
+                            <th className="hidden md:table-cell text-left px-3 py-2">Last seen</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -251,12 +251,12 @@ export default function AdminWorkersPage() {
                                         <Link to={`/app/admin/workers/${w.id}`} className="text-blue-600 hover:underline">
                                             {w.name || w.id.slice(0, 8)}
                                         </Link>
-                                        <div className="text-slate-400 text-xs">{w.id}</div>
+                                        <div className="hidden md:block text-slate-400 text-xs">{w.id}</div>
                                     </td>
                                     <td className="px-3 py-2 font-mono text-xs">
                                         {w.ssh_user}@{w.ssh_host || w.ip_addr}:{w.ssh_port}
                                     </td>
-                                    <td className="px-3 py-2">
+                                    <td className="hidden md:table-cell px-3 py-2">
                                         <span className="text-slate-600">
                                             {w.worker_type}
                                             {w.worker_type === "shared" && (w.free_tier ? " · free" : " · premium")}
@@ -274,17 +274,17 @@ export default function AdminWorkersPage() {
                                             <RiskPoolBadge pool={w.risk_pool} />
                                         )}
                                     </td>
-                                    <td className="px-3 py-2 text-xs font-mono">
+                                    <td className="hidden md:table-cell px-3 py-2 text-xs font-mono">
                                         {w.image_version || <span className="text-slate-400">—</span>}
                                     </td>
                                     <td className={`px-3 py-2 text-xs font-medium ${live.cls}`}>
                                         {live.label}
                                     </td>
                                     <td className="px-3 py-2">{w.account_count}</td>
-                                    <td className="px-3 py-2">
+                                    <td className="hidden md:table-cell px-3 py-2">
                                         <TagsCell worker={w} />
                                     </td>
-                                    <td className="px-3 py-2 text-slate-500 text-xs">
+                                    <td className="hidden md:table-cell px-3 py-2 text-slate-500 text-xs">
                                         {w.last_seen_at
                                             ? new Date(w.last_seen_at).toLocaleString()
                                             : "—"}

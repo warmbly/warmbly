@@ -55,8 +55,8 @@ export default function InboundUrlDialog({
                 onClick={onClose}
                 className="absolute inset-0 bg-slate-900/40 backdrop-blur-[2px]"
             />
-            <div className="relative z-10 w-[520px] max-w-[92vw] bg-white rounded-lg shadow-xl border border-slate-200 overflow-hidden">
-                <div className="h-12 px-5 border-b border-slate-200 flex items-center gap-3">
+            <div className="relative z-10 w-[520px] max-w-[92vw] max-h-[90dvh] flex flex-col bg-white rounded-lg shadow-xl border border-slate-200 overflow-hidden">
+                <div className="h-12 px-5 border-b border-slate-200 flex items-center gap-3 shrink-0">
                     <div className="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">Webhook URL</div>
                     <div className="h-4 w-px bg-slate-200" />
                     <div className="text-[12.5px] text-slate-900 font-medium truncate flex-1">
@@ -72,7 +72,7 @@ export default function InboundUrlDialog({
                     </button>
                 </div>
 
-                <div className="px-5 py-5 space-y-4">
+                <div className="px-5 py-5 space-y-4 overflow-y-auto flex-1">
                     <p className="text-[12.5px] text-slate-600 leading-relaxed">
                         {HINTS[provider] ?? "Paste this URL in the provider's webhook configuration."}
                     </p>
@@ -97,7 +97,7 @@ export default function InboundUrlDialog({
                     </div>
                 </div>
 
-                <div className="border-t border-slate-200 px-5 py-3 flex items-center justify-end gap-2">
+                <div className="border-t border-slate-200 px-5 py-3 flex items-center justify-end gap-2 shrink-0">
                     <button
                         type="button"
                         onClick={onClose}

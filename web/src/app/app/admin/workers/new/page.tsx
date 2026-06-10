@@ -291,7 +291,7 @@ export default function AdminAddWorkerWizard() {
                         SSH reachability is only needed if you use the older dashboard-driven install path.
                     </p>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        <div className="col-span-2">
+                        <div className="sm:col-span-2">
                             <label className={lbl}>Host or IP</label>
                             <input
                                 value={state.ssh_host}
@@ -644,10 +644,10 @@ function PostCreatePanel({
             {result.enrollment_token && (
                 <div className="mb-4">
                     <div className={lbl}>Run on the VPS</div>
-                    <div className="bg-slate-900 text-slate-100 p-3 rounded text-xs font-mono overflow-auto whitespace-pre-wrap">
+                    <div className="bg-slate-900 text-slate-100 p-3 rounded text-xs font-mono overflow-auto whitespace-pre-wrap break-all">
                         {enrollCommand}
                     </div>
-                    <div className="flex items-center justify-between mt-1">
+                    <div className="flex flex-wrap items-center justify-between gap-1 mt-1">
                         <p className="text-slate-500 text-xs">
                             Token expires in {Math.round((result.enrollment_token_ttl_seconds ?? 7200) / 60)} minutes and is consumed after first use.
                         </p>
@@ -670,7 +670,7 @@ function PostCreatePanel({
                     onFocus={(e) => e.currentTarget.select()}
                     className="w-full font-mono text-xs p-2 border rounded bg-slate-50"
                 />
-                <div className="flex items-center justify-between mt-1">
+                <div className="flex flex-wrap items-center justify-between gap-1 mt-1">
                     <p className="text-slate-500 text-xs">
                         Paste this into <code className="bg-slate-100 px-1 rounded">~/.ssh/authorized_keys</code>{" "}
                         on the VPS.

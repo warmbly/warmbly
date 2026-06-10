@@ -290,7 +290,7 @@ function TypeChips({
     onChange: (v: FilterId) => void;
 }) {
     return (
-        <div className="inline-flex bg-slate-100 rounded-md p-0.5">
+        <div className="inline-flex flex-wrap bg-slate-100 rounded-md p-0.5">
             {FILTERS.map((f) => {
                 const isActive = value === f.id;
                 return (
@@ -370,7 +370,7 @@ function DateRange({
                 {label}
             </button>
             {open && (
-                <div className="absolute right-0 top-7 z-50 w-64 max-w-[min(256px,calc(100vw-2rem))] p-2.5 rounded-md border border-slate-200 bg-white shadow-lg">
+                <div className="absolute left-0 md:left-auto md:right-0 top-7 z-50 w-64 max-w-[min(256px,calc(100vw-2rem))] p-2.5 rounded-md border border-slate-200 bg-white shadow-lg">
                     <div className="grid grid-cols-2 gap-2">
                         <div>
                             <label className="block text-[10px] uppercase tracking-[0.12em] font-medium text-slate-500 mb-1">
