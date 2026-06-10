@@ -1,6 +1,7 @@
 ---
 import Layout from '../../layouts/Layout.astro';
 import Icon from '../../components/Icon.astro';
+import { learnArticles } from '../../lib/learn';
 
 const chapters = [
   { num: '01', id: 'definition',    title: 'Definition' },
@@ -13,21 +14,36 @@ const chapters = [
   { num: '08', id: 'problem',       title: 'Incident' },
 ];
 
-// All learn essays (kept in sync with Learn.astro)
-const related = [
-  { href: '/learn/email-warmup/',         title: 'Email warmup, properly explained',         read: '11 min' },
-  { href: '/learn/deliverability/',       title: 'The deliverability handbook',              read: '14 min' },
-  { href: '/learn/spf-dkim-dmarc/',       title: 'SPF, DKIM and DMARC, end to end',          read: '12 min' },
-  { href: '/learn/inbox-placement/',      title: 'Inbox placement, not just delivery',       read: '8 min' },
-  { href: '/learn/cold-email-rules/',     title: 'Cold email rules across regions',          read: '10 min' },
-  { href: '/learn/warmup-pools/',         title: 'Warmup pools: free, premium, dedicated',   read: '7 min' },
-  { href: '/learn/reputation-recovery/',  title: 'Recovering a burned mailbox',              read: '9 min' },
-];
+// All learn essays, from the shared registry
+const related = learnArticles;
 const path = Astro.url.pathname;
+
+// BlogPosting structured data, mirroring what Learn.astro emits for the
+// other essays. This page hand-rolls its shell, so it declares its own.
+const headline = 'The deliverability handbook';
+const description = 'A full mental model for getting cold mail into the inbox, and keeping it there. Authentication, warmup, volume, reputation.';
+const updated = '2026-05-08';
+const siteOrigin = (Astro.site ?? new URL('https://warmbly.com')).toString().replace(/\/$/, '');
+const canonical = new URL(path, Astro.site ?? 'https://warmbly.com').toString();
+const articleJsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'BlogPosting',
+  headline,
+  description,
+  image: `${siteOrigin}/og-image.png`,
+  dateModified: updated,
+  datePublished: updated,
+  author: { '@id': `${siteOrigin}#org` },
+  publisher: { '@id': `${siteOrigin}#org` },
+  mainEntityOfPage: { '@type': 'WebPage', '@id': canonical },
+  isAccessibleForFree: true,
+};
 ---
 <Layout
   title="The Deliverability Handbook | Warmbly"
-  description="A full mental model for getting cold mail into the inbox, and keeping it there. Authentication, warmup, volume, reputation."
+  description={description}
+  ogType="article"
+  jsonLd={articleJsonLd}
 >
   <!-- ============================================================
        TOP BAR — minimal nav
@@ -96,7 +112,7 @@ const path = Astro.url.pathname;
                     {isCurrent ? (
                       <span class="w-1.5 h-1.5 rounded-full bg-[#0284c7] shrink-0"></span>
                     ) : (
-                      <span class="font-mono text-[10px] text-muted-foreground/55 shrink-0">{r.read.replace(' min', 'm')}</span>
+                      <span class="font-mono text-[10px] text-muted-foreground/55 shrink-0">{r.read}m</span>
                     )}
                   </a>
                 </li>
@@ -354,10 +370,10 @@ const path = Astro.url.pathname;
               Reputation does not live at the worker. It lives at the IP, the domain, and the From mailbox. A worker that holds 200 mailboxes is 200 reputations, not one. Reasoning about a worker as a unit (worker.cap = 5000) ignores where the actual reputation signal accrues.
             </p>
             <p class="mt-4 text-[15.5px] leading-[1.7] text-foreground/85">
-              Warmbly's defaults reflect this: the cold-send cap is per mailbox (100/day) and the per-send gap is per mailbox (600 seconds). A worker's outbound budget is computed as <code>Σ mailbox.coldBudget</code> over its assigned mailboxes. The system surfaces a concentration warning when a shared worker holds more than ~10 actively-sending cold mailboxes at default settings (~1,000 cold sends/day), because past that point a single bad mailbox poisons the worker's IP for everyone else on it.
+              Warmbly's defaults reflect this: the cold-send cap is per mailbox (50/day by default, raisable to at most 100/day with positive reputation evidence) and the per-send gap is per mailbox (600 seconds). A worker's outbound budget is computed as <code>Σ mailbox.coldBudget</code> over its assigned mailboxes. The system surfaces a concentration warning when a shared worker holds more than ~10 actively-sending cold mailboxes at default settings (~500 cold sends/day), because past that point a single bad mailbox poisons the worker's IP for everyone else on it.
             </p>
             <p class="mt-4 text-[15.5px] leading-[1.7] text-foreground/85">
-              Scaling volume up means adding mailboxes, not raising per-mailbox caps. A campaign that wants 5,000 cold sends/day should be assigned to 50+ healthy mailboxes at the 100/day default, not 5 mailboxes pushed to 1,000/day. The first plan is invisible to any anomaly heuristic; the second is the textbook example.
+              Scaling volume up means adding mailboxes, not raising per-mailbox caps. A campaign that wants 5,000 cold sends/day should be assigned to 100+ healthy mailboxes at the 50/day default, not 5 mailboxes pushed to 1,000/day. The first plan is invisible to any anomaly heuristic; the second is the textbook example.
             </p>
           </div>
           <div class="xl:pl-4 space-y-3">
@@ -392,7 +408,7 @@ const path = Astro.url.pathname;
               The DMARC ramp matters: start at <code>p=none; rua=mailto:dmarc@yourdomain</code>, watch reports for 14 days to confirm no third-party services were quietly relying on your domain (this is the most common surprise), then move to <code>p=quarantine; pct=10</code> for a week, then increase pct to 100, then <code>p=reject</code>. Skipping <code>pct</code> ramping is how legitimate mail gets quarantined by an aggressive DMARC change.
             </p>
             <p class="mt-4 text-[15.5px] leading-[1.7] text-foreground/85">
-              The 100/day per-mailbox cap and 600-second gap are not magic numbers. They are derived from observing that mailboxes which send a new message every 10+ minutes look indistinguishable from human typing cadence to the receiver, and from the empirical observation that Gmail's anomaly model starts flagging mailboxes sending more than ~150/day from a previously low baseline.
+              The 50/day default per-mailbox cap (raisable to 100/day only with positive reputation evidence) and the 600-second gap are not magic numbers. They are derived from observing that mailboxes which send a new message every 10+ minutes look indistinguishable from human typing cadence to the receiver, and from the empirical observation that Gmail's anomaly model starts flagging mailboxes sending more than ~150/day from a previously low baseline.
             </p>
           </div>
           <div class="xl:pl-4">
@@ -401,7 +417,7 @@ const path = Astro.url.pathname;
                 'Use a sub-domain for cold sending (outreach.acme.com). Reputation issues stay scoped.',
                 'Configure SPF, DKIM and DMARC on the sub-domain. Start at p=none, then quarantine after 2 weeks.',
                 'Warm every cold sending mailbox for at least 3 weeks before campaigns start.',
-                'Cap each mailbox at 100 cold emails per day with a 10-minute minimum gap.',
+                'Cap each mailbox at 50 cold emails per day (up to 100 only with proven reputation) with a 10-minute minimum gap.',
                 'Spread campaign sends across multiple mailboxes. Do not concentrate volume.',
                 'Plain text by default. No tracking pixels unless you need opens.',
                 'Two or three follow-ups, not eight.',

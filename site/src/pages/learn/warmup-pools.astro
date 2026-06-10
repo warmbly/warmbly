@@ -3,6 +3,7 @@ import Learn from '../../layouts/Learn.astro';
 ---
 <Learn
   title="How Warmup Pools Work | Warmbly"
+  headline="Warmup pools: free, premium, dedicated"
   description="How shared warmup pools actually work, why pool quality matters more than pool size, and what 'dedicated' should and shouldn't mean."
   reading="7 min read"
   updated="2026-04-19"
@@ -12,7 +13,7 @@ import Learn from '../../layouts/Learn.astro';
     A warmup pool is a group of mailboxes that send warmup mail to one another. Your mailbox sends a short message to another mailbox in the pool. That mailbox opens it, sometimes replies, and the pattern reverses with mail from another pool member.
   </p>
   <p>
-    From a mailbox provider's point of view, the pattern looks like normal individual mailbox activity. low volume, conversational, mixed senders.
+    From a mailbox provider's point of view, the pattern looks like normal individual mailbox activity: low volume, conversational, mixed senders.
   </p>
 
   <h2>Why pool quality matters more than size</h2>
@@ -46,7 +47,7 @@ import Learn from '../../layouts/Learn.astro';
     <li>Never silently mix free-tier mailboxes into the premium recipient set.</li>
   </ul>
   <p>
-    In Warmbly, free and premium pools are physically separated. Dedicated-worker customers still participate in the premium pool by default. dedicated infrastructure is for isolation and IP control, not a reputation shortcut.
+    In Warmbly, free and premium pools are physically separated. Dedicated-worker customers still participate in the premium pool by default. Dedicated infrastructure is for isolation and IP control, not a reputation shortcut.
   </p>
 
   <h2>What "dedicated" should mean</h2>
@@ -62,7 +63,7 @@ import Learn from '../../layouts/Learn.astro';
   <ul>
     <li>Bypass per-mailbox health rules.</li>
     <li>Let you ignore complaint or bounce thresholds.</li>
-    <li>Magically warm a brand-new IP. dedicated IPs need their own warmup ramp.</li>
+    <li>Magically warm a brand-new IP. Dedicated IPs need their own warmup ramp.</li>
   </ul>
 
   <h2>Re-entry after quarantine</h2>

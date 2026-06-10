@@ -1,9 +1,13 @@
 ---
 import Layout from './Layout.astro';
 import Icon from '../components/Icon.astro';
+import { learnArticles, glossaryHref, neighborsOf, levelTone } from '../lib/learn';
 
 interface Props {
+  /** SEO <title>, e.g. "Email Warmup - How It Works | Warmbly". */
   title: string;
+  /** Editorial H1. Falls back to the title with the SEO suffix stripped. */
+  headline?: string;
   description?: string;
   eyebrow?: string;
   reading?: string;
@@ -11,25 +15,22 @@ interface Props {
 }
 const {
   title,
+  headline = title.split(/\s*[|]\s*/)[0],
   description,
   eyebrow = 'Learn',
   reading = '6 min read',
   updated,
 } = Astro.props;
 
-// Related articles for the "Continue reading" footer
-const related = [
-  { href: '/learn/email-warmup/',         title: 'Email warmup, properly explained',         read: '11 min' },
-  { href: '/learn/deliverability/',       title: 'The deliverability handbook',              read: '14 min' },
-  { href: '/learn/spf-dkim-dmarc/',       title: 'SPF, DKIM and DMARC, end to end',          read: '12 min' },
-  { href: '/learn/inbox-placement/',      title: 'Inbox placement, not just delivery',       read: '8 min' },
-  { href: '/learn/cold-email-rules/',     title: 'Cold email rules across regions',          read: '10 min' },
-  { href: '/learn/warmup-pools/',         title: 'Warmup pools: free, premium, dedicated',   read: '7 min' },
-  { href: '/learn/reputation-recovery/',  title: 'Recovering a burned mailbox',              read: '9 min' },
-  { href: '/learn/personalization/',      title: 'Personalization & conditionals',           read: '6 min' },
-];
 const path = Astro.url.pathname;
-const next = related.filter((r) => r.href !== path).slice(0, 2);
+const current = learnArticles.find((a) => a.href === path);
+const { prev, next } = neighborsOf(path);
+const tone = current ? levelTone(current.level) : null;
+
+const neighbors = [
+  prev ? { label: 'Previously', article: prev } : null,
+  next ? { label: 'Up next', article: next } : null,
+].filter(Boolean) as { label: string; article: (typeof learnArticles)[number] }[];
 
 // BlogPosting structured data for each guide. Helps the essays surface as
 // articles rather than generic pages, and ties them back to the org.
@@ -38,8 +39,8 @@ const canonical = new URL(path, Astro.site ?? 'https://warmbly.com').toString();
 const articleJsonLd = {
   '@context': 'https://schema.org',
   '@type': 'BlogPosting',
-  headline: title,
-  description: description ?? title,
+  headline,
+  description: description ?? headline,
   image: `${siteOrigin}/og-image.png`,
   ...(updated ? { dateModified: updated, datePublished: updated } : {}),
   author: { '@id': `${siteOrigin}#org` },
@@ -48,51 +49,50 @@ const articleJsonLd = {
   isAccessibleForFree: true,
 };
 ---
-<Layout title={title} description={description ?? title} ogType="article" jsonLd={articleJsonLd}>
-  <!-- TOP BAR -->
-  <div class="bg-white border-b border-[color:var(--border)]">
+<Layout title={title} description={description ?? headline} ogType="article" jsonLd={articleJsonLd}>
+  <!-- TOP BAR: sticky under the site header, carries the reading progress -->
+  <div class="sticky top-14 z-30 bg-white/90 backdrop-blur-md border-b border-[color:var(--border)]">
     <div class="container-page py-3 flex items-center justify-between text-[11.5px] font-mono">
       <a href="/learn/" class="inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors">
         <Icon name="arrowRight" size={11} class="rotate-180" />
         Library
       </a>
-      <div class="hidden md:flex items-center gap-4 text-muted-foreground">
-        <span>{eyebrow}</span>
-        <span class="w-1 h-1 rounded-full bg-[color:var(--border)]"></span>
+      <div class="flex items-center gap-4 text-muted-foreground">
+        <span class="hidden md:inline">{eyebrow}</span>
+        <span class="hidden md:inline w-1 h-1 rounded-full bg-[color:var(--border)]"></span>
         <span>{reading}</span>
-        {updated && <span class="w-1 h-1 rounded-full bg-[color:var(--border)]"></span>}
-        {updated && <span>Updated {updated}</span>}
+        {updated && <span class="hidden sm:inline w-1 h-1 rounded-full bg-[color:var(--border)]"></span>}
+        {updated && <span class="hidden sm:inline">Updated {updated}</span>}
       </div>
     </div>
+    <div class="reading-progress" data-reading-progress></div>
   </div>
 
   <!-- DOC LAYOUT: sticky chapter rail + main column -->
-  <div class="grid lg:grid-cols-[200px_minmax(0,1fr)] xl:grid-cols-[220px_minmax(0,1fr)]">
+  <div class="grid lg:grid-cols-[220px_minmax(0,1fr)] xl:grid-cols-[240px_minmax(0,1fr)]">
 
     <!-- LEFT RAIL -->
-    <aside class="hidden lg:block border-r border-[color:var(--border)] bg-[color:var(--surface-1)]/40">
-      <div class="sticky top-0 max-h-screen overflow-y-auto py-8 px-6 flex flex-col gap-7">
-        <!-- On this page -->
-        <div>
+    <aside class="hidden lg:block border-r border-[color:var(--border)] bg-[color:var(--surface-2)]/40">
+      <div class="sticky top-[6.25rem] max-h-[calc(100vh-6.25rem)] overflow-y-auto py-8 px-6 flex flex-col gap-7">
+        <!-- On this page: filled by the chapter script, no placeholder flash -->
+        <div data-chapter-block hidden>
           <div class="text-[10.5px] uppercase tracking-[0.22em] font-mono text-muted-foreground mb-4">On this page</div>
-          <ol class="learn-chapter-rail space-y-px text-[13px]" data-chapter-rail>
-            <li class="text-[11.5px] text-muted-foreground/60 italic">Loading…</li>
-          </ol>
+          <ol class="learn-chapter-rail space-y-px text-[13px]" data-chapter-rail></ol>
         </div>
 
         <!-- All articles in the library, with current one highlighted -->
-        <div class="pt-6 border-t border-[color:var(--border)]">
+        <div data-essays-block class="pt-6 border-t border-[color:var(--border)]">
           <div class="text-[10.5px] uppercase tracking-[0.22em] font-mono text-muted-foreground mb-4 flex items-center justify-between">
             <span>All essays</span>
-            <span class="font-mono text-[10.5px] text-muted-foreground/70">{related.length}</span>
+            <span class="font-mono text-[10.5px] text-muted-foreground/70">{learnArticles.length}</span>
           </div>
           <ol class="space-y-px text-[13px]">
-            {related.map((r, i) => {
-              const isCurrent = r.href === path;
+            {learnArticles.map((a, i) => {
+              const isCurrent = a.href === path;
               return (
                 <li>
                   <a
-                    href={r.href}
+                    href={a.href}
                     aria-current={isCurrent ? 'page' : undefined}
                     class={`group flex items-baseline gap-3 py-1.5 px-2 -mx-2 rounded-md transition-colors duration-300 ease-out ${
                       isCurrent
@@ -101,21 +101,26 @@ const articleJsonLd = {
                     }`}
                   >
                     <span class={`font-mono text-[10.5px] w-5 shrink-0 transition-colors duration-300 ${isCurrent ? 'text-[#0284c7]' : 'text-muted-foreground/55'}`}>{String(i + 1).padStart(2, '0')}</span>
-                    <span class="leading-snug flex-1 truncate">{r.title}</span>
+                    <span class="leading-snug flex-1 line-clamp-2">{a.title}</span>
                     {isCurrent ? (
                       <span class="w-1.5 h-1.5 rounded-full bg-[#0284c7] shrink-0"></span>
                     ) : (
-                      <span class="font-mono text-[10px] text-muted-foreground/55 shrink-0">{r.read.replace(' read', '').replace(' min', 'm')}</span>
+                      <span class="font-mono text-[10px] text-muted-foreground/55 shrink-0">{a.read}m</span>
                     )}
                   </a>
                 </li>
               );
             })}
           </ol>
-          <a href="/learn/" class="mt-4 inline-flex items-center gap-1.5 text-[11.5px] font-mono text-[#0369a1] hover:text-[#075985]">
-            Library home
-            <Icon name="arrowRight" size={10} />
-          </a>
+          <div class="mt-4 flex items-center gap-4">
+            <a href={glossaryHref} class={`inline-flex items-center gap-1.5 text-[11.5px] font-mono ${path === glossaryHref ? 'text-[#0369a1] font-semibold' : 'text-muted-foreground hover:text-[#0369a1]'}`}>
+              Glossary
+            </a>
+            <a href="/learn/" class="inline-flex items-center gap-1.5 text-[11.5px] font-mono text-[#0369a1] hover:text-[#075985]">
+              Library home
+              <Icon name="arrowRight" size={10} />
+            </a>
+          </div>
         </div>
       </div>
     </aside>
@@ -124,46 +129,49 @@ const articleJsonLd = {
     <main class="bg-white learn-main">
       <!-- Page header -->
       <header class="border-b border-[color:var(--border)] px-6 md:px-10 lg:px-14 py-10 md:py-14">
-        <div class="text-[10.5px] uppercase tracking-[0.22em] font-mono text-[#0284c7] mb-3">{eyebrow}</div>
-        <h1 class="text-[40px] md:text-[52px] font-semibold tracking-[-0.03em] leading-[1.05] text-heading max-w-3xl">{title}</h1>
+        <div class="flex items-center gap-3 flex-wrap mb-3">
+          <span class="text-[10.5px] uppercase tracking-[0.22em] font-mono text-[#0284c7]">{eyebrow}</span>
+          {current && tone && (
+            <span class={`inline-flex items-center gap-1.5 h-5 px-2 rounded-full text-[10.5px] font-mono font-semibold uppercase tracking-[0.1em] ${tone.chip}`}>
+              <span class={`w-1 h-1 rounded-full ${tone.dot}`}></span>
+              {current.level}
+            </span>
+          )}
+          {current && (
+            <span class="text-[10.5px] uppercase tracking-[0.16em] font-mono text-muted-foreground">{current.topic}</span>
+          )}
+        </div>
+        <h1 class="text-[36px] md:text-[52px] font-semibold tracking-[-0.03em] leading-[1.05] text-heading max-w-3xl">{headline}</h1>
         {description && (
           <p class="mt-4 text-[16px] md:text-[17px] text-foreground/70 max-w-2xl leading-relaxed">{description}</p>
         )}
+
+        <!-- Mobile TOC: filled by the chapter script -->
+        <details class="lg:hidden mt-6 rounded-[12px] bg-[color:var(--surface-2)]/60 ring-1 ring-[color:var(--border)] open:bg-white" data-mobile-toc hidden>
+          <summary class="cursor-pointer select-none list-none px-4 py-3 flex items-center justify-between text-[11px] uppercase tracking-[0.18em] font-mono text-muted-foreground">
+            On this page
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="toc-caret transition-transform" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+          </summary>
+          <ol class="px-4 pb-4 space-y-1 text-[13.5px]" data-mobile-toc-list></ol>
+        </details>
       </header>
 
       <!-- Prose body -->
-      <div class="learn-prose px-6 md:px-10 lg:px-14 py-12 md:py-16 max-w-[820px]
-        [&_h2]:scroll-mt-4 [&_h2]:text-[24px] [&_h2]:md:text-[28px] [&_h2]:font-semibold [&_h2]:tracking-[-0.02em] [&_h2]:leading-[1.15] [&_h2]:text-heading [&_h2]:mt-14 [&_h2]:first:mt-0 [&_h2]:mb-5 [&_h2]:relative
-        [&_h2]:before:content-['§'] [&_h2]:before:absolute [&_h2]:before:-left-7 [&_h2]:before:text-[#0284c7]/30 [&_h2]:before:text-[18px] [&_h2]:before:font-mono [&_h2]:before:top-1
-        [&_h3]:text-[16px] [&_h3]:font-semibold [&_h3]:text-heading [&_h3]:mt-8 [&_h3]:mb-2
-        [&_p]:text-[15.5px] [&_p]:md:text-[16px] [&_p]:leading-[1.75] [&_p]:text-foreground/85 [&_p]:mt-4
-        [&_p:first-child]:mt-0
-        [&_ul]:mt-4 [&_ul]:space-y-2 [&_ul]:text-[15px] [&_ul]:text-foreground/85
-        [&_ul>li]:relative [&_ul>li]:pl-5 [&_ul>li]:leading-[1.6]
-        [&_ul>li]:before:content-['·'] [&_ul>li]:before:absolute [&_ul>li]:before:left-1 [&_ul>li]:before:text-[#0284c7] [&_ul>li]:before:font-bold
-        [&_ol]:mt-4 [&_ol]:list-none [&_ol]:counter-reset:[step] [&_ol]:space-y-2 [&_ol]:text-[15px] [&_ol]:text-foreground/85
-        [&_ol>li]:counter-increment:[step] [&_ol>li]:relative [&_ol>li]:pl-10 [&_ol>li]:leading-[1.6]
-        [&_ol>li]:before:content-[counter(step,decimal-leading-zero)'.'] [&_ol>li]:before:absolute [&_ol>li]:before:left-0 [&_ol>li]:before:top-0 [&_ol>li]:before:text-[12px] [&_ol>li]:before:font-mono [&_ol>li]:before:font-semibold [&_ol>li]:before:text-[#0284c7]
-        [&_a]:text-[#0369a1] [&_a:hover]:text-[#075985] [&_a]:underline [&_a]:underline-offset-2 [&_a]:decoration-[#0284c7]/30
-        [&_code]:font-mono [&_code]:text-[0.92em] [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded [&_code]:bg-[color:var(--surface-1)] [&_code]:ring-1 [&_code]:ring-[color:var(--border)]
-        [&_blockquote]:my-8 [&_blockquote]:border-l-2 [&_blockquote]:border-[#0284c7] [&_blockquote]:pl-6 [&_blockquote]:py-2 [&_blockquote]:text-[18px] [&_blockquote]:md:text-[22px] [&_blockquote]:font-semibold [&_blockquote]:tracking-[-0.015em] [&_blockquote]:leading-[1.35] [&_blockquote]:text-heading
-        [&_strong]:text-heading [&_strong]:font-semibold
-        [&_pre]:my-5 [&_pre]:bg-[#0c1224] [&_pre]:text-white/85 [&_pre]:p-5 [&_pre]:rounded-[10px] [&_pre]:overflow-x-auto [&_pre]:text-[13px] [&_pre]:leading-[1.6]
-        [&_pre_code]:bg-transparent [&_pre_code]:ring-0 [&_pre_code]:p-0">
+      <div class="article-prose learn-prose px-6 md:px-10 lg:px-14 py-12 md:py-16 max-w-[760px]">
         <slot />
       </div>
 
-      <!-- Continue reading -->
+      <!-- Previously / up next -->
       <footer class="px-6 md:px-10 lg:px-14 py-12 border-t border-[color:var(--border)]">
         <div class="text-[10.5px] uppercase tracking-[0.22em] font-mono text-muted-foreground mb-5">Continue reading</div>
         <div class="grid sm:grid-cols-2 gap-3">
-          {next.map((n) => (
-            <a href={n.href} class="group flex items-center justify-between p-5 rounded-[12px] bg-[color:var(--surface-1)] ring-1 ring-[color:var(--border)] hover:ring-[color:var(--sky-3)] hover:bg-white transition-all">
-              <div>
-                <div class="text-[10.5px] font-mono text-muted-foreground">{n.read} read</div>
-                <div class="mt-1 text-[15px] font-semibold text-heading group-hover:text-[#0369a1] transition-colors">{n.title}</div>
+          {neighbors.map(({ label, article }) => (
+            <a href={article.href} class="group flex items-center justify-between p-5 rounded-[12px] bg-[color:var(--surface-2)] ring-1 ring-[color:var(--border)] hover:ring-[#0284c7]/40 hover:bg-white transition-all">
+              <div class="min-w-0">
+                <div class="text-[10.5px] font-mono text-muted-foreground">{label} · {article.read} min read</div>
+                <div class="mt-1 text-[15px] font-semibold text-heading group-hover:text-[#0369a1] transition-colors leading-snug">{article.title}</div>
               </div>
-              <Icon name="arrowRight" size={14} class="text-muted-foreground group-hover:text-[#0369a1] group-hover:translate-x-0.5 transition-all" />
+              <Icon name="arrowRight" size={14} class="shrink-0 ml-4 text-muted-foreground group-hover:text-[#0369a1] group-hover:translate-x-0.5 transition-all" />
             </a>
           ))}
         </div>
@@ -172,71 +180,113 @@ const articleJsonLd = {
   </div>
 
   <script is:inline>
-    // Auto-build chapter rail from H2 elements + scroll-spy active state
+    // Chapter rail + mobile TOC from H2s, scroll-spy, hover anchors,
+    // reading progress. Articles author plain HTML, so ids are assigned here.
     (function () {
-      const rail = document.querySelector('[data-chapter-rail]');
-      const main = document.querySelector('.learn-prose');
-      if (!rail || !main) return;
-      const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-      const h2s = Array.from(main.querySelectorAll('h2'));
+      var rail = document.querySelector('[data-chapter-rail]');
+      var railBlock = document.querySelector('[data-chapter-block]');
+      var mobileToc = document.querySelector('[data-mobile-toc]');
+      var mobileTocList = document.querySelector('[data-mobile-toc-list]');
+      var main = document.querySelector('.learn-prose');
+      var bar = document.querySelector('[data-reading-progress]');
+      if (!main) return;
+
+      var slug = function (s) { return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''); };
+      var h2s = Array.prototype.slice.call(main.querySelectorAll('h2'));
+
+      // Reading progress works even on pages without chapters.
+      if (bar) {
+        var raf = 0;
+        var update = function () {
+          var rect = main.getBoundingClientRect();
+          var total = rect.height - window.innerHeight;
+          var read = Math.min(Math.max(-rect.top, 0), Math.max(total, 1));
+          bar.style.width = (total > 0 ? (read / total) * 100 : 100) + '%';
+        };
+        update();
+        window.addEventListener('scroll', function () {
+          if (raf) return;
+          raf = requestAnimationFrame(function () { raf = 0; update(); });
+        }, { passive: true });
+      }
+
       if (!h2s.length) return;
 
-      const baseClass    = 'group flex items-baseline gap-3 py-1.5 px-2 -mx-2 rounded-md transition-colors duration-300 ease-out';
-      const inactiveClass = ' text-foreground/60 hover:text-[#0369a1]';
-      const activeClass   = ' text-[#0369a1] font-semibold';
+      var baseClass = 'group flex items-baseline gap-3 py-1.5 px-2 -mx-2 rounded-md transition-colors duration-300 ease-out';
+      var inactiveClass = ' text-foreground/60 hover:text-[#0369a1]';
+      var activeClass = ' text-[#0369a1] font-semibold';
 
-      // Build rail
-      rail.innerHTML = '';
-      const links = [];
-      h2s.forEach((h2, i) => {
-        if (!h2.id) h2.id = slug(h2.textContent || 'section-' + (i + 1));
-        const li = document.createElement('li');
-        const a  = document.createElement('a');
-        a.href   = '#' + h2.id;
-        a.className = baseClass + inactiveClass;
-        a.innerHTML = '<span class="font-mono text-[10.5px] text-muted-foreground/70 w-5 shrink-0 chapter-num">' + String(i + 1).padStart(2, '0') + '</span><span class="leading-snug">' + h2.textContent + '</span>';
-        li.appendChild(a);
-        rail.appendChild(li);
-        links.push({ id: h2.id, el: a });
+      var links = [];
+      h2s.forEach(function (h2, i) {
+        var label = h2.textContent || 'Section ' + (i + 1);
+        if (!h2.id) h2.id = slug(label);
+
+        // Hover anchor for deep links.
+        var anchor = document.createElement('a');
+        anchor.href = '#' + h2.id;
+        anchor.className = 'heading-anchor';
+        anchor.textContent = '#';
+        anchor.setAttribute('aria-label', 'Link to this section');
+        h2.appendChild(anchor);
+
+        if (rail) {
+          var li = document.createElement('li');
+          var a = document.createElement('a');
+          a.href = '#' + h2.id;
+          a.className = baseClass + inactiveClass;
+          a.innerHTML = '<span class="font-mono text-[10.5px] text-muted-foreground/70 w-5 shrink-0 chapter-num">' + String(i + 1).padStart(2, '0') + '</span><span class="leading-snug"></span>';
+          a.lastChild.textContent = label;
+          li.appendChild(a);
+          rail.appendChild(li);
+          links.push({ id: h2.id, el: a });
+        }
+
+        if (mobileTocList) {
+          var mli = document.createElement('li');
+          var ma = document.createElement('a');
+          ma.href = '#' + h2.id;
+          ma.className = 'flex items-baseline gap-2.5 py-1 text-foreground/70 hover:text-[#0369a1]';
+          ma.innerHTML = '<span class="font-mono text-[10.5px] text-muted-foreground/60">' + String(i + 1).padStart(2, '0') + '</span><span></span>';
+          ma.lastChild.textContent = label;
+          mli.appendChild(ma);
+          mobileTocList.appendChild(mli);
+        }
       });
 
-      // Scroll-spy: highlight closest H2 above viewport mid-line
-      let currentId = null;
+      if (railBlock) railBlock.hidden = false;
+      if (mobileToc) mobileToc.hidden = false;
+
+      // Scroll-spy: highlight closest H2 above viewport mid-line.
+      var currentId = null;
       function setActive(id) {
         if (id === currentId) return;
         currentId = id;
-        links.forEach((l) => {
-          if (l.id === id) {
-            l.el.className = baseClass + activeClass;
-          } else {
-            l.el.className = baseClass + inactiveClass;
-          }
+        links.forEach(function (l) {
+          l.el.className = baseClass + (l.id === id ? activeClass : inactiveClass);
         });
       }
-
       function onScroll() {
-        const probe = window.innerHeight * 0.35;
-        let active = h2s[0].id;
-        for (const h2 of h2s) {
-          const rect = h2.getBoundingClientRect();
-          if (rect.top - probe <= 0) {
-            active = h2.id;
-          } else {
-            break;
-          }
+        var probe = window.innerHeight * 0.35;
+        var active = h2s[0].id;
+        for (var i = 0; i < h2s.length; i++) {
+          var rect = h2s[i].getBoundingClientRect();
+          if (rect.top - probe <= 0) active = h2s[i].id; else break;
         }
         setActive(active);
       }
-
-      onScroll();
-      let raf = 0;
-      window.addEventListener('scroll', () => {
-        if (raf) return;
-        raf = requestAnimationFrame(() => {
-          raf = 0;
-          onScroll();
-        });
-      }, { passive: true });
+      if (links.length) {
+        onScroll();
+        var raf2 = 0;
+        window.addEventListener('scroll', function () {
+          if (raf2) return;
+          raf2 = requestAnimationFrame(function () { raf2 = 0; onScroll(); });
+        }, { passive: true });
+      }
     })();
   </script>
+
+  <style>
+    details[data-mobile-toc] summary::-webkit-details-marker { display: none; }
+    details[data-mobile-toc][open] .toc-caret { transform: rotate(180deg); }
+  </style>
 </Layout>

@@ -3,13 +3,14 @@ import Learn from '../../layouts/Learn.astro';
 ---
 <Learn
   title="Inbox Placement vs. Delivery | Warmbly"
+  headline="Inbox placement, not just delivery"
   description="Delivery is a 200 OK from an SMTP server. Placement is whether the recipient actually sees the message."
   reading="8 min read"
   updated="2026-04-22"
 >
   <h2>Delivery vs placement</h2>
   <p>
-    Most cold-email tools report "delivery rate". the percentage of messages that the receiving SMTP server accepted. That number is almost always close to 100% and tells you almost nothing.
+    Most cold-email tools report "delivery rate": the percentage of messages that the receiving SMTP server accepted. That number is almost always close to 100% and tells you almost nothing.
   </p>
   <p>
     A receiving server can accept a message (delivery) and then immediately filter it into Spam, Promotions, or out of the inbox entirely. Placement is the share of accepted messages that land in the recipient's primary inbox.
@@ -21,7 +22,7 @@ import Learn from '../../layouts/Learn.astro';
   <h2>How placement is measured</h2>
   <h3>Warmup probes</h3>
   <p>
-    Warmbly's warmup pool is also a placement probe. Pool members report where each warmup message arrived. inbox, spam, promotions. We aggregate per sending mailbox over a rolling sample window.
+    Warmbly's warmup pool is also a placement probe. Pool members report where each warmup message arrived: inbox, spam, promotions. We aggregate per sending mailbox over a rolling sample window.
   </p>
   <p>
     Probe accuracy depends on pool diversity. A pool that only contains Gmail addresses can't tell you anything about Outlook placement. Our premium pool spans Gmail, Outlook, Yahoo, iCloud and self-hosted IMAP servers in proportion to the broader receiver landscape.
@@ -29,7 +30,7 @@ import Learn from '../../layouts/Learn.astro';
 
   <h3>Seed lists</h3>
   <p>
-    Some teams maintain a "seed list". a fixed set of mailboxes across providers that always receive a copy of every campaign send. The placement on the seed list approximates placement for the full campaign.
+    Some teams maintain a "seed list": a fixed set of mailboxes across providers that always receive a copy of every campaign send. The placement on the seed list approximates placement for the full campaign.
   </p>
   <p>
     Seed lists are useful but not free of bias. They tend to be older, more engaged inboxes than your real cold recipients. Treat them as a directional signal.
@@ -45,7 +46,7 @@ import Learn from '../../layouts/Learn.astro';
     <li>Unauthenticated mail (missing or misaligned SPF, DKIM, DMARC).</li>
     <li>Sudden volume spikes from an otherwise quiet mailbox.</li>
     <li>Cold mail with heavy HTML, unsolicited attachments, or tracking-pixel-only bodies.</li>
-    <li>Word-for-word identical content across thousands of sends. content fingerprinting catches it.</li>
+    <li>Word-for-word identical content across thousands of sends: content fingerprinting catches it.</li>
     <li>Long URLs to suspicious TLDs, or URL shorteners that have been abused.</li>
     <li>Recipients consistently deleting without opening.</li>
     <li>Recipients marking as spam (the worst signal of all).</li>
@@ -55,10 +56,10 @@ import Learn from '../../layouts/Learn.astro';
   <ul>
     <li>Plain text bodies for cold sequences.</li>
     <li>Sensible volume relative to historical baseline for the mailbox.</li>
-    <li>Real replies from real recipients. this is the strongest positive signal.</li>
+    <li>Real replies from real recipients: this is the strongest positive signal.</li>
     <li>Variation in subject and opening line across recipients.</li>
     <li>Tight, well-targeted contact lists. Sending to obviously-bad addresses (parsed from web pages, role accounts, etc.) inflates bounces and complaint risk.</li>
-    <li>Consistent sending pattern. same business hours every day, with weekends off.</li>
+    <li>Consistent sending pattern: same business hours every day, with weekends off.</li>
   </ul>
 
   <h2>Targets to aim for</h2>

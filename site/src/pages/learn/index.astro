@@ -3,100 +3,11 @@ import Layout from '../../layouts/Layout.astro';
 import HeroAtmosphere from '../../components/HeroAtmosphere.astro';
 import Cloud from '../../components/Cloud.astro';
 import Icon from '../../components/Icon.astro';
+import { learnArticles, levelTone, numberWord } from '../../lib/learn';
 
-// All articles with topic + level + read time
-const articles = [
-  {
-    href: '/learn/deliverability/',
-    title: 'The deliverability handbook',
-    topic: 'Foundations',
-    level: 'Essential',
-    read: 14,
-    body: 'A full mental model for getting cold mail into the inbox and keeping it there. Authentication, warmup, volume discipline and reputation, in one place.',
-    icon: 'shield',
-    featured: true,
-  },
-  {
-    href: '/learn/email-warmup/',
-    title: 'Email warmup, properly explained',
-    topic: 'Foundations',
-    level: 'Beginner',
-    read: 11,
-    body: 'Why warmup exists, how providers read it, and how to do it without faking signals.',
-    icon: 'flame',
-  },
-  {
-    href: '/learn/spf-dkim-dmarc/',
-    title: 'SPF, DKIM and DMARC, end to end',
-    topic: 'Foundations',
-    level: 'Beginner',
-    read: 12,
-    body: 'The three authentication records and the alignment rules that actually matter for cold mail.',
-    icon: 'key',
-  },
-  {
-    href: '/learn/inbox-placement/',
-    title: 'Inbox placement, not just delivery',
-    topic: 'Foundations',
-    level: 'Beginner',
-    read: 8,
-    body: 'Delivery is a 200 OK. Placement is whether the recipient actually sees the message.',
-    icon: 'inbox',
-  },
-  {
-    href: '/learn/cold-email-rules/',
-    title: 'Cold email rules across regions',
-    topic: 'Sending well',
-    level: 'Practical',
-    read: 10,
-    body: 'CAN-SPAM, GDPR, CASL, PECR. What each says and how to comply without lawyering up.',
-    icon: 'list',
-  },
-  {
-    href: '/learn/warmup-pools/',
-    title: 'Warmup pools: free, premium, dedicated',
-    topic: 'Sending well',
-    level: 'Practical',
-    read: 7,
-    body: 'How shared warmup pools work and why pool quality matters more than pool size.',
-    icon: 'users',
-  },
-  {
-    href: '/learn/reputation-recovery/',
-    title: 'Recovering a burned mailbox',
-    topic: 'Sending well',
-    level: 'Advanced',
-    read: 9,
-    body: 'A step-by-step plan to bring a quarantined mailbox back to healthy.',
-    icon: 'workflow',
-  },
-  {
-    href: '/learn/personalization/',
-    title: 'Personalization & conditionals',
-    topic: 'Sending well',
-    level: 'Practical',
-    read: 6,
-    body: 'Merge variables, custom fields, and if/else conditionals so one template reads naturally for every recipient.',
-    icon: 'list',
-  },
-];
-
-const featured = articles.find((a) => a.featured)!;
-const rest     = articles.filter((a) => !a.featured);
-
-const topics = ['All', 'Foundations', 'Sending well'];
-const counts: Record<string, number> = {
-  'All': articles.length,
-  'Foundations': articles.filter(a => a.topic === 'Foundations').length,
-  'Sending well': articles.filter(a => a.topic === 'Sending well').length,
-};
-
-const levelTone = (l: string) => {
-  if (l === 'Essential') return { dot: 'bg-amber-500',   chip: 'bg-amber-50 text-amber-700' };
-  if (l === 'Beginner')  return { dot: 'bg-emerald-500', chip: 'bg-emerald-50 text-emerald-700' };
-  if (l === 'Practical') return { dot: 'bg-sky-500',     chip: 'bg-sky-50 text-sky-700' };
-  return { dot: 'bg-violet-500', chip: 'bg-violet-50 text-violet-700' };
-};
+// Single source of truth for the library lives in src/lib/learn.ts.
+const featured = learnArticles.find((a) => a.featured)!;
+const rest     = learnArticles.filter((a) => !a.featured);
 ---
 <Layout
   title="Cold Email & Deliverability Guides | Warmbly"
@@ -173,7 +84,7 @@ const levelTone = (l: string) => {
               </div>
               <div class="text-[60px] md:text-[80px] font-semibold text-white tracking-[-0.04em] leading-none drop-shadow-[0_2px_8px_rgba(2,32,71,0.3)]">{featured.read}</div>
               <div class="mt-1 text-[10.5px] uppercase tracking-[0.2em] font-mono text-white/75">minutes</div>
-              <div class="mt-5 text-[12.5px] font-mono text-white/85">7 sections · 1 worked example</div>
+              <div class="mt-5 text-[12.5px] font-mono text-white/85">{featured.topic} · the place to start</div>
             </div>
           </div>
         </div>
@@ -190,7 +101,7 @@ const levelTone = (l: string) => {
       <div class="mb-12 max-w-3xl">
         <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">The library</div>
         <h2 class="text-[32px] md:text-[44px] font-semibold tracking-[-0.03em] leading-[1.04] text-heading">
-          Six essays and a reference.
+          {numberWord(rest.length)} essays and a reference.
         </h2>
       </div>
 
@@ -203,28 +114,36 @@ const levelTone = (l: string) => {
             <span class="text-[10.5px] font-mono text-muted-foreground/70">{rest.length}</span>
           </div>
           <div class="divide-y divide-[color:var(--border)]">
-            {rest.map((a, i) => (
-              <a href={a.href} class="article-row group grid grid-cols-[36px_1fr_auto] gap-4 py-5 items-baseline hover:bg-[color:var(--surface-1)]/60 -mx-3 px-3 rounded-[8px] transition-colors">
-                <span class="text-[11px] font-mono text-muted-foreground tracking-[0.06em] pt-1">{String(i + 1).padStart(2, '0')}</span>
-                <div>
-                  <h3 class="text-[17px] md:text-[19px] font-semibold tracking-[-0.015em] leading-[1.25] text-heading group-hover:text-[#0369a1] transition-colors">
-                    {a.title}
-                  </h3>
-                  <div class="mt-1.5 flex items-center gap-3 text-[11.5px] font-mono text-muted-foreground">
-                    <span class="uppercase tracking-[0.12em]">{a.topic}</span>
-                    <span class="w-1 h-1 rounded-full bg-[color:var(--border)]"></span>
-                    <span>{a.read} min</span>
+            {rest.map((a, i) => {
+              const tone = levelTone(a.level);
+              return (
+                <a href={a.href} class="article-row group grid grid-cols-[36px_1fr_auto] gap-4 py-5 items-baseline hover:bg-[color:var(--surface-2)]/60 -mx-3 px-3 rounded-[8px] transition-colors">
+                  <span class="text-[11px] font-mono text-muted-foreground tracking-[0.06em] pt-1">{String(i + 1).padStart(2, '0')}</span>
+                  <div class="min-w-0">
+                    <h3 class="text-[17px] md:text-[19px] font-semibold tracking-[-0.015em] leading-[1.25] text-heading group-hover:text-[#0369a1] transition-colors">
+                      {a.title}
+                    </h3>
+                    <p class="mt-1.5 text-[13px] text-foreground/65 leading-relaxed max-w-xl">{a.body}</p>
+                    <div class="mt-2 flex items-center gap-3 text-[11.5px] font-mono text-muted-foreground">
+                      <span class={`inline-flex items-center gap-1.5 h-5 px-2 rounded-full text-[10.5px] font-semibold uppercase tracking-[0.1em] ${tone.chip}`}>
+                        <span class={`w-1 h-1 rounded-full ${tone.dot}`}></span>
+                        {a.level}
+                      </span>
+                      <span class="uppercase tracking-[0.12em]">{a.topic}</span>
+                      <span class="w-1 h-1 rounded-full bg-[color:var(--border)]"></span>
+                      <span>{a.read} min</span>
+                    </div>
                   </div>
-                </div>
-                <Icon name="arrowRight" size={13} class="text-muted-foreground group-hover:text-[#0369a1] group-hover:translate-x-1 transition-all self-center" />
-              </a>
-            ))}
+                  <Icon name="arrowRight" size={13} class="text-muted-foreground group-hover:text-[#0369a1] group-hover:translate-x-1 transition-all self-center" />
+                </a>
+              );
+            })}
           </div>
         </div>
 
         <!-- Reference: inline glossary panel -->
         <aside class="lg:sticky lg:top-24 self-start" style="align-self: start;">
-          <div class="rounded-[14px] bg-[color:var(--surface-1)] ring-1 ring-[color:var(--border)] p-6 md:p-7">
+          <div class="rounded-[14px] bg-[color:var(--surface-2)] ring-1 ring-[color:var(--border)] p-6 md:p-7">
             <div class="flex items-baseline justify-between mb-4">
               <div class="text-[10.5px] uppercase tracking-[0.22em] font-mono text-muted-foreground">Reference</div>
               <a href="/learn/glossary/" class="text-[11.5px] font-medium text-[#0369a1] hover:text-[#075985]">Open all →</a>
@@ -253,7 +172,7 @@ const levelTone = (l: string) => {
             </div>
 
             <div class="mt-5 pt-5 border-t border-[color:var(--border)] flex items-center justify-between text-[11.5px] font-mono text-muted-foreground">
-              <span>42 terms total</span>
+              <span>Plain definitions, A to Z</span>
               <span>5 min read</span>
             </div>
           </div>

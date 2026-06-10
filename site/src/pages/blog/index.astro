@@ -1,0 +1,87 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import Icon from '../../components/Icon.astro';
+import CTA from '../../components/CTA.astro';
+import PostGrid from '../../components/blog/PostGrid.astro';
+import TagFilter from '../../components/blog/TagFilter.astro';
+import { getPublishedPosts, tagCounts } from '../../lib/blog';
+
+const posts = await getPublishedPosts();
+const tags = tagCounts(posts);
+
+const follow = [
+  { href: '/changelog/', title: 'Changelog', icon: 'list', external: false },
+  { href: 'https://github.com/warmbly/warmbly', title: 'Source code', icon: 'code', external: true },
+  { href: 'https://github.com/warmbly/warmbly/discussions', title: 'Discussions', icon: 'reply', external: true },
+];
+---
+<Layout
+  title="Blog | Warmbly"
+  description="Deliverability, sending infrastructure, and what it takes to run an open-source cold email platform."
+>
+  <!-- ============================================================
+       HEADER — compact, newsroom style; the posts are the page.
+  ============================================================ -->
+  <section class="bg-white">
+    <div class="container-page pt-12 md:pt-16 pb-8 md:pb-10">
+      <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7] mb-3">Blog</div>
+      <div class="flex flex-wrap items-end justify-between gap-x-8 gap-y-3">
+        <h1 class="text-[34px] md:text-[44px] font-semibold tracking-[-0.03em] leading-[1.04] text-heading">
+          The Warmbly blog.
+        </h1>
+        <p class="text-[12px] font-mono text-muted-foreground pb-1.5">
+          RSS feed at <a href="/blog/rss.xml" class="text-[#0369a1] hover:text-[#075985]">/blog/rss.xml</a>
+        </p>
+      </div>
+      <p class="mt-3 text-[15px] md:text-[16px] text-foreground/70 max-w-2xl leading-relaxed">
+        Deliverability, sending infrastructure, and what it takes to run an
+        open-source cold email platform.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       POSTS — tabs + search + cover-image grid
+  ============================================================ -->
+  <section class="bg-white pb-16 md:pb-20">
+    <div class="container-page">
+      <PostGrid posts={posts}>
+        <TagFilter slot="filters" tags={tags} total={posts.length} />
+      </PostGrid>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       TOPICS + ELSEWHERE — one compact band
+  ============================================================ -->
+  <section class="bg-[color:var(--surface-2)]/40 border-y border-[color:var(--border)] py-10 md:py-14">
+    <div class="container-page">
+      <div class="grid lg:grid-cols-2 gap-10 lg:gap-16">
+        <div>
+          <div class="text-[10.5px] uppercase tracking-[0.22em] font-mono text-muted-foreground mb-4">Topics</div>
+          <div class="flex flex-wrap gap-2.5">
+            {tags.map(({ tag, count }) => (
+              <a href={`/blog/tag/${tag}/`} class="group inline-flex items-center gap-2 h-9 px-3.5 rounded-[10px] bg-white ring-1 ring-[color:var(--border)] hover:ring-[#0284c7]/40 hover:-translate-y-0.5 transition-all duration-200 text-[13px] font-medium text-foreground/80 hover:text-[#0369a1]">
+                {tag}
+                <span class="font-mono text-[10.5px] text-muted-foreground">{count}</span>
+              </a>
+            ))}
+          </div>
+        </div>
+        <div>
+          <div class="text-[10.5px] uppercase tracking-[0.22em] font-mono text-muted-foreground mb-4">Elsewhere</div>
+          <div class="flex flex-wrap gap-2.5">
+            {follow.map((f) => (
+              <a href={f.href} {...(f.external ? { target: '_blank', rel: 'noopener' } : {})} class="group inline-flex items-center gap-2 h-9 px-3.5 rounded-[10px] bg-white ring-1 ring-[color:var(--border)] hover:ring-[#0284c7]/40 hover:-translate-y-0.5 transition-all duration-200 text-[13px] font-medium text-foreground/80 hover:text-[#0369a1]">
+                <Icon name={f.icon} size={13} class="text-[#0284c7]" />
+                {f.title}
+              </a>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <CTA />
+</Layout>

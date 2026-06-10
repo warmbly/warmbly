@@ -1,0 +1,50 @@
+---
+import Layout from '../../../layouts/Layout.astro';
+import CTA from '../../../components/CTA.astro';
+import PostGrid from '../../../components/blog/PostGrid.astro';
+import TagFilter from '../../../components/blog/TagFilter.astro';
+import { getPublishedPosts, tagCounts } from '../../../lib/blog';
+
+export async function getStaticPaths() {
+  const posts = await getPublishedPosts();
+  return tagCounts(posts).map(({ tag }) => ({
+    params: { tag },
+    props: { posts: posts.filter((p) => p.data.tags.includes(tag)) },
+  }));
+}
+
+const { tag } = Astro.params;
+const { posts } = Astro.props;
+
+const all = await getPublishedPosts();
+const tags = tagCounts(all);
+---
+<Layout
+  title={`${tag} | Warmbly Blog`}
+  description={`Posts about ${tag} from the team building Warmbly.`}
+>
+  <!-- HEADER — compact, mirrors the blog index -->
+  <section class="bg-white">
+    <div class="container-page pt-12 md:pt-16 pb-8 md:pb-10">
+      <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7] mb-3">
+        <a href="/blog/" class="hover:text-[#075985]">Blog</a> · topic
+      </div>
+      <div class="flex flex-wrap items-end justify-between gap-x-8 gap-y-3">
+        <h1 class="text-[34px] md:text-[44px] font-semibold tracking-[-0.03em] leading-[1.04] text-heading">{tag}</h1>
+        <p class="text-[12px] font-mono text-muted-foreground pb-1.5">
+          {posts.length} {posts.length === 1 ? 'post' : 'posts'}
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section class="bg-white pb-16 md:pb-20">
+    <div class="container-page">
+      <PostGrid posts={posts}>
+        <TagFilter slot="filters" tags={tags} total={all.length} active={tag} />
+      </PostGrid>
+    </div>
+  </section>
+
+  <CTA />
+</Layout>

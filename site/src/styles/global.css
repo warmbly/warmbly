@@ -474,6 +474,242 @@ body {
   -webkit-mask-image: linear-gradient(to right, transparent 0%, black 8%, black 92%, transparent 100%);
 }
 
+/* ----------------------------------------------------------------
+   Article typography — shared by the Learn essays and the blog.
+   Lives in @layer components so single-class Tailwind utilities on
+   elements inside an article (e.g. a custom <pre class="bg-...">)
+   still win over these defaults.
+---------------------------------------------------------------- */
+
+@layer components {
+  .article-prose {
+    color: var(--foreground);
+  }
+
+  .article-prose h2 {
+    position: relative;
+    margin-top: 3.5rem;
+    margin-bottom: 1.25rem;
+    font-size: 24px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+    color: var(--heading);
+    scroll-margin-top: 6.5rem;
+  }
+  .article-prose h2:first-child { margin-top: 0; }
+  @media (min-width: 768px) {
+    .article-prose h2 { font-size: 28px; }
+    /* Section glyph sits in the left margin; gated to md+ so it cannot
+       poke past the px-6 container edge on phones. */
+    .article-prose h2::before {
+      content: '§';
+      position: absolute;
+      left: -1.75rem;
+      top: 0.25rem;
+      font-family: var(--font-mono);
+      font-size: 18px;
+      color: color-mix(in oklab, #0284c7 30%, transparent);
+    }
+  }
+
+  /* Hover anchor for deep links; the <a> is injected by the article script. */
+  .article-prose h2 .heading-anchor {
+    position: absolute;
+    right: 100%;
+    top: 0;
+    bottom: 0;
+    display: inline-flex;
+    align-items: center;
+    padding-right: 0.4rem;
+    font-family: var(--font-mono);
+    font-size: 15px;
+    font-weight: 400;
+    color: #0284c7;
+    opacity: 0;
+    text-decoration: none;
+    transition: opacity 160ms ease;
+  }
+  .article-prose h2:hover .heading-anchor,
+  .article-prose h2 .heading-anchor:focus-visible { opacity: 1; }
+  @media (min-width: 768px) {
+    /* When the § glyph is visible, the anchor replaces it on hover. */
+    .article-prose h2:hover::before { opacity: 0; }
+  }
+
+  .article-prose h3 {
+    margin-top: 2rem;
+    margin-bottom: 0.5rem;
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--heading);
+  }
+
+  .article-prose p {
+    margin-top: 1rem;
+    font-size: 15.5px;
+    line-height: 1.75;
+    color: color-mix(in oklab, var(--foreground) 85%, transparent);
+  }
+  .article-prose p:first-child { margin-top: 0; }
+  @media (min-width: 768px) {
+    .article-prose p { font-size: 16px; }
+  }
+
+  .article-prose ul {
+    margin-top: 1rem;
+    font-size: 15px;
+    color: color-mix(in oklab, var(--foreground) 85%, transparent);
+  }
+  .article-prose ul > li {
+    position: relative;
+    padding-left: 1.25rem;
+    line-height: 1.6;
+  }
+  .article-prose ul > li + li { margin-top: 0.5rem; }
+  .article-prose ul > li::before {
+    content: '·';
+    position: absolute;
+    left: 0.25rem;
+    color: #0284c7;
+    font-weight: 700;
+  }
+
+  .article-prose ol {
+    margin-top: 1rem;
+    list-style: none;
+    counter-reset: step;
+    font-size: 15px;
+    color: color-mix(in oklab, var(--foreground) 85%, transparent);
+  }
+  .article-prose ol > li {
+    counter-increment: step;
+    position: relative;
+    padding-left: 2.5rem;
+    line-height: 1.6;
+  }
+  .article-prose ol > li + li { margin-top: 0.5rem; }
+  .article-prose ol > li::before {
+    content: counter(step, decimal-leading-zero) '.';
+    position: absolute;
+    left: 0;
+    top: 0;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 600;
+    color: #0284c7;
+  }
+
+  .article-prose a {
+    color: #0369a1;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    text-decoration-color: color-mix(in oklab, #0284c7 30%, transparent);
+  }
+  .article-prose a:hover { color: #075985; }
+
+  .article-prose strong {
+    color: var(--heading);
+    font-weight: 600;
+  }
+
+  .article-prose code {
+    font-family: var(--font-mono);
+    font-size: 0.92em;
+    padding: 0.125rem 0.375rem;
+    border-radius: 4px;
+    background: var(--surface-2);
+    box-shadow: 0 0 0 1px var(--border);
+  }
+
+  .article-prose blockquote {
+    margin-top: 2rem;
+    margin-bottom: 2rem;
+    border-left: 2px solid #0284c7;
+    padding: 0.5rem 0 0.5rem 1.5rem;
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    line-height: 1.35;
+    color: var(--heading);
+  }
+  @media (min-width: 768px) {
+    .article-prose blockquote { font-size: 22px; }
+  }
+  .article-prose blockquote p {
+    margin: 0;
+    font-size: inherit;
+    line-height: inherit;
+    color: inherit;
+  }
+
+  .article-prose pre {
+    margin-top: 1.25rem;
+    margin-bottom: 1.25rem;
+    background: #0c1224;
+    color: rgba(255, 255, 255, 0.85);
+    padding: 1.25rem;
+    border-radius: 10px;
+    overflow-x: auto;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  .article-prose pre code {
+    background: transparent;
+    box-shadow: none;
+    padding: 0;
+    font-size: inherit;
+  }
+
+  .article-prose table {
+    width: 100%;
+    margin-top: 1.25rem;
+    margin-bottom: 1.25rem;
+    border-collapse: collapse;
+    font-size: 13.5px;
+    line-height: 1.5;
+  }
+  .article-prose thead th {
+    text-align: left;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--muted-foreground);
+    padding: 0 0.75rem 0.5rem 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .article-prose tbody td {
+    padding: 0.625rem 0.75rem 0.625rem 0;
+    border-bottom: 1px solid var(--border);
+    color: color-mix(in oklab, var(--foreground) 80%, transparent);
+    vertical-align: top;
+  }
+  .article-prose tbody td:first-child {
+    color: var(--heading);
+    font-weight: 500;
+  }
+
+  .article-prose hr {
+    margin-top: 2.5rem;
+    margin-bottom: 2.5rem;
+    border: 0;
+    border-top: 1px solid var(--border);
+  }
+}
+
+/* 2px sky reading-progress bar pinned under the article top bar. */
+.reading-progress {
+  position: absolute;
+  left: 0;
+  bottom: -1px;
+  height: 2px;
+  width: 0%;
+  background: linear-gradient(to right, #38bdf8, #0284c7);
+  transition: width 80ms linear;
+}
+
 /* Inline code style for the docs/learn pages. */
 .kbd {
   font-family: var(--font-mono);
