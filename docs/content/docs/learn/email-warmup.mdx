@@ -1,0 +1,79 @@
+---
+title: Email warmup
+description: Why warmup exists, how providers read it, and how to do it without faking signals.
+icon: Sunrise
+---
+
+Warmup is the practice of sending small, conversational volumes of mail from a new (or recently dormant) mailbox to gradually build a positive reputation with mailbox providers like Google, Microsoft, Yahoo and Apple. The goal isn't a one-off score. It's a track record. Mailbox providers reward consistency.
+
+## What "warmup" actually means
+
+Modern warmup tools generate this traffic between participating mailboxes: your mailbox sends short, plain-text messages to other warmed mailboxes, those mailboxes open and reply, and the cycle repeats. Done well, the pattern looks like a real human starting to use a new inbox.
+
+## Why providers care about it
+
+Inbox placement is reputation-driven. When a brand-new domain or mailbox starts sending dozens of cold messages to strangers, Gmail and Outlook treat it as suspicious by default. They don't know whether you're a small startup or a spammer, so the safest assumption, for them, is spammer.
+
+Warmup gives them signal. Mailboxes that send small volumes, get opens, get replies, and don't trigger complaints look like real human inboxes. Providers loosen the screws as that pattern persists.
+
+## What good warmup looks like
+
+### Gradual volume growth
+
+Start low and ramp slowly. Warmbly's defaults are 10 emails per day to start, +1 per day, with a ceiling of 40 per day. That ceiling exists on purpose: warmup that climbs to 100/day looks unnatural and starts to look like a bot.
+
+### Realistic spacing
+
+Warmup mail should be spread across the working day, with sensible gaps. Sending all 40 messages in a single minute is the loudest possible spam signal.
+
+### Conversational behaviour
+
+A real mailbox doesn't only send. It replies. Warmup pools should generate a mix of new sends and replies to existing threads. Warmbly defaults to a 30% reply rate within the pool, tunable per mailbox.
+
+### Quality recipients
+
+Warmup recipients should be other warmed, healthy mailboxes: not free trial mailboxes, not throwaways, not lookalikes of catch-all domains. Pool quality matters more than pool size.
+
+### Token verification
+
+Every warmup message Warmbly sends carries a verification token. Missing, malformed or replayed tokens are tracked per mailbox and feed a rolling spam score. Above the threshold, the mailbox is removed from the pool until it requalifies.
+
+## What bad warmup looks like
+
+- **Synthetic blasting**: sending 200 identical messages a day to the same handful of recipients. Looks great on a vendor dashboard. Looks awful to Gmail.
+- **Throwaway pools**: generating recipient mailboxes from free providers on the fly. Providers know what disposable inboxes look like and weight signals from them at zero, or worse.
+- **Open/click theatre**: simulating opens and clicks at unrealistic rates. Apple Mail Privacy already pollutes open rates; pumping the number from a bot makes the entire signal worthless.
+- **Stopping at "ready"**: many tools stop warmup the moment campaigns begin. Reputation has to be maintained, not earned once and forgotten.
+
+## How long does it take?
+
+Domain warmup commonly takes 3–6 weeks to reach a stable state. New domains take longer than re-warming an existing one. New mailboxes on warmed domains often stabilise within a week or two if the domain reputation is already healthy.
+
+What matters is not _finishing_ warmup: it's running it indefinitely at a low volume in parallel with your cold sending, so any reputation dip is caught and offset before campaigns hit it.
+
+## Free pools vs paid pools
+
+Free warmup pools are useful for testing but mix higher-risk participants. Paid pools should be stricter: only vetted, monitored mailboxes participate, and misbehaving senders are quarantined fast.
+
+In Warmbly, free-tier mailboxes never silently appear in the premium pool. Even dedicated-worker customers participate in the premium pool by default. Dedicated infrastructure isn't a reputation shortcut, it's an isolation tool.
+
+## When to quarantine a mailbox
+
+Most platforms wait until a mailbox is landing in spam 80% of the time before they pull it. By then the reputation damage is already done. Acting earlier protects everyone in the shared pool. Our policy:
+
+- **Watch**: spam placement ≥ 10% over a 20-delivery sample. Lower volume, increase spacing.
+- **Quarantine**: spam placement ≥ 20%, or complaint rate ≥ 0.10%, or bounce rate ≥ 5%. 7-day removal from the paid pool.
+- **Block**: spam placement ≥ 40%, or complaint rate ≥ 0.30%. 30-day block, manual review to re-enter.
+- **Catastrophic**: spam placement ≥ 80%. Long block plus reputation reset, with no automatic re-entry.
+
+## Practical checklist
+
+1. Set up SPF, DKIM and DMARC before you start warming.
+2. Choose plain text. Save HTML for transactional mail.
+3. Use a sub-domain for cold sending (e.g. `outreach.acme.com`) so any reputation dip is isolated from your transactional domain.
+4. Start at 10/day, ramp +1/day, ceiling 40/day.
+5. Reply rate inside the pool around 30%.
+6. Don't stop warmup when you start campaigns.
+7. Watch placement weekly, not opens daily.
+
+> Warmup is reputation insurance, not a magic switch. Treat it like a habit your mailbox maintains, not a project you finish.

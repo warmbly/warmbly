@@ -1,0 +1,105 @@
+---
+title: SPF, DKIM, and DMARC
+description: The three authentication records every cold-email sender needs, the alignment rules nobody explains, and the practical step-by-step setup.
+icon: BookKey
+---
+
+## Why these three records exist
+
+Mailbox providers receive a message and need to answer two questions:
+
+1. Did this message actually come from a server that's allowed to send for this domain?
+2. Was the message changed in flight?
+
+SPF answers the first. DKIM answers both. DMARC ties the answers to the visible "From" address and tells the receiver what to do if anything is off.
+
+## SPF: Sender Policy Framework
+
+SPF is a TXT record on your sending domain that lists the servers and services allowed to send mail "on behalf" of you. Receivers check the SMTP envelope sender ("MAIL FROM") domain against your SPF record.
+
+An example for a domain that sends through Google Workspace and Warmbly:
+
+```
+v=spf1 include:_spf.google.com include:spf.warmbly.com ~all
+```
+
+- `v=spf1` is the version.
+- `include:` defers to another SPF record (Google's, ours).
+- `~all` softfails anything not listed. Receivers downgrade reputation but may still deliver.
+
+<Callout type="warn" title="The 10 DNS lookup limit">
+  Every `include:` counts toward SPF's 10 DNS lookup limit. Stack too many and SPF returns PermError, which DMARC treats as fail.
+</Callout>
+
+## DKIM: DomainKeys Identified Mail
+
+DKIM signs outgoing mail with a cryptographic signature. The signature lives in a header; the public key lives in DNS under a "selector". When a receiver gets your message, it fetches your public key, verifies the signature, and confirms the message wasn't altered in flight.
+
+A typical Google Workspace DKIM record looks like:
+
+```
+google._domainkey.acme.com TXT "v=DKIM1; k=rsa; p=MIIBIjANBgkqh..."
+```
+
+The `google._` part is the selector. You'll have one per sending service, so different providers don't trample each other's keys. Use 2048-bit keys when the provider supports them; 1024 is the minimum.
+
+## DMARC: the policy that ties it together
+
+DMARC sits on top of SPF and DKIM. It does three things:
+
+1. Tells receivers what to do if a message fails SPF and DKIM (none / quarantine / reject).
+2. Requires the authenticated domain to *align* with the visible From: domain.
+3. Lets you collect aggregate reports so you can see who is sending as you.
+
+A starter DMARC record at `_dmarc.acme.com`:
+
+```
+v=DMARC1; p=none; rua=mailto:dmarc-reports@acme.com; ruf=mailto:dmarc-reports@acme.com; pct=100; aspf=r; adkim=r
+```
+
+- `p=none` means monitor only. Start here.
+- `rua` is the aggregate report mailbox.
+- `ruf` is the forensic report mailbox.
+- `aspf=r` and `adkim=r` set relaxed alignment; `s` is strict.
+
+### Alignment in plain English
+
+"Alignment" means the domain that passed SPF (or signed with DKIM) must match the domain in the From: header.
+
+- **Strict SPF alignment:** the MAIL FROM domain must equal the From: domain.
+- **Relaxed SPF alignment:** the organisational domain must match. `bounce.outreach.acme.com` aligns relaxed with `outreach@acme.com`.
+- **Strict DKIM alignment:** the DKIM `d=` domain must equal the From: domain.
+- **Relaxed DKIM alignment:** the organisational domain must match.
+
+Most senders should use relaxed alignment. Strict only matters when you're trying to prevent specific sub-domain spoofing.
+
+## The right way to roll out DMARC
+
+1. Publish SPF and DKIM for every sending service. Verify with `mail-tester.com` or your provider's tool.
+2. Publish DMARC with `p=none; pct=100; rua=mailto:...`. Don't change anything else for two weeks.
+3. Read the aggregate reports. You'll discover services sending as you that you forgot about (the payroll provider, the newsletter from 2019).
+4. Bring every legitimate sender into SPF and DKIM alignment.
+5. Move to `p=quarantine; pct=25`. Ramp `pct` to 100 over a month while watching reports.
+6. When clean, move to `p=reject`. This is the strongest spoof protection.
+
+## Common mistakes
+
+- Multiple SPF records on the same domain: receivers treat that as PermError. There must be exactly one SPF record.
+- Forgetting `include:` for a new sending service. Mail still leaves; reputation slowly tanks.
+- 1024-bit DKIM keys never rotated. Mailbox providers are starting to penalise stale keys.
+- DMARC `p=reject` on a domain with services you forgot about, which makes legitimate mail start disappearing.
+- Cold mail from your transactional domain. Reputation issues bleed across.
+
+## Recommended sub-domain pattern
+
+For a company at `acme.com`:
+
+- `acme.com` carries transactional and human mail. DMARC reject after rollout.
+- `outreach.acme.com` carries cold campaigns, with its own SPF, DKIM, and DMARC.
+- `news.acme.com` carries newsletters, with separate authentication and reputation.
+
+The sub-domain pattern keeps cold reputation issues from contaminating the inboxes you use to run the company. It also lets you change cold-email providers without disturbing transactional mail.
+
+<Callout type="info" title="Authentication isn't a one-time setup">
+  Audit it quarterly. Rotate DKIM keys yearly. Watch DMARC reports. The cost of doing it once is hours; the cost of skipping it is months of bad placement.
+</Callout>
