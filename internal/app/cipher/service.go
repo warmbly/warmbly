@@ -10,7 +10,7 @@ import (
 )
 
 type CipherService interface {
-	Cipher(ctx context.Context, userID uuid.UUID) (*Cipher, error)
+	Cipher(ctx context.Context, orgID uuid.UUID) (*Cipher, error)
 }
 
 type cipherService struct {

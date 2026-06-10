@@ -176,7 +176,7 @@ Webhook not firing:
 
 ## Security notes
 
-- Worker SSH private keys are encrypted at rest via KMS-wrapped DEK (same envelope as user secrets).
+- Worker SSH private keys are encrypted at rest via KMS-wrapped DEK (same envelope as organization secrets).
 - The release webhook authenticates via HMAC-SHA256, not bearer token, so the secret never appears in logs.
 - All worker runtime credentials (Kafka SASL, Schema Registry secret, Redis URL, AWS secret access key) are stored encrypted; the dashboard only ever sees "set / not set" booleans for sensitive fields.
 - Worker AWS keys should be least-privilege: KMS Decrypt, S3 read/write to the configured bucket, plus Kafka SASL. Nothing else. (Workers no longer use DynamoDB — encrypted DEKs and the message-ID map are reached over the backend's internal API.)

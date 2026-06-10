@@ -196,7 +196,7 @@ Warmbly uses envelope encryption for application secrets and sensitive payloads.
 High-level flow:
 
 - AWS KMS is the root of trust
-- each user gets a data encryption key (DEK)
+- each organization gets a data encryption key (DEK)
 - the plaintext DEK is used for application-layer encryption and decryption
 - the encrypted DEK is stored, not the plaintext DEK
 - decrypted DEKs are cached for reuse
@@ -204,7 +204,7 @@ High-level flow:
 Current implementation:
 
 - KMS generates a 32-byte DEK for AES-256
-- the encrypted DEK blob is base64-encoded and stored via the pluggable `encryptedkeys.Store` (the `postgres` backend writes the `user_encrypted_keys` table; workers use the `http` backend, which proxies to the backend's `/api/v1/internal/dek` endpoint)
+- the encrypted DEK blob is base64-encoded and stored via the pluggable `encryptedkeys.Store` (the `postgres` backend writes the `organization_encrypted_keys` table; workers use the `http` backend, which proxies to the backend's `/api/v1/internal/dek` endpoint)
 - the plaintext DEK is cached in Redis with a TTL
 - encrypted fields are sealed with AES-GCM and then base64-encoded
 
@@ -222,7 +222,7 @@ Main code paths:
 Operational guidance:
 
 - do not introduce plaintext storage of secrets or message content where the current design expects encrypted values
-- DEKs live in the `user_encrypted_keys` Postgres table behind the `encryptedkeys.Store` interface (provider selected by `ENCRYPTED_KEYS_PROVIDER`: `postgres` for backend/consumer, `http` for workers). DynamoDB is no longer used anywhere; do not reintroduce it. Losing a DEK is unrecoverable, so any change to DEK storage needs a migration plan
+- DEKs are per-organization and live in the `organization_encrypted_keys` Postgres table behind the `encryptedkeys.Store` interface (provider selected by `ENCRYPTED_KEYS_PROVIDER`: `postgres` for backend/consumer, `http` for workers). DynamoDB is no longer used anywhere; do not reintroduce it. Losing a DEK is unrecoverable, so any change to DEK storage needs a migration plan. Do not reintroduce per-user DEKs: mailboxes, integration tokens, and message content are organization assets, and keying them by user breaks when that user is offboarded
 - if workers need access to encrypted payloads, prefer passing encrypted material plus access to KMS-backed decryption primitives, or an internal backend API, rather than introducing direct SQL dependencies
 - be explicit about which fields are encrypted at rest in app code versus stored in infrastructure services like S3
 

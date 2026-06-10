@@ -145,7 +145,7 @@ const (
 type SendEmail struct {
 	TaskID         uuid.UUID     `json:"task_id" avro:"task_id"`
 	EmailID        uuid.UUID     `json:"email_id" avro:"email_id"`
-	UserID         uuid.UUID     `json:"user_id" avro:"user_id"`
+	OrgID          uuid.UUID     `json:"org_id" avro:"org_id"`
 	To             []string      `json:"to" avro:"to"`
 	Cc             []string      `json:"cc" avro:"cc"`
 	Bcc            []string      `json:"bcc" avro:"bcc"`

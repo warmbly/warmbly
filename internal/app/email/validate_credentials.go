@@ -12,10 +12,10 @@ import (
 	"github.com/warmbly/warmbly/internal/models"
 )
 
-func (s *emailService) ValidateCredentials(ctx context.Context, userID uuid.UUID, workerID string, credentials *models.SmtpImap) *errx.Error {
+func (s *emailService) ValidateCredentials(ctx context.Context, orgID uuid.UUID, workerID string, credentials *models.SmtpImap) *errx.Error {
 	processID := uuid.New()
 
-	cipher, err := s.cipherService.Cipher(ctx, userID)
+	cipher, err := s.cipherService.Cipher(ctx, orgID)
 	if err != nil {
 		sentry.CaptureException(err)
 		return errx.InternalError()
@@ -36,6 +36,7 @@ func (s *emailService) ValidateCredentials(ctx context.Context, userID uuid.UUID
 	eventData := models.WorkerEvent{
 		Type: models.WorkerEventTypeEmailValidation,
 		Body: models.EventWorkerEmailValidation{
+			OrgID:       orgID,
 			ProcessID:   processID,
 			Credentials: credentials,
 		},
@@ -49,7 +50,7 @@ func (s *emailService) ValidateCredentials(ctx context.Context, userID uuid.UUID
 		return errx.InternalError()
 	}
 
-	if err := s.producer.Produce(topic, []byte(userID.String()), msgBytes); err != nil {
+	if err := s.producer.Produce(topic, []byte(orgID.String()), msgBytes); err != nil {
 		sentry.CaptureException(err)
 		return errx.InternalError()
 	}

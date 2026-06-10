@@ -66,7 +66,6 @@ func (s *tasksService) SendTestEmail(ctx context.Context, userID string, account
 		BodyPlain: bodyPlain,
 		MessageID: messageID,
 		IsWarmup:  false,
-		UserID:    uuid.MustParse(userID),
 	}
 
 	taskID := uuid.New()

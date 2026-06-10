@@ -18,19 +18,19 @@ import (
 func init() { gin.SetMode(gin.TestMode) }
 
 type mockEKStore struct {
-	put    func(ctx context.Context, userID uuid.UUID, dek string) error
-	get    func(ctx context.Context, userID uuid.UUID) (string, error)
-	delete func(ctx context.Context, userID uuid.UUID) error
+	put    func(ctx context.Context, orgID uuid.UUID, dek string) error
+	get    func(ctx context.Context, orgID uuid.UUID) (string, error)
+	delete func(ctx context.Context, orgID uuid.UUID) error
 }
 
-func (m *mockEKStore) Put(ctx context.Context, userID uuid.UUID, dek string) error {
-	return m.put(ctx, userID, dek)
+func (m *mockEKStore) Put(ctx context.Context, orgID uuid.UUID, dek string) error {
+	return m.put(ctx, orgID, dek)
 }
-func (m *mockEKStore) Get(ctx context.Context, userID uuid.UUID) (string, error) {
-	return m.get(ctx, userID)
+func (m *mockEKStore) Get(ctx context.Context, orgID uuid.UUID) (string, error) {
+	return m.get(ctx, orgID)
 }
-func (m *mockEKStore) Delete(ctx context.Context, userID uuid.UUID) error {
-	return m.delete(ctx, userID)
+func (m *mockEKStore) Delete(ctx context.Context, orgID uuid.UUID) error {
+	return m.delete(ctx, orgID)
 }
 func (m *mockEKStore) Name() string { return "mock" }
 
@@ -38,9 +38,9 @@ func newDEKRouter(t *testing.T, store encryptedkeys.Store) *gin.Engine {
 	t.Helper()
 	h := &Handler{EncryptedKeys: store}
 	r := gin.New()
-	r.GET("/dek/:userID", h.InternalGetDEK)
-	r.PUT("/dek/:userID", h.InternalPutDEK)
-	r.DELETE("/dek/:userID", h.InternalDeleteDEK)
+	r.GET("/dek/:orgID", h.InternalGetDEK)
+	r.PUT("/dek/:orgID", h.InternalPutDEK)
+	r.DELETE("/dek/:orgID", h.InternalDeleteDEK)
 	return r
 }
 

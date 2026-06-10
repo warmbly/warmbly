@@ -132,7 +132,6 @@ func (s *service) CreateTest(ctx context.Context, orgID *uuid.UUID, senderAccoun
 			BodyPlain: bodyPlain,
 			BodyHTML:  bodyHTML,
 			MessageID: fmt.Sprintf("<%s@%s>", uuid.NewString(), domainOf(sender.Email)),
-			UserID:    mustUserID(sender.UserID),
 			// We also pass the token through the warmup verify header lane via
 			// WarmupToken so that, IF a future worker change starts persisting
 			// that header into unibox flags, the same token is already present.
@@ -264,14 +263,4 @@ func domainOf(email string) string {
 		return email[at+1:]
 	}
 	return "localhost"
-}
-
-// mustUserID parses the email account's string UserID, returning uuid.Nil on a
-// malformed value (the send still goes out; the worker keys off the account).
-func mustUserID(s string) uuid.UUID {
-	id, err := uuid.Parse(s)
-	if err != nil {
-		return uuid.Nil
-	}
-	return id
 }

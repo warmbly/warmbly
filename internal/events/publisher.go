@@ -21,7 +21,7 @@ import (
 // Publisher handles event publishing to Kafka and S3 storage
 type Publisher interface {
 	// Storage
-	StoreEmailBody(ctx context.Context, taskID, userID uuid.UUID, plainText, htmlBody string) (string, error)
+	StoreEmailBody(ctx context.Context, taskID, orgID uuid.UUID, plainText, htmlBody string) (string, error)
 
 	// Email events - sends to worker via Kafka
 	PublishSendEmail(ctx context.Context, workerID uuid.UUID, params *SendEmailParams) error
@@ -42,7 +42,7 @@ type Publisher interface {
 type SendEmailParams struct {
 	TaskID         uuid.UUID
 	EmailID        uuid.UUID
-	UserID         uuid.UUID
+	OrgID          uuid.UUID
 	To             []string
 	CC             []string
 	BCC            []string
@@ -85,7 +85,7 @@ func (p *publisher) PublishSendEmail(ctx context.Context, workerID uuid.UUID, pa
 	// Store email body (and attachment refs) in S3. The attachment refs ride
 	// inside the emsg blob so the worker receives them via BodyS3Key without any
 	// change to the Avro event contract.
-	s3Key, err := p.storeEmailBody(ctx, params.TaskID, params.UserID, params.BodyPlain, params.BodyHTML, params.Attachments)
+	s3Key, err := p.storeEmailBody(ctx, params.TaskID, params.OrgID, params.BodyPlain, params.BodyHTML, params.Attachments)
 	if err != nil {
 		return fmt.Errorf("failed to store email body: %w", err)
 	}
@@ -93,7 +93,7 @@ func (p *publisher) PublishSendEmail(ctx context.Context, workerID uuid.UUID, pa
 	// Encrypt subject
 	subject := params.Subject
 	if p.cipherService != nil {
-		c, cerr := p.cipherService.Cipher(ctx, params.UserID)
+		c, cerr := p.cipherService.Cipher(ctx, params.OrgID)
 		if cerr != nil {
 			return fmt.Errorf("failed to get cipher: %w", cerr)
 		}
@@ -108,7 +108,7 @@ func (p *publisher) PublishSendEmail(ctx context.Context, workerID uuid.UUID, pa
 	sendEmail := &models.SendEmail{
 		TaskID:         params.TaskID,
 		EmailID:        params.EmailID,
-		UserID:         params.UserID,
+		OrgID:          params.OrgID,
 		To:             params.To,
 		Cc:             params.CC,
 		Bcc:            params.BCC,
@@ -134,15 +134,15 @@ func (p *publisher) PublishSendEmail(ctx context.Context, workerID uuid.UUID, pa
 
 // StoreEmailBody stores email body in S3 and returns the S3 key. It is the
 // interface method; the attachment-aware path goes through storeEmailBody.
-func (p *publisher) StoreEmailBody(ctx context.Context, taskID, userID uuid.UUID, plainText, htmlBody string) (string, error) {
-	return p.storeEmailBody(ctx, taskID, userID, plainText, htmlBody, nil)
+func (p *publisher) StoreEmailBody(ctx context.Context, taskID, orgID uuid.UUID, plainText, htmlBody string) (string, error) {
+	return p.storeEmailBody(ctx, taskID, orgID, plainText, htmlBody, nil)
 }
 
 // storeEmailBody encodes the email body plus attachment refs into the emsg blob
 // and uploads it to object storage, returning the S3 key. Bodies are encrypted
-// per-user before encoding; attachment refs are plaintext metadata (the bytes
+// with the organization DEK before encoding; attachment refs are plaintext metadata (the bytes
 // they point to are stored separately and the worker fetches them by key).
-func (p *publisher) storeEmailBody(ctx context.Context, taskID, userID uuid.UUID, plainText, htmlBody string, attachments []models.AttachmentRef) (string, error) {
+func (p *publisher) storeEmailBody(ctx context.Context, taskID, orgID uuid.UUID, plainText, htmlBody string, attachments []models.AttachmentRef) (string, error) {
 	if p.storageClient == nil {
 		return "", nil
 	}
@@ -150,7 +150,7 @@ func (p *publisher) storeEmailBody(ctx context.Context, taskID, userID uuid.UUID
 	encPlainText := plainText
 	encHTMLBody := htmlBody
 	if p.cipherService != nil {
-		c, err := p.cipherService.Cipher(ctx, userID)
+		c, err := p.cipherService.Cipher(ctx, orgID)
 		if err != nil {
 			return "", fmt.Errorf("failed to get cipher: %w", err)
 		}

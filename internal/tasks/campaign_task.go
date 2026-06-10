@@ -438,27 +438,13 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 		}
 	}
 
-	// STEP 13: Encrypt email content
-	userUUID, err := uuid.Parse(account.UserID)
-	if err != nil {
-		sentry.CaptureException(err)
+	// STEP 13: Warm the organization DEK so the publisher's encrypt pass (the
+	// one whose ciphertext is actually sent) fails fast here if KMS is down.
+	if account.OrganizationID == nil {
+		sentry.CaptureException(fmt.Errorf("email account %s has no organization", account.ID))
 		return errx.InternalError()
 	}
-
-	cipher, err := s.cipherService.Cipher(ctx, userUUID)
-	if err != nil {
-		sentry.CaptureException(err)
-		return errx.InternalError()
-	}
-
-	_, err = cipher.Encrypt(ctx, subject)
-	if err != nil {
-		sentry.CaptureException(err)
-		return errx.InternalError()
-	}
-
-	_, err = cipher.Encrypt(ctx, bodyHTML)
-	if err != nil {
+	if _, err := s.cipherService.Cipher(ctx, *account.OrganizationID); err != nil {
 		sentry.CaptureException(err)
 		return errx.InternalError()
 	}
@@ -495,7 +481,6 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 		MessageID:      messageID,
 		IsWarmup:       false,
 		Tracking:       tracking,
-		UserID:         userUUID,
 		UnsubscribeURL: unsubscribeURL,
 		Attachments:    attachmentRefs,
 	}

@@ -21,13 +21,13 @@ func (w *WorkerService) HandleEmailValidation(ctx context.Context, body any) err
 		sentry.WithScope(func(scope *sentry.Scope) {
 			scope.SetTag("event_type", string(models.WorkerEventTypeEmailValidation))
 			scope.SetTag("process_id", data.ProcessID.String())
-			scope.SetTag("user_id", data.UserID.String())
+			scope.SetTag("org_id", data.OrgID.String())
 			sentry.CaptureException(err)
 		})
 		return err
 	}
 
-	cipher, err := w.CipherService.Cipher(ctx, data.UserID)
+	cipher, err := w.CipherService.Cipher(ctx, data.OrgID)
 	if err != nil {
 		sentry.CaptureException(err)
 		return nil

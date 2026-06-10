@@ -43,7 +43,7 @@ func (w *WorkerService) HandleSendEmail(ctx context.Context, body any) error {
 	// Decrypt subject
 	subject := sendEmail.Subject
 	if w.CipherService != nil {
-		c, cerr := w.CipherService.Cipher(ctx, sendEmail.UserID)
+		c, cerr := w.CipherService.Cipher(ctx, sendEmail.OrgID)
 		if cerr == nil {
 			decSubject, cerr := c.Decrypt(ctx, sendEmail.Subject)
 			if cerr == nil {
@@ -53,7 +53,7 @@ func (w *WorkerService) HandleSendEmail(ctx context.Context, body any) error {
 	}
 
 	// Fetch email body from S3 (attachment refs ride inside the emsg blob).
-	bodyPlain, bodyHTML, attachmentRefs, err := w.fetchEmailBody(ctx, sendEmail.UserID, sendEmail.BodyS3Key)
+	bodyPlain, bodyHTML, attachmentRefs, err := w.fetchEmailBody(ctx, sendEmail.OrgID, sendEmail.BodyS3Key)
 	if err != nil {
 		log.Error().Err(err).Str("s3_key", sendEmail.BodyS3Key).Msg("Failed to fetch email body from S3")
 		w.sendEmailFailure(sendEmail.TaskID, sendEmail.EmailID, mail, fmt.Sprintf("failed to fetch email body: %v", err))
@@ -130,7 +130,7 @@ func (w *WorkerService) deleteTransportEmailBody(ctx context.Context, taskID uui
 
 // fetchEmailBody fetches and decodes the email body from S3, returning the
 // decrypted plain/HTML bodies and the attachment refs carried inside the blob.
-func (w *WorkerService) fetchEmailBody(ctx context.Context, userID uuid.UUID, s3Key string) (string, string, []emsg.Attachment, error) {
+func (w *WorkerService) fetchEmailBody(ctx context.Context, orgID uuid.UUID, s3Key string) (string, string, []emsg.Attachment, error) {
 	if w.Storage == nil {
 		return "", "", nil, fmt.Errorf("storage client not configured")
 	}
@@ -158,7 +158,7 @@ func (w *WorkerService) fetchEmailBody(ctx context.Context, userID uuid.UUID, s3
 	bodyHTML := string(blob.HTMLBody)
 
 	if w.CipherService != nil {
-		if c, cerr := w.CipherService.Cipher(ctx, userID); cerr == nil {
+		if c, cerr := w.CipherService.Cipher(ctx, orgID); cerr == nil {
 			if bodyPlain != "" {
 				if decPlain, decErr := c.Decrypt(ctx, bodyPlain); decErr == nil {
 					bodyPlain = decPlain

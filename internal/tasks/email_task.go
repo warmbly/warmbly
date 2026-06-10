@@ -236,16 +236,6 @@ func (s *tasksService) HandleEmailTask(task *proto.ProcessTask) *errx.Error {
 		}
 	}
 
-	// STEP 8: Parse sender user ID for the outbound message.
-	// Warmup mail is not stored at rest, so we no longer call the cipher
-	// service here — the previous Encrypt() pair discarded its ciphertext
-	// and only served to warm the user's DEK in cache.
-	userUUID, err := uuid.Parse(account.UserID)
-	if err != nil {
-		sentry.CaptureException(err)
-		return errx.InternalError()
-	}
-
 	// STEP 9: Generate Message-ID
 	messageID := generateMessageID(account.Email)
 	// Persist it now so the reply path (GetLatestReplyCandidate, which filters
@@ -286,7 +276,6 @@ func (s *tasksService) HandleEmailTask(task *proto.ProcessTask) *errx.Error {
 		IsWarmup:    true,
 		Tracking:    nil, // No tracking for warmup
 		WarmupToken: warmupTokenStr,
-		UserID:      userUUID,
 	}
 
 	if err := s.emailSender.Send(ctx, taskID, emailMsg, *account); err != nil {

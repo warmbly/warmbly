@@ -25,7 +25,6 @@ type EmailMessage struct {
 	IsWarmup       bool
 	Tracking       *models.TrackingInfo
 	WarmupToken    string
-	UserID         uuid.UUID
 	UnsubscribeURL string
 	// Attachments are file refs (S3 key + metadata). The worker fetches the
 	// bytes from object storage at send time. Refs travel inside the S3 body
@@ -59,6 +58,12 @@ func (s *emailSender) Send(ctx context.Context, taskID uuid.UUID, msg EmailMessa
 		return fmt.Errorf("no worker assigned to email account %s", account.ID)
 	}
 
+	// Email content is sealed with the organization DEK; an account without an
+	// organization cannot be encrypted for transport.
+	if account.OrganizationID == nil {
+		return fmt.Errorf("email account %s has no organization", account.ID)
+	}
+
 	// For warmup emails, only use plaintext (no HTML)
 	bodyHTML := msg.BodyHTML
 	if msg.IsWarmup {
@@ -69,7 +74,7 @@ func (s *emailSender) Send(ctx context.Context, taskID uuid.UUID, msg EmailMessa
 	params := &events.SendEmailParams{
 		TaskID:         taskID,
 		EmailID:        account.ID,
-		UserID:         msg.UserID,
+		OrgID:          *account.OrganizationID,
 		To:             msg.To,
 		CC:             msg.CC,
 		BCC:            msg.BCC,

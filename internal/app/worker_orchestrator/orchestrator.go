@@ -31,11 +31,11 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// platformCipherUser is the UUID under which the cipher service stores the
+// platformCipherID is the UUID under which the cipher service stores the
 // DEK that encrypts platform-level secrets (worker SSH keys). The zero UUID
-// is not used by any real user, so it cleanly partitions platform secrets
-// from user secrets in the encrypted-keys store.
-var platformCipherUser = uuid.Nil
+// is not used by any real organization, so it cleanly partitions platform
+// secrets from organization secrets in the encrypted-keys store.
+var platformCipherID = uuid.Nil
 
 // WorkerEnvConfig is the set of env vars the worker container needs at run
 // time. The orchestrator writes these into /etc/warmbly/worker.env on the
@@ -484,7 +484,7 @@ func (o *Orchestrator) loadSigner(ctx context.Context, encryptedPrivateKey strin
 	if encryptedPrivateKey == "" {
 		return nil, errors.New("no private key stored")
 	}
-	c, err := o.cipher.Cipher(ctx, platformCipherUser)
+	c, err := o.cipher.Cipher(ctx, platformCipherID)
 	if err != nil {
 		return nil, fmt.Errorf("cipher: %w", err)
 	}
@@ -500,7 +500,7 @@ func (o *Orchestrator) loadSigner(ctx context.Context, encryptedPrivateKey strin
 }
 
 func (o *Orchestrator) encryptPrivateKey(ctx context.Context, pem string) (string, error) {
-	c, err := o.cipher.Cipher(ctx, platformCipherUser)
+	c, err := o.cipher.Cipher(ctx, platformCipherID)
 	if err != nil {
 		return "", err
 	}
@@ -542,7 +542,7 @@ func (o *Orchestrator) renderEnvFile(ctx context.Context, workerID uuid.UUID) (e
 		if pe == nil {
 			return "", "", fmt.Errorf("profile %s not found", w.ProfileID)
 		}
-		c, err := o.cipher.Cipher(ctx, platformCipherUser)
+		c, err := o.cipher.Cipher(ctx, platformCipherID)
 		if err != nil {
 			return "", "", fmt.Errorf("cipher: %w", err)
 		}

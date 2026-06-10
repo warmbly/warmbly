@@ -17,26 +17,26 @@ import (
 //
 // Wire format mirrors what encryptedkeys.HTTPStore expects:
 //
-//	GET    /api/v1/internal/dek/:userID  -> 200 {"encrypted_data_key":"..."} | 404
-//	PUT    /api/v1/internal/dek/:userID  body: {"encrypted_data_key":"..."}
+//	GET    /api/v1/internal/dek/:orgID  -> 200 {"encrypted_data_key":"..."} | 404
+//	PUT    /api/v1/internal/dek/:orgID  body: {"encrypted_data_key":"..."}
 //	                                     -> 201 | 409 ErrAlreadyExists
-//	DELETE /api/v1/internal/dek/:userID  -> 204
+//	DELETE /api/v1/internal/dek/:orgID  -> 204
 
 type dekPayload struct {
 	EncryptedDataKey string `json:"encrypted_data_key"`
 }
 
-func parseUserID(c *gin.Context) (uuid.UUID, bool) {
-	id, err := uuid.Parse(c.Param("userID"))
+func parseOrgID(c *gin.Context) (uuid.UUID, bool) {
+	id, err := uuid.Parse(c.Param("orgID"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid userID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid orgID"})
 		return uuid.Nil, false
 	}
 	return id, true
 }
 
 func (h *Handler) InternalGetDEK(c *gin.Context) {
-	id, ok := parseUserID(c)
+	id, ok := parseOrgID(c)
 	if !ok {
 		return
 	}
@@ -53,7 +53,7 @@ func (h *Handler) InternalGetDEK(c *gin.Context) {
 }
 
 func (h *Handler) InternalPutDEK(c *gin.Context) {
-	id, ok := parseUserID(c)
+	id, ok := parseOrgID(c)
 	if !ok {
 		return
 	}
@@ -83,7 +83,7 @@ func (h *Handler) InternalPutDEK(c *gin.Context) {
 }
 
 func (h *Handler) InternalDeleteDEK(c *gin.Context) {
-	id, ok := parseUserID(c)
+	id, ok := parseOrgID(c)
 	if !ok {
 		return
 	}

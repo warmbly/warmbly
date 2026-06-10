@@ -20,15 +20,15 @@ import (
 //
 // The endpoint contract (served by internal/api/handler/internal_dek.go):
 //
-//	GET    {BaseURL}/api/v1/internal/dek/{userID}
+//	GET    {BaseURL}/api/v1/internal/dek/{orgID}
 //	   200 {"encrypted_data_key":"..."}  -> success
 //	   404                                -> no DEK stored (returns "")
 //
-//	PUT    {BaseURL}/api/v1/internal/dek/{userID}   body: {"encrypted_data_key":"..."}
+//	PUT    {BaseURL}/api/v1/internal/dek/{orgID}   body: {"encrypted_data_key":"..."}
 //	   201                                -> created
 //	   409                                -> ErrAlreadyExists
 //
-//	DELETE {BaseURL}/api/v1/internal/dek/{userID}
+//	DELETE {BaseURL}/api/v1/internal/dek/{orgID}
 //	   204                                -> idempotent ok
 //
 // Auth: Authorization: Bearer <ENCRYPTED_KEYS_WORKER_TOKEN>
@@ -70,8 +70,8 @@ func NewHTTP(baseURL, token string, opts ...HTTPOption) (*HTTPStore, error) {
 
 func (s *HTTPStore) Name() string { return "http" }
 
-func (s *HTTPStore) url(userID uuid.UUID) string {
-	return s.baseURL + "/api/v1/internal/dek/" + userID.String()
+func (s *HTTPStore) url(orgID uuid.UUID) string {
+	return s.baseURL + "/api/v1/internal/dek/" + orgID.String()
 }
 
 func (s *HTTPStore) authed(req *http.Request) {
@@ -83,12 +83,12 @@ type dekPayload struct {
 	EncryptedDataKey string `json:"encrypted_data_key"`
 }
 
-func (s *HTTPStore) Put(ctx context.Context, userID uuid.UUID, encryptedDEKB64 string) error {
+func (s *HTTPStore) Put(ctx context.Context, orgID uuid.UUID, encryptedDEKB64 string) error {
 	body, err := json.Marshal(dekPayload{EncryptedDataKey: encryptedDEKB64})
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, s.url(userID), strings.NewReader(string(body)))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, s.url(orgID), strings.NewReader(string(body)))
 	if err != nil {
 		return err
 	}
@@ -111,8 +111,8 @@ func (s *HTTPStore) Put(ctx context.Context, userID uuid.UUID, encryptedDEKB64 s
 	}
 }
 
-func (s *HTTPStore) Get(ctx context.Context, userID uuid.UUID) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.url(userID), nil)
+func (s *HTTPStore) Get(ctx context.Context, orgID uuid.UUID) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.url(orgID), nil)
 	if err != nil {
 		return "", err
 	}
@@ -142,8 +142,8 @@ func (s *HTTPStore) Get(ctx context.Context, userID uuid.UUID) (string, error) {
 	}
 }
 
-func (s *HTTPStore) Delete(ctx context.Context, userID uuid.UUID) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, s.url(userID), nil)
+func (s *HTTPStore) Delete(ctx context.Context, orgID uuid.UUID) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, s.url(orgID), nil)
 	if err != nil {
 		return err
 	}

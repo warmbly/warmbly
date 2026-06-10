@@ -190,8 +190,9 @@ func (s *emailService) OnboardSMTPIMAP(ctx context.Context, userID string, orgID
 		return nil, errx.ErrEmailOnboardNoWorker
 	}
 
-	uid, err := uuid.Parse(userID)
-	if err != nil {
+	// Credentials are sealed with the organization DEK for the validation
+	// round-trip, so an org is required before we can onboard a mailbox.
+	if orgID == nil {
 		return nil, errx.ErrUser
 	}
 
@@ -202,7 +203,7 @@ func (s *emailService) OnboardSMTPIMAP(ctx context.Context, userID string, orgID
 	}
 
 	creds := &models.SmtpImap{SMTP: data.SMTP, IMAP: data.IMAP}
-	if xerr := s.ValidateCredentials(ctx, uid, w.ID.String(), creds); xerr != nil {
+	if xerr := s.ValidateCredentials(ctx, *orgID, w.ID.String(), creds); xerr != nil {
 		return nil, xerr
 	}
 

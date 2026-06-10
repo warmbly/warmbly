@@ -243,7 +243,7 @@ func (s *service) Connect(ctx context.Context, orgID, userID uuid.UUID, provider
 		}
 	}
 
-	configEnc, err := s.sealConfig(ctx, userID, config)
+	configEnc, err := s.sealConfig(ctx, orgID, config)
 	if err != nil {
 		return nil, err
 	}
@@ -347,11 +347,11 @@ func (s *service) OAuthFinish(ctx context.Context, userID uuid.UUID, code, state
 		return nil, err
 	}
 
-	accessEnc, err := s.seal(ctx, userID, tokens.AccessToken)
+	accessEnc, err := s.seal(ctx, st.OrganizationID, tokens.AccessToken)
 	if err != nil {
 		return nil, err
 	}
-	refreshEnc, err := s.seal(ctx, userID, tokens.RefreshToken)
+	refreshEnc, err := s.seal(ctx, st.OrganizationID, tokens.RefreshToken)
 	if err != nil {
 		return nil, err
 	}
@@ -792,35 +792,35 @@ func (s *service) SpreadsheetValues(ctx context.Context, orgID, connID uuid.UUID
 
 // --- encryption helpers -----------------------------------------------------
 
-func (s *service) seal(ctx context.Context, userID uuid.UUID, plaintext string) (string, error) {
+func (s *service) seal(ctx context.Context, orgID uuid.UUID, plaintext string) (string, error) {
 	if plaintext == "" {
 		return "", nil
 	}
 	if s.cipher == nil {
 		return "", errors.New("cipher service unavailable")
 	}
-	c, err := s.cipher.Cipher(ctx, userID)
+	c, err := s.cipher.Cipher(ctx, orgID)
 	if err != nil {
 		return "", err
 	}
 	return c.Encrypt(ctx, plaintext)
 }
 
-func (s *service) open(ctx context.Context, userID uuid.UUID, ciphertext string) (string, error) {
+func (s *service) open(ctx context.Context, orgID uuid.UUID, ciphertext string) (string, error) {
 	if ciphertext == "" {
 		return "", nil
 	}
 	if s.cipher == nil {
 		return "", errors.New("cipher service unavailable")
 	}
-	c, err := s.cipher.Cipher(ctx, userID)
+	c, err := s.cipher.Cipher(ctx, orgID)
 	if err != nil {
 		return "", err
 	}
 	return c.Decrypt(ctx, ciphertext)
 }
 
-func (s *service) sealConfig(ctx context.Context, userID uuid.UUID, config map[string]any) ([]byte, error) {
+func (s *service) sealConfig(ctx context.Context, orgID uuid.UUID, config map[string]any) ([]byte, error) {
 	if len(config) == 0 {
 		return nil, nil
 	}
@@ -828,7 +828,7 @@ func (s *service) sealConfig(ctx context.Context, userID uuid.UUID, config map[s
 	if err != nil {
 		return nil, err
 	}
-	b64, err := s.seal(ctx, userID, string(raw))
+	b64, err := s.seal(ctx, orgID, string(raw))
 	if err != nil {
 		return nil, err
 	}
@@ -836,10 +836,10 @@ func (s *service) sealConfig(ctx context.Context, userID uuid.UUID, config map[s
 }
 
 func (s *service) openConfig(ctx context.Context, sec *repository.ConnectionSecrets) (map[string]any, error) {
-	if len(sec.ConfigEncrypted) == 0 || sec.Conn.ConnectedByUserID == nil {
+	if len(sec.ConfigEncrypted) == 0 {
 		return map[string]any{}, nil
 	}
-	plain, err := s.open(ctx, *sec.Conn.ConnectedByUserID, string(sec.ConfigEncrypted))
+	plain, err := s.open(ctx, sec.Conn.OrganizationID, string(sec.ConfigEncrypted))
 	if err != nil {
 		return nil, err
 	}
@@ -858,16 +858,13 @@ func (s *service) openConfig(ctx context.Context, sec *repository.ConnectionSecr
 // On an unrecoverable refresh failure it flips the connection to
 // reauth_required and returns an error.
 func (s *service) accessTokenFor(ctx context.Context, sec *repository.ConnectionSecrets) (string, error) {
-	if sec.Conn.ConnectedByUserID == nil {
-		return "", errors.New("connection has no owning user for decryption")
-	}
-	userID := *sec.Conn.ConnectedByUserID
+	orgID := sec.Conn.OrganizationID
 
-	access, err := s.open(ctx, userID, sec.AccessTokenEnc)
+	access, err := s.open(ctx, orgID, sec.AccessTokenEnc)
 	if err != nil {
 		return "", err
 	}
-	refresh, err := s.open(ctx, userID, sec.RefreshTokenEnc)
+	refresh, err := s.open(ctx, orgID, sec.RefreshTokenEnc)
 	if err != nil {
 		return "", err
 	}
@@ -884,8 +881,8 @@ func (s *service) accessTokenFor(ctx context.Context, sec *repository.Connection
 		return "", rerr
 	}
 	if didRefresh {
-		accessEnc, _ := s.seal(ctx, userID, refreshed.AccessToken)
-		refreshEnc, _ := s.seal(ctx, userID, refreshed.RefreshToken)
+		accessEnc, _ := s.seal(ctx, orgID, refreshed.AccessToken)
+		refreshEnc, _ := s.seal(ctx, orgID, refreshed.RefreshToken)
 		_ = s.repo.UpdateConnectionTokens(ctx, sec.Conn.ID, accessEnc, refreshEnc, refreshed.ExpiresAt, refreshed.Scopes)
 		return refreshed.AccessToken, nil
 	}

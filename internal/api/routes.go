@@ -67,9 +67,9 @@ func Run(
 	internal := r.Group("/api/v1/internal")
 	internal.Use(m.InternalAuthMiddleware())
 	{
-		internal.GET("/dek/:userID", h.InternalGetDEK)
-		internal.PUT("/dek/:userID", h.InternalPutDEK)
-		internal.DELETE("/dek/:userID", h.InternalDeleteDEK)
+		internal.GET("/dek/:orgID", h.InternalGetDEK)
+		internal.PUT("/dek/:orgID", h.InternalPutDEK)
+		internal.DELETE("/dek/:orgID", h.InternalDeleteDEK)
 
 		// Worker mailbox-sync messageId -> internal email map (replaces the
 		// former DynamoDB EmailMessageData table). Workers read/write it here.
