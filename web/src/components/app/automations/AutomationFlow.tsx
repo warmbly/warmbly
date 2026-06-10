@@ -29,6 +29,7 @@ import {
     type EdgeProps,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import { AnimatePresence, motion } from "framer-motion";
 import dagre from "@dagrejs/dagre";
 import {
     ArrowLeftIcon,
@@ -880,7 +881,9 @@ export default function AutomationFlow({
                     </Panel>
                 </ReactFlow>
 
+                <AnimatePresence>
                 {selectedNode && !panel && (
+                    <SidePanel key="editor">
                     <NodeEditor
                         key={selectedNode.id}
                         node={selectedNode}
@@ -901,9 +904,11 @@ export default function AutomationFlow({
                         providerOf={providerOf}
                         onAction={(patch) => updateNodeData(selectedNode.id, patch)}
                     />
+                    </SidePanel>
                 )}
 
                 {panel && (
+                    <SidePanel key="insights">
                     <InsightsPanel
                         mode={panel}
                         automationId={automation.id}
@@ -911,9 +916,28 @@ export default function AutomationFlow({
                         testing={test.isPending}
                         onClose={() => setPanel(null)}
                     />
+                    </SidePanel>
                 )}
+                </AnimatePresence>
             </div>
         </div>
+    );
+}
+
+// ── Side panels ──────────────────────────────────────────────────────────────
+// Shared slide-in wrapper for the builder's right-side panels (node editor,
+// test run, history). Same motion language as the app's other sheets.
+function SidePanel({ children }: { children: React.ReactNode }) {
+    return (
+        <motion.div
+            initial={{ x: "100%" }}
+            animate={{ x: 0 }}
+            exit={{ x: "100%" }}
+            transition={{ type: "spring", stiffness: 300, damping: 32 }}
+            className="absolute top-0 right-0 h-full w-full md:w-80 md:max-w-[88vw] bg-white border-l border-slate-200 shadow-xl flex flex-col z-10"
+        >
+            {children}
+        </motion.div>
     );
 }
 
@@ -969,7 +993,7 @@ function InsightsPanel({
 }) {
     const runs = useAutomationRuns(automationId, mode === "history");
     return (
-        <div className="absolute top-0 right-0 h-full w-full md:w-80 md:max-w-[88vw] bg-white border-l border-slate-200 shadow-xl flex flex-col z-10">
+        <div className="flex h-full min-h-0 flex-col">
             <div className="h-11 px-3 flex items-center border-b border-slate-200 shrink-0">
                 <span className="text-[12.5px] font-medium text-slate-900">{mode === "test" ? "Test run" : "Run history"}</span>
                 <button
@@ -982,7 +1006,13 @@ function InsightsPanel({
                 </button>
             </div>
 
-            <div className="flex-1 overflow-auto p-3 space-y-2">
+            <motion.div
+                key={mode}
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.15 }}
+                className="flex-1 overflow-auto p-3 space-y-2"
+            >
                 {mode === "test" ? (
                     testing ? (
                         <div className="flex items-center gap-2 text-[12px] text-slate-400">
@@ -1034,7 +1064,7 @@ function InsightsPanel({
                         </div>
                     ))
                 )}
-            </div>
+            </motion.div>
         </div>
     );
 }
@@ -1071,7 +1101,12 @@ function NodeEditor({
     const triggerOptions: SelectOption[] = TRIGGER_EVENTS.map((ev) => ({ value: ev, label: triggerLabel(ev) }));
 
     return (
-        <div className="absolute top-0 right-0 h-full w-full md:w-80 md:max-w-[88vw] bg-white border-l border-slate-200 shadow-xl flex flex-col z-10">
+        <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.15 }}
+            className="flex h-full min-h-0 flex-col"
+        >
             <div className="h-11 px-3 flex items-center border-b border-slate-200 shrink-0">
                 <span className="text-[12.5px] font-medium text-slate-900">
                     {isTrigger ? "Trigger" : isCondition ? "Condition" : "Action"}
@@ -1116,7 +1151,7 @@ function NodeEditor({
                     />
                 )}
             </div>
-        </div>
+        </motion.div>
     );
 }
 
@@ -1358,6 +1393,15 @@ function ActionEditor({
                 <SelectMenu value={data.action ?? ""} onChange={pickAction} options={actionOptions} className="w-full" fullWidth />
             </div>
 
+            {/* Config fields swap when the action/target changes; the keyed
+                fade keeps that swap from feeling like a hard cut. */}
+            <motion.div
+                key={`${selectedConn}:${data.action ?? ""}`}
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.15 }}
+                className="space-y-3"
+            >
             {isNative ? (
                 <NativeActionConfig action={data.action ?? ""} config={config} patchConfig={patchConfig} selfId={selfId} />
             ) : (
@@ -1393,6 +1437,7 @@ function ActionEditor({
                     </p>
                 </>
             )}
+            </motion.div>
         </div>
     );
 }
