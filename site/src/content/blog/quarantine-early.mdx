@@ -1,0 +1,36 @@
+---
+title: 'Quarantine early: how we protect shared warmup pools'
+description: 'The industry default is to pull a mailbox from warmup when it is already landing in spam 80% of the time. We think that is roughly 70 points too late.'
+pubDate: 2026-06-09
+tags: ['warmup', 'policy']
+---
+import Callout from '../../components/blog/Callout.astro';
+
+While building our warmup pools we looked at how other tools decide when a mailbox no longer belongs in one. The pattern we kept finding: a mailbox gets removed when its spam placement crosses something like 80%.
+
+Think about what 80% means in a shared pool. The pool works by having participating mailboxes send to and reply to each other, so providers see normal conversational traffic. A mailbox that is landing in spam four times out of five has been poisoning those interactions for weeks. Its partners have been opening junk folders to fish its messages out (or not), its replies have been going unanswered, and every healthy mailbox paired with it has absorbed a little of that damage. Removing it at 80% is not a policy. It is a memorial service.
+
+So our bands are set much lower, and they went through a few revisions before we were happy:
+
+| Band | Trigger | What happens |
+| --- | --- | --- |
+| Watch | 10% spam placement | volume down, spacing up |
+| Quarantine | 20% placement, or 0.10% complaints, or 5% bounces | out of the pool, 7 days |
+| Block | 40% placement, or 0.30% complaints | out 30 days, manual review |
+| Catastrophic | 80% placement | long block, full reset |
+
+Two design decisions worth explaining.
+
+First, the signals stay separate. An earlier draft combined everything into one health score, and we walked away from it because a single number hides what is actually wrong. A bounce problem is a list-quality problem. A complaint problem is a content or targeting problem. A token problem (every warmup message we send carries a verification token, and we count attempts with missing or forged ones) is usually someone trying to game the pool. Same quarantine, different ways back out.
+
+Second, none of this fires on one bad data point. Placement is judged on at least 20 warmup deliveries across a week. A single message in spam on a Tuesday does not quarantine anyone.
+
+<Callout title="Where the numbers come from">
+  Google asks senders to keep reported spam under 0.10% and to never reach 0.30%. Our
+  quarantine and block triggers sit at exactly those two numbers, on purpose: by the time a
+  mailbox is there, the question is not whether to act but whether we already acted too late.
+</Callout>
+
+The part people push back on is re-entry. The 7 days expiring does not put a mailbox back in the pool. It has to requalify: authentication intact, no new complaint or bounce spikes, clean token behaviour, and placement back under 10% on a fresh probation sample, starting from low volume again. We had a few users annoyed by this, usually with one specific mailbox they were sure was fine. Checking the data, it mostly wasn't.
+
+If you only take one number from this post, take 20%, not 80%. That is the point where a mailbox stops being a participant in a shared pool and starts being a cost to everyone else in it.
