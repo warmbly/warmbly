@@ -16,5 +16,4 @@ execution-plane split intact. Workers should not connect directly to Postgres;
 route stateful workflows through the backend or event bus instead.
 
 When adding an external dependency, keep self-hostability intact. Any required
-third-party service needs an open-source or self-hosted path documented in
-[docs/VENDOR_LOCKIN.md](docs/VENDOR_LOCKIN.md).
+third-party service needs an open-source or self-hosted path.
