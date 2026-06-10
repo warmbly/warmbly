@@ -11,8 +11,8 @@ import (
 	"github.com/warmbly/warmbly/internal/infrastructure/db"
 )
 
-// PostgresStore stores encrypted DEKs in the user_encrypted_keys table.
-// Only the backend uses this impl directly; workers reach DEKs via the
+// PostgresStore stores encrypted DEKs in the organization_encrypted_keys
+// table. Only the backend uses this impl directly; workers reach DEKs via the
 // HTTP store (which proxies through the backend).
 type PostgresStore struct {
 	db *db.DB
@@ -24,12 +24,12 @@ func NewPostgres(d *db.DB) *PostgresStore {
 
 func (s *PostgresStore) Name() string { return "postgres" }
 
-func (s *PostgresStore) Put(ctx context.Context, userID uuid.UUID, encryptedDEKB64 string) error {
+func (s *PostgresStore) Put(ctx context.Context, orgID uuid.UUID, encryptedDEKB64 string) error {
 	const q = `
-		INSERT INTO user_encrypted_keys (user_id, encrypted_data_key)
+		INSERT INTO organization_encrypted_keys (organization_id, encrypted_data_key)
 		VALUES ($1, $2)
 	`
-	_, err := s.db.Exec(ctx, q, userID, encryptedDEKB64)
+	_, err := s.db.Exec(ctx, q, orgID, encryptedDEKB64)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" { // unique_violation
@@ -40,10 +40,10 @@ func (s *PostgresStore) Put(ctx context.Context, userID uuid.UUID, encryptedDEKB
 	return nil
 }
 
-func (s *PostgresStore) Get(ctx context.Context, userID uuid.UUID) (string, error) {
-	const q = `SELECT encrypted_data_key FROM user_encrypted_keys WHERE user_id = $1`
+func (s *PostgresStore) Get(ctx context.Context, orgID uuid.UUID) (string, error) {
+	const q = `SELECT encrypted_data_key FROM organization_encrypted_keys WHERE organization_id = $1`
 	var out string
-	err := s.db.QueryRow(ctx, q, userID).Scan(&out)
+	err := s.db.QueryRow(ctx, q, orgID).Scan(&out)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", nil
@@ -53,9 +53,9 @@ func (s *PostgresStore) Get(ctx context.Context, userID uuid.UUID) (string, erro
 	return out, nil
 }
 
-func (s *PostgresStore) Delete(ctx context.Context, userID uuid.UUID) error {
-	const q = `DELETE FROM user_encrypted_keys WHERE user_id = $1`
-	_, err := s.db.Exec(ctx, q, userID)
+func (s *PostgresStore) Delete(ctx context.Context, orgID uuid.UUID) error {
+	const q = `DELETE FROM organization_encrypted_keys WHERE organization_id = $1`
+	_, err := s.db.Exec(ctx, q, orgID)
 	if err != nil {
 		return fmt.Errorf("encryptedkeys.postgres: delete: %w", err)
 	}
