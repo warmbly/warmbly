@@ -67,11 +67,12 @@ const exExprAnd = `and (gtf .confidence 0.8) (eq .intent "positive")`;
 
 const exExprAction = `{{if gt .confidence 0.8}}hot lead{{else}}follow up{{end}}`;
 
-const preClass = "not-prose my-4 overflow-x-auto rounded-lg border border-[color:var(--border)] bg-[color:var(--surface-1)] p-4 text-[12.5px] leading-relaxed text-foreground/80 whitespace-pre-wrap";
+const preClass = "my-4 overflow-x-auto rounded-lg border border-[color:var(--border)] bg-[color:var(--surface-1)] p-4 text-[12.5px] leading-relaxed text-foreground/80 whitespace-pre-wrap";
 const preStyle = "font-family: var(--font-mono)";
 ---
 <Learn
   title="Personalization & conditionals | Warmbly"
+  headline="Personalization & conditionals"
   description="Merge variables, custom fields, if/else conditionals, fallbacks, functions, and spintax so one cold-email template reads naturally for every recipient."
   eyebrow="Guide"
   reading="9 min read"

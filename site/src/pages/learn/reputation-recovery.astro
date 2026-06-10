@@ -3,6 +3,7 @@ import Learn from '../../layouts/Learn.astro';
 ---
 <Learn
   title="Sender Reputation Recovery | Warmbly"
+  headline="Recovering a burned mailbox"
   description="A step-by-step plan to bring a quarantined or low-placement mailbox back to healthy without making things worse."
   reading="9 min read"
   updated="2026-05-18"
@@ -31,7 +32,7 @@ import Learn from '../../layouts/Learn.astro';
     <li><strong>DKIM:</strong> selector resolves? Key length ≥ 1024? Rotated within the last year?</li>
     <li><strong>DMARC:</strong> exists? Aligned? Reporting address receives mail? Policy appropriate for your maturity?</li>
     <li><strong>PTR:</strong> sending IP has a reverse DNS record that resolves back?</li>
-    <li><strong>Mailbox content:</strong> last 90 days of sent mail. any HTML-heavy, image-only, or link-bait messages?</li>
+    <li><strong>Mailbox content:</strong> last 90 days of sent mail: any HTML-heavy, image-only, or link-bait messages?</li>
   </ol>
   <p>
     Fix anything that's broken before you start the volume work. Recovery on a misconfigured domain is futile.
@@ -56,7 +57,7 @@ import Learn from '../../layouts/Learn.astro';
   <ul>
     <li>Recipients who replied positively in the past 6 months.</li>
     <li>Contacts at organisations you have customer relationships with.</li>
-    <li>Subscribers (newsletter, podcast, blog). addresses you've already had positive engagement from.</li>
+    <li>Subscribers (newsletter, podcast, blog): addresses you've already had positive engagement from.</li>
   </ul>
   <p>
     Reply-rich first sends rebuild engagement signal fast. Cold sends to brand-new contact lists during recovery are the easiest way to undo the work.
@@ -77,7 +78,7 @@ import Learn from '../../layouts/Learn.astro';
     If after 8 weeks of disciplined recovery the mailbox still hovers below 80% placement, the address has likely picked up reputation damage that won't reverse. Options:
   </p>
   <ul>
-    <li>Retire the mailbox and create a new one on the same domain. re-warm from scratch.</li>
+    <li>Retire the mailbox and create a new one on the same domain, re-warming from scratch.</li>
     <li>Move cold sending to a new sub-domain (e.g. <code>outreach2.acme.com</code>) and start with fresh SPF/DKIM/DMARC.</li>
     <li>If the whole domain is the problem, register a new sending sub-domain and warm it for 6 weeks before reusing.</li>
   </ul>
