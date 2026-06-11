@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { EyeIcon, PencilIcon, ReplyIcon } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useOnlineMembers, type PresenceUser } from "@/hooks/PresenceProvider";
+import useClickOutside from "@/hooks/useClickOutside";
 import { cn } from "@/lib/utils";
 
 const MAX_VISIBLE = 4;
@@ -16,51 +18,100 @@ function initialsOf(name: string | null) {
         .join("");
 }
 
-function activityLabel(user: PresenceUser) {
-    if (user.action === "replying") return "replying to an email";
-    if (user.action === "editing") return "editing";
-    if (user.page) {
-        const section = user.page.split("/").filter(Boolean)[1];
-        if (section) return `in ${section.replace(/-/g, " ")}`;
+// Name the thing a teammate is focused on from its resource key, e.g.
+// "automation:<id>" -> "an automation". Keeps the dropdown specific ("Editing
+// an automation") instead of a bare "editing".
+function resourceNoun(resource: string | null): string {
+    const kind = resource?.split(":")[0];
+    switch (kind) {
+        case "automation":
+            return "an automation";
+        case "campaign":
+            return "a campaign";
+        case "contact":
+            return "a contact";
+        case "thread":
+            return "a conversation";
+        default:
+            return "";
     }
-    return "online";
 }
 
-// Online-teammates stack for the app header. Hover shows who is where; the
-// green ring marks live sockets, mirroring the Discord-like presence feel.
+type Tone = "hot" | "cool" | "idle";
+
+function activityOf(user: PresenceUser): {
+    label: string;
+    tone: Tone;
+    Icon: typeof EyeIcon | null;
+} {
+    if (user.action === "replying") return { label: "Replying to a message", tone: "hot", Icon: ReplyIcon };
+    if (user.action === "editing") {
+        const noun = resourceNoun(user.resource);
+        return { label: noun ? `Editing ${noun}` : "Editing", tone: "hot", Icon: PencilIcon };
+    }
+    if (user.action === "viewing" && user.resource) {
+        const noun = resourceNoun(user.resource);
+        return { label: noun ? `Viewing ${noun}` : "Viewing", tone: "cool", Icon: EyeIcon };
+    }
+    if (user.page) {
+        const section = user.page.split("/").filter(Boolean)[1];
+        if (section) return { label: `In ${section.replace(/-/g, " ")}`, tone: "idle", Icon: null };
+    }
+    return { label: "Online", tone: "idle", Icon: null };
+}
+
+const TONE_TEXT: Record<Tone, string> = {
+    hot: "text-amber-600",
+    cool: "text-sky-600",
+    idle: "text-slate-400",
+};
+
+// Online-teammates stack for the app header. Click to pin a dropdown listing
+// everyone online and exactly what they're doing (editing / viewing / where),
+// with profile pictures and a +N overflow — a Discord-like presence surface.
 export default function PresenceAvatars() {
     const members = useOnlineMembers();
     const [open, setOpen] = useState(false);
+    const ref = useRef<HTMLDivElement>(null);
+    useClickOutside(ref, () => setOpen(false));
 
     if (members.length === 0) return null;
 
     const visible = members.slice(0, MAX_VISIBLE);
     const overflow = members.length - visible.length;
+    const editingCount = members.filter((m) => m.action === "editing" || m.action === "replying").length;
 
     return (
-        <div
-            className="relative hidden sm:block"
-            onMouseEnter={() => setOpen(true)}
-            onMouseLeave={() => setOpen(false)}
-        >
+        <div ref={ref} className="relative hidden sm:block">
             <button
                 type="button"
                 aria-label={`${members.length} teammate${members.length === 1 ? "" : "s"} online`}
-                className="flex items-center -space-x-1.5 focus:outline-none"
+                className="flex items-center -space-x-1.5 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200"
                 onClick={() => setOpen((v) => !v)}
             >
-                {visible.map((m) => (
-                    <Avatar
-                        key={m.userId}
-                        size="sm"
-                        className="ring-2 ring-white border border-emerald-300/70"
-                    >
-                        {m.avatar ? <AvatarImage src={m.avatar} alt={m.name ?? ""} /> : null}
-                        <AvatarFallback className="bg-emerald-50 text-emerald-700 text-[9.5px] font-semibold">
-                            {initialsOf(m.name)}
-                        </AvatarFallback>
-                    </Avatar>
-                ))}
+                {visible.map((m) => {
+                    const hot = m.action === "editing" || m.action === "replying";
+                    return (
+                        <Avatar
+                            key={m.userId}
+                            size="sm"
+                            className={cn(
+                                "ring-2 ring-white border",
+                                hot ? "border-amber-300" : "border-emerald-300/70",
+                            )}
+                        >
+                            {m.avatar ? <AvatarImage src={m.avatar} alt={m.name ?? ""} /> : null}
+                            <AvatarFallback
+                                className={cn(
+                                    "text-[9.5px] font-semibold",
+                                    hot ? "bg-amber-50 text-amber-700" : "bg-emerald-50 text-emerald-700",
+                                )}
+                            >
+                                {initialsOf(m.name)}
+                            </AvatarFallback>
+                        </Avatar>
+                    );
+                })}
                 {overflow > 0 && (
                     <span className="relative z-10 inline-flex size-6 items-center justify-center rounded-full bg-slate-100 ring-2 ring-white text-[9.5px] font-semibold text-slate-500">
                         +{overflow}
@@ -75,40 +126,44 @@ export default function PresenceAvatars() {
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: 4, scale: 0.98 }}
                         transition={{ duration: 0.12 }}
-                        className="absolute right-0 top-full mt-2 w-60 rounded-md border border-slate-200 bg-white shadow-lg z-50 py-1.5"
+                        className="absolute right-0 top-full mt-2 w-[260px] max-h-[60vh] overflow-y-auto rounded-md border border-slate-200 bg-white shadow-lg z-50 py-1.5"
                     >
-                        <div className="px-3 pb-1.5 pt-0.5 text-[10px] uppercase tracking-[0.14em] text-slate-400 flex items-center gap-1.5">
+                        <div className="px-3 pb-1.5 pt-0.5 flex items-center gap-1.5">
                             <span className="relative flex size-1.5">
                                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
                                 <span className="relative inline-flex size-1.5 rounded-full bg-emerald-500" />
                             </span>
-                            Online now
+                            <span className="text-[10px] uppercase tracking-[0.14em] text-slate-400">
+                                {members.length} online
+                            </span>
+                            {editingCount > 0 && (
+                                <span className="ml-auto text-[10px] font-medium text-amber-600">
+                                    {editingCount} editing
+                                </span>
+                            )}
                         </div>
-                        {members.map((m) => (
-                            <div key={m.userId} className="px-3 py-1.5 flex items-center gap-2.5">
-                                <Avatar size="sm">
-                                    {m.avatar ? <AvatarImage src={m.avatar} alt={m.name ?? ""} /> : null}
-                                    <AvatarFallback className="bg-sky-50 text-sky-700 text-[9.5px] font-semibold">
-                                        {initialsOf(m.name)}
-                                    </AvatarFallback>
-                                </Avatar>
-                                <div className="min-w-0">
-                                    <div className="text-[12.5px] text-slate-900 font-medium truncate">
-                                        {m.name ?? "Teammate"}
-                                    </div>
-                                    <div
-                                        className={cn(
-                                            "text-[10.5px] truncate capitalize",
-                                            m.action === "replying" || m.action === "editing"
-                                                ? "text-amber-600"
-                                                : "text-slate-400",
-                                        )}
-                                    >
-                                        {activityLabel(m)}
+                        {members.map((m) => {
+                            const act = activityOf(m);
+                            return (
+                                <div key={m.userId} className="px-3 py-1.5 flex items-center gap-2.5">
+                                    <Avatar size="sm">
+                                        {m.avatar ? <AvatarImage src={m.avatar} alt={m.name ?? ""} /> : null}
+                                        <AvatarFallback className="bg-sky-50 text-sky-700 text-[9.5px] font-semibold">
+                                            {initialsOf(m.name)}
+                                        </AvatarFallback>
+                                    </Avatar>
+                                    <div className="min-w-0">
+                                        <div className="text-[12.5px] text-slate-900 font-medium truncate">
+                                            {m.name ?? "Teammate"}
+                                        </div>
+                                        <div className={cn("text-[10.5px] truncate flex items-center gap-1", TONE_TEXT[act.tone])}>
+                                            {act.Icon && <act.Icon className="w-3 h-3 shrink-0" />}
+                                            {act.label}
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </motion.div>
                 )}
             </AnimatePresence>
