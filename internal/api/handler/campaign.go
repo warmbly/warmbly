@@ -97,11 +97,15 @@ func (h *Handler) CreateCampaign(c *gin.Context) {
 }
 
 func (h *Handler) GetCampaign(c *gin.Context) {
-	userID := middleware.GetUserID(c)
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "no organization selected"))
+		return
+	}
 
 	id := c.Param("id")
 
-	resp, err := h.CampaignService.Get(c.Request.Context(), userID, id)
+	resp, err := h.CampaignService.Get(c.Request.Context(), orgID.String(), id)
 	if err != nil {
 		errx.JSON(c, err)
 		return
@@ -111,14 +115,18 @@ func (h *Handler) GetCampaign(c *gin.Context) {
 }
 
 func (h *Handler) SearchCampaigns(c *gin.Context) {
-	userID := middleware.GetUserID(c)
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "no organization selected"))
+		return
+	}
 
 	query := c.Query("q")
 	cursor := c.Query("cursor")
 	folder := c.Query("folder")
 	limit := c.Query("limit")
 
-	resp, err := h.CampaignService.Search(c.Request.Context(), userID, query, cursor, folder, limit)
+	resp, err := h.CampaignService.Search(c.Request.Context(), orgID.String(), query, cursor, folder, limit)
 	if err != nil {
 		errx.JSON(c, err)
 		return

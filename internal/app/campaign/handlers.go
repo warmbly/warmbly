@@ -61,8 +61,8 @@ func (s *campaignService) Create(ctx context.Context, userID string, orgID *uuid
 	return resp, nil
 }
 
-func (s *campaignService) Get(ctx context.Context, userID, id string) (*models.Campaign, *errx.Error) {
-	resp, err := s.campaignRepository.Get(ctx, userID, id)
+func (s *campaignService) Get(ctx context.Context, orgID, id string) (*models.Campaign, *errx.Error) {
+	resp, err := s.campaignRepository.Get(ctx, orgID, id)
 	if err != nil {
 		if errors.Is(err, errx.ErrResourceNotFound) {
 			return nil, errx.ErrNotFound
@@ -74,7 +74,7 @@ func (s *campaignService) Get(ctx context.Context, userID, id string) (*models.C
 	return resp, nil
 }
 
-func (s *campaignService) Search(ctx context.Context, userID, query, cursor, folder, limit string) (*models.CampaignsResult, *errx.Error) {
+func (s *campaignService) Search(ctx context.Context, orgID, query, cursor, folder, limit string) (*models.CampaignsResult, *errx.Error) {
 	cursorId, err := validate.Uuid(cursor)
 	if err != nil {
 		return nil, err
@@ -88,7 +88,7 @@ func (s *campaignService) Search(ctx context.Context, userID, query, cursor, fol
 		return nil, err
 	}
 
-	resp, xerr := s.campaignRepository.Search(ctx, userID, query, cursorId, folderId, limitN)
+	resp, xerr := s.campaignRepository.Search(ctx, orgID, query, cursorId, folderId, limitN)
 	if xerr != nil {
 		return nil, errx.InternalError()
 	}

@@ -563,7 +563,7 @@ func (r *campaignRepository) Create(ctx context.Context, userID string, orgID *u
 	return &campaign, nil
 }
 
-func (r *campaignRepository) Get(ctx context.Context, userID, id string) (*models.Campaign, error) {
+func (r *campaignRepository) Get(ctx context.Context, orgID, id string) (*models.Campaign, error) {
 	var campaign models.Campaign
 
 	query := fmt.Sprintf(
@@ -571,13 +571,13 @@ func (r *campaignRepository) Get(ctx context.Context, userID, id string) (*model
 		 FROM campaigns c
 		 LEFT JOIN campaign_email_tags cet ON cet.campaign_id = c.id
 		 LEFT JOIN campaign_folders cec ON cec.campaign_id = c.id
-		 WHERE c.user_id = $1 AND c.id = $2
+		 WHERE c.organization_id = $1 AND c.id = $2
 		 GROUP BY c.id`,
 		CAMPAIGN_SELECT_FULL,
 	)
 
 	params := []any{
-		userID,
+		orgID,
 		id,
 	}
 
@@ -598,7 +598,7 @@ func (r *campaignRepository) Get(ctx context.Context, userID, id string) (*model
 	return &campaign, nil
 }
 
-func (r *campaignRepository) Search(ctx context.Context, userID, query string, cursor, folder *string, limit int32) (*models.CampaignsResult, error) {
+func (r *campaignRepository) Search(ctx context.Context, orgID, query string, cursor, folder *string, limit int32) (*models.CampaignsResult, error) {
 	tx, err := r.DB.Begin(ctx)
 	if err != nil {
 		db.CaptureError(err, "", nil, "begin")
@@ -612,7 +612,7 @@ func (r *campaignRepository) Search(ctx context.Context, userID, query string, c
 		FROM campaigns c
 		LEFT JOIN campaign_email_tags cet ON cet.campaign_id = c.id
 		LEFT JOIN campaign_folders cec ON cec.campaign_id = c.id
-		WHERE user_id = $1
+		WHERE c.organization_id = $1
 		 AND ($2::uuid IS NULL OR (c.created_at, c.id) < (
 		  SELECT created_at, id
 		  FROM campaigns
@@ -634,7 +634,7 @@ func (r *campaignRepository) Search(ctx context.Context, userID, query string, c
 			SELECT COUNT(DISTINCT c.id)
 			FROM campaigns c
 			LEFT JOIN campaign_folders cec ON cec.campaign_id = c.id
-			WHERE user_id = $1
+			WHERE c.organization_id = $1
 			  AND ($2 = '' OR c.name ILIKE '%%' || $2 || '%%')
 			  AND ($3::uuid IS NULL OR EXISTS (
 				SELECT 1 FROM campaign_folders cf WHERE cf.campaign_id = c.id AND cf.folder_id = $3
@@ -643,7 +643,7 @@ func (r *campaignRepository) Search(ctx context.Context, userID, query string, c
 	}
 
 	params := []any{
-		userID,
+		orgID,
 		cursor,
 		query,
 		folder,
@@ -685,12 +685,12 @@ func (r *campaignRepository) Search(ctx context.Context, userID, query string, c
 
 	if cursor == nil && countSQL != "" {
 		params := []any{
-			userID,
+			orgID,
 			query,
 			folder,
 		}
 		var tmp int64
-		err = tx.QueryRow(ctx, countSQL, userID, query, folder).Scan(&tmp)
+		err = tx.QueryRow(ctx, countSQL, orgID, query, folder).Scan(&tmp)
 		if err != nil {
 			db.CaptureError(err, countSQL, params, "queryrow")
 			return nil, err
