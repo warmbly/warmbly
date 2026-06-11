@@ -41,7 +41,7 @@ func (s *contactService) Add(ctx context.Context, userID string, contacts []mode
 	return created, nil
 }
 
-func (s *contactService) Search(ctx context.Context, userID, cursor, category, limit string, filters models.SearchContacts) (*models.ContactsResult, *errx.Error) {
+func (s *contactService) Search(ctx context.Context, orgID, cursor, category, limit string, filters models.SearchContacts) (*models.ContactsResult, *errx.Error) {
 	cursorId, err := validate.Uuid(cursor)
 	if err != nil {
 		return nil, err
@@ -56,7 +56,7 @@ func (s *contactService) Search(ctx context.Context, userID, cursor, category, l
 		return nil, err
 	}
 
-	return s.contactRepository.Search(ctx, userID, categoryId, cursorId, filters, limitN)
+	return s.contactRepository.Search(ctx, orgID, categoryId, cursorId, filters, limitN)
 }
 
 func (s *contactService) BulkUpdate(ctx context.Context, userID string, data *models.BulkEditContactsData) ([]models.Contact, *errx.Error) {

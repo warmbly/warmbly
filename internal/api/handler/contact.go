@@ -46,7 +46,11 @@ func (h *Handler) AddContacts(c *gin.Context) {
 }
 
 func (h *Handler) SearchContacts(c *gin.Context) {
-	userID := middleware.GetUserID(c)
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.Handle(c, errx.New(errx.BadRequest, "no organization selected"))
+		return
+	}
 
 	cursor := c.Query("cursor")
 	category := c.Query("category")
@@ -59,7 +63,7 @@ func (h *Handler) SearchContacts(c *gin.Context) {
 		return
 	}
 
-	resp, err := h.ContactService.Search(c.Request.Context(), userID, cursor, category, limit, data)
+	resp, err := h.ContactService.Search(c.Request.Context(), orgID.String(), cursor, category, limit, data)
 	if err != nil {
 		errx.Handle(c, err)
 		return

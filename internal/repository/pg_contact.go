@@ -562,7 +562,7 @@ func (r *contactRepository) GetByIDsAndOrganization(ctx context.Context, organiz
 
 func (r *contactRepository) Search(
 	ctx context.Context,
-	userID string,
+	orgID string,
 	category,
 	cursor *string,
 	filters models.SearchContacts,
@@ -579,8 +579,8 @@ func (r *contactRepository) Search(
 	// -----------------------------
 	// Base filter: user_id
 	// -----------------------------
-	whereClauses = append(whereClauses, fmt.Sprintf("c.user_id = $%d", argIndex))
-	args = append(args, userID)
+	whereClauses = append(whereClauses, fmt.Sprintf("c.organization_id = $%d", argIndex))
+	args = append(args, orgID)
 	argIndex++
 
 	// -----------------------------
@@ -857,7 +857,7 @@ func (r *contactRepository) Search(
 					FROM campaign_leads cl2
 					JOIN campaigns cam ON cl2.campaign_id = cam.id
 					WHERE cl2.contact_id = c.id
-					AND cam.user_id = $%d
+					AND cam.organization_id = $%d
 				), '[]'::json
 			) AS campaigns,
 			COALESCE(
@@ -881,7 +881,7 @@ func (r *contactRepository) Search(
 		LIMIT $%d
 	`, argIndex, argIndex, leadProgressSelect, whereSQL, sortBy, direction, argIndex+1)
 
-	args = append(args, userID, limit+1)
+	args = append(args, orgID, limit+1)
 
 	// Skip total count if cursor exists
 	var totalCount *int64
