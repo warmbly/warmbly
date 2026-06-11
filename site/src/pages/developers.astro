@@ -7,20 +7,31 @@ import CTA from '../components/CTA.astro';
 // All numbers below are platform-level facts from the codebase:
 //   internal/api/handler/*, internal/app/ratelimit/service.go,
 //   internal/api/middleware/ratelimit.go, internal/app/consumer/*,
-//   internal/app/advanced/service.go, web/src/app/app/api-keys/page.tsx
+//   internal/app/advanced/service.go.
 
-const keys = [
-  { name: 'production',  prefix: 'wmbly_live_8a3', suffix: 'q2x7', scope: 'full',  rpm: 600, last: '14s ago',  status: 'active'   },
-  { name: 'staging',     prefix: 'wmbly_live_b1f', suffix: 'kd9m', scope: 'full',  rpm: 600, last: '4m ago',   status: 'active'   },
-  { name: 'analytics-ro',prefix: 'wmbly_live_77c', suffix: 'p0za', scope: 'read',  rpm: 120, last: '2h ago',   status: 'active'   },
-  { name: 'zap-webhook', prefix: 'wmbly_live_d24', suffix: 'm4n6', scope: 'write', rpm: 300, last: '1d ago',   status: 'active'   },
-  { name: 'old-laptop',  prefix: 'wmbly_live_55a', suffix: 'xx0p', scope: 'read',  rpm: 120, last: '23d ago',  status: 'revoked'  },
+// =========================================================================
+// Section 2 · tabbed client editor
+// =========================================================================
+type Client = { id: string; label: string };
+const clients: Client[] = [
+  { id: 'ts',   label: 'TypeScript' },
+  { id: 'py',   label: 'Python' },
+  { id: 'go',   label: 'Go' },
+  { id: 'curl', label: 'curl' },
 ];
 
-const statusTone = (s: string) => {
-  if (s === 'active') return { bg: 'bg-emerald-50', text: 'text-emerald-700', dot: 'bg-emerald-500' };
-  if (s === 'revoked') return { bg: 'bg-rose-50',   text: 'text-rose-700',   dot: 'bg-rose-500' };
-  return { bg: 'bg-slate-100', text: 'text-slate-600', dot: 'bg-slate-400' };
+// =========================================================================
+// Section 3 · event catalog, colored per surface
+// =========================================================================
+type EventGroup = {
+  surface: string;
+  blurb: string;
+  events: string[];
+  tone: string;
+  ring: string;     // tailwind ring color for the card border accent
+  eyebrow: string;  // tailwind classes for eyebrow text
+  pill: string;     // tailwind classes for the count pill
+  chip: string;     // tailwind classes for individual event chips
 };
 
 // Activity strip bars for the dashboard mock (24 buckets, last 24h).
