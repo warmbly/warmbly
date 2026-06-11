@@ -118,6 +118,42 @@ Everything in the dashboard must use our own theme, not browser/library defaults
 - Row interactions: list rows behave like the campaigns list — clicking anywhere on a row opens that item's detail (drawer or page); right-side action buttons (3-dots / "More") open a relevant detail/tab (e.g. the mailbox 3-dots opens the Settings tab of `InboxDetails`). Inner interactive controls (checkbox, dropdown trigger, action buttons) must `e.stopPropagation()` so they don't also fire the row's open handler.
 - Prefer realtime over polling: subscribe to the socket and `queryClient.invalidateQueries(...)` on the relevant event instead of `refetchInterval` where an event exists (see `useRealtimeEvents` / `RealtimeManager`).
 
+## Realtime Collaboration And Presence
+
+The dashboard is collaborative: org members see each other's activity live. Keep these patterns intact when extending features.
+
+### The audit spine
+
+Every `h.auditOrg` / `AuditService.LogAction` call publishes an org-scoped `AUDIT_CREATED` realtime event carrying `action`, `entity_type`, and `entity_id`. The web client maps `entity_type` to react-query invalidations (the `spine` map in `web/src/hooks/useRealtimeEvents.ts`), so every audited mutation refreshes every teammate's lists without a bespoke emit site.
+
+Consequences:
+
+- keeping audit coverage complete IS keeping the dashboard live. A new mutating handler gets org-wide realtime for free by calling `auditOrg` with a proper entity type
+- a new audit entity type needs a matching entry in the frontend spine map
+- dedicated realtime events only exist for non-audited consumer/scheduler flows: `EMAIL_SENT` (campaign send success), `EMAIL_REPLIED` (human replies only, via `WireRealtime` in both backend and consumer mains), `EMAIL_DELETED`, inbox arrivals, tracking opens/clicks, account health transitions
+
+### Org-scoped events
+
+The Elixir subscriber routes on the event BODY: `user_id` -> `user:<id>`, `org_id`/`organization_id` -> `org:<id>`, plus `campaign_id`/`email_account_id`/`operation_id` entity topics. To make an event visible to the whole team, set the `OrgID` field on the specific event struct (do NOT add OrgID to `BaseEvent`; several event structs declare their own `org_id` JSON key and embedding would conflict).
+
+`OrgChannel.can_see_event?` gates org-broadcast events by member permission after normalizing the event type (upcased, separators collapsed): inbox -> `access_unibox`, campaign/task/send/open/click/reply -> `view_campaigns`, contact -> `view_contacts`, account/warmup -> `manage_emails`, member/invitation -> `manage_team`, settings -> `manage_settings`, billing -> `manage_billing`. `AUDIT_CREATED` is deliberately default-allowed (payload is non-sensitive ids; the spine needs all members to receive it). New org-scoped event families must be added to this table.
+
+### Presence
+
+`RealtimeWeb.Presence` (Phoenix.Presence) tracks JWT members on the org channel; API-key (developer) sockets receive events but are never tracked. Clients push `presence:update` with `{page, resource, action}` where action is `viewing | editing | replying | idle` (rate-limited by the existing `ws_event` limiter, strings sanitized and capped).
+
+Web conventions:
+
+- `PresenceProvider` (mounted inside `RealtimeManager`) syncs `presence_state`/`presence_diff` into the zustand `presenceSlice` and pushes route changes automatically
+- detail panes/editors claim a record with `usePresenceResource(resource, action)`; resource strings are `thread:<id>`, `automation:<id>`, `campaign:<id>`, `contact:<id>` — follow this naming for new surfaces
+- show other viewers with `<ResourceViewers resource={...} />` (amber for editing/replying, emerald for viewing); the header avatar stack is `PresenceAvatars`
+- `useRealtimeEvents` early-returns on `PRESENCE*` / `RATE_LIMITED` events; never let presence diffs reach the default invalidation branch
+- `OrgChannel` has a no-op `handle_info(%Phoenix.Socket.Broadcast{}, ...)` clause because its manual PubSub subscription duplicates presence broadcasts to the channel process; removing it crashes the channel on the first presence diff
+
+### Developer WebSocket
+
+API keys with the `REALTIME_SUBSCRIBE` permission (bit 11) can connect to the same socket. Connection spam is bounded by per-user concurrent-connection caps (plan-based, default 10), per-IP (50), a global cap, join rate limits, and per-key IP restrictions. Documented in `docs/content/docs/api/realtime.mdx` — keep that page in sync with channel/limit changes.
+
 ## System Shape
 
 - `cmd/backend`: API and business orchestration
@@ -617,6 +653,15 @@ Relevant code:
 - `tracking/src/handlers.rs`
 - `internal/repository/pg_tracking_dedupe.go`
 - `internal/app/consumer/event_tracking.go`
+
+### Tracking endpoint anti-abuse
+
+The tracking service additionally defends itself before any event reaches Kafka (`tracking/src/abuse.rs`):
+
+- per-source rate limiting: fixed 60s window per hashed IP, `TRACKING_RATE_LIMIT_PER_MIN` (default `300`), bounded cache. Over-budget pixels are still served (no broken images) but not counted; over-budget click redirects get `429`
+- prefetch/scanner filtering: `Sec-Purpose`/`Purpose`-style prefetch headers and a UA marker list (crawlers, CLI clients, chat-app link previews, email security gateways) are served but never counted. Gmail's image proxy is deliberately NOT filtered — it is the only open signal Gmail exposes
+- URL caps on click redirects: 4096 bytes raw / 2048 decoded
+- signed click links: the Go sender appends `&s=<hex HMAC-SHA256(taskID|url)>` when `TRACKING_LINK_SECRET` is set (`internal/tasks/template.go`); when the tracking service has the same secret it refuses unsigned/mis-signed redirects with `404`. This closes the open-redirector hole. Rollout order matters: set the secret on the backend first, enable enforcement on the tracking service only after unsigned in-flight emails have aged out
 - `internal/app/advanced/service.go`
 - `internal/repository/pg_advanced_outreach.go`
 - `internal/repository/pg_subscription.go`
