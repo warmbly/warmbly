@@ -15,7 +15,11 @@
 // section.
 
 import React from "react";
-import { Navigate, NavLink, Outlet, useLocation } from "react-router-dom";
+import { Navigate, NavLink, Outlet, useBlocker, useLocation } from "react-router-dom";
+import { AnimatePresence, motion } from "framer-motion";
+import toast from "react-hot-toast";
+import { Loader2Icon } from "lucide-react";
+import { UnsavedProvider, useUnsavedRegistry } from "@/hooks/context/unsaved";
 import {
     AlertOctagonIcon,
     BellIcon,
@@ -52,9 +56,58 @@ const SECTIONS: SectionDef[] = [
 ];
 
 export default function SettingsLayout() {
+    return (
+        <UnsavedProvider>
+            <SettingsLayoutInner />
+        </UnsavedProvider>
+    );
+}
+
+function SettingsLayoutInner() {
     const location = useLocation();
     const access = useFeatureAccess();
     const navRef = React.useRef<HTMLElement>(null);
+    const unsaved = useUnsavedRegistry();
+    const [savingLeave, setSavingLeave] = React.useState(false);
+
+    // Block in-app navigation away from a tab with unsaved/pending/failed
+    // auto-save changes; the dialog below offers save or discard.
+    const blocker = useBlocker(
+        React.useCallback(
+            ({ currentLocation, nextLocation }: { currentLocation: { pathname: string }; nextLocation: { pathname: string } }) =>
+                !!unsaved?.anyDirty() && currentLocation.pathname !== nextLocation.pathname,
+            [unsaved],
+        ),
+    );
+
+    // Native guard for hard navigations (reload / close tab).
+    React.useEffect(() => {
+        const handler = (e: BeforeUnloadEvent) => {
+            if (unsaved?.anyDirty()) {
+                e.preventDefault();
+                e.returnValue = "";
+            }
+        };
+        window.addEventListener("beforeunload", handler);
+        return () => window.removeEventListener("beforeunload", handler);
+    }, [unsaved]);
+
+    async function saveAndLeave() {
+        if (!unsaved) return;
+        setSavingLeave(true);
+        try {
+            await unsaved.saveAll();
+            setSavingLeave(false);
+            blocker.proceed?.();
+        } catch {
+            setSavingLeave(false);
+            toast.error("Couldn't save your changes — fix them or discard to leave.");
+        }
+    }
+    function discardAndLeave() {
+        unsaved?.discardAll();
+        blocker.proceed?.();
+    }
 
     // On phones the nav is a horizontal tab strip; deep links or
     // navigation to a later section should bring the active tab into
@@ -124,6 +177,59 @@ export default function SettingsLayout() {
                     <Outlet />
                 </div>
             </div>
+
+            <AnimatePresence>
+                {blocker.state === "blocked" && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-50 bg-slate-900/30 flex items-center justify-center p-4"
+                        onMouseDown={(e) => {
+                            if (e.target === e.currentTarget && !savingLeave) blocker.reset?.();
+                        }}
+                    >
+                        <motion.div
+                            initial={{ opacity: 0, y: 8, scale: 0.98 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, y: 8, scale: 0.98 }}
+                            className="w-full max-w-sm rounded-lg bg-white border border-slate-200 shadow-xl p-5"
+                        >
+                            <h3 className="text-[14px] font-semibold text-slate-900">Unsaved changes</h3>
+                            <p className="text-[12.5px] text-slate-500 leading-relaxed mt-1">
+                                Some changes on this tab haven't finished saving. Save them before leaving, or discard them.
+                            </p>
+                            <div className="mt-4 flex items-center justify-end gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => blocker.reset?.()}
+                                    disabled={savingLeave}
+                                    className="h-8 px-3 rounded-md text-[12.5px] font-medium text-slate-600 hover:bg-slate-100 transition-colors disabled:opacity-60"
+                                >
+                                    Stay
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={discardAndLeave}
+                                    disabled={savingLeave}
+                                    className="h-8 px-3 rounded-md text-[12.5px] font-medium text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-60"
+                                >
+                                    Discard
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={saveAndLeave}
+                                    disabled={savingLeave}
+                                    className="h-8 px-3 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-[12.5px] font-medium inline-flex items-center gap-1.5 transition-colors disabled:opacity-60"
+                                >
+                                    {savingLeave && <Loader2Icon className="w-3.5 h-3.5 animate-spin" />}
+                                    Save changes
+                                </button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </Page>
     );
 }
