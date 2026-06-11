@@ -1,6 +1,8 @@
 package models
 
 import (
+	"strings"
+
 	"database/sql/driver"
 	"fmt"
 )
@@ -97,6 +99,17 @@ var RolePermissions = map[Role]OrganizationPermission{
 		PermViewCampaigns | PermViewContacts | PermAccessUnibox |
 		PermUseIntegrations,
 	RoleViewer: PermViewCampaigns | PermViewContacts | PermViewAnalytics,
+}
+
+// IsReservedRoleName reports whether a custom role name collides with a
+// built-in role (case-insensitive); such names are rejected so member.role
+// strings stay unambiguous.
+func IsReservedRoleName(name string) bool {
+	switch Role(strings.ToLower(strings.TrimSpace(name))) {
+	case RoleOwner, RoleAdmin, RoleManager, RoleViewer, "member":
+		return true
+	}
+	return false
 }
 
 // GetRolePermissions returns the default permissions for a role

@@ -90,6 +90,7 @@ const (
 	AuditEntityAutomation     AuditEntityType = "automation"
 	AuditEntityLeadSyncSource AuditEntityType = "lead_sync_source"
 	AuditEntityMeeting        AuditEntityType = "meeting"
+	AuditEntityRole           AuditEntityType = "role"
 )
 
 // AuditActor is the minimal identity of the member who performed an action,

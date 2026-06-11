@@ -42,6 +42,12 @@ type OrganizationService interface {
 	GetMembership(ctx context.Context, orgID, userID uuid.UUID) (*models.OrganizationMember, *errx.Error)
 	InviteMember(ctx context.Context, orgID uuid.UUID, inviterID uuid.UUID, req *models.InviteMemberRequest) (*models.OrganizationInvitation, *errx.Error)
 	AcceptInvitation(ctx context.Context, token string, userID uuid.UUID, email string) (*models.OrganizationMember, *errx.Error)
+
+	// Custom roles
+	ListRoles(ctx context.Context, orgID uuid.UUID) ([]models.OrganizationRole, *errx.Error)
+	CreateRole(ctx context.Context, orgID, actorID uuid.UUID, req *models.CreateOrganizationRoleRequest) (*models.OrganizationRole, *errx.Error)
+	UpdateRole(ctx context.Context, orgID, actorID, roleID uuid.UUID, req *models.UpdateOrganizationRoleRequest) (*models.OrganizationRole, *errx.Error)
+	DeleteRole(ctx context.Context, orgID, roleID uuid.UUID) *errx.Error
 	UpdateMemberRole(ctx context.Context, orgID, memberUserID uuid.UUID, req *models.UpdateMemberRequest) (*models.OrganizationMember, *errx.Error)
 	RemoveMember(ctx context.Context, orgID, memberUserID uuid.UUID) *errx.Error
 
@@ -331,17 +337,33 @@ func (s *organizationService) InviteMember(ctx context.Context, orgID uuid.UUID,
 	// First, we need to check if there's already a user with this email
 	// For now, we'll just create the invitation
 
-	// Determine role and permissions
+	// Determine role and permissions. A custom role wins and snapshots its
+	// name + permissions onto the invitation (kept in sync via role_id).
 	role := string(models.RoleViewer)
-	if req.Role != "" && models.IsValidRole(req.Role) {
-		role = req.Role
-	}
-
+	var roleID *uuid.UUID
 	var permissions models.OrganizationPermission
-	if req.Permissions != nil {
-		permissions = models.OrganizationPermission(*req.Permissions)
+
+	if req.RoleID != nil {
+		customRole, rerr := s.orgRepo.GetRoleByID(ctx, orgID, *req.RoleID)
+		if rerr != nil {
+			sentry.CaptureException(rerr)
+			return nil, errx.New(errx.Internal, "failed to load role")
+		}
+		if customRole == nil {
+			return nil, errx.New(errx.BadRequest, "role not found")
+		}
+		role = customRole.Name
+		roleID = &customRole.ID
+		permissions = customRole.Permissions
 	} else {
-		permissions = models.GetRolePermissions(models.Role(role))
+		if req.Role != "" && models.IsValidRole(req.Role) {
+			role = req.Role
+		}
+		if req.Permissions != nil {
+			permissions = models.OrganizationPermission(*req.Permissions)
+		} else {
+			permissions = models.GetRolePermissions(models.Role(role))
+		}
 	}
 
 	// Generate invitation token
@@ -356,6 +378,7 @@ func (s *organizationService) InviteMember(ctx context.Context, orgID uuid.UUID,
 		OrganizationID: orgID,
 		Email:          strings.ToLower(req.Email),
 		Role:           role,
+		RoleID:         roleID,
 		Permissions:    permissions,
 		InvitedBy:      inviterID,
 		Token:          token,
@@ -408,6 +431,7 @@ func (s *organizationService) AcceptInvitation(ctx context.Context, token string
 		OrganizationID: inv.OrganizationID,
 		UserID:         userID,
 		Role:           inv.Role,
+		RoleID:         inv.RoleID,
 		Permissions:    inv.Permissions,
 		InvitedBy:      &inv.InvitedBy,
 		InvitedAt:      inv.CreatedAt,
@@ -441,7 +465,21 @@ func (s *organizationService) UpdateMemberRole(ctx context.Context, orgID, membe
 		return nil, errx.New(errx.Forbidden, "cannot modify owner role")
 	}
 
-	if req.Role != nil {
+	if req.RoleID != nil {
+		// Assign a custom role: snapshot its name + permissions; role edits
+		// propagate to this member via role_id.
+		customRole, rerr := s.orgRepo.GetRoleByID(ctx, orgID, *req.RoleID)
+		if rerr != nil {
+			sentry.CaptureException(rerr)
+			return nil, errx.New(errx.Internal, "failed to load role")
+		}
+		if customRole == nil {
+			return nil, errx.New(errx.BadRequest, "role not found")
+		}
+		member.Role = customRole.Name
+		member.RoleID = &customRole.ID
+		member.Permissions = customRole.Permissions
+	} else if req.Role != nil {
 		if !models.IsValidRole(*req.Role) {
 			return nil, errx.New(errx.BadRequest, "invalid role")
 		}
@@ -450,13 +488,14 @@ func (s *organizationService) UpdateMemberRole(ctx context.Context, orgID, membe
 			return nil, errx.New(errx.Forbidden, "cannot promote to owner, use transfer ownership")
 		}
 		member.Role = *req.Role
+		member.RoleID = nil
 		// Update permissions to match new role unless custom permissions provided
 		if req.Permissions == nil {
 			member.Permissions = models.GetRolePermissions(models.Role(*req.Role))
 		}
 	}
 
-	if req.Permissions != nil {
+	if req.RoleID == nil && req.Permissions != nil {
 		member.Permissions = models.OrganizationPermission(*req.Permissions)
 	}
 
@@ -1118,4 +1157,134 @@ func (s *organizationService) RejectLimitRequest(ctx context.Context, id, review
 	lr.ReviewedBy = &reviewerID
 	lr.ReviewNotes = notes
 	return lr, nil
+}
+
+// MaxCustomRolesPerOrg caps role sprawl per workspace.
+const MaxCustomRolesPerOrg = 25
+
+// validateRolePermissions enforces the two safety rules for custom roles:
+// transfer-ownership can never be delegated through a role, and an actor can
+// only put permissions into a role that they hold themselves (no privilege
+// escalation by minting a stronger role and self-assigning a teammate).
+func (s *organizationService) validateRolePermissions(ctx context.Context, orgID, actorID uuid.UUID, perms models.OrganizationPermission) *errx.Error {
+	if perms&models.PermTransferOwnership != 0 {
+		return errx.New(errx.BadRequest, "custom roles cannot include ownership transfer")
+	}
+	actor, err := s.orgRepo.GetMember(ctx, orgID, actorID)
+	if err != nil {
+		sentry.CaptureException(err)
+		return errx.New(errx.Internal, "failed to load member")
+	}
+	if actor == nil {
+		return errx.New(errx.Forbidden, "not a member")
+	}
+	if perms&^actor.Permissions != 0 {
+		return errx.New(errx.Forbidden, "a role cannot grant permissions you do not hold")
+	}
+	return nil
+}
+
+func validateRoleName(name string) (string, *errx.Error) {
+	name = strings.TrimSpace(name)
+	if name == "" || len(name) > 50 {
+		return "", errx.New(errx.BadRequest, "role name must be 1-50 characters")
+	}
+	if models.IsReservedRoleName(name) {
+		return "", errx.New(errx.BadRequest, "that name is reserved for a built-in role")
+	}
+	return name, nil
+}
+
+func (s *organizationService) ListRoles(ctx context.Context, orgID uuid.UUID) ([]models.OrganizationRole, *errx.Error) {
+	roles, err := s.orgRepo.ListRoles(ctx, orgID)
+	if err != nil {
+		sentry.CaptureException(err)
+		return nil, errx.New(errx.Internal, "failed to list roles")
+	}
+	if roles == nil {
+		roles = []models.OrganizationRole{}
+	}
+	return roles, nil
+}
+
+func (s *organizationService) CreateRole(ctx context.Context, orgID, actorID uuid.UUID, req *models.CreateOrganizationRoleRequest) (*models.OrganizationRole, *errx.Error) {
+	name, xerr := validateRoleName(req.Name)
+	if xerr != nil {
+		return nil, xerr
+	}
+	perms := models.OrganizationPermission(req.Permissions)
+	if xerr := s.validateRolePermissions(ctx, orgID, actorID, perms); xerr != nil {
+		return nil, xerr
+	}
+
+	count, err := s.orgRepo.CountRoles(ctx, orgID)
+	if err != nil {
+		sentry.CaptureException(err)
+		return nil, errx.New(errx.Internal, "failed to count roles")
+	}
+	if count >= MaxCustomRolesPerOrg {
+		return nil, errx.New(errx.Forbidden, "custom role limit reached")
+	}
+
+	role := &models.OrganizationRole{
+		ID:             uuid.New(),
+		OrganizationID: orgID,
+		Name:           name,
+		Description:    strings.TrimSpace(req.Description),
+		Permissions:    perms,
+	}
+	if err := s.orgRepo.CreateRole(ctx, role); err != nil {
+		// Unique (org, name) violation is the only expected failure here.
+		return nil, errx.New(errx.BadRequest, "a role with that name already exists")
+	}
+	return role, nil
+}
+
+func (s *organizationService) UpdateRole(ctx context.Context, orgID, actorID, roleID uuid.UUID, req *models.UpdateOrganizationRoleRequest) (*models.OrganizationRole, *errx.Error) {
+	role, err := s.orgRepo.GetRoleByID(ctx, orgID, roleID)
+	if err != nil {
+		sentry.CaptureException(err)
+		return nil, errx.New(errx.Internal, "failed to load role")
+	}
+	if role == nil {
+		return nil, errx.New(errx.NotFound, "role not found")
+	}
+
+	if req.Name != nil {
+		name, xerr := validateRoleName(*req.Name)
+		if xerr != nil {
+			return nil, xerr
+		}
+		role.Name = name
+	}
+	if req.Description != nil {
+		role.Description = strings.TrimSpace(*req.Description)
+	}
+	if req.Permissions != nil {
+		perms := models.OrganizationPermission(*req.Permissions)
+		if xerr := s.validateRolePermissions(ctx, orgID, actorID, perms); xerr != nil {
+			return nil, xerr
+		}
+		role.Permissions = perms
+	}
+
+	// Write-through: assigned members pick up the new name + permissions
+	// atomically (their effective access changes live via the audit spine).
+	if err := s.orgRepo.UpdateRole(ctx, role); err != nil {
+		sentry.CaptureException(err)
+		return nil, errx.New(errx.Internal, "failed to update role")
+	}
+	return role, nil
+}
+
+func (s *organizationService) DeleteRole(ctx context.Context, orgID, roleID uuid.UUID) *errx.Error {
+	inUse, err := s.orgRepo.DeleteRole(ctx, orgID, roleID)
+	if err != nil {
+		sentry.CaptureException(err)
+		return errx.New(errx.Internal, "failed to delete role")
+	}
+	if inUse {
+		return errx.New(errx.Conflict, "reassign the members using this role first")
+	}
+	return nil
 }

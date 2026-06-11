@@ -34,14 +34,17 @@ func (o *Organization) IsPendingDeletion() bool {
 
 // OrganizationMember represents a user's membership in an organization
 type OrganizationMember struct {
-	ID             uuid.UUID              `json:"id"`
-	OrganizationID uuid.UUID              `json:"organization_id"`
-	UserID         uuid.UUID              `json:"user_id"`
-	Role           string                 `json:"role"`
-	Permissions    OrganizationPermission `json:"permissions"`
-	InvitedBy      *uuid.UUID             `json:"invited_by,omitempty"`
-	InvitedAt      time.Time              `json:"invited_at"`
-	AcceptedAt     *time.Time             `json:"accepted_at,omitempty"`
+	ID             uuid.UUID `json:"id"`
+	OrganizationID uuid.UUID `json:"organization_id"`
+	UserID         uuid.UUID `json:"user_id"`
+	Role           string    `json:"role"`
+	// RoleID links to a custom organization_roles row; nil for built-in
+	// roles. Permissions stays the effective snapshot either way.
+	RoleID      *uuid.UUID             `json:"role_id,omitempty"`
+	Permissions OrganizationPermission `json:"permissions"`
+	InvitedBy   *uuid.UUID             `json:"invited_by,omitempty"`
+	InvitedAt   time.Time              `json:"invited_at"`
+	AcceptedAt  *time.Time             `json:"accepted_at,omitempty"`
 
 	// Joined data
 	User         *User         `json:"user,omitempty"`
@@ -70,6 +73,7 @@ type OrganizationInvitation struct {
 	OrganizationID uuid.UUID              `json:"organization_id"`
 	Email          string                 `json:"email"`
 	Role           string                 `json:"role"`
+	RoleID         *uuid.UUID             `json:"role_id,omitempty"`
 	Permissions    OrganizationPermission `json:"permissions"`
 	InvitedBy      uuid.UUID              `json:"invited_by"`
 	Token          string                 `json:"-"` // Never expose token in JSON
@@ -127,11 +131,45 @@ type InviteMemberRequest struct {
 	Email       string  `json:"email" binding:"required,email"`
 	Role        string  `json:"role,omitempty"`
 	Permissions *uint16 `json:"permissions,omitempty"`
+	// RoleID invites straight into a custom role (wins over Role/Permissions).
+	RoleID *uuid.UUID `json:"role_id,omitempty"`
 }
 
 // UpdateMemberRequest represents the request to update a member's role/permissions
 type UpdateMemberRequest struct {
 	Role        *string `json:"role,omitempty"`
+	Permissions *uint16 `json:"permissions,omitempty"`
+	// RoleID assigns a custom role (wins over Role/Permissions).
+	RoleID *uuid.UUID `json:"role_id,omitempty"`
+}
+
+// OrganizationRole is an org-scoped custom role: a named permission set
+// members can be assigned to. Editing a role writes through to every
+// assigned member's permissions snapshot, so all permission readers stay
+// JOIN-free.
+type OrganizationRole struct {
+	ID             uuid.UUID              `json:"id"`
+	OrganizationID uuid.UUID              `json:"organization_id"`
+	Name           string                 `json:"name"`
+	Description    string                 `json:"description"`
+	Permissions    OrganizationPermission `json:"permissions"`
+	MemberCount    int                    `json:"member_count"`
+	CreatedAt      time.Time              `json:"created_at"`
+	UpdatedAt      time.Time              `json:"updated_at"`
+}
+
+// CreateOrganizationRoleRequest creates a custom role.
+type CreateOrganizationRoleRequest struct {
+	Name        string `json:"name" binding:"required"`
+	Description string `json:"description,omitempty"`
+	Permissions uint16 `json:"permissions"`
+}
+
+// UpdateOrganizationRoleRequest edits a custom role (edits propagate to
+// every member assigned to it).
+type UpdateOrganizationRoleRequest struct {
+	Name        *string `json:"name,omitempty"`
+	Description *string `json:"description,omitempty"`
 	Permissions *uint16 `json:"permissions,omitempty"`
 }
 

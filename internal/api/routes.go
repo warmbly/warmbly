@@ -676,6 +676,12 @@ func Run(
 			org.PATCH("/members/:id", m.RequireOrganization(), m.RequirePermission(models.PermManageTeam), h.UpdateMemberRole)
 			org.DELETE("/members/:id", m.RequireOrganization(), m.RequirePermission(models.PermManageTeam), h.RemoveMember)
 
+			// Custom roles: named permission sets assignable to members.
+			org.GET("/roles", m.RequireOrganization(), h.ListOrganizationRoles)
+			org.POST("/roles", m.RequireOrganization(), m.RequirePermission(models.PermManageTeam), h.CreateOrganizationRole)
+			org.PATCH("/roles/:id", m.RequireOrganization(), m.RequirePermission(models.PermManageTeam), h.UpdateOrganizationRole)
+			org.DELETE("/roles/:id", m.RequireOrganization(), m.RequirePermission(models.PermManageTeam), h.DeleteOrganizationRole)
+
 			org.GET("/invitations", m.RequireOrganization(), m.RequirePermission(models.PermManageTeam), h.GetPendingInvitations)
 			org.DELETE("/invitations/:id", m.RequireOrganization(), m.RequirePermission(models.PermManageTeam), h.CancelInvitation)
 

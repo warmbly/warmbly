@@ -32,6 +32,14 @@ type OrganizationRepository interface {
 	GetMemberByID(ctx context.Context, memberID uuid.UUID) (*models.OrganizationMember, error)
 	AddMember(ctx context.Context, member *models.OrganizationMember) error
 	UpdateMember(ctx context.Context, member *models.OrganizationMember) error
+
+	// Custom roles (implemented in pg_organization_roles.go)
+	ListRoles(ctx context.Context, orgID uuid.UUID) ([]models.OrganizationRole, error)
+	GetRoleByID(ctx context.Context, orgID, roleID uuid.UUID) (*models.OrganizationRole, error)
+	CountRoles(ctx context.Context, orgID uuid.UUID) (int, error)
+	CreateRole(ctx context.Context, role *models.OrganizationRole) error
+	UpdateRole(ctx context.Context, role *models.OrganizationRole) error
+	DeleteRole(ctx context.Context, orgID, roleID uuid.UUID) (bool, error)
 	RemoveMember(ctx context.Context, orgID, userID uuid.UUID) error
 	GetMemberCount(ctx context.Context, orgID uuid.UUID) (int, error)
 
@@ -246,7 +254,7 @@ func (r *organizationRepository) GetMembers(ctx context.Context, orgID uuid.UUID
 		var m models.OrganizationMember
 		var u models.User
 		err := rows.Scan(
-			&m.ID, &m.OrganizationID, &m.UserID, &m.Role, &m.Permissions,
+			&m.ID, &m.OrganizationID, &m.UserID, &m.Role, &m.RoleID, &m.Permissions,
 			&m.InvitedBy, &m.InvitedAt, &m.AcceptedAt,
 			&u.ID, &u.FirstName, &u.LastName, &u.Email, &u.CreatedAt, &u.UpdatedAt,
 		)
@@ -264,13 +272,13 @@ func (r *organizationRepository) GetMembers(ctx context.Context, orgID uuid.UUID
 // GetMember retrieves a specific member of an organization
 func (r *organizationRepository) GetMember(ctx context.Context, orgID, userID uuid.UUID) (*models.OrganizationMember, error) {
 	query := `
-		SELECT id, organization_id, user_id, role, permissions, invited_by, invited_at, accepted_at
+		SELECT id, organization_id, user_id, role, role_id, permissions, invited_by, invited_at, accepted_at
 		FROM organization_members
 		WHERE organization_id = $1 AND user_id = $2
 	`
 	row := r.db.QueryRow(ctx, query, orgID, userID)
 	var m models.OrganizationMember
-	err := row.Scan(&m.ID, &m.OrganizationID, &m.UserID, &m.Role, &m.Permissions, &m.InvitedBy, &m.InvitedAt, &m.AcceptedAt)
+	err := row.Scan(&m.ID, &m.OrganizationID, &m.UserID, &m.Role, &m.RoleID, &m.Permissions, &m.InvitedBy, &m.InvitedAt, &m.AcceptedAt)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -283,12 +291,12 @@ func (r *organizationRepository) GetMember(ctx context.Context, orgID, userID uu
 // GetMemberByID retrieves a member by their membership ID
 func (r *organizationRepository) GetMemberByID(ctx context.Context, memberID uuid.UUID) (*models.OrganizationMember, error) {
 	query := `
-		SELECT id, organization_id, user_id, role, permissions, invited_by, invited_at, accepted_at
+		SELECT id, organization_id, user_id, role, role_id, permissions, invited_by, invited_at, accepted_at
 		FROM organization_members WHERE id = $1
 	`
 	row := r.db.QueryRow(ctx, query, memberID)
 	var m models.OrganizationMember
-	err := row.Scan(&m.ID, &m.OrganizationID, &m.UserID, &m.Role, &m.Permissions, &m.InvitedBy, &m.InvitedAt, &m.AcceptedAt)
+	err := row.Scan(&m.ID, &m.OrganizationID, &m.UserID, &m.Role, &m.RoleID, &m.Permissions, &m.InvitedBy, &m.InvitedAt, &m.AcceptedAt)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -301,11 +309,11 @@ func (r *organizationRepository) GetMemberByID(ctx context.Context, memberID uui
 // AddMember adds a member to an organization
 func (r *organizationRepository) AddMember(ctx context.Context, member *models.OrganizationMember) error {
 	query := `
-		INSERT INTO organization_members (id, organization_id, user_id, role, permissions, invited_by, invited_at, accepted_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		INSERT INTO organization_members (id, organization_id, user_id, role, role_id, permissions, invited_by, invited_at, accepted_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 	`
 	_, err := r.db.Exec(ctx, query,
-		member.ID, member.OrganizationID, member.UserID, member.Role, member.Permissions,
+		member.ID, member.OrganizationID, member.UserID, member.Role, member.RoleID, member.Permissions,
 		member.InvitedBy, member.InvitedAt, member.AcceptedAt,
 	)
 	return err
@@ -314,10 +322,10 @@ func (r *organizationRepository) AddMember(ctx context.Context, member *models.O
 // UpdateMember updates a member's role and permissions
 func (r *organizationRepository) UpdateMember(ctx context.Context, member *models.OrganizationMember) error {
 	query := `
-		UPDATE organization_members SET role = $3, permissions = $4
+		UPDATE organization_members SET role = $3, role_id = $4, permissions = $5
 		WHERE organization_id = $1 AND user_id = $2
 	`
-	_, err := r.db.Exec(ctx, query, member.OrganizationID, member.UserID, member.Role, member.Permissions)
+	_, err := r.db.Exec(ctx, query, member.OrganizationID, member.UserID, member.Role, member.RoleID, member.Permissions)
 	return err
 }
 
@@ -337,17 +345,18 @@ func (r *organizationRepository) GetMemberCount(ctx context.Context, orgID uuid.
 // CreateInvitation creates a new invitation
 func (r *organizationRepository) CreateInvitation(ctx context.Context, inv *models.OrganizationInvitation) error {
 	query := `
-		INSERT INTO organization_invitations (id, organization_id, email, role, permissions, invited_by, token, expires_at, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		INSERT INTO organization_invitations (id, organization_id, email, role, role_id, permissions, invited_by, token, expires_at, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		ON CONFLICT (organization_id, email) DO UPDATE SET
 			role = EXCLUDED.role,
+			role_id = EXCLUDED.role_id,
 			permissions = EXCLUDED.permissions,
 			invited_by = EXCLUDED.invited_by,
 			token = EXCLUDED.token,
 			expires_at = EXCLUDED.expires_at
 	`
 	_, err := r.db.Exec(ctx, query,
-		inv.ID, inv.OrganizationID, inv.Email, inv.Role, inv.Permissions,
+		inv.ID, inv.OrganizationID, inv.Email, inv.Role, inv.RoleID, inv.Permissions,
 		inv.InvitedBy, inv.Token, inv.ExpiresAt, inv.CreatedAt,
 	)
 	return err
@@ -357,7 +366,7 @@ func (r *organizationRepository) CreateInvitation(ctx context.Context, inv *mode
 func (r *organizationRepository) GetInvitationByToken(ctx context.Context, token string) (*models.OrganizationInvitation, error) {
 	query := `
 		SELECT
-			i.id, i.organization_id, i.email, i.role, i.permissions, i.invited_by, i.token, i.expires_at, i.created_at,
+			i.id, i.organization_id, i.email, i.role, i.role_id, i.permissions, i.invited_by, i.token, i.expires_at, i.created_at,
 			o.id, o.name, o.slug, o.avatar_url, o.owner_user_id, o.created_at, o.updated_at,
 			o.deletion_scheduled_at, o.deletion_scheduled_for
 		FROM organization_invitations i
@@ -368,7 +377,7 @@ func (r *organizationRepository) GetInvitationByToken(ctx context.Context, token
 	var inv models.OrganizationInvitation
 	var org models.Organization
 	err := row.Scan(
-		&inv.ID, &inv.OrganizationID, &inv.Email, &inv.Role, &inv.Permissions,
+		&inv.ID, &inv.OrganizationID, &inv.Email, &inv.Role, &inv.RoleID, &inv.Permissions,
 		&inv.InvitedBy, &inv.Token, &inv.ExpiresAt, &inv.CreatedAt,
 		&org.ID, &org.Name, &org.Slug, &org.AvatarURL, &org.OwnerUserID, &org.CreatedAt, &org.UpdatedAt,
 		&org.DeletionScheduledAt, &org.DeletionScheduledFor,
