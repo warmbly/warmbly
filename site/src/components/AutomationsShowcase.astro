@@ -1,0 +1,122 @@
+---
+import Icon from './Icon.astro';
+import AutomationsDemo from './AutomationsDemo.astro';
+
+/**
+ * Landing-page centerpiece for Automations. Breaks the copy-beside-window
+ * rhythm of the feature showcase on purpose: the whole section is drawn as a
+ * builder canvas (edge-to-edge dot grid + faint flow strokes + floating node
+ * fragments), with the live demo window running a test end to end at
+ * near-full container width.
+ */
+const callouts = [
+  {
+    icon: 'gitBranch',
+    label: 'Branches like you think',
+    text: 'One IF chip routes on intent, confidence, source, or a random split. Yes goes right, no goes down, and the no path is still yours to wire.',
+  },
+  {
+    icon: 'layers',
+    label: 'Acts across your stack',
+    text: 'Seven built-in actions plus Slack, Discord, HubSpot, Salesforce, Pipedrive, Close and HMAC-signed webhooks. No keys to paste for automation tools.',
+  },
+  {
+    icon: 'flask',
+    label: 'Test before it is on',
+    text: 'Dry-run any automation against a sample event and read every node verdict, yes or no, before the switch ever flips.',
+  },
+];
+---
+<section class="auto-showcase relative isolate overflow-hidden border-y border-[color:var(--border)]">
+  <!-- The section IS the canvas: dot grid + giant faint flow strokes -->
+  <div class="absolute inset-0 pointer-events-none" aria-hidden="true" style="background: linear-gradient(180deg, #f6f9fd 0%, #ffffff 38%, #f2f7fd 100%);"></div>
+  <div class="absolute inset-0 pointer-events-none" aria-hidden="true" style="background-image: radial-gradient(#dbe6f3 1px, transparent 1px); background-size: 24px 24px; mask-image: radial-gradient(ellipse 90% 80% at 50% 40%, black 30%, transparent 100%); -webkit-mask-image: radial-gradient(ellipse 90% 80% at 50% 40%, black 30%, transparent 100%);"></div>
+  <svg class="absolute inset-0 w-full h-full pointer-events-none" aria-hidden="true" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice" fill="none">
+    <path d="M -40 240 C 280 240, 300 560, 720 560 S 1180 300, 1500 300" stroke="#bae6fd" stroke-width="1.5" opacity="0.55"/>
+    <path d="M -40 700 C 360 700, 420 420, 760 420 S 1220 660, 1500 660" stroke="#e0eaf6" stroke-width="1.5"/>
+    <circle cx="720" cy="560" r="4" fill="#7dd3fc" opacity="0.7"/>
+    <circle cx="760" cy="420" r="4" fill="#cbdcf0"/>
+  </svg>
+
+  <!-- Floating node fragments at the far edges (xl+) -->
+  <div class="hidden xl:block absolute inset-0 pointer-events-none select-none" aria-hidden="true">
+    <div class="auto-float absolute top-[16%] left-[3%]" style="--drift:-9px; animation-duration:7.4s;">
+      <div class="rotate-[-2deg] inline-flex items-center gap-1.5 rounded-lg border border-sky-200 bg-gradient-to-b from-sky-50 to-white px-2.5 py-1.5 shadow-[0_14px_30px_-14px_rgba(2,32,71,0.4)]">
+        <Icon name="gitBranch" size={12} class="text-sky-600" />
+        <span class="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-sky-500">if</span>
+        <span class="text-[12px] font-medium text-sky-800">meeting.booked</span>
+      </div>
+    </div>
+    <div class="auto-float absolute top-[62%] left-[5%]" style="--drift:-7px; animation-duration:8.6s; animation-delay:-2.2s;">
+      <div class="rotate-[2deg] inline-flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 shadow-[0_12px_26px_-14px_rgba(2,32,71,0.35)]">
+        <Icon name="check" size={11} class="text-emerald-600" />
+        <span class="text-[11.5px] font-medium text-emerald-700">Run passed &middot; 1.9 s</span>
+      </div>
+    </div>
+    <div class="auto-float absolute top-[22%] right-[3%]" style="--drift:-11px; animation-duration:7.0s; animation-delay:-1.1s;">
+      <div class="rotate-[2deg] w-[200px] rounded-[12px] bg-white ring-1 ring-slate-900/5 shadow-[0_18px_36px_-14px_rgba(2,32,71,0.4)] overflow-hidden">
+        <div class="flex items-center gap-2 border-b border-slate-200/70 bg-gradient-to-r from-slate-50 to-white px-2.5 py-1.5">
+          <span class="inline-flex size-5 items-center justify-center rounded-md bg-violet-50 text-violet-600 ring-1 ring-violet-200"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span>
+          <span class="flex-1 truncate text-[12px] font-semibold text-slate-800">Create a task</span>
+        </div>
+        <div class="px-2.5 py-1.5">
+          <div class="text-[8.5px] font-semibold uppercase tracking-[0.14em] text-slate-300">Then</div>
+          <div class="mt-0.5 truncate text-[11px] text-slate-500">Call back &middot; due in 2 days</div>
+        </div>
+      </div>
+    </div>
+    <div class="auto-float absolute top-[66%] right-[4%]" style="--drift:-8px; animation-duration:8.0s; animation-delay:-3s;">
+      <div class="rotate-[-2deg] inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full bg-white/95 ring-1 ring-slate-900/5 shadow-[0_10px_22px_-12px_rgba(2,32,71,0.4)]">
+        <Icon name="lock" size={11} class="text-slate-400" />
+        <span class="font-mono text-[10.5px] font-semibold text-slate-600">X-Warmbly-Signature: sha256=…</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="container-page relative py-16 md:py-24">
+    <div class="text-center max-w-3xl mx-auto">
+      <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7] mb-4">Automations</div>
+      <h2 class="text-[34px] md:text-[52px] font-semibold tracking-[-0.03em] leading-[1.04] text-heading">
+        When this happens, do that.
+      </h2>
+      <p class="mt-5 text-[15.5px] md:text-[16.5px] text-foreground/70 leading-relaxed max-w-2xl mx-auto">
+        Every reply, booked meeting, bounce and warmup dip is a trigger. Wire it to your stack on a canvas: branch on intent, post to Slack, open the deal, update the CRM. The one below is running its test right now. Press Test in the window to fire it again.
+      </p>
+    </div>
+
+    <!-- The live demo window -->
+    <div class="relative mt-10 md:mt-14 max-w-[1180px] mx-auto">
+      <AutomationsDemo />
+    </div>
+
+    <!-- Callouts -->
+    <div class="mt-12 md:mt-16 grid sm:grid-cols-3 gap-8 lg:gap-12 max-w-5xl mx-auto">
+      {callouts.map((c) => (
+        <div class="sm:border-l sm:border-[color:var(--border)] sm:pl-5">
+          <div class="flex items-center gap-2">
+            <Icon name={c.icon} size={14} class="text-[#0284c7]" />
+            <div class="text-[13.5px] font-semibold text-heading">{c.label}</div>
+          </div>
+          <p class="mt-2 text-[13px] text-foreground/65 leading-relaxed">{c.text}</p>
+        </div>
+      ))}
+    </div>
+
+    <div class="mt-12 flex flex-wrap items-center justify-center gap-3">
+      <a href="/automations/" class="inline-flex h-10 px-5 items-center gap-2 rounded-[10px] text-[14px] font-medium bg-[color:var(--brand)] text-white hover:bg-[color:var(--brand-strong)] transition-colors shadow-[0_10px_24px_-10px_rgba(2,132,199,0.65)]">
+        Explore automations
+        <Icon name="arrowRight" size={13} />
+      </a>
+      <a href="https://app.warmbly.com/register" class="inline-flex h-10 px-4 items-center gap-1.5 text-[13.5px] font-medium text-foreground/75 hover:text-foreground transition-colors">
+        or start free
+        <Icon name="arrowUpRight" size={12} />
+      </a>
+    </div>
+  </div>
+
+  <style>
+    .auto-float { animation-name: autoFloat; animation-timing-function: ease-in-out; animation-iteration-count: infinite; animation-direction: alternate; will-change: transform; }
+    @keyframes autoFloat { from { transform: translateY(0); } to { transform: translateY(var(--drift, -8px)); } }
+    @media (prefers-reduced-motion: reduce) { .auto-float { animation: none; } }
+  </style>
+</section>

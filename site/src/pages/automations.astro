@@ -1,0 +1,624 @@
+---
+import Layout from '../layouts/Layout.astro';
+import HeroAtmosphere from '../components/HeroAtmosphere.astro';
+import Icon from '../components/Icon.astro';
+import CTA from '../components/CTA.astro';
+import AutomationsDemo from '../components/AutomationsDemo.astro';
+
+// ===========================================================================
+// Automations page. The centrepiece is the live builder demo (AutomationsDemo,
+// shared with the landing page): the real /app/automations/:id canvas with a
+// test run firing end to end. Catalog content mirrors the product:
+//   web/src automations builder        (trigger events, native + integration
+//                                       actions, condition fields, test runs)
+//   migrations 000033..000035          (automations, branching graph, history)
+//
+// Astro JSX caveat: template tokens are written as {`{{.Field}}`}.
+// ===========================================================================
+
+// --- Trigger events ----------------------------------------------------------
+const triggers = [
+  { icon: 'reply',         label: 'Prospect replies',           key: 'campaign.reply_received', desc: 'The classifier labels intent and confidence before the trigger fires, so you can branch on both.' },
+  { icon: 'calendarCheck', label: 'Meeting booked',             key: 'meeting.booked',          desc: 'Calendly and Cal.com invitees, matched back to the contact that booked.' },
+  { icon: 'calendarClock', label: 'Meeting rescheduled',        key: 'meeting.rescheduled',     desc: 'Same payload, new time, so downstream reminders stay honest.' },
+  { icon: 'calendarX',     label: 'Meeting canceled',           key: 'meeting.canceled',        desc: 'Catch the cancellation and put the contact back to work.' },
+  { icon: 'mailWarning',   label: 'Email bounces',              key: 'campaign.email_bounced',  desc: 'Hard or soft, with the provider and reason attached to the event.' },
+  { icon: 'userMinus',     label: 'Contact unsubscribes',       key: 'campaign.unsubscribed',   desc: 'Suppression already happened. This is your cue to sync it everywhere else.' },
+  { icon: 'activity',      label: 'Warmup health changes',      key: 'warmup.health_changed',   desc: 'A mailbox moves bands: healthy, watch, quarantined. React before placement slips.' },
+  { icon: 'shieldAlert',   label: 'Spam complaint',             key: 'deliverability.complaint', desc: 'The signal worth reacting to fastest. Page the channel, pause the risk.' },
+  { icon: 'workflow',      label: 'Launched by a campaign step', key: 'campaign.action',        desc: 'A sequence action node can fire any automation, per contact, mid-flow.' },
+];
+
+const tIcons: Record<string, string> = {
+  reply:         '<polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/>',
+  calendarCheck: '<path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="m9 16 2 2 4-4"/>',
+  calendarClock: '<path d="M21 7.5V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h3.5"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h5"/><path d="M17.5 17.5 16 16.3V14"/><circle cx="16" cy="16" r="6"/>',
+  calendarX:     '<path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="m14 14-4 4"/><path d="m10 14 4 4"/>',
+  mailWarning:   '<path d="M22 10.5V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v12c0 1.1.9 2 2 2h12.5"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/><path d="M20 14v4"/><path d="M20 22v.01"/>',
+  userMinus:     '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="22" x2="16" y1="11" y2="11"/>',
+  activity:      '<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>',
+  shieldAlert:   '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="M12 8v4"/><path d="M12 16h.01"/>',
+  workflow:      '<rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="15" width="6" height="6" rx="1"/><path d="M6 9v4a2 2 0 0 0 2 2h7"/>',
+};
+
+const aIcons: Record<string, string> = {
+  tag:         '<path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/>',
+  checkSquare: '<polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
+  briefcase:   '<path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/><rect width="20" height="14" x="2" y="6" rx="2"/>',
+  userMinus:   '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="22" x2="16" y1="11" y2="11"/>',
+  zap:         '<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>',
+  send:        '<path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.5.5 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/><path d="m21.854 2.147-10.94 10.939"/>',
+  gitBranch:   '<line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>',
+  checkCircle: '<path d="M21.801 10A10 10 0 1 1 17 3.335"/><path d="m9 11 3 3L22 4"/>',
+  xCircle:     '<circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/>',
+};
+
+// --- Actions: built in -------------------------------------------------------
+const nativeActions = [
+  { icon: 'tag',         tint: 'bg-emerald-50 text-emerald-600 ring-emerald-200', name: 'Add a tag',                key: 'warmbly.add_tag',        desc: 'Label the contact for the next segment or suppression list.' },
+  { icon: 'tag',         tint: 'bg-amber-50 text-amber-600 ring-amber-200',       name: 'Remove a tag',             key: 'warmbly.remove_tag',     desc: 'Pull them out of a segment the moment the reason expires.' },
+  { icon: 'checkSquare', tint: 'bg-violet-50 text-violet-600 ring-violet-200',    name: 'Create a task',            key: 'warmbly.create_task',    desc: 'Typed, owned, with a due date: call back, review, follow up.' },
+  { icon: 'briefcase',   tint: 'bg-sky-50 text-sky-600 ring-sky-200',             name: 'Create a deal',            key: 'warmbly.create_deal',    desc: 'Open the pipeline record with a stage, value and currency.' },
+  { icon: 'briefcase',   tint: 'bg-sky-50 text-sky-600 ring-sky-200',             name: 'Move the deal stage',      key: 'warmbly.move_deal_stage', desc: 'Advance or park the deal as the signal comes in.' },
+  { icon: 'userMinus',   tint: 'bg-rose-50 text-rose-600 ring-rose-200',          name: 'Unsubscribe the contact',  key: 'warmbly.unsubscribe',    desc: 'Workspace-wide suppression, applied before anything else queues.' },
+  { icon: 'zap',         tint: 'bg-indigo-50 text-indigo-600 ring-indigo-200',    name: 'Run another automation',   key: 'warmbly.run_automation', desc: 'Compose playbooks. Self-reference is blocked, so no loops.' },
+];
+
+// --- Actions: across the stack ----------------------------------------------
+const stackActions = [
+  { initial: 'S',  tile: 'bg-fuchsia-50 text-fuchsia-600 ring-fuchsia-200', name: 'Slack',      action: 'Send a channel message, templated per event.' },
+  { initial: 'D',  tile: 'bg-indigo-50 text-indigo-600 ring-indigo-200',    name: 'Discord',    action: 'Same message action, pointed at a Discord channel.' },
+  { initial: 'H',  tile: 'bg-orange-50 text-orange-600 ring-orange-200',    name: 'HubSpot',    action: 'Create or update the contact as events land.' },
+  { initial: 'Sf', tile: 'bg-sky-50 text-sky-600 ring-sky-200',             name: 'Salesforce', action: 'Upsert the contact into your org.' },
+  { initial: 'P',  tile: 'bg-slate-100 text-slate-700 ring-slate-300',      name: 'Pipedrive',  action: 'Create or update the person record.' },
+  { initial: 'C',  tile: 'bg-indigo-50 text-indigo-600 ring-indigo-200',    name: 'Close',      action: 'Upsert the lead, ready for the calling queue.' },
+  { initial: '{}', tile: 'bg-sky-50 text-sky-600 ring-sky-200',             name: 'Webhook',    action: 'HMAC-signed POST to any URL you run.' },
+];
+
+// --- Condition surface --------------------------------------------------------
+const conditionFields = [
+  { field: 'intent',        on: 'replies',       type: 'enum' },
+  { field: 'confidence',    on: 'replies',       type: 'number' },
+  { field: 'subject',       on: 'replies',       type: 'string' },
+  { field: 'source',        on: 'meetings',      type: 'enum' },
+  { field: 'event_name',    on: 'meetings',      type: 'string' },
+  { field: 'provider',      on: 'deliverability', type: 'enum' },
+  { field: 'reason',        on: 'deliverability', type: 'string' },
+  { field: 'new_state',     on: 'warmup health', type: 'enum' },
+  { field: 'contact_email', on: 'everything',    type: 'string' },
+];
+
+const operators = [
+  { type: 'string', ops: 'equals · not equals · contains · exists' },
+  { type: 'number', ops: 'greater or equal · less or equal · equals' },
+  { type: 'enum',   ops: 'equals · not equals · exists' },
+  { type: 'random', ops: 'chance, a weighted split for testing playbooks' },
+];
+
+// --- Template variables -------------------------------------------------------
+const variables = ['{{.contact_email}}', '{{.intent}}', '{{.confidence}}', '{{.subject}}', '{{.snippet}}', '{{.campaign_id}}'];
+
+// --- Trust strip ---------------------------------------------------------------
+const trust = [
+  { icon: 'lock',   t: 'Signed deliveries',  d: 'Every webhook a run sends carries an HMAC SHA-256 signature header. Verify it in four lines and drop anything that does not match.' },
+  { icon: 'shield', t: 'Throttled, fail-open', d: 'Dispatch is rate-limited per organization and event with generous plan-based limits. If the limiter itself has a bad day, events still flow.' },
+  { icon: 'layers', t: 'Safe to compose',    d: 'Automations can run automations, and campaign steps can launch them per contact. Anything referenced by a live campaign step cannot be deleted out from under it.' },
+  { icon: 'key',    t: 'No keys to paste',   d: 'Automation tools connect in one click. OAuth where the provider has a per-user identity, a minted webhook URL for the rest.' },
+];
+
+// --- FAQ -----------------------------------------------------------------------
+const faq = [
+  ['What can start an automation?',
+   'Nine triggers: a classified reply, a booked, rescheduled or canceled meeting, a bounce, an unsubscribe, a warmup health change, a spam complaint, and a campaign step that launches the automation per contact mid-sequence.'],
+  ['Do I still need Zapier?',
+   'For the common paths, no: Slack, Discord, HubSpot, Salesforce, Pipedrive, Close and the built-in CRM actions are direct. Zapier, Make and n8n still connect with a scoped key when you want them, and the signed webhook action reaches anything else.'],
+  ['What happens when a step fails?',
+   'Each run records a per-node result. A failed step keeps the response it got, the run shows up in history with exactly which node broke and why, and the verdicts of the other nodes stay readable. Test runs exist so most failures never reach production.'],
+  ['Can one automation run another?',
+   'Yes. The run-another-automation action composes playbooks, and a campaign sequence step can launch an automation for each contact that reaches it. Self-reference is blocked in the picker, and an automation referenced by a campaign step cannot be deleted.'],
+  ['Does the test run send anything?',
+   'No. Test is a dry run against a sample event for your trigger. Every node reports what it would do, conditions report yes or no, and nothing leaves Warmbly until the automation is switched on.'],
+];
+---
+<Layout
+  title="Outbound Automations: Visual Workflow Builder | Warmbly"
+  description="When a reply lands, do everything else automatically: branch on intent, post to Slack, open the deal, update HubSpot or Salesforce, fire a signed webhook. A visual builder for every Warmbly event, with dry runs and full run history."
+>
+  <!-- ============================================================
+       HERO · sky, with floating builder fragments (xl+)
+  ============================================================ -->
+  <section class="relative isolate overflow-hidden">
+    <HeroAtmosphere />
+
+    <div class="hidden xl:block absolute inset-0 z-0 pointer-events-none select-none" aria-hidden="true">
+      <!-- TOP-LEFT · trigger node, above the headline band -->
+      <div class="hero-float absolute top-[11%] left-[calc(50%_-_500px)] z-30" style="--drift:-10px;animation-duration:7.6s;animation-delay:-1.4s">
+        <div class="rotate-[-2deg] w-[212px] rounded-[12px] bg-white ring-1 ring-slate-900/5 shadow-[0_2px_4px_-2px_rgba(2,32,71,0.25),0_18px_36px_-12px_rgba(2,32,71,0.5)] overflow-hidden">
+          <div class="flex items-center gap-2 border-b border-slate-200/70 bg-gradient-to-r from-sky-50/80 to-white px-2.5 py-1.5">
+            <span class="inline-flex size-5 items-center justify-center rounded-md bg-sky-100 text-sky-600 ring-1 ring-sky-200/70"><Icon name="zap" size={11} /></span>
+            <span class="flex-1 truncate text-[12px] font-semibold text-slate-800">Prospect replies</span>
+            <span class="rounded bg-sky-600 px-1.5 py-px text-[8.5px] font-semibold uppercase tracking-[0.12em] text-white">Trigger</span>
+          </div>
+          <div class="px-2.5 py-1.5">
+            <div class="text-[8.5px] font-semibold uppercase tracking-[0.14em] text-slate-300">When</div>
+            <div class="mt-0.5 truncate font-mono text-[10.5px] text-slate-500">campaign.reply_received</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TOP-RIGHT · IF chip -->
+      <div class="hero-float absolute top-[9%] right-[calc(50%_-_452px)] z-30" style="--drift:-12px;animation-duration:7.2s;animation-delay:-2.1s">
+        <div class="rotate-[2deg] inline-flex items-center gap-1.5 rounded-lg border border-sky-200 bg-gradient-to-b from-sky-50 to-white px-2.5 py-1.5 shadow-[0_2px_4px_-2px_rgba(2,32,71,0.25),0_16px_32px_-12px_rgba(2,32,71,0.5)]">
+          <Icon name="gitBranch" size={12} class="text-sky-600" />
+          <span class="text-[9px] font-semibold uppercase tracking-[0.14em] text-sky-500">if</span>
+          <span class="text-[12px] font-medium text-sky-800">intent is positive</span>
+        </div>
+      </div>
+
+      <!-- TOP-RIGHT · run passed pill, staggered under the IF chip but still
+           above the headline so it never touches the title -->
+      <div class="hero-float absolute top-[20%] right-[calc(50%_-_496px)] z-20" style="--drift:-7px;animation-duration:8.2s;animation-delay:-0.7s">
+        <div class="rotate-[-2deg] inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full bg-white/95 ring-1 ring-slate-900/5 shadow-[0_8px_20px_-10px_rgba(2,32,71,0.4)]">
+          <Icon name="check" size={12} class="text-emerald-600" />
+          <span class="font-mono text-[11px] font-semibold text-slate-700">run passed &middot; 1.9 s</span>
+        </div>
+      </div>
+
+      <!-- BOTTOM-LEFT · slack action, below the CTA row -->
+      <div class="hero-float absolute top-[80%] left-[calc(50%_-_478px)] z-20" style="--drift:-9px;animation-duration:7.9s;animation-delay:-2.6s">
+        <div class="rotate-[2deg] inline-flex items-center gap-2 rounded-[12px] bg-white ring-1 ring-slate-900/5 shadow-[0_2px_3px_-2px_rgba(2,32,71,0.2),0_14px_30px_-14px_rgba(2,32,71,0.45)] px-3 py-2">
+          <span class="inline-flex size-5 items-center justify-center rounded-md bg-fuchsia-50 text-fuchsia-600 ring-1 ring-fuchsia-200 text-[10px] font-bold">S</span>
+          <span class="text-[12px] font-semibold text-slate-800">Notify #sales</span>
+        </div>
+      </div>
+
+      <!-- BOTTOM-RIGHT · signature pill, below the CTA row -->
+      <div class="hero-float absolute top-[83%] right-[calc(50%_-_466px)] z-10" style="--drift:-8px;animation-duration:7.0s;animation-delay:-3.2s">
+        <div class="rotate-[-2deg] inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full bg-white/95 ring-1 ring-slate-900/5 shadow-[0_10px_24px_-12px_rgba(2,32,71,0.4)]">
+          <Icon name="lock" size={11} class="text-slate-400" />
+          <span class="font-mono text-[10.5px] font-semibold text-slate-600">X-Warmbly-Signature: sha256=…</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="container-page relative z-10 pt-16 md:pt-24 pb-24 md:pb-32 text-center">
+      <div class="inline-flex items-center gap-2 h-7 pl-1 pr-3 rounded-full bg-white/15 backdrop-blur ring-1 ring-white/25 text-[12px] text-white/95 shadow-[0_4px_14px_-4px_rgba(0,0,0,0.25)]">
+        <span class="inline-flex items-center h-5 px-1.5 rounded-full text-[10.5px] font-semibold uppercase tracking-[0.06em] bg-white" style="color:#0369a1;">
+          Automations
+        </span>
+        A visual builder for every Warmbly event
+      </div>
+
+      <h1 class="mt-8 md:mt-10 text-[44px] sm:text-6xl md:text-[72px] lg:text-[80px] font-semibold tracking-[-0.04em] leading-[0.98] text-white max-w-4xl mx-auto">
+        When this happens,<br/>do that.
+      </h1>
+      <p class="mt-6 text-[17px] md:text-[19px] text-white/80 max-w-2xl mx-auto leading-relaxed">
+        A reply lands, a meeting books, a mailbox slips. Wire each moment to your playbook on a canvas: branch on intent, post to Slack, open the deal, update the CRM, fire a signed webhook. Then dry-run it before it ever touches production.
+      </p>
+
+      <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
+        <a href="https://app.warmbly.com/register" class="inline-flex h-11 px-5 items-center gap-2 rounded-[10px] text-[14.5px] font-semibold bg-white hover:bg-white hover:-translate-y-0.5 hover:shadow-[0_12px_28px_-6px_rgba(0,0,0,0.3)] transition-all duration-200 ease-out shadow-[0_4px_14px_-2px_rgba(0,0,0,0.18)]">
+          <span style="color:#075985;">Build your first automation</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#075985" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>
+          </svg>
+        </a>
+        <a href="#demo" class="inline-flex h-11 px-5 items-center rounded-[10px] text-[14.5px] font-medium bg-white/10 backdrop-blur ring-1 ring-white/40 text-white hover:bg-white/20 hover:-translate-y-0.5 transition-all duration-200 ease-out">
+          Watch it run
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <style>
+    .hero-float { animation-name: heroFloat; animation-timing-function: ease-in-out; animation-iteration-count: infinite; animation-direction: alternate; will-change: transform; }
+    @keyframes heroFloat { from { transform: translateY(0); } to { transform: translateY(var(--drift, -10px)); } }
+    @media (prefers-reduced-motion: reduce) { .hero-float { animation: none; } }
+  </style>
+
+  <!-- ============================================================
+       LIVE DEMO · the real builder, running a test end to end
+  ============================================================ -->
+  <section id="demo" class="relative border-b border-[color:var(--border)] py-20 md:py-28 scroll-mt-4 overflow-hidden">
+    <div class="absolute inset-0 pointer-events-none" aria-hidden="true" style="background: linear-gradient(180deg, #f6f9fd 0%, #ffffff 45%, #f2f7fd 100%);"></div>
+    <div class="absolute inset-0 pointer-events-none" aria-hidden="true" style="background-image: radial-gradient(#dbe6f3 1px, transparent 1px); background-size: 24px 24px; mask-image: radial-gradient(ellipse 90% 80% at 50% 35%, black 25%, transparent 100%); -webkit-mask-image: radial-gradient(ellipse 90% 80% at 50% 35%, black 25%, transparent 100%);"></div>
+
+    <div class="container-page relative">
+      <div class="max-w-2xl mb-10 md:mb-12">
+        <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7] mb-3">Live demo</div>
+        <h2 class="text-[32px] md:text-[44px] font-semibold tracking-[-0.03em] leading-[1.05] text-heading">
+          Watch a run, end to end.
+        </h2>
+        <p class="mt-4 text-[15.5px] text-foreground/70 leading-relaxed">
+          This is the builder as it ships. A positive reply comes in, the IF chip routes it, and the yes path posts to Slack, opens the deal and updates HubSpot while the test panel checks off every node. The no path waits its turn. Press Test in the window to fire it again.
+        </p>
+      </div>
+
+      <div class="max-w-[1180px]">
+        <AutomationsDemo />
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       TRIGGERS · nine moments it can fire
+  ============================================================ -->
+  <section class="border-b border-[color:var(--border)] py-20 md:py-28">
+    <div class="container-page">
+      <div class="max-w-2xl mb-12">
+        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Triggers</div>
+        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
+          Nine moments it can fire.
+        </h2>
+        <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed">
+          Every automation starts from one event. Replies arrive already classified, meetings arrive matched to the contact, and a campaign step can launch an automation for each contact that reaches it.
+        </p>
+      </div>
+
+      <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-px bg-[color:var(--border)] rounded-[14px] overflow-hidden ring-1 ring-[color:var(--border)]">
+        {triggers.map((t) => (
+          <div class="bg-white p-6">
+            <div class="flex items-center gap-2.5">
+              <span class="inline-flex size-8 items-center justify-center rounded-md bg-sky-100 text-sky-600 ring-1 ring-sky-200/70">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" set:html={tIcons[t.icon]}></svg>
+              </span>
+              <div class="min-w-0">
+                <div class="text-[14.5px] font-semibold text-heading leading-tight">{t.label}</div>
+                <div class="mt-0.5 font-mono text-[10.5px] text-muted-foreground truncate">{t.key}</div>
+              </div>
+            </div>
+            <p class="mt-3.5 text-[13px] text-foreground/65 leading-relaxed">{t.desc}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       ACTIONS · built-in + across the stack
+  ============================================================ -->
+  <section class="border-b border-[color:var(--border)] bg-[color:var(--surface-1)]/40 py-20 md:py-28">
+    <div class="container-page grid lg:grid-cols-[1fr_1.5fr] gap-12 lg:gap-20 items-start">
+      <div class="lg:sticky lg:top-24" style="align-self: start;">
+        <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7] mb-3">Actions</div>
+        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
+          Do it in Warmbly. Do it everywhere else.
+        </h2>
+        <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed max-w-md">
+          Seven actions ship built in and need no connection at all. The rest reach your stack through the integrations you have already connected, with message templates rendered per event.
+        </p>
+        <ul class="mt-6 space-y-2.5 text-[14px] text-foreground/85">
+          <li class="flex items-start gap-2"><Icon name="check" size={13} class="text-[#0284c7] mt-1 shrink-0" /><span>Built-in actions run inside Warmbly: tags, tasks, deals, suppression.</span></li>
+          <li class="flex items-start gap-2"><Icon name="check" size={13} class="text-[#0284c7] mt-1 shrink-0" /><span>Stack actions reuse the connection: pick it from a dropdown, done.</span></li>
+        </ul>
+      </div>
+
+      <div class="space-y-4">
+        <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden">
+          <div class="px-5 py-3 bg-[color:var(--surface-1)] border-b border-[color:var(--border)] text-[10px] uppercase tracking-[0.18em] font-mono text-muted-foreground">Built in &middot; no connection needed</div>
+          {nativeActions.map((a) => (
+            <div class="flex items-center gap-3 px-5 py-3 border-b border-[color:var(--border)] last:border-b-0">
+              <span class={`inline-flex size-7 shrink-0 items-center justify-center rounded-md ring-1 ${a.tint}`}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={aIcons[a.icon]}></svg>
+              </span>
+              <div class="min-w-0 flex-1">
+                <span class="text-[13px] font-medium text-heading">{a.name}</span>
+                <span class="hidden md:inline text-[12.5px] text-foreground/55"> &middot; {a.desc}</span>
+              </div>
+              <code class="hidden sm:inline font-mono text-[10.5px] text-muted-foreground shrink-0">{a.key}</code>
+            </div>
+          ))}
+        </div>
+
+        <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden">
+          <div class="px-5 py-3 bg-[color:var(--surface-1)] border-b border-[color:var(--border)] text-[10px] uppercase tracking-[0.18em] font-mono text-muted-foreground">Across your stack</div>
+          {stackActions.map((s) => (
+            <div class="flex items-center gap-3 px-5 py-3 border-b border-[color:var(--border)] last:border-b-0">
+              <span class={`inline-flex size-7 shrink-0 items-center justify-center rounded-md ring-1 text-[11px] font-bold ${s.tile}`}>{s.initial}</span>
+              <div class="min-w-0 flex-1">
+                <span class="text-[13px] font-medium text-heading">{s.name}</span>
+                <span class="text-[12.5px] text-foreground/55"> &middot; {s.action}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       BRANCHING · the IF surface
+  ============================================================ -->
+  <section class="border-b border-[color:var(--border)] py-20 md:py-28">
+    <div class="container-page grid lg:grid-cols-[1fr_1.3fr] gap-12 lg:gap-16 items-start">
+      <div class="lg:sticky lg:top-24" style="align-self: start;">
+        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Branching</div>
+        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
+          One chip, two paths, full graph.
+        </h2>
+        <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed max-w-md">
+          A condition reads one field off the event and routes it: yes out the right dot, no out the bottom. Chain conditions for AND logic, point both paths anywhere, and converge them back when the playbooks rejoin.
+        </p>
+        <ul class="mt-6 space-y-2.5 text-[14px] text-foreground/85">
+          <li class="flex items-start gap-2"><Icon name="check" size={13} class="text-[#0284c7] mt-1 shrink-0" /><span>Fields follow the trigger: intent and confidence on replies, source on meetings, provider and reason on bounces.</span></li>
+          <li class="flex items-start gap-2"><Icon name="check" size={13} class="text-[#0284c7] mt-1 shrink-0" /><span>A random split routes a weighted share of events down a different path.</span></li>
+        </ul>
+      </div>
+
+      <div class="space-y-4">
+        <!-- the IF editor, drawn out -->
+        <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden">
+          <div class="flex items-center gap-2 border-b border-[color:var(--border)] px-4 py-3">
+            <Icon name="gitBranch" size={14} class="text-sky-600" />
+            <div>
+              <div class="text-[10px] uppercase tracking-[0.14em] text-muted-foreground font-mono">Condition</div>
+              <div class="text-[11.5px] text-foreground/55">on campaign.reply_received</div>
+            </div>
+          </div>
+          <div class="p-4 grid sm:grid-cols-3 gap-2.5">
+            <div>
+              <div class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium mb-1.5">Field</div>
+              <div class="h-8 px-2.5 rounded-md border border-slate-200 bg-white text-[12.5px] text-slate-900 inline-flex w-full items-center justify-between">intent <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="text-slate-400"><path d="m6 9 6 6 6-6"/></svg></div>
+            </div>
+            <div>
+              <div class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium mb-1.5">Operator</div>
+              <div class="h-8 px-2.5 rounded-md border border-slate-200 bg-white text-[12.5px] text-slate-900 inline-flex w-full items-center justify-between">equals <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="text-slate-400"><path d="m6 9 6 6 6-6"/></svg></div>
+            </div>
+            <div>
+              <div class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium mb-1.5">Value</div>
+              <div class="h-8 px-2.5 rounded-md border border-sky-300 ring-2 ring-sky-100 bg-white text-[12.5px] text-slate-900 inline-flex w-full items-center">positive</div>
+            </div>
+          </div>
+          <div class="px-4 pb-4 flex flex-wrap items-center gap-1.5">
+            <span class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium mr-1">Fields by trigger</span>
+            {conditionFields.map((f) => (
+              <span class="inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded border border-slate-200 bg-slate-50 font-mono text-[10.5px] text-slate-600">
+                {f.field}
+                <span class="text-slate-400">&middot; {f.on}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+
+        <!-- operators per type -->
+        <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden">
+          <div class="grid grid-cols-[110px_minmax(0,1fr)] px-5 py-3 bg-[color:var(--surface-1)] border-b border-[color:var(--border)] text-[10px] uppercase tracking-[0.18em] font-mono text-muted-foreground">
+            <div>Field type</div>
+            <div>Operators</div>
+          </div>
+          {operators.map((o) => (
+            <div class="grid grid-cols-[110px_minmax(0,1fr)] px-5 py-3 border-b border-[color:var(--border)] last:border-b-0 items-center">
+              <span class="font-mono text-[12px] text-heading">{o.type}</span>
+              <span class="text-[12.5px] text-foreground/70">{o.ops}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       TEMPLATING · per-event Go templates, rendered
+  ============================================================ -->
+  <section class="border-b border-[color:var(--border)] bg-[color:var(--surface-1)]/40 py-20 md:py-28">
+    <div class="container-page grid lg:grid-cols-[1fr_1.3fr] gap-12 lg:gap-16 items-start">
+      <div class="lg:sticky lg:top-24" style="align-self: start;">
+        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Templating</div>
+        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
+          Messages written from the event.
+        </h2>
+        <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed max-w-md">
+          Slack messages, Discord messages and webhook payloads are Go templates, the same syntax as the rest of Warmbly. Pull any field the trigger carries and the message reads like a teammate wrote it.
+        </p>
+        <div class="mt-6">
+          <div class="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground mb-2">Reply event fields</div>
+          <div class="flex flex-wrap gap-1.5">
+            {variables.map((v) => (
+              <code class="inline-flex items-center h-6 px-2 rounded-md bg-[#0c1224] text-[11.5px] font-mono text-sky-300 ring-1 ring-white/10">{v}</code>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden">
+        <!-- template source -->
+        <div class="bg-[#0c1224]">
+          <div class="px-4 py-2.5 border-b border-white/10 flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-[#ff5f56]/80"></span>
+            <span class="w-2.5 h-2.5 rounded-full bg-[#ffbd2e]/80"></span>
+            <span class="w-2.5 h-2.5 rounded-full bg-[#27c93f]/80"></span>
+            <span class="ml-2 text-[11px] font-mono text-white/55">slack message &middot; template</span>
+          </div>
+          <div class="p-5 font-mono text-[12.5px] leading-[1.85] text-white/85">
+            <div>:fire: <span class="text-sky-300">{`{{.contact_email}}`}</span> replied to <span class="text-sky-300">{`{{.subject}}`}</span></div>
+            <div>intent <span class="text-sky-300">{`{{.intent}}`}</span> at <span class="text-sky-300">{`{{.confidence}}`}</span>% &middot; &ldquo;<span class="text-sky-300">{`{{.snippet}}`}</span>&rdquo;</div>
+          </div>
+        </div>
+
+        <!-- rendered slack message -->
+        <div class="p-5">
+          <div class="flex items-center gap-2 mb-3 text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
+            <Icon name="arrowRight" size={12} class="text-[#0284c7]" />
+            Lands in #sales as
+          </div>
+          <div class="rounded-[10px] bg-[color:var(--surface-1)]/60 ring-1 ring-[color:var(--border)] p-4">
+            <div class="flex items-start gap-2.5">
+              <span class="inline-flex size-8 shrink-0 items-center justify-center rounded-md bg-fuchsia-50 text-fuchsia-600 ring-1 ring-fuchsia-200 text-[13px] font-bold">S</span>
+              <div class="min-w-0">
+                <div class="flex items-baseline gap-2">
+                  <span class="text-[13px] font-semibold text-heading">Warmbly</span>
+                  <span class="inline-flex items-center h-4 px-1 rounded-sm bg-slate-200/80 text-[9px] font-semibold uppercase tracking-wide text-slate-500">app</span>
+                  <span class="text-[11px] text-muted-foreground font-mono">2:14 pm</span>
+                </div>
+                <p class="mt-1 text-[13.5px] leading-relaxed text-foreground/85">
+                  🔥 <span class="text-[#0369a1] font-medium">maya@northwind.dev</span> replied to <span class="font-medium text-heading">Re: Quick question</span><br/>
+                  intent <span class="text-emerald-700 font-medium">positive</span> at 92% &middot; &ldquo;Thursday works for me&rdquo;
+                </p>
+              </div>
+            </div>
+          </div>
+          <p class="mt-3 text-[12px] text-foreground/60 leading-relaxed">
+            Rendered with the event that fired the run. A blank field never breaks the message, it just renders empty.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       TEST RUNS & HISTORY
+  ============================================================ -->
+  <section class="border-b border-[color:var(--border)] py-20 md:py-28">
+    <div class="container-page grid lg:grid-cols-[1fr_1.3fr] gap-12 lg:gap-16 items-start">
+      <div class="lg:sticky lg:top-24" style="align-self: start;">
+        <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7] mb-3">Test runs &amp; history</div>
+        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
+          Know what it did, every time.
+        </h2>
+        <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed max-w-md">
+          Test fires a dry run against a sample event: every node reports what it would do, every condition reports yes or no, and nothing leaves Warmbly. Once live, every real run lands in history with per-node results, so a broken step is a read, not an investigation.
+        </p>
+        <ul class="mt-6 space-y-2.5 text-[14px] text-foreground/85">
+          <li class="flex items-start gap-2"><Icon name="check" size={13} class="text-[#0284c7] mt-1 shrink-0" /><span>Per-node verdicts, with the provider response kept on failures.</span></li>
+          <li class="flex items-start gap-2"><Icon name="check" size={13} class="text-[#0284c7] mt-1 shrink-0" /><span>Branch decisions are recorded too: you can see which path a contact took.</span></li>
+        </ul>
+      </div>
+
+      <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden">
+        <div class="flex items-center gap-2 border-b border-[color:var(--border)] px-4 py-3">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse-soft"></span>
+          <div class="text-[10px] uppercase tracking-[0.14em] text-muted-foreground font-mono">Run history &middot; Reply to revenue</div>
+        </div>
+
+        <!-- run 1: expanded -->
+        <div class="border-b border-[color:var(--border)]">
+          <div class="flex items-center gap-2.5 px-4 py-3">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-emerald-500 shrink-0" set:html={aIcons.checkCircle}></svg>
+            <span class="text-[13px] font-medium text-heading">Run passed</span>
+            <span class="text-[11.5px] text-muted-foreground font-mono">2 min ago &middot; 5 steps &middot; 1.9 s</span>
+          </div>
+          <div class="px-4 pb-3 space-y-1.5">
+            {[
+              { label: 'Trigger · Prospect replies', right: 'maya@northwind.dev', ok: true },
+              { label: 'intent is positive · ≥ 80%', right: 'yes · 92%', ok: true },
+              { label: 'Slack message · #sales', right: '212 ms', ok: true },
+              { label: 'Deal created · Discovery', right: '$4,800', ok: true },
+              { label: 'HubSpot contact updated', right: '2 fields', ok: true },
+            ].map((r) => (
+              <div class="flex items-center gap-2 rounded-md border border-slate-200 px-2.5 py-1.5">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-emerald-500 shrink-0" set:html={aIcons.checkCircle}></svg>
+                <span class="text-[11.5px] font-medium text-slate-700 truncate">{r.label}</span>
+                <span class="ml-auto shrink-0 font-mono text-[10.5px] text-slate-400">{r.right}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <!-- run 2: took the no branch -->
+        <div class="flex items-center gap-2.5 px-4 py-3 border-b border-[color:var(--border)]">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-slate-400 shrink-0" set:html={aIcons.gitBranch}></svg>
+          <span class="text-[13px] font-medium text-heading">Run passed</span>
+          <span class="text-[11.5px] text-muted-foreground font-mono">1 h ago &middot; took the no path &middot; 2 steps</span>
+          <span class="ml-auto inline-flex items-center h-5 px-1.5 rounded text-[10px] font-medium bg-slate-100 text-slate-500 border border-slate-200">no &middot; 41%</span>
+        </div>
+
+        <!-- run 3: failed -->
+        <div class="px-4 py-3">
+          <div class="flex items-center gap-2.5">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-rose-500 shrink-0" set:html={aIcons.xCircle}></svg>
+            <span class="text-[13px] font-medium text-heading">Run failed</span>
+            <span class="text-[11.5px] text-muted-foreground font-mono">yesterday &middot; step 3 of 5</span>
+            <span class="ml-auto inline-flex items-center h-5 px-1.5 rounded text-[10px] font-medium bg-rose-50 text-rose-600 border border-rose-200">failed</span>
+          </div>
+          <div class="mt-2 flex items-center gap-2 rounded-md border border-rose-200 bg-rose-50/50 px-2.5 py-1.5">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-rose-500 shrink-0" set:html={aIcons.xCircle}></svg>
+            <span class="text-[11.5px] font-medium text-slate-700 truncate">Slack message &middot; #sales</span>
+            <span class="ml-auto shrink-0 font-mono text-[10.5px] text-rose-600">404 &middot; channel_not_found</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       TRUST · how it behaves under load and failure
+  ============================================================ -->
+  <section class="border-b border-[color:var(--border)] bg-[color:var(--surface-1)]/40 py-20 md:py-24">
+    <div class="container-page">
+      <div class="max-w-2xl mb-12">
+        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Plumbing</div>
+        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
+          Built to not wake you up.
+        </h2>
+      </div>
+
+      <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-px bg-[color:var(--border)] rounded-[12px] overflow-hidden ring-1 ring-[color:var(--border)]">
+        {trust.map((c) => (
+          <div class="bg-white p-6">
+            <Icon name={c.icon} size={16} class="text-[#0284c7]" />
+            <div class="mt-3.5 text-[15px] font-semibold text-heading">{c.t}</div>
+            <p class="mt-1.5 text-[13px] text-foreground/65 leading-relaxed">{c.d}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       FAQ
+  ============================================================ -->
+  <section class="border-b border-[color:var(--border)] py-20 md:py-24">
+    <div class="container-page grid lg:grid-cols-[1fr_1.8fr] gap-12 lg:gap-20 items-start">
+      <div class="lg:sticky lg:top-24" style="align-self: start;">
+        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Automations FAQ</div>
+        <h2 class="text-[28px] md:text-[36px] font-semibold tracking-[-0.025em] leading-[1.08] text-heading">
+          Five questions about how runs behave.
+        </h2>
+      </div>
+      <div class="divide-y divide-[color:var(--border)]" data-faq>
+        {faq.map(([q, a]) => (
+          <div class="faq-row py-2">
+            <button type="button" class="faq-trigger group w-full flex items-start justify-between gap-4 py-3 text-left" aria-expanded="false">
+              <span class="text-[15.5px] font-medium text-heading group-hover:text-[#0369a1] transition-colors">{q}</span>
+              <span class="faq-icon shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-full bg-white ring-1 ring-[color:var(--border)] text-foreground/60 transition-transform duration-300 ease-out">
+                <Icon name="plus" size={12} />
+              </span>
+            </button>
+            <div class="faq-panel grid grid-rows-[0fr] transition-[grid-template-rows] duration-300 ease-out">
+              <div class="overflow-hidden">
+                <p class="pb-4 pr-12 text-[14px] text-foreground/75 leading-relaxed max-w-2xl">{a}</p>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <script is:inline>
+        (function () {
+          const faq = document.querySelector('[data-faq]');
+          if (!faq) return;
+          faq.querySelectorAll('.faq-trigger').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+              const row   = btn.closest('.faq-row');
+              const panel = row.querySelector('.faq-panel');
+              const icon  = btn.querySelector('.faq-icon');
+              const open  = btn.getAttribute('aria-expanded') === 'true';
+              btn.setAttribute('aria-expanded', String(!open));
+              panel.style.gridTemplateRows = open ? '0fr' : '1fr';
+              if (icon) icon.style.transform = open ? 'rotate(0deg)' : 'rotate(45deg)';
+            });
+          });
+        })();
+      </script>
+    </div>
+  </section>
+
+  <CTA
+    title="Wire your first trigger in two minutes."
+    description="Pick the reply trigger, point it at Slack, press Test. Then flip it on."
+    primaryLabel="Start free trial"
+    primaryHref="https://app.warmbly.com/register"
+    secondaryLabel="Browse the integrations"
+    secondaryHref="/integrations/"
+  />
+</Layout>

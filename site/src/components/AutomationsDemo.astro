@@ -1,0 +1,389 @@
+---
+/**
+ * Live demo of the Warmbly automation builder (/app/automations/:id).
+ *
+ * Pixel-faithful to web/src (PageTopbar + React-Flow canvas: TriggerNode /
+ * ConditionNode / ActionNode, sky-600 chrome, dot grid at 24px), authored at a
+ * fixed 1280px design width and uniformly scaled to fit its container.
+ *
+ * The demo is a 15s master timeline, all CSS keyframes on one shared duration:
+ * a cursor presses Test, the insights panel slides in, and the run travels the
+ * flow node by node: edges draw in, nodes flash as the run passes, result rows
+ * check off in the panel, a Slack notification pops, the summary lands. The
+ * "no" branch dims while the run takes the "yes" path. Clicking the real Test
+ * button restarts the run from zero.
+ */
+const zapIcon = '<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>';
+const gitBranchIcon = '<line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>';
+const briefcaseIcon = '<path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/><rect width="20" height="14" x="2" y="6" rx="2"/>';
+const tagIcon = '<path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/>';
+const sendIcon = '<path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.5.5 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/><path d="m21.854 2.147-10.94 10.939"/>';
+const historyIcon = '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>';
+const playIcon = '<polygon points="6 3 20 12 6 21 6 3"/>';
+const wandIcon = '<path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72"/><path d="m14 7 3 3"/><path d="M5 6v4"/><path d="M19 14v4"/><path d="M10 2v2"/><path d="M7 8H3"/><path d="M21 16h-4"/><path d="M11 3H9"/>';
+const checkIcon = '<path d="M20 6 9 17l-5-5"/>';
+const checkCircleIcon = '<path d="M21.801 10A10 10 0 1 1 17 3.335"/><path d="m9 11 3 3L22 4"/>';
+const arrowLeftIcon = '<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>';
+const plusIcon = '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>';
+const xIcon = '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>';
+---
+<div class="ad-root relative rounded-[14px] overflow-hidden bg-white ring-1 ring-slate-900/[0.07]" style="box-shadow: 0 50px 110px -32px rgba(2,132,199,0.42), 0 14px 36px -16px rgba(15,23,42,0.18);">
+  <!-- browser chrome -->
+  <div class="flex items-center gap-2.5 px-3 h-11 border-b border-slate-200/80 bg-gradient-to-b from-[#f7f8fa] to-[#eceef1]">
+    <div class="flex items-center gap-2 shrink-0">
+      <span class="w-3 h-3 rounded-full bg-[#ff5f57]"></span>
+      <span class="w-3 h-3 rounded-full bg-[#febc2e]"></span>
+      <span class="w-3 h-3 rounded-full bg-[#28c840]"></span>
+    </div>
+    <div class="hidden sm:flex items-center gap-1 shrink-0 text-slate-400">
+      <span class="grid place-items-center w-6 h-6 rounded-md"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></span>
+      <span class="grid place-items-center w-6 h-6 rounded-md text-slate-300"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></span>
+    </div>
+    <div class="flex-1 min-w-0 flex items-center gap-2 h-7 px-3 rounded-lg bg-white ring-1 ring-slate-200/90 text-[12px] shadow-[inset_0_1px_2px_rgba(15,23,42,0.04)]">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" class="text-emerald-500 shrink-0"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      <span class="truncate font-medium text-slate-700">app.warmbly.com<span class="text-slate-400 font-normal">/automations/reply-to-revenue</span></span>
+    </div>
+    <div class="hidden sm:flex items-center shrink-0 text-slate-300">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+    </div>
+  </div>
+
+  <!-- scale-to-fit screen: authored at 1280px design width -->
+  <div class="ad-fit relative w-full overflow-hidden bg-white min-h-[240px]">
+    <div class="ad-screen absolute top-0 left-0 origin-top-left" style="width:1280px;">
+
+      <!-- ── Builder top bar ───────────────────────────────────────── -->
+      <div class="h-12 px-3 flex items-center gap-2 border-b border-slate-200 bg-white">
+        <span class="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-500"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={arrowLeftIcon}></svg></span>
+        <span class="h-7 px-2 inline-flex items-center rounded-md text-[13px] font-medium text-slate-900">Reply to revenue</span>
+        <span class="inline-flex h-7 items-center gap-2 ml-1">
+          <span class="relative inline-flex h-[18px] w-8 shrink-0 items-center rounded-full bg-sky-600"><span class="inline-block size-3.5 translate-x-[16px] rounded-full bg-white shadow-sm"></span></span>
+          <span class="text-[12px] font-medium text-slate-700">Active</span>
+        </span>
+        <div class="ml-auto flex items-center gap-1.5">
+          <span class="inline-flex h-7 px-2.5 items-center gap-1.5 rounded-md border border-slate-200 text-slate-700 text-[12px]"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={historyIcon}></svg>History</span>
+          <button type="button" class="ad-testbtn ad-anim relative inline-flex h-7 px-2.5 items-center gap-1.5 rounded-md border border-slate-200 text-slate-700 text-[12px] cursor-pointer select-none" aria-label="Replay the demo run">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={playIcon}></svg>
+            <span class="relative inline-grid">
+              <span class="ad-testlabel-a ad-anim col-start-1 row-start-1">Test</span>
+              <span class="ad-testlabel-b ad-anim col-start-1 row-start-1 inline-flex items-center gap-1.5 text-sky-700">Running<span class="ad-spin inline-block size-2.5 rounded-full border-[1.5px] border-sky-300 border-t-sky-600"></span></span>
+            </span>
+          </button>
+          <span class="inline-flex h-7 px-2.5 items-center gap-1.5 rounded-md border border-slate-200 text-slate-700 text-[12px]"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={wandIcon}></svg>Tidy up</span>
+          <span class="inline-flex h-7 px-3 items-center gap-1.5 rounded-md bg-slate-100 text-slate-400 text-[12px] font-medium"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={checkIcon}></svg>Saved</span>
+        </div>
+      </div>
+
+      <!-- ── Canvas ────────────────────────────────────────────────── -->
+      <div class="relative h-[560px] overflow-hidden bg-slate-50/40" style="background-image: radial-gradient(#e9eef5 1px, transparent 1px); background-size: 24px 24px;">
+
+        <!-- toolbar -->
+        <div class="absolute left-3 top-3 z-20 flex items-center gap-1.5">
+          <span class="inline-flex h-8 items-center gap-1.5 rounded-md bg-sky-600 px-2.5 text-[12px] font-medium text-white shadow-sm"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" set:html={plusIcon}></svg>Add action</span>
+          <span class="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 text-[12px] font-medium text-slate-700 shadow-sm"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={gitBranchIcon}></svg>Add condition</span>
+        </div>
+
+        <!-- canvas hint -->
+        <div class="absolute bottom-3 left-1/2 -translate-x-1/2 z-0 rounded-md bg-white/95 px-3 py-1.5 shadow-sm text-[11px] text-slate-500 whitespace-nowrap">drag a node's dot to connect &middot; IF block: right dot = yes, bottom dot = no</div>
+
+        <!-- edges -->
+        <svg width="1280" height="560" viewBox="0 0 1280 560" class="absolute inset-0 pointer-events-none" aria-hidden="true">
+          <defs>
+            <marker id="ad-arrow-slate" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M1 1 L9 5 L1 9 z" fill="#94a3b8"/></marker>
+            <marker id="ad-arrow-sky" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M1 1 L9 5 L1 9 z" fill="#0ea5e9"/></marker>
+          </defs>
+          <!-- base edges -->
+          <path d="M 444 98 L 444 134" fill="none" stroke="#cbd5e1" stroke-width="1.5" marker-end="url(#ad-arrow-slate)"/>
+          <path d="M 558 155 C 670 155, 764 168, 764 214" fill="none" stroke="#0ea5e9" stroke-width="1.5" marker-end="url(#ad-arrow-sky)"/>
+          <path class="ad-dim ad-anim" d="M 444 176 C 444 215, 220 208, 220 254" fill="none" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#ad-arrow-slate)"/>
+          <path d="M 764 302 L 764 338" fill="none" stroke="#cbd5e1" stroke-width="1.5" marker-end="url(#ad-arrow-slate)"/>
+          <path d="M 764 422 L 764 458" fill="none" stroke="#cbd5e1" stroke-width="1.5" marker-end="url(#ad-arrow-slate)"/>
+          <path class="ad-dim ad-anim" d="M 220 338 L 220 386" fill="none" stroke="#cbd5e1" stroke-width="1.5" marker-end="url(#ad-arrow-slate)"/>
+          <!-- lit overlays: drawn in as the run travels -->
+          <path class="ad-lit ad-anim" style="--len:60;  animation-delay:0s"    d="M 444 98 L 444 134" fill="none" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round"/>
+          <path class="ad-lit ad-anim" style="--len:280; animation-delay:0.95s" d="M 558 155 C 670 155, 764 168, 764 214" fill="none" stroke="#7dd3fc" stroke-width="2.5" stroke-linecap="round"/>
+          <path class="ad-lit ad-anim" style="--len:60;  animation-delay:2.25s" d="M 764 302 L 764 338" fill="none" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round"/>
+          <path class="ad-lit ad-anim" style="--len:60;  animation-delay:3.45s" d="M 764 422 L 764 458" fill="none" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round"/>
+        </svg>
+
+        <!-- edge labels -->
+        <span class="absolute z-10 inline-flex items-center rounded border border-sky-200 bg-white px-1.5 py-px text-[10px] font-medium text-sky-600 shadow-sm" style="left:632px; top:142px;">yes</span>
+        <span class="ad-dim ad-anim absolute z-10 inline-flex items-center rounded border border-slate-200 bg-white px-1.5 py-px text-[10px] text-slate-500 shadow-sm" style="left:304px; top:192px;">no</span>
+
+        <!-- TriggerNode -->
+        <div class="absolute" style="left:320px; top:22px; width:248px;">
+          <div class="ad-flash ad-anim relative rounded-xl border border-slate-200 bg-white shadow-sm" style="animation-delay:0s">
+            <div class="flex items-center gap-2 rounded-t-xl border-b border-slate-200/70 bg-gradient-to-r from-sky-50/80 to-white px-2.5 py-1.5">
+              <span class="inline-flex size-5 shrink-0 items-center justify-center rounded-md bg-sky-100 text-sky-600 ring-1 ring-sky-200/70"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={zapIcon}></svg></span>
+              <span class="min-w-0 flex-1 truncate text-[12.5px] font-semibold text-slate-800">Prospect replies</span>
+              <span class="shrink-0 rounded bg-sky-600 px-1.5 py-px text-[9px] font-semibold uppercase tracking-[0.12em] text-white">Trigger</span>
+            </div>
+            <div class="px-2.5 py-2">
+              <div class="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-slate-300">When</div>
+              <div class="mt-0.5 truncate font-mono text-[11px] text-slate-500">campaign.reply_received</div>
+            </div>
+            <span class="absolute -bottom-1.5 left-1/2 -translate-x-1/2 size-3 rounded-full bg-sky-500 border-2 border-white shadow-sm"></span>
+          </div>
+        </div>
+
+        <!-- ConditionNode -->
+        <div class="absolute" style="left:334px; top:140px; width:220px;">
+          <div class="ad-flash ad-anim relative rounded-lg border border-sky-200 bg-gradient-to-b from-sky-50 to-white px-2.5 py-1.5 shadow-sm" style="animation-delay:0.9s">
+            <div class="flex items-center gap-1.5">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-sky-600" set:html={gitBranchIcon}></svg>
+              <span class="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-sky-500">if</span>
+              <span class="min-w-0 flex-1 truncate text-[11px] font-medium text-sky-800">intent is positive &middot; &ge; 80%</span>
+            </div>
+            <span class="absolute -right-1.5 top-1/2 -translate-y-1/2 size-3 rounded-full bg-sky-500 border-2 border-white shadow-sm"></span>
+            <span class="absolute -bottom-1.5 left-1/2 -translate-x-1/2 size-3 rounded-full bg-slate-400 border-2 border-white shadow-sm"></span>
+          </div>
+        </div>
+
+        <!-- ActionNode: Slack -->
+        <div class="absolute" style="left:640px; top:222px; width:248px;">
+          <div class="ad-flash ad-anim relative rounded-xl border border-slate-200 bg-white shadow-sm" style="animation-delay:1.95s">
+            <div class="flex items-center gap-2 rounded-t-xl border-b border-slate-200/70 bg-gradient-to-r from-slate-50 to-white px-2.5 py-1.5">
+              <span class="inline-flex size-5 shrink-0 items-center justify-center rounded-md bg-fuchsia-50 text-fuchsia-600 ring-1 ring-fuchsia-200 text-[10px] font-bold">S</span>
+              <span class="min-w-0 flex-1 truncate text-[12.5px] font-semibold text-slate-800">Send a Slack message</span>
+            </div>
+            <div class="px-2.5 py-2">
+              <div class="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-slate-300">Then</div>
+              <div class="mt-0.5 truncate text-[11.5px] text-slate-500">#sales &middot; reply from {`{{.contact_email}}`}</div>
+            </div>
+            <span class="absolute -top-1 left-1/2 -translate-x-1/2 size-2 rounded-full bg-slate-300 border-2 border-white"></span>
+            <span class="absolute -bottom-1.5 left-1/2 -translate-x-1/2 size-3 rounded-full bg-sky-500 border-2 border-white shadow-sm"></span>
+          </div>
+        </div>
+
+        <!-- ActionNode: Create a deal -->
+        <div class="absolute" style="left:640px; top:342px; width:248px;">
+          <div class="ad-flash ad-anim relative rounded-xl border border-slate-200 bg-white shadow-sm" style="animation-delay:3.2s">
+            <div class="flex items-center gap-2 rounded-t-xl border-b border-slate-200/70 bg-gradient-to-r from-slate-50 to-white px-2.5 py-1.5">
+              <span class="inline-flex size-5 shrink-0 items-center justify-center rounded-md bg-sky-50 text-sky-600 ring-1 ring-sky-200/70"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={briefcaseIcon}></svg></span>
+              <span class="min-w-0 flex-1 truncate text-[12.5px] font-semibold text-slate-800">Create a deal</span>
+            </div>
+            <div class="px-2.5 py-2">
+              <div class="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-slate-300">Then</div>
+              <div class="mt-0.5 truncate text-[11.5px] text-slate-500">Discovery &middot; $4,800</div>
+            </div>
+            <span class="absolute -top-1 left-1/2 -translate-x-1/2 size-2 rounded-full bg-slate-300 border-2 border-white"></span>
+            <span class="absolute -bottom-1.5 left-1/2 -translate-x-1/2 size-3 rounded-full bg-sky-500 border-2 border-white shadow-sm"></span>
+          </div>
+        </div>
+
+        <!-- ActionNode: HubSpot -->
+        <div class="absolute" style="left:640px; top:462px; width:248px;">
+          <div class="ad-flash ad-anim relative rounded-xl border border-slate-200 bg-white shadow-sm" style="animation-delay:4.4s">
+            <div class="flex items-center gap-2 rounded-t-xl border-b border-slate-200/70 bg-gradient-to-r from-slate-50 to-white px-2.5 py-1.5">
+              <span class="inline-flex size-5 shrink-0 items-center justify-center rounded-md bg-orange-50 text-orange-600 ring-1 ring-orange-200 text-[10px] font-bold">H</span>
+              <span class="min-w-0 flex-1 truncate text-[12.5px] font-semibold text-slate-800">Update HubSpot contact</span>
+            </div>
+            <div class="px-2.5 py-2">
+              <div class="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-slate-300">Then</div>
+              <div class="mt-0.5 truncate text-[11.5px] text-slate-500">lifecycle stage &middot; opportunity</div>
+            </div>
+            <span class="absolute -top-1 left-1/2 -translate-x-1/2 size-2 rounded-full bg-slate-300 border-2 border-white"></span>
+          </div>
+        </div>
+
+        <!-- ActionNode: Add a tag (no branch, dims during the run) -->
+        <div class="ad-dim ad-anim absolute" style="left:96px; top:258px; width:248px;">
+          <div class="relative rounded-xl border border-slate-200 bg-white shadow-sm">
+            <div class="flex items-center gap-2 rounded-t-xl border-b border-slate-200/70 bg-gradient-to-r from-slate-50 to-white px-2.5 py-1.5">
+              <span class="inline-flex size-5 shrink-0 items-center justify-center rounded-md bg-emerald-50 text-emerald-600 ring-1 ring-emerald-200"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={tagIcon}></svg></span>
+              <span class="min-w-0 flex-1 truncate text-[12.5px] font-semibold text-slate-800">Add a tag</span>
+            </div>
+            <div class="px-2.5 py-2">
+              <div class="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-slate-300">Then</div>
+              <div class="mt-0.5 truncate text-[11.5px] text-slate-500">nurture</div>
+            </div>
+            <span class="absolute -top-1 left-1/2 -translate-x-1/2 size-2 rounded-full bg-slate-300 border-2 border-white"></span>
+            <span class="absolute -bottom-1.5 left-1/2 -translate-x-1/2 size-3 rounded-full bg-sky-500 border-2 border-white shadow-sm"></span>
+          </div>
+        </div>
+
+        <!-- ActionNode: Webhook (no branch) -->
+        <div class="ad-dim ad-anim absolute" style="left:96px; top:390px; width:248px;">
+          <div class="relative rounded-xl border border-slate-200 bg-white shadow-sm">
+            <div class="flex items-center gap-2 rounded-t-xl border-b border-slate-200/70 bg-gradient-to-r from-slate-50 to-white px-2.5 py-1.5">
+              <span class="inline-flex size-5 shrink-0 items-center justify-center rounded-md bg-sky-50 text-sky-600 ring-1 ring-sky-200/70"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={sendIcon}></svg></span>
+              <span class="min-w-0 flex-1 truncate text-[12.5px] font-semibold text-slate-800">Send a webhook</span>
+            </div>
+            <div class="px-2.5 py-2">
+              <div class="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-slate-300">Then</div>
+              <div class="mt-0.5 truncate font-mono text-[11px] text-slate-500">hooks.yourapp.com/replies</div>
+            </div>
+            <span class="absolute -top-1 left-1/2 -translate-x-1/2 size-2 rounded-full bg-slate-300 border-2 border-white"></span>
+          </div>
+        </div>
+
+        <!-- Slack notification toast -->
+        <div class="ad-toast ad-anim absolute left-5 bottom-5 z-30 w-[300px] rounded-[10px] bg-white shadow-[0_14px_36px_-12px_rgba(15,23,42,0.4)] ring-1 ring-slate-200 p-3" aria-hidden="true">
+          <div class="flex items-start gap-2.5">
+            <span class="inline-flex size-8 shrink-0 items-center justify-center rounded-md bg-fuchsia-50 text-fuchsia-600 ring-1 ring-fuchsia-200 text-[13px] font-bold">S</span>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center justify-between">
+                <span class="text-[11.5px] font-semibold text-slate-900">#sales</span>
+                <span class="text-[10px] text-slate-400 font-mono">now</span>
+              </div>
+              <p class="text-[11.5px] text-slate-500 mt-0.5 leading-snug"><span class="font-medium text-slate-700">Warmbly</span> maya@northwind.dev replied to Q1 outreach: &ldquo;Thursday works for me&rdquo;</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Insights panel: the test run, step by step ──────────── -->
+        <div class="ad-panel ad-anim absolute inset-y-0 right-0 z-40 w-[340px] bg-white border-l border-slate-200 shadow-[-10px_0_34px_-14px_rgba(15,23,42,0.3)] flex flex-col" aria-hidden="true">
+          <div class="h-11 px-3 flex items-center border-b border-slate-200 shrink-0">
+            <span class="text-[12.5px] font-medium text-slate-900">Test run</span>
+            <span class="ml-auto inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" set:html={xIcon}></svg></span>
+          </div>
+          <div class="flex-1 min-h-0 p-3 space-y-2 overflow-hidden">
+            <p class="text-[11px] text-slate-400 leading-relaxed">Dry run with a sample reply event.</p>
+
+            <div class="ad-row ad-anim rounded-md border border-slate-200 px-2.5 py-2" style="animation-delay:0s">
+              <div class="flex items-center gap-2">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-emerald-500 shrink-0" set:html={checkCircleIcon}></svg>
+                <span class="text-[11.5px] font-medium text-slate-700 truncate">Trigger &middot; Prospect replies</span>
+              </div>
+              <div class="mt-1 pl-[21px] font-mono text-[10.5px] text-slate-400 truncate">maya@northwind.dev &middot; Re: Quick question</div>
+            </div>
+
+            <div class="ad-row ad-anim rounded-md border border-slate-200 px-2.5 py-2" style="animation-delay:0.9s">
+              <div class="flex items-center gap-2">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-sky-500 shrink-0" set:html={gitBranchIcon}></svg>
+                <span class="text-[11.5px] font-medium text-slate-700 truncate">intent is positive &middot; &ge; 80%</span>
+                <span class="ml-auto shrink-0 text-[10.5px] font-semibold text-emerald-600">yes &middot; 92%</span>
+              </div>
+            </div>
+
+            <div class="ad-row ad-anim rounded-md border border-slate-200 px-2.5 py-2" style="animation-delay:1.95s">
+              <div class="flex items-center gap-2">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-emerald-500 shrink-0" set:html={checkCircleIcon}></svg>
+                <span class="text-[11.5px] font-medium text-slate-700 truncate">Slack message &middot; #sales</span>
+                <span class="ml-auto shrink-0 font-mono text-[10.5px] text-slate-400">212 ms</span>
+              </div>
+            </div>
+
+            <div class="ad-row ad-anim rounded-md border border-slate-200 px-2.5 py-2" style="animation-delay:3.2s">
+              <div class="flex items-center gap-2">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-emerald-500 shrink-0" set:html={checkCircleIcon}></svg>
+                <span class="text-[11.5px] font-medium text-slate-700 truncate">Deal created &middot; Discovery</span>
+                <span class="ml-auto shrink-0 font-mono text-[10.5px] text-slate-400">$4,800</span>
+              </div>
+            </div>
+
+            <div class="ad-row ad-anim rounded-md border border-slate-200 px-2.5 py-2" style="animation-delay:4.4s">
+              <div class="flex items-center gap-2">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-emerald-500 shrink-0" set:html={checkCircleIcon}></svg>
+                <span class="text-[11.5px] font-medium text-slate-700 truncate">HubSpot contact updated</span>
+                <span class="ml-auto shrink-0 font-mono text-[10.5px] text-slate-400">2 fields</span>
+              </div>
+            </div>
+
+            <div class="ad-row ad-anim rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-2" style="animation-delay:5.2s">
+              <div class="flex items-center gap-2">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-emerald-600 shrink-0" set:html={checkCircleIcon}></svg>
+                <span class="text-[11.5px] font-semibold text-emerald-700">Run passed &middot; 5 steps &middot; 1.9 s</span>
+              </div>
+            </div>
+
+            <p class="ad-row ad-anim text-[11px] text-slate-400 leading-relaxed pt-1" style="animation-delay:5.2s">Flip it on and this fires on every real reply.</p>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Demo cursor: positioned against the whole 1280x608 screen so it can
+           reach the Test button in the top bar -->
+      <div class="ad-cursor ad-anim z-50" aria-hidden="true"><span class="ad-ripple ad-anim"></span><svg class="ad-anim" width="23" height="27" viewBox="0 0 23 27" fill="none"><path d="M3 2.2 L3 20.4 L7.7 16 L10.9 23.2 L14 21.8 L10.9 14.8 L17.2 14.6 Z" fill="#ffffff" stroke="#0f172a" stroke-width="1.4" stroke-linejoin="round"/></svg></div>
+    </div>
+  </div>
+
+  <style>
+    /* ── Master timeline: every animation runs on the same 15s loop ── */
+
+    .ad-cursor{position:absolute;width:23px;height:27px;pointer-events:none;filter:drop-shadow(0 4px 6px rgba(15,23,42,.4));animation:ad-move 15s cubic-bezier(.5,0,.2,1) infinite;}
+    .ad-cursor svg{display:block;transform-origin:3px 2px;animation:ad-press 15s ease-in-out infinite;}
+    .ad-ripple{position:absolute;left:-6px;top:-6px;width:32px;height:32px;border-radius:9999px;background:rgba(2,132,199,.5);transform:scale(0);opacity:0;animation:ad-rip 15s ease-out infinite;}
+    @keyframes ad-move{0%{left:46%;top:64%}8%,12%{left:80.5%;top:5.6%}22%{left:58%;top:48%}74%{left:60%;top:52%}88%,100%{left:46%;top:64%}}
+    @keyframes ad-press{0%,8.5%{transform:scale(1)}9.5%{transform:scale(.82)}11%,100%{transform:scale(1)}}
+    @keyframes ad-rip{0%,9%{transform:scale(0);opacity:0}10.5%{transform:scale(.3);opacity:.7}16%{transform:scale(1.9);opacity:0}100%{transform:scale(0);opacity:0}}
+
+    /* Test button: press flash, label crossfades to a spinner while running */
+    .ad-testbtn{animation:ad-btn 15s ease-out infinite;}
+    @keyframes ad-btn{0%,9%{background:#fff;border-color:#e2e8f0}10.5%,48%{background:#f0f9ff;border-color:#7dd3fc}53%,100%{background:#fff;border-color:#e2e8f0}}
+    .ad-testlabel-a{animation:ad-lbl-a 15s ease-out infinite;}
+    .ad-testlabel-b{opacity:0;animation:ad-lbl-b 15s ease-out infinite;}
+    @keyframes ad-lbl-a{0%,10%{opacity:1}11%,49%{opacity:0}52%,100%{opacity:1}}
+    @keyframes ad-lbl-b{0%,10%{opacity:0}11%,49%{opacity:1}52%,100%{opacity:0}}
+    .ad-spin{animation:ad-rot .8s linear infinite;}
+    @keyframes ad-rot{to{transform:rotate(360deg)}}
+
+    /* Insights panel slides in while the run executes */
+    .ad-panel{transform:translateX(102%);animation:ad-pane 15s cubic-bezier(.22,1,.36,1) infinite;}
+    @keyframes ad-pane{0%,11%{transform:translateX(102%)}13.5%,79%{transform:translateX(0)}82%,100%{transform:translateX(102%)}}
+
+    /* Result rows pop in one by one (per-row phase via animation-delay) */
+    .ad-row{opacity:0;animation:ad-pop 15s cubic-bezier(.22,1,.36,1) infinite;}
+    @keyframes ad-pop{0%,16%{opacity:0;transform:translateY(6px)}18%,79%{opacity:1;transform:translateY(0)}82%,100%{opacity:0;transform:translateY(6px)}}
+
+    /* Node flash as the run passes through (shared pulse, shifted per node) */
+    .ad-flash{animation:ad-fl 15s ease-in-out infinite;}
+    @keyframes ad-fl{0%,13.5%{box-shadow:0 1px 2px 0 rgb(0 0 0 / 0.05)}15%{box-shadow:0 0 0 4px rgba(125,211,252,.85)}18%,100%{box-shadow:0 1px 2px 0 rgb(0 0 0 / 0.05)}}
+
+    /* Lit edge overlays draw in along the path */
+    .ad-lit{stroke-dasharray:var(--len);stroke-dashoffset:var(--len);animation:ad-dr 15s ease-in-out infinite;}
+    @keyframes ad-dr{0%,17%{stroke-dashoffset:var(--len);opacity:1}19.5%,76%{stroke-dashoffset:0;opacity:1}78%,100%{stroke-dashoffset:var(--len);opacity:0}}
+
+    /* The path not taken dims while the run is live */
+    .ad-dim{animation:ad-dm 15s ease-in-out infinite;}
+    @keyframes ad-dm{0%,13%{opacity:1}17%,75%{opacity:.4}80%,100%{opacity:1}}
+
+    /* Slack toast pops while the Slack step delivers */
+    .ad-toast{opacity:0;animation:ad-to 15s cubic-bezier(.22,1,.36,1) infinite;}
+    @keyframes ad-to{0%,29%{opacity:0;transform:translateY(14px) scale(.96)}31.5%,58%{opacity:1;transform:translateY(0) scale(1)}61%,100%{opacity:0;transform:translateY(14px) scale(.96)}}
+
+    @media (prefers-reduced-motion: reduce){
+      .ad-cursor,.ad-panel,.ad-toast{display:none}
+      .ad-anim{animation:none !important;opacity:1}
+      .ad-testlabel-b{opacity:0 !important}
+      .ad-lit{stroke-dashoffset:0}
+      .ad-row{opacity:1;transform:none}
+    }
+  </style>
+
+  <script>
+    // Scale-to-fit (1280px design width; below md, show the left 860px like the
+    // hero mock does) + click Test to restart the run from zero.
+    const DESIGN = 1280;
+    const MOBILE_VISIBLE = 860;
+    function fit(screen: HTMLElement) {
+      const box = screen.parentElement as HTMLElement | null;
+      if (!box) return;
+      const visible = window.innerWidth >= 768 ? DESIGN : MOBILE_VISIBLE;
+      const s = box.clientWidth / visible;
+      screen.style.transform = `scale(${s})`;
+      box.style.height = `${screen.offsetHeight * s}px`;
+    }
+    document.querySelectorAll<HTMLElement>('.ad-screen').forEach((screen) => {
+      const run = () => fit(screen);
+      run();
+      requestAnimationFrame(run);
+      if (screen.parentElement) new ResizeObserver(run).observe(screen.parentElement);
+      window.addEventListener('load', run);
+      window.addEventListener('resize', run);
+    });
+    document.querySelectorAll<HTMLElement>('.ad-root').forEach((root) => {
+      const btn = root.querySelector<HTMLElement>('.ad-testbtn');
+      if (!btn) return;
+      btn.addEventListener('click', () => {
+        // Toggle animation-name only: the per-element animation-delay lives in
+        // the style attribute and the animation shorthand would wipe it.
+        const els = root.querySelectorAll<HTMLElement | SVGElement>('.ad-anim');
+        els.forEach((el) => { (el as HTMLElement).style.animationName = 'none'; });
+        void root.offsetWidth;
+        els.forEach((el) => { (el as HTMLElement).style.animationName = ''; });
+      });
+    });
+  </script>
+</div>

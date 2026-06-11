@@ -15,6 +15,7 @@ import CRMMock from '../components/CRMMock.astro';
 import TemplatingShowcase from '../components/TemplatingShowcase.astro';
 import ChangelogShowcase from '../components/ChangelogShowcase.astro';
 import OpenSourceShowcase from '../components/OpenSourceShowcase.astro';
+import AutomationsShowcase from '../components/AutomationsShowcase.astro';
 
 const compare = [
   ['Per-mailbox cold cap',     '50 / day default',                 '200 / day if you ask for it'],
@@ -342,6 +343,13 @@ const softwareJsonLd = {
     >
       <IntegrationsMock />
     </FeatureSection>
+
+    <!-- ============================================================
+         AUTOMATIONS — full-width centerpiece: the live builder demo
+         running a test end to end. Deliberately breaks the side-by-side
+         rhythm so it reads as the headline act of the showcase.
+    ============================================================ -->
+    <AutomationsShowcase />
 
     <FeatureSection
       eyebrow="Developers"

@@ -10,6 +10,16 @@ const { onSky = false } = Astro.props;
 
 const path = Astro.url.pathname;
 
+// Featured product: rendered as a full-width row above the grid, with a
+// miniature trigger -> if -> action flow as its visual.
+const productFeatured = {
+  icon: 'zap',
+  href: '/automations/',
+  title: 'Automations',
+  desc: 'When a reply lands: open the deal, ping Slack, update the CRM. A visual builder for every Warmbly event.',
+  tag: 'Orchestration',
+};
+
 // Product mega-menu items (6 meaningful products)
 const products = [
   { icon: 'flame',    href: '/warmup/',    title: 'Warmup',         desc: 'Reputation-safe pools and gradual ramps that earn placement, not just inflate it.', tag: 'Deliverability' },
@@ -38,17 +48,19 @@ type NavItem = {
   megaTitle?: string;
   megaTagline?: string;
   megaItems?: MegaItem[];
+  megaFeatured?: MegaItem;
 };
 
 const nav: NavItem[] = [
   {
     label: 'Product',
     href: '/warmup/',
-    match: '/warmup|/developers|/inbox|/campaigns|/analytics|/crm',
+    match: '/warmup|/developers|/inbox|/campaigns|/analytics|/crm|/automations',
     mega: true,
     megaTitle: 'The cold-email platform.',
-    megaTagline: 'Six systems designed to work together. Warmup that earns reputation, sending that respects it.',
+    megaTagline: 'Seven systems designed to work together. Warmup that earns reputation, sending that respects it.',
     megaItems: products,
+    megaFeatured: productFeatured,
   },
   {
     label: 'Use cases',
@@ -124,8 +136,59 @@ function active(match?: string) {
                       </a>
                     </div>
 
-                    <!-- RIGHT: 3-column product grid -->
-                    <div class="grid grid-cols-2 lg:grid-cols-3">
+                    <!-- RIGHT: featured row + 3-column product grid -->
+                    <div class="flex flex-col">
+                      {n.megaFeatured && (() => {
+                        const f = n.megaFeatured;
+                        const isCurrent = path === f.href || path.startsWith(f.href);
+                        return (
+                          <a
+                            href={f.href}
+                            aria-current={isCurrent ? 'page' : undefined}
+                            class={`mega-card group flex items-center gap-6 px-7 py-5 border-b border-[color:var(--border)] ${isCurrent ? 'bg-[color:var(--sky-1)]/60' : 'hover:bg-[color:var(--surface-1)]'}`}
+                            style="transition: background-color 140ms ease-out;"
+                          >
+                            <span class="min-w-0 shrink">
+                              <span class="block text-[10px] uppercase tracking-[0.22em] font-mono text-foreground/45 mb-2">{f.tag}</span>
+                              <span class={`text-[18px] font-semibold tracking-[-0.015em] flex items-center gap-2 ${isCurrent ? 'text-[#0369a1]' : 'text-heading group-hover:text-[#0369a1]'}`} style="transition: color 140ms ease-out;">
+                                {f.title}
+                                {isCurrent && <span class="w-1.5 h-1.5 rounded-full bg-[#0284c7]"></span>}
+                              </span>
+                              <span class="mt-1 block text-[13px] text-foreground/60 leading-relaxed">{f.desc}</span>
+                            </span>
+
+                            {/* miniature flow: trigger -> if -> actions, same node language as the app */}
+                            <span class="hidden xl:flex items-center gap-1.5 ml-auto shrink-0" aria-hidden="true">
+                              <span class="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-slate-200 bg-white shadow-sm text-[11px] font-medium text-slate-700 whitespace-nowrap">
+                                <Icon name="zap" size={11} class="text-sky-600" />
+                                Reply lands
+                              </span>
+                              <svg width="14" height="10" viewBox="0 0 14 10" fill="none" class="text-slate-300 shrink-0"><path d="M0 5h10" stroke="currentColor" stroke-width="1.5"/><path d="m8 1.5 3.5 3.5L8 8.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                              <span class="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-sky-200 bg-gradient-to-b from-sky-50 to-white shadow-sm whitespace-nowrap">
+                                <Icon name="gitBranch" size={11} class="text-sky-600" />
+                                <span class="text-[9px] font-semibold uppercase tracking-[0.12em] text-sky-500">if</span>
+                                <span class="text-[11px] font-medium text-sky-800">positive</span>
+                              </span>
+                              <svg width="14" height="10" viewBox="0 0 14 10" fill="none" class="text-slate-300 shrink-0"><path d="M0 5h10" stroke="currentColor" stroke-width="1.5"/><path d="m8 1.5 3.5 3.5L8 8.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                              <span class="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-slate-200 bg-white shadow-sm text-[11px] font-medium text-slate-700 whitespace-nowrap">
+                                <span class="inline-flex size-4 items-center justify-center rounded bg-fuchsia-50 text-fuchsia-600 ring-1 ring-fuchsia-200 text-[8.5px] font-bold">S</span>
+                                #sales
+                              </span>
+                              <svg width="14" height="10" viewBox="0 0 14 10" fill="none" class="text-slate-300 shrink-0"><path d="M0 5h10" stroke="currentColor" stroke-width="1.5"/><path d="m8 1.5 3.5 3.5L8 8.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                              <span class="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-slate-200 bg-white shadow-sm text-[11px] font-medium text-slate-700 whitespace-nowrap">
+                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-sky-600"><path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/><rect width="20" height="14" x="2" y="6" rx="2"/></svg>
+                                Deal opened
+                              </span>
+                            </span>
+
+                            <span class="shrink-0 ml-auto xl:ml-0 inline-flex items-center gap-1 text-[11.5px] font-medium text-foreground/45 group-hover:text-[#0369a1]" style="transition: color 140ms ease-out;">
+                              Open
+                              <svg width="9" height="9" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M3.5 3l3 3-3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            </span>
+                          </a>
+                        );
+                      })()}
+                      <div class="grid grid-cols-2 lg:grid-cols-3">
                       {(n.megaItems ?? []).map((it, i) => {
                         const isCurrent = path === it.href || path.startsWith(it.href);
                         const colBreak = (i + 1) % 3 !== 0;
@@ -150,6 +213,7 @@ function active(match?: string) {
                           </a>
                         );
                       })}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -255,7 +319,7 @@ function active(match?: string) {
             <div class="acc-panel">
               <div>
                 <div class="pb-3 flex flex-col">
-                  {(n.megaItems ?? []).map((it) => (
+                  {[...(n.megaFeatured ? [n.megaFeatured] : []), ...(n.megaItems ?? [])].map((it) => (
                     <a href={it.href} class="flex flex-col py-2 pl-1 pr-2 rounded-md hover:bg-slate-50">
                       <span class="text-[15px] font-medium text-slate-800">{it.title}</span>
                       <span class="text-[12.5px] text-slate-400 leading-snug">{it.desc.split('.')[0]}.</span>
