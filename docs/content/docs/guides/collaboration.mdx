@@ -1,0 +1,39 @@
+---
+title: Live collaboration
+description: See your team working in real time across the whole dashboard.
+icon: Users
+---
+
+The Warmbly dashboard is live by default. Campaign sends, opens, clicks, replies, new inbox mail, contact changes, automation runs, meetings, and audit entries all appear the moment they happen, for everyone in the workspace, without a refresh. On top of that event stream sits a presence layer that shows who on your team is online and what they are working on.
+
+## Online teammates
+
+The header shows an avatar stack of every workspace member who currently has the dashboard open. Hover it to see each person's name and where they are right now (for example "in unibox" or "editing"). The stack updates instantly as people come and go.
+
+## Who is already on this?
+
+Anywhere a record can be opened, Warmbly shows you when a teammate already has it open:
+
+- **Unibox**: a conversation row gets a green pulse when someone else is reading it, and an amber pulse when they are already writing a reply. The open thread shows a pill with their name, so two people never answer the same prospect twice.
+- **Automations**: opening a flow that a teammate is editing shows an amber "is editing" pill next to the automation name. Coordinate before saving; the last save wins.
+- **Campaigns**: the campaign header shows who else is viewing the same campaign.
+- **Contacts**: the contact panel shows when someone else has the same person open for editing.
+
+Indicators are scoped to your workspace. Only members of the same organization can see your presence, and what they see is limited to your name, avatar, the dashboard page you are on, and the record you have open.
+
+## What updates live
+
+Beyond presence, the dashboard reflects changes from any source in real time:
+
+- An email sent inside a campaign updates the campaign's progress, the leads list, and analytics for every viewer the moment the worker sends it.
+- Opens, clicks, and replies pulse into campaign stats and the activity feed as recipients act. Automated replies such as out-of-office do not count as replies.
+- New mail appears in every member's unibox as it syncs, respecting inbox permissions.
+- Contact imports, edits, and deletes refresh the contacts views for the whole team.
+- Mailbox health transitions (for example a warmup quarantine) flip status badges live.
+- The [audit log](/guides/security/) streams new entries as teammates act, so the activity trail is also a live feed.
+
+Events are permission-aware: a member without inbox access never receives unibox events, and billing events only reach members who can manage billing. See [Team roles](/guides/team-roles/) for the permission model.
+
+## Developers
+
+The same realtime stream is available to API consumers over a WebSocket, including the presence events that power these indicators. See the [Realtime WebSocket](/api/realtime/) reference for connection details, channels, and rate limits.

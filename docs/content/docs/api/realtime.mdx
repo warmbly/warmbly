@@ -1,0 +1,81 @@
+---
+title: Realtime WebSocket
+description: Subscribe to live Warmbly events over a WebSocket connection.
+icon: Radio
+---
+
+Warmbly pushes dashboard events (campaign sends, opens, clicks, replies, inbox arrivals, audit entries, and more) over a WebSocket. The same socket that powers the live dashboard is available to developers.
+
+## Connecting
+
+The socket speaks the Phoenix channel protocol (serializer version `1.0.0`) at:
+
+```
+wss://realtime.warmbly.com/socket/websocket?vsn=1.0.0&token=<TOKEN>
+```
+
+Two token types are accepted:
+
+- **API key**: pass a key with the `REALTIME_SUBSCRIBE` permission (bit 11) directly as `token`. See [Permissions](/api/permissions/) for how to grant it.
+- **Short-lived JWT**: browser sessions call the authenticated socket endpoint to mint a 10-minute connection token. This is what the dashboard itself uses.
+
+If the key has IP restrictions configured, they are enforced on the socket handshake as well.
+
+## Channels
+
+After connecting, join one or more topics with a `phx_join` message:
+
+| Topic | Scope | Notes |
+| --- | --- | --- |
+| `user:<user_id>` | Events for the key's owning user | Always joinable by yourself |
+| `org:<org_id>` | Organization-wide events | Requires membership; events are filtered by your member permissions |
+| `campaign:<campaign_id>` | One campaign's activity | Requires `view_campaigns` |
+| `account:<account_id>` | One mailbox's sync and warmup events | Requires `manage_emails` |
+| `bulk:<operation_id>` | Progress of one bulk operation | Import/export progress |
+
+Events arrive as channel messages whose event name is the event type, for example `EMAIL_SENT`, `EMAIL_OPENED`, `EMAIL_REPLIED`, `EMAIL_RECEIVED`, `CAMPAIGN_COMPLETED`, `TASK_PROGRESS`, `ACCOUNT_HEALTH_CHANGED`, `AUDIT_CREATED`, `AUTOMATION_RUN`, `MEETING_BOOKED`, `NOTIFICATION_CREATED`. Payloads always include `event_type` and a timestamp, plus the relevant ids (`campaign_id`, `contact_id`, `thread_id`, and so on).
+
+Permission filtering happens per event on the org channel: for example inbox events require `access_unibox`, campaign pulses require `view_campaigns`, member changes require `manage_team`, and billing events require `manage_billing`. A member without the permission simply never receives the event.
+
+## Presence
+
+The org channel carries team presence for the collaboration features in the dashboard (who is online, who is viewing or replying to a record). Standard Phoenix presence events are used:
+
+- `presence_state` is pushed once after a successful join with the full member map.
+- `presence_diff` carries joins and leaves as they happen.
+
+Clients update their own activity by pushing a `presence:update` event with `{ "page": "/app/unibox", "resource": "thread:<id>", "action": "viewing" }`. Valid actions are `viewing`, `editing`, `replying`, and `idle`.
+
+API-key connections receive presence events but are never tracked as presences themselves: machines are not teammates.
+
+## Rate limits and connection caps
+
+The realtime service protects itself against connection spam. All limits are per user (the key's owner) unless noted:
+
+| Limit | Default |
+| --- | --- |
+| Concurrent connections | 10 (plan-dependent) |
+| Concurrent connections per IP | 50 |
+| Channel joins | 30/minute |
+| Client-sent events (including `presence:update`) | 60/minute |
+| Server-to-client messages | 120/minute |
+
+When a client-sent event is throttled you receive an error reply with `reason: "rate_limited"` and a `retry_after_ms` hint. When outbound delivery is throttled the channel pushes a `rate_limited` message instead of the event.
+
+## Close codes
+
+The handshake is rejected with Discord-style close codes:
+
+| Code | Meaning |
+| --- | --- |
+| 4003 | Missing token |
+| 4004 | Invalid or expired token |
+| 4007 | Rate limited, retry later |
+| 4009 | Connection limit exceeded |
+| 4010 | Key lacks the realtime permission |
+
+## Good citizenship
+
+- Reuse one connection per process and multiplex channels over it instead of opening one socket per topic.
+- Reconnect with exponential backoff; the limits above treat reconnect storms the same as connection spam.
+- Treat events as invalidation signals and refetch via the REST API, rather than assuming every payload carries full state.
