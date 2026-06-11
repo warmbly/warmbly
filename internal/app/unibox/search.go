@@ -41,10 +41,10 @@ func (s *uniboxService) Search(
 // GetUnseenCount returns the count of unseen emails
 func (s *uniboxService) GetUnseenCount(
 	ctx context.Context,
-	userID uuid.UUID,
+	orgID uuid.UUID,
 	emailAccountID *uuid.UUID,
 ) (int64, *errx.Error) {
-	count, err := s.uniboxRepository.GetUnseenCount(ctx, userID, emailAccountID)
+	count, err := s.uniboxRepository.GetUnseenCount(ctx, orgID, emailAccountID)
 	if err != nil {
 		sentry.CaptureException(err)
 		return 0, errx.InternalError()

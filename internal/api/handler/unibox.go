@@ -356,10 +356,9 @@ func (h *Handler) UniboxMarkSeen(c *gin.Context) {
 // GetUnseenCount gets the count of unseen emails
 // GET /unibox/count
 func (h *Handler) GetUnseenCount(c *gin.Context) {
-	userID := middleware.GetUserID(c)
-	uid, err := uuid.Parse(userID)
-	if err != nil {
-		errx.Handle(c, errx.ErrUser)
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.Handle(c, errx.New(errx.BadRequest, "no organization selected"))
 		return
 	}
 
@@ -371,7 +370,7 @@ func (h *Handler) GetUnseenCount(c *gin.Context) {
 		}
 	}
 
-	count, xerr := h.UniboxService.GetUnseenCount(c.Request.Context(), uid, emailAccountID)
+	count, xerr := h.UniboxService.GetUnseenCount(c.Request.Context(), *orgID, emailAccountID)
 	if xerr != nil {
 		errx.Handle(c, xerr)
 		return

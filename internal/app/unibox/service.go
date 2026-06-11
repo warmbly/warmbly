@@ -36,7 +36,7 @@ type UniboxService interface {
 	) (*models.MailSearchResult, *errx.Error)
 	GetUnseenCount(
 		ctx context.Context,
-		userID uuid.UUID,
+		orgID uuid.UUID,
 		emailAccountID *uuid.UUID,
 	) (int64, *errx.Error)
 	MarkSeen(ctx context.Context, userID, emailID uuid.UUID, seen bool) *errx.Error

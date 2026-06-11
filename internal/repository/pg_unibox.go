@@ -29,7 +29,7 @@ type UniboxRepository interface {
 	GetByThread(ctx context.Context, userID, emailID uuid.UUID, threadID string, limit int, cursor string) (*models.MailSearchResult, error)
 	GetBySender(ctx context.Context, userID uuid.UUID, sender string, limit int, cursor string) (*models.MailSearchResult, error)
 	Search(ctx context.Context, orgID, userID uuid.UUID, params *models.MailSearchParams) (*models.MailSearchResult, error)
-	GetUnseenCount(ctx context.Context, userID uuid.UUID, emailAccountID *uuid.UUID) (int64, error)
+	GetUnseenCount(ctx context.Context, orgID uuid.UUID, emailAccountID *uuid.UUID) (int64, error)
 	MarkSeen(ctx context.Context, userID, id uuid.UUID, seen bool) error
 	MarkSeenBulk(ctx context.Context, userID uuid.UUID, ids []uuid.UUID, seen bool) error
 	Delete(ctx context.Context, userID, id uuid.UUID) error
@@ -424,7 +424,7 @@ func (r *uniboxRepository) Search(ctx context.Context, orgID, userID uuid.UUID, 
 	return r.queryThreadList(ctx, query, args, params.PageSize)
 }
 
-func (r *uniboxRepository) GetUnseenCount(ctx context.Context, userID uuid.UUID, emailAccountID *uuid.UUID) (int64, error) {
+func (r *uniboxRepository) GetUnseenCount(ctx context.Context, orgID uuid.UUID, emailAccountID *uuid.UUID) (int64, error) {
 	var count int64
 
 	// Count unread THREADS (distinct, empty-thread-safe), not messages,
@@ -432,16 +432,19 @@ func (r *uniboxRepository) GetUnseenCount(ctx context.Context, userID uuid.UUID,
 	if emailAccountID != nil {
 		err := r.db.QueryRow(ctx,
 			`SELECT COUNT(DISTINCT COALESCE(NULLIF(thread_id, ''), id::text))
-			 FROM unibox_emails WHERE user_id = $1 AND email_id = $2 AND seen = FALSE`,
-			userID, *emailAccountID,
+			 FROM unibox_emails
+			 WHERE email_id IN (SELECT id FROM email_accounts WHERE organization_id = $1)
+			   AND email_id = $2 AND seen = FALSE`,
+			orgID, *emailAccountID,
 		).Scan(&count)
 		return count, err
 	}
 
 	err := r.db.QueryRow(ctx,
 		`SELECT COUNT(DISTINCT COALESCE(NULLIF(thread_id, ''), id::text))
-		 FROM unibox_emails WHERE user_id = $1 AND seen = FALSE`,
-		userID,
+		 FROM unibox_emails
+		 WHERE email_id IN (SELECT id FROM email_accounts WHERE organization_id = $1) AND seen = FALSE`,
+		orgID,
 	).Scan(&count)
 	return count, err
 }
