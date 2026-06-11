@@ -17,7 +17,7 @@ import (
 func (r *organizationRepository) ListRoles(ctx context.Context, orgID uuid.UUID) ([]models.OrganizationRole, error) {
 	query := `
 		SELECT
-			rl.id, rl.organization_id, rl.name, rl.description, rl.permissions,
+			rl.id, rl.organization_id, rl.name, rl.description, rl.color, rl.permissions,
 			rl.created_at, rl.updated_at,
 			(SELECT COUNT(*) FROM organization_members om WHERE om.role_id = rl.id) AS member_count
 		FROM organization_roles rl
@@ -34,7 +34,7 @@ func (r *organizationRepository) ListRoles(ctx context.Context, orgID uuid.UUID)
 	for rows.Next() {
 		var role models.OrganizationRole
 		if err := rows.Scan(
-			&role.ID, &role.OrganizationID, &role.Name, &role.Description, &role.Permissions,
+			&role.ID, &role.OrganizationID, &role.Name, &role.Description, &role.Color, &role.Permissions,
 			&role.CreatedAt, &role.UpdatedAt, &role.MemberCount,
 		); err != nil {
 			return nil, err
@@ -48,7 +48,7 @@ func (r *organizationRepository) ListRoles(ctx context.Context, orgID uuid.UUID)
 func (r *organizationRepository) GetRoleByID(ctx context.Context, orgID, roleID uuid.UUID) (*models.OrganizationRole, error) {
 	query := `
 		SELECT
-			rl.id, rl.organization_id, rl.name, rl.description, rl.permissions,
+			rl.id, rl.organization_id, rl.name, rl.description, rl.color, rl.permissions,
 			rl.created_at, rl.updated_at,
 			(SELECT COUNT(*) FROM organization_members om WHERE om.role_id = rl.id) AS member_count
 		FROM organization_roles rl
@@ -56,7 +56,7 @@ func (r *organizationRepository) GetRoleByID(ctx context.Context, orgID, roleID 
 	`
 	var role models.OrganizationRole
 	err := r.db.QueryRow(ctx, query, orgID, roleID).Scan(
-		&role.ID, &role.OrganizationID, &role.Name, &role.Description, &role.Permissions,
+		&role.ID, &role.OrganizationID, &role.Name, &role.Description, &role.Color, &role.Permissions,
 		&role.CreatedAt, &role.UpdatedAt, &role.MemberCount,
 	)
 	if err == pgx.ErrNoRows {
@@ -78,10 +78,10 @@ func (r *organizationRepository) CountRoles(ctx context.Context, orgID uuid.UUID
 // CreateRole inserts a custom role.
 func (r *organizationRepository) CreateRole(ctx context.Context, role *models.OrganizationRole) error {
 	query := `
-		INSERT INTO organization_roles (id, organization_id, name, description, permissions)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO organization_roles (id, organization_id, name, description, color, permissions)
+		VALUES ($1, $2, $3, $4, $5, $6)
 	`
-	_, err := r.db.Exec(ctx, query, role.ID, role.OrganizationID, role.Name, role.Description, role.Permissions)
+	_, err := r.db.Exec(ctx, query, role.ID, role.OrganizationID, role.Name, role.Description, role.Color, role.Permissions)
 	return err
 }
 
@@ -97,9 +97,9 @@ func (r *organizationRepository) UpdateRole(ctx context.Context, role *models.Or
 
 	if _, err := tx.Exec(ctx, `
 		UPDATE organization_roles
-		SET name = $3, description = $4, permissions = $5, updated_at = NOW()
+		SET name = $3, description = $4, color = $5, permissions = $6, updated_at = NOW()
 		WHERE organization_id = $1 AND id = $2
-	`, role.OrganizationID, role.ID, role.Name, role.Description, role.Permissions); err != nil {
+	`, role.OrganizationID, role.ID, role.Name, role.Description, role.Color, role.Permissions); err != nil {
 		return err
 	}
 

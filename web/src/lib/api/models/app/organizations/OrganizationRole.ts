@@ -5,6 +5,7 @@ export default interface OrganizationRole {
     organization_id: string;
     name: string;
     description: string;
+    color: string;
     permissions: number;
     member_count: number;
     created_at: string;

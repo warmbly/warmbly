@@ -13,6 +13,7 @@ import (
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/crypt"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
@@ -211,6 +212,22 @@ func (s *organizationService) Create(ctx context.Context, userID uuid.UUID, name
 		return nil, errx.New(errx.Internal, "failed to add owner member")
 	}
 
+	// Seed the default roles (Admin/Manager/Viewer). Ordinary rows from here
+	// on: the owner can rename, reshape, or delete them. Best-effort — a
+	// failure leaves a usable org where roles can be created manually.
+	for _, seed := range models.DefaultSeedRoles() {
+		if err := s.orgRepo.CreateRole(ctx, &models.OrganizationRole{
+			ID:             uuid.New(),
+			OrganizationID: org.ID,
+			Name:           seed.Name,
+			Description:    seed.Description,
+			Color:          seed.Color,
+			Permissions:    seed.Permissions,
+		}); err != nil {
+			sentry.CaptureException(err)
+		}
+	}
+
 	return org, nil
 }
 
@@ -337,34 +354,22 @@ func (s *organizationService) InviteMember(ctx context.Context, orgID uuid.UUID,
 	// First, we need to check if there's already a user with this email
 	// For now, we'll just create the invitation
 
-	// Determine role and permissions. A custom role wins and snapshots its
+	// Roles are data rows: every invite lands in one, snapshotting its
 	// name + permissions onto the invitation (kept in sync via role_id).
-	role := string(models.RoleViewer)
-	var roleID *uuid.UUID
-	var permissions models.OrganizationPermission
-
-	if req.RoleID != nil {
-		customRole, rerr := s.orgRepo.GetRoleByID(ctx, orgID, *req.RoleID)
-		if rerr != nil {
-			sentry.CaptureException(rerr)
-			return nil, errx.New(errx.Internal, "failed to load role")
-		}
-		if customRole == nil {
-			return nil, errx.New(errx.BadRequest, "role not found")
-		}
-		role = customRole.Name
-		roleID = &customRole.ID
-		permissions = customRole.Permissions
-	} else {
-		if req.Role != "" && models.IsValidRole(req.Role) {
-			role = req.Role
-		}
-		if req.Permissions != nil {
-			permissions = models.OrganizationPermission(*req.Permissions)
-		} else {
-			permissions = models.GetRolePermissions(models.Role(role))
-		}
+	if req.RoleID == nil {
+		return nil, errx.New(errx.BadRequest, "a role is required")
 	}
+	workspaceRole, rerr := s.orgRepo.GetRoleByID(ctx, orgID, *req.RoleID)
+	if rerr != nil {
+		sentry.CaptureException(rerr)
+		return nil, errx.New(errx.Internal, "failed to load role")
+	}
+	if workspaceRole == nil {
+		return nil, errx.New(errx.BadRequest, "role not found")
+	}
+	role := workspaceRole.Name
+	roleID := &workspaceRole.ID
+	permissions := workspaceRole.Permissions
 
 	// Generate invitation token
 	token, xerr := generateInvitationToken()
@@ -465,39 +470,22 @@ func (s *organizationService) UpdateMemberRole(ctx context.Context, orgID, membe
 		return nil, errx.New(errx.Forbidden, "cannot modify owner role")
 	}
 
-	if req.RoleID != nil {
-		// Assign a custom role: snapshot its name + permissions; role edits
-		// propagate to this member via role_id.
-		customRole, rerr := s.orgRepo.GetRoleByID(ctx, orgID, *req.RoleID)
-		if rerr != nil {
-			sentry.CaptureException(rerr)
-			return nil, errx.New(errx.Internal, "failed to load role")
-		}
-		if customRole == nil {
-			return nil, errx.New(errx.BadRequest, "role not found")
-		}
-		member.Role = customRole.Name
-		member.RoleID = &customRole.ID
-		member.Permissions = customRole.Permissions
-	} else if req.Role != nil {
-		if !models.IsValidRole(*req.Role) {
-			return nil, errx.New(errx.BadRequest, "invalid role")
-		}
-		// Cannot promote to owner
-		if *req.Role == string(models.RoleOwner) {
-			return nil, errx.New(errx.Forbidden, "cannot promote to owner, use transfer ownership")
-		}
-		member.Role = *req.Role
-		member.RoleID = nil
-		// Update permissions to match new role unless custom permissions provided
-		if req.Permissions == nil {
-			member.Permissions = models.GetRolePermissions(models.Role(*req.Role))
-		}
+	if req.RoleID == nil {
+		return nil, errx.New(errx.BadRequest, "a role is required")
 	}
-
-	if req.RoleID == nil && req.Permissions != nil {
-		member.Permissions = models.OrganizationPermission(*req.Permissions)
+	// Snapshot the role's name + permissions; role edits keep propagating
+	// to this member via role_id.
+	workspaceRole, rerr := s.orgRepo.GetRoleByID(ctx, orgID, *req.RoleID)
+	if rerr != nil {
+		sentry.CaptureException(rerr)
+		return nil, errx.New(errx.Internal, "failed to load role")
 	}
+	if workspaceRole == nil {
+		return nil, errx.New(errx.BadRequest, "role not found")
+	}
+	member.Role = workspaceRole.Name
+	member.RoleID = &workspaceRole.ID
+	member.Permissions = workspaceRole.Permissions
 
 	if err := s.orgRepo.UpdateMember(ctx, member); err != nil {
 		sentry.CaptureException(err)
@@ -1226,11 +1214,17 @@ func (s *organizationService) CreateRole(ctx context.Context, orgID, actorID uui
 		return nil, errx.New(errx.Forbidden, "custom role limit reached")
 	}
 
+	color := strings.TrimSpace(req.Color)
+	if color != "" && !crypt.IsValidHexColor(color) {
+		return nil, errx.New(errx.BadRequest, "color must be a hex value like #0ea5e9")
+	}
+
 	role := &models.OrganizationRole{
 		ID:             uuid.New(),
 		OrganizationID: orgID,
 		Name:           name,
 		Description:    strings.TrimSpace(req.Description),
+		Color:          color,
 		Permissions:    perms,
 	}
 	if err := s.orgRepo.CreateRole(ctx, role); err != nil {
@@ -1259,6 +1253,13 @@ func (s *organizationService) UpdateRole(ctx context.Context, orgID, actorID, ro
 	}
 	if req.Description != nil {
 		role.Description = strings.TrimSpace(*req.Description)
+	}
+	if req.Color != nil {
+		color := strings.TrimSpace(*req.Color)
+		if color != "" && !crypt.IsValidHexColor(color) {
+			return nil, errx.New(errx.BadRequest, "color must be a hex value like #0ea5e9")
+		}
+		role.Color = color
 	}
 	if req.Permissions != nil {
 		perms := models.OrganizationPermission(*req.Permissions)

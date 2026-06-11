@@ -38,7 +38,7 @@ import type OrganizationRole from "@/lib/api/models/app/organizations/Organizati
 import { useAppStore } from "@/stores";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
-import { ROLE_CATALOG, getRoleDef } from "@/lib/permissions";
+import RoleSelect from "../_components/RoleSelect";
 import {
     RolePill,
     Section,
@@ -101,18 +101,14 @@ export default function MembersSettingsPage() {
             () => toast.error("Couldn't copy"),
         );
     }
-    function changeRole(memberId: string, next: RoleChoice, email: string) {
-        const label = next.kind === "builtin" ? getRoleDef(next.id).label : next.label;
-        confirm?.show(`Change ${email}'s role to ${label}?`, async () => {
+    function changeRole(memberId: string, next: OrganizationRole, email: string) {
+        confirm?.show(`Change ${email}'s role to ${next.name}?`, async () => {
             try {
                 await toast.promise(
-                    updateRole.mutateAsync({
-                        id: memberId,
-                        data: next.kind === "builtin" ? { role: next.id } : { role_id: next.id },
-                    }),
+                    updateRole.mutateAsync({ id: memberId, data: { role_id: next.id } }),
                     {
                         loading: "Saving…",
-                        success: `Role updated to ${label}`,
+                        success: `Role updated to ${next.name}`,
                         error: (e: AppError) => buildError(e),
                     },
                 );
@@ -135,16 +131,12 @@ export default function MembersSettingsPage() {
                     <InviteFlow
                         pending={invite.isPending}
                         customRoles={customRoles.data ?? []}
-                        onSubmit={async (emails, choice) => {
+                        onSubmit={async (emails, role) => {
                             let ok = 0;
                             let failed = 0;
                             for (const e of emails) {
                                 try {
-                                    await invite.mutateAsync(
-                                        choice.kind === "builtin"
-                                            ? { email: e, role: choice.id }
-                                            : { email: e, role_id: choice.id },
-                                    );
+                                    await invite.mutateAsync({ email: e, role_id: role.id });
                                     ok++;
                                 } catch {
                                     failed++;
@@ -212,10 +204,10 @@ export default function MembersSettingsPage() {
                                             </td>
                                             <td className="px-3">
                                                 {access.isOwner && !isOwner ? (
-                                                    <InlineRolePicker
-                                                        value={m.role}
-                                                        roleId={m.role_id}
-                                                        customRoles={customRoles.data ?? []}
+                                                    <RoleSelect
+                                                        roles={customRoles.data ?? []}
+                                                        value={m.role_id}
+                                                        fallbackLabel={m.role}
                                                         onChange={(next) => changeRole(m.user_id, next, email)}
                                                         pending={updateRole.isPending}
                                                     />
@@ -356,113 +348,6 @@ const ACCENT_DOT: Record<string, string> = {
     amber:   "bg-amber-500",
 };
 
-type RoleChoice =
-    | { kind: "builtin"; id: string }
-    | { kind: "custom"; id: string; label: string };
-
-function InlineRolePicker({
-    value,
-    roleId,
-    customRoles,
-    onChange,
-    pending,
-}: {
-    value: string;
-    roleId?: string;
-    customRoles: OrganizationRole[];
-    onChange: (next: RoleChoice) => void;
-    pending: boolean;
-}) {
-    const [open, setOpen] = React.useState(false);
-    const assignable = ROLE_CATALOG.filter((r) => r.assignable && r.id !== "member");
-
-    // A member on a custom role renders that role's name; built-ins keep
-    // their catalog accent.
-    const customCurrent = roleId ? customRoles.find((r) => r.id === roleId) : undefined;
-    const cur = getRoleDef(value);
-    const label = customCurrent?.name ?? (customCurrent === undefined && roleId ? value : cur.label);
-    const accent = customCurrent || roleId ? "sky" : cur.accent;
-
-    return (
-        <PopoverMenu open={open} onOpenChange={setOpen} align="start">
-            <PopoverMenuTrigger asChild>
-                <button
-                    type="button"
-                    disabled={pending}
-                    className={`h-6 px-1.5 rounded text-[10px] uppercase tracking-[0.08em] font-semibold inline-flex items-center gap-1 border transition-colors ${ACCENT_PILL[accent] ?? ACCENT_PILL.slate} hover:opacity-80 disabled:opacity-60`}
-                >
-                    {pending ? (
-                        <Loader2Icon className="w-2.5 h-2.5 animate-spin" />
-                    ) : (
-                        <span className={`size-1.5 rounded-full ${ACCENT_DOT[accent] ?? ACCENT_DOT.slate}`} />
-                    )}
-                    {label}
-                    <ChevronDownIcon className="w-2.5 h-2.5 opacity-60" />
-                </button>
-            </PopoverMenuTrigger>
-            <PopoverMenuContent minWidth={288} className="max-w-[calc(100vw-2rem)]">
-                {assignable.map((r) => {
-                    const selected = !roleId && r.id === value;
-                    return (
-                        <button
-                            key={r.id}
-                            type="button"
-                            onClick={() => {
-                                setOpen(false);
-                                onChange({ kind: "builtin", id: r.id });
-                            }}
-                            className={`w-full px-2.5 py-1.5 text-left hover:bg-slate-100 transition-colors ${
-                                selected ? "bg-slate-50" : ""
-                            }`}
-                        >
-                            <div className="flex items-center gap-2">
-                                <span className={`size-1.5 rounded-full ${ACCENT_DOT[r.accent] ?? ACCENT_DOT.slate}`} />
-                                <span className="text-[12px] font-medium text-slate-900">
-                                    {r.label}
-                                </span>
-                                {selected && <CheckIcon className="ml-auto w-3 h-3 text-slate-500" />}
-                            </div>
-                            <p className="text-[11px] text-slate-500 leading-tight mt-0.5">
-                                {r.description}
-                            </p>
-                        </button>
-                    );
-                })}
-                {customRoles.length > 0 && (
-                    <div className="px-2.5 pt-1.5 pb-0.5 text-[9.5px] uppercase tracking-[0.14em] text-slate-400 border-t border-slate-100">
-                        Custom roles
-                    </div>
-                )}
-                {customRoles.map((r) => {
-                    const selected = roleId === r.id;
-                    return (
-                        <button
-                            key={r.id}
-                            type="button"
-                            onClick={() => {
-                                setOpen(false);
-                                onChange({ kind: "custom", id: r.id, label: r.name });
-                            }}
-                            className={`w-full px-2.5 py-1.5 text-left hover:bg-slate-100 transition-colors ${
-                                selected ? "bg-slate-50" : ""
-                            }`}
-                        >
-                            <div className="flex items-center gap-2">
-                                <span className={`size-1.5 rounded-full ${ACCENT_DOT.sky}`} />
-                                <span className="text-[12px] font-medium text-slate-900">{r.name}</span>
-                                {selected && <CheckIcon className="ml-auto w-3 h-3 text-slate-500" />}
-                            </div>
-                            {r.description && (
-                                <p className="text-[11px] text-slate-500 leading-tight mt-0.5">{r.description}</p>
-                            )}
-                        </button>
-                    );
-                })}
-            </PopoverMenuContent>
-        </PopoverMenu>
-    );
-}
-
 /**
  * Multi-email invite flow. Email chips + role selector + send button,
  * with the role-description rail on the right so the owner sees what
@@ -473,13 +358,18 @@ function InviteFlow({
     pending,
     customRoles,
 }: {
-    onSubmit: (emails: string[], choice: RoleChoice) => Promise<void>;
+    onSubmit: (emails: string[], role: OrganizationRole) => Promise<void>;
     pending: boolean;
     customRoles: OrganizationRole[];
 }) {
     const [chips, setChips] = React.useState<{ email: string; valid: boolean }[]>([]);
     const [draft, setDraft] = React.useState("");
-    const [role, setRole] = React.useState<RoleChoice>({ kind: "builtin", id: "manager" });
+    const [roleId, setRoleId] = React.useState<string | null>(null);
+    // Default to the seeded Viewer (least privilege), else the first role.
+    const selectedRole =
+        customRoles.find((r) => r.id === roleId) ??
+        customRoles.find((r) => r.name === "Viewer") ??
+        customRoles[0];
     const SEPARATOR_RE = /[\s,;]+/;
 
     function commitDrafts(value: string) {
@@ -537,18 +427,20 @@ function InviteFlow({
                 icon: "⚠️",
             });
         }
-        await onSubmit(valid, role);
+        if (!selectedRole) {
+            toast.error("Create a role first (Settings → Roles & access)");
+            return;
+        }
+        await onSubmit(valid, selectedRole);
         setChips([]);
         setDraft("");
     }
 
     const totalCount = chips.length + (draft.trim() ? draft.trim().split(SEPARATOR_RE).filter(Boolean).length : 0);
-    const assignable = ROLE_CATALOG.filter((r) => r.assignable && r.id !== "member");
-    const activeCustom = role.kind === "custom" ? customRoles.find((r) => r.id === role.id) : undefined;
-    const activeRole = role.kind === "builtin" ? getRoleDef(role.id) : undefined;
-    const activeLabel = activeRole?.label ?? activeCustom?.name ?? "Custom role";
+    const activeLabel = selectedRole?.name ?? "No roles yet";
     const activeDescription =
-        activeRole?.description ?? activeCustom?.description ?? "A custom permission set for this workspace.";
+        selectedRole?.description ??
+        "Create a role under Settings → Roles & access before inviting members.";
 
     return (
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_220px] gap-4">
@@ -612,36 +504,12 @@ function InviteFlow({
 
                 <div className="flex items-center gap-2">
                     <Label className="!mb-0 w-16">Role</Label>
-                    <div className="inline-flex items-center rounded-md border border-slate-200 bg-white p-0.5 shrink-0 flex-wrap">
-                        {assignable.map((r) => (
-                            <button
-                                key={r.id}
-                                type="button"
-                                onClick={() => setRole({ kind: "builtin", id: r.id })}
-                                className={`h-6 px-2.5 rounded text-[11.5px] font-medium transition-colors ${
-                                    role.kind === "builtin" && role.id === r.id
-                                        ? "bg-slate-900 text-white"
-                                        : "text-slate-500 hover:text-slate-900"
-                                }`}
-                            >
-                                {r.label}
-                            </button>
-                        ))}
-                        {customRoles.map((r) => (
-                            <button
-                                key={r.id}
-                                type="button"
-                                onClick={() => setRole({ kind: "custom", id: r.id, label: r.name })}
-                                className={`h-6 px-2.5 rounded text-[11.5px] font-medium transition-colors ${
-                                    role.kind === "custom" && role.id === r.id
-                                        ? "bg-sky-600 text-white"
-                                        : "text-sky-600 hover:text-sky-800"
-                                }`}
-                            >
-                                {r.name}
-                            </button>
-                        ))}
-                    </div>
+                    <RoleSelect
+                        roles={customRoles}
+                        value={selectedRole?.id}
+                        onChange={(r) => setRoleId(r.id)}
+                        pending={false}
+                    />
                 </div>
 
                 <div className="flex items-center gap-2 pt-1">

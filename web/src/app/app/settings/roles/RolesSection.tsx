@@ -16,24 +16,22 @@ import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import {
     CATEGORY_LABEL,
-    PERMISSION_BITS,
     PERMISSION_CATALOG,
-    ROLE_CATALOG,
+    ROLE_TEMPLATES,
 } from "@/lib/permissions";
+import { roleColor } from "../_components/RoleSelect";
 
-// Ownership transfer can never live in a custom role (the API rejects it).
+// Ownership transfer can never live in a role (the API rejects it).
 const EDITABLE_PERMISSIONS = PERMISSION_CATALOG.filter(
     (p) => p.key !== "TRANSFER_OWNERSHIP",
 );
 const CATEGORIES = ["data", "send", "people", "admin"] as const;
 
-// Presets the editor can start from ("preceding roles"): a built-in's
-// permission set minus anything a custom role cannot carry.
-const PRESETS = ROLE_CATALOG.filter((r) => r.assignable && r.id !== "member").map((r) => ({
-    id: r.id,
-    label: r.label,
-    permissions: r.permissions & ~PERMISSION_BITS.TRANSFER_OWNERSHIP,
-}));
+// Permission templates the editor can start from.
+const PRESETS = ROLE_TEMPLATES;
+
+// Swatch palette for role colors.
+const COLORS = ["#0ea5e9", "#8b5cf6", "#10b981", "#f59e0b", "#f43f5e", "#06b6d4", "#84cc16", "#64748b"];
 
 export default function RolesSection({ canManage }: { canManage: boolean }) {
     const roles = useRoles();
@@ -60,31 +58,15 @@ export default function RolesSection({ canManage }: { canManage: boolean }) {
     return (
         <div className="space-y-3">
             <div className="rounded-md border border-slate-200 bg-white divide-y divide-slate-200/60">
-                {ROLE_CATALOG.filter((r) => r.id !== "member").map((r) => (
-                    <div key={r.id} className="px-3 py-2 flex items-center gap-3">
-                        <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2">
-                                <span className="text-[12.5px] font-medium text-slate-900">{r.label}</span>
-                                <span className="inline-flex h-4 px-1.5 items-center rounded-sm bg-slate-100 text-slate-500 text-[9.5px] uppercase tracking-[0.1em] font-semibold">
-                                    Built-in
-                                </span>
-                            </div>
-                            <p className="text-[11px] text-slate-500 truncate">{r.description}</p>
-                        </div>
-                        <span className="font-mono text-[10.5px] text-slate-400 tabular-nums shrink-0">
-                            {countBits(r.permissions)} perms
-                        </span>
-                    </div>
-                ))}
-
                 {customRoles.map((role) => (
                     <div key={role.id} className="px-3 py-2 flex items-center gap-3">
                         <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2">
+                                <span
+                                    className="size-2 rounded-full shrink-0"
+                                    style={{ backgroundColor: roleColor(role) }}
+                                />
                                 <span className="text-[12.5px] font-medium text-slate-900 truncate">{role.name}</span>
-                                <span className="inline-flex h-4 px-1.5 items-center rounded-sm bg-sky-50 text-sky-700 text-[9.5px] uppercase tracking-[0.1em] font-semibold">
-                                    Custom
-                                </span>
                             </div>
                             <p className="text-[11px] text-slate-500 truncate">
                                 {role.description || `${countBits(role.permissions)} permissions`}
@@ -151,6 +133,7 @@ function RoleEditor({ role, onClose }: { role: OrganizationRole | null; onClose:
     const update = useUpdateRole();
     const [name, setName] = React.useState(role?.name ?? "");
     const [description, setDescription] = React.useState(role?.description ?? "");
+    const [color, setColor] = React.useState(role?.color || COLORS[0]);
     const [permissions, setPermissions] = React.useState<number>(
         role?.permissions ?? PRESETS.find((p) => p.id === "viewer")?.permissions ?? 0,
     );
@@ -166,8 +149,8 @@ function RoleEditor({ role, onClose }: { role: OrganizationRole | null; onClose:
         try {
             await toast.promise(
                 role
-                    ? update.mutateAsync({ id: role.id, data: { name: name.trim(), description, permissions } })
-                    : create.mutateAsync({ name: name.trim(), description, permissions }),
+                    ? update.mutateAsync({ id: role.id, data: { name: name.trim(), description, color, permissions } })
+                    : create.mutateAsync({ name: name.trim(), description, color, permissions }),
                 {
                     loading: "Saving…",
                     success: role ? "Role updated" : "Role created",
@@ -242,7 +225,10 @@ function RoleEditor({ role, onClose }: { role: OrganizationRole | null; onClose:
                                 <button
                                     key={p.id}
                                     type="button"
-                                    onClick={() => setPermissions(p.permissions)}
+                                    onClick={() => {
+                                        setPermissions(p.permissions);
+                                        if (!role) setColor(p.color);
+                                    }}
                                     className={`h-6 px-2.5 rounded text-[11.5px] font-medium transition-colors ${
                                         permissions === p.permissions
                                             ? "bg-slate-900 text-white"
@@ -254,8 +240,26 @@ function RoleEditor({ role, onClose }: { role: OrganizationRole | null; onClose:
                             ))}
                         </div>
                         <p className="text-[11px] text-slate-400 mt-1">
-                            Copies a built-in role's permissions as a starting point, then tweak below.
+                            Copies a template's permissions as a starting point, then tweak below.
                         </p>
+                    </div>
+
+                    <div>
+                        <Label>Color</Label>
+                        <div className="flex items-center gap-1.5">
+                            {COLORS.map((c) => (
+                                <button
+                                    key={c}
+                                    type="button"
+                                    aria-label={`Use color ${c}`}
+                                    onClick={() => setColor(c)}
+                                    className={`size-6 rounded-full border-2 transition-transform ${
+                                        color === c ? "border-slate-900 scale-110" : "border-transparent"
+                                    }`}
+                                    style={{ backgroundColor: c }}
+                                />
+                            ))}
+                        </div>
                     </div>
 
                     {CATEGORIES.map((cat) => {

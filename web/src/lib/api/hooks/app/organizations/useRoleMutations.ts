@@ -13,7 +13,7 @@ const invalidate = (qc: ReturnType<typeof useQueryClient>) => {
 export function useCreateRole() {
     const queryClient = useQueryClient();
     return useMutation({
-        mutationFn: (data: { name: string; description?: string; permissions: number }) => createRole(data),
+        mutationFn: (data: { name: string; description?: string; color?: string; permissions: number }) => createRole(data),
         onSuccess: () => invalidate(queryClient),
     })
 }
@@ -21,7 +21,7 @@ export function useCreateRole() {
 export function useUpdateRole() {
     const queryClient = useQueryClient();
     return useMutation({
-        mutationFn: ({ id, data }: { id: string; data: { name?: string; description?: string; permissions?: number } }) => updateRole(id, data),
+        mutationFn: ({ id, data }: { id: string; data: { name?: string; description?: string; color?: string; permissions?: number } }) => updateRole(id, data),
         onSuccess: () => invalidate(queryClient),
     })
 }

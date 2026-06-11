@@ -128,18 +128,16 @@ type UpdateOrganizationRequest struct {
 
 // InviteMemberRequest represents the request to invite a new member
 type InviteMemberRequest struct {
-	Email       string  `json:"email" binding:"required,email"`
-	Role        string  `json:"role,omitempty"`
-	Permissions *uint16 `json:"permissions,omitempty"`
-	// RoleID invites straight into a custom role (wins over Role/Permissions).
+	Email string `json:"email" binding:"required,email"`
+	// RoleID is the workspace role the invitee lands in (required: roles
+	// are data rows, there are no hardcoded role names anymore).
 	RoleID *uuid.UUID `json:"role_id,omitempty"`
 }
 
 // UpdateMemberRequest represents the request to update a member's role/permissions
 type UpdateMemberRequest struct {
-	Role        *string `json:"role,omitempty"`
-	Permissions *uint16 `json:"permissions,omitempty"`
-	// RoleID assigns a custom role (wins over Role/Permissions).
+	// RoleID is the only way to change a member's access (owner is a
+	// membership status, not a role).
 	RoleID *uuid.UUID `json:"role_id,omitempty"`
 }
 
@@ -152,6 +150,7 @@ type OrganizationRole struct {
 	OrganizationID uuid.UUID              `json:"organization_id"`
 	Name           string                 `json:"name"`
 	Description    string                 `json:"description"`
+	Color          string                 `json:"color"`
 	Permissions    OrganizationPermission `json:"permissions"`
 	MemberCount    int                    `json:"member_count"`
 	CreatedAt      time.Time              `json:"created_at"`
@@ -162,6 +161,7 @@ type OrganizationRole struct {
 type CreateOrganizationRoleRequest struct {
 	Name        string `json:"name" binding:"required"`
 	Description string `json:"description,omitempty"`
+	Color       string `json:"color,omitempty"`
 	Permissions uint16 `json:"permissions"`
 }
 
@@ -170,6 +170,7 @@ type CreateOrganizationRoleRequest struct {
 type UpdateOrganizationRoleRequest struct {
 	Name        *string `json:"name,omitempty"`
 	Description *string `json:"description,omitempty"`
+	Color       *string `json:"color,omitempty"`
 	Permissions *uint16 `json:"permissions,omitempty"`
 }
 
