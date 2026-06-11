@@ -8,6 +8,7 @@ package notification
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -174,8 +175,12 @@ func (s *service) deliverEmail(userID uuid.UUID, category models.NotificationCat
 		return
 	}
 	href := link
-	if href != "" && len(href) > 0 && href[0] == '/' {
-		href = "https://app.warmbly.com" + href
+	if href != "" && href[0] == '/' {
+		base := strings.TrimRight(os.Getenv("APP_URL"), "/")
+		if base == "" {
+			base = "https://app.warmbly.com"
+		}
+		href = base + href
 	}
 	cta := ""
 	if href != "" {
