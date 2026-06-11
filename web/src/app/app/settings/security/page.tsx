@@ -1,10 +1,14 @@
-import { comingSoon } from "@/lib/helper/comingSoon";
+import React from "react";
+import { useNavigate } from "react-router-dom";
 import { RowLink, Section, SectionShell } from "../_components/SectionShell";
 import PasskeyManager from "./PasskeyManager";
 import SessionManager from "./SessionManager";
 import TwoFactorManager from "./TwoFactorManager";
+import ChangePasswordDialog from "./ChangePasswordDialog";
 
 export default function SecuritySettingsPage() {
+    const [pwOpen, setPwOpen] = React.useState(false);
+    const navigate = useNavigate();
     return (
         <SectionShell title="Security" description="Sign-in protection for your account.">
             <PasskeyManager />
@@ -16,7 +20,7 @@ export default function SecuritySettingsPage() {
                     title="Change password"
                     description="Use 12+ characters with mixed case and a number."
                     cta="Change"
-                    onClick={() => comingSoon("Change password")}
+                    onClick={() => setPwOpen(true)}
                 />
             </Section>
 
@@ -25,11 +29,9 @@ export default function SecuritySettingsPage() {
             <Section eyebrow="Alerts" description="How we let you know about account activity.">
                 <RowLink
                     title="Sign-in alerts"
-                    description="Email when your account is accessed from a new device."
+                    description="Get notified when your account is accessed from a new device. Turn email delivery on under Notifications."
                     cta="Configure"
-                    statusLabel="On"
-                    statusTone="ok"
-                    onClick={() => comingSoon("Sign-in alerts")}
+                    onClick={() => navigate("/app/settings/notifications")}
                 />
             </Section>
 
@@ -60,6 +62,7 @@ export default function SecuritySettingsPage() {
                     onClick={() => (window.location.href = "/app/api-keys")}
                 />
             </Section>
+            <ChangePasswordDialog open={pwOpen} onClose={() => setPwOpen(false)} />
         </SectionShell>
     );
 }

@@ -206,3 +206,28 @@ func (h *Handler) ResetPasswordConfirm(c *gin.Context) {
 
 	c.Status(http.StatusOK)
 }
+
+// ChangePassword updates the signed-in user's password (current + new).
+func (h *Handler) ChangePassword(c *gin.Context) {
+	uid, err := uuid.Parse(middleware.GetUserID(c))
+	if err != nil {
+		errx.Handle(c, errx.ErrUnauthorized)
+		return
+	}
+
+	var data auth.ChangePassword
+	if berr := c.ShouldBindJSON(&data); berr != nil {
+		errx.Handle(c, errx.ErrInvalid)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), authRequestTimeout)
+	defer cancel()
+
+	if xerr := h.AuthService.ChangePassword(ctx, uid, &data); xerr != nil {
+		errx.Handle(c, xerr)
+		return
+	}
+
+	c.Status(http.StatusOK)
+}

@@ -872,6 +872,10 @@ func main() {
 		notificationService = notification.NewService(repository.NewNotificationRepository(primaryDB.Pool), streamingPublisher)
 		notificationService.WireDelivery(emailNotificationService, integrationServiceForHandler, userRepostory)
 		advancedService.WireNotifier(notificationService)
+		// New-device sign-in alerts: the token service fires this on session
+		// creation from an unrecognized device, delivered as a security
+		// notification (in-app + email per the user's channels).
+		tokenService.WireSignInAlerter(notification.NewSignInAlerter(notificationService))
 		advancedService.WireRealtime(streamingPublisher)
 		emailSender := tasks.NewEmailSender(emailRepostory, eventsPublisher)
 		tasksService = tasks.NewService(

@@ -17,6 +17,7 @@ export interface NotificationPreferences {
     health_bounce: CategoryPref;
     health_complaint: CategoryPref;
     health_worker_downtime: CategoryPref;
+    security_new_signin: CategoryPref;
 }
 
 export type NotificationCategoryKey = keyof NotificationPreferences;

@@ -21,6 +21,10 @@ const HEALTH: { key: NotificationCategoryKey; label: string; hint: string }[] = 
     { key: "health_worker_downtime", label: "Worker downtime", hint: "A sender worker stops responding." },
 ];
 
+const SECURITY: { key: NotificationCategoryKey; label: string; hint: string }[] = [
+    { key: "security_new_signin", label: "New sign-in", hint: "Your account was accessed from a device you haven't used before." },
+];
+
 export default function NotificationsSettingsPage() {
     const { data, isLoading } = useNotificationPreferences();
     const update = useUpdateNotificationPreferences();
@@ -41,6 +45,7 @@ export default function NotificationsSettingsPage() {
         "health_bounce",
         "health_complaint",
         "health_worker_downtime",
+        "security_new_signin",
     ];
     // Channels present globally: "on" when every category carries the channel.
     const channelOn = (ch: "email" | "slack") =>
@@ -101,6 +106,9 @@ export default function NotificationsSettingsPage() {
                     </Section>
                     <Section eyebrow="Health" description="Deliverability + infrastructure alerts. Recommended on.">
                         {rows(HEALTH)}
+                    </Section>
+                    <Section eyebrow="Security" description="Account access alerts.">
+                        {rows(SECURITY)}
                     </Section>
                     <Section eyebrow="Channels" description="Where enabled notifications are delivered. Applies across every category above.">
                         <Row label="In-app" description="The bell in the dashboard chrome (controlled per category above).">

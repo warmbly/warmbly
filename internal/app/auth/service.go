@@ -36,6 +36,10 @@ type AuthService interface {
 
 	ResetPasswordStart(ctx context.Context, data *ResetPasswordStart, ipaddr string) *errx.Error
 	ResetPasswordConfirm(ctx context.Context, data *ResetPasswordConfirm, session, ipaddr string) *errx.Error
+
+	// ChangePassword updates a logged-in user's password after verifying the
+	// current one.
+	ChangePassword(ctx context.Context, userID uuid.UUID, data *ChangePassword) *errx.Error
 }
 
 type authService struct {

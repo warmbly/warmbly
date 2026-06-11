@@ -81,6 +81,23 @@ func (s *tokenService) GenerateSessionWithOrg(ctx context.Context, userID uuid.U
 
 	userAgentInfo := useragent.Parse(userAgent)
 
+	// New-device check (before inserting this session): does the user already
+	// have an active session from this OS+browser? Only meaningful when they
+	// have a prior session to compare against, so a first/fresh login is quiet.
+	newDevice := false
+	if s.signInAlert != nil {
+		if prior, perr := s.tokenRepository.ListSessionsByUser(ctx, userID); perr == nil && len(prior) > 0 {
+			seen := false
+			for _, p := range prior {
+				if p.OSName == userAgentInfo.OS && p.BrowserName == userAgentInfo.Name {
+					seen = true
+					break
+				}
+			}
+			newDevice = !seen
+		}
+	}
+
 	session := &models.Session{
 		ID:                    uuid.New(),
 		UserID:                userID,
@@ -145,6 +162,17 @@ func (s *tokenService) GenerateSessionWithOrg(ctx context.Context, userID uuid.U
 	if err := tx.Commit(ctx); err != nil {
 		db.CaptureError(err, "", nil, "commit")
 		return nil, errx.InternalError()
+	}
+
+	if newDevice && s.signInAlert != nil {
+		alerter := s.signInAlert
+		uid, browser, osName := userID, session.BrowserName, session.OSName
+		city, country := session.LocationCity, session.LocationCountry
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+			defer cancel()
+			alerter.NewSignIn(ctx, uid, browser, osName, city, country)
+		}()
 	}
 
 	return &models.Token{

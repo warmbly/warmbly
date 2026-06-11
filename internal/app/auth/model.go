@@ -22,3 +22,8 @@ type ResetPasswordConfirm struct {
 	Password  string `json:"password"`
 	Turnstile string `json:"turnstile"`
 }
+
+type ChangePassword struct {
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password"`
+}

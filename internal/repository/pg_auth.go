@@ -19,6 +19,7 @@ type AuthRepository interface {
 	IsValidCredentials(ctx context.Context, email, password string) (uuid.UUID, *errx.Error)
 	ExternalLogin(ctx context.Context, email string) (*models.User, *errx.Error)
 	ResetPassword(ctx context.Context, userID uuid.UUID, password string) *errx.Error
+	GetPasswordHash(ctx context.Context, userID uuid.UUID) (string, *errx.Error)
 }
 
 type authRepository struct {
@@ -111,6 +112,24 @@ func (r *authRepository) ExternalLogin(ctx context.Context, email string) (*mode
 	}
 
 	return &u, nil
+}
+
+// GetPasswordHash returns the stored argon2 hash for a user (empty when the
+// account is OAuth-only / passwordless).
+func (r *authRepository) GetPasswordHash(ctx context.Context, userID uuid.UUID) (string, *errx.Error) {
+	var hash *string
+	err := r.DB.QueryRow(ctx, `SELECT password_hash FROM users WHERE id = $1`, userID).Scan(&hash)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", errx.ErrNotFound
+		}
+		db.CaptureError(err, "get password hash", []any{userID}, "queryrow")
+		return "", errx.InternalError()
+	}
+	if hash == nil {
+		return "", nil
+	}
+	return *hash, nil
 }
 
 func (r *authRepository) ResetPassword(ctx context.Context, userID uuid.UUID, passwordHash string) *errx.Error {

@@ -118,3 +118,39 @@ func (s *authService) ResetPasswordConfirm(ctx context.Context, data *ResetPassw
 
 	return nil
 }
+
+// ChangePassword updates a logged-in user's password. It verifies the current
+// password first (so a hijacked but unattended session can't silently change
+// it), rejects OAuth-only accounts, and enforces the password policy.
+func (s *authService) ChangePassword(ctx context.Context, userID uuid.UUID, data *ChangePassword) *errx.Error {
+	hash, xerr := s.authRepository.GetPasswordHash(ctx, userID)
+	if xerr != nil {
+		return xerr
+	}
+	if hash == "" {
+		return errx.New(errx.BadRequest, "this account signs in without a password")
+	}
+
+	ok, verr := argon2.Verify(data.CurrentPassword, hash)
+	if verr != nil {
+		sentry.CaptureException(verr)
+		return errx.InternalError()
+	}
+	if !ok {
+		return errx.ErrCredentials
+	}
+
+	if !crypt.ValidatePassword(data.NewPassword) {
+		return errx.ErrPassword
+	}
+	if data.NewPassword == data.CurrentPassword {
+		return errx.New(errx.BadRequest, "the new password must be different")
+	}
+
+	newHash, hashErr := argon2.Hash(data.NewPassword)
+	if hashErr != nil {
+		sentry.CaptureException(hashErr)
+		return errx.InternalError()
+	}
+	return s.authRepository.ResetPassword(ctx, userID, newHash)
+}
