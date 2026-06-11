@@ -27,6 +27,8 @@ import type MiniCampaign from "@/lib/api/models/app/campaigns/MiniCampaign";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import BookACallButton from "@/components/app/integrations/BookACallButton";
+import ResourceViewers from "@/components/app/presence/ResourceViewers";
+import { usePresenceResource } from "@/hooks/PresenceProvider";
 import NewMeetingDialog from "@/components/app/meetings/NewMeetingDialog";
 import OverviewTab from "./contact-edit/OverviewTab";
 import ActivityTab from "./contact-edit/ActivityTab";
@@ -79,6 +81,10 @@ function ContactEditPanel({
     const update = useUpdateContact(contact.id);
     const detail = useContact(contact.id);
     const confirm = useConfirm();
+
+    // Collaboration: claim this contact while the 360 panel is open so a
+    // teammate editing the same person sees the live-viewer pill up top.
+    usePresenceResource(`contact:${contact.id}`, "editing");
 
     const [tab, setTab] = React.useState<ContactSlideTab>(initialTab ?? "overview");
 
@@ -338,6 +344,7 @@ function ContactHeader({
                         {displayName}
                     </h2>
                     {statusPill}
+                    <ResourceViewers resource={`contact:${contact.id}`} className="shrink-0" />
                     {dirty && (
                         <span className="inline-flex h-5 items-center px-1.5 rounded text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200">
                             Unsaved

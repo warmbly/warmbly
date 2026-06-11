@@ -7,6 +7,7 @@
 
 import type UniboxEmail from "@/lib/api/models/app/unibox/UniboxEmail";
 import { useAppStore } from "@/stores";
+import { useResourceViewers } from "@/hooks/PresenceProvider";
 import { cn } from "@/lib/utils";
 
 function relative(d: Date): string {
@@ -70,6 +71,11 @@ export function ConversationItem({ email }: ConversationItemProps) {
   const messageCount = email.message_count ?? 1;
   const labels = email.labels ?? [];
 
+  // A teammate already has this conversation open (or is replying):
+  // surface it on the row so nobody double-handles the same email.
+  const viewers = useResourceViewers(`thread:${threadId}`);
+  const replierName = viewers.find((v) => v.action === "replying")?.name;
+
   return (
     <button
       onClick={() => {
@@ -120,6 +126,29 @@ export function ConversationItem({ email }: ConversationItemProps) {
               title={`${messageCount} messages in this conversation`}
             >
               {messageCount}
+            </span>
+          )}
+          {viewers.length > 0 && (
+            <span
+              className="shrink-0 relative flex size-2"
+              title={
+                replierName
+                  ? `${replierName} is replying`
+                  : `${viewers[0].name ?? "A teammate"} is viewing`
+              }
+            >
+              <span
+                className={cn(
+                  "absolute inline-flex h-full w-full animate-ping rounded-full opacity-60",
+                  replierName ? "bg-amber-400" : "bg-emerald-400",
+                )}
+              />
+              <span
+                className={cn(
+                  "relative inline-flex size-2 rounded-full",
+                  replierName ? "bg-amber-500" : "bg-emerald-500",
+                )}
+              />
             </span>
           )}
           <span className="font-mono text-[10px] text-slate-400 tabular-nums shrink-0 ml-auto">

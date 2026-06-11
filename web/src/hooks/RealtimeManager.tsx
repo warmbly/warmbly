@@ -3,6 +3,7 @@ import { useSocket } from './context/socket'
 import { useAppStore } from '@/stores'
 import { useUserProfile } from './context/user'
 import { useRealtimeEvents } from './useRealtimeEvents'
+import { PresenceProvider } from './PresenceProvider'
 import useUnseenCount from '@/lib/api/hooks/app/unibox/useUnseenCount'
 
 export function RealtimeManager({ children }: { children: React.ReactNode }) {
@@ -120,5 +121,6 @@ export function RealtimeManager({ children }: { children: React.ReactNode }) {
   // Set up event-to-store routing
   useRealtimeEvents()
 
-  return <>{children}</>
+  // Presence rides the same org channel: who's online, who's viewing what.
+  return <PresenceProvider>{children}</PresenceProvider>
 }

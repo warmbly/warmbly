@@ -29,6 +29,8 @@ import {
 
 import { MessageBubble } from "./MessageBubble";
 import { ReplyComposer, type ReplyMode } from "./ReplyComposer";
+import ResourceViewers from "@/components/app/presence/ResourceViewers";
+import { usePresenceResource } from "@/hooks/PresenceProvider";
 import { ThreadLabelMenu } from "./ThreadLabelMenu";
 import ContactContextPanel from "./ContactContextPanel";
 import BookACallButton from "@/components/app/integrations/BookACallButton";
@@ -206,6 +208,14 @@ export function ThreadView({ threadId, emailId }: ThreadViewProps) {
     setReplyState(null);
   }, [threadId]);
 
+  // Collaboration: claim this thread while it's open so teammates see
+  // "X is viewing" (and "replying" once a composer is mounted) instead of
+  // double-handling the same conversation.
+  usePresenceResource(
+    threadId ? `thread:${threadId}` : null,
+    replyState ? "replying" : "viewing",
+  );
+
   // Opening a thread marks its unseen messages as read. The hook invalidates
   // ["unibox"], so the unread badge, the collapsed list, and the overview all
   // refresh. Once everything is seen the id list is empty and this no-ops, so
@@ -348,6 +358,7 @@ export function ThreadView({ threadId, emailId }: ThreadViewProps) {
             ))}
           </span>
         )}
+        <ResourceViewers resource={`thread:${threadId}`} className="shrink-0" />
         <div className="ml-auto flex items-center gap-1">
           <button
             type="button"

@@ -16,6 +16,7 @@ import { ChevronRight, Menu, Search } from "lucide-react";
 import { Logo } from "@/components/svg";
 import { useAppStore } from "@/stores";
 import { ConnectionIndicator } from "@/components/shared/ConnectionIndicator";
+import PresenceAvatars from "@/components/app/presence/PresenceAvatars";
 import { NotificationBell } from "./NotificationBell";
 import { OrgSwitcher } from "./OrgSwitcher";
 import { PlanPill } from "./PlanPill";
@@ -130,6 +131,7 @@ export function AppHeader({ onMenu }: { onMenu?: () => void }) {
                     <PlanPill />
                     <div className="h-4 w-px bg-slate-200/80" />
                 </div>
+                <PresenceAvatars />
                 <ConnectionIndicator />
                 <NotificationBell />
                 <button

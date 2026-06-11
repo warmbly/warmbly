@@ -35,6 +35,11 @@ export function useRealtimeEvents() {
       const event = rawEvent.replace(/[.:\s-]+/g, '_').toUpperCase()
       if (!event) return
 
+      // Presence sync + throttle notices are handled by PresenceProvider /
+      // the socket layer; they must never reach the default invalidation
+      // (presence diffs fire on every teammate navigation).
+      if (event.startsWith('PRESENCE') || event === 'RATE_LIMITED') return
+
       const getString = (key: string) => {
         const value = payload[key]
         return typeof value === 'string' && value.length > 0 ? value : null
@@ -207,8 +212,48 @@ export function useRealtimeEvents() {
         return
       }
 
+      // Audit spine: every audited mutation broadcasts AUDIT_CREATED with its
+      // action/entity_type/entity_id org-wide, so one branch keeps every
+      // teammate's lists fresh for surfaces that have no dedicated event.
       if (includes('AUDIT')) {
         invalidate([['audit']])
+        const entityType = getString('entity_type') ?? ''
+        const entityId = getString('entity_id')
+        const spine: Record<string, QueryKey[]> = {
+          contact: [['contacts']],
+          campaign: [['campaigns'], ['analytics']],
+          sequence: [['campaigns']],
+          email_account: [['emails', 'list'], ['analytics', 'accounts']],
+          api_key: [['api-keys']],
+          webhook: [['integrations', 'connections']],
+          template: [['templates']],
+          organization: [['organizations']],
+          organization_member: [['organizations'], ['organizations', 'members']],
+          invitation: [['organizations', 'invitations']],
+          team: [['teams']],
+          automation: [['automations']],
+          integration: [['integrations', 'connections']],
+          lead_sync_source: [['lead-sync', 'sources']],
+          meeting: [['meetings'], ['meetings', 'summary']],
+          subscription: [['subscription'], ['organizations', 'limits']],
+          settings: [['organizations', 'current']],
+          unibox: [['unibox']],
+          crm_note: [['crm'], ['contacts']],
+          crm_pipeline: [['crm', 'pipelines'], ['crm', 'deals']],
+          crm_stage: [['crm', 'pipelines'], ['crm', 'deals']],
+          crm_deal: [['crm', 'deals'], ['contacts']],
+          crm_task: [['crm', 'tasks'], ['crm', 'deals']],
+          warmup_routing_rule: [['analytics', 'warmup']],
+          // Folders / tags / categories ride the user payload.
+          folder: [['auth', 'me']],
+          tag: [['auth', 'me']],
+          category: [['auth', 'me'], ['contacts']],
+        }
+        const keys = spine[entityType]
+        if (keys) invalidate(keys)
+        if (entityId && entityType === 'contact') invalidate([['contacts', entityId]])
+        if (entityId && entityType === 'campaign') invalidate([['campaigns', entityId]])
+        if (entityId && entityType === 'automation') invalidate([['automations', entityId]])
         return
       }
 

@@ -103,6 +103,8 @@ import TaskTypePicker from "@/components/app/crm/TaskTypePicker";
 import AssigneeTeamPicker, { type AssigneeValue } from "@/components/app/crm/AssigneeTeamPicker";
 import { useAutomations } from "@/lib/api/hooks/app/automations/useAutomations";
 import ProviderGlyph from "@/app/app/integrations/_components/ProviderGlyph";
+import ResourceViewers from "@/components/app/presence/ResourceViewers";
+import { usePresenceResource } from "@/hooks/PresenceProvider";
 import { cn } from "@/lib/utils";
 
 const NODE_W = 248;
@@ -411,6 +413,11 @@ export default function AutomationFlow({
 }) {
     const update = useUpdateAutomation();
     const test = useTestAutomation();
+
+    // Collaboration: claim this automation as "editing" while the builder is
+    // open, so a teammate opening the same flow sees who's already in it
+    // before they start moving nodes around.
+    usePresenceResource(`automation:${automation.id}`, "editing");
 
     const [name, setName] = React.useState(automation.name);
     const [enabled, setEnabled] = React.useState(automation.enabled);
@@ -734,6 +741,7 @@ export default function AutomationFlow({
                     placeholder="Automation name"
                     className="h-7 px-2 w-56 max-w-[30vw] md:max-w-[36vw] rounded-md text-[13px] font-medium text-slate-900 outline-none hover:bg-slate-50 focus:bg-white focus:border-sky-400 focus:ring-2 focus:ring-sky-100 border border-transparent"
                 />
+                <ResourceViewers resource={`automation:${automation.id}`} className="shrink-0" />
                 <button
                     type="button"
                     role="switch"
