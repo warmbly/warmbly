@@ -273,7 +273,7 @@ export default function MembersSettingsPage() {
                                             </div>
                                         </td>
                                         <td className="px-3">
-                                            <RolePill role={inv.role} color={(customRoles.data ?? []).find((r) => r.id === inv.role_id)?.color} />
+                                            {(inv.roles?.length ?? 0) > 0 ? <RoleChips roles={inv.roles!} /> : <RolePill role={inv.role} color={(customRoles.data ?? []).find((r) => r.id === inv.role_id)?.color} />}
                                         </td>
                                         <td className="px-3 font-mono text-[11px] text-slate-500 tabular-nums hidden md:table-cell">
                                             {new Date(inv.expires_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}

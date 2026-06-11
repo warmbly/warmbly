@@ -48,7 +48,7 @@ type OrganizationService interface {
 	ListRoles(ctx context.Context, orgID uuid.UUID) ([]models.OrganizationRole, *errx.Error)
 	CreateRole(ctx context.Context, orgID, actorID uuid.UUID, req *models.CreateOrganizationRoleRequest) (*models.OrganizationRole, *errx.Error)
 	UpdateRole(ctx context.Context, orgID, actorID, roleID uuid.UUID, req *models.UpdateOrganizationRoleRequest) (*models.OrganizationRole, *errx.Error)
-	DeleteRole(ctx context.Context, orgID, roleID uuid.UUID) *errx.Error
+	DeleteRole(ctx context.Context, orgID, actorID, roleID uuid.UUID) *errx.Error
 	UpdateMemberRole(ctx context.Context, orgID, actorID, memberUserID uuid.UUID, req *models.UpdateMemberRequest) (*models.OrganizationMember, *errx.Error)
 	RemoveMember(ctx context.Context, orgID, memberUserID uuid.UUID) *errx.Error
 
@@ -510,13 +510,9 @@ func (s *organizationService) AcceptInvitation(ctx context.Context, token string
 		InvitedAt:      inv.CreatedAt,
 		AcceptedAt:     &now,
 	}
-	if err := s.orgRepo.AddMember(ctx, member); err != nil {
+	if err := s.orgRepo.AddMemberWithRoles(ctx, member, liveRoleIDs); err != nil {
 		sentry.CaptureException(err)
 		return nil, errx.New(errx.Internal, "failed to add member")
-	}
-	if err := s.orgRepo.SetMemberRoles(ctx, inv.OrganizationID, userID, liveRoleIDs); err != nil {
-		sentry.CaptureException(err)
-		return nil, errx.New(errx.Internal, "failed to assign roles")
 	}
 
 	// Delete the invitation
@@ -603,6 +599,9 @@ func (s *organizationService) GetPendingInvitations(ctx context.Context, orgID u
 	if err != nil {
 		sentry.CaptureException(err)
 		return nil, errx.New(errx.Internal, "failed to get invitations")
+	}
+	if err := s.orgRepo.HydrateInvitationRoles(ctx, invitations); err != nil {
+		sentry.CaptureException(err)
 	}
 	return invitations, nil
 }
@@ -1362,7 +1361,22 @@ func (s *organizationService) UpdateRole(ctx context.Context, orgID, actorID, ro
 	return role, nil
 }
 
-func (s *organizationService) DeleteRole(ctx context.Context, orgID, roleID uuid.UUID) *errx.Error {
+func (s *organizationService) DeleteRole(ctx context.Context, orgID, actorID, roleID uuid.UUID) *errx.Error {
+	// Deleting a role strips its permissions from everyone holding it, so the
+	// actor must hold those permissions themselves (symmetry with the grant
+	// paths — otherwise a team-manager could de-privilege admins by deleting
+	// the Admin role).
+	role, rerr := s.orgRepo.GetRoleByID(ctx, orgID, roleID)
+	if rerr != nil {
+		sentry.CaptureException(rerr)
+		return errx.New(errx.Internal, "failed to load role")
+	}
+	if role == nil {
+		return nil // already gone — idempotent
+	}
+	if xerr := s.validateActorHoldsPermissions(ctx, orgID, actorID, role.Permissions); xerr != nil {
+		return xerr
+	}
 	if err := s.orgRepo.DeleteRole(ctx, orgID, roleID); err != nil {
 		sentry.CaptureException(err)
 		return errx.New(errx.Internal, "failed to delete role")

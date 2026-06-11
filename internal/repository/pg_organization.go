@@ -42,6 +42,8 @@ type OrganizationRepository interface {
 	DeleteRole(ctx context.Context, orgID, roleID uuid.UUID) error
 
 	// Multi-role assignment (pg_member_roles.go)
+	AddMemberWithRoles(ctx context.Context, member *models.OrganizationMember, roleIDs []uuid.UUID) error
+	HydrateInvitationRoles(ctx context.Context, invitations []models.OrganizationInvitation) error
 	SetMemberRoles(ctx context.Context, orgID, userID uuid.UUID, roleIDs []uuid.UUID) error
 	GetMemberRoles(ctx context.Context, orgID, userID uuid.UUID) ([]models.MemberRole, error)
 	HydrateMemberRoles(ctx context.Context, orgID uuid.UUID, members []models.OrganizationMember) error

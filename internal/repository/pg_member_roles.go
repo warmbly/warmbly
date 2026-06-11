@@ -42,6 +42,75 @@ func recomputeMemberPermissions(ctx context.Context, tx pgx.Tx, orgID, userID uu
 	return err
 }
 
+// AddMemberWithRoles inserts a membership row and its role assignments and
+// recomputes the effective permission snapshot, all in one transaction.
+// Used by invite-accept so a partial failure can never strand a member with
+// no role rows.
+func (r *organizationRepository) AddMemberWithRoles(ctx context.Context, member *models.OrganizationMember, roleIDs []uuid.UUID) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO organization_members (id, organization_id, user_id, role, role_id, permissions, invited_by, invited_at, accepted_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+	`, member.ID, member.OrganizationID, member.UserID, member.Role, member.RoleID,
+		member.Permissions, member.InvitedBy, member.InvitedAt, member.AcceptedAt); err != nil {
+		return err
+	}
+	for _, roleID := range roleIDs {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO organization_member_roles (organization_id, user_id, role_id)
+			VALUES ($1, $2, $3) ON CONFLICT DO NOTHING
+		`, member.OrganizationID, member.UserID, roleID); err != nil {
+			return err
+		}
+	}
+	if err := recomputeMemberPermissions(ctx, tx, member.OrganizationID, member.UserID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// HydrateInvitationRoles fills the Roles slice on each pending invitation
+// from one query (mirrors HydrateMemberRoles for the roster).
+func (r *organizationRepository) HydrateInvitationRoles(ctx context.Context, invitations []models.OrganizationInvitation) error {
+	if len(invitations) == 0 {
+		return nil
+	}
+	ids := make([]uuid.UUID, 0, len(invitations))
+	for _, inv := range invitations {
+		ids = append(ids, inv.ID)
+	}
+	rows, err := r.db.Query(ctx, `
+		SELECT ir.invitation_id, r.id, r.name, r.color
+		FROM organization_invitation_roles ir
+		JOIN organization_roles r ON r.id = ir.role_id
+		WHERE ir.invitation_id = ANY($1)
+		ORDER BY r.created_at ASC
+	`, ids)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	byInvite := make(map[uuid.UUID][]models.MemberRole)
+	for rows.Next() {
+		var invID uuid.UUID
+		var mr models.MemberRole
+		if err := rows.Scan(&invID, &mr.ID, &mr.Name, &mr.Color); err != nil {
+			return err
+		}
+		byInvite[invID] = append(byInvite[invID], mr)
+	}
+	for i := range invitations {
+		invitations[i].Roles = byInvite[invitations[i].ID]
+	}
+	return nil
+}
+
 // SetMemberRoles replaces a member's assigned role set and recomputes the
 // effective permission snapshot atomically. All role ids must belong to the
 // org (enforced by the FK + the caller's validation).

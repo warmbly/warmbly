@@ -107,7 +107,13 @@ func (h *Handler) DeleteOrganizationRole(c *gin.Context) {
 		return
 	}
 
-	if xerr := h.OrganizationService.DeleteRole(c.Request.Context(), *orgID, roleID); xerr != nil {
+	actorID, uerr := middleware.GetUserUUID(c)
+	if uerr != nil {
+		errx.JSON(c, errx.New(errx.Unauthorized, "invalid user"))
+		return
+	}
+
+	if xerr := h.OrganizationService.DeleteRole(c.Request.Context(), *orgID, actorID, roleID); xerr != nil {
 		errx.JSON(c, xerr)
 		return
 	}
