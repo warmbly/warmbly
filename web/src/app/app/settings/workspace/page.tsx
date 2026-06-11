@@ -1,10 +1,6 @@
 import React from "react";
-import toast from "react-hot-toast";
 import { useAppStore } from "@/stores";
 import { TextInput } from "@/components/ui/field";
-import { TopbarAction } from "@/components/layout/Page";
-import type { AppError } from "@/lib/api/client/normalizeError";
-import buildError from "@/lib/helper/buildError";
 import useUpdateOrganization from "@/lib/api/hooks/app/organizations/useUpdateOrganization";
 import { AvatarUploader } from "@/components/app/avatar/AvatarUploader";
 import {
@@ -12,6 +8,9 @@ import {
     useUploadOrgAvatar,
 } from "@/lib/api/hooks/app/avatar/useOrgAvatar";
 import { Row, Section, SectionShell, ToggleRow } from "../_components/SectionShell";
+import SaveStatus from "../_components/SaveStatus";
+import { useAutosave } from "@/hooks/useAutosave";
+import { useRegisterUnsaved } from "@/hooks/context/unsaved";
 
 export default function WorkspaceSettingsPage() {
     const currentOrg = useAppStore((s) => s.currentOrganization);
@@ -21,41 +20,28 @@ export default function WorkspaceSettingsPage() {
     const removeOrgAvatar = useDeleteOrgAvatar();
     const updateOrg = useUpdateOrganization();
 
-    // Avatar changes are committed immediately by the uploader, so
-    // they don't count toward the dirty flag — only fields that need
-    // a "Save workspace" action do.
-    const dirty = name.trim() !== (currentOrg?.name ?? "");
+    // Auto-save the workspace name ~700ms after typing stops. An empty name is
+    // never persisted; the field just stays unsaved until it's valid again.
+    const autosave = useAutosave({
+        value: name.trim(),
+        debounceMs: 700,
+        save: async (v) => {
+            if (!v) throw new Error("name required");
+            await updateOrg.mutateAsync({ name: v });
+        },
+    });
+    useRegisterUnsaved(autosave, () => setName(autosave.savedValue));
 
-    function discard() {
-        setName(currentOrg?.name ?? "");
-    }
-
-    async function save() {
-        if (!dirty || updateOrg.isPending) return;
-        try {
-            await updateOrg.mutateAsync({ name: name.trim() });
-            toast.success("Workspace saved");
-        } catch (err) {
-            toast.error(buildError(err as AppError));
-        }
-    }
+    React.useEffect(() => {
+        autosave.markSaved(currentOrg?.name ?? "");
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [currentOrg?.name]);
 
     return (
         <SectionShell
             title="Workspace"
             description="Org-wide settings. Visible only to the owner."
-            actions={
-                dirty ? (
-                    <>
-                        <TopbarAction variant="ghost" onClick={discard}>
-                            Discard
-                        </TopbarAction>
-                        <TopbarAction onClick={save} disabled={updateOrg.isPending}>
-                            {updateOrg.isPending ? "Saving…" : "Save workspace"}
-                        </TopbarAction>
-                    </>
-                ) : null
-            }
+            actions={<SaveStatus status={autosave.status} onRetry={autosave.retry} />}
         >
             <Section
                 eyebrow="Identity"
