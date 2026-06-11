@@ -1,14 +1,13 @@
 import React from "react";
-import toast from "react-hot-toast";
-import { TopbarAction } from "@/components/layout/Page";
-import type { AppError } from "@/lib/api/client/normalizeError";
-import buildError from "@/lib/helper/buildError";
 import {
     useNotificationPreferences,
     useUpdateNotificationPreferences,
 } from "@/lib/api/hooks/app/notifications/useNotifications";
 import type { NotificationCategoryKey, NotificationPreferences } from "@/lib/api/models/app/notifications/Notification";
 import { Row, Section, SectionShell, Toggle } from "../_components/SectionShell";
+import SaveStatus from "../_components/SaveStatus";
+import { useAutosave } from "@/hooks/useAutosave";
+import { useRegisterUnsaved } from "@/hooks/context/unsaved";
 
 const INBOUND: { key: NotificationCategoryKey; label: string; hint: string }[] = [
     { key: "inbound_reply", label: "Reply received", hint: "A recipient replied to a cold email." },
@@ -30,11 +29,25 @@ export default function NotificationsSettingsPage() {
     const update = useUpdateNotificationPreferences();
     const [draft, setDraft] = React.useState<NotificationPreferences | null>(null);
 
-    React.useEffect(() => {
-        if (data) setDraft(data);
-    }, [data]);
+    // Auto-save: toggles persist instantly. markSaved on data load moves the
+    // baseline to the server value so the initial null→data hydration (and any
+    // refetch) is never mistaken for a user edit.
+    const autosave = useAutosave({
+        value: draft,
+        enabled: !!draft,
+        save: async (v) => {
+            if (v) await update.mutateAsync(v);
+        },
+    });
+    useRegisterUnsaved(autosave, () => setDraft(autosave.savedValue));
 
-    const dirty = !!draft && !!data && JSON.stringify(draft) !== JSON.stringify(data);
+    React.useEffect(() => {
+        if (data) {
+            setDraft(data);
+            autosave.markSaved(data);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [data]);
 
     const setEnabled = (key: NotificationCategoryKey, on: boolean) =>
         setDraft((d) => (d ? { ...d, [key]: { ...d[key], enabled: on } } : d));
@@ -60,16 +73,6 @@ export default function NotificationsSettingsPage() {
             return next;
         });
 
-    const save = async () => {
-        if (!draft || !dirty || update.isPending) return;
-        try {
-            await update.mutateAsync(draft);
-            toast.success("Notification preferences saved");
-        } catch (err) {
-            toast.error(buildError(err as AppError));
-        }
-    };
-
     const rows = (items: { key: NotificationCategoryKey; label: string; hint: string }[]) =>
         items.map((c) => (
             <Row key={c.key} label={c.label} description={c.hint}>
@@ -81,18 +84,7 @@ export default function NotificationsSettingsPage() {
         <SectionShell
             title="Notifications"
             description="Which events notify you, and where they are delivered. Defaults reflect the recommendation."
-            actions={
-                dirty ? (
-                    <>
-                        <TopbarAction variant="ghost" onClick={() => data && setDraft(data)}>
-                            Discard
-                        </TopbarAction>
-                        <TopbarAction onClick={save} disabled={update.isPending}>
-                            {update.isPending ? "Saving…" : "Save"}
-                        </TopbarAction>
-                    </>
-                ) : null
-            }
+            actions={<SaveStatus status={autosave.status} onRetry={autosave.retry} />}
         >
             {isLoading || !draft ? (
                 <div className="px-5 py-10 text-[12.5px] text-slate-400">Loading…</div>
