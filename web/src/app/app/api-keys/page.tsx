@@ -17,6 +17,8 @@
 
 "use client";
 
+import { NoAccess } from "@/components/layout/NoAccess";
+import { usePermission } from "@/hooks/usePermission";
 import React from "react";
 import {
     ActivityIcon,
@@ -51,6 +53,7 @@ import KeyDetailDrawer from "./_components/KeyDetailDrawer";
 import { StackedBars } from "./_components/Sparkline";
 
 export default function APIKeysPage() {
+    const canManage = usePermission("MANAGE_API_KEYS");
     const summary = useAPIKeyUsageSummary();
     const keys = useAPIKeys();
     const analytics = useAPIKeyAnalytics("all");
@@ -70,6 +73,8 @@ export default function APIKeysPage() {
         : all;
 
     const samplePrefix = all[0]?.key_prefix ? `${all[0].key_prefix}…` : "wmbly_••";
+
+    if (!canManage) return <NoAccess feature="API keys" permissionLabel="Manage API keys" />;
 
     return (
         <Page>

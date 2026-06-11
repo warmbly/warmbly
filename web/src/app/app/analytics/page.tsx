@@ -1,3 +1,5 @@
+import { NoAccess } from "@/components/layout/NoAccess";
+import { usePermission } from "@/hooks/usePermission";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -49,6 +51,7 @@ function num(v: number | undefined): string {
 }
 
 export default function AnalyticsPage() {
+    const canView = usePermission("VIEW_ANALYTICS");
     const [range, setRange] = useState<Range>("7d");
     const [metric, setMetric] = useState<Metric>("sent");
     const dash = useDashboard(range);
@@ -79,6 +82,8 @@ export default function AnalyticsPage() {
         ],
         daily: (d?.daily_trend ?? []).map((p) => ({ label: p.date, value: p.sent })),
     };
+
+    if (!canView) return <NoAccess feature="analytics" permissionLabel="View analytics" />;
 
     return (
         <Page>
