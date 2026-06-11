@@ -6,7 +6,8 @@ import Request from "../../Request";
 // shape the rest of the app expects.
 interface RawMembership {
     organization_id: string;
-    role: "owner" | "admin" | "member";
+    role: string;
+    permissions?: number;
     organization?: {
         id: string;
         name: string;
@@ -37,6 +38,7 @@ export default async function getOrganizations(): Promise<Organization[]> {
             avatar: r.organization!.avatar,
             plan: r.organization!.plan,
             role: r.role,
+            permissions: r.permissions,
             created_at: new Date(r.organization!.created_at),
         }));
 }

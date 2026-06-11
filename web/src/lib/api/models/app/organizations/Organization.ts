@@ -3,6 +3,9 @@ export default interface Organization {
     name: string
     avatar?: string
     plan?: string
-    role: 'owner' | 'admin' | 'member'
+    // Built-in role id or a custom role's name.
+    role: string
+    // Caller's effective permission bitmask in this org (custom-role aware).
+    permissions?: number
     created_at: Date
 }

@@ -35,7 +35,6 @@ import useCancelInvitation from "@/lib/api/hooks/app/organizations/useCancelInvi
 import useUpdateMemberRole from "@/lib/api/hooks/app/organizations/useUpdateMemberRole";
 import useRoles from "@/lib/api/hooks/app/organizations/useRoles";
 import type OrganizationRole from "@/lib/api/models/app/organizations/OrganizationRole";
-import RolesSection from "./RolesSection";
 import { useAppStore } from "@/stores";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
@@ -327,12 +326,6 @@ export default function MembersSettingsPage() {
                     </div>
                     </TableSurface>
                 )}
-            </Section>
-            <Section
-                eyebrow="Roles"
-                description="Built-in roles cover the common cases; custom roles let you grant exactly the permissions a job needs. Editing a custom role updates everyone assigned to it."
-            >
-                <RolesSection canManage={access.isOwner} />
             </Section>
         </SectionShell>
     );

@@ -6,7 +6,10 @@ export interface Organization {
   avatar?: string
   avatar_url?: string | null
   plan?: string
-  role: 'owner' | 'admin' | 'member'
+  // Built-in role id or a custom role's name.
+  role: string
+  // Caller's effective permission bitmask in this org (custom-role aware).
+  permissions?: number
 }
 
 export interface OrganizationSlice {

@@ -15,6 +15,7 @@
 
 import useSubscription from "@/lib/api/hooks/app/subscription/useSubscription";
 import { useAppStore } from "@/stores";
+import { PERMISSION_BITS, hasPermission } from "@/lib/permissions";
 import {
     getPlan,
     isAtLeast,
@@ -82,6 +83,11 @@ export default function useFeatureAccess(): FeatureAccess {
         hasTeam: isPaid && isAtLeast(plan, "starter"),
         hasWebhooks: isPaid && isAtLeast(plan, "business"),
         isOwner: currentOrg?.role === "owner",
-        canManage: currentOrg?.role === "owner" || currentOrg?.role === "admin",
+        // Permission-aware: a custom role carrying MANAGE_TEAM unlocks the
+        // same management surfaces as the built-in admin role.
+        canManage:
+            currentOrg?.role === "owner" ||
+            currentOrg?.role === "admin" ||
+            hasPermission(currentOrg?.permissions, PERMISSION_BITS.MANAGE_TEAM),
     };
 }

@@ -5,7 +5,7 @@
 // the Members section so there's no duplication.
 
 import React from "react";
-import { CheckIcon, InfoIcon, LockIcon, XIcon } from "lucide-react";
+import { CheckIcon, LockIcon, XIcon } from "lucide-react";
 import { Link } from "react-router-dom";
 import useFeatureAccess from "@/hooks/useFeatureAccess";
 import useMembers from "@/lib/api/hooks/app/organizations/useMembers";
@@ -19,6 +19,9 @@ import {
     type RoleDef,
 } from "@/lib/permissions";
 import { Section, SectionShell, TableSurface } from "../_components/SectionShell";
+import RolesSection from "./RolesSection";
+import useRoles from "@/lib/api/hooks/app/organizations/useRoles";
+import type OrganizationRole from "@/lib/api/models/app/organizations/OrganizationRole";
 
 const ACCENT = {
     sky:     { dot: "bg-sky-500",     pill: "bg-sky-50 text-sky-700 border-sky-100" },
@@ -31,6 +34,7 @@ const ACCENT = {
 export default function RolesSettingsPage() {
     const access = useFeatureAccess();
     const members = useMembers();
+    const customRoles = useRoles();
     const currentOrg = useAppStore((s) => s.currentOrganization);
 
     if (!access.loading && !access.isOwner) {
@@ -70,7 +74,7 @@ export default function RolesSettingsPage() {
         >
             <Section
                 eyebrow="Built-in roles"
-                description="Pick the closest match for each member. Custom permission bundles coming later."
+                description="Fixed bundles that cover the common patterns. Need something narrower? Create a custom role below."
             >
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                     {ROLE_CATALOG.filter((r) => r.id !== "member").map((r) => (
@@ -82,6 +86,9 @@ export default function RolesSettingsPage() {
                                 (r.id === "manager" ? roleCounts.member ?? 0 : 0)
                             }
                         />
+                    ))}
+                    {(customRoles.data ?? []).map((r) => (
+                        <CustomRoleSummaryCard key={r.id} role={r} />
                     ))}
                 </div>
                 <p className="text-[11.5px] text-slate-500 leading-relaxed">
@@ -100,21 +107,15 @@ export default function RolesSettingsPage() {
                 description="Every capability and which role grants it."
             >
                 <TableSurface>
-                    <MatrixTable />
+                    <MatrixTable customRoles={customRoles.data ?? []} />
                 </TableSurface>
             </Section>
 
-            <Section eyebrow="Custom roles">
-                <div className="flex items-start gap-3">
-                    <div className="size-7 rounded-md bg-slate-100 text-slate-500 flex items-center justify-center shrink-0">
-                        <InfoIcon className="w-3.5 h-3.5" />
-                    </div>
-                    <div className="text-[12px] text-slate-600 leading-relaxed">
-                        Custom roles with bespoke permission bundles are coming soon. For now,
-                        the four built-in roles cover the common patterns — pick the one closest
-                        to what the member needs.
-                    </div>
-                </div>
+            <Section
+                eyebrow="Custom roles"
+                description="Grant exactly the permissions a job needs. Editing a role updates everyone assigned to it, and you can only grant permissions you hold yourself."
+            >
+                <RolesSection canManage={access.isOwner} />
             </Section>
         </SectionShell>
     );
@@ -138,8 +139,41 @@ function RoleSummaryCard({ role, count }: { role: RoleDef; count: number }) {
     );
 }
 
-function MatrixTable() {
-    const cols = ROLE_CATALOG.filter((r) => r.id !== "member");
+function CustomRoleSummaryCard({ role }: { role: OrganizationRole }) {
+    return (
+        <div className="rounded-md border border-sky-200/70 bg-sky-50/30 px-3 py-2.5">
+            <div className="flex items-center gap-1.5 mb-1">
+                <span className="size-1.5 rounded-full bg-sky-500" />
+                <span className="text-[11px] uppercase tracking-[0.1em] font-semibold text-slate-700 truncate">
+                    {role.name}
+                </span>
+                <span className="ml-auto font-mono text-[12px] text-slate-900 tabular-nums">
+                    {role.member_count}
+                </span>
+            </div>
+            <p className="text-[10.5px] text-slate-500 leading-snug truncate">
+                {role.description || "Custom role"}
+            </p>
+        </div>
+    );
+}
+
+function MatrixTable({ customRoles }: { customRoles: OrganizationRole[] }) {
+    // Built-ins keep their catalog accents; custom roles join as sky columns.
+    const cols: { id: string; label: string; accent: keyof typeof ACCENT; permissions: number }[] = [
+        ...ROLE_CATALOG.filter((r) => r.id !== "member").map((r) => ({
+            id: r.id,
+            label: r.label,
+            accent: r.accent as keyof typeof ACCENT,
+            permissions: r.permissions,
+        })),
+        ...customRoles.map((r) => ({
+            id: r.id,
+            label: r.name,
+            accent: "sky" as const,
+            permissions: r.permissions,
+        })),
+    ];
     const grouped = React.useMemo(() => {
         const out: Record<PermissionDef["category"], PermissionDef[]> = {
             data:   [],
@@ -160,7 +194,7 @@ function MatrixTable() {
                             Capability
                         </th>
                         {cols.map((r) => {
-                            const a = ACCENT[r.accent as keyof typeof ACCENT];
+                            const a = ACCENT[r.accent];
                             return (
                                 <th
                                     key={r.id}
@@ -214,7 +248,7 @@ function MatrixTable() {
                                                     {allowed ? (
                                                         <span
                                                             className={`inline-flex items-center justify-center size-5 rounded-full ${
-                                                                ACCENT[r.accent as keyof typeof ACCENT].pill
+                                                                ACCENT[r.accent].pill
                                                             } border`}
                                                             title="Granted"
                                                         >
