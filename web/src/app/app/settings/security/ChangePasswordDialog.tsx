@@ -7,6 +7,7 @@ import { Loader2Icon, XIcon } from "lucide-react";
 import toast from "react-hot-toast";
 import { Label, TextInput } from "@/components/ui/field";
 import changePassword from "@/lib/api/client/auth/changePassword";
+import { useQueryClient } from "@tanstack/react-query";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 
@@ -15,6 +16,7 @@ export default function ChangePasswordDialog({ open, onClose }: { open: boolean;
     const [next, setNext] = React.useState("");
     const [confirm, setConfirm] = React.useState("");
     const [pending, setPending] = React.useState(false);
+    const queryClient = useQueryClient();
 
     React.useEffect(() => {
         if (open) {
@@ -37,7 +39,10 @@ export default function ChangePasswordDialog({ open, onClose }: { open: boolean;
         setPending(true);
         try {
             await changePassword({ current_password: current, new_password: next });
-            toast.success("Password changed");
+            // Other sessions are revoked server-side; refresh the list so they
+            // drop out of the Sessions panel live.
+            void queryClient.invalidateQueries({ queryKey: ["sessions"] });
+            toast.success("Password changed. Other devices were signed out.");
             onClose();
         } catch (e) {
             toast.error(buildError(e as AppError));
