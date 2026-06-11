@@ -12,6 +12,7 @@ import {
 
 // Constants
 const HEARTBEAT_INTERVAL = 30000; // 30 seconds
+const HEARTBEAT_TIMEOUT = 10000; // drop the socket if a heartbeat isn't answered in 10s
 const RECONNECT_MAX_DELAY = 30000; // 30 seconds max
 const PHOENIX_EVENTS = {
     JOIN: 'phx_join',
@@ -49,6 +50,14 @@ export default function SocketProvider({
     const refCounterRef = useRef(0);
     const channelsRef = useRef<Map<string, ChannelInternal>>(new Map());
     const pendingJoinsRef = useRef<Map<string, Record<string, unknown>>>(new Map());
+    // Distinguishes a close we caused (logout / unmount — don't reconnect) from
+    // every other close (server idle-close, channel crash, network drop — do
+    // reconnect). The old code only reconnected on `!wasClean`, so a clean
+    // server-initiated close stranded the client.
+    const intentionalCloseRef = useRef(false);
+    // Zombie detection: if a heartbeat goes unanswered this fires and force-
+    // closes the socket so onclose schedules a reconnect.
+    const heartbeatTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     // Legacy handlers for backwards compatibility
     const legacyHandlersRef = useRef<Map<string, Set<(msg: unknown) => void>>>(new Map());
@@ -83,12 +92,24 @@ export default function SocketProvider({
     const sendHeartbeat = useCallback(() => {
         const ref = getRef();
         pendingPingRef.current.set(ref, performance.now());
-        sendRaw({
+        const ok = sendRaw({
             topic: 'phoenix',
             event: PHOENIX_EVENTS.HEARTBEAT,
             payload: {},
             ref,
         });
+        if (!ok) return;
+        // Arm a watchdog: a healthy connection answers within ~1s. If the
+        // socket has silently died (network dropped with no close frame), no
+        // reply lands and we close it ourselves to trigger a reconnect.
+        if (heartbeatTimeoutRef.current) clearTimeout(heartbeatTimeoutRef.current);
+        heartbeatTimeoutRef.current = setTimeout(() => {
+            try {
+                wsRef.current?.close();
+            } catch {
+                /* ignore */
+            }
+        }, HEARTBEAT_TIMEOUT);
     }, [sendRaw, getRef]);
 
     // Start heartbeat
@@ -121,6 +142,11 @@ export default function SocketProvider({
 
         // Heartbeat reply → compute roundtrip and publish latency.
         if (event === PHOENIX_EVENTS.REPLY && topic === 'phoenix' && ref) {
+            // The connection is alive — disarm the zombie watchdog.
+            if (heartbeatTimeoutRef.current) {
+                clearTimeout(heartbeatTimeoutRef.current);
+                heartbeatTimeoutRef.current = null;
+            }
             const sentAt = pendingPingRef.current.get(ref);
             if (sentAt != null) {
                 const dt = Math.round(performance.now() - sentAt);
@@ -385,7 +411,20 @@ export default function SocketProvider({
 
     // Connect to WebSocket
     const connect = useCallback(async () => {
-        if (wsRef.current?.readyState === WebSocket.OPEN) return;
+        // Already connected or mid-handshake — don't open a second socket.
+        if (
+            wsRef.current &&
+            (wsRef.current.readyState === WebSocket.OPEN ||
+                wsRef.current.readyState === WebSocket.CONNECTING)
+        ) {
+            return;
+        }
+        // A manual connect (network back, tab focus) supersedes any pending
+        // backoff timer.
+        if (reconnectTimerRef.current) {
+            clearTimeout(reconnectTimerRef.current);
+            reconnectTimerRef.current = null;
+        }
 
         try {
             const urlData = await getSocket();
@@ -415,6 +454,10 @@ export default function SocketProvider({
             wsRef.current.onclose = (ev) => {
                 setIsConnected(false);
                 stopHeartbeat();
+                if (heartbeatTimeoutRef.current) {
+                    clearTimeout(heartbeatTimeoutRef.current);
+                    heartbeatTimeoutRef.current = null;
+                }
                 // Latency only means anything while connected.
                 setWsLatencyMs(null);
                 pendingPingRef.current.clear();
@@ -427,8 +470,10 @@ export default function SocketProvider({
                     }
                 });
 
-                // Reconnect with exponential backoff
-                if (!ev.wasClean) {
+                // Reconnect with exponential backoff for EVERY close we didn't
+                // initiate — clean or not. A graceful server close (idle, channel
+                // crash, deploy) is exactly when we most need to come back.
+                if (!intentionalCloseRef.current) {
                     const delay = Math.min(1000 * Math.pow(2, reconnectAttemptRef.current), RECONNECT_MAX_DELAY);
                     reconnectTimerRef.current = setTimeout(() => {
                         setReconnectAttempt((a) => a + 1);
@@ -460,10 +505,34 @@ export default function SocketProvider({
 
     // Mount effect
     useEffect(() => {
+        intentionalCloseRef.current = false;
         connect();
+
+        // Proactively reconnect when the network returns or the tab is
+        // refocused — don't wait out a backoff timer if we're already idle.
+        const wake = () => {
+            if (wsRef.current?.readyState !== WebSocket.OPEN) {
+                reconnectAttemptRef.current = 0;
+                setReconnectAttempt(0);
+                connect();
+            }
+        };
+        const onVisible = () => {
+            if (document.visibilityState === 'visible') wake();
+        };
+        window.addEventListener('online', wake);
+        document.addEventListener('visibilitychange', onVisible);
+
         return () => {
+            // We're tearing down on purpose — suppress the reconnect.
+            intentionalCloseRef.current = true;
+            window.removeEventListener('online', wake);
+            document.removeEventListener('visibilitychange', onVisible);
             if (reconnectTimerRef.current) {
                 clearTimeout(reconnectTimerRef.current);
+            }
+            if (heartbeatTimeoutRef.current) {
+                clearTimeout(heartbeatTimeoutRef.current);
             }
             stopHeartbeat();
             wsRef.current?.close();
