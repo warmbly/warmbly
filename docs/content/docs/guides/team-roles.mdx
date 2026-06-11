@@ -58,7 +58,7 @@ A few rules apply:
 
 ## Roles and the permission matrix
 
-Warmbly ships with a set of built-in roles. Each role is a fixed bundle of permissions. You pick the closest role for each person; custom permission bundles are not available yet.
+Warmbly ships with a set of built-in roles, and you can also define your own custom roles when none of them fit. Each role is a bundle of permissions; built-in bundles are fixed, custom bundles are yours to shape.
 
 The **Roles & access** page shows a card for each role with a short description and a live count of how many people currently hold it, followed by the full **permission matrix**.
 
@@ -136,9 +136,23 @@ This is how the built-in roles map onto those capabilities. A check means the ro
 
 In short: **Admin** is the owner minus ownership transfer, **Manager** is everything operational without team, settings, billing, or API keys, and **Viewer** is read-only.
 
-<Callout type="info" title="Custom roles">
-Custom roles with bespoke permission bundles are planned but not available yet. For now the built-in roles cover the common patterns, so choose the one closest to what the person needs.
-</Callout>
+## Custom roles
+
+When the built-in bundles don't fit, anyone with team management access can create custom roles from the **Roles** section of the members page:
+
+1. Click **New role** and give it a name (up to 50 characters) and an optional description. Built-in role names are reserved.
+2. Pick a built-in role under **Start from** to copy its permissions as a starting point, then toggle individual permissions on or off.
+3. Save, then assign the role from the member roster's role picker or directly in the invite flow.
+
+A few rules keep custom roles safe:
+
+- **Editing a role updates everyone assigned to it, immediately.** The editor shows how many members will be affected before you save.
+- **You can only grant permissions you hold yourself.** A manager with team access cannot mint a role stronger than their own and assign it to someone.
+- **Ownership transfer can never be part of a custom role.** It stays exclusive to the owner.
+- **A role in use cannot be deleted.** Reassign its members first, so nobody silently loses access.
+- Each workspace can have up to 25 custom roles.
+
+Custom roles apply everywhere permissions do: API access checks, dashboard visibility, and which realtime events a member's live dashboard receives.
 
 ## Removing members
 
