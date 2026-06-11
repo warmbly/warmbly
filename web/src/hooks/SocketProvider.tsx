@@ -11,9 +11,15 @@ import {
 } from './context/socket';
 
 // Constants
-const HEARTBEAT_INTERVAL = 30000; // 30 seconds
-const HEARTBEAT_TIMEOUT = 10000; // drop the socket if a heartbeat isn't answered in 10s
-const RECONNECT_MAX_DELAY = 30000; // 30 seconds max
+const HEARTBEAT_INTERVAL = 25000; // 25s — under typical 60s idle proxy timeouts
+const HEARTBEAT_TIMEOUT = 8000; // drop + reconnect if a heartbeat isn't answered in 8s
+
+// Reconnect backoff schedule (ms), modeled on the Phoenix JS client and
+// Socket.io: retry almost immediately first, then ramp. A slow 1s→2s→4s ramp is
+// what made reconnects "take a long time"; the first retry here is ~120ms so a
+// blip is invisible. Indexed by attempt; clamps at the last entry. Each delay
+// gets ±25% jitter so many clients don't reconnect in lockstep after an outage.
+const RECONNECT_SCHEDULE = [120, 350, 800, 1500, 3000, 5000, 10000];
 const PHOENIX_EVENTS = {
     JOIN: 'phx_join',
     LEAVE: 'phx_leave',
@@ -474,7 +480,10 @@ export default function SocketProvider({
                 // initiate — clean or not. A graceful server close (idle, channel
                 // crash, deploy) is exactly when we most need to come back.
                 if (!intentionalCloseRef.current) {
-                    const delay = Math.min(1000 * Math.pow(2, reconnectAttemptRef.current), RECONNECT_MAX_DELAY);
+                    const attempt = reconnectAttemptRef.current;
+                    const base = RECONNECT_SCHEDULE[Math.min(attempt, RECONNECT_SCHEDULE.length - 1)];
+                    // ±25% jitter so clients don't reconnect in lockstep after an outage.
+                    const delay = Math.round(base * (0.75 + Math.random() * 0.5));
                     reconnectTimerRef.current = setTimeout(() => {
                         setReconnectAttempt((a) => a + 1);
                         connect();
@@ -489,8 +498,17 @@ export default function SocketProvider({
         } catch (err) {
             const error = err as AppError;
             console.error('[WS] Init failed:', error);
-            // Retry after 15 seconds on init failure
-            setTimeout(connect, 15000);
+            // Token fetch / handshake failed — retry on the same fast backoff
+            // rather than a flat 15s wait.
+            if (!intentionalCloseRef.current) {
+                const attempt = reconnectAttemptRef.current;
+                const base = RECONNECT_SCHEDULE[Math.min(attempt, RECONNECT_SCHEDULE.length - 1)];
+                const delay = Math.round(base * (0.75 + Math.random() * 0.5));
+                reconnectTimerRef.current = setTimeout(() => {
+                    setReconnectAttempt((a) => a + 1);
+                    connect();
+                }, delay);
+            }
         }
     }, [
         onOpen,
@@ -511,11 +529,30 @@ export default function SocketProvider({
         // Proactively reconnect when the network returns or the tab is
         // refocused — don't wait out a backoff timer if we're already idle.
         const wake = () => {
-            if (wsRef.current?.readyState !== WebSocket.OPEN) {
-                reconnectAttemptRef.current = 0;
-                setReconnectAttempt(0);
-                connect();
+            if (wsRef.current?.readyState === WebSocket.OPEN) return;
+            // Safari (and other browsers) suspend background tabs: the socket can
+            // be stuck CONNECTING with no close event ever firing. connect() skips
+            // a CONNECTING socket, so clear the zombie first (detach its handlers
+            // so its eventual close doesn't trigger our reconnect path) and open
+            // a fresh one immediately.
+            const stale = wsRef.current;
+            if (stale && stale.readyState !== WebSocket.CLOSED) {
+                stale.onclose = null;
+                stale.onerror = null;
+                try {
+                    stale.close();
+                } catch {
+                    /* ignore */
+                }
             }
+            wsRef.current = null;
+            if (reconnectTimerRef.current) {
+                clearTimeout(reconnectTimerRef.current);
+                reconnectTimerRef.current = null;
+            }
+            reconnectAttemptRef.current = 0;
+            setReconnectAttempt(0);
+            connect();
         };
         const onVisible = () => {
             if (document.visibilityState === 'visible') wake();
