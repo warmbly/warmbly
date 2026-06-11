@@ -54,10 +54,13 @@ type CampaignSummary struct {
 	EmailsSent    int `json:"emails_sent"`
 	EmailsPending int `json:"emails_pending"`
 	UniqueOpens   int `json:"unique_opens"`
-	UniqueClicks  int `json:"unique_clicks"`
-	Replies       int `json:"replies"`
-	Bounces       int `json:"bounces"`
-	Unsubscribes  int `json:"unsubscribes"`
+	// MachineOpens is the subset of UniqueOpens from automated fetchers
+	// (Apple MPP prefetch, UA-less clients). Human opens = unique - machine.
+	MachineOpens int `json:"machine_opens"`
+	UniqueClicks int `json:"unique_clicks"`
+	Replies      int `json:"replies"`
+	Bounces      int `json:"bounces"`
+	Unsubscribes int `json:"unsubscribes"`
 
 	OpenRate   float64 `json:"open_rate"`   // percentage
 	ClickRate  float64 `json:"click_rate"`  // percentage
@@ -209,8 +212,10 @@ type DashboardAnalytics struct {
 
 // DashboardOverallStats contains aggregate statistics for the dashboard
 type DashboardOverallStats struct {
-	TotalEmailsSent int     `json:"total_emails_sent"`
-	TotalOpens      int     `json:"total_opens"`
+	TotalEmailsSent int `json:"total_emails_sent"`
+	TotalOpens      int `json:"total_opens"`
+	// MachineOpens is the subset of TotalOpens from automated fetchers.
+	MachineOpens    int     `json:"machine_opens"`
 	TotalClicks     int     `json:"total_clicks"`
 	TotalReplies    int     `json:"total_replies"`
 	TotalBounces    int     `json:"total_bounces"`

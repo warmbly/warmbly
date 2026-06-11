@@ -70,7 +70,7 @@ type CampaignSequencePair struct {
 type CampaignProgressRepository interface {
 	// Record email status
 	RecordEmailSent(ctx context.Context, campaignID, contactID, sequenceID uuid.UUID) error
-	RecordEmailOpened(ctx context.Context, campaignID, contactID, sequenceID uuid.UUID) error
+	RecordEmailOpened(ctx context.Context, campaignID, contactID, sequenceID uuid.UUID, machine bool) error
 	RecordEmailClicked(ctx context.Context, campaignID, contactID, sequenceID uuid.UUID) error
 	RecordEmailReplied(ctx context.Context, campaignID, contactID, sequenceID uuid.UUID) error
 	RecordEmailBounced(ctx context.Context, campaignID, contactID, sequenceID uuid.UUID) error
@@ -144,18 +144,22 @@ func (r *campaignProgressRepository) RecordEmailSent(ctx context.Context, campai
 	return err
 }
 
-// RecordEmailOpened records that an email was opened
-func (r *campaignProgressRepository) RecordEmailOpened(ctx context.Context, campaignID, contactID, sequenceID uuid.UUID) error {
+// RecordEmailOpened records that an email was opened. machine marks automated
+// fetches (Apple MPP prefetch, UA-less clients): the first open stamps
+// opened_at with the flag, and a later HUMAN open upgrades a machine open to
+// human (keeping the original timestamp). Human opens are never downgraded.
+func (r *campaignProgressRepository) RecordEmailOpened(ctx context.Context, campaignID, contactID, sequenceID uuid.UUID, machine bool) error {
 	query := `
 		UPDATE campaign_contact_progress
-		SET opened_at = NOW()
+		SET opened_at = COALESCE(opened_at, NOW()),
+		    opened_machine = $4
 		WHERE campaign_id = $1
 		  AND contact_id = $2
 		  AND sequence_id = $3
-		  AND opened_at IS NULL
+		  AND (opened_at IS NULL OR (opened_machine = true AND $4 = false))
 	`
 
-	_, err := r.db.Exec(ctx, query, campaignID, contactID, sequenceID)
+	_, err := r.db.Exec(ctx, query, campaignID, contactID, sequenceID, machine)
 	return err
 }
 

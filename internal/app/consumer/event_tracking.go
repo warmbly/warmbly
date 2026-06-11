@@ -129,6 +129,11 @@ func (tc *TrackingConsumer) HandleTrackingEvent(ctx context.Context, event *even
 		urlHash = hashURL(*event.OriginalURL)
 	}
 
+	// Classify opens: machine fetches (Apple MPP prefetch, UA-less clients)
+	// still count as delivery signal but are labeled, and must never fire
+	// open-triggered automations (a prefetch is not intent).
+	machineOpen := event.EventType == events.EventTypeEmailOpened && isMachineOpen(event.UserAgent)
+
 	// Check for duplicate at consumer level (belt and suspenders with Rust service)
 	if tc.dedupeRepo != nil {
 		processed, err := tc.dedupeRepo.IsProcessed(ctx, taskID, event.EventType, urlHash)
@@ -136,7 +141,18 @@ func (tc *TrackingConsumer) HandleTrackingEvent(ctx context.Context, event *even
 			// Log but continue - allow processing on dedupe errors
 			log.Warn().Err(err).Str("task_id", event.TaskID).Msg("tracking dedupe check failed")
 		} else if processed {
-			// Already processed, skip
+			// A HUMAN open after a machine-labeled one upgrades the label
+			// (MPP prefetched at delivery; the person actually read it later
+			// from another network). Quiet write only: the open was already
+			// counted once, so no automations and no re-publish.
+			if event.EventType == events.EventTypeEmailOpened && !machineOpen {
+				if campaignTask, terr := tc.taskRepo.GetCampaignTask(ctx, taskID); terr == nil &&
+					campaignTask != nil && campaignTask.CampaignID != nil &&
+					campaignTask.ContactID != nil && campaignTask.SequenceID != nil {
+					_ = tc.campaignProgressRepo.RecordEmailOpened(ctx,
+						*campaignTask.CampaignID, *campaignTask.ContactID, *campaignTask.SequenceID, false)
+				}
+			}
 			return nil
 		}
 	}
@@ -170,8 +186,11 @@ func (tc *TrackingConsumer) HandleTrackingEvent(ctx context.Context, event *even
 		err = tc.campaignProgressRepo.RecordEmailOpened(ctx,
 			*campaignTask.CampaignID,
 			*campaignTask.ContactID,
-			*campaignTask.SequenceID)
-		instantKind = "open"
+			*campaignTask.SequenceID,
+			machineOpen)
+		if !machineOpen {
+			instantKind = "open"
+		}
 	case events.EventTypeEmailClicked:
 		err = tc.campaignProgressRepo.RecordEmailClicked(ctx,
 			*campaignTask.CampaignID,
@@ -193,7 +212,7 @@ func (tc *TrackingConsumer) HandleTrackingEvent(ctx context.Context, event *even
 	// must never block tracking ingest; the scheduler still routes the matching
 	// opened/clicked branch at the next step boundary. Exactly-once per (step,
 	// eventKind) is enforced inside FireInstantActions via ClaimInstantFire.
-	if tc.advancedService != nil {
+	if tc.advancedService != nil && instantKind != "" {
 		tc.advancedService.FireInstantActions(ctx,
 			*campaignTask.CampaignID,
 			*campaignTask.ContactID,
@@ -209,13 +228,13 @@ func (tc *TrackingConsumer) HandleTrackingEvent(ctx context.Context, event *even
 	}
 
 	// Publish to Pub/Sub for realtime updates
-	tc.publishTrackingEvent(ctx, campaignTask, *event)
+	tc.publishTrackingEvent(ctx, campaignTask, *event, machineOpen)
 
 	return nil
 }
 
 // publishTrackingEvent publishes the tracking event to Pub/Sub for realtime UI updates
-func (tc *TrackingConsumer) publishTrackingEvent(ctx context.Context, task *repository.CampaignTask, event events.TrackingEvent) {
+func (tc *TrackingConsumer) publishTrackingEvent(ctx context.Context, task *repository.CampaignTask, event events.TrackingEvent, machine bool) {
 	if tc.streamingPublisher == nil {
 		return
 	}
@@ -263,6 +282,7 @@ func (tc *TrackingConsumer) publishTrackingEvent(ctx context.Context, task *repo
 		ContactID:    task.ContactID.String(),
 		ContactEmail: contactEmail,
 		SequenceID:   task.SequenceID.String(),
+		Machine:      machine,
 	}
 
 	if event.EventType == events.EventTypeEmailClicked && event.OriginalURL != nil {

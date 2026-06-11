@@ -81,7 +81,7 @@ export default function CampaignOverview() {
 
     const breakdown = [
         { label: "Sent", value: summary?.emails_sent, icon: SendIcon, dot: "bg-slate-400" },
-        { label: "Opens", value: summary?.unique_opens, icon: MailCheckIcon, dot: "bg-emerald-500" },
+        { label: "Opens", value: summary?.unique_opens, icon: MailCheckIcon, dot: "bg-emerald-500", note: summary?.machine_opens ? `${summary.machine_opens} auto` : undefined },
         { label: "Clicks", value: summary?.unique_clicks, icon: MousePointerClickIcon, dot: "bg-violet-500" },
         { label: "Replies", value: summary?.replies, icon: ReplyIcon, dot: "bg-amber-500" },
         { label: "Bounces", value: summary?.bounces, icon: TriangleAlertIcon, dot: "bg-rose-500" },
@@ -250,6 +250,14 @@ export default function CampaignOverview() {
                                 <div key={q.label} className="h-9 px-5 flex items-center gap-2">
                                     <span className={`size-1.5 rounded-full ${q.dot}`} />
                                     <span className="text-[12px] text-slate-700">{q.label}</span>
+                                    {q.note && (
+                                        <span
+                                            className="text-[9.5px] text-slate-400 font-mono"
+                                            title="Auto-opens: pixel fetches from privacy proxies (e.g. Apple Mail), not a person reading"
+                                        >
+                                            {q.note}
+                                        </span>
+                                    )}
                                     <span className="ml-auto font-mono text-[11px] text-slate-500 tabular-nums">
                                         {loading ? "—" : <AnimatedNumber value={q.value ?? 0} />}
                                     </span>
@@ -270,6 +278,14 @@ export default function CampaignOverview() {
                                 <div key={q.label} className="h-9 px-5 flex items-center gap-2">
                                     <span className={`size-1.5 rounded-full ${q.dot}`} />
                                     <span className="text-[12px] text-slate-700">{q.label}</span>
+                                    {q.note && (
+                                        <span
+                                            className="text-[9.5px] text-slate-400 font-mono"
+                                            title="Auto-opens: pixel fetches from privacy proxies (e.g. Apple Mail), not a person reading"
+                                        >
+                                            {q.note}
+                                        </span>
+                                    )}
                                     <span className="ml-auto font-mono text-[11px] text-slate-500 tabular-nums">
                                         {loading ? "—" : <AnimatedNumber value={q.value ?? 0} />}
                                     </span>

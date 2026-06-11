@@ -95,6 +95,7 @@ func (r *analyticsRepository) GetCampaignSummary(ctx context.Context, userID, ca
 			COUNT(CASE WHEN ccp.sent_at IS NOT NULL THEN 1 END) as emails_sent,
 			COUNT(CASE WHEN ccp.sent_at IS NULL THEN 1 END) as emails_pending,
 			COUNT(CASE WHEN ccp.opened_at IS NOT NULL THEN 1 END) as unique_opens,
+			COUNT(CASE WHEN ccp.opened_at IS NOT NULL AND ccp.opened_machine THEN 1 END) as machine_opens,
 			COUNT(CASE WHEN ccp.clicked_at IS NOT NULL THEN 1 END) as unique_clicks,
 			COUNT(CASE WHEN ccp.replied_at IS NOT NULL THEN 1 END) as replies,
 			COUNT(CASE WHEN ccp.bounced_at IS NOT NULL THEN 1 END) as bounces
@@ -111,6 +112,7 @@ func (r *analyticsRepository) GetCampaignSummary(ctx context.Context, userID, ca
 		&summary.EmailsSent,
 		&summary.EmailsPending,
 		&summary.UniqueOpens,
+		&summary.MachineOpens,
 		&summary.UniqueClicks,
 		&summary.Replies,
 		&summary.Bounces,
@@ -341,6 +343,7 @@ func (r *analyticsRepository) GetDashboardOverallStats(ctx context.Context, user
 		SELECT
 			COUNT(CASE WHEN ccp.sent_at IS NOT NULL AND ccp.sent_at >= $2 AND ccp.sent_at <= $3 THEN 1 END) as total_sent,
 			COUNT(CASE WHEN ccp.opened_at IS NOT NULL AND ccp.sent_at >= $2 AND ccp.sent_at <= $3 THEN 1 END) as total_opens,
+			COUNT(CASE WHEN ccp.opened_at IS NOT NULL AND ccp.opened_machine AND ccp.sent_at >= $2 AND ccp.sent_at <= $3 THEN 1 END) as machine_opens,
 			COUNT(CASE WHEN ccp.clicked_at IS NOT NULL AND ccp.sent_at >= $2 AND ccp.sent_at <= $3 THEN 1 END) as total_clicks,
 			COUNT(CASE WHEN ccp.replied_at IS NOT NULL AND ccp.sent_at >= $2 AND ccp.sent_at <= $3 THEN 1 END) as total_replies,
 			COUNT(CASE WHEN ccp.bounced_at IS NOT NULL AND ccp.sent_at >= $2 AND ccp.sent_at <= $3 THEN 1 END) as total_bounces,
@@ -357,6 +360,7 @@ func (r *analyticsRepository) GetDashboardOverallStats(ctx context.Context, user
 	err := r.DB.QueryRow(ctx, query, params...).Scan(
 		&stats.TotalEmailsSent,
 		&stats.TotalOpens,
+		&stats.MachineOpens,
 		&stats.TotalClicks,
 		&stats.TotalReplies,
 		&stats.TotalBounces,

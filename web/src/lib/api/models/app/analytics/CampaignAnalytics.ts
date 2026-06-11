@@ -14,6 +14,9 @@ export interface CampaignSummary {
     emails_sent: number
     emails_pending: number
     unique_opens: number
+    // Subset of unique_opens from automated fetchers (Apple MPP prefetch
+    // and UA-less clients). Human opens = unique_opens - machine_opens.
+    machine_opens: number
     unique_clicks: number
     replies: number
     bounces: number

@@ -176,6 +176,9 @@ type TrackingEventPayload struct {
 	ContactEmail string `json:"contact_email,omitempty"`
 	SequenceID   string `json:"sequence_id,omitempty"`
 	OriginalURL  string `json:"original_url,omitempty"` // For click events
+	// Machine marks an automated open (Apple MPP prefetch, UA-less fetcher)
+	// so live views can badge it instead of presenting it as a human open.
+	Machine bool `json:"machine,omitempty"`
 }
 
 // TaskProgressEvent for detailed campaign task progress

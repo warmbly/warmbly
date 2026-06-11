@@ -5,6 +5,8 @@
 export interface DashboardOverallStats {
     total_emails_sent: number
     total_opens: number
+    // Subset of total_opens from automated fetchers (auto-opens).
+    machine_opens: number
     total_clicks: number
     total_replies: number
     total_bounces: number
