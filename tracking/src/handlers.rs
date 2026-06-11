@@ -38,8 +38,10 @@ pub struct AppState {
     pub dedupe_cache: Arc<DedupeCache>,
     /// Per-source request budget (anti-flood)
     pub rate_limiter: Arc<RateLimiter>,
-    /// Shared secret for signed click redirects; None = legacy unsigned links
-    pub link_secret: Option<Arc<String>>,
+    /// Accepted signing secrets for click redirects, newest first (the
+    /// retired key rides along during a rotation so in-flight emails keep
+    /// working). None = legacy unsigned links.
+    pub link_secrets: Option<Arc<Vec<String>>>,
 }
 
 impl AppState {
@@ -54,11 +56,21 @@ impl AppState {
             .time_to_idle(Duration::from_secs(1800)) // 30 min idle
             .build();
 
+        // Enforcement is keyed on the CURRENT secret: a leftover previous
+        // secret with no current one means signing was turned off.
+        let link_secrets = config.link_secret.clone().map(|current| {
+            let mut secrets = vec![current];
+            if let Some(previous) = config.link_secret_previous.clone() {
+                secrets.push(previous);
+            }
+            Arc::new(secrets)
+        });
+
         Self {
             kafka,
             dedupe_cache: Arc::new(dedupe_cache),
             rate_limiter: Arc::new(RateLimiter::new(config.rate_limit_per_min)),
-            link_secret: config.link_secret.clone().map(Arc::new),
+            link_secrets,
         }
     }
 
@@ -187,8 +199,14 @@ pub async fn track_click(
     // Signed-link enforcement: when the shared secret is configured, only
     // redirects minted by our own send pipeline are honored. This is what
     // stops the tracking domain from being abused as an open redirector.
-    if let Some(secret) = &state.link_secret {
-        if !verify_signature(secret, &task_id, &original_url, params.get("s").map(String::as_str)) {
+    // Any configured key may match (current, or the previous one during a
+    // rotation grace window).
+    if let Some(secrets) = &state.link_secrets {
+        let sig = params.get("s").map(String::as_str);
+        if !secrets
+            .iter()
+            .any(|secret| verify_signature(secret, &task_id, &original_url, sig))
+        {
             return (StatusCode::NOT_FOUND, "Unknown link").into_response();
         }
     }

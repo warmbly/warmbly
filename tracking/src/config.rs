@@ -34,6 +34,10 @@ pub struct Config {
     /// Shared secret for HMAC-signed click redirects. When set, unsigned or
     /// mis-signed /t/c/ requests are refused (open-redirect protection).
     pub link_secret: Option<String>,
+    /// The retired secret during a key rotation: links signed with it keep
+    /// verifying until in-flight emails age out. Ignored unless link_secret
+    /// is also set.
+    pub link_secret_previous: Option<String>,
     /// Per-source request budget for both tracking endpoints (default 300/min).
     pub rate_limit_per_min: u32,
 }
@@ -129,8 +133,18 @@ impl Config {
             Self::get_secret_optional("TRACKING_LINK_SECRET", "tracking/link_secret", &secrets)
                 .await
                 .filter(|s| !s.is_empty());
+        let link_secret_previous = Self::get_secret_optional(
+            "TRACKING_LINK_SECRET_PREVIOUS",
+            "tracking/link_secret_previous",
+            &secrets,
+        )
+        .await
+        .filter(|s| !s.is_empty());
         if link_secret.is_some() {
-            info!("Signed click redirects enforced");
+            info!(
+                "Signed click redirects enforced (rotation grace: {})",
+                link_secret_previous.is_some()
+            );
         }
 
         let rate_limit_per_min: u32 = env::var("TRACKING_RATE_LIMIT_PER_MIN")
@@ -151,6 +165,7 @@ impl Config {
             schema_registry_key,
             schema_registry_secret,
             link_secret,
+            link_secret_previous,
             rate_limit_per_min,
         })
     }
@@ -205,6 +220,10 @@ impl Config {
             .get_optional("tracking/link_secret")
             .await
             .filter(|s| !s.is_empty());
+        let link_secret_previous = secrets
+            .get_optional("tracking/link_secret_previous")
+            .await
+            .filter(|s| !s.is_empty());
 
         Ok(Self {
             env: env.to_string(),
@@ -218,6 +237,7 @@ impl Config {
             schema_registry_key,
             schema_registry_secret,
             link_secret,
+            link_secret_previous,
             rate_limit_per_min: 300,
         })
     }

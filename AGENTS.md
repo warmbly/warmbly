@@ -662,6 +662,7 @@ The tracking service additionally defends itself before any event reaches Kafka 
 - prefetch/scanner filtering: `Sec-Purpose`/`Purpose`-style prefetch headers and a UA marker list (crawlers, CLI clients, chat-app link previews, email security gateways) are served but never counted. Gmail's image proxy is deliberately NOT filtered — it is the only open signal Gmail exposes
 - URL caps on click redirects: 4096 bytes raw / 2048 decoded
 - signed click links: the Go sender appends `&s=<hex HMAC-SHA256(taskID|url)>` when `TRACKING_LINK_SECRET` is set (`internal/tasks/template.go`); when the tracking service has the same secret it refuses unsigned/mis-signed redirects with `404`. This closes the open-redirector hole. Rollout order matters: set the secret on the backend first, enable enforcement on the tracking service only after unsigned in-flight emails have aged out
+- key rotation: the tracking service also accepts `TRACKING_LINK_SECRET_PREVIOUS` (ignored without a current secret). Rotating = move the old value to the previous slot, sign new sends with the new current value, unset the previous slot once old emails have aged out. Never rotate by replacing the current secret alone; that 404s every link in already-delivered emails
 - `internal/app/advanced/service.go`
 - `internal/repository/pg_advanced_outreach.go`
 - `internal/repository/pg_subscription.go`
