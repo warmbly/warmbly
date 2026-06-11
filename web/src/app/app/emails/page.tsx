@@ -3,6 +3,8 @@ import React, { useEffect, useMemo, useRef } from "react";
 import toast from "react-hot-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import useEmails from "@/lib/api/hooks/app/emails/useEmails";
+import { NoAccess } from "@/components/layout/NoAccess";
+import { usePermission } from "@/hooks/usePermission";
 import useWarmupLifecycle from "@/lib/api/hooks/app/emails/useWarmupLifecycle";
 import useAccountStatuses from "@/lib/api/hooks/app/analytics/useAccountStatuses";
 import useFeatureStatus from "@/lib/api/hooks/app/subscription/useFeatureStatus";
@@ -72,6 +74,7 @@ function healthTone(status?: AccountStatus): { dot: string; text: string; label:
 export default function AddressesPage() {
     const p = useUserProfile();
     const confirm = useConfirm();
+    const canView = usePermission("VIEW_CAMPAIGNS");
 
     const [query, setQuery] = React.useState<string>("");
     const [tag, setTag] = React.useState<string>("");
@@ -179,6 +182,10 @@ export default function AddressesPage() {
         return emailsData.emails
             ? emailsData.emails.length > 0 && selected.length === emailsData.emails.length
             : false;
+    }
+
+    if (!canView) {
+        return <NoAccess feature="email accounts" permissionLabel="View campaigns" />;
     }
 
     return (

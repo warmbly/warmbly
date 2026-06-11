@@ -24,6 +24,8 @@ import { ScopeSheet } from "@/components/app/unibox/ScopeSheet";
 import { UniboxHeader } from "@/components/app/unibox/UniboxHeader";
 import useFeatureAccess from "@/hooks/useFeatureAccess";
 import { LockedSurface } from "@/components/layout/LockedSurface";
+import { NoAccess } from "@/components/layout/NoAccess";
+import { usePermission } from "@/hooks/usePermission";
 import { useAppStore } from "@/stores";
 import useUniboxOverview from "@/lib/api/hooks/app/unibox/useUniboxOverview";
 import { cn } from "@/lib/utils";
@@ -43,6 +45,7 @@ function startOfWeek(): Date {
 
 export default function UniboxPage() {
   const access = useFeatureAccess();
+  const canAccess = usePermission("ACCESS_UNIBOX");
   const overview = useUniboxOverview();
   const routeParams = useParams<{ scope?: string; threadId?: string }>();
   const [searchParams] = useSearchParams();
@@ -236,6 +239,10 @@ export default function UniboxPage() {
         return "All";
     }
   }, [scope, overviewData]);
+
+  if (!canAccess) {
+    return <NoAccess feature="the unified inbox" permissionLabel="Use unified inbox" />;
+  }
 
   return (
     <LockedSurface
