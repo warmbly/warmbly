@@ -9,7 +9,6 @@
 import React from "react";
 import {
     CheckIcon,
-    ChevronDownIcon,
     CopyIcon,
     Loader2Icon,
     MailIcon,
@@ -20,11 +19,6 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { Label } from "@/components/ui/field";
-import {
-    PopoverMenu,
-    PopoverMenuContent,
-    PopoverMenuTrigger,
-} from "@/components/ui/popover-menu";
 import { useConfirm } from "@/hooks/context/confirm";
 import useFeatureAccess from "@/hooks/useFeatureAccess";
 import useMembers from "@/lib/api/hooks/app/organizations/useMembers";
@@ -333,20 +327,6 @@ function Th({ children, className }: { children: React.ReactNode; className?: st
     );
 }
 
-const ACCENT_PILL: Record<string, string> = {
-    sky:     "bg-sky-50 text-sky-700 border-sky-100",
-    violet:  "bg-violet-50 text-violet-700 border-violet-100",
-    emerald: "bg-emerald-50 text-emerald-700 border-emerald-100",
-    slate:   "bg-slate-50 text-slate-700 border-slate-200",
-    amber:   "bg-amber-50 text-amber-700 border-amber-100",
-};
-const ACCENT_DOT: Record<string, string> = {
-    sky:     "bg-sky-500",
-    violet:  "bg-violet-500",
-    emerald: "bg-emerald-500",
-    slate:   "bg-slate-400",
-    amber:   "bg-amber-500",
-};
 
 /**
  * Multi-email invite flow. Email chips + role selector + send button,

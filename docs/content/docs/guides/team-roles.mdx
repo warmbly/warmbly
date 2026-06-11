@@ -58,20 +58,20 @@ A few rules apply:
 
 ## Roles and the permission matrix
 
-Warmbly ships with a set of built-in roles, and you can also define your own custom roles when none of them fit. Each role is a bundle of permissions; built-in bundles are fixed, custom bundles are yours to shape.
+Roles in Warmbly are workspace data. Every new workspace starts with three seeded roles (Admin, Manager, and Viewer), and all of them are ordinary roles: rename them, recolor them, change their permissions, delete them, or add your own. Owner is not a role but a membership status; there is exactly one owner per workspace.
 
 The **Roles & access** page shows a card for each role with a short description and a live count of how many people currently hold it, followed by the full **permission matrix**.
 
-### The built-in roles
+### The seeded roles
 
-| Role | What it can do |
+| Role | What it starts with |
 | --- | --- |
-| **Owner** | Full control of the workspace. There is exactly one owner. Only the owner can transfer ownership. |
-| **Admin** | Everything the owner can do except transfer ownership. |
+| **Owner** (status, not a role) | Full control of the workspace, including ownership transfer. |
+| **Admin** | Everything except transferring ownership. |
 | **Manager** | The day-to-day operator. Can run campaigns, manage contacts and mailboxes, and use integrations, but has no team, billing, settings, or API-key access. |
 | **Viewer** | Read-only. Can see campaigns, contacts, and reports but cannot change anything. |
 
-There is also a legacy **Member** role kept only for backwards compatibility. It behaves the same as **Manager**. New members are not assigned Member; pick Manager instead.
+These are starting points, not fixed tiers. Any of them can be edited or deleted once the workspace exists.
 
 ### What each permission means
 
@@ -138,10 +138,10 @@ In short: **Admin** is the owner minus ownership transfer, **Manager** is everyt
 
 ## Custom roles
 
-When the built-in bundles don't fit, anyone with team management access can create custom roles on the **Roles & access** settings page:
+Anyone with team management access can create additional roles on the **Roles & access** settings page:
 
-1. Click **New role** and give it a name (up to 50 characters) and an optional description. Built-in role names are reserved.
-2. Pick a built-in role under **Start from** to copy its permissions as a starting point, then toggle individual permissions on or off.
+1. Click **New role** and give it a name (up to 50 characters), a color for the role pickers, and an optional description. Only the name "owner" is reserved.
+2. Pick a template under **Start from** to copy a permission bundle as a starting point, then toggle individual permissions on or off.
 3. Save, then assign the role from the member roster's role picker or directly in the invite flow.
 
 A few rules keep custom roles safe:
