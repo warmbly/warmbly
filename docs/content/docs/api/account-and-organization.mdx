@@ -1,0 +1,1993 @@
+---
+title: Account and organization
+description: Authentication, sessions, your profile and security settings, organization governance, teams, and subscription billing.
+icon: Users
+---
+
+This group covers everything tied to a human account and the workspace it belongs to: signing in, managing sessions, editing your profile and security settings (notification preferences, two-factor authentication, passkeys), running an organization (members, invitations, custom roles), grouping members into teams, and billing.
+
+Almost every endpoint here is session only. They depend on a human-bound JWT and are never reachable with an API key. The two exceptions are the team endpoints, which accept either a JWT or an API key, and the public auth endpoints (login, register, refresh, password reset, passkey login, 2FA verify), which carry no session at all because they exist to create one. Each endpoint below states its auth explicitly.
+
+All error responses use the shared envelope (`error`, `message`, `code`, `request_id`). See [Error codes](/api/error-codes/).
+
+## Authentication
+
+These endpoints are public (no session required). Login and registration are two-step: the first call sends a one-time code by email and returns a short-lived signed `session` token, the second call confirms the code and mints the real token pair. Captcha (Cloudflare Turnstile) is required on the start calls.
+
+### Start login
+
+`POST /auth/login`
+
+Sends a login code to the account email and returns a signed session token to carry into the confirm step.
+
+Auth: public (not available to API keys).
+
+#### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `email` | string | yes | Account email. |
+| `password` | string | yes | Account password. |
+| `turnstile` | string | yes | Cloudflare Turnstile token. |
+
+```json
+{
+  "email": "alex@acme.com",
+  "password": "correct horse battery staple",
+  "turnstile": "0.abc123..."
+}
+```
+
+#### Response
+
+```json
+{
+  "session": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+```
+
+### Confirm login
+
+`POST /auth/login/confirm`
+
+Exchanges the emailed code plus the session token for a token pair. If the account has 2FA enabled, no token pair is returned: `two_fa_required` is `true` and a single-use `pending_token` is returned instead, to be passed to `/auth/2fa/verify/`.
+
+Auth: public (not available to API keys).
+
+#### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `session` | string | yes | The token returned by `/auth/login`. |
+| `code` | string | yes | The one-time code from the email. |
+| `turnstile` | string | no | Cloudflare Turnstile token. |
+
+```json
+{
+  "session": "eyJhbGciOiJIUzI1NiIs...",
+  "code": "489210"
+}
+```
+
+#### Response
+
+On success, the full token pair:
+
+```json
+{
+  "access_token": "eyJhbGc...",
+  "access_token_expires_at": "2026-06-12T13:00:00Z",
+  "refresh_token": "eyJhbGc...",
+  "refresh_token_expires_at": "2026-07-12T12:00:00Z"
+}
+```
+
+When 2FA is enabled, a challenge instead of a session:
+
+```json
+{
+  "two_fa_required": true,
+  "pending_token": "eyJhbGc...",
+  "expires_in": 300
+}
+```
+
+### Start registration
+
+`POST /auth/register`
+
+Creates a pending registration and emails a confirmation code. Returns a signed session token for the confirm step.
+
+Auth: public (not available to API keys).
+
+#### Request body
+
+Same shape as `/auth/login`: `email`, `password`, `turnstile`.
+
+```json
+{
+  "email": "newuser@acme.com",
+  "password": "correct horse battery staple",
+  "turnstile": "0.abc123..."
+}
+```
+
+#### Response
+
+```json
+{
+  "session": "eyJhbGciOiJIUzI1NiIs..."
+}
+```
+
+### Confirm registration
+
+`POST /auth/register/confirm`
+
+Confirms the emailed code and creates the account. Returns `204 No Content` (the client then signs in via the login flow).
+
+Auth: public (not available to API keys).
+
+#### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `session` | string | yes | The token returned by `/auth/register`. |
+| `code` | string | yes | The one-time code from the email. |
+| `turnstile` | string | no | Cloudflare Turnstile token. |
+
+#### Response
+
+`204 No Content`.
+
+### Refresh token
+
+`POST /auth/refresh`
+
+Exchanges a valid refresh token for a fresh token pair.
+
+Auth: public (not available to API keys).
+
+#### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `refresh_token` | string | yes | A valid, unexpired refresh token. |
+
+```json
+{
+  "refresh_token": "eyJhbGc..."
+}
+```
+
+#### Response
+
+A new token pair, same shape as the login confirm success response (`access_token`, `access_token_expires_at`, `refresh_token`, `refresh_token_expires_at`).
+
+### Start password reset
+
+`POST /auth/reset-password`
+
+Emails a reset code if the address has an account. Always returns `200 OK` (it does not reveal whether the address exists).
+
+Auth: public (not available to API keys).
+
+#### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `email` | string | yes | Account email. |
+| `turnstile` | string | yes | Cloudflare Turnstile token. |
+
+#### Response
+
+`200 OK` with an empty body.
+
+### Confirm password reset
+
+`POST /auth/reset-password/confirm`
+
+Sets a new password using the emailed reset code (carried inside the signed `session` token).
+
+Auth: public (not available to API keys).
+
+#### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `session` | string | yes | The reset session token tied to the email. |
+| `password` | string | yes | The new password. |
+| `turnstile` | string | yes | Cloudflare Turnstile token. |
+
+#### Response
+
+`200 OK` with an empty body.
+
+### Begin passkey login
+
+`POST /auth/passkey/login/begin`
+
+Starts a discoverable (usernameless) WebAuthn assertion. Returns the public-key request options the browser passes to `navigator.credentials.get()`.
+
+Auth: public (not available to API keys).
+
+#### Response
+
+The WebAuthn assertion options object (challenge, RP id, allowed credentials, timeout), to feed directly to the WebAuthn API. The embedded `session` is echoed back in the finish step.
+
+### Finish passkey login
+
+`POST /auth/passkey/login/finish`
+
+Verifies the signed assertion and mints a token pair. A passkey is strong auth, so there is no email code step.
+
+Auth: public (not available to API keys).
+
+#### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `session` | string | yes | The session value from the begin step. |
+| `credential` | object | yes | The raw WebAuthn assertion (`PublicKeyCredential`) from the browser. |
+
+#### Response
+
+A token pair (same shape as the login confirm success response).
+
+### Verify 2FA login
+
+`POST /auth/2fa/verify`
+
+Exchanges the single-use `pending_token` from a 2FA-gated login plus a TOTP or recovery code for a real session.
+
+Auth: public (not available to API keys).
+
+#### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `pending_token` | string | yes | The `pending_token` returned by `/auth/login/confirm`. |
+| `code` | string | yes | A current TOTP code or an unused recovery code. |
+
+```json
+{
+  "pending_token": "eyJhbGc...",
+  "code": "123456"
+}
+```
+
+#### Response
+
+A token pair (same shape as the login confirm success response).
+
+## Sessions
+
+Self-service session management for the signed-in user. Revoking by id can only ever touch the caller's own sessions.
+
+### Sign out
+
+`POST /auth/logout`
+
+Revokes the current session. Returns `204 No Content`.
+
+Auth: Session only (not available to API keys).
+
+### Sign out everywhere
+
+`POST /auth/logout-all`
+
+Revokes every session for the user. Returns `204 No Content`.
+
+Auth: Session only (not available to API keys).
+
+### List sessions
+
+`GET /auth/sessions`
+
+Returns the user's active sessions for the account security page, with the current one flagged and floated to the top.
+
+Auth: Session only (not available to API keys).
+
+#### Response
+
+A bare array of session views.
+
+```json
+[
+  {
+    "id": "1f1d...",
+    "current": true,
+    "browser": "Chrome",
+    "os": "macOS",
+    "location_city": "Austin",
+    "location_region": "Texas",
+    "location_country": "United States",
+    "country_code": "US",
+    "auth_provider": "email",
+    "created_at": "2026-06-10T08:12:00Z",
+    "last_active_at": "2026-06-12T09:40:00Z"
+  }
+]
+```
+
+### Revoke other sessions
+
+`DELETE /auth/sessions`
+
+Ends every active session except the current one. Returns `204 No Content`.
+
+Auth: Session only (not available to API keys).
+
+### Revoke a session
+
+`DELETE /auth/sessions/:id`
+
+Ends one of the user's other sessions by id. Returns `204 No Content`.
+
+Auth: Session only (not available to API keys).
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `id` | path | uuid | The session id to revoke. |
+
+## Profile and account
+
+### Get current user
+
+`GET /auth/me`
+
+Returns the signed-in user, including admin flags and the per-user label groups (folders, tags, categories) the dashboard needs on initial load.
+
+Auth: Session only (not available to API keys).
+
+#### Response
+
+```json
+{
+  "id": "9c2a...",
+  "first_name": "Alex",
+  "last_name": "Rivera",
+  "email": "alex@acme.com",
+  "avatar_url": "https://warmbly-assets.s3.amazonaws.com/avatars/users/9c2a-...jpg",
+  "roles": ["b1e4..."],
+  "referral_source": "google",
+  "onboarding_completed_at": "2026-05-01T10:00:00Z",
+  "max_organizations": 3,
+  "free_trial_used": true,
+  "admin_permissions": 0,
+  "is_admin": false,
+  "folders": [],
+  "tags": [],
+  "categories": [],
+  "created_at": "2026-04-20T12:00:00Z",
+  "updated_at": "2026-06-10T08:00:00Z"
+}
+```
+
+### Update profile
+
+`PATCH /auth/me`
+
+Updates editable profile fields. First and last name are both required and capped at 50 characters. Returns `204 No Content`.
+
+Auth: Session only (not available to API keys).
+
+#### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `first_name` | string | yes | 1 to 50 characters. |
+| `last_name` | string | yes | 1 to 50 characters. |
+
+```json
+{
+  "first_name": "Alex",
+  "last_name": "Rivera"
+}
+```
+
+### Complete onboarding
+
+`PATCH /auth/me/onboarding`
+
+Persists the onboarding questionnaire (name plus optional persona answers). Returns `204 No Content`.
+
+Auth: Session only (not available to API keys).
+
+#### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `first_name` | string | yes | 1 to 50 characters. |
+| `last_name` | string | yes | 1 to 50 characters. |
+| `referral_source` | string | yes | One of `reddit`, `x`, `facebook`, `google`, `other`. |
+| `role` | string | no | One of `founder`, `sales`, `marketing`, `agency`, `recruiter`, `other`. |
+| `team_size` | string | no | One of `just_me`, `2-10`, `11-50`, `51-200`, `200+`. |
+
+```json
+{
+  "first_name": "Alex",
+  "last_name": "Rivera",
+  "referral_source": "google",
+  "role": "sales",
+  "team_size": "2-10"
+}
+```
+
+### Upload avatar
+
+`POST /auth/me/avatar`
+
+Uploads a profile image. `multipart/form-data` with a single `file` field. PNG or JPG only, max 2 MB, max 1024x1024 px.
+
+Auth: Session only (not available to API keys).
+
+#### Response
+
+```json
+{
+  "avatar_url": "https://warmbly-assets.s3.amazonaws.com/avatars/users/9c2a-1718193600.jpg"
+}
+```
+
+### Remove avatar
+
+`DELETE /auth/me/avatar`
+
+Clears the profile image. Returns `204 No Content`.
+
+Auth: Session only (not available to API keys).
+
+### Change password
+
+`POST /auth/me/password`
+
+Updates the signed-in user's password. Returns `200 OK`.
+
+Auth: Session only (not available to API keys).
+
+#### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `current_password` | string | yes | The existing password. |
+| `new_password` | string | yes | The new password. |
+
+```json
+{
+  "current_password": "correct horse battery staple",
+  "new_password": "a longer better passphrase"
+}
+```
+
+## Notification preferences and feed
+
+User-scoped, no organization gate. Preferences are a single per-user object; the feed is the in-app notification list.
+
+### Get notification preferences
+
+`GET /auth/me/notification-preferences`
+
+Returns the caller's preferences merged over the defaults.
+
+Auth: Session only (not available to API keys).
+
+#### Response
+
+```json
+{
+  "preferences": {
+    "inbound_reply": { "enabled": false, "channels": { "in_app": true, "email": false, "slack": false } },
+    "inbound_out_of_office": { "enabled": false, "channels": { "in_app": true, "email": false, "slack": false } },
+    "health_bounce": { "enabled": true, "channels": { "in_app": true, "email": false, "slack": false } },
+    "health_complaint": { "enabled": true, "channels": { "in_app": true, "email": false, "slack": false } },
+    "health_worker_downtime": { "enabled": true, "channels": { "in_app": true, "email": false, "slack": false } },
+    "security_new_signin": { "enabled": true, "channels": { "in_app": true, "email": false, "slack": false } }
+  }
+}
+```
+
+### Update notification preferences
+
+`PUT /auth/me/notification-preferences`
+
+Replaces the caller's preferences. The full preferences object is sent under a `preferences` key and echoed back.
+
+Auth: Session only (not available to API keys).
+
+#### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `preferences` | object | yes | The complete preferences object. Each of the six categories has `enabled` plus a `channels` object (`in_app`, `email`, `slack`). |
+
+```json
+{
+  "preferences": {
+    "inbound_reply": { "enabled": true, "channels": { "in_app": true, "email": true, "slack": false } },
+    "inbound_out_of_office": { "enabled": false, "channels": { "in_app": true, "email": false, "slack": false } },
+    "health_bounce": { "enabled": true, "channels": { "in_app": true, "email": false, "slack": false } },
+    "health_complaint": { "enabled": true, "channels": { "in_app": true, "email": false, "slack": false } },
+    "health_worker_downtime": { "enabled": true, "channels": { "in_app": true, "email": false, "slack": false } },
+    "security_new_signin": { "enabled": true, "channels": { "in_app": true, "email": false, "slack": false } }
+  }
+}
+```
+
+#### Response
+
+The same `{ "preferences": { ... } }` object that was sent.
+
+### List notifications
+
+`GET /auth/me/notifications`
+
+Returns the caller's recent in-app feed plus the unread count. This is a fixed-size feed, not a cursor-paginated list.
+
+Auth: Session only (not available to API keys).
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `limit` | query | int | Max items to return (default 50). |
+| `unread` | query | string | `1` or `true` to return only unread items. |
+
+#### Response
+
+```json
+{
+  "notifications": [
+    {
+      "id": "f0aa...",
+      "user_id": "9c2a...",
+      "organization_id": "3d11...",
+      "category": "health_bounce",
+      "title": "Hard bounce on alex@acme.com",
+      "body": "A message bounced and the recipient was suppressed.",
+      "link": "/app/mailboxes/abc",
+      "read_at": null,
+      "created_at": "2026-06-12T09:00:00Z"
+    }
+  ],
+  "unread": 3
+}
+```
+
+### Mark all read
+
+`PUT /auth/me/notifications`
+
+Marks the caller's whole feed read.
+
+Auth: Session only (not available to API keys).
+
+#### Response
+
+```json
+{ "ok": true }
+```
+
+### Mark one read
+
+`POST /auth/me/notifications/:id/read`
+
+Marks a single notification read.
+
+Auth: Session only (not available to API keys).
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `id` | path | uuid | The notification id. |
+
+#### Response
+
+```json
+{ "ok": true }
+```
+
+## Two-factor authentication
+
+TOTP-based 2FA. Enrollment and management require a live session. The login challenge itself (`/auth/2fa/verify`) is public and documented above.
+
+### 2FA status
+
+`GET /auth/2fa/status`
+
+Reports whether the caller has 2FA enabled.
+
+Auth: Session only (not available to API keys).
+
+#### Response
+
+```json
+{ "enabled": false }
+```
+
+### Begin enrollment
+
+`POST /auth/2fa/enroll/start`
+
+Generates a TOTP secret and the `otpauth://` provisioning URI (returned once). The client renders the URI as a QR code.
+
+Auth: Session only (not available to API keys).
+
+#### Response
+
+```json
+{
+  "secret": "JBSWY3DPEHPK3PXP",
+  "otpauth_uri": "otpauth://totp/Warmbly:alex@acme.com?secret=JBSWY3DPEHPK3PXP&issuer=Warmbly"
+}
+```
+
+### Confirm enrollment
+
+`POST /auth/2fa/enroll/confirm`
+
+Verifies a TOTP code, enables 2FA, and returns the one-time recovery codes (shown once).
+
+Auth: Session only (not available to API keys).
+
+#### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `code` | string | yes | A current TOTP code from the authenticator. |
+
+#### Response
+
+```json
+{
+  "recovery_codes": ["a1b2-c3d4", "e5f6-g7h8", "..."]
+}
+```
+
+### Disable 2FA
+
+`DELETE /auth/2fa`
+
+Turns off 2FA. Requires a current TOTP or recovery code in the body.
+
+Auth: Session only (not available to API keys).
+
+#### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `code` | string | yes | A current TOTP or recovery code. |
+
+#### Response
+
+```json
+{ "ok": true }
+```
+
+## Passkeys
+
+WebAuthn credential management for the signed-in user. The login flow (`/auth/passkey/login/begin` and `/finish`) is public and documented above.
+
+### Begin passkey registration
+
+`POST /auth/passkey/register/begin`
+
+Returns the WebAuthn creation options the browser passes to `navigator.credentials.create()`.
+
+Auth: Session only (not available to API keys).
+
+#### Response
+
+The WebAuthn creation options object (challenge, RP, user, pubkey params).
+
+### Finish passkey registration
+
+`POST /auth/passkey/register/finish`
+
+Stores the new credential and returns its display view.
+
+Auth: Session only (not available to API keys).
+
+#### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | no | A friendly label for the passkey. |
+| `credential` | object | yes | The raw WebAuthn attestation (`PublicKeyCredential`) from the browser. |
+
+#### Response
+
+```json
+{
+  "id": "c41f...",
+  "name": "MacBook Touch ID",
+  "credential_id": "b64url...",
+  "transports": ["internal"],
+  "backup_state": true,
+  "created_at": "2026-06-12T09:00:00Z",
+  "last_used_at": null
+}
+```
+
+### List passkeys
+
+`GET /auth/passkey/credentials`
+
+Returns the user's stored passkeys.
+
+Auth: Session only (not available to API keys).
+
+#### Response
+
+A bare array of credential views (same shape as the register finish response).
+
+### Rename a passkey
+
+`PATCH /auth/passkey/credentials/:id`
+
+Renames a stored passkey and returns the updated view.
+
+Auth: Session only (not available to API keys).
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `id` | path | uuid | The credential id. |
+
+#### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | yes | The new label. |
+
+### Delete a passkey
+
+`DELETE /auth/passkey/credentials/:id`
+
+Removes a stored passkey. Returns `204 No Content`.
+
+Auth: Session only (not available to API keys).
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `id` | path | uuid | The credential id. |
+
+## Account danger zone
+
+Delayed hard-delete of the caller's own account, with a confirmation phrase and a grace window.
+
+### Get account danger-zone status
+
+`GET /me/danger-zone`
+
+Returns the danger-zone summary plus any pending deletion.
+
+Auth: Session only (not available to API keys).
+
+#### Response
+
+```json
+{
+  "resource_type": "user",
+  "resource_id": "9c2a...",
+  "resource_name": "alex@acme.com",
+  "confirmation_hint": "alex@acme.com",
+  "grace_days": 14,
+  "pending_deletion": null
+}
+```
+
+### Schedule account deletion
+
+`POST /me/danger-zone/delete`
+
+Schedules the account for a delayed hard delete. The confirmation must match the email. Returns `202 Accepted` with the scheduled-deletion record.
+
+Auth: Session only (not available to API keys).
+
+#### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `confirmation` | string | yes | Must equal the account email. |
+| `reason` | string | no | Optional free-text reason. |
+
+```json
+{
+  "confirmation": "alex@acme.com",
+  "reason": "switching tools"
+}
+```
+
+#### Response
+
+```json
+{
+  "resource_type": "user",
+  "resource_id": "9c2a...",
+  "requested_by_user_id": "9c2a...",
+  "scheduled_at": "2026-06-12T09:00:00Z",
+  "execute_after": "2026-06-26T09:00:00Z",
+  "grace_days": 14,
+  "status": "pending"
+}
+```
+
+### Cancel account deletion
+
+`DELETE /me/danger-zone/delete`
+
+Cancels a pending account deletion.
+
+Auth: Session only (not available to API keys).
+
+#### Request body (optional)
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `reason` | string | no | Optional free-text reason. |
+
+#### Response
+
+```json
+{ "message": "deletion cancelled" }
+```
+
+## Websocket bootstrap
+
+### Generate a websocket token
+
+`POST /getaway`
+
+Mints a single-session token for the realtime websocket and returns the connect URL plus its TTL in seconds.
+
+Auth: Session only (not available to API keys).
+
+#### Response
+
+```json
+{
+  "url": "wss://realtime.warmbly.com/socket?token=...",
+  "expires_in": 60
+}
+```
+
+## Organizations
+
+The organization is the workspace tenant. These endpoints handle creating and switching workspaces, the current workspace and its limits, members, custom roles, invitations, ownership transfer, avatar, and the workspace danger zone. All of `/organization/*` is session only. Mutations are gated by the caller's organization role, noted per endpoint.
+
+### Create an organization
+
+`POST /organization`
+
+Creates a new organization owned by the caller. Returns `201 Created`.
+
+Auth: Session only (not available to API keys).
+
+#### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | yes | 1 to 255 characters. |
+
+```json
+{ "name": "Acme Outbound" }
+```
+
+#### Response
+
+The created organization object.
+
+```json
+{
+  "id": "3d11...",
+  "name": "Acme Outbound",
+  "slug": null,
+  "avatar_url": null,
+  "owner_user_id": "9c2a...",
+  "presence_show_online": true,
+  "presence_show_activity": true,
+  "created_at": "2026-06-12T09:00:00Z",
+  "updated_at": "2026-06-12T09:00:00Z"
+}
+```
+
+### List my organizations
+
+`GET /organization`
+
+Returns the organizations the caller is a member of.
+
+Auth: Session only (not available to API keys).
+
+#### Response
+
+```json
+{
+  "data": [
+    {
+      "id": "ab12...",
+      "organization_id": "3d11...",
+      "user_id": "9c2a...",
+      "role": "owner",
+      "permissions": 524287,
+      "email": "alex@acme.com",
+      "name": "Alex Rivera",
+      "invited_at": "2026-06-12T09:00:00Z"
+    }
+  ]
+}
+```
+
+### Switch organization
+
+`POST /organization/switch/:id`
+
+Sets the session's current organization. The caller must be a member.
+
+Auth: Session only (not available to API keys).
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `id` | path | uuid | The organization to switch to. |
+
+#### Response
+
+```json
+{
+  "message": "organization switched",
+  "organization_id": "3d11..."
+}
+```
+
+### Get current organization
+
+`GET /organization/current`
+
+Returns the session's current organization with its resolved limits and live counts.
+
+Auth: Session only (not available to API keys).
+
+#### Response
+
+```json
+{
+  "id": "3d11...",
+  "name": "Acme Outbound",
+  "owner_user_id": "9c2a...",
+  "presence_show_online": true,
+  "presence_show_activity": true,
+  "created_at": "2026-06-12T09:00:00Z",
+  "updated_at": "2026-06-12T09:00:00Z",
+  "limits": {
+    "max_campaigns": 50,
+    "max_team_members": 10,
+    "max_email_accounts": 25,
+    "daily_campaign_limit": 500
+  },
+  "counts": {
+    "total_campaigns": 8,
+    "active_campaigns": 2,
+    "total_contacts": 1240,
+    "total_members": 3,
+    "email_accounts": 6,
+    "emails_sent_today": 180
+  }
+}
+```
+
+### Update current organization
+
+`PATCH /organization/current`
+
+Updates the current organization (name, slug, presence privacy toggles). A presence privacy change re-gates connected sockets live.
+
+Auth: Session only (not available to API keys). **Org permission** `manage_settings`.
+
+#### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | no | New workspace name. |
+| `slug` | string | no | New workspace slug. |
+| `presence_show_online` | boolean | no | When false the realtime service tracks no member (nobody appears online). |
+| `presence_show_activity` | boolean | no | When false online is still shown but viewing/editing detail is stripped. |
+
+```json
+{
+  "name": "Acme Outbound",
+  "presence_show_activity": false
+}
+```
+
+#### Response
+
+The updated organization object.
+
+### Get organization limits
+
+`GET /organization/current/limits`
+
+Returns the current organization's plan-resolved limits and current usage counts.
+
+Auth: Session only (not available to API keys). Requires a selected organization.
+
+#### Response
+
+```json
+{
+  "limits": {
+    "max_campaigns": 50,
+    "max_team_members": 10,
+    "max_email_accounts": 25,
+    "daily_campaign_limit": 500
+  },
+  "counts": {
+    "total_campaigns": 8,
+    "active_campaigns": 2,
+    "total_contacts": 1240,
+    "total_members": 3,
+    "email_accounts": 6,
+    "emails_sent_today": 180
+  }
+}
+```
+
+### List members
+
+`GET /organization/members`
+
+Returns the current organization's members, each hydrated with the user's email, display name, role, and effective permission bitmask.
+
+Auth: Session only (not available to API keys). Requires a selected organization.
+
+#### Response
+
+```json
+{
+  "data": [
+    {
+      "id": "ab12...",
+      "organization_id": "3d11...",
+      "user_id": "9c2a...",
+      "role": "owner",
+      "roles": [{ "id": "r1...", "name": "Owner", "color": "#0ea5e9" }],
+      "permissions": 524287,
+      "email": "alex@acme.com",
+      "name": "Alex Rivera",
+      "invited_at": "2026-06-12T09:00:00Z",
+      "accepted_at": "2026-06-12T09:05:00Z"
+    }
+  ]
+}
+```
+
+### Invite a member
+
+`POST /organization/members/invite`
+
+Invites an email to the organization and emails an accept link. The invitee lands in the given role set. Returns `201 Created`.
+
+Auth: Session only (not available to API keys). **Org permission** `manage_team`.
+
+#### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `email` | string | yes | The invitee's email. |
+| `role_ids` | uuid[] | no | The workspace roles to assign (at least one role overall). |
+| `role_id` | uuid | no | Single-role shorthand, merged with `role_ids`. |
+
+```json
+{
+  "email": "sam@acme.com",
+  "role_ids": ["r2..."]
+}
+```
+
+#### Response
+
+```json
+{
+  "message": "invitation sent",
+  "invitation": {
+    "id": "inv1...",
+    "organization_id": "3d11...",
+    "email": "sam@acme.com",
+    "role": "member",
+    "permissions": 12288,
+    "invited_by": "9c2a...",
+    "expires_at": "2026-06-19T09:00:00Z",
+    "created_at": "2026-06-12T09:00:00Z"
+  }
+}
+```
+
+### Update a member's roles
+
+`PATCH /organization/members/:id`
+
+Replaces a member's assigned role set. Returns the updated member.
+
+Auth: Session only (not available to API keys). **Org permission** `manage_team`.
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `id` | path | uuid | The member's user id. |
+
+#### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `role_ids` | uuid[] | no | New assigned role set (at least one role overall). |
+| `role_id` | uuid | no | Single-role shorthand, merged with `role_ids`. |
+
+```json
+{ "role_ids": ["r2...", "r3..."] }
+```
+
+#### Response
+
+The updated member object (same shape as a list-members entry).
+
+### Remove a member
+
+`DELETE /organization/members/:id`
+
+Removes a member from the organization.
+
+Auth: Session only (not available to API keys). **Org permission** `manage_team`.
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `id` | path | uuid | The member's user id. |
+
+#### Response
+
+```json
+{ "message": "member removed" }
+```
+
+### List custom roles
+
+`GET /organization/roles`
+
+Returns the organization's custom roles (named permission sets). Listing is open to every member so role chips render on the roster.
+
+Auth: Session only (not available to API keys). Requires a selected organization.
+
+#### Response
+
+```json
+{
+  "data": [
+    {
+      "id": "r2...",
+      "organization_id": "3d11...",
+      "name": "Sales rep",
+      "description": "Run campaigns, view contacts",
+      "color": "#22c55e",
+      "permissions": 4352,
+      "member_count": 4,
+      "created_at": "2026-05-01T09:00:00Z",
+      "updated_at": "2026-06-01T09:00:00Z"
+    }
+  ]
+}
+```
+
+### Create a custom role
+
+`POST /organization/roles`
+
+Creates a custom role. Returns `201 Created` with the role.
+
+Auth: Session only (not available to API keys). **Org permission** `manage_team`.
+
+#### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | yes | Role name. |
+| `description` | string | no | Role description. |
+| `color` | string | no | Hex color for the chip. |
+| `permissions` | int | no | Organization permission bitmask granted by the role. |
+
+```json
+{
+  "name": "Sales rep",
+  "description": "Run campaigns, view contacts",
+  "color": "#22c55e",
+  "permissions": 4352
+}
+```
+
+### Update a custom role
+
+`PATCH /organization/roles/:id`
+
+Edits a custom role. Edits propagate to every member assigned to it (permission readers stay JOIN-free).
+
+Auth: Session only (not available to API keys). **Org permission** `manage_team`.
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `id` | path | uuid | The role id. |
+
+#### Request body
+
+All fields optional; nil fields are left untouched.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | no | New name. |
+| `description` | string | no | New description. |
+| `color` | string | no | New chip color. |
+| `permissions` | int | no | New permission bitmask. |
+
+### Delete a custom role
+
+`DELETE /organization/roles/:id`
+
+Removes a custom role. Returns `204 No Content`.
+
+Auth: Session only (not available to API keys). **Org permission** `manage_team`.
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `id` | path | uuid | The role id. |
+
+### List pending invitations
+
+`GET /organization/invitations`
+
+Returns the organization's outstanding invitations.
+
+Auth: Session only (not available to API keys). **Org permission** `manage_team`.
+
+#### Response
+
+```json
+{
+  "data": [
+    {
+      "id": "inv1...",
+      "organization_id": "3d11...",
+      "email": "sam@acme.com",
+      "role": "member",
+      "permissions": 12288,
+      "invited_by": "9c2a...",
+      "expires_at": "2026-06-19T09:00:00Z",
+      "created_at": "2026-06-12T09:00:00Z"
+    }
+  ]
+}
+```
+
+### Cancel an invitation
+
+`DELETE /organization/invitations/:id`
+
+Cancels a pending invitation.
+
+Auth: Session only (not available to API keys). **Org permission** `manage_team`.
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `id` | path | uuid | The invitation id. |
+
+#### Response
+
+```json
+{ "message": "invitation cancelled" }
+```
+
+### Get an invitation link
+
+`GET /organization/invitations/:id/link`
+
+Returns the shareable accept token for a pending invitation so a team manager can copy a real accept link.
+
+Auth: Session only (not available to API keys). **Org permission** `manage_team`.
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `id` | path | uuid | The invitation id. |
+
+#### Response
+
+```json
+{ "token": "inv_token_abc123" }
+```
+
+### Transfer ownership
+
+`POST /organization/transfer-ownership`
+
+Transfers organization ownership to another member.
+
+Auth: Session only (not available to API keys). **Org permission** `transfer_ownership`.
+
+#### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `new_owner_user_id` | uuid | yes | The member's user id to promote to owner. |
+
+```json
+{ "new_owner_user_id": "7b88..." }
+```
+
+#### Response
+
+```json
+{ "message": "ownership transferred" }
+```
+
+### Upload organization avatar
+
+`POST /organization/avatar`
+
+Uploads the workspace image. `multipart/form-data` with a single `file` field. Owner only. PNG or JPG, max 2 MB, max 1024x1024 px.
+
+Auth: Session only (not available to API keys). Requires a selected organization (owner only).
+
+#### Response
+
+```json
+{ "avatar_url": "https://warmbly-assets.s3.amazonaws.com/avatars/organizations/3d11-1718193600.jpg" }
+```
+
+### Remove organization avatar
+
+`DELETE /organization/avatar`
+
+Clears the workspace image. Owner only. Returns `204 No Content`.
+
+Auth: Session only (not available to API keys). Requires a selected organization (owner only).
+
+### Get organization danger-zone status
+
+`GET /organization/current/danger-zone`
+
+Returns the workspace danger-zone summary plus any pending deletion.
+
+Auth: Session only (not available to API keys). Requires a selected organization.
+
+#### Response
+
+Same shape as the account danger zone, with `resource_type` of `organization` and the org name as the confirmation hint.
+
+### Schedule organization deletion
+
+`POST /organization/current/danger-zone/delete`
+
+Schedules the current organization for a delayed hard delete. Owner only; the confirmation must match the org name. Returns `202 Accepted` with the scheduled-deletion record.
+
+Auth: Session only (not available to API keys). Requires a selected organization (owner only).
+
+#### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `confirmation` | string | yes | Must equal the organization name. |
+| `reason` | string | no | Optional free-text reason. |
+
+```json
+{ "confirmation": "Acme Outbound" }
+```
+
+### Cancel organization deletion
+
+`DELETE /organization/current/danger-zone/delete`
+
+Cancels a pending organization deletion.
+
+Auth: Session only (not available to API keys). Requires a selected organization.
+
+#### Request body (optional)
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `reason` | string | no | Optional free-text reason. |
+
+#### Response
+
+```json
+{ "message": "deletion cancelled" }
+```
+
+### Submit a limit-increase request
+
+`POST /organization/:orgId/limit-requests`
+
+Submits a request to raise one of the organization's limits. The current effective value is captured server-side at submission time. Returns `201 Created`.
+
+Auth: Session only (not available to API keys).
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `orgId` | path | uuid | The organization id. |
+
+#### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `field` | string | yes | A limit field (for example `max_email_accounts`, `daily_campaign_limit`). |
+| `requested` | int | yes | The requested value, must be greater than the current effective limit. |
+| `reason` | string | yes | 1 to 2000 characters. |
+
+```json
+{
+  "field": "max_email_accounts",
+  "requested": 50,
+  "reason": "Onboarding a new sales team next month."
+}
+```
+
+#### Response
+
+```json
+{
+  "id": "lr1...",
+  "organization_id": "3d11...",
+  "field": "max_email_accounts",
+  "current_effective": 25,
+  "requested": 50,
+  "reason": "Onboarding a new sales team next month.",
+  "status": "pending",
+  "submitted_by": "9c2a...",
+  "submitted_at": "2026-06-12T09:00:00Z",
+  "review_notes": ""
+}
+```
+
+### List limit requests
+
+`GET /organization/:orgId/limit-requests`
+
+Returns the organization's limit-increase requests.
+
+Auth: Session only (not available to API keys).
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `orgId` | path | uuid | The organization id. |
+
+#### Response
+
+```json
+{ "data": [ { "id": "lr1...", "field": "max_email_accounts", "status": "pending", "requested": 50 } ] }
+```
+
+### Cancel a limit request
+
+`DELETE /limit-requests/:id`
+
+Cancels a pending limit request. Submitter only. Returns `204 No Content`.
+
+Auth: Session only (not available to API keys).
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `id` | path | uuid | The limit-request id. |
+
+## Invitations (for the invitee)
+
+These sit outside `/organization` because they act on the signed-in user's own pending invitations.
+
+### List my pending invitations
+
+`GET /invitations`
+
+Returns invitations addressed to the caller's email.
+
+Auth: Session only (not available to API keys).
+
+#### Response
+
+```json
+{
+  "data": [
+    {
+      "id": "inv1...",
+      "organization_id": "3d11...",
+      "email": "alex@acme.com",
+      "role": "member",
+      "expires_at": "2026-06-19T09:00:00Z",
+      "created_at": "2026-06-12T09:00:00Z",
+      "organization": { "id": "3d11...", "name": "Acme Outbound" }
+    }
+  ]
+}
+```
+
+### Accept an invitation
+
+`POST /invitations/accept`
+
+Accepts an invitation, either by the secret token (from a `/invite` link) or by the invitation id (from the caller's own pending list). Returns the new membership.
+
+Auth: Session only (not available to API keys).
+
+#### Request body
+
+Exactly one of `token` or `invitation_id` is required.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `token` | string | conditional | The secret token from a `/invite` link. |
+| `invitation_id` | uuid | conditional | The invitation id from the caller's pending list. |
+
+```json
+{ "token": "inv_token_abc123" }
+```
+
+#### Response
+
+```json
+{
+  "message": "invitation accepted",
+  "member": {
+    "id": "ab13...",
+    "organization_id": "3d11...",
+    "user_id": "9c2a...",
+    "role": "member",
+    "permissions": 12288,
+    "email": "alex@acme.com",
+    "name": "Alex Rivera"
+  }
+}
+```
+
+## Teams
+
+Teams group existing organization members under a named, color-tagged label (used for CRM ownership and routing). Unlike the rest of this group, the team endpoints accept either a JWT or an API key, and all require a selected organization. Reads map to the CRM read scope and writes to the CRM write scope.
+
+### List teams
+
+`GET /teams`
+
+Returns the organization's teams, each hydrated with its members.
+
+Auth: **Scope** `READ_CRM` · **Org permission** `view_contacts`. Requires a selected organization.
+
+#### Response
+
+```json
+{
+  "data": [
+    {
+      "id": "t1...",
+      "organization_id": "3d11...",
+      "name": "West coast",
+      "color": "#0ea5e9",
+      "members": [
+        { "user_id": "9c2a...", "email": "alex@acme.com", "name": "Alex Rivera", "added_at": "2026-06-01T09:00:00Z" }
+      ],
+      "created_at": "2026-05-01T09:00:00Z",
+      "updated_at": "2026-06-01T09:00:00Z"
+    }
+  ]
+}
+```
+
+### Create a team
+
+`POST /teams`
+
+Creates a team. Returns `201 Created` with the team.
+
+Auth: **Scope** `WRITE_CRM` · **Org permission** `manage_team`. Requires a selected organization.
+
+#### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | yes | 1 to 255 characters. |
+| `color` | string | no | Hex color (defaults to `#94a3b8`). |
+
+```json
+{ "name": "West coast", "color": "#0ea5e9" }
+```
+
+#### Response
+
+The created team object (members starts empty).
+
+### Get a team
+
+`GET /teams/:id`
+
+Returns a single team with its members.
+
+Auth: **Scope** `READ_CRM` · **Org permission** `view_contacts`. Requires a selected organization.
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `id` | path | uuid | The team id. |
+
+### Update a team
+
+`PATCH /teams/:id`
+
+Partial-updates a team's name or color. Nil fields are left untouched.
+
+Auth: **Scope** `WRITE_CRM` · **Org permission** `manage_team`. Requires a selected organization.
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `id` | path | uuid | The team id. |
+
+#### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | no | New name. |
+| `color` | string | no | New color. |
+
+#### Response
+
+The updated team object.
+
+### Delete a team
+
+`DELETE /teams/:id`
+
+Deletes a team. Returns `204 No Content`.
+
+Auth: **Scope** `WRITE_CRM` · **Org permission** `manage_team`. Requires a selected organization.
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `id` | path | uuid | The team id. |
+
+### Add a team member
+
+`POST /teams/:id/members`
+
+Adds an existing organization member to the team. Returns the updated team.
+
+Auth: **Scope** `WRITE_CRM` · **Org permission** `manage_team`. Requires a selected organization.
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `id` | path | uuid | The team id. |
+
+#### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `user_id` | uuid | yes | The member's user id (must already belong to the organization). |
+
+```json
+{ "user_id": "7b88..." }
+```
+
+#### Response
+
+The updated team object, including the new member.
+
+### Remove a team member
+
+`DELETE /teams/:id/members/:userId`
+
+Removes a member from the team. Returns `204 No Content`.
+
+Auth: **Scope** `WRITE_CRM` · **Org permission** `manage_team`. Requires a selected organization.
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `id` | path | uuid | The team id. |
+| `userId` | path | uuid | The member's user id. |
+
+## Subscription and billing
+
+The subscription is per-organization. These endpoints read the current subscription, trial, feature access, manage Stripe checkout and the billing portal, change plans, validate discount codes, and submit enterprise inquiries. All of `/subscription/*` is session only.
+
+### Get subscription
+
+`GET /subscription`
+
+Returns the current organization's subscription.
+
+Auth: Session only (not available to API keys). Requires a selected organization.
+
+#### Response
+
+```json
+{
+  "id": "sub1...",
+  "user_id": "9c2a...",
+  "organization_id": "3d11...",
+  "plan_id": "plan_pro...",
+  "stripe_customer_id": "cus_...",
+  "stripe_subscription_id": "sub_...",
+  "status": "active",
+  "current_period_start": "2026-06-01T00:00:00Z",
+  "current_period_end": "2026-07-01T00:00:00Z",
+  "cancel_at_period_end": false,
+  "is_enterprise": false,
+  "plan": { "id": "plan_pro...", "name": "Pro", "price": 99, "duration": "month" },
+  "created_at": "2026-04-20T12:00:00Z",
+  "updated_at": "2026-06-01T00:00:00Z"
+}
+```
+
+### Get subscription with limits
+
+`GET /subscription/limits`
+
+Returns the subscription plus the plan's rate limits.
+
+Auth: Session only (not available to API keys). Requires a selected organization.
+
+#### Response
+
+The subscription object as above, extended with the plan's limit fields.
+
+### Get trial status
+
+`GET /subscription/trial`
+
+Returns the organization's free-trial status.
+
+Auth: Session only (not available to API keys). Requires a selected organization.
+
+#### Response
+
+The trial status object (whether a trial is active, when it ends, whether it has been used).
+
+### Get feature status
+
+`GET /subscription/features`
+
+Returns the organization's feature-access status plus convenience flags for the major gated features.
+
+Auth: Session only (not available to API keys). Requires a selected organization.
+
+#### Response
+
+```json
+{
+  "subscription": { "status": "active", "plan": "Pro" },
+  "can_send_campaigns": true,
+  "can_use_warmup": true,
+  "can_use_unibox": true
+}
+```
+
+### Create a checkout session
+
+`POST /subscription/checkout`
+
+Creates a Stripe checkout session for a price and returns the redirect URL.
+
+Auth: Session only (not available to API keys). Requires a selected organization.
+
+#### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `price_id` | string | yes | The Stripe price id to subscribe to. |
+| `success_url` | string | yes | Redirect target after successful checkout. |
+| `cancel_url` | string | yes | Redirect target if the user cancels. |
+| `discount_code` | string | no | A discount code to apply. |
+
+```json
+{
+  "price_id": "price_123",
+  "success_url": "https://app.warmbly.com/billing?status=success",
+  "cancel_url": "https://app.warmbly.com/billing?status=cancel"
+}
+```
+
+#### Response
+
+```json
+{
+  "session_id": "cs_test_...",
+  "checkout_url": "https://checkout.stripe.com/c/pay/cs_test_..."
+}
+```
+
+### Validate a discount code
+
+`POST /subscription/discount/validate`
+
+Previews whether a discount code is valid for the current organization (optionally against a target plan), returning the discount details for display.
+
+Auth: Session only (not available to API keys). Requires a selected organization.
+
+#### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `code` | string | yes | The discount code. |
+| `plan_id` | uuid | no | A target plan to compute the discounted amount against. |
+
+```json
+{ "code": "LAUNCH20", "plan_id": "plan_pro..." }
+```
+
+#### Response
+
+```json
+{
+  "valid": true,
+  "code": "LAUNCH20",
+  "type": "percent",
+  "percent_off": 20,
+  "duration": "once"
+}
+```
+
+When invalid, `valid` is `false` and `reason` explains why.
+
+### Create a billing portal session
+
+`POST /subscription/portal`
+
+Creates a Stripe billing portal session for the organization's customer and returns the portal URL.
+
+Auth: Session only (not available to API keys). Requires a selected organization.
+
+#### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `return_url` | string | yes | Where Stripe returns the user after the portal. |
+
+```json
+{ "return_url": "https://app.warmbly.com/billing" }
+```
+
+#### Response
+
+```json
+{ "portal_url": "https://billing.stripe.com/p/session/..." }
+```
+
+### Cancel subscription
+
+`POST /subscription/cancel`
+
+Cancels the organization's subscription, either at period end or immediately.
+
+Auth: Session only (not available to API keys). Requires a selected organization.
+
+#### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `cancel_at_period_end` | boolean | no | When true, cancel at the end of the current period instead of immediately. |
+
+```json
+{ "cancel_at_period_end": true }
+```
+
+#### Response
+
+```json
+{ "message": "subscription cancelled" }
+```
+
+### Change plan
+
+`POST /subscription/change-plan`
+
+Changes the organization's plan with proration.
+
+Auth: Session only (not available to API keys). **Org permission** `manage_billing`. Requires a selected organization.
+
+#### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `plan_id` | uuid | yes | The target plan id. |
+| `proration_behavior` | string | no | One of `create_prorations`, `always_invoice`, `none`. |
+| `discount_code` | string | no | A discount code to apply. |
+| `interval` | string | no | `month` or `year` (defaults to monthly). |
+
+```json
+{
+  "plan_id": "plan_scale...",
+  "proration_behavior": "create_prorations",
+  "interval": "year"
+}
+```
+
+#### Response
+
+```json
+{
+  "message": "plan changed successfully",
+  "subscription": { "id": "sub1...", "plan_id": "plan_scale...", "status": "active" }
+}
+```
+
+### Preview a plan change
+
+`GET /subscription/preview-change`
+
+Previews the proration for a plan change without applying it.
+
+Auth: Session only (not available to API keys). **Org permission** `manage_billing`. Requires a selected organization.
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `new_plan_id` | query | uuid | The target plan id. |
+
+#### Response
+
+The proration preview object (line items, immediate charge, and next invoice amount).
+
+### Submit an enterprise inquiry
+
+`POST /subscription/enterprise-inquiry`
+
+Submits an enterprise pricing inquiry. Returns a confirmation plus the new inquiry id.
+
+Auth: Session only (not available to API keys).
+
+#### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `company_name` | string | yes | Company name. |
+| `contact_name` | string | yes | Contact name. |
+| `contact_email` | string | yes | Contact email. |
+| `estimated_volume` | int | no | Estimated monthly email volume. |
+| `team_size` | int | no | Team size. |
+| `notes` | string | no | Free-text notes. |
+
+```json
+{
+  "company_name": "Acme Inc",
+  "contact_name": "Alex Rivera",
+  "contact_email": "alex@acme.com",
+  "estimated_volume": 50000,
+  "team_size": 25
+}
+```
+
+#### Response
+
+```json
+{
+  "message": "Thank you! Our team will contact you within 24 hours.",
+  "inquiry_id": "eiq1..."
+}
+```
+
+## Reference data
+
+Two read-only reference endpoints sit alongside billing. Unlike the rest of this group they accept any authenticated key (JWT or API key); auth only exists to keep them from being scraped.
+
+### List plans
+
+`GET /plans`
+
+Returns the available public subscription plans.
+
+Auth: any authenticated caller (JWT or API key).
+
+#### Response
+
+```json
+{
+  "plans": [
+    { "id": "plan_pro...", "name": "Pro", "price": 99, "duration": "month", "public": true }
+  ]
+}
+```
+
+### List timezones
+
+`GET /timezones`
+
+Returns the supported timezone identifiers (for campaign schedule windows and the like).
+
+Auth: any authenticated caller (JWT or API key).
+
+## See also
+
+- [Authentication](/api/authentication/)
+- [Permissions reference](/api/permissions/)
+- [Error codes](/api/error-codes/)

@@ -9,9 +9,9 @@ export interface TaskProgressPayload {
     contact_id: string;
     contact_email: string;
     contact_name: string;
-    sequence_id: string;
-    sequence_name: string;
-    sequence_index: number;
+    step_id: string;
+    step_name: string;
+    step_index: number;
     progress: number;
     total_contacts: number;
     processed_count: number;

@@ -619,7 +619,7 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
             while (queue.length) {
                 const id = queue.shift()!;
                 for (const b of seqById.get(id)?.conditions?.branches ?? []) {
-                    const t = b.target_sequence_id;
+                    const t = b.target_step_id;
                     if (t && !set.has(t)) {
                         set.add(t);
                         queue.push(t);
@@ -671,7 +671,7 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
             if (!src) return;
             saveBranches(sourceId, [
                 ...(src.conditions?.branches ?? []),
-                { branch_id: newBranchId(), target_sequence_id: target, conditions: [] },
+                { branch_id: newBranchId(), target_step_id: target, conditions: [] },
             ]);
         },
         [seqById, saveBranches],
@@ -682,7 +682,7 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
             if (!src) return;
             const branch: SequenceBranch = {
                 branch_id: newBranchId(),
-                target_sequence_id: target,
+                target_step_id: target,
                 conditions: [{ field: "opened", operator: "within_days", value: 3 }],
             };
             // Drop a default ("else") line that already points to the same step
@@ -690,7 +690,7 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
             // auto-created a duplicate else to the same step. The else stays
             // something you add and connect yourself.
             const existing = (src.conditions?.branches ?? []).filter(
-                (b) => !(!isCond(b) && b.target_sequence_id === target),
+                (b) => !(!isCond(b) && b.target_step_id === target),
             );
             saveBranches(sourceId, [...existing, branch]);
             openCondition(sourceId, branch.branch_id);
@@ -704,7 +704,7 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
             saveBranches(
                 sourceId,
                 (src.conditions?.branches ?? []).map((b) =>
-                    b.branch_id === branchId ? { ...b, target_sequence_id: target } : b,
+                    b.branch_id === branchId ? { ...b, target_step_id: target } : b,
                 ),
             );
         },
@@ -786,7 +786,7 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                 const created = (await createSequence.mutateAsync()) as Sequence;
                 await saveBranches(sourceId, [
                     ...(src?.conditions?.branches ?? []),
-                    { branch_id: newBranchId(), target_sequence_id: created.id, conditions: [] },
+                    { branch_id: newBranchId(), target_step_id: created.id, conditions: [] },
                 ]);
             } catch {
                 toast.error("Couldn't add the step");
@@ -806,7 +806,7 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                 const created = (await createSequence.mutateAsync()) as Sequence;
                 const branch: SequenceBranch = {
                     branch_id: newBranchId(),
-                    target_sequence_id: created.id,
+                    target_step_id: created.id,
                     conditions: [{ field: "opened", operator: "within_days", value: 3 }],
                 };
                 await saveBranches(sourceId, [...(src?.conditions?.branches ?? []), branch]);
@@ -836,7 +836,7 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                 });
                 const branch: SequenceBranch = {
                     branch_id: newBranchId(),
-                    target_sequence_id: created.id,
+                    target_step_id: created.id,
                     conditions: [{ field: "reply_positive", operator: "ever" }],
                 };
                 await saveBranches(sourceId, [...(src?.conditions?.branches ?? []), branch]);
@@ -873,7 +873,7 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
         (id: string) => {
             const label = stepName(seqById.get(id));
             const referencing = sequences.filter(
-                (s) => s.id !== id && (s.conditions?.branches ?? []).some((b) => b.target_sequence_id === id),
+                (s) => s.id !== id && (s.conditions?.branches ?? []).some((b) => b.target_step_id === id),
             );
             const extra = referencing.length
                 ? ` ${referencing.length} connection${referencing.length === 1 ? "" : "s"} into it will be removed too.`
@@ -884,7 +884,7 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                         referencing.map((s) =>
                             updateSequence(campaignId, s.id, {
                                 conditions: {
-                                    branches: (s.conditions?.branches ?? []).filter((b) => b.target_sequence_id !== id),
+                                    branches: (s.conditions?.branches ?? []).filter((b) => b.target_step_id !== id),
                                 },
                             }),
                         ),
@@ -930,7 +930,7 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
             while (queue.length) {
                 const id = queue.shift()!;
                 for (const b of seqById.get(id)?.conditions?.branches ?? []) {
-                    const t = b.target_sequence_id;
+                    const t = b.target_step_id;
                     if (t && !reachable.has(t)) {
                         reachable.add(t);
                         queue.push(t);
@@ -1041,12 +1041,12 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                         : "instant"
                     : withinDays
                       ? `within ${withinDays}d`
-                      : waitTag(b.target_sequence_id);
+                      : waitTag(b.target_step_id);
                 flowEdges.push({
                     id: `then-${b.branch_id}`,
                     source: nid,
                     sourceHandle: "out",
-                    target: b.target_sequence_id ?? STOP_ID,
+                    target: b.target_step_id ?? STOP_ID,
                     label: wt || undefined,
                     reconnectable: true,
                     style: edgeStyle(true),
@@ -1059,8 +1059,8 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
             });
 
             if (uncond) {
-                const wt = waitTag(uncond.target_sequence_id);
-                const target = uncond.target_sequence_id ?? STOP_ID;
+                const wt = waitTag(uncond.target_step_id);
+                const target = uncond.target_step_id ?? STOP_ID;
                 if (conds.length > 0) {
                     // The final ELSE hangs off the LAST condition's else.
                     flowEdges.push({
@@ -1098,7 +1098,7 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
         });
         ifMetaRef.current = ifMeta;
 
-        const anyStop = sequences.some((s) => (s.conditions?.branches ?? []).some((b) => b.target_sequence_id === null));
+        const anyStop = sequences.some((s) => (s.conditions?.branches ?? []).some((b) => b.target_step_id === null));
         if (anyStop) allNodes.push({ id: STOP_ID, type: "stop", position: { x: 0, y: 0 }, data: {} });
 
         // Convergence: more than one branch can route to the SAME next step, so
@@ -1159,7 +1159,7 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
             const br = seqById
                 .get(selectedEdge.sourceId)
                 ?.conditions?.branches?.find((b) => b.branch_id === selectedEdge.branchId);
-            root = br?.target_sequence_id ?? selectedEdge.sourceId;
+            root = br?.target_step_id ?? selectedEdge.sourceId;
         }
         const hl = root ? reachableFrom(root) : null;
         const stepIn = (id: string) => {
@@ -1376,10 +1376,10 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                         .findIndex((b) => b.branch_id === selected.branch.branch_id)}
                     condCount={(selected.source.conditions?.branches ?? []).filter(isCond).length}
                     onMove={(dir) => moveBranch(selected.source.id, selected.branch.branch_id, dir)}
-                    waitDays={seqById.get(selected.branch.target_sequence_id ?? "")?.wait_after ?? 0}
+                    waitDays={seqById.get(selected.branch.target_step_id ?? "")?.wait_after ?? 0}
                     onClose={() => setSelectedEdge(null)}
                     onSetWait={(days) => {
-                        if (selected.branch.target_sequence_id) saveWait(selected.branch.target_sequence_id, days);
+                        if (selected.branch.target_step_id) saveWait(selected.branch.target_step_id, days);
                     }}
                     onSave={(updated) => {
                         saveBranches(
@@ -1586,8 +1586,8 @@ function ConnectionEditor({
     const isInstantCapable = isInstantCapableField(field as BranchField);
     const instantVerb = field === "opened" ? "open" : field === "clicked" ? "click" : "reply";
     const isNegative = field === "not_opened" || field === "not_clicked" || field === "not_replied";
-    const target = steps.find((s) => s.id === branch.target_sequence_id);
-    const targetLabel = branch.target_sequence_id === null ? "Stop the sequence" : target ? `“${stepName(target)}”` : "—";
+    const target = steps.find((s) => s.id === branch.target_step_id);
+    const targetLabel = branch.target_step_id === null ? "Stop the sequence" : target ? `“${stepName(target)}”` : "—";
 
     const buildConditions = (): BranchCondition[] => {
         if (isAlways) return [];
@@ -1596,10 +1596,10 @@ function ConnectionEditor({
         if (isReply) return [{ field: field as BranchField, operator: "ever" }];
         return [{ field: field as BranchField, operator: "within_days", value }];
     };
-    const save = (target_sequence_id: string | null) =>
+    const save = (target_step_id: string | null) =>
         onSave({
             branch_id: branch.branch_id,
-            target_sequence_id,
+            target_step_id,
             conditions: buildConditions(),
             // Persist the instant opt-out for any instant-capable signal (reply
             // intent, opened, clicked). Other fields can't fire instantly.
@@ -1649,7 +1649,7 @@ function ConnectionEditor({
                 <div className="flex flex-wrap items-center gap-1.5">
                     <span>then go to</span>
                     <span className="font-medium text-slate-800">{targetLabel}</span>
-                    {branch.target_sequence_id !== null && (
+                    {branch.target_step_id !== null && (
                         <button
                             type="button"
                             onClick={() => save(null)}
@@ -1751,7 +1751,7 @@ function ConnectionEditor({
                     </p>
                 )}
 
-                {branch.target_sequence_id !== null && !(isInstantCapable && instant) && (
+                {branch.target_step_id !== null && !(isInstantCapable && instant) && (
                     <WaitRow value={waitDays} onCommit={onSetWait} />
                 )}
             </div>
@@ -1768,7 +1768,7 @@ function ConnectionEditor({
                 </button>
                 <button
                     type="button"
-                    onClick={() => save(branch.target_sequence_id)}
+                    onClick={() => save(branch.target_step_id)}
                     className="ml-auto h-7 rounded-md bg-sky-600 px-3 text-[12px] font-medium text-white hover:bg-sky-700"
                 >
                     Save

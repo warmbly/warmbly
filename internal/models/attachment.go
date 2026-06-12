@@ -11,7 +11,7 @@ import (
 type CampaignAttachment struct {
 	ID         uuid.UUID  `json:"id"`
 	CampaignID uuid.UUID  `json:"campaign_id"`
-	SequenceID *uuid.UUID `json:"sequence_id,omitempty"`
+	SequenceID *uuid.UUID `json:"step_id,omitempty"`
 	UserID     uuid.UUID  `json:"user_id"`
 	Filename   string     `json:"filename"`
 	Size       int64      `json:"size"`

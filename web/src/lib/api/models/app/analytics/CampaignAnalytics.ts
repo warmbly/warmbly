@@ -28,7 +28,7 @@ export interface CampaignSummary {
 }
 
 export interface SequenceStats {
-    sequence_id: string
+    step_id: string
     name: string
     position: number
     emails_sent: number
@@ -44,6 +44,6 @@ export default interface CampaignAnalytics {
     status: string
     date_range: DateRange
     summary: CampaignSummary
-    sequences: SequenceStats[]
+    steps: SequenceStats[]
     daily_stats?: DailyStats[]
 }

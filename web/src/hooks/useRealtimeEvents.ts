@@ -222,7 +222,7 @@ export function useRealtimeEvents() {
         const spine: Record<string, QueryKey[]> = {
           contact: [['contacts']],
           campaign: [['campaigns'], ['analytics']],
-          sequence: [['campaigns']],
+          step: [['campaigns']],
           email_account: [['emails', 'list'], ['analytics', 'accounts']],
           api_key: [['api-keys']],
           webhook: [['integrations', 'connections']],

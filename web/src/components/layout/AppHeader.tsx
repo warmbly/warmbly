@@ -46,7 +46,7 @@ const labelMap: Record<string, string> = {
     leads: "Leads",
     preferences: "Preferences",
     schedule: "Schedule",
-    sequences: "Sequences",
+    steps: "Steps",
 };
 
 function pretty(segment: string): string {

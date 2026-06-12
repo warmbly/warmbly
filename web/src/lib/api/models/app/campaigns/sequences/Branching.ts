@@ -73,7 +73,7 @@ export interface BranchCondition {
 export interface SequenceBranch {
     branch_id: string;
     // The step to route to when this branch matches. null = stop the sequence.
-    target_sequence_id: string | null;
+    target_step_id: string | null;
     // ANDed conditions. An empty list is the catch-all "else" branch.
     conditions: BranchCondition[];
     // For an instant-capable branch: whether its action chain fires the moment

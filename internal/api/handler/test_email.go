@@ -11,7 +11,7 @@ import (
 )
 
 type sendTestEmailRequest struct {
-	SequenceID *uuid.UUID `json:"sequence_id"`
+	SequenceID *uuid.UUID `json:"step_id"`
 	AccountID  uuid.UUID  `json:"account_id" binding:"required"`
 	Recipient  string     `json:"recipient" binding:"required,email"`
 }

@@ -285,7 +285,7 @@ type CreateCampaign struct {
 	TrackingDomain     *string `json:"tracking_domain,omitempty"`
 
 	// Initial sequences (in order) — caller can also create them after.
-	Sequences []CreateSequenceInput `json:"sequences,omitempty"`
+	Sequences []CreateSequenceInput `json:"steps,omitempty"`
 
 	// A/B variants for the first sequence — useful for "create + test" in one shot.
 	Variants []CreateCampaignABVariantRequest `json:"variants,omitempty"`

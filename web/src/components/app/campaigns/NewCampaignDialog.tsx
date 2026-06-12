@@ -156,7 +156,7 @@ export function NewCampaignDialog({ open, onClose }: Props) {
                 link_tracking: linkTracking,
                 unsubscribe_header: unsubHeader,
                 email_tag_ids: emailTagIds,
-                sequences: cleanSequences,
+                steps: cleanSequences,
             });
             toast.success(launchImmediately ? "Campaign created — open to launch" : "Campaign created");
             onClose();

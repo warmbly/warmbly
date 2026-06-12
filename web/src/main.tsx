@@ -229,7 +229,7 @@ const router = createBrowserRouter([
                     element: <CampaignSchedule />,
                   },
                   {
-                    path: "sequences",
+                    path: "steps",
                     element: <CampaignSequences />,
                   }
                 ]

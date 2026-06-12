@@ -179,7 +179,7 @@ type TrackingEventPayload struct {
 	CampaignID   string `json:"campaign_id"`
 	ContactID    string `json:"contact_id,omitempty"`
 	ContactEmail string `json:"contact_email,omitempty"`
-	SequenceID   string `json:"sequence_id,omitempty"`
+	SequenceID   string `json:"step_id,omitempty"`
 	OriginalURL  string `json:"original_url,omitempty"` // For click events
 	// Machine marks an automated open (Apple MPP prefetch, UA-less fetcher)
 	// so live views can badge it instead of presenting it as a human open.
@@ -196,9 +196,9 @@ type TaskProgressEvent struct {
 	ContactID      string `json:"contact_id"`
 	ContactEmail   string `json:"contact_email"`
 	ContactName    string `json:"contact_name"`
-	SequenceID     string `json:"sequence_id"`
-	SequenceName   string `json:"sequence_name"`
-	SequenceIndex  int    `json:"sequence_index"`
+	SequenceID     string `json:"step_id"`
+	SequenceName   string `json:"step_name"`
+	SequenceIndex  int    `json:"step_index"`
 	Progress       int    `json:"progress"` // Percentage 0-100
 	TotalContacts  int    `json:"total_contacts"`
 	ProcessedCount int    `json:"processed_count"`

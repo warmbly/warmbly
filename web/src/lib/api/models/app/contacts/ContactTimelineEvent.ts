@@ -22,8 +22,8 @@ export default interface ContactTimelineEvent {
 
     campaign_id?: string | null;
     campaign_name?: string | null;
-    sequence_id?: string | null;
-    sequence_name?: string | null;
+    step_id?: string | null;
+    step_name?: string | null;
 
     task_id?: string | null;
     subject?: string | null;

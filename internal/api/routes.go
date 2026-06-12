@@ -308,7 +308,7 @@ func Run(
 			// Campaign-scoped tracking-domain verification.
 			campaigns.POST("/:id/tracking-domain/verify", m.RequireOrganization(), m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.VerifyCampaignTrackingDomain)
 
-			sequences := campaigns.Group("/:id/sequences")
+			sequences := campaigns.Group("/:id/steps")
 			{
 				sequences.GET("", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadCampaigns), h.GetSequences)
 				sequences.POST("", m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.CreateSequence)

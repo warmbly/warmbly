@@ -1,9 +1,9 @@
-// An A/B test variant for a campaign. When sequence_id is set the variant is
+// An A/B test variant for a campaign. When step_id is set the variant is
 // scoped to that step; null = campaign-level (applies to every step).
 export default interface ABVariant {
     id: string;
     campaign_id: string;
-    sequence_id?: string | null;
+    step_id?: string | null;
     name: string;
     weight: number;
     subject: string;
@@ -17,7 +17,7 @@ export default interface ABVariant {
 
 export interface CreateABVariantInput {
     name: string;
-    sequence_id?: string | null;
+    step_id?: string | null;
     weight?: number;
     subject?: string;
     body_html?: string;

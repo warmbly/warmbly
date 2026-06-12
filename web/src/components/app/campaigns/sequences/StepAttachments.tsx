@@ -2,9 +2,9 @@
 // click to upload files for this step; lists each file with its name + size and
 // a delete control, and shows the total size used across the step's files.
 //
-// Attachments are scoped to the step via sequence_id on upload; the list is the
+// Attachments are scoped to the step via step_id on upload; the list is the
 // campaign-wide set filtered down to this step. Campaign-level attachments (no
-// sequence_id) are not shown here.
+// step_id) are not shown here.
 
 import React from "react";
 import { PaperclipIcon, UploadCloudIcon, Loader2Icon, Trash2Icon, FileIcon } from "lucide-react";
@@ -35,7 +35,7 @@ export default function StepAttachments({
     const inputRef = React.useRef<HTMLInputElement>(null);
     const [dragging, setDragging] = React.useState(false);
 
-    const attachments = (all ?? []).filter((a) => a.sequence_id === sequenceId);
+    const attachments = (all ?? []).filter((a) => a.step_id === sequenceId);
     const totalSize = attachments.reduce((sum, a) => sum + (a.size || 0), 0);
 
     const uploadFiles = React.useCallback(

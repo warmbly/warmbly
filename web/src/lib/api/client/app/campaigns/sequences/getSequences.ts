@@ -4,7 +4,7 @@ import Request from "../../../Request";
 export default async function getSequences(campaign_id: string): Promise<Sequence[]> {
     return await Request<Sequence[]>({
         method: "GET",
-        url: `/campaigns/${campaign_id}/sequences`,
+        url: `/campaigns/${campaign_id}/steps`,
         authorization: true,
     })
 }

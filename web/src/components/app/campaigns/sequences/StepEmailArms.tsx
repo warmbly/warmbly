@@ -42,7 +42,7 @@ export default function StepEmailArms({
     index: number;
 }) {
     const { data: all } = useCampaignABVariants(campaignId);
-    const variants = (all ?? []).filter((v) => v.sequence_id === sequence.id);
+    const variants = (all ?? []).filter((v) => v.step_id === sequence.id);
     const create = useCreateABVariant(campaignId);
 
     const { data: analysis } = useCampaignABAnalysis(campaignId, (all ?? []).length > 0);
@@ -71,7 +71,7 @@ export default function StepEmailArms({
         try {
             const v = await create.mutateAsync({
                 name: `Variant ${LETTERS[variants.length] ?? variants.length + 1}`,
-                sequence_id: sequence.id,
+                step_id: sequence.id,
                 weight: CONTROL_WEIGHT,
                 is_active: true,
                 subject: sequence.subject,

@@ -305,7 +305,7 @@ Replace the campaign's advanced overrides. **Scope** `WRITE_CAMPAIGNS` · **Org 
 
 `GET /campaigns/:id/ab-variants`
 
-List the campaign's A/B variants. A variant scoped to a `sequence_id` applies to one step, a `null` sequence id is campaign-level. **Scope** `READ_CAMPAIGNS` · **Org permission** `view_campaigns`.
+List the campaign's A/B variants. A variant scoped to a `step_id` applies to one step, a `null` sequence id is campaign-level. **Scope** `READ_CAMPAIGNS` · **Org permission** `view_campaigns`.
 
 | Parameter | In | Type | Description |
 | --- | --- | --- | --- |
@@ -321,7 +321,7 @@ A `data` array of `CampaignABVariant` objects (no pagination wrapper).
     {
       "id": "c1a2...",
       "campaign_id": "8f1d6b2e-2b7a-4c9e-9a1f-0e6d4c3b2a10",
-      "sequence_id": "7e3b...",
+      "step_id": "7e3b...",
       "name": "Subject B",
       "weight": 50,
       "subject": "Worth a look, {{first_name}}?",
@@ -340,7 +340,7 @@ A `data` array of `CampaignABVariant` objects (no pagination wrapper).
 
 `POST /campaigns/:id/ab-variants`
 
-Add a variant to the campaign (or to one step via `sequence_id`). **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_settings`.
+Add a variant to the campaign (or to one step via `step_id`). **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_settings`.
 
 | Parameter | In | Type | Description |
 | --- | --- | --- | --- |
@@ -351,7 +351,7 @@ Add a variant to the campaign (or to one step via `sequence_id`). **Scope** `WRI
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
 | `name` | string | yes | Variant label. |
-| `sequence_id` | uuid | no | Step to scope the variant to, omit for campaign-level. |
+| `step_id` | uuid | no | Step to scope the variant to, omit for campaign-level. |
 | `weight` | integer | no | Relative selection weight. |
 | `subject` | string | no | Variant subject template. |
 | `body_html` | string | no | Variant HTML body. |
@@ -363,7 +363,7 @@ Add a variant to the campaign (or to one step via `sequence_id`). **Scope** `WRI
 ```json
 {
   "name": "Subject B",
-  "sequence_id": "7e3b...",
+  "step_id": "7e3b...",
   "weight": 50,
   "subject": "Worth a look, {{first_name}}?",
   "body_plain": "Hi {{first_name}}...",
@@ -473,7 +473,7 @@ A `data` array of attachment objects (no pagination wrapper).
     {
       "id": "a9f0...",
       "campaign_id": "8f1d6b2e-2b7a-4c9e-9a1f-0e6d4c3b2a10",
-      "sequence_id": null,
+      "step_id": null,
       "filename": "one-pager.pdf",
       "size": 248192,
       "mime_type": "application/pdf",
@@ -494,7 +494,7 @@ Upload a file to attach to the campaign (or one step). Sent as `multipart/form-d
 | --- | --- | --- | --- |
 | `id` | path | uuid | Campaign id. |
 | `file` | form (multipart) | file | Required. The file to upload (max 15 MB). Executable and script types are rejected. |
-| `sequence_id` | form (multipart) | uuid | Optional. Scope the attachment to one sequence step. |
+| `step_id` | form (multipart) | uuid | Optional. Scope the attachment to one sequence step. |
 
 ### Response
 
@@ -554,7 +554,7 @@ A `PreflightReport` object.
 
 `POST /campaigns/:id/test-email`
 
-Send a one-off preview of a sequence step to a chosen recipient through a chosen mailbox. Defaults to the first step when `sequence_id` is omitted. **Scope** `SEND_CAMPAIGNS` · **Org permission** `send_campaigns`.
+Send a one-off preview of a sequence step to a chosen recipient through a chosen mailbox. Defaults to the first step when `step_id` is omitted. **Scope** `SEND_CAMPAIGNS` · **Org permission** `send_campaigns`.
 
 | Parameter | In | Type | Description |
 | --- | --- | --- | --- |
@@ -566,13 +566,13 @@ Send a one-off preview of a sequence step to a chosen recipient through a chosen
 | --- | --- | --- | --- |
 | `account_id` | uuid | yes | Sending mailbox id. |
 | `recipient` | string (email) | yes | Where to send the test. |
-| `sequence_id` | uuid | no | Step to render and send, defaults to the first step. |
+| `step_id` | uuid | no | Step to render and send, defaults to the first step. |
 
 ```json
 {
   "account_id": "5c7d...",
   "recipient": "me@example.com",
-  "sequence_id": "7e3b..."
+  "step_id": "7e3b..."
 }
 ```
 
@@ -734,7 +734,7 @@ A `TrackingDomainStatus` object.
 
 ## List sequences
 
-`GET /campaigns/:id/sequences`
+`GET /campaigns/:id/steps`
 
 Return the campaign's sequence steps in order. **Scope** `READ_CAMPAIGNS` · **Org permission** `view_campaigns`.
 
@@ -767,7 +767,7 @@ A bare array of `Sequence` objects (no envelope).
 
 ## Create a sequence
 
-`POST /campaigns/:id/sequences`
+`POST /campaigns/:id/steps`
 
 Append a new empty sequence step to the campaign. The step is created with defaults, then edited with PATCH. **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_campaigns`.
 
@@ -783,7 +783,7 @@ The created `Sequence` object (see the [list sequences](#list-sequences) shape).
 
 ## Update a sequence
 
-`PATCH /campaigns/:id/sequences/:sid`
+`PATCH /campaigns/:id/steps/:sid`
 
 Patch a sequence step: its copy, spacing, node kind, branching tree, or action config. Omitted fields are unchanged. **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_campaigns`.
 
@@ -819,7 +819,7 @@ All fields optional.
     "branches": [
       {
         "branch_id": "b1",
-        "target_sequence_id": null,
+        "target_step_id": null,
         "conditions": [{ "field": "replied", "operator": "ever", "value": null }]
       }
     ]
@@ -833,7 +833,7 @@ The updated `Sequence` object.
 
 ## Delete a sequence
 
-`DELETE /campaigns/:id/sequences/:sid`
+`DELETE /campaigns/:id/steps/:sid`
 
 Delete a sequence step. **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_campaigns`.
 

@@ -1,0 +1,558 @@
+---
+title: Mailboxes
+description: Connect, configure, warm up, verify, and send from sender mailboxes (email accounts).
+icon: Mail
+---
+
+Mailboxes are the sender accounts Warmbly sends campaign and warmup mail from. These endpoints live under `/emails` and let you list and inspect connected mailboxes, update their sending and warmup settings, point a custom tracking domain at a mailbox, drive the warmup lifecycle, check authentication and ban status, verify addresses before sending, and send a one-off message from a specific mailbox.
+
+Most read routes require the **Read emails** scope and write routes require the **Write emails** scope. The mailbox connection (onboarding) routes are session only because they write user-encrypted refresh tokens through the SPA popup flow, and the send route requires the **Send campaigns** scope because it transmits real mail. When an API key is scoped to specific mailboxes, every `/:id` route is additionally gated to keys allowed to act on that mailbox.
+
+## List mailboxes
+
+`GET /emails`
+
+Returns the organization's connected mailboxes, newest first, with cursor pagination.
+
+Auth: **Scope** `READ_EMAILS` · **Org permission** `view_campaigns`
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `q` | query | string | Optional free-text search over mailbox address and name. |
+| `tag` | query | string (UUID) | Optional tag id to filter by. Must be a valid UUID. |
+| `cursor` | query | string (UUID) | Opaque cursor from a previous `pagination.next_cursor`. |
+| `limit` | query | integer | Page size. Defaults to `50`. Invalid limits return `400`. |
+
+### Response
+
+A `data` array of mailbox objects plus a `pagination` envelope.
+
+```json
+{
+  "data": [
+    {
+      "id": "0c0f1a2b-3c4d-5e6f-7a8b-9c0d1e2f3a4b",
+      "user_id": "a1b2c3d4-...",
+      "organization_id": "f9e8d7c6-...",
+      "worker_id": "7b6a5c4d-...",
+      "email": "sales@acme.com",
+      "name": "Acme Sales",
+      "signature_plain": "",
+      "signature_html": "",
+      "signature_sync": false,
+      "signature_code": false,
+      "provider": "gmail",
+      "status": "active",
+      "last_synced_at": "2026-06-11T09:14:00Z",
+      "last_id": 184213,
+      "campaign_limit": 50,
+      "min_wait_time": 600,
+      "reply_to": "",
+      "tracking_domain": "t.acme.com",
+      "tracking_domain_verified": true,
+      "tracking_domain_verified_at": "2026-06-01T12:00:00Z",
+      "warmup": "2026-05-20T00:00:00Z",
+      "warmup_paused_at": null,
+      "warmup_base": 10,
+      "warmup_max": 40,
+      "warmup_increase": 1,
+      "warmup_reply_rate": 30,
+      "warmup_tag": "",
+      "warmup_pool_type": "premium",
+      "warmup_start_time": "09:00",
+      "warmup_end_time": "17:00",
+      "warmup_days": 5,
+      "timezone": "America/New_York",
+      "tags": ["outbound"],
+      "created_at": "2026-05-19T18:00:00Z",
+      "updated_at": "2026-06-11T09:14:00Z"
+    }
+  ],
+  "pagination": {
+    "total": 12,
+    "next_cursor": "1d1e2f3a-4b5c-6d7e-8f9a-0b1c2d3e4f5a",
+    "has_more": true
+  }
+}
+```
+
+`provider` is one of `gmail`, `outlook`, or `smtp_imap`. `status` is one of `active`, `inactive`, or `revoked`. `warmup` is the warmup anchor timestamp (null when warmup has never been enabled); a non-null `warmup_paused_at` means warmup is enabled but paused. `total` and `next_cursor` may be null when not applicable.
+
+## Get a mailbox
+
+`GET /emails/:id`
+
+Returns a single mailbox by id.
+
+Auth: **Scope** `READ_EMAILS` · **Org permission** `view_campaigns`
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `id` | path | string (UUID) | The mailbox (email account) id. |
+
+### Response
+
+A bare mailbox object, same shape as one element of the list `data` array.
+
+```json
+{
+  "id": "0c0f1a2b-3c4d-5e6f-7a8b-9c0d1e2f3a4b",
+  "email": "sales@acme.com",
+  "name": "Acme Sales",
+  "provider": "gmail",
+  "status": "active",
+  "campaign_limit": 50,
+  "min_wait_time": 600,
+  "warmup": "2026-05-20T00:00:00Z",
+  "warmup_paused_at": null,
+  "warmup_pool_type": "premium",
+  "tracking_domain": "t.acme.com",
+  "tracking_domain_verified": true,
+  "tags": ["outbound"],
+  "created_at": "2026-05-19T18:00:00Z",
+  "updated_at": "2026-06-11T09:14:00Z"
+}
+```
+
+## Update a mailbox
+
+`PATCH /emails/:id`
+
+Updates mailbox settings: display name, signature, status, sending caps, reply-to, warmup configuration, and tags. All fields are optional; only present fields are applied.
+
+Auth: **Scope** `WRITE_EMAILS` · **Org permission** `manage_emails`
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `id` | path | string (UUID) | The mailbox id. |
+
+### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | no | Display name on outgoing mail. |
+| `signature_plain` | string | no | Plain-text signature. |
+| `signature_html` | string | no | HTML signature. |
+| `signature_sync` | boolean | no | Keep the signature synced from the provider. |
+| `signature_code` | boolean | no | Treat the HTML signature as raw code. |
+| `status` | string | no | `active`, `inactive`, or `revoked`. |
+| `campaign_limit` | integer | no | Daily cold-campaign cap for this mailbox (validated up to `100`). |
+| `min_wait_time` | integer | no | Minimum seconds between sends. |
+| `reply_to` | string | no | Reply-to address. |
+| `warmup` | boolean | no | Enable or disable warmup. |
+| `warmup_base` | integer | no | Warmup starting volume per day. |
+| `warmup_max` | integer | no | Warmup daily ceiling. |
+| `warmup_increase` | integer | no | Per-day warmup ramp increment. |
+| `warmup_reply_rate` | integer | no | Percentage of warmup threads to reply to. |
+| `warmup_tag` | string | no | Tag applied to warmup threads. |
+| `warmup_start_time` | string | no | Daily warmup window start, `HH:MM`. |
+| `warmup_end_time` | string | no | Daily warmup window end, `HH:MM`. |
+| `warmup_days` | integer | no | Number of active warmup days per week. |
+| `tags` | string[] | no | Tag ids assigned to the mailbox. |
+
+```json
+{
+  "name": "Acme Sales (US)",
+  "status": "active",
+  "campaign_limit": 40,
+  "min_wait_time": 720,
+  "reply_to": "replies@acme.com",
+  "warmup_max": 35,
+  "tags": ["outbound", "us"]
+}
+```
+
+### Response
+
+The updated mailbox object (same shape as Get a mailbox).
+
+## Update the tracking domain
+
+`PATCH /emails/:id/track`
+
+Sets or clears the custom open/click tracking domain for a mailbox. The backend resolves the CNAME on save and marks it verified once the customer subdomain points at the shared tracking host (`t.warmbly.com`). DNS can lag a freshly added record, so a miss is reported as unverified (pending), not an error. Send an empty domain to clear the custom domain and fall back to the shared default.
+
+Auth: **Scope** `WRITE_EMAILS` · **Org permission** `manage_emails`
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `id` | path | string (UUID) | The mailbox id. |
+| `domain` | query | string | The custom tracking subdomain (for example `t.acme.com`). Empty clears it. |
+
+### Response
+
+```json
+{
+  "tracking_domain": "t.acme.com",
+  "tracking_domain_verified": true,
+  "tracking_domain_verified_at": "2026-06-11T09:20:00Z"
+}
+```
+
+`tracking_domain_verified_at` is null until the CNAME resolves to the tracking host.
+
+## Start warmup
+
+`POST /emails/:id/warmup/start`
+
+Enables warmup for a mailbox. When resuming from a paused state it preserves ramp progress and seeds the warmup task chain immediately rather than waiting for the next reconciler pass.
+
+Auth: **Scope** `WRITE_EMAILS` · **Org permission** `manage_emails`
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `id` | path | string (UUID) | The mailbox id. |
+
+### Response
+
+The updated mailbox object, reflecting the new warmup state.
+
+```json
+{
+  "id": "0c0f1a2b-3c4d-5e6f-7a8b-9c0d1e2f3a4b",
+  "email": "sales@acme.com",
+  "warmup": "2026-06-11T09:25:00Z",
+  "warmup_paused_at": null,
+  "warmup_pool_type": "premium"
+}
+```
+
+## Pause warmup
+
+`POST /emails/:id/warmup/pause`
+
+Pauses warmup without losing ramp progress. A later start continues from the same daily volume.
+
+Auth: **Scope** `WRITE_EMAILS` · **Org permission** `manage_emails`
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `id` | path | string (UUID) | The mailbox id. |
+
+### Response
+
+The updated mailbox object. A paused mailbox has a non-null `warmup_paused_at`.
+
+```json
+{
+  "id": "0c0f1a2b-3c4d-5e6f-7a8b-9c0d1e2f3a4b",
+  "warmup": "2026-06-11T09:25:00Z",
+  "warmup_paused_at": "2026-06-11T11:00:00Z"
+}
+```
+
+## Resume warmup
+
+`POST /emails/:id/warmup/resume`
+
+Resumes a paused warmup, shifting the ramp anchor forward so progress continues where it left off, and re-seeds the warmup task chain immediately.
+
+Auth: **Scope** `WRITE_EMAILS` · **Org permission** `manage_emails`
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `id` | path | string (UUID) | The mailbox id. |
+
+### Response
+
+The updated mailbox object, with `warmup_paused_at` cleared.
+
+## Stop warmup
+
+`POST /emails/:id/warmup/stop`
+
+Disables warmup entirely and clears ramp progress. Distinct from pause: a later start begins a fresh ramp.
+
+Auth: **Scope** `WRITE_EMAILS` · **Org permission** `manage_emails`
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `id` | path | string (UUID) | The mailbox id. |
+
+### Response
+
+The updated mailbox object, with warmup disabled.
+
+```json
+{
+  "id": "0c0f1a2b-3c4d-5e6f-7a8b-9c0d1e2f3a4b",
+  "warmup": null,
+  "warmup_paused_at": null
+}
+```
+
+## Check domain authentication
+
+`GET /emails/:id/auth-check`
+
+Validates SPF, DKIM, and DMARC for the mailbox's sending domain on demand. Authentication alignment is a hard bulk-sender requirement and a common silent deliverability failure, so this confirms the domain is configured correctly without leaving the dashboard.
+
+Auth: **Scope** `READ_EMAILS` · **Org permission** `view_campaigns`
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `id` | path | string (UUID) | The mailbox id. The domain is derived from the mailbox address. |
+
+### Response
+
+```json
+{
+  "domain": "acme.com",
+  "spf_found": true,
+  "spf_record": "v=spf1 include:_spf.google.com ~all",
+  "dkim_found": true,
+  "dkim_selectors": ["google"],
+  "dmarc_found": true,
+  "dmarc_policy": "quarantine",
+  "all_aligned": true,
+  "summary": "SPF, DKIM, and DMARC are all present and aligned."
+}
+```
+
+`spf_record`, `dkim_selectors`, and `dmarc_policy` are omitted when the corresponding record is not found.
+
+## Verify an email address
+
+`POST /emails/verify`
+
+Verifies a single email address on demand (syntax, then MX, then an SMTP RCPT probe, then catch-all detection). This is pre-send verification: confirm an address is deliverable before a worker ever sends to it, instead of learning from a hard bounce. The probe runs from the backend (a non-sending IP), never from worker IPs.
+
+Auth: **Scope** `READ_EMAILS` · **Org permission** `view_campaigns`
+
+The address may be supplied in the JSON body or as the `email` query param; the body takes precedence.
+
+### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `email` | string | no | The address to verify. Required if the `email` query param is not set. |
+
+```json
+{
+  "email": "jane.doe@example.com"
+}
+```
+
+### Response
+
+```json
+{
+  "email": "jane.doe@example.com",
+  "status": "valid",
+  "reason": "accepted by recipient mail server",
+  "is_catch_all": false,
+  "has_mx": true,
+  "checked_at": "2026-06-11T09:30:00Z"
+}
+```
+
+`status` is one of `valid`, `risky`, `invalid`, or `unknown`. A missing or empty address returns a `400` error envelope.
+
+## Get warmup ban status
+
+`GET /emails/:id/warmup/ban-status`
+
+Returns whether a mailbox is blocked from the shared warmup pool, why, and whether the owner can appeal. Powers the dashboard ban banner.
+
+Auth: **Scope** `READ_EMAILS` · **Org permission** `view_campaigns`
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `id` | path | string (UUID) | The mailbox id. |
+
+### Response
+
+```json
+{
+  "email_account_id": "0c0f1a2b-3c4d-5e6f-7a8b-9c0d1e2f3a4b",
+  "blocked": true,
+  "health_state": "quarantined",
+  "reason": "spam-folder placement above threshold",
+  "blocked_at": "2026-06-09T14:00:00Z",
+  "blocked_until": "2026-06-16T14:00:00Z",
+  "can_appeal": true,
+  "pending_appeal": false
+}
+```
+
+`reason`, `blocked_at`, and `blocked_until` are omitted when the mailbox is not blocked. `health_state` reflects the mailbox's rolling warmup health (for example `healthy`, `watch`, `throttled`, `quarantined`, or `blocked`).
+
+## Submit a warmup appeal
+
+`POST /emails/:id/warmup/appeal`
+
+Lets the mailbox owner appeal a warmup ban with a reason.
+
+Auth: **Scope** `WRITE_EMAILS` · **Org permission** `manage_emails`
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `id` | path | string (UUID) | The mailbox id. |
+
+### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `reason` | string | no | The owner's explanation for the appeal. |
+
+```json
+{
+  "reason": "Authentication is fixed and the high-bounce list has been removed."
+}
+```
+
+### Response
+
+```json
+{
+  "appeal_id": "5e6f7a8b-9c0d-1e2f-3a4b-5c6d7e8f9a0b"
+}
+```
+
+## Delete a mailbox
+
+`DELETE /emails/:id`
+
+Disconnects and deletes a mailbox. It is removed from all warmup pools and an account-disconnected event fans out.
+
+Auth: **Scope** `WRITE_EMAILS` · **Org permission** `manage_emails`
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `id` | path | string (UUID) | The mailbox id. |
+
+### Response
+
+`204 No Content` with an empty body.
+
+## Send from a mailbox
+
+`POST /emails/:id/send`
+
+Sends a one-off email from a specific mailbox. The send is scheduled and dispatched through the mailbox's assigned worker. Choose how it is scheduled with `send_mode`.
+
+Auth: **Scope** `SEND_CAMPAIGNS` · **Org permission** `send_campaigns`. Requires an active organization.
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `id` | path | string (UUID) | The sending mailbox id. |
+
+### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `to` | string[] | yes | Recipient addresses. |
+| `cc` | string[] | no | CC addresses. |
+| `bcc` | string[] | no | BCC addresses. |
+| `subject` | string | yes | Email subject. |
+| `body_html` | string | no | HTML body. |
+| `body_plain` | string | no | Plain-text body. |
+| `in_reply_to` | string[] | no | Message ids this email replies to. |
+| `thread_id` | string | no | Thread id to attach the message to. |
+| `send_mode` | string | no | `instant` (default), `smart` (next per-mailbox scheduler gap), or `scheduled` (use `scheduled_at`). |
+| `scheduled_at` | string (RFC 3339) | no | Required when `send_mode` is `scheduled`. Must be in the future. |
+
+```json
+{
+  "to": ["jane.doe@example.com"],
+  "subject": "Quick question about your rollout",
+  "body_html": "<p>Hi Jane, ...</p>",
+  "body_plain": "Hi Jane, ...",
+  "send_mode": "smart"
+}
+```
+
+### Response
+
+```json
+{
+  "task_id": "9a0b1c2d-3e4f-5a6b-7c8d-9e0f1a2b3c4d",
+  "scheduled_at": "2026-06-11T09:45:00Z",
+  "send_mode": "smart"
+}
+```
+
+`task_id` identifies the queued send task. `scheduled_at` is the resolved dispatch time (immediate for `instant`, the next gap for `smart`, or the requested time for `scheduled`).
+
+## Connect a mailbox (onboarding)
+
+The three onboarding routes connect a new mailbox. They are **session only (not available to API keys)** because they write user-encrypted provider refresh tokens through the SPA popup flow.
+
+### Start OAuth
+
+`POST /emails/onboarding/oauth/start`
+
+Begins an OAuth round trip for a Gmail or Outlook mailbox and returns the provider authorization URL plus an opaque `state` to round-trip back.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `provider` | string | yes | `gmail` or `outlook`. |
+
+```json
+{
+  "provider": "gmail"
+}
+```
+
+Response:
+
+```json
+{
+  "url": "https://accounts.google.com/o/oauth2/auth?...",
+  "state": "n0nc3-opaque-state"
+}
+```
+
+### Finish OAuth
+
+`POST /emails/onboarding/oauth/finish`
+
+Completes the OAuth round trip with the authorization code and state from the provider, then creates the mailbox.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `code` | string | yes | Authorization code from the provider. |
+| `state` | string | yes | The `state` returned from start. |
+
+```json
+{
+  "code": "4/0Ax...",
+  "state": "n0nc3-opaque-state"
+}
+```
+
+Response: `201 Created` with the new mailbox object (same shape as Get a mailbox).
+
+### Connect SMTP/IMAP
+
+`POST /emails/onboarding/smtp-imap`
+
+Connects an SMTP/IMAP mailbox in a single call.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `email` | string | yes | The mailbox address. |
+| `name` | string | no | Display name. |
+| `smtp` | object | yes | SMTP credentials: `username`, `password`, `host`, `port`. |
+| `imap` | object | yes | IMAP credentials: `username`, `password`, `host`, `port`. |
+
+```json
+{
+  "email": "sales@acme.com",
+  "name": "Acme Sales",
+  "smtp": {
+    "username": "sales@acme.com",
+    "password": "app-specific-password",
+    "host": "smtp.acme.com",
+    "port": 587
+  },
+  "imap": {
+    "username": "sales@acme.com",
+    "password": "app-specific-password",
+    "host": "imap.acme.com",
+    "port": 993
+  }
+}
+```
+
+Response: `201 Created` with the new mailbox object.

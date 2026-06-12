@@ -45,7 +45,7 @@ type CampaignAnalytics struct {
 	Status     string               `json:"status"`
 	DateRange  DateRange            `json:"date_range"`
 	Summary    CampaignSummary      `json:"summary"`
-	Sequences  []SequenceStats      `json:"sequences"`
+	Sequences  []SequenceStats      `json:"steps"`
 	DailyStats []CampaignDailyStats `json:"daily_stats,omitempty"`
 }
 
@@ -69,7 +69,7 @@ type CampaignSummary struct {
 }
 
 type SequenceStats struct {
-	SequenceID uuid.UUID `json:"sequence_id"`
+	SequenceID uuid.UUID `json:"step_id"`
 	Name       string    `json:"name"`
 	Position   int       `json:"position"`
 	EmailsSent int       `json:"emails_sent"`

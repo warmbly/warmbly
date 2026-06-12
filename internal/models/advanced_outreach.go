@@ -142,7 +142,7 @@ type CampaignABVariant struct {
 	CampaignID uuid.UUID `json:"campaign_id"`
 	// SequenceID scopes the variant to one step. nil = campaign-level (applies
 	// to every step, legacy behavior).
-	SequenceID *uuid.UUID             `json:"sequence_id,omitempty"`
+	SequenceID *uuid.UUID             `json:"step_id,omitempty"`
 	Name       string                 `json:"name"`
 	Weight     int                    `json:"weight"`
 	Subject    string                 `json:"subject"`
@@ -157,7 +157,7 @@ type CampaignABVariant struct {
 
 type CreateCampaignABVariantRequest struct {
 	Name       string                 `json:"name" binding:"required"`
-	SequenceID *uuid.UUID             `json:"sequence_id,omitempty"`
+	SequenceID *uuid.UUID             `json:"step_id,omitempty"`
 	Weight     int                    `json:"weight"`
 	Subject    string                 `json:"subject,omitempty"`
 	BodyHTML   string                 `json:"body_html,omitempty"`

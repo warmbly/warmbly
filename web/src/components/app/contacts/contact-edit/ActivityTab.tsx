@@ -236,7 +236,7 @@ function applyFilters(
                 e.subject,
                 e.content,
                 e.campaign_name,
-                e.sequence_name,
+                e.step_name,
                 e.email_account_email,
                 e.email_account_name,
                 e.reason,
@@ -591,10 +591,10 @@ function EventMeta({
             </span>,
         );
     }
-    if (event.sequence_name) {
+    if (event.step_name) {
         parts.push(
             <span key="sequence">
-                step <Highlight text={event.sequence_name} q={highlight} />
+                step <Highlight text={event.step_name} q={highlight} />
             </span>,
         );
     }

@@ -36,7 +36,7 @@ export type AuditEntityType =
     | "contact"
     | "email_account"
     | "api_key"
-    | "sequence"
+    | "step"
     | "user"
     | "organization"
     | "organization_member"

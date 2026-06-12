@@ -22,7 +22,7 @@ export async function uploadAttachment(
 ): Promise<Attachment> {
     const fd = new FormData();
     fd.append("file", file, file.name);
-    if (opts?.sequenceId) fd.append("sequence_id", opts.sequenceId);
+    if (opts?.sequenceId) fd.append("step_id", opts.sequenceId);
     return await Request<Attachment>({
         method: "POST",
         url: `/campaigns/${campaignId}/attachments`,

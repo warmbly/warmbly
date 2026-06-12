@@ -133,7 +133,7 @@ type Branch struct {
 	// TargetSequenceID is the step to route to when this branch matches. nil
 	// means STOP (send the contact no further step). A target that no longer
 	// exists (a deleted step) is treated as STOP at schedule time.
-	TargetSequenceID *uuid.UUID `json:"target_sequence_id"`
+	TargetSequenceID *uuid.UUID `json:"target_step_id"`
 	// Conditions are ANDed together — every condition must hold for the branch
 	// to match. An empty list is an unconditional/catch-all branch ("otherwise").
 	Conditions []BranchCondition `json:"conditions,omitempty"`

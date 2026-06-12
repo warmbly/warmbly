@@ -54,7 +54,7 @@ const ACTIONS: AuditAction[] = [
 ];
 
 const ENTITY_TYPES: AuditEntityType[] = [
-    "campaign", "contact", "email_account", "sequence", "template",
+    "campaign", "contact", "email_account", "step", "template",
     "api_key", "webhook", "integration", "warmup_routing_rule",
     "organization", "organization_member", "invitation",
     "folder", "tag", "category", "subscription", "settings",

@@ -54,7 +54,7 @@ const (
 	AuditEntityContact        AuditEntityType = "contact"
 	AuditEntityEmailAccount   AuditEntityType = "email_account"
 	AuditEntityAPIKey         AuditEntityType = "api_key"
-	AuditEntitySequence       AuditEntityType = "sequence"
+	AuditEntitySequence       AuditEntityType = "step"
 	AuditEntityUser           AuditEntityType = "user"
 	AuditEntityOrganization   AuditEntityType = "organization"
 	AuditEntityWorker         AuditEntityType = "worker"

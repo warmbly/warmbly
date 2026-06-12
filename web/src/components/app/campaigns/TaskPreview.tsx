@@ -157,10 +157,10 @@ export default function TaskPreview({ campaignId, campaignStatus: initialStatus 
                                     {taskProgress.contact_email}
                                 </p>
                             )}
-                            {taskProgress.sequence_name && (
+                            {taskProgress.step_name && (
                                 <p className="text-[11px] text-sky-700 truncate mt-0.5">
-                                    {taskProgress.sequence_name}
-                                    {taskProgress.sequence_index > 0 && ` · Step ${taskProgress.sequence_index}`}
+                                    {taskProgress.step_name}
+                                    {taskProgress.step_index > 0 && ` · Step ${taskProgress.step_index}`}
                                 </p>
                             )}
                         </div>

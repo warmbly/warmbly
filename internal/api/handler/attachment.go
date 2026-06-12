@@ -76,7 +76,7 @@ func (h *Handler) UploadCampaignAttachment(c *gin.Context) {
 
 	// Optional sequence_id form field scopes the attachment to one step.
 	var seqID *uuid.UUID
-	if s := strings.TrimSpace(c.PostForm("sequence_id")); s != "" {
+	if s := strings.TrimSpace(c.PostForm("step_id")); s != "" {
 		if id, perr := uuid.Parse(s); perr == nil {
 			seqID = &id
 		}
@@ -224,7 +224,7 @@ func (h *Handler) attachmentResponse(c *gin.Context, att *models.CampaignAttachm
 	return gin.H{
 		"id":          att.ID,
 		"campaign_id": att.CampaignID,
-		"sequence_id": att.SequenceID,
+		"step_id":     att.SequenceID,
 		"filename":    att.Filename,
 		"size":        att.Size,
 		"mime_type":   att.MimeType,

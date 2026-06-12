@@ -43,7 +43,7 @@ export default function CampaignOverview() {
     const [metric, setMetric] = useState<Metric>("sent");
 
     const summary = analytics.data?.summary;
-    const sequences = analytics.data?.sequences ?? [];
+    const sequences = analytics.data?.steps ?? [];
     const dailyStats = daily.data ?? [];
 
     const series: ChartPoint[] = useMemo(
@@ -214,7 +214,7 @@ export default function CampaignOverview() {
                                     <span className="w-16 text-right hidden md:block">Bounces</span>
                                 </div>
                                 {sequences.map((s) => (
-                                    <div key={s.sequence_id} className="h-11 px-5 flex items-center gap-3">
+                                    <div key={s.step_id} className="h-11 px-5 flex items-center gap-3">
                                         <span className="flex items-center gap-2 flex-1 min-w-0">
                                             <span className="font-mono text-[10.5px] text-slate-400 tabular-nums shrink-0">
                                                 {s.position}

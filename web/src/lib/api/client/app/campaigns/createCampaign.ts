@@ -45,7 +45,7 @@ export interface CreateCampaignInput {
     tracking_domain?: string;
 
     // Initial sequences (ordered)
-    sequences?: Array<{
+    steps?: Array<{
         name: string;
         subject: string;
         body_plain: string;
