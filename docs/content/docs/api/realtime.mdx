@@ -37,6 +37,26 @@ Events arrive as channel messages whose event name is the event type, for exampl
 
 Permission filtering happens per event on the org channel: for example inbox events require `access_unibox`, campaign pulses require `view_campaigns`, member changes require `manage_team`, and billing events require `manage_billing`. A member without the permission simply never receives the event.
 
+## Selecting events with intents
+
+By default an `org:<org_id>` subscriber receives every event the member is permitted to see. To narrow the stream, pass an `intents` array in the `phx_join` payload listing the event families you want:
+
+```json
+{ "intents": ["AUDIT", "CAMPAIGN", "EMAIL"] }
+```
+
+Each token is matched as a case-insensitive substring of the event type, so `CAMPAIGN` matches `CAMPAIGN_*`, `EMAIL` matches `EMAIL_SENT` / `EMAIL_OPENED` / `EMAIL_RECEIVED`, and `AUDIT` matches `AUDIT_CREATED`. An absent or empty array means the full stream. Intents reduce traffic against the per-connection message limit, they are not a security boundary (permission filtering still applies on top).
+
+## Heartbeats
+
+The `org:<org_id>` join reply doubles as a HELLO: it returns the cadence the server expects, so a client library does not hardcode it.
+
+```json
+{ "org_id": "...", "role": "owner", "heartbeat_interval_ms": 25000, "server_timeout_ms": 60000 }
+```
+
+Heartbeats are client-initiated (standard Phoenix): send a `heartbeat` event on the `phoenix` topic every `heartbeat_interval_ms`. If the server receives nothing for `server_timeout_ms` it closes the socket. The reference client also arms a short watchdog after each heartbeat and force-reconnects if the reply does not arrive, which detects a silently dead connection faster than the timeout.
+
 ## Presence
 
 The org channel carries team presence for the collaboration features in the dashboard (who is online, who is viewing or replying to a record). Standard Phoenix presence events are used:
@@ -64,20 +84,27 @@ The realtime service protects itself against connection spam. All limits are per
 
 When a client-sent event is throttled you receive an error reply with `reason: "rate_limited"` and a `retry_after_ms` hint. When outbound delivery is throttled the channel pushes a `rate_limited` message instead of the event.
 
-## Close codes
+## Connection rejections
 
-The handshake is rejected with Discord-style close codes:
+If authentication, the realtime permission, the IP allowlist, the rate limit, or the connection cap fails, the WebSocket upgrade is rejected at the HTTP layer: the client observes a failed upgrade (no application close frame). The server records a reason code for each case:
 
-| Code | Meaning |
-| --- | --- |
-| 4003 | Missing token |
-| 4004 | Invalid or expired token |
-| 4007 | Rate limited, retry later |
-| 4009 | Connection limit exceeded |
-| 4010 | Key lacks the realtime permission |
+| Code | Meaning | Client action |
+| --- | --- | --- |
+| 4003 | Missing token | Fix the connection URL |
+| 4004 | Invalid or expired token | Re-mint the token, then reconnect |
+| 4007 | Rate limited | Back off and retry |
+| 4009 | Connection limit exceeded | Reduce concurrent sockets |
+| 4010 | Key lacks the realtime permission | Grant `REALTIME_SUBSCRIBE` |
+
+Because the code is not delivered as a WebSocket close frame today, a client cannot branch on it programmatically: treat any failed upgrade as "re-mint the token if it expired, otherwise back off". Surfacing these as application close codes is planned.
+
+## Delivery guarantees
+
+The stream is best-effort and at-most-once. There are no sequence numbers, no acknowledgements, and no server-side replay or resume, so events emitted while a client is disconnected are not buffered and are lost. On reconnect, resynchronize by refetching the affected resources over the REST API rather than assuming the stream is gap-free. Do not use the WebSocket as a system of record or an audit log: use it to reduce polling on top of REST, and use [webhooks](/api/endpoints/) where guaranteed delivery matters.
 
 ## Good citizenship
 
 - Reuse one connection per process and multiplex channels over it instead of opening one socket per topic.
+- Pass `intents` so you only receive (and pay the message-rate budget for) the events you act on.
 - Reconnect with exponential backoff; the limits above treat reconnect storms the same as connection spam.
 - Treat events as invalidation signals and refetch via the REST API, rather than assuming every payload carries full state.

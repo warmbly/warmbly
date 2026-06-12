@@ -29,7 +29,7 @@ defmodule RealtimeWeb.OrgChannel do
   @presence_actions ~w(viewing editing replying idle)
 
   @impl true
-  def join("org:" <> org_id, _params, socket) do
+  def join("org:" <> org_id, params, socket) do
     user_id = socket.assigns.user_id
 
     case Auth.check_org_membership(user_id, org_id) do
@@ -45,9 +45,24 @@ defmodule RealtimeWeb.OrgChannel do
           # settings change applies live once clients reconnect to the channel.
           |> assign(:presence_show_online, Map.get(member, :presence_show_online, true))
           |> assign(:presence_show_activity, Map.get(member, :presence_show_activity, true))
+          # Optional event-family intents: a client may join with
+          # {"intents": ["AUDIT", "CAMPAIGN"]} to receive only matching event
+          # types. Absent or empty means the full org stream (back-compatible).
+          |> assign(:intents, parse_intents(params))
 
         send(self(), :after_join)
-        {:ok, %{org_id: org_id, role: member.role}, socket}
+
+        # The join reply doubles as a HELLO: advertise the heartbeat cadence the
+        # server expects so library authors do not hardcode it. Heartbeats are
+        # client-initiated on the "phoenix" topic; send one within
+        # server_timeout_ms or the socket is closed.
+        {:ok,
+         %{
+           org_id: org_id,
+           role: member.role,
+           heartbeat_interval_ms: 25_000,
+           server_timeout_ms: 60_000
+         }, socket}
 
       {:error, :not_a_member} ->
         {:error, %{reason: "not_a_member"}}
@@ -134,8 +149,9 @@ defmodule RealtimeWeb.OrgChannel do
 
     case RateLimiter.check(user_id, :ws_message, ws_message_limit) do
       {:ok, _remaining} ->
-        # Check if user has permission to see this event
-        if can_see_event?(socket, event) do
+        # Forward only if the member may see it AND it matches the client's
+        # declared intents (if any).
+        if can_see_event?(socket, event) and intents_allow?(socket, event) do
           push(socket, event["event_type"], event)
         end
 
@@ -201,6 +217,46 @@ defmodule RealtimeWeb.OrgChannel do
   end
 
   # Private functions
+
+  # Normalize the optional intents list into upcased family tokens, or nil for
+  # "everything". Each token is substring-matched against the event type, so
+  # "CAMPAIGN" matches CAMPAIGN_* and "AUDIT" matches AUDIT_CREATED.
+  defp parse_intents(params) when is_map(params) do
+    case params["intents"] do
+      list when is_list(list) ->
+        tokens =
+          list
+          |> Enum.filter(&is_binary/1)
+          |> Enum.map(fn s -> s |> String.upcase() |> String.replace(~r/[.:\s-]+/, "_") end)
+          |> Enum.reject(&(&1 == ""))
+
+        if tokens == [], do: nil, else: tokens
+
+      _ ->
+        nil
+    end
+  end
+
+  defp parse_intents(_), do: nil
+
+  # When a client declared intents, forward only events whose normalized type
+  # contains one of the requested tokens. No intents = forward everything.
+  defp intents_allow?(socket, event) do
+    case socket.assigns[:intents] do
+      nil ->
+        true
+
+      tokens ->
+        type =
+          event
+          |> Map.get("event_type", "")
+          |> to_string()
+          |> String.upcase()
+          |> String.replace(~r/[.:\s-]+/, "_")
+
+        Enum.any?(tokens, fn t -> String.contains?(type, t) end)
+    end
+  end
 
   # Gate org-broadcast events on member permissions. Event types are
   # normalized (upcased, separators collapsed to "_") so both the legacy
