@@ -1,0 +1,391 @@
+---
+title: API keys
+description: Create, inspect, rotate, and revoke programmatic API keys and read their usage analytics.
+icon: KeyRound
+---
+
+API keys are how integrations authenticate to the Warmbly API. Each key belongs to an organization, carries a permission bitmask that scopes what it can do, and can be restricted to specific source IPs or specific mailboxes. This group is self-service: a key that holds the `API_KEYS` scope can manage its own organization's keys without going through the dashboard, so an integration can rotate its credentials programmatically.
+
+Every endpoint in this group requires both **Scope** `API_KEYS` (for API-key callers) and **Org permission** `manage_api_keys` (for session/JWT callers). All routes are organization-scoped and write rate-limited.
+
+## The permission bitmask
+
+A key's `permissions` field is a `uint64` bitmask. Each grant is a single bit, and a key is allowed to perform a request only when its mask contains every bit the route requires. Combine bits with bitwise OR. The full list of bit names and values, along with the `read_only` and `full_access` presets, is available from the [permissions endpoint](#list-available-permissions) below and documented in [API permissions](/api/permissions/). Unknown bits are rejected on create so a stale client cannot accidentally grant a future scope.
+
+## The plaintext secret is shown once
+
+When you create a key, the response includes a `secret` field containing the full plaintext key. This is the only time the secret is ever returned. Warmbly stores only a hash plus a short prefix and suffix for display, so the plaintext cannot be recovered later. Capture it at creation time and store it securely. If it is lost, revoke the key and create a new one. See [Authentication](/api/authentication/) for how to present the key on requests.
+
+## List API keys
+
+`GET /api-keys`
+
+Returns the organization's API keys, newest first, with the secret never included.
+
+Auth: **Scope** `API_KEYS` · **Org permission** `manage_api_keys`
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `cursor` | query | uuid | Opaque cursor from the previous page's `pagination.next_cursor`. Omit for the first page. |
+| `limit` | query | integer | Page size, 1 to 100. Defaults to 50. Out-of-range or invalid values fall back to the default. |
+
+### Response
+
+A `data` plus `pagination` envelope. Each item is an API key without its secret.
+
+```json
+{
+  "data": [
+    {
+      "id": "0b2d5e7a-1c3f-4a9b-8c2d-1e2f3a4b5c6d",
+      "user_id": "9f8e7d6c-5b4a-3210-fedc-ba9876543210",
+      "organization_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "name": "Zapier production",
+      "description": "Lead sync from the marketing site",
+      "key_prefix": "wk_live_",
+      "key_suffix": "9f3a",
+      "permissions": 8447,
+      "allowed_ips": ["203.0.113.10"],
+      "allowed_email_accounts": [],
+      "rate_limit_per_minute": 120,
+      "status": "active",
+      "last_used_at": "2026-06-11T18:42:10Z",
+      "last_request_ip": "203.0.113.10",
+      "expires_at": null,
+      "created_at": "2026-05-01T09:00:00Z",
+      "updated_at": "2026-06-11T18:42:10Z"
+    }
+  ],
+  "pagination": {
+    "total": null,
+    "next_cursor": "0b2d5e7a-1c3f-4a9b-8c2d-1e2f3a4b5c6d",
+    "has_more": true
+  }
+}
+```
+
+## Create an API key
+
+`POST /api-keys`
+
+Creates a new key and returns the plaintext secret exactly once (see the note above).
+
+Auth: **Scope** `API_KEYS` · **Org permission** `manage_api_keys`
+
+### Request body
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | string | yes | Human-readable label, up to 255 characters. |
+| `description` | string | no | Free-form note about the key's purpose. |
+| `permissions` | integer (uint64) | yes | The permission bitmask. Must contain only defined bits; unknown bits are rejected. |
+| `allowed_ips` | string array | no | If set, the key is usable only from these source IPs. Omit or leave empty to allow any IP. |
+| `allowed_email_accounts` | uuid array | no | If set, mailbox-scoped routes accept only these email account ids. |
+| `rate_limit_per_minute` | integer | no | Per-key sliding-window request cap. Omit or send `0` to use the default (60 r/m). |
+| `expires_at` | string (RFC3339) | no | When the key should stop working. Omit for a non-expiring key. |
+
+```json
+{
+  "name": "Zapier production",
+  "description": "Lead sync from the marketing site",
+  "permissions": 8447,
+  "allowed_ips": ["203.0.113.10"],
+  "rate_limit_per_minute": 120,
+  "expires_at": "2027-01-01T00:00:00Z"
+}
+```
+
+### Response
+
+`201 Created`. The full key object plus the one-time `secret`. Everything except `secret` matches the shape returned by the list and get endpoints.
+
+```json
+{
+  "id": "0b2d5e7a-1c3f-4a9b-8c2d-1e2f3a4b5c6d",
+  "user_id": "9f8e7d6c-5b4a-3210-fedc-ba9876543210",
+  "organization_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "name": "Zapier production",
+  "description": "Lead sync from the marketing site",
+  "key_prefix": "wk_live_",
+  "key_suffix": "9f3a",
+  "permissions": 8447,
+  "allowed_ips": ["203.0.113.10"],
+  "rate_limit_per_minute": 120,
+  "status": "active",
+  "expires_at": "2027-01-01T00:00:00Z",
+  "created_at": "2026-06-11T19:00:00Z",
+  "updated_at": "2026-06-11T19:00:00Z",
+  "secret": "wk_live_3f9a...the-only-time-you-see-this...9f3a"
+}
+```
+
+This endpoint mutates state and supports [`Idempotency-Key`](/api/authentication/) for safe retries.
+
+## List available permissions
+
+`GET /api-keys/permissions`
+
+Returns the catalog of permission bits and the built-in presets, so a client can render a picker or grant a sane default without hard-coding values.
+
+Auth: **Scope** `API_KEYS` · **Org permission** `manage_api_keys`
+
+### Response
+
+An object with a `permissions` array (each entry carries its `name`, numeric `value`, `description`, and `category` of `read`, `write`, `bulk`, or `special`) and a `presets` object with the `read_only` and `full_access` masks.
+
+```json
+{
+  "permissions": [
+    {
+      "name": "READ_EMAILS",
+      "value": 1,
+      "description": "View email accounts and settings",
+      "category": "read"
+    },
+    {
+      "name": "WRITE_CAMPAIGNS",
+      "value": 64,
+      "description": "Create and modify campaigns and sequences",
+      "category": "write"
+    }
+    // ... one entry per defined permission bit
+  ],
+  "presets": {
+    "read_only": 4329731,
+    "full_access": 8388607
+  }
+}
+```
+
+## Get an API key
+
+`GET /api-keys/:id`
+
+Returns a single key by id. The secret is never included.
+
+Auth: **Scope** `API_KEYS` · **Org permission** `manage_api_keys`
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | uuid | The API key id. |
+
+### Response
+
+The key object, identical in shape to one element of the list `data` array.
+
+```json
+{
+  "id": "0b2d5e7a-1c3f-4a9b-8c2d-1e2f3a4b5c6d",
+  "user_id": "9f8e7d6c-5b4a-3210-fedc-ba9876543210",
+  "organization_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "name": "Zapier production",
+  "description": "Lead sync from the marketing site",
+  "key_prefix": "wk_live_",
+  "key_suffix": "9f3a",
+  "permissions": 8447,
+  "allowed_ips": ["203.0.113.10"],
+  "rate_limit_per_minute": 120,
+  "status": "active",
+  "last_used_at": "2026-06-11T18:42:10Z",
+  "last_request_ip": "203.0.113.10",
+  "expires_at": null,
+  "created_at": "2026-05-01T09:00:00Z",
+  "updated_at": "2026-06-11T18:42:10Z"
+}
+```
+
+## Update an API key
+
+`PATCH /api-keys/:id`
+
+Updates the mutable fields of a key. Every field is optional; only the fields you send are changed. You cannot rotate the secret here (create a new key and revoke the old one instead).
+
+Auth: **Scope** `API_KEYS` · **Org permission** `manage_api_keys`
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | uuid | The API key id. |
+
+### Request body
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | string | no | New label. |
+| `description` | string | no | New description. |
+| `permissions` | integer (uint64) | no | Replacement permission bitmask. |
+| `allowed_ips` | string array | no | Replacement IP allowlist. |
+| `allowed_email_accounts` | uuid array | no | Replacement mailbox allowlist. |
+| `rate_limit_per_minute` | integer | no | New per-key rate cap (`0` means use the default). |
+
+```json
+{
+  "description": "Lead sync, now read-only",
+  "permissions": 4329731,
+  "rate_limit_per_minute": 60
+}
+```
+
+### Response
+
+The updated key object, same shape as get.
+
+```json
+{
+  "id": "0b2d5e7a-1c3f-4a9b-8c2d-1e2f3a4b5c6d",
+  "name": "Zapier production",
+  "description": "Lead sync, now read-only",
+  "permissions": 4329731,
+  "rate_limit_per_minute": 60,
+  "status": "active",
+  "updated_at": "2026-06-11T19:30:00Z"
+  // ... remaining key fields unchanged
+}
+```
+
+## Revoke an API key
+
+`DELETE /api-keys/:id`
+
+Revokes a key immediately. The key stops authenticating right away; this is not reversible.
+
+Auth: **Scope** `API_KEYS` · **Org permission** `manage_api_keys`
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | uuid | The API key id. |
+| `reason` | query | string | Optional revocation note stored on the key. Defaults to `Revoked by user`. |
+
+### Response
+
+A small status envelope.
+
+```json
+{ "status": "revoked" }
+```
+
+## Usage summary
+
+`GET /api-keys/usage/summary`
+
+Returns the organization-level usage strip: key counts by status plus a 24-hour request, error, and latency rollup.
+
+Auth: **Scope** `API_KEYS` · **Org permission** `manage_api_keys`
+
+### Response
+
+A single summary object. Counts under the `24h` fields cover the last 24 hours.
+
+```json
+{
+  "active_keys": 3,
+  "revoked_keys": 1,
+  "expired_keys": 0,
+  "requests_24h": 14820,
+  "errors_24h": 37,
+  "avg_latency_ms_24h": 42.6,
+  "last_call_at": "2026-06-11T18:42:10Z"
+}
+```
+
+## Usage analytics
+
+`GET /api-keys/usage/analytics`
+`GET /api-keys/:id/analytics`
+
+Returns a time-bucketed request series plus a per-endpoint breakdown. Both routes share one handler: the org-wide form lives at `/api-keys/usage/analytics`, and the per-key form is `/api-keys/:id/analytics`. You can also pass the literal `:id` value `all` on the per-key route to get the org-wide aggregate.
+
+Auth: **Scope** `API_KEYS` · **Org permission** `manage_api_keys`
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | uuid | The API key id, or the literal `all` for the org-wide aggregate (per-key route only). |
+| `from` | query | string (RFC3339) | Start of the window. Defaults to 24 hours before `to`. |
+| `to` | query | string (RFC3339) | End of the window. Defaults to now. |
+| `interval` | query | string | Bucket granularity: `minute`, `hour`, or `day`. |
+
+### Response
+
+An analytics object: `buckets` is the graph series, `endpoints` is the top-endpoints table, and `total` / `errors` are the window totals. For the org-wide aggregate, `api_key_id` is the all-zero UUID.
+
+```json
+{
+  "api_key_id": "0b2d5e7a-1c3f-4a9b-8c2d-1e2f3a4b5c6d",
+  "from": "2026-06-10T19:00:00Z",
+  "to": "2026-06-11T19:00:00Z",
+  "interval": "hour",
+  "buckets": [
+    {
+      "bucket": "2026-06-11T18:00:00Z",
+      "total": 612,
+      "success": 605,
+      "client_errors": 6,
+      "server_errors": 1,
+      "avg_latency_ms": 41.2
+    }
+    // ... one bucket per interval
+  ],
+  "endpoints": [
+    {
+      "endpoint": "/api/v1/contacts",
+      "method": "POST",
+      "count": 980,
+      "error_count": 4,
+      "avg_latency_ms": 55.1
+    }
+  ],
+  "total": 14820,
+  "errors": 37
+}
+```
+
+## List per-key usage logs
+
+`GET /api-keys/:id/logs`
+
+Returns the recent raw request entries for a single key, newest first. Useful for debugging which requests a key made and how they responded.
+
+Auth: **Scope** `API_KEYS` · **Org permission** `manage_api_keys`
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | uuid | The API key id. |
+| `cursor` | query | uuid | Opaque cursor from the previous page's `pagination.next_cursor`. |
+| `limit` | query | integer | Page size, 1 to 200. Defaults to 50. |
+
+### Response
+
+A `data` plus `pagination` envelope. Each entry is one recorded request.
+
+```json
+{
+  "data": [
+    {
+      "id": "7c1f9a2b-3d4e-5f60-7a8b-9c0d1e2f3a4b",
+      "api_key_id": "0b2d5e7a-1c3f-4a9b-8c2d-1e2f3a4b5c6d",
+      "endpoint": "/api/v1/contacts",
+      "method": "POST",
+      "ip_address": "203.0.113.10",
+      "user_agent": "warmbly-zapier/1.4",
+      "response_code": 201,
+      "response_time_ms": 48,
+      "created_at": "2026-06-11T18:42:10Z"
+    }
+  ],
+  "pagination": {
+    "total": null,
+    "next_cursor": "7c1f9a2b-3d4e-5f60-7a8b-9c0d1e2f3a4b",
+    "has_more": true
+  }
+}
+```
+
+## Errors
+
+All endpoints use the shared error envelope with stable `code` and `request_id` fields. Common cases for this group:
+
+- `400` when no organization is selected, the request body is invalid, or a permission bitmask contains unknown bits.
+- `401` when the caller is unauthenticated.
+- `403` when the caller lacks the `API_KEYS` scope or the `manage_api_keys` org permission.
+- `404` when the `:id` path value is not a valid UUID or the key does not belong to the organization.
+
+See [Error codes](/api/error-codes/) for the full list.

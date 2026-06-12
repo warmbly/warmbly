@@ -8,6 +8,7 @@
     "authentication",
     "permissions",
     "endpoints",
+    "reference",
     "realtime",
     "error-codes"
   ]

@@ -1,0 +1,496 @@
+---
+title: Unified inbox
+description: Read, search, and triage incoming mail across every mailbox, then reply, label, snooze, and manage scheduled sends.
+icon: Inbox
+---
+
+The unified inbox (unibox) is the org-wide view of everything that lands in your connected mailboxes. These endpoints power the dashboard's inbox list, thread view, scope rail, conversation labels, snoozes, and scheduled-send queue. Every route is gated on the unified-inbox feature, so the calling organization needs an active trial or paid subscription; without it the endpoint returns `403`.
+
+The list, thread, overview, and snooze data is org-scoped, not per-user. Two members of the same organization see the same inbox, the same unread badge, and the same threads. Snoozes and conversation labels are attached to the calling user.
+
+## List incoming mail
+
+`GET /unibox`
+
+Returns the inbox list, collapsed to one row per thread (the newest message), with filtering and cursor pagination. Auth: **Scope** `READ_UNIBOX` · **Org permission** `access_unibox`.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `cursor` | query | string | Opaque pagination cursor from a previous response. |
+| `limit` | query | integer | Page size. Clamped to the server's min/max. |
+| `from` | query | string | Filter by sender address (substring). |
+| `subject` | query | string | Filter by subject (substring). |
+| `unseen` | query | boolean | `true` returns only threads with unread messages. |
+| `awaiting_reply` | query | boolean | `true` returns only threads where the latest message was sent by you (recipient has not replied). |
+| `snoozed` | query | string | `true` returns only snoozed threads. Omit to exclude snoozed threads (default). |
+| `since` | query | string | Lower bound on date, `YYYY-MM-DD`. |
+| `until` | query | string | Upper bound on date, `YYYY-MM-DD`. |
+| `email_id` | query | string | Restrict to a single mailbox by UUID. |
+| `email_ids` | query | string | Comma-separated mailbox UUIDs. A thread matches if it landed in any of them. Invalid UUIDs are dropped. |
+| `category_ids` | query | string | Comma-separated conversation-label UUIDs. A thread matches if it carries any of them. |
+
+The response is a `data` plus `pagination` envelope. Each row summarises the whole thread behind it (`message_count`, `has_unread`) plus the conversation's labels.
+
+### Response
+
+```json
+{
+  "data": [
+    {
+      "id": "9b6f0e2a-3c4d-4f1a-8b2e-1a2b3c4d5e6f",
+      "email_id": "2a1b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
+      "thread_id": "thread-af83b21",
+      "from_addr": ["Jane Doe <jane@acme.com>"],
+      "to_addr": ["sales@yourco.com"],
+      "subject": "Re: Following up on pricing",
+      "snippet": "Thanks for the details, this looks great...",
+      "internal_date": "2026-06-11T14:22:09Z",
+      "seen": false,
+      "message_count": 4,
+      "has_unread": true,
+      "labels": [
+        { "id": "c0ffee00-0000-4000-8000-000000000001", "title": "Interested", "color": "#16a34a" }
+      ]
+    }
+  ],
+  "pagination": {
+    "next_cursor": "eyJpZCI6Ii4uLiJ9",
+    "has_more": true
+  }
+}
+```
+
+## Get unread count
+
+`GET /unibox/count`
+
+Returns the org-wide unread message count, optionally scoped to one mailbox. Backs the inbox badge. Auth: **Scope** `READ_UNIBOX` · **Org permission** `access_unibox`.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `email_id` | query | string | Optional mailbox UUID to count unread for a single mailbox. |
+
+### Response
+
+```json
+{
+  "count": 37
+}
+```
+
+## Get inbox overview
+
+`GET /unibox/overview`
+
+Rolls up the scope rail and top metric strip in one call: unread, today, week, snoozed, awaiting-reply, and pending-scheduled counts, plus per-mailbox, per-tag, and per-conversation-label breakdowns. Auth: **Scope** `READ_UNIBOX` · **Org permission** `access_unibox`.
+
+### Response
+
+```json
+{
+  "total": 1284,
+  "unread": 37,
+  "today": 12,
+  "week": 88,
+  "snoozed": 3,
+  "awaiting_reply": 9,
+  "scheduled_pending": 2,
+  "scheduled_pending_max": 50,
+  "mailboxes": [
+    {
+      "id": "2a1b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
+      "email": "sales@yourco.com",
+      "name": "Sales",
+      "unread": 21,
+      "total": 640
+    }
+  ],
+  "tags": [
+    {
+      "id": "1f2e3d4c-5b6a-7980-a1b2-c3d4e5f60718",
+      "title": "Outbound",
+      "color": "#2563eb",
+      "unread": 14,
+      "total": 410
+    }
+  ],
+  "categories": [
+    {
+      "id": "c0ffee00-0000-4000-8000-000000000001",
+      "title": "Interested",
+      "color": "#16a34a",
+      "unread": 5,
+      "total": 62
+    }
+  ],
+  "generated_at": "2026-06-11T14:25:00Z",
+  "window_today_start": "2026-06-11T00:00:00Z",
+  "window_week_start": "2026-06-05T00:00:00Z"
+}
+```
+
+## Get a thread
+
+`GET /unibox/thread`
+
+Returns every message in a single conversation, oldest-first style message rows, with cursor pagination. The mailbox filter is optional: with no `email_id` the thread is read across every mailbox in the organization (the natural unified view). Auth: **Scope** `READ_UNIBOX` · **Org permission** `access_unibox`.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `thread_id` | query | string | Required. The thread to read. Also accepted as `id`. |
+| `email_id` | query | string | Optional mailbox UUID to scope the thread to one mailbox. Also accepted as `email`. |
+| `cursor` | query | string | Opaque pagination cursor. |
+| `limit` | query | integer | Page size. Out-of-range values return `400`. |
+
+The response is a `data` plus `pagination` envelope. Each item is a full message (envelope plus body).
+
+### Response
+
+```json
+{
+  "data": [
+    {
+      "id": "9b6f0e2a-3c4d-4f1a-8b2e-1a2b3c4d5e6f",
+      "email_id": "2a1b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
+      "mailbox": 1,
+      "thread_id": "thread-af83b21",
+      "message_id": "<CA+abc123@mail.acme.com>",
+      "gmail_id": "18f0c2a9b7d4e5f6",
+      "parent_id": "<CA+prev@mail.acme.com>",
+      "uid": 4821,
+      "mod_seq": 90210,
+      "flags": ["\\Seen"],
+      "bcc": [],
+      "cc": [],
+      "from_addr": ["Jane Doe <jane@acme.com>"],
+      "in_reply_to": ["<CA+prev@mail.acme.com>"],
+      "reply_to": [],
+      "to_addr": ["sales@yourco.com"],
+      "subject": "Re: Following up on pricing",
+      "size": 18422,
+      "internal_date": "2026-06-11T14:22:09Z",
+      "sent_date": "2026-06-11T14:22:00Z",
+      "snippet": "Thanks for the details, this looks great...",
+      "seen": true,
+      "body_plain": "Thanks for the details...",
+      "body_html": "<p>Thanks for the details...</p>",
+      "updated_at": "2026-06-11T14:22:10Z",
+      "created_at": "2026-06-11T14:22:10Z"
+    }
+  ],
+  "pagination": {
+    "next_cursor": null,
+    "has_more": false
+  }
+}
+```
+
+## Get thread labels
+
+`GET /unibox/thread/labels`
+
+Returns the conversation labels (your categories) attached to a thread. Auth: **Scope** `READ_UNIBOX` · **Org permission** `access_unibox`.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `thread_id` | query | string | Required. The thread to read labels for. Also accepted as `id`. |
+
+The response wraps the labels in a `data` array.
+
+### Response
+
+```json
+{
+  "data": [
+    { "id": "c0ffee00-0000-4000-8000-000000000001", "title": "Interested", "color": "#16a34a" }
+  ]
+}
+```
+
+## Set thread labels
+
+`PUT /unibox/thread/labels`
+
+Replaces the full conversation-label set on a thread. The body's `category_ids` is the desired set, so the call is idempotent and retries are naturally safe. Only your own categories are attached. Auth: **Scope** `WRITE_UNIBOX` · **Org permission** `access_unibox`.
+
+### Request body
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `thread_id` | string | Yes | The thread to label. |
+| `category_ids` | string[] | No | The full desired set of category UUIDs. An empty array clears all labels. |
+
+```json
+{
+  "thread_id": "thread-af83b21",
+  "category_ids": [
+    "c0ffee00-0000-4000-8000-000000000001",
+    "c0ffee00-0000-4000-8000-000000000002"
+  ]
+}
+```
+
+### Response
+
+Returns the resulting label set in a `data` array.
+
+```json
+{
+  "data": [
+    { "id": "c0ffee00-0000-4000-8000-000000000001", "title": "Interested", "color": "#16a34a" },
+    { "id": "c0ffee00-0000-4000-8000-000000000002", "title": "Demo booked", "color": "#7c3aed" }
+  ]
+}
+```
+
+## Mark messages seen
+
+`PATCH /unibox/seen`
+
+Marks a batch of messages as read or unread, org-wide. Up to 500 ids per call. Auth: **Scope** `WRITE_UNIBOX` · **Org permission** `access_unibox`.
+
+### Request body
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `email_ids` | string[] | Yes | Message UUIDs to update (max 500). |
+| `seen` | boolean | No | `true` marks as read, `false` marks as unread. |
+
+```json
+{
+  "email_ids": [
+    "9b6f0e2a-3c4d-4f1a-8b2e-1a2b3c4d5e6f",
+    "7a8b9c0d-1e2f-3a4b-5c6d-7e8f9a0b1c2d"
+  ],
+  "seen": true
+}
+```
+
+### Response
+
+Echoes the request back.
+
+```json
+{
+  "email_ids": [
+    "9b6f0e2a-3c4d-4f1a-8b2e-1a2b3c4d5e6f",
+    "7a8b9c0d-1e2f-3a4b-5c6d-7e8f9a0b1c2d"
+  ],
+  "seen": true
+}
+```
+
+## Reply from the inbox
+
+`POST /unibox/reply`
+
+Sends or schedules a reply from one of your mailboxes. The send is routed through the per-mailbox scheduler according to `send_mode`. Requires an active organization. Auth: **Scope** `WRITE_UNIBOX` · **Org permission** `access_unibox`.
+
+### Request body
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `email_account_id` | string | Yes | UUID of the sending mailbox. |
+| `to` | string[] | Yes | Recipient addresses (at least one). |
+| `cc` | string[] | No | CC addresses. |
+| `bcc` | string[] | No | BCC addresses. |
+| `subject` | string | Yes | Subject line. |
+| `body_html` | string | No | HTML body. |
+| `body_plain` | string | No | Plain-text body. |
+| `in_reply_to` | string[] | No | Message-ID(s) this reply threads under. |
+| `thread_id` | string | No | Thread to thread the reply into. |
+| `send_mode` | string | No | `instant` (default), `smart` (next mailbox gap), or `scheduled` (use `scheduled_at`). |
+| `scheduled_at` | string | No | RFC 3339 timestamp. Required when `send_mode` is `scheduled`; must be in the future. |
+
+```json
+{
+  "email_account_id": "2a1b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
+  "to": ["jane@acme.com"],
+  "subject": "Re: Following up on pricing",
+  "body_html": "<p>Happy to hop on a call this week.</p>",
+  "in_reply_to": ["<CA+abc123@mail.acme.com>"],
+  "thread_id": "thread-af83b21",
+  "send_mode": "instant"
+}
+```
+
+### Response
+
+```json
+{
+  "task_id": "5c6d7e8f-9a0b-4c1d-8e2f-3a4b5c6d7e8f",
+  "scheduled_at": "2026-06-11T14:30:00Z",
+  "send_mode": "instant"
+}
+```
+
+## List active snoozes
+
+`GET /unibox/snoozes`
+
+Returns your active thread snoozes. Auth: **Scope** `READ_UNIBOX` · **Org permission** `access_unibox`.
+
+The response wraps the snoozes in a `data` array.
+
+### Response
+
+```json
+{
+  "data": [
+    {
+      "id": "3a4b5c6d-7e8f-4a0b-9c1d-2e3f4a5b6c7d",
+      "user_id": "1e2f3a4b-5c6d-7e8f-9a0b-1c2d3e4f5a6b",
+      "thread_id": "thread-af83b21",
+      "snoozed_until": "2026-06-12T09:00:00Z",
+      "created_at": "2026-06-11T14:00:00Z",
+      "updated_at": "2026-06-11T14:00:00Z"
+    }
+  ]
+}
+```
+
+## Snooze a thread
+
+`POST /unibox/snooze`
+
+Hides a thread from your inbox until `snoozed_until` passes. Upsert semantics: a second call on the same thread updates the time in place. Auth: **Scope** `WRITE_UNIBOX` · **Org permission** `access_unibox`.
+
+### Request body
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `thread_id` | string | Yes | The thread to snooze. |
+| `snoozed_until` | string | Yes | RFC 3339 timestamp to un-hide the thread. |
+
+```json
+{
+  "thread_id": "thread-af83b21",
+  "snoozed_until": "2026-06-12T09:00:00Z"
+}
+```
+
+### Response
+
+```json
+{
+  "id": "3a4b5c6d-7e8f-4a0b-9c1d-2e3f4a5b6c7d",
+  "user_id": "1e2f3a4b-5c6d-7e8f-9a0b-1c2d3e4f5a6b",
+  "thread_id": "thread-af83b21",
+  "snoozed_until": "2026-06-12T09:00:00Z",
+  "created_at": "2026-06-11T14:00:00Z",
+  "updated_at": "2026-06-11T14:00:00Z"
+}
+```
+
+## Unsnooze a thread
+
+`DELETE /unibox/snooze`
+
+Un-snoozes a thread immediately. Idempotent: deleting a snooze that does not exist still succeeds with `204`. Auth: **Scope** `WRITE_UNIBOX` · **Org permission** `access_unibox`.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `thread_id` | query | string | Required. The thread to un-snooze. |
+
+### Response
+
+`204 No Content` with an empty body.
+
+## List scheduled sends
+
+`GET /unibox/scheduled`
+
+Returns the outbound emails you have queued but not yet sent. Pass `thread_id` to scope to a single conversation (used to render queued replies inline); the response shape is identical either way. Auth: **Scope** `READ_UNIBOX` · **Org permission** `access_unibox`.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `thread_id` | query | string | Optional. Restrict to scheduled sends queued into one thread. |
+
+The response wraps the items in a `data` array. Each item is a preview of the queued message.
+
+### Response
+
+```json
+{
+  "data": [
+    {
+      "task_id": "5c6d7e8f-9a0b-4c1d-8e2f-3a4b5c6d7e8f",
+      "scheduled_at": "2026-06-12T09:15:00Z",
+      "created_at": "2026-06-11T14:30:00Z",
+      "account_id": "2a1b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
+      "account_email": "sales@yourco.com",
+      "account_name": "Sales",
+      "to": ["jane@acme.com"],
+      "subject": "Re: Following up on pricing",
+      "snippet": "Happy to hop on a call this week.",
+      "thread_id": "thread-af83b21"
+    }
+  ]
+}
+```
+
+## Cancel a scheduled send
+
+`DELETE /unibox/scheduled/:task_id`
+
+Cancels a pending scheduled send before it fires. The queued task is marked cancelled and short-circuits to a no-op when its run time arrives. Auth: **Scope** `WRITE_UNIBOX` · **Org permission** `access_unibox`.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `task_id` | path | string | UUID of the scheduled task to cancel. |
+
+### Response
+
+`204 No Content` with an empty body.
+
+## Get a message by id
+
+`GET /unibox/:id`
+
+Returns a single message by its UUID, including the full envelope and body. Auth: **Scope** `READ_UNIBOX` · **Org permission** `access_unibox`.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | string | UUID of the message. |
+
+### Response
+
+```json
+{
+  "id": "9b6f0e2a-3c4d-4f1a-8b2e-1a2b3c4d5e6f",
+  "gmail_id": "18f0c2a9b7d4e5f6",
+  "uid": 4821,
+  "parent_id": "<CA+prev@mail.acme.com>",
+  "thread_id": "thread-af83b21",
+  "flags": ["\\Seen"],
+  "bcc": [],
+  "cc": [],
+  "date": "2026-06-11T14:22:00Z",
+  "from": ["Jane Doe <jane@acme.com>"],
+  "in_reply_to": ["<CA+prev@mail.acme.com>"],
+  "message_id": "<CA+abc123@mail.acme.com>",
+  "ReplyTo": [],
+  "to": ["sales@yourco.com"],
+  "subject": "Re: Following up on pricing",
+  "size": 18422,
+  "internal_date": "2026-06-11T14:22:09Z",
+  "mod_seq": 90210,
+  "body_plain": "Thanks for the details...",
+  "body_html": "<p>Thanks for the details...</p>"
+}
+```
+
+## Errors
+
+All error responses follow the standard envelope. See [error codes](/api/error-codes/) for the full list.
+
+```json
+{
+  "error": "forbidden",
+  "message": "Unibox requires an active trial or paid subscription",
+  "code": "FORBIDDEN",
+  "request_id": "req_8f3a1c2b9d"
+}
+```
+
+Common cases: `403` when the organization lacks unified-inbox access, `400` for a missing `thread_id`, an invalid cursor or limit, or no organization selected, and `400` when marking more than 500 messages seen in one call.

@@ -1,0 +1,1276 @@
+---
+title: Integrations, automations, meetings
+description: Connect third-party apps, build automation flows, capture booked meetings, and run on-demand Google Sheets lead syncs.
+icon: Plug
+---
+
+These endpoints cover Warmbly's integration layer: the provider catalog and connection lifecycle, per-connection event subscriptions and field mappings, the visual automation flow builder, the booked-meetings list, and on-demand Google Sheets lead sync. Most reads are reachable by operational integration users (`use_integrations` / `INTEGRATIONS`), while connecting and configuring is a settings action (`manage_settings`).
+
+Integrations are a paid-plan feature. Browsing the catalog and listing connections is open so non-paid orgs see the upsell, but any mutating call (connect, authorize, configure, push, test, automations write) returns `403` with a "Integrations are available on paid plans" message when the organization is not on a paid plan.
+
+List shapes here are mostly ad-hoc envelopes (`{"connections": [...]}`, `{"automations": [...]}`, and so on) rather than the cursor-paginated `data` + `pagination` shape used elsewhere. The meetings search and lead-sync source list are the exceptions and are noted inline. Errors follow the standard `{error, message, code, request_id}` envelope (see [error codes](/api/error-codes/)).
+
+## List the integration catalog
+
+`GET /integrations/catalog`
+
+Returns the static metadata for every provider Warmbly supports, annotated with whether each OAuth provider has server-side credentials wired (`configured`).
+
+Auth: **Scope** `INTEGRATIONS` (or session with **Org permission** `manage_settings` or `use_integrations`).
+
+### Response
+
+A `catalog` array of provider entries.
+
+```json
+{
+  "catalog": [
+    {
+      "provider": "hubspot",
+      "name": "HubSpot",
+      "tagline": "Sync contacts and deals to your CRM",
+      "category": "crm",
+      "auth_method": "oauth",
+      "beta": false,
+      "highlights": ["Push contacts on demand", "Auto-sync on positive reply"],
+      "scopes": ["crm.objects.contacts.write"],
+      "events": ["email.replied", "meeting.booked"],
+      "action_types": ["hubspot.upsert_contact"],
+      "supports_push": true,
+      "configured": true
+    }
+    // ... one entry per provider
+  ]
+}
+```
+
+## List connections
+
+`GET /integrations/connections`
+
+Returns this org's connection rows. Secrets (access/refresh tokens, pasted API keys) are never serialized.
+
+Auth: **Scope** `INTEGRATIONS` (or session with **Org permission** `manage_settings` or `use_integrations`).
+
+### Response
+
+A `connections` array of `IntegrationConnection` objects.
+
+```json
+{
+  "connections": [
+    {
+      "id": "9b2c1f7e-4d6a-4f2b-bb11-9d0e2a7c5f33",
+      "organization_id": "1a2b3c4d-0000-0000-0000-000000000001",
+      "provider": "hubspot",
+      "label": "HubSpot (Sales)",
+      "status": "connected",
+      "auth_method": "oauth",
+      "display_fields": {},
+      "sync_direction": "push",
+      "external_account_name": "Acme Inc",
+      "granted_scopes": ["crm.objects.contacts.write"],
+      "health": "healthy",
+      "last_synced_at": "2026-06-10T14:03:00Z",
+      "created_at": "2026-05-01T09:00:00Z",
+      "updated_at": "2026-06-10T14:03:00Z"
+    }
+  ]
+}
+```
+
+## Create a connection
+
+`POST /integrations/connections`
+
+Creates a credential-based connection for `api_key` / `webhook` providers (for example Close or Discord). OAuth providers are rejected here with a hint to start the authorize flow instead (`POST /integrations/oauth/start`, session only).
+
+Auth: **Scope** `INTEGRATIONS` · **Org permission** `manage_settings`.
+
+### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `provider` | string | Yes | A valid provider id (for example `close`, `discord`). |
+| `label` | string | No | Friendly name shown on the connection card. |
+| `config` | object | No | Provider-specific config (for example the pasted API key or webhook URL). |
+
+```json
+{
+  "provider": "close",
+  "label": "Close (Outbound)",
+  "config": { "api_key": "api_xxx" }
+}
+```
+
+### Response
+
+`201 Created` with the created `IntegrationConnection` object (bare, not enveloped). For inbound providers (Calendly, Cal.com) the response includes `inbound_webhook_url` once.
+
+```json
+{
+  "id": "c0ffee00-0000-4000-8000-000000000abc",
+  "provider": "close",
+  "label": "Close (Outbound)",
+  "status": "connected",
+  "auth_method": "api_key",
+  "sync_direction": "push",
+  "health": "unknown",
+  "created_at": "2026-06-11T10:00:00Z",
+  "updated_at": "2026-06-11T10:00:00Z"
+}
+```
+
+## Get a connection
+
+`GET /integrations/connections/:id`
+
+Returns one connection plus its event subscriptions and up to 20 recent sync runs (the detail drawer payload).
+
+Auth: **Scope** `INTEGRATIONS` (or session with **Org permission** `manage_settings` or `use_integrations`).
+
+| Parameter | In | Type | Description |
+|-----------|-----|------|-------------|
+| `id` | path | uuid | Connection id. |
+
+### Response
+
+```json
+{
+  "connection": {
+    "id": "9b2c1f7e-4d6a-4f2b-bb11-9d0e2a7c5f33",
+    "provider": "hubspot",
+    "label": "HubSpot (Sales)",
+    "status": "connected",
+    "auth_method": "oauth",
+    "sync_direction": "push",
+    "health": "healthy",
+    "created_at": "2026-05-01T09:00:00Z",
+    "updated_at": "2026-06-10T14:03:00Z"
+  },
+  "events": [
+    {
+      "id": "11111111-1111-4111-8111-111111111111",
+      "connection_id": "9b2c1f7e-4d6a-4f2b-bb11-9d0e2a7c5f33",
+      "event_type": "email.replied",
+      "action": "hubspot.upsert_contact",
+      "config": {},
+      "enabled": true,
+      "use_case": "crm_sync",
+      "created_at": "2026-05-01T09:05:00Z",
+      "updated_at": "2026-05-01T09:05:00Z"
+    }
+  ],
+  "runs": [
+    {
+      "id": "22222222-2222-4222-8222-222222222222",
+      "connection_id": "9b2c1f7e-4d6a-4f2b-bb11-9d0e2a7c5f33",
+      "kind": "push",
+      "status": "success",
+      "detail": "pushed 12 contacts",
+      "records_processed": 12,
+      "started_at": "2026-06-10T14:02:00Z",
+      "finished_at": "2026-06-10T14:03:00Z"
+    }
+  ]
+}
+```
+
+## Update connection config
+
+`PATCH /integrations/connections/:id/config`
+
+Saves a connection's onboarding/capability snapshot (selected objects, enabled use-cases) and its sync direction.
+
+Auth: **Scope** `INTEGRATIONS` · **Org permission** `manage_settings`.
+
+| Parameter | In | Type | Description |
+|-----------|-----|------|-------------|
+| `id` | path | uuid | Connection id. |
+
+### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `config_capabilities` | object | No | Per-connection capability snapshot (picker selections, enabled use-cases). |
+| `sync_direction` | string | No | Data-flow direction: `push`, `pull`, or `both`. |
+
+```json
+{
+  "config_capabilities": { "objects": ["contact"], "use_cases": ["crm_sync"] },
+  "sync_direction": "push"
+}
+```
+
+### Response
+
+```json
+{
+  "connection": {
+    "id": "9b2c1f7e-4d6a-4f2b-bb11-9d0e2a7c5f33",
+    "provider": "hubspot",
+    "sync_direction": "push",
+    "status": "connected",
+    "health": "healthy",
+    "updated_at": "2026-06-11T11:00:00Z"
+  }
+}
+```
+
+## Disconnect
+
+`DELETE /integrations/connections/:id`
+
+Removes a connection row.
+
+Auth: **Scope** `INTEGRATIONS` · **Org permission** `manage_settings`.
+
+| Parameter | In | Type | Description |
+|-----------|-----|------|-------------|
+| `id` | path | uuid | Connection id. |
+
+### Response
+
+`204 No Content`.
+
+## List event subscriptions
+
+`GET /integrations/connections/:id/events`
+
+Returns the event subscriptions (event-to-action routes) configured on a connection.
+
+Auth: **Scope** `INTEGRATIONS` (or session with **Org permission** `manage_settings` or `use_integrations`).
+
+| Parameter | In | Type | Description |
+|-----------|-----|------|-------------|
+| `id` | path | uuid | Connection id. |
+
+### Response
+
+```json
+{
+  "events": [
+    {
+      "id": "11111111-1111-4111-8111-111111111111",
+      "connection_id": "9b2c1f7e-4d6a-4f2b-bb11-9d0e2a7c5f33",
+      "event_type": "email.replied",
+      "action": "hubspot.upsert_contact",
+      "config": {},
+      "enabled": true,
+      "use_case": "crm_sync",
+      "automation_id": null,
+      "created_at": "2026-05-01T09:05:00Z",
+      "updated_at": "2026-05-01T09:05:00Z"
+    }
+  ]
+}
+```
+
+## Create an event subscription
+
+`POST /integrations/connections/:id/events`
+
+Routes a Warmbly event to a provider action on this connection.
+
+Auth: **Scope** `INTEGRATIONS` · **Org permission** `manage_settings`.
+
+| Parameter | In | Type | Description |
+|-----------|-----|------|-------------|
+| `id` | path | uuid | Connection id. |
+
+### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `event_type` | string | Yes | The Warmbly event to react to (for example `email.replied`). |
+| `action` | string | Yes | Provider action id (for example `slack.notify`, `hubspot.upsert_contact`). |
+| `config` | object | No | Action config (for example a Slack channel or message template). |
+| `enabled` | boolean | No | Defaults to `true` when omitted. |
+
+```json
+{
+  "event_type": "email.replied",
+  "action": "slack.notify",
+  "config": { "channel": "#sales" },
+  "enabled": true
+}
+```
+
+### Response
+
+`201 Created` with the created `IntegrationEventSubscription` (bare object).
+
+```json
+{
+  "id": "33333333-3333-4333-8333-333333333333",
+  "connection_id": "9b2c1f7e-4d6a-4f2b-bb11-9d0e2a7c5f33",
+  "event_type": "email.replied",
+  "action": "slack.notify",
+  "config": { "channel": "#sales" },
+  "enabled": true,
+  "use_case": "notify",
+  "created_at": "2026-06-11T12:00:00Z",
+  "updated_at": "2026-06-11T12:00:00Z"
+}
+```
+
+## Delete an event subscription
+
+`DELETE /integrations/connections/:id/events/:eventId`
+
+Removes one event subscription.
+
+Auth: **Scope** `INTEGRATIONS` · **Org permission** `manage_settings`.
+
+| Parameter | In | Type | Description |
+|-----------|-----|------|-------------|
+| `id` | path | uuid | Connection id. |
+| `eventId` | path | uuid | Event subscription id. |
+
+### Response
+
+`204 No Content`.
+
+## List field mappings
+
+`GET /integrations/connections/:id/field-mappings`
+
+Returns the Warmbly-field to provider-field maps configured for a connection.
+
+Auth: **Scope** `INTEGRATIONS` (or session with **Org permission** `manage_settings` or `use_integrations`).
+
+| Parameter | In | Type | Description |
+|-----------|-----|------|-------------|
+| `id` | path | uuid | Connection id. |
+
+### Response
+
+```json
+{
+  "mappings": [
+    {
+      "id": "44444444-4444-4444-8444-444444444444",
+      "connection_id": "9b2c1f7e-4d6a-4f2b-bb11-9d0e2a7c5f33",
+      "direction": "push",
+      "object_name": "contact",
+      "warmbly_field": "email",
+      "external_field": "email",
+      "transform": "",
+      "static_value": "",
+      "is_default": true,
+      "created_at": "2026-05-01T09:06:00Z"
+    }
+  ]
+}
+```
+
+## Replace field mappings
+
+`PUT /integrations/connections/:id/field-mappings`
+
+Swaps the connection-default field map for an object wholesale. A full replace is naturally idempotent, so retries are safe without an `Idempotency-Key`.
+
+Auth: **Scope** `INTEGRATIONS` · **Org permission** `manage_settings`.
+
+| Parameter | In | Type | Description |
+|-----------|-----|------|-------------|
+| `id` | path | uuid | Connection id. |
+
+### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `object` | string | No | The provider object the mappings apply to (for example `contact`). |
+| `mappings` | array | Yes | The full set of mappings to store (replaces any existing). |
+| `mappings[].external_field` | string | Yes | Destination field on the provider. Required for every mapping. |
+| `mappings[].warmbly_field` | string | Conditional | Source Warmbly field. Required unless `transform` is `static`. |
+| `mappings[].transform` | string | No | One of `` (none), `none`, `static`, `uppercase`, `lowercase`, `trim`. |
+| `mappings[].static_value` | string | Conditional | Required when `transform` is `static`. |
+
+```json
+{
+  "object": "contact",
+  "mappings": [
+    { "warmbly_field": "email", "external_field": "email", "transform": "" },
+    { "warmbly_field": "first_name", "external_field": "firstname", "transform": "trim" },
+    { "external_field": "lifecyclestage", "transform": "static", "static_value": "lead" }
+  ]
+}
+```
+
+### Response
+
+The full mapping set after the replace (same shape as the list endpoint).
+
+```json
+{
+  "mappings": [
+    {
+      "id": "44444444-4444-4444-8444-444444444444",
+      "connection_id": "9b2c1f7e-4d6a-4f2b-bb11-9d0e2a7c5f33",
+      "object_name": "contact",
+      "warmbly_field": "email",
+      "external_field": "email",
+      "transform": "",
+      "is_default": true,
+      "created_at": "2026-06-11T12:30:00Z"
+    }
+  ]
+}
+```
+
+## List sync runs
+
+`GET /integrations/connections/:id/runs`
+
+Returns up to 50 recent observability records for a connection (connect, token refresh, event dispatch, manual push).
+
+Auth: **Scope** `INTEGRATIONS` (or session with **Org permission** `manage_settings` or `use_integrations`).
+
+| Parameter | In | Type | Description |
+|-----------|-----|------|-------------|
+| `id` | path | uuid | Connection id. |
+
+### Response
+
+```json
+{
+  "runs": [
+    {
+      "id": "22222222-2222-4222-8222-222222222222",
+      "connection_id": "9b2c1f7e-4d6a-4f2b-bb11-9d0e2a7c5f33",
+      "kind": "push",
+      "status": "success",
+      "detail": "pushed 12 contacts",
+      "records_processed": 12,
+      "started_at": "2026-06-10T14:02:00Z",
+      "finished_at": "2026-06-10T14:03:00Z"
+    }
+  ]
+}
+```
+
+## Get the connection webhook secret
+
+`GET /integrations/connections/:id/webhook-secret`
+
+Returns (generating on first call) the HMAC signing secret for an automation connection, so you can verify Warmbly's outbound webhook signatures.
+
+Auth: **Scope** `INTEGRATIONS` · **Org permission** `manage_settings`.
+
+| Parameter | In | Type | Description |
+|-----------|-----|------|-------------|
+| `id` | path | uuid | Connection id. |
+
+### Response
+
+```json
+{
+  "signing_secret": "whsec_live_...",
+  "signature_header": "X-Warmbly-Signature",
+  "scheme": "HMAC-SHA256 of \"{t}.{body}\", sent as t=<unix>,v1=<hex>"
+}
+```
+
+## Test a connection
+
+`POST /integrations/connections/:id/test`
+
+Fires a synthetic event through the connection's notify/webhook automations so you can confirm the Zap, scenario, or channel is wired.
+
+Auth: **Scope** `INTEGRATIONS` · **Org permission** `manage_settings`.
+
+| Parameter | In | Type | Description |
+|-----------|-----|------|-------------|
+| `id` | path | uuid | Connection id. |
+
+### Response
+
+```json
+{ "sent": true }
+```
+
+## Push contacts to a CRM
+
+`POST /integrations/connections/:id/push`
+
+Synchronously upserts the given org contacts into a connected CRM (HubSpot, Pipedrive, Salesforce, Close). Retries are naturally safe: every provider upsert is keyed by email, so a repeated push converges rather than duplicating records. No `Idempotency-Key` is required. Per-record results are returned.
+
+Auth: **Scope** `INTEGRATIONS` · **Org permission** `use_integrations`.
+
+| Parameter | In | Type | Description |
+|-----------|-----|------|-------------|
+| `id` | path | uuid | Connection id. |
+
+### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `contact_ids` | string[] | Yes | Contact ids to push. Deduplicated server-side. At least 1, at most 500. |
+
+```json
+{
+  "contact_ids": [
+    "aaaaaaaa-0000-4000-8000-000000000001",
+    "aaaaaaaa-0000-4000-8000-000000000002"
+  ]
+}
+```
+
+### Response
+
+```json
+{
+  "provider": "hubspot",
+  "pushed": 1,
+  "failed": 1,
+  "results": [
+    { "contact_id": "aaaaaaaa-0000-4000-8000-000000000001", "email": "jane@acme.com", "ok": true },
+    { "contact_id": "aaaaaaaa-0000-4000-8000-000000000002", "email": "bad", "ok": false, "error": "invalid email" }
+  ]
+}
+```
+
+A connection whose token can no longer be refreshed returns `409 Conflict` with a "needs to be reconnected" message.
+
+## List meeting bookings (integrations view)
+
+`GET /integrations/bookings`
+
+Returns up to 50 recent booked meetings, surfaced on the integrations page. For the full Meetings page list with filters and pagination, use `GET /meetings`.
+
+Auth: **Scope** `INTEGRATIONS` (or session with **Org permission** `manage_settings` or `use_integrations`).
+
+### Response
+
+```json
+{
+  "bookings": [
+    {
+      "id": "55555555-5555-4555-8555-555555555555",
+      "source": "calendly",
+      "status": "booked",
+      "invitee_email": "lead@acme.com",
+      "invitee_name": "Lead Person",
+      "event_name": "Intro call",
+      "scheduled_for": "2026-06-15T16:00:00Z",
+      "join_url": "https://meet.example/abc",
+      "contact_id": "aaaaaaaa-0000-4000-8000-000000000001",
+      "created_at": "2026-06-11T08:00:00Z",
+      "updated_at": "2026-06-11T08:00:00Z"
+    }
+  ]
+}
+```
+
+## List automations
+
+`GET /automations`
+
+Returns this org's automation flows (the visual flow builder).
+
+Auth: **Scope** `INTEGRATIONS` (or session with **Org permission** `manage_settings` or `use_integrations`).
+
+### Response
+
+```json
+{
+  "automations": [
+    {
+      "id": "66666666-6666-4666-8666-666666666666",
+      "organization_id": "1a2b3c4d-0000-0000-0000-000000000001",
+      "name": "Notify on positive reply",
+      "enabled": true,
+      "trigger_event": "email.replied",
+      "graph": { "nodes": [], "edges": [] },
+      "created_at": "2026-06-01T09:00:00Z",
+      "updated_at": "2026-06-01T09:00:00Z"
+    }
+  ]
+}
+```
+
+## Create an automation
+
+`POST /automations`
+
+Creates a new automation flow: a trigger event plus a graph of condition and action nodes.
+
+Auth: **Scope** `INTEGRATIONS` (or session with **Org permission** `manage_settings` or `use_integrations`).
+
+### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | Yes | Display name. |
+| `enabled` | boolean | No | Whether the automation runs on matching events. |
+| `trigger_event` | string | Yes | The event that fires the flow (for example `email.replied`). |
+| `filter` | object | No | Optional automation-wide gate (for example intents / `min_confidence`) applied to every action. |
+| `graph` | object | Yes | The flow graph: `nodes` and `edges`. |
+| `graph.nodes[]` | object | Yes | A node. `type` is `trigger` (exactly one, id `trigger`), `condition`, or `action`. Action nodes carry `action`, optional `connection_id`, and `config`; condition nodes carry `condition`. Each node has `x` / `y` canvas coordinates. |
+| `graph.edges[]` | object | Yes | An edge: `source`, `target`, and `when` (`""` for plain edges, `true` / `false` for the two outgoing edges of a condition). |
+
+```json
+{
+  "name": "Notify on positive reply",
+  "enabled": true,
+  "trigger_event": "email.replied",
+  "graph": {
+    "nodes": [
+      { "id": "trigger", "type": "trigger", "x": 0, "y": 0 },
+      {
+        "id": "a1",
+        "type": "action",
+        "action": "slack.notify",
+        "connection_id": "9b2c1f7e-4d6a-4f2b-bb11-9d0e2a7c5f33",
+        "config": { "channel": "#sales" },
+        "x": 240,
+        "y": 0
+      }
+    ],
+    "edges": [
+      { "id": "e1", "source": "trigger", "target": "a1", "when": "" }
+    ]
+  }
+}
+```
+
+### Response
+
+`201 Created` with the created automation under an `automation` key.
+
+```json
+{
+  "automation": {
+    "id": "66666666-6666-4666-8666-666666666666",
+    "name": "Notify on positive reply",
+    "enabled": true,
+    "trigger_event": "email.replied",
+    "graph": { "nodes": [ /* ... */ ], "edges": [ /* ... */ ] },
+    "created_at": "2026-06-11T13:00:00Z",
+    "updated_at": "2026-06-11T13:00:00Z"
+  }
+}
+```
+
+## Get an automation
+
+`GET /automations/:id`
+
+Returns one automation with its full graph.
+
+Auth: **Scope** `INTEGRATIONS` (or session with **Org permission** `manage_settings` or `use_integrations`).
+
+| Parameter | In | Type | Description |
+|-----------|-----|------|-------------|
+| `id` | path | uuid | Automation id. |
+
+### Response
+
+```json
+{
+  "automation": {
+    "id": "66666666-6666-4666-8666-666666666666",
+    "name": "Notify on positive reply",
+    "enabled": true,
+    "trigger_event": "email.replied",
+    "graph": { "nodes": [ /* ... */ ], "edges": [ /* ... */ ] },
+    "created_at": "2026-06-01T09:00:00Z",
+    "updated_at": "2026-06-01T09:00:00Z"
+  }
+}
+```
+
+## Update an automation
+
+`PATCH /automations/:id`
+
+Replaces an automation's name, enabled state, trigger, filter, and graph. The body shape matches the create payload.
+
+Auth: **Scope** `INTEGRATIONS` (or session with **Org permission** `manage_settings` or `use_integrations`).
+
+| Parameter | In | Type | Description |
+|-----------|-----|------|-------------|
+| `id` | path | uuid | Automation id. |
+
+### Request body
+
+Same fields as [create an automation](#create-an-automation).
+
+```json
+{
+  "name": "Notify on positive reply",
+  "enabled": false,
+  "trigger_event": "email.replied",
+  "graph": { "nodes": [ /* ... */ ], "edges": [ /* ... */ ] }
+}
+```
+
+### Response
+
+```json
+{
+  "automation": {
+    "id": "66666666-6666-4666-8666-666666666666",
+    "name": "Notify on positive reply",
+    "enabled": false,
+    "trigger_event": "email.replied",
+    "graph": { "nodes": [ /* ... */ ], "edges": [ /* ... */ ] },
+    "updated_at": "2026-06-11T13:30:00Z"
+  }
+}
+```
+
+## Delete an automation
+
+`DELETE /automations/:id`
+
+Removes an automation. Returns `409 Conflict` when the automation is still referenced by campaign steps.
+
+Auth: **Scope** `INTEGRATIONS` (or session with **Org permission** `manage_settings` or `use_integrations`).
+
+| Parameter | In | Type | Description |
+|-----------|-----|------|-------------|
+| `id` | path | uuid | Automation id. |
+
+### Response
+
+```json
+{ "deleted": true }
+```
+
+## Test an automation
+
+`POST /automations/:id/test`
+
+Runs the automation against sample (or provided) data without side effects and returns the walked trace plus per-action previews (the builder's "Test" button).
+
+Auth: **Scope** `INTEGRATIONS` (or session with **Org permission** `manage_settings` or `use_integrations`).
+
+| Parameter | In | Type | Description |
+|-----------|-----|------|-------------|
+| `id` | path | uuid | Automation id. |
+
+### Request body
+
+The body is optional. When omitted, the server builds a sample event from the trigger.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `data` | object | No | Sample event payload to evaluate the flow against. |
+
+```json
+{
+  "data": { "email": "lead@acme.com", "intent": "positive" }
+}
+```
+
+### Response
+
+A dry-run trace plus the resolved event data.
+
+```json
+{
+  "trace": [
+    { "node_id": "trigger", "type": "trigger", "status": "success" },
+    {
+      "node_id": "a1",
+      "type": "action",
+      "action": "slack.notify",
+      "label": "Slack · #sales",
+      "status": "success",
+      "preview": { "channel": "#sales", "text": "Lead replied: lead@acme.com" }
+    }
+  ],
+  "data": { "email": "lead@acme.com", "intent": "positive" }
+}
+```
+
+## List automation runs
+
+`GET /automations/:id/runs`
+
+Returns recent run history for an automation (per fired event or manual launch), with per-node outcomes.
+
+Auth: **Scope** `INTEGRATIONS` (or session with **Org permission** `manage_settings` or `use_integrations`).
+
+| Parameter | In | Type | Description |
+|-----------|-----|------|-------------|
+| `id` | path | uuid | Automation id. |
+| `limit` | query | int | Max runs to return. Defaults to 50. |
+
+### Response
+
+```json
+{
+  "runs": [
+    {
+      "id": "77777777-7777-4777-8777-777777777777",
+      "automation_id": "66666666-6666-4666-8666-666666666666",
+      "trigger_event": "email.replied",
+      "status": "success",
+      "node_results": [
+        { "node_id": "a1", "type": "action", "action": "slack.notify", "status": "success" }
+      ],
+      "started_at": "2026-06-10T15:00:00Z",
+      "finished_at": "2026-06-10T15:00:01Z"
+    }
+  ]
+}
+```
+
+## Search meetings
+
+`GET /meetings`
+
+The Meetings page list: booked calls from connected scheduling providers (Calendly, Cal.com) plus manually logged meetings, filtered by timeframe, status, and text, with offset pagination.
+
+Auth: **Scope** `READ_CONTACTS` · **Org permission** `view_contacts`.
+
+| Parameter | In | Type | Description |
+|-----------|-----|------|-------------|
+| `timeframe` | query | string | One of `upcoming`, `past`, or empty for all. Anything else returns `400`. |
+| `status` | query | string | Exact status filter (`booked`, `rescheduled`, `canceled`, `completed`, `no_show`), or empty for any. |
+| `q` | query | string | Matches invitee name/email or event name. |
+| `limit` | query | int | Page size (clamped 1..200 server-side). |
+| `offset` | query | int | Row offset (clamped to >= 0). |
+
+### Response
+
+An offset-paginated `data` + `pagination` envelope. Note this uses `offset` / `total`, not the opaque-cursor shape used by other list endpoints.
+
+```json
+{
+  "data": [
+    {
+      "id": "55555555-5555-4555-8555-555555555555",
+      "source": "calendly",
+      "status": "booked",
+      "invitee_email": "lead@acme.com",
+      "invitee_name": "Lead Person",
+      "event_name": "Intro call",
+      "scheduled_for": "2026-06-15T16:00:00Z",
+      "join_url": "https://meet.example/abc",
+      "contact_id": "aaaaaaaa-0000-4000-8000-000000000001",
+      "contact_name": "Lead Person",
+      "created_at": "2026-06-11T08:00:00Z",
+      "updated_at": "2026-06-11T08:00:00Z"
+    }
+  ],
+  "pagination": {
+    "total": 42,
+    "limit": 50,
+    "offset": 0,
+    "has_more": false,
+    "next_offset": null
+  }
+}
+```
+
+## Meetings summary
+
+`GET /meetings/summary`
+
+Returns the counts the Meetings page header and sidebar show.
+
+Auth: **Scope** `READ_CONTACTS` · **Org permission** `view_contacts`.
+
+### Response
+
+```json
+{
+  "upcoming": 7,
+  "today": 2,
+  "total": 42,
+  "canceled": 3
+}
+```
+
+## Create a meeting
+
+`POST /meetings`
+
+Logs a meeting by hand (source `manual`). It lives alongside auto-captured Calendly/Cal.com bookings on the Meetings page and the contact timeline. The contact is attributed by an explicit (verified) id or by an org-scoped email match.
+
+Auth: **Scope** `WRITE_CONTACTS` · **Org permission** `manage_contacts`.
+
+### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `title` | string | No | Meeting title. Defaults to `Call` when empty. |
+| `invitee_name` | string | Conditional | A name or email is required. |
+| `invitee_email` | string | Conditional | A name or email is required. Lowercased server-side. |
+| `scheduled_for` | string | Yes | RFC 3339 date-time. Required and validated. |
+| `duration_minutes` | int | No | When > 0, sets the end time. |
+| `location` | string | No | Free-text location. |
+| `join_url` | string | No | Video/join link. |
+| `contact_id` | string | No | Explicit contact id to link (verified against the org). |
+
+```json
+{
+  "title": "Intro call",
+  "invitee_name": "Lead Person",
+  "invitee_email": "lead@acme.com",
+  "scheduled_for": "2026-06-15T16:00:00Z",
+  "duration_minutes": 30,
+  "join_url": "https://meet.example/abc"
+}
+```
+
+### Response
+
+`201 Created` with the created booking under a `meeting` key.
+
+```json
+{
+  "meeting": {
+    "id": "55555555-5555-4555-8555-555555555555",
+    "source": "manual",
+    "status": "booked",
+    "invitee_email": "lead@acme.com",
+    "invitee_name": "Lead Person",
+    "event_name": "Intro call",
+    "scheduled_for": "2026-06-15T16:00:00Z",
+    "end_time": "2026-06-15T16:30:00Z",
+    "contact_id": "aaaaaaaa-0000-4000-8000-000000000001",
+    "created_at": "2026-06-11T14:00:00Z",
+    "updated_at": "2026-06-11T14:00:00Z"
+  }
+}
+```
+
+## Delete a meeting
+
+`DELETE /meetings/:id`
+
+Removes a meeting booking (used for manually created ones).
+
+Auth: **Scope** `WRITE_CONTACTS` · **Org permission** `manage_contacts`.
+
+| Parameter | In | Type | Description |
+|-----------|-----|------|-------------|
+| `id` | path | uuid | Meeting booking id. |
+
+### Response
+
+```json
+{ "deleted": true }
+```
+
+## Get the lead-sync Google connection
+
+`GET /lead-sync/google/connection`
+
+Reports whether the org has a connected Google account usable for lead sync (the hidden `google_sheets` OAuth connection).
+
+Auth: **Scope** `WRITE_CONTACTS` · **Org permission** `manage_contacts`.
+
+### Response
+
+```json
+{
+  "connected": true,
+  "connection": {
+    "id": "88888888-8888-4888-8888-888888888888",
+    "external_account_name": "ops@acme.com",
+    "status": "connected"
+  }
+}
+```
+
+When no Google account is connected, `connected` is `false` and `connection` is `null`.
+
+## Get spreadsheet metadata
+
+`POST /lead-sync/google/spreadsheet`
+
+Returns a sheet's title and tabs so the UI can render a tab picker before mapping columns.
+
+Auth: **Scope** `WRITE_CONTACTS` · **Org permission** `manage_contacts`.
+
+### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `connection_id` | string | Yes | The `google_sheets` connection id. |
+| `sheet_id` | string | Yes | The Google spreadsheet id. |
+
+```json
+{
+  "connection_id": "88888888-8888-4888-8888-888888888888",
+  "sheet_id": "1AbCdEfGhIjKlMnOpQrStUvWxYz"
+}
+```
+
+### Response
+
+```json
+{
+  "sheet_id": "1AbCdEfGhIjKlMnOpQrStUvWxYz",
+  "title": "Q2 Leads",
+  "tabs": [
+    { "title": "Inbound", "index": 0 },
+    { "title": "Outbound", "index": 1 }
+  ]
+}
+```
+
+## Preview a lead sync
+
+`POST /lead-sync/google/preview`
+
+Returns an import-preview-shaped payload (columns, sample rows, total rows, header detection, suggested mapping) so the frontend reuses its contact-import column mapper verbatim.
+
+Auth: **Scope** `WRITE_CONTACTS` · **Org permission** `manage_contacts`.
+
+### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `connection_id` | string | Yes | The `google_sheets` connection id. |
+| `sheet_id` | string | Yes | The Google spreadsheet id. |
+| `tab_title` | string | No | The tab to read. Defaults to the first tab. |
+
+```json
+{
+  "connection_id": "88888888-8888-4888-8888-888888888888",
+  "sheet_id": "1AbCdEfGhIjKlMnOpQrStUvWxYz",
+  "tab_title": "Inbound"
+}
+```
+
+### Response
+
+```json
+{
+  "filename": "Q2 Leads / Inbound",
+  "format": "google_sheets",
+  "total_rows": 124,
+  "columns": ["Email", "First name", "Company"],
+  "has_header": true,
+  "sample_rows": [
+    ["jane@acme.com", "Jane", "Acme"]
+  ],
+  "suggested_mapping": [
+    { "index": 0, "target": "email" },
+    { "index": 1, "target": "first_name" },
+    { "index": 2, "target": "company" }
+  ]
+}
+```
+
+## List lead-sync sources
+
+`GET /lead-sync/sources`
+
+Lists this org's saved sync sources, optionally filtered to a campaign.
+
+Auth: **Scope** `WRITE_CONTACTS` · **Org permission** `manage_contacts`.
+
+| Parameter | In | Type | Description |
+|-----------|-----|------|-------------|
+| `campaign_id` | query | uuid | Optional. Restricts to sources targeting that campaign. Invalid ids return `400`. |
+
+### Response
+
+A `data` array (no pagination envelope on this list).
+
+```json
+{
+  "data": [
+    {
+      "id": "99999999-9999-4999-8999-999999999999",
+      "provider": "google_sheets",
+      "connection_id": "88888888-8888-4888-8888-888888888888",
+      "sheet_id": "1AbCdEfGhIjKlMnOpQrStUvWxYz",
+      "sheet_title": "Q2 Leads",
+      "tab_title": "Inbound",
+      "has_header": true,
+      "column_mapping": [
+        { "index": 0, "target": "email" },
+        { "index": 1, "target": "first_name" }
+      ],
+      "dedup": "update",
+      "category_ids": [],
+      "subscribed_default": true,
+      "status": "idle",
+      "last_synced_at": "2026-06-10T12:00:00Z",
+      "created_at": "2026-06-01T09:00:00Z",
+      "updated_at": "2026-06-10T12:00:00Z"
+    }
+  ]
+}
+```
+
+## Create a lead-sync source
+
+`POST /lead-sync/sources`
+
+Saves a new on-demand sync source binding a Google Sheet tab to Warmbly's contact importer.
+
+Auth: **Scope** `WRITE_CONTACTS` · **Org permission** `manage_contacts`.
+
+### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `connection_id` | uuid | Yes | The org's `google_sheets` OAuth connection. |
+| `sheet_id` | string | Yes | The Google spreadsheet id. |
+| `sheet_title` | string | No | Spreadsheet title (for display). |
+| `tab_title` | string | No | Tab to read. |
+| `has_header` | boolean | No | Whether the first row is a header. |
+| `column_mapping` | array | Yes | Column-to-target mappings (same shape as contact import). |
+| `dedup` | string | No | Collision strategy: `skip`, `update`, or `create_duplicate`. |
+| `target_campaign_id` | uuid | No | Enrol new/updated leads into this campaign on each sync. |
+| `category_ids` | string[] | No | Categories to assign to synced leads. |
+| `subscribed_default` | boolean | No | Default subscription state for new contacts. |
+| `label` | string | No | Friendly name. |
+
+```json
+{
+  "connection_id": "88888888-8888-4888-8888-888888888888",
+  "sheet_id": "1AbCdEfGhIjKlMnOpQrStUvWxYz",
+  "sheet_title": "Q2 Leads",
+  "tab_title": "Inbound",
+  "has_header": true,
+  "column_mapping": [
+    { "index": 0, "target": "email" },
+    { "index": 1, "target": "first_name" }
+  ],
+  "dedup": "update",
+  "target_campaign_id": null,
+  "category_ids": [],
+  "subscribed_default": true,
+  "label": "Q2 inbound leads"
+}
+```
+
+### Response
+
+`201 Created` with the created `LeadSyncSource` (bare object, same shape as a list item).
+
+```json
+{
+  "id": "99999999-9999-4999-8999-999999999999",
+  "provider": "google_sheets",
+  "connection_id": "88888888-8888-4888-8888-888888888888",
+  "sheet_id": "1AbCdEfGhIjKlMnOpQrStUvWxYz",
+  "sheet_title": "Q2 Leads",
+  "tab_title": "Inbound",
+  "has_header": true,
+  "column_mapping": [
+    { "index": 0, "target": "email" },
+    { "index": 1, "target": "first_name" }
+  ],
+  "dedup": "update",
+  "category_ids": [],
+  "subscribed_default": true,
+  "status": "idle",
+  "created_at": "2026-06-11T15:00:00Z",
+  "updated_at": "2026-06-11T15:00:00Z"
+}
+```
+
+## Get a lead-sync source
+
+`GET /lead-sync/sources/:id`
+
+Returns one saved source.
+
+Auth: **Scope** `WRITE_CONTACTS` · **Org permission** `manage_contacts`.
+
+| Parameter | In | Type | Description |
+|-----------|-----|------|-------------|
+| `id` | path | uuid | Source id. |
+
+### Response
+
+A bare `LeadSyncSource` object (same shape as a list item).
+
+## Update a lead-sync source
+
+`PATCH /lead-sync/sources/:id`
+
+Edits a saved source. All fields are optional; omitting a field leaves the stored value untouched.
+
+Auth: **Scope** `WRITE_CONTACTS` · **Org permission** `manage_contacts`.
+
+| Parameter | In | Type | Description |
+|-----------|-----|------|-------------|
+| `id` | path | uuid | Source id. |
+
+### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `sheet_id` | string | No | New spreadsheet id. |
+| `sheet_title` | string | No | New title. |
+| `tab_title` | string | No | New tab. |
+| `has_header` | boolean | No | Header toggle. |
+| `column_mapping` | array | No | Replacement mappings. |
+| `dedup` | string | No | Collision strategy. |
+| `target_campaign_id` | uuid | No | New target campaign. |
+| `clear_campaign` | boolean | No | When `true`, unsets the target campaign. |
+| `category_ids` | string[] | No | Replacement category set. |
+| `subscribed_default` | boolean | No | Default subscription state. |
+| `label` | string | No | New label. |
+
+```json
+{
+  "label": "Q2 inbound (paused)",
+  "dedup": "skip",
+  "clear_campaign": true
+}
+```
+
+### Response
+
+The updated `LeadSyncSource` (bare object).
+
+## Delete a lead-sync source
+
+`DELETE /lead-sync/sources/:id`
+
+Removes a saved source.
+
+Auth: **Scope** `WRITE_CONTACTS` · **Org permission** `manage_contacts`.
+
+| Parameter | In | Type | Description |
+|-----------|-----|------|-------------|
+| `id` | path | uuid | Source id. |
+
+### Response
+
+`204 No Content`.
+
+## Run a lead-sync source now
+
+`POST /lead-sync/sources/:id/sync`
+
+Runs the source on demand: reads the sheet and upserts contacts through the contact importer. New rows create contacts; rows matching an existing contact by email are updated. Naturally idempotent (email upsert), so retries are safe without an `Idempotency-Key`.
+
+Auth: **Scope** `WRITE_CONTACTS` · **Org permission** `manage_contacts`.
+
+| Parameter | In | Type | Description |
+|-----------|-----|------|-------------|
+| `id` | path | uuid | Source id. |
+
+### Response
+
+The source id plus the underlying contact-import counts.
+
+```json
+{
+  "source_id": "99999999-9999-4999-8999-999999999999",
+  "result": {
+    "total": 124,
+    "imported": 18,
+    "updated": 100,
+    "skipped": 6,
+    "failed": 0,
+    "started_at": "2026-06-11T16:00:00Z",
+    "ended_at": "2026-06-11T16:00:04Z"
+  }
+}
+```

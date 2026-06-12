@@ -1,0 +1,512 @@
+---
+title: Analytics and audit
+description: Read dashboard, deliverability, warmup, campaign, account, and usage analytics, plus your organization's audit trail.
+icon: BarChart3
+---
+
+The analytics endpoints expose the same rollups that power the dashboard: an org-wide overview, deliverability posture, warmup progress, per-campaign performance (with daily and hourly breakdowns and side-by-side comparison), mailbox health, and account usage. The audit endpoint returns your organization's activity trail ("who did what, when, from where"). All of these are read-only.
+
+Every analytics route shares one auth gate: **Scope** `READ_ANALYTICS` · **Org permission** `view_analytics`. The audit route uses the same org permission with a dedicated scope. See [permissions](/api/permissions/) for the scope reference and [authentication](/api/authentication/) for how to present credentials.
+
+Dates are parsed as `YYYY-MM-DD` unless noted. Errors follow the standard `{error, message, code, request_id}` envelope documented in [error codes](/api/error-codes/).
+
+## Get dashboard analytics
+
+`GET /analytics/dashboard`
+
+Returns the main dashboard overview for the active organization: aggregate stats, recent activity, top campaigns, account health, and a daily trend series. Auth: **Scope** `READ_ANALYTICS` · **Org permission** `view_analytics`.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `period` | query | string | One of `7d`, `30d`, `90d`. Defaults to `7d`; any other value falls back to `7d`. |
+
+### Response
+
+```json
+{
+  "period": "7d",
+  "overall_stats": {
+    "total_emails_sent": 1240,
+    "total_opens": 612,
+    "machine_opens": 88,
+    "total_clicks": 143,
+    "total_replies": 57,
+    "total_bounces": 9,
+    "open_rate": 49.35,
+    "click_rate": 11.53,
+    "reply_rate": 4.6,
+    "bounce_rate": 0.73,
+    "active_campaigns": 4,
+    "active_accounts": 12
+  },
+  "recent_activity": [
+    {
+      "type": "replied",
+      "campaign_id": "b1f2c3d4-0000-0000-0000-000000000001",
+      "campaign_name": "Q2 outbound",
+      "contact_email": "lead@example.com",
+      "contact_id": "c0ffee00-0000-0000-0000-000000000002",
+      "timestamp": "2026-06-11T14:02:11Z"
+    }
+  ],
+  "top_campaigns": [
+    {
+      "campaign_id": "b1f2c3d4-0000-0000-0000-000000000001",
+      "name": "Q2 outbound",
+      "status": "active",
+      "emails_sent": 820,
+      "open_rate": 51.2,
+      "click_rate": 12.1,
+      "reply_rate": 5.0
+    }
+  ],
+  "account_health": {
+    "total_accounts": 12,
+    "healthy_accounts": 10,
+    "warning_accounts": 1,
+    "error_accounts": 1
+  },
+  "daily_trend": [
+    { "date": "2026-06-05", "sent": 160, "opens": 79, "clicks": 18, "replies": 7 }
+  ]
+}
+```
+
+## Get deliverability dashboard
+
+`GET /analytics/deliverability`
+
+Returns the organization's deliverability posture for a time window: bounce, complaint, open, click, and reply counts and rates, suppression and dead-letter pressure, reply-intent breakdown, seed inbox-placement, an overall health band (from the documented thresholds), a daily timeseries, and per-mailbox and per-campaign breakdowns. Requires an organization context. Auth: **Scope** `READ_ANALYTICS` · **Org permission** `view_analytics`.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `from` | query | string | Window start as an RFC 3339 timestamp. Defaults to 7 days ago (UTC). |
+| `to` | query | string | Window end as an RFC 3339 timestamp. Defaults to now (UTC). |
+
+### Response
+
+```json
+{
+  "from": "2026-06-05T00:00:00Z",
+  "to": "2026-06-12T00:00:00Z",
+  "events_total": 1380,
+  "bounce_count": 9,
+  "complaint_count": 1,
+  "unsubscribe_count": 4,
+  "reply_count": 57,
+  "open_count": 612,
+  "click_count": 143,
+  "suppressed_recipients": 21,
+  "dlq_pending": 0,
+  "intent_positive": 18,
+  "intent_negative": 6,
+  "intent_out_of_office": 11,
+  "intent_question": 9,
+  "intent_neutral": 13,
+  "emails_sent": 1240,
+  "bounce_rate": 0.73,
+  "complaint_rate": 0.08,
+  "open_rate": 49.35,
+  "click_rate": 11.53,
+  "reply_rate": 4.6,
+  "spam_placement_rate": 6.5,
+  "inbox_placement_rate": 93.5,
+  "placement_samples": 40,
+  "band": "healthy",
+  "timeseries": [
+    {
+      "date": "2026-06-05",
+      "sent": 160,
+      "bounces": 1,
+      "complaints": 0,
+      "opens": 79,
+      "clicks": 18,
+      "replies": 7,
+      "unsubscribes": 1
+    }
+  ],
+  "by_mailbox": [
+    {
+      "email_account_id": "a0a1a2a3-0000-0000-0000-000000000003",
+      "email": "sales@yourdomain.com",
+      "sent": 420,
+      "bounces": 2,
+      "complaints": 0,
+      "bounce_rate": 0.48,
+      "complaint_rate": 0.0,
+      "band": "healthy"
+    }
+  ],
+  "by_campaign": [
+    {
+      "campaign_id": "b1f2c3d4-0000-0000-0000-000000000001",
+      "name": "Q2 outbound",
+      "sent": 820,
+      "bounces": 5,
+      "complaints": 1,
+      "bounce_rate": 0.61,
+      "complaint_rate": 0.12,
+      "band": "watch"
+    }
+  ]
+}
+```
+
+`spam_placement_rate` and `inbox_placement_rate` are omitted when there are no seed samples in the window.
+
+## Get warmup analytics
+
+`GET /analytics/warmup`
+
+Returns warmup send and reply statistics over a date range, with a summary and per-day series. Optionally scoped to a single mailbox. Auth: **Scope** `READ_ANALYTICS` · **Org permission** `view_analytics`.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `from` | query | string | Required. Range start (`YYYY-MM-DD`). |
+| `to` | query | string | Required. Range end (`YYYY-MM-DD`). |
+| `email_id` | query | string (uuid) | Optional. Limit to one email account. Invalid UUIDs are ignored. |
+
+### Response
+
+```json
+{
+  "email_account_id": "a0a1a2a3-0000-0000-0000-000000000003",
+  "email": "",
+  "date_range": {
+    "from": "2026-06-01T00:00:00Z",
+    "to": "2026-06-12T00:00:00Z"
+  },
+  "summary": {
+    "total_sent": 210,
+    "total_replied": 84,
+    "average_daily": 17.5,
+    "reply_rate": 40.0,
+    "target_progress": 0,
+    "days_active": 12
+  },
+  "daily_stats": [
+    { "date": "2026-06-01", "emails_sent": 12, "emails_replied": 5, "target_volume": 12 }
+  ]
+}
+```
+
+`email_account_id` is the zero UUID when no `email_id` filter is supplied.
+
+## Get campaign analytics
+
+`GET /analytics/campaigns/:id`
+
+Returns a single campaign's performance summary plus per-sequence-step stats. The campaign must belong to the caller. Auth: **Scope** `READ_ANALYTICS` · **Org permission** `view_analytics`.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | string (uuid) | Campaign id. |
+
+### Response
+
+```json
+{
+  "campaign_id": "b1f2c3d4-0000-0000-0000-000000000001",
+  "name": "Q2 outbound",
+  "status": "active",
+  "date_range": { "from": "0001-01-01T00:00:00Z", "to": "0001-01-01T00:00:00Z" },
+  "summary": {
+    "total_contacts": 500,
+    "emails_sent": 820,
+    "emails_pending": 60,
+    "unique_opens": 410,
+    "machine_opens": 52,
+    "unique_clicks": 99,
+    "replies": 41,
+    "bounces": 5,
+    "unsubscribes": 3,
+    "open_rate": 50.0,
+    "click_rate": 12.07,
+    "reply_rate": 5.0,
+    "bounce_rate": 0.61
+  },
+  "sequences": [
+    {
+      "sequence_id": "5e9e0001-0000-0000-0000-000000000004",
+      "name": "Intro",
+      "position": 1,
+      "emails_sent": 500,
+      "opens": 260,
+      "clicks": 61,
+      "replies": 28,
+      "bounces": 3
+    }
+  ]
+}
+```
+
+`machine_opens` is the subset of `unique_opens` from automated fetchers (Apple MPP prefetch, UA-less clients); human opens are `unique_opens` minus `machine_opens`.
+
+## Get campaign daily stats
+
+`GET /analytics/campaigns/:id/daily`
+
+Returns per-day send, open, click, and reply counts for one campaign over a date range. The campaign must belong to the caller. Auth: **Scope** `READ_ANALYTICS` · **Org permission** `view_analytics`.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | string (uuid) | Campaign id. |
+| `from` | query | string | Required. Range start (`YYYY-MM-DD`). |
+| `to` | query | string | Required. Range end (`YYYY-MM-DD`). |
+
+### Response
+
+The series is returned under a `data` envelope.
+
+```json
+{
+  "data": [
+    { "date": "2026-06-05", "sent": 120, "opens": 61, "clicks": 14, "replies": 6 },
+    { "date": "2026-06-06", "sent": 110, "opens": 58, "clicks": 12, "replies": 5 }
+  ]
+}
+```
+
+## Get campaign hourly stats
+
+`GET /analytics/campaigns/:id/hourly`
+
+Returns per-hour stats for one campaign on a single day. The campaign must belong to the caller. Auth: **Scope** `READ_ANALYTICS` · **Org permission** `view_analytics`.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | string (uuid) | Campaign id. |
+| `date` | query | string | Day to report (`YYYY-MM-DD`). Defaults to today. |
+
+### Response
+
+The series is returned under a `data` envelope, with the resolved `date` echoed back. Each item's `hour` is `0`-`23`.
+
+```json
+{
+  "data": [
+    { "hour": 9, "sent": 22, "opens": 11, "clicks": 3, "replies": 1 },
+    { "hour": 10, "sent": 30, "opens": 16, "clicks": 4, "replies": 2 }
+  ],
+  "date": "2026-06-11"
+}
+```
+
+## Compare campaigns
+
+`GET /analytics/campaigns/compare`
+
+Returns side-by-side performance for up to 10 campaigns over a date range. Every requested campaign must belong to the caller. Auth: **Scope** `READ_ANALYTICS` · **Org permission** `view_analytics`.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `ids` | query | string | Required. Comma-separated campaign UUIDs. Invalid entries are dropped; the list is capped at 10. At least one valid id is required. |
+| `from` | query | string | Required. Range start (`YYYY-MM-DD`). |
+| `to` | query | string | Required. Range end (`YYYY-MM-DD`). |
+
+### Response
+
+```json
+{
+  "campaigns": [
+    {
+      "campaign_id": "b1f2c3d4-0000-0000-0000-000000000001",
+      "name": "Q2 outbound",
+      "status": "active",
+      "emails_sent": 820,
+      "open_rate": 50.0,
+      "click_rate": 12.07,
+      "reply_rate": 5.0,
+      "bounce_rate": 0.61
+    },
+    {
+      "campaign_id": "b1f2c3d4-0000-0000-0000-000000000005",
+      "name": "Reactivation",
+      "status": "paused",
+      "emails_sent": 410,
+      "open_rate": 44.1,
+      "click_rate": 9.8,
+      "reply_rate": 3.4,
+      "bounce_rate": 1.2
+    }
+  ],
+  "period": {
+    "from": "2026-06-01T00:00:00Z",
+    "to": "2026-06-12T00:00:00Z"
+  }
+}
+```
+
+## List account statuses
+
+`GET /analytics/accounts`
+
+Returns the health and usage status of every email account the caller owns. Accounts whose status fails to build are skipped. Auth: **Scope** `READ_ANALYTICS` · **Org permission** `view_analytics`.
+
+### Response
+
+The list is returned under a `data` envelope (no cursor; all of the caller's accounts are included). Each item has the same shape as [get account status](#get-account-status).
+
+```json
+{
+  "data": [
+    {
+      "id": "a0a1a2a3-0000-0000-0000-000000000003",
+      "email": "sales@yourdomain.com",
+      "provider": "google",
+      "status": "active",
+      "last_synced_at": "2026-06-12T08:00:00Z",
+      "health": { "status": "healthy", "score": 100, "issues": [] },
+      "errors": [],
+      "daily_usage": {
+        "date": "2026-06-12",
+        "campaign_sent": 18,
+        "campaign_limit": 50,
+        "warmup_sent": 22,
+        "warmup_limit": 40
+      },
+      "in_campaign": true
+    }
+  ]
+}
+```
+
+## Get account status
+
+`GET /analytics/accounts/:id`
+
+Returns the detailed status for one email account: a combined health score (folding in warmup-pool reputation), active errors, today's usage, warmup status, and warmup-pool health. The account must belong to the caller. Auth: **Scope** `READ_ANALYTICS` · **Org permission** `view_analytics`.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | string (uuid) | Email account id. |
+
+### Response
+
+```json
+{
+  "id": "a0a1a2a3-0000-0000-0000-000000000003",
+  "email": "sales@yourdomain.com",
+  "provider": "google",
+  "status": "active",
+  "last_synced_at": "2026-06-12T08:00:00Z",
+  "health": {
+    "status": "warning",
+    "score": 90,
+    "issues": ["Warmup reputation needs watching"]
+  },
+  "errors": [
+    {
+      "id": "e1e1e1e1-0000-0000-0000-000000000006",
+      "error_code": "IMAP_AUTH",
+      "severity": "WARNING",
+      "title": "Mailbox reconnect recommended",
+      "message": "Token nearing expiry",
+      "created_at": "2026-06-11T22:14:00Z"
+    }
+  ],
+  "daily_usage": {
+    "date": "2026-06-12",
+    "campaign_sent": 18,
+    "campaign_limit": 50,
+    "warmup_sent": 22,
+    "warmup_limit": 40
+  },
+  "warmup_status": {
+    "enabled": true,
+    "paused": false,
+    "started_at": "2026-05-20T00:00:00Z",
+    "current_volume": 22,
+    "target_volume": 33,
+    "max_volume": 40,
+    "reply_rate": 35,
+    "days_active": 23
+  },
+  "warmup_health": {
+    "state": "watch",
+    "score": 78,
+    "spam_score": 6,
+    "evaluated_at": "2026-06-12T06:00:00Z"
+  },
+  "in_campaign": true
+}
+```
+
+`warmup_status` is present only when warmup has ever been enabled; `warmup_health` is present only when the mailbox is in a warmup pool. `in_campaign` reports whether the mailbox currently backs a live campaign.
+
+## Get usage overview
+
+`GET /analytics/usage`
+
+Returns account, campaign, contact, and API usage counters for the caller. Auth: **Scope** `READ_ANALYTICS` · **Org permission** `view_analytics`.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `period` | query | string | One of `day`, `week`, `month`. Defaults to `day`; any other value falls back to `day`. |
+
+### Response
+
+```json
+{
+  "user_id": "11111111-0000-0000-0000-000000000007",
+  "period": "day",
+  "email_accounts": { "total": 12, "active": 11, "in_warmup": 8, "with_errors": 1 },
+  "campaigns": { "total": 9, "active": 4, "paused": 2, "draft": 3, "emails_sent": 12400 },
+  "contacts": { "total": 8200, "subscribed": 8050, "added_today": 120 },
+  "api": { "total_calls": 0, "daily_limit": 50000, "top_endpoints": [] }
+}
+```
+
+## List audit logs
+
+`GET /audit-logs`
+
+Returns the organization-wide activity trail for the caller's current organization ("who did what, when, from where"). The organization is always taken from the session and never from a client parameter, so one organization can never read another's trail. Auth: **Scope** `READ_AUDIT_LOGS` · **Org permission** `view_analytics`.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `limit` | query | int | Page size. Defaults to `50`; must be between `10` and `200` or a `400` is returned. |
+| `cursor` | query | string (uuid) | Opaque cursor from `pagination.next_cursor`. Invalid cursors return `400`. |
+| `actor_id` | query | string (uuid) | Filter to a single acting member. |
+| `entity_id` | query | string (uuid) | Filter to a single entity. |
+| `entity_type` | query | string | Filter by entity type (for example `campaign`, `contact`, `email_account`, `api_key`, `webhook`). |
+| `action` | query | string | Filter by action (for example `create`, `update`, `delete`, `send`, `revoke`). |
+| `date` | query | string | Single-day filter (`YYYY-MM-DD`), expanded to that whole UTC day. |
+| `start_date` | query | string | Range start. RFC 3339 or `YYYY-MM-DD`. Overrides `date`. |
+| `end_date` | query | string | Range end. RFC 3339 or `YYYY-MM-DD`. Overrides `date`. |
+
+### Response
+
+A `data` plus `pagination` envelope with an opaque cursor. `actor` is null when the acting user has since been deleted; `entity_id`, `changes`, and `metadata` are omitted when empty.
+
+```json
+{
+  "data": [
+    {
+      "id": "9c9c9c9c-0000-0000-0000-000000000008",
+      "org_id": "0a0a0a0a-0000-0000-0000-000000000009",
+      "user_id": "11111111-0000-0000-0000-000000000007",
+      "actor": {
+        "id": "11111111-0000-0000-0000-000000000007",
+        "first_name": "Ada",
+        "last_name": "Lovelace",
+        "email": "ada@yourdomain.com"
+      },
+      "action_date": "2026-06-12T08:14:00Z",
+      "action": "update",
+      "entity_type": "campaign",
+      "entity_id": "b1f2c3d4-0000-0000-0000-000000000001",
+      "ip_address": "203.0.113.10",
+      "user_agent": "Mozilla/5.0",
+      "changes": { "status": "paused" },
+      "timestamp": "2026-06-12T08:14:00Z"
+    }
+  ],
+  "pagination": {
+    "next_cursor": "9c9c9c9c-0000-0000-0000-000000000008",
+    "has_more": true
+  }
+}
+```
+
+Secret values (API key material, webhook secrets, passwords) are never recorded in `changes` or `metadata`; the trail records only that a field changed.

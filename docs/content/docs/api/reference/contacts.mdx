@@ -1,0 +1,803 @@
+---
+title: Contacts
+description: Search, manage, import, export, and enrich contacts along with their notes, activities, timeline, and deals.
+icon: Users
+---
+
+Contacts are the people you send to. This group covers the full lifecycle: searching and filtering, creating and editing (singly and in bulk), CSV/XLSX/JSON import and export, the hydrated contact 360 view, the per-contact email and activity feeds, and CRM notes, activities, and deals attached to a contact. List endpoints return a `data` array plus a `pagination` envelope; errors follow the standard `{error, message, code, request_id}` shape (see [error codes](/api/error-codes/)).
+
+## Search contacts
+
+`POST /contacts/search`
+
+Faceted, server-side contact search scoped to your organization. The request body holds the filters; pagination is via query params.
+
+Auth: **Scope** `READ_CONTACTS` · **Org permission** `view_contacts`
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `cursor` | query | string | Opaque pagination cursor from the previous page's `pagination.next_cursor`. |
+| `limit` | query | string | Page size (numeric string). |
+| `category` | query | string | Convenience filter for a single category ID. |
+
+### Request body
+
+Every field is optional; an empty body matches all contacts in the organization.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `query` | string | No | Text search across core fields (name, email, company). |
+| `custom_field_filters` | array | No | Per custom-field filters: `{ "name", "value", "type" }` where `type` is one of `equal`, `starts_with`, `ends_with`, `contains`. |
+| `campaign_ids` | string[] | No | Contact must be in ALL of these campaigns. |
+| `category_ids` | string[] | No | Contact must have ALL of these categories. |
+| `min_campaigns` | integer | No | Minimum number of associated campaigns. |
+| `max_campaigns` | integer | No | Maximum number of associated campaigns. |
+| `subscribed` | boolean | No | Filter by subscription status. |
+| `created_after` | string (RFC 3339) | No | Created on or after this time. |
+| `created_before` | string (RFC 3339) | No | Created on or before this time. |
+| `updated_after` | string (RFC 3339) | No | Updated on or after this time. |
+| `updated_before` | string (RFC 3339) | No | Updated on or before this time. |
+| `sort_by` | string | No | Sort column, e.g. `first_name`, `campaign_count`. |
+| `reverse` | boolean | No | Descending when true. |
+| `offset` | integer | No | Offset pagination alternative. |
+
+```json
+{
+  "query": "acme",
+  "subscribed": true,
+  "category_ids": ["6f1c0b1e-0c2a-4b3a-9c1e-2d3f4a5b6c7d"],
+  "min_campaigns": 1,
+  "sort_by": "first_name",
+  "reverse": false
+}
+```
+
+### Response
+
+Returns a `data` array of contacts plus a `pagination` envelope.
+
+```json
+{
+  "data": [
+    {
+      "id": "1b2c3d4e-5f60-4a1b-8c2d-3e4f5a6b7c8d",
+      "first_name": "Dana",
+      "last_name": "Reyes",
+      "email": "dana@acme.com",
+      "company": "Acme",
+      "phone": "+15551234567",
+      "custom_fields": { "title": "VP Sales" },
+      "subscribed": true,
+      "campaigns": [{ "id": "c1...", "name": "Q3 Outbound" }],
+      "categories": [{ "id": "6f1c...", "title": "VIP", "color": "#0ea5e9" }],
+      "verification_status": "valid",
+      "verification_reason": "",
+      "is_catch_all": false,
+      "esp_provider": "gmail",
+      "updated_at": "2026-06-10T12:00:00Z",
+      "created_at": "2026-05-01T09:30:00Z"
+    }
+  ],
+  "pagination": {
+    "total": 1280,
+    "next_cursor": "9f8e7d6c-5b4a-3210-fedc-ba9876543210",
+    "has_more": true
+  }
+}
+```
+
+When the search filters by exactly one campaign, each contact additionally carries a `campaign_lead` object with its processing state inside that campaign (`status`, `sent`, `opened`, `clicked`, `replied`, `bounced`, `current_step`, `last_activity_at`).
+
+## Create contacts
+
+`POST /contacts`
+
+Creates one or more contacts. The body is a JSON array, so a single create is an array of length one.
+
+Auth: **Scope** `WRITE_CONTACTS` · **Org permission** `manage_contacts`
+
+### Request body
+
+A JSON array of contact objects (at least one, up to the per-request maximum; an empty array is a `400`).
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `email` | string | Yes | Contact email address. |
+| `first_name` | string | No | First name. |
+| `last_name` | string | No | Last name. |
+| `company` | string | No | Company name. |
+| `phone` | string | No | Phone number. |
+| `campaigns` | string[] | No | Campaign IDs to add the contact to. |
+| `categories` | string[] | No | Category IDs to assign. |
+| `custom_fields` | object | No | Arbitrary string key/value custom fields. |
+
+```json
+[
+  {
+    "email": "lee@globex.com",
+    "first_name": "Lee",
+    "last_name": "Ng",
+    "company": "Globex",
+    "categories": ["6f1c0b1e-0c2a-4b3a-9c1e-2d3f4a5b6c7d"],
+    "custom_fields": { "title": "Head of Ops" }
+  }
+]
+```
+
+### Response
+
+Returns the created contacts as a bare JSON array (same contact shape as search).
+
+```json
+[
+  {
+    "id": "2c3d4e5f-6071-4b2c-9d3e-4f5a6b7c8d9e",
+    "first_name": "Lee",
+    "last_name": "Ng",
+    "email": "lee@globex.com",
+    "company": "Globex",
+    "phone": "",
+    "custom_fields": { "title": "Head of Ops" },
+    "subscribed": true,
+    "campaigns": [],
+    "categories": [{ "id": "6f1c...", "title": "VIP", "color": "#0ea5e9" }],
+    "verification_status": "unknown",
+    "esp_provider": "",
+    "updated_at": "2026-06-11T10:00:00Z",
+    "created_at": "2026-06-11T10:00:00Z"
+  }
+]
+```
+
+## Bulk update contacts
+
+`PATCH /contacts`
+
+Applies one set of edits across a list of contacts: add/remove campaigns and categories, set custom-field operations, and toggle subscription. Up to 1000 contacts per batch.
+
+Auth: **Scope** `BULK_CONTACTS` · **Org permission** `manage_contacts`
+
+### Request body
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `contacts` | string[] | Yes | Contact IDs to edit (1 to 1000). |
+| `add_campaigns` | string[] | No | Campaign IDs to add. |
+| `remove_campaigns` | string[] | No | Campaign IDs to remove. |
+| `add_categories` | string[] | No | Category IDs to add. |
+| `remove_categories` | string[] | No | Category IDs to remove. |
+| `fields` | array | No | Custom-field operations: `{ "type", "key", "value" }` where `type` is `ADD`, `EDIT`, `DELETE`, or `RENAME`. |
+| `subscribe` | boolean | No | Set subscription status for all listed contacts. |
+
+```json
+{
+  "contacts": ["1b2c3d4e-5f60-4a1b-8c2d-3e4f5a6b7c8d", "2c3d4e5f-6071-4b2c-9d3e-4f5a6b7c8d9e"],
+  "add_categories": ["6f1c0b1e-0c2a-4b3a-9c1e-2d3f4a5b6c7d"],
+  "subscribe": false,
+  "fields": [{ "type": "EDIT", "key": "title", "value": "Decision Maker" }]
+}
+```
+
+### Response
+
+Returns the updated contacts as a bare JSON array (contact shape as above).
+
+```json
+[
+  {
+    "id": "1b2c3d4e-5f60-4a1b-8c2d-3e4f5a6b7c8d",
+    "email": "dana@acme.com",
+    "subscribed": false,
+    "categories": [{ "id": "6f1c...", "title": "VIP", "color": "#0ea5e9" }],
+    "updated_at": "2026-06-11T10:05:00Z",
+    "created_at": "2026-05-01T09:30:00Z"
+  }
+]
+```
+
+## Bulk delete contacts
+
+`DELETE /contacts`
+
+Deletes a list of contacts. Up to 1000 IDs per batch.
+
+Auth: **Scope** `BULK_CONTACTS` · **Org permission** `manage_contacts`
+
+### Request body
+
+A JSON array of contact ID strings (1 to 1000; an empty array is a `400`).
+
+```json
+["1b2c3d4e-5f60-4a1b-8c2d-3e4f5a6b7c8d", "2c3d4e5f-6071-4b2c-9d3e-4f5a6b7c8d9e"]
+```
+
+### Response
+
+`204 No Content`.
+
+## Export contacts
+
+`POST /contacts/export`
+
+Exports contacts to CSV, XLSX, or JSON. The response is the file itself, not JSON.
+
+Auth: **Scope** `READ_CONTACTS` · **Org permission** `view_contacts`
+
+### Request body
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `format` | string | Yes | `csv`, `xlsx`, or `json`. |
+| `scope` | string | Yes | `all`, `filtered`, or `selected`. |
+| `contact_ids` | string[] | No | Contact IDs when `scope` is `selected`. |
+| `filters` | object | No | A search-contacts filter body when `scope` is `filtered`. |
+| `fields` | string[] | No | Column identifiers in display order (built-ins like `email`, `first_name`, or `custom:<key>`). Empty uses the default columns. |
+| `filename` | string | No | Filename without extension. Sanitized server-side; empty falls back to `contacts-<YYYY-MM-DD>`. |
+
+```json
+{
+  "format": "csv",
+  "scope": "filtered",
+  "filters": { "subscribed": true },
+  "fields": ["email", "first_name", "last_name", "company", "custom:title"],
+  "filename": "subscribed-contacts"
+}
+```
+
+### Response
+
+`200 OK` with the file as an attachment. The relevant headers are:
+
+| Header | Description |
+| --- | --- |
+| `Content-Type` | The export's MIME type (CSV, XLSX, or JSON). |
+| `Content-Disposition` | `attachment; filename="..."`. |
+| `X-Total-Rows` | Number of rows written. |
+
+Exports are capped at 50,000 rows. Larger sets should be split via filters or selection.
+
+## Preview an import
+
+`POST /contacts/import/preview`
+
+Uploads a CSV or XLSX file and returns detected columns plus a small sample so the client can build a column mapping before committing.
+
+Auth: **Scope** `WRITE_CONTACTS` · **Org permission** `manage_contacts`
+
+Send the file as `multipart/form-data` with a `file` form field. Uploads are capped at 50 MB.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `file` | form-data | file | The CSV/XLSX upload. |
+
+### Response
+
+```json
+{
+  "filename": "leads.csv",
+  "format": "csv",
+  "total_rows": 1243,
+  "columns": ["Email", "First", "Last", "Company"],
+  "has_header": true,
+  "sample_rows": [
+    ["dana@acme.com", "Dana", "Reyes", "Acme"]
+  ],
+  "suggested_mapping": [
+    { "index": 0, "target": "email" },
+    { "index": 1, "target": "first_name" },
+    { "index": 2, "target": "last_name" },
+    { "index": 3, "target": "company" }
+  ]
+}
+```
+
+`sample_rows` is capped at 20 rows. `suggested_mapping` is a default the client may override.
+
+## Commit an import
+
+`POST /contacts/import/commit`
+
+Re-uploads the file with a mapping and dedup options, applies it, and returns per-row results.
+
+Auth: **Scope** `BULK_CONTACTS` · **Org permission** `manage_contacts`
+
+Send `multipart/form-data` with a `file` field and an `options` field containing the JSON below as a string.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `file` | form-data | file | The CSV/XLSX upload (max 50 MB). |
+| `options` | form-data | string | JSON-encoded commit options (below). |
+
+### `options` fields
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `mapping` | array | Yes | Column mappings: `{ "index", "target", "custom_key" }`. `target` is `ignore`, `email`, `first_name`, `last_name`, `company`, `phone`, `subscribed`, `categories`, or `custom:<key>`. |
+| `dedup` | string | Yes | `skip`, `update`, or `create_duplicate` for rows whose email matches an existing contact. |
+| `has_header` | boolean | Yes | Whether the first row is a header. |
+| `category_ids` | string[] | No | Categories to assign to imported contacts. |
+| `campaign_ids` | string[] | No | Campaigns to add imported contacts to. |
+| `subscribed_default` | boolean | No | Subscription state for new contacts when no subscribed column is mapped. Defaults to true. |
+
+```json
+{
+  "mapping": [
+    { "index": 0, "target": "email" },
+    { "index": 1, "target": "first_name" },
+    { "index": 3, "target": "custom:company_size", "custom_key": "company_size" }
+  ],
+  "dedup": "update",
+  "has_header": true,
+  "category_ids": ["6f1c0b1e-0c2a-4b3a-9c1e-2d3f4a5b6c7d"],
+  "subscribed_default": true
+}
+```
+
+### Response
+
+```json
+{
+  "total": 1243,
+  "imported": 1180,
+  "updated": 41,
+  "skipped": 18,
+  "failed": 4,
+  "started_at": "2026-06-11T10:10:00Z",
+  "ended_at": "2026-06-11T10:10:07Z",
+  "errors": [
+    { "line": 57, "email": "not-an-email", "reason": "invalid email" }
+  ]
+}
+```
+
+Imports are capped at 50,000 rows.
+
+## Look up a contact by email
+
+`GET /contacts/lookup`
+
+Resolves a sender address to a contact in your organization. Returns `200` with `{"contact": null}` when nothing matches, so unknown senders render a clean empty state rather than a `404`. A display-name wrapped address (`Name <addr@example.com>`) is accepted and unwrapped.
+
+Auth: **Scope** `READ_CONTACTS` · **Org permission** `view_contacts`
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `email` | query | string | The email address to resolve (required). |
+
+### Response
+
+```json
+{
+  "contact": {
+    "id": "1b2c3d4e-5f60-4a1b-8c2d-3e4f5a6b7c8d",
+    "first_name": "Dana",
+    "last_name": "Reyes",
+    "email": "dana@acme.com",
+    "company": "Acme",
+    "subscribed": true,
+    "campaigns": [],
+    "categories": [],
+    "verification_status": "valid",
+    "esp_provider": "gmail",
+    "updated_at": "2026-06-10T12:00:00Z",
+    "created_at": "2026-05-01T09:30:00Z"
+  }
+}
+```
+
+## Get a contact
+
+`GET /contacts/:id`
+
+Returns the hydrated contact 360 payload: the contact plus an engagement summary and, when present, suppression state. Engagement and suppression counts are org-scoped; they are returned only when an organization is selected.
+
+Auth: **Scope** `READ_CONTACTS` · **Org permission** `view_contacts`
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | UUID | Contact ID. |
+
+### Response
+
+```json
+{
+  "id": "1b2c3d4e-5f60-4a1b-8c2d-3e4f5a6b7c8d",
+  "first_name": "Dana",
+  "last_name": "Reyes",
+  "email": "dana@acme.com",
+  "company": "Acme",
+  "phone": "+15551234567",
+  "custom_fields": { "title": "VP Sales" },
+  "subscribed": true,
+  "campaigns": [{ "id": "c1...", "name": "Q3 Outbound" }],
+  "categories": [{ "id": "6f1c...", "title": "VIP", "color": "#0ea5e9" }],
+  "verification_status": "valid",
+  "esp_provider": "gmail",
+  "updated_at": "2026-06-10T12:00:00Z",
+  "created_at": "2026-05-01T09:30:00Z",
+  "engagement": {
+    "total_sent": 4,
+    "total_opened": 3,
+    "total_clicked": 1,
+    "total_replied": 1,
+    "total_bounced": 0,
+    "total_complained": 0,
+    "last_sent_at": "2026-06-09T08:00:00Z",
+    "last_opened_at": "2026-06-09T08:14:00Z",
+    "last_replied_at": "2026-06-09T11:02:00Z"
+  },
+  "suppression": null
+}
+```
+
+When the contact is suppressed, `suppression` is an object: `{ "reason", "source", "expires_at", "created_at" }` where `source` is `bounce`, `complaint`, or `unsubscribe`.
+
+## Update a contact
+
+`PATCH /contacts/:id`
+
+Partially updates a single contact. Only the fields present are changed. Campaign and category lists can be set wholesale or adjusted with diff-style add/remove.
+
+Auth: **Scope** `WRITE_CONTACTS` · **Org permission** `manage_contacts`
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | UUID | Contact ID. |
+
+### Request body
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `first_name` | string | No | First name. |
+| `last_name` | string | No | Last name. |
+| `company` | string | No | Company. |
+| `phone` | string | No | Phone. |
+| `custom_fields` | object | No | Replaces the custom-fields map. |
+| `subscribed` | boolean | No | Subscription status. |
+| `campaigns` | string[] | No | Set the full campaign membership (nil leaves as-is). |
+| `categories` | string[] | No | Set the full category list (nil leaves as-is). |
+| `add_categories` | string[] | No | Diff-style add (ignored when `categories` is set). |
+| `remove_categories` | string[] | No | Diff-style remove (ignored when `categories` is set). |
+
+```json
+{
+  "company": "Acme Corp",
+  "subscribed": true,
+  "add_categories": ["6f1c0b1e-0c2a-4b3a-9c1e-2d3f4a5b6c7d"]
+}
+```
+
+### Response
+
+Returns the updated contact as a bare object (contact shape as in search).
+
+```json
+{
+  "id": "1b2c3d4e-5f60-4a1b-8c2d-3e4f5a6b7c8d",
+  "first_name": "Dana",
+  "last_name": "Reyes",
+  "email": "dana@acme.com",
+  "company": "Acme Corp",
+  "subscribed": true,
+  "campaigns": [],
+  "categories": [{ "id": "6f1c...", "title": "VIP", "color": "#0ea5e9" }],
+  "updated_at": "2026-06-11T10:20:00Z",
+  "created_at": "2026-05-01T09:30:00Z"
+}
+```
+
+## Delete a contact
+
+`DELETE /contacts/:id`
+
+Deletes a single contact.
+
+Auth: **Scope** `WRITE_CONTACTS` · **Org permission** `manage_contacts`
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | UUID | Contact ID. |
+
+### Response
+
+`204 No Content`.
+
+## List emails sent to a contact
+
+`GET /contacts/:id/emails`
+
+Returns one row per email sent (or attempted) to the contact, newest first, with sender, campaign, sequence, and engagement timestamps. Pagination is keyed on the `(created_at, task_id)` of the last row.
+
+Auth: **Scope** `READ_CONTACTS` · **Org permission** `view_contacts`
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | UUID | Contact ID. |
+| `limit` | query | integer | Page size, 1 to 200 (default 50). |
+| `before_at` | query | string (RFC 3339 nano) | `created_at` of the last row from the previous page. |
+| `before_id` | query | UUID | `task_id` of the last row from the previous page. |
+
+Both `before_at` and `before_id` must be supplied together; otherwise the cursor is ignored and the first page is returned.
+
+### Response
+
+Returns a `data` array plus a `pagination` envelope.
+
+```json
+{
+  "data": [
+    {
+      "task_id": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+      "status": "sent",
+      "message_id": "<abc@mail.acme.com>",
+      "subject": "Quick question",
+      "sent_at": "2026-06-09T08:00:00Z",
+      "email_account_id": "e1...",
+      "email_account_email": "rep@yourco.com",
+      "email_account_name": "Rep One",
+      "campaign_id": "c1...",
+      "campaign_name": "Q3 Outbound",
+      "sequence_id": "s1...",
+      "sequence_name": "Email 1",
+      "opened_at": "2026-06-09T08:14:00Z",
+      "replied_at": "2026-06-09T11:02:00Z"
+    }
+  ],
+  "pagination": {
+    "total": 4,
+    "next_cursor": null,
+    "has_more": false
+  }
+}
+```
+
+## List a contact's timeline
+
+`GET /contacts/:id/timeline`
+
+Returns the merged activity feed for a contact: sends, opens, clicks, replies, bounces, deliverability and suppression events, notes, and meeting bookings. Requires a selected organization (org-scoped events would otherwise be hidden), so a request with no organization returns `400`.
+
+Auth: **Scope** `READ_CONTACTS` · **Org permission** `view_contacts`
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | UUID | Contact ID. |
+| `limit` | query | integer | Page size, 1 to 200 (default 50). |
+| `before` | query | string (RFC 3339 nano) | The `at` timestamp of the oldest event from the previous page. |
+
+### Response
+
+Returns a `data` array and a `has_more` flag (not a cursor envelope). Paginate by passing the oldest event's `at` as `before`.
+
+```json
+{
+  "data": [
+    {
+      "type": "email_replied",
+      "at": "2026-06-09T11:02:00Z",
+      "email_account_id": "e1...",
+      "email_account_email": "rep@yourco.com",
+      "campaign_id": "c1...",
+      "campaign_name": "Q3 Outbound",
+      "task_id": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+      "subject": "Quick question"
+    },
+    {
+      "type": "note",
+      "at": "2026-06-08T16:30:00Z",
+      "content": "Met at the conference, wants a follow-up in July.",
+      "user_id": "u1..."
+    }
+  ],
+  "has_more": false
+}
+```
+
+`type` is one of `email_sent`, `email_opened`, `email_clicked`, `email_replied`, `email_bounced`, `reply_received`, `deliverability`, `suppressed`, `note`, `meeting_booked`, `meeting_rescheduled`, or `meeting_canceled`. Fields not relevant to an event type are omitted.
+
+## List a contact's activities
+
+`GET /contacts/:id/activities`
+
+Returns the structured CRM activity log for a contact (note, deal, task, campaign, and engagement events recorded in the CRM activity table). Requires a selected organization.
+
+Auth: **Scope** `READ_CONTACTS` · **Org permission** `view_contacts`
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | UUID | Contact ID. |
+| `limit` | query | integer | Page size, 1 to 100 (default 50). |
+| `cursor` | query | UUID | Opaque cursor from the previous page's `pagination.next_cursor`. |
+
+### Response
+
+```json
+{
+  "data": [
+    {
+      "id": "ac1...",
+      "contact_id": "1b2c3d4e-5f60-4a1b-8c2d-3e4f5a6b7c8d",
+      "organization_id": "org1...",
+      "user_id": "u1...",
+      "activity_type": "note_added",
+      "metadata": { "note_id": "n1..." },
+      "created_at": "2026-06-08T16:30:00Z"
+    }
+  ],
+  "pagination": {
+    "total": 12,
+    "next_cursor": "ac0...",
+    "has_more": true
+  }
+}
+```
+
+`activity_type` is a closed enum including `email_sent`, `email_opened`, `email_clicked`, `email_replied`, `email_bounced`, `note_added`, `note_updated`, `deal_created`, `deal_stage_changed`, `deal_won`, `deal_lost`, `task_created`, `task_completed`, `contact_created`, `contact_updated`, `campaign_added`, and `campaign_removed`.
+
+## List a contact's notes
+
+`GET /contacts/:id/notes`
+
+Returns the CRM notes attached to a contact, newest first. Requires a selected organization.
+
+Auth: **Scope** `READ_CONTACTS` · **Org permission** `view_contacts`
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | UUID | Contact ID. |
+| `limit` | query | integer | Page size, 1 to 100 (default 50). |
+| `cursor` | query | UUID | Opaque cursor from the previous page's `pagination.next_cursor`. |
+
+### Response
+
+```json
+{
+  "data": [
+    {
+      "id": "n1b2c3d4-5f60-4a1b-8c2d-3e4f5a6b7c8d",
+      "contact_id": "1b2c3d4e-5f60-4a1b-8c2d-3e4f5a6b7c8d",
+      "organization_id": "org1...",
+      "user_id": "u1...",
+      "content": "Met at the conference, wants a follow-up in July.",
+      "created_at": "2026-06-08T16:30:00Z",
+      "updated_at": "2026-06-08T16:30:00Z",
+      "user": { "id": "u1...", "name": "Sam Rep" }
+    }
+  ],
+  "pagination": {
+    "total": 3,
+    "next_cursor": null,
+    "has_more": false
+  }
+}
+```
+
+## Create a contact note
+
+`POST /contacts/:id/notes`
+
+Adds a note to a contact. Requires a selected organization.
+
+Auth: **Scope** `WRITE_CONTACTS` · **Org permission** `manage_contacts`
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | UUID | Contact ID. |
+
+### Request body
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `content` | string | Yes | Note body (1 to 10,000 characters). |
+
+```json
+{ "content": "Sent the proposal, following up Monday." }
+```
+
+### Response
+
+`201 Created` with the created note (same shape as a note in the list).
+
+```json
+{
+  "id": "n2c3d4e5-6071-4b2c-9d3e-4f5a6b7c8d9e",
+  "contact_id": "1b2c3d4e-5f60-4a1b-8c2d-3e4f5a6b7c8d",
+  "organization_id": "org1...",
+  "user_id": "u1...",
+  "content": "Sent the proposal, following up Monday.",
+  "created_at": "2026-06-11T10:30:00Z",
+  "updated_at": "2026-06-11T10:30:00Z"
+}
+```
+
+## Update a contact note
+
+`PATCH /contacts/:id/notes/:noteId`
+
+Edits a note's content. Requires a selected organization.
+
+Auth: **Scope** `WRITE_CONTACTS` · **Org permission** `manage_contacts`
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | UUID | Contact ID. |
+| `noteId` | path | UUID | Note ID. |
+
+### Request body
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `content` | string | No | New note body. |
+
+```json
+{ "content": "Sent the proposal, following up Tuesday." }
+```
+
+### Response
+
+Returns the updated note.
+
+```json
+{
+  "id": "n2c3d4e5-6071-4b2c-9d3e-4f5a6b7c8d9e",
+  "contact_id": "1b2c3d4e-5f60-4a1b-8c2d-3e4f5a6b7c8d",
+  "organization_id": "org1...",
+  "user_id": "u1...",
+  "content": "Sent the proposal, following up Tuesday.",
+  "created_at": "2026-06-11T10:30:00Z",
+  "updated_at": "2026-06-11T10:35:00Z"
+}
+```
+
+## Delete a contact note
+
+`DELETE /contacts/:id/notes/:noteId`
+
+Deletes a note. Requires a selected organization.
+
+Auth: **Scope** `WRITE_CONTACTS` · **Org permission** `manage_contacts`
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | UUID | Contact ID. |
+| `noteId` | path | UUID | Note ID. |
+
+### Response
+
+`204 No Content`.
+
+## List a contact's deals
+
+`GET /contacts/:id/deals`
+
+Returns the CRM deals associated with a contact as a bare JSON array.
+
+Auth: **Scope** `READ_CRM` · **Org permission** `view_contacts`
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | UUID | Contact ID. |
+
+### Response
+
+```json
+[
+  {
+    "id": "d1b2c3d4-5f60-4a1b-8c2d-3e4f5a6b7c8d",
+    "organization_id": "org1...",
+    "pipeline_id": "p1...",
+    "stage_id": "st1...",
+    "contact_id": "1b2c3d4e-5f60-4a1b-8c2d-3e4f5a6b7c8d",
+    "name": "Acme expansion",
+    "value": 12000,
+    "currency": "USD",
+    "status": "open",
+    "expected_close_date": "2026-07-15T00:00:00Z",
+    "campaign_id": "c1...",
+    "created_at": "2026-06-05T09:00:00Z",
+    "updated_at": "2026-06-10T12:00:00Z"
+  }
+]
+```
+
+`status` is `open`, `won`, or `lost`. `value`, `expected_close_date`, `won_at`, `lost_at`, `lost_reason`, `assigned_to`, `campaign_id`, and `source_mailbox_id` are nullable and omitted when unset.

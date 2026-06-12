@@ -1,0 +1,17 @@
+{
+  "title": "Endpoint reference",
+  "icon": "Braces",
+  "pages": [
+    "mailboxes",
+    "campaigns",
+    "contacts",
+    "unibox",
+    "crm",
+    "analytics",
+    "api-keys",
+    "webhooks",
+    "integrations",
+    "deliverability-ops",
+    "account-org"
+  ]
+}

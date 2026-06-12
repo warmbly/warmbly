@@ -1,0 +1,1253 @@
+---
+title: Deliverability and ops
+description: Ingest deliverability events, replay dead-lettered tasks, manage warmup routing rules, reply templates, and org-level outreach settings.
+icon: ShieldCheck
+---
+
+This group covers the operational control surface for sending: posting deliverability signals (bounces, complaints, unsubscribes) back into the platform, listing and replaying dead-lettered tasks, defining premium-pool warmup routing preferences, managing reply templates, and reading or updating organization-wide advanced outreach settings. All routes are organization-scoped, so the caller must have an active organization selected (API keys are always bound to one organization).
+
+Errors follow the shared `{error, message, code, request_id}` envelope. See [error codes](/api/error-codes/) for the full list, and [authentication](/api/authentication/) for how scopes and organization permissions combine.
+
+## Get outreach settings
+
+`GET /outreach/settings`
+
+Returns the organization's advanced outreach settings: the bounce pipeline, task reliability, A/B testing, reply-intent, send-time optimization, preflight, and deliverability-dashboard configuration blocks.
+
+Auth: **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_settings`
+
+### Response
+
+Returns the `AdvancedOutreachSettings` object directly (not wrapped in an envelope).
+
+```json
+{
+  "bounce_pipeline": {
+    "enabled": true,
+    "auto_suppress_on_bounce": true,
+    "auto_suppress_on_complaint": true,
+    "auto_suppress_on_unsubscribe": true,
+    "auto_pause_campaign_on_spike": true,
+    "pause_bounce_rate_threshold": 8,
+    "pause_complaint_rate_threshold": 1.5
+  },
+  "task_reliability": {
+    "enabled": true,
+    "dlq_enabled": true,
+    "max_attempts": 5,
+    "execution_window_seconds": 300
+  },
+  "ab_testing": {
+    "enabled": true,
+    "default_winning_rule": "reply_rate",
+    "auto_promote_winner": false,
+    "min_sample_size": 30
+  },
+  "reply_intent": {
+    "enabled": true,
+    "positive_keywords": ["interested", "demo", "pricing"],
+    "negative_keywords": ["not interested", "unsubscribe", "stop"],
+    "out_of_office_keywords": ["out of office", "ooo", "vacation"],
+    "question_keywords": ["?", "how", "price"],
+    "auto_create_crm_task": true,
+    "auto_pause_on_negative": false,
+    "auto_suppress_on_unsubscribe_keyword": true
+  },
+  "send_time_optimization": {
+    "enabled": true,
+    "use_contact_timezone": true,
+    "default_contact_timezone": "UTC",
+    "preferred_hours": [9, 10, 11, 14, 15, 16],
+    "weekend_weight_multiplier": 0.5
+  },
+  "preflight": {
+    "enabled": true,
+    "check_tracking_domain": true,
+    "check_unsubscribe_header": true,
+    "check_ab_variant_configured": false,
+    "check_daily_limit": true,
+    "check_schedule_window": true
+  },
+  "dashboard": {
+    "enabled": true,
+    "show_suppression_log": true,
+    "show_intent_summary": true,
+    "show_dlq_stats": true
+  },
+  "custom": {}
+}
+```
+
+## Update outreach settings
+
+`PATCH /outreach/settings`
+
+Replaces the organization's advanced outreach settings with the supplied object. Send the full settings block (the value is upserted, not deep-merged). Returns no body on success.
+
+Auth: **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_settings`
+
+### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `settings` | object | Yes | The full `AdvancedOutreachSettings` object (same shape as the GET response). |
+
+```json
+{
+  "settings": {
+    "bounce_pipeline": {
+      "enabled": true,
+      "auto_suppress_on_bounce": true,
+      "auto_suppress_on_complaint": true,
+      "auto_suppress_on_unsubscribe": true,
+      "auto_pause_campaign_on_spike": true,
+      "pause_bounce_rate_threshold": 8,
+      "pause_complaint_rate_threshold": 1.5
+    },
+    "task_reliability": {
+      "enabled": true,
+      "dlq_enabled": true,
+      "max_attempts": 5,
+      "execution_window_seconds": 300
+    },
+    "ab_testing": {
+      "enabled": true,
+      "default_winning_rule": "reply_rate",
+      "auto_promote_winner": false,
+      "min_sample_size": 30
+    }
+  }
+}
+```
+
+### Response
+
+`204 No Content`.
+
+## Ingest a deliverability event
+
+`POST /deliverability/events`
+
+Posts a single deliverability signal (bounce, complaint, unsubscribe, open, click, or reply) into the platform. This is API-key callable so downstream pipelines (for example an SES bounce processor) can report events without a human in the loop. Depending on the org's bounce-pipeline settings, a bounce, complaint, or unsubscribe may auto-suppress the recipient. Supply an `idempotency_key` to make retries safe.
+
+Auth: **Scope** `WRITE_CAMPAIGNS` · **Org permission** `send_campaigns`
+
+### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `event_type` | string | Yes | One of `bounce`, `complaint`, `unsubscribe`, `open`, `click`, `reply`. |
+| `recipient_email` | string | Yes | The recipient address the event is about. |
+| `campaign_id` | uuid | No | Campaign the event is attributed to. |
+| `task_id` | uuid | No | Send task the event is attributed to. |
+| `contact_id` | uuid | No | Contact the event is attributed to. |
+| `provider` | string | No | Source provider label (e.g. `ses`, `postmark`). |
+| `reason` | string | No | Human-readable reason or diagnostic text. |
+| `idempotency_key` | string | No | De-duplicates retried events. |
+| `metadata` | object | No | Free-form JSON attached to the event. |
+
+```json
+{
+  "event_type": "bounce",
+  "recipient_email": "prospect@example.com",
+  "campaign_id": "8f1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9",
+  "provider": "ses",
+  "reason": "550 5.1.1 mailbox does not exist",
+  "idempotency_key": "ses-msg-01HZX9QК",
+  "metadata": { "bounce_type": "Permanent" }
+}
+```
+
+### Response
+
+`202 Accepted` with no body. The event is queued for processing.
+
+## List task dead letters
+
+`GET /tasks/dlq`
+
+Lists tasks that exhausted their retry budget and landed in the dead-letter queue (failed sends, syncs, and other side-effectful work). Use this to inspect failures before replaying them.
+
+Auth: **Scope** `SEND_CAMPAIGNS` · **Org permission** `send_campaigns`
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `status` | query | string | Optional status filter (e.g. `pending`, `replayed`). |
+| `limit` | query | integer | Max rows to return, 1 to 200 (default 100). |
+
+### Response
+
+Returns a `data` array of dead-letter records. This endpoint is not cursor-paginated; it returns up to `limit` rows in one response.
+
+```json
+{
+  "data": [
+    {
+      "id": "1a2b3c4d-5e6f-7081-9293-a4b5c6d7e8f9",
+      "task_id": "9f8e7d6c-5b4a-3021-8f7e-6d5c4b3a2110",
+      "task_type": "send_campaign_email",
+      "payload": { "campaign_id": "8f1b2c3d-...", "email_account_id": "..." },
+      "last_error": "smtp: 421 too many connections",
+      "attempts": 5,
+      "max_attempts": 5,
+      "status": "pending",
+      "next_retry_at": null,
+      "replayed_at": null,
+      "created_at": "2026-06-11T14:02:09Z",
+      "updated_at": "2026-06-11T14:31:50Z"
+    }
+  ]
+}
+```
+
+## Replay a task dead letter
+
+`POST /tasks/dlq/:id/replay`
+
+Re-dispatches a dead-lettered task. Because a replay can transmit real mail, this requires the send permission rather than plain write access.
+
+Auth: **Scope** `SEND_CAMPAIGNS` · **Org permission** `send_campaigns`
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `id` | path | uuid | The dead-letter record ID (the `id` field from the DLQ list, not `task_id`). |
+
+### Response
+
+`200 OK`.
+
+```json
+{ "status": "replayed" }
+```
+
+## List warmup routing rules
+
+`GET /warmup/routing`
+
+Returns every warmup routing rule for the organization, ordered by `priority` ascending (first to evaluate). Rules express premium-pool partner preferences, for example "only send to Gmail recipients from Google-classified senders".
+
+Auth: **Scope** `WARMUP_ROUTING` · **Org permission** `manage_settings`
+
+### Response
+
+Returns the rules under a `rules` key (always an array, never null).
+
+```json
+{
+  "rules": [
+    {
+      "id": "c1d2e3f4-5061-7283-94a5-b6c7d8e9f0a1",
+      "organization_id": "0a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9",
+      "name": "Gmail to Gmail only",
+      "priority": 10,
+      "sender_match_type": "provider",
+      "sender_match_value": "google",
+      "recipient_match_type": "provider",
+      "recipient_match_value": "google",
+      "weight": 1.0,
+      "enabled": true,
+      "created_at": "2026-06-01T09:00:00Z",
+      "updated_at": "2026-06-01T09:00:00Z"
+    }
+  ]
+}
+```
+
+## Create a warmup routing rule
+
+`POST /warmup/routing`
+
+Creates a routing rule for the organization. Both the sender and recipient side are matched; a rule applies only when both sides match. Match values are lowercased and trimmed on write.
+
+Auth: **Scope** `WARMUP_ROUTING` · **Org permission** `manage_settings`
+
+### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | Yes | Display name for the rule. |
+| `priority` | integer | No | Evaluation order, ascending. Lower runs first. |
+| `sender_match_type` | string | Yes | One of `any`, `domain`, `tld`, `provider`. |
+| `sender_match_value` | string | Conditional | Required unless `sender_match_type` is `any`. Domain (`acme.com`), TLD (`com`), or provider bucket (`google`, `microsoft`, `yahoo`, `apple`, `proton`, `zoho`, `custom`). |
+| `recipient_match_type` | string | Yes | One of `any`, `domain`, `tld`, `provider`. |
+| `recipient_match_value` | string | Conditional | Required unless `recipient_match_type` is `any`. Same value forms as the sender side. |
+| `weight` | number | No | Selection weight, must be `>= 0`. |
+| `enabled` | boolean | No | Whether the rule is active. |
+
+```json
+{
+  "name": "Gmail to Gmail only",
+  "priority": 10,
+  "sender_match_type": "provider",
+  "sender_match_value": "google",
+  "recipient_match_type": "provider",
+  "recipient_match_value": "google",
+  "weight": 1.0,
+  "enabled": true
+}
+```
+
+### Response
+
+`201 Created` with the full rule object (same shape as a list item, with server-managed `id`, `organization_id`, `created_at`, `updated_at`).
+
+```json
+{
+  "id": "c1d2e3f4-5061-7283-94a5-b6c7d8e9f0a1",
+  "organization_id": "0a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9",
+  "name": "Gmail to Gmail only",
+  "priority": 10,
+  "sender_match_type": "provider",
+  "sender_match_value": "google",
+  "recipient_match_type": "provider",
+  "recipient_match_value": "google",
+  "weight": 1.0,
+  "enabled": true,
+  "created_at": "2026-06-11T16:20:00Z",
+  "updated_at": "2026-06-11T16:20:00Z"
+}
+```
+
+## Update a warmup routing rule
+
+`PATCH /warmup/routing/:id`
+
+Replaces a rule by ID. The body is the same full payload as create (all fields are applied, not deep-merged), and the same validation rules apply.
+
+Auth: **Scope** `WARMUP_ROUTING` · **Org permission** `manage_settings`
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `id` | path | uuid | The rule ID. |
+
+### Request body
+
+Same fields as [create a warmup routing rule](#create-a-warmup-routing-rule).
+
+```json
+{
+  "name": "Gmail to Gmail only",
+  "priority": 5,
+  "sender_match_type": "provider",
+  "sender_match_value": "google",
+  "recipient_match_type": "provider",
+  "recipient_match_value": "google",
+  "weight": 2.0,
+  "enabled": true
+}
+```
+
+### Response
+
+`200 OK` with the updated rule object.
+
+## Delete a warmup routing rule
+
+`DELETE /warmup/routing/:id`
+
+Removes a routing rule by ID.
+
+Auth: **Scope** `WARMUP_ROUTING` · **Org permission** `manage_settings`
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `id` | path | uuid | The rule ID. |
+
+### Response
+
+`204 No Content`.
+
+## List reply templates
+
+`GET /templates`
+
+Lists the organization's reply templates, ordered by position. An optional `q` filter matches against name and subject (case-insensitive).
+
+Auth: **Scope** `READ_TEMPLATES` · **Org permission** `view_campaigns`
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `q` | query | string | Optional case-insensitive search over name and subject. |
+
+### Response
+
+Returns templates under a `data` key (not cursor-paginated).
+
+```json
+{
+  "data": [
+    {
+      "id": "11111111-2222-3333-4444-555555555555",
+      "organization_id": "0a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9",
+      "user_id": "99999999-8888-7777-6666-555555555555",
+      "name": "Pricing follow-up",
+      "subject": "Re: pricing for {{.Company}}",
+      "body_html": "<p>Hi {{.FirstName}},</p>",
+      "body_plain": "Hi {{.FirstName}},",
+      "position": 1,
+      "created_at": "2026-05-20T10:00:00Z",
+      "updated_at": "2026-05-20T10:00:00Z"
+    }
+  ]
+}
+```
+
+## Create a reply template
+
+`POST /templates`
+
+Creates a reply template owned by the calling user, appended to the end of the org's list.
+
+Auth: **Scope** `WRITE_TEMPLATES` · **Org permission** `manage_campaigns`
+
+### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | Yes | Template name, max 255 characters. |
+| `subject` | string | No | Subject line (may contain `{{.Key}}` placeholders). |
+| `body_html` | string | No | HTML body. |
+| `body_plain` | string | No | Plain-text body. |
+
+```json
+{
+  "name": "Pricing follow-up",
+  "subject": "Re: pricing for {{.Company}}",
+  "body_html": "<p>Hi {{.FirstName}},</p>",
+  "body_plain": "Hi {{.FirstName}},"
+}
+```
+
+### Response
+
+`200 OK` with the created `ReplyTemplate`.
+
+```json
+{
+  "id": "11111111-2222-3333-4444-555555555555",
+  "organization_id": "0a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9",
+  "user_id": "99999999-8888-7777-6666-555555555555",
+  "name": "Pricing follow-up",
+  "subject": "Re: pricing for {{.Company}}",
+  "body_html": "<p>Hi {{.FirstName}},</p>",
+  "body_plain": "Hi {{.FirstName}},",
+  "position": 3,
+  "created_at": "2026-06-11T17:00:00Z",
+  "updated_at": "2026-06-11T17:00:00Z"
+}
+```
+
+## Reorder reply templates
+
+`PATCH /templates/reorder`
+
+Repositions templates to match the supplied ID order (1-indexed). IDs omitted from the list are left untouched. Returns the full reordered list.
+
+Auth: **Scope** `WRITE_TEMPLATES` · **Org permission** `manage_campaigns`
+
+### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `ids` | array of uuid | Yes | Template IDs in their new order. |
+
+```json
+{
+  "ids": [
+    "33333333-3333-3333-3333-333333333333",
+    "11111111-2222-3333-4444-555555555555"
+  ]
+}
+```
+
+### Response
+
+`200 OK` with the reordered list under `data` (same shape as [list reply templates](#list-reply-templates)).
+
+## Get a reply template
+
+`GET /templates/:id`
+
+Retrieves a single reply template by ID.
+
+Auth: **Scope** `READ_TEMPLATES` · **Org permission** `view_campaigns`
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `id` | path | uuid | The template ID. |
+
+### Response
+
+`200 OK` with the `ReplyTemplate` object (same shape as a list item).
+
+## Update a reply template
+
+`PATCH /templates/:id`
+
+Updates a reply template. All fields are optional; omitted fields are left unchanged.
+
+Auth: **Scope** `WRITE_TEMPLATES` · **Org permission** `manage_campaigns`
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `id` | path | uuid | The template ID. |
+
+### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | No | New name. |
+| `subject` | string | No | New subject. |
+| `body_html` | string | No | New HTML body. |
+| `body_plain` | string | No | New plain-text body. |
+
+```json
+{
+  "subject": "Re: updated pricing for {{.Company}}"
+}
+```
+
+### Response
+
+`200 OK` with the updated `ReplyTemplate`.
+
+## Delete a reply template
+
+`DELETE /templates/:id`
+
+Deletes a reply template by ID.
+
+Auth: **Scope** `WRITE_TEMPLATES` · **Org permission** `manage_campaigns`
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `id` | path | uuid | The template ID. |
+
+### Response
+
+`204 No Content`.
+
+## Duplicate a reply template
+
+`POST /templates/:id/duplicate`
+
+Clones a template, appending " (copy)" to the name and placing the clone at the end of the org's list.
+
+Auth: **Scope** `WRITE_TEMPLATES` · **Org permission** `manage_campaigns`
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `id` | path | uuid | The source template ID. |
+
+### Response
+
+`200 OK` with the newly created `ReplyTemplate` (same shape as create).
+
+## Render a reply template
+
+`POST /templates/:id/render`
+
+Expands `{{.Key}}` placeholders in the template's subject and body using a caller-supplied variable map. Used to preview a reply before sending. The body is optional; an empty map renders all placeholders empty.
+
+Auth: **Scope** `READ_TEMPLATES` · **Org permission** `view_campaigns`
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `id` | path | uuid | The template ID. |
+
+### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `variables` | object (string to string) | No | Values substituted into `{{.Key}}` placeholders. |
+
+```json
+{
+  "variables": {
+    "FirstName": "Dana",
+    "Company": "Acme"
+  }
+}
+```
+
+### Response
+
+`200 OK` with the rendered subject and body.
+
+```json
+{
+  "subject": "Re: pricing for Acme",
+  "body_html": "<p>Hi Dana,</p>",
+  "body_plain": "Hi Dana,"
+}
+```
+
+## Score template content
+
+`POST /templates/score`
+
+Returns an advisory deliverability content score (0 to 100, higher is safer) for a subject and body, plus the issues found. This is advisory only and never blocks sending. It does not read a stored template; it scores the content in the request body.
+
+Auth: **Scope** `READ_TEMPLATES` · **Org permission** `view_campaigns`
+
+### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `subject` | string | No | Subject line to score. |
+| `body_html` | string | No | HTML body (used when `body_plain` is empty). |
+| `body_plain` | string | No | Plain-text body, preferred over HTML when present. |
+
+```json
+{
+  "subject": "Quick question about {{.Company}}",
+  "body_plain": "Hi Dana, are you the right person to talk to about outreach?"
+}
+```
+
+### Response
+
+`200 OK` with the score and any advisory issues.
+
+```json
+{
+  "score": 92,
+  "issues": [
+    {
+      "severity": "warn",
+      "code": "too_many_links",
+      "message": "4 links — keep cold-email link count low."
+    }
+  ]
+}
+```
+```
+
+I notice the JSON examples have some non-ASCII placeholder characters I should fix (e.g. "01HZX9QК" has a Cyrillic char, and the em dash in the score message). Let me return clean output.
+
+---
+
+```mdx
+---
+title: Deliverability and ops
+description: Ingest deliverability events, replay dead-lettered tasks, manage warmup routing rules, reply templates, and org-level outreach settings.
+icon: ShieldCheck
+---
+
+This group covers the operational control surface for sending: posting deliverability signals (bounces, complaints, unsubscribes) back into the platform, listing and replaying dead-lettered tasks, defining premium-pool warmup routing preferences, managing reply templates, and reading or updating organization-wide advanced outreach settings. All routes are organization-scoped, so the caller must have an active organization selected (API keys are always bound to one organization).
+
+Errors follow the shared `{error, message, code, request_id}` envelope. See [error codes](/api/error-codes/) for the full list, and [authentication](/api/authentication/) for how scopes and organization permissions combine.
+
+## Get outreach settings
+
+`GET /outreach/settings`
+
+Returns the organization's advanced outreach settings: the bounce pipeline, task reliability, A/B testing, reply-intent, send-time optimization, preflight, and deliverability-dashboard configuration blocks.
+
+Auth: **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_settings`
+
+### Response
+
+Returns the `AdvancedOutreachSettings` object directly (not wrapped in an envelope).
+
+```json
+{
+  "bounce_pipeline": {
+    "enabled": true,
+    "auto_suppress_on_bounce": true,
+    "auto_suppress_on_complaint": true,
+    "auto_suppress_on_unsubscribe": true,
+    "auto_pause_campaign_on_spike": true,
+    "pause_bounce_rate_threshold": 8,
+    "pause_complaint_rate_threshold": 1.5
+  },
+  "task_reliability": {
+    "enabled": true,
+    "dlq_enabled": true,
+    "max_attempts": 5,
+    "execution_window_seconds": 300
+  },
+  "ab_testing": {
+    "enabled": true,
+    "default_winning_rule": "reply_rate",
+    "auto_promote_winner": false,
+    "min_sample_size": 30
+  },
+  "reply_intent": {
+    "enabled": true,
+    "positive_keywords": ["interested", "demo", "pricing"],
+    "negative_keywords": ["not interested", "unsubscribe", "stop"],
+    "out_of_office_keywords": ["out of office", "ooo", "vacation"],
+    "question_keywords": ["?", "how", "price"],
+    "auto_create_crm_task": true,
+    "auto_pause_on_negative": false,
+    "auto_suppress_on_unsubscribe_keyword": true
+  },
+  "send_time_optimization": {
+    "enabled": true,
+    "use_contact_timezone": true,
+    "default_contact_timezone": "UTC",
+    "preferred_hours": [9, 10, 11, 14, 15, 16],
+    "weekend_weight_multiplier": 0.5
+  },
+  "preflight": {
+    "enabled": true,
+    "check_tracking_domain": true,
+    "check_unsubscribe_header": true,
+    "check_ab_variant_configured": false,
+    "check_daily_limit": true,
+    "check_schedule_window": true
+  },
+  "dashboard": {
+    "enabled": true,
+    "show_suppression_log": true,
+    "show_intent_summary": true,
+    "show_dlq_stats": true
+  },
+  "custom": {}
+}
+```
+
+## Update outreach settings
+
+`PATCH /outreach/settings`
+
+Replaces the organization's advanced outreach settings with the supplied object. Send the full settings block (the value is upserted, not deep-merged). Returns no body on success.
+
+Auth: **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_settings`
+
+### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `settings` | object | Yes | The full `AdvancedOutreachSettings` object (same shape as the GET response). |
+
+```json
+{
+  "settings": {
+    "bounce_pipeline": {
+      "enabled": true,
+      "auto_suppress_on_bounce": true,
+      "auto_suppress_on_complaint": true,
+      "auto_suppress_on_unsubscribe": true,
+      "auto_pause_campaign_on_spike": true,
+      "pause_bounce_rate_threshold": 8,
+      "pause_complaint_rate_threshold": 1.5
+    },
+    "task_reliability": {
+      "enabled": true,
+      "dlq_enabled": true,
+      "max_attempts": 5,
+      "execution_window_seconds": 300
+    },
+    "ab_testing": {
+      "enabled": true,
+      "default_winning_rule": "reply_rate",
+      "auto_promote_winner": false,
+      "min_sample_size": 30
+    }
+  }
+}
+```
+
+### Response
+
+`204 No Content`.
+
+## Ingest a deliverability event
+
+`POST /deliverability/events`
+
+Posts a single deliverability signal (bounce, complaint, unsubscribe, open, click, or reply) into the platform. This is API-key callable so downstream pipelines (for example an SES bounce processor) can report events without a human in the loop. Depending on the org's bounce-pipeline settings, a bounce, complaint, or unsubscribe may auto-suppress the recipient. Supply an `idempotency_key` to make retries safe.
+
+Auth: **Scope** `WRITE_CAMPAIGNS` · **Org permission** `send_campaigns`
+
+### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `event_type` | string | Yes | One of `bounce`, `complaint`, `unsubscribe`, `open`, `click`, `reply`. |
+| `recipient_email` | string | Yes | The recipient address the event is about. |
+| `campaign_id` | uuid | No | Campaign the event is attributed to. |
+| `task_id` | uuid | No | Send task the event is attributed to. |
+| `contact_id` | uuid | No | Contact the event is attributed to. |
+| `provider` | string | No | Source provider label (e.g. `ses`, `postmark`). |
+| `reason` | string | No | Human-readable reason or diagnostic text. |
+| `idempotency_key` | string | No | De-duplicates retried events. |
+| `metadata` | object | No | Free-form JSON attached to the event. |
+
+```json
+{
+  "event_type": "bounce",
+  "recipient_email": "prospect@example.com",
+  "campaign_id": "8f1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9",
+  "provider": "ses",
+  "reason": "550 5.1.1 mailbox does not exist",
+  "idempotency_key": "ses-bounce-01hzx9q",
+  "metadata": { "bounce_type": "Permanent" }
+}
+```
+
+### Response
+
+`202 Accepted` with no body. The event is queued for processing.
+
+## List task dead letters
+
+`GET /tasks/dlq`
+
+Lists tasks that exhausted their retry budget and landed in the dead-letter queue (failed sends, syncs, and other side-effectful work). Use this to inspect failures before replaying them.
+
+Auth: **Scope** `SEND_CAMPAIGNS` · **Org permission** `send_campaigns`
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `status` | query | string | Optional status filter (e.g. `pending`, `replayed`). |
+| `limit` | query | integer | Max rows to return, 1 to 200 (default 100). |
+
+### Response
+
+Returns a `data` array of dead-letter records. This endpoint is not cursor-paginated; it returns up to `limit` rows in one response.
+
+```json
+{
+  "data": [
+    {
+      "id": "1a2b3c4d-5e6f-7081-9293-a4b5c6d7e8f9",
+      "task_id": "9f8e7d6c-5b4a-3021-8f7e-6d5c4b3a2110",
+      "task_type": "send_campaign_email",
+      "payload": { "campaign_id": "8f1b2c3d-...", "email_account_id": "..." },
+      "last_error": "smtp: 421 too many connections",
+      "attempts": 5,
+      "max_attempts": 5,
+      "status": "pending",
+      "next_retry_at": null,
+      "replayed_at": null,
+      "created_at": "2026-06-11T14:02:09Z",
+      "updated_at": "2026-06-11T14:31:50Z"
+    }
+  ]
+}
+```
+
+## Replay a task dead letter
+
+`POST /tasks/dlq/:id/replay`
+
+Re-dispatches a dead-lettered task. Because a replay can transmit real mail, this requires the send permission rather than plain write access.
+
+Auth: **Scope** `SEND_CAMPAIGNS` · **Org permission** `send_campaigns`
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `id` | path | uuid | The dead-letter record ID (the `id` field from the DLQ list, not `task_id`). |
+
+### Response
+
+`200 OK`.
+
+```json
+{ "status": "replayed" }
+```
+
+## List warmup routing rules
+
+`GET /warmup/routing`
+
+Returns every warmup routing rule for the organization, ordered by `priority` ascending (first to evaluate). Rules express premium-pool partner preferences, for example "only send to Gmail recipients from Google-classified senders".
+
+Auth: **Scope** `WARMUP_ROUTING` · **Org permission** `manage_settings`
+
+### Response
+
+Returns the rules under a `rules` key (always an array, never null).
+
+```json
+{
+  "rules": [
+    {
+      "id": "c1d2e3f4-5061-7283-94a5-b6c7d8e9f0a1",
+      "organization_id": "0a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9",
+      "name": "Gmail to Gmail only",
+      "priority": 10,
+      "sender_match_type": "provider",
+      "sender_match_value": "google",
+      "recipient_match_type": "provider",
+      "recipient_match_value": "google",
+      "weight": 1.0,
+      "enabled": true,
+      "created_at": "2026-06-01T09:00:00Z",
+      "updated_at": "2026-06-01T09:00:00Z"
+    }
+  ]
+}
+```
+
+## Create a warmup routing rule
+
+`POST /warmup/routing`
+
+Creates a routing rule for the organization. Both the sender and recipient side are matched; a rule applies only when both sides match. Match values are lowercased and trimmed on write.
+
+Auth: **Scope** `WARMUP_ROUTING` · **Org permission** `manage_settings`
+
+### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | Yes | Display name for the rule. |
+| `priority` | integer | No | Evaluation order, ascending. Lower runs first. |
+| `sender_match_type` | string | Yes | One of `any`, `domain`, `tld`, `provider`. |
+| `sender_match_value` | string | Conditional | Required unless `sender_match_type` is `any`. Domain (`acme.com`), TLD (`com`), or provider bucket (`google`, `microsoft`, `yahoo`, `apple`, `proton`, `zoho`, `custom`). |
+| `recipient_match_type` | string | Yes | One of `any`, `domain`, `tld`, `provider`. |
+| `recipient_match_value` | string | Conditional | Required unless `recipient_match_type` is `any`. Same value forms as the sender side. |
+| `weight` | number | No | Selection weight, must be `>= 0`. |
+| `enabled` | boolean | No | Whether the rule is active. |
+
+```json
+{
+  "name": "Gmail to Gmail only",
+  "priority": 10,
+  "sender_match_type": "provider",
+  "sender_match_value": "google",
+  "recipient_match_type": "provider",
+  "recipient_match_value": "google",
+  "weight": 1.0,
+  "enabled": true
+}
+```
+
+### Response
+
+`201 Created` with the full rule object (same shape as a list item, with server-managed `id`, `organization_id`, `created_at`, `updated_at`).
+
+```json
+{
+  "id": "c1d2e3f4-5061-7283-94a5-b6c7d8e9f0a1",
+  "organization_id": "0a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9",
+  "name": "Gmail to Gmail only",
+  "priority": 10,
+  "sender_match_type": "provider",
+  "sender_match_value": "google",
+  "recipient_match_type": "provider",
+  "recipient_match_value": "google",
+  "weight": 1.0,
+  "enabled": true,
+  "created_at": "2026-06-11T16:20:00Z",
+  "updated_at": "2026-06-11T16:20:00Z"
+}
+```
+
+## Update a warmup routing rule
+
+`PATCH /warmup/routing/:id`
+
+Replaces a rule by ID. The body is the same full payload as create (all fields are applied, not deep-merged), and the same validation rules apply.
+
+Auth: **Scope** `WARMUP_ROUTING` · **Org permission** `manage_settings`
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `id` | path | uuid | The rule ID. |
+
+### Request body
+
+Same fields as [create a warmup routing rule](#create-a-warmup-routing-rule).
+
+```json
+{
+  "name": "Gmail to Gmail only",
+  "priority": 5,
+  "sender_match_type": "provider",
+  "sender_match_value": "google",
+  "recipient_match_type": "provider",
+  "recipient_match_value": "google",
+  "weight": 2.0,
+  "enabled": true
+}
+```
+
+### Response
+
+`200 OK` with the updated rule object.
+
+## Delete a warmup routing rule
+
+`DELETE /warmup/routing/:id`
+
+Removes a routing rule by ID.
+
+Auth: **Scope** `WARMUP_ROUTING` · **Org permission** `manage_settings`
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `id` | path | uuid | The rule ID. |
+
+### Response
+
+`204 No Content`.
+
+## List reply templates
+
+`GET /templates`
+
+Lists the organization's reply templates, ordered by position. An optional `q` filter matches against name and subject (case-insensitive).
+
+Auth: **Scope** `READ_TEMPLATES` · **Org permission** `view_campaigns`
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `q` | query | string | Optional case-insensitive search over name and subject. |
+
+### Response
+
+Returns templates under a `data` key (not cursor-paginated).
+
+```json
+{
+  "data": [
+    {
+      "id": "11111111-2222-3333-4444-555555555555",
+      "organization_id": "0a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9",
+      "user_id": "99999999-8888-7777-6666-555555555555",
+      "name": "Pricing follow-up",
+      "subject": "Re: pricing for {{.Company}}",
+      "body_html": "<p>Hi {{.FirstName}},</p>",
+      "body_plain": "Hi {{.FirstName}},",
+      "position": 1,
+      "created_at": "2026-05-20T10:00:00Z",
+      "updated_at": "2026-05-20T10:00:00Z"
+    }
+  ]
+}
+```
+
+## Create a reply template
+
+`POST /templates`
+
+Creates a reply template owned by the calling user, appended to the end of the org's list.
+
+Auth: **Scope** `WRITE_TEMPLATES` · **Org permission** `manage_campaigns`
+
+### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | Yes | Template name, max 255 characters. |
+| `subject` | string | No | Subject line (may contain `{{.Key}}` placeholders). |
+| `body_html` | string | No | HTML body. |
+| `body_plain` | string | No | Plain-text body. |
+
+```json
+{
+  "name": "Pricing follow-up",
+  "subject": "Re: pricing for {{.Company}}",
+  "body_html": "<p>Hi {{.FirstName}},</p>",
+  "body_plain": "Hi {{.FirstName}},"
+}
+```
+
+### Response
+
+`200 OK` with the created `ReplyTemplate`.
+
+```json
+{
+  "id": "11111111-2222-3333-4444-555555555555",
+  "organization_id": "0a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9",
+  "user_id": "99999999-8888-7777-6666-555555555555",
+  "name": "Pricing follow-up",
+  "subject": "Re: pricing for {{.Company}}",
+  "body_html": "<p>Hi {{.FirstName}},</p>",
+  "body_plain": "Hi {{.FirstName}},",
+  "position": 3,
+  "created_at": "2026-06-11T17:00:00Z",
+  "updated_at": "2026-06-11T17:00:00Z"
+}
+```
+
+## Reorder reply templates
+
+`PATCH /templates/reorder`
+
+Repositions templates to match the supplied ID order (1-indexed). IDs omitted from the list are left untouched. Returns the full reordered list.
+
+Auth: **Scope** `WRITE_TEMPLATES` · **Org permission** `manage_campaigns`
+
+### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `ids` | array of uuid | Yes | Template IDs in their new order. |
+
+```json
+{
+  "ids": [
+    "33333333-3333-3333-3333-333333333333",
+    "11111111-2222-3333-4444-555555555555"
+  ]
+}
+```
+
+### Response
+
+`200 OK` with the reordered list under `data` (same shape as [list reply templates](#list-reply-templates)).
+
+## Get a reply template
+
+`GET /templates/:id`
+
+Retrieves a single reply template by ID.
+
+Auth: **Scope** `READ_TEMPLATES` · **Org permission** `view_campaigns`
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `id` | path | uuid | The template ID. |
+
+### Response
+
+`200 OK` with the `ReplyTemplate` object (same shape as a list item).
+
+## Update a reply template
+
+`PATCH /templates/:id`
+
+Updates a reply template. All fields are optional; omitted fields are left unchanged.
+
+Auth: **Scope** `WRITE_TEMPLATES` · **Org permission** `manage_campaigns`
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `id` | path | uuid | The template ID. |
+
+### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | No | New name. |
+| `subject` | string | No | New subject. |
+| `body_html` | string | No | New HTML body. |
+| `body_plain` | string | No | New plain-text body. |
+
+```json
+{
+  "subject": "Re: updated pricing for {{.Company}}"
+}
+```
+
+### Response
+
+`200 OK` with the updated `ReplyTemplate`.
+
+## Delete a reply template
+
+`DELETE /templates/:id`
+
+Deletes a reply template by ID.
+
+Auth: **Scope** `WRITE_TEMPLATES` · **Org permission** `manage_campaigns`
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `id` | path | uuid | The template ID. |
+
+### Response
+
+`204 No Content`.
+
+## Duplicate a reply template
+
+`POST /templates/:id/duplicate`
+
+Clones a template, appending " (copy)" to the name and placing the clone at the end of the org's list.
+
+Auth: **Scope** `WRITE_TEMPLATES` · **Org permission** `manage_campaigns`
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `id` | path | uuid | The source template ID. |
+
+### Response
+
+`200 OK` with the newly created `ReplyTemplate` (same shape as create).
+
+## Render a reply template
+
+`POST /templates/:id/render`
+
+Expands `{{.Key}}` placeholders in the template's subject and body using a caller-supplied variable map. Used to preview a reply before sending. The body is optional; an empty map renders all placeholders empty.
+
+Auth: **Scope** `READ_TEMPLATES` · **Org permission** `view_campaigns`
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `id` | path | uuid | The template ID. |
+
+### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `variables` | object (string to string) | No | Values substituted into `{{.Key}}` placeholders. |
+
+```json
+{
+  "variables": {
+    "FirstName": "Dana",
+    "Company": "Acme"
+  }
+}
+```
+
+### Response
+
+`200 OK` with the rendered subject and body.
+
+```json
+{
+  "subject": "Re: pricing for Acme",
+  "body_html": "<p>Hi Dana,</p>",
+  "body_plain": "Hi Dana,"
+}
+```
+
+## Score template content
+
+`POST /templates/score`
+
+Returns an advisory deliverability content score (0 to 100, higher is safer) for a subject and body, plus the issues found. This is advisory only and never blocks sending. It does not read a stored template; it scores the content in the request body.
+
+Auth: **Scope** `READ_TEMPLATES` · **Org permission** `view_campaigns`
+
+### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `subject` | string | No | Subject line to score. |
+| `body_html` | string | No | HTML body (used when `body_plain` is empty). |
+| `body_plain` | string | No | Plain-text body, preferred over HTML when present. |
+
+```json
+{
+  "subject": "Quick question about {{.Company}}",
+  "body_plain": "Hi Dana, are you the right person to talk to about outreach?"
+}
+```
+
+### Response
+
+`200 OK` with the score and any advisory issues.
+
+```json
+{
+  "score": 92,
+  "issues": [
+    {
+      "severity": "warn",
+      "code": "too_many_links",
+      "message": "4 links found; keep cold-email link count low."
+    }
+  ]
+}
+```

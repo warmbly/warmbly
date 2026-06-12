@@ -1,0 +1,367 @@
+---
+title: Webhooks
+description: Subscribe to Warmbly platform events and receive HMAC-signed delivery callbacks at your own HTTPS endpoints.
+icon: Webhook
+---
+
+Webhooks let your systems react to Warmbly activity in real time. You register one or more HTTPS endpoints, optionally filter them to specific event types, and Warmbly POSTs a signed JSON payload to each matching endpoint whenever a subscribed event fires. Every delivery is signed with HMAC-SHA256 and carries a unique event id so you can verify authenticity and dedupe replays. Failed deliveries are retried with exponential backoff and their history is queryable for debugging.
+
+All webhook management endpoints are org-scoped and share one auth gate: **Scope** `WEBHOOKS` · **Org permission** `manage_settings`. The signing secret is server-generated and only returned at create and rotate time, so capture it then.
+
+## List webhook endpoints
+
+`GET /webhooks`
+
+Returns every endpoint configured for the caller's organization, along with the full event vocabulary for building a picker. Secrets are never included in this response.
+
+Auth: **Scope** `WEBHOOKS` · **Org permission** `manage_settings`.
+
+### Response
+
+Returns an object with the configured `endpoints` array and the canonical `event_types` list (every event Warmbly can emit). This is not a `data` + `pagination` envelope.
+
+```json
+{
+  "endpoints": [
+    {
+      "id": "a3f1c2e4-5b6d-7e8f-9a0b-1c2d3e4f5a6b",
+      "organization_id": "11111111-2222-3333-4444-555555555555",
+      "url": "https://hooks.example.com/warmbly",
+      "description": "Production event sink",
+      "event_types": ["campaign.reply_received", "meeting.booked"],
+      "enabled": true,
+      "last_success_at": "2026-06-11T18:02:14Z",
+      "last_failure_at": null,
+      "last_failure_reason": null,
+      "consecutive_failures": 0,
+      "created_at": "2026-05-01T09:00:00Z",
+      "updated_at": "2026-06-11T18:02:14Z"
+    }
+  ],
+  "event_types": [
+    "email_account.connected",
+    "campaign.email_sent",
+    "meeting.booked"
+  ]
+}
+```
+
+## Create a webhook endpoint
+
+`POST /webhooks`
+
+Creates a new subscription. The response is the only time the signing `secret` is returned, so store it immediately. The URL must be HTTPS and resolve to a publicly routable host (loopback, private, and link-local targets are rejected unless the server runs with unsafe webhook URLs enabled for local or self-hosted development).
+
+Auth: **Scope** `WEBHOOKS` · **Org permission** `manage_settings`.
+
+### Request body
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `url` | string | Yes | HTTPS URL that will receive POST callbacks. Must be publicly routable. |
+| `description` | string | No | Free-text label for your own reference. |
+| `event_types` | string[] | No | Event names to subscribe to. Each must be a known type (see the event vocabulary below). An empty or omitted array subscribes to all events. |
+| `enabled` | boolean | No | Whether the endpoint is active. Defaults to `true`. |
+
+```json
+{
+  "url": "https://hooks.example.com/warmbly",
+  "description": "Production event sink",
+  "event_types": ["campaign.reply_received", "meeting.booked"],
+  "enabled": true
+}
+```
+
+### Response
+
+`201 Created` with the full endpoint, including the one-time `secret`.
+
+```json
+{
+  "id": "a3f1c2e4-5b6d-7e8f-9a0b-1c2d3e4f5a6b",
+  "organization_id": "11111111-2222-3333-4444-555555555555",
+  "url": "https://hooks.example.com/warmbly",
+  "description": "Production event sink",
+  "event_types": ["campaign.reply_received", "meeting.booked"],
+  "enabled": true,
+  "last_success_at": null,
+  "last_failure_at": null,
+  "last_failure_reason": null,
+  "consecutive_failures": 0,
+  "created_at": "2026-06-11T18:00:00Z",
+  "updated_at": "2026-06-11T18:00:00Z",
+  "secret": "whsec_9f8e7d6c5b4a39281706f5e4d3c2b1a09f8e7d6c5b4a39281706f5e4d3c2b1a0"
+}
+```
+
+## Update a webhook endpoint
+
+`PATCH /webhooks/:id`
+
+Updates a subscription's URL, description, event filter, or enabled state. The signing secret is not changed here, use the rotate endpoint for that. The same URL and event-type validation as create applies.
+
+Auth: **Scope** `WEBHOOKS` · **Org permission** `manage_settings`.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | UUID | The endpoint id to update. |
+
+### Request body
+
+Same shape as create. All fields are replaced with the values sent, so send the complete desired state (event_types is overwritten, not merged).
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `url` | string | Yes | HTTPS, publicly routable URL. |
+| `description` | string | No | Free-text label. |
+| `event_types` | string[] | No | Replacement event filter. Empty means all events. |
+| `enabled` | boolean | No | Active state. Defaults to `true` if omitted. |
+
+```json
+{
+  "url": "https://hooks.example.com/warmbly",
+  "description": "Production event sink (replies only)",
+  "event_types": ["campaign.reply_received"],
+  "enabled": true
+}
+```
+
+### Response
+
+`200 OK` with the updated endpoint (no secret).
+
+```json
+{
+  "id": "a3f1c2e4-5b6d-7e8f-9a0b-1c2d3e4f5a6b",
+  "organization_id": "11111111-2222-3333-4444-555555555555",
+  "url": "https://hooks.example.com/warmbly",
+  "description": "Production event sink (replies only)",
+  "event_types": ["campaign.reply_received"],
+  "enabled": true,
+  "last_success_at": "2026-06-11T18:02:14Z",
+  "last_failure_at": null,
+  "last_failure_reason": null,
+  "consecutive_failures": 0,
+  "created_at": "2026-05-01T09:00:00Z",
+  "updated_at": "2026-06-11T18:05:00Z"
+}
+```
+
+## Delete a webhook endpoint
+
+`DELETE /webhooks/:id`
+
+Deletes a subscription and cascades to its delivery history.
+
+Auth: **Scope** `WEBHOOKS` · **Org permission** `manage_settings`.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | UUID | The endpoint id to delete. |
+
+### Response
+
+`204 No Content` with an empty body.
+
+## Rotate the signing secret
+
+`POST /webhooks/:id/rotate-secret`
+
+Issues a new signing secret and returns it once. In-flight deliveries that were already signed continue to verify against the old secret until they settle, while new deliveries use the new secret. Update your verifier promptly after rotating.
+
+Auth: **Scope** `WEBHOOKS` · **Org permission** `manage_settings`.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | UUID | The endpoint id to rotate. |
+
+### Response
+
+`200 OK` with the new secret. This is the only time it is returned.
+
+```json
+{
+  "secret": "whsec_1a2b3c4d5e6f70819a2b3c4d5e6f70819a2b3c4d5e6f70819a2b3c4d5e6f7081"
+}
+```
+
+## List delivery attempts
+
+`GET /webhooks/:id/deliveries`
+
+Returns recent delivery attempts for an endpoint, newest first. Each row updates in place across retries, so a single event that retried several times appears as one record whose `attempt_count` and `status` reflect the latest state. Useful for debugging integration failures.
+
+Auth: **Scope** `WEBHOOKS` · **Org permission** `manage_settings`.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | UUID | The endpoint id whose deliveries to list. |
+| `limit` | query | integer | Max rows to return. Must be between 1 and 200. Defaults to 50. Out-of-range values return `400`. |
+
+This endpoint returns a `deliveries` array, not a `data` + `pagination` cursor envelope.
+
+### Response
+
+```json
+{
+  "deliveries": [
+    {
+      "id": "d1e2f3a4-b5c6-7d8e-9f0a-1b2c3d4e5f6a",
+      "endpoint_id": "a3f1c2e4-5b6d-7e8f-9a0b-1c2d3e4f5a6b",
+      "organization_id": "11111111-2222-3333-4444-555555555555",
+      "event_type": "campaign.reply_received",
+      "event_id": "e9f8a7b6-c5d4-3e2f-1a0b-9c8d7e6f5a4b",
+      "payload": {
+        "id": "e9f8a7b6-c5d4-3e2f-1a0b-9c8d7e6f5a4b",
+        "event_type": "campaign.reply_received",
+        "organization_id": "11111111-2222-3333-4444-555555555555",
+        "created_at": "2026-06-11T18:02:13Z",
+        "data": { "...": "event-specific object" }
+      },
+      "status": "delivered",
+      "attempt_count": 1,
+      "max_attempts": 8,
+      "next_attempt_at": "2026-06-11T18:02:13Z",
+      "last_attempt_at": "2026-06-11T18:02:14Z",
+      "response_status": 200,
+      "response_body_excerpt": "ok",
+      "error_reason": null,
+      "created_at": "2026-06-11T18:02:13Z",
+      "updated_at": "2026-06-11T18:02:14Z"
+    }
+  ]
+}
+```
+
+Delivery `status` is one of `pending`, `in_flight`, `delivered`, `failed`, or `abandoned` (retries exhausted). `response_body_excerpt` is capped at the first 1024 bytes of the subscriber's response.
+
+## Delivery payload
+
+Every callback is an HTTP `POST` with a `Content-Type: application/json` body in this shape:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `id` | UUID | Unique event id. Stable across retries of the same event. Matches `X-Warmbly-Event-Id`. |
+| `event_type` | string | The event name, for example `campaign.reply_received`. |
+| `organization_id` | UUID | The organization the event belongs to. |
+| `created_at` | string | RFC 3339 UTC timestamp of when the event was dispatched. |
+| `data` | object | Event-specific payload. Shape depends on `event_type`. |
+
+```json
+{
+  "id": "e9f8a7b6-c5d4-3e2f-1a0b-9c8d7e6f5a4b",
+  "event_type": "campaign.reply_received",
+  "organization_id": "11111111-2222-3333-4444-555555555555",
+  "created_at": "2026-06-11T18:02:13Z",
+  "data": { "...": "event-specific object" }
+}
+```
+
+### Headers
+
+Each delivery carries these request headers:
+
+| Header | Description |
+| --- | --- |
+| `X-Warmbly-Signature` | HMAC-SHA256 signature in the form `t=<unix>,v1=<hex>`. |
+| `X-Warmbly-Event` | The event type, so you can route without parsing the body. |
+| `X-Warmbly-Event-Id` | The unique event id (same as the payload `id`). Use it to dedupe replays. |
+| `User-Agent` | `Warmbly-Webhooks/1.0`. |
+
+## Verifying signatures
+
+Warmbly signs every delivery with HMAC-SHA256 using your endpoint's signing secret. The `X-Warmbly-Signature` header has the form `t=<unix-timestamp>,v1=<hex-digest>`. To verify:
+
+1. Parse `t` and `v1` from the header.
+2. Compute `HMAC-SHA256(secret, "<t>." + rawRequestBody)` and hex-encode it. The signed string is the timestamp, a literal `.`, then the exact raw request body.
+3. Compare your hex digest against `v1` using a constant-time comparison.
+4. Optionally reject deliveries whose `t` is too far from the current time to limit replay windows.
+
+Always compute the HMAC over the raw, unmodified request body before any JSON re-serialization. The secret is the `whsec_`-prefixed value returned at create or rotate time.
+
+```text
+signed_payload = "1749664934." + raw_body
+expected_v1    = hex(hmac_sha256(secret, signed_payload))
+```
+
+## Retries and backoff
+
+Deliveries are enqueued and drained asynchronously by a background worker, so the dispatching API call returns immediately and is not blocked on your endpoint.
+
+- A `2xx` response marks the delivery `delivered` and resets the endpoint's failure health.
+- Any non-`2xx` response, a connection error, or a timeout (the worker uses a 15s request timeout) marks the attempt failed and schedules a retry.
+- Backoff doubles each retry starting at 30 seconds (30s, 1m, 2m, 4m, 8m, 16m, 32m), capped at 1 hour per wait.
+- The default `max_attempts` is 8. Once attempts are exhausted the delivery is marked `abandoned`.
+- Both `4xx` and `5xx` responses are retried (a `4xx` may be a transient validation flap), up to the attempt cap.
+
+Make your handler idempotent: dedupe on `X-Warmbly-Event-Id` (equivalently the payload `id`), since the same event id can arrive more than once across retries.
+
+## Event vocabulary
+
+An endpoint with an empty `event_types` filter receives all of the following. The `data` object differs per event.
+
+### Email account lifecycle
+
+| Event | Fires when |
+| --- | --- |
+| `email_account.connected` | A mailbox is connected to the organization. |
+| `email_account.removed` | A mailbox is removed. |
+
+### Campaign send pipeline
+
+| Event | Fires when |
+| --- | --- |
+| `campaign.email_sent` | A campaign email is dispatched by a worker. |
+| `campaign.email_delivered` | A campaign email is accepted by the recipient's provider. |
+| `campaign.email_opened` | A tracked open is recorded. |
+| `campaign.email_clicked` | A tracked link click is recorded. |
+| `campaign.email_bounced` | A campaign email bounces. |
+| `campaign.reply_received` | A human reply lands for a campaign thread. |
+| `campaign.unsubscribed` | A recipient unsubscribes. |
+| `campaign.started` | A campaign starts sending. |
+| `campaign.paused` | A campaign is paused. |
+| `campaign.completed` | A campaign finishes. |
+| `campaign.deliverability_warning` | A campaign's rolling bounce or complaint rate enters the early-warning band (half the auto-pause threshold). |
+| `campaign.action` | A sequence flow `notify` action node fires. |
+
+### Warmup
+
+| Event | Fires when |
+| --- | --- |
+| `warmup.email_sent` | A warmup message is sent. |
+| `warmup.health_changed` | A mailbox's warmup health state changes. |
+| `warmup.placement_in_spam` | A warmup message is observed landing in spam. |
+| `warmup.quarantined` | A mailbox is quarantined from the shared pool. |
+| `warmup.blocked` | A mailbox is blocked from the shared pool. |
+
+### Deliverability
+
+| Event | Fires when |
+| --- | --- |
+| `deliverability.bounce` | A bounce signal is processed. |
+| `deliverability.complaint` | A complaint (spam report) is processed. |
+
+### Meetings
+
+| Event | Fires when |
+| --- | --- |
+| `meeting.booked` | A call is booked through a connected scheduler (Calendly or Cal.com). |
+| `meeting.rescheduled` | A booked call is rescheduled. |
+| `meeting.canceled` | A booked call is canceled. |
+
+## Errors
+
+Webhook endpoints use the standard error envelope with stable `code` and `request_id` fields (see [error codes](/api/error-codes/)). Common cases:
+
+- `400` invalid payload, a non-HTTPS or non-routable `url`, an unknown event type, or a `limit` outside 1 to 200.
+- `400` an invalid endpoint id in the path.
+- `404` the endpoint does not exist or does not belong to your organization (returned on update target lookup, delete, rotate, and deliveries).
+
+```json
+{
+  "error": "Bad Request",
+  "message": "unknown event type: campaign.exploded",
+  "code": "bad_request",
+  "request_id": "req_7Yc2pK1nQ4"
+}
+```

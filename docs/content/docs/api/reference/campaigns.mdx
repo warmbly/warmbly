@@ -1,0 +1,920 @@
+---
+title: Campaigns
+description: Create campaigns and sequences, manage senders, ramp and tracking settings, A/B variants, attachments, preflight, and start or stop sends.
+icon: Megaphone
+---
+```
+
+Let me confirm the Search `q`/`folder` query params and that `Search` always returns the `CampaignsResult` envelope (data + Pagination). Already confirmed from handler and model. Now writing the final output.
+
+---
+title: Campaigns
+description: Create campaigns and sequences, manage senders, A/B variants, attachments, ramp and tracking settings, preflight checks, and start or stop sends.
+icon: Megaphone
+---
+
+Campaigns are the cold outreach unit in Warmbly. A campaign holds sending rules, a schedule, a sender pool, and an ordered list of sequence steps (email or action nodes). These endpoints cover campaign CRUD, the advanced outreach overrides, per-step A/B variants, attachments, the explicit sender pool, preflight and test sends, start and stop, activity logs, campaign-scoped tracking-domain verification, the nested sequence editor, the template preview helper, and the AI writing assistant.
+
+All errors follow the shared `{error, message, code, request_id}` envelope documented in [error codes](/api/error-codes/). Authentication and the scope model are covered in [authentication](/api/authentication/) and [permissions](/api/permissions/).
+
+## List campaigns
+
+`GET /campaigns`
+
+Search and page through the organization's campaigns. **Scope** `READ_CAMPAIGNS` · **Org permission** `view_campaigns`.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `q` | query | string | Free-text filter on campaign name. Optional. |
+| `folder` | query | string | Restrict to a single folder id. Optional. |
+| `cursor` | query | string | Opaque cursor from the previous page's `pagination.next_cursor`. Optional. |
+| `limit` | query | string | Page size. Optional. |
+
+### Response
+
+A `data` plus `pagination` envelope. `next_cursor` is the campaign id to resume from (`null` on the last page), and `total` is the unfiltered count.
+
+```json
+{
+  "data": [
+    {
+      "id": "8f1d6b2e-2b7a-4c9e-9a1f-0e6d4c3b2a10",
+      "user_id": "a2c4...",
+      "organization_id": "11111111-2222-3333-4444-555555555555",
+      "name": "Q3 outbound",
+      "description": "",
+      "status": "active",
+      "stop_on_reply": true,
+      "open_tracking": true,
+      "link_tracking": true,
+      "text_only": false,
+      "daily_limit": 50,
+      "unsubscribe_header": true,
+      "risky_emails": false,
+      "cc": [],
+      "bcc": [],
+      "start_date": null,
+      "end_date": null,
+      "timezone": "UTC",
+      "days": 62,
+      "start_time": "09:00",
+      "end_time": "17:00",
+      "schedule_windows": [[],[{"start":540,"end":1020}],[],[],[],[],[]],
+      "email_tags": ["sales"],
+      "folders": [],
+      "contact_order_by": "created_at",
+      "contact_order_dir": "asc",
+      "sender_strategy": "tags",
+      "rotation_mode": "round_robin",
+      "ramp_enabled": false,
+      "ramp_start": 0,
+      "ramp_increment": 0,
+      "ramp_ceiling": 0,
+      "ramp_level": 0,
+      "esp_match_mode": "off",
+      "max_new_leads_per_day": 0,
+      "prioritize_new_leads": false,
+      "tracking_domain": "",
+      "tracking_domain_verified": false,
+      "updated_at": "2026-06-10T12:00:00Z",
+      "created_at": "2026-06-01T09:00:00Z"
+    }
+  ],
+  "pagination": {
+    "total": 12,
+    "next_cursor": "8f1d6b2e-2b7a-4c9e-9a1f-0e6d4c3b2a10",
+    "has_more": true
+  }
+}
+```
+
+## Create a campaign
+
+`POST /campaigns`
+
+Create a campaign. Only `name` is required, every other field is optional and applied only when sent (the wizard sends everything at once, a simple modal can send just `{name, description}` and get sane defaults). **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_campaigns`.
+
+### Request body
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | string | yes | Campaign name. |
+| `description` | string | no | Free-text description. |
+| `stop_on_reply` | boolean | no | Stop sending to a contact once they reply. |
+| `open_tracking` | boolean | no | Insert the open pixel. |
+| `link_tracking` | boolean | no | Rewrite links through the tracking ticket service. |
+| `text_only` | boolean | no | Send plain text only. |
+| `daily_limit` | integer | no | Per-campaign daily send cap. |
+| `unsubscribe_header` | boolean | no | Add the RFC 8058 one-click unsubscribe header. |
+| `risky_emails` | boolean | no | Allow sending to risky/unverified addresses. |
+| `cc` | string[] | no | Static CC list. |
+| `bcc` | string[] | no | Static BCC list. |
+| `start_date` | string (RFC 3339) | no | Earliest send time. |
+| `end_date` | string (RFC 3339) | no | Latest send time. |
+| `timezone` | string | no | IANA timezone for the schedule. |
+| `days` | integer (0-127) | no | Legacy weekday bitmask (superseded by `schedule_windows`). |
+| `start_time` | string | no | Legacy daily start (`HH:MM`). |
+| `end_time` | string | no | Legacy daily end (`HH:MM`). |
+| `email_tag_ids` | string[] | no | Mailbox tag ids that resolve the sender pool (tags strategy). |
+| `folder_ids` | string[] | no | Folder ids to file the campaign under. |
+| `sender_strategy` | string | no | `tags` (default) or `explicit`. |
+| `rotation_mode` | string | no | How volume spreads across the chosen mailboxes. |
+| `senders` | object[] | no | Explicit-strategy mailbox pool (see sender input below). |
+| `ramp_enabled` | boolean | no | Enable per-campaign daily ramp-up. |
+| `ramp_start` | integer | no | Ramp starting volume. |
+| `ramp_increment` | integer | no | Daily ramp increment. |
+| `ramp_ceiling` | integer | no | Ramp ceiling (never raises above the per-mailbox cap). |
+| `esp_match_mode` | string | no | `off`, `prefer`, or `strict`. |
+| `max_new_leads_per_day` | integer | no | New-lead throttle, `0` is unlimited. |
+| `prioritize_new_leads` | boolean | no | Prefer new leads in each send window. |
+| `tracking_domain` | string | no | Campaign-scoped tracking domain (honored only once verified). |
+| `sequences` | object[] | no | Initial sequence steps in order (see create sequence input below). |
+| `variants` | object[] | no | A/B variants for the first step (same shape as create A/B variant). |
+| `advanced_overrides` | object | no | Advanced outreach overrides, see [advanced settings](#get-advanced-settings). |
+
+`schedule_windows` may also be supplied as a 7-element array (indexed by `time.Weekday`, Sunday = 0) of `{start, end}` minute intervals. When non-empty it supersedes `days`/`start_time`/`end_time`.
+
+```json
+{
+  "name": "Q3 outbound",
+  "description": "Founders in fintech",
+  "stop_on_reply": true,
+  "open_tracking": true,
+  "link_tracking": true,
+  "daily_limit": 40,
+  "unsubscribe_header": true,
+  "timezone": "America/New_York",
+  "email_tag_ids": ["3b0a...", "9d2c..."],
+  "sender_strategy": "tags",
+  "rotation_mode": "round_robin",
+  "ramp_enabled": true,
+  "ramp_start": 10,
+  "ramp_increment": 2,
+  "ramp_ceiling": 40,
+  "sequences": [
+    { "name": "Step 1", "subject": "Quick question, {{first_name}}", "body_plain": "Hi {{first_name}}...", "wait_after": 0 }
+  ]
+}
+```
+
+### Response
+
+The created `Campaign` object (same shape as one element of the [list](#list-campaigns) `data` array).
+
+## Get a campaign
+
+`GET /campaigns/:id`
+
+Fetch a single campaign by id. **Scope** `READ_CAMPAIGNS` · **Org permission** `view_campaigns`.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | uuid | Campaign id. |
+
+### Response
+
+A `Campaign` object (see the [list](#list-campaigns) shape).
+
+## Update a campaign
+
+`PATCH /campaigns/:id`
+
+Patch any subset of campaign fields. Omitted fields are left unchanged. The explicit sender list is edited through [replace senders](#replace-senders), only the `sender_strategy`/`rotation_mode` toggles ride this PATCH. **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_campaigns`.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | uuid | Campaign id. |
+
+### Request body
+
+Every field is optional. Scalar fields use nullable pointers, so any field you send is applied. Notable fields: `name`, `description`, `status`, `stop_on_reply`, `open_tracking`, `link_tracking`, `text_only`, `daily_limit`, `unsubscribe_header`, `risky_emails`, `cc`, `bcc`, `start_date`, `end_date`, `timezone`, `days`, `start_time`, `end_time`, `schedule_windows`, `email_tags`, `folders`, `contact_order_by`, `contact_order_dir`, `contact_order_field`, `sender_strategy`, `rotation_mode`, `ramp_enabled`, `ramp_start`, `ramp_increment`, `ramp_ceiling`, `esp_match_mode`, `max_new_leads_per_day`, `prioritize_new_leads`, `tracking_domain`.
+
+```json
+{
+  "name": "Q3 outbound (renamed)",
+  "daily_limit": 35,
+  "stop_on_reply": true,
+  "schedule_windows": [[],[{"start":540,"end":1020}],[{"start":540,"end":1020}],[],[],[],[]]
+}
+```
+
+### Response
+
+The updated `Campaign` object.
+
+## Delete a campaign
+
+`DELETE /campaigns/:id`
+
+Permanently delete a campaign. **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_campaigns`.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | uuid | Campaign id. |
+
+### Response
+
+`204 No Content` with an empty body.
+
+## Get advanced settings
+
+`GET /campaigns/:id/advanced`
+
+Return the campaign's advanced outreach overrides (bounce pipeline, task reliability, A/B testing, reply intent, send-time optimization, preflight, dashboard). **Scope** `READ_CAMPAIGNS` · **Org permission** `view_campaigns`.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | uuid | Campaign id. |
+
+### Response
+
+A `CampaignAdvancedSettings` object: the campaign id, the `overrides` block, and `updated_at`.
+
+```json
+{
+  "campaign_id": "8f1d6b2e-2b7a-4c9e-9a1f-0e6d4c3b2a10",
+  "overrides": {
+    "bounce_pipeline": {
+      "enabled": true,
+      "auto_suppress_on_bounce": true,
+      "auto_suppress_on_complaint": true,
+      "auto_suppress_on_unsubscribe": true,
+      "auto_pause_campaign_on_spike": true,
+      "pause_bounce_rate_threshold": 8,
+      "pause_complaint_rate_threshold": 1.5
+    },
+    "task_reliability": { "enabled": true, "dlq_enabled": true, "max_attempts": 5, "execution_window_seconds": 300 },
+    "ab_testing": { "enabled": true, "default_winning_rule": "reply_rate", "auto_promote_winner": false, "min_sample_size": 30 },
+    "reply_intent": {
+      "enabled": true,
+      "positive_keywords": ["interested", "pricing"],
+      "negative_keywords": ["not interested", "unsubscribe"],
+      "out_of_office_keywords": ["out of office", "vacation"],
+      "question_keywords": ["?", "how", "price"],
+      "auto_create_crm_task": true,
+      "auto_pause_on_negative": false,
+      "auto_suppress_on_unsubscribe_keyword": true
+    },
+    "send_time_optimization": {
+      "enabled": true,
+      "use_contact_timezone": true,
+      "default_contact_timezone": "UTC",
+      "preferred_hours": [9, 10, 11, 14, 15, 16],
+      "weekend_weight_multiplier": 0.5
+    },
+    "preflight": {
+      "enabled": true,
+      "check_tracking_domain": true,
+      "check_unsubscribe_header": true,
+      "check_ab_variant_configured": false,
+      "check_daily_limit": true,
+      "check_schedule_window": true
+    },
+    "dashboard": { "enabled": true, "show_suppression_log": true, "show_intent_summary": true, "show_dlq_stats": true }
+  },
+  "updated_at": "2026-06-10T12:00:00Z"
+}
+```
+
+## Update advanced settings
+
+`PATCH /campaigns/:id/advanced`
+
+Replace the campaign's advanced overrides. **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_settings`.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | uuid | Campaign id. |
+
+### Request body
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `settings` | object | yes | A full `AdvancedOutreachSettings` block (same shape as `overrides` above). |
+
+```json
+{
+  "settings": {
+    "bounce_pipeline": { "enabled": true, "auto_suppress_on_bounce": true, "auto_suppress_on_complaint": true, "auto_suppress_on_unsubscribe": true, "auto_pause_campaign_on_spike": true, "pause_bounce_rate_threshold": 8, "pause_complaint_rate_threshold": 1.5 },
+    "task_reliability": { "enabled": true, "dlq_enabled": true, "max_attempts": 5, "execution_window_seconds": 300 },
+    "ab_testing": { "enabled": true, "default_winning_rule": "reply_rate", "auto_promote_winner": false, "min_sample_size": 30 },
+    "reply_intent": { "enabled": true, "positive_keywords": [], "negative_keywords": [], "out_of_office_keywords": [], "question_keywords": [], "auto_create_crm_task": true, "auto_pause_on_negative": false, "auto_suppress_on_unsubscribe_keyword": true },
+    "send_time_optimization": { "enabled": true, "use_contact_timezone": true, "default_contact_timezone": "UTC", "preferred_hours": [9, 14], "weekend_weight_multiplier": 0.5 },
+    "preflight": { "enabled": true, "check_tracking_domain": true, "check_unsubscribe_header": true, "check_ab_variant_configured": false, "check_daily_limit": true, "check_schedule_window": true },
+    "dashboard": { "enabled": true, "show_suppression_log": true, "show_intent_summary": true, "show_dlq_stats": true }
+  }
+}
+```
+
+### Response
+
+`204 No Content` with an empty body.
+
+## List A/B variants
+
+`GET /campaigns/:id/ab-variants`
+
+List the campaign's A/B variants. A variant scoped to a `sequence_id` applies to one step, a `null` sequence id is campaign-level. **Scope** `READ_CAMPAIGNS` · **Org permission** `view_campaigns`.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | uuid | Campaign id. |
+
+### Response
+
+A `data` array of `CampaignABVariant` objects (no pagination wrapper).
+
+```json
+{
+  "data": [
+    {
+      "id": "c1a2...",
+      "campaign_id": "8f1d6b2e-2b7a-4c9e-9a1f-0e6d4c3b2a10",
+      "sequence_id": "7e3b...",
+      "name": "Subject B",
+      "weight": 50,
+      "subject": "Worth a look, {{first_name}}?",
+      "body_html": "<p>Hi {{first_name}}...</p>",
+      "body_plain": "Hi {{first_name}}...",
+      "is_control": false,
+      "is_active": true,
+      "created_at": "2026-06-02T10:00:00Z",
+      "updated_at": "2026-06-02T10:00:00Z"
+    }
+  ]
+}
+```
+
+## Create an A/B variant
+
+`POST /campaigns/:id/ab-variants`
+
+Add a variant to the campaign (or to one step via `sequence_id`). **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_settings`.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | uuid | Campaign id. |
+
+### Request body
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | string | yes | Variant label. |
+| `sequence_id` | uuid | no | Step to scope the variant to, omit for campaign-level. |
+| `weight` | integer | no | Relative selection weight. |
+| `subject` | string | no | Variant subject template. |
+| `body_html` | string | no | Variant HTML body. |
+| `body_plain` | string | no | Variant plain-text body. |
+| `is_control` | boolean | no | Mark this as the control. |
+| `is_active` | boolean | no | Whether the variant participates in the split. |
+| `metadata` | object | no | Free-form metadata. |
+
+```json
+{
+  "name": "Subject B",
+  "sequence_id": "7e3b...",
+  "weight": 50,
+  "subject": "Worth a look, {{first_name}}?",
+  "body_plain": "Hi {{first_name}}...",
+  "is_control": false,
+  "is_active": true
+}
+```
+
+### Response
+
+`201 Created` with the created `CampaignABVariant` object (see the [list variants](#list-ab-variants) shape).
+
+## Update an A/B variant
+
+`PATCH /campaigns/:id/ab-variants/:variantId`
+
+Patch a variant. Omitted fields are unchanged. **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_settings`.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | uuid | Campaign id. |
+| `variantId` | path | uuid | Variant id. |
+
+### Request body
+
+All fields optional: `name`, `weight`, `subject`, `body_html`, `body_plain`, `is_control`, `is_active`, `metadata`.
+
+```json
+{ "weight": 70, "is_active": true }
+```
+
+### Response
+
+The updated `CampaignABVariant` object.
+
+## Delete an A/B variant
+
+`DELETE /campaigns/:id/ab-variants/:variantId`
+
+Remove a variant. **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_settings`.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | uuid | Campaign id. |
+| `variantId` | path | uuid | Variant id. |
+
+### Response
+
+`204 No Content` with an empty body.
+
+## Get A/B analysis
+
+`GET /campaigns/:id/ab-analysis`
+
+Return per-variant engagement stats plus the computed winner for the campaign. **Scope** `READ_ANALYTICS` · **Org permission** `view_analytics`.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | uuid | Campaign id. |
+
+### Response
+
+An `ABWinnerAnalysis` object.
+
+```json
+{
+  "campaign_id": "8f1d6b2e-2b7a-4c9e-9a1f-0e6d4c3b2a10",
+  "variants": [
+    {
+      "variant_id": "c1a2...",
+      "variant_name": "Subject A",
+      "total_sent": 120,
+      "opened": 78,
+      "clicked": 21,
+      "replied": 9,
+      "bounced": 2,
+      "open_rate": 65.0,
+      "click_rate": 17.5,
+      "reply_rate": 7.5,
+      "bounce_rate": 1.7
+    }
+  ],
+  "winner_id": "c1a2...",
+  "winner_name": "Subject A",
+  "winning_rule": "reply_rate",
+  "confidence": "low"
+}
+```
+
+## List attachments
+
+`GET /campaigns/:id/attachments`
+
+List the campaign's attachments. Each entry carries a short-lived presigned download `url`. **Scope** `READ_CAMPAIGNS` · **Org permission** `view_campaigns`.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | uuid | Campaign id. |
+
+### Response
+
+A `data` array of attachment objects (no pagination wrapper).
+
+```json
+{
+  "data": [
+    {
+      "id": "a9f0...",
+      "campaign_id": "8f1d6b2e-2b7a-4c9e-9a1f-0e6d4c3b2a10",
+      "sequence_id": null,
+      "filename": "one-pager.pdf",
+      "size": 248192,
+      "mime_type": "application/pdf",
+      "url": "https://storage.warmbly.com/...signed...",
+      "created_at": "2026-06-05T08:00:00Z"
+    }
+  ]
+}
+```
+
+## Upload an attachment
+
+`POST /campaigns/:id/attachments`
+
+Upload a file to attach to the campaign (or one step). Sent as `multipart/form-data`, not JSON. **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_campaigns`.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | uuid | Campaign id. |
+| `file` | form (multipart) | file | Required. The file to upload (max 15 MB). Executable and script types are rejected. |
+| `sequence_id` | form (multipart) | uuid | Optional. Scope the attachment to one sequence step. |
+
+### Response
+
+`201 Created` with the created attachment object (same shape as one element of [list attachments](#list-attachments)).
+
+## Delete an attachment
+
+`DELETE /campaigns/:id/attachments/:attachmentId`
+
+Delete a campaign attachment and its stored object. **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_campaigns`.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | uuid | Campaign id. |
+| `attachmentId` | path | uuid | Attachment id. |
+
+### Response
+
+`204 No Content` with an empty body.
+
+## Run preflight
+
+`POST /campaigns/:id/preflight`
+
+Run the campaign's preflight validation checks (tracking domain, unsubscribe header, daily limit, schedule window, A/B configuration, and more) and return a scored report. No mail is sent. **Scope** `SEND_CAMPAIGNS` · **Org permission** `send_campaigns`.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | uuid | Campaign id. |
+
+### Response
+
+A `PreflightReport` object.
+
+```json
+{
+  "id": "f2b1...",
+  "organization_id": "11111111-2222-3333-4444-555555555555",
+  "campaign_id": "8f1d6b2e-2b7a-4c9e-9a1f-0e6d4c3b2a10",
+  "passed": false,
+  "score": 80,
+  "checks": [
+    {
+      "key": "tracking_domain",
+      "passed": false,
+      "severity": "warning",
+      "message": "Tracking domain is not verified.",
+      "remediation": "Verify the campaign tracking domain before sending."
+    }
+  ],
+  "recommendations": ["Verify your tracking domain to improve link attribution."],
+  "created_at": "2026-06-10T12:00:00Z"
+}
+```
+
+## Send a test email
+
+`POST /campaigns/:id/test-email`
+
+Send a one-off preview of a sequence step to a chosen recipient through a chosen mailbox. Defaults to the first step when `sequence_id` is omitted. **Scope** `SEND_CAMPAIGNS` · **Org permission** `send_campaigns`.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | uuid | Campaign id. |
+
+### Request body
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `account_id` | uuid | yes | Sending mailbox id. |
+| `recipient` | string (email) | yes | Where to send the test. |
+| `sequence_id` | uuid | no | Step to render and send, defaults to the first step. |
+
+```json
+{
+  "account_id": "5c7d...",
+  "recipient": "me@example.com",
+  "sequence_id": "7e3b..."
+}
+```
+
+### Response
+
+```json
+{
+  "message": "test email sent",
+  "recipient": "me@example.com",
+  "subject": "Quick question, Alex",
+  "account_id": "5c7d..."
+}
+```
+
+## Start a campaign
+
+`POST /campaigns/:id/start`
+
+Start (activate) the campaign so it begins sending real mail. **Scope** `SEND_CAMPAIGNS` · **Org permission** `send_campaigns`.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | uuid | Campaign id. |
+
+### Response
+
+```json
+{ "status": "started" }
+```
+
+## Stop a campaign
+
+`POST /campaigns/:id/stop`
+
+Stop (pause) an active campaign. **Scope** `SEND_CAMPAIGNS` · **Org permission** `send_campaigns`.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | uuid | Campaign id. |
+
+### Response
+
+```json
+{ "status": "stopped" }
+```
+
+## Get campaign logs
+
+`GET /campaigns/:id/logs`
+
+Page through the campaign's activity log (status changes, send events, errors). **Scope** `READ_CAMPAIGNS` · **Org permission** `view_campaigns`.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | uuid | Campaign id. |
+| `cursor` | query | string | Opaque cursor from the previous page. Optional. |
+| `limit` | query | integer | Page size, 1 to 100 (default 50). Optional. |
+
+### Response
+
+A `data` plus `pagination` envelope. Here `pagination` carries only `next_cursor` (a string, `null` on the last page) and `has_more`.
+
+```json
+{
+  "data": [
+    {
+      "id": "9b2c...",
+      "campaign_id": "8f1d6b2e-2b7a-4c9e-9a1f-0e6d4c3b2a10",
+      "event_type": "campaign_started",
+      "message": "Campaign started",
+      "metadata": {},
+      "created_at": "2026-06-10T12:00:00Z"
+    }
+  ],
+  "pagination": {
+    "next_cursor": "9b2c...",
+    "has_more": true
+  }
+}
+```
+
+## List campaign senders
+
+`GET /campaigns/:id/senders`
+
+Return the campaign's explicit sender pool (used when `sender_strategy` is `explicit`). **Scope** `READ_CAMPAIGNS` · **Org permission** `view_campaigns`.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | uuid | Campaign id. |
+
+### Response
+
+A `data` array of sender objects (no pagination wrapper).
+
+```json
+{
+  "data": [
+    {
+      "email_account_id": "5c7d...",
+      "weight": 1,
+      "last_sent_at": "2026-06-10T11:55:00Z",
+      "enabled": true
+    }
+  ]
+}
+```
+
+## Replace senders
+
+`PUT /campaigns/:id/senders`
+
+Atomically replace the campaign's explicit sender pool with the supplied list. **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_campaigns`.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | uuid | Campaign id. |
+
+### Request body
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `senders` | object[] | yes | The full new sender pool. Each item: `email_account_id` (uuid, required), `weight` (integer, optional), `enabled` (boolean, optional). |
+
+```json
+{
+  "senders": [
+    { "email_account_id": "5c7d...", "weight": 2, "enabled": true },
+    { "email_account_id": "6d8e...", "weight": 1, "enabled": true }
+  ]
+}
+```
+
+### Response
+
+A `data` array of the resulting sender objects (same shape as [list senders](#list-campaign-senders)).
+
+## Verify campaign tracking domain
+
+`POST /campaigns/:id/tracking-domain/verify`
+
+Resolve the campaign-scoped tracking domain's CNAME and flip `tracking_domain_verified` to `true` on success. **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_campaigns`.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | uuid | Campaign id. |
+
+### Response
+
+A `TrackingDomainStatus` object.
+
+```json
+{
+  "tracking_domain": "track.acme.com",
+  "tracking_domain_verified": true,
+  "tracking_domain_verified_at": "2026-06-10T12:00:00Z"
+}
+```
+
+## List sequences
+
+`GET /campaigns/:id/sequences`
+
+Return the campaign's sequence steps in order. **Scope** `READ_CAMPAIGNS` · **Org permission** `view_campaigns`.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | uuid | Campaign id. |
+
+### Response
+
+A bare array of `Sequence` objects (no envelope).
+
+```json
+[
+  {
+    "id": "7e3b...",
+    "name": "Step 1",
+    "subject": "Quick question, {{first_name}}",
+    "body_plain": "Hi {{first_name}}...",
+    "body_html": "<p>Hi {{first_name}}...</p>",
+    "body_sync": true,
+    "body_code": false,
+    "wait_after": 0,
+    "position": 0,
+    "kind": "email",
+    "updated_at": "2026-06-02T10:00:00Z",
+    "created_at": "2026-06-02T10:00:00Z"
+  }
+]
+```
+
+## Create a sequence
+
+`POST /campaigns/:id/sequences`
+
+Append a new empty sequence step to the campaign. The step is created with defaults, then edited with PATCH. **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_campaigns`.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | uuid | Campaign id. |
+
+This endpoint takes no request body.
+
+### Response
+
+The created `Sequence` object (see the [list sequences](#list-sequences) shape).
+
+## Update a sequence
+
+`PATCH /campaigns/:id/sequences/:sid`
+
+Patch a sequence step: its copy, spacing, node kind, branching tree, or action config. Omitted fields are unchanged. **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_campaigns`.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | uuid | Campaign id. |
+| `sid` | path | uuid | Sequence (step) id. |
+
+### Request body
+
+All fields optional.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | string | no | Step label. |
+| `subject` | string | no | Subject template. |
+| `body_plain` | string | no | Plain-text body template. |
+| `body_html` | string | no | HTML body template. |
+| `body_sync` | boolean | no | Keep plain and HTML bodies in sync. |
+| `body_code` | boolean | no | Treat the body as raw code (no auto-formatting). |
+| `wait_after` | integer | no | Minutes to wait after this step before the next (the spacing model, there is no standalone wait node for email steps). |
+| `conditions` | object | no | Branching tree (`{branches: [...]}`). Send `{}` or empty branches to clear branching and fall back to linear progression. |
+| `kind` | string | no | `email` (default), `action`, or `wait`. |
+| `action` | object | no | Typed config for non-email nodes. `type` is the switch (`wait`, `add_tag`, `remove_tag`, `unsubscribe`, `notify`, `create_task`, `create_deal`, `move_deal_stage`, `run_automation`, `end`), the remaining fields are type-scoped. |
+
+```json
+{
+  "name": "Step 2",
+  "subject": "Following up, {{first_name}}",
+  "body_plain": "Just bumping this...",
+  "wait_after": 2880,
+  "conditions": {
+    "branches": [
+      {
+        "branch_id": "b1",
+        "target_sequence_id": null,
+        "conditions": [{ "field": "replied", "operator": "ever", "value": null }]
+      }
+    ]
+  }
+}
+```
+
+### Response
+
+The updated `Sequence` object.
+
+## Delete a sequence
+
+`DELETE /campaigns/:id/sequences/:sid`
+
+Delete a sequence step. **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_campaigns`.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | uuid | Campaign id. |
+| `sid` | path | uuid | Sequence (step) id. |
+
+### Response
+
+`200 OK` with an empty body.
+
+## Preview a template
+
+`POST /campaign-template-preview`
+
+Render subject and body templates against a sample (or supplied) contact exactly as the send path would, and report parse errors plus any unresolved `{{...}}` tokens. No side effects, no campaign id. **Scope** `READ_CAMPAIGNS` · **Org permission** `view_campaigns`.
+
+### Request body
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `subject` | string | no | Subject template. |
+| `body_html` | string | no | HTML body template. |
+| `body_plain` | string | no | Plain-text body template. |
+| `contact` | object | no | Override fields on the built-in sample contact: `first_name`, `last_name`, `email`, `company`, `phone`, and a `custom_fields` map of string to string. |
+
+```json
+{
+  "subject": "Hi {{first_name}} at {{company}}",
+  "body_plain": "Hey {{first_name}}, I saw {{company}} is hiring. {{unknown_token}}",
+  "contact": { "first_name": "Sam", "company": "Globex" }
+}
+```
+
+### Response
+
+A `TemplatePreview` object. `errors` lists template parse errors that would block sending, `unresolved` lists literal tokens left after render. Both are omitted when empty.
+
+```json
+{
+  "subject": "Hi Sam at Globex",
+  "body_html": "",
+  "body_plain": "Hey Sam, I saw Globex is hiring. {{unknown_token}}",
+  "unresolved": ["{{unknown_token}}"]
+}
+```
+
+## Generate copy with the writing assistant
+
+`POST /generation/write`
+
+Generate outreach copy with the AI writing assistant. Gated to paid and free-trial organizations, and each call consumes one AI credit (refunded if the provider call fails). Supports `Idempotency-Key` so a retried request is not double-charged. **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_campaigns`.
+
+### Request body
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `prompt` | string | yes | The instruction to generate from (max 8000 characters). |
+| `tone` | string | no | Desired tone (for example `friendly`, `direct`). |
+
+```json
+{ "prompt": "Write a 3-line cold intro to a fintech founder about our deliverability tooling.", "tone": "direct" }
+```
+
+### Response
+
+```json
+{
+  "text": "Hi {{first_name}},\n\nNoticed {{company}} is scaling outbound...\n\nWorth a quick chat?",
+  "credits_remaining": 248,
+  "model": "claude-..."
+}
+
+When the organization is out of credits the endpoint returns `402` with `code: "insufficient_credits"` and the standard envelope. A depleted balance is checked before any provider call, so no completion is ever burned on a `402`.
