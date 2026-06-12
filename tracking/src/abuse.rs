@@ -48,7 +48,10 @@ pub fn is_prefetch(headers: &HeaderMap) -> bool {
     for name in ["sec-purpose", "purpose", "x-purpose", "x-moz"] {
         if let Some(value) = headers.get(name).and_then(|h| h.to_str().ok()) {
             let value = value.to_ascii_lowercase();
-            if value.contains("prefetch") || value.contains("preview") || value.contains("prerender") {
+            if value.contains("prefetch")
+                || value.contains("preview")
+                || value.contains("prerender")
+            {
                 return true;
             }
         }

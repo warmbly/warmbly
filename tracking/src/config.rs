@@ -130,12 +130,8 @@ impl Config {
 
         // Click-ticket resolver wiring (required): backend internal API base
         // URL + the shared internal bearer token.
-        let backend_internal_url = Self::get_required(
-            "BACKEND_INTERNAL_URL",
-            "backend/internal_url",
-            &params,
-        )
-        .await?;
+        let backend_internal_url =
+            Self::get_required("BACKEND_INTERNAL_URL", "backend/internal_url", &params).await?;
         let internal_api_token =
             Self::get_secret_optional("INTERNAL_API_TOKEN", "backend/internal_api_token", &secrets)
                 .await

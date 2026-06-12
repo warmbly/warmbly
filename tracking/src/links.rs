@@ -109,7 +109,10 @@ impl LinkResolver {
             return Resolution::Unavailable;
         }
 
-        let url = format!("{}/api/v1/internal/tracked-links/{}", self.backend_url, link_id);
+        let url = format!(
+            "{}/api/v1/internal/tracked-links/{}",
+            self.backend_url, link_id
+        );
         let response = self
             .http
             .get(&url)
@@ -180,8 +183,10 @@ impl LinkResolver {
     fn record_failure(&self) {
         let failures = self.breaker_failures.fetch_add(1, Ordering::Relaxed) + 1;
         if failures >= BREAKER_TRIP {
-            self.breaker_open_until_ms
-                .store(self.now_ms() + BREAKER_COOLDOWN.as_millis() as u64, Ordering::Relaxed);
+            self.breaker_open_until_ms.store(
+                self.now_ms() + BREAKER_COOLDOWN.as_millis() as u64,
+                Ordering::Relaxed,
+            );
             self.breaker_failures.store(0, Ordering::Relaxed);
             warn!("tracked-link breaker open for {:?}", BREAKER_COOLDOWN);
         }
