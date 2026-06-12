@@ -313,7 +313,10 @@ func main() {
 			log.Fatal(err)
 		}
 
-		// Google Pub/Sub for realtime streaming (optional)
+		// Realtime event transport. Prefer Google Pub/Sub when configured (prod);
+		// otherwise bridge events to the realtime service over Redis (local dev
+		// and any env without GCP), reusing the Redis client we already built.
+		// Exactly one transport is active, so events are never delivered twice.
 		gcpProjectID := os.Getenv("GCP_PROJECT_ID")
 		if gcpProjectID != "" {
 			pubsubClient, err := pubsub.NewClient(ctx, gcpProjectID)
@@ -323,6 +326,10 @@ func main() {
 			} else {
 				streamingPublisher = pubsub.NewStreamingPublisher(pubsubClient)
 			}
+		}
+		if streamingPublisher == nil {
+			streamingPublisher = pubsub.NewStreamingPublisher(pubsub.NewRedisBus(cache.Client, ""))
+			log.Println("Realtime events bridged over Redis (Google Pub/Sub not configured)")
 		}
 
 		emailCfg, err := cfg.LoadEmailConfig(ctx)

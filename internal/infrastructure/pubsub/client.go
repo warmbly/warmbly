@@ -78,13 +78,21 @@ func (c *Client) Publish(ctx context.Context, topicID string, data interface{}, 
 	return nil
 }
 
+// eventBus is the transport the StreamingPublisher writes to. Both the Google
+// Pub/Sub Client and the Redis bridge implement it, so the publish helpers stay
+// transport-agnostic and the same code path serves GCP and non-GCP (local dev)
+// environments.
+type eventBus interface {
+	Publish(ctx context.Context, topicID string, data interface{}, attributes map[string]string) error
+}
+
 // StreamingPublisher handles real-time streaming to users
 type StreamingPublisher struct {
-	client *Client
+	client eventBus
 }
 
 // NewStreamingPublisher creates a new streaming publisher
-func NewStreamingPublisher(client *Client) *StreamingPublisher {
+func NewStreamingPublisher(client eventBus) *StreamingPublisher {
 	return &StreamingPublisher{
 		client: client,
 	}

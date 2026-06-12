@@ -10,6 +10,7 @@ defmodule Realtime.CloudPubSub.Subscriber do
 
   require Logger
   alias Realtime.ErrorReporter
+  alias Realtime.EventBroadcaster
 
   def start_link(opts) do
     subscription = Keyword.fetch!(opts, :subscription)
@@ -75,46 +76,5 @@ defmodule Realtime.CloudPubSub.Subscriber do
     messages
   end
 
-  defp broadcast_event(event) do
-    user_id = event["user_id"]
-    event_type = event["event_type"]
-
-    # Broadcast to user channel
-    if user_id do
-      topic = "user:#{user_id}"
-      Phoenix.PubSub.broadcast(Realtime.PubSub, topic, {:pubsub_event, event})
-      Logger.debug("Broadcast #{event_type} to #{topic}")
-    end
-
-    org_id = event["org_id"] || event["organization_id"]
-
-    if org_id do
-      topic = "org:#{org_id}"
-      Phoenix.PubSub.broadcast(Realtime.PubSub, topic, {:pubsub_event, event})
-      Logger.debug("Broadcast #{event_type} to #{topic}")
-    end
-
-    # Broadcast to entity-specific channels
-    broadcast_to_entity_channels(event)
-  end
-
-  defp broadcast_to_entity_channels(event) do
-    # Campaign events
-    if campaign_id = event["campaign_id"] do
-      topic = "campaign:#{campaign_id}"
-      Phoenix.PubSub.broadcast(Realtime.PubSub, topic, {:pubsub_event, event})
-    end
-
-    # Account events
-    if account_id = event["email_account_id"] do
-      topic = "account:#{account_id}"
-      Phoenix.PubSub.broadcast(Realtime.PubSub, topic, {:pubsub_event, event})
-    end
-
-    # Bulk operation events
-    if operation_id = event["operation_id"] do
-      topic = "bulk:#{operation_id}"
-      Phoenix.PubSub.broadcast(Realtime.PubSub, topic, {:pubsub_event, event})
-    end
-  end
+  defp broadcast_event(event), do: EventBroadcaster.broadcast(event)
 end

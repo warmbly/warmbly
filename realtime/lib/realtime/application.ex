@@ -33,7 +33,7 @@ defmodule Realtime.Application do
 
       # Google Pub/Sub subscriber supervisor
       {Realtime.CloudPubSub.Supervisor, []}
-    ]
+    ] ++ event_bridge_children()
 
     opts = [strategy: :one_for_one, name: Realtime.Supervisor]
 
@@ -49,6 +49,18 @@ defmodule Realtime.Application do
     )
 
     Supervisor.start_link(children, opts)
+  end
+
+  # Bridge backend events over Redis whenever Google Pub/Sub is not the active
+  # transport (local dev and any non-GCP env). In Pub/Sub environments the
+  # Broadway subscriber handles fan-out, so this stays off and events are never
+  # delivered twice.
+  defp event_bridge_children do
+    if Application.get_env(:realtime, :pubsub_enabled, false) do
+      []
+    else
+      [Realtime.Redis.EventSubscriber]
+    end
   end
 
   @impl true
