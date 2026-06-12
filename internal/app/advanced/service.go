@@ -451,6 +451,11 @@ func pickVariantWeightedRandom(variants []models.CampaignABVariant) *models.Camp
 	return &variants[len(variants)-1]
 }
 
+// abControlWeight is the implicit weight of a step's original content (the
+// control arm) in a step-scoped A/B split, matching the default variant weight
+// so one variant yields an even 50/50 split with the original.
+const abControlWeight = 100
+
 // pickVariantDeterministic does a weighted draw seeded by a stable string, so
 // the same seed always picks the same variant (used for per-step assignment).
 func pickVariantDeterministic(variants []models.CampaignABVariant, seed string) *models.CampaignABVariant {
@@ -507,9 +512,15 @@ func (s *service) SelectVariant(ctx context.Context, organizationID, campaignID,
 
 	var selected *models.CampaignABVariant
 	if len(stepVariants) > 0 {
-		// Step-scoped: deterministic per (contact, step), so the same contact
-		// always gets the same variant for this step without an assignment row.
-		selected = pickVariantDeterministic(stepVariants, contactID.String()+":"+sequenceID.String())
+		// Step-scoped: the step's own content is the control arm, so contacts are
+		// split across the original PLUS the active variants by weight,
+		// deterministically per (contact, step). The control arm carries the zero
+		// id; if it wins we send the step's original content.
+		pool := append([]models.CampaignABVariant{{Weight: abControlWeight}}, stepVariants...)
+		selected = pickVariantDeterministic(pool, contactID.String()+":"+sequenceID.String())
+		if selected != nil && selected.ID == uuid.Nil {
+			return &models.VariantSelection{Subject: subject, BodyHTML: bodyHTML, BodyPlain: bodyPlain}, nil
+		}
 	} else if len(campaignVariants) > 0 {
 		// Campaign-level (legacy): keep the assignment-based selection so a
 		// contact stays on one variant across the whole campaign.

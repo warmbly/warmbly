@@ -1,7 +1,8 @@
-// Per-step A/B variants editor (lives under the Step composer). Lists the
-// variants scoped to this step; each variant has its own name, weight, active
-// toggle, subject, and rich body. The step's own content is the implicit
-// "original"; sends split across the original + active variants by weight.
+// Per-step A/B variants editor, shown directly under the step's email composer.
+// The step's own email is the CONTROL arm: when A/B testing is on, each contact
+// is split across the original plus the active variants by weight (the backend
+// includes the original as a control arm with weight 100). This editor surfaces
+// all the arms together so it is obvious which email a contact can receive.
 
 import React from "react";
 import { PlusIcon, Loader2Icon, Trash2Icon, FlaskConicalIcon, TrophyIcon } from "lucide-react";
@@ -24,6 +25,8 @@ import buildError from "@/lib/helper/buildError";
 
 const VARIABLES = ["{{.FirstName}}", "{{.LastName}}", "{{.Email}}", "{{.Company}}", "{{.Phone}}"];
 const LETTERS = ["B", "C", "D", "E", "F"];
+// Must match abControlWeight in internal/app/advanced/service.go.
+const CONTROL_WEIGHT = 100;
 
 function htmlToPlain(html: string): string {
     const withBreaks = html
@@ -60,13 +63,19 @@ export default function StepVariants({
     const winnerId = analysis?.winner_id ?? null;
     const stepHasWinner = !!winnerId && variants.some((v) => v.id === winnerId);
 
+    // The split: the original (control) plus every ACTIVE variant, by weight.
+    const wOf = (v: ABVariant) => (v.weight > 0 ? v.weight : CONTROL_WEIGHT);
+    const totalWeight =
+        CONTROL_WEIGHT + variants.filter((v) => v.is_active).reduce((s, v) => s + wOf(v), 0);
+    const pct = (w: number) => (totalWeight > 0 ? Math.round((w / totalWeight) * 100) : 0);
+
     const addVariant = () => {
         const name = `Variant ${LETTERS[variants.length] ?? variants.length + 1}`;
         create.mutate(
             {
                 name,
                 sequence_id: sequenceId,
-                weight: 100,
+                weight: CONTROL_WEIGHT,
                 is_active: true,
                 subject: baseSubject,
                 body_html: baseBodyHtml,
@@ -76,6 +85,31 @@ export default function StepVariants({
         );
     };
 
+    // No variants yet: a slim, inline affordance under the email, not a section.
+    if (!isLoading && variants.length === 0) {
+        return (
+            <button
+                type="button"
+                onClick={addVariant}
+                disabled={create.isPending}
+                className="group flex w-full items-center gap-2 rounded-md border border-dashed border-slate-200 px-3 py-2 text-left hover:border-sky-300 hover:bg-sky-50/40 disabled:opacity-50"
+            >
+                {create.isPending ? (
+                    <Loader2Icon className="w-3.5 h-3.5 animate-spin text-slate-400" />
+                ) : (
+                    <FlaskConicalIcon className="w-3.5 h-3.5 text-slate-400 group-hover:text-sky-600" />
+                )}
+                <span className="text-[12px] font-medium text-slate-700 group-hover:text-sky-700">
+                    Add an A/B variant
+                </span>
+                <span className="truncate text-[11px] text-slate-400">
+                    test alternate copy, contacts split against this email
+                </span>
+                <PlusIcon className="ml-auto w-3.5 h-3.5 text-slate-400 group-hover:text-sky-600" />
+            </button>
+        );
+    }
+
     return (
         <div className="rounded-md border border-slate-200 bg-white">
             <div className="flex items-center justify-between gap-2 border-b border-slate-200/70 px-3 py-2.5">
@@ -83,12 +117,10 @@ export default function StepVariants({
                     <FlaskConicalIcon className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                     <div className="min-w-0">
                         <div className="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">
-                            A/B variants
+                            A/B test
                         </div>
                         <p className="truncate text-[11px] text-slate-400">
-                            {variants.length === 0
-                                ? "Test alternate copy for this step — volume splits by weight."
-                                : `${variants.length} variant${variants.length === 1 ? "" : "s"} + the original, split by weight.`}
+                            Each contact gets one version, split by weight. The email above is the control.
                         </p>
                     </div>
                 </div>
@@ -118,12 +150,20 @@ export default function StepVariants({
             )}
             {isLoading ? (
                 <div className="px-3 py-4 text-[11.5px] text-slate-400">Loading variants…</div>
-            ) : variants.length === 0 ? (
-                <div className="px-3 py-4 text-[11.5px] text-slate-400">
-                    No variants yet. The step&apos;s main content is sent to everyone until you add one.
-                </div>
             ) : (
                 <div className="divide-y divide-slate-200/60">
+                    {/* The control arm: the step's own email, shown so the split is obvious. */}
+                    <div className="flex items-center gap-2.5 px-3 py-2.5">
+                        <span className="inline-flex items-center rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-600">
+                            Original
+                        </span>
+                        <span className="text-[11.5px] text-slate-500">
+                            The email above, sent as the control.
+                        </span>
+                        <span className="ml-auto text-[11px] tabular-nums text-slate-500">
+                            ~{pct(CONTROL_WEIGHT)}% of contacts
+                        </span>
+                    </div>
                     {variants.map((v) => (
                         <VariantCard
                             key={v.id}
@@ -131,6 +171,7 @@ export default function StepVariants({
                             variant={v}
                             stats={statsById.get(v.id)}
                             isWinner={winnerId === v.id}
+                            splitPct={v.is_active ? pct(wOf(v)) : 0}
                         />
                     ))}
                 </div>
@@ -144,11 +185,13 @@ function VariantCard({
     variant,
     stats,
     isWinner,
+    splitPct,
 }: {
     campaignId: string;
     variant: ABVariant;
     stats?: ABVariantStats;
     isWinner?: boolean;
+    splitPct: number;
 }) {
     const update = useUpdateABVariant(campaignId);
     const del = useDeleteABVariant(campaignId);
@@ -229,6 +272,9 @@ function VariantCard({
                     <Label>Weight</Label>
                     <NumberInput value={weight} onChange={setWeight} min={1} max={100} className="w-28" />
                 </div>
+                <span className="h-7 inline-flex items-center text-[11px] tabular-nums text-slate-400">
+                    {active ? `~${splitPct}% of contacts` : "paused"}
+                </span>
                 <label className="inline-flex items-center gap-2 h-7 text-[12px] text-slate-600 select-none">
                     <Toggle id={`var-active-${variant.id}`} value={active} onChange={setActive} />
                     Active
