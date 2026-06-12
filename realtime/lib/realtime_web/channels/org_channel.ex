@@ -41,6 +41,10 @@ defmodule RealtimeWeb.OrgChannel do
           |> assign(:org_id, org_id)
           |> assign(:member, member)
           |> assign(:permissions, Map.get(member, :permissions, 0))
+          # Org-wide presence privacy, read once at join. Re-read on rejoin, so a
+          # settings change applies live once clients reconnect to the channel.
+          |> assign(:presence_show_online, Map.get(member, :presence_show_online, true))
+          |> assign(:presence_show_activity, Map.get(member, :presence_show_activity, true))
 
         send(self(), :after_join)
         {:ok, %{org_id: org_id, role: member.role}, socket}
@@ -61,11 +65,52 @@ defmodule RealtimeWeb.OrgChannel do
     Phoenix.PubSub.subscribe(Realtime.PubSub, "org:#{org_id}")
 
     # Track presence for human members only; developer API-key sockets are
-    # event consumers, not teammates.
+    # event consumers, not teammates. When the org has turned off "show who's
+    # online", we track no one — so nobody appears online for anybody — but
+    # still push the (empty) roster so the client's join-complete logic runs.
     if Map.get(socket.assigns, :auth_type) == :jwt do
-      profile = Auth.get_user_profile(socket.assigns.user_id)
+      if socket.assigns[:presence_show_online] do
+        profile = Auth.get_user_profile(socket.assigns.user_id)
 
-      {:ok, _} =
+        {:ok, _} =
+          Presence.track(socket, socket.assigns.user_id, %{
+            online_at: System.system_time(:second),
+            name: profile.name,
+            avatar: profile.avatar,
+            page: nil,
+            resource: nil,
+            action: nil
+          })
+      end
+
+      push(socket, "presence_state", Presence.list(socket))
+    end
+
+    {:noreply, socket}
+  end
+
+  # Org-wide presence privacy changed. Re-gate THIS socket live instead of
+  # waiting for a reconnect: drop the current presence, then re-add it only if
+  # "show online" is now on (re-added with nil activity, which also enforces
+  # "activity off" until the next — stripped — client push). Phoenix broadcasts
+  # the resulting presence diff, so every teammate's UI updates immediately.
+  # Not forwarded to web clients (the audit event refreshes the settings UI).
+  @impl true
+  def handle_info({:pubsub_event, %{"event_type" => "PRESENCE_POLICY_UPDATED"} = event}, socket) do
+    show_online = event["presence_show_online"] != false
+    show_activity = event["presence_show_activity"] != false
+
+    socket =
+      socket
+      |> assign(:presence_show_online, show_online)
+      |> assign(:presence_show_activity, show_activity)
+
+    if Map.get(socket.assigns, :auth_type) == :jwt do
+      Presence.untrack(socket, socket.assigns.user_id)
+
+      if show_online do
+        profile = Auth.get_user_profile(socket.assigns.user_id)
+
         Presence.track(socket, socket.assigns.user_id, %{
           online_at: System.system_time(:second),
           name: profile.name,
@@ -74,8 +119,7 @@ defmodule RealtimeWeb.OrgChannel do
           resource: nil,
           action: nil
         })
-
-      push(socket, "presence_state", Presence.list(socket))
+      end
     end
 
     {:noreply, socket}
@@ -211,11 +255,20 @@ defmodule RealtimeWeb.OrgChannel do
     end
   end
 
-  # presence:update — merge the client's sanitized activity descriptor into
-  # its presence meta. Only tracked (JWT) members can update presence.
+  # presence:update — merge the client's sanitized activity descriptor into its
+  # presence meta. Only tracked (JWT) members can update presence. Gated by the
+  # org privacy policy: if "show who's online" is off the member isn't tracked
+  # (nothing to update); if "show activity" is off we keep them online but strip
+  # the viewing/editing/page detail so teammates never see what they're doing.
   defp handle_client_event("presence:update", payload, socket) do
-    if Map.get(socket.assigns, :auth_type) == :jwt do
-      patch = sanitize_presence(payload)
+    if Map.get(socket.assigns, :auth_type) == :jwt and socket.assigns[:presence_show_online] do
+      patch =
+        if socket.assigns[:presence_show_activity] do
+          sanitize_presence(payload)
+        else
+          %{page: nil, resource: nil, action: nil, updated_at: System.system_time(:second)}
+        end
+
       Presence.update(socket, socket.assigns.user_id, fn meta -> Map.merge(meta, patch) end)
     end
 

@@ -129,8 +129,10 @@ defmodule Realtime.Auth do
   """
   def check_org_membership(user_id, org_id) do
     query = """
-    SELECT om.id, om.role, om.permissions
+    SELECT om.id, om.role, om.permissions,
+           o.presence_show_online, o.presence_show_activity
     FROM organization_members om
+    JOIN organizations o ON o.id = om.organization_id
     WHERE om.organization_id = $1 AND om.user_id = $2
     """
 
@@ -144,14 +146,17 @@ defmodule Realtime.Auth do
 
   defp run_org_membership(query, org_bin, user_bin, org_id, user_id) do
     case Realtime.Repo.query(query, [org_bin, user_bin]) do
-      {:ok, %{rows: [[id, role, permissions] | _]}} ->
+      {:ok, %{rows: [[id, role, permissions, show_online, show_activity] | _]}} ->
         {:ok,
          %{
            id: id,
            role: role,
            permissions: permissions,
            organization_id: org_id,
-           user_id: user_id
+           user_id: user_id,
+           # Org-wide presence privacy. Default to visible if somehow null.
+           presence_show_online: show_online != false,
+           presence_show_activity: show_activity != false
          }}
 
       {:ok, %{rows: []}} ->
