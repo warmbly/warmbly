@@ -604,7 +604,13 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
     const [adding, setAdding] = React.useState(false);
     // When you drag a node's dot out to empty canvas, we open a create menu at
     // the drop point instead of immediately making an email step.
-    const [dragCreate, setDragCreate] = React.useState<{ x: number; y: number; sourceId: string } | null>(null);
+    const [dragCreate, setDragCreate] = React.useState<{
+        x: number;
+        y: number;
+        sourceId: string;
+        ifSource?: { sourceId: string; branchId: string; handle: string };
+    } | null>(null);
+    const connectStartRef = React.useRef<string | null>(null);
     // While dragging a node, kill the position transition so the drag is 1:1.
     const [dragging, setDragging] = React.useState(false);
     // Editing the sequence flow (add a step, drag a node, draw a branch) needs
@@ -883,6 +889,29 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
         },
         [adding, sequences.length, seqById, createSequence, campaignId, saveBranches],
     );
+    // Create a step of the chosen type and return its id (used by the menu when
+    // dragging out of an IF block, which then points the branch at the new node).
+    const createTypedStep = React.useCallback(
+        async (choice: CreateChoice): Promise<string | null> => {
+            if (adding || sequences.length >= MAX_STEPS) return null;
+            setAdding(true);
+            try {
+                const created = (await createSequence.mutateAsync()) as Sequence;
+                if (choice === "condition") {
+                    await updateSequence(campaignId, created.id, { kind: "wait", name: "Condition" });
+                } else if (choice !== "email") {
+                    await updateSequence(campaignId, created.id, { kind: "action", action: defaultActionFor(choice) });
+                }
+                return created.id;
+            } catch {
+                toast.error("Couldn't add the step");
+                return null;
+            } finally {
+                setAdding(false);
+            }
+        },
+        [adding, sequences.length, createSequence, campaignId],
+    );
     // "On reply" on a step: create a new action step + a reply branch that fires
     // it the moment the contact replies, then open the branch so you can pick the
     // reply type (positive/negative/automated) and build the action chain. Reuses
@@ -916,22 +945,6 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
         [adding, sequences.length, seqById, createSequence, campaignId, saveBranches, openCondition, invalidate],
     );
 
-    // Drag an IF block's bottom dot to empty -> new step the if leads to.
-    const retargetToNew = React.useCallback(
-        async (sourceId: string, branchId: string) => {
-            if (adding || sequences.length >= MAX_STEPS) return;
-            setAdding(true);
-            try {
-                const created = (await createSequence.mutateAsync()) as Sequence;
-                retargetBranch(sourceId, branchId, created.id);
-            } catch {
-                toast.error("Couldn't add the step");
-            } finally {
-                setAdding(false);
-            }
-        },
-        [adding, sequences.length, createSequence, retargetBranch],
-    );
 
     const deleteStep = React.useCallback(
         (id: string) => {
@@ -1341,6 +1354,9 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                     }
                     onConnect(c);
                 }}
+                onConnectStart={(_, params) => {
+                    connectStartRef.current = params.nodeId ?? null;
+                }}
                 nodesConnectable={canEditFlow}
                 nodesDraggable={!isCoarse}
                 zoomOnScroll={false}
@@ -1349,27 +1365,36 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                 minZoom={0.2}
                 maxZoom={1.75}
                 onConnectEnd={(event, state) => {
-                    const from = state.fromNode;
-                    if (!from || state.toNode) return;
+                    const fromId = state?.fromNode?.id ?? connectStartRef.current;
+                    connectStartRef.current = null;
+                    // Only when the line is dropped on EMPTY canvas (the pane). A
+                    // drop on a node/handle is a real connection that onConnect
+                    // already handled. The pane class is the reliable v12 signal.
+                    const onPane = (event.target as Element | null)?.classList?.contains("react-flow__pane");
+                    if (!fromId || !onPane) return;
                     if (!canEditFlow) {
                         showPermissionDenied("MANAGE_SEQUENCES");
                         return;
                     }
-                    const handle = state.fromHandle?.id;
-                    if (isIfId(from.id)) {
-                        const m = ifMetaRef.current[from.id];
+                    const pt =
+                        "changedTouches" in event && event.changedTouches.length
+                            ? event.changedTouches[0]
+                            : (event as MouseEvent);
+                    if (isIfId(fromId)) {
+                        // Dragging out of an IF block: the menu lets the then/else
+                        // path lead to an email, action, or another condition (so
+                        // you can chain IF -> condition -> IF into nested trees).
+                        const m = ifMetaRef.current[fromId];
                         if (!m) return;
-                        // "out" = new then-step; "else" (bottom gray dot) = a new
-                        // step reached unconditionally ("always / just go there").
-                        if (handle === "out") retargetToNew(m.sourceId, m.branchId);
-                        else dragOutStep(m.sourceId);
+                        const handle = state?.fromHandle?.id ?? "out";
+                        setDragCreate({
+                            x: pt.clientX,
+                            y: pt.clientY,
+                            sourceId: fromId,
+                            ifSource: { sourceId: m.sourceId, branchId: m.branchId, handle },
+                        });
                     } else {
-                        // Open the create menu at the drop point: email / action / condition.
-                        const pt =
-                            "changedTouches" in event && event.changedTouches.length
-                                ? event.changedTouches[0]
-                                : (event as MouseEvent);
-                        setDragCreate({ x: pt.clientX, y: pt.clientY, sourceId: from.id });
+                        setDragCreate({ x: pt.clientX, y: pt.clientY, sourceId: fromId });
                     }
                 }}
                 onReconnect={(oldEdge, conn) => {
@@ -1456,12 +1481,28 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                     x={dragCreate.x}
                     y={dragCreate.y}
                     onClose={() => setDragCreate(null)}
-                    onPick={(choice) => {
-                        const sid = dragCreate.sourceId;
+                    onPick={async (choice) => {
+                        const dc = dragCreate;
                         setDragCreate(null);
-                        if (choice === "email") dragOutStep(sid);
-                        else if (choice === "condition") dragOutCondition(sid);
-                        else dragOutAction(sid, choice);
+                        if (!dc) return;
+                        if (dc.ifSource) {
+                            // From an IF block: create the node, then point this
+                            // branch's then/else path at it.
+                            const id = await createTypedStep(choice);
+                            if (id) {
+                                if (dc.ifSource.handle === "out") {
+                                    retargetBranch(dc.ifSource.sourceId, dc.ifSource.branchId, id);
+                                } else {
+                                    addUnconditional(dc.ifSource.sourceId, id);
+                                }
+                            }
+                        } else if (choice === "email") {
+                            dragOutStep(dc.sourceId);
+                        } else if (choice === "condition") {
+                            dragOutCondition(dc.sourceId);
+                        } else {
+                            dragOutAction(dc.sourceId, choice);
+                        }
                     }}
                 />
             )}
