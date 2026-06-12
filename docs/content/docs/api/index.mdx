@@ -27,7 +27,7 @@ See [Authentication](/api/authentication) for the key format, scoping, and secur
 - **Permissions**: every key carries an explicit permission set; a request beyond the key's permissions returns `403`. The full list is in the [permissions reference](/api/permissions).
 - **List responses**: list endpoints return a consistent `data` plus `pagination` shape with opaque cursors.
 - **Errors**: error responses carry a machine-readable `code` and a `request_id` alongside the human-readable text. Client logic should branch on `code` and HTTP status, never on message text. See [error codes](/api/error-codes).
-- **Endpoint coverage**: the [endpoint scope map](/api/endpoints) lists every route, whether it accepts API keys, and which permission it requires.
+- **Endpoint coverage**: the [endpoint scope map](/api/endpoints) lists every route, whether it accepts API keys, and which permission it requires. The [endpoint reference](/api/reference/mailboxes/) documents each route's request and response structures, grouped by resource.
 
 ```json
 {
