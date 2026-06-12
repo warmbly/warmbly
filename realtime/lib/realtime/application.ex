@@ -12,28 +12,29 @@ defmodule Realtime.Application do
     # while named processes (like PubSub.Supervisor) survive, causing conflicts.
     {:ok, _} = Application.ensure_all_started(:postgrex)
 
-    children = [
-      # Database repository for API key lookups
-      Realtime.Repo,
+    children =
+      [
+        # Database repository for API key lookups
+        Realtime.Repo,
 
-      # Redis connection pool for rate limiting and distributed state
-      Realtime.Redis,
+        # Redis connection pool for rate limiting and distributed state
+        Realtime.Redis,
 
-      # Phoenix PubSub for internal message broadcasting
-      {Phoenix.PubSub, name: Realtime.PubSub},
+        # Phoenix PubSub for internal message broadcasting
+        {Phoenix.PubSub, name: Realtime.PubSub},
 
-      # Presence tracker for org-level collaboration (who's online / viewing what)
-      RealtimeWeb.Presence,
+        # Presence tracker for org-level collaboration (who's online / viewing what)
+        RealtimeWeb.Presence,
 
-      # Phoenix Endpoint (WebSocket server)
-      RealtimeWeb.Endpoint,
+        # Phoenix Endpoint (WebSocket server)
+        RealtimeWeb.Endpoint,
 
-      # Connection tracker
-      {Realtime.Connections, []},
+        # Connection tracker
+        {Realtime.Connections, []},
 
-      # Google Pub/Sub subscriber supervisor
-      {Realtime.CloudPubSub.Supervisor, []}
-    ] ++ event_bridge_children()
+        # Google Pub/Sub subscriber supervisor
+        {Realtime.CloudPubSub.Supervisor, []}
+      ] ++ event_bridge_children()
 
     opts = [strategy: :one_for_one, name: Realtime.Supervisor]
 

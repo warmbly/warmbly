@@ -292,7 +292,13 @@ defmodule RealtimeWeb.OrgChannel do
 
       # Campaign activity: lifecycle, task progress, send/open/click/reply pulses
       String.contains?(event_type, "CAMPAIGN") or String.contains?(event_type, "TASK_PROGRESS") or
-          event_type in ["EMAIL_SENT", "EMAIL_OPENED", "EMAIL_CLICKED", "EMAIL_REPLIED", "EMAIL_BOUNCED"] ->
+          event_type in [
+            "EMAIL_SENT",
+            "EMAIL_OPENED",
+            "EMAIL_CLICKED",
+            "EMAIL_REPLIED",
+            "EMAIL_BOUNCED"
+          ] ->
         has.(:view_campaigns)
 
       # Contact changes
