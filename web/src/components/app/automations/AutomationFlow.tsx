@@ -573,10 +573,16 @@ export default function AutomationFlow({
         [toRFNode, setNodes, setEdges, flowSig],
     );
 
-    // A stable signature of the SERVER automation, to detect a teammate's save
-    // (the detail query is invalidated by the AUTOMATION_UPDATED realtime event).
-    const serverSig = React.useCallback(
+    // A monotonic version token for the SERVER automation, used to tell a
+    // teammate's save apart from our own. `updated_at` is bumped on every write
+    // and our own save's response carries the new value, so comparing it is
+    // exact — unlike a deep content signature, which can read back subtly
+    // different (key order, defaults) and make the editor falsely think a
+    // teammate changed it. Falls back to a content hash only if a record somehow
+    // has no timestamp.
+    const serverVersion = React.useCallback(
         (a: Automation) =>
+            a.updated_at ||
             JSON.stringify({ name: (a.name || "").trim(), enabled: a.enabled, trigger: a.trigger_event, graph: a.graph ?? null }),
         [],
     );
@@ -587,7 +593,7 @@ export default function AutomationFlow({
         if (seeded.current) return;
         seeded.current = true;
         seedFrom(automation);
-        serverVersionRef.current = serverSig(automation);
+        serverVersionRef.current = serverVersion(automation);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
@@ -596,7 +602,7 @@ export default function AutomationFlow({
     // do, surface a non-destructive banner so we never clobber local work.
     React.useEffect(() => {
         if (!seeded.current) return;
-        const incoming = serverSig(automation);
+        const incoming = serverVersion(automation);
         if (incoming === serverVersionRef.current) return; // unchanged / our own save
         if (!dirty) {
             seedFrom(automation);
@@ -739,7 +745,7 @@ export default function AutomationFlow({
             baselineRef.current = flowSig(name, enabled, trigger, nodes, edges);
             // Mark this as the known server version so our own refetch doesn't
             // read back as a "teammate changed it" event.
-            if (res?.automation) serverVersionRef.current = serverSig(res.automation);
+            if (res?.automation) serverVersionRef.current = serverVersion(res.automation);
             setRemoteUpdate(null);
             toast.success("Automation saved");
             return true;
