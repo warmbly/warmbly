@@ -716,6 +716,20 @@ func (s *tasksService) executeActionNode(ctx context.Context, campaign *models.C
 			return xerr
 		}
 		return nil
+	case "label_email":
+		// Apply unibox labels to the contact's most recent conversation. A no-op
+		// when the contact has no thread yet (returns "" thread, nil error).
+		if len(cfg.LabelIDs) == 0 {
+			return nil
+		}
+		owner, perr := uuid.Parse(campaign.UserID)
+		if perr != nil {
+			return nil
+		}
+		if _, xerr := s.advanced.LabelLatestThreadForContact(ctx, owner, contact.Email, cfg.LabelIDs); xerr != nil {
+			return xerr
+		}
+		return nil
 	case "unsubscribe":
 		if xerr := s.advanced.Unsubscribe(ctx, campaign.ID, contact.ID); xerr != nil {
 			return xerr

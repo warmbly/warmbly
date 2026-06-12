@@ -14,6 +14,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/cipher"
 	jobs "github.com/warmbly/warmbly/internal/app/consumer"
 	"github.com/warmbly/warmbly/internal/app/integration"
+	"github.com/warmbly/warmbly/internal/app/nativeactions"
 	"github.com/warmbly/warmbly/internal/app/notification"
 	warmupapp "github.com/warmbly/warmbly/internal/app/warmup"
 	"github.com/warmbly/warmbly/internal/app/webhook"
@@ -193,6 +194,7 @@ func main() {
 	contactRepo := repository.NewContactRepostory(primaryDB)
 	campaignProgressRepo := repository.NewCampaignProgressRepository(primaryDB.Pool)
 	crmRepo := repository.NewCRMRepository(primaryDB.Pool)
+	orgRepoConsumer := repository.NewOrganizationRepository(primaryDB.Pool)
 	advancedRepo := repository.NewAdvancedOutreachRepository(primaryDB.Pool)
 
 	// Reply → integration fan-out. The consumer is where inbound replies are
@@ -227,10 +229,21 @@ func main() {
 		contactRepo,
 		campaignProgressRepo,
 		crmRepo,
+		uniboxRepo,
 		nil, // tasksClient: the consumer does not schedule Cloud Tasks
 		warmupService,
 	)
 	advancedService.WireDispatcher(webhookService)
+	// Native (Warmbly-internal) automation actions run wherever the event is
+	// dispatched. Reply/bounce/warmup events dispatch in THIS process, so without
+	// wiring native actions here a reply-triggered automation's add_tag /
+	// create_deal / label_email node would fail with "native actions are not
+	// available". Mirrors the backend wiring.
+	integrationServiceC.SetNativeActions(nativeactions.Adapter{
+		Adv:      advancedService,
+		Contacts: contactRepo,
+		Orgs:     orgRepoConsumer,
+	})
 	// In-app notifications: the reply/bounce/complaint gate fires in THIS
 	// process (inbox ingest + deliverability ingest run in the consumer), so the
 	// notifier must be wired here. Missing this = notifications silently never

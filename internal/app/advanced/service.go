@@ -73,6 +73,16 @@ type Service interface {
 	// just because a deal hasn't been created yet.
 	MoveContactDealStage(ctx context.Context, orgID, contactID, pipelineID, stageID uuid.UUID) (*models.Deal, *errx.Error)
 
+	// LabelThread additively applies unibox conversation labels (categories owned
+	// by userID) to a thread, for the "label_email" automation action. No-op on
+	// empty input; categories not owned by userID are silently ignored.
+	LabelThread(ctx context.Context, userID uuid.UUID, threadID string, categoryIDs []uuid.UUID) error
+	// LabelLatestThreadForContact finds the contact's most recent conversation in
+	// userID's unibox and labels it, for the "label_email" campaign step action
+	// (which knows the contact but not the thread id). Returns the labeled thread
+	// id, or "" when the contact has no conversation yet.
+	LabelLatestThreadForContact(ctx context.Context, userID uuid.UUID, contactEmail string, categoryIDs []uuid.UUID) (string, error)
+
 	// WireDispatcher attaches the event dispatcher that fans classified
 	// replies + deliverability events out to customer webhooks and third-party
 	// integration actions (Slack ping, CRM upsert).
@@ -110,6 +120,7 @@ type service struct {
 	contactRepo          repository.ContactRepository
 	campaignProgressRepo repository.CampaignProgressRepository
 	crmRepo              repository.CRMRepository
+	uniboxRepo           repository.UniboxRepository
 	tasksClient          *gtasks.Client
 	warmupService        warmupapp.Service
 	dispatcher           EventDispatcher
@@ -125,6 +136,7 @@ func NewService(
 	contactRepo repository.ContactRepository,
 	campaignProgressRepo repository.CampaignProgressRepository,
 	crmRepo repository.CRMRepository,
+	uniboxRepo repository.UniboxRepository,
 	tasksClient *gtasks.Client,
 	warmupService warmupapp.Service,
 ) Service {
@@ -136,6 +148,7 @@ func NewService(
 		contactRepo:          contactRepo,
 		campaignProgressRepo: campaignProgressRepo,
 		crmRepo:              crmRepo,
+		uniboxRepo:           uniboxRepo,
 		tasksClient:          tasksClient,
 		warmupService:        warmupService,
 	}
@@ -891,6 +904,13 @@ func (s *service) ProcessIncomingReply(ctx context.Context, emailAccountID uuid.
 		"snippet":       msg.Snippet,
 		"action_taken":  actionTaken,
 		"trigger":       "campaign_reply",
+		// thread_id lets a "label email" automation action tag the conversation
+		// this reply belongs to. _user_id is the mailbox owner (categories are per
+		// user); the leading underscore keeps it out of outbound customer webhook
+		// bodies (publicEventData strips _-prefixed keys) while staying available
+		// to native actions, which read the raw event data.
+		"thread_id": msg.ThreadID,
+		"_user_id":  account.UserID,
 	}
 	if campaignID != nil {
 		payload["campaign_id"] = campaignID.String()

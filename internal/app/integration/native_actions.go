@@ -29,8 +29,24 @@ func validateNativeActionConfig(action models.IntegrationAction, raw json.RawMes
 		if strings.TrimSpace(cfg.AutomationID) == "" {
 			return fmt.Errorf("a run-automation action needs a target automation")
 		}
+	case models.IntegrationActionLabelEmail:
+		if len(parseUUIDList(cfg.LabelIDs)) == 0 {
+			return fmt.Errorf("a label action needs at least one label")
+		}
 	}
 	return nil
+}
+
+// parseUUIDList parses a slice of string ids into uuids, dropping any that don't
+// parse. Used by the label_email action's category list.
+func parseUUIDList(ids []string) []uuid.UUID {
+	out := make([]uuid.UUID, 0, len(ids))
+	for _, s := range ids {
+		if id, err := uuid.Parse(strings.TrimSpace(s)); err == nil {
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 // NativeActions runs Warmbly-internal CRM/contact mutations for automation
@@ -50,6 +66,10 @@ type NativeActions interface {
 	CreateDeal(ctx context.Context, orgID, createdBy uuid.UUID, data *models.CreateDeal) error
 	MoveDealStage(ctx context.Context, orgID, contactID, pipelineID, stageID uuid.UUID) error
 	Unsubscribe(ctx context.Context, campaignID, contactID uuid.UUID) error
+	// LabelThread additively applies unibox conversation labels to a thread, on
+	// behalf of the mailbox-owner userID (categories are per user). Backs the
+	// "label_email" action; userID + threadID come from the reply event data.
+	LabelThread(ctx context.Context, userID uuid.UUID, threadID string, categoryIDs []uuid.UUID) error
 }
 
 // nativeActionConfig is the per-node config for native action nodes (mirrors the
@@ -69,6 +89,8 @@ type nativeActionConfig struct {
 	TaskAssignedTeamID string   `json:"task_assigned_team_id"`
 	// run_automation: the automation to launch.
 	AutomationID string `json:"automation_id"`
+	// label_email: the unibox conversation labels to apply (category-registry ids).
+	LabelIDs []string `json:"label_ids"`
 }
 
 func parseNativeConfig(raw json.RawMessage) nativeActionConfig {
@@ -99,6 +121,21 @@ func (s *service) execNativeAction(ctx context.Context, a models.Automation, n m
 			return fmt.Errorf("an automation cannot run itself")
 		}
 		return s.RunAutomationByID(ctx, a.OrganizationID, targetID, data)
+	}
+
+	// label_email tags the conversation the event belongs to; it needs the
+	// thread + mailbox owner (carried by reply triggers), not a resolved contact.
+	if n.Action == models.IntegrationActionLabelEmail {
+		threadID := stringFromMap(data, "thread_id")
+		ownerID, perr := uuid.Parse(stringFromMap(data, "_user_id"))
+		if threadID == "" || perr != nil {
+			return fmt.Errorf("label-email needs a reply thread (use it on a reply trigger)")
+		}
+		catIDs := parseUUIDList(cfg.LabelIDs)
+		if len(catIDs) == 0 {
+			return fmt.Errorf("a label action needs at least one label")
+		}
+		return s.native.LabelThread(ctx, ownerID, threadID, catIDs)
 	}
 
 	contactID := stringFromMap(data, "contact_id")

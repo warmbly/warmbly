@@ -42,6 +42,7 @@ import (
 	idempotencyapp "github.com/warmbly/warmbly/internal/app/idempotency"
 	"github.com/warmbly/warmbly/internal/app/integration"
 	"github.com/warmbly/warmbly/internal/app/leadsync"
+	"github.com/warmbly/warmbly/internal/app/nativeactions"
 	"github.com/warmbly/warmbly/internal/app/notification"
 	"github.com/warmbly/warmbly/internal/app/organization"
 	"github.com/warmbly/warmbly/internal/app/passkey"
@@ -858,6 +859,7 @@ func main() {
 			contactRepostory,
 			campaignProgressRepository,
 			crmRepository,
+			uniboxRepository,
 			tasksClient,
 			warmupService,
 		)
@@ -867,10 +869,10 @@ func main() {
 		// Wire native (Warmbly-internal) automation actions + realtime now that
 		// the advanced/contact/org services exist (the integration service was
 		// constructed earlier).
-		integrationServiceForHandler.SetNativeActions(nativeActionsAdapter{
-			adv:      advancedService,
-			contacts: contactRepostory,
-			orgs:     organizationRepository,
+		integrationServiceForHandler.SetNativeActions(nativeactions.Adapter{
+			Adv:      advancedService,
+			Contacts: contactRepostory,
+			Orgs:     organizationRepository,
 		})
 		integrationServiceForHandler.SetPublisher(streamingPublisher)
 		// In-app notifications: API reads/writes happen here; also wire the gate
