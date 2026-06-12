@@ -8,6 +8,7 @@
 "use client";
 
 import React from "react";
+import { createPortal } from "react-dom";
 import {
     ReactFlow,
     Background,
@@ -46,6 +47,7 @@ import {
     PlusIcon,
     SendIcon,
     TagIcon,
+    TagsIcon,
     TriangleAlertIcon,
     Trash2Icon,
     UserMinusIcon,
@@ -97,6 +99,7 @@ import {
     NATIVE_ACTIONS,
     isNativeAction,
     nativeActionNeeds,
+    triggerCarriesThread,
     type TriggerFieldDef,
 } from "@/lib/api/models/app/automations/meta";
 import CategoryPicker from "@/components/app/contacts/CategoryPicker";
@@ -125,7 +128,7 @@ const uid = () => {
 function layoutGraph(nodes: Node[], edges: Edge[]): Node[] {
     const g = new dagre.graphlib.Graph();
     g.setDefaultEdgeLabel(() => ({}));
-    g.setGraph({ rankdir: "TB", nodesep: 140, ranksep: 96, marginx: 32, marginy: 32, edgesep: 80 });
+    g.setGraph({ rankdir: "TB", nodesep: 180, ranksep: 130, marginx: 32, marginy: 32, edgesep: 100 });
     nodes.forEach((n) => {
         let w = NODE_W;
         let h = NODE_H;
@@ -185,7 +188,7 @@ function stackComponents(nodes: Node[], edges: Edge[]): Node[] {
         box.set(k, b);
     }
     const baseX = Math.min(...[...box.values()].map((b) => b.minX));
-    const GAP = 120;
+    const GAP = 130;
     let cursorY = 0;
     const offset = new Map<number, { dx: number; dy: number }>();
     for (const k of [...box.keys()].sort((a, b) => a - b)) {
@@ -430,6 +433,13 @@ export default function AutomationFlow({
     const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
     const [selectedId, setSelectedId] = React.useState<string | null>("trigger");
+    // Drag a node's dot to empty canvas -> a menu opens at the drop point to pick
+    // what comes next (action / built-in action / condition), mirroring the
+    // campaign steps canvas. `when` carries the source handle (yes/no for a
+    // condition block) so the new edge keeps its branch label.
+    const [dragCreate, setDragCreate] = React.useState<{ x: number; y: number; sourceId: string; when: When } | null>(null);
+    const connectStartRef = React.useRef<string | null>(null);
+    const connectHandleRef = React.useRef<string | null>(null);
     // Right-side insights panel: dry-run trace ("test") or run history ("history").
     const [panel, setPanel] = React.useState<"test" | "history" | null>(null);
     const [testResult, setTestResult] = React.useState<DryRunResponse | null>(null);
@@ -644,11 +654,12 @@ export default function AutomationFlow({
     );
 
     const addNode = React.useCallback(
-        (type: "action" | "condition", at?: { x: number; y: number }) => {
+        (type: "action" | "condition", at?: { x: number; y: number }, presetAction?: string) => {
             const id = uid();
             const maxY = nodes.reduce((m, n) => Math.max(m, n.position.y), 0);
             const position = at ?? { x: 0, y: maxY + 140 };
             const defCond = defaultConditionForTrigger(trigger);
+            const native = !!presetAction && isNativeAction(presetAction);
             const node: Node =
                 type === "condition"
                     ? {
@@ -661,13 +672,44 @@ export default function AutomationFlow({
                           id,
                           type: "action",
                           position,
-                          data: { action: "", connection_id: undefined, config: {}, title: "Choose an action", sub: "Pick an integration…", provider: "", onDelete: () => deleteNode(id) },
+                          data: presetAction
+                              ? {
+                                    action: presetAction,
+                                    connection_id: undefined,
+                                    config: {},
+                                    title: actionLabel(presetAction),
+                                    sub: native ? "Built-in action" : "Pick an integration…",
+                                    provider: "",
+                                    native,
+                                    onDelete: () => deleteNode(id),
+                                }
+                              : { action: "", connection_id: undefined, config: {}, title: "Choose an action", sub: "Pick an integration…", provider: "", onDelete: () => deleteNode(id) },
                       };
             setNodes((ns) => [...ns, node]);
             setSelectedId(id);
             return id;
         },
         [nodes, setNodes, deleteNode, trigger],
+    );
+
+    // Create a node from the drag-create menu and wire the source's dot to it.
+    // The new node is dropped just below its source so the canvas stays tidy
+    // without a full re-layout. A condition's yes/no edge is one-per-handle, so
+    // re-dragging the same branch replaces it.
+    const createConnectedNode = React.useCallback(
+        (choice: string, sourceId: string, when: When) => {
+            const src = nodes.find((n) => n.id === sourceId);
+            const base = src?.position ?? { x: 0, y: 0 };
+            const at = { x: base.x, y: base.y + 140 };
+            const newId =
+                choice === "condition" ? addNode("condition", at) : addNode("action", at, choice === "action" ? undefined : choice);
+            setEdges((es) => {
+                const filtered =
+                    when === "" ? es : es.filter((e) => !(e.source === sourceId && (e.data as { when?: string })?.when === when));
+                return [...filtered, styledEdge(uid(), sourceId, newId, whenToHandle(when), when)];
+            });
+        },
+        [nodes, addNode, setEdges],
     );
 
     const onReconnect = React.useCallback(
@@ -691,6 +733,16 @@ export default function AutomationFlow({
                 const need = nativeActionNeeds(d.action);
                 if (need === "tag" && !String(d.config?.category_id ?? "").trim()) {
                     toast.error("A tag action needs a tag");
+                    setSelectedId(n.id);
+                    return false;
+                }
+                if (need === "label" && !(Array.isArray(d.config?.label_ids) && d.config.label_ids.length > 0)) {
+                    toast.error("A label action needs at least one label");
+                    setSelectedId(n.id);
+                    return false;
+                }
+                if (need === "label" && !triggerCarriesThread(trigger)) {
+                    toast.error("Label email only runs on a “Reply received” automation");
                     setSelectedId(n.id);
                     return false;
                 }
@@ -901,13 +953,25 @@ export default function AutomationFlow({
                     onNodesChange={onNodesChange}
                     onEdgesChange={onEdgesChange}
                     onConnect={onConnect}
-                    onConnectEnd={(_, state) => {
-                        const from = state.fromNode;
-                        if (!from || state.toNode) return;
-                        const pos = from.position ?? { x: 0, y: 0 };
-                        const when = handleToWhen(state.fromHandle?.id);
-                        const newId = addNode("action", { x: pos.x, y: pos.y + 140 });
-                        setEdges((es) => [...es, styledEdge(uid(), from.id, newId, whenToHandle(when), when)]);
+                    onConnectStart={(_, params) => {
+                        connectStartRef.current = params.nodeId ?? null;
+                        connectHandleRef.current = params.handleId ?? null;
+                    }}
+                    onConnectEnd={(event, state) => {
+                        const fromId = state?.fromNode?.id ?? connectStartRef.current;
+                        const fromHandle = state?.fromHandle?.id ?? connectHandleRef.current;
+                        connectStartRef.current = null;
+                        connectHandleRef.current = null;
+                        // Only when the line is dropped on EMPTY canvas (the pane). A
+                        // drop on a node/handle is a real connection onConnect handled.
+                        // The pane class is the reliable v12 signal (toNode is not).
+                        const onPane = (event.target as Element | null)?.classList?.contains("react-flow__pane");
+                        if (!fromId || !onPane || !canEditAutomation) return;
+                        const pt =
+                            "changedTouches" in event && event.changedTouches.length
+                                ? event.changedTouches[0]
+                                : (event as MouseEvent);
+                        setDragCreate({ x: pt.clientX, y: pt.clientY, sourceId: fromId, when: handleToWhen(fromHandle) });
                     }}
                     onReconnect={onReconnect}
                     deleteKeyCode={["Backspace", "Delete"]}
@@ -976,10 +1040,19 @@ export default function AutomationFlow({
                     </Panel>
                     <Panel position="bottom-center">
                         <div className="hidden md:block rounded-md bg-white/95 px-3 py-1.5 text-[11px] text-slate-500 shadow-sm">
-                            drag a node's dot to connect · IF block: right dot = yes, bottom dot = no · drag to empty canvas for a new action · click a line then Delete to remove
+                            drag a node's dot to connect · IF block: right dot = yes, bottom dot = no · drag to empty canvas to pick what comes next · click a line then Delete to remove
                         </div>
                     </Panel>
                 </ReactFlow>
+
+                {dragCreate && (
+                    <DragCreateMenu
+                        x={dragCreate.x}
+                        y={dragCreate.y}
+                        onClose={() => setDragCreate(null)}
+                        onPick={(choice) => createConnectedNode(choice, dragCreate.sourceId, dragCreate.when)}
+                    />
+                )}
 
                 <AnimatePresence>
                 {selectedNode && !panel && (
@@ -1401,6 +1474,7 @@ const ACTION_VISUAL: Record<string, { Icon: typeof TagIcon; tint: string; bg: st
     "warmbly.move_deal_stage": { Icon: BriefcaseIcon, tint: "text-sky-600", bg: "bg-sky-50", desc: "Move the contact's open deal to another stage." },
     "warmbly.unsubscribe": { Icon: UserMinusIcon, tint: "text-rose-600", bg: "bg-rose-50", desc: "Unsubscribe the contact from the campaign." },
     "warmbly.run_automation": { Icon: ZapIcon, tint: "text-indigo-600", bg: "bg-indigo-50", desc: "Launch another automation with this event's data." },
+    "warmbly.label_email": { Icon: TagsIcon, tint: "text-fuchsia-600", bg: "bg-fuchsia-50", desc: "Label the conversation the contact replied on." },
     "slack.notify": { Icon: MessageSquareIcon, tint: "text-violet-600", bg: "bg-violet-50" },
     "discord.notify": { Icon: MessageSquareIcon, tint: "text-indigo-600", bg: "bg-indigo-50" },
     "webhook.ping": { Icon: SendIcon, tint: "text-sky-600", bg: "bg-sky-50" },
@@ -1415,6 +1489,87 @@ function actionGlyph(action: string): React.ReactNode {
     const v = ACTION_VISUAL[action];
     const Icon = v?.Icon ?? ZapIcon;
     return <Icon className={cn("w-3.5 h-3.5", v?.tint ?? "text-slate-400")} />;
+}
+
+// The menu that opens where you drop a dragged connection on empty canvas: pick
+// what the next node is — an integration action, a condition (IF) router, or one
+// of the built-in actions as a quick pick. Mirrors the campaign steps canvas.
+function DragCreateMenu({
+    x,
+    y,
+    onPick,
+    onClose,
+}: {
+    x: number;
+    y: number;
+    onPick: (choice: string) => void;
+    onClose: () => void;
+}) {
+    // Animate in/out like the app's other menus. The node is created the moment
+    // a row is clicked; the menu plays its exit independently, and onClose (which
+    // clears the parent state) only fires once that exit finishes.
+    const [open, setOpen] = React.useState(true);
+    const vw = typeof window !== "undefined" ? window.innerWidth : x + 240;
+    const vh = typeof window !== "undefined" ? window.innerHeight : y + 360;
+    const flipX = x > vw - 232;
+    const flipY = y > vh - 360;
+    const left = Math.max(8, Math.min(x, vw - 232));
+    const top = Math.max(8, Math.min(y, vh - 360));
+    const pick = (choice: string) => {
+        onPick(choice);
+        setOpen(false);
+    };
+    return createPortal(
+        <>
+            {open && <div className="fixed inset-0 z-40" onMouseDown={() => setOpen(false)} />}
+            <AnimatePresence onExitComplete={onClose}>
+                {open && (
+                    <motion.div
+                        key="drag-create-menu"
+                        className="fixed z-50 max-h-[340px] w-56 overflow-y-auto rounded-lg border border-slate-200 bg-white p-1 shadow-xl"
+                        style={{
+                            left,
+                            top,
+                            transformOrigin: `${flipY ? "bottom" : "top"} ${flipX ? "right" : "left"}`,
+                            willChange: "transform, opacity",
+                        }}
+                        role="menu"
+                        initial={{ opacity: 0, scale: 0.95, y: flipY ? 4 : -4 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.97, y: flipY ? 2 : -2 }}
+                        transition={{
+                            opacity: { duration: 0.14, ease: [0.16, 1, 0.3, 1] },
+                            scale: { duration: 0.18, ease: [0.16, 1, 0.3, 1] },
+                            y: { duration: 0.18, ease: [0.16, 1, 0.3, 1] },
+                        }}
+                    >
+                        <div className="px-2 pt-1 pb-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">Add</div>
+                        <CreateRow icon={<ZapIcon className="w-3.5 h-3.5 text-sky-600" />} label="Action" onClick={() => pick("action")} />
+                        <CreateRow icon={<GitBranchIcon className="w-3.5 h-3.5 text-amber-600" />} label="Condition (branch)" onClick={() => pick("condition")} />
+                        <div className="my-1 h-px bg-slate-100" />
+                        <div className="px-2 pt-0.5 pb-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">Built-in actions</div>
+                        {NATIVE_ACTIONS.map((a) => (
+                            <CreateRow key={a} icon={actionGlyph(a)} label={actionLabel(a)} onClick={() => pick(a)} />
+                        ))}
+                    </motion.div>
+                )}
+            </AnimatePresence>
+        </>,
+        document.body,
+    );
+}
+
+function CreateRow({ icon, label, onClick }: { icon: React.ReactNode; label: string; onClick: () => void }) {
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[12.5px] text-slate-700 transition-colors hover:bg-slate-100"
+        >
+            {icon}
+            {label}
+        </button>
+    );
 }
 
 function ActionEditor({
@@ -1503,7 +1658,7 @@ function ActionEditor({
                 className="space-y-3"
             >
             {isNative ? (
-                <NativeActionConfig action={data.action ?? ""} config={config} patchConfig={patchConfig} selfId={selfId} />
+                <NativeActionConfig action={data.action ?? ""} trigger={trigger} config={config} patchConfig={patchConfig} selfId={selfId} />
             ) : (
                 <>
                     {actionNeedsChannel(data.action ?? "") && (
@@ -1569,11 +1724,13 @@ const NATIVE_CURRENCIES: SelectOption[] = ["USD", "EUR", "GBP", "CAD", "AUD"].ma
 // NativeActionConfig renders the right editor for a built-in (Warmbly) action.
 function NativeActionConfig({
     action,
+    trigger,
     config,
     patchConfig,
     selfId,
 }: {
     action: string;
+    trigger: string;
     config: Record<string, unknown>;
     patchConfig: (p: Record<string, unknown>) => void;
     selfId: string;
@@ -1589,6 +1746,30 @@ function NativeActionConfig({
                         onChange={(ids) => patchConfig({ category_id: ids.length ? ids[ids.length - 1] : "" })}
                         placeholder="Pick a tag…"
                     />
+                </div>
+            )}
+
+            {need === "label" && (
+                <div className="space-y-2">
+                    <div>
+                        <Label>Labels to apply</Label>
+                        <CategoryPicker
+                            value={Array.isArray(config.label_ids) ? (config.label_ids as string[]) : []}
+                            onChange={(ids) => patchConfig({ label_ids: ids })}
+                            placeholder="Pick one or more labels…"
+                        />
+                    </div>
+                    {triggerCarriesThread(trigger) ? (
+                        <p className="text-[11px] leading-relaxed text-slate-400">
+                            Labels the conversation the contact replied on (the same labels you set by hand in the unibox).
+                        </p>
+                    ) : (
+                        <p className="inline-flex items-start gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] leading-relaxed text-amber-700">
+                            <TriangleAlertIcon className="mt-px w-3.5 h-3.5 shrink-0" /> This labels the email a contact
+                            replied on, so it only runs on a &quot;Reply received&quot; automation. This trigger has no
+                            inbox thread to label.
+                        </p>
+                    )}
                 </div>
             )}
 
