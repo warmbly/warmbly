@@ -37,6 +37,17 @@ func validateNativeActionConfig(action models.IntegrationAction, raw json.RawMes
 		if strings.TrimSpace(cfg.HTTPURL) == "" {
 			return fmt.Errorf("an HTTP request needs a URL")
 		}
+	case models.IntegrationActionSetVariables:
+		hasOne := false
+		for _, v := range cfg.SetVars {
+			if strings.TrimSpace(v.Key) != "" {
+				hasOne = true
+				break
+			}
+		}
+		if !hasOne {
+			return fmt.Errorf("set variables needs at least one named variable")
+		}
 	}
 	return nil
 }
@@ -104,6 +115,14 @@ type nativeActionConfig struct {
 	HTTPQuery     map[string]string `json:"http_query"`
 	HTTPBody      string            `json:"http_body"`
 	HTTPOutputKey string            `json:"http_output_key"`
+	// set_variables: named values computed from templates and written back into
+	// the event data for later nodes to reuse.
+	SetVars []setVar `json:"set_vars"`
+}
+
+type setVar struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
 }
 
 func parseNativeConfig(raw json.RawMessage) nativeActionConfig {
@@ -140,6 +159,19 @@ func (s *service) execNativeAction(ctx context.Context, a models.Automation, n m
 	// back into `data`. It needs no contact, so handle it before resolution.
 	if n.Action == models.IntegrationActionHTTPRequest {
 		return runHTTPRequest(ctx, n, cfg, data)
+	}
+
+	// set_variables computes named values from templates and writes them back
+	// into the event data for later nodes. No contact, no external call.
+	if n.Action == models.IntegrationActionSetVariables {
+		for _, v := range cfg.SetVars {
+			key := strings.TrimSpace(v.Key)
+			if key == "" {
+				continue
+			}
+			data[key] = renderTemplate(v.Value, data)
+		}
+		return nil
 	}
 
 	// label_email tags the conversation the event belongs to; it needs the

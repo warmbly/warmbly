@@ -762,6 +762,15 @@ export default function AutomationFlow({
                     setSelectedId(n.id);
                     return false;
                 }
+                if (
+                    need === "vars" &&
+                    !(Array.isArray(d.config?.set_vars) &&
+                        (d.config.set_vars as { key?: string }[]).some((v) => String(v?.key ?? "").trim()))
+                ) {
+                    toast.error("A set-variables action needs at least one named variable");
+                    setSelectedId(n.id);
+                    return false;
+                }
                 continue; // native actions need no connection
             }
             if (!d.connection_id) {
@@ -1482,6 +1491,7 @@ const ACTION_VISUAL: Record<string, { Icon: typeof TagIcon; tint: string; bg: st
     "warmbly.run_automation": { Icon: ZapIcon, tint: "text-indigo-600", bg: "bg-indigo-50", desc: "Launch another automation with this event's data." },
     "warmbly.label_email": { Icon: TagsIcon, tint: "text-fuchsia-600", bg: "bg-fuchsia-50", desc: "Label the conversation the contact replied on." },
     "warmbly.http_request": { Icon: GlobeIcon, tint: "text-teal-600", bg: "bg-teal-50", desc: "Call any URL / send a webhook, and use the response in later steps." },
+    "warmbly.set_variables": { Icon: WandSparklesIcon, tint: "text-amber-600", bg: "bg-amber-50", desc: "Compute named values from templates for later steps to reuse." },
     "slack.notify": { Icon: MessageSquareIcon, tint: "text-violet-600", bg: "bg-violet-50" },
     "discord.notify": { Icon: MessageSquareIcon, tint: "text-indigo-600", bg: "bg-indigo-50" },
     "webhook.ping": { Icon: SendIcon, tint: "text-sky-600", bg: "bg-sky-50" },
@@ -1895,6 +1905,8 @@ function NativeActionConfig({
 
             {need === "http" && <HttpRequestFields config={config} patchConfig={patchConfig} />}
 
+            {need === "vars" && <SetVariablesFields config={config} patchConfig={patchConfig} />}
+
             {need === "none" && (
                 <p className="text-[11px] text-slate-400 leading-relaxed">
                     Works when the event carries a campaign (reply / bounce / unsubscribe triggers).
@@ -2000,6 +2012,68 @@ function HttpRequestFields({
                     <code>{`{{.${outputKey}.ok}}`}</code> to branch on success.
                 </p>
             </div>
+        </div>
+    );
+}
+
+type SetVarRow = { key: string; value: string };
+
+// SetVariablesFields edits a list of named template values written back into the
+// event data for later steps to reuse (the safe "transform" node).
+function SetVariablesFields({
+    config,
+    patchConfig,
+}: {
+    config: Record<string, unknown>;
+    patchConfig: (p: Record<string, unknown>) => void;
+}) {
+    const rows: SetVarRow[] = Array.isArray(config.set_vars)
+        ? (config.set_vars as SetVarRow[]).map((v) => ({ key: String(v?.key ?? ""), value: String(v?.value ?? "") }))
+        : [];
+    const display = rows.length ? rows : [{ key: "", value: "" }];
+
+    const update = (next: SetVarRow[]) => patchConfig({ set_vars: next.filter((r) => r.key.trim() || r.value.trim()) });
+    const setRow = (i: number, patch: Partial<SetVarRow>) => update(display.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+    const addRow = () => update([...display, { key: "", value: "" }]);
+    const removeRow = (i: number) => update(display.filter((_, idx) => idx !== i));
+
+    return (
+        <div className="space-y-2">
+            {display.map((row, i) => (
+                <div key={i} className="flex items-center gap-2">
+                    <TextInput
+                        value={row.key}
+                        onChange={(v) => setRow(i, { key: v })}
+                        placeholder="name"
+                        className="w-28 shrink-0 font-mono"
+                    />
+                    <span className="text-[12.5px] text-slate-400">=</span>
+                    <TextInput
+                        value={row.value}
+                        onChange={(v) => setRow(i, { value: v })}
+                        placeholder="{{.first_name}} at {{.company}}"
+                        className="flex-1 min-w-0 font-mono"
+                    />
+                    <button
+                        type="button"
+                        onClick={() => removeRow(i)}
+                        className="shrink-0 text-slate-400 hover:text-rose-500"
+                        aria-label="Remove variable"
+                    >
+                        <XIcon className="w-3.5 h-3.5" />
+                    </button>
+                </div>
+            ))}
+            <button
+                type="button"
+                onClick={addRow}
+                className="inline-flex items-center gap-1 text-[12px] text-sky-600 hover:text-sky-700"
+            >
+                <PlusIcon className="w-3.5 h-3.5" /> Add variable
+            </button>
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+                Each value is a Go template. Later steps reference it as <code>{`{{.name}}`}</code>.
+            </p>
         </div>
     );
 }

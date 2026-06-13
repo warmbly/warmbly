@@ -278,6 +278,13 @@ const (
 	// branch on {{.response.ok}}. SSRF-guarded + bounded retry. This is the
 	// generic "send a webhook / call any API" node.
 	IntegrationActionHTTPRequest IntegrationAction = "warmbly.http_request"
+	// IntegrationActionSetVariables computes one or more named values from Go
+	// templates (against the event + prior step output) and writes them back into
+	// the event data, so later nodes can reuse a transformed/normalized value
+	// without recomputing it. The safe "transform" node — it runs the same
+	// sandboxed text/template engine as every other action value (no I/O, no
+	// arbitrary code), not a general code runtime.
+	IntegrationActionSetVariables IntegrationAction = "warmbly.set_variables"
 )
 
 // IsNativeAction reports whether an action is a Warmbly-internal CRM/contact
@@ -286,7 +293,8 @@ func IsNativeAction(a IntegrationAction) bool {
 	switch a {
 	case IntegrationActionAddTag, IntegrationActionRemoveTag, IntegrationActionCreateTask,
 		IntegrationActionCreateDeal, IntegrationActionMoveDealStage, IntegrationActionUnsubscribe,
-		IntegrationActionRunAutomation, IntegrationActionLabelEmail, IntegrationActionHTTPRequest:
+		IntegrationActionRunAutomation, IntegrationActionLabelEmail, IntegrationActionHTTPRequest,
+		IntegrationActionSetVariables:
 		return true
 	default:
 		return false

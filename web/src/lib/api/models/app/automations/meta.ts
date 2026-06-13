@@ -43,6 +43,7 @@ export const ACTION_LABELS: Record<string, string> = {
     "warmbly.run_automation": "Run another automation",
     "warmbly.label_email": "Label the email",
     "warmbly.http_request": "HTTP request / webhook",
+    "warmbly.set_variables": "Set variables",
 };
 
 export function actionLabel(a: string): string {
@@ -64,6 +65,7 @@ export const NATIVE_ACTIONS: string[] = [
     "warmbly.run_automation",
     "warmbly.label_email",
     "warmbly.http_request",
+    "warmbly.set_variables",
 ];
 
 export function isNativeAction(a: string): boolean {
@@ -73,7 +75,7 @@ export function isNativeAction(a: string): boolean {
 // What config a native action needs, so the editor shows the right picker.
 export function nativeActionNeeds(
     action: string,
-): "tag" | "label" | "deal" | "task" | "automation" | "http" | "none" {
+): "tag" | "label" | "deal" | "task" | "automation" | "http" | "vars" | "none" {
     switch (action) {
         case "warmbly.add_tag":
         case "warmbly.remove_tag":
@@ -89,6 +91,8 @@ export function nativeActionNeeds(
             return "automation";
         case "warmbly.http_request":
             return "http";
+        case "warmbly.set_variables":
+            return "vars";
         default:
             return "none";
     }
