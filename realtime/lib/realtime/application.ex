@@ -23,6 +23,10 @@ defmodule Realtime.Application do
         # Phoenix PubSub for internal message broadcasting
         {Phoenix.PubSub, name: Realtime.PubSub},
 
+        # Per-org sequencer pool: assigns the resumable sequence + buffers + and
+        # broadcasts org events in order. Must start before the event bridge.
+        Realtime.Sequencer,
+
         # Presence tracker for org-level collaboration (who's online / viewing what)
         RealtimeWeb.Presence,
 
