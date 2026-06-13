@@ -165,7 +165,7 @@ Press **Test** to save the current canvas and then **dry-run** it against sample
 
 ### History
 
-Press **History** to see recent real runs of this automation. Each run shows whether it succeeded or errored, when it started, and the result of each action step (including the error text when a step fails). Run history updates live as the automation fires, so you can watch it work without refreshing.
+Press **History** to see recent real runs of this automation. Each run shows whether it succeeded or errored, when it started, and the result of each action step: the error text when a step fails, and a short summary of what the step did when it succeeds (the channel or URL it used, an HTTP request's response status, or the variables a Set variables step computed). Run history updates live as the automation fires, so you can watch it work without refreshing.
 
 <Callout type="info" title="Best-effort by design">
 Automation runs are best-effort and bounded against loops, so one failing step won't block the rest of the flow. The run is still recorded as errored in History so you can see what went wrong.

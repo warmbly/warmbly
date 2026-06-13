@@ -1243,14 +1243,26 @@ function InsightsPanel({
                                 <span className="ml-auto shrink-0 whitespace-nowrap tabular-nums text-[10.5px] text-slate-400">{new Date(run.started_at).toLocaleString()}</span>
                             </div>
                             {run.node_results?.filter((r) => r.type === "action").map((r, i) => (
-                                <div key={`${run.id}-${i}`} className="flex items-center gap-1.5 pl-1">
-                                    {r.status === "error" ? (
-                                        <XCircleIcon className="w-3 h-3 text-rose-400" />
-                                    ) : (
-                                        <CheckCircle2Icon className="w-3 h-3 text-emerald-400" />
+                                <div key={`${run.id}-${i}`} className="pl-1">
+                                    <div className="flex items-center gap-1.5">
+                                        {r.status === "error" ? (
+                                            <XCircleIcon className="w-3 h-3 text-rose-400" />
+                                        ) : (
+                                            <CheckCircle2Icon className="w-3 h-3 text-emerald-400" />
+                                        )}
+                                        <span className="text-[11px] text-slate-500">{actionLabel(r.action ?? "")}</span>
+                                        {r.error && <span className="text-[10.5px] text-rose-500 truncate">· {r.error}</span>}
+                                    </div>
+                                    {r.preview && Object.keys(r.preview).length > 0 && (
+                                        <div className="mt-0.5 pl-4 space-y-0.5">
+                                            {Object.entries(r.preview).map(([k, v]) => (
+                                                <div key={k} className="text-[10px] text-slate-400 truncate">
+                                                    <span className="text-slate-300">{k}:</span>{" "}
+                                                    <span className="font-mono">{String(v)}</span>
+                                                </div>
+                                            ))}
+                                        </div>
                                     )}
-                                    <span className="text-[11px] text-slate-500">{actionLabel(r.action ?? "")}</span>
-                                    {r.error && <span className="text-[10.5px] text-rose-500 truncate">· {r.error}</span>}
                                 </div>
                             ))}
                         </div>
