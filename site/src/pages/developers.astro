@@ -134,7 +134,7 @@ const faq: [string, string][] = [
   ['Can a single key be scoped to one campaign or mailbox?',
    'Yes. Each key carries a list of scopes and an optional resource filter, for example mailboxes:write limited to mbx_01HQX. Cross-resource calls return 403 with a scope_required error code.'],
   ['Do you publish OpenAPI?',
-   'Yes, at docs.warmbly.com/openapi.json. The same spec generates our TypeScript and Python SDKs, so the surface in the docs is the surface every client targets.'],
+   'Yes, at docs.warmbly.com/openapi.json. It is OpenAPI 3.1, so you can import it into Postman or Insomnia, generate a typed client in your language, or build straight against it. There are no official SDKs yet, so plain HTTP is the path today.'],
 ];
 ---
 <Layout
@@ -282,7 +282,7 @@ const faq: [string, string][] = [
           One operation. Every client.
         </h2>
         <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed">
-          First-class SDKs for TypeScript, Python, and Go. Plain HTTP if you want to call it from anywhere else. Same request shape, same idempotency semantics, same error codes.
+          A published OpenAPI 3.1 spec you can generate a typed client from, and plain HTTP from anywhere else. Same request shape, same idempotency semantics, same error codes.
         </p>
       </div>
 
@@ -301,71 +301,51 @@ const faq: [string, string][] = [
               aria-selected={i === 0 ? 'true' : 'false'}
             >{c.label}</button>
           ))}
-          <span class="ml-auto pr-2 text-[10.5px] font-mono text-white/40 hidden md:inline">create mailbox &middot; warmup pool: premium</span>
+          <span class="ml-auto pr-2 text-[10.5px] font-mono text-white/40 hidden md:inline">list campaigns &middot; opaque cursor pagination</span>
         </div>
 
         <!-- Tab panel stack · panels share one grid cell so the editor keeps
              the height of its tallest panel and the swap never jumps -->
         <div data-tabs-stack>
         <!-- TypeScript -->
-        <pre data-tab-panel="ts" data-state="active" class="tab-panel px-6 py-6 text-[12.5px] leading-[1.75] font-mono overflow-x-auto text-white/85"><code><span style="color:#94a3b8">// add-mailbox.ts</span>
-<span style="color:#7dd3fc">import</span> Warmbly <span style="color:#7dd3fc">from</span> <span style="color:#fde68a">"@warmbly/sdk"</span>;
-
-<span style="color:#7dd3fc">const</span> wb <span style="color:#f472b6">=</span> <span style="color:#7dd3fc">new</span> <span style="color:#a78bfa">Warmbly</span>(&#123; apiKey: process.env.WARMBLY_KEY! &#125;);
-
-<span style="color:#7dd3fc">const</span> mailbox <span style="color:#f472b6">=</span> <span style="color:#7dd3fc">await</span> wb.mailboxes.<span style="color:#a78bfa">create</span>(
-  &#123;
-    address:  <span style="color:#fde68a">"sara@acme.com"</span>,
-    provider: <span style="color:#fde68a">"google"</span>,
-    warmup:   &#123; pool: <span style="color:#fde68a">"premium"</span> &#125;,
-  &#125;,
-  &#123; idempotencyKey: <span style="color:#fde68a">"sara-bootstrap-2026-05"</span> &#125;,
+        <pre data-tab-panel="ts" data-state="active" class="tab-panel px-6 py-6 text-[12.5px] leading-[1.75] font-mono overflow-x-auto text-white/85"><code><span style="color:#94a3b8">// list-campaigns.ts — plain fetch, no SDK required</span>
+<span style="color:#7dd3fc">const</span> res <span style="color:#f472b6">=</span> <span style="color:#7dd3fc">await</span> <span style="color:#a78bfa">fetch</span>(
+  <span style="color:#fde68a">"https://api.warmbly.com/v1/campaigns?limit=20"</span>,
+  &#123; headers: &#123; Authorization: <span style="color:#fde68a">`Bearer $&#123;process.env.WARMBLY_KEY&#125;`</span> &#125; &#125;,
 );
 
-console.<span style="color:#a78bfa">log</span>(mailbox.id, mailbox.oauth_url);</code></pre>
+<span style="color:#7dd3fc">const</span> &#123; data, pagination &#125; <span style="color:#f472b6">=</span> <span style="color:#7dd3fc">await</span> res.<span style="color:#a78bfa">json</span>();
+console.<span style="color:#a78bfa">log</span>(data.length, pagination.next_cursor);</code></pre>
 
         <!-- Python -->
-        <pre data-tab-panel="py" data-state="inactive" class="tab-panel px-6 py-6 text-[12.5px] leading-[1.75] font-mono overflow-x-auto text-white/85"><code><span style="color:#94a3b8"># add_mailbox.py</span>
-<span style="color:#7dd3fc">from</span> warmbly <span style="color:#7dd3fc">import</span> Warmbly
+        <pre data-tab-panel="py" data-state="inactive" class="tab-panel px-6 py-6 text-[12.5px] leading-[1.75] font-mono overflow-x-auto text-white/85"><code><span style="color:#94a3b8"># list_campaigns.py — plain requests, no SDK required</span>
+<span style="color:#7dd3fc">import</span> os, requests
 
-wb <span style="color:#f472b6">=</span> <span style="color:#a78bfa">Warmbly</span>(api_key<span style="color:#f472b6">=</span>os.environ[<span style="color:#fde68a">"WARMBLY_KEY"</span>])
-
-mailbox <span style="color:#f472b6">=</span> wb.mailboxes.<span style="color:#a78bfa">create</span>(
-    address<span style="color:#f472b6">=</span><span style="color:#fde68a">"sara@acme.com"</span>,
-    provider<span style="color:#f472b6">=</span><span style="color:#fde68a">"google"</span>,
-    warmup<span style="color:#f472b6">=</span>&#123;<span style="color:#fde68a">"pool"</span>: <span style="color:#fde68a">"premium"</span>&#125;,
-    idempotency_key<span style="color:#f472b6">=</span><span style="color:#fde68a">"sara-bootstrap-2026-05"</span>,
+res <span style="color:#f472b6">=</span> requests.<span style="color:#a78bfa">get</span>(
+    <span style="color:#fde68a">"https://api.warmbly.com/v1/campaigns"</span>,
+    headers<span style="color:#f472b6">=</span>&#123;<span style="color:#fde68a">"Authorization"</span>: <span style="color:#fde68a">f"Bearer &#123;os.environ['WARMBLY_KEY']&#125;"</span>&#125;,
+    params<span style="color:#f472b6">=</span>&#123;<span style="color:#fde68a">"limit"</span>: <span style="color:#fde68a">20</span>&#125;,
 )
 
-<span style="color:#a78bfa">print</span>(mailbox.id, mailbox.oauth_url)</code></pre>
+body <span style="color:#f472b6">=</span> res.<span style="color:#a78bfa">json</span>()
+<span style="color:#a78bfa">print</span>(<span style="color:#a78bfa">len</span>(body[<span style="color:#fde68a">"data"</span>]), body[<span style="color:#fde68a">"pagination"</span>][<span style="color:#fde68a">"next_cursor"</span>])</code></pre>
 
         <!-- Go -->
-        <pre data-tab-panel="go" data-state="inactive" class="tab-panel px-6 py-6 text-[12.5px] leading-[1.75] font-mono overflow-x-auto text-white/85"><code><span style="color:#94a3b8">// main.go</span>
-<span style="color:#7dd3fc">package</span> main
+        <pre data-tab-panel="go" data-state="inactive" class="tab-panel px-6 py-6 text-[12.5px] leading-[1.75] font-mono overflow-x-auto text-white/85"><code><span style="color:#94a3b8">// main.go — net/http, no SDK required</span>
+req, _ <span style="color:#f472b6">:=</span> http.<span style="color:#a78bfa">NewRequest</span>(<span style="color:#fde68a">"GET"</span>,
+    <span style="color:#fde68a">"https://api.warmbly.com/v1/campaigns?limit=20"</span>, <span style="color:#a78bfa">nil</span>)
+req.Header.<span style="color:#a78bfa">Set</span>(<span style="color:#fde68a">"Authorization"</span>, <span style="color:#fde68a">"Bearer "</span><span style="color:#f472b6">+</span>os.<span style="color:#a78bfa">Getenv</span>(<span style="color:#fde68a">"WARMBLY_KEY"</span>))
 
-<span style="color:#7dd3fc">import</span> <span style="color:#fde68a">"github.com/warmbly/warmbly-go"</span>
-
-client <span style="color:#f472b6">:=</span> warmbly.<span style="color:#a78bfa">New</span>(os.<span style="color:#a78bfa">Getenv</span>(<span style="color:#fde68a">"WARMBLY_KEY"</span>))
-
-mailbox, err <span style="color:#f472b6">:=</span> client.Mailboxes.<span style="color:#a78bfa">Create</span>(ctx, &amp;warmbly.MailboxCreate&#123;
-    Address:  <span style="color:#fde68a">"sara@acme.com"</span>,
-    Provider: <span style="color:#fde68a">"google"</span>,
-    Warmup:   &amp;warmbly.Warmup&#123;Pool: <span style="color:#fde68a">"premium"</span>&#125;,
-&#125;, warmbly.<span style="color:#a78bfa">WithIdempotencyKey</span>(<span style="color:#fde68a">"sara-bootstrap-2026-05"</span>))
-
-<span style="color:#7dd3fc">if</span> err <span style="color:#f472b6">!=</span> <span style="color:#a78bfa">nil</span> &#123; <span style="color:#a78bfa">log</span>.<span style="color:#a78bfa">Fatal</span>(err) &#125;</code></pre>
+res, err <span style="color:#f472b6">:=</span> http.DefaultClient.<span style="color:#a78bfa">Do</span>(req)
+<span style="color:#7dd3fc">if</span> err <span style="color:#f472b6">!=</span> <span style="color:#a78bfa">nil</span> &#123; <span style="color:#a78bfa">log</span>.<span style="color:#a78bfa">Fatal</span>(err) &#125;
+<span style="color:#7dd3fc">defer</span> res.Body.<span style="color:#a78bfa">Close</span>() <span style="color:#94a3b8">// decode &#123; data, pagination &#125;</span></code></pre>
 
         <!-- curl -->
         <pre data-tab-panel="curl" data-state="inactive" class="tab-panel px-6 py-6 text-[12.5px] leading-[1.75] font-mono overflow-x-auto text-white/85"><code><span style="color:#94a3b8"># terminal</span>
-<span style="color:#94a3b8">$</span> curl <span style="color:#f472b6">-X</span> <span style="color:#fde68a">POST</span> <span style="color:#fde68a">https://api.warmbly.com/v1/mailboxes</span> \
-    -H <span style="color:#fde68a">"Authorization: Bearer $WARMBLY_KEY"</span> \
-    -H <span style="color:#fde68a">"Idempotency-Key: sara-bootstrap-2026-05"</span> \
-    -H <span style="color:#fde68a">"Content-Type: application/json"</span> \
-    -d <span style="color:#fde68a">'&#123;
-      "address":  "sara@acme.com",
-      "provider": "google",
-      "warmup":   &#123; "pool": "premium" &#125;
-    &#125;'</span></code></pre>
+<span style="color:#94a3b8">$</span> curl <span style="color:#fde68a">https://api.warmbly.com/v1/campaigns?limit=20</span> \
+    -H <span style="color:#fde68a">"Authorization: Bearer $WARMBLY_KEY"</span>
+
+<span style="color:#94a3b8"># -> &#123; "data": [ ... ], "pagination": &#123; "next_cursor": "c1_…", "has_more": true &#125; &#125;</span></code></pre>
         </div>
       </div>
 
@@ -670,7 +650,7 @@ mailbox, err <span style="color:#f472b6">:=</span> client.Mailboxes.<span style=
           The questions we get a lot.
         </h2>
         <p class="mt-4 text-[14.5px] text-foreground/70 leading-relaxed">
-          Full reference and SDK guides at <a class="text-[#0369a1] hover:text-[#075985] font-medium" href="https://docs.warmbly.com">docs.warmbly.com</a>.
+          Full API reference and the OpenAPI spec at <a class="text-[#0369a1] hover:text-[#075985] font-medium" href="https://docs.warmbly.com">docs.warmbly.com</a>.
         </p>
       </div>
 
