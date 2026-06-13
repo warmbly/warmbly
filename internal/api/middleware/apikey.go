@@ -20,7 +20,14 @@ const (
 	AuthTypeKey                   = "auth_type"
 	AuthTypeJWT                   = "jwt"
 	AuthTypeAPIKey                = "api_key"
+	AuthTypeOAuth                 = "oauth"
 )
+
+// bitmaskAuth reports whether a caller's permissions come from a bitmask of API
+// scopes (API keys and OAuth tokens) rather than an org role (JWT sessions).
+func bitmaskAuth(authType string) bool {
+	return authType == AuthTypeAPIKey || authType == AuthTypeOAuth
+}
 
 // APIKeyMiddleware accepts only API key auth ("Bearer wmbly_..."). Reserved
 // for endpoints that should never accept browser sessions — none today, but
@@ -51,6 +58,9 @@ func (h *Handler) CombinedAuthMiddleware() gin.HandlerFunc {
 		case strings.HasPrefix(authHeader, "Bearer "+apikey.KeyPrefix):
 			key := strings.TrimPrefix(authHeader, "Bearer ")
 			h.validateAPIKey(c, key)
+		case strings.HasPrefix(authHeader, "Bearer "+models.OAuthAccessTokenPrefix):
+			token := strings.TrimPrefix(authHeader, "Bearer ")
+			h.validateOAuthToken(c, token)
 		case strings.HasPrefix(authHeader, "Bearer "):
 			token := strings.TrimPrefix(authHeader, "Bearer ")
 			h.validateJWT(c, token)
@@ -118,6 +128,29 @@ func (h *Handler) validateAPIKey(c *gin.Context, rawKey string) {
 	c.Next()
 }
 
+// validateOAuthToken authenticates an OAuth 2.1 bearer access token. It sets the
+// same context keys as an API key (UserIDKey, OrganizationIDKey, and the granted
+// scope bitmask in APIKeyPermissionsKey) so every existing route gate applies
+// unchanged; auth_type is "oauth" so usage/last-used logic can tell them apart.
+func (h *Handler) validateOAuthToken(c *gin.Context, token string) {
+	if h.OAuthService == nil {
+		errx.Handle(c, errx.ErrAuth)
+		c.Abort()
+		return
+	}
+	claims, err := h.OAuthService.ValidateAccessToken(c.Request.Context(), token)
+	if err != nil {
+		errx.Handle(c, errx.ErrAuth)
+		c.Abort()
+		return
+	}
+	c.Set(AuthTypeKey, AuthTypeOAuth)
+	c.Set(APIKeyPermissionsKey, claims.Scopes)
+	c.Set(UserIDKey, claims.UserID.String())
+	c.Set(OrganizationIDKey, claims.OrganizationID)
+	c.Next()
+}
+
 func (h *Handler) validateJWT(c *gin.Context, token string) {
 	session, err := h.TokenService.ValidateAccessToken(c.Request.Context(), token)
 	if err != nil {
@@ -141,7 +174,7 @@ func (h *Handler) validateJWT(c *gin.Context, token string) {
 // OrganizationPermission check (RequirePermission / RequireAccess).
 func RequireAPIPermission(perm uint64) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if c.GetString(AuthTypeKey) != AuthTypeAPIKey {
+		if !bitmaskAuth(c.GetString(AuthTypeKey)) {
 			c.Next()
 			return
 		}
@@ -169,7 +202,7 @@ func RequireAPIPermission(perm uint64) gin.HandlerFunc {
 func (h *Handler) RequireAccess(orgPerm models.OrganizationPermission, apiPerm uint64) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		switch c.GetString(AuthTypeKey) {
-		case AuthTypeAPIKey:
+		case AuthTypeAPIKey, AuthTypeOAuth:
 			perms, exists := c.Get(APIKeyPermissionsKey)
 			if !exists {
 				errx.Handle(c, errx.ErrForbidden)
@@ -225,7 +258,7 @@ func (h *Handler) RequireAccess(orgPerm models.OrganizationPermission, apiPerm u
 func (h *Handler) RequireAnyAccess(apiPerm uint64, orgPerms ...models.OrganizationPermission) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		switch c.GetString(AuthTypeKey) {
-		case AuthTypeAPIKey:
+		case AuthTypeAPIKey, AuthTypeOAuth:
 			perms, exists := c.Get(APIKeyPermissionsKey)
 			if !exists {
 				errx.Handle(c, errx.ErrForbidden)

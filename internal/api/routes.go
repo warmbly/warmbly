@@ -42,6 +42,9 @@ func Run(
 	// credential, resolving to one automation that runs with the JSON body.
 	r.POST("/api/v1/integrations/inbound/automation/:token", h.InboundAutomation)
 
+	// OAuth 2.1 authorization-server discovery (RFC 8414): public + unversioned.
+	r.GET("/.well-known/oauth-authorization-server", h.OAuthServerMetadata)
+
 	// Public worker enrollment. The one-time enrollment token is the
 	// credential; successful exchange returns a dotenv file for the installer
 	// and consumes the token.
@@ -234,6 +237,12 @@ func Run(
 	// routes and the session-only sensitive routes), mounted under the versioned
 	// `base` (/v1). Every response also carries an API-Version header.
 	mountPublicAPI := func(base *gin.RouterGroup) {
+		// OAuth 2.1 token + revocation endpoints: public and client-authenticated
+		// (client credentials arrive in the body or via HTTP Basic), so they sit
+		// outside the JWT/API-key groups.
+		base.POST("/oauth/token", h.OAuthToken)
+		base.POST("/oauth/revoke", h.OAuthRevoke)
+
 		// JWT-only group: routes tied to a human session, never reachable via a
 		// long-lived API key (billing, org governance, websocket bootstrap, and
 		// the email onboarding flow that writes user-encrypted secrets).
@@ -565,6 +574,30 @@ func Run(
 				automations.DELETE("/:id", awrite, h.DeleteAutomation)
 				automations.POST("/:id/test", aread, h.TestAutomation)
 				automations.GET("/:id/runs", aread, h.ListAutomationRuns)
+			}
+
+			// OAuth 2.1 authorization server. Registering/editing apps is a
+			// developer-credentials action (the manage-api-keys family); the
+			// authorize + authorized-apps flows are session-only (a human consents
+			// in their browser, so they never accept a long-lived API key).
+			oauthApps := protected.Group("/oauth/applications")
+			oauthApps.Use(m.RequireOrganization(), m.RequireAccess(models.PermManageAPIKeys, models.APIPermAPIKeys), m.RateLimitMiddleware(models.RateLimitWrite))
+			{
+				oauthApps.GET("", h.ListOAuthApplications)
+				oauthApps.POST("", h.CreateOAuthApplication)
+				oauthApps.GET("/:id", h.GetOAuthApplication)
+				oauthApps.PATCH("/:id", h.UpdateOAuthApplication)
+				oauthApps.DELETE("/:id", h.DeleteOAuthApplication)
+				oauthApps.POST("/:id/rotate-secret", h.RotateOAuthApplicationSecret)
+			}
+
+			oauthFlow := jwtOnly.Group("/oauth")
+			oauthFlow.Use(m.RequireOrganization(), m.RateLimitMiddleware(models.RateLimitWrite))
+			{
+				oauthFlow.GET("/authorize/details", h.OAuthAuthorizeDetails)
+				oauthFlow.POST("/authorize", h.OAuthAuthorize)
+				oauthFlow.GET("/authorized-apps", h.ListAuthorizedApps)
+				oauthFlow.DELETE("/authorized-apps/:id", h.RevokeAuthorizedApp)
 			}
 
 			// On-demand Google Sheets -> leads sync (org-scoped). A saved "sync

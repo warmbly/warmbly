@@ -22,6 +22,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/integration"
 	"github.com/warmbly/warmbly/internal/app/leadsync"
 	"github.com/warmbly/warmbly/internal/app/notification"
+	"github.com/warmbly/warmbly/internal/app/oauth"
 	"github.com/warmbly/warmbly/internal/app/organization"
 	"github.com/warmbly/warmbly/internal/app/passkey"
 	"github.com/warmbly/warmbly/internal/app/placement"
@@ -150,6 +151,10 @@ type Handler struct {
 	// SNDS, Cloudflare, GoDaddy, Namecheap, Google Sheets).
 	IntegrationService integration.Service
 	ContactRepo        repository.ContactRepository
+
+	// OAuth 2.1 authorization server (third-party app registration + the
+	// authorization-code-with-PKCE flow + bearer-token validation).
+	OAuthService *oauth.Service
 
 	// Realtime publisher for handler paths that emit live dashboard events
 	// directly (inbound meeting webhooks have no service layer of their own).

@@ -44,6 +44,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/leadsync"
 	"github.com/warmbly/warmbly/internal/app/nativeactions"
 	"github.com/warmbly/warmbly/internal/app/notification"
+	"github.com/warmbly/warmbly/internal/app/oauth"
 	"github.com/warmbly/warmbly/internal/app/organization"
 	"github.com/warmbly/warmbly/internal/app/passkey"
 	"github.com/warmbly/warmbly/internal/app/placement"
@@ -194,6 +195,7 @@ func main() {
 	var warmupRoutingRepoForHandler repository.WarmupRoutingRepository
 	var webhookServiceForHandler webhook.Service
 	var integrationServiceForHandler integration.Service
+	var oauthService *oauth.Service
 	var notificationService notification.Service
 	var twofaService twofa.Service
 	var contactRepoForHandler repository.ContactRepository
@@ -547,6 +549,8 @@ func main() {
 		webhookServiceForHandler = webhookService
 
 		integrationRepository := repository.NewIntegrationRepository(primaryDB.Pool)
+		// OAuth 2.1 authorization server (third-party app registration + token flow).
+		oauthService = oauth.NewService(repository.NewOAuthRepository(primaryDB.Pool))
 		// integrationServiceForHandler is constructed after cipherService below —
 		// OAuth/secret sealing depends on the envelope-encryption service.
 		contactRepoForHandler = contactRepostory
@@ -1113,6 +1117,9 @@ func main() {
 		ContactRepo:        contactRepoForHandler,
 		StreamingPublisher: streamingPublisher,
 
+		// OAuth 2.1 authorization server
+		OAuthService: oauthService,
+
 		// On-demand Google Sheets -> leads sync
 		LeadSyncService: leadSyncServiceForHandler,
 
@@ -1147,6 +1154,7 @@ func main() {
 		APIKeyService:       apiKeyService,
 		IdempotencyService:  idempotencyService,
 		OrganizationService: organizationService,
+		OAuthService:        oauthService,
 	}
 
 	oidcH := &middleware.OidcHandler{
