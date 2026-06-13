@@ -1,0 +1,230 @@
+{
+  "asyncapi": "3.1.0",
+  "info": {
+    "title": "Warmbly Realtime Gateway",
+    "version": "1.0.0",
+    "description": "Resumable WebSocket gateway for live organization events. The socket speaks the Phoenix channel protocol (serializer 1.0.0). Authenticate with an API key (REALTIME_SUBSCRIBE permission) or a short-lived JWT passed as the `token` query parameter. Events carry a monotonic per-organization `seq`; reconnecting clients resume by replaying the gap. See the human guide at https://docs.warmbly.com/api/realtime/.",
+    "contact": { "name": "Warmbly", "url": "https://docs.warmbly.com" },
+    "license": { "name": "Proprietary", "url": "https://warmbly.com" }
+  },
+  "defaultContentType": "application/json",
+  "servers": {
+    "production": {
+      "host": "realtime.warmbly.com",
+      "pathname": "/socket/websocket",
+      "protocol": "wss",
+      "description": "Production gateway. Connect with ?vsn=1.0.0&token=<TOKEN>.",
+      "security": [{ "$ref": "#/components/securitySchemes/token" }]
+    }
+  },
+  "channels": {
+    "org": {
+      "address": "org:{org_id}",
+      "title": "Organization channel",
+      "description": "Per-organization event stream + team presence. A subscriber receives every event the member/key is permitted to see, optionally narrowed by intents. Messages are Phoenix channel frames [join_ref, ref, topic, event, payload].",
+      "parameters": {
+        "org_id": { "description": "The organization id (UUID) to subscribe to." }
+      },
+      "messages": {
+        "join": { "$ref": "#/components/messages/Join" },
+        "hello": { "$ref": "#/components/messages/Hello" },
+        "event": { "$ref": "#/components/messages/Event" },
+        "resumed": { "$ref": "#/components/messages/Resumed" },
+        "resumeFailed": { "$ref": "#/components/messages/ResumeFailed" },
+        "rateLimited": { "$ref": "#/components/messages/RateLimited" },
+        "presenceState": { "$ref": "#/components/messages/PresenceState" },
+        "presenceDiff": { "$ref": "#/components/messages/PresenceDiff" },
+        "presenceUpdate": { "$ref": "#/components/messages/PresenceUpdate" }
+      }
+    }
+  },
+  "operations": {
+    "joinOrg": {
+      "action": "send",
+      "channel": { "$ref": "#/channels/org" },
+      "summary": "Join the org channel (optionally with intents and a resume token).",
+      "messages": [{ "$ref": "#/channels/org/messages/join" }],
+      "reply": {
+        "channel": { "$ref": "#/channels/org" },
+        "messages": [{ "$ref": "#/channels/org/messages/hello" }]
+      }
+    },
+    "receiveOrgStream": {
+      "action": "receive",
+      "channel": { "$ref": "#/channels/org" },
+      "summary": "Receive live events, resume markers, presence, and rate-limit notices.",
+      "messages": [
+        { "$ref": "#/channels/org/messages/event" },
+        { "$ref": "#/channels/org/messages/resumed" },
+        { "$ref": "#/channels/org/messages/resumeFailed" },
+        { "$ref": "#/channels/org/messages/rateLimited" },
+        { "$ref": "#/channels/org/messages/presenceState" },
+        { "$ref": "#/channels/org/messages/presenceDiff" }
+      ]
+    },
+    "updatePresence": {
+      "action": "send",
+      "channel": { "$ref": "#/channels/org" },
+      "summary": "Update your own presence activity (JWT members only).",
+      "messages": [{ "$ref": "#/channels/org/messages/presenceUpdate" }]
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "token": {
+        "type": "httpApiKey",
+        "in": "query",
+        "name": "token",
+        "description": "An API key with the REALTIME_SUBSCRIBE permission, or a short-lived connection JWT, passed as the `token` query parameter on the socket URL."
+      }
+    },
+    "messages": {
+      "Join": {
+        "name": "phx_join",
+        "title": "Join (phx_join)",
+        "summary": "Subscribe to org:{org_id}. Optionally declare intents and a resume token.",
+        "payload": { "$ref": "#/components/schemas/JoinPayload" }
+      },
+      "Hello": {
+        "name": "phx_reply",
+        "title": "HELLO (join reply)",
+        "summary": "Heartbeat cadence and the current stream sequence.",
+        "payload": { "$ref": "#/components/schemas/Hello" }
+      },
+      "Event": {
+        "name": "event",
+        "title": "Domain event",
+        "summary": "A live or replayed event. The frame event name is the event_type (e.g. CAMPAIGN_UPDATED); the payload carries the body plus a monotonic seq.",
+        "payload": { "$ref": "#/components/schemas/Event" }
+      },
+      "Resumed": {
+        "name": "resumed",
+        "title": "Resume complete",
+        "summary": "Sent after a successful resume replay; the events preceded it.",
+        "payload": { "$ref": "#/components/schemas/Resumed" }
+      },
+      "ResumeFailed": {
+        "name": "resume_failed",
+        "title": "Resume failed",
+        "summary": "The buffer no longer covers your position (or the token was malformed). Do a full REST resync, then continue from current_seq.",
+        "payload": { "$ref": "#/components/schemas/ResumeFailed" }
+      },
+      "RateLimited": {
+        "name": "rate_limited",
+        "title": "Outbound rate limited",
+        "payload": { "$ref": "#/components/schemas/RateLimited" }
+      },
+      "PresenceState": {
+        "name": "presence_state",
+        "title": "Presence snapshot",
+        "payload": { "$ref": "#/components/schemas/PresenceState" }
+      },
+      "PresenceDiff": {
+        "name": "presence_diff",
+        "title": "Presence diff",
+        "payload": { "$ref": "#/components/schemas/PresenceDiff" }
+      },
+      "PresenceUpdate": {
+        "name": "presence:update",
+        "title": "Update own presence",
+        "payload": { "$ref": "#/components/schemas/PresenceUpdate" }
+      }
+    },
+    "schemas": {
+      "JoinPayload": {
+        "type": "object",
+        "description": "Payload of the phx_join frame for org:{org_id}.",
+        "properties": {
+          "intents": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Optional event-family tokens (case-insensitive substring of the event type, e.g. CAMPAIGN, EMAIL, AUDIT). Absent/empty = the full permitted stream. Not a security boundary."
+          },
+          "resume": {
+            "type": "object",
+            "description": "Resume token from a reconnecting client.",
+            "properties": {
+              "last_seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "The highest seq the client has processed. The server replays events with seq greater than this."
+              }
+            },
+            "required": ["last_seq"]
+          }
+        }
+      },
+      "Hello": {
+        "type": "object",
+        "required": ["org_id", "heartbeat_interval_ms", "server_timeout_ms", "seq"],
+        "properties": {
+          "org_id": { "type": "string", "format": "uuid" },
+          "role": { "type": "string", "description": "The member's role in the org (JWT sockets)." },
+          "heartbeat_interval_ms": { "type": "integer", "description": "Send a heartbeat on the phoenix topic at least this often." },
+          "server_timeout_ms": { "type": "integer", "description": "The server closes the socket after this long with no heartbeat." },
+          "seq": { "type": "integer", "description": "Current stream sequence. A fresh client should start tracking from here." },
+          "resume_supported": { "type": "boolean" }
+        }
+      },
+      "Event": {
+        "type": "object",
+        "required": ["event_type", "seq"],
+        "description": "Invalidation-oriented: the body carries ids, not full resource state. Refetch over REST for current contents. Permission- and intent-filtered identically for live and replayed events.",
+        "properties": {
+          "event_type": { "type": "string", "description": "e.g. AUDIT_CREATED, CAMPAIGN_UPDATED, EMAIL_SENT, EMAIL_RECEIVED. Also the frame event name." },
+          "seq": { "type": "integer", "description": "Monotonic per-organization sequence. Track the highest seen; dedupe replays by it." },
+          "org_id": { "type": "string", "format": "uuid" },
+          "user_id": { "type": "string", "format": "uuid" },
+          "campaign_id": { "type": "string", "format": "uuid" },
+          "email_account_id": { "type": "string", "format": "uuid" }
+        },
+        "additionalProperties": true
+      },
+      "Resumed": {
+        "type": "object",
+        "required": ["from", "current_seq", "replayed"],
+        "properties": {
+          "from": { "type": "integer", "description": "The last_seq the client resumed from." },
+          "current_seq": { "type": "integer", "description": "The stream sequence after replay; the client is now caught up to here." },
+          "replayed": { "type": "integer", "description": "Number of events delivered during replay (after permission + intent filtering)." }
+        }
+      },
+      "ResumeFailed": {
+        "type": "object",
+        "required": ["reason", "current_seq"],
+        "properties": {
+          "reason": { "type": "string", "enum": ["buffer_evicted", "invalid_resume"] },
+          "current_seq": { "type": "integer", "description": "Resync over REST, then continue live from here." }
+        }
+      },
+      "RateLimited": {
+        "type": "object",
+        "properties": {
+          "category": { "type": "string", "example": "ws_message" },
+          "retry_after_ms": { "type": "integer" }
+        }
+      },
+      "PresenceState": {
+        "type": "object",
+        "description": "Phoenix presence snapshot: a map of user_id -> { metas: [...] }.",
+        "additionalProperties": true
+      },
+      "PresenceDiff": {
+        "type": "object",
+        "description": "Phoenix presence diff with joins and leaves.",
+        "properties": {
+          "joins": { "type": "object", "additionalProperties": true },
+          "leaves": { "type": "object", "additionalProperties": true }
+        }
+      },
+      "PresenceUpdate": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "string" },
+          "resource": { "type": "string", "description": "e.g. thread:<id>, campaign:<id>, contact:<id>." },
+          "action": { "type": "string", "enum": ["viewing", "editing", "replying", "idle"] }
+        }
+      }
+    }
+  }
+}

@@ -4,7 +4,13 @@ description: Subscribe to live Warmbly events over a WebSocket connection.
 icon: Radio
 ---
 
-Warmbly pushes dashboard events (campaign sends, opens, clicks, replies, inbox arrivals, audit entries, and more) over a WebSocket. The same socket that powers the live dashboard is available to developers.
+Warmbly pushes dashboard events (campaign sends, opens, clicks, replies, inbox arrivals, audit entries, and more) over a WebSocket. The same socket that powers the live dashboard is available to developers. Events are ordered and carry a monotonic `seq`, and a reconnecting client can resume and replay what it missed.
+
+The gateway has a machine-readable AsyncAPI 3.1 description you can generate clients or docs from:
+
+```
+https://docs.warmbly.com/asyncapi.json
+```
 
 ## Connecting
 
@@ -49,13 +55,41 @@ Each token is matched as a case-insensitive substring of the event type, so `CAM
 
 ## Heartbeats
 
-The `org:<org_id>` join reply doubles as a HELLO: it returns the cadence the server expects, so a client library does not hardcode it.
+The `org:<org_id>` join reply doubles as a HELLO: it returns the cadence the server expects (so a client library does not hardcode it) and the current stream `seq`.
 
 ```json
-{ "org_id": "...", "role": "owner", "heartbeat_interval_ms": 25000, "server_timeout_ms": 60000 }
+{ "org_id": "...", "role": "owner", "heartbeat_interval_ms": 25000, "server_timeout_ms": 60000, "seq": 4821, "resume_supported": true }
 ```
 
 Heartbeats are client-initiated (standard Phoenix): send a `heartbeat` event on the `phoenix` topic every `heartbeat_interval_ms`. If the server receives nothing for `server_timeout_ms` it closes the socket. The reference client also arms a short watchdog after each heartbeat and force-reconnects if the reply does not arrive, which detects a silently dead connection faster than the timeout.
+
+## Resuming after a disconnect
+
+Every event carries a monotonic per-organization sequence number in its `seq` field, delivered in order. Track the highest `seq` you have processed; the HELLO also returns the current `seq`.
+
+To resume after a reconnect, rejoin the `org:<org_id>` channel with a resume token instead of starting fresh:
+
+```json
+{ "resume": { "last_seq": 4821 } }
+```
+
+The server then either replays what you missed or tells you to resync:
+
+- **Replay.** The events with `seq` greater than `last_seq` are pushed as normal channel messages (same shape as live, filtered by your permissions and intents exactly like live delivery), followed by a `resumed` marker:
+
+  ```json
+  { "from": 4821, "current_seq": 4895, "replayed": 12 }
+  ```
+
+- **Resync.** If your position is no longer in the buffer (you were disconnected longer than the buffer window) or the token is malformed, the server pushes `resume_failed` and no events:
+
+  ```json
+  { "reason": "buffer_evicted", "current_seq": 5300 }
+  ```
+
+  On `resume_failed`, refetch the affected resources over the REST API, then continue live from `current_seq`.
+
+Resume is **at-least-once**: a replay may re-deliver an event you already handled, so dedupe by `seq`. The buffer holds roughly the most recent events per organization, bounded by both size and time, so resume covers short disconnects (deploys, network blips, tab sleep) but not arbitrarily long ones.
 
 ## Presence
 
@@ -100,11 +134,14 @@ Because the code is not delivered as a WebSocket close frame today, a client can
 
 ## Delivery guarantees
 
-The stream is best-effort and at-most-once. There are no sequence numbers, no acknowledgements, and no server-side replay or resume, so events emitted while a client is disconnected are not buffered and are lost. On reconnect, resynchronize by refetching the affected resources over the REST API rather than assuming the stream is gap-free. Do not use the WebSocket as a system of record or an audit log: use it to reduce polling on top of REST, and use [webhooks](/api/endpoints/) where guaranteed delivery matters.
+Every event has a monotonic per-organization `seq` and is delivered in order. Within the buffer window, a reconnecting client can [resume](#resuming-after-a-disconnect) and replay exactly what it missed; across a resume, delivery is at-least-once (dedupe by `seq`).
+
+The buffer is not an infinite log. It holds roughly the most recent events per organization, bounded by size and time, so a client disconnected longer than that window gets a `resume_failed` and must do a full resync over the REST API. For delivery that must survive arbitrary downtime, use [webhooks](/api/endpoints/), which are persisted and retried; the WebSocket is the low-latency path, webhooks are the durable one.
 
 ## Good citizenship
 
 - Reuse one connection per process and multiplex channels over it instead of opening one socket per topic.
 - Pass `intents` so you only receive (and pay the message-rate budget for) the events you act on.
 - Reconnect with exponential backoff; the limits above treat reconnect storms the same as connection spam.
-- Treat events as invalidation signals and refetch via the REST API, rather than assuming every payload carries full state.
+- After a reconnect, resume with your last `seq` instead of refetching everything; only fall back to a full REST resync on `resume_failed`.
+- Treat event payloads as invalidation signals (they carry ids, not full state) and refetch the resource over the REST API when you need its current contents.
