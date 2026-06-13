@@ -53,6 +53,15 @@ The Dockerfiles in `deploy/docker/` are the deployment unit. Production runs on 
 
 Configuration is env-driven — see `deploy/config/env.example` for the full env reference, or [../resources/deployment-guide.md](../resources/deployment-guide.md) for a step-by-step.
 
+### Realtime transport
+
+Backend, consumer, and the Elixir realtime service all pick their event transport from one flag, `PUBSUB_ENABLED`, so they cannot disagree:
+
+- `PUBSUB_ENABLED=false` (default): events bridge over Redis (`REDIS_URL`). No GCP needed. This is the local-dev and simple self-host path.
+- `PUBSUB_ENABLED=true`: events flow through Google Pub/Sub. Also set `GCP_PROJECT_ID` and `GOOGLE_APPLICATION_CREDENTIALS_JSON` on every service. The backend and consumer auto-provision the realtime topics and their `<topic>-sub` pull subscriptions on boot (idempotent), so there is no manual `gcloud` step. The service account needs `roles/pubsub.editor`.
+
+Set the flag the same on all three services. A publisher on Pub/Sub with a subscriber on Redis silently drops every realtime event.
+
 ## Worker deployment
 
 Workers run on per-VPS machines so cold-mail traffic spreads across many IPs. Worker identity is a deterministic UUIDv5 derived from the VPS's public IPv4 — same IP, same worker.
