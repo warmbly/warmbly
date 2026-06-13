@@ -120,8 +120,14 @@ These act directly on the event's contact and need no external connection. Pick 
 | Create a deal | Creates a CRM deal in a chosen pipeline and stage |
 | Move the deal stage | Moves the contact's most recent open deal in a pipeline |
 | Unsubscribe the contact | Unsubscribes the contact (works when the event carries a campaign) |
+| HTTP request / webhook | Calls any URL (method, headers, query, body all templated) and saves the response for later steps |
+| Set variables | Computes named values from templates and stores them for later steps to reuse |
 
 **Move the deal stage** acts on the contact's most recent open deal in the chosen pipeline. If they have no open deal there, nothing happens. **Unsubscribe the contact** only applies when the triggering event carries a campaign, such as a reply, bounce, or unsubscribe. **Label the email** only works on a **Reply received** automation: it labels the conversation that reply belongs to (the same labels you set by hand in the unibox), so it needs an inbox thread to act on.
+
+**HTTP request / webhook** is the generic "call any API" step. Choose a method, a URL, optional headers and query, and a body, all of which can use the same `{{.variable}}` templating as everywhere else. The call is retried briefly on a network or 5xx failure, and the URL must be HTTPS and publicly routable. The response is written back into the flow under the output name you choose (default `response`), so a later step can read `{{.response.body.id}}` or `{{.response.status}}`, and a condition can branch on `{{.response.ok}}` to handle failures.
+
+**Set variables** computes one or more named values from templates and writes them back into the flow, so you can normalize or combine fields once and reuse the result (`{{.name}}`) in several later steps. Each value is a Go template; it does not run arbitrary code.
 
 ### Templating action text
 
