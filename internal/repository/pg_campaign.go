@@ -44,6 +44,10 @@ type CampaignRepository interface {
 	StopCampaign(ctx context.Context, campaignID uuid.UUID) error
 	ValidateCampaignReady(ctx context.Context, campaignID uuid.UUID) error
 	GetPendingCampaignTasks(ctx context.Context, campaignID uuid.UUID) ([]Task, error)
+	// ListCampaignScheduleCandidates returns active campaigns that have NO pending
+	// task — their self-perpetuating chain died and needs re-seeding. Used by the
+	// campaign reconciler.
+	ListCampaignScheduleCandidates(ctx context.Context, limit int) ([]uuid.UUID, error)
 	CountActiveForOrganization(ctx context.Context, orgID uuid.UUID) (int, error)
 	AccountHasActiveCampaign(ctx context.Context, accountID uuid.UUID) (bool, error)
 	// CountActiveCampaignsForAccount returns how many active campaigns send
@@ -1335,6 +1339,40 @@ func (r *campaignRepository) GetPendingCampaignTasks(ctx context.Context, campai
 	}
 
 	return tasks, rows.Err()
+}
+
+// ListCampaignScheduleCandidates returns active campaigns with no pending task,
+// i.e. chains that stalled (a swallowed enqueue or a crash between ticks left no
+// successor). The reconciler re-seeds each. createCampaignTask's advisory lock
+// makes a concurrent real-tick enqueue safe (one wins, the other no-ops).
+func (r *campaignRepository) ListCampaignScheduleCandidates(ctx context.Context, limit int) ([]uuid.UUID, error) {
+	query := `
+		SELECT c.id
+		FROM campaigns c
+		WHERE c.status = 'active'
+		  AND NOT EXISTS (
+		    SELECT 1
+		    FROM campaign_tasks ct
+		    JOIN tasks t ON t.id = ct.task_id
+		    WHERE ct.campaign_id = c.id AND t.status = 'pending'
+		  )
+		LIMIT $1`
+
+	rows, err := r.DB.Query(ctx, query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var ids []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 func (r *campaignRepository) CountActiveForOrganization(ctx context.Context, orgID uuid.UUID) (int, error) {

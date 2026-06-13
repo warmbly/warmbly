@@ -194,13 +194,20 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 			executionStatus = "completed"
 			return nil
 		}
-		if errors.Is(err, scheduler.ErrCampaignCompleted) {
+		// Terminal: all emails sent, OR the campaign passed its end date. Both end
+		// the campaign at the "completed" status (the status enum has no separate
+		// "ended"); the reason differs in the activity log.
+		if errors.Is(err, scheduler.ErrCampaignCompleted) || errors.Is(err, scheduler.ErrCampaignEnded) {
+			reason := "Campaign completed: all emails sent"
+			if errors.Is(err, scheduler.ErrCampaignEnded) {
+				reason = "Campaign ended: reached its end date"
+			}
 			s.campaignRepo.UpdateStatus(ctx, campaign.ID, "completed")
 			if s.campaignLogRepo != nil {
 				s.campaignLogRepo.CreateLog(ctx, &repository.CampaignLogEntry{
 					CampaignID: campaign.ID,
 					EventType:  "completed",
-					Message:    "Campaign completed: all emails sent",
+					Message:    reason,
 				})
 			}
 			// Broadcast live so the dashboard (and the sidebar campaign counters)
@@ -217,10 +224,39 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 					Status:     "completed",
 				})
 			}
+			s.taskRepo.UpdateTaskStatus(ctx, taskID, "completed")
+			executionStatus = "completed"
+			return nil
 		}
-		s.taskRepo.UpdateTaskStatus(ctx, taskID, "completed")
-		executionStatus = "completed"
-		return nil
+		// Benign: the campaign was paused/deleted between ticks. Stop this chain
+		// cleanly; a resume re-seeds it.
+		if errors.Is(err, scheduler.ErrCampaignNotActive) {
+			s.taskRepo.UpdateTaskStatus(ctx, taskID, "cancelled")
+			executionStatus = "completed"
+			return nil
+		}
+		// Transient / unknown error (a DB blip bubbled up from the scheduler). Do
+		// NOT silently mark the task completed — that strands the campaign with no
+		// successor. Record the failure for dashboard review, reset the task to
+		// pending, and return 5xx so Cloud Tasks retries (with backoff). The
+		// campaign reconciler is the backstop if retries are ever exhausted.
+		sentry.CaptureException(err)
+		s.recordSchedulerFailure(ctx, campaign.ID, "scheduler_error", "Could not compute the next step; retrying", err)
+		// Pulse the dashboard so the failure appears live for the whole team. A
+		// CAMPAIGN_UPDATED with empty status invalidates the campaign logs query
+		// without flipping the campaign's status.
+		if s.streamingPublisher != nil {
+			s.streamingPublisher.PublishCampaignEvent(ctx, &pubsub.CampaignEvent{
+				BaseEvent:  pubsub.BaseEvent{EventType: pubsub.EventCampaignUpdated, UserID: campaign.UserID},
+				OrgID:      campaignOrgID(campaign),
+				CampaignID: campaign.ID.String(),
+			})
+		}
+		if rerr := s.taskRepo.UpdateTaskStatus(ctx, taskID, "pending"); rerr != nil {
+			sentry.CaptureException(rerr)
+		}
+		executionStatus = "failed"
+		return errx.InternalError()
 	}
 
 	// STEP 7: Load contact and sequence
@@ -962,4 +998,29 @@ func campaignOrgID(campaign *Campaign) string {
 		return ""
 	}
 	return campaign.OrganizationID.String()
+}
+
+// recordSchedulerFailure writes a campaign-scoped, reviewable failure to the
+// activity log so a stalled or retrying step is VISIBLE in the dashboard
+// instead of failing silently. metadata.level="error" tints it red in the
+// campaign detail (TaskPreview) and the log feed is already realtime-invalidated
+// for every teammate. Best-effort and nil-safe — recording a failure must never
+// itself break the tick.
+func (s *tasksService) recordSchedulerFailure(ctx context.Context, campaignID uuid.UUID, code, message string, cause error) {
+	if s.campaignLogRepo == nil {
+		return
+	}
+	meta := map[string]interface{}{
+		"level": "error",
+		"code":  code,
+	}
+	if cause != nil {
+		meta["error"] = cause.Error()
+	}
+	_ = s.campaignLogRepo.CreateLog(ctx, &repository.CampaignLogEntry{
+		CampaignID: campaignID,
+		EventType:  "scheduler_failed",
+		Message:    message,
+		Metadata:   meta,
+	})
 }

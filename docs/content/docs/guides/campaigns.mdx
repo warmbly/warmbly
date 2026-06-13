@@ -109,6 +109,12 @@ A campaign can also pause itself. If it loses all of its sending accounts it bec
 
 If you have configured it to do so, a campaign can stop sending follow-ups to a contact as soon as that contact replies, so you do not keep emailing someone who is already in a conversation with you.
 
+## Live activity and issues
+
+The campaign detail view streams a live activity feed: sends, opens, clicks, replies, bounces, and skips appear as they happen, for every teammate at once. Above the feed, a **Needs attention** panel surfaces anything that went wrong, such as a step that could not be scheduled. These entries are retried automatically and stay visible so a problem is never silent.
+
+If a campaign's scheduling ever stalls because of a transient infrastructure hiccup, Warmbly re-seeds it on its own within a few minutes, so an active campaign does not get stuck. You can always pause and resume to force a fresh start.
+
 ## Safety posture
 
 Warmbly defaults are deliberately conservative. The goal is a low complaint rate and a low spam rate, not maximum throughput.

@@ -106,8 +106,16 @@ export default function TaskPreview({ campaignId, campaignStatus: initialStatus 
     }, [taskProgress, total, processed]);
 
     const recentLogs = useMemo(() => {
+        // The client returns logs newest-first, so the first 6 are the latest.
         const all = logs.data?.logs ?? [];
-        return all.slice(-6).reverse();
+        return all.slice(0, 6);
+    }, [logs.data]);
+
+    // Scheduler / send failures surfaced for review, always visible (not hidden
+    // behind the live-activity feed) so a stalled or retrying step is never silent.
+    const issueLogs = useMemo(() => {
+        const all = logs.data?.logs ?? [];
+        return all.filter((l) => l.level === "error").slice(0, 3);
     }, [logs.data]);
 
     const hasActivity = activities.length > 0;
@@ -194,6 +202,28 @@ export default function TaskPreview({ campaignId, campaignStatus: initialStatus 
                         {remainingHint && (
                             <span className="text-[10.5px] text-slate-400">{remainingHint}</span>
                         )}
+                    </div>
+                </div>
+            )}
+
+            {/* ── Issues (failures) — always visible ─────────────────── */}
+            {issueLogs.length > 0 && (
+                <div className="shrink-0 border-b border-rose-200 bg-rose-50/60">
+                    <div className="px-4 pt-2.5 pb-1 text-[10px] uppercase tracking-[0.14em] text-rose-500 font-medium">
+                        Needs attention
+                    </div>
+                    <div className="divide-y divide-rose-200/50">
+                        {issueLogs.map((log, i) => (
+                            <div key={i} className="flex items-start gap-2.5 px-4 py-2">
+                                <span className="size-1.5 mt-1.5 shrink-0 rounded-full bg-rose-500" />
+                                <p className="flex-1 min-w-0 text-[12px] text-rose-700 leading-snug break-words">
+                                    {log.message}
+                                </p>
+                                <span className="shrink-0 font-mono text-[10.5px] text-rose-400 tabular-nums mt-0.5">
+                                    {relativeTime(new Date(log.timestamp))}
+                                </span>
+                            </div>
+                        ))}
                     </div>
                 </div>
             )}
