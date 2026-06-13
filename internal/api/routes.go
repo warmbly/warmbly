@@ -23,6 +23,7 @@ func Run(
 
 	r := gin.Default()
 	r.Use(middleware.RequestIDMiddleware())
+	r.Use(middleware.APIVersionMiddleware(middleware.APIVersion))
 
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok"})
@@ -108,6 +109,11 @@ func Run(
 			"X-RateLimit-Remaining",
 			"X-RateLimit-Policy",
 			"Retry-After",
+			"API-Version",
+			"Deprecation",
+			"Sunset",
+			"Link",
+			"Warning",
 		},
 		MaxAge: 12 * time.Hour,
 	}
@@ -214,539 +220,558 @@ func Run(
 		protectedAuth.DELETE("/passkey/credentials/:id", h.PasskeyDeleteCredential)
 	}
 
-	// JWT-only protected group: routes that are tied to a human session and
-	// must never be reachable via a long-lived API key. This is the safety
-	// boundary for billing, organization governance, websocket bootstrapping,
-	// and the email onboarding flow (which writes user-encrypted secrets).
-	jwtOnly := r.Group("")
-	jwtOnly.Use(m.AuthMiddleware())
-
-	// API-accessible protected group: routes that accept either a JWT or an
-	// API key. CombinedAuthMiddleware sets the same context keys for both
-	// auth types; APIKeyUsageMiddleware records one log row per API-key
-	// request (JWT requests are skipped).
-	protected := r.Group("")
-	protected.Use(m.CombinedAuthMiddleware(), m.APIKeyUsageMiddleware(), m.IdempotencyMiddleware())
-	{
-		emails := protected.Group("/emails")
-		emails.Use(m.RateLimitMiddleware(models.RateLimitWrite))
-		{
-			emails.GET("", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadEmails), h.EmailsSearch)
-			emails.GET("/:id", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadEmails), middleware.RequireAPIKeyEmailAccountParam("id"), h.GetEmail)
-			emails.PATCH("/:id", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails), middleware.RequireAPIKeyEmailAccountParam("id"), h.UpdateEmail)
-			emails.PATCH("/:id/track", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails), middleware.RequireAPIKeyEmailAccountParam("id"), h.UpdateEmailTrackingDomain)
-			emails.POST("/:id/warmup/start", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails), middleware.RequireAPIKeyEmailAccountParam("id"), h.StartWarmup)
-			emails.POST("/:id/warmup/pause", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails), middleware.RequireAPIKeyEmailAccountParam("id"), h.PauseWarmup)
-			emails.POST("/:id/warmup/resume", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails), middleware.RequireAPIKeyEmailAccountParam("id"), h.ResumeWarmup)
-			emails.POST("/:id/warmup/stop", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails), middleware.RequireAPIKeyEmailAccountParam("id"), h.StopWarmup)
-			emails.GET("/:id/auth-check", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadEmails), middleware.RequireAPIKeyEmailAccountParam("id"), h.GetEmailAuthCheck)
-			emails.POST("/verify", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadEmails), h.VerifyEmail)
-			emails.GET("/:id/warmup/ban-status", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadEmails), middleware.RequireAPIKeyEmailAccountParam("id"), h.GetWarmupBanStatus)
-			emails.POST("/:id/warmup/appeal", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails), middleware.RequireAPIKeyEmailAccountParam("id"), h.SubmitWarmupAppeal)
-			emails.DELETE("/:id", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails), middleware.RequireAPIKeyEmailAccountParam("id"), h.DeleteEmail)
-			emails.POST("/:id/send", m.RequireOrganization(), m.RequireAccess(models.PermSendCampaigns, models.APIPermSendCampaigns), middleware.RequireAPIKeyEmailAccountParam("id"), h.SendEmailFromAccount)
+	// The full customer-facing API surface (the API-key-capable `protected`
+	// routes and the session-only sensitive routes) is mounted TWICE: once under
+	// the canonical /v1 prefix, and once at the bare path as a deprecated alias
+	// so existing integrators keep working. The bare alias emits Deprecation /
+	// Sunset headers; every response also carries API-Version. /auth, /admin, the
+	// internal API, and the public OAuth bouncers are intentionally NOT versioned.
+	mountPublicAPI := func(base *gin.RouterGroup, deprecated bool) {
+		// JWT-only group: routes tied to a human session, never reachable via a
+		// long-lived API key (billing, org governance, websocket bootstrap, and
+		// the email onboarding flow that writes user-encrypted secrets).
+		jwtOnly := base.Group("")
+		jwtOnly.Use(m.AuthMiddleware())
+		if deprecated {
+			jwtOnly.Use(middleware.DeprecatedAliasMiddleware())
 		}
 
-		// Email onboarding is JWT-only — it writes user-encrypted refresh
-		// tokens via the SPA popup flow and shouldn't be triggerable by an
-		// API key with a long lifetime.
-		onboardingEmails := jwtOnly.Group("/emails/onboarding")
-		onboardingEmails.Use(m.RateLimitMiddleware(models.RateLimitWrite))
-		{
-			onboardingEmails.POST("/oauth/start", h.StartEmailOAuth)
-			onboardingEmails.POST("/oauth/finish", h.FinishEmailOAuth)
-			onboardingEmails.POST("/smtp-imap", h.ConnectEmailSMTPIMAP)
+		// API-accessible group: routes that accept either a JWT or an API key.
+		// CombinedAuthMiddleware sets the same context keys for both; the usage
+		// middleware records one log row per API-key request (JWT skipped).
+		protected := base.Group("")
+		protected.Use(m.CombinedAuthMiddleware(), m.APIKeyUsageMiddleware(), m.IdempotencyMiddleware())
+		if deprecated {
+			protected.Use(middleware.DeprecatedAliasMiddleware())
 		}
-
-		// Integration OAuth handshake is JWT-only — it writes user-encrypted
-		// provider tokens via the SPA popup flow, same as mailbox onboarding.
-		integrationsOAuth := jwtOnly.Group("/integrations/oauth")
-		integrationsOAuth.Use(m.RequireOrganization(), m.RateLimitMiddleware(models.RateLimitWrite))
 		{
-			integrationsOAuth.POST("/start", h.StartIntegrationOAuth)
-			integrationsOAuth.POST("/finish", h.FinishIntegrationOAuth)
-			integrationsOAuth.POST("/reauth/:id", h.ReauthIntegration)
-		}
-
-		// Template preview/validation (no campaign id; can't be a static sibling
-		// of /campaigns/:id, so it lives one level up). Renders against a sample
-		// contact — read-level access, no side effects.
-		protected.POST("/campaign-template-preview", m.RequireOrganization(), m.RequireAccess(models.PermViewCampaigns, models.APIPermReadCampaigns), h.PreviewCampaignTemplate)
-
-		campaigns := protected.Group("/campaigns")
-		campaigns.Use(m.RateLimitMiddleware(models.RateLimitWrite))
-		{
-			campaigns.GET("", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadCampaigns), h.SearchCampaigns)
-			campaigns.POST("", m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.CreateCampaign)
-			campaigns.GET("/:id", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadCampaigns), h.GetCampaign)
-			campaigns.PATCH("/:id", m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.UpdateCampaign)
-			campaigns.DELETE("/:id", m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.DeleteCampaign)
-
-			// Advanced campaign controls
-			campaigns.GET("/:id/advanced", m.RequireOrganization(), m.RequireAccess(models.PermViewCampaigns, models.APIPermReadCampaigns), h.GetCampaignAdvancedSettings)
-			campaigns.PATCH("/:id/advanced", m.RequireOrganization(), m.RequireAccess(models.PermManageSettings, models.APIPermWriteCampaigns), h.UpdateCampaignAdvancedSettings)
-			campaigns.GET("/:id/ab-variants", m.RequireOrganization(), m.RequireAccess(models.PermViewCampaigns, models.APIPermReadCampaigns), h.ListCampaignABVariants)
-			campaigns.POST("/:id/ab-variants", m.RequireOrganization(), m.RequireAccess(models.PermManageSettings, models.APIPermWriteCampaigns), h.CreateCampaignABVariant)
-			campaigns.PATCH("/:id/ab-variants/:variantId", m.RequireOrganization(), m.RequireAccess(models.PermManageSettings, models.APIPermWriteCampaigns), h.UpdateCampaignABVariant)
-			campaigns.DELETE("/:id/ab-variants/:variantId", m.RequireOrganization(), m.RequireAccess(models.PermManageSettings, models.APIPermWriteCampaigns), h.DeleteCampaignABVariant)
-			campaigns.GET("/:id/attachments", m.RequireOrganization(), m.RequireAccess(models.PermViewCampaigns, models.APIPermReadCampaigns), h.ListCampaignAttachments)
-			campaigns.POST("/:id/attachments", m.RequireOrganization(), m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.UploadCampaignAttachment)
-			campaigns.DELETE("/:id/attachments/:attachmentId", m.RequireOrganization(), m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.DeleteCampaignAttachment)
-			campaigns.POST("/:id/preflight", m.RequireOrganization(), m.RequireAccess(models.PermSendCampaigns, models.APIPermSendCampaigns), h.RunCampaignPreflight)
-			campaigns.GET("/:id/ab-analysis", m.RequireOrganization(), m.RequireAccess(models.PermViewAnalytics, models.APIPermReadAnalytics), h.GetCampaignABAnalysis)
-			campaigns.POST("/:id/test-email", m.RequireOrganization(), m.RequireAccess(models.PermSendCampaigns, models.APIPermSendCampaigns), h.SendTestEmail)
-
-			// Campaign start/stop
-			campaigns.POST("/:id/start", m.RequireOrganization(), m.RequireAccess(models.PermSendCampaigns, models.APIPermSendCampaigns), h.StartCampaign)
-			campaigns.POST("/:id/stop", m.RequireOrganization(), m.RequireAccess(models.PermSendCampaigns, models.APIPermSendCampaigns), h.StopCampaign)
-			campaigns.GET("/:id/logs", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadCampaigns), h.GetCampaignLogs)
-
-			// Explicit sender pool (rotation/weighting).
-			campaigns.GET("/:id/senders", m.RequireOrganization(), m.RequireAccess(models.PermViewCampaigns, models.APIPermReadCampaigns), h.ListCampaignSenders)
-			campaigns.PUT("/:id/senders", m.RequireOrganization(), m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.ReplaceCampaignSenders)
-
-			// Campaign-scoped tracking-domain verification.
-			campaigns.POST("/:id/tracking-domain/verify", m.RequireOrganization(), m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.VerifyCampaignTrackingDomain)
-
-			sequences := campaigns.Group("/:id/steps")
+			emails := protected.Group("/emails")
+			emails.Use(m.RateLimitMiddleware(models.RateLimitWrite))
 			{
-				sequences.GET("", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadCampaigns), h.GetSequences)
-				sequences.POST("", m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.CreateSequence)
-				sequences.PATCH("/:sid", m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.UpdateSequence)
-				sequences.DELETE("/:sid", m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.DeleteSequence)
-			}
-		}
-
-		generation := protected.Group("/generation")
-		generation.Use(m.RateLimitMiddleware(models.RateLimitWrite))
-		{
-			generation.POST("/write", m.RequireOrganization(), m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.GenerateWriting)
-		}
-
-		contacts := protected.Group("/contacts")
-		contacts.Use(m.RateLimitMiddleware(models.RateLimitWrite))
-		{
-			contacts.POST("/search", m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts), h.SearchContacts)
-			contacts.POST("", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts), h.AddContacts)
-			contacts.DELETE("", m.RequireAccess(models.PermManageContacts, models.APIPermBulkContacts), h.DeleteContactBulk)
-			contacts.PATCH("", m.RequireAccess(models.PermManageContacts, models.APIPermBulkContacts), h.UpdateContactBulk)
-			// Import + export power-tools. Read-only export gates on
-			// ReadContacts; the import endpoints write and so use the
-			// stricter Write/Bulk scopes that the rest of the contact
-			// write paths already use.
-			contacts.POST("/export", m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts), h.ExportContacts)
-			contacts.POST("/import/preview", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts), h.ImportPreviewContacts)
-			contacts.POST("/import/commit", m.RequireAccess(models.PermManageContacts, models.APIPermBulkContacts), h.ImportCommitContacts)
-			contacts.PATCH("/:id", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts), h.UpdateContact)
-			contacts.DELETE("/:id", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts), h.DeleteContact)
-
-			// Resolve a sender address to a contact (unibox CRM panel).
-			// Registered before /:id so the fixed path wins over the catch-all.
-			contacts.GET("/lookup", m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts), h.LookupContactByEmail)
-
-			// Contact 360 view: hydrated detail, every email sent to
-			// the contact, and the merged activity timeline.
-			contacts.GET("/:id", m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts), h.GetContact)
-			contacts.GET("/:id/emails", m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts), h.ListContactEmails)
-			contacts.GET("/:id/timeline", m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts), h.ListContactTimeline)
-
-			// CRM: Notes & Activities (under contacts)
-			contacts.GET("/:id/notes", m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts), h.ListContactNotes)
-			contacts.POST("/:id/notes", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts), h.CreateContactNote)
-			contacts.PATCH("/:id/notes/:noteId", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts), h.UpdateContactNote)
-			contacts.DELETE("/:id/notes/:noteId", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts), h.DeleteContactNote)
-			contacts.GET("/:id/activities", m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts), h.ListContactActivities)
-			contacts.GET("/:id/deals", m.RequireAccess(models.PermViewContacts, models.APIPermReadCRM), h.GetDealsByContact)
-		}
-
-		// Group endpoints map to the resources they organize: campaign
-		// folders, email-account tags, and contact categories.
-		grouph.New(protected, h.FolderService, h.AuditService, "folders", m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns))
-		grouph.New(protected, h.TagService, h.AuditService, "tags", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails))
-		grouph.New(protected, h.CategoryService, h.AuditService, "categories", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts))
-
-		unibox := protected.Group("/unibox")
-		unibox.Use(m.RateLimitMiddleware(models.RateLimitRead))
-		{
-			unibox.GET("", m.RequireAccess(models.PermAccessUnibox, models.APIPermReadUnibox), h.GetUniboxIncoming)
-			unibox.GET("/count", m.RequireAccess(models.PermAccessUnibox, models.APIPermReadUnibox), h.GetUnseenCount)
-			unibox.GET("/overview", m.RequireAccess(models.PermAccessUnibox, models.APIPermReadUnibox), h.GetUniboxOverview)
-			unibox.GET("/thread", m.RequireAccess(models.PermAccessUnibox, models.APIPermReadUnibox), h.GetUniboxThread)
-
-			// Conversation labels — read the set on a thread, or replace
-			// it wholesale (idempotent PUT). Registered before /:id so the
-			// fixed path wins over the catch-all.
-			unibox.GET("/thread/labels", m.RequireAccess(models.PermAccessUnibox, models.APIPermReadUnibox), h.GetUniboxThreadLabels)
-			unibox.PUT("/thread/labels", m.RequireAccess(models.PermAccessUnibox, models.APIPermWriteUnibox), h.SetUniboxThreadLabels)
-
-			unibox.PATCH("/seen", m.RequireAccess(models.PermAccessUnibox, models.APIPermWriteUnibox), h.UniboxMarkSeen)
-			unibox.POST("/reply", m.RequireOrganization(), m.RequireAccess(models.PermAccessUnibox, models.APIPermWriteUnibox), h.UniboxReply)
-
-			// Snoozes — POST/DELETE on a thread, GET lists active ones.
-			unibox.GET("/snoozes", m.RequireAccess(models.PermAccessUnibox, models.APIPermReadUnibox), h.ListUniboxSnoozes)
-			unibox.POST("/snooze", m.RequireAccess(models.PermAccessUnibox, models.APIPermWriteUnibox), h.CreateUniboxSnooze)
-			unibox.DELETE("/snooze", m.RequireAccess(models.PermAccessUnibox, models.APIPermWriteUnibox), h.DeleteUniboxSnooze)
-
-			// Scheduled-sends review + cancel. DELETE is DB-only —
-			// we don't pay Cloud Tasks to delete the queued task; the
-			// handler short-circuits on cancelled status when it fires.
-			unibox.GET("/scheduled", m.RequireAccess(models.PermAccessUnibox, models.APIPermReadUnibox), h.ListUniboxScheduled)
-			unibox.DELETE("/scheduled/:task_id", m.RequireAccess(models.PermAccessUnibox, models.APIPermWriteUnibox), h.CancelUniboxScheduled)
-
-			// Keep /:id last — gin treats it as a catch-all so any
-			// fixed-name routes (above) must register first.
-			unibox.GET("/:id", m.RequireAccess(models.PermAccessUnibox, models.APIPermReadUnibox), h.GetUniboxEmail)
-		}
-
-		// API key management. JWT users need PermManageAPIKeys; API keys
-		// need the APIPermAPIKeys self-service bit. This lets an integration
-		// rotate its own keys without going through the dashboard.
-		apiKeys := protected.Group("/api-keys")
-		apiKeys.Use(m.RequireOrganization(), m.RequireAccess(models.PermManageAPIKeys, models.APIPermAPIKeys))
-		apiKeys.Use(m.RateLimitMiddleware(models.RateLimitWrite))
-		{
-			apiKeys.GET("", h.ListAPIKeys)
-			apiKeys.POST("", h.CreateAPIKey)
-			apiKeys.GET("/permissions", h.ListAPIPermissions)
-			apiKeys.GET("/usage/summary", h.GetAPIKeyUsageSummary)
-			apiKeys.GET("/usage/analytics", h.GetAPIKeyAnalytics)
-			apiKeys.GET("/:id", h.GetAPIKey)
-			apiKeys.PATCH("/:id", h.UpdateAPIKey)
-			apiKeys.DELETE("/:id", h.RevokeAPIKey)
-			apiKeys.GET("/:id/analytics", h.GetAPIKeyAnalytics)
-			apiKeys.GET("/:id/logs", h.ListAPIKeyUsageLogs)
-		}
-
-		// Analytics endpoints
-		analytics := protected.Group("/analytics")
-		analytics.Use(m.RateLimitMiddleware(models.RateLimitAnalytics), m.RequireAccess(models.PermViewAnalytics, models.APIPermReadAnalytics))
-		{
-			analytics.GET("/dashboard", h.GetDashboardAnalytics)
-			analytics.GET("/deliverability", m.RequireOrganization(), h.GetDeliverabilityDashboard)
-			analytics.GET("/warmup", h.GetWarmupAnalytics)
-			analytics.GET("/campaigns/compare", h.CompareCampaigns)
-			analytics.GET("/campaigns/:id", h.GetCampaignAnalytics)
-			analytics.GET("/campaigns/:id/daily", h.GetCampaignDailyStats)
-			analytics.GET("/campaigns/:id/hourly", h.GetCampaignHourlyStats)
-			analytics.GET("/accounts", h.GetAllAccountStatuses)
-			analytics.GET("/accounts/:id", h.GetAccountStatus)
-			analytics.GET("/usage", h.GetUsageOverview)
-		}
-
-		// Audit logs
-		auditLogs := protected.Group("/audit-logs")
-		auditLogs.Use(m.RateLimitMiddleware(models.RateLimitRead), m.RequireAccess(models.PermViewAnalytics, models.APIPermReadAuditLogs))
-		{
-			auditLogs.GET("", h.GetAuditLogs)
-		}
-
-		// Realtime websocket bootstrap is JWT-only — the websocket itself
-		// has its own session-based auth.
-		realtime := jwtOnly.Group("/realtime")
-		{
-			realtime.GET("/info", h.GetRealtimeInfo)
-		}
-
-		// Advanced outreach controls (org-scoped)
-		outreach := protected.Group("/outreach")
-		outreach.Use(m.RequireOrganization(), m.RequireAccess(models.PermManageSettings, models.APIPermWriteCampaigns))
-		{
-			outreach.GET("/settings", h.GetOutreachSettings)
-			outreach.PATCH("/settings", h.UpdateOutreachSettings)
-		}
-
-		// Deliverability event ingestion (org-scoped). API-key callable so
-		// downstream pipelines (e.g. SES bounce processors) can post events
-		// without a human in the loop.
-		deliverability := protected.Group("/deliverability")
-		deliverability.Use(m.RequireOrganization(), m.RequireAccess(models.PermSendCampaigns, models.APIPermWriteCampaigns))
-		{
-			deliverability.POST("/events", h.IngestDeliverabilityEvent)
-		}
-
-		// Task dead letter operations (org-scoped). Requires SendCampaigns
-		// because a replay actually re-dispatches mail.
-		taskOps := protected.Group("/tasks")
-		taskOps.Use(m.RequireOrganization(), m.RequireAccess(models.PermSendCampaigns, models.APIPermSendCampaigns))
-		{
-			taskOps.GET("/dlq", h.ListTaskDeadLetters)
-			taskOps.POST("/dlq/:id/replay", h.ReplayTaskDeadLetter)
-		}
-
-		// Customer-facing webhooks (org-scoped).
-		webhooks := protected.Group("/webhooks")
-		webhooks.Use(m.RequireOrganization(), m.RequireAccess(models.PermManageSettings, models.APIPermWebhooks), m.RateLimitMiddleware(models.RateLimitWrite))
-		{
-			webhooks.GET("", h.ListWebhookEndpoints)
-			webhooks.POST("", h.CreateWebhookEndpoint)
-			webhooks.PATCH("/:id", h.UpdateWebhookEndpoint)
-			webhooks.DELETE("/:id", h.DeleteWebhookEndpoint)
-			webhooks.POST("/:id/rotate-secret", h.RotateWebhookSecret)
-			webhooks.GET("/:id/deliveries", h.ListWebhookDeliveries)
-		}
-
-		// Third-party integrations (org-scoped). Reads are reachable by both
-		// settings managers AND operational integration users (PermUseIntegrations)
-		// so contextual integration actions show up everywhere they belong;
-		// connecting + configuring stays gated on PermManageSettings. Pushing
-		// records on demand is an operational action (PermUseIntegrations).
-		integrations := protected.Group("/integrations")
-		integrations.Use(m.RequireOrganization(), m.RateLimitMiddleware(models.RateLimitWrite))
-		{
-			read := m.RequireAnyAccess(models.APIPermIntegrations, models.PermManageSettings, models.PermUseIntegrations)
-			write := m.RequireAccess(models.PermManageSettings, models.APIPermIntegrations)
-			operate := m.RequireAccess(models.PermUseIntegrations, models.APIPermIntegrations)
-
-			integrations.GET("/catalog", read, h.ListIntegrationCatalog)
-			integrations.GET("/connections", read, h.ListIntegrationConnections)
-			integrations.POST("/connections", write, h.ConnectIntegration)
-			integrations.GET("/connections/:id", read, h.GetIntegrationConnection)
-			integrations.PATCH("/connections/:id/config", write, h.UpdateConnectionConfig)
-			integrations.DELETE("/connections/:id", write, h.DisconnectIntegration)
-			integrations.GET("/connections/:id/events", read, h.ListConnectionEventSubscriptions)
-			integrations.POST("/connections/:id/events", write, h.CreateConnectionEventSubscription)
-			integrations.DELETE("/connections/:id/events/:eventId", write, h.DeleteConnectionEventSubscription)
-			integrations.GET("/connections/:id/field-mappings", read, h.ListConnectionFieldMappings)
-			integrations.PUT("/connections/:id/field-mappings", write, h.ReplaceConnectionFieldMappings)
-			integrations.GET("/connections/:id/runs", read, h.ListConnectionSyncRuns)
-			integrations.GET("/connections/:id/webhook-secret", write, h.GetConnectionWebhookSecret)
-			integrations.POST("/connections/:id/test", write, h.TestConnection)
-			integrations.POST("/connections/:id/push", operate, h.PushContactsToIntegration)
-			integrations.GET("/bookings", read, h.ListMeetingBookings)
-		}
-
-		// Meetings (org-scoped). Booked calls from connected scheduling
-		// providers (Calendly / Cal.com), surfaced as a first-class CRM list.
-		// Read-only and reachable by anyone who can view contacts.
-		meetings := protected.Group("/meetings")
-		meetings.Use(m.RequireOrganization(), m.RateLimitMiddleware(models.RateLimitWrite))
-		{
-			meetingsRead := m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts)
-			meetingsWrite := m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts)
-			meetings.GET("", meetingsRead, h.SearchMeetings)
-			meetings.GET("/summary", meetingsRead, h.MeetingsSummary)
-			meetings.POST("", meetingsWrite, h.CreateMeeting)
-			meetings.DELETE("/:id", meetingsWrite, h.DeleteMeeting)
-		}
-
-		// Automations (org-scoped). The visual flow builder: a trigger event +
-		// action steps across integrations. Reads reachable by operational
-		// integration users; creating/editing is a settings action.
-		automations := protected.Group("/automations")
-		automations.Use(m.RequireOrganization(), m.RateLimitMiddleware(models.RateLimitWrite))
-		{
-			aread := m.RequireAnyAccess(models.APIPermIntegrations, models.PermManageSettings, models.PermUseIntegrations)
-			// Writing automations needs the integration permission (same family as
-			// reads) OR settings-manager; previously it required manage-settings only,
-			// which let integration-permitted members open the builder but 403 on save.
-			awrite := m.RequireAnyAccess(models.APIPermIntegrations, models.PermManageSettings, models.PermUseIntegrations)
-			automations.GET("", aread, h.ListAutomations)
-			automations.POST("", awrite, h.CreateAutomation)
-			automations.GET("/:id", aread, h.GetAutomation)
-			automations.PATCH("/:id", awrite, h.UpdateAutomation)
-			automations.DELETE("/:id", awrite, h.DeleteAutomation)
-			automations.POST("/:id/test", aread, h.TestAutomation)
-			automations.GET("/:id/runs", aread, h.ListAutomationRuns)
-		}
-
-		// On-demand Google Sheets -> leads sync (org-scoped). A saved "sync
-		// source" the user re-runs with "Sync now"; new rows create contacts and
-		// existing rows (matched by email) update. Gated under the contacts
-		// write permissions because it ultimately upserts contacts. The Google
-		// account itself is connected via the existing /integrations/oauth flow
-		// with provider "google_sheets".
-		leadSync := protected.Group("/lead-sync")
-		leadSync.Use(m.RequireOrganization(), m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts), m.RateLimitMiddleware(models.RateLimitWrite))
-		{
-			leadSync.GET("/google/connection", h.GetLeadSyncGoogleConnection)
-			leadSync.POST("/google/spreadsheet", h.GetLeadSyncSpreadsheet)
-			leadSync.POST("/google/preview", h.PreviewLeadSync)
-
-			leadSync.GET("/sources", h.ListLeadSyncSources)
-			leadSync.POST("/sources", h.CreateLeadSyncSource)
-			leadSync.GET("/sources/:id", h.GetLeadSyncSource)
-			leadSync.PATCH("/sources/:id", h.UpdateLeadSyncSource)
-			leadSync.DELETE("/sources/:id", h.DeleteLeadSyncSource)
-			leadSync.POST("/sources/:id/sync", h.SyncLeadSyncSourceNow)
-		}
-
-		// Warmup routing rules (org-scoped). Lets customers define
-		// preferences for premium-pool partner selection — e.g. send
-		// to Gmail recipients only from Google-classified senders.
-		warmupRouting := protected.Group("/warmup/routing")
-		warmupRouting.Use(m.RequireOrganization(), m.RequireAccess(models.PermManageSettings, models.APIPermWarmupRouting), m.RateLimitMiddleware(models.RateLimitWrite))
-		{
-			warmupRouting.GET("", h.ListWarmupRoutingRules)
-			warmupRouting.POST("", h.CreateWarmupRoutingRule)
-			warmupRouting.PATCH("/:id", h.UpdateWarmupRoutingRule)
-			warmupRouting.DELETE("/:id", h.DeleteWarmupRoutingRule)
-		}
-
-		// Reply templates (org-scoped)
-		templates := protected.Group("/templates")
-		templates.Use(m.RequireOrganization(), m.RateLimitMiddleware(models.RateLimitWrite))
-		{
-			templates.GET("", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadTemplates), h.ListTemplates)
-			templates.POST("", m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteTemplates), h.CreateTemplate)
-			templates.PATCH("/reorder", m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteTemplates), h.ReorderTemplates)
-			templates.GET("/:id", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadTemplates), h.GetTemplate)
-			templates.PATCH("/:id", m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteTemplates), h.UpdateTemplate)
-			templates.DELETE("/:id", m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteTemplates), h.DeleteTemplate)
-			templates.POST("/:id/duplicate", m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteTemplates), h.DuplicateTemplate)
-			templates.POST("/:id/render", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadTemplates), h.RenderTemplate)
-			templates.POST("/score", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadTemplates), h.ScoreTemplateContent)
-		}
-
-		// CRM routes (require org)
-		crmGroup := protected.Group("/crm")
-		crmGroup.Use(m.RequireOrganization(), m.RateLimitMiddleware(models.RateLimitWrite))
-		{
-			pipelines := crmGroup.Group("/pipelines")
-			{
-				pipelines.GET("", m.RequireAccess(models.PermViewContacts, models.APIPermReadCRM), h.ListPipelines)
-				pipelines.POST("", m.RequireAccess(models.PermManageContacts, models.APIPermWriteCRM), h.CreatePipeline)
-				pipelines.GET("/:id", m.RequireAccess(models.PermViewContacts, models.APIPermReadCRM), h.GetPipeline)
-				pipelines.PATCH("/:id", m.RequireAccess(models.PermManageContacts, models.APIPermWriteCRM), h.UpdatePipeline)
-				pipelines.DELETE("/:id", m.RequireAccess(models.PermManageContacts, models.APIPermWriteCRM), h.DeletePipeline)
-				pipelines.POST("/:id/stages", m.RequireAccess(models.PermManageContacts, models.APIPermWriteCRM), h.CreateStage)
-				pipelines.PATCH("/:id/stages/:stageId", m.RequireAccess(models.PermManageContacts, models.APIPermWriteCRM), h.UpdateStage)
-				pipelines.DELETE("/:id/stages/:stageId", m.RequireAccess(models.PermManageContacts, models.APIPermWriteCRM), h.DeleteStage)
+				emails.GET("", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadEmails), h.EmailsSearch)
+				emails.GET("/:id", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadEmails), middleware.RequireAPIKeyEmailAccountParam("id"), h.GetEmail)
+				emails.PATCH("/:id", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails), middleware.RequireAPIKeyEmailAccountParam("id"), h.UpdateEmail)
+				emails.PATCH("/:id/track", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails), middleware.RequireAPIKeyEmailAccountParam("id"), h.UpdateEmailTrackingDomain)
+				emails.POST("/:id/warmup/start", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails), middleware.RequireAPIKeyEmailAccountParam("id"), h.StartWarmup)
+				emails.POST("/:id/warmup/pause", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails), middleware.RequireAPIKeyEmailAccountParam("id"), h.PauseWarmup)
+				emails.POST("/:id/warmup/resume", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails), middleware.RequireAPIKeyEmailAccountParam("id"), h.ResumeWarmup)
+				emails.POST("/:id/warmup/stop", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails), middleware.RequireAPIKeyEmailAccountParam("id"), h.StopWarmup)
+				emails.GET("/:id/auth-check", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadEmails), middleware.RequireAPIKeyEmailAccountParam("id"), h.GetEmailAuthCheck)
+				emails.POST("/verify", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadEmails), h.VerifyEmail)
+				emails.GET("/:id/warmup/ban-status", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadEmails), middleware.RequireAPIKeyEmailAccountParam("id"), h.GetWarmupBanStatus)
+				emails.POST("/:id/warmup/appeal", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails), middleware.RequireAPIKeyEmailAccountParam("id"), h.SubmitWarmupAppeal)
+				emails.DELETE("/:id", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails), middleware.RequireAPIKeyEmailAccountParam("id"), h.DeleteEmail)
+				emails.POST("/:id/send", m.RequireOrganization(), m.RequireAccess(models.PermSendCampaigns, models.APIPermSendCampaigns), middleware.RequireAPIKeyEmailAccountParam("id"), h.SendEmailFromAccount)
 			}
 
-			deals := crmGroup.Group("/deals")
+			// Email onboarding is JWT-only — it writes user-encrypted refresh
+			// tokens via the SPA popup flow and shouldn't be triggerable by an
+			// API key with a long lifetime.
+			onboardingEmails := jwtOnly.Group("/emails/onboarding")
+			onboardingEmails.Use(m.RateLimitMiddleware(models.RateLimitWrite))
 			{
-				deals.GET("", m.RequireAccess(models.PermViewContacts, models.APIPermReadCRM), h.ListDeals)
-				deals.POST("", m.RequireAccess(models.PermManageContacts, models.APIPermWriteCRM), h.CreateDeal)
-				deals.POST("/search", m.RequireAccess(models.PermViewContacts, models.APIPermReadCRM), h.SearchDeals)
-				deals.POST("/summary", m.RequireAccess(models.PermViewContacts, models.APIPermReadCRM), h.DealsSummary)
-				deals.GET("/:id", m.RequireAccess(models.PermViewContacts, models.APIPermReadCRM), h.GetDeal)
-				deals.PATCH("/:id", m.RequireAccess(models.PermManageContacts, models.APIPermWriteCRM), h.UpdateDeal)
-				deals.DELETE("/:id", m.RequireAccess(models.PermManageContacts, models.APIPermWriteCRM), h.DeleteDeal)
+				onboardingEmails.POST("/oauth/start", h.StartEmailOAuth)
+				onboardingEmails.POST("/oauth/finish", h.FinishEmailOAuth)
+				onboardingEmails.POST("/smtp-imap", h.ConnectEmailSMTPIMAP)
 			}
 
-			taskTypes := crmGroup.Group("/task-types")
+			// Integration OAuth handshake is JWT-only — it writes user-encrypted
+			// provider tokens via the SPA popup flow, same as mailbox onboarding.
+			integrationsOAuth := jwtOnly.Group("/integrations/oauth")
+			integrationsOAuth.Use(m.RequireOrganization(), m.RateLimitMiddleware(models.RateLimitWrite))
 			{
-				taskTypes.GET("", m.RequireAccess(models.PermViewContacts, models.APIPermReadCRM), h.ListTaskTypes)
-				taskTypes.POST("", m.RequireAccess(models.PermManageContacts, models.APIPermWriteCRM), h.CreateTaskType)
-				taskTypes.PATCH("/:id", m.RequireAccess(models.PermManageContacts, models.APIPermWriteCRM), h.UpdateTaskType)
-				taskTypes.DELETE("/:id", m.RequireAccess(models.PermManageContacts, models.APIPermWriteCRM), h.DeleteTaskType)
+				integrationsOAuth.POST("/start", h.StartIntegrationOAuth)
+				integrationsOAuth.POST("/finish", h.FinishIntegrationOAuth)
+				integrationsOAuth.POST("/reauth/:id", h.ReauthIntegration)
 			}
 
-			crmTasks := crmGroup.Group("/tasks")
+			// Template preview/validation (no campaign id; can't be a static sibling
+			// of /campaigns/:id, so it lives one level up). Renders against a sample
+			// contact — read-level access, no side effects.
+			protected.POST("/campaign-template-preview", m.RequireOrganization(), m.RequireAccess(models.PermViewCampaigns, models.APIPermReadCampaigns), h.PreviewCampaignTemplate)
+
+			campaigns := protected.Group("/campaigns")
+			campaigns.Use(m.RateLimitMiddleware(models.RateLimitWrite))
 			{
-				crmTasks.GET("", m.RequireAccess(models.PermViewContacts, models.APIPermReadCRM), h.ListCRMTasks)
-				crmTasks.POST("", m.RequireAccess(models.PermManageContacts, models.APIPermWriteCRM), h.CreateCRMTask)
-				crmTasks.POST("/search", m.RequireAccess(models.PermViewContacts, models.APIPermReadCRM), h.SearchCRMTasks)
-				crmTasks.POST("/summary", m.RequireAccess(models.PermViewContacts, models.APIPermReadCRM), h.TasksSummary)
-				crmTasks.GET("/:id", m.RequireAccess(models.PermViewContacts, models.APIPermReadCRM), h.GetCRMTask)
-				crmTasks.PATCH("/:id", m.RequireAccess(models.PermManageContacts, models.APIPermWriteCRM), h.UpdateCRMTask)
-				crmTasks.DELETE("/:id", m.RequireAccess(models.PermManageContacts, models.APIPermWriteCRM), h.DeleteCRMTask)
+				campaigns.GET("", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadCampaigns), h.SearchCampaigns)
+				campaigns.POST("", m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.CreateCampaign)
+				campaigns.GET("/:id", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadCampaigns), h.GetCampaign)
+				campaigns.PATCH("/:id", m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.UpdateCampaign)
+				campaigns.DELETE("/:id", m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.DeleteCampaign)
+
+				// Advanced campaign controls
+				campaigns.GET("/:id/advanced", m.RequireOrganization(), m.RequireAccess(models.PermViewCampaigns, models.APIPermReadCampaigns), h.GetCampaignAdvancedSettings)
+				campaigns.PATCH("/:id/advanced", m.RequireOrganization(), m.RequireAccess(models.PermManageSettings, models.APIPermWriteCampaigns), h.UpdateCampaignAdvancedSettings)
+				campaigns.GET("/:id/ab-variants", m.RequireOrganization(), m.RequireAccess(models.PermViewCampaigns, models.APIPermReadCampaigns), h.ListCampaignABVariants)
+				campaigns.POST("/:id/ab-variants", m.RequireOrganization(), m.RequireAccess(models.PermManageSettings, models.APIPermWriteCampaigns), h.CreateCampaignABVariant)
+				campaigns.PATCH("/:id/ab-variants/:variantId", m.RequireOrganization(), m.RequireAccess(models.PermManageSettings, models.APIPermWriteCampaigns), h.UpdateCampaignABVariant)
+				campaigns.DELETE("/:id/ab-variants/:variantId", m.RequireOrganization(), m.RequireAccess(models.PermManageSettings, models.APIPermWriteCampaigns), h.DeleteCampaignABVariant)
+				campaigns.GET("/:id/attachments", m.RequireOrganization(), m.RequireAccess(models.PermViewCampaigns, models.APIPermReadCampaigns), h.ListCampaignAttachments)
+				campaigns.POST("/:id/attachments", m.RequireOrganization(), m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.UploadCampaignAttachment)
+				campaigns.DELETE("/:id/attachments/:attachmentId", m.RequireOrganization(), m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.DeleteCampaignAttachment)
+				campaigns.POST("/:id/preflight", m.RequireOrganization(), m.RequireAccess(models.PermSendCampaigns, models.APIPermSendCampaigns), h.RunCampaignPreflight)
+				campaigns.GET("/:id/ab-analysis", m.RequireOrganization(), m.RequireAccess(models.PermViewAnalytics, models.APIPermReadAnalytics), h.GetCampaignABAnalysis)
+				campaigns.POST("/:id/test-email", m.RequireOrganization(), m.RequireAccess(models.PermSendCampaigns, models.APIPermSendCampaigns), h.SendTestEmail)
+
+				// Campaign start/stop
+				campaigns.POST("/:id/start", m.RequireOrganization(), m.RequireAccess(models.PermSendCampaigns, models.APIPermSendCampaigns), h.StartCampaign)
+				campaigns.POST("/:id/stop", m.RequireOrganization(), m.RequireAccess(models.PermSendCampaigns, models.APIPermSendCampaigns), h.StopCampaign)
+				campaigns.GET("/:id/logs", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadCampaigns), h.GetCampaignLogs)
+
+				// Explicit sender pool (rotation/weighting).
+				campaigns.GET("/:id/senders", m.RequireOrganization(), m.RequireAccess(models.PermViewCampaigns, models.APIPermReadCampaigns), h.ListCampaignSenders)
+				campaigns.PUT("/:id/senders", m.RequireOrganization(), m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.ReplaceCampaignSenders)
+
+				// Campaign-scoped tracking-domain verification.
+				campaigns.POST("/:id/tracking-domain/verify", m.RequireOrganization(), m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.VerifyCampaignTrackingDomain)
+
+				sequences := campaigns.Group("/:id/steps")
+				{
+					sequences.GET("", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadCampaigns), h.GetSequences)
+					sequences.POST("", m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.CreateSequence)
+					sequences.PATCH("/:sid", m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.UpdateSequence)
+					sequences.DELETE("/:sid", m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.DeleteSequence)
+				}
 			}
+
+			generation := protected.Group("/generation")
+			generation.Use(m.RateLimitMiddleware(models.RateLimitWrite))
+			{
+				generation.POST("/write", m.RequireOrganization(), m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.GenerateWriting)
+			}
+
+			contacts := protected.Group("/contacts")
+			contacts.Use(m.RateLimitMiddleware(models.RateLimitWrite))
+			{
+				contacts.POST("/search", m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts), h.SearchContacts)
+				contacts.POST("", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts), h.AddContacts)
+				contacts.DELETE("", m.RequireAccess(models.PermManageContacts, models.APIPermBulkContacts), h.DeleteContactBulk)
+				contacts.PATCH("", m.RequireAccess(models.PermManageContacts, models.APIPermBulkContacts), h.UpdateContactBulk)
+				// Import + export power-tools. Read-only export gates on
+				// ReadContacts; the import endpoints write and so use the
+				// stricter Write/Bulk scopes that the rest of the contact
+				// write paths already use.
+				contacts.POST("/export", m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts), h.ExportContacts)
+				contacts.POST("/import/preview", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts), h.ImportPreviewContacts)
+				contacts.POST("/import/commit", m.RequireAccess(models.PermManageContacts, models.APIPermBulkContacts), h.ImportCommitContacts)
+				contacts.PATCH("/:id", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts), h.UpdateContact)
+				contacts.DELETE("/:id", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts), h.DeleteContact)
+
+				// Resolve a sender address to a contact (unibox CRM panel).
+				// Registered before /:id so the fixed path wins over the catch-all.
+				contacts.GET("/lookup", m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts), h.LookupContactByEmail)
+
+				// Contact 360 view: hydrated detail, every email sent to
+				// the contact, and the merged activity timeline.
+				contacts.GET("/:id", m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts), h.GetContact)
+				contacts.GET("/:id/emails", m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts), h.ListContactEmails)
+				contacts.GET("/:id/timeline", m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts), h.ListContactTimeline)
+
+				// CRM: Notes & Activities (under contacts)
+				contacts.GET("/:id/notes", m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts), h.ListContactNotes)
+				contacts.POST("/:id/notes", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts), h.CreateContactNote)
+				contacts.PATCH("/:id/notes/:noteId", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts), h.UpdateContactNote)
+				contacts.DELETE("/:id/notes/:noteId", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts), h.DeleteContactNote)
+				contacts.GET("/:id/activities", m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts), h.ListContactActivities)
+				contacts.GET("/:id/deals", m.RequireAccess(models.PermViewContacts, models.APIPermReadCRM), h.GetDealsByContact)
+			}
+
+			// Group endpoints map to the resources they organize: campaign
+			// folders, email-account tags, and contact categories.
+			grouph.New(protected, h.FolderService, h.AuditService, "folders", m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns))
+			grouph.New(protected, h.TagService, h.AuditService, "tags", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails))
+			grouph.New(protected, h.CategoryService, h.AuditService, "categories", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts))
+
+			unibox := protected.Group("/unibox")
+			unibox.Use(m.RateLimitMiddleware(models.RateLimitRead))
+			{
+				unibox.GET("", m.RequireAccess(models.PermAccessUnibox, models.APIPermReadUnibox), h.GetUniboxIncoming)
+				unibox.GET("/count", m.RequireAccess(models.PermAccessUnibox, models.APIPermReadUnibox), h.GetUnseenCount)
+				unibox.GET("/overview", m.RequireAccess(models.PermAccessUnibox, models.APIPermReadUnibox), h.GetUniboxOverview)
+				unibox.GET("/thread", m.RequireAccess(models.PermAccessUnibox, models.APIPermReadUnibox), h.GetUniboxThread)
+
+				// Conversation labels — read the set on a thread, or replace
+				// it wholesale (idempotent PUT). Registered before /:id so the
+				// fixed path wins over the catch-all.
+				unibox.GET("/thread/labels", m.RequireAccess(models.PermAccessUnibox, models.APIPermReadUnibox), h.GetUniboxThreadLabels)
+				unibox.PUT("/thread/labels", m.RequireAccess(models.PermAccessUnibox, models.APIPermWriteUnibox), h.SetUniboxThreadLabels)
+
+				unibox.PATCH("/seen", m.RequireAccess(models.PermAccessUnibox, models.APIPermWriteUnibox), h.UniboxMarkSeen)
+				unibox.POST("/reply", m.RequireOrganization(), m.RequireAccess(models.PermAccessUnibox, models.APIPermWriteUnibox), h.UniboxReply)
+
+				// Snoozes — POST/DELETE on a thread, GET lists active ones.
+				unibox.GET("/snoozes", m.RequireAccess(models.PermAccessUnibox, models.APIPermReadUnibox), h.ListUniboxSnoozes)
+				unibox.POST("/snooze", m.RequireAccess(models.PermAccessUnibox, models.APIPermWriteUnibox), h.CreateUniboxSnooze)
+				unibox.DELETE("/snooze", m.RequireAccess(models.PermAccessUnibox, models.APIPermWriteUnibox), h.DeleteUniboxSnooze)
+
+				// Scheduled-sends review + cancel. DELETE is DB-only —
+				// we don't pay Cloud Tasks to delete the queued task; the
+				// handler short-circuits on cancelled status when it fires.
+				unibox.GET("/scheduled", m.RequireAccess(models.PermAccessUnibox, models.APIPermReadUnibox), h.ListUniboxScheduled)
+				unibox.DELETE("/scheduled/:task_id", m.RequireAccess(models.PermAccessUnibox, models.APIPermWriteUnibox), h.CancelUniboxScheduled)
+
+				// Keep /:id last — gin treats it as a catch-all so any
+				// fixed-name routes (above) must register first.
+				unibox.GET("/:id", m.RequireAccess(models.PermAccessUnibox, models.APIPermReadUnibox), h.GetUniboxEmail)
+			}
+
+			// API key management. JWT users need PermManageAPIKeys; API keys
+			// need the APIPermAPIKeys self-service bit. This lets an integration
+			// rotate its own keys without going through the dashboard.
+			apiKeys := protected.Group("/api-keys")
+			apiKeys.Use(m.RequireOrganization(), m.RequireAccess(models.PermManageAPIKeys, models.APIPermAPIKeys))
+			apiKeys.Use(m.RateLimitMiddleware(models.RateLimitWrite))
+			{
+				apiKeys.GET("", h.ListAPIKeys)
+				apiKeys.POST("", h.CreateAPIKey)
+				apiKeys.GET("/permissions", h.ListAPIPermissions)
+				apiKeys.GET("/usage/summary", h.GetAPIKeyUsageSummary)
+				apiKeys.GET("/usage/analytics", h.GetAPIKeyAnalytics)
+				apiKeys.GET("/:id", h.GetAPIKey)
+				apiKeys.PATCH("/:id", h.UpdateAPIKey)
+				apiKeys.DELETE("/:id", h.RevokeAPIKey)
+				apiKeys.GET("/:id/analytics", h.GetAPIKeyAnalytics)
+				apiKeys.GET("/:id/logs", h.ListAPIKeyUsageLogs)
+			}
+
+			// Analytics endpoints
+			analytics := protected.Group("/analytics")
+			analytics.Use(m.RateLimitMiddleware(models.RateLimitAnalytics), m.RequireAccess(models.PermViewAnalytics, models.APIPermReadAnalytics))
+			{
+				analytics.GET("/dashboard", h.GetDashboardAnalytics)
+				analytics.GET("/deliverability", m.RequireOrganization(), h.GetDeliverabilityDashboard)
+				analytics.GET("/warmup", h.GetWarmupAnalytics)
+				analytics.GET("/campaigns/compare", h.CompareCampaigns)
+				analytics.GET("/campaigns/:id", h.GetCampaignAnalytics)
+				analytics.GET("/campaigns/:id/daily", h.GetCampaignDailyStats)
+				analytics.GET("/campaigns/:id/hourly", h.GetCampaignHourlyStats)
+				analytics.GET("/accounts", h.GetAllAccountStatuses)
+				analytics.GET("/accounts/:id", h.GetAccountStatus)
+				analytics.GET("/usage", h.GetUsageOverview)
+			}
+
+			// Audit logs
+			auditLogs := protected.Group("/audit-logs")
+			auditLogs.Use(m.RateLimitMiddleware(models.RateLimitRead), m.RequireAccess(models.PermViewAnalytics, models.APIPermReadAuditLogs))
+			{
+				auditLogs.GET("", h.GetAuditLogs)
+			}
+
+			// Realtime websocket bootstrap is JWT-only — the websocket itself
+			// has its own session-based auth.
+			realtime := jwtOnly.Group("/realtime")
+			{
+				realtime.GET("/info", h.GetRealtimeInfo)
+			}
+
+			// Advanced outreach controls (org-scoped)
+			outreach := protected.Group("/outreach")
+			outreach.Use(m.RequireOrganization(), m.RequireAccess(models.PermManageSettings, models.APIPermWriteCampaigns))
+			{
+				outreach.GET("/settings", h.GetOutreachSettings)
+				outreach.PATCH("/settings", h.UpdateOutreachSettings)
+			}
+
+			// Deliverability event ingestion (org-scoped). API-key callable so
+			// downstream pipelines (e.g. SES bounce processors) can post events
+			// without a human in the loop.
+			deliverability := protected.Group("/deliverability")
+			deliverability.Use(m.RequireOrganization(), m.RequireAccess(models.PermSendCampaigns, models.APIPermWriteCampaigns))
+			{
+				deliverability.POST("/events", h.IngestDeliverabilityEvent)
+			}
+
+			// Task dead letter operations (org-scoped). Requires SendCampaigns
+			// because a replay actually re-dispatches mail.
+			taskOps := protected.Group("/tasks")
+			taskOps.Use(m.RequireOrganization(), m.RequireAccess(models.PermSendCampaigns, models.APIPermSendCampaigns))
+			{
+				taskOps.GET("/dlq", h.ListTaskDeadLetters)
+				taskOps.POST("/dlq/:id/replay", h.ReplayTaskDeadLetter)
+			}
+
+			// Customer-facing webhooks (org-scoped).
+			webhooks := protected.Group("/webhooks")
+			webhooks.Use(m.RequireOrganization(), m.RequireAccess(models.PermManageSettings, models.APIPermWebhooks), m.RateLimitMiddleware(models.RateLimitWrite))
+			{
+				webhooks.GET("", h.ListWebhookEndpoints)
+				webhooks.POST("", h.CreateWebhookEndpoint)
+				webhooks.PATCH("/:id", h.UpdateWebhookEndpoint)
+				webhooks.DELETE("/:id", h.DeleteWebhookEndpoint)
+				webhooks.POST("/:id/rotate-secret", h.RotateWebhookSecret)
+				webhooks.GET("/:id/deliveries", h.ListWebhookDeliveries)
+			}
+
+			// Third-party integrations (org-scoped). Reads are reachable by both
+			// settings managers AND operational integration users (PermUseIntegrations)
+			// so contextual integration actions show up everywhere they belong;
+			// connecting + configuring stays gated on PermManageSettings. Pushing
+			// records on demand is an operational action (PermUseIntegrations).
+			integrations := protected.Group("/integrations")
+			integrations.Use(m.RequireOrganization(), m.RateLimitMiddleware(models.RateLimitWrite))
+			{
+				read := m.RequireAnyAccess(models.APIPermIntegrations, models.PermManageSettings, models.PermUseIntegrations)
+				write := m.RequireAccess(models.PermManageSettings, models.APIPermIntegrations)
+				operate := m.RequireAccess(models.PermUseIntegrations, models.APIPermIntegrations)
+
+				integrations.GET("/catalog", read, h.ListIntegrationCatalog)
+				integrations.GET("/connections", read, h.ListIntegrationConnections)
+				integrations.POST("/connections", write, h.ConnectIntegration)
+				integrations.GET("/connections/:id", read, h.GetIntegrationConnection)
+				integrations.PATCH("/connections/:id/config", write, h.UpdateConnectionConfig)
+				integrations.DELETE("/connections/:id", write, h.DisconnectIntegration)
+				integrations.GET("/connections/:id/events", read, h.ListConnectionEventSubscriptions)
+				integrations.POST("/connections/:id/events", write, h.CreateConnectionEventSubscription)
+				integrations.DELETE("/connections/:id/events/:eventId", write, h.DeleteConnectionEventSubscription)
+				integrations.GET("/connections/:id/field-mappings", read, h.ListConnectionFieldMappings)
+				integrations.PUT("/connections/:id/field-mappings", write, h.ReplaceConnectionFieldMappings)
+				integrations.GET("/connections/:id/runs", read, h.ListConnectionSyncRuns)
+				integrations.GET("/connections/:id/webhook-secret", write, h.GetConnectionWebhookSecret)
+				integrations.POST("/connections/:id/test", write, h.TestConnection)
+				integrations.POST("/connections/:id/push", operate, h.PushContactsToIntegration)
+				integrations.GET("/bookings", read, h.ListMeetingBookings)
+			}
+
+			// Meetings (org-scoped). Booked calls from connected scheduling
+			// providers (Calendly / Cal.com), surfaced as a first-class CRM list.
+			// Read-only and reachable by anyone who can view contacts.
+			meetings := protected.Group("/meetings")
+			meetings.Use(m.RequireOrganization(), m.RateLimitMiddleware(models.RateLimitWrite))
+			{
+				meetingsRead := m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts)
+				meetingsWrite := m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts)
+				meetings.GET("", meetingsRead, h.SearchMeetings)
+				meetings.GET("/summary", meetingsRead, h.MeetingsSummary)
+				meetings.POST("", meetingsWrite, h.CreateMeeting)
+				meetings.DELETE("/:id", meetingsWrite, h.DeleteMeeting)
+			}
+
+			// Automations (org-scoped). The visual flow builder: a trigger event +
+			// action steps across integrations. Reads reachable by operational
+			// integration users; creating/editing is a settings action.
+			automations := protected.Group("/automations")
+			automations.Use(m.RequireOrganization(), m.RateLimitMiddleware(models.RateLimitWrite))
+			{
+				aread := m.RequireAnyAccess(models.APIPermIntegrations, models.PermManageSettings, models.PermUseIntegrations)
+				// Writing automations needs the integration permission (same family as
+				// reads) OR settings-manager; previously it required manage-settings only,
+				// which let integration-permitted members open the builder but 403 on save.
+				awrite := m.RequireAnyAccess(models.APIPermIntegrations, models.PermManageSettings, models.PermUseIntegrations)
+				automations.GET("", aread, h.ListAutomations)
+				automations.POST("", awrite, h.CreateAutomation)
+				automations.GET("/:id", aread, h.GetAutomation)
+				automations.PATCH("/:id", awrite, h.UpdateAutomation)
+				automations.DELETE("/:id", awrite, h.DeleteAutomation)
+				automations.POST("/:id/test", aread, h.TestAutomation)
+				automations.GET("/:id/runs", aread, h.ListAutomationRuns)
+			}
+
+			// On-demand Google Sheets -> leads sync (org-scoped). A saved "sync
+			// source" the user re-runs with "Sync now"; new rows create contacts and
+			// existing rows (matched by email) update. Gated under the contacts
+			// write permissions because it ultimately upserts contacts. The Google
+			// account itself is connected via the existing /integrations/oauth flow
+			// with provider "google_sheets".
+			leadSync := protected.Group("/lead-sync")
+			leadSync.Use(m.RequireOrganization(), m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts), m.RateLimitMiddleware(models.RateLimitWrite))
+			{
+				leadSync.GET("/google/connection", h.GetLeadSyncGoogleConnection)
+				leadSync.POST("/google/spreadsheet", h.GetLeadSyncSpreadsheet)
+				leadSync.POST("/google/preview", h.PreviewLeadSync)
+
+				leadSync.GET("/sources", h.ListLeadSyncSources)
+				leadSync.POST("/sources", h.CreateLeadSyncSource)
+				leadSync.GET("/sources/:id", h.GetLeadSyncSource)
+				leadSync.PATCH("/sources/:id", h.UpdateLeadSyncSource)
+				leadSync.DELETE("/sources/:id", h.DeleteLeadSyncSource)
+				leadSync.POST("/sources/:id/sync", h.SyncLeadSyncSourceNow)
+			}
+
+			// Warmup routing rules (org-scoped). Lets customers define
+			// preferences for premium-pool partner selection — e.g. send
+			// to Gmail recipients only from Google-classified senders.
+			warmupRouting := protected.Group("/warmup/routing")
+			warmupRouting.Use(m.RequireOrganization(), m.RequireAccess(models.PermManageSettings, models.APIPermWarmupRouting), m.RateLimitMiddleware(models.RateLimitWrite))
+			{
+				warmupRouting.GET("", h.ListWarmupRoutingRules)
+				warmupRouting.POST("", h.CreateWarmupRoutingRule)
+				warmupRouting.PATCH("/:id", h.UpdateWarmupRoutingRule)
+				warmupRouting.DELETE("/:id", h.DeleteWarmupRoutingRule)
+			}
+
+			// Reply templates (org-scoped)
+			templates := protected.Group("/templates")
+			templates.Use(m.RequireOrganization(), m.RateLimitMiddleware(models.RateLimitWrite))
+			{
+				templates.GET("", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadTemplates), h.ListTemplates)
+				templates.POST("", m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteTemplates), h.CreateTemplate)
+				templates.PATCH("/reorder", m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteTemplates), h.ReorderTemplates)
+				templates.GET("/:id", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadTemplates), h.GetTemplate)
+				templates.PATCH("/:id", m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteTemplates), h.UpdateTemplate)
+				templates.DELETE("/:id", m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteTemplates), h.DeleteTemplate)
+				templates.POST("/:id/duplicate", m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteTemplates), h.DuplicateTemplate)
+				templates.POST("/:id/render", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadTemplates), h.RenderTemplate)
+				templates.POST("/score", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadTemplates), h.ScoreTemplateContent)
+			}
+
+			// CRM routes (require org)
+			crmGroup := protected.Group("/crm")
+			crmGroup.Use(m.RequireOrganization(), m.RateLimitMiddleware(models.RateLimitWrite))
+			{
+				pipelines := crmGroup.Group("/pipelines")
+				{
+					pipelines.GET("", m.RequireAccess(models.PermViewContacts, models.APIPermReadCRM), h.ListPipelines)
+					pipelines.POST("", m.RequireAccess(models.PermManageContacts, models.APIPermWriteCRM), h.CreatePipeline)
+					pipelines.GET("/:id", m.RequireAccess(models.PermViewContacts, models.APIPermReadCRM), h.GetPipeline)
+					pipelines.PATCH("/:id", m.RequireAccess(models.PermManageContacts, models.APIPermWriteCRM), h.UpdatePipeline)
+					pipelines.DELETE("/:id", m.RequireAccess(models.PermManageContacts, models.APIPermWriteCRM), h.DeletePipeline)
+					pipelines.POST("/:id/stages", m.RequireAccess(models.PermManageContacts, models.APIPermWriteCRM), h.CreateStage)
+					pipelines.PATCH("/:id/stages/:stageId", m.RequireAccess(models.PermManageContacts, models.APIPermWriteCRM), h.UpdateStage)
+					pipelines.DELETE("/:id/stages/:stageId", m.RequireAccess(models.PermManageContacts, models.APIPermWriteCRM), h.DeleteStage)
+				}
+
+				deals := crmGroup.Group("/deals")
+				{
+					deals.GET("", m.RequireAccess(models.PermViewContacts, models.APIPermReadCRM), h.ListDeals)
+					deals.POST("", m.RequireAccess(models.PermManageContacts, models.APIPermWriteCRM), h.CreateDeal)
+					deals.POST("/search", m.RequireAccess(models.PermViewContacts, models.APIPermReadCRM), h.SearchDeals)
+					deals.POST("/summary", m.RequireAccess(models.PermViewContacts, models.APIPermReadCRM), h.DealsSummary)
+					deals.GET("/:id", m.RequireAccess(models.PermViewContacts, models.APIPermReadCRM), h.GetDeal)
+					deals.PATCH("/:id", m.RequireAccess(models.PermManageContacts, models.APIPermWriteCRM), h.UpdateDeal)
+					deals.DELETE("/:id", m.RequireAccess(models.PermManageContacts, models.APIPermWriteCRM), h.DeleteDeal)
+				}
+
+				taskTypes := crmGroup.Group("/task-types")
+				{
+					taskTypes.GET("", m.RequireAccess(models.PermViewContacts, models.APIPermReadCRM), h.ListTaskTypes)
+					taskTypes.POST("", m.RequireAccess(models.PermManageContacts, models.APIPermWriteCRM), h.CreateTaskType)
+					taskTypes.PATCH("/:id", m.RequireAccess(models.PermManageContacts, models.APIPermWriteCRM), h.UpdateTaskType)
+					taskTypes.DELETE("/:id", m.RequireAccess(models.PermManageContacts, models.APIPermWriteCRM), h.DeleteTaskType)
+				}
+
+				crmTasks := crmGroup.Group("/tasks")
+				{
+					crmTasks.GET("", m.RequireAccess(models.PermViewContacts, models.APIPermReadCRM), h.ListCRMTasks)
+					crmTasks.POST("", m.RequireAccess(models.PermManageContacts, models.APIPermWriteCRM), h.CreateCRMTask)
+					crmTasks.POST("/search", m.RequireAccess(models.PermViewContacts, models.APIPermReadCRM), h.SearchCRMTasks)
+					crmTasks.POST("/summary", m.RequireAccess(models.PermViewContacts, models.APIPermReadCRM), h.TasksSummary)
+					crmTasks.GET("/:id", m.RequireAccess(models.PermViewContacts, models.APIPermReadCRM), h.GetCRMTask)
+					crmTasks.PATCH("/:id", m.RequireAccess(models.PermManageContacts, models.APIPermWriteCRM), h.UpdateCRMTask)
+					crmTasks.DELETE("/:id", m.RequireAccess(models.PermManageContacts, models.APIPermWriteCRM), h.DeleteCRMTask)
+				}
+			}
+
+			// Teams — group existing org members into named teams (for CRM
+			// ownership / routing). Built from members; managed by team managers.
+			teamsGroup := protected.Group("/teams")
+			teamsGroup.Use(m.RequireOrganization(), m.RateLimitMiddleware(models.RateLimitWrite))
+			{
+				teamsGroup.GET("", m.RequireAccess(models.PermViewContacts, models.APIPermReadCRM), h.ListTeams)
+				teamsGroup.POST("", m.RequireAccess(models.PermManageTeam, models.APIPermWriteCRM), h.CreateTeam)
+				teamsGroup.GET("/:id", m.RequireAccess(models.PermViewContacts, models.APIPermReadCRM), h.GetTeam)
+				teamsGroup.PATCH("/:id", m.RequireAccess(models.PermManageTeam, models.APIPermWriteCRM), h.UpdateTeam)
+				teamsGroup.DELETE("/:id", m.RequireAccess(models.PermManageTeam, models.APIPermWriteCRM), h.DeleteTeam)
+				teamsGroup.POST("/:id/members", m.RequireAccess(models.PermManageTeam, models.APIPermWriteCRM), h.AddTeamMember)
+				teamsGroup.DELETE("/:id/members/:userId", m.RequireAccess(models.PermManageTeam, models.APIPermWriteCRM), h.RemoveTeamMember)
+			}
+
+			// Plans and timezones are essentially public reference data — auth
+			// gates them only to avoid being scraped. Cheap to expose to keys.
+			protected.GET("/plans", h.ListPlans)
+			protected.GET("/timezones", h.GetTimezones)
 		}
 
-		// Teams — group existing org members into named teams (for CRM
-		// ownership / routing). Built from members; managed by team managers.
-		teamsGroup := protected.Group("/teams")
-		teamsGroup.Use(m.RequireOrganization(), m.RateLimitMiddleware(models.RateLimitWrite))
+		// Sensitive routes below — JWT only. Organization governance, billing,
+		// websocket bootstrap, danger-zone destructions, and pending invitations
+		// all live here. None of these are reachable via an API key.
 		{
-			teamsGroup.GET("", m.RequireAccess(models.PermViewContacts, models.APIPermReadCRM), h.ListTeams)
-			teamsGroup.POST("", m.RequireAccess(models.PermManageTeam, models.APIPermWriteCRM), h.CreateTeam)
-			teamsGroup.GET("/:id", m.RequireAccess(models.PermViewContacts, models.APIPermReadCRM), h.GetTeam)
-			teamsGroup.PATCH("/:id", m.RequireAccess(models.PermManageTeam, models.APIPermWriteCRM), h.UpdateTeam)
-			teamsGroup.DELETE("/:id", m.RequireAccess(models.PermManageTeam, models.APIPermWriteCRM), h.DeleteTeam)
-			teamsGroup.POST("/:id/members", m.RequireAccess(models.PermManageTeam, models.APIPermWriteCRM), h.AddTeamMember)
-			teamsGroup.DELETE("/:id/members/:userId", m.RequireAccess(models.PermManageTeam, models.APIPermWriteCRM), h.RemoveTeamMember)
-		}
+			org := jwtOnly.Group("/organization")
+			org.Use(m.RateLimitMiddleware(models.RateLimitWrite))
+			{
+				org.POST("", h.CreateOrganization)
+				org.GET("", h.GetUserOrganizations)
+				org.POST("/switch/:id", h.SwitchOrganization)
 
-		// Plans and timezones are essentially public reference data — auth
-		// gates them only to avoid being scraped. Cheap to expose to keys.
-		protected.GET("/plans", h.ListPlans)
-		protected.GET("/timezones", h.GetTimezones)
+				org.GET("/current", h.GetCurrentOrganization)
+				org.PATCH("/current", m.RequireOrganization(), m.RequirePermission(models.PermManageSettings), h.UpdateOrganization)
+				org.GET("/current/limits", m.RequireOrganization(), h.GetOrganizationLimits)
+
+				org.GET("/members", m.RequireOrganization(), h.GetMembers)
+				org.POST("/members/invite", m.RequireOrganization(), m.RequirePermission(models.PermManageTeam), h.InviteMember)
+				org.PATCH("/members/:id", m.RequireOrganization(), m.RequirePermission(models.PermManageTeam), h.UpdateMemberRole)
+				org.DELETE("/members/:id", m.RequireOrganization(), m.RequirePermission(models.PermManageTeam), h.RemoveMember)
+
+				// Custom roles: named permission sets assignable to members.
+				org.GET("/roles", m.RequireOrganization(), h.ListOrganizationRoles)
+				org.POST("/roles", m.RequireOrganization(), m.RequirePermission(models.PermManageTeam), h.CreateOrganizationRole)
+				org.PATCH("/roles/:id", m.RequireOrganization(), m.RequirePermission(models.PermManageTeam), h.UpdateOrganizationRole)
+				org.DELETE("/roles/:id", m.RequireOrganization(), m.RequirePermission(models.PermManageTeam), h.DeleteOrganizationRole)
+
+				org.GET("/invitations", m.RequireOrganization(), m.RequirePermission(models.PermManageTeam), h.GetPendingInvitations)
+				org.DELETE("/invitations/:id", m.RequireOrganization(), m.RequirePermission(models.PermManageTeam), h.CancelInvitation)
+				org.GET("/invitations/:id/link", m.RequireOrganization(), m.RequirePermission(models.PermManageTeam), h.GetInvitationLink)
+
+				org.POST("/transfer-ownership", m.RequireOrganization(), m.RequirePermission(models.PermTransferOwnership), h.TransferOwnership)
+
+				org.POST("/avatar", m.RequireOrganization(), h.UploadOrganizationAvatar)
+				org.DELETE("/avatar", m.RequireOrganization(), h.DeleteOrganizationAvatar)
+
+				org.GET("/current/danger-zone", m.RequireOrganization(), h.GetOrganizationDangerZone)
+				org.POST("/current/danger-zone/delete", m.RequireOrganization(), h.ScheduleOrganizationDeletion)
+				org.DELETE("/current/danger-zone/delete", m.RequireOrganization(), h.CancelOrganizationDeletion)
+
+				// Customer-facing limit-increase requests. The "current
+				// effective" value is computed server-side at submission
+				// time so the org/admin can see what the user was looking
+				// at when they asked.
+				org.POST("/:orgId/limit-requests", h.SubmitLimitIncreaseRequest)
+				org.GET("/:orgId/limit-requests", h.ListOrgLimitRequests)
+			}
+
+			// Cancel a pending limit request by id (submitter-only). Sits
+			// outside the /organization group so the URL doesn't need
+			// double-encoding of the org id.
+			jwtOnly.DELETE("/limit-requests/:id", h.CancelLimitRequest)
+
+			account := jwtOnly.Group("/me")
+			{
+				account.GET("/danger-zone", h.GetAccountDangerZone)
+				account.POST("/danger-zone/delete", h.ScheduleAccountDeletion)
+				account.DELETE("/danger-zone/delete", h.CancelAccountDeletion)
+			}
+
+			jwtOnly.GET("/invitations", h.GetMyPendingInvitations)
+			jwtOnly.POST("/invitations/accept", h.AcceptInvitation)
+
+			// Websocket bootstrap. The token returned here is single-session.
+			jwtOnly.POST("/getaway", h.GenerateWebsocket)
+
+			subscriptions := jwtOnly.Group("/subscription")
+			subscriptions.Use(m.RateLimitMiddleware(models.RateLimitWrite))
+			{
+				subscriptions.GET("", h.GetSubscription)
+				subscriptions.GET("/limits", h.GetSubscriptionLimits)
+				subscriptions.GET("/trial", h.GetTrialStatus)
+				subscriptions.GET("/features", h.GetFeatureStatus)
+				subscriptions.POST("/checkout", h.CreateCheckoutSession)
+				subscriptions.POST("/discount/validate", h.ValidateDiscountCode)
+				subscriptions.POST("/portal", h.CreateBillingPortalSession)
+				subscriptions.POST("/cancel", h.CancelSubscription)
+
+				subscriptions.POST("/change-plan", m.RequireOrganization(), m.RequirePermission(models.PermManageBilling), h.ChangePlan)
+				subscriptions.GET("/preview-change", m.RequireOrganization(), m.RequirePermission(models.PermManageBilling), h.PreviewPlanChange)
+
+				subscriptions.POST("/enterprise-inquiry", h.SubmitEnterpriseInquiry)
+			}
+		}
 	}
 
-	// Sensitive routes below — JWT only. Organization governance, billing,
-	// websocket bootstrap, danger-zone destructions, and pending invitations
-	// all live here. None of these are reachable via an API key.
-	{
-		org := jwtOnly.Group("/organization")
-		org.Use(m.RateLimitMiddleware(models.RateLimitWrite))
-		{
-			org.POST("", h.CreateOrganization)
-			org.GET("", h.GetUserOrganizations)
-			org.POST("/switch/:id", h.SwitchOrganization)
-
-			org.GET("/current", h.GetCurrentOrganization)
-			org.PATCH("/current", m.RequireOrganization(), m.RequirePermission(models.PermManageSettings), h.UpdateOrganization)
-			org.GET("/current/limits", m.RequireOrganization(), h.GetOrganizationLimits)
-
-			org.GET("/members", m.RequireOrganization(), h.GetMembers)
-			org.POST("/members/invite", m.RequireOrganization(), m.RequirePermission(models.PermManageTeam), h.InviteMember)
-			org.PATCH("/members/:id", m.RequireOrganization(), m.RequirePermission(models.PermManageTeam), h.UpdateMemberRole)
-			org.DELETE("/members/:id", m.RequireOrganization(), m.RequirePermission(models.PermManageTeam), h.RemoveMember)
-
-			// Custom roles: named permission sets assignable to members.
-			org.GET("/roles", m.RequireOrganization(), h.ListOrganizationRoles)
-			org.POST("/roles", m.RequireOrganization(), m.RequirePermission(models.PermManageTeam), h.CreateOrganizationRole)
-			org.PATCH("/roles/:id", m.RequireOrganization(), m.RequirePermission(models.PermManageTeam), h.UpdateOrganizationRole)
-			org.DELETE("/roles/:id", m.RequireOrganization(), m.RequirePermission(models.PermManageTeam), h.DeleteOrganizationRole)
-
-			org.GET("/invitations", m.RequireOrganization(), m.RequirePermission(models.PermManageTeam), h.GetPendingInvitations)
-			org.DELETE("/invitations/:id", m.RequireOrganization(), m.RequirePermission(models.PermManageTeam), h.CancelInvitation)
-			org.GET("/invitations/:id/link", m.RequireOrganization(), m.RequirePermission(models.PermManageTeam), h.GetInvitationLink)
-
-			org.POST("/transfer-ownership", m.RequireOrganization(), m.RequirePermission(models.PermTransferOwnership), h.TransferOwnership)
-
-			org.POST("/avatar", m.RequireOrganization(), h.UploadOrganizationAvatar)
-			org.DELETE("/avatar", m.RequireOrganization(), h.DeleteOrganizationAvatar)
-
-			org.GET("/current/danger-zone", m.RequireOrganization(), h.GetOrganizationDangerZone)
-			org.POST("/current/danger-zone/delete", m.RequireOrganization(), h.ScheduleOrganizationDeletion)
-			org.DELETE("/current/danger-zone/delete", m.RequireOrganization(), h.CancelOrganizationDeletion)
-
-			// Customer-facing limit-increase requests. The "current
-			// effective" value is computed server-side at submission
-			// time so the org/admin can see what the user was looking
-			// at when they asked.
-			org.POST("/:orgId/limit-requests", h.SubmitLimitIncreaseRequest)
-			org.GET("/:orgId/limit-requests", h.ListOrgLimitRequests)
-		}
-
-		// Cancel a pending limit request by id (submitter-only). Sits
-		// outside the /organization group so the URL doesn't need
-		// double-encoding of the org id.
-		jwtOnly.DELETE("/limit-requests/:id", h.CancelLimitRequest)
-
-		account := jwtOnly.Group("/me")
-		{
-			account.GET("/danger-zone", h.GetAccountDangerZone)
-			account.POST("/danger-zone/delete", h.ScheduleAccountDeletion)
-			account.DELETE("/danger-zone/delete", h.CancelAccountDeletion)
-		}
-
-		jwtOnly.GET("/invitations", h.GetMyPendingInvitations)
-		jwtOnly.POST("/invitations/accept", h.AcceptInvitation)
-
-		// Websocket bootstrap. The token returned here is single-session.
-		jwtOnly.POST("/getaway", h.GenerateWebsocket)
-
-		subscriptions := jwtOnly.Group("/subscription")
-		subscriptions.Use(m.RateLimitMiddleware(models.RateLimitWrite))
-		{
-			subscriptions.GET("", h.GetSubscription)
-			subscriptions.GET("/limits", h.GetSubscriptionLimits)
-			subscriptions.GET("/trial", h.GetTrialStatus)
-			subscriptions.GET("/features", h.GetFeatureStatus)
-			subscriptions.POST("/checkout", h.CreateCheckoutSession)
-			subscriptions.POST("/discount/validate", h.ValidateDiscountCode)
-			subscriptions.POST("/portal", h.CreateBillingPortalSession)
-			subscriptions.POST("/cancel", h.CancelSubscription)
-
-			subscriptions.POST("/change-plan", m.RequireOrganization(), m.RequirePermission(models.PermManageBilling), h.ChangePlan)
-			subscriptions.GET("/preview-change", m.RequireOrganization(), m.RequirePermission(models.PermManageBilling), h.PreviewPlanChange)
-
-			subscriptions.POST("/enterprise-inquiry", h.SubmitEnterpriseInquiry)
-		}
-	}
+	// Canonical versioned mount, plus the unversioned bare paths as a deprecated
+	// alias so existing integrators keep working during the migration window.
+	// The bare alias just carries Deprecation/Sunset headers; the routes are
+	// otherwise identical.
+	mountPublicAPI(r.Group("/v1"), false)
+	mountPublicAPI(r.Group(""), true)
 
 	// Admin routes (requires admin permissions)
 	adminRoutes := r.Group("/admin")
