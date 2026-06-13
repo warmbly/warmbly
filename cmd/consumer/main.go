@@ -152,24 +152,33 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Realtime event transport. Prefer Google Pub/Sub when configured (prod);
-	// otherwise bridge events to the realtime service over Redis (local dev and
-	// any env without GCP), reusing the Redis client we already built. Exactly
-	// one transport is active, so events are never delivered twice.
-	gcpProjectID := os.Getenv("GCP_PROJECT_ID")
+	// Realtime event transport, chosen by PUBSUB_ENABLED — the SAME flag the
+	// backend and the Elixir realtime service read, so the three services can
+	// never split-brain. PUBSUB_ENABLED=true => Google Pub/Sub (prod); anything
+	// else => Redis bridge (local dev / non-GCP). Exactly one transport is active.
 	var streamingPublisher *pubsub.StreamingPublisher
-	if gcpProjectID != "" {
+	if os.Getenv("PUBSUB_ENABLED") == "true" {
+		gcpProjectID := os.Getenv("GCP_PROJECT_ID")
+		if gcpProjectID == "" {
+			log.Fatal("PUBSUB_ENABLED=true requires GCP_PROJECT_ID")
+		}
 		pubsubClient, err := pubsub.NewClient(ctx, gcpProjectID)
 		if err != nil {
 			sentry.CaptureException(err)
 			log.Fatal(err)
 		}
 		defer pubsubClient.Close()
+		// Idempotently ensure the realtime topics + subscriptions exist (safe to
+		// run from both backend and consumer; AlreadyExists is treated as success).
+		if err := pubsubClient.EnsureRealtimeTopology(ctx); err != nil {
+			sentry.CaptureException(err)
+			log.Fatal("Failed to provision Pub/Sub topics/subscriptions: ", err)
+		}
 		streamingPublisher = pubsub.NewStreamingPublisher(pubsubClient)
 	}
 	if streamingPublisher == nil {
 		streamingPublisher = pubsub.NewStreamingPublisher(pubsub.NewRedisBus(redisCache.Client, ""))
-		log.Println("Realtime events bridged over Redis (Google Pub/Sub not configured)")
+		log.Println("Realtime events bridged over Redis (Pub/Sub disabled)")
 	}
 
 	// Repositories
@@ -234,6 +243,11 @@ func main() {
 		warmupService,
 	)
 	advancedService.WireDispatcher(webhookService)
+	// Reply/open/click instant action chains run in THIS process (inbox ingest +
+	// tracking consumer), so a "run_automation" node on an instant branch must be
+	// able to launch the flow here too. Without this it would be stamped sent and
+	// never fire. Mirrors the scheduler's automationRunner wiring.
+	advancedService.WireAutomationRunner(integrationServiceC)
 	// Native (Warmbly-internal) automation actions run wherever the event is
 	// dispatched. Reply/bounce/warmup events dispatch in THIS process, so without
 	// wiring native actions here a reply-triggered automation's add_tag /
