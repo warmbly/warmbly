@@ -2012,7 +2012,7 @@ function textToHeaders(text: string): Record<string, string> {
 }
 
 const HTTP_FIELD_CLASS =
-    "w-full rounded-md border border-slate-200 px-2 py-1.5 text-[12.5px] font-mono outline-none resize-y focus:border-sky-400 focus:ring-2 focus:ring-sky-100";
+    "w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[12.5px] font-mono text-slate-900 placeholder:text-slate-400 outline-none resize-y focus:border-sky-400 focus:ring-2 focus:ring-sky-100";
 
 // HttpRequestFields configures the generic HTTP request / webhook action: a
 // templated method/url/headers/body call whose response later steps can read.
@@ -2107,7 +2107,10 @@ function SetVariablesFields({
         : [];
     const display = rows.length ? rows : [{ key: "", value: "" }];
 
-    const update = (next: SetVarRow[]) => patchConfig({ set_vars: next.filter((r) => r.key.trim() || r.value.trim()) });
+    // Keep blank rows while editing (filtering here would delete a just-added row
+    // before it can be typed in). Save-time validation requires one named var, and
+    // the backend ignores any row whose key is empty.
+    const update = (next: SetVarRow[]) => patchConfig({ set_vars: next });
     const setRow = (i: number, patch: Partial<SetVarRow>) => update(display.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
     const addRow = () => update([...display, { key: "", value: "" }]);
     const removeRow = (i: number) => update(display.filter((_, idx) => idx !== i));
