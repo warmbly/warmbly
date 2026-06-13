@@ -31,7 +31,9 @@ export interface AutomationEdge {
     id: string;
     source: string;
     target: string;
-    when?: "" | "true" | "false";
+    // "" plain/then, "true"/"false" a condition's branches, "error" an action's
+    // on-error branch.
+    when?: "" | "true" | "false" | "error";
 }
 
 export interface AutomationGraph {

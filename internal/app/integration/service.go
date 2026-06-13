@@ -723,14 +723,20 @@ func (s *service) validateAutomationGraph(ctx context.Context, orgID uuid.UUID, 
 		if e.Source == e.Target {
 			return errors.New("a node cannot connect to itself")
 		}
-		// Branch labels are only valid (and required) on edges out of a
-		// condition node; every other edge is an unconditional "then".
-		if src.Type == models.AutomationNodeCondition {
+		// Branch labels: a condition's edges are the yes/no paths; an action may
+		// have a plain "then" edge plus an optional "on error" branch; anything
+		// else is an unconditional "then".
+		switch {
+		case src.Type == models.AutomationNodeCondition:
 			if e.When != "true" && e.When != "false" {
 				return errors.New("a condition's branches must be a yes or no path")
 			}
-		} else if e.When != "" {
-			return errors.New("only conditions can have yes/no branches")
+		case src.Type == models.AutomationNodeAction:
+			if e.When != "" && e.When != "error" {
+				return errors.New("an action edge must be a plain path or an on-error branch")
+			}
+		case e.When != "":
+			return errors.New("only conditions and actions can have branch labels")
 		}
 		adj[e.Source] = append(adj[e.Source], e.Target)
 	}

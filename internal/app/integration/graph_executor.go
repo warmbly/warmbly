@@ -87,18 +87,39 @@ func (s *service) executeAutomationGraph(ctx context.Context, a models.Automatio
 		case models.AutomationNodeAction:
 			label, aerr := s.runGraphAction(ctx, a, n, eventType, data)
 			nr := models.AutomationNodeResult{NodeID: id, Type: "action", Action: string(n.Action), Label: label, Status: "success"}
-			if aerr != nil {
-				nr.Status = "error"
-				nr.Error = truncate(aerr.Error(), 300)
-				anyError = true
-			}
 			// Capture what the action actually did (rendered fields + any output it
 			// wrote) so run history shows the result, not just success/failure.
 			nr.Preview = actionRunOutput(n, data)
-			results = append(results, nr)
-			for _, e := range outEdges[id] {
-				queue = append(queue, e.Target)
+			if aerr != nil {
+				nr.Status = "error"
+				nr.Error = truncate(aerr.Error(), 300)
+				// try/catch: if the node has an "on error" branch, route the failure
+				// there and treat it as handled (the run is not marked failed, the
+				// normal path is skipped). With no error branch, fall back to the old
+				// best-effort behavior: mark the run errored and continue downstream.
+				handled := false
+				for _, e := range outEdges[id] {
+					if e.When == "error" {
+						queue = append(queue, e.Target)
+						handled = true
+					}
+				}
+				if !handled {
+					anyError = true
+					for _, e := range outEdges[id] {
+						if e.When != "error" {
+							queue = append(queue, e.Target)
+						}
+					}
+				}
+			} else {
+				for _, e := range outEdges[id] {
+					if e.When != "error" {
+						queue = append(queue, e.Target)
+					}
+				}
 			}
+			results = append(results, nr)
 		default: // trigger / unknown: just follow outgoing edges
 			for _, e := range outEdges[id] {
 				queue = append(queue, e.Target)
@@ -272,8 +293,12 @@ func dryRunGraph(a models.Automation, data map[string]any) []models.AutomationNo
 				Status:  "success",
 				Preview: actionPreview(n, data),
 			})
+			// A dry run never fails an action, so it follows the normal path and
+			// not the "on error" branch.
 			for _, e := range outEdges[id] {
-				queue = append(queue, e.Target)
+				if e.When != "error" {
+					queue = append(queue, e.Target)
+				}
 			}
 		default:
 			for _, e := range outEdges[id] {

@@ -141,6 +141,14 @@ These act directly on the event's contact and need no external connection. Pick 
 
 **Set variables** computes one or more named values from templates and writes them back into the flow, so you can normalize or combine fields once and reuse the result (`{{.name}}`) in several later steps. Each value is a Go template; it does not run arbitrary code.
 
+### Handling errors (the on-error branch)
+
+Every action node has an **on error** branch: the red dot on its right edge. Drag from it to the steps that should run when that action fails (a `5xx` from an HTTP request, a rejected Slack message, a CRM timeout, a webhook that won't connect).
+
+- When the action fails and an on-error branch is connected, the flow follows that branch and the run is **not** marked failed, the error is handled, like a try/catch. The normal path below the action is skipped.
+- When an action has no on-error branch, a failure is recorded in History, the run is marked errored, and the flow still continues down the normal path best-effort, so one failing step never blocks the rest.
+- A dry run never fails an action, so **Test** always shows the normal path, not the on-error branch.
+
 ### Templating action text
 
 Text fields in an action (a Slack or Discord message, a webhook URL, a deal name, a task title) support variable fields drawn from the trigger. The builder shows clickable chips that insert the available variables for you. Reference each with standard dotted Go-template field access, `{{.key}}`:

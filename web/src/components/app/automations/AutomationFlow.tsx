@@ -307,6 +307,8 @@ function ActionNode({ data, selected }: NodeProps) {
                 <div className="mt-0.5 truncate text-[11.5px] text-slate-500">{d.sub || "Pick an integration…"}</div>
             </div>
             <Handle type="source" id="s" position={Position.Bottom} className="!h-4 !w-4 md:!h-3 md:!w-3 !border-2 !border-white !bg-sky-500" />
+            {/* "On error" branch: drag from here to route a failed action down a recovery path. */}
+            <Handle type="source" id="err" position={Position.Right} title="On error" className="!h-3.5 !w-3.5 md:!h-2.5 md:!w-2.5 !border-2 !border-white !bg-rose-500" />
         </div>
     );
 }
@@ -384,17 +386,18 @@ function ConvergeEdge({
 
 const edgeTypes = { converge: ConvergeEdge };
 
-type When = "" | "true" | "false";
+type When = "" | "true" | "false" | "error";
 
 function handleToWhen(h?: string | null): When {
-    return h === "out" ? "true" : h === "else" ? "false" : "";
+    return h === "out" ? "true" : h === "else" ? "false" : h === "err" ? "error" : "";
 }
 function whenToHandle(w?: string): string {
-    return w === "true" ? "out" : w === "false" ? "else" : "s";
+    return w === "true" ? "out" : w === "false" ? "else" : w === "error" ? "err" : "s";
 }
 
 function styledEdge(id: string, source: string, target: string, sourceHandle: string, when: When): Edge {
-    const color = when === "true" ? "#0ea5e9" : when === "false" ? "#94a3b8" : "#cbd5e1";
+    const color =
+        when === "true" ? "#0ea5e9" : when === "false" ? "#94a3b8" : when === "error" ? "#f43f5e" : "#cbd5e1";
     return {
         id,
         source,
@@ -402,7 +405,7 @@ function styledEdge(id: string, source: string, target: string, sourceHandle: st
         sourceHandle,
         type: "converge",
         data: { when },
-        label: when === "true" ? "yes" : when === "false" ? "no" : undefined,
+        label: when === "true" ? "yes" : when === "false" ? "no" : when === "error" ? "error" : undefined,
         markerEnd: { type: MarkerType.ArrowClosed, color, width: 16, height: 16 },
         style: { stroke: color, strokeWidth: 1.5 },
         labelStyle: { fill: color },
@@ -811,7 +814,7 @@ export default function AutomationFlow({
                 id: e.id,
                 source: e.source,
                 target: e.target,
-                when: ((e.data as { when?: string })?.when ?? "") as "" | "true" | "false",
+                when: ((e.data as { when?: string })?.when ?? "") as "" | "true" | "false" | "error",
             })),
         };
         try {
