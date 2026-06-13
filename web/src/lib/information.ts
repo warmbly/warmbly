@@ -1,6 +1,9 @@
 export const WEBSITE_URL = "https://warmbly.com";
 export const APP_URL = import.meta.env.VITE_APP_URL!;
 export const API_URL = import.meta.env.VITE_API_URL!;
+// The whole dashboard talks to the versioned API. VITE_API_URL is a bare origin
+// (no path), so this is the single place the /v1 prefix is applied.
+export const API_BASE_URL = `${API_URL}/v1`;
 export const TRACKING_DOMAIN = import.meta.env.VITE_TRACKING_DOMAIN!;
 export const HUMAN_VERIFICATION_FAIL = "We couldn’t verify you’re human. Please try the security check again or reload the page.";
 export const PASSWORD_FAIL = "The password must be at least 8 characters long and contain both uppercase and lowercase letters, as well as a number."

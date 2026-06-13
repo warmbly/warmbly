@@ -157,7 +157,14 @@ func Run(
 		c.Next()
 	})
 
-	auth := r.Group("/auth")
+	// The entire customer-facing API surface (auth + the API-key-capable and
+	// session-only routes) lives under a single versioned prefix, /v1. There is
+	// no unversioned alias: a breaking change ships as /v2. Truly public routes
+	// (health, signed webhooks, OAuth bouncers, worker enroll, the internal API,
+	// and /admin) are NOT versioned and stay at their bare paths.
+	v1 := r.Group("/v1")
+
+	auth := v1.Group("/auth")
 	{
 		auth.POST("/login", h.LoginStart)
 		auth.POST("/login/confirm", h.LoginConfirm)
@@ -221,29 +228,20 @@ func Run(
 	}
 
 	// The full customer-facing API surface (the API-key-capable `protected`
-	// routes and the session-only sensitive routes) is mounted TWICE: once under
-	// the canonical /v1 prefix, and once at the bare path as a deprecated alias
-	// so existing integrators keep working. The bare alias emits Deprecation /
-	// Sunset headers; every response also carries API-Version. /auth, /admin, the
-	// internal API, and the public OAuth bouncers are intentionally NOT versioned.
-	mountPublicAPI := func(base *gin.RouterGroup, deprecated bool) {
+	// routes and the session-only sensitive routes), mounted under the versioned
+	// `base` (/v1). Every response also carries an API-Version header.
+	mountPublicAPI := func(base *gin.RouterGroup) {
 		// JWT-only group: routes tied to a human session, never reachable via a
 		// long-lived API key (billing, org governance, websocket bootstrap, and
 		// the email onboarding flow that writes user-encrypted secrets).
 		jwtOnly := base.Group("")
 		jwtOnly.Use(m.AuthMiddleware())
-		if deprecated {
-			jwtOnly.Use(middleware.DeprecatedAliasMiddleware())
-		}
 
 		// API-accessible group: routes that accept either a JWT or an API key.
 		// CombinedAuthMiddleware sets the same context keys for both; the usage
 		// middleware records one log row per API-key request (JWT skipped).
 		protected := base.Group("")
 		protected.Use(m.CombinedAuthMiddleware(), m.APIKeyUsageMiddleware(), m.IdempotencyMiddleware())
-		if deprecated {
-			protected.Use(middleware.DeprecatedAliasMiddleware())
-		}
 		{
 			emails := protected.Group("/emails")
 			emails.Use(m.RateLimitMiddleware(models.RateLimitWrite))
@@ -766,12 +764,8 @@ func Run(
 		}
 	}
 
-	// Canonical versioned mount, plus the unversioned bare paths as a deprecated
-	// alias so existing integrators keep working during the migration window.
-	// The bare alias just carries Deprecation/Sunset headers; the routes are
-	// otherwise identical.
-	mountPublicAPI(r.Group("/v1"), false)
-	mountPublicAPI(r.Group(""), true)
+	// Single versioned mount. No unversioned alias.
+	mountPublicAPI(v1)
 
 	// Admin routes (requires admin permissions)
 	adminRoutes := r.Group("/admin")

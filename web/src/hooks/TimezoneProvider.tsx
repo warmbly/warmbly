@@ -1,6 +1,6 @@
 "use client";
 
-import { API_URL } from "@/lib/information";
+import { API_BASE_URL } from "@/lib/information";
 import React, { createContext, useContext } from "react";
 import { useError } from "./ErrorProvider";
 
@@ -18,7 +18,7 @@ export default function TimezoneProvider({children}:{children: React.ReactNode})
     React.useEffect(() => {
         const Do = async() => {
             try {
-                const resp = await fetch(`${API_URL}/timezones`)
+                const resp = await fetch(`${API_BASE_URL}/timezones`)
                 if (!resp.ok){
                     showError(`Error ${resp.status}`, "Something went wrong when fetching the timezones.")
                 } else {

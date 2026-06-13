@@ -15,7 +15,7 @@ import type {
 export function login(input: LoginRequest): Promise<LoginStartResponse> {
     return Request<LoginStartResponse>({
         method: "POST",
-        url: "/auth/login",
+        url: "/v1/auth/login",
         data: input,
         timeout: 15_000,
     });
@@ -25,7 +25,7 @@ export function login(input: LoginRequest): Promise<LoginStartResponse> {
 export function loginConfirm(input: LoginConfirmRequest): Promise<LoginResponse> {
     return Request<LoginResponse>({
         method: "POST",
-        url: "/auth/login/confirm",
+        url: "/v1/auth/login/confirm",
         data: input,
         timeout: 15_000,
     });
@@ -34,7 +34,7 @@ export function loginConfirm(input: LoginConfirmRequest): Promise<LoginResponse>
 export function getMe(): Promise<AdminProfile> {
     return Request<AdminProfile>({
         method: "GET",
-        url: "/auth/me",
+        url: "/v1/auth/me",
         authorization: true,
     });
 }
@@ -42,7 +42,7 @@ export function getMe(): Promise<AdminProfile> {
 export function logout(): Promise<void> {
     return Request<void>({
         method: "POST",
-        url: "/auth/logout",
+        url: "/v1/auth/logout",
         authorization: true,
     });
 }

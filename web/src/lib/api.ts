@@ -1,5 +1,5 @@
 import { saveTokens, TOKENS, clearTokens } from "./auth";
-import { API_URL } from "./information";
+import { API_BASE_URL } from "./information";
 
 export const isAuthenticated = (): boolean => {
   for (const key of TOKENS) {
@@ -44,7 +44,7 @@ export const refreshToken = async () => {
   }
   const token = localStorage.getItem('refresh_token');
 
-  const resp = await fetch(`${API_URL}/auth/refresh`, {
+  const resp = await fetch(`${API_BASE_URL}/auth/refresh`, {
     method: "POST",
     headers: {
       'Content-Type': 'application/json',
@@ -93,7 +93,7 @@ export async function Call(
 
   const token = localStorage.getItem('access_token');
 
-  const res = await fetch(`${API_URL}${endpoint}`, {
+  const res = await fetch(`${API_BASE_URL}${endpoint}`, {
     method,
     headers: {
       'Content-Type': 'application/json',

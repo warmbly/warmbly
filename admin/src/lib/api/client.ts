@@ -51,7 +51,7 @@ interface AuthRequestConfig extends AxiosRequestConfig {
 let refreshPromise: Promise<AdminToken> | null = null;
 
 async function refreshTokens(refreshToken: string): Promise<AdminToken> {
-    const res = await axios.post<AdminToken>(`${API_URL}/auth/refresh`, {
+    const res = await axios.post<AdminToken>(`${API_URL}/v1/auth/refresh`, {
         refresh_token: refreshToken,
     });
     return res.data;

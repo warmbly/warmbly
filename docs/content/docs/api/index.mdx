@@ -28,7 +28,7 @@ The API is versioned in the URL. The current version is `v1`, and the base URL i
 
 - **Stability**: within a version, changes are additive (new fields, new endpoints). A breaking change ships as a new version, so code written against `v1` keeps working.
 - **Version header**: every response carries an `API-Version` header so you can confirm which version answered.
-- **Unversioned paths are deprecated**: the same routes still resolve without the `/v1` prefix for backward compatibility, but those responses carry `Deprecation` and `Sunset` headers. Always use `/v1`; the unversioned aliases will be removed after the sunset date.
+- **No unversioned alias**: every endpoint lives under `/v1`; there are no bare, unversioned paths. A future breaking change will ship as `/v2` while `/v1` keeps working.
 
 ## Conventions
 

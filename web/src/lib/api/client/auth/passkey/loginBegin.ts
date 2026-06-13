@@ -1,11 +1,11 @@
-import { API_URL } from "@/lib/information";
+import { API_BASE_URL } from "@/lib/information";
 import type PasskeyLoginBegin from "@/lib/api/models/auth/PasskeyLoginBegin";
 
 export default async function passkeyLoginBegin(): Promise<PasskeyLoginBegin> {
     // Keep this as a direct fetch instead of the shared axios wrapper. Safari's
     // WebAuthn user-gesture detection is sensitive to async wrapper layers
     // before startAuthentication().
-    const response = await fetch(`${API_URL}/auth/passkey/login/begin`, {
+    const response = await fetch(`${API_BASE_URL}/auth/passkey/login/begin`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
     });
