@@ -49,11 +49,16 @@ defmodule RealtimeWeb.OrgChannel do
           # {"intents": ["AUDIT", "CAMPAIGN"]} to receive only matching event
           # types. Absent or empty means the full org stream (back-compatible).
           |> assign(:intents, parse_intents(params))
+          # Resume token from a reconnecting client: the last sequence it saw.
+          |> assign(:resume_from, parse_resume(params))
 
         send(self(), :after_join)
 
         # The join reply doubles as a HELLO: advertise the heartbeat cadence the
-        # server expects so library authors do not hardcode it. Heartbeats are
+        # server expects (so library authors do not hardcode it) and the current
+        # stream sequence. Every event carries a monotonic `seq`; track the
+        # highest you have seen and rejoin with {"resume": {"last_seq": seq}} to
+        # replay what you missed across a disconnect. Heartbeats are
         # client-initiated on the "phoenix" topic; send one within
         # server_timeout_ms or the socket is closed.
         {:ok,
@@ -61,7 +66,9 @@ defmodule RealtimeWeb.OrgChannel do
            org_id: org_id,
            role: member.role,
            heartbeat_interval_ms: 25_000,
-           server_timeout_ms: 60_000
+           server_timeout_ms: 60_000,
+           seq: Realtime.EventLog.current_seq(org_id),
+           resume_supported: true
          }, socket}
 
       {:error, :not_a_member} ->
@@ -100,6 +107,11 @@ defmodule RealtimeWeb.OrgChannel do
 
       push(socket, "presence_state", Presence.list(socket))
     end
+
+    # If the client reconnected with a resume token, replay the events it missed
+    # (re-applying the same permission + intent filter as live delivery), or tell
+    # it the buffer no longer covers its position so it should do a full resync.
+    maybe_replay(socket)
 
     {:noreply, socket}
   end
@@ -238,6 +250,75 @@ defmodule RealtimeWeb.OrgChannel do
   end
 
   defp parse_intents(_), do: nil
+
+  # Resume support -------------------------------------------------------------
+
+  # A reconnecting client may join with {"resume": {"last_seq": <n>}} to replay
+  # the events it missed. Returns the sequence (>= 0), :invalid for a malformed
+  # token, or nil for a fresh (non-resuming) join.
+  defp parse_resume(params) when is_map(params) do
+    case params["resume"] do
+      %{"last_seq" => v} -> normalize_seq(v)
+      _ -> nil
+    end
+  end
+
+  defp parse_resume(_), do: nil
+
+  defp normalize_seq(v) when is_integer(v) and v >= 0, do: v
+
+  defp normalize_seq(v) when is_binary(v) do
+    case Integer.parse(v) do
+      {n, ""} when n >= 0 -> n
+      _ -> :invalid
+    end
+  end
+
+  defp normalize_seq(_), do: :invalid
+
+  # Replay the gap for a resuming client, or signal that a full resync is needed.
+  # Runs after the PubSub subscribe, so a live event landing during replay may be
+  # delivered twice (once here, once live) — resume is at-least-once, so clients
+  # dedupe by `seq`. The replay is bounded by the buffer size.
+  defp maybe_replay(socket) do
+    org_id = socket.assigns.org_id
+
+    case socket.assigns[:resume_from] do
+      nil ->
+        :ok
+
+      :invalid ->
+        push(socket, "resume_failed", %{
+          reason: "invalid_resume",
+          current_seq: Realtime.EventLog.current_seq(org_id)
+        })
+
+      last_seq ->
+        case Realtime.EventLog.replay(org_id, last_seq) do
+          {:ok, events} ->
+            replayed =
+              Enum.reduce(events, 0, fn ev, n ->
+                if can_see_event?(socket, ev) and intents_allow?(socket, ev) do
+                  push(socket, ev["event_type"], ev)
+                  n + 1
+                else
+                  n
+                end
+              end)
+
+            push(socket, "resumed", %{
+              from: last_seq,
+              current_seq: Realtime.EventLog.current_seq(org_id),
+              replayed: replayed
+            })
+
+          {:gap, current} ->
+            push(socket, "resume_failed", %{reason: "buffer_evicted", current_seq: current})
+        end
+    end
+
+    :ok
+  end
 
   # When a client declared intents, forward only events whose normalized type
   # contains one of the requested tokens. No intents = forward everything.

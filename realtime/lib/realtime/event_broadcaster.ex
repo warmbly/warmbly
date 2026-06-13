@@ -22,6 +22,10 @@ defmodule Realtime.EventBroadcaster do
     org_id = event["org_id"] || event["organization_id"]
 
     if present?(org_id) do
+      # Assign a monotonic per-org sequence and buffer the event for replay
+      # BEFORE broadcasting, so the org channel can resume a reconnecting client.
+      # Fails open: on Redis trouble the event broadcasts without a seq.
+      event = Realtime.EventLog.stamp(org_id, event)
       Phoenix.PubSub.broadcast(Realtime.PubSub, "org:#{org_id}", {:pubsub_event, event})
     end
 
