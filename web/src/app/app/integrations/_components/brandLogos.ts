@@ -46,12 +46,12 @@ const CLOSE: RawBrandLogo = {
 };
 
 // Pipedrive has no published single-path symbol, only a wordmark. This is its
-// real app mark rebuilt to match: a Green Haze (#017737) circle with a white
+// real app mark rebuilt to match: a Green Haze (#08A742) circle with a white
 // blocky lowercase "p" (stem with descender + square-counter bowl).
 const PIPEDRIVE: RawBrandLogo = {
     viewBox: "0 0 48 48",
     inner: [
-        '<circle cx="24" cy="24" r="24" fill="#017737"/>',
+        '<circle cx="24" cy="24" r="24" fill="#08A742"/>',
         '<rect x="14" y="12" width="6" height="26" fill="#fff"/>',
         '<rect x="14" y="12" width="20" height="6" fill="#fff"/>',
         '<rect x="28" y="12" width="6" height="18" fill="#fff"/>',
