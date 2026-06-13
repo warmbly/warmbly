@@ -26,6 +26,7 @@ import (
 
 	"github.com/warmbly/warmbly/internal/infrastructure/cache"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/safehttp"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
@@ -394,7 +395,10 @@ func NewDeliveryWorker(repo repository.WebhookRepository, opts DeliveryWorkerOpt
 		opts.PollEvery = 2 * time.Second
 	}
 	if opts.HTTPClient == nil {
-		opts.HTTPClient = &http.Client{Timeout: 15 * time.Second}
+		// SSRF-hardened: customer webhook URLs are user-supplied, so block delivery
+		// to non-public hosts at dial time (covers DNS-resolved + rebinding cases
+		// the literal-IP ValidateOutboundURL check on write cannot catch).
+		opts.HTTPClient = safehttp.Client(15 * time.Second)
 	}
 	return &DeliveryWorker{
 		repo:       repo,

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,14 +13,18 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/rs/zerolog/log"
 
 	"github.com/warmbly/warmbly/internal/app/webhook"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/safehttp"
 )
 
-// actionHTTP is the shared client for outbound provider action calls. Short
-// timeout — a slow third party shouldn't pin a dispatch goroutine for long.
-var actionHTTP = &http.Client{Timeout: 15 * time.Second}
+// actionHTTP is the shared client for outbound provider action calls. It is
+// SSRF-hardened (resolves + blocks non-public hosts at dial time) because most of
+// these calls go to user-supplied URLs. Short timeout — a slow third party
+// shouldn't pin a dispatch goroutine for long.
+var actionHTTP = safehttp.Client(15 * time.Second)
 
 // automationEventPayload is the structured, versioned body delivered to generic
 // automation webhooks (Zapier / Make / n8n). The legacy flat fields
@@ -95,7 +100,7 @@ const httpResponseBodyLimit = 64 << 10 // 64 KiB
 // retry, and write the response back into `data` under the node's output key
 // (default "response") so downstream nodes can template {{.response.body...}}
 // and condition nodes can branch on {{.response.ok}}.
-func runHTTPRequest(ctx context.Context, n models.AutomationNode, cfg nativeActionConfig, data map[string]any) error {
+func runHTTPRequest(ctx context.Context, orgID, automationID uuid.UUID, n models.AutomationNode, cfg nativeActionConfig, data map[string]any) error {
 	method := strings.ToUpper(strings.TrimSpace(cfg.HTTPMethod))
 	if method == "" {
 		method = http.MethodPost
@@ -127,6 +132,15 @@ func runHTTPRequest(ctx context.Context, n models.AutomationNode, cfg nativeActi
 	if outKey == "" {
 		outKey = "response"
 	}
+
+	// Abuse trail: log every outbound HTTP-request action with org/automation
+	// attribution so a misuse pattern (scanning, relaying) is reviewable.
+	host := rawURL
+	if pu, perr := url.Parse(rawURL); perr == nil {
+		host = pu.Hostname()
+	}
+	log.Info().Str("org_id", orgID.String()).Str("automation_id", automationID.String()).
+		Str("method", method).Str("host", host).Msg("automation http_request outbound")
 
 	var lastErr error
 	for attempt := 0; attempt < 3; attempt++ {
@@ -169,6 +183,12 @@ func runHTTPRequest(ctx context.Context, n models.AutomationNode, cfg nativeActi
 		if status >= 400 && status < 500 {
 			return lastErr // client error: retrying won't help
 		}
+	}
+
+	// A blocked destination is an SSRF attempt worth flagging with attribution.
+	if errors.Is(lastErr, safehttp.ErrBlockedAddress) {
+		log.Warn().Str("org_id", orgID.String()).Str("automation_id", automationID.String()).
+			Str("host", host).Msg("automation http_request blocked: non-public destination")
 	}
 
 	// Network failure on every attempt — still record a failure response so a
