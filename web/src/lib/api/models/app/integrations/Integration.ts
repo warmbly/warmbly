@@ -305,6 +305,7 @@ export const EVENT_LABELS: Record<string, string> = {
     "meeting.rescheduled": "Meeting rescheduled",
     "meeting.canceled": "Meeting canceled",
     "campaign.action": "Launched by a campaign step",
+    "inbound.webhook": "Inbound webhook",
 };
 
 // Which action a provider performs for an event subscription.

@@ -17,11 +17,19 @@ export const TRIGGER_EVENTS: string[] = [
     "campaign.unsubscribed",
     "warmup.health_changed",
     "deliverability.complaint",
+    "inbound.webhook",
     "campaign.action",
 ];
 
 export function triggerLabel(ev: string): string {
     return EVENT_LABELS[ev] ?? ev;
+}
+
+// The inbound-webhook trigger fires when an external system POSTs to this
+// automation's unique URL; the JSON body becomes the event payload, so its
+// fields are caller-defined rather than fixed.
+export function triggerIsInboundWebhook(ev: string): boolean {
+    return ev === "inbound.webhook";
 }
 
 // Human labels for the provider action handlers (the action a step performs).
@@ -302,6 +310,9 @@ export const TRIGGER_VARIABLES: Record<string, string[]> = {
     "campaign.unsubscribed": ["contact_email", "contact_id", "campaign_id", "source"],
     "warmup.health_changed": ["email", "new_state", "previous_state", "reason"],
     "campaign.action": ["contact_email", "contact_id", "campaign_id", "campaign_name", "first_name", "last_name", "company", "phone"],
+    // Inbound webhook payloads are caller-defined, so there are no fixed
+    // variables to offer; the user references their own JSON keys directly.
+    "inbound.webhook": [],
 };
 
 export function triggerVariables(triggerEvent: string): string[] {

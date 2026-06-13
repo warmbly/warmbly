@@ -38,6 +38,7 @@ import {
     CheckCircle2Icon,
     CheckIcon,
     CheckSquareIcon,
+    CopyIcon,
     GitBranchIcon,
     GlobeIcon,
     HistoryIcon,
@@ -101,8 +102,10 @@ import {
     isNativeAction,
     nativeActionNeeds,
     triggerCarriesThread,
+    triggerIsInboundWebhook,
     type TriggerFieldDef,
 } from "@/lib/api/models/app/automations/meta";
+import { API_URL } from "@/lib/information";
 import CategoryPicker from "@/components/app/contacts/CategoryPicker";
 import { ExpressionReference } from "@/components/app/automations/ExpressionReference";
 import DealStagePicker from "@/components/app/crm/DealStagePicker";
@@ -1083,6 +1086,7 @@ export default function AutomationFlow({
                             setTrigger(ev);
                             updateNodeData("trigger", { label: triggerLabel(ev) });
                         }}
+                        inboundUrl={automation.inbound_url}
                         // condition
                         onCondition={(cond) => updateNodeData(selectedNode.id, { condition: cond, label: conditionLabel(cond) })}
                         // action
@@ -1257,6 +1261,56 @@ function InsightsPanel({
     );
 }
 
+// InboundUrlField shows the automation's unique inbound-webhook URL (read-only)
+// with a copy button. The stored value is a path; we prefix the API origin so
+// the copied value is the full URL an external system POSTs to.
+function InboundUrlField({ inboundUrl }: { inboundUrl?: string }) {
+    const [copied, setCopied] = React.useState(false);
+    if (!inboundUrl) {
+        return (
+            <p className="text-[11.5px] text-slate-400 leading-relaxed">
+                Save this automation to generate its unique webhook URL. An external system POSTs JSON to that URL and
+                the body becomes the event payload (reference any field with <code>{"{{.field}}"}</code>).
+            </p>
+        );
+    }
+    const full = `${API_URL}${inboundUrl}`;
+    const copy = async () => {
+        try {
+            await navigator.clipboard.writeText(full);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+        } catch {
+            /* clipboard blocked — the value is still selectable in the field */
+        }
+    };
+    return (
+        <div>
+            <Label>Your webhook URL</Label>
+            <div className="flex items-center gap-1.5">
+                <input
+                    readOnly
+                    value={full}
+                    onFocus={(e) => e.currentTarget.select()}
+                    className="flex-1 h-7 rounded-md border border-slate-200 bg-slate-50 px-2 text-[11.5px] font-mono text-slate-700 focus:border-sky-400 focus:ring-2 focus:ring-sky-100 focus:outline-none"
+                />
+                <button
+                    type="button"
+                    onClick={copy}
+                    className="h-7 px-2 rounded-md border border-slate-200 inline-flex items-center gap-1 text-[11.5px] text-slate-600 hover:bg-slate-50 shrink-0"
+                >
+                    {copied ? <CheckIcon className="w-3.5 h-3.5 text-emerald-600" /> : <CopyIcon className="w-3.5 h-3.5" />}
+                    {copied ? "Copied" : "Copy"}
+                </button>
+            </div>
+            <p className="text-[11.5px] text-slate-400 mt-1.5 leading-relaxed">
+                POST JSON here to run this automation. The body becomes the event payload, so reference its keys with{" "}
+                <code>{"{{.field}}"}</code> in actions and conditions.
+            </p>
+        </div>
+    );
+}
+
 // ── Editor panel ─────────────────────────────────────────────────────────────
 function NodeEditor({
     node,
@@ -1264,6 +1318,7 @@ function NodeEditor({
     selfId,
     trigger,
     onTrigger,
+    inboundUrl,
     onCondition,
     targets,
     connLabel,
@@ -1276,6 +1331,7 @@ function NodeEditor({
     selfId: string;
     trigger: string;
     onTrigger: (ev: string) => void;
+    inboundUrl?: string;
     onCondition: (c: AutomationCondition) => void;
     targets: IntegrationConnection[];
     connLabel: (id?: string) => string;
@@ -1316,9 +1372,13 @@ function NodeEditor({
                             <Label>When this happens</Label>
                             <SelectMenu value={trigger} onChange={onTrigger} options={triggerOptions} className="w-full" />
                         </div>
-                        <p className="text-[11.5px] text-slate-400 leading-relaxed">
-                            Add a condition (IF) below the trigger to branch on the event — e.g. only positive replies, or by source.
-                        </p>
+                        {triggerIsInboundWebhook(trigger) ? (
+                            <InboundUrlField inboundUrl={inboundUrl} />
+                        ) : (
+                            <p className="text-[11.5px] text-slate-400 leading-relaxed">
+                                Add a condition (IF) below the trigger to branch on the event — e.g. only positive replies, or by source.
+                            </p>
+                        )}
                     </>
                 ) : isCondition ? (
                     <ConditionEditor

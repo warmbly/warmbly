@@ -49,6 +49,9 @@ export interface Automation {
     graph: AutomationGraph;
     created_at: string;
     updated_at: string;
+    // Public POST path that fires this automation, set only when its trigger is
+    // the inbound webhook. Append to the API origin for the full URL.
+    inbound_url?: string;
 }
 
 export interface AutomationWrite {
