@@ -132,7 +132,7 @@ func (s *service) execAction(ctx context.Context, target repository.DispatchTarg
 		if rerr != nil {
 			return rerr
 		}
-		return webhookPost(ctx, rendered, msg)
+		return discordNotify(ctx, rendered, msg)
 
 	case models.IntegrationActionGenericWebhookPing:
 		url := stringFromMap(secretCfg, "webhook_url")

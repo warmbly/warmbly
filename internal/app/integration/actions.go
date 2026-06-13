@@ -216,16 +216,66 @@ func recordStepOutput(n models.AutomationNode, data map[string]any, out map[stri
 	steps[n.ID] = out
 }
 
+// Warmbly's sky accent (Tailwind sky-500, #0EA5E9) brands outbound notification
+// cards: an integer for Discord embeds, a hex string for Slack attachments.
+const (
+	notifyAccentInt = 0x0EA5E9
+	notifyAccentHex = "#0EA5E9"
+)
+
+// truncateRunes caps a string at max runes (provider embed/field limits), adding
+// an ellipsis when it trims so a long custom template can't get rejected.
+func truncateRunes(s string, max int) string {
+	r := []rune(s)
+	if len(r) <= max {
+		return s
+	}
+	if max <= 1 {
+		return string(r[:max])
+	}
+	return string(r[:max-1]) + "…"
+}
+
+// notifyFields turns the message's contact/subject into structured key-value
+// fields shared by the Slack and Discord cards (omitted when empty).
+func (m eventMessage) notifyFields() (contact, subject string) {
+	return m.Email, m.Subject
+}
+
 // slackPostMessage posts to a channel using a bot token from the OAuth connect.
-// Slack returns HTTP 200 with {ok:false,error:...} on failure, so we inspect
-// the body rather than the status code.
+// It renders a sky-accented attachment card (title + contact/subject fields)
+// rather than a bare line, with a plain-text fallback for the notification
+// preview. Slack returns HTTP 200 with {ok:false,error:...} on failure, so we
+// inspect the body rather than the status code.
 func slackPostMessage(ctx context.Context, token, channel string, msg eventMessage) error {
 	if channel == "" {
 		return fmt.Errorf("no slack channel configured")
 	}
+	attachment := map[string]any{
+		"color":    notifyAccentHex,
+		"fallback": msg.plainText(),
+		"title":    truncateRunes(msg.Title, 256),
+		"footer":   "Warmbly",
+		"ts":       time.Now().Unix(),
+	}
+	if msg.Custom != "" {
+		attachment["text"] = truncateRunes(msg.Custom, 3000)
+	}
+	contact, subject := msg.notifyFields()
+	var fields []map[string]any
+	if contact != "" {
+		fields = append(fields, map[string]any{"title": "Contact", "value": contact, "short": true})
+	}
+	if subject != "" {
+		fields = append(fields, map[string]any{"title": "Subject", "value": subject, "short": true})
+	}
+	if len(fields) > 0 {
+		attachment["fields"] = fields
+	}
 	body, _ := json.Marshal(map[string]any{
-		"channel": channel,
-		"text":    msg.plainText(),
+		"channel":     channel,
+		"text":        msg.Title,
+		"attachments": []map[string]any{attachment},
 	})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://slack.com/api/chat.postMessage", bytes.NewReader(body))
 	if err != nil {
@@ -253,15 +303,37 @@ func slackPostMessage(ctx context.Context, token, channel string, msg eventMessa
 	return nil
 }
 
-// webhookPost delivers a Discord-compatible payload (and works for any generic
-// JSON webhook): Discord requires a top-level "content" string.
-func webhookPost(ctx context.Context, url string, msg eventMessage) error {
-	body, _ := json.Marshal(map[string]any{
-		"content": msg.plainText(),
-		"email":   msg.Email,
-		"subject": msg.Subject,
-		"title":   msg.Title,
-	})
+// discordEmbedPayload builds a Discord webhook body as a single rich embed in
+// Warmbly's sky theme (title + optional description + contact/subject fields +
+// footer/timestamp) rather than a plain content line, so notifications render as
+// branded cards. Discord ignores unknown top-level keys, so embeds are the body.
+func discordEmbedPayload(msg eventMessage) map[string]any {
+	embed := map[string]any{
+		"title":     truncateRunes(msg.Title, 256),
+		"color":     notifyAccentInt,
+		"footer":    map[string]any{"text": "Warmbly"},
+		"timestamp": time.Now().UTC().Format(time.RFC3339),
+	}
+	if msg.Custom != "" {
+		embed["description"] = truncateRunes(msg.Custom, 4096)
+	}
+	contact, subject := msg.notifyFields()
+	var fields []map[string]any
+	if contact != "" {
+		fields = append(fields, map[string]any{"name": "Contact", "value": truncateRunes(contact, 1024), "inline": true})
+	}
+	if subject != "" {
+		fields = append(fields, map[string]any{"name": "Subject", "value": truncateRunes(subject, 1024), "inline": true})
+	}
+	if len(fields) > 0 {
+		embed["fields"] = fields
+	}
+	return map[string]any{"embeds": []map[string]any{embed}}
+}
+
+// discordNotify delivers a sky-themed embed card to a Discord channel webhook.
+func discordNotify(ctx context.Context, url string, msg eventMessage) error {
+	body, _ := json.Marshal(discordEmbedPayload(msg))
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return err
