@@ -72,12 +72,19 @@ defmodule RealtimeWeb.OrgChannel do
          }, socket}
 
       {:error, :not_a_member} ->
-        {:error, %{reason: "not_a_member"}}
+        join_error(:not_a_member)
 
       {:error, reason} ->
         Logger.warning("Failed to join org channel: #{inspect(reason)}")
-        {:error, %{reason: to_string(reason)}}
+        join_error(reason)
     end
+  end
+
+  # Structured join rejection the client can branch on: a numeric `code`
+  # (Auth.error_code/1) plus a human-readable `reason` (Auth.error_message/1),
+  # mirroring the socket-level auth error shape.
+  defp join_error(reason) do
+    {:error, %{code: Auth.error_code(reason), reason: Auth.error_message(reason)}}
   end
 
   @impl true
@@ -389,6 +396,14 @@ defmodule RealtimeWeb.OrgChannel do
       # Mailbox account + warmup health transitions
       String.contains?(event_type, "ACCOUNT") or String.contains?(event_type, "WARMUP") ->
         has.(:manage_emails)
+
+      # Developer "fire event" custom events: the org's own automation/campaign
+      # signals, with no per-app context on this socket. Allow to any subscriber
+      # on the org channel (the same join already verified org membership). An
+      # "intents" of "CUSTOM" filters these in: the substring match covers
+      # "CUSTOM_EVENT" since "CUSTOM" is a prefix of the normalized type.
+      event_type == "CUSTOM_EVENT" ->
+        true
 
       # Default: allow (audit refresh signals, meetings, automations, ...).
       # The corresponding list endpoints enforce their own permissions; these
