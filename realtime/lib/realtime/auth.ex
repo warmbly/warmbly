@@ -2,25 +2,28 @@ defmodule Realtime.Auth do
   @moduledoc """
   Token verification for WebSocket connections.
 
-  Supports both:
+  Supports:
   - JWT tokens issued by the Go backend
   - API keys prefixed with `wmbly_`
+  - OAuth2 access tokens prefixed with `wmat_`
   """
 
   require Logger
 
   alias Realtime.ApiKey
   alias Realtime.ErrorReporter
+  alias Realtime.OAuthToken
 
   @doc """
   Verifies a token (JWT or API key) and returns the user_id if valid.
 
   Detects token type by prefix:
+  - `wmat_` prefix = OAuth2 access token
   - `wmbly_` prefix = API key
   - Otherwise = JWT token
 
   Returns:
-  - {:ok, user_id, :jwt} or {:ok, user_id, :api_key} on success
+  - {:ok, user_id, :jwt}, {:ok, user_id, :api_key} or {:ok, user_id, :oauth} on success
   - {:error, reason} on failure
   """
   def verify_token(token, opts \\ [])
@@ -29,10 +32,15 @@ defmodule Realtime.Auth do
   def verify_token("", _opts), do: {:error, :missing_token}
 
   def verify_token(token, opts) do
-    if ApiKey.is_api_key?(token) do
-      verify_api_key(token, opts)
-    else
-      verify_jwt(token)
+    cond do
+      OAuthToken.is_oauth_token?(token) ->
+        verify_oauth_token(token, opts)
+
+      ApiKey.is_api_key?(token) ->
+        verify_api_key(token, opts)
+
+      true ->
+        verify_jwt(token)
     end
   end
 
@@ -78,6 +86,20 @@ defmodule Realtime.Auth do
   end
 
   @doc """
+  Verify an OAuth2 access token.
+  """
+  def verify_oauth_token(token, opts \\ []) do
+    case OAuthToken.validate(token, opts) do
+      {:ok, user_id} ->
+        {:ok, user_id, :oauth}
+
+      {:error, reason} ->
+        Logger.warning("OAuth token verification failed: #{inspect(reason)}")
+        {:error, reason}
+    end
+  end
+
+  @doc """
   Map error reasons to Discord-style error codes.
   """
   def error_code(:missing_token), do: 4003
@@ -90,9 +112,12 @@ defmodule Realtime.Auth do
   def error_code(:invalid_key), do: 4004
   def error_code(:key_inactive), do: 4004
   def error_code(:key_expired), do: 4004
+  def error_code(:token_revoked), do: 4004
   def error_code(:database_error), do: 4004
   def error_code(:permission_denied), do: 4010
   def error_code(:ip_not_allowed), do: 4010
+  def error_code(:not_a_member), do: 4010
+  def error_code(:forbidden), do: 4010
   def error_code(:rate_limited), do: 4007
   def error_code(:limit_exceeded), do: 4009
   def error_code(_), do: 4004
@@ -110,6 +135,7 @@ defmodule Realtime.Auth do
   def error_message(:invalid_key), do: "Invalid API key"
   def error_message(:key_inactive), do: "API key inactive"
   def error_message(:key_expired), do: "API key expired"
+  def error_message(:token_revoked), do: "Access token revoked"
   def error_message(:database_error), do: "Authentication failed"
   def error_message(:permission_denied), do: "Permission denied"
   def error_message(:ip_not_allowed), do: "IP address not allowed"
