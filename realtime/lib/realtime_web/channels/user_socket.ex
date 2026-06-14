@@ -42,21 +42,57 @@ defmodule RealtimeWeb.UserSocket do
 
       {:ok, socket}
     else
-      {:error, reason} ->
-        code = Auth.error_code(reason)
-        message = Auth.error_message(reason)
-        Logger.warning("Socket connection rejected (#{code}): #{message}")
-        :error
-
+      # The join rate limiter returns a 3-tuple carrying the cooldown; match it
+      # before the generic 2-tuple clause and surface a Retry-After style hint.
       {:error, :rate_limited, retry_after_ms} ->
-        Logger.warning("Socket connection rate limited, retry after #{retry_after_ms}ms")
-        :error
+        reject(:rate_limited, retry_after_ms: retry_after_ms)
+
+      {:error, reason} ->
+        reject(reason)
     end
   end
 
   def connect(_params, _socket, _connect_info) do
-    Logger.warning("Socket connection rejected: missing token")
-    :error
+    reject(:missing_token)
+  end
+
+  # Build the structured rejection returned from connect/2.
+  #
+  # Phoenix.Socket.connect/2 runs before the WebSocket upgrade completes, so we
+  # cannot send a real WS close frame here (e.g. a 4007 close); the close code is
+  # advisory. Returning {:error, term} hands `term` to the transport's
+  # :error_handler (Phoenix.Transports.WebSocket), which can render it; the
+  # default handler still replies HTTP 403, so the 403 response carries the
+  # reason for transports/handlers that surface it.
+  defp reject(reason, extra \\ []) do
+    code = Auth.error_code(reason)
+    message = Auth.error_message(reason)
+
+    payload =
+      %{code: code, reason: message}
+      |> maybe_put_retry_after(extra[:retry_after_ms])
+
+    log_rejection(code, message, payload)
+
+    {:error, payload}
+  end
+
+  defp maybe_put_retry_after(payload, nil), do: payload
+
+  defp maybe_put_retry_after(payload, retry_after_ms) when is_integer(retry_after_ms) do
+    Map.put(payload, :retry_after_ms, retry_after_ms)
+  end
+
+  defp maybe_put_retry_after(payload, _), do: payload
+
+  defp log_rejection(code, message, %{retry_after_ms: retry_after_ms}) do
+    Logger.warning(
+      "Socket connection rejected (#{code}): #{message}, retry after #{retry_after_ms}ms"
+    )
+  end
+
+  defp log_rejection(code, message, _payload) do
+    Logger.warning("Socket connection rejected (#{code}): #{message}")
   end
 
   @impl true
