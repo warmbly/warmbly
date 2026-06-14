@@ -85,6 +85,10 @@ func (s *Service) IssueAuthorizationCode(ctx context.Context, orgID, userID uuid
 	if err != nil {
 		return "", errServer("could not mint code")
 	}
+	method := ""
+	if strings.TrimSpace(req.CodeChallenge) != "" {
+		method = "S256"
+	}
 	ac := &models.OAuthAuthorizationCode{
 		CodeHash:            hashToken(code),
 		ApplicationID:       app.ID,
@@ -93,7 +97,7 @@ func (s *Service) IssueAuthorizationCode(ctx context.Context, orgID, userID uuid
 		RedirectURI:         req.RedirectURI,
 		Scopes:              scopes,
 		CodeChallenge:       req.CodeChallenge,
-		CodeChallengeMethod: "S256",
+		CodeChallengeMethod: method,
 		ExpiresAt:           time.Now().UTC().Add(models.OAuthAuthorizationCodeTTL),
 	}
 	if err := s.repo.CreateAuthorizationCode(ctx, ac); err != nil {
@@ -118,12 +122,9 @@ func (s *Service) validateAuthorize(ctx context.Context, req AuthorizeRequest) (
 	if !redirectAllowed(app, req.RedirectURI) {
 		return nil, 0, errInvalidRequest("redirect_uri does not match a registered URI")
 	}
-	// OAuth 2.1 mandates PKCE; we only accept S256 (plain is disallowed).
-	if req.CodeChallengeMethod != "S256" {
+	// PKCE is an optional extra layer; when a challenge is sent we only accept S256.
+	if strings.TrimSpace(req.CodeChallenge) != "" && req.CodeChallengeMethod != "S256" {
 		return nil, 0, errInvalidRequest("code_challenge_method must be 'S256'")
-	}
-	if strings.TrimSpace(req.CodeChallenge) == "" {
-		return nil, 0, errInvalidRequest("code_challenge is required (PKCE)")
 	}
 	mask, unknown := ParseScopes(req.Scope)
 	if len(unknown) > 0 {
@@ -158,7 +159,8 @@ func (s *Service) ExchangeCode(ctx context.Context, clientID, clientSecret, code
 	if ac.RedirectURI != redirectURI {
 		return nil, errInvalidGrant("redirect_uri does not match the authorization request")
 	}
-	if !verifyPKCE(codeVerifier, ac.CodeChallenge) {
+	// If the authorize request bound a PKCE challenge, the verifier must match.
+	if ac.CodeChallenge != "" && !verifyPKCE(codeVerifier, ac.CodeChallenge) {
 		return nil, errInvalidGrant("PKCE verification failed")
 	}
 	return s.issueGrant(ctx, app.ID, ac.OrganizationID, ac.UserID, ac.Scopes)
@@ -268,8 +270,8 @@ func (s *Service) issueGrant(ctx context.Context, appID, orgID, userID uuid.UUID
 	}, nil
 }
 
-// authenticateClient resolves and authenticates the OAuth client. Confidential
-// clients must present their secret; public clients authenticate via PKCE alone.
+// authenticateClient resolves and authenticates the OAuth client. Every app has
+// a client secret, so a matching secret is always required.
 func (s *Service) authenticateClient(ctx context.Context, clientID, clientSecret string) (*models.OAuthApplication, error) {
 	app, err := s.repo.GetApplicationByClientID(ctx, strings.TrimSpace(clientID))
 	if err != nil {
@@ -278,10 +280,8 @@ func (s *Service) authenticateClient(ctx context.Context, clientID, clientSecret
 	if app == nil || app.Status != models.OAuthAppActive {
 		return nil, errInvalidClient("unknown or disabled client")
 	}
-	if app.Confidential {
-		if clientSecret == "" || hashToken(clientSecret) != app.ClientSecretHash {
-			return nil, errInvalidClient("invalid client credentials")
-		}
+	if clientSecret == "" || app.ClientSecretHash == "" || hashToken(clientSecret) != app.ClientSecretHash {
+		return nil, errInvalidClient("invalid client credentials")
 	}
 	return app, nil
 }

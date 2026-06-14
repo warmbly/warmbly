@@ -6,10 +6,10 @@ import (
 	"github.com/google/uuid"
 )
 
-// OAuth 2.1 authorization server domain types. Apps register as OAuth clients;
-// users grant them scoped access via authorization-code-with-PKCE; the issued
-// access token carries an API-permission bitmask (Scopes) and authenticates API
-// calls through the same gates as an API key.
+// OAuth2 authorization server domain types. Apps register as OAuth clients;
+// users grant them scoped access via the authorization-code flow (client secret
+// required, PKCE optional); the issued access token carries an API-permission
+// bitmask (Scopes) and authenticates API calls through the same gates as an API key.
 
 type OAuthAppStatus string
 
@@ -49,7 +49,6 @@ type OAuthApplication struct {
 	ClientSecretHash string         `json:"-"`
 	RedirectURIs     []string       `json:"redirect_uris"`
 	Scopes           uint64         `json:"scopes"`
-	Confidential     bool           `json:"confidential"`
 	Status           OAuthAppStatus `json:"status"`
 	CreatedAt        time.Time      `json:"created_at"`
 	UpdatedAt        time.Time      `json:"updated_at"`
@@ -70,7 +69,6 @@ type OAuthApplicationWrite struct {
 	WebsiteURL   string   `json:"website_url"`
 	RedirectURIs []string `json:"redirect_uris"`
 	Scopes       uint64   `json:"scopes"`
-	Confidential bool     `json:"confidential"`
 }
 
 // OAuthAuthorizationCode is a single-use code bound to a PKCE challenge and the

@@ -1,7 +1,7 @@
--- OAuth 2.1 authorization server. Third-party apps register here; org members
--- grant them scoped access via the authorization-code-with-PKCE flow; the issued
--- bearer tokens authenticate API calls with the SAME permission bitmask as API
--- keys, so they reuse every existing route gate.
+-- OAuth2 authorization server. Third-party apps register here; org members grant
+-- them scoped access via the authorization-code flow (every app holds a client
+-- secret, with optional PKCE on top); the issued bearer tokens authenticate API
+-- calls with the SAME permission bitmask as API keys, reusing every route gate.
 
 -- A registered third-party application (the OAuth client).
 CREATE TABLE oauth_applications (
@@ -13,14 +13,13 @@ CREATE TABLE oauth_applications (
     logo_url text NOT NULL DEFAULT '',
     website_url text NOT NULL DEFAULT '',
     client_id text NOT NULL UNIQUE,
-    -- SHA-256 of the client secret (one-way, like api_keys.key_hash). Empty for a
-    -- public client that authenticates with PKCE alone.
+    -- SHA-256 of the client secret (one-way, like api_keys.key_hash). Every app
+    -- is issued a secret and authenticates the token exchange with it.
     client_secret_hash text NOT NULL DEFAULT '',
-    -- Exact-match redirect URIs (OAuth 2.1 forbids fuzzy matching).
+    -- Exact-match redirect URIs (no fuzzy matching).
     redirect_uris text[] NOT NULL DEFAULT '{}',
     -- Bitmask of the API permissions this app is allowed to request.
     scopes bigint NOT NULL DEFAULT 0,
-    confidential boolean NOT NULL DEFAULT true,
     status text NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'disabled')),
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now()
@@ -38,8 +37,9 @@ CREATE TABLE oauth_authorization_codes (
     user_id uuid NOT NULL,
     redirect_uri text NOT NULL,
     scopes bigint NOT NULL DEFAULT 0,
-    code_challenge text NOT NULL,
-    code_challenge_method text NOT NULL DEFAULT 'S256',
+    -- PKCE is an optional extra layer; empty when the app did not send a challenge.
+    code_challenge text NOT NULL DEFAULT '',
+    code_challenge_method text NOT NULL DEFAULT '',
     used_at timestamptz,
     expires_at timestamptz NOT NULL,
     created_at timestamptz NOT NULL DEFAULT now()

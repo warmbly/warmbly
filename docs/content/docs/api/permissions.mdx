@@ -6,7 +6,7 @@ icon: ShieldCheck
 
 Warmbly uses a bitmask system for API permissions. Each permission is one bit in a `uint64`, so a single integer can express any combination of the permissions below.
 
-These same permissions are the [OAuth 2.1](/api/oauth/) scopes, lowercased: `READ_EMAILS` is the scope `read_emails`. An OAuth access token carries a bitmask of granted permissions and is checked through the identical gates as an API key.
+These same permissions are the [OAuth](/api/oauth/) scopes, lowercased: `READ_EMAILS` is the scope `read_emails`. An OAuth access token carries a bitmask of granted permissions and is checked through the identical gates as an API key.
 
 ## Permission values
 

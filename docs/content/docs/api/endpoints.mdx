@@ -111,7 +111,7 @@ All paths below are relative to the versioned base URL `https://api.warmbly.com/
 
 ### OAuth apps
 
-Registering and managing the OAuth 2.1 apps your workspace owns. The flow itself (authorize, token, revoke) is listed under JWT only and Public below.
+Registering and managing the OAuth apps your workspace owns. The flow itself (authorize, token, revoke) is listed under JWT only and Public below.
 
 | Method | Path | API Permission |
 |--------|------|----------------|
@@ -172,8 +172,8 @@ These never accept an API key. They depend on a human-bound session: billing flo
 - `POST /webhook/stripe` (Stripe signature)
 - `POST /webhook/campaign`, `/webhook/email`, `/webhook/user-email` (Google OIDC token from Cloud Tasks)
 - `GET /addresses/google/callback`, `GET /addresses/outlook/callback` (OAuth bouncer pages)
-- `POST /oauth/token`, `POST /oauth/revoke` (OAuth 2.1 token endpoints, authenticated by the client's id and secret)
-- `GET /.well-known/oauth-authorization-server` (OAuth 2.1 discovery metadata)
+- `POST /oauth/token`, `POST /oauth/revoke` (OAuth token endpoints, authenticated by the client's id and secret)
+- `GET /.well-known/oauth-authorization-server` (OAuth discovery metadata)
 
 ## Notes
 

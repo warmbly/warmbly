@@ -591,6 +591,13 @@ func Run(
 				oauthApps.POST("/:id/rotate-secret", h.RotateOAuthApplicationSecret)
 			}
 
+			// Logo upload for the app-registration UI. A separate path (not under
+			// /applications/:id) so it doesn't collide with the :id param route and
+			// can be called during creation, before an app id exists.
+			oauthLogo := protected.Group("/oauth/application-logo")
+			oauthLogo.Use(m.RequireOrganization(), m.RequireAccess(models.PermManageAPIKeys, models.APIPermAPIKeys), m.RateLimitMiddleware(models.RateLimitWrite))
+			oauthLogo.POST("", h.UploadOAuthAppLogo)
+
 			oauthFlow := jwtOnly.Group("/oauth")
 			oauthFlow.Use(m.RequireOrganization(), m.RateLimitMiddleware(models.RateLimitWrite))
 			{

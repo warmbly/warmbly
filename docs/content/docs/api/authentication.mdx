@@ -32,7 +32,7 @@ For mutation retries, include an `Idempotency-Key` header with a unique value pe
 
 ## OAuth access tokens
 
-API keys authenticate your own scripts. If you are building an app that other people connect their Warmbly workspace to, use OAuth 2.1 instead: the user grants your app scoped access and you receive a bearer **access token** (prefix `wmat_`). It goes in the same `Authorization: Bearer` header and is checked against the same permissions, so every endpoint below behaves identically whether you present an API key or an OAuth token. The difference is only how the credential is obtained. See [OAuth 2.1](/api/oauth/) for the full flow.
+API keys authenticate your own scripts. If you are building an app that other people connect their Warmbly workspace to, use OAuth instead: the user grants your app scoped access and you receive a bearer **access token** (prefix `wmat_`). It goes in the same `Authorization: Bearer` header and is checked against the same permissions, so every endpoint below behaves identically whether you present an API key or an OAuth token. The difference is only how the credential is obtained. See [OAuth](/api/oauth/) for the full flow.
 
 ## Key security best practices
 

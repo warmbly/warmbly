@@ -2,9 +2,11 @@ package handler
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -148,6 +150,30 @@ func (h *Handler) RotateOAuthApplicationSecret(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"client_secret": secret})
+}
+
+// UploadOAuthAppLogo stores an app logo image (PNG/JPG, <=2MB) in public object
+// storage and returns its URL. Used by the registration UI during the branding
+// step: there is no app id yet, so the returned URL is sent in the create/update
+// payload. Reuses the avatar upload validation + storage path.
+func (h *Handler) UploadOAuthAppLogo(c *gin.Context) {
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "no organization selected"))
+		return
+	}
+	body, mime, ext, xerr := readAvatarUpload(c)
+	if xerr != nil {
+		errx.JSON(c, xerr)
+		return
+	}
+	key := fmt.Sprintf("oauth-app-logos/%s-%d%s", orgID.String(), time.Now().Unix(), ext)
+	url, xerr := putPublicObject(c.Request.Context(), h.Storage, key, body, mime)
+	if xerr != nil {
+		errx.JSON(c, xerr)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"logo_url": url})
 }
 
 // --- Authorize (JWT: the logged-in user consents) ---------------------------
@@ -338,7 +364,7 @@ func (h *Handler) OAuthServerMetadata(c *gin.Context) {
 		"response_types_supported":              []string{"code"},
 		"grant_types_supported":                 []string{"authorization_code", "refresh_token"},
 		"code_challenge_methods_supported":      []string{"S256"},
-		"token_endpoint_auth_methods_supported": []string{"client_secret_basic", "client_secret_post", "none"},
+		"token_endpoint_auth_methods_supported": []string{"client_secret_basic", "client_secret_post"},
 		"scopes_supported":                      oauth.ScopeList(models.AllAPIPermissionsMask),
 	})
 }

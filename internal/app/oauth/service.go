@@ -1,8 +1,8 @@
-// Package oauth implements Warmbly's OAuth 2.1 authorization server: third-party
-// app registration, the authorization-code-with-PKCE flow, token issue/refresh/
-// revoke, and bearer-token validation. Issued access tokens carry an
-// API-permission bitmask, so they authenticate through the same route gates as
-// API keys.
+// Package oauth implements Warmbly's OAuth2 authorization server: third-party
+// app registration, the authorization-code flow (client secret required, PKCE
+// optional), token issue/refresh/revoke, and bearer-token validation. Issued
+// access tokens carry an API-permission bitmask, so they authenticate through the
+// same route gates as API keys.
 package oauth
 
 import (
@@ -56,8 +56,8 @@ func verifyPKCE(verifier, challenge string) bool {
 
 // --- application management ---
 
-// RegisterApplication creates a new OAuth client. The plaintext client secret
-// (confidential clients only) is returned exactly once.
+// RegisterApplication creates a new OAuth client. Every app is issued a client
+// secret, returned exactly once here.
 func (s *Service) RegisterApplication(ctx context.Context, orgID, userID uuid.UUID, w models.OAuthApplicationWrite) (*models.OAuthApplicationWithSecret, error) {
 	name := strings.TrimSpace(w.Name)
 	if name == "" {
@@ -85,17 +85,13 @@ func (s *Service) RegisterApplication(ctx context.Context, orgID, userID uuid.UU
 		ClientID:       clientID,
 		RedirectURIs:   uris,
 		Scopes:         scopes,
-		Confidential:   w.Confidential,
 		Status:         models.OAuthAppActive,
 	}
-	var secret string
-	if w.Confidential {
-		secret, err = randomToken(models.OAuthClientSecretPrefix)
-		if err != nil {
-			return nil, err
-		}
-		app.ClientSecretHash = hashToken(secret)
+	secret, err := randomToken(models.OAuthClientSecretPrefix)
+	if err != nil {
+		return nil, err
 	}
+	app.ClientSecretHash = hashToken(secret)
 	if err := s.repo.CreateApplication(ctx, app); err != nil {
 		return nil, err
 	}
@@ -146,7 +142,7 @@ func (s *Service) UpdateApplication(ctx context.Context, orgID, id uuid.UUID, w 
 }
 
 // RotateSecret mints a new client secret (returned once) and invalidates the old
-// one. No-op-safe for public clients (they get a secret and become confidential).
+// one.
 func (s *Service) RotateSecret(ctx context.Context, orgID, id uuid.UUID) (string, error) {
 	app, err := s.repo.GetApplication(ctx, orgID, id)
 	if err != nil {

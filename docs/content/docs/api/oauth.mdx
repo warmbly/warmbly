@@ -1,22 +1,22 @@
 ---
-title: OAuth 2.1
-description: Let third-party apps act on behalf of a Warmbly workspace with the authorization-code-with-PKCE flow.
+title: OAuth
+description: Let third-party apps act on behalf of a Warmbly workspace with the authorization-code flow.
 icon: LockKeyhole
 ---
 
-API keys are for your own scripts. When you build an app that other people connect their Warmbly workspace to, use OAuth 2.1 instead: the user grants your app scoped access on a consent screen, and you receive tokens that act on their behalf. You never see their password or API key.
+API keys are for your own scripts. When you build an app that other people connect their Warmbly workspace to, use OAuth instead: the user grants your app scoped access on a consent screen, and you receive tokens that act on their behalf. You never see their password or API key.
 
-Warmbly implements the OAuth 2.1 authorization-code flow with PKCE. The implicit and password grants are not supported.
+Warmbly implements the OAuth 2.0 authorization-code flow. Every app holds a client secret, with PKCE available as an optional extra layer. The implicit and password grants are not supported.
 
 ## Register your app
 
-In the dashboard, open **OAuth apps** and register an application. You provide:
+In the dashboard, open **Settings -> OAuth apps** and register an application. You provide:
 
 - a **name**, optional description, logo, and website (shown on the consent screen),
 - one or more **redirect URIs** (where users are sent back after they approve), matched exactly and required to be HTTPS, except loopback URLs for native apps,
 - the **scopes** your app may request.
 
-You receive a **client ID** and, for a confidential client, a **client secret** shown only once. Turn off "confidential client" for mobile or single-page apps that cannot keep a secret: they authenticate with PKCE alone.
+You receive a **client ID** and a **client secret**, shown only once. Every app has a secret: keep it server-side and use it to authenticate the token exchange. Browser and mobile apps that cannot safely hold a secret should add PKCE on top (see below) rather than embedding it.
 
 ## Scopes
 
@@ -26,7 +26,7 @@ OAuth scopes are the same permissions as API keys, lowercased (for example `read
 
 ### 1. Send the user to the authorize page
 
-Redirect the user's browser to the consent page with the standard parameters. Generate a PKCE `code_verifier` (a high-entropy random string) and send its S256 challenge:
+Redirect the user's browser to the consent page with the standard parameters. PKCE is optional but recommended: generate a `code_verifier` (a high-entropy random string) and send its S256 challenge.
 
 ```
 code_challenge = base64url( sha256( code_verifier ) )
@@ -43,7 +43,7 @@ https://app.warmbly.com/oauth/authorize
   &code_challenge_method=S256
 ```
 
-`state` is yours to verify on return (CSRF protection). `code_challenge_method` must be `S256`.
+`state` is yours to verify on return (CSRF protection). The `code_challenge` and `code_challenge_method` are optional; if you include them, `code_challenge_method` must be `S256`.
 
 ### 2. The user approves
 
@@ -57,7 +57,7 @@ If the user denies, the redirect carries `?error=access_denied&state=...` instea
 
 ### 3. Exchange the code for tokens
 
-Verify `state` matches, then `POST` to the token endpoint with your original `code_verifier`. The request is `application/x-www-form-urlencoded`; a confidential client sends its secret (in the body or via HTTP Basic auth).
+Verify `state` matches, then `POST` to the token endpoint. The request is `application/x-www-form-urlencoded`; send your `client_secret` (in the body or via HTTP Basic auth), plus the original `code_verifier` if you used PKCE.
 
 ```bash
 curl -X POST "https://api.warmbly.com/v1/oauth/token" \
@@ -111,7 +111,7 @@ curl -X POST "https://api.warmbly.com/v1/oauth/revoke" \
   -d client_secret=wmcs_...
 ```
 
-Users can also revoke your app themselves under **OAuth apps → Authorized apps**, which invalidates every token issued to it for that workspace.
+Users can also revoke your app themselves under **Settings -> OAuth apps -> Authorized apps**, which invalidates every token issued to it for that workspace.
 
 ## Token lifetimes
 
@@ -135,8 +135,8 @@ It lists the authorization, token, and revocation endpoints, the supported scope
 
 - Redirect URIs are matched exactly, so register every callback you use.
 - Always send and verify `state`.
-- PKCE is mandatory and only `S256` is accepted.
-- Keep your client secret server-side. Public clients rely on PKCE and never embed a secret.
+- PKCE is optional but recommended; when used, only `S256` is accepted.
+- Keep your client secret server-side. Browser and mobile apps should add PKCE rather than embedding the secret.
 
 ## Related
 

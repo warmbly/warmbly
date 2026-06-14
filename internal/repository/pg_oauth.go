@@ -51,13 +51,13 @@ func NewOAuthRepository(db *pgxpool.Pool) OAuthRepository {
 }
 
 const oauthAppCols = `id, organization_id, created_by, name, description, logo_url, website_url,
-	client_id, client_secret_hash, redirect_uris, scopes, confidential, status, created_at, updated_at`
+	client_id, client_secret_hash, redirect_uris, scopes, status, created_at, updated_at`
 
 func scanOAuthApp(row pgx.Row, a *models.OAuthApplication) error {
 	var scopes int64
 	var status string
 	if err := row.Scan(&a.ID, &a.OrganizationID, &a.CreatedBy, &a.Name, &a.Description, &a.LogoURL, &a.WebsiteURL,
-		&a.ClientID, &a.ClientSecretHash, &a.RedirectURIs, &scopes, &a.Confidential, &status, &a.CreatedAt, &a.UpdatedAt); err != nil {
+		&a.ClientID, &a.ClientSecretHash, &a.RedirectURIs, &scopes, &status, &a.CreatedAt, &a.UpdatedAt); err != nil {
 		return err
 	}
 	a.Scopes = uint64(scopes)
@@ -80,10 +80,10 @@ func (r *oauthRepository) CreateApplication(ctx context.Context, a *models.OAuth
 	}
 	_, err := r.db.Exec(ctx, `
 		INSERT INTO oauth_applications (id, organization_id, created_by, name, description, logo_url, website_url,
-			client_id, client_secret_hash, redirect_uris, scopes, confidential, status, created_at, updated_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$14)`,
+			client_id, client_secret_hash, redirect_uris, scopes, status, created_at, updated_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$13)`,
 		a.ID, a.OrganizationID, a.CreatedBy, a.Name, a.Description, a.LogoURL, a.WebsiteURL,
-		a.ClientID, a.ClientSecretHash, a.RedirectURIs, int64(a.Scopes), a.Confidential, string(a.Status), now)
+		a.ClientID, a.ClientSecretHash, a.RedirectURIs, int64(a.Scopes), string(a.Status), now)
 	return err
 }
 
@@ -133,10 +133,10 @@ func (r *oauthRepository) UpdateApplication(ctx context.Context, a *models.OAuth
 	a.UpdatedAt = now
 	tag, err := r.db.Exec(ctx, `
 		UPDATE oauth_applications SET name=$3, description=$4, logo_url=$5, website_url=$6,
-			redirect_uris=$7, scopes=$8, confidential=$9, status=$10, updated_at=$11
+			redirect_uris=$7, scopes=$8, status=$9, updated_at=$10
 		WHERE id=$1 AND organization_id=$2`,
 		a.ID, a.OrganizationID, a.Name, a.Description, a.LogoURL, a.WebsiteURL,
-		a.RedirectURIs, int64(a.Scopes), a.Confidential, string(a.Status), now)
+		a.RedirectURIs, int64(a.Scopes), string(a.Status), now)
 	if err != nil {
 		return err
 	}
