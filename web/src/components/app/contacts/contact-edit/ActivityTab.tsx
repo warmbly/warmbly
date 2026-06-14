@@ -15,6 +15,7 @@
 
 import React from "react";
 import { motion } from "framer-motion";
+import { DatePicker } from "@/components/ui/DatePicker";
 import {
     AlertOctagonIcon,
     BanIcon,
@@ -376,22 +377,24 @@ function DateRange({
                             <label className="block text-[10px] uppercase tracking-[0.12em] font-medium text-slate-500 mb-1">
                                 From
                             </label>
-                            <input
-                                type="date"
+                            <DatePicker
                                 value={from}
-                                onChange={(e) => setFrom(e.target.value)}
-                                className="w-full h-7 px-1.5 rounded border border-slate-200 bg-white text-[11.5px] text-slate-900 outline-none focus:border-slate-400"
+                                onChange={setFrom}
+                                placeholder="From"
+                                clearable={false}
+                                className="w-full"
                             />
                         </div>
                         <div>
                             <label className="block text-[10px] uppercase tracking-[0.12em] font-medium text-slate-500 mb-1">
                                 To
                             </label>
-                            <input
-                                type="date"
+                            <DatePicker
                                 value={to}
-                                onChange={(e) => setTo(e.target.value)}
-                                className="w-full h-7 px-1.5 rounded border border-slate-200 bg-white text-[11.5px] text-slate-900 outline-none focus:border-slate-400"
+                                onChange={setTo}
+                                placeholder="To"
+                                clearable={false}
+                                className="w-full"
                             />
                         </div>
                     </div>

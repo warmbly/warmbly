@@ -30,6 +30,7 @@ import {
 import { MessageBubble } from "./MessageBubble";
 import { ReplyComposer, type ReplyMode } from "./ReplyComposer";
 import ResourceViewers from "@/components/app/presence/ResourceViewers";
+import { DateTimePicker } from "@/components/ui/DateTimePicker";
 import { usePresenceResource } from "@/hooks/PresenceProvider";
 import { ThreadLabelMenu } from "./ThreadLabelMenu";
 import ContactContextPanel from "./ContactContextPanel";
@@ -415,17 +416,9 @@ export function ThreadView({ threadId, emailId }: ThreadViewProps) {
                     className="px-1 py-1 w-[240px]"
                   >
                     <PopoverMenuLabel>Pick a date &amp; time</PopoverMenuLabel>
-                    <input
-                      type="datetime-local"
-                      value={customValue}
-                      onChange={(e) => setCustomValue(e.target.value)}
-                      min={toLocalInput(new Date(Date.now() + 60_000))}
-                      max={toLocalInput(
-                        new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
-                      )}
-                      autoFocus
-                      className="w-full h-8 px-2 mt-1 rounded-md border border-slate-200 text-[12.5px] text-slate-900 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 tabular-nums"
-                    />
+                    <div className="mt-1">
+                      <DateTimePicker value={customValue} onChange={setCustomValue} stepMinutes={15} />
+                    </div>
                     <div className="mt-2 flex items-center gap-1.5">
                       <button
                         type="button"

@@ -13,6 +13,12 @@ export default function useClickOutside(
     const listener = (event: MouseEvent | TouchEvent) => {
       if (!ref.current || ref.current.contains(event.target as Node)) return;
 
+      // Ignore clicks inside any portaled floating layer (a date-picker calendar,
+      // a SelectMenu, a nested popover). Those render to <body>, outside `ref`, so
+      // without this a click into a popover this element opened would dismiss it.
+      const el = event.target as Element | null;
+      if (el && typeof el.closest === "function" && el.closest("[data-floating]")) return;
+
       handler();
     };
 

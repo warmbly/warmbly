@@ -126,6 +126,7 @@ export default function Calendar({
                   visibility: pos ? "visible" : "hidden",
                   zIndex: 100,
                 }}
+                data-floating="true"
                 className="w-[264px] bg-white border border-slate-200 rounded-lg shadow-[0_12px_32px_-8px_rgba(15,23,42,0.18),0_2px_8px_-4px_rgba(15,23,42,0.10)] overflow-hidden"
               >
                 {/* month header */}

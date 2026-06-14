@@ -33,6 +33,7 @@ import {
 import { Link } from "react-router-dom";
 import toast from "react-hot-toast";
 import sendReply from "@/lib/api/client/app/unibox/sendReply";
+import { DateTimePicker } from "@/components/ui/DateTimePicker";
 import useTemplates from "@/lib/api/hooks/app/templates/useTemplates";
 import useUniboxOverview from "@/lib/api/hooks/app/unibox/useUniboxOverview";
 import useIntegrationConnections from "@/lib/api/hooks/app/integrations/useIntegrationConnections";
@@ -628,15 +629,9 @@ export function ReplyComposer({ threadId, replyTo, mode, onClose }: ReplyCompose
                                     className="px-1 py-1 w-[260px]"
                                 >
                                     <PopoverMenuLabel>Send at</PopoverMenuLabel>
-                                    <input
-                                        type="datetime-local"
-                                        value={customValue}
-                                        onChange={(e) => setCustomValue(e.target.value)}
-                                        min={toLocalInput(new Date(Date.now() + 60_000))}
-                                        max={toLocalInput(new Date(Date.now() + MAX_SCHEDULE_MS))}
-                                        autoFocus
-                                        className="w-full h-8 px-2 mt-1 rounded-md border border-slate-200 text-[12.5px] text-slate-900 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 tabular-nums"
-                                    />
+                                    <div className="mt-1">
+                                        <DateTimePicker value={customValue} onChange={setCustomValue} stepMinutes={15} />
+                                    </div>
                                     <div className="mt-2 flex items-center gap-1.5">
                                         <button
                                             type="button"

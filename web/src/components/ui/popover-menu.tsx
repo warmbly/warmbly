@@ -211,6 +211,10 @@ export function PopoverMenuContent({
             const t = e.target as Node;
             if (ref.current?.contains(t)) return;
             if (triggerRef.current?.contains(t)) return;
+            // A click inside another portaled floating layer this menu opened (a
+            // date-picker calendar, a nested SelectMenu) must not close this menu.
+            const el = t as Element | null;
+            if (el && typeof el.closest === "function" && el.closest("[data-floating]")) return;
             setOpen(false);
         };
         const onKey = (e: KeyboardEvent) => {
@@ -253,6 +257,7 @@ export function PopoverMenuContent({
                     ref={ref}
                     key="popover"
                     role="menu"
+                    data-floating="true"
                     layout
                     initial={{ opacity: 0, scale: 0.96, y: enterY }}
                     animate={{ opacity: 1, scale: 1, y: 0 }}
