@@ -771,24 +771,6 @@ func (s *tasksService) executeActionNode(ctx context.Context, campaign *models.C
 			return xerr
 		}
 		return nil
-	case "notify":
-		if s.advanced == nil || campaign.OrganizationID == nil {
-			return nil
-		}
-		event := models.WebhookEventCampaignAction
-		if cfg.NotifyEvent != "" {
-			event = models.WebhookEventType(cfg.NotifyEvent)
-		}
-		data := map[string]any{
-			"campaign_id":   campaign.ID.String(),
-			"contact_id":    contact.ID.String(),
-			"contact_email": contact.Email,
-		}
-		for k, v := range cfg.NotifyData {
-			data[k] = v
-		}
-		s.advanced.EmitCampaignEvent(ctx, *campaign.OrganizationID, event, data)
-		return nil
 	case "create_task":
 		if s.advanced == nil || campaign.OrganizationID == nil {
 			return nil

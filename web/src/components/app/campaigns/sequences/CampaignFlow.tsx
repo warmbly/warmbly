@@ -396,7 +396,6 @@ const ACTION_META: Record<string, { label: string; Icon: typeof ClockIcon; tint:
     create_deal: { label: "Create deal", Icon: HandshakeIcon, tint: "text-emerald-600" },
     move_deal_stage: { label: "Move deal stage", Icon: ArrowRightLeftIcon, tint: "text-sky-600" },
     unsubscribe: { label: "Unsubscribe", Icon: BellOffIcon, tint: "text-rose-600" },
-    notify: { label: "Notify", Icon: SendIcon, tint: "text-sky-600" },
     run_automation: { label: "Run automation", Icon: ZapIcon, tint: "text-indigo-600" },
     http_request: { label: "HTTP request", Icon: BracesIcon, tint: "text-teal-600" },
     fire_event: { label: "Fire event", Icon: SendIcon, tint: "text-sky-600" },
@@ -418,8 +417,6 @@ function actionSummary(a?: SequenceAction | null): string {
             return a.deal_pipeline_id && a.deal_stage_id ? "Move the deal forward" : "Pick a pipeline and stage…";
         case "unsubscribe":
             return "Unsubscribe the contact";
-        case "notify":
-            return "Send a notification";
         case "run_automation":
             return a.automation_id ? "Launch an automation" : "Pick an automation…";
         case "http_request":
@@ -1966,7 +1963,6 @@ const ADD_ACTION_OPTIONS: { type: SequenceActionType; label: string }[] = [
     { type: "create_deal", label: "Create deal" },
     { type: "move_deal_stage", label: "Move deal stage" },
     { type: "unsubscribe", label: "Unsubscribe" },
-    { type: "notify", label: "Notify (webhook)" },
     { type: "run_automation", label: "Run automation" },
     { type: "http_request", label: "HTTP request" },
     { type: "fire_event", label: "Fire event" },
@@ -2347,13 +2343,6 @@ function ActionEditor({
                 <p className="rounded-md border border-slate-200 bg-slate-50/60 px-3 py-2.5 text-[11.5px] leading-relaxed text-slate-600">
                     Suppresses this contact across your workspace — they won't receive further campaign emails, and a{" "}
                     <code className="font-mono">campaign.unsubscribed</code> event fires to your integrations.
-                </p>
-            )}
-
-            {action.type === "notify" && (
-                <p className="rounded-md border border-slate-200 bg-slate-50/60 px-3 py-2.5 text-[11.5px] leading-relaxed text-slate-600">
-                    Sends a <code className="font-mono">campaign.action</code> event to your connected webhooks and
-                    integrations (Slack, CRM…) with this contact's details. Configure where it goes in Integrations.
                 </p>
             )}
 

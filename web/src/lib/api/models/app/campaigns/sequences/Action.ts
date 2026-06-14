@@ -7,7 +7,6 @@ export type SequenceActionType =
     | "remove_tag"
     | "label_email"
     | "unsubscribe"
-    | "notify"
     | "create_task"
     | "create_deal"
     | "move_deal_stage"
@@ -30,9 +29,6 @@ export interface SequenceAction {
     // applied to the thread the contact replied on. Reply-branch only; a no-op
     // when the contact has not replied.
     label_ids?: string[];
-    // notify
-    notify_event?: string;
-    notify_data?: Record<string, unknown>;
     // create_task — open a CRM task for the lead at this step
     task_title?: string;
     task_type?: string; // task type name (user-managed)

@@ -282,24 +282,6 @@ func (s *service) executeInstantActionNode(ctx context.Context, campaign *models
 		if xerr := s.Unsubscribe(ctx, campaign.ID, contact.ID); xerr != nil {
 			s.logActionErr(campaign, contact, cfg.Type, eventKind, xerr)
 		}
-	case "notify":
-		if campaign.OrganizationID == nil {
-			return
-		}
-		event := models.WebhookEventCampaignAction
-		if cfg.NotifyEvent != "" {
-			event = models.WebhookEventType(cfg.NotifyEvent)
-		}
-		data := map[string]any{
-			"campaign_id":   campaign.ID.String(),
-			"contact_id":    contact.ID.String(),
-			"contact_email": contact.Email,
-			"trigger":       eventKind,
-		}
-		for k, v := range cfg.NotifyData {
-			data[k] = v
-		}
-		s.EmitCampaignEvent(ctx, *campaign.OrganizationID, event, data)
 	case "create_task":
 		if campaign.OrganizationID == nil {
 			return

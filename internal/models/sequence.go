@@ -55,10 +55,6 @@ type ActionConfig struct {
 	// the inbox they're "labels", so the field is label_ids. Reply-branch only.
 	LabelIDs []uuid.UUID `json:"label_ids,omitempty"`
 
-	// notify — webhook / integration fan-out
-	NotifyEvent string         `json:"notify_event,omitempty"`
-	NotifyData  map[string]any `json:"notify_data,omitempty"`
-
 	// create_task — open a CRM task for the lead when they reach this step
 	// (e.g. a Call task). TaskAssignedTo is the teammate chosen on the step;
 	// when nil the task falls back to the campaign owner.
