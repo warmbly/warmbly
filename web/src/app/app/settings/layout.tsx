@@ -1,36 +1,31 @@
-// Settings layout — left rail with real router links.
+// Settings layout — grouped left rail with real router links.
 //
-// Replaces the hash-based section switch. Each section is now a real
-// route so:
-//   - /app/settings/profile
-//   - /app/settings/notifications
-//   - /app/settings/security
-//   - /app/settings/members
-//   - /app/settings/workspace   (owner-only)
-//   - /app/settings/danger
-//
-// The route table renders this layout once and swaps the right pane
-// via <Outlet />. Visiting /app/settings (no section) redirects to
-// /profile so a deep link or back-button always lands on a real
-// section.
+// Each section is a real route (/app/settings/<section>). The rail groups them
+// under small section labels, marks the active row with a single framer-motion
+// pill that slides between rows, and cross-fades the right pane on every section
+// change. Visiting bare /app/settings redirects to /profile so a deep link or
+// back-button always lands on a real section. Navigating away from a tab with
+// unsaved auto-save changes is blocked by the dialog at the bottom.
 
 import React from "react";
 import { Navigate, NavLink, Outlet, useBlocker, useLocation } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import toast from "react-hot-toast";
-import { Loader2Icon } from "lucide-react";
-import { UnsavedProvider, useUnsavedRegistry } from "@/hooks/context/unsaved";
 import {
     AlertOctagonIcon,
     BellIcon,
+    BoxesIcon,
     BriefcaseIcon,
     CreditCardIcon,
     GaugeIcon,
+    Loader2Icon,
     ShieldCheckIcon,
     ShieldIcon,
     UserIcon,
     UsersIcon,
 } from "lucide-react";
+import { UnsavedProvider, useUnsavedRegistry } from "@/hooks/context/unsaved";
+import { usePermission, type PermissionKey } from "@/hooks/usePermission";
 import { Page, PageTopbar } from "@/components/layout/Page";
 import useFeatureAccess from "@/hooks/useFeatureAccess";
 
@@ -40,19 +35,46 @@ interface SectionDef {
     icon: React.ComponentType<{ className?: string }>;
     description: string;
     ownerOnly?: boolean;
+    permission?: PermissionKey;
 }
 
-const SECTIONS: SectionDef[] = [
-    { path: "profile",       label: "Profile",       icon: UserIcon,         description: "Personal information." },
-    { path: "notifications", label: "Notifications", icon: BellIcon,         description: "What you get notified about." },
-    { path: "security",      label: "Security",      icon: ShieldIcon,       description: "Password, 2FA, active sessions." },
-    { path: "members",       label: "Members",       icon: UsersIcon,        description: "Team and invitations." },
-    { path: "teams",         label: "Teams",         icon: UsersIcon,        description: "Group members into teams." },
-    { path: "roles",         label: "Roles & access", icon: ShieldCheckIcon,  description: "Who can do what.", ownerOnly: true },
-    { path: "workspace",     label: "Workspace",     icon: BriefcaseIcon,    description: "Org-wide settings.", ownerOnly: true },
-    { path: "billing",       label: "Billing",       icon: CreditCardIcon,   description: "Plan, payment, invoices.", ownerOnly: true },
-    { path: "limits",        label: "Limits",        icon: GaugeIcon,        description: "Request more capacity than your plan allows.", ownerOnly: true },
-    { path: "danger",        label: "Danger zone",   icon: AlertOctagonIcon, description: "Irreversible actions." },
+interface SectionGroup {
+    label: string;
+    items: SectionDef[];
+}
+
+const GROUPS: SectionGroup[] = [
+    {
+        label: "Account",
+        items: [
+            { path: "profile", label: "Profile", icon: UserIcon, description: "Personal information." },
+            { path: "notifications", label: "Notifications", icon: BellIcon, description: "What you get notified about." },
+            { path: "security", label: "Security", icon: ShieldIcon, description: "Password, 2FA, active sessions." },
+        ],
+    },
+    {
+        label: "Workspace",
+        items: [
+            { path: "members", label: "Members", icon: UsersIcon, description: "Team and invitations." },
+            { path: "teams", label: "Teams", icon: UsersIcon, description: "Group members into teams." },
+            { path: "roles", label: "Roles & access", icon: ShieldCheckIcon, description: "Who can do what.", ownerOnly: true },
+            { path: "workspace", label: "Workspace", icon: BriefcaseIcon, description: "Org-wide settings.", ownerOnly: true },
+            { path: "billing", label: "Billing", icon: CreditCardIcon, description: "Plan, payment, invoices.", ownerOnly: true },
+            { path: "limits", label: "Limits", icon: GaugeIcon, description: "Request more capacity than your plan allows.", ownerOnly: true },
+        ],
+    },
+    {
+        label: "Apps",
+        items: [
+            { path: "oauth-apps", label: "OAuth apps", icon: BoxesIcon, description: "Apps that connect via OAuth2, and the apps you've authorized.", permission: "MANAGE_API_KEYS" },
+        ],
+    },
+    {
+        label: "Advanced",
+        items: [
+            { path: "danger", label: "Danger zone", icon: AlertOctagonIcon, description: "Irreversible actions." },
+        ],
+    },
 ];
 
 export default function SettingsLayout() {
@@ -66,6 +88,7 @@ export default function SettingsLayout() {
 function SettingsLayoutInner() {
     const location = useLocation();
     const access = useFeatureAccess();
+    const canManageApiKeys = usePermission("MANAGE_API_KEYS");
     const navRef = React.useRef<HTMLElement>(null);
     const unsaved = useUnsavedRegistry();
     const [savingLeave, setSavingLeave] = React.useState(false);
@@ -109,19 +132,15 @@ function SettingsLayoutInner() {
         blocker.proceed?.();
     }
 
-    // On phones the nav is a horizontal tab strip; deep links or
-    // navigation to a later section should bring the active tab into
-    // view, otherwise the strip sits scrolled to the start with no
-    // hint of where you are. No-op on >=md where the rail is vertical.
+    // On phones the nav is a horizontal tab strip; deep links or navigation to a
+    // later section should bring the active tab into view, otherwise the strip
+    // sits scrolled to the start with no hint of where you are. No-op on >=md.
     React.useEffect(() => {
         if (window.matchMedia("(min-width: 768px)").matches) return;
         const el = navRef.current?.querySelector<HTMLElement>('[aria-current="page"]');
         el?.scrollIntoView({ inline: "center", block: "nearest" });
     }, [location.pathname]);
 
-    // When user hits bare /app/settings, route them to the default
-    // section so the URL stays meaningful. Done at layout level so
-    // it works for every entry path.
     if (
         location.pathname === "/app/settings" ||
         location.pathname === "/app/settings/"
@@ -129,10 +148,18 @@ function SettingsLayoutInner() {
         return <Navigate to="/app/settings/profile" replace />;
     }
 
-    const visibleSections = SECTIONS.filter((s) => !s.ownerOnly || access.isOwner);
+    const visibleGroups = GROUPS.map((g) => ({
+        ...g,
+        items: g.items.filter(
+            (s) =>
+                (!s.ownerOnly || access.isOwner) &&
+                (s.permission !== "MANAGE_API_KEYS" || canManageApiKeys),
+        ),
+    })).filter((g) => g.items.length > 0);
+
     const currentPath = location.pathname.replace(/^\/app\/settings\//, "");
-    const current =
-        visibleSections.find((s) => s.path === currentPath) ?? visibleSections[0];
+    const allItems = visibleGroups.flatMap((g) => g.items);
+    const current = allItems.find((s) => s.path === currentPath) ?? allItems[0];
 
     return (
         <Page>
@@ -142,39 +169,37 @@ function SettingsLayoutInner() {
             />
 
             <div className="flex-1 min-h-0 flex flex-col md:flex-row">
-                {/* Mobile: a horizontally-scrollable tab strip across the top.
-                    >=md: the vertical left rail. */}
-                <nav ref={navRef} className="flex md:block shrink-0 gap-1 md:gap-0 overflow-x-auto md:overflow-y-auto border-b md:border-b-0 md:border-r border-slate-200/70 px-2 md:px-0 py-2 md:w-[220px]">
-                    {visibleSections.map((s) => (
-                        <NavLink
-                            key={s.path}
-                            to={`/app/settings/${s.path}`}
-                            className={({ isActive }) =>
-                                `group shrink-0 md:w-[calc(100%-0.75rem)] md:mx-1.5 md:my-px flex items-center gap-2 px-3 md:px-2 h-7 rounded text-[12.5px] whitespace-nowrap text-left transition-colors ${
-                                    isActive
-                                        ? "bg-slate-200/70 text-slate-900 font-medium"
-                                        : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/40"
-                                }`
-                            }
-                        >
-                            {({ isActive }) => (
-                                <>
-                                    <s.icon
-                                        className={`w-[14px] h-[14px] shrink-0 ${
-                                            isActive
-                                                ? "text-slate-700"
-                                                : "text-slate-400 group-hover:text-slate-600"
-                                        }`}
-                                    />
-                                    <span className="truncate">{s.label}</span>
-                                </>
-                            )}
-                        </NavLink>
+                {/* Mobile: a horizontally-scrollable tab strip. >=md: vertical rail. */}
+                <nav
+                    ref={navRef}
+                    className="flex md:flex-col shrink-0 gap-0.5 md:gap-0 overflow-x-auto md:overflow-y-auto border-b md:border-b-0 md:border-r border-slate-200/70 px-2 md:px-2.5 py-2 md:py-3 md:w-[236px]"
+                >
+                    {visibleGroups.map((g, gi) => (
+                        <div key={g.label} className="contents md:block md:mb-1">
+                            <div className={`hidden md:block px-2 ${gi === 0 ? "mb-1" : "mt-3 mb-1"}`}>
+                                <span className="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">
+                                    {g.label}
+                                </span>
+                            </div>
+                            {g.items.map((s) => (
+                                <SectionLink key={s.path} section={s} />
+                            ))}
+                        </div>
                     ))}
                 </nav>
 
                 <div className="flex-1 min-w-0 overflow-y-auto">
-                    <Outlet />
+                    <AnimatePresence mode="wait" initial={false}>
+                        <motion.div
+                            key={location.pathname}
+                            initial={{ opacity: 0, y: 6 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -4 }}
+                            transition={{ duration: 0.16, ease: "easeOut" }}
+                        >
+                            <Outlet />
+                        </motion.div>
+                    </AnimatePresence>
                 </div>
             </div>
 
@@ -231,5 +256,36 @@ function SettingsLayoutInner() {
                 )}
             </AnimatePresence>
         </Page>
+    );
+}
+
+function SectionLink({ section }: { section: SectionDef }) {
+    return (
+        <NavLink
+            to={`/app/settings/${section.path}`}
+            className={({ isActive }) =>
+                `group relative shrink-0 md:w-full flex items-center gap-2.5 px-2.5 h-8 rounded-md text-[12.5px] whitespace-nowrap text-left transition-colors ${
+                    isActive ? "text-slate-900 font-medium" : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/40"
+                }`
+            }
+        >
+            {({ isActive }) => (
+                <>
+                    {isActive && (
+                        <motion.span
+                            layoutId="settings-active-pill"
+                            className="absolute inset-0 rounded-md bg-slate-200/70"
+                            transition={{ type: "spring", stiffness: 520, damping: 42 }}
+                        />
+                    )}
+                    <section.icon
+                        className={`relative z-10 w-[14px] h-[14px] shrink-0 ${
+                            isActive ? "text-slate-700" : "text-slate-400 group-hover:text-slate-600"
+                        }`}
+                    />
+                    <span className="relative z-10 truncate">{section.label}</span>
+                </>
+            )}
+        </NavLink>
     );
 }
