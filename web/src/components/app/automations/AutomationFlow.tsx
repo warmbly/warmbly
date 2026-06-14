@@ -116,6 +116,7 @@ import { useAutomations } from "@/lib/api/hooks/app/automations/useAutomations";
 import ProviderGlyph from "@/app/app/integrations/_components/ProviderGlyph";
 import ResourceViewers from "@/components/app/presence/ResourceViewers";
 import { usePresenceResource } from "@/hooks/PresenceProvider";
+import { isSelfMutation } from "@/lib/realtime/selfActivity";
 import { cn } from "@/lib/utils";
 
 const NODE_W = 248;
@@ -632,9 +633,11 @@ export default function AutomationFlow({
         if (!seeded.current) return;
         const incoming = serverVersion(automation);
         if (incoming === serverVersionRef.current) return; // unchanged / our own save
-        // Our own just-saved write, arriving via the realtime-triggered refetch
-        // before save() updated serverVersionRef: sync silently, never as a teammate.
-        if (Date.now() < selfSaveUntil.current) {
+        // Our own change — either an in-editor save whose realtime refetch raced
+        // the HTTP response, OR a change WE made elsewhere (the list "Turn on"
+        // toggle, another tab) that round-tripped back. Either way it is not a
+        // teammate: sync silently, never toast.
+        if (Date.now() < selfSaveUntil.current || isSelfMutation("automation", automation.id)) {
             serverVersionRef.current = incoming;
             if (!dirty) seedFrom(automation);
             return;
