@@ -7,7 +7,8 @@ import type { AutomationWrite } from "@/lib/api/models/app/automations/Automatio
 
 export function useTestAutomation() {
     return useMutation({
-        mutationFn: ({ id, data }: { id: string; data?: Record<string, unknown> }) => testAutomation(id, data),
+        mutationFn: ({ id, data, skipNodeIds }: { id: string; data?: Record<string, unknown>; skipNodeIds?: string[] }) =>
+            testAutomation(id, data, skipNodeIds),
     });
 }
 

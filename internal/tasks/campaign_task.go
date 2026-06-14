@@ -925,6 +925,17 @@ func (s *tasksService) executeActionNode(ctx context.Context, campaign *models.C
 			data[key] = RenderTemplate(kv.Value, *contact)
 		}
 		return s.automationRunner.RunAutomationByID(ctx, *campaign.OrganizationID, *cfg.AutomationID, data)
+	case "fire_event":
+		if s.advanced == nil || campaign.OrganizationID == nil {
+			return nil
+		}
+		s.advanced.FireCampaignEvent(ctx, *campaign.OrganizationID, campaign.ID.String(), cfg.EventName, cfg.EventFields, contact)
+		return nil
+	case "http_request":
+		if s.advanced == nil || campaign.OrganizationID == nil {
+			return nil
+		}
+		return s.advanced.RunCampaignHTTPRequest(ctx, *campaign.OrganizationID, cfg, contact)
 	default:
 		return nil
 	}

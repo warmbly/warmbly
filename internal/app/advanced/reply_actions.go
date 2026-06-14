@@ -407,6 +407,18 @@ func (s *service) executeInstantActionNode(ctx context.Context, campaign *models
 		if xerr := s.automationRunner.RunAutomationByID(ctx, *campaign.OrganizationID, *cfg.AutomationID, data); xerr != nil {
 			s.logActionErr(campaign, contact, cfg.Type, eventKind, xerr)
 		}
+	case "fire_event":
+		if campaign.OrganizationID == nil {
+			return
+		}
+		s.FireCampaignEvent(ctx, *campaign.OrganizationID, campaign.ID.String(), cfg.EventName, cfg.EventFields, contact)
+	case "http_request":
+		if campaign.OrganizationID == nil {
+			return
+		}
+		if xerr := s.RunCampaignHTTPRequest(ctx, *campaign.OrganizationID, cfg, contact); xerr != nil {
+			s.logActionErr(campaign, contact, cfg.Type, eventKind, xerr)
+		}
 	default:
 		// "wait" / "end" are handled by the chain walker (they stop the walk);
 		// unknown types are ignored.

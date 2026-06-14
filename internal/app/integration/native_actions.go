@@ -48,6 +48,10 @@ func validateNativeActionConfig(action models.IntegrationAction, raw json.RawMes
 		if !hasOne {
 			return fmt.Errorf("set variables needs at least one named variable")
 		}
+	case models.IntegrationActionFireEvent:
+		if strings.TrimSpace(cfg.EventName) == "" {
+			return fmt.Errorf("a fire-event action needs an event name")
+		}
 	}
 	return nil
 }
@@ -118,6 +122,10 @@ type nativeActionConfig struct {
 	// set_variables: named values computed from templates and written back into
 	// the event data for later nodes to reuse.
 	SetVars []setVar `json:"set_vars"`
+	// fire_event: a developer-defined custom event published to the realtime
+	// gateway. EventName + each field value are Go-templated against the event data.
+	EventName   string   `json:"event_name"`
+	EventFields []setVar `json:"event_fields"`
 }
 
 type setVar struct {
@@ -173,6 +181,28 @@ func (s *service) execNativeAction(ctx context.Context, a models.Automation, n m
 				continue
 			}
 			data[key] = renderTemplate(v.Value, data)
+		}
+		return nil
+	}
+
+	// fire_event publishes a developer-defined custom event to the realtime
+	// gateway (org-scoped). Subscribers receive it over the websocket with no
+	// public URL. Name + each field value are templated against the event data.
+	if n.Action == models.IntegrationActionFireEvent {
+		name := strings.TrimSpace(renderTemplate(cfg.EventName, data))
+		if name == "" {
+			return fmt.Errorf("fire-event needs an event name")
+		}
+		payload := make(map[string]string, len(cfg.EventFields))
+		for _, f := range cfg.EventFields {
+			key := strings.TrimSpace(f.Key)
+			if key == "" {
+				continue
+			}
+			payload[key] = renderTemplate(f.Value, data)
+		}
+		if s.publisher != nil {
+			s.publisher.PublishCustomEvent(ctx, a.OrganizationID, uuid.Nil, name, payload, "automation", a.ID.String())
 		}
 		return nil
 	}

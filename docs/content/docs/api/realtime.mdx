@@ -53,6 +53,24 @@ By default an `org:<org_id>` subscriber receives every event the member is permi
 
 Each token is matched as a case-insensitive substring of the event type, so `CAMPAIGN` matches `CAMPAIGN_*`, `EMAIL` matches `EMAIL_SENT` / `EMAIL_OPENED` / `EMAIL_RECEIVED`, and `AUDIT` matches `AUDIT_CREATED`. An absent or empty array means the full stream. Intents reduce traffic against the per-connection message limit, they are not a security boundary (permission filtering still applies on top).
 
+## Custom events (fire event)
+
+You can have Warmbly emit your own events to this stream, so your app reacts to things happening in Warmbly without hosting a public webhook URL. Add a **Fire event** step to an automation or a campaign sequence: you give it an event name and a set of key/value fields (each value templated against the event/contact data, e.g. `{{.contact_email}}`). When the step runs, Warmbly publishes a `CUSTOM_EVENT` on the org channel.
+
+```json
+{
+  "event_type": "CUSTOM_EVENT",
+  "name": "lead.replied",
+  "payload": { "contact_email": "jane@example.com", "intent": "positive" },
+  "source": "automation",
+  "source_id": "…",
+  "org_id": "…",
+  "timestamp": "2026-06-14T15:00:00Z"
+}
+```
+
+`name` is the event name you chose and `payload` is your fields. Subscribe with an API key carrying `REALTIME_SUBSCRIBE` and match on `name` (or use the `CUSTOM` intent to receive only these). This is the recommended way to "tell my system this happened" — no inbound endpoint, no SSRF surface, and it works behind a firewall.
+
 ## Heartbeats
 
 The `org:<org_id>` join reply doubles as a HELLO: it returns the cadence the server expects (so a client library does not hardcode it) and the current stream `seq`.

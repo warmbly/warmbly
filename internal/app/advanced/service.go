@@ -99,6 +99,12 @@ type Service interface {
 	// "notify" action node) to customer webhooks and wired integrations.
 	EmitCampaignEvent(ctx context.Context, orgID uuid.UUID, eventType models.WebhookEventType, data map[string]any)
 
+	// FireCampaignEvent publishes a developer-defined "fire event" to the realtime
+	// gateway from a campaign step (subscribers receive it over the API websocket).
+	FireCampaignEvent(ctx context.Context, orgID uuid.UUID, sourceID, name string, fields []models.ActionKV, contact *models.Contact)
+	// RunCampaignHTTPRequest runs a campaign "HTTP request" step (SSRF-guarded).
+	RunCampaignHTTPRequest(ctx context.Context, orgID uuid.UUID, cfg *models.ActionConfig, contact *models.Contact) error
+
 	// FireInstantActions runs the matched INSTANT branch's action chain for a
 	// contact the moment an engagement signal lands for them, instead of waiting
 	// for the next scheduled step boundary. eventKind is "reply", "open", or

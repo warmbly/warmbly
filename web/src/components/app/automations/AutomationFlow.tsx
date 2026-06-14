@@ -103,6 +103,7 @@ import {
     nativeActionNeeds,
     triggerCarriesThread,
     triggerIsInboundWebhook,
+    sampleEventData,
     type TriggerFieldDef,
 } from "@/lib/api/models/app/automations/meta";
 import { API_URL } from "@/lib/information";
@@ -609,6 +610,11 @@ export default function AutomationFlow({
         return JSON.stringify({ name: (a.name || "").trim(), enabled: a.enabled, trigger: a.trigger_event, graph: a.graph ?? null });
     }, []);
     const serverVersionRef = React.useRef("");
+    // Our own save broadcasts an AUDIT_CREATED event that invalidates and
+    // refetches this automation; that refetch can land before the save's HTTP
+    // response updates serverVersionRef, which would mis-read our own write as a
+    // teammate's. While this window is open, treat an incoming change as ours.
+    const selfSaveUntil = React.useRef(0);
 
     // Seed once on mount.
     React.useEffect(() => {
@@ -626,6 +632,13 @@ export default function AutomationFlow({
         if (!seeded.current) return;
         const incoming = serverVersion(automation);
         if (incoming === serverVersionRef.current) return; // unchanged / our own save
+        // Our own just-saved write, arriving via the realtime-triggered refetch
+        // before save() updated serverVersionRef: sync silently, never as a teammate.
+        if (Date.now() < selfSaveUntil.current) {
+            serverVersionRef.current = incoming;
+            if (!dirty) seedFrom(automation);
+            return;
+        }
         if (!dirty) {
             seedFrom(automation);
             serverVersionRef.current = incoming;
@@ -777,6 +790,11 @@ export default function AutomationFlow({
                     setSelectedId(n.id);
                     return false;
                 }
+                if (need === "event" && !String(d.config?.event_name ?? "").trim()) {
+                    toast.error("A fire-event action needs an event name");
+                    setSelectedId(n.id);
+                    return false;
+                }
                 continue; // native actions need no connection
             }
             if (!d.connection_id) {
@@ -817,6 +835,9 @@ export default function AutomationFlow({
                 when: ((e.data as { when?: string })?.when ?? "") as "" | "true" | "false" | "error",
             })),
         };
+        // Open the self-save window NOW so a realtime refetch racing the HTTP
+        // response is recognized as our own write, not a teammate's.
+        selfSaveUntil.current = Date.now() + 8000;
         try {
             const res = await update.mutateAsync({ id: automation.id, w: { name: name.trim() || "Automation", enabled, trigger_event: trigger, filter, graph } });
             // Re-baseline so the canvas is no longer "dirty" after a successful save.
@@ -824,6 +845,7 @@ export default function AutomationFlow({
             // Mark this as the known server version so our own refetch doesn't
             // read back as a "teammate changed it" event.
             if (res?.automation) serverVersionRef.current = serverVersion(res.automation);
+            selfSaveUntil.current = Date.now() + 8000;
             setRemoteUpdate(null);
             toast.success("Automation saved");
             return true;
@@ -837,18 +859,31 @@ export default function AutomationFlow({
         }
     };
 
-    // Test = save the current canvas, then dry-run it (no side effects).
-    const runTest = async () => {
-        if (!(await save())) return;
+    // Dry-run (no side effects) against the given sample event, skipping the
+    // action steps the user toggled off. Persists the canvas first only when there
+    // are unsaved edits, so we test what's on screen.
+    const runTest = async (data?: Record<string, unknown>, skipNodeIds?: string[]) => {
+        if (dirty && !(await save())) return;
         try {
-            const res = await test.mutateAsync({ id: automation.id });
+            const res = await test.mutateAsync({ id: automation.id, data, skipNodeIds });
             setTestResult(res);
-            setSelectedId(null);
             setPanel("test");
         } catch {
             toast.error("Could not run the test");
         }
     };
+
+    // The action steps (in canvas order) the test panel lists with on/off toggles.
+    const actionSteps = React.useMemo(
+        () =>
+            nodes
+                .filter((n) => n.type === "action")
+                .map((n) => {
+                    const a = (n.data as { action?: string }).action;
+                    return { id: n.id, label: a ? actionLabel(String(a)) : "Unconfigured action" };
+                }),
+        [nodes],
+    );
 
     const selectedNode = nodes.find((n) => n.id === selectedId) ?? null;
 
@@ -924,12 +959,19 @@ export default function AutomationFlow({
                     </button>
                     <button
                         type="button"
-                        onClick={runTest}
-                        disabled={test.isPending || update.isPending}
+                        onClick={() => {
+                            setSelectedId(null);
+                            setPanel((p) => (p === "test" ? null : "test"));
+                        }}
                         aria-label="Test"
-                        className="h-7 px-2.5 rounded-md border border-slate-200 hover:border-slate-300 text-slate-700 hover:text-slate-900 text-[12px] inline-flex items-center gap-1.5 transition-colors disabled:opacity-60"
+                        className={cn(
+                            "h-7 px-2.5 rounded-md border text-[12px] inline-flex items-center gap-1.5 transition-colors",
+                            panel === "test"
+                                ? "border-sky-300 bg-sky-50 text-sky-700"
+                                : "border-slate-200 hover:border-slate-300 text-slate-700 hover:text-slate-900",
+                        )}
                     >
-                        {test.isPending ? <Loader2Icon className="w-3.5 h-3.5 animate-spin" /> : <PlayIcon className="w-3.5 h-3.5" />}
+                        <PlayIcon className="w-3.5 h-3.5" />
                         <span className="hidden md:inline">Test</span>
                     </button>
                     <button
@@ -1107,8 +1149,11 @@ export default function AutomationFlow({
                     <InsightsPanel
                         mode={panel}
                         automationId={automation.id}
+                        trigger={trigger}
+                        steps={actionSteps}
                         testResult={testResult}
                         testing={test.isPending}
+                        onRun={runTest}
                         onClose={() => setPanel(null)}
                     />
                     </SidePanel>
@@ -1141,6 +1186,7 @@ function nodeStatusIcon(status: string) {
     if (status === "error") return <XCircleIcon className="w-3.5 h-3.5 text-rose-500" />;
     if (status === "branch_true") return <CheckCircle2Icon className="w-3.5 h-3.5 text-emerald-500" />;
     if (status === "branch_false") return <XCircleIcon className="w-3.5 h-3.5 text-slate-400" />;
+    if (status === "skipped") return <span className="inline-block w-3.5 h-3.5 rounded-full border border-slate-300" aria-hidden />;
     return <CheckCircle2Icon className="w-3.5 h-3.5 text-emerald-500" />;
 }
 
@@ -1149,13 +1195,16 @@ function NodeResultRow({ r }: { r: AutomationNodeResult }) {
         <div className="rounded-md border border-slate-200 px-2.5 py-1.5">
             <div className="flex items-center gap-1.5">
                 {nodeStatusIcon(r.status)}
-                <span className="text-[11.5px] font-medium text-slate-700">
+                <span className={cn("text-[11.5px] font-medium", r.status === "skipped" ? "text-slate-400" : "text-slate-700")}>
                     {r.type === "condition" ? "IF" : r.type === "action" ? actionLabel(r.action ?? "") : r.type}
                 </span>
                 {r.type === "condition" && (
                     <span className="ml-auto text-[10.5px] font-medium text-slate-400">
                         {r.status === "branch_true" ? "→ yes" : "→ no"}
                     </span>
+                )}
+                {r.type === "action" && r.status === "skipped" && (
+                    <span className="ml-auto text-[10.5px] font-medium text-slate-400">skipped</span>
                 )}
             </div>
             {r.label && r.type === "condition" && <div className="mt-0.5 text-[11px] text-slate-400">{r.label}</div>}
@@ -1176,17 +1225,61 @@ function NodeResultRow({ r }: { r: AutomationNodeResult }) {
 function InsightsPanel({
     mode,
     automationId,
+    trigger,
+    steps,
     testResult,
     testing,
+    onRun,
     onClose,
 }: {
     mode: "test" | "history";
     automationId: string;
+    trigger: string;
+    steps: { id: string; label: string }[];
     testResult: DryRunResponse | null;
     testing: boolean;
+    onRun: (data: Record<string, unknown>, skipNodeIds: string[]) => void;
     onClose: () => void;
 }) {
     const runs = useAutomationRuns(automationId, mode === "history");
+
+    // Editable sample event the dry-run evaluates against, seeded per trigger and
+    // re-seeded when the trigger changes (its payload shape changes with it).
+    const [sample, setSample] = React.useState<string>(() => JSON.stringify(sampleEventData(trigger), null, 2));
+    const [sampleErr, setSampleErr] = React.useState<string | null>(null);
+    // Action steps the user toggled OFF for this test (skipped in the dry-run).
+    const [disabled, setDisabled] = React.useState<Set<string>>(new Set());
+    React.useEffect(() => {
+        setSample(JSON.stringify(sampleEventData(trigger), null, 2));
+        setSampleErr(null);
+    }, [trigger]);
+    const resetSample = () => {
+        setSample(JSON.stringify(sampleEventData(trigger), null, 2));
+        setSampleErr(null);
+    };
+    const toggleStep = (id: string) =>
+        setDisabled((prev) => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            return next;
+        });
+    const runWithSample = () => {
+        let parsed: unknown;
+        try {
+            parsed = JSON.parse(sample);
+        } catch (e) {
+            setSampleErr((e as Error).message || "Invalid JSON");
+            return;
+        }
+        if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+            setSampleErr("Sample data must be a JSON object.");
+            return;
+        }
+        setSampleErr(null);
+        onRun(parsed as Record<string, unknown>, [...disabled]);
+    };
+
     return (
         <div className="flex h-full min-h-0 flex-col">
             <div className="h-11 px-3 flex items-center border-b border-slate-200 shrink-0">
@@ -1209,24 +1302,101 @@ function InsightsPanel({
                 className="flex-1 overflow-auto p-3 space-y-2"
             >
                 {mode === "test" ? (
-                    testing ? (
-                        <div className="flex items-center gap-2 text-[12px] text-slate-400">
-                            <Loader2Icon className="w-4 h-4 animate-spin" /> Running…
-                        </div>
-                    ) : testResult ? (
-                        <>
-                            <p className="text-[11px] text-slate-400 leading-relaxed">
-                                Dry run against sample data — no messages sent, no records changed. Shows the path + what each action would send.
-                            </p>
-                            {testResult.trace.length === 0 ? (
-                                <p className="text-[12px] text-slate-500">No actions ran for this sample (check your conditions).</p>
+                    <div className="space-y-3">
+                        <p className="text-[11px] text-slate-400 leading-relaxed">
+                            Dry run: no messages are sent and no records change. Edit the sample event your automation receives, then run to see the path it takes and what each action would send.
+                        </p>
+                        <div>
+                            <div className="mb-1 flex items-center justify-between">
+                                <span className="text-[11px] font-medium text-slate-600">Sample event data</span>
+                                <button
+                                    type="button"
+                                    onClick={resetSample}
+                                    className="text-[11px] text-sky-600 hover:text-sky-700"
+                                >
+                                    Reset to sample
+                                </button>
+                            </div>
+                            <textarea
+                                value={sample}
+                                onChange={(e) => setSample(e.target.value)}
+                                spellCheck={false}
+                                rows={8}
+                                className={cn(
+                                    "w-full rounded-md border bg-white px-2 py-1.5 text-[11.5px] font-mono text-slate-800 outline-none resize-y focus:ring-2",
+                                    sampleErr
+                                        ? "border-rose-300 focus:border-rose-400 focus:ring-rose-100"
+                                        : "border-slate-200 focus:border-sky-400 focus:ring-sky-100",
+                                )}
+                            />
+                            {sampleErr ? (
+                                <p className="mt-1 text-[10.5px] text-rose-600">{sampleErr}</p>
                             ) : (
-                                testResult.trace.map((r, i) => <NodeResultRow key={`${r.node_id}-${i}`} r={r} />)
+                                <p className="mt-1 text-[10.5px] text-slate-400">
+                                    Conditions branch on these fields, so editing them changes which actions run.
+                                </p>
                             )}
-                        </>
-                    ) : (
-                        <p className="text-[12px] text-slate-500">Press Test to dry-run this automation.</p>
-                    )
+                        </div>
+                        {steps.length > 0 && (
+                            <div>
+                                <div className="mb-1 text-[11px] font-medium text-slate-600">
+                                    Steps to run <span className="text-slate-400">({steps.length - disabled.size}/{steps.length})</span>
+                                </div>
+                                <div className="space-y-1">
+                                    {steps.map((s) => {
+                                        const on = !disabled.has(s.id);
+                                        return (
+                                            <button
+                                                key={s.id}
+                                                type="button"
+                                                onClick={() => toggleStep(s.id)}
+                                                className="w-full flex items-center gap-2 rounded-md border border-slate-200 px-2 py-1.5 text-left hover:border-slate-300"
+                                            >
+                                                <span
+                                                    className={cn(
+                                                        "flex h-4 w-4 shrink-0 items-center justify-center rounded",
+                                                        on ? "bg-sky-600 text-white" : "border border-slate-300",
+                                                    )}
+                                                >
+                                                    {on && <CheckIcon className="w-3 h-3" />}
+                                                </span>
+                                                <span className={cn("text-[12px]", on ? "text-slate-700" : "text-slate-400 line-through")}>
+                                                    {s.label}
+                                                </span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                                <p className="mt-1 text-[10.5px] text-slate-400">
+                                    Turn a step off to skip it in this test. Conditions still decide which steps are reached.
+                                </p>
+                            </div>
+                        )}
+                        <button
+                            type="button"
+                            onClick={runWithSample}
+                            disabled={testing}
+                            className="h-8 w-full rounded-md bg-sky-600 hover:bg-sky-700 text-white text-[12px] font-medium inline-flex items-center justify-center gap-1.5 disabled:opacity-60"
+                        >
+                            {testing ? <Loader2Icon className="w-3.5 h-3.5 animate-spin" /> : <PlayIcon className="w-3.5 h-3.5" />}
+                            {testing ? "Running…" : "Run test"}
+                        </button>
+                        <div className="border-t border-slate-200 pt-3 space-y-2">
+                            {testing ? (
+                                <div className="flex items-center gap-2 text-[12px] text-slate-400">
+                                    <Loader2Icon className="w-4 h-4 animate-spin" /> Running…
+                                </div>
+                            ) : testResult ? (
+                                testResult.trace.length === 0 ? (
+                                    <p className="text-[12px] text-slate-500">No actions ran for this sample (check your conditions).</p>
+                                ) : (
+                                    testResult.trace.map((r, i) => <NodeResultRow key={`${r.node_id}-${i}`} r={r} />)
+                                )
+                            ) : (
+                                <p className="text-[12px] text-slate-500">Edit the sample event, then Run test.</p>
+                            )}
+                        </div>
+                    </div>
                 ) : runs.isLoading ? (
                     <div className="flex items-center gap-2 text-[12px] text-slate-400">
                         <Loader2Icon className="w-4 h-4 animate-spin" /> Loading…
@@ -1567,6 +1737,7 @@ const ACTION_VISUAL: Record<string, { Icon: typeof TagIcon; tint: string; bg: st
     "warmbly.label_email": { Icon: TagsIcon, tint: "text-fuchsia-600", bg: "bg-fuchsia-50", desc: "Label the conversation the contact replied on." },
     "warmbly.http_request": { Icon: GlobeIcon, tint: "text-teal-600", bg: "bg-teal-50", desc: "Call any URL / send a webhook, and use the response in later steps." },
     "warmbly.set_variables": { Icon: WandSparklesIcon, tint: "text-amber-600", bg: "bg-amber-50", desc: "Compute named values from templates for later steps to reuse." },
+    "warmbly.fire_event": { Icon: SendIcon, tint: "text-sky-600", bg: "bg-sky-50", desc: "Publish a custom event to the realtime gateway — your app receives it over the API websocket, no public URL." },
     "slack.notify": { Icon: MessageSquareIcon, tint: "text-violet-600", bg: "bg-violet-50" },
     "discord.notify": { Icon: MessageSquareIcon, tint: "text-indigo-600", bg: "bg-indigo-50" },
     "webhook.ping": { Icon: SendIcon, tint: "text-sky-600", bg: "bg-sky-50" },
@@ -1978,6 +2149,7 @@ function NativeActionConfig({
 
             {need === "automation" && <RunAnotherAutomationFields config={config} patchConfig={patchConfig} selfId={selfId} />}
 
+            {need === "event" && <FireEventFields config={config} patchConfig={patchConfig} />}
             {need === "http" && <HttpRequestFields config={config} patchConfig={patchConfig} />}
 
             {need === "vars" && <SetVariablesFields config={config} patchConfig={patchConfig} />}
@@ -2152,6 +2324,82 @@ function SetVariablesFields({
             <p className="text-[11px] text-slate-400 leading-relaxed">
                 Each value is a Go template. Later steps reference it as <code>{`{{.name}}`}</code>.
             </p>
+        </div>
+    );
+}
+
+// FireEventFields configures a custom "fire event": an event name + a list of
+// templated key/value fields that become the event payload. The event is
+// published to the realtime gateway, so a developer's app receives it over the
+// API websocket (API key + REALTIME_SUBSCRIBE) without hosting a webhook URL.
+function FireEventFields({
+    config,
+    patchConfig,
+}: {
+    config: Record<string, unknown>;
+    patchConfig: (p: Record<string, unknown>) => void;
+}) {
+    const rows: SetVarRow[] = Array.isArray(config.event_fields)
+        ? (config.event_fields as SetVarRow[]).map((v) => ({ key: String(v?.key ?? ""), value: String(v?.value ?? "") }))
+        : [];
+    const display = rows.length ? rows : [{ key: "", value: "" }];
+    const update = (next: SetVarRow[]) => patchConfig({ event_fields: next });
+    const setRow = (i: number, patch: Partial<SetVarRow>) => update(display.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+    const addRow = () => update([...display, { key: "", value: "" }]);
+    const removeRow = (i: number) => update(display.filter((_, idx) => idx !== i));
+
+    return (
+        <div className="space-y-3">
+            <div>
+                <Label>Event name</Label>
+                <TextInput
+                    value={String(config.event_name ?? "")}
+                    onChange={(v) => patchConfig({ event_name: v })}
+                    placeholder="lead.replied"
+                    className="w-full font-mono"
+                />
+                <p className="mt-1 text-[11px] text-slate-400">What your app subscribes to. Lowercase dotted names work well.</p>
+            </div>
+            <div>
+                <Label>Payload</Label>
+                <div className="space-y-2">
+                    {display.map((row, i) => (
+                        <div key={i} className="flex items-center gap-2">
+                            <TextInput
+                                value={row.key}
+                                onChange={(v) => setRow(i, { key: v })}
+                                placeholder="field"
+                                className="w-28 shrink-0 font-mono"
+                            />
+                            <span className="text-[12.5px] text-slate-400">=</span>
+                            <TextInput
+                                value={row.value}
+                                onChange={(v) => setRow(i, { value: v })}
+                                placeholder="{{.contact_email}}"
+                                className="flex-1 min-w-0 font-mono"
+                            />
+                            <button
+                                type="button"
+                                onClick={() => removeRow(i)}
+                                className="shrink-0 text-slate-400 hover:text-rose-500"
+                                aria-label="Remove field"
+                            >
+                                <XIcon className="w-3.5 h-3.5" />
+                            </button>
+                        </div>
+                    ))}
+                </div>
+                <button
+                    type="button"
+                    onClick={addRow}
+                    className="mt-2 inline-flex items-center gap-1 text-[12px] text-sky-600 hover:text-sky-700"
+                >
+                    <PlusIcon className="w-3.5 h-3.5" /> Add field
+                </button>
+                <p className="mt-1 text-[11px] text-slate-400 leading-relaxed">
+                    Each value is a Go template against the event data. Your app receives <code>{`{ name, payload }`}</code> over the websocket.
+                </p>
+            </div>
         </div>
     );
 }

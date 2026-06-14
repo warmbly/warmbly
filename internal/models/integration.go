@@ -285,6 +285,12 @@ const (
 	// sandboxed text/template engine as every other action value (no I/O, no
 	// arbitrary code), not a general code runtime.
 	IntegrationActionSetVariables IntegrationAction = "warmbly.set_variables"
+	// IntegrationActionFireEvent publishes a developer-defined custom event to the
+	// realtime gateway (org-scoped). The event name + a fully-custom key/value
+	// payload are Go-templated against the event data. Subscribers (an API key
+	// with REALTIME_SUBSCRIBE on the org websocket) receive it with no public URL,
+	// so it replaces an outbound webhook for "tell my system this happened".
+	IntegrationActionFireEvent IntegrationAction = "warmbly.fire_event"
 )
 
 // IsNativeAction reports whether an action is a Warmbly-internal CRM/contact
@@ -294,7 +300,7 @@ func IsNativeAction(a IntegrationAction) bool {
 	case IntegrationActionAddTag, IntegrationActionRemoveTag, IntegrationActionCreateTask,
 		IntegrationActionCreateDeal, IntegrationActionMoveDealStage, IntegrationActionUnsubscribe,
 		IntegrationActionRunAutomation, IntegrationActionLabelEmail, IntegrationActionHTTPRequest,
-		IntegrationActionSetVariables:
+		IntegrationActionSetVariables, IntegrationActionFireEvent:
 		return true
 	default:
 		return false
@@ -424,8 +430,11 @@ type AutomationNodeResult struct {
 
 // DryRunRequest tests an automation without side effects. Data is the sample
 // event payload; when empty the server builds a sample from the trigger.
+// SkipNodeIDs are action nodes the caller toggled off for this test: they are
+// recorded as "skipped" in the trace and never previewed.
 type DryRunRequest struct {
-	Data map[string]any `json:"data,omitempty"`
+	Data        map[string]any `json:"data,omitempty"`
+	SkipNodeIDs []string       `json:"skip_node_ids,omitempty"`
 }
 
 // DryRunResponse is the trace of a dry run.

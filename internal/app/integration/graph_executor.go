@@ -227,12 +227,18 @@ func (s *service) DryRunAutomation(ctx context.Context, orgID, id uuid.UUID, req
 	if len(data) == 0 {
 		data = sampleEventData(a.TriggerEvent)
 	}
-	return &models.DryRunResponse{Trace: dryRunGraph(*a, data), Data: data}, nil
+	skip := make(map[string]bool, len(req.SkipNodeIDs))
+	for _, id := range req.SkipNodeIDs {
+		skip[id] = true
+	}
+	return &models.DryRunResponse{Trace: dryRunGraph(*a, data, skip), Data: data}, nil
 }
 
 // dryRunGraph mirrors executeAutomationGraph's walk but records a preview trace
 // instead of executing anything (conditions are pure, so they evaluate for real).
-func dryRunGraph(a models.Automation, data map[string]any) []models.AutomationNodeResult {
+// Action nodes in skip are recorded as "skipped" and not previewed, but the walk
+// still follows their normal edge so downstream steps are reflected.
+func dryRunGraph(a models.Automation, data map[string]any, skip map[string]bool) []models.AutomationNodeResult {
 	baseSeed := stringFromMap(data, "delivery_id", "id", "booking_id", "contact_email", "invitee_email", "email")
 	byID := make(map[string]models.AutomationNode, len(a.Graph.Nodes))
 	for _, n := range a.Graph.Nodes {
@@ -285,16 +291,27 @@ func dryRunGraph(a models.Automation, data map[string]any) []models.AutomationNo
 				}
 			}
 		case models.AutomationNodeAction:
-			trace = append(trace, models.AutomationNodeResult{
-				NodeID:  id,
-				Type:    "action",
-				Action:  string(n.Action),
-				Label:   string(n.Action),
-				Status:  "success",
-				Preview: actionPreview(n, data),
-			})
+			if skip[id] {
+				// Toggled off for this test: record as skipped, no preview.
+				trace = append(trace, models.AutomationNodeResult{
+					NodeID: id,
+					Type:   "action",
+					Action: string(n.Action),
+					Label:  string(n.Action),
+					Status: "skipped",
+				})
+			} else {
+				trace = append(trace, models.AutomationNodeResult{
+					NodeID:  id,
+					Type:    "action",
+					Action:  string(n.Action),
+					Label:   string(n.Action),
+					Status:  "success",
+					Preview: actionPreview(n, data),
+				})
+			}
 			// A dry run never fails an action, so it follows the normal path and
-			// not the "on error" branch.
+			// not the "on error" branch (a skipped action still continues the walk).
 			for _, e := range outEdges[id] {
 				if e.When != "error" {
 					queue = append(queue, e.Target)
@@ -324,6 +341,14 @@ func actionPreview(n models.AutomationNode, data map[string]any) map[string]any 
 		}
 		if cfg.TaskTitle != "" {
 			p["task_title"] = renderTemplate(cfg.TaskTitle, data)
+		}
+		if n.Action == models.IntegrationActionFireEvent {
+			p["event"] = renderTemplate(cfg.EventName, data)
+			for _, f := range cfg.EventFields {
+				if k := strings.TrimSpace(f.Key); k != "" {
+					p[k] = renderTemplate(f.Value, data)
+				}
+			}
 		}
 	}
 	return p

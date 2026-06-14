@@ -70,6 +70,11 @@ const (
 	EventAutomationDeleted EventType = "AUTOMATION_DELETED"
 	EventAutomationRun     EventType = "AUTOMATION_RUN"
 
+	// Developer "fire event": a custom, org-scoped event emitted from an
+	// automation action or campaign step, delivered over the realtime gateway so
+	// API-key subscribers receive it without hosting a public webhook URL.
+	EventCustomFired EventType = "CUSTOM_EVENT"
+
 	// In-app notification feed (user-scoped). The web client refreshes the bell
 	// feed + may toast on any event type containing "NOTIFICATION".
 	EventNotificationCreated EventType = "NOTIFICATION_CREATED"
@@ -485,6 +490,49 @@ func (p *StreamingPublisher) PublishAutomationEvent(ctx context.Context, orgID, 
 		"user_id":    actorID.String(),
 		"org_id":     orgID.String(),
 		"event_type": string(eventType),
+	}
+	if err := p.client.Publish(ctx, TopicUserEvents, event, attrs); err != nil {
+		// Best-effort: realtime is a nicety, not a requirement.
+	}
+}
+
+// CustomEvent is a developer-defined "fire event" signal. Name is the
+// caller-chosen event name (what subscribers match on) and Payload is the
+// fully-customizable key/value data. Source/SourceID record where it was fired
+// from (an automation or a campaign step). Routed to org:<id> like any
+// org-scoped event; the gateway delivers it to API-key websocket subscribers.
+type CustomEvent struct {
+	BaseEvent
+	OrgID    string            `json:"org_id"`
+	Name     string            `json:"name"`
+	Payload  map[string]string `json:"payload,omitempty"`
+	Source   string            `json:"source,omitempty"`
+	SourceID string            `json:"source_id,omitempty"`
+}
+
+// PublishCustomEvent emits an org-scoped developer "fire event". actorID may be
+// uuid.Nil for system-fired events. Best-effort: a publish hiccup never blocks
+// the automation/campaign that fired it.
+func (p *StreamingPublisher) PublishCustomEvent(ctx context.Context, orgID, actorID uuid.UUID, name string, payload map[string]string, source, sourceID string) {
+	if p == nil || p.client == nil || orgID == uuid.Nil {
+		return
+	}
+	event := &CustomEvent{
+		BaseEvent: BaseEvent{
+			EventType: EventCustomFired,
+			UserID:    actorID.String(),
+			Timestamp: time.Now(),
+		},
+		OrgID:    orgID.String(),
+		Name:     name,
+		Payload:  payload,
+		Source:   source,
+		SourceID: sourceID,
+	}
+	attrs := map[string]string{
+		"user_id":    actorID.String(),
+		"org_id":     orgID.String(),
+		"event_type": string(EventCustomFired),
 	}
 	if err := p.client.Publish(ctx, TopicUserEvents, event, attrs); err != nil {
 		// Best-effort: realtime is a nicety, not a requirement.

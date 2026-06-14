@@ -48,6 +48,9 @@ func (s *service) EmitCampaignEvent(ctx context.Context, orgID uuid.UUID, eventT
 // interface so this package stays decoupled from the pubsub event types.
 type ReplyRealtimePublisher interface {
 	PublishEmailReplied(ctx context.Context, orgID, userID, campaignID, contactID, contactEmail, sequenceID string)
+	// PublishCustomEvent pushes a developer-defined "fire event" to the gateway so
+	// API-key websocket subscribers receive it (the campaign "fire event" step).
+	PublishCustomEvent(ctx context.Context, orgID, actorID uuid.UUID, name string, payload map[string]string, source, sourceID string)
 }
 
 // WireRealtime attaches the realtime publisher after construction. No-op if

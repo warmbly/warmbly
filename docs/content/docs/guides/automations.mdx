@@ -134,6 +134,7 @@ These act directly on the event's contact and need no external connection. Pick 
 | Unsubscribe the contact | Unsubscribes the contact (works when the event carries a campaign) |
 | HTTP request / webhook | Calls any URL (method, headers, query, body all templated) and saves the response for later steps |
 | Set variables | Computes named values from templates and stores them for later steps to reuse |
+| Fire event | Publishes a custom event to the realtime gateway; your app receives it over the API websocket, with no public URL |
 
 **Move the deal stage** acts on the contact's most recent open deal in the chosen pipeline. If they have no open deal there, nothing happens. **Unsubscribe the contact** only applies when the triggering event carries a campaign, such as a reply, bounce, or unsubscribe. **Label the email** only works on a **Reply received** automation: it labels the conversation that reply belongs to (the same labels you set by hand in the unibox), so it needs an inbox thread to act on.
 
@@ -142,6 +143,8 @@ These act directly on the event's contact and need no external connection. Pick 
 For safety the URL must be HTTPS and resolve to a public address. Warmbly blocks requests to private, loopback, link-local, and cloud-metadata addresses, checked at the moment the request is made (so a hostname that resolves to an internal IP is caught too) and again on any redirect. This is why the action can't be pointed at internal services. Outbound requests are also subject to a generous per-workspace daily limit to keep the feature from being used for abuse.
 
 **Set variables** computes one or more named values from templates and writes them back into the flow, so you can normalize or combine fields once and reuse the result (`{{.name}}`) in several later steps. Each value is a Go template; it does not run arbitrary code.
+
+**Fire event** is the inverse of the inbound webhook: instead of an outside system calling you, Warmbly tells your system something happened. Give it an event name and a set of templated key/value fields, and when the step runs Warmbly publishes a `CUSTOM_EVENT` to the realtime gateway. Your app subscribes with an API key (the `REALTIME_SUBSCRIBE` permission) over the websocket and receives `{ name, payload }`, so you get events without hosting a public URL or exposing an endpoint. See [Realtime events](/api/realtime/). The same step is available on campaign sequences.
 
 ### Handling errors (the on-error branch)
 
