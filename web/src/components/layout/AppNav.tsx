@@ -151,7 +151,6 @@ const sections: NavSection[] = [
             { title: "Integrations", url: "/app/integrations", icon: CableIcon, indicator: "integrations", permission: "USE_INTEGRATIONS", permissionLabel: "Use integrations" },
             { title: "Automations", url: "/app/automations", icon: ZapIcon, permission: "USE_INTEGRATIONS", permissionLabel: "Use integrations" },
             { title: "API Keys", url: "/app/api-keys", icon: KeyIcon, indicator: "apikeys", permission: "MANAGE_API_KEYS", permissionLabel: "Manage API keys" },
-            { title: "OAuth apps", url: "/app/oauth-apps", icon: LockIcon, permission: "MANAGE_API_KEYS", permissionLabel: "Manage API keys" },
             { title: "Audit log", url: "/app/audit", icon: ListChecksIcon, rolesAllowed: "manage" },
         ],
     },

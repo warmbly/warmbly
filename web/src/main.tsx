@@ -27,7 +27,7 @@ import TasksPage from './app/app/crm/tasks/page';
 import MeetingsPage from './app/app/crm/meetings/page';
 import TemplatesPage from './app/app/templates/page';
 import APIKeysPage from './app/app/api-keys/page';
-import OAuthAppsPage from './app/app/oauth-apps/page';
+import OAuthAppsPage from './app/app/settings/oauth-apps/page';
 import OAuthLayout from './app/oauth/layout';
 import OAuthConsentPage from './app/oauth/authorize/page';
 import IntegrationsPage from './app/app/integrations/page';
@@ -291,8 +291,9 @@ const router = createBrowserRouter([
             element: <APIKeysPage />,
           },
           {
+            // OAuth apps moved into Settings; keep the old path working.
             path: "oauth-apps",
-            element: <OAuthAppsPage />,
+            element: <Navigate to="/app/settings/oauth-apps" replace />,
           },
           {
             path: "integrations",
@@ -324,6 +325,7 @@ const router = createBrowserRouter([
               { path: "billing", element: <BillingSettingsPage /> },
               { path: "limits", element: <LimitsSettingsPage /> },
               { path: "roles", element: <RolesSettingsPage /> },
+              { path: "oauth-apps", element: <OAuthAppsPage /> },
               { path: "danger", element: <DangerSettingsPage /> },
             ],
           },

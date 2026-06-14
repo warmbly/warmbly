@@ -5,6 +5,7 @@ import createOAuthApp from "@/lib/api/client/app/oauth/createOAuthApp";
 import updateOAuthApp from "@/lib/api/client/app/oauth/updateOAuthApp";
 import deleteOAuthApp from "@/lib/api/client/app/oauth/deleteOAuthApp";
 import rotateOAuthAppSecret from "@/lib/api/client/app/oauth/rotateOAuthAppSecret";
+import uploadOAuthAppLogo from "@/lib/api/client/app/oauth/uploadOAuthAppLogo";
 import type { OAuthApplicationInput } from "@/lib/api/models/app/oauth/OAuthApp";
 
 export function useOAuthApps() {
@@ -42,5 +43,11 @@ export function useDeleteOAuthApp() {
 export function useRotateOAuthAppSecret() {
     return useMutation({
         mutationFn: (id: string) => rotateOAuthAppSecret(id),
+    });
+}
+
+export function useUploadOAuthAppLogo() {
+    return useMutation({
+        mutationFn: (blob: Blob) => uploadOAuthAppLogo(blob),
     });
 }

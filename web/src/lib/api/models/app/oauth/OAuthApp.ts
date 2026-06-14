@@ -14,7 +14,6 @@ export interface OAuthApplication {
     redirect_uris: string[];
     // Bitmask of the API permissions this app may request (same bits as API keys).
     scopes: number;
-    confidential: boolean;
     status: OAuthAppStatus;
     created_at: string;
     updated_at: string;
@@ -36,7 +35,6 @@ export interface OAuthApplicationInput {
     website_url?: string;
     redirect_uris: string[];
     scopes: number;
-    confidential: boolean;
 }
 
 // The consent screen payload (GET /oauth/authorize/details).
