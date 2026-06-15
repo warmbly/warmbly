@@ -23,7 +23,7 @@ import (
 )
 
 type ContactRepository interface {
-	Add(ctx context.Context, userID string, contacts []models.AddContact) ([]models.Contact, *errx.Error)
+	Add(ctx context.Context, userID string, orgID uuid.UUID, contacts []models.AddContact) ([]models.Contact, *errx.Error)
 	GetByID(ctx context.Context, contactID uuid.UUID) (*models.Contact, *errx.Error)
 	GetByEmailAndOrganization(ctx context.Context, organizationID uuid.UUID, email string) (*models.Contact, *errx.Error)
 	// GetByIDsAndOrganization fetches the org's contacts for a set of IDs. Used
@@ -48,10 +48,10 @@ type ContactRepository interface {
 	GetByEmailsAndUser(ctx context.Context, userID uuid.UUID, emails []string) (map[string]models.Contact, *errx.Error)
 	Search(ctx context.Context, userID string, category, cursor *string, filters models.SearchContacts, limit int32) (*models.ContactsResult, *errx.Error)
 	ExportAll(ctx context.Context, userID string, filters *models.SearchContacts, contactIDs []string, max int) ([]models.Contact, *errx.Error)
-	BulkUpdate(ctx context.Context, userID string, data *models.BulkEditContactsData) ([]models.Contact, *errx.Error)
-	Update(ctx context.Context, userID, contactID string, data *models.UpdateContact) (*models.Contact, *errx.Error)
-	BulkDelete(ctx context.Context, userID string, contactIDs []string) *errx.Error
-	Delete(ctx context.Context, userID string, contactID string) *errx.Error
+	BulkUpdate(ctx context.Context, userID string, orgID uuid.UUID, data *models.BulkEditContactsData) ([]models.Contact, *errx.Error)
+	Update(ctx context.Context, userID, contactID string, orgID uuid.UUID, data *models.UpdateContact) (*models.Contact, *errx.Error)
+	BulkDelete(ctx context.Context, userID string, orgID uuid.UUID, contactIDs []string) *errx.Error
+	Delete(ctx context.Context, userID string, orgID uuid.UUID, contactID string) *errx.Error
 	GetContactCount(ctx context.Context, userID string) (int, *errx.Error)
 
 	// 360 view read paths. orgID is optional — when nil, the suppression
@@ -100,7 +100,7 @@ func parseCategoryIDs(raw []string) ([]uuid.UUID, *errx.Error) {
 	return out, nil
 }
 
-func (r *contactRepository) Add(ctx context.Context, userID string, contacts []models.AddContact) ([]models.Contact, *errx.Error) {
+func (r *contactRepository) Add(ctx context.Context, userID string, orgID uuid.UUID, contacts []models.AddContact) ([]models.Contact, *errx.Error) {
 	// Validate userID up front. The handler should have caught a
 	// malformed JWT subject, but a defensive check here keeps any
 	// invalid value from blowing up pgx as "InternalError 500".
@@ -201,11 +201,12 @@ func (r *contactRepository) Add(ctx context.Context, userID string, contacts []m
 	for _, lead := range normalized {
 		insertBatch.Queue(
 			`INSERT INTO contacts (
-			 id, user_id, first_name, last_name, email, company, phone, custom_fields
+			 id, user_id, organization_id, first_name, last_name, email, company, phone, custom_fields
 			 ) VALUES (
-			  gen_random_uuid(), $1, $2, $3, LOWER($4), $5, $6, $7
+			  gen_random_uuid(), $1, $2, $3, $4, LOWER($5), $6, $7, $8
 			 )
 			 ON CONFLICT (user_id, (LOWER(email))) DO UPDATE SET
+			  organization_id = COALESCE(contacts.organization_id, EXCLUDED.organization_id),
 			  first_name = EXCLUDED.first_name,
 			  last_name = EXCLUDED.last_name,
 			  company = EXCLUDED.company,
@@ -213,7 +214,7 @@ func (r *contactRepository) Add(ctx context.Context, userID string, contacts []m
 			  custom_fields = contacts.custom_fields || EXCLUDED.custom_fields,
 			  updated_at = NOW()
 			 RETURNING id, first_name, last_name, email, company, phone, custom_fields, subscribed, updated_at, created_at`,
-			userID, lead.FirstName, lead.LastName, lead.Email, lead.Company, lead.Phone, lead.CustomFields,
+			userID, orgID, lead.FirstName, lead.LastName, lead.Email, lead.Company, lead.Phone, lead.CustomFields,
 		)
 	}
 
@@ -1025,7 +1026,7 @@ func (r *contactRepository) Search(
 	}, nil
 }
 
-func (r *contactRepository) Update(ctx context.Context, userID, contactID string, data *models.UpdateContact) (*models.Contact, *errx.Error) {
+func (r *contactRepository) Update(ctx context.Context, userID, contactID string, orgID uuid.UUID, data *models.UpdateContact) (*models.Contact, *errx.Error) {
 	tx, err := r.DB.Begin(ctx)
 	if err != nil {
 		db.CaptureError(err, "", nil, "begin")
@@ -1051,12 +1052,13 @@ func (r *contactRepository) Update(ctx context.Context, userID, contactID string
 				'[]'::json
 			) AS campaigns
 		FROM contacts c
-		WHERE c.id = $1 AND c.user_id = $2
+		WHERE c.id = $1 AND c.organization_id = $3
 		`
 
 	params := []any{
 		contactID,
 		userID,
+		orgID,
 	}
 
 	err = tx.QueryRow(
@@ -1157,11 +1159,11 @@ func (r *contactRepository) Update(ctx context.Context, userID, contactID string
 	// If no fields to update, skip contacts table update
 	var updatedContact models.Contact
 	if len(setClauses) > 1 { // >1 because updated_at is always included
-		args = append(args, contactID, userID)
+		args = append(args, contactID, orgID)
 		query := fmt.Sprintf(`
 			UPDATE contacts
 			SET %s
-			WHERE id = $%d AND user_id = $%d
+			WHERE id = $%d AND organization_id = $%d
 			RETURNING id, first_name, last_name, email, company, phone, custom_fields, subscribed, updated_at, created_at`,
 			strings.Join(setClauses, ", "), argIndex, argIndex+1)
 		err = tx.QueryRow(ctx, query, args...).Scan(
@@ -1385,7 +1387,7 @@ func (r *contactRepository) Update(ctx context.Context, userID, contactID string
 	return &updatedContact, nil
 }
 
-func (r *contactRepository) BulkUpdate(ctx context.Context, userID string, data *models.BulkEditContactsData) ([]models.Contact, *errx.Error) {
+func (r *contactRepository) BulkUpdate(ctx context.Context, userID string, orgID uuid.UUID, data *models.BulkEditContactsData) ([]models.Contact, *errx.Error) {
 	tx, err := r.DB.Begin(ctx)
 	if err != nil {
 		db.CaptureError(err, "", nil, "begin")
@@ -1398,8 +1400,8 @@ func (r *contactRepository) BulkUpdate(ctx context.Context, userID string, data 
 	if data.Subscribe != nil {
 		b.Queue(`UPDATE contacts
 		         SET subscribed = $1, updated_at = NOW()
-		         WHERE user_id = $2 AND id = ANY($3)`,
-			*data.Subscribe, userID, data.Contacts)
+		         WHERE organization_id = $2 AND id = ANY($3)`,
+			*data.Subscribe, orgID, data.Contacts)
 	}
 
 	if len(data.RemoveCampaigns) > 0 {
@@ -1407,11 +1409,11 @@ func (r *contactRepository) BulkUpdate(ctx context.Context, userID string, data 
 		         USING contacts c, campaigns cam
 		         WHERE cl.contact_id = c.id
 		           AND cl.campaign_id = cam.id
-		           AND c.user_id = $1
-		           AND cam.user_id = $1
+		           AND c.organization_id = $1
+		           AND cam.user_id = $4
 		           AND cl.contact_id = ANY($2)
 		           AND cl.campaign_id = ANY($3)`,
-			userID, data.Contacts, data.RemoveCampaigns)
+			orgID, data.Contacts, data.RemoveCampaigns, userID)
 	}
 
 	if len(data.AddCampaigns) > 0 {
@@ -1419,22 +1421,22 @@ func (r *contactRepository) BulkUpdate(ctx context.Context, userID string, data 
 		         SELECT c.id, cam.id
 		         FROM contacts c
 		         CROSS JOIN campaigns cam
-		         WHERE c.user_id = $1
+		         WHERE c.organization_id = $1
 		           AND c.id = ANY($2)
 		           AND cam.id = ANY($3::uuid[])
-		           AND cam.user_id = $1
+		           AND cam.user_id = $4
 		         ON CONFLICT DO NOTHING`,
-			userID, data.Contacts, data.AddCampaigns)
+			orgID, data.Contacts, data.AddCampaigns, userID)
 	}
 
 	if len(data.RemoveCategories) > 0 {
 		b.Queue(`DELETE FROM contact_categories cc
 		         USING contacts c
 		         WHERE cc.contact_id = c.id
-		           AND c.user_id = $1
+		           AND c.organization_id = $1
 		           AND cc.contact_id = ANY($2)
 		           AND cc.category_id = ANY($3::uuid[])`,
-			userID, data.Contacts, data.RemoveCategories)
+			orgID, data.Contacts, data.RemoveCategories)
 	}
 
 	if len(data.AddCategories) > 0 {
@@ -1442,12 +1444,12 @@ func (r *contactRepository) BulkUpdate(ctx context.Context, userID string, data 
 		         SELECT c.id, cat.id
 		         FROM contacts c
 		         CROSS JOIN categories cat
-		         WHERE c.user_id = $1
+		         WHERE c.organization_id = $1
 		           AND c.id = ANY($2)
 		           AND cat.id = ANY($3::uuid[])
-		           AND cat.user_id = $1
+		           AND cat.user_id = $4
 		         ON CONFLICT DO NOTHING`,
-			userID, data.Contacts, data.AddCategories)
+			orgID, data.Contacts, data.AddCategories, userID)
 	}
 
 	for _, p := range data.Fields {
@@ -1456,27 +1458,27 @@ func (r *contactRepository) BulkUpdate(ctx context.Context, userID string, data 
 			b.Queue(`UPDATE contacts
 			         SET custom_fields = custom_fields || jsonb_build_object($1,$2),
 			             updated_at = NOW()
-			         WHERE user_id = $3 AND id = ANY($4)`,
-				p.Key, p.Value, userID, data.Contacts)
+			         WHERE organization_id = $3 AND id = ANY($4)`,
+				p.Key, p.Value, orgID, data.Contacts)
 		case models.BulkEditField:
 			b.Queue(`UPDATE contacts
 			         SET custom_fields = jsonb_set(custom_fields, ARRAY[$1], to_jsonb($2::text)),
 			             updated_at = NOW()
-			         WHERE user_id = $3 AND id = ANY($4)`,
-				p.Key, p.Value, userID, data.Contacts)
+			         WHERE organization_id = $3 AND id = ANY($4)`,
+				p.Key, p.Value, orgID, data.Contacts)
 		case models.BulkDeleteField:
 			b.Queue(`UPDATE contacts
 			         SET custom_fields = custom_fields - $1,
 			             updated_at = NOW()
-			         WHERE user_id = $2 AND id = ANY($3)`,
-				p.Key, userID, data.Contacts)
+			         WHERE organization_id = $2 AND id = ANY($3)`,
+				p.Key, orgID, data.Contacts)
 		case models.BulkRenameField:
 			b.Queue(`UPDATE contacts
 			         SET custom_fields = (custom_fields - $1) || jsonb_build_object($2, custom_fields->$1),
 			             updated_at = NOW()
-			         WHERE user_id = $3 AND id = ANY($4)
+			         WHERE organization_id = $3 AND id = ANY($4)
 			           AND custom_fields ? $1`,
-				p.Key, p.Value, userID, data.Contacts)
+				p.Key, p.Value, orgID, data.Contacts)
 		}
 	}
 
@@ -1515,12 +1517,13 @@ func (r *contactRepository) BulkUpdate(ctx context.Context, userID string, data 
 				'[]'::json
 			) AS categories
 		FROM contacts c
-		WHERE c.user_id = $2 AND c.id = ANY($1)
+		WHERE c.organization_id = $3 AND c.id = ANY($1)
 	`
 
 	params := []any{
 		data.Contacts,
 		userID,
+		orgID,
 	}
 	rows, err := tx.Query(
 		ctx,
@@ -1590,14 +1593,14 @@ func (r *contactRepository) BulkUpdate(ctx context.Context, userID string, data 
 	return updatedContacts, nil
 }
 
-func (r *contactRepository) BulkDelete(ctx context.Context, userID string, IDs []string) *errx.Error {
+func (r *contactRepository) BulkDelete(ctx context.Context, userID string, orgID uuid.UUID, IDs []string) *errx.Error {
 	query := `
 		DELETE FROM contacts
-		WHERE id = ANY($1) AND user_id = $2
+		WHERE id = ANY($1) AND organization_id = $2
 	`
 	params := []any{
 		IDs,
-		userID,
+		orgID,
 	}
 	_, err := r.DB.Exec(
 		ctx,
@@ -1611,14 +1614,14 @@ func (r *contactRepository) BulkDelete(ctx context.Context, userID string, IDs [
 	return nil
 }
 
-func (r *contactRepository) Delete(ctx context.Context, userID, ID string) *errx.Error {
+func (r *contactRepository) Delete(ctx context.Context, userID string, orgID uuid.UUID, ID string) *errx.Error {
 	query := `
 		DELETE FROM contacts
-		WHERE id = $1 AND user_id = $2
+		WHERE id = $1 AND organization_id = $2
 	`
 	params := []any{
 		ID,
-		userID,
+		orgID,
 	}
 	cmd, err := r.DB.Exec(
 		ctx,
@@ -1783,7 +1786,15 @@ func (r *contactRepository) GetDetail(ctx context.Context, userID uuid.UUID, org
 	//    so the UI gets identical fields back.
 	var detail models.ContactDetail
 	var campaignsJSON, categoriesJSON []byte
-	mainQuery := `
+	// Scope the contact row to the org so teammates can open each other's
+	// contacts. Without an org (e.g. an API key with no selected org) fall
+	// back to the legacy user scope. The campaign/category badge subselects
+	// stay user-scoped (categories has no organization_id column).
+	rowScope := "c.user_id = $1"
+	if orgID != nil {
+		rowScope = "c.organization_id = $3"
+	}
+	mainQuery := fmt.Sprintf(`
 		SELECT
 			c.id, c.first_name, c.last_name, c.email, c.company, c.phone,
 			c.custom_fields, c.subscribed, c.updated_at, c.created_at,
@@ -1804,9 +1815,13 @@ func (r *contactRepository) GetDetail(ctx context.Context, userID uuid.UUID, org
 				), '[]'::json
 			) AS categories
 		FROM contacts c
-		WHERE c.id = $2 AND c.user_id = $1
-	`
-	err := r.DB.QueryRow(ctx, mainQuery, userID, contactID).Scan(
+		WHERE c.id = $2 AND %s
+	`, rowScope)
+	mainArgs := []any{userID, contactID}
+	if orgID != nil {
+		mainArgs = append(mainArgs, *orgID)
+	}
+	err := r.DB.QueryRow(ctx, mainQuery, mainArgs...).Scan(
 		&detail.ID, &detail.FirstName, &detail.LastName, &detail.Email,
 		&detail.Company, &detail.Phone, &detail.CustomFields, &detail.Subscribed,
 		&detail.UpdatedAt, &detail.CreatedAt, &campaignsJSON, &categoriesJSON,
@@ -1815,7 +1830,7 @@ func (r *contactRepository) GetDetail(ctx context.Context, userID uuid.UUID, org
 		if err == pgx.ErrNoRows {
 			return nil, errx.ErrNotFound
 		}
-		db.CaptureError(err, mainQuery, []any{userID, contactID}, "GetDetail main")
+		db.CaptureError(err, mainQuery, mainArgs, "GetDetail main")
 		return nil, errx.InternalError()
 	}
 	if detail.CustomFields == nil {

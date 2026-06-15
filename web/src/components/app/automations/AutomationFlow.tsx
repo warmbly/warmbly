@@ -40,7 +40,6 @@ import {
     CheckSquareIcon,
     CopyIcon,
     GitBranchIcon,
-    GlobeIcon,
     HistoryIcon,
     Link2Icon,
     Loader2Icon,
@@ -776,11 +775,6 @@ export default function AutomationFlow({
                 }
                 if (need === "automation" && !String(d.config?.automation_id ?? "").trim()) {
                     toast.error("A run-automation action needs a target automation");
-                    setSelectedId(n.id);
-                    return false;
-                }
-                if (need === "http" && !String(d.config?.http_url ?? "").trim()) {
-                    toast.error("An HTTP request action needs a URL");
                     setSelectedId(n.id);
                     return false;
                 }
@@ -1738,7 +1732,6 @@ const ACTION_VISUAL: Record<string, { Icon: typeof TagIcon; tint: string; bg: st
     "warmbly.unsubscribe": { Icon: UserMinusIcon, tint: "text-rose-600", bg: "bg-rose-50", desc: "Unsubscribe the contact from the campaign." },
     "warmbly.run_automation": { Icon: ZapIcon, tint: "text-indigo-600", bg: "bg-indigo-50", desc: "Launch another automation with this event's data." },
     "warmbly.label_email": { Icon: TagsIcon, tint: "text-fuchsia-600", bg: "bg-fuchsia-50", desc: "Label the conversation the contact replied on." },
-    "warmbly.http_request": { Icon: GlobeIcon, tint: "text-teal-600", bg: "bg-teal-50", desc: "Call any URL / send a webhook, and use the response in later steps." },
     "warmbly.set_variables": { Icon: WandSparklesIcon, tint: "text-amber-600", bg: "bg-amber-50", desc: "Compute named values from templates for later steps to reuse." },
     "warmbly.fire_event": { Icon: SendIcon, tint: "text-sky-600", bg: "bg-sky-50", desc: "Publish a custom event to the realtime gateway — your app receives it over the API websocket, no public URL." },
     "slack.notify": { Icon: MessageSquareIcon, tint: "text-violet-600", bg: "bg-violet-50" },
@@ -2153,7 +2146,6 @@ function NativeActionConfig({
             {need === "automation" && <RunAnotherAutomationFields config={config} patchConfig={patchConfig} selfId={selfId} />}
 
             {need === "event" && <FireEventFields config={config} patchConfig={patchConfig} />}
-            {need === "http" && <HttpRequestFields config={config} patchConfig={patchConfig} />}
 
             {need === "vars" && <SetVariablesFields config={config} patchConfig={patchConfig} />}
 
@@ -2162,106 +2154,6 @@ function NativeActionConfig({
                     Works when the event carries a campaign (reply / bounce / unsubscribe triggers).
                 </p>
             )}
-        </div>
-    );
-}
-
-const HTTP_METHODS: SelectOption[] = ["GET", "POST", "PUT", "PATCH", "DELETE"].map((m) => ({ value: m, label: m }));
-
-function headersToText(h: unknown): string {
-    if (!h || typeof h !== "object") return "";
-    return Object.entries(h as Record<string, string>)
-        .map(([k, v]) => `${k}: ${v}`)
-        .join("\n");
-}
-
-function textToHeaders(text: string): Record<string, string> {
-    const out: Record<string, string> = {};
-    for (const line of text.split("\n")) {
-        const i = line.indexOf(":");
-        if (i <= 0) continue;
-        const k = line.slice(0, i).trim();
-        if (k) out[k] = line.slice(i + 1).trim();
-    }
-    return out;
-}
-
-const HTTP_FIELD_CLASS =
-    "w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[12.5px] font-mono text-slate-900 placeholder:text-slate-400 outline-none resize-y focus:border-sky-400 focus:ring-2 focus:ring-sky-100";
-
-// HttpRequestFields configures the generic HTTP request / webhook action: a
-// templated method/url/headers/body call whose response later steps can read.
-function HttpRequestFields({
-    config,
-    patchConfig,
-}: {
-    config: Record<string, unknown>;
-    patchConfig: (p: Record<string, unknown>) => void;
-}) {
-    const outputKey = String(config.http_output_key ?? "").trim() || "response";
-    return (
-        <div className="space-y-3">
-            <div className="flex items-end gap-2">
-                <div className="w-28 shrink-0">
-                    <Label>Method</Label>
-                    <SelectMenu
-                        value={String(config.http_method ?? "POST")}
-                        onChange={(m) => patchConfig({ http_method: m })}
-                        options={HTTP_METHODS}
-                        className="w-full"
-                        fullWidth
-                    />
-                </div>
-                <div className="flex-1 min-w-0">
-                    <Label>URL</Label>
-                    <TextInput
-                        value={String(config.http_url ?? "")}
-                        onChange={(v) => patchConfig({ http_url: v })}
-                        placeholder="https://api.example.com/contacts"
-                        className="w-full"
-                    />
-                </div>
-            </div>
-            <div>
-                <Label>Headers</Label>
-                <textarea
-                    value={headersToText(config.http_headers)}
-                    onChange={(e) => patchConfig({ http_headers: textToHeaders(e.target.value) })}
-                    placeholder={"Authorization: Bearer …\nContent-Type: application/json"}
-                    rows={3}
-                    className={HTTP_FIELD_CLASS}
-                />
-                <p className="mt-1 text-[11px] text-slate-400">
-                    One per line, <code>Key: Value</code>. Values are templated.
-                </p>
-            </div>
-            <div>
-                <Label>Body</Label>
-                <textarea
-                    value={String(config.http_body ?? "")}
-                    onChange={(e) => patchConfig({ http_body: e.target.value })}
-                    placeholder={'{ "email": "{{.contact_email}}", "name": "{{.first_name}}" }'}
-                    rows={4}
-                    className={HTTP_FIELD_CLASS}
-                />
-                <p className="mt-1 text-[11px] text-slate-400">
-                    Full Go template, sent as the request body (JSON by default).
-                </p>
-            </div>
-            <div>
-                <Label>Save response as</Label>
-                <TextInput
-                    value={String(config.http_output_key ?? "")}
-                    onChange={(v) => patchConfig({ http_output_key: v })}
-                    placeholder="response"
-                    className="w-full"
-                />
-                <p className="mt-1 text-[11px] text-slate-400 leading-relaxed">
-                    Later steps read it as <code>{`{{.${outputKey}.body…}}`}</code> and{" "}
-                    <code>{`{{.${outputKey}.status}}`}</code>; add a condition on{" "}
-                    <code>{`{{.${outputKey}.ok}}`}</code> to branch on success.
-                </p>
-            </div>
         </div>
     );
 }

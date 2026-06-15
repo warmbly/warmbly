@@ -29,9 +29,9 @@ type CRMService interface {
 	DeletePipeline(ctx context.Context, orgID, pipelineID uuid.UUID) *errx.Error
 
 	// Pipeline Stages
-	CreateStage(ctx context.Context, pipelineID uuid.UUID, data *models.CreatePipelineStage) (*models.PipelineStage, *errx.Error)
-	UpdateStage(ctx context.Context, stageID uuid.UUID, data *models.UpdatePipelineStage) (*models.PipelineStage, *errx.Error)
-	DeleteStage(ctx context.Context, stageID uuid.UUID) *errx.Error
+	CreateStage(ctx context.Context, orgID, pipelineID uuid.UUID, data *models.CreatePipelineStage) (*models.PipelineStage, *errx.Error)
+	UpdateStage(ctx context.Context, orgID, stageID uuid.UUID, data *models.UpdatePipelineStage) (*models.PipelineStage, *errx.Error)
+	DeleteStage(ctx context.Context, orgID, stageID uuid.UUID) *errx.Error
 
 	// Deals
 	CreateDeal(ctx context.Context, orgID uuid.UUID, data *models.CreateDeal) (*models.Deal, *errx.Error)
@@ -41,7 +41,7 @@ type CRMService interface {
 	DealsSummary(ctx context.Context, orgID uuid.UUID, filters models.SearchDeals) (*models.DealsSummary, *errx.Error)
 	UpdateDeal(ctx context.Context, orgID, dealID uuid.UUID, userID *uuid.UUID, data *models.UpdateDeal) (*models.Deal, *errx.Error)
 	DeleteDeal(ctx context.Context, orgID, dealID uuid.UUID) *errx.Error
-	GetDealsByContact(ctx context.Context, contactID uuid.UUID) ([]models.Deal, *errx.Error)
+	GetDealsByContact(ctx context.Context, orgID, contactID uuid.UUID) ([]models.Deal, *errx.Error)
 
 	// CRM Tasks
 	CreateCRMTask(ctx context.Context, orgID, userID uuid.UUID, data *models.CreateCRMTask) (*models.CRMTask, *errx.Error)
@@ -212,28 +212,28 @@ func (s *crmService) DeletePipeline(ctx context.Context, orgID, pipelineID uuid.
 // Pipeline Stages
 // =====================
 
-func (s *crmService) CreateStage(ctx context.Context, pipelineID uuid.UUID, data *models.CreatePipelineStage) (*models.PipelineStage, *errx.Error) {
+func (s *crmService) CreateStage(ctx context.Context, orgID, pipelineID uuid.UUID, data *models.CreatePipelineStage) (*models.PipelineStage, *errx.Error) {
 	if len(data.Name) == 0 || len(data.Name) > 255 {
 		return nil, errx.New(errx.BadRequest, "stage name must be between 1 and 255 characters")
 	}
 
-	stage, err := s.repo.CreateStage(ctx, pipelineID, data)
+	stage, err := s.repo.CreateStage(ctx, orgID, pipelineID, data)
 	if err != nil {
 		return nil, toErrx(err)
 	}
 	return stage, nil
 }
 
-func (s *crmService) UpdateStage(ctx context.Context, stageID uuid.UUID, data *models.UpdatePipelineStage) (*models.PipelineStage, *errx.Error) {
-	stage, err := s.repo.UpdateStage(ctx, stageID, data)
+func (s *crmService) UpdateStage(ctx context.Context, orgID, stageID uuid.UUID, data *models.UpdatePipelineStage) (*models.PipelineStage, *errx.Error) {
+	stage, err := s.repo.UpdateStage(ctx, orgID, stageID, data)
 	if err != nil {
 		return nil, toErrx(err)
 	}
 	return stage, nil
 }
 
-func (s *crmService) DeleteStage(ctx context.Context, stageID uuid.UUID) *errx.Error {
-	if err := s.repo.DeleteStage(ctx, stageID); err != nil {
+func (s *crmService) DeleteStage(ctx context.Context, orgID, stageID uuid.UUID) *errx.Error {
+	if err := s.repo.DeleteStage(ctx, orgID, stageID); err != nil {
 		return toErrx(err)
 	}
 	return nil
@@ -352,8 +352,8 @@ func (s *crmService) DeleteDeal(ctx context.Context, orgID, dealID uuid.UUID) *e
 	return nil
 }
 
-func (s *crmService) GetDealsByContact(ctx context.Context, contactID uuid.UUID) ([]models.Deal, *errx.Error) {
-	deals, err := s.repo.GetDealsByContact(ctx, contactID)
+func (s *crmService) GetDealsByContact(ctx context.Context, orgID, contactID uuid.UUID) ([]models.Deal, *errx.Error) {
+	deals, err := s.repo.GetDealsByContact(ctx, orgID, contactID)
 	if err != nil {
 		return nil, toErrx(err)
 	}

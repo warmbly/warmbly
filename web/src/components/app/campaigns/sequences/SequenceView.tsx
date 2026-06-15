@@ -28,6 +28,7 @@ export default function SequenceView({
     sequence,
     index,
     embedded = false,
+    headerExtra,
 }: {
     campaignId: string;
     sequence: Sequence;
@@ -35,6 +36,9 @@ export default function SequenceView({
     // When embedded inside the tabbed arms editor, drop the outer card chrome
     // and the "Step N" eyebrow (the tab already provides that context).
     embedded?: boolean;
+    // Optional control rendered to the left of Reset/Save in the header (used to
+    // surface the "A/B test this step" entry point when no variants exist yet).
+    headerExtra?: React.ReactNode;
 }) {
     const updateSequence = useUpdateSequence(campaignId, sequence.id);
 
@@ -85,6 +89,7 @@ export default function SequenceView({
                     </div>
                 )}
                 <div className="flex flex-wrap shrink-0 items-center gap-2 sm:ml-auto">
+                    {headerExtra}
                     <button
                         type="button"
                         onClick={() => setDraft(toDraft(sequence))}

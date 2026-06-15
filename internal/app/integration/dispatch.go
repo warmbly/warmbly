@@ -276,6 +276,40 @@ func renderEventMessage(sub models.IntegrationEventSubscription, data map[string
 		m.Title = "🔁 Meeting rescheduled"
 	case models.WebhookEventMeetingCanceled:
 		m.Title = "❌ Meeting canceled"
+	case models.WebhookEventCampaignEmailSent:
+		m.Title = "✉️ Email sent"
+	case models.WebhookEventCampaignEmailOpened:
+		m.Title = "👀 Email opened"
+	case models.WebhookEventCampaignEmailClicked:
+		m.Title = "🔗 Link clicked"
+	case models.WebhookEventCampaignStarted:
+		m.Title = "▶️ Campaign started"
+	case models.WebhookEventCampaignPaused:
+		m.Title = "⏸️ Campaign paused"
+	case models.WebhookEventCampaignCompleted:
+		m.Title = "✅ Campaign completed"
+	case models.WebhookEventContactCreated:
+		m.Title = "🧑 Contact created"
+	case models.WebhookEventContactUpdated:
+		m.Title = "✏️ Contact updated"
+	case models.WebhookEventCRMDealCreated:
+		m.Title = "💼 Deal created"
+	case models.WebhookEventCRMDealUpdated:
+		m.Title = "💼 Deal updated"
+	case models.WebhookEventInboxEmailReceived:
+		m.Title = "📥 New email received"
+	case models.WebhookEventWarmupPlacementInSpam:
+		m.Title = "🧯 Warmup landed in spam"
+	case models.WebhookEventWarmupQuarantined:
+		m.Title = "🚧 Mailbox quarantined"
+	case models.WebhookEventWarmupBlocked:
+		m.Title = "⛔ Mailbox blocked from warmup"
+	case models.WebhookEventCustom:
+		if n := stringFromMap(data, "name"); n != "" {
+			m.Title = "⚡ " + n
+		} else {
+			m.Title = "⚡ Custom event"
+		}
 	default:
 		m.Title = "Warmbly event: " + string(eventType)
 	}

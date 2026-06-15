@@ -53,7 +53,7 @@ func (a Adapter) OrgOwner(ctx context.Context, orgID uuid.UUID) (uuid.UUID, erro
 }
 
 func (a Adapter) AddTag(ctx context.Context, orgID, actorID, contactID, categoryID uuid.UUID) error {
-	if _, e := a.Contacts.Update(ctx, actorID.String(), contactID.String(), &models.UpdateContact{
+	if _, e := a.Contacts.Update(ctx, actorID.String(), contactID.String(), orgID, &models.UpdateContact{
 		AddCategories: []string{categoryID.String()},
 	}); e != nil {
 		return e
@@ -62,7 +62,7 @@ func (a Adapter) AddTag(ctx context.Context, orgID, actorID, contactID, category
 }
 
 func (a Adapter) RemoveTag(ctx context.Context, orgID, actorID, contactID, categoryID uuid.UUID) error {
-	if _, e := a.Contacts.Update(ctx, actorID.String(), contactID.String(), &models.UpdateContact{
+	if _, e := a.Contacts.Update(ctx, actorID.String(), contactID.String(), orgID, &models.UpdateContact{
 		RemoveCategories: []string{categoryID.String()},
 	}); e != nil {
 		return e

@@ -13,12 +13,12 @@ import (
 )
 
 type ContactService interface {
-	Add(ctx context.Context, userID string, contacts []models.AddContact) ([]models.Contact, *errx.Error)
+	Add(ctx context.Context, userID string, orgID uuid.UUID, contacts []models.AddContact) ([]models.Contact, *errx.Error)
 	Search(ctx context.Context, userID, cursor, category, limit string, filters models.SearchContacts) (*models.ContactsResult, *errx.Error)
-	BulkUpdate(ctx context.Context, userID string, data *models.BulkEditContactsData) ([]models.Contact, *errx.Error)
-	Update(ctx context.Context, userID, contactID string, data *models.UpdateContact) (*models.Contact, *errx.Error)
-	BulkDelete(ctx context.Context, userID string, contactIDs []string) *errx.Error
-	Delete(ctx context.Context, userID string, contactID string) *errx.Error
+	BulkUpdate(ctx context.Context, userID string, orgID uuid.UUID, data *models.BulkEditContactsData) ([]models.Contact, *errx.Error)
+	Update(ctx context.Context, userID, contactID string, orgID uuid.UUID, data *models.UpdateContact) (*models.Contact, *errx.Error)
+	BulkDelete(ctx context.Context, userID string, orgID uuid.UUID, contactIDs []string) *errx.Error
+	Delete(ctx context.Context, userID string, orgID uuid.UUID, contactID string) *errx.Error
 
 	// Export streams every contact matching the request into the given
 	// writer. The format / filename / content-type are returned so the
@@ -32,7 +32,7 @@ type ContactService interface {
 	// ImportCommit re-parses the uploaded file with the chosen mapping
 	// and performs the upsert / skip / dedup work. Returns per-row
 	// result counts plus a list of rows that failed (with reasons).
-	ImportCommit(ctx context.Context, userID string, file io.Reader, filename string, opts *models.ContactImportCommit) (*models.ContactImportResult, *errx.Error)
+	ImportCommit(ctx context.Context, userID string, orgID uuid.UUID, file io.Reader, filename string, opts *models.ContactImportCommit) (*models.ContactImportResult, *errx.Error)
 
 	// GetDetail returns the 360 read model used by the contact
 	// slide-over: hydrated contact + engagement summary + suppression.

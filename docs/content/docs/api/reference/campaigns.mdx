@@ -307,6 +307,10 @@ Replace the campaign's advanced overrides. **Scope** `WRITE_CAMPAIGNS` · **Org 
 
 List the campaign's A/B variants. A variant scoped to a `step_id` applies to one step, a `null` sequence id is campaign-level. **Scope** `READ_CAMPAIGNS` · **Org permission** `view_campaigns`.
 
+<Callout type="info" title="The Original is a weighted arm">
+For a step-scoped test the step's own email is the Original (control) arm. By default it carries an even share, but you can give it an explicit share by creating one `is_control: true` variant on that `step_id` whose `weight` is the Original's share. That row's `subject`/`body` are ignored; when the control wins, the step's own content is sent. Control rows are excluded from the A/B analysis variant list.
+</Callout>
+
 | Parameter | In | Type | Description |
 | --- | --- | --- | --- |
 | `id` | path | uuid | Campaign id. |
@@ -352,11 +356,11 @@ Add a variant to the campaign (or to one step via `step_id`). **Scope** `WRITE_C
 | --- | --- | --- | --- |
 | `name` | string | yes | Variant label. |
 | `step_id` | uuid | no | Step to scope the variant to, omit for campaign-level. |
-| `weight` | integer | no | Relative selection weight. |
+| `weight` | integer | no | Relative selection weight (1-100). Shares are these weights normalized across the active arms, so two arms at equal weight split evenly. |
 | `subject` | string | no | Variant subject template. |
 | `body_html` | string | no | Variant HTML body. |
 | `body_plain` | string | no | Variant plain-text body. |
-| `is_control` | boolean | no | Mark this as the control. |
+| `is_control` | boolean | no | Mark this as the step's control arm. For a step-scoped test, create one `is_control` row to set the Original's share; its `weight` is the Original's share and its content is ignored (the step's own email is sent when the control wins). |
 | `is_active` | boolean | no | Whether the variant participates in the split. |
 | `metadata` | object | no | Free-form metadata. |
 

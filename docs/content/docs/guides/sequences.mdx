@@ -85,14 +85,15 @@ So to keep a follow-up in the same thread, leave its subject matching the email 
 
 ## A/B variants
 
-Each email step can test alternate copy. Open the step and find the **A/B variants** panel below the composer.
+Each email step can test alternate copy. Open the step's email editor and click **A/B test this step** to start.
 
 How it works:
 
-- The step's own subject and body are the **original**. It always sends until you add a variant.
-- Click **Add variant** to add Variant B (then C, D, E, F). You can have up to 5 variants per step, on top of the original.
-- Each variant has its own **name**, **weight**, **active** toggle, **subject**, and **body**. Leave a variant's subject or body blank to reuse the step's own.
-- Sends split across the original and the active variants by **weight** (1 to 100). Higher weight means a larger share of contacts. The original is a control arm at the default weight, so one variant at the same weight gives an even split (the editor shows each arm's live share, like "~50% of contacts"). Turning a variant **inactive** stops it from receiving new sends without deleting it.
+- The step's own subject and body are the **Original** (the control arm). On its own it sends to everyone; once you add a variant it becomes one weighted arm alongside the others.
+- Click **Variant** to add Variant B (then C, D, E, F). You can have up to 5 variants per step, on top of the Original.
+- A **traffic-split bar** sits above the editor with one colored segment per arm, the Original included. Drag a divider to shift share between two arms, or type an exact percent in any arm's row. Shares always total 100%, and **Even split** balances every active arm in one click.
+- Select any arm (click its segment or its row) to edit that arm's **name**, **subject**, and **body** below. Leave a variant's subject or body blank to reuse the step's own.
+- A fresh test with one variant starts at an even 50/50 against the Original. Turning a variant **inactive** drops it out of the split without deleting it; deleting the last variant turns the step back into a single send.
 
 ### Performance and the winner
 

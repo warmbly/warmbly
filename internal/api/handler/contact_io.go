@@ -119,6 +119,12 @@ func (h *Handler) ImportPreviewContacts(c *gin.Context) {
 func (h *Handler) ImportCommitContacts(c *gin.Context) {
 	userIDStr := middleware.GetUserID(c)
 
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.Handle(c, errx.New(errx.BadRequest, "no organization selected"))
+		return
+	}
+
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxImportUploadBytes)
 	file, header, err := c.Request.FormFile("file")
 	if err != nil {
@@ -138,7 +144,7 @@ func (h *Handler) ImportCommitContacts(c *gin.Context) {
 		return
 	}
 
-	result, xerr := h.ContactService.ImportCommit(c.Request.Context(), userIDStr, file, header.Filename, &opts)
+	result, xerr := h.ContactService.ImportCommit(c.Request.Context(), userIDStr, *orgID, file, header.Filename, &opts)
 	if xerr != nil {
 		errx.Handle(c, xerr)
 		return

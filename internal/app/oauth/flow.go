@@ -212,7 +212,12 @@ func (s *Service) RevokeToken(ctx context.Context, clientID, clientSecret, token
 	if err != nil {
 		return err
 	}
-	return s.repo.RevokeGrantByTokenHash(ctx, app.ID, hashToken(token))
+	if err := s.repo.RevokeGrantByTokenHash(ctx, app.ID, hashToken(token)); err != nil {
+		return err
+	}
+	// The org may have lost its last grant — reconcile removes its app endpoint.
+	s.ReconcileAppEndpoints(ctx, app.ID)
+	return nil
 }
 
 // ValidateAccessToken resolves a bearer access token to its grant if the grant
@@ -261,6 +266,9 @@ func (s *Service) issueGrant(ctx context.Context, appID, orgID, userID uuid.UUID
 	if err := s.repo.CreateAccessGrant(ctx, g); err != nil {
 		return nil, errServer("could not store grant")
 	}
+	// Newly-authorized org: materialize the app's webhook endpoint for it (scoped
+	// to the granted permissions). Best-effort.
+	s.ReconcileAppEndpoints(ctx, appID)
 	return &TokenResponse{
 		AccessToken:  access,
 		TokenType:    "Bearer",

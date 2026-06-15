@@ -102,8 +102,6 @@ type Service interface {
 	// FireCampaignEvent publishes a developer-defined "fire event" to the realtime
 	// gateway from a campaign step (subscribers receive it over the API websocket).
 	FireCampaignEvent(ctx context.Context, orgID uuid.UUID, sourceID, name string, fields []models.ActionKV, contact *models.Contact)
-	// RunCampaignHTTPRequest runs a campaign "HTTP request" step (SSRF-guarded).
-	RunCampaignHTTPRequest(ctx context.Context, orgID uuid.UUID, cfg *models.ActionConfig, contact *models.Contact) error
 
 	// FireInstantActions runs the matched INSTANT branch's action chain for a
 	// contact the moment an engagement signal lands for them, instead of waiting
@@ -390,7 +388,7 @@ func (s *service) MoveContactDealStage(ctx context.Context, orgID, contactID, pi
 	if s.crmRepo == nil {
 		return nil, errx.InternalError()
 	}
-	deals, err := s.crmRepo.GetDealsByContact(ctx, contactID)
+	deals, err := s.crmRepo.GetDealsByContact(ctx, orgID, contactID)
 	if err != nil {
 		return nil, toErrx(err)
 	}
@@ -535,13 +533,24 @@ func (s *service) SelectVariant(ctx context.Context, organizationID, campaignID,
 
 	var selected *models.CampaignABVariant
 	if len(stepVariants) > 0 {
-		// Step-scoped: the step's own content is the control arm, so contacts are
-		// split across the original PLUS the active variants by weight,
-		// deterministically per (contact, step). The control arm carries the zero
-		// id; if it wins we send the step's original content.
-		pool := append([]models.CampaignABVariant{{Weight: abControlWeight}}, stepVariants...)
+		// Step-scoped: the step's own content is the control arm. Contacts split
+		// across the original PLUS the active variants by weight, deterministically
+		// per (contact, step). The original's share is the weight of its is_control
+		// row when the user has set one, otherwise the default control weight. The
+		// control arm carries the zero id (or an is_control row, whose content is
+		// ignored); if it wins we send the step's own content.
+		controlWeight := abControlWeight
+		arms := make([]models.CampaignABVariant, 0, len(stepVariants))
+		for _, v := range stepVariants {
+			if v.IsControl {
+				controlWeight = v.Weight
+				continue
+			}
+			arms = append(arms, v)
+		}
+		pool := append([]models.CampaignABVariant{{Weight: controlWeight}}, arms...)
 		selected = pickVariantDeterministic(pool, contactID.String()+":"+sequenceID.String())
-		if selected != nil && selected.ID == uuid.Nil {
+		if selected != nil && (selected.ID == uuid.Nil || selected.IsControl) {
 			return &models.VariantSelection{Subject: subject, BodyHTML: bodyHTML, BodyPlain: bodyPlain}, nil
 		}
 	} else if len(campaignVariants) > 0 {

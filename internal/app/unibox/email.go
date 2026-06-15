@@ -12,19 +12,25 @@ import (
 
 func (s *uniboxService) GetByID(
 	ctx context.Context,
-	userID, id uuid.UUID,
+	orgID, id uuid.UUID,
 ) (*models.EmailMessage, *errx.Error) {
 	var resp models.EmailMessage
 	var snippet string
 	var seededMessage bool
 
+	// ownerID is the mailbox owner's user_id. The S3 body key is built from it
+	// (emails/<ownerID>/<id>), so the body must be fetched under the owner even
+	// when a different teammate opens the message via the org-scoped read.
+	var ownerID uuid.UUID
+
 	// Fetch email data by id index
 	{
-		msg, err := s.uniboxRepository.GetByID(ctx, userID, id)
+		msg, owner, err := s.uniboxRepository.GetByIDForOrg(ctx, orgID, id)
 		if err != nil {
 			sentry.CaptureException(err)
 			return nil, errx.InternalError()
 		}
+		ownerID = owner
 		resp.ID = msg.ID
 		resp.GmailID = msg.GmailID
 		resp.UID = msg.UID
@@ -51,9 +57,10 @@ func (s *uniboxService) GetByID(
 		seededMessage = strings.HasPrefix(msg.MessageID, "<seed-")
 	}
 
-	// Fetch body from s3 storage
+	// Fetch body from s3 storage. Keyed by the mailbox OWNER's user_id, not the
+	// caller's: the key is emails/<ownerID>/<id>.
 	{
-		out, err := s.GetBody(ctx, userID, id)
+		out, err := s.GetBody(ctx, ownerID, id)
 		if err != nil {
 			sentry.CaptureException(err)
 			if seededMessage {

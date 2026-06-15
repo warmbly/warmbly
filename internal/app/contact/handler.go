@@ -12,7 +12,7 @@ import (
 	"github.com/warmbly/warmbly/internal/utils/validate"
 )
 
-func (s *contactService) Add(ctx context.Context, userID string, contacts []models.AddContact) ([]models.Contact, *errx.Error) {
+func (s *contactService) Add(ctx context.Context, userID string, orgID uuid.UUID, contacts []models.AddContact) ([]models.Contact, *errx.Error) {
 	// Enforce contact limit if subscription repos are available
 	if s.subRepo != nil && s.planRepo != nil {
 		uid, parseErr := uuid.Parse(userID)
@@ -33,7 +33,7 @@ func (s *contactService) Add(ctx context.Context, userID string, contacts []mode
 		}
 	}
 
-	created, xerr := s.contactRepository.Add(ctx, userID, contacts)
+	created, xerr := s.contactRepository.Add(ctx, userID, orgID, contacts)
 	if xerr != nil {
 		return nil, xerr
 	}
@@ -60,8 +60,8 @@ func (s *contactService) Search(ctx context.Context, orgID, cursor, category, li
 	return s.contactRepository.Search(ctx, orgID, categoryId, cursorId, filters, limitN)
 }
 
-func (s *contactService) BulkUpdate(ctx context.Context, userID string, data *models.BulkEditContactsData) ([]models.Contact, *errx.Error) {
-	updated, xerr := s.contactRepository.BulkUpdate(ctx, userID, data)
+func (s *contactService) BulkUpdate(ctx context.Context, userID string, orgID uuid.UUID, data *models.BulkEditContactsData) ([]models.Contact, *errx.Error) {
+	updated, xerr := s.contactRepository.BulkUpdate(ctx, userID, orgID, data)
 	if xerr != nil {
 		return nil, xerr
 	}
@@ -70,8 +70,8 @@ func (s *contactService) BulkUpdate(ctx context.Context, userID string, data *mo
 	return updated, nil
 }
 
-func (s *contactService) Update(ctx context.Context, userID, contactID string, data *models.UpdateContact) (*models.Contact, *errx.Error) {
-	updated, xerr := s.contactRepository.Update(ctx, userID, contactID, data)
+func (s *contactService) Update(ctx context.Context, userID, contactID string, orgID uuid.UUID, data *models.UpdateContact) (*models.Contact, *errx.Error) {
+	updated, xerr := s.contactRepository.Update(ctx, userID, contactID, orgID, data)
 	if xerr != nil {
 		return nil, xerr
 	}
@@ -80,8 +80,8 @@ func (s *contactService) Update(ctx context.Context, userID, contactID string, d
 	return updated, nil
 }
 
-func (s *contactService) BulkDelete(ctx context.Context, userID string, contactIDs []string) *errx.Error {
-	if xerr := s.contactRepository.BulkDelete(ctx, userID, contactIDs); xerr != nil {
+func (s *contactService) BulkDelete(ctx context.Context, userID string, orgID uuid.UUID, contactIDs []string) *errx.Error {
+	if xerr := s.contactRepository.BulkDelete(ctx, userID, orgID, contactIDs); xerr != nil {
 		return xerr
 	}
 
@@ -89,8 +89,8 @@ func (s *contactService) BulkDelete(ctx context.Context, userID string, contactI
 	return nil
 }
 
-func (s *contactService) Delete(ctx context.Context, userID string, contactID string) *errx.Error {
-	if xerr := s.contactRepository.Delete(ctx, userID, contactID); xerr != nil {
+func (s *contactService) Delete(ctx context.Context, userID string, orgID uuid.UUID, contactID string) *errx.Error {
+	if xerr := s.contactRepository.Delete(ctx, userID, orgID, contactID); xerr != nil {
 		return xerr
 	}
 

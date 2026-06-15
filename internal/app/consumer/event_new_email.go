@@ -39,8 +39,23 @@ func (s *JobsService) HandleNewEmail(ctx context.Context, e *models.JobEventNewE
 		CaptureError(e.UserID, e.Message.EmailID, err)
 		return err
 	}
-	if s.StreamingPublisher != nil && e.Message != nil {
-		s.StreamingPublisher.PublishEmailReceived(ctx, s.emailInboxEvent(ctx, e.UserID, e.Message))
+	if e.Message != nil {
+		inbox := s.emailInboxEvent(ctx, e.UserID, e.Message)
+		if s.StreamingPublisher != nil {
+			s.StreamingPublisher.PublishEmailReceived(ctx, inbox)
+		}
+		// Fan an opt-in firehose webhook for the arrival (inbox.email_received).
+		if s.AdvancedService != nil && inbox.OrgID != "" {
+			if orgID, perr := uuid.Parse(inbox.OrgID); perr == nil {
+				s.AdvancedService.EmitCampaignEvent(ctx, orgID, models.WebhookEventInboxEmailReceived, map[string]any{
+					"email_account_id": inbox.EmailAccountID,
+					"message_id":       inbox.MessageID,
+					"thread_id":        inbox.ThreadID,
+					"subject":          inbox.Subject,
+					"from":             inbox.From,
+				})
+			}
+		}
 	}
 
 	// Advanced reply-intent automation is best-effort and should not block inbox

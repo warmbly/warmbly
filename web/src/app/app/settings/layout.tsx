@@ -23,6 +23,7 @@ import {
     ShieldIcon,
     UserIcon,
     UsersIcon,
+    WebhookIcon,
 } from "lucide-react";
 import { UnsavedProvider, useUnsavedRegistry } from "@/hooks/context/unsaved";
 import { usePermission, type PermissionKey } from "@/hooks/usePermission";
@@ -64,9 +65,10 @@ const GROUPS: SectionGroup[] = [
         ],
     },
     {
-        label: "Apps",
+        label: "Developers",
         items: [
             { path: "oauth-apps", label: "OAuth apps", icon: BoxesIcon, description: "Apps that connect via OAuth2, and the apps you've authorized.", permission: "MANAGE_API_KEYS" },
+            { path: "webhooks", label: "Webhooks", icon: WebhookIcon, description: "Realtime HTTP callbacks for workspace events.", permission: "MANAGE_SETTINGS" },
         ],
     },
     {
@@ -89,6 +91,7 @@ function SettingsLayoutInner() {
     const location = useLocation();
     const access = useFeatureAccess();
     const canManageApiKeys = usePermission("MANAGE_API_KEYS");
+    const canManageSettings = usePermission("MANAGE_SETTINGS");
     const navRef = React.useRef<HTMLElement>(null);
     const unsaved = useUnsavedRegistry();
     const [savingLeave, setSavingLeave] = React.useState(false);
@@ -153,7 +156,8 @@ function SettingsLayoutInner() {
         items: g.items.filter(
             (s) =>
                 (!s.ownerOnly || access.isOwner) &&
-                (s.permission !== "MANAGE_API_KEYS" || canManageApiKeys),
+                (s.permission !== "MANAGE_API_KEYS" || canManageApiKeys) &&
+                (s.permission !== "MANAGE_SETTINGS" || canManageSettings),
         ),
     })).filter((g) => g.items.length > 0);
 

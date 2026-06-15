@@ -26,6 +26,12 @@ type UniboxRepository interface {
 	UpdateEntry(ctx context.Context, userID, emailID, id uuid.UUID, e *UpdateUniboxEntry) error
 	GetIncoming(ctx context.Context, userID uuid.UUID, limit int, cursor string) (*models.MailSearchResult, error)
 	GetByID(ctx context.Context, userID, id uuid.UUID) (*models.EmailMessageStoreData, error)
+	// GetByIDForOrg is the org-scoped read for the unibox detail view: any
+	// member with unibox access can open a message in the org-wide list. It
+	// returns the row plus the mailbox OWNER's user_id, which the S3 body key
+	// is built from (emails/<ownerID>/<id>), so the body still resolves under
+	// the owner even when a different teammate opens it.
+	GetByIDForOrg(ctx context.Context, orgID, id uuid.UUID) (*models.EmailMessageStoreData, uuid.UUID, error)
 	GetByThread(ctx context.Context, orgID, emailID uuid.UUID, threadID string, limit int, cursor string) (*models.MailSearchResult, error)
 	GetBySender(ctx context.Context, userID uuid.UUID, sender string, limit int, cursor string) (*models.MailSearchResult, error)
 	Search(ctx context.Context, orgID, userID uuid.UUID, params *models.MailSearchParams) (*models.MailSearchResult, error)
@@ -206,6 +212,44 @@ func (r *uniboxRepository) GetByID(ctx context.Context, userID, id uuid.UUID) (*
 	}
 
 	return &e, nil
+}
+
+// GetByIDForOrg reads a single message scoped to the org's mailboxes (not the
+// caller's user_id), mirroring GetByThread, so a non-owner teammate who sees a
+// message in the org-scoped list can open it. It also returns the row's owner
+// user_id: the S3 body key is built from the owner (emails/<ownerID>/<id>), so
+// the caller must fetch the body under the owner, not under itself.
+func (r *uniboxRepository) GetByIDForOrg(ctx context.Context, orgID, id uuid.UUID) (*models.EmailMessageStoreData, uuid.UUID, error) {
+	query := fmt.Sprintf(`
+		SELECT user_id, %s
+		FROM unibox_emails
+		WHERE id = $2 AND email_id IN (SELECT id FROM email_accounts WHERE organization_id = $1)
+	`, strings.Join(mailFieldsFull, ", "))
+
+	var ownerID uuid.UUID
+	var e models.EmailMessageStoreData
+	err := r.db.QueryRow(ctx, query, orgID, id).Scan(
+		&ownerID,
+		&e.ID, &e.EmailID, &e.Mailbox, &e.ThreadID, &e.MessageID,
+		&e.GmailID, &e.ParentID, &e.UID, &e.ModSeq,
+		&e.Flags, &e.BCC, &e.CC, &e.FromAddr, &e.InReplyTo, &e.ReplyTo,
+		&e.ToAddr, &e.Subject, &e.Size, &e.InternalDate, &e.SentDate,
+		&e.Snippet, &e.Seen, &e.UpdatedAt, &e.CreatedAt,
+	)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, uuid.Nil, fmt.Errorf("email not found")
+		}
+		return nil, uuid.Nil, err
+	}
+
+	// Auto-mark as seen, org-scoped so any member clears the shared unread state.
+	if !e.Seen {
+		_ = r.MarkSeenBulk(ctx, orgID, []uuid.UUID{id}, true)
+		e.Seen = true
+	}
+
+	return &e, ownerID, nil
 }
 
 // GetByThread returns the messages in a thread. emailID is optional —

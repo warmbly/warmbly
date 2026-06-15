@@ -271,13 +271,6 @@ const (
 	// the current event data through. Bounded by the chain-depth guard so it
 	// cannot loop forever or fan out unbounded compute.
 	IntegrationActionRunAutomation IntegrationAction = "warmbly.run_automation"
-	// IntegrationActionHTTPRequest makes a configurable outbound HTTP call
-	// (method/url/headers/query/body, all templated from the event + prior step
-	// output) and writes the response back into the event data so downstream
-	// nodes can use it (e.g. {{.response.body.id}}) and condition nodes can
-	// branch on {{.response.ok}}. SSRF-guarded + bounded retry. This is the
-	// generic "send a webhook / call any API" node.
-	IntegrationActionHTTPRequest IntegrationAction = "warmbly.http_request"
 	// IntegrationActionSetVariables computes one or more named values from Go
 	// templates (against the event + prior step output) and writes them back into
 	// the event data, so later nodes can reuse a transformed/normalized value
@@ -299,7 +292,7 @@ func IsNativeAction(a IntegrationAction) bool {
 	switch a {
 	case IntegrationActionAddTag, IntegrationActionRemoveTag, IntegrationActionCreateTask,
 		IntegrationActionCreateDeal, IntegrationActionMoveDealStage, IntegrationActionUnsubscribe,
-		IntegrationActionRunAutomation, IntegrationActionLabelEmail, IntegrationActionHTTPRequest,
+		IntegrationActionRunAutomation, IntegrationActionLabelEmail,
 		IntegrationActionSetVariables, IntegrationActionFireEvent:
 		return true
 	default:

@@ -397,7 +397,6 @@ const ACTION_META: Record<string, { label: string; Icon: typeof ClockIcon; tint:
     move_deal_stage: { label: "Move deal stage", Icon: ArrowRightLeftIcon, tint: "text-sky-600" },
     unsubscribe: { label: "Unsubscribe", Icon: BellOffIcon, tint: "text-rose-600" },
     run_automation: { label: "Run automation", Icon: ZapIcon, tint: "text-indigo-600" },
-    http_request: { label: "HTTP request", Icon: BracesIcon, tint: "text-teal-600" },
     fire_event: { label: "Fire event", Icon: SendIcon, tint: "text-sky-600" },
 };
 
@@ -419,8 +418,6 @@ function actionSummary(a?: SequenceAction | null): string {
             return "Unsubscribe the contact";
         case "run_automation":
             return a.automation_id ? "Launch an automation" : "Pick an automation…";
-        case "http_request":
-            return a.http_url ? "Send an HTTP request" : "Set a URL…";
         case "fire_event":
             return a.event_name ? `Fire "${a.event_name}"` : "Name the event…";
         default:
@@ -626,7 +623,10 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
     const [dragging, setDragging] = React.useState(false);
     // Editing the sequence flow (add a step, drag a node, draw a branch) needs
     // the manage-sequences permission. View-only members can pan/zoom/inspect.
-    const canEditFlow = usePermission("MANAGE_SEQUENCES");
+    // Step CRUD is gated server-side on MANAGE_CAMPAIGNS (the JWT/org path), so the
+    // canvas editing affordances must check the same bit — not MANAGE_SEQUENCES,
+    // which only gates the API-key WRITE_CAMPAIGNS path and can diverge for custom roles.
+    const canEditFlow = usePermission("MANAGE_CAMPAIGNS");
     const ifMetaRef = React.useRef<Record<string, IfMeta>>({});
 
     const seqById = React.useMemo(() => {
@@ -1359,7 +1359,7 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                 }}
                 onNodeDragStart={() => {
                     if (!canEditFlow) {
-                        showPermissionDenied("MANAGE_SEQUENCES");
+                        showPermissionDenied("MANAGE_CAMPAIGNS");
                         return;
                     }
                     setDragging(true);
@@ -1367,7 +1367,7 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                 onNodeDragStop={() => setDragging(false)}
                 onConnect={(c) => {
                     if (!canEditFlow) {
-                        showPermissionDenied("MANAGE_SEQUENCES");
+                        showPermissionDenied("MANAGE_CAMPAIGNS");
                         return;
                     }
                     onConnect(c);
@@ -1391,7 +1391,7 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                     const onPane = (event.target as Element | null)?.classList?.contains("react-flow__pane");
                     if (!fromId || !onPane) return;
                     if (!canEditFlow) {
-                        showPermissionDenied("MANAGE_SEQUENCES");
+                        showPermissionDenied("MANAGE_CAMPAIGNS");
                         return;
                     }
                     const pt =
@@ -1458,12 +1458,12 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                         <div className="flex flex-wrap items-center gap-1.5">
                             <AddNodeMenu
                                 onAddEmail={
-                                    canEditFlow ? addStep : () => showPermissionDenied("MANAGE_SEQUENCES")
+                                    canEditFlow ? addStep : () => showPermissionDenied("MANAGE_CAMPAIGNS")
                                 }
                                 onAddAction={
                                     canEditFlow
                                         ? addAction
-                                        : () => showPermissionDenied("MANAGE_SEQUENCES")
+                                        : () => showPermissionDenied("MANAGE_CAMPAIGNS")
                                 }
                                 disabled={adding || atMax}
                                 busy={adding}
@@ -1964,7 +1964,6 @@ const ADD_ACTION_OPTIONS: { type: SequenceActionType; label: string }[] = [
     { type: "move_deal_stage", label: "Move deal stage" },
     { type: "unsubscribe", label: "Unsubscribe" },
     { type: "run_automation", label: "Run automation" },
-    { type: "http_request", label: "HTTP request" },
     { type: "fire_event", label: "Fire event" },
 ];
 
@@ -2171,9 +2170,6 @@ function defaultActionFor(type: SequenceActionType): SequenceAction {
     }
     if (type === "run_automation") {
         return { type, automation_values: [] };
-    }
-    if (type === "http_request") {
-        return { type, http_method: "POST", http_headers: {} };
     }
     if (type === "fire_event") {
         return { type, event_fields: [] };
@@ -2481,7 +2477,6 @@ function ActionEditor({
             )}
 
             {action.type === "run_automation" && <RunAutomationFields action={action} setAction={setAction} />}
-            {action.type === "http_request" && <HttpRequestStepFields action={action} setAction={setAction} />}
             {action.type === "fire_event" && <FireEventStepFields action={action} setAction={setAction} />}
 
             <div className="flex items-center justify-end pt-1">
@@ -2602,113 +2597,6 @@ function RunAutomationFields({
                     </div>
                 )}
             </div>
-        </div>
-    );
-}
-
-// HttpRequestStepFields — a configurable outbound call when the lead reaches this
-// step. URL/headers/body template against the contact and are SSRF-guarded server
-// side. Best-effort: a failure is logged and the campaign continues.
-function HttpRequestStepFields({
-    action,
-    setAction,
-}: {
-    action: SequenceAction;
-    setAction: React.Dispatch<React.SetStateAction<SequenceAction>>;
-}) {
-    const headers = action.http_headers ?? {};
-    const headerRows = Object.entries(headers);
-    const setHeaders = (next: Record<string, string>) => setAction((a) => ({ ...a, http_headers: next }));
-    const methodOpts: SelectOption[] = ["GET", "POST", "PUT", "PATCH", "DELETE"].map((m) => ({ value: m, label: m }));
-
-    return (
-        <div className="space-y-3">
-            <div className="flex items-end gap-2">
-                <div className="shrink-0">
-                    <Label>Method</Label>
-                    <SelectMenu
-                        value={action.http_method || "POST"}
-                        onChange={(v) => setAction((a) => ({ ...a, http_method: v }))}
-                        options={methodOpts}
-                        minWidth={110}
-                    />
-                </div>
-                <div className="flex-1 min-w-0">
-                    <Label>URL</Label>
-                    <TextInput
-                        value={action.http_url ?? ""}
-                        onChange={(v) => setAction((a) => ({ ...a, http_url: v }))}
-                        placeholder="https://api.yourapp.com/hook"
-                        className="w-full font-mono"
-                    />
-                </div>
-            </div>
-            <div>
-                <Label>Body</Label>
-                <textarea
-                    value={action.http_body ?? ""}
-                    onChange={(e) => setAction((a) => ({ ...a, http_body: e.target.value }))}
-                    rows={3}
-                    placeholder={'{"email": "{{.Email}}", "company": "{{.Company}}"}'}
-                    className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[12px] font-mono text-slate-900 placeholder:text-slate-400 outline-none resize-y focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
-                />
-            </div>
-            <div>
-                <div className="mb-1.5 flex items-center justify-between gap-2">
-                    <Label className="mb-0">Headers (optional)</Label>
-                    <button
-                        type="button"
-                        onClick={() => setHeaders({ ...headers, "": "" })}
-                        className="inline-flex h-6 items-center gap-1 rounded-md border border-slate-200 bg-white px-2 text-[11.5px] font-medium text-slate-600 transition-colors hover:border-slate-300 hover:text-slate-900"
-                    >
-                        <PlusIcon className="w-3 h-3" /> Add header
-                    </button>
-                </div>
-                {headerRows.length === 0 ? (
-                    <p className="text-[11px] text-slate-400">Content-Type defaults to application/json when a body is set.</p>
-                ) : (
-                    <div className="space-y-1.5">
-                        {headerRows.map(([k, v], i) => (
-                            <div key={i} className="flex items-center gap-1.5">
-                                <TextInput
-                                    value={k}
-                                    onChange={(nk) => {
-                                        const next: Record<string, string> = {};
-                                        headerRows.forEach(([hk, hv], idx) => {
-                                            next[idx === i ? nk : hk] = hv;
-                                        });
-                                        setHeaders(next);
-                                    }}
-                                    placeholder="Authorization"
-                                    className="w-36 shrink-0 font-mono"
-                                />
-                                <span className="text-slate-300">:</span>
-                                <TextInput
-                                    value={v}
-                                    onChange={(nv) => setHeaders({ ...headers, [k]: nv })}
-                                    placeholder="Bearer …"
-                                    className="flex-1 min-w-0 font-mono"
-                                />
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        const next = { ...headers };
-                                        delete next[k];
-                                        setHeaders(next);
-                                    }}
-                                    title="Remove"
-                                    className="inline-flex size-6 shrink-0 items-center justify-center rounded text-slate-300 transition-colors hover:bg-rose-50 hover:text-rose-600"
-                                >
-                                    <XIcon className="w-3.5 h-3.5" />
-                                </button>
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </div>
-            <p className="text-[11px] text-slate-400 leading-relaxed">
-                URL, headers, and body are templated per contact ({"{{.Email}}"}, {"{{.FirstName}}"}). Only public https URLs are allowed.
-            </p>
         </div>
     );
 }

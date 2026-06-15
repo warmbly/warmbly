@@ -248,19 +248,19 @@ func nextChainTarget(node *models.Sequence) (uuid.UUID, bool) {
 func (s *service) executeInstantActionNode(ctx context.Context, campaign *models.Campaign, contact *models.Contact, cfg *models.ActionConfig, eventKind string) {
 	switch cfg.Type {
 	case "add_tag":
-		if cfg.CategoryID == nil {
+		if cfg.CategoryID == nil || campaign.OrganizationID == nil {
 			return
 		}
-		if _, xerr := s.contactRepo.Update(ctx, campaign.UserID, contact.ID.String(), &models.UpdateContact{
+		if _, xerr := s.contactRepo.Update(ctx, campaign.UserID, contact.ID.String(), *campaign.OrganizationID, &models.UpdateContact{
 			AddCategories: []string{cfg.CategoryID.String()},
 		}); xerr != nil {
 			s.logActionErr(campaign, contact, cfg.Type, eventKind, xerr)
 		}
 	case "remove_tag":
-		if cfg.CategoryID == nil {
+		if cfg.CategoryID == nil || campaign.OrganizationID == nil {
 			return
 		}
-		if _, xerr := s.contactRepo.Update(ctx, campaign.UserID, contact.ID.String(), &models.UpdateContact{
+		if _, xerr := s.contactRepo.Update(ctx, campaign.UserID, contact.ID.String(), *campaign.OrganizationID, &models.UpdateContact{
 			RemoveCategories: []string{cfg.CategoryID.String()},
 		}); xerr != nil {
 			s.logActionErr(campaign, contact, cfg.Type, eventKind, xerr)
@@ -294,17 +294,21 @@ func (s *service) executeInstantActionNode(ctx context.Context, campaign *models
 		if title == "" {
 			title = "Follow up: " + contactDisplayName(contact)
 		}
+		// Default to the campaign owner ONLY when neither a user nor a team is
+		// chosen, and forward the team id — mirroring the scheduler executor so a
+		// team-assigned task on an instant reply branch keeps its team.
 		assignee := cfg.TaskAssignedTo
-		if assignee == nil {
+		if assignee == nil && cfg.TaskAssignedTeamID == nil {
 			assignee = &owner
 		}
 		cid := contact.ID
 		data := &models.CreateCRMTask{
-			ContactID:  &cid,
-			Title:      title,
-			Type:       cfg.TaskType,
-			Priority:   cfg.TaskPriority,
-			AssignedTo: assignee,
+			ContactID:      &cid,
+			Title:          title,
+			Type:           cfg.TaskType,
+			Priority:       cfg.TaskPriority,
+			AssignedTo:     assignee,
+			AssignedTeamID: cfg.TaskAssignedTeamID,
 		}
 		if cfg.TaskDueOffsetDays != nil {
 			due := time.Now().UTC().AddDate(0, 0, *cfg.TaskDueOffsetDays)
@@ -394,13 +398,6 @@ func (s *service) executeInstantActionNode(ctx context.Context, campaign *models
 			return
 		}
 		s.FireCampaignEvent(ctx, *campaign.OrganizationID, campaign.ID.String(), cfg.EventName, cfg.EventFields, contact)
-	case "http_request":
-		if campaign.OrganizationID == nil {
-			return
-		}
-		if xerr := s.RunCampaignHTTPRequest(ctx, *campaign.OrganizationID, cfg, contact); xerr != nil {
-			s.logActionErr(campaign, contact, cfg.Type, eventKind, xerr)
-		}
 	default:
 		// "wait" / "end" are handled by the chain walker (they stop the walk);
 		// unknown types are ignored.

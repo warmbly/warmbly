@@ -33,10 +33,6 @@ func validateNativeActionConfig(action models.IntegrationAction, raw json.RawMes
 		if len(parseUUIDList(cfg.LabelIDs)) == 0 {
 			return fmt.Errorf("a label action needs at least one label")
 		}
-	case models.IntegrationActionHTTPRequest:
-		if strings.TrimSpace(cfg.HTTPURL) == "" {
-			return fmt.Errorf("an HTTP request needs a URL")
-		}
 	case models.IntegrationActionSetVariables:
 		hasOne := false
 		for _, v := range cfg.SetVars {
@@ -110,15 +106,6 @@ type nativeActionConfig struct {
 	AutomationID string `json:"automation_id"`
 	// label_email: the unibox conversation labels to apply (category-registry ids).
 	LabelIDs []string `json:"label_ids"`
-	// http_request: a configurable outbound call. Method/URL/headers/query/body
-	// are all Go-templated against the event + prior step output. The response is
-	// written back into the event data under HTTPOutputKey (default "response").
-	HTTPMethod    string            `json:"http_method"`
-	HTTPURL       string            `json:"http_url"`
-	HTTPHeaders   map[string]string `json:"http_headers"`
-	HTTPQuery     map[string]string `json:"http_query"`
-	HTTPBody      string            `json:"http_body"`
-	HTTPOutputKey string            `json:"http_output_key"`
 	// set_variables: named values computed from templates and written back into
 	// the event data for later nodes to reuse.
 	SetVars []setVar `json:"set_vars"`
@@ -161,15 +148,6 @@ func (s *service) execNativeAction(ctx context.Context, a models.Automation, n m
 			return fmt.Errorf("an automation cannot run itself")
 		}
 		return s.RunAutomationByID(ctx, a.OrganizationID, targetID, data)
-	}
-
-	// http_request makes a configurable outbound call and writes the response
-	// back into `data`. It needs no contact, so handle it before resolution.
-	if n.Action == models.IntegrationActionHTTPRequest {
-		if !s.allowOutbound(ctx, a.OrganizationID) {
-			return fmt.Errorf("daily outbound request limit reached (%d/day); contact support to raise it", outboundDailyQuota)
-		}
-		return runHTTPRequest(ctx, a.OrganizationID, a.ID, n, cfg, data)
 	}
 
 	// set_variables computes named values from templates and writes them back

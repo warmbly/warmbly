@@ -17,6 +17,12 @@ const maxBulkOperationSize = 1000
 func (h *Handler) AddContacts(c *gin.Context) {
 	userIDStr := middleware.GetUserID(c)
 
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.Handle(c, errx.New(errx.BadRequest, "no organization selected"))
+		return
+	}
+
 	var data []models.AddContact
 
 	if err := c.ShouldBindJSON(&data); err != nil {
@@ -33,7 +39,7 @@ func (h *Handler) AddContacts(c *gin.Context) {
 		return
 	}
 
-	resp, err := h.ContactService.Add(c.Request.Context(), userIDStr, data)
+	resp, err := h.ContactService.Add(c.Request.Context(), userIDStr, *orgID, data)
 	if err != nil {
 		errx.Handle(c, err)
 		return
@@ -75,6 +81,12 @@ func (h *Handler) SearchContacts(c *gin.Context) {
 func (h *Handler) UpdateContactBulk(c *gin.Context) {
 	userIDStr := middleware.GetUserID(c)
 
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.Handle(c, errx.New(errx.BadRequest, "no organization selected"))
+		return
+	}
+
 	var data models.BulkEditContactsData
 
 	if err := c.ShouldBindJSON(&data); err != nil {
@@ -91,7 +103,7 @@ func (h *Handler) UpdateContactBulk(c *gin.Context) {
 		return
 	}
 
-	resp, err := h.ContactService.BulkUpdate(c.Request.Context(), userIDStr, &data)
+	resp, err := h.ContactService.BulkUpdate(c.Request.Context(), userIDStr, *orgID, &data)
 	if err != nil {
 		errx.Handle(c, err)
 		return
@@ -106,6 +118,12 @@ func (h *Handler) UpdateContactBulk(c *gin.Context) {
 func (h *Handler) UpdateContact(c *gin.Context) {
 	userIDStr := middleware.GetUserID(c)
 
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.Handle(c, errx.New(errx.BadRequest, "no organization selected"))
+		return
+	}
+
 	id := c.Param("id")
 
 	var data models.UpdateContact
@@ -115,7 +133,7 @@ func (h *Handler) UpdateContact(c *gin.Context) {
 		return
 	}
 
-	resp, err := h.ContactService.Update(c.Request.Context(), userIDStr, id, &data)
+	resp, err := h.ContactService.Update(c.Request.Context(), userIDStr, id, *orgID, &data)
 	if err != nil {
 		errx.Handle(c, err)
 		return
@@ -131,6 +149,12 @@ func (h *Handler) UpdateContact(c *gin.Context) {
 
 func (h *Handler) DeleteContactBulk(c *gin.Context) {
 	userIDStr := middleware.GetUserID(c)
+
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.Handle(c, errx.New(errx.BadRequest, "no organization selected"))
+		return
+	}
 
 	var data []string
 
@@ -148,7 +172,7 @@ func (h *Handler) DeleteContactBulk(c *gin.Context) {
 		return
 	}
 
-	if err := h.ContactService.BulkDelete(c.Request.Context(), userIDStr, data); err != nil {
+	if err := h.ContactService.BulkDelete(c.Request.Context(), userIDStr, *orgID, data); err != nil {
 		errx.Handle(c, err)
 		return
 	}
@@ -162,9 +186,15 @@ func (h *Handler) DeleteContactBulk(c *gin.Context) {
 func (h *Handler) DeleteContact(c *gin.Context) {
 	userIDStr := middleware.GetUserID(c)
 
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.Handle(c, errx.New(errx.BadRequest, "no organization selected"))
+		return
+	}
+
 	id := c.Param("id")
 
-	if err := h.ContactService.Delete(c.Request.Context(), userIDStr, id); err != nil {
+	if err := h.ContactService.Delete(c.Request.Context(), userIDStr, *orgID, id); err != nil {
 		errx.Handle(c, err)
 		return
 	}

@@ -1,15 +1,8 @@
-// Connection-management drawer — this is HOW a user actually uses an
-// integration after connecting. It surfaces lifecycle + health, the connected
-// account, granted scopes, recent activity (sync runs), and the automation
-// rules wired to this connection:
-//
-//   "When a prospect replies (positive, ≥60% confidence) → notify #sales
-//    with: 🔥 {{contact_email}} is interested — {{subject}}"
-//
-// Each rule is fully customizable: trigger event, filters (reply intent + min
-// confidence), destination (Slack channel / Sheet ID / webhook), and a custom
-// message template with {{placeholder}} substitution. Reauthorize / disconnect
-// live here too.
+// Connection-management drawer: how a user works with an integration after
+// connecting. It surfaces lifecycle + health, the connected account, granted
+// scopes, field mapping, booking link, webhook-delivery testing, and recent
+// activity (sync runs). Reauthorize / disconnect live here too. Automations
+// themselves are built in the visual flow builder, not in this drawer.
 
 "use client";
 
@@ -42,6 +35,8 @@ import {
 } from "@/lib/api/models/app/integrations/Integration";
 import { useFieldMappings, useUpdateConnectionConfig } from "@/lib/api/hooks/app/integrations/useFieldMappings";
 import { useRevealWebhookSecret, useTestConnection } from "@/lib/api/hooks/app/integrations/useConnectionWebhookTools";
+import { useAutomations } from "@/lib/api/hooks/app/automations/useAutomations";
+import type { IntegrationAction } from "@/lib/api/models/app/integrations/Integration";
 import { cn } from "@/lib/utils";
 
 import { Drawer, SectionLabel } from "./ConnectDrawer";
@@ -52,6 +47,10 @@ import StatusPill, { HealthDot } from "./StatusPill";
 // tools additionally expose an HMAC signing secret for verification.
 const WEBHOOK_TOOL_PROVIDERS = ["slack", "discord", "zapier", "make", "n8n"];
 const SIGNING_PROVIDERS = ["zapier", "make", "n8n"];
+
+// Action nodes that "Send test event" can actually fire (notify + generic
+// webhook). Native + CRM-upsert actions are deliberately excluded.
+const NOTIFY_WEBHOOK_ACTIONS: IntegrationAction[] = ["slack.notify", "discord.notify", "webhook.ping"];
 
 export default function ConnectionDetail({
     connection,
@@ -71,8 +70,23 @@ export default function ConnectionDetail({
     const confirm = useConfirm();
 
     const conn = detail.data?.connection ?? connection;
-    const events = detail.data?.events ?? [];
     const runs = detail.data?.runs ?? [];
+
+    // Only webhook-tool connections expose the "Send test event" control, so only
+    // those need the automations list (avoid an extra request per drawer open).
+    const isWebhookTool = WEBHOOK_TOOL_PROVIDERS.includes(conn.provider);
+    const automations = useAutomations({ enabled: isWebhookTool });
+    const hasAutomations = (automations.data?.automations ?? []).some(
+        (a) =>
+            a.enabled &&
+            a.graph?.nodes?.some(
+                (n) =>
+                    n.type === "action" &&
+                    n.connection_id === conn.id &&
+                    !!n.action &&
+                    NOTIFY_WEBHOOK_ACTIONS.includes(n.action),
+            ),
+    );
 
     const capability = entry?.capability;
     const crmObject = capability?.objects?.[0];
@@ -178,13 +192,13 @@ export default function ConnectionDetail({
                 )}
 
                 {/* Webhook delivery — test wiring + (automation tools) signature */}
-                {WEBHOOK_TOOL_PROVIDERS.includes(conn.provider) && (
+                {isWebhookTool && (
                     <div className="px-5 py-4 border-b border-slate-200 space-y-3">
                         <SectionLabel>Webhook delivery</SectionLabel>
                         <WebhookToolsBlock
                             connectionId={conn.id}
                             provider={conn.provider}
-                            hasAutomations={events.length > 0}
+                            hasAutomations={hasAutomations}
                         />
                     </div>
                 )}
@@ -363,7 +377,7 @@ function WebhookToolsBlock({
             <p className="text-[11.5px] text-slate-400 leading-relaxed">
                 {hasAutomations
                     ? "Send a sample event to confirm your automation is wired correctly."
-                    : "Add an automation above first, then send a test event to confirm it's wired."}
+                    : "Build an automation that uses this integration first, then send a test event to confirm it's wired."}
             </p>
             <button
                 type="button"

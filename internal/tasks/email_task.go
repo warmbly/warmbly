@@ -671,14 +671,20 @@ func (s *tasksService) createWarmupTask(ctx context.Context, accountID uuid.UUID
 	return nil
 }
 
-// publishWarmupEmailSentEvent publishes warmup email sent event
+// publishWarmupEmailSentEvent publishes warmup email sent event (realtime) and
+// an opt-in firehose webhook (warmup.email_sent).
 func (s *tasksService) publishWarmupEmailSentEvent(ctx context.Context, task *Task, account *Email, partner *Email, isReply bool) {
-	if s.eventsPublisher == nil {
-		return
+	if s.eventsPublisher != nil {
+		if err := s.eventsPublisher.PublishWarmupEmailSent(ctx, task, account, partner, isReply); err != nil {
+			log.Warn().Err(err).Str("task_id", task.ID.String()).Msg("Failed to publish warmup email sent event")
+		}
 	}
 
-	if err := s.eventsPublisher.PublishWarmupEmailSent(ctx, task, account, partner, isReply); err != nil {
-		log.Warn().Err(err).Str("task_id", task.ID.String()).Msg("Failed to publish warmup email sent event")
+	if s.advanced != nil && account != nil && account.OrganizationID != nil {
+		s.advanced.EmitCampaignEvent(ctx, *account.OrganizationID, models.WebhookEventWarmupEmailSent, map[string]any{
+			"email_account_id": account.ID.String(),
+			"is_reply":         isReply,
+		})
 	}
 }
 

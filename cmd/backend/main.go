@@ -551,13 +551,24 @@ func main() {
 		integrationRepository := repository.NewIntegrationRepository(primaryDB.Pool)
 		// OAuth 2.1 authorization server (third-party app registration + token flow).
 		oauthService = oauth.NewService(repository.NewOAuthRepository(primaryDB.Pool))
+		// Enforce the per-app webhook-domain allowlist on app-scoped endpoints (at
+		// write time, and re-checked at delivery time via the worker below).
+		webhookService.WireAppDomainResolver(oauthService.AllowedWebhookDomains)
+		// Materialize per-org webhook endpoints when an app is authorized/revoked or
+		// its webhook config changes (the app-level subscription model).
+		oauthService.WireWebhookSync(webhookRepository)
 		// integrationServiceForHandler is constructed after cipherService below —
 		// OAuth/secret sealing depends on the envelope-encryption service.
 		contactRepoForHandler = contactRepostory
 
 		// Drain the webhook delivery queue in-process. Multiple replicas are
 		// safe because ClaimDueDeliveries uses SELECT … FOR UPDATE SKIP LOCKED.
-		webhookWorker := webhook.NewDeliveryWorker(webhookRepository, webhook.DeliveryWorkerOptions{})
+		// Cache enables the per-endpoint delivery rate limit; AppDomains re-checks
+		// app-scoped endpoint hosts at delivery time.
+		webhookWorker := webhook.NewDeliveryWorker(webhookRepository, webhook.DeliveryWorkerOptions{
+			Cache:      cache,
+			AppDomains: oauthService.AllowedWebhookDomains,
+		})
 		go webhookWorker.Run(ctx)
 		campaignProgressRepository := repository.NewCampaignProgressRepository(primaryDB.Pool)
 		campaignLogRepository := repository.NewCampaignLogRepository(primaryDB)
@@ -600,6 +611,9 @@ func main() {
 		// Organization-wide audit trail (who did what, when, from where).
 		auditRepository := repository.NewAuditRepository(primaryDB.Pool)
 		auditService = audit.NewService(auditRepository, streamingPublisher)
+		// Bridge audited mutations to typed customer webhooks (campaign/contact/
+		// template/CRM/team/role/settings/subscription .created/.updated/.deleted).
+		auditService.WireWebhookDispatcher(webhookService)
 
 		authService = auth.NewService(
 			authRepostory,
@@ -894,8 +908,6 @@ func main() {
 			Orgs:     organizationRepository,
 		})
 		integrationServiceForHandler.SetPublisher(streamingPublisher)
-		// Per-org daily outbound-action quota (anti-abuse on the HTTP-request node).
-		integrationServiceForHandler.SetOutboundQuotaCache(cache)
 		// In-app notifications: API reads/writes happen here; also wire the gate
 		// onto the backend's advanced service (deliverability webhooks can ingest
 		// here too).

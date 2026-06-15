@@ -199,7 +199,7 @@ export default function MembersSettingsPage() {
                                                 </div>
                                             </td>
                                             <td className="px-3">
-                                                {access.canManage && !isOwner ? (
+                                                {access.canManage && !isOwner && !isSelf ? (
                                                     <RoleMultiSelect
                                                         roles={customRoles.data ?? []}
                                                         value={(m.roles ?? []).map((r) => r.id)}

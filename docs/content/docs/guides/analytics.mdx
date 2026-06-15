@@ -93,7 +93,9 @@ Use this to find the one mailbox dragging down a campaign's bounce rate, rather 
 
 ## A/B analysis
 
-A/B testing lets you run more than one version of a message and let the data pick the winner. You create variants on a campaign (different subject lines, bodies, or both), and Warmbly splits traffic across the active variants. Variants can be scoped to a single sequence step or to the whole campaign.
+A/B testing lets you run more than one version of a message and let the data pick the winner. You create variants on a campaign (different subject lines, bodies, or both), and Warmbly splits traffic across the active arms. Variants can be scoped to a single sequence step or to the whole campaign.
+
+For a step-scoped test, the step's own email is the **Original** (the control arm), and each variant is a sibling alongside it. The Original is a first-class arm with its own share of traffic, so you can run, for example, 70% Original against 30% of a new subject line. You set the whole split in one place: drag a divider on the traffic-split bar or type an exact percent per arm, and the shares always add up to 100%.
 
 A/B testing is on by default in a workspace's outreach settings, but a campaign only runs an experiment when it has at least two active variants configured.
 
@@ -102,7 +104,7 @@ A/B testing is on by default in a workspace's outreach settings, but a campaign 
 - **Step-scoped variants** are assigned deterministically per contact and step. The same contact always sees the same variant for that step, so the test stays consistent across retries.
 - **Campaign-level variants** assign a contact to one variant on first send (a weighted random draw) and keep them on it for the rest of the campaign.
 
-Each variant carries a `weight` that controls how much traffic it gets. If you do not set a weight, it defaults to an even split.
+Each arm carries a `weight` that controls how much traffic it gets, including the Original. The percentages you see are these weights normalized to 100%, so a fresh test with one variant starts at an even 50/50 against the Original. Pause a variant to drop it out of the split without deleting its content.
 
 ### Variant stats
 

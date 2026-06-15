@@ -981,7 +981,7 @@ func (r *advancedOutreachRepository) GetABVariantStats(ctx context.Context, camp
 			COUNT(a.bounced_at) AS bounced
 		FROM campaign_ab_variants v
 		LEFT JOIN campaign_ab_assignments a ON a.variant_id = v.id AND a.campaign_id = v.campaign_id
-		WHERE v.campaign_id = $1
+		WHERE v.campaign_id = $1 AND v.is_control = false
 		GROUP BY v.id, v.name
 		ORDER BY v.created_at
 	`

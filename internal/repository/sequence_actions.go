@@ -14,10 +14,14 @@ func validateActionConfig(a *models.ActionConfig) *errx.Error {
 		return nil
 	}
 	switch a.Type {
-	case "wait", "add_tag", "remove_tag", "unsubscribe", "notify", "create_task", "create_deal", "move_deal_stage", "run_automation", "end":
-		// Type must be known. Sub-config (wait minutes, tag) is filled in the
-		// editor; an unconfigured node is a harmless no-op at send time, so we
-		// don't block creating a draft node here.
+	case "wait", "add_tag", "remove_tag", "label_email", "unsubscribe",
+		"notify", "create_task", "create_deal", "move_deal_stage",
+		"run_automation", "fire_event", "end":
+		// Type must be known. Sub-config (wait minutes, tag, event name, HTTP
+		// request) is filled in the editor; an unconfigured node is a harmless
+		// no-op at send time, so we don't block creating a draft node here. Keep
+		// this list in sync with models.ActionConfig.Type and the task executor's
+		// switch (internal/tasks/campaign_task.go, advanced/reply_actions.go).
 		return nil
 	default:
 		return errx.ErrSequenceAction

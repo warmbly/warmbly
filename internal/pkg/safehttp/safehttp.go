@@ -34,10 +34,34 @@ func allowUnsafe() bool {
 	return strings.EqualFold(os.Getenv("WARMBLY_ALLOW_UNSAFE_WEBHOOK_URLS"), "true")
 }
 
+// blockedHostnames are denied before DNS resolution: cloud-metadata service
+// names that resolve to link-local IPs (covered by the IP check too, but denying
+// the name closes a split-horizon-DNS gap) and bare localhost forms.
+var blockedHostnames = map[string]bool{
+	"localhost":                  true,
+	"metadata.google.internal":   true,
+	"metadata.goog":              true,
+	"metadata.amazonaws.com":     true,
+	"instance-data":              true,
+	"instance-data.ec2.internal": true,
+}
+
+// isBlockedHostname reports whether a hostname must be refused pre-resolution.
+func isBlockedHostname(host string) bool {
+	host = strings.Trim(strings.ToLower(host), "[].")
+	if host == "" {
+		return true
+	}
+	if blockedHostnames[host] || strings.HasSuffix(host, ".localhost") {
+		return true
+	}
+	return false
+}
+
 // IsBlockedIP reports whether an IP must never be dialed for a user-supplied URL:
 // loopback, RFC1918 private, IPv6 ULA, link-local (includes the 169.254.169.254
-// cloud metadata endpoint), multicast, unspecified, carrier-grade NAT, and the
-// 0.0.0.0/8 "this network" range.
+// cloud metadata endpoint), multicast, unspecified, carrier-grade NAT, the
+// 0.0.0.0/8 "this network" range, plus documentation/benchmark/reserved ranges.
 func IsBlockedIP(ip net.IP) bool {
 	if ip == nil {
 		return true
@@ -50,15 +74,38 @@ func IsBlockedIP(ip net.IP) bool {
 		return true
 	}
 	if v4 := ip.To4(); v4 != nil {
-		// 0.0.0.0/8 "this network" and 100.64.0.0/10 carrier-grade NAT.
-		if v4[0] == 0 {
+		switch {
+		case v4[0] == 0: // 0.0.0.0/8 "this network"
 			return true
-		}
-		if v4[0] == 100 && v4[1] >= 64 && v4[1] <= 127 {
+		case v4[0] == 100 && v4[1] >= 64 && v4[1] <= 127: // 100.64.0.0/10 CGNAT
+			return true
+		case v4[0] == 192 && v4[1] == 0 && v4[2] == 0: // 192.0.0.0/24 IETF protocol assignments
+			return true
+		case v4[0] == 192 && v4[1] == 0 && v4[2] == 2: // 192.0.2.0/24 TEST-NET-1
+			return true
+		case v4[0] == 198 && v4[1] == 51 && v4[2] == 100: // 198.51.100.0/24 TEST-NET-2
+			return true
+		case v4[0] == 203 && v4[1] == 0 && v4[2] == 113: // 203.0.113.0/24 TEST-NET-3
+			return true
+		case v4[0] == 192 && v4[1] == 88 && v4[2] == 99: // 192.88.99.0/24 6to4 relay anycast
+			return true
+		case v4[0] == 198 && (v4[1] == 18 || v4[1] == 19): // 198.18.0.0/15 benchmarking
+			return true
+		case v4[0] >= 240: // 240.0.0.0/4 reserved + 255.255.255.255 broadcast
 			return true
 		}
 	}
 	return false
+}
+
+// portAllowed restricts the dial to web ports. Only 443 and 8443 are reachable
+// for user-supplied URLs (so a host that passes the IP check still cannot reach
+// 22/3306/6379/9200/etc.); the dev flag opens any port for local testing.
+func portAllowed(port string) bool {
+	if allowUnsafe() {
+		return true
+	}
+	return port == "443" || port == "8443"
 }
 
 // safeDialContext resolves addr's host, blocks the connection if any resolved IP
@@ -72,6 +119,14 @@ func safeDialContext(dialer *net.Dialer) func(context.Context, string, string) (
 		host, port, err := net.SplitHostPort(addr)
 		if err != nil {
 			return nil, err
+		}
+		if isBlockedHostname(host) {
+			log.Warn().Str("host", host).Msg("safehttp: blocked request to a denied hostname")
+			return nil, ErrBlockedAddress
+		}
+		if !portAllowed(port) {
+			log.Warn().Str("host", host).Str("port", port).Msg("safehttp: blocked request to a non-web port")
+			return nil, ErrBlockedAddress
 		}
 		ips, err := net.DefaultResolver.LookupIP(ctx, "ip", host)
 		if err != nil {
@@ -101,6 +156,7 @@ func Client(timeout time.Duration) *http.Client {
 		MaxIdleConns:          100,
 		IdleConnTimeout:       90 * time.Second,
 		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout: 10 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
 	}
 	return &http.Client{

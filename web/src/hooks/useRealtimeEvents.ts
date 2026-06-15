@@ -214,6 +214,13 @@ export function useRealtimeEvents() {
         return
       }
 
+      // A webhook endpoint changed or a delivery was attempted/redelivered:
+      // refresh the endpoints list and the live delivery log.
+      if (includes('WEBHOOK')) {
+        invalidate([['webhooks', 'list'], ['webhooks', 'deliveries']])
+        return
+      }
+
       // Audit spine: every audited mutation broadcasts AUDIT_CREATED with its
       // action/entity_type/entity_id org-wide, so one branch keeps every
       // teammate's lists fresh for surfaces that have no dedicated event.
@@ -233,7 +240,7 @@ export function useRealtimeEvents() {
           step: [['campaigns']],
           email_account: [['emails', 'list'], ['analytics', 'accounts']],
           api_key: [['api-keys']],
-          webhook: [['integrations', 'connections']],
+          webhook: [['webhooks'], ['integrations', 'connections']],
           template: [['templates']],
           organization: [['organizations']],
           organization_member: [['organizations'], ['organizations', 'members']],

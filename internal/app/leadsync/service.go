@@ -305,7 +305,7 @@ func (s *service) SyncNow(ctx context.Context, triggeringUserID, orgID, sourceID
 		SubscribedDefault: &subscribed,
 	}
 
-	result, ierr := s.contacts.ImportCommit(ctx, triggeringUserID.String(), bytes.NewReader(csvBytes), "google-sheets-sync.csv", opts)
+	result, ierr := s.contacts.ImportCommit(ctx, triggeringUserID.String(), orgID, bytes.NewReader(csvBytes), "google-sheets-sync.csv", opts)
 	if ierr != nil {
 		s.recordResult(ctx, src.ID, models.LeadSyncStatusError, nil, nil, ierr.Message)
 		return nil, ierr

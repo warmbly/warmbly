@@ -164,22 +164,22 @@ func (h *Handler) GetUniboxIncoming(c *gin.Context) {
 }
 
 func (h *Handler) GetUniboxEmail(c *gin.Context) {
-	userID := middleware.GetUserID(c)
-	uid, err := uuid.Parse(userID)
-	if err != nil {
+	// Org-scoped: the inbox list is org-wide, so opening a message must be too.
+	// A non-owner member who sees a message in the org-scoped list would
+	// otherwise get "email not found" because the row is keyed to the mailbox
+	// owner's user_id, not theirs.
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
 		errx.Handle(c, errx.ErrUser)
 		return
 	}
 
 	// Check if organization can use unibox
 	if h.FeatureGateService != nil {
-		orgID := middleware.GetOrganizationID(c)
-		if orgID != nil {
-			canUse, _ := h.FeatureGateService.CanUseUnibox(c.Request.Context(), *orgID)
-			if !canUse {
-				errx.Handle(c, errx.New(errx.Forbidden, "Unibox requires an active trial or paid subscription"))
-				return
-			}
+		canUse, _ := h.FeatureGateService.CanUseUnibox(c.Request.Context(), *orgID)
+		if !canUse {
+			errx.Handle(c, errx.New(errx.Forbidden, "Unibox requires an active trial or paid subscription"))
+			return
 		}
 	}
 
@@ -192,7 +192,7 @@ func (h *Handler) GetUniboxEmail(c *gin.Context) {
 
 	resp, xerr := h.UniboxService.GetByID(
 		c.Request.Context(),
-		uid, mid,
+		*orgID, mid,
 	)
 	if xerr != nil {
 		errx.Handle(c, xerr)

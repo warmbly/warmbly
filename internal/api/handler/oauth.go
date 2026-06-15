@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/oauth"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/utils/paging"
 )
 
 // respondOAuthError renders an *oauth.OAuthError as its RFC 6749 JSON body, or a
@@ -150,6 +152,127 @@ func (h *Handler) RotateOAuthApplicationSecret(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"client_secret": secret})
+}
+
+// GetOAuthAppWebhookSecret reveals the app's webhook signing secret (used to
+// verify every app-webhook delivery, from any org).
+//
+// GET /oauth/applications/:id/webhook-secret
+func (h *Handler) GetOAuthAppWebhookSecret(c *gin.Context) {
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "no organization selected"))
+		return
+	}
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "invalid id"))
+		return
+	}
+	secret, rerr := h.OAuthService.WebhookSecret(c.Request.Context(), *orgID, id)
+	if rerr != nil {
+		errx.JSON(c, errx.New(errx.NotFound, rerr.Error()))
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"webhook_secret": secret})
+}
+
+// RotateOAuthAppWebhookSecret mints a new app webhook signing secret and
+// re-materializes every install with it.
+//
+// POST /oauth/applications/:id/webhook-secret/rotate
+func (h *Handler) RotateOAuthAppWebhookSecret(c *gin.Context) {
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "no organization selected"))
+		return
+	}
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "invalid id"))
+		return
+	}
+	secret, rerr := h.OAuthService.RotateWebhookSecret(c.Request.Context(), *orgID, id)
+	if rerr != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, rerr.Error()))
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"webhook_secret": secret})
+}
+
+// ListOAuthAppWebhookEndpoints returns the per-org endpoints the app has
+// materialized (every org that authorized it), with health.
+//
+// GET /oauth/applications/:id/webhook-endpoints
+func (h *Handler) ListOAuthAppWebhookEndpoints(c *gin.Context) {
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "no organization selected"))
+		return
+	}
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "invalid id"))
+		return
+	}
+	app, aerr := h.OAuthService.GetApplication(c.Request.Context(), *orgID, id)
+	if aerr != nil || app == nil {
+		errx.JSON(c, errx.New(errx.NotFound, "application not found"))
+		return
+	}
+	eps, lerr := h.WebhookService.ListAppEndpoints(c.Request.Context(), id)
+	if lerr != nil {
+		errx.JSON(c, errx.New(errx.Internal, "failed to list endpoints"))
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"endpoints": eps})
+}
+
+// ListOAuthAppWebhookDeliveries returns the app-developer delivery log: every
+// attempt across all of the app's endpoints, filterable + paginated.
+//
+// GET /oauth/applications/:id/webhook-deliveries
+func (h *Handler) ListOAuthAppWebhookDeliveries(c *gin.Context) {
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "no organization selected"))
+		return
+	}
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "invalid id"))
+		return
+	}
+	app, aerr := h.OAuthService.GetApplication(c.Request.Context(), *orgID, id)
+	if aerr != nil || app == nil {
+		errx.JSON(c, errx.New(errx.NotFound, "application not found"))
+		return
+	}
+	filter := models.WebhookDeliveryFilter{
+		Status:    c.Query("status"),
+		EventType: c.Query("event_type"),
+		Limit:     50,
+	}
+	if raw := c.Query("limit"); raw != "" {
+		n, perr := strconv.Atoi(raw)
+		if perr != nil || n <= 0 || n > 200 {
+			errx.JSON(c, errx.New(errx.BadRequest, "limit must be between 1 and 200"))
+			return
+		}
+		filter.Limit = n
+	}
+	offset, xerr := paging.DecodeOffsetCursor(c.Query("cursor"))
+	if xerr != nil {
+		errx.Handle(c, xerr)
+		return
+	}
+	filter.Offset = offset
+	result, lerr := h.WebhookService.ListAppDeliveries(c.Request.Context(), id, filter)
+	if lerr != nil {
+		errx.JSON(c, errx.New(errx.Internal, "failed to list deliveries"))
+		return
+	}
+	c.JSON(http.StatusOK, result)
 }
 
 // UploadOAuthAppLogo stores an app logo image (PNG/JPG, <=2MB) in public object

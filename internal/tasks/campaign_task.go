@@ -733,20 +733,20 @@ func (s *tasksService) executeActionNode(ctx context.Context, campaign *models.C
 	case "wait", "end", "":
 		return nil
 	case "add_tag":
-		if cfg.CategoryID == nil {
+		if cfg.CategoryID == nil || campaign.OrganizationID == nil {
 			return nil
 		}
-		if _, xerr := s.contactRepo.Update(ctx, campaign.UserID, contact.ID.String(), &models.UpdateContact{
+		if _, xerr := s.contactRepo.Update(ctx, campaign.UserID, contact.ID.String(), *campaign.OrganizationID, &models.UpdateContact{
 			AddCategories: []string{cfg.CategoryID.String()},
 		}); xerr != nil {
 			return xerr
 		}
 		return nil
 	case "remove_tag":
-		if cfg.CategoryID == nil {
+		if cfg.CategoryID == nil || campaign.OrganizationID == nil {
 			return nil
 		}
-		if _, xerr := s.contactRepo.Update(ctx, campaign.UserID, contact.ID.String(), &models.UpdateContact{
+		if _, xerr := s.contactRepo.Update(ctx, campaign.UserID, contact.ID.String(), *campaign.OrganizationID, &models.UpdateContact{
 			RemoveCategories: []string{cfg.CategoryID.String()},
 		}); xerr != nil {
 			return xerr
@@ -913,11 +913,6 @@ func (s *tasksService) executeActionNode(ctx context.Context, campaign *models.C
 		}
 		s.advanced.FireCampaignEvent(ctx, *campaign.OrganizationID, campaign.ID.String(), cfg.EventName, cfg.EventFields, contact)
 		return nil
-	case "http_request":
-		if s.advanced == nil || campaign.OrganizationID == nil {
-			return nil
-		}
-		return s.advanced.RunCampaignHTTPRequest(ctx, *campaign.OrganizationID, cfg, contact)
 	default:
 		return nil
 	}
@@ -981,6 +976,22 @@ func (s *tasksService) publishEmailSentEvent(
 
 	if err := s.eventsPublisher.PublishEmailSent(ctx, task, account, campaign, contact, sequence); err != nil {
 		log.Warn().Err(err).Str("campaign_id", campaign.ID.String()).Str("task_id", task.ID.String()).Msg("Failed to publish email sent event")
+	}
+
+	// Fan an opt-in firehose webhook for the send (campaign.email_sent).
+	if s.advanced != nil && campaign.OrganizationID != nil {
+		data := map[string]any{
+			"campaign_id": campaign.ID.String(),
+			"contact_id":  contact.ID.String(),
+			"sequence_id": sequence.ID.String(),
+		}
+		if contact.Email != "" {
+			data["contact_email"] = contact.Email
+		}
+		if account != nil {
+			data["from_email"] = account.Email
+		}
+		s.advanced.EmitCampaignEvent(ctx, *campaign.OrganizationID, models.WebhookEventCampaignEmailSent, data)
 	}
 }
 

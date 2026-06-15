@@ -9,7 +9,7 @@ export async function uploadUserAvatar(blob: Blob): Promise<{ avatar_url: string
     fd.append("file", blob, "avatar.jpg");
     return Request<{ avatar_url: string }>({
         method: "POST",
-        url: "/me/avatar",
+        url: "/auth/me/avatar",
         data: fd,
         authorization: true,
     });
@@ -18,7 +18,7 @@ export async function uploadUserAvatar(blob: Blob): Promise<{ avatar_url: string
 export async function deleteUserAvatar(): Promise<void> {
     return Request<void>({
         method: "DELETE",
-        url: "/me/avatar",
+        url: "/auth/me/avatar",
         authorization: true,
     });
 }

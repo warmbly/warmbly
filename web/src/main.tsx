@@ -28,6 +28,7 @@ import MeetingsPage from './app/app/crm/meetings/page';
 import TemplatesPage from './app/app/templates/page';
 import APIKeysPage from './app/app/api-keys/page';
 import OAuthAppsPage from './app/app/settings/oauth-apps/page';
+import WebhooksSettingsPage from './app/app/settings/webhooks/page';
 import OAuthLayout from './app/oauth/layout';
 import OAuthConsentPage from './app/oauth/authorize/page';
 import IntegrationsPage from './app/app/integrations/page';
@@ -326,6 +327,7 @@ const router = createBrowserRouter([
               { path: "limits", element: <LimitsSettingsPage /> },
               { path: "roles", element: <RolesSettingsPage /> },
               { path: "oauth-apps", element: <OAuthAppsPage /> },
+              { path: "webhooks", element: <WebhooksSettingsPage /> },
               { path: "danger", element: <DangerSettingsPage /> },
             ],
           },

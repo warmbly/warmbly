@@ -42,7 +42,7 @@ type Sequence struct {
 // ActionConfig is the persisted config for a non-email (action/wait) node. Type
 // is the switch the task executes on; the remaining fields are type-scoped.
 type ActionConfig struct {
-	Type string `json:"type"` // wait | add_tag | remove_tag | label_email | unsubscribe | notify | create_task | create_deal | move_deal_stage | run_automation | http_request | fire_event | end
+	Type string `json:"type"` // wait | add_tag | remove_tag | label_email | unsubscribe | notify | create_task | create_deal | move_deal_stage | run_automation | fire_event | end
 
 	// wait
 	WaitMinutes *int `json:"wait_minutes,omitempty"`
@@ -83,14 +83,6 @@ type ActionConfig struct {
 	// Values render against the contact ({{.FirstName}} / {{.Company}} etc.).
 	AutomationID     *uuid.UUID `json:"automation_id,omitempty"`
 	AutomationValues []ActionKV `json:"automation_values,omitempty"`
-
-	// http_request — a configurable outbound call when the contact reaches this
-	// step. URL/headers/body are templated against the contact and SSRF-guarded
-	// (https + no internal targets). Best-effort; failures are logged, not fatal.
-	HTTPMethod  string            `json:"http_method,omitempty"`
-	HTTPURL     string            `json:"http_url,omitempty"`
-	HTTPHeaders map[string]string `json:"http_headers,omitempty"`
-	HTTPBody    string            `json:"http_body,omitempty"`
 
 	// fire_event — publish a developer-defined custom event to the realtime
 	// gateway. Subscribers (an API key with REALTIME_SUBSCRIBE on the org

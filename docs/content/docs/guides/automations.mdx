@@ -132,15 +132,10 @@ These act directly on the event's contact and need no external connection. Pick 
 | Create a deal | Creates a CRM deal in a chosen pipeline and stage |
 | Move the deal stage | Moves the contact's most recent open deal in a pipeline |
 | Unsubscribe the contact | Unsubscribes the contact (works when the event carries a campaign) |
-| HTTP request / webhook | Calls any URL (method, headers, query, body all templated) and saves the response for later steps |
 | Set variables | Computes named values from templates and stores them for later steps to reuse |
 | Fire event | Publishes a custom event to the realtime gateway; your app receives it over the API websocket, with no public URL |
 
 **Move the deal stage** acts on the contact's most recent open deal in the chosen pipeline. If they have no open deal there, nothing happens. **Unsubscribe the contact** only applies when the triggering event carries a campaign, such as a reply, bounce, or unsubscribe. **Label the email** only works on a **Reply received** automation: it labels the conversation that reply belongs to (the same labels you set by hand in the unibox), so it needs an inbox thread to act on.
-
-**HTTP request / webhook** is the generic "call any API" step. Choose a method, a URL, optional headers and query, and a body, all of which can use the same `{{.variable}}` templating as everywhere else. The call is retried briefly on a network or 5xx failure. The response is written back into the flow under the output name you choose (default `response`), so a later step can read `{{.response.body.id}}` or `{{.response.status}}`, and a condition can branch on `{{.response.ok}}` to handle failures.
-
-For safety the URL must be HTTPS and resolve to a public address. Warmbly blocks requests to private, loopback, link-local, and cloud-metadata addresses, checked at the moment the request is made (so a hostname that resolves to an internal IP is caught too) and again on any redirect. This is why the action can't be pointed at internal services. Outbound requests are also subject to a generous per-workspace daily limit to keep the feature from being used for abuse.
 
 **Set variables** computes one or more named values from templates and writes them back into the flow, so you can normalize or combine fields once and reuse the result (`{{.name}}`) in several later steps. Each value is a Go template; it does not run arbitrary code.
 
@@ -148,7 +143,7 @@ For safety the URL must be HTTPS and resolve to a public address. Warmbly blocks
 
 ### Handling errors (the on-error branch)
 
-Every action node has an **on error** branch: the red dot on its right edge. Drag from it to the steps that should run when that action fails (a `5xx` from an HTTP request, a rejected Slack message, a CRM timeout, a webhook that won't connect).
+Every action node has an **on error** branch: the red dot on its right edge. Drag from it to the steps that should run when that action fails (a rejected Slack message, a CRM timeout, a webhook that won't connect).
 
 - When the action fails and an on-error branch is connected, the flow follows that branch and the run is **not** marked failed, the error is handled, like a try/catch. The normal path below the action is skipped.
 - When an action has no on-error branch, a failure is recorded in History, the run is marked errored, and the flow still continues down the normal path best-effort, so one failing step never blocks the rest.
@@ -178,7 +173,7 @@ Press **Test** to save the current canvas and then **dry-run** it against sample
 
 ### History
 
-Press **History** to see recent real runs of this automation. Each run shows whether it succeeded or errored, when it started, and the result of each action step: the error text when a step fails, and a short summary of what the step did when it succeeds (the channel or URL it used, an HTTP request's response status, or the variables a Set variables step computed). Run history updates live as the automation fires, so you can watch it work without refreshing.
+Press **History** to see recent real runs of this automation. Each run shows whether it succeeded or errored, when it started, and the result of each action step: the error text when a step fails, and a short summary of what the step did when it succeeds (the channel or URL it used, or the variables a Set variables step computed). Run history updates live as the automation fires, so you can watch it work without refreshing.
 
 <Callout type="info" title="Best-effort by design">
 Automation runs are best-effort and bounded against loops, so one failing step won't block the rest of the flow. The run is still recorded as errored in History so you can see what went wrong.

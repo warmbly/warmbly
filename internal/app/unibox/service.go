@@ -27,7 +27,7 @@ type UniboxService interface {
 	) (*models.MailSearchResult, *errx.Error)
 	GetByID(
 		ctx context.Context,
-		userID, emailID uuid.UUID,
+		orgID, id uuid.UUID,
 	) (*models.EmailMessage, *errx.Error)
 	GetByThread(
 		ctx context.Context,

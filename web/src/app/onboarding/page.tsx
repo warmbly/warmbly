@@ -12,6 +12,7 @@ import AuthButton from "@/components/auth/button";
 import useCompleteOnboarding from "@/lib/api/hooks/auth/useCompleteOnboarding";
 import useUpdateOrganization from "@/lib/api/hooks/app/organizations/useUpdateOrganization";
 import useCurrentOrganization from "@/lib/api/hooks/app/organizations/useCurrentOrganization";
+import createWebhook from "@/lib/api/client/app/webhooks/createWebhook";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 
@@ -30,6 +31,15 @@ const schema = z.object({
     referral_source: z.enum(["reddit", "x", "facebook", "google", "other"], {
         error: "Let us know how you found us",
     }),
+    // Optional final step: connect a webhook. Skippable, so an empty value is OK;
+    // when present it must look like a URL.
+    webhook_url: z
+        .string()
+        .trim()
+        .url("Enter a valid URL (https://…)")
+        .refine((u) => u.startsWith("https://"), "Webhook URLs must use https")
+        .optional()
+        .or(z.literal("")),
 });
 
 type OnboardingForm = z.infer<typeof schema>;
@@ -51,6 +61,11 @@ const STEPS = [
         fields: ["role", "team_size", "referral_source"] as const,
         title: "A few quick questions",
         subtitle: "This helps us tailor Warmbly to how you send.",
+    },
+    {
+        fields: ["webhook_url"] as const,
+        title: "Connect a webhook",
+        subtitle: "Optional. Get a realtime HTTP callback when things happen in your workspace. You can skip this and add it later.",
     },
 ];
 
@@ -182,6 +197,16 @@ export default function OnboardingPage() {
                 role: data.role,
                 team_size: data.team_size,
             });
+            // Optional webhook. Best effort: an empty URL skips it, and a hiccup
+            // here must never block completing onboarding.
+            const webhookUrl = (data.webhook_url ?? "").trim();
+            if (webhookUrl) {
+                try {
+                    await createWebhook({ url: webhookUrl, event_types: [], enabled: true });
+                } catch {
+                    /* keep going — onboarding completion matters more */
+                }
+            }
             queryClient.removeQueries({ queryKey: ["auth", "me"] });
             navigate("/app/emails");
         } catch (e) {
@@ -306,10 +331,43 @@ export default function OnboardingPage() {
                                 />
                             </div>
                         )}
+
+                        {step === 3 && (
+                            <div>
+                                <FieldLabel>Webhook URL</FieldLabel>
+                                <input
+                                    type="url"
+                                    placeholder="https://acme.com/webhooks/warmbly"
+                                    className={INPUT}
+                                    autoFocus
+                                    {...register("webhook_url")}
+                                />
+                                <FieldError message={errors.webhook_url?.message} />
+                                <p className="text-sm text-slate-400 mt-2 leading-relaxed">
+                                    We'll POST a signed callback here for every workspace event. Subscribe to specific events and
+                                    manage signing secrets later in Settings. You can skip this for now.
+                                </p>
+                            </div>
+                        )}
                     </motion.div>
                 </AnimatePresence>
 
                 <AuthButton loading={isLast && pending}>{isLast ? "Get started" : "Continue"}</AuthButton>
+
+                {isLast && (
+                    <button
+                        type="button"
+                        onClick={() => {
+                            if (pending) return;
+                            setValue("webhook_url", "");
+                            void finish();
+                        }}
+                        disabled={pending}
+                        className="w-full text-center text-sm font-medium text-slate-400 hover:text-slate-600 transition-colors disabled:opacity-50 disabled:pointer-events-none"
+                    >
+                        Skip for now
+                    </button>
+                )}
             </form>
         </div>
     );

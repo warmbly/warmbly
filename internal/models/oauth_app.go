@@ -38,20 +38,32 @@ const (
 
 // OAuthApplication is a registered third-party OAuth client.
 type OAuthApplication struct {
-	ID               uuid.UUID      `json:"id"`
-	OrganizationID   uuid.UUID      `json:"organization_id"`
-	CreatedBy        uuid.UUID      `json:"created_by"`
-	Name             string         `json:"name"`
-	Description      string         `json:"description"`
-	LogoURL          string         `json:"logo_url"`
-	WebsiteURL       string         `json:"website_url"`
-	ClientID         string         `json:"client_id"`
-	ClientSecretHash string         `json:"-"`
-	RedirectURIs     []string       `json:"redirect_uris"`
-	Scopes           uint64         `json:"scopes"`
-	Status           OAuthAppStatus `json:"status"`
-	CreatedAt        time.Time      `json:"created_at"`
-	UpdatedAt        time.Time      `json:"updated_at"`
+	ID               uuid.UUID `json:"id"`
+	OrganizationID   uuid.UUID `json:"organization_id"`
+	CreatedBy        uuid.UUID `json:"created_by"`
+	Name             string    `json:"name"`
+	Description      string    `json:"description"`
+	LogoURL          string    `json:"logo_url"`
+	WebsiteURL       string    `json:"website_url"`
+	ClientID         string    `json:"client_id"`
+	ClientSecretHash string    `json:"-"`
+	RedirectURIs     []string  `json:"redirect_uris"`
+	// AllowedWebhookDomains constrains the host of any webhook endpoint this app
+	// registers (subdomain-inclusive: ".acme.com" matches subdomains, "acme.com"
+	// is exact). Empty = the app cannot register webhooks.
+	AllowedWebhookDomains []string `json:"allowed_webhook_domains"`
+	// App-level webhook subscription (the GitHub/Slack-app model). When WebhookURL
+	// is set, every org that authorizes this app automatically receives the
+	// subscribed events at WebhookURL, scoped to the permissions that org granted,
+	// signed with WebhookSecret. WebhookEvents empty = all non-firehose events the
+	// grant's scopes allow. The URL host must be within AllowedWebhookDomains.
+	WebhookURL    string         `json:"webhook_url"`
+	WebhookEvents []string       `json:"webhook_events"`
+	WebhookSecret string         `json:"-"`
+	Scopes        uint64         `json:"scopes"`
+	Status        OAuthAppStatus `json:"status"`
+	CreatedAt     time.Time      `json:"created_at"`
+	UpdatedAt     time.Time      `json:"updated_at"`
 }
 
 // OAuthApplicationWithSecret is returned exactly once, on create or secret
@@ -62,13 +74,24 @@ type OAuthApplicationWithSecret struct {
 }
 
 // OAuthApplicationWrite is the create/update payload from the developer UI.
+// WebhookSecret is server-generated (returned once on set/rotate), never set here.
 type OAuthApplicationWrite struct {
-	Name         string   `json:"name"`
-	Description  string   `json:"description"`
-	LogoURL      string   `json:"logo_url"`
-	WebsiteURL   string   `json:"website_url"`
-	RedirectURIs []string `json:"redirect_uris"`
-	Scopes       uint64   `json:"scopes"`
+	Name                  string   `json:"name"`
+	Description           string   `json:"description"`
+	LogoURL               string   `json:"logo_url"`
+	WebsiteURL            string   `json:"website_url"`
+	RedirectURIs          []string `json:"redirect_uris"`
+	AllowedWebhookDomains []string `json:"allowed_webhook_domains"`
+	WebhookURL            string   `json:"webhook_url"`
+	WebhookEvents         []string `json:"webhook_events"`
+	Scopes                uint64   `json:"scopes"`
+}
+
+// OAuthGrantOrg is one org that has an active grant for an app, with the union
+// of scopes that org granted (across its users). Drives app-webhook materialization.
+type OAuthGrantOrg struct {
+	OrgID  uuid.UUID
+	Scopes uint64
 }
 
 // OAuthAuthorizationCode is a single-use code bound to a PKCE challenge and the

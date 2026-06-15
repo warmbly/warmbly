@@ -17,11 +17,27 @@ const (
 	APIKeyPermissionsKey          = "api_key_permissions"
 	APIKeyAllowedEmailAccountsKey = "api_key_allowed_email_accounts"
 	APIKeyUserIDKey               = "api_key_user_id"
+	OAuthApplicationIDKey         = "oauth_application_id"
 	AuthTypeKey                   = "auth_type"
 	AuthTypeJWT                   = "jwt"
 	AuthTypeAPIKey                = "api_key"
 	AuthTypeOAuth                 = "oauth"
 )
+
+// GetOAuthApplicationID returns the OAuth application id when the caller
+// authenticated with an OAuth access token, or nil otherwise. Used to bind
+// app-registered webhook endpoints (and enforce their domain allowlist).
+func GetOAuthApplicationID(c *gin.Context) *uuid.UUID {
+	v, ok := c.Get(OAuthApplicationIDKey)
+	if !ok {
+		return nil
+	}
+	id, ok := v.(uuid.UUID)
+	if !ok || id == uuid.Nil {
+		return nil
+	}
+	return &id
+}
 
 // bitmaskAuth reports whether a caller's permissions come from a bitmask of API
 // scopes (API keys and OAuth tokens) rather than an org role (JWT sessions).
@@ -148,6 +164,7 @@ func (h *Handler) validateOAuthToken(c *gin.Context, token string) {
 	c.Set(APIKeyPermissionsKey, claims.Scopes)
 	c.Set(UserIDKey, claims.UserID.String())
 	c.Set(OrganizationIDKey, claims.OrganizationID)
+	c.Set(OAuthApplicationIDKey, claims.ApplicationID)
 	c.Next()
 }
 

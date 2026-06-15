@@ -258,8 +258,6 @@ func main() {
 		Contacts: contactRepo,
 		Orgs:     orgRepoConsumer,
 	})
-	// Per-org daily outbound-action quota (event-driven automations run here).
-	integrationServiceC.SetOutboundQuotaCache(redisCache)
 	// In-app notifications: the reply/bounce/complaint gate fires in THIS
 	// process (inbox ingest + deliverability ingest run in the consumer), so the
 	// notifier must be wired here. Missing this = notifications silently never

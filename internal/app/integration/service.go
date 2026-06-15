@@ -11,22 +11,14 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/rs/zerolog/log"
 
 	"github.com/warmbly/warmbly/internal/app/cipher"
 	"github.com/warmbly/warmbly/internal/app/webhook"
 	"github.com/warmbly/warmbly/internal/errx"
-	"github.com/warmbly/warmbly/internal/infrastructure/cache"
 	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
 )
-
-// outboundDailyQuota caps per-org outbound HTTP-request automation actions per
-// day. It is an anti-abuse ceiling (relay / scanning), set well above any
-// legitimate flow, not a pricing tier — tune freely. Enforced only when a quota
-// cache is wired; fail-open otherwise so infra hiccups never break automations.
-const outboundDailyQuota = 1000
 
 // oauthStateTTL bounds how long a started OAuth handshake stays valid.
 const oauthStateTTL = 15 * time.Minute
@@ -96,9 +88,6 @@ type Service interface {
 	// publisher post-construction (they depend on services built after this one).
 	SetNativeActions(n NativeActions)
 	SetPublisher(p *pubsub.StreamingPublisher)
-	// SetOutboundQuotaCache wires the Redis cache backing the per-org daily
-	// outbound-action quota (anti-abuse). Optional; nil disables the quota.
-	SetOutboundQuotaCache(c *cache.Cache)
 
 	// ListSyncRuns returns recent observability records for a connection.
 	ListSyncRuns(ctx context.Context, orgID, connID uuid.UUID, limit int) ([]models.IntegrationSyncRun, error)
@@ -163,39 +152,11 @@ type Service interface {
 }
 
 type service struct {
-	repo       repository.IntegrationRepository
-	cipher     cipher.CipherService
-	oauth      *OAuthManager
-	native     NativeActions
-	publisher  *pubsub.StreamingPublisher
-	quotaCache *cache.Cache
-}
-
-// SetOutboundQuotaCache wires the Redis cache backing the per-org daily outbound
-// quota (post-construction, like the other setters). Both the backend and the
-// consumer run automations, so both wire it; nil leaves the quota disabled.
-func (s *service) SetOutboundQuotaCache(c *cache.Cache) { s.quotaCache = c }
-
-// allowOutbound increments and checks the per-org daily outbound-action counter.
-// Fail-open: a missing cache or a Redis error never blocks an automation.
-func (s *service) allowOutbound(ctx context.Context, orgID uuid.UUID) bool {
-	if s.quotaCache == nil {
-		return true
-	}
-	key := fmt.Sprintf("automation:outbound:%s:%s", orgID, time.Now().UTC().Format("20060102"))
-	n, err := s.quotaCache.Incr(ctx, key).Result()
-	if err != nil {
-		return true
-	}
-	if n == 1 {
-		_ = s.quotaCache.Expire(ctx, key, 26*time.Hour).Err()
-	}
-	if n > outboundDailyQuota {
-		log.Warn().Str("org_id", orgID.String()).Int64("count", n).
-			Msg("automation outbound daily quota exceeded")
-		return false
-	}
-	return true
+	repo      repository.IntegrationRepository
+	cipher    cipher.CipherService
+	oauth     *OAuthManager
+	native    NativeActions
+	publisher *pubsub.StreamingPublisher
 }
 
 // NewService builds the integration service. cipherSvc seals provider secrets
@@ -1143,6 +1104,46 @@ func (s *service) SendTestEvent(ctx context.Context, orgID, connID uuid.UUID) (i
 			count++
 		}
 	}
+
+	// The visual automation builder never writes legacy event-subscription rows,
+	// so also walk this org's enabled automations for notify/webhook action nodes
+	// wired to this connection. Native + CRM-upsert actions are skipped so a test
+	// never writes a junk CRM record or fires native side effects.
+	autos, err := s.repo.ListAutomations(ctx, orgID)
+	if err != nil {
+		return count, err
+	}
+	for _, a := range autos {
+		if !a.Enabled {
+			continue
+		}
+		for _, n := range a.Graph.Nodes {
+			if n.Type != models.AutomationNodeAction || n.ConnectionID == nil || *n.ConnectionID != connID {
+				continue
+			}
+			switch n.Action {
+			case models.IntegrationActionSlackNotify,
+				models.IntegrationActionDiscordNotify,
+				models.IntegrationActionGenericWebhookPing:
+				sub := models.IntegrationEventSubscription{
+					ID:             uuid.New(),
+					ConnectionID:   connID,
+					OrganizationID: orgID,
+					EventType:      a.TriggerEvent,
+					Action:         n.Action,
+					Config:         n.Config,
+					Enabled:        true,
+					UseCase:        "automation",
+				}
+				target := repository.DispatchTarget{Subscription: sub, Secrets: *sec}
+				if err := s.execAction(ctx, target, sample); err != nil {
+					return count, err
+				}
+				count++
+			}
+		}
+	}
+
 	if count == 0 {
 		return 0, fmt.Errorf("add a notification or webhook automation first, then send a test")
 	}

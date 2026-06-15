@@ -34,9 +34,9 @@ type CRMRepository interface {
 	DeletePipeline(ctx context.Context, orgID, pipelineID uuid.UUID) error
 
 	// Pipeline Stages
-	CreateStage(ctx context.Context, pipelineID uuid.UUID, data *models.CreatePipelineStage) (*models.PipelineStage, error)
-	UpdateStage(ctx context.Context, stageID uuid.UUID, data *models.UpdatePipelineStage) (*models.PipelineStage, error)
-	DeleteStage(ctx context.Context, stageID uuid.UUID) error
+	CreateStage(ctx context.Context, orgID, pipelineID uuid.UUID, data *models.CreatePipelineStage) (*models.PipelineStage, error)
+	UpdateStage(ctx context.Context, orgID, stageID uuid.UUID, data *models.UpdatePipelineStage) (*models.PipelineStage, error)
+	DeleteStage(ctx context.Context, orgID, stageID uuid.UUID) error
 
 	// Deals
 	CreateDeal(ctx context.Context, orgID uuid.UUID, data *models.CreateDeal) (*models.Deal, error)
@@ -46,7 +46,7 @@ type CRMRepository interface {
 	DealsSummary(ctx context.Context, orgID uuid.UUID, filters models.SearchDeals) (*models.DealsSummary, error)
 	UpdateDeal(ctx context.Context, orgID, dealID uuid.UUID, data *models.UpdateDeal) (*models.Deal, error)
 	DeleteDeal(ctx context.Context, orgID, dealID uuid.UUID) error
-	GetDealsByContact(ctx context.Context, contactID uuid.UUID) ([]models.Deal, error)
+	GetDealsByContact(ctx context.Context, orgID, contactID uuid.UUID) ([]models.Deal, error)
 
 	// CRM Tasks
 	CreateCRMTask(ctx context.Context, orgID, userID uuid.UUID, data *models.CreateCRMTask) (*models.CRMTask, error)
@@ -469,27 +469,33 @@ func (r *crmRepository) DeletePipeline(ctx context.Context, orgID, pipelineID uu
 // Pipeline Stages
 // =====================
 
-func (r *crmRepository) CreateStage(ctx context.Context, pipelineID uuid.UUID, data *models.CreatePipelineStage) (*models.PipelineStage, error) {
+func (r *crmRepository) CreateStage(ctx context.Context, orgID, pipelineID uuid.UUID, data *models.CreatePipelineStage) (*models.PipelineStage, error) {
 	var maxPos int
 	_ = r.db.QueryRow(ctx, `SELECT COALESCE(MAX(position), -1) FROM pipeline_stages WHERE pipeline_id = $1`, pipelineID).Scan(&maxPos)
 
+	// pipeline_stages has no organization_id; scope through the owning pipeline so
+	// a cross-org pipeline id inserts nothing (and maps to not-found below).
 	query := `
 		INSERT INTO pipeline_stages (pipeline_id, name, color, position)
-		VALUES ($1, $2, $3, $4)
+		SELECT $1, $2, $3, $4
+		WHERE EXISTS (SELECT 1 FROM pipelines WHERE id = $1 AND organization_id = $5)
 		RETURNING id, pipeline_id, name, color, position, created_at, updated_at
 	`
 	var stage models.PipelineStage
-	err := r.db.QueryRow(ctx, query, pipelineID, data.Name, data.Color, maxPos+1).Scan(
+	err := r.db.QueryRow(ctx, query, pipelineID, data.Name, data.Color, maxPos+1, orgID).Scan(
 		&stage.ID, &stage.PipelineID, &stage.Name, &stage.Color,
 		&stage.Position, &stage.CreatedAt, &stage.UpdatedAt,
 	)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, errx.ErrNotFound
+		}
 		return nil, err
 	}
 	return &stage, nil
 }
 
-func (r *crmRepository) UpdateStage(ctx context.Context, stageID uuid.UUID, data *models.UpdatePipelineStage) (*models.PipelineStage, error) {
+func (r *crmRepository) UpdateStage(ctx context.Context, orgID, stageID uuid.UUID, data *models.UpdatePipelineStage) (*models.PipelineStage, error) {
 	setClauses := []string{}
 	args := []any{stageID}
 	argPos := 2
@@ -511,11 +517,15 @@ func (r *crmRepository) UpdateStage(ctx context.Context, stageID uuid.UUID, data
 
 	setClauses = append(setClauses, "updated_at = NOW()")
 
+	// Scope through the owning pipeline (no organization_id on pipeline_stages) so
+	// a cross-org stage matches no row and returns not-found.
+	orgPos := argPos
+	args = append(args, orgID)
 	query := fmt.Sprintf(`
 		UPDATE pipeline_stages SET %s
-		WHERE id = $1
+		WHERE id = $1 AND pipeline_id IN (SELECT id FROM pipelines WHERE organization_id = $%d)
 		RETURNING id, pipeline_id, name, color, position, created_at, updated_at
-	`, strings.Join(setClauses, ", "))
+	`, strings.Join(setClauses, ", "), orgPos)
 
 	var stage models.PipelineStage
 	err := r.db.QueryRow(ctx, query, args...).Scan(
@@ -531,8 +541,8 @@ func (r *crmRepository) UpdateStage(ctx context.Context, stageID uuid.UUID, data
 	return &stage, nil
 }
 
-func (r *crmRepository) DeleteStage(ctx context.Context, stageID uuid.UUID) error {
-	cmd, err := r.db.Exec(ctx, `DELETE FROM pipeline_stages WHERE id = $1`, stageID)
+func (r *crmRepository) DeleteStage(ctx context.Context, orgID, stageID uuid.UUID) error {
+	cmd, err := r.db.Exec(ctx, `DELETE FROM pipeline_stages WHERE id = $1 AND pipeline_id IN (SELECT id FROM pipelines WHERE organization_id = $2)`, stageID, orgID)
 	if err != nil {
 		return err
 	}
@@ -766,15 +776,15 @@ func (r *crmRepository) DeleteDeal(ctx context.Context, orgID, dealID uuid.UUID)
 	return nil
 }
 
-func (r *crmRepository) GetDealsByContact(ctx context.Context, contactID uuid.UUID) ([]models.Deal, error) {
+func (r *crmRepository) GetDealsByContact(ctx context.Context, orgID, contactID uuid.UUID) ([]models.Deal, error) {
 	query := `
 		SELECT id, organization_id, pipeline_id, stage_id, contact_id, name, value, currency, status,
 		       expected_close_date, won_at, lost_at, lost_reason, assigned_to, campaign_id, source_mailbox_id, created_at, updated_at
 		FROM deals
-		WHERE contact_id = $1
+		WHERE organization_id = $1 AND contact_id = $2
 		ORDER BY created_at DESC
 	`
-	rows, err := r.db.Query(ctx, query, contactID)
+	rows, err := r.db.Query(ctx, query, orgID, contactID)
 	if err != nil {
 		return nil, err
 	}

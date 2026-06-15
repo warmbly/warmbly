@@ -68,6 +68,7 @@ func (s *contactService) ImportPreview(ctx context.Context, r io.Reader, filenam
 func (s *contactService) ImportCommit(
 	ctx context.Context,
 	userID string,
+	orgID uuid.UUID,
 	r io.Reader,
 	filename string,
 	opts *models.ContactImportCommit,
@@ -225,7 +226,7 @@ func (s *contactService) ImportCommit(
 			end = len(toInsert)
 		}
 		chunk := toInsert[start:end]
-		inserted, xerr := s.Add(ctx, userID, chunk)
+		inserted, xerr := s.Add(ctx, userID, orgID, chunk)
 		if xerr != nil {
 			// Per-row reasons are easier to act on than a "batch
 			// failed" — record each as failed with the same reason.
@@ -267,7 +268,7 @@ func (s *contactService) ImportCommit(
 			}
 			update.AddCategories = ids
 		}
-		if _, xerr := s.contactRepository.Update(ctx, userID, idStr, update); xerr != nil {
+		if _, xerr := s.contactRepository.Update(ctx, userID, idStr, orgID, update); xerr != nil {
 			res.Failed++
 			res.Errors = append(res.Errors, models.ContactImportRowError{
 				Line:   p.line,
@@ -280,7 +281,7 @@ func (s *contactService) ImportCommit(
 
 		// Attach campaigns separately if the caller requested it.
 		if len(p.contact.Campaigns) > 0 {
-			if _, xerr := s.contactRepository.BulkUpdate(ctx, userID, &models.BulkEditContactsData{
+			if _, xerr := s.contactRepository.BulkUpdate(ctx, userID, orgID, &models.BulkEditContactsData{
 				Contacts:     []string{idStr},
 				AddCampaigns: p.contact.Campaigns,
 			}); xerr != nil {

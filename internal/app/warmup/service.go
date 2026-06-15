@@ -303,7 +303,29 @@ func (s *service) RecordSpamPlacement(ctx context.Context, reporterAccountID, re
 	if _, err := s.repo.IncrementSpamScore(ctx, reportedAccountID, 5); err != nil {
 		return nil, errx.InternalError()
 	}
+	// Fan a warmup.placement_in_spam webhook for the sender (best-effort).
+	s.dispatchPlacementInSpam(ctx, reportedAccountID, contentSource, recipientProvider, recipientDomain)
 	return s.evaluateAndPersistAnyPool(ctx, reportedAccountID)
+}
+
+// dispatchPlacementInSpam fires the warmup.placement_in_spam customer webhook for
+// the sending mailbox. Best-effort; no-op when webhooks aren't wired (consumer
+// still records the signal and the health evaluation still runs).
+func (s *service) dispatchPlacementInSpam(ctx context.Context, accountID uuid.UUID, contentSource, recipientProvider, recipientDomain string) {
+	if s.webhooks == nil || s.emailRepo == nil {
+		return
+	}
+	account, _ := s.emailRepo.GetByID(ctx, accountID)
+	if account == nil || account.OrganizationID == nil {
+		return
+	}
+	_, _ = s.webhooks.Dispatch(ctx, *account.OrganizationID, models.WebhookEventWarmupPlacementInSpam, map[string]any{
+		"email_account_id":   accountID,
+		"email":              account.Email,
+		"content_source":     contentSource,
+		"recipient_provider": recipientProvider,
+		"recipient_domain":   recipientDomain,
+	})
 }
 
 // RecordTampering records that a participant harmed a warmup email (deleted it

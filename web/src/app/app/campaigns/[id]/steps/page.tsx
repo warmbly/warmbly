@@ -54,7 +54,7 @@ function StepsBuilder({ campaignId }: { campaignId: string }) {
                     follow-ups.
                 </p>
                 <PermissionButton
-                    permission="MANAGE_SEQUENCES"
+                    permission="MANAGE_CAMPAIGNS"
                     type="button"
                     onClick={create}
                     disabled={creating}

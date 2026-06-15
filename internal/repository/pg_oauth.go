@@ -24,6 +24,16 @@ type OAuthRepository interface {
 	UpdateApplication(ctx context.Context, a *models.OAuthApplication) error
 	UpdateApplicationSecret(ctx context.Context, orgID, id uuid.UUID, secretHash string) error
 	DeleteApplication(ctx context.Context, orgID, id uuid.UUID) error
+	// GetAllowedWebhookDomains fetches an app's webhook-domain allowlist by id
+	// alone (no org), for delivery-time enforcement on app-scoped endpoints.
+	GetAllowedWebhookDomains(ctx context.Context, id uuid.UUID) ([]string, error)
+	// GetApplicationByID fetches an app by id alone (no org), for app-webhook
+	// reconciliation which spans every org that authorized the app.
+	GetApplicationByID(ctx context.Context, id uuid.UUID) (*models.OAuthApplication, error)
+	// ListActiveGrantOrgs returns every org with an active (non-revoked) grant for
+	// the app, with the union of scopes that org granted. Used to materialize the
+	// app's per-org webhook endpoints.
+	ListActiveGrantOrgs(ctx context.Context, appID uuid.UUID) ([]models.OAuthGrantOrg, error)
 
 	// Authorization codes
 	CreateAuthorizationCode(ctx context.Context, c *models.OAuthAuthorizationCode) error
@@ -51,19 +61,27 @@ func NewOAuthRepository(db *pgxpool.Pool) OAuthRepository {
 }
 
 const oauthAppCols = `id, organization_id, created_by, name, description, logo_url, website_url,
-	client_id, client_secret_hash, redirect_uris, scopes, status, created_at, updated_at`
+	client_id, client_secret_hash, redirect_uris, allowed_webhook_domains,
+	webhook_url, webhook_events, webhook_secret, scopes, status, created_at, updated_at`
 
 func scanOAuthApp(row pgx.Row, a *models.OAuthApplication) error {
 	var scopes int64
 	var status string
 	if err := row.Scan(&a.ID, &a.OrganizationID, &a.CreatedBy, &a.Name, &a.Description, &a.LogoURL, &a.WebsiteURL,
-		&a.ClientID, &a.ClientSecretHash, &a.RedirectURIs, &scopes, &status, &a.CreatedAt, &a.UpdatedAt); err != nil {
+		&a.ClientID, &a.ClientSecretHash, &a.RedirectURIs, &a.AllowedWebhookDomains,
+		&a.WebhookURL, &a.WebhookEvents, &a.WebhookSecret, &scopes, &status, &a.CreatedAt, &a.UpdatedAt); err != nil {
 		return err
 	}
 	a.Scopes = uint64(scopes)
 	a.Status = models.OAuthAppStatus(status)
+	if a.WebhookEvents == nil {
+		a.WebhookEvents = []string{}
+	}
 	if a.RedirectURIs == nil {
 		a.RedirectURIs = []string{}
+	}
+	if a.AllowedWebhookDomains == nil {
+		a.AllowedWebhookDomains = []string{}
 	}
 	return nil
 }
@@ -80,10 +98,12 @@ func (r *oauthRepository) CreateApplication(ctx context.Context, a *models.OAuth
 	}
 	_, err := r.db.Exec(ctx, `
 		INSERT INTO oauth_applications (id, organization_id, created_by, name, description, logo_url, website_url,
-			client_id, client_secret_hash, redirect_uris, scopes, status, created_at, updated_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$13)`,
+			client_id, client_secret_hash, redirect_uris, allowed_webhook_domains,
+			webhook_url, webhook_events, webhook_secret, scopes, status, created_at, updated_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$17)`,
 		a.ID, a.OrganizationID, a.CreatedBy, a.Name, a.Description, a.LogoURL, a.WebsiteURL,
-		a.ClientID, a.ClientSecretHash, a.RedirectURIs, int64(a.Scopes), string(a.Status), now)
+		a.ClientID, a.ClientSecretHash, a.RedirectURIs, a.AllowedWebhookDomains,
+		a.WebhookURL, a.WebhookEvents, a.WebhookSecret, int64(a.Scopes), string(a.Status), now)
 	return err
 }
 
@@ -116,6 +136,42 @@ func (r *oauthRepository) GetApplication(ctx context.Context, orgID, id uuid.UUI
 	return &a, nil
 }
 
+func (r *oauthRepository) GetApplicationByID(ctx context.Context, id uuid.UUID) (*models.OAuthApplication, error) {
+	var a models.OAuthApplication
+	row := r.db.QueryRow(ctx, `SELECT `+oauthAppCols+` FROM oauth_applications WHERE id = $1`, id)
+	if err := scanOAuthApp(row, &a); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &a, nil
+}
+
+func (r *oauthRepository) ListActiveGrantOrgs(ctx context.Context, appID uuid.UUID) ([]models.OAuthGrantOrg, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT organization_id, bit_or(scopes)
+		FROM oauth_access_grants
+		WHERE application_id = $1 AND revoked_at IS NULL
+		GROUP BY organization_id
+	`, appID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []models.OAuthGrantOrg{}
+	for rows.Next() {
+		var g models.OAuthGrantOrg
+		var scopes int64
+		if err := rows.Scan(&g.OrgID, &scopes); err != nil {
+			return nil, err
+		}
+		g.Scopes = uint64(scopes)
+		out = append(out, g)
+	}
+	return out, rows.Err()
+}
+
 func (r *oauthRepository) GetApplicationByClientID(ctx context.Context, clientID string) (*models.OAuthApplication, error) {
 	var a models.OAuthApplication
 	row := r.db.QueryRow(ctx, `SELECT `+oauthAppCols+` FROM oauth_applications WHERE client_id = $1`, clientID)
@@ -133,10 +189,12 @@ func (r *oauthRepository) UpdateApplication(ctx context.Context, a *models.OAuth
 	a.UpdatedAt = now
 	tag, err := r.db.Exec(ctx, `
 		UPDATE oauth_applications SET name=$3, description=$4, logo_url=$5, website_url=$6,
-			redirect_uris=$7, scopes=$8, status=$9, updated_at=$10
+			redirect_uris=$7, allowed_webhook_domains=$8, webhook_url=$9, webhook_events=$10,
+			webhook_secret=$11, scopes=$12, status=$13, updated_at=$14
 		WHERE id=$1 AND organization_id=$2`,
 		a.ID, a.OrganizationID, a.Name, a.Description, a.LogoURL, a.WebsiteURL,
-		a.RedirectURIs, int64(a.Scopes), string(a.Status), now)
+		a.RedirectURIs, a.AllowedWebhookDomains, a.WebhookURL, a.WebhookEvents,
+		a.WebhookSecret, int64(a.Scopes), string(a.Status), now)
 	if err != nil {
 		return err
 	}
@@ -160,6 +218,21 @@ func (r *oauthRepository) UpdateApplicationSecret(ctx context.Context, orgID, id
 func (r *oauthRepository) DeleteApplication(ctx context.Context, orgID, id uuid.UUID) error {
 	_, err := r.db.Exec(ctx, `DELETE FROM oauth_applications WHERE id=$1 AND organization_id=$2`, id, orgID)
 	return err
+}
+
+func (r *oauthRepository) GetAllowedWebhookDomains(ctx context.Context, id uuid.UUID) ([]string, error) {
+	var domains []string
+	err := r.db.QueryRow(ctx, `SELECT allowed_webhook_domains FROM oauth_applications WHERE id=$1`, id).Scan(&domains)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if domains == nil {
+		domains = []string{}
+	}
+	return domains, nil
 }
 
 func (r *oauthRepository) CreateAuthorizationCode(ctx context.Context, c *models.OAuthAuthorizationCode) error {

@@ -356,23 +356,12 @@ func actionPreview(n models.AutomationNode, data map[string]any) map[string]any 
 
 // actionRunOutput captures, after an action node ran, a small summary of what it
 // did for run history: the rendered templatable fields (channel/url/message/deal/
-// task), plus node-specific output — an HTTP call's status/ok and the values a
-// set-variables node wrote. Returns nil when there is nothing to show. Kept
-// scalar + bounded so it stays cheap to store in the run's node_results jsonb.
+// task), plus node-specific output such as the values a set-variables node wrote.
+// Returns nil when there is nothing to show. Kept scalar + bounded so it stays
+// cheap to store in the run's node_results jsonb.
 func actionRunOutput(n models.AutomationNode, data map[string]any) map[string]any {
 	out := actionPreview(n, data)
 	switch n.Action {
-	case models.IntegrationActionHTTPRequest:
-		if steps, ok := data["steps"].(map[string]any); ok {
-			if r, ok := steps[n.ID].(map[string]any); ok {
-				if v, ok := r["status"]; ok {
-					out["status"] = v
-				}
-				if v, ok := r["ok"]; ok {
-					out["ok"] = v
-				}
-			}
-		}
 	case models.IntegrationActionSetVariables:
 		cfg := parseNativeConfig(n.Config)
 		for _, v := range cfg.SetVars {

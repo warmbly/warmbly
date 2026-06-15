@@ -300,6 +300,11 @@ func (h *Handler) DeletePipeline(c *gin.Context) {
 // =====================
 
 func (h *Handler) CreateStage(c *gin.Context) {
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.Handle(c, errx.New(errx.BadRequest, "no organization selected"))
+		return
+	}
 	pipelineID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		errx.Handle(c, errx.ErrUuid)
@@ -312,7 +317,7 @@ func (h *Handler) CreateStage(c *gin.Context) {
 		return
 	}
 
-	stage, xerr := h.CRMService.CreateStage(c.Request.Context(), pipelineID, &data)
+	stage, xerr := h.CRMService.CreateStage(c.Request.Context(), *orgID, pipelineID, &data)
 	if xerr != nil {
 		errx.Handle(c, xerr)
 		return
@@ -324,6 +329,11 @@ func (h *Handler) CreateStage(c *gin.Context) {
 }
 
 func (h *Handler) UpdateStage(c *gin.Context) {
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.Handle(c, errx.New(errx.BadRequest, "no organization selected"))
+		return
+	}
 	stageID, err := uuid.Parse(c.Param("stageId"))
 	if err != nil {
 		errx.Handle(c, errx.ErrUuid)
@@ -336,7 +346,7 @@ func (h *Handler) UpdateStage(c *gin.Context) {
 		return
 	}
 
-	stage, xerr := h.CRMService.UpdateStage(c.Request.Context(), stageID, &data)
+	stage, xerr := h.CRMService.UpdateStage(c.Request.Context(), *orgID, stageID, &data)
 	if xerr != nil {
 		errx.Handle(c, xerr)
 		return
@@ -348,13 +358,18 @@ func (h *Handler) UpdateStage(c *gin.Context) {
 }
 
 func (h *Handler) DeleteStage(c *gin.Context) {
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.Handle(c, errx.New(errx.BadRequest, "no organization selected"))
+		return
+	}
 	stageID, err := uuid.Parse(c.Param("stageId"))
 	if err != nil {
 		errx.Handle(c, errx.ErrUuid)
 		return
 	}
 
-	xerr := h.CRMService.DeleteStage(c.Request.Context(), stageID)
+	xerr := h.CRMService.DeleteStage(c.Request.Context(), *orgID, stageID)
 	if xerr != nil {
 		errx.Handle(c, xerr)
 		return
@@ -584,13 +599,18 @@ func (h *Handler) DeleteDeal(c *gin.Context) {
 }
 
 func (h *Handler) GetDealsByContact(c *gin.Context) {
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.Handle(c, errx.New(errx.BadRequest, "no organization selected"))
+		return
+	}
 	contactID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		errx.Handle(c, errx.ErrUuid)
 		return
 	}
 
-	deals, xerr := h.CRMService.GetDealsByContact(c.Request.Context(), contactID)
+	deals, xerr := h.CRMService.GetDealsByContact(c.Request.Context(), *orgID, contactID)
 	if xerr != nil {
 		errx.Handle(c, xerr)
 		return
