@@ -14,7 +14,8 @@ In the dashboard, open **Settings -> OAuth apps** and register an application. Y
 
 - a **name**, optional description, logo, and website (shown on the consent screen),
 - one or more **redirect URIs** (where users are sent back after they approve), matched exactly and required to be HTTPS, except loopback URLs for native apps,
-- the **scopes** your app may request.
+- the **scopes** your app may request,
+- optionally, **allowed webhook domains** (see below).
 
 You receive a **client ID** and a **client secret**, shown only once. Every app has a secret: keep it server-side and use it to authenticate the token exchange. Browser and mobile apps that cannot safely hold a secret should add PKCE on top (see below) rather than embedding it.
 
@@ -131,12 +132,155 @@ GET https://api.warmbly.com/.well-known/oauth-authorization-server
 
 It lists the authorization, token, and revocation endpoints, the supported scopes, `code` as the only response type, `authorization_code` and `refresh_token` grants, and `S256` as the only PKCE method.
 
+## Webhook domains for OAuth apps
+
+If your app registers webhook endpoints on behalf of its users, you must declare the domains those endpoints may use. Set `allowed_webhook_domains` on the app object (a string array) when creating or updating the app:
+
+```json
+{
+  "name": "My App",
+  "redirect_uris": ["https://yourapp.com/oauth/callback"],
+  "allowed_webhook_domains": [".acme.com", "hooks.partnersite.com"]
+}
+```
+
+Any webhook URL your app registers must have a host within this list. An empty list means the app cannot register webhook endpoints at all.
+
+**Matching rules:**
+
+- A bare entry (`acme.com`) matches that exact host only.
+- A leading-dot entry (`.acme.com`) matches the apex and any subdomain: `acme.com`, `hooks.acme.com`, `prod.hooks.acme.com`.
+
+The list is enforced at endpoint registration time and re-checked at delivery time. See the [webhooks reference](/api/reference/webhooks/) for the full endpoint verification and delivery flow.
+
+## Receiving events as an app (webhooks)
+
+Instead of holding one WebSocket connection per installed workspace, your app can declare a single webhook configuration and let Warmbly deliver events to it automatically for every org that authorizes the app. This is the GitHub/Slack-app model: configure once on the app, receive from all installs.
+
+### App webhook config
+
+Set `webhook_url` and `webhook_events` when creating or updating your app via `POST /oauth/applications` or `PATCH /oauth/applications/:id`.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `webhook_url` | string | The HTTPS URL events are delivered to. Its host must be within the app's `allowed_webhook_domains` (a 400 is returned otherwise). Set to empty to opt out of app-level webhook delivery. |
+| `webhook_events` | string[] | The event names the app subscribes to. An empty or omitted array subscribes to all non-firehose events permitted by the org's granted scopes. |
+
+The signing secret is server-generated and shared across the whole app: one secret, used to sign deliveries from every org install. Reveal or rotate it using the dedicated endpoints below.
+
+```json
+{
+  "name": "My App",
+  "redirect_uris": ["https://yourapp.com/oauth/callback"],
+  "allowed_webhook_domains": [".yourapp.com"],
+  "webhook_url": "https://hooks.yourapp.com/warmbly",
+  "webhook_events": ["campaign.reply_received", "meeting.booked", "contact.created"]
+}
+```
+
+### Automatic, scope-gated delivery
+
+When an org authorizes your app, Warmbly automatically creates a managed webhook endpoint for that org and starts delivering the subscribed events. When the org revokes the app, that endpoint is removed.
+
+Events are gated by the intersection of what your app declared in `webhook_events` and what the org's granted scopes permit. An event family is only delivered if both the app holds the matching scope and the org granted it. The scope-to-event mapping:
+
+| Events | Required scope |
+| --- | --- |
+| `inbox.*` | `READ_UNIBOX` |
+| `campaign.*`, `deliverability.*`, `meeting.*` | `READ_CAMPAIGNS` |
+| `email_account.*`, `warmup.*` | `READ_EMAILS` |
+| `contact.*`, `bulk_operation.*` | `READ_CONTACTS` |
+| `crm.*` | `READ_CRM` |
+| `automation.*` | `INTEGRATIONS` |
+| `team.*`, `role.*`, `settings.*`, `subscription.*` | `READ_AUDIT_LOGS` |
+| `custom.event` | `REALTIME_SUBSCRIBE` |
+
+Every delivery payload carries `organization_id` so you can tell which install the event came from. Delivery is signed, retried with the same backoff schedule as regular webhooks, and verifiable using the same `X-Warmbly-Signature` scheme. See [Webhooks: verifying signatures](/api/reference/webhooks/#verifying-signatures) for the verification algorithm.
+
+### App webhook management endpoints
+
+All four endpoints require **Scope** `API_KEYS` and **org permission** `manage_api_keys`.
+
+#### Reveal the webhook secret
+
+`GET /oauth/applications/{id}/webhook-secret`
+
+Returns the current signing secret. This is the `whsec_`-prefixed value used to verify all deliveries for this app, across every org install.
+
+```json
+{ "webhook_secret": "whsec_9f8e7d6c5b4a39281706f5e4d3c2b1a09f8e7d6c5b4a39281706f5e4d3c2b1a0" }
+```
+
+#### Rotate the webhook secret
+
+`POST /oauth/applications/{id}/webhook-secret/rotate`
+
+Issues a new signing secret and returns it once. Update your verification logic before in-flight deliveries settle against the old secret.
+
+```json
+{ "webhook_secret": "whsec_1a2b3c4d5e6f70819a2b3c4d5e6f70819a2b3c4d5e6f70819a2b3c4d5e6f7081" }
+```
+
+#### List per-org endpoints
+
+`GET /oauth/applications/{id}/webhook-endpoints`
+
+Returns the managed per-org endpoints that Warmbly materialized for this app, with their current health.
+
+```json
+{
+  "endpoints": [
+    {
+      "id": "a3f1c2e4-5b6d-7e8f-9a0b-1c2d3e4f5a6b",
+      "organization_id": "11111111-2222-3333-4444-555555555555",
+      "url": "https://hooks.yourapp.com/warmbly",
+      "enabled": true,
+      "verified_at": "2026-06-14T10:00:00Z",
+      "consecutive_failures": 0,
+      "last_success_at": "2026-06-14T10:05:00Z",
+      "last_failure_at": null
+    }
+  ]
+}
+```
+
+#### Cross-org delivery log
+
+`GET /oauth/applications/{id}/webhook-deliveries`
+
+Returns the delivery log across all org installs, newest first. Every attempt is included with its response code, error, payload, and retry state.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `status` | query | string | Filter by status: `pending`, `in_flight`, `delivered`, `failed`, or `abandoned`. |
+| `event_type` | query | string | Filter by event type, for example `campaign.reply_received`. |
+| `limit` | query | integer | Max rows. Between 1 and 200, defaults to 50. Out-of-range values return `400`. |
+| `cursor` | query | string | Opaque pagination cursor from `pagination.next_cursor`. |
+
+Response uses the standard `data` + `pagination` envelope with opaque cursors. Each row includes `organization_id` so you can see which install each delivery belongs to.
+
+### Webhooks vs the realtime gateway
+
+The [realtime gateway](/api/realtime/) and app-level webhooks deliver the same event vocabulary. Choose based on your integration's needs:
+
+| | Realtime gateway | App-level webhooks |
+| --- | --- | --- |
+| Transport | WebSocket (persistent connection) | HTTP POST (stateless delivery) |
+| Best for | Live UI, presence, low-latency dashboards | Durable processing, pipelines, serverless receivers |
+| Connection model | One connection per install | No persistent connection; Warmbly pushes to your URL |
+| Delivery guarantees | Lossy on disconnect (resume/replay available) | Retried with exponential backoff, inspectable log |
+| Scope gating | Per-connection intents | Per-app scope, enforced per org grant |
+
+Both are equally valid depending on what you are building. A dashboard-like integration benefits from the WebSocket's low latency and presence features. A data-pipeline or serverless integration benefits from the webhook's durable, individually-inspectable HTTP deliveries without holding a connection open for every installed org.
+
 ## Security notes
 
 - Redirect URIs are matched exactly, so register every callback you use.
 - Always send and verify `state`.
 - PKCE is optional but recommended; when used, only `S256` is accepted.
 - Keep your client secret server-side. Browser and mobile apps should add PKCE rather than embedding the secret.
+- Set `allowed_webhook_domains` to the smallest set of domains your app needs. An overly broad list widens the surface for SSRF if a user tricks your app into registering an unexpected URL.
+- The app webhook secret is shared across all org installs. Rotate it if it is compromised, and update your receiver promptly: in-flight deliveries that were already signed continue to verify against the old secret until they settle.
 
 ## Related
 
@@ -146,5 +290,11 @@ It lists the authorization, token, and revocation endpoints, the supported scope
   </Card>
   <Card title="Authentication" href="/api/authentication/">
     Using bearer tokens (API keys and OAuth) on the API.
+  </Card>
+  <Card title="Webhooks" href="/api/reference/webhooks/">
+    Delivery mechanics, signature verification, and the full event catalog.
+  </Card>
+  <Card title="Realtime gateway" href="/api/realtime/">
+    WebSocket alternative for live, low-latency event streaming.
   </Card>
 </Cards>

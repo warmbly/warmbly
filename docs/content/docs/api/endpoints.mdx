@@ -121,6 +121,10 @@ Registering and managing the OAuth apps your workspace owns. The flow itself (au
 | PATCH | `/oauth/applications/:id` | `API_KEYS` |
 | DELETE | `/oauth/applications/:id` | `API_KEYS` |
 | POST | `/oauth/applications/:id/rotate-secret` | `API_KEYS` |
+| GET | `/oauth/applications/:id/webhook-secret` | `API_KEYS` |
+| POST | `/oauth/applications/:id/webhook-secret/rotate` | `API_KEYS` |
+| GET | `/oauth/applications/:id/webhook-endpoints` | `API_KEYS` |
+| GET | `/oauth/applications/:id/webhook-deliveries` | `API_KEYS` |
 
 ### Operations
 
@@ -132,7 +136,12 @@ Registering and managing the OAuth apps your workspace owns. The flow itself (au
 | POST | `/tasks/dlq/:id/replay` | `SEND_CAMPAIGNS` |
 | GET/POST/PATCH/DELETE | `/webhooks[/:id]` | `WEBHOOKS` |
 | POST | `/webhooks/:id/rotate-secret` | `WEBHOOKS` |
+| POST | `/webhooks/:id/verify` | `WEBHOOKS` |
+| GET | `/webhooks/event-types` | `WEBHOOKS` |
+| GET | `/webhooks/deliveries` | `WEBHOOKS` |
 | GET | `/webhooks/:id/deliveries` | `WEBHOOKS` |
+| POST | `/webhooks/deliveries/:deliveryId/redeliver` | `WEBHOOKS` |
+| GET | `/webhooks/throttle-drops` | `WEBHOOKS` |
 | GET/POST/DELETE | `/integrations/*` | `INTEGRATIONS` |
 | GET/POST/PATCH/DELETE | `/warmup/routing[/:id]` | `WARMUP_ROUTING` |
 
