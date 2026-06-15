@@ -12,6 +12,15 @@ export interface OAuthApplication {
     website_url: string;
     client_id: string;
     redirect_uris: string[];
+    // Domains this app's registered webhooks must point at. A leading dot
+    // (.acme.com) matches subdomains; a bare domain is an exact match. Empty
+    // forbids the app from registering webhooks.
+    allowed_webhook_domains: string[];
+    // The app's webhook callback URL. Must be HTTPS and its host must be inside
+    // allowed_webhook_domains; empty means the app receives no events.
+    webhook_url: string;
+    // Event types the app subscribes to (empty = all events the granting org allows).
+    webhook_events: string[];
     // Bitmask of the API permissions this app may request (same bits as API keys).
     scopes: number;
     status: OAuthAppStatus;
@@ -34,6 +43,9 @@ export interface OAuthApplicationInput {
     logo_url?: string;
     website_url?: string;
     redirect_uris: string[];
+    allowed_webhook_domains?: string[];
+    webhook_url?: string;
+    webhook_events?: string[];
     scopes: number;
 }
 
