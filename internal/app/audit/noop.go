@@ -21,6 +21,8 @@ type NoOpService struct{}
 
 func NewNoOpService() AuditService { return &NoOpService{} }
 
+func (s *NoOpService) WireWebhookDispatcher(_ WebhookDispatcher) {}
+
 func (s *NoOpService) Log(_ context.Context, _ *models.CreateAuditLog) error {
 	return nil
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/warmbly/warmbly/internal/events"
 	"github.com/warmbly/warmbly/internal/infrastructure/kafka"
 	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
+	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
@@ -233,13 +234,10 @@ func (tc *TrackingConsumer) HandleTrackingEvent(ctx context.Context, event *even
 	return nil
 }
 
-// publishTrackingEvent publishes the tracking event to Pub/Sub for realtime UI updates
+// publishTrackingEvent publishes the tracking event to Pub/Sub for realtime UI
+// updates AND fans an opt-in firehose webhook (campaign.email_opened/clicked).
 func (tc *TrackingConsumer) publishTrackingEvent(ctx context.Context, task *repository.CampaignTask, event events.TrackingEvent, machine bool) {
-	if tc.streamingPublisher == nil {
-		return
-	}
-
-	// Get campaign to find user ID
+	// Get campaign to find user ID + org
 	campaign, err := tc.campaignRepo.GetByID(ctx, *task.CampaignID)
 	if err != nil || campaign == nil {
 		return
@@ -252,6 +250,34 @@ func (tc *TrackingConsumer) publishTrackingEvent(ctx context.Context, task *repo
 		if xerr == nil && contact != nil {
 			contactEmail = contact.Email
 		}
+	}
+
+	// Fan an opt-in firehose webhook for the open/click (org-scoped). Human opens
+	// only — a machine prefetch is not engagement intent — clicks always.
+	if tc.advancedService != nil && campaign.OrganizationID != nil {
+		var whType models.WebhookEventType
+		switch {
+		case event.EventType == events.EventTypeEmailOpened && !machine:
+			whType = models.WebhookEventCampaignEmailOpened
+		case event.EventType == events.EventTypeEmailClicked:
+			whType = models.WebhookEventCampaignEmailClicked
+		}
+		if whType != "" {
+			data := map[string]any{
+				"campaign_id":   task.CampaignID.String(),
+				"contact_id":    task.ContactID.String(),
+				"contact_email": contactEmail,
+				"sequence_id":   task.SequenceID.String(),
+			}
+			if event.EventType == events.EventTypeEmailClicked && event.OriginalURL != nil {
+				data["url"] = *event.OriginalURL
+			}
+			tc.advancedService.EmitCampaignEvent(ctx, *campaign.OrganizationID, whType, data)
+		}
+	}
+
+	if tc.streamingPublisher == nil {
+		return
 	}
 
 	// Determine event type
