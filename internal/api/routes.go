@@ -170,6 +170,12 @@ func Run(
 	// and /admin) are NOT versioned and stay at their bare paths.
 	v1 := r.Group("/v1")
 
+	// Public invitation preview for the /invite landing page. Unauthenticated:
+	// the invite token in the query is the capability. Registered on /v1 (the
+	// versioned client baseURL) outside any auth group; the bare alias at the top
+	// of this file stays for non-versioned callers.
+	v1.GET("/invitations/lookup", h.PreviewInvitation)
+
 	auth := v1.Group("/auth")
 	{
 		auth.POST("/login", h.LoginStart)
@@ -506,9 +512,15 @@ func Run(
 			{
 				webhooks.GET("", h.ListWebhookEndpoints)
 				webhooks.POST("", h.CreateWebhookEndpoint)
+				// Discovery + cross-endpoint views (static paths; sit beside :id).
+				webhooks.GET("/event-types", h.ListWebhookEventCatalog)
+				webhooks.GET("/deliveries", h.ListWebhookDeliveries)
+				webhooks.POST("/deliveries/:deliveryId/redeliver", h.RedeliverWebhookDelivery)
+				webhooks.GET("/throttle-drops", h.ListWebhookDrops)
 				webhooks.PATCH("/:id", h.UpdateWebhookEndpoint)
 				webhooks.DELETE("/:id", h.DeleteWebhookEndpoint)
 				webhooks.POST("/:id/rotate-secret", h.RotateWebhookSecret)
+				webhooks.POST("/:id/verify", h.VerifyWebhookEndpoint)
 				webhooks.GET("/:id/deliveries", h.ListWebhookDeliveries)
 			}
 
@@ -589,6 +601,12 @@ func Run(
 				oauthApps.PATCH("/:id", h.UpdateOAuthApplication)
 				oauthApps.DELETE("/:id", h.DeleteOAuthApplication)
 				oauthApps.POST("/:id/rotate-secret", h.RotateOAuthApplicationSecret)
+				// App-level webhook subscription: secret reveal/rotate + delivery
+				// observability (the per-org endpoints and the cross-org delivery log).
+				oauthApps.GET("/:id/webhook-secret", h.GetOAuthAppWebhookSecret)
+				oauthApps.POST("/:id/webhook-secret/rotate", h.RotateOAuthAppWebhookSecret)
+				oauthApps.GET("/:id/webhook-endpoints", h.ListOAuthAppWebhookEndpoints)
+				oauthApps.GET("/:id/webhook-deliveries", h.ListOAuthAppWebhookDeliveries)
 			}
 
 			// Logo upload for the app-registration UI. A separate path (not under
