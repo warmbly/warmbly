@@ -9,6 +9,7 @@ import (
 	"github.com/warmbly/warmbly/internal/api/middleware"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/notify/templates"
 )
 
 // CreateOrganization creates a new organization
@@ -221,16 +222,11 @@ func (h *Handler) InviteMember(c *gin.Context) {
 	// Send invitation email
 	if h.EmailNotificationService != nil {
 		subject := fmt.Sprintf("You've been invited to join %s on Warmbly", orgName)
-		body := fmt.Sprintf(`
-			<h2>You've been invited!</h2>
-			<p>%s has invited you to join <strong>%s</strong> on Warmbly.</p>
-			<p>Click the link below to accept the invitation:</p>
-			<p><a href="https://app.warmbly.com/invite?token=%s" style="display:inline-block;padding:12px 24px;background:#4F46E5;color:white;text-decoration:none;border-radius:6px;">Accept Invitation</a></p>
-			<p>This invitation expires in 7 days.</p>
-			<p>If you don't have an account yet, you'll be able to create one when you accept the invitation.</p>
-		`, inviterName, orgName, inv.Token)
-
-		go h.EmailNotificationService.Send(c.Request.Context(), []string{req.Email}, nil, nil, subject, body)
+		acceptURL := fmt.Sprintf("%s/invite?token=%s", templates.AppURL, inv.Token)
+		// GenerateInvitationHTML reports its own render errors to Sentry.
+		if body, gerr := templates.GenerateInvitationHTML(inviterName, orgName, acceptURL); gerr == nil {
+			go h.EmailNotificationService.Send(c.Request.Context(), []string{req.Email}, nil, nil, subject, body)
+		}
 	}
 
 	c.JSON(http.StatusCreated, gin.H{
