@@ -149,6 +149,14 @@ Registering and managing the OAuth apps your workspace owns. The flow itself (au
 
 Mutating API requests may include an `Idempotency-Key` header. Warmbly stores the completed response for 24 hours per organization and key. Reusing the same key with the same method, route, query, and body replays the original response with `X-Idempotent-Replayed: true`; reusing the key with a different request returns `409 Conflict`.
 
+### Identity
+
+| Method | Path | API Permission |
+|--------|------|----------------|
+| GET | `/me` | (any authenticated key) |
+
+`GET /me` returns who the active credential belongs to: `user_id`, `email`, `name`, `organization_id`, `organization_name`, `auth_type` (`api_key`, `oauth`, or `jwt`), and the granted `scopes`. It requires no specific permission, so it is the right call for validating a connection and rendering a human-readable label. Unlike `/auth/me` (JWT only), it is reachable by API keys and OAuth tokens.
+
 ### Reference data
 
 | Method | Path | API Permission |
