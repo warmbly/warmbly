@@ -19,7 +19,7 @@ Welcome
 {{if .FirstName}}Hi {{.FirstName}}, welcome to Warmbly{{else}}Welcome to Warmbly{{end}}
 </h2>
 <p style="margin:0 0 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:13px;color:#475569;line-height:20px;">
-Your account is ready. From here you can connect mailboxes, warm them up, and start outbound campaigns — all in one place.
+Your account is ready. From here you can connect mailboxes, warm them up, and start outbound campaigns, all in one place.
 </p>
 
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px;width:100%;">
