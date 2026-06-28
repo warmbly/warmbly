@@ -1,6 +1,7 @@
 package models
 
 import (
+	"math"
 	"time"
 
 	"github.com/google/uuid"
@@ -62,8 +63,36 @@ type Plan struct {
 	// AI writing-assistant monthly credit grant for this plan.
 	MonthlyCredits int `json:"monthly_credits"`
 
+	// Referral reward: the percentage of this plan's first-month-equivalent
+	// price a referrer earns when an invitee converts to it (100 = a full
+	// month-equivalent). Defaults to 100 for every plan.
+	ReferralRewardPercent int `json:"referral_reward_percent"`
+
 	UpdatedAt time.Time `json:"updated_at"`
 	CreatedAt time.Time `json:"created_at"`
+}
+
+// MonthlyPriceCents returns this plan's price normalized to a single month, in
+// integer cents. Yearly plans are divided by 12 so a referral reward for an
+// annual conversion is one month-equivalent (e.g. Pro Annual $990/yr -> ~$99),
+// not the full annual invoice.
+func (p *Plan) MonthlyPriceCents() int64 {
+	price := float64(p.Price)
+	if p.Duration == DurationYear {
+		price = price / 12
+	}
+	return int64(math.Round(price * 100))
+}
+
+// ReferralRewardCents returns the credit a referrer earns for converting an
+// invitee onto this plan: the month-equivalent price scaled by the plan's
+// referral_reward_percent.
+func (p *Plan) ReferralRewardCents() int64 {
+	pct := p.ReferralRewardPercent
+	if pct <= 0 {
+		return 0
+	}
+	return int64(math.Round(float64(p.MonthlyPriceCents()) * float64(pct) / 100))
 }
 
 type OfferOption struct {

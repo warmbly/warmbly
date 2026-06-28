@@ -91,6 +91,11 @@ const (
 	AuditEntityLeadSyncSource AuditEntityType = "lead_sync_source"
 	AuditEntityMeeting        AuditEntityType = "meeting"
 	AuditEntityRole           AuditEntityType = "role"
+
+	// Referral program. referral = the share code / attribution; referral_credit
+	// = a reward or clawback on the referrer's earnings ledger.
+	AuditEntityReferral       AuditEntityType = "referral"
+	AuditEntityReferralCredit AuditEntityType = "referral_credit"
 )
 
 // AuditActor is the minimal identity of the member who performed an action,
