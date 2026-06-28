@@ -252,6 +252,8 @@ export function useRealtimeEvents() {
           lead_sync_source: [['lead-sync', 'sources']],
           meeting: [['meetings'], ['meetings', 'summary']],
           subscription: [['subscription'], ['organizations', 'limits']],
+          referral: [['subscription', 'referral']],
+          referral_credit: [['subscription', 'referral'], ['subscription']],
           settings: [['organizations', 'current']],
           unibox: [['unibox']],
           crm_note: [['crm'], ['contacts']],
