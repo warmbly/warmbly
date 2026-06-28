@@ -70,6 +70,7 @@ func (s *authService) RegistrationStart(ctx context.Context, data *AuthData, ipa
 		CodeHash:     codeHash,
 		PasswordHash: passwordHash,
 		Nonce:        nonce,
+		ReferralCode: data.ReferralCode,
 	}
 
 	if err := s.saveRegistrationSession(ctx, sessionID, session, expiresAt); err != nil {
@@ -154,6 +155,14 @@ func (s *authService) RegistrationConfirm(ctx context.Context, data *ConfirmData
 		if err := s.trialService.StartFreeTrialWithOrg(ctx, u.ID, org.ID); err != nil {
 			sentry.CaptureException(err)
 			// Don't fail registration if trial creation fails
+		}
+	}
+
+	// Attribute the signup to a referrer if a referral code rode along.
+	// Best-effort: a bad or self-referral code never fails registration.
+	if s.referral != nil && org != nil && sess.ReferralCode != "" {
+		if xerr := s.referral.AttributeSignup(ctx, sess.ReferralCode, org.ID, u.ID); xerr != nil {
+			sentry.CaptureException(xerr)
 		}
 	}
 

@@ -25,6 +25,13 @@ type TwoFAChallenger interface {
 	CreatePendingChallenge(ctx context.Context, userID uuid.UUID) (string, int, *errx.Error)
 }
 
+// ReferralAttributor links a brand-new org to the referrer behind its signup
+// code. Satisfied by *referral.Service; injected post-construction (WireReferral)
+// so the auth package needs no import of referral (no cycle).
+type ReferralAttributor interface {
+	AttributeSignup(ctx context.Context, code string, inviteeOrgID, inviteeUserID uuid.UUID) *errx.Error
+}
+
 type AuthService interface {
 	LoginStart(ctx context.Context, data *AuthData, ipaddr string) (*models.AuthSession, *errx.Error)
 	LoginConfirm(ctx context.Context, data *ConfirmData, session, ipaddr, userAgent string) (*models.LoginResult, *errx.Error)
@@ -33,6 +40,9 @@ type AuthService interface {
 
 	RegistrationStart(ctx context.Context, data *AuthData, ipaddr string) (*models.AuthSession, *errx.Error)
 	RegistrationConfirm(ctx context.Context, data *ConfirmData, session, ipaddr string) *errx.Error
+	// WireReferral attaches the referral attributor (post-construction; nil = no
+	// referral attribution at signup).
+	WireReferral(r ReferralAttributor)
 
 	ResetPasswordStart(ctx context.Context, data *ResetPasswordStart, ipaddr string) *errx.Error
 	ResetPasswordConfirm(ctx context.Context, data *ResetPasswordConfirm, session, ipaddr string) *errx.Error
@@ -54,9 +64,12 @@ type authService struct {
 	captcha                  *captcha.Turnstile
 	externalAuth             *models.ExternalAuth
 	twofa                    TwoFAChallenger
+	referral                 ReferralAttributor
 }
 
 func (s *authService) WireTwoFA(t TwoFAChallenger) { s.twofa = t }
+
+func (s *authService) WireReferral(r ReferralAttributor) { s.referral = r }
 
 func NewService(
 	authRepository repository.AuthRepository,

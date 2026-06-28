@@ -175,10 +175,12 @@ type AdminDiscountSearch struct {
 	ExpiresAfter  *time.Time `form:"expires_after" time_format:"2006-01-02" time_utc:"true"`
 	ExpiresBefore *time.Time `form:"expires_before" time_format:"2006-01-02" time_utc:"true"`
 
-	Cursor   *uuid.UUID `form:"cursor"`
-	Limit    int        `form:"limit"`
-	SortBy   string     `form:"sort_by"` // created_at|code|status|times_redeemed|expires_at|starts_at|updated_at
-	SortDesc bool       `form:"sort_desc"`
+	// Offset is decoded from the opaque ?cursor token by the handler (the wire
+	// cursor stays opaque, like every other list), not bound from the query.
+	Offset   int    `form:"-"`
+	Limit    int    `form:"limit"`
+	SortBy   string `form:"sort_by"` // created_at|code|status|times_redeemed|expires_at|starts_at|updated_at
+	SortDesc bool   `form:"sort_desc"`
 }
 
 // AdminDiscountsResult is the paginated admin discount list envelope.

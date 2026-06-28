@@ -171,8 +171,20 @@ These never accept an API key. They depend on a human-bound session: billing flo
 - `GET /me/danger-zone`, `POST /me/danger-zone/delete`, `DELETE /me/danger-zone/delete`
 - `GET /invitations`, `POST /invitations/accept`
 - All of `/organization/*` (create, switch, members, invitations, transfer ownership, avatar, danger zone)
-- All of `/subscription/*` (checkout, portal, cancel, change-plan, preview-change, enterprise-inquiry, etc.)
+- All of `/subscription/*` (checkout, portal, cancel, change-plan, preview-change, enterprise-inquiry, discounts, referrals, etc.)
 - All of `/admin/*`
+
+### Referrals and discounts
+
+The referral program and billing discount history are part of `/subscription/*`, so they are JWT only and never accept an API key. There is no API permission scope for them; browser callers are gated by the org permission below. The discount validation and checkout endpoints are listed under [Subscription and billing](/api/account-and-organization/) in the reference.
+
+| Method | Path | JWT permission |
+|--------|------|----------------|
+| GET | `/subscription/referral` | `manage_billing` |
+| POST | `/subscription/referral` | `manage_billing` |
+| GET | `/subscription/referral/attributions` | `manage_billing` |
+| GET | `/subscription/referral/earnings` | `manage_billing` |
+| GET | `/subscription/discounts` | `manage_billing` |
 
 ## Public
 

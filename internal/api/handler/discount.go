@@ -8,6 +8,7 @@ import (
 	"github.com/warmbly/warmbly/internal/api/middleware"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/utils/paging"
 )
 
 // --- Admin discount-code management ---
@@ -19,6 +20,15 @@ func (h *Handler) AdminListDiscounts(c *gin.Context) {
 		errx.JSON(c, errx.New(errx.BadRequest, "invalid query parameters"))
 		return
 	}
+
+	// The wire cursor is an opaque offset token; a malformed one is a 400, not
+	// a silent reset to the first page.
+	offset, xerr := paging.DecodeOffsetCursor(c.Query("cursor"))
+	if xerr != nil {
+		errx.JSON(c, xerr)
+		return
+	}
+	search.Offset = offset
 
 	result, xerr := h.DiscountService.List(c.Request.Context(), &search)
 	if xerr != nil {
@@ -129,10 +139,14 @@ func (h *Handler) AdminListDiscountRedemptions(c *gin.Context) {
 		return
 	}
 
-	cursor := parseCursor(c.Query("cursor"))
+	offset, xerr := paging.DecodeOffsetCursor(c.Query("cursor"))
+	if xerr != nil {
+		errx.JSON(c, xerr)
+		return
+	}
 	limit := parseLimit(c.Query("limit"), 50)
 
-	result, xerr := h.DiscountService.ListRedemptions(c.Request.Context(), id, cursor, limit)
+	result, xerr := h.DiscountService.ListRedemptions(c.Request.Context(), id, offset, limit)
 	if xerr != nil {
 		errx.JSON(c, xerr)
 		return

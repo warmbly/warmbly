@@ -27,6 +27,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/passkey"
 	"github.com/warmbly/warmbly/internal/app/placement"
 	"github.com/warmbly/warmbly/internal/app/ratelimit"
+	"github.com/warmbly/warmbly/internal/app/referral"
 	"github.com/warmbly/warmbly/internal/app/releases"
 	"github.com/warmbly/warmbly/internal/app/sequence"
 	"github.com/warmbly/warmbly/internal/app/socket"
@@ -86,6 +87,7 @@ type Handler struct {
 	SubscriptionService subscription.SubscriptionService
 	StripeService       stripe.StripeService
 	DiscountService     discount.DiscountService
+	ReferralService     referral.Service
 
 	// Trial & feature gates
 	TrialService            trial.TrialService

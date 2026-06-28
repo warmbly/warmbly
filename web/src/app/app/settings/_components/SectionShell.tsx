@@ -55,34 +55,56 @@ export function SectionShell({
 }
 
 /**
- * A titled group inside the SectionShell. Pulls the title to a
- * narrow rail on the left and the actual controls to a wider column
- * on the right so the page reads like a settings document.
+ * A titled group inside the SectionShell. Default `stack` layout puts a
+ * compact header above and gives the content the full panel width so
+ * wide content (plan grids, tables) is never squeezed into a narrow
+ * column. Pass `layout="split"` for the older title-rail look when a
+ * section is just a couple of short key/value rows.
  */
 export function Section({
     eyebrow,
     description,
     actions,
     children,
+    layout = "stack",
     className,
 }: {
     eyebrow: string;
     description?: string;
     actions?: React.ReactNode;
     children: React.ReactNode;
+    layout?: "stack" | "split";
     className?: string;
 }) {
+    if (layout === "split") {
+        return (
+            <section className={`px-4 py-5 md:px-8 md:py-6 grid grid-cols-1 lg:grid-cols-[200px_1fr] gap-6 ${className ?? ""}`}>
+                <header className="flex flex-col">
+                    <div className="flex items-center gap-2 mb-1">
+                        <h3 className="text-[12.5px] font-semibold text-slate-900 tracking-tight">
+                            {eyebrow}
+                        </h3>
+                        {actions}
+                    </div>
+                    {description && (
+                        <p className="text-[11.5px] text-slate-500 leading-relaxed">{description}</p>
+                    )}
+                </header>
+                <div className="min-w-0 space-y-3">{children}</div>
+            </section>
+        );
+    }
     return (
-        <section className={`px-4 py-5 md:px-8 md:py-6 grid grid-cols-1 lg:grid-cols-[220px_1fr] gap-6 ${className ?? ""}`}>
-            <header className="flex flex-col">
-                <div className="flex items-center gap-2 mb-1">
-                    <h3 className="text-[12.5px] font-semibold text-slate-900 tracking-tight">
-                        {eyebrow}
-                    </h3>
-                    {actions}
-                </div>
+        <section className={`px-4 py-5 md:px-8 md:py-6 ${className ?? ""}`}>
+            <header className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1">
+                <h3 className="text-[12.5px] font-semibold text-slate-900 tracking-tight">
+                    {eyebrow}
+                </h3>
+                {actions && <div className="flex items-center gap-1.5 ml-auto">{actions}</div>}
                 {description && (
-                    <p className="text-[11.5px] text-slate-500 leading-relaxed">{description}</p>
+                    <p className="basis-full text-[11.5px] text-slate-500 leading-relaxed">
+                        {description}
+                    </p>
                 )}
             </header>
             <div className="min-w-0 space-y-3">{children}</div>

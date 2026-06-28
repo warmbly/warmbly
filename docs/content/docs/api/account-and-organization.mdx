@@ -1820,6 +1820,31 @@ Auth: Session only (not available to API keys). Requires a selected organization
 
 When invalid, `valid` is `false` and `reason` explains why.
 
+### List promo-code redemptions
+
+`GET /subscription/discounts`
+
+Returns the organization's own promo-code redemption history, used to render the discounts list on the billing page.
+
+Auth: Session only (not available to API keys). **Org permission** `manage_billing`. Requires a selected organization.
+
+#### Response
+
+```json
+{
+  "data": [
+    {
+      "code": "LAUNCH20",
+      "type": "percent",
+      "percent_off": 20,
+      "duration": "once",
+      "redeemed_at": "2026-05-01T12:00:00Z"
+    }
+  ],
+  "pagination": { "next_cursor": null, "has_more": false }
+}
+```
+
 ### Create a billing portal session
 
 `POST /subscription/portal`
@@ -1955,6 +1980,150 @@ Auth: Session only (not available to API keys).
   "inquiry_id": "eiq1..."
 }
 ```
+
+## Referrals
+
+The referral program is per-organization. These endpoints read the caller's referral code and link, mint the code, and list the referred organizations and the earnings ledger. They power the **Settings, Referral** dashboard page. See the [referral program guide](/guides/referral-program/) for the product behavior, rewards, and clawback rules.
+
+All referral endpoints are session only and require the **Manage billing** org permission, the same gate as the rest of billing. They are not reachable with an API key and there is no API permission scope for them.
+
+### Get referral status
+
+`GET /subscription/referral`
+
+Returns the caller's referral code, share link, earnings, and conversion counts.
+
+Auth: Session only (not available to API keys). **Org permission** `manage_billing`. Requires a selected organization.
+
+#### Response
+
+```json
+{
+  "code": "K7QXMN3P",
+  "share_url": "https://app.warmbly.com/register?ref=K7QXMN3P",
+  "currency": "usd",
+  "invitee_percent_off": 10,
+  "invitee_months": 3,
+  "balance_cents": 29700,
+  "lifetime_earned_cents": 29700,
+  "total_referred": 12,
+  "pending": 5,
+  "qualified": 3,
+  "rewarded": 4
+}
+```
+
+Amounts are in integer cents (`balance_cents` is the current credit available, `lifetime_earned_cents` is the all-time total earned). `total_referred` is the number of organizations attributed to the caller, broken down into `pending` (signed up, not yet paid), `qualified` (reached a paid checkout), and `rewarded` (the referral reward was granted).
+
+### Create a referral code
+
+`POST /subscription/referral`
+
+Idempotently mints the caller's referral code. Calling it again returns the existing code rather than creating a new one.
+
+Auth: Session only (not available to API keys). **Org permission** `manage_billing`. Requires a selected organization.
+
+#### Response
+
+```json
+{
+  "id": "a1b2c3d4-0000-0000-0000-000000000000",
+  "owner_user_id": "9f8e7d6c-0000-0000-0000-000000000000",
+  "owner_org_id": "3d11a0b2-0000-0000-0000-000000000000",
+  "code": "K7QXMN3P",
+  "discount_code_id": "7c6b5a40-0000-0000-0000-000000000000",
+  "created_at": "2026-05-01T09:00:00Z",
+  "updated_at": "2026-05-01T09:00:00Z"
+}
+```
+
+The share link is `https://app.warmbly.com/register?ref=<code>`. Use `GET /subscription/referral` for the prebuilt `share_url` plus earnings and counts.
+
+### List referral attributions
+
+`GET /subscription/referral/attributions`
+
+Returns the organizations referred by the caller, newest first, with cursor pagination.
+
+Auth: Session only (not available to API keys). **Org permission** `manage_billing`. Requires a selected organization.
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `limit` | query | int | Page size. Invalid values return `400`. |
+| `cursor` | query | string | Opaque cursor from a previous `pagination.next_cursor`. |
+
+#### Response
+
+```json
+{
+  "data": [
+    {
+      "id": "f00d1234-0000-0000-0000-000000000000",
+      "invitee_org_id": "3d11a0b2-0000-0000-0000-000000000000",
+      "status": "rewarded",
+      "reward_cents": 9900,
+      "reward_currency": "usd",
+      "qualified_at": "2026-05-18T14:30:00Z",
+      "rewarded_at": "2026-05-18T14:31:00Z",
+      "created_at": "2026-05-10T09:00:00Z"
+    }
+  ],
+  "pagination": {
+    "next_cursor": "o1_b3BhcXVlLWN1cnNvcg",
+    "has_more": true
+  }
+}
+```
+
+`status` is one of `pending` (signed up, not yet paid), `qualified` (reached a paid checkout), `rewarded` (reward granted), or `void` (reversed by a clawback, self-referral, or cap). `qualified_at` and `rewarded_at` are null until those stages are reached. `reward_cents` is the credit granted for this referral, in integer cents.
+
+### List referral earnings
+
+`GET /subscription/referral/earnings`
+
+Returns the caller's referral earnings ledger trail, newest first, with cursor pagination. Each row is a credit grant or a clawback reversal.
+
+Auth: Session only (not available to API keys). **Org permission** `manage_billing`. Requires a selected organization.
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `limit` | query | int | Page size. Invalid values return `400`. |
+| `cursor` | query | string | Opaque cursor from a previous `pagination.next_cursor`. |
+
+#### Response
+
+```json
+{
+  "data": [
+    {
+      "id": "11110000-0000-0000-0000-000000000000",
+      "attribution_id": "f00d1234-0000-0000-0000-000000000000",
+      "amount_cents": 9900,
+      "currency": "usd",
+      "reason": "referral_reward",
+      "balance_after_cents": 29700,
+      "created_at": "2026-05-18T14:31:00Z"
+    },
+    {
+      "id": "22220000-0000-0000-0000-000000000000",
+      "attribution_id": "beef5678-0000-0000-0000-000000000000",
+      "amount_cents": -2900,
+      "currency": "usd",
+      "reason": "referral_clawback:refund",
+      "balance_after_cents": 26800,
+      "created_at": "2026-05-20T10:00:00Z"
+    }
+  ],
+  "pagination": {
+    "next_cursor": null,
+    "has_more": false
+  }
+}
+```
+
+`amount_cents` is positive for a reward and negative for a clawback. `reason` is `referral_reward` or `referral_clawback:<cause>`. `balance_after_cents` is the running ledger balance after the row.
+
+`type` is `credit` for a granted reward or `clawback` for a reversal within the 30-day window. `amount` is in the plan currency's major units and is negative for clawbacks.
 
 ## Reference data
 

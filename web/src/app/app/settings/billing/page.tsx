@@ -27,14 +27,16 @@ import useValidateDiscountCode from "@/lib/api/hooks/app/subscription/useValidat
 import useCreateCheckoutSession from "@/lib/api/hooks/app/subscription/useCreateCheckoutSession";
 import useChangePlan from "@/lib/api/hooks/app/subscription/useChangePlan";
 import usePlans from "@/lib/api/hooks/app/subscription/usePlans";
+import useAppliedDiscounts from "@/lib/api/hooks/app/subscription/useAppliedDiscounts";
 import useUsageOverview from "@/lib/api/hooks/app/analytics/useUsageOverview";
 import { useAppStore } from "@/stores";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import type DiscountPreview from "@/lib/api/models/app/subscription/DiscountPreview";
+import type { DiscountRedemption } from "@/lib/api/models/app/subscription/DiscountRedemption";
 import type ServerPlan from "@/lib/api/models/app/subscription/Plan";
 import buildError from "@/lib/helper/buildError";
 import { TextInput } from "@/components/ui/field";
-import { Row, Section, SectionShell } from "../_components/SectionShell";
+import { Row, Section, SectionShell, TableSurface } from "../_components/SectionShell";
 import { PLAN_ACCENT_CLASSES, PAID_PLANS, getPlan, type PlanID } from "@/lib/plans";
 
 type BillingInterval = "monthly" | "annual";
@@ -48,6 +50,7 @@ export default function BillingSettingsPage() {
     const checkout = useCreateCheckoutSession();
     const changePlan = useChangePlan();
     const plansQuery = usePlans();
+    const redemptions = useAppliedDiscounts();
     const usage = useUsageOverview().data;
     const [codeInput, setCodeInput] = React.useState("");
     const [applied, setApplied] = React.useState<DiscountPreview | null>(null);
@@ -315,6 +318,37 @@ export default function BillingSettingsPage() {
             </Section>
 
             <Section
+                eyebrow="Redeemed codes"
+                description="Promo and referral codes this workspace has redeemed."
+            >
+                {redemptions.isPending ? (
+                    <div className="h-16 rounded bg-slate-100 animate-pulse" />
+                ) : (redemptions.data?.data.length ?? 0) === 0 ? (
+                    <p className="text-[12px] text-slate-500 leading-relaxed">
+                        No codes redeemed yet. Apply a code above to see it here.
+                    </p>
+                ) : (
+                    <TableSurface>
+                        <table className="w-full text-[12px]">
+                            <thead>
+                                <tr className="text-left text-[10.5px] uppercase tracking-[0.08em] text-slate-400 border-b border-slate-200">
+                                    <th className="font-medium px-3 py-2">Code</th>
+                                    <th className="font-medium px-3 py-2">Discount</th>
+                                    <th className="font-medium px-3 py-2">Status</th>
+                                    <th className="font-medium px-3 py-2 text-right">Redeemed</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {(redemptions.data?.data ?? []).map((d) => (
+                                    <RedemptionRow key={d.id} row={d} />
+                                ))}
+                            </tbody>
+                        </table>
+                    </TableSurface>
+                )}
+            </Section>
+
+            <Section
                 eyebrow="Compare plans"
                 description="Same lineup as the public pricing page."
             >
@@ -329,7 +363,7 @@ export default function BillingSettingsPage() {
                         onChange={setBillingInterval}
                     />
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
                     {PAID_PLANS.map((id) => (
                         <PlanCard
                             key={id}
@@ -655,6 +689,63 @@ function UsageRow({
             </div>
         </div>
     );
+}
+
+function RedemptionRow({ row }: { row: DiscountRedemption }) {
+    return (
+        <tr className="text-slate-700">
+            <td className="px-3 py-2 font-mono uppercase text-slate-900">{row.code}</td>
+            <td className="px-3 py-2 text-slate-600">{describeRedemption(row)}</td>
+            <td className="px-3 py-2">
+                <RedemptionStatusPill status={row.status} />
+            </td>
+            <td className="px-3 py-2 text-right text-slate-500 tabular-nums">
+                {fmtDate(row.redeemed_at)}
+            </td>
+        </tr>
+    );
+}
+
+function RedemptionStatusPill({ status }: { status: string }) {
+    const s = (status ?? "").toLowerCase();
+    const cls =
+        s === "applied" || s === "active"
+            ? "bg-emerald-50 text-emerald-700 border-emerald-100"
+            : s === "expired" || s === "revoked" || s === "void"
+                ? "bg-slate-100 text-slate-400 border-slate-200"
+                : "bg-slate-100 text-slate-500 border-slate-200";
+    return (
+        <span
+            className={`inline-flex items-center text-[10px] uppercase tracking-[0.08em] font-semibold rounded-sm px-1.5 py-0.5 border ${cls}`}
+        >
+            {status || "—"}
+        </span>
+    );
+}
+
+// describeRedemption renders a short human summary of a redeemed code.
+function describeRedemption(d: DiscountRedemption): string {
+    if (d.type === "trial_extension") {
+        return `+${d.trial_extension_days ?? 0} trial days`;
+    }
+    if (d.type === "percent") {
+        return `${d.percent_off ?? 0}% off`;
+    }
+    if (d.type === "fixed" && d.amount_off != null) {
+        return `${(d.currency ?? "usd").toUpperCase()} ${fmtMoney(d.amount_off)} off`;
+    }
+    return d.type || "Discount";
+}
+
+function fmtDate(value?: string | null): string {
+    if (!value) return "—";
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return "—";
+    return d.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+    });
 }
 
 // describeDiscount renders a short human summary of an applied code.

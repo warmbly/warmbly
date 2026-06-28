@@ -8,7 +8,7 @@ import { WEBSITE_URL } from "@/lib/information";
 const INPUT = "w-full h-11 rounded-lg border border-slate-200 bg-white px-4 text-[15px] text-slate-900 placeholder:text-slate-400 outline-none transition-colors duration-200 focus:border-sky-400 focus:ring-4 focus:ring-sky-400/15";
 
 export default function RegisterPage() {
-    const { mail, setMail, password, setPassword, password2, setPassword2, acceptTerms, setAcceptTerms, captcha, pending, onSubmit, onToken } = useRegisterForm();
+    const { mail, setMail, password, setPassword, password2, setPassword2, acceptTerms, setAcceptTerms, captcha, pending, onSubmit, onToken, referralCode } = useRegisterForm();
 
     return (
         <div className="space-y-6">
@@ -16,6 +16,16 @@ export default function RegisterPage() {
                 <h1 className="text-[28px] font-bold text-slate-900 tracking-tight leading-tight">Create your account</h1>
                 <p className="text-sm text-slate-400 mt-1.5">Get started with Warmbly for free</p>
             </div>
+
+            {referralCode && (
+                <div className="flex items-center justify-center gap-2 rounded-lg border border-sky-100 bg-sky-50 px-3 py-2 text-[13px] text-sky-700">
+                    <svg className="size-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="3" y="8" width="18" height="4" rx="1" />
+                        <path d="M12 8v13M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7M7.5 8a2.5 2.5 0 0 1 0-5C11 3 12 8 12 8M16.5 8a2.5 2.5 0 0 0 0-5C13 3 12 8 12 8" />
+                    </svg>
+                    <span>You've been invited. A discount will be applied to your first invoices.</span>
+                </div>
+            )}
 
             <form onSubmit={onSubmit} className="space-y-4">
                 <div className="space-y-1.5">

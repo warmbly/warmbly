@@ -4,6 +4,9 @@ type AuthData struct {
 	Email     string `json:"email"`
 	Password  string `json:"password"`
 	Turnstile string `json:"turnstile"`
+	// ReferralCode is the optional ?ref= code the signup arrived with. Carried
+	// to RegistrationConfirm so the new org can be attributed to its referrer.
+	ReferralCode string `json:"referral_code"`
 }
 
 type ConfirmData struct {

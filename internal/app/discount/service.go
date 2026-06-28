@@ -29,7 +29,11 @@ type DiscountService interface {
 	Create(ctx context.Context, adminID uuid.UUID, req *models.CreateDiscountCodeRequest, ipAddress, userAgent string) (*models.DiscountCode, *errx.Error)
 	Update(ctx context.Context, adminID, id uuid.UUID, req *models.UpdateDiscountCodeRequest, ipAddress, userAgent string) (*models.DiscountCode, *errx.Error)
 	Delete(ctx context.Context, adminID, id uuid.UUID, ipAddress, userAgent string) *errx.Error
-	ListRedemptions(ctx context.Context, codeID uuid.UUID, cursor *uuid.UUID, limit int) (*models.AdminDiscountRedemptionsResult, *errx.Error)
+	ListRedemptions(ctx context.Context, codeID uuid.UUID, offset, limit int) (*models.AdminDiscountRedemptionsResult, *errx.Error)
+
+	// ListOrganizationRedemptions returns an org's own redemption history for
+	// the customer billing page.
+	ListOrganizationRedemptions(ctx context.Context, orgID uuid.UUID, limit int) ([]models.DiscountRedemption, *errx.Error)
 
 	// Customer-facing validation (pre-checkout preview). Never errors on a
 	// business-invalid code; returns Valid=false with a reason instead.
@@ -260,13 +264,22 @@ func (s *service) Delete(ctx context.Context, adminID, id uuid.UUID, ipAddress, 
 	return nil
 }
 
-func (s *service) ListRedemptions(ctx context.Context, codeID uuid.UUID, cursor *uuid.UUID, limit int) (*models.AdminDiscountRedemptionsResult, *errx.Error) {
-	result, err := s.redRepo.ListByCode(ctx, codeID, cursor, limit)
+func (s *service) ListRedemptions(ctx context.Context, codeID uuid.UUID, offset, limit int) (*models.AdminDiscountRedemptionsResult, *errx.Error) {
+	result, err := s.redRepo.ListByCode(ctx, codeID, offset, limit)
 	if err != nil {
 		sentry.CaptureException(err)
 		return nil, errx.New(errx.Internal, "failed to list redemptions")
 	}
 	return result, nil
+}
+
+func (s *service) ListOrganizationRedemptions(ctx context.Context, orgID uuid.UUID, limit int) ([]models.DiscountRedemption, *errx.Error) {
+	rows, err := s.redRepo.ListByOrganization(ctx, orgID, limit)
+	if err != nil {
+		sentry.CaptureException(err)
+		return nil, errx.New(errx.Internal, "failed to list redemptions")
+	}
+	return rows, nil
 }
 
 // --- Customer-facing validation ---

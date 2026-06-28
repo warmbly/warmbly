@@ -50,6 +50,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/placement"
 	"github.com/warmbly/warmbly/internal/app/provisioning"
 	"github.com/warmbly/warmbly/internal/app/ratelimit"
+	"github.com/warmbly/warmbly/internal/app/referral"
 	"github.com/warmbly/warmbly/internal/app/releases"
 	"github.com/warmbly/warmbly/internal/app/sequence"
 	"github.com/warmbly/warmbly/internal/app/settings"
@@ -152,6 +153,7 @@ func main() {
 	var subscriptionService subscription.SubscriptionService
 	var stripeService stripe.StripeService
 	var discountService discount.DiscountService
+	var referralService referral.Service
 	var organizationService organization.OrganizationService
 
 	// Email send & templates
@@ -635,6 +637,23 @@ func main() {
 		// gate can issue a pending challenge.
 		twofaService = twofa.NewService(repository.NewTOTPRepository(primaryDB.Pool), userRepostory, tokenService, cache, twofa.DeriveKey(authCfg.TwoFASecret))
 		authService.WireTwoFA(twofaService)
+
+		// Referral program. Wired bidirectionally with Stripe (webhooks reward and
+		// claw back; the earnings ledger nets onto the referrer's customer balance)
+		// and into auth so a signup carrying ?ref= is attributed to its referrer.
+		referralRepository := repository.NewReferralRepository(primaryDB.Pool)
+		referralService = referral.NewService(
+			referralRepository,
+			discountCodeRepository,
+			planRepository,
+			subscriptionRepository,
+			userRepostory,
+			auditService,
+			os.Getenv("APP_URL"),
+		)
+		stripeService.WireReferral(referralService)
+		referralService.WireBalancer(stripeService)
+		authService.WireReferral(referralService)
 		var passkeyErr error
 		passkeyService, passkeyErr = passkey.New(passkey.Deps{
 			Repo:          webauthnRepository,
@@ -1069,6 +1088,7 @@ func main() {
 		SubscriptionService: subscriptionService,
 		StripeService:       stripeService,
 		DiscountService:     discountService,
+		ReferralService:     referralService,
 
 		// Trial & feature gates
 		TrialService:            trialService,

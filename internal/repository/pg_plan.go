@@ -85,7 +85,7 @@ func (r *planRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.Pla
 		SELECT p.id, p.name, p.max_contacts, p.daily_emails, p.ai_generation, p.account_limit,
 			   p.price, p.discounted_price, d.title, p.savings, p.public,
 			   p.stripe_price_id, p.stripe_price_id_yearly, p.stripe_product_id, p.dedicated_workers, p.daily_campaign_limit,
-			   p.created_at, p.updated_at
+			   p.referral_reward_percent, p.created_at, p.updated_at
 		FROM plans p
 		LEFT JOIN durations d ON d.id = p.duration_id
 		WHERE p.id = $1
@@ -97,7 +97,7 @@ func (r *planRepository) GetByStripePriceID(ctx context.Context, priceID string)
 		SELECT p.id, p.name, p.max_contacts, p.daily_emails, p.ai_generation, p.account_limit,
 			   p.price, p.discounted_price, d.title, p.savings, p.public,
 			   p.stripe_price_id, p.stripe_price_id_yearly, p.stripe_product_id, p.dedicated_workers, p.daily_campaign_limit,
-			   p.created_at, p.updated_at
+			   p.referral_reward_percent, p.created_at, p.updated_at
 		FROM plans p
 		LEFT JOIN durations d ON d.id = p.duration_id
 		WHERE p.stripe_price_id = $1 OR p.stripe_price_id_yearly = $1
@@ -109,7 +109,7 @@ func (r *planRepository) GetByStripeProductID(ctx context.Context, productID str
 		SELECT p.id, p.name, p.max_contacts, p.daily_emails, p.ai_generation, p.account_limit,
 			   p.price, p.discounted_price, d.title, p.savings, p.public,
 			   p.stripe_price_id, p.stripe_price_id_yearly, p.stripe_product_id, p.dedicated_workers, p.daily_campaign_limit,
-			   p.created_at, p.updated_at
+			   p.referral_reward_percent, p.created_at, p.updated_at
 		FROM plans p
 		LEFT JOIN durations d ON d.id = p.duration_id
 		WHERE p.stripe_product_id = $1
@@ -145,7 +145,7 @@ func (r *planRepository) List(ctx context.Context, publicOnly bool) ([]*models.P
 		SELECT p.id, p.name, p.max_contacts, p.daily_emails, p.ai_generation, p.account_limit,
 			   p.price, p.discounted_price, d.title, p.savings, p.public,
 			   p.stripe_price_id, p.stripe_price_id_yearly, p.stripe_product_id, p.dedicated_workers, p.daily_campaign_limit,
-			   p.created_at, p.updated_at
+			   p.referral_reward_percent, p.created_at, p.updated_at
 		FROM plans p
 		LEFT JOIN durations d ON d.id = p.duration_id
 	`
@@ -168,7 +168,7 @@ func (r *planRepository) List(ctx context.Context, publicOnly bool) ([]*models.P
 			&plan.ID, &plan.Name, &plan.MaxContacts, &plan.DailyEmails, &plan.AIGeneration, &plan.AccountLimit,
 			&plan.Price, &plan.DiscountedPrice, &duration, &plan.Savings, &plan.Public,
 			&plan.StripePriceID, &plan.StripePriceIDYearly, &plan.StripeProductID, &plan.DedicatedWorkers, &plan.DailyCampaignLimit,
-			&plan.CreatedAt, &plan.UpdatedAt,
+			&plan.ReferralRewardPercent, &plan.CreatedAt, &plan.UpdatedAt,
 		)
 		if err != nil {
 			return nil, err

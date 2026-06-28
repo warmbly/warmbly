@@ -297,12 +297,6 @@ func (r *discountCodeRepository) List(ctx context.Context, search *models.AdminD
 	addAfter("dc.expires_at", search.ExpiresAfter)
 	addBefore("dc.expires_at", search.ExpiresBefore)
 
-	if search.Cursor != nil {
-		whereClause += " AND dc.id < $" + itoa(argNum)
-		args = append(args, *search.Cursor)
-		argNum++
-	}
-
 	orderCol := "dc.created_at"
 	switch search.SortBy {
 	case "code":
@@ -324,9 +318,23 @@ func (r *discountCodeRepository) List(ctx context.Context, search *models.AdminD
 	}
 	orderBy := "ORDER BY " + orderCol + " " + orderDir + ", dc.id DESC"
 
-	args = append(args, limit+1)
+	offset := search.Offset
+	if offset < 0 {
+		offset = 0
+	}
 
-	query := `SELECT ` + dcCols + ` FROM discount_codes dc ` + whereClause + ` ` + orderBy + ` LIMIT $` + itoa(argNum)
+	// args holds only the WHERE filters here; snapshot them for the COUNT
+	// before the pagination placeholders are appended. Offset paging keeps the
+	// keyset correct for every sort column (a plain dc.id keyset did not match
+	// the ORDER BY and skipped/duplicated rows on any non-id sort).
+	countArgs := append([]interface{}{}, args...)
+
+	limitArg := argNum
+	offsetArg := argNum + 1
+	args = append(args, limit+1, offset)
+
+	query := `SELECT ` + dcCols + ` FROM discount_codes dc ` + whereClause + ` ` + orderBy +
+		` LIMIT $` + itoa(limitArg) + ` OFFSET $` + itoa(offsetArg)
 
 	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
@@ -361,8 +369,7 @@ func (r *discountCodeRepository) List(ctx context.Context, search *models.AdminD
 	if len(codes) > limit {
 		result.Data = codes[:limit]
 		ids = ids[:limit]
-		lastID := result.Data[limit-1].ID
-		result.Pagination.NextCursor = paging.UUIDString(lastID)
+		result.Pagination.NextCursor = paging.EncodeOffset(offset + limit)
 	}
 
 	// Attach plan eligibility for the returned page in one query.
@@ -393,10 +400,11 @@ func (r *discountCodeRepository) List(ctx context.Context, search *models.AdminD
 		}
 	}
 
-	// Total count for the same filter — drop the trailing LIMIT arg.
+	// Total count for the same filter, using the snapshot of WHERE-only args
+	// (the live args slice now also carries the LIMIT/OFFSET placeholders).
 	countQuery := `SELECT COUNT(*) FROM discount_codes dc ` + whereClause
 	var total int64
-	if err := r.db.QueryRow(ctx, countQuery, args[:len(args)-1]...).Scan(&total); err == nil {
+	if err := r.db.QueryRow(ctx, countQuery, countArgs...).Scan(&total); err == nil {
 		result.Pagination.Total = &total
 	}
 
@@ -421,7 +429,10 @@ type DiscountRedemptionRepository interface {
 	CancelBySession(ctx context.Context, sessionID string) error
 	CancelByID(ctx context.Context, redemptionID uuid.UUID) error
 	CountActiveByCodeAndOrg(ctx context.Context, codeID, orgID uuid.UUID) (int, error)
-	ListByCode(ctx context.Context, codeID uuid.UUID, cursor *uuid.UUID, limit int) (*models.AdminDiscountRedemptionsResult, error)
+	ListByCode(ctx context.Context, codeID uuid.UUID, offset, limit int) (*models.AdminDiscountRedemptionsResult, error)
+	// ListByOrganization returns an org's redemptions (newest first), joined to
+	// the code string, for the customer billing page.
+	ListByOrganization(ctx context.Context, orgID uuid.UUID, limit int) ([]models.DiscountRedemption, error)
 }
 
 type discountRedemptionRepository struct {
@@ -594,30 +605,62 @@ func (r *discountRedemptionRepository) CountActiveByCodeAndOrg(ctx context.Conte
 	return count, err
 }
 
-func (r *discountRedemptionRepository) ListByCode(ctx context.Context, codeID uuid.UUID, cursor *uuid.UUID, limit int) (*models.AdminDiscountRedemptionsResult, error) {
+func (r *discountRedemptionRepository) ListByOrganization(ctx context.Context, orgID uuid.UUID, limit int) ([]models.DiscountRedemption, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}
+	rows, err := r.db.Query(ctx, `
+		SELECT dr.id, dr.discount_code_id, dr.organization_id, dr.redeemed_by, dr.subscription_id, dr.plan_id,
+			dr.stripe_coupon_id, dr.stripe_checkout_session_id, dr.type, dr.percent_off, dr.amount_off,
+			dr.currency, dr.trial_extension_days, dr.status, dr.redeemed_at, dr.applied_at, dc.code
+		FROM discount_redemptions dr
+		JOIN discount_codes dc ON dc.id = dr.discount_code_id
+		WHERE dr.organization_id = $1
+		ORDER BY dr.redeemed_at DESC
+		LIMIT $2
+	`, orgID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
 
-	args := []interface{}{codeID, limit + 1}
-	argNum := 3
-	whereClause := "WHERE discount_code_id = $1"
-	if cursor != nil {
-		whereClause += " AND id < $" + itoa(argNum)
-		args = append(args, *cursor)
+	items := []models.DiscountRedemption{}
+	for rows.Next() {
+		var d models.DiscountRedemption
+		if err := rows.Scan(
+			&d.ID, &d.DiscountCodeID, &d.OrganizationID, &d.RedeemedBy, &d.SubscriptionID, &d.PlanID,
+			&d.StripeCouponID, &d.StripeCheckoutSessionID, &d.Type, &d.PercentOff, &d.AmountOff,
+			&d.Currency, &d.TrialExtensionDays, &d.Status, &d.RedeemedAt, &d.AppliedAt, &d.Code,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, d)
+	}
+	return items, rows.Err()
+}
+
+func (r *discountRedemptionRepository) ListByCode(ctx context.Context, codeID uuid.UUID, offset, limit int) (*models.AdminDiscountRedemptionsResult, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
 	}
 
+	// Offset paging: rows are ordered by redeemed_at, so a dc.id keyset would
+	// not match the sort. The (discount_code_id, redeemed_at DESC) index keeps
+	// it fast even for a code with many redemptions.
 	query := `
 		SELECT id, discount_code_id, organization_id, redeemed_by, subscription_id, plan_id,
 			stripe_coupon_id, stripe_checkout_session_id, type, percent_off, amount_off,
 			currency, trial_extension_days, status, redeemed_at, applied_at
 		FROM discount_redemptions
-		` + whereClause + `
-		ORDER BY redeemed_at DESC
-		LIMIT $2
+		WHERE discount_code_id = $1
+		ORDER BY redeemed_at DESC, id DESC
+		LIMIT $2 OFFSET $3
 	`
 
-	rows, err := r.db.Query(ctx, query, args...)
+	rows, err := r.db.Query(ctx, query, codeID, limit+1, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -646,8 +689,7 @@ func (r *discountRedemptionRepository) ListByCode(ctx context.Context, codeID uu
 	}
 	if len(items) > limit {
 		result.Data = items[:limit]
-		lastID := result.Data[limit-1].ID
-		result.Pagination.NextCursor = paging.UUIDString(lastID)
+		result.Pagination.NextCursor = paging.EncodeOffset(offset + limit)
 	}
 
 	return result, nil

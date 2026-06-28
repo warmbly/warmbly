@@ -1,0 +1,100 @@
+---
+title: Referral program
+description: Share Warmbly, give friends a discount, and earn account credit when they upgrade.
+icon: Gift
+---
+
+The referral program rewards you for bringing other teams to Warmbly. You share a personal code, the people you refer get a discount on their first few months, and when they upgrade to a paid plan you earn account credit that comes straight off your future invoices.
+
+This guide covers where to find your code, what an invitee gets, what you earn, how the credit is applied, the 30-day clawback, the fraud and limit rules, and a short FAQ.
+
+<Callout type="info" title="Who can manage referrals">
+The referral page lives under **Settings, Referral** and requires the **Manage billing** permission, the same permission that controls the rest of billing. The owner and any role granted billing access can open it; other members do not see it.
+</Callout>
+
+## Finding your code
+
+Open **Settings, Referral** in the dashboard. Warmbly mints one referral code per workspace the first time you visit, and the page shows it along with a ready-to-share link in the form:
+
+```
+https://app.warmbly.com/register?ref=CODE
+```
+
+Copy the link and send it to anyone you want to refer. When they open it, the code is captured automatically and carried through sign-up, so they do not have to type or remember anything.
+
+The same page shows your running totals: how many people have signed up with your code, how many converted to a paid plan, and how much credit you have earned so far.
+
+## What the invitee gets
+
+Anyone who signs up through your link gets **10% off their first 3 months**. It is a repeating discount that is applied automatically at checkout, so the invitee does not need to enter a promo code. After the third month the discount ends and they pay the standard plan price.
+
+The discount applies to whichever paid plan the invitee chooses when they upgrade. It does not require them to start on a specific plan.
+
+## What you earn
+
+When an invitee converts to a paid plan, you earn **account credit equal to one month-equivalent of their plan price**:
+
+| Invitee's plan | Credit you earn |
+|----------------|-----------------|
+| Starter ($29/mo) | $29 |
+| Pro ($99/mo) | $99 |
+| Pro Annual | ~$99 (one month-equivalent, not the full annual invoice) |
+
+Annual plans count as a single month-equivalent of the plan price, not the whole year. Referring someone who pays annually earns you roughly one month of that plan, the same as referring someone on the monthly version.
+
+You earn **one reward per referred organization**, and rewards **stack across referrals**: refer five teams that all upgrade to Pro and you earn five times the Pro reward.
+
+## How credit is applied
+
+Credit is applied automatically. When a referred organization converts, Warmbly adds the reward to your Stripe customer balance, and that balance nets off your future Warmbly invoices. You do not need to redeem anything or contact support: the next invoice simply draws down the available credit first, and any remainder rolls forward to later invoices.
+
+Because the credit lives on your billing account, you can see it reflected in the billing portal alongside your normal invoices.
+
+## The 30-day clawback
+
+Rewards are not final the instant they are granted. Each reward has a **30-day clawback window**: if the invitee refunds or cancels their subscription within 30 days of the reward being granted, the credit is reversed and removed from your balance.
+
+This keeps the program honest and means earned credit settles once the referred subscription has held for the window. After 30 days the reward is no longer subject to clawback.
+
+## Limits and fraud rules
+
+To keep the program fair, a few rules apply automatically:
+
+- **No self-referrals.** You cannot refer your own workspace or use your own code to claim a reward. Self-referral attempts are blocked.
+- **One reward per organization.** Each referred organization can generate at most one reward, no matter how many times its link is shared or reused.
+- **A monthly cap per referrer.** There is a per-referrer monthly limit on the number of rewarded conversions. Conversions beyond the cap in a given month still bring teams onto Warmbly, but do not add further credit that month.
+
+<Callout type="warn" title="Abuse is reversible">
+Credit is provisional until the clawback window closes. Refunds, cancellations inside the window, and conversions that breach the rules above will not result in lasting credit.
+</Callout>
+
+## Frequently asked questions
+
+### Does the invitee need to enter a code?
+
+No. The code is captured from the link (`?ref=CODE`) and carried through sign-up automatically. The 10% discount is applied at checkout without the invitee typing anything.
+
+### When exactly do I earn the credit?
+
+When the referred organization converts to a paid plan. Sign-ups that never upgrade do not earn a reward.
+
+### What if the invitee upgrades to an annual plan?
+
+You earn one month-equivalent of that plan's price, not the full annual invoice. For Pro Annual that is roughly the monthly Pro amount.
+
+### Can I lose credit I already earned?
+
+Only inside the 30-day clawback window. If the invitee refunds or cancels within 30 days of the reward, that reward is reversed. After the window closes the credit is settled.
+
+### How many people can I refer?
+
+As many as you like, and rewards stack. There is a per-referrer monthly cap on rewarded conversions, so a single month's earnings are bounded, but there is no cap on how many teams you can invite.
+
+### Where does the credit show up?
+
+On your Stripe customer balance, which automatically reduces your next Warmbly invoices. You can see it in the billing portal.
+
+## See also
+
+- [Team and roles](/guides/team-roles/) for the billing permission that controls access to the referral page.
+- [Account and organization API](/api/account-and-organization/) for the referral and discount endpoints behind this page.
