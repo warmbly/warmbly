@@ -15,6 +15,7 @@ import (
 	"github.com/stripe/stripe-go/v76/checkout/session"
 	"github.com/stripe/stripe-go/v76/coupon"
 	"github.com/stripe/stripe-go/v76/customer"
+	balancetxn "github.com/stripe/stripe-go/v76/customerbalancetransaction"
 	"github.com/stripe/stripe-go/v76/invoice"
 	"github.com/stripe/stripe-go/v76/subscription"
 	"github.com/stripe/stripe-go/v76/webhook"
@@ -57,6 +58,25 @@ type StripeService interface {
 	// Webhooks
 	VerifyWebhook(payload []byte, signature string) (*stripe.Event, *errx.Error)
 	ProcessWebhookEvent(ctx context.Context, event *stripe.Event) *errx.Error
+
+	// ApplyCustomerCredit adds a signed cents delta to a customer's Stripe
+	// balance (negative = credit the customer). Satisfies referral.StripeBalancer.
+	ApplyCustomerCredit(ctx context.Context, customerID string, amountCents int64, currency, idempotencyKey string) (string, *errx.Error)
+
+	// WireReferral attaches the referral program (post-construction; nil = the
+	// referral hooks in the webhook flow are skipped).
+	WireReferral(r ReferralRewarder)
+}
+
+// ReferralRewarder is the slice of the referral service the Stripe webhook flow
+// drives. *referral.Service satisfies it; injected via WireReferral so the
+// stripe package needs no import of referral (no cycle).
+type ReferralRewarder interface {
+	QualifyOnConversion(ctx context.Context, inviteeOrgID uuid.UUID)
+	RewardOnFirstInvoice(ctx context.Context, inviteeOrgID, planID uuid.UUID, eventID string) *errx.Error
+	ClawbackForInvitee(ctx context.Context, inviteeOrgID uuid.UUID, eventID, reason string)
+	SyncStripeBalance(ctx context.Context, orgID uuid.UUID)
+	InviteeDiscountCode(ctx context.Context, inviteeOrgID uuid.UUID) string
 }
 
 type stripeService struct {
@@ -65,7 +85,10 @@ type stripeService struct {
 	planRepo         repository.PlanRepository
 	workerAssignment worker.WorkerAssignmentService
 	discountService  discount.DiscountService
+	referral         ReferralRewarder
 }
+
+func (s *stripeService) WireReferral(r ReferralRewarder) { s.referral = r }
 
 func NewService(
 	cfg *config.StripeConfig,
@@ -110,6 +133,31 @@ func (s *stripeService) GetCustomer(ctx context.Context, customerID string) (*st
 	return cust, nil
 }
 
+// ApplyCustomerCredit posts a customer balance transaction. amountCents is the
+// signed delta applied to the Stripe balance: negative credits the customer
+// (reduces future invoices), positive debits them (reverses a credit). The
+// idempotency key prevents a retried webhook from double-applying.
+func (s *stripeService) ApplyCustomerCredit(ctx context.Context, customerID string, amountCents int64, currency, idempotencyKey string) (string, *errx.Error) {
+	if customerID == "" || amountCents == 0 {
+		return "", nil
+	}
+	params := &stripe.CustomerBalanceTransactionParams{
+		Customer:    stripe.String(customerID),
+		Amount:      stripe.Int64(amountCents),
+		Currency:    stripe.String(currency),
+		Description: stripe.String("Referral credit"),
+	}
+	if idempotencyKey != "" {
+		params.SetIdempotencyKey(idempotencyKey)
+	}
+	txn, err := balancetxn.New(params)
+	if err != nil {
+		sentry.CaptureException(fmt.Errorf("stripe customer balance txn failed: %w", err))
+		return "", errx.New(errx.Internal, "failed to apply referral credit")
+	}
+	return txn.ID, nil
+}
+
 func (s *stripeService) CreateCheckoutSession(ctx context.Context, userID uuid.UUID, orgID uuid.UUID, priceID, successURL, cancelURL, discountCode string) (*stripe.CheckoutSession, *errx.Error) {
 	// Get or create customer
 	sub, err := s.subRepo.GetByOrganizationID(ctx, orgID)
@@ -148,6 +196,15 @@ func (s *stripeService) CreateCheckoutSession(ctx context.Context, userID uuid.U
 		params.Customer = stripe.String(customerID)
 	} else {
 		params.CustomerCreation = stripe.String("always")
+	}
+
+	// Auto-apply the invitee's referral discount when none was supplied, so a
+	// user who signed up with ?ref= still gets their 10%/3-month discount even
+	// if the billing page didn't prefill the code.
+	if discountCode == "" && s.referral != nil {
+		if code := s.referral.InviteeDiscountCode(ctx, orgID); code != "" {
+			discountCode = code
+		}
 	}
 
 	// Resolve and attach a discount code, if supplied. The code is validated
@@ -505,6 +562,8 @@ func (s *stripeService) ProcessWebhookEvent(ctx context.Context, event *stripe.E
 		processErr = s.handleInvoicePaid(ctx, event)
 	case "invoice.payment_failed":
 		processErr = s.handleInvoicePaymentFailed(ctx, event)
+	case "charge.refunded":
+		processErr = s.handleChargeRefunded(ctx, event)
 	}
 
 	// Record event for idempotency
@@ -617,6 +676,14 @@ func (s *stripeService) handleCheckoutCompleted(ctx context.Context, event *stri
 		if xerr := s.discountService.MarkRedemptionApplied(ctx, checkoutSession.ID, subID); xerr != nil {
 			sentry.CaptureException(fmt.Errorf("mark discount redemption applied failed: %s", xerr.Message))
 		}
+	}
+
+	// Referral hooks: mark the invitee's attribution qualified (they reached a
+	// paid checkout), and flush any referral credit this org earned before it
+	// had a Stripe customer.
+	if hasOrgID && s.referral != nil {
+		s.referral.QualifyOnConversion(ctx, orgID)
+		s.referral.SyncStripeBalance(ctx, orgID)
 	}
 
 	return nil
@@ -783,11 +850,80 @@ func (s *stripeService) handleSubscriptionDeleted(ctx context.Context, event *st
 		}()
 	}
 
+	// Claw back a referral reward if the invitee cancels inside the window.
+	if s.referral != nil {
+		s.referral.ClawbackForInvitee(ctx, sub.OrganizationID, event.ID, "subscription_canceled")
+	}
+
 	return nil
 }
 
 func (s *stripeService) handleInvoicePaid(ctx context.Context, event *stripe.Event) *errx.Error {
-	// Invoice paid - subscription should be active via subscription.updated event
+	// Subscription activation is handled via subscription.updated. This hook
+	// rewards the referrer on the invitee's FIRST paid invoice.
+	if s.referral == nil {
+		return nil
+	}
+	var inv stripe.Invoice
+	if err := json.Unmarshal(event.Data.Raw, &inv); err != nil {
+		return errx.New(errx.Internal, "failed to parse invoice")
+	}
+	// Only the first invoice of a new subscription, and only once real money has
+	// changed hands (a $0 invoice is not a payment), earns a referral reward.
+	if inv.BillingReason != stripe.InvoiceBillingReasonSubscriptionCreate {
+		return nil
+	}
+	if inv.AmountPaid <= 0 {
+		return nil
+	}
+
+	// Resolve the invitee org from the subscription, falling back to customer.
+	var sub *models.Subscription
+	if inv.Subscription != nil {
+		sub, _ = s.subRepo.GetByStripeSubscriptionID(ctx, inv.Subscription.ID)
+	}
+	if sub == nil && inv.Customer != nil {
+		sub, _ = s.subRepo.GetByStripeCustomerID(ctx, inv.Customer.ID)
+	}
+	if sub == nil {
+		return nil
+	}
+
+	// Resolve the invitee's plan: prefer the invoiced price, fall back to the
+	// local subscription's plan.
+	var plan *models.Plan
+	if inv.Lines != nil && len(inv.Lines.Data) > 0 && inv.Lines.Data[0].Price != nil {
+		plan, _ = s.planRepo.GetByStripePriceID(ctx, inv.Lines.Data[0].Price.ID)
+	}
+	if plan == nil {
+		plan, _ = s.planRepo.GetByID(ctx, sub.PlanID)
+	}
+	if plan == nil {
+		return nil
+	}
+
+	return s.referral.RewardOnFirstInvoice(ctx, sub.OrganizationID, plan.ID, event.ID)
+}
+
+// handleChargeRefunded claws back a referral reward when an invitee's charge is
+// refunded inside the clawback window. The referral service guards the window
+// and one-time semantics, so a refund outside the window is a no-op.
+func (s *stripeService) handleChargeRefunded(ctx context.Context, event *stripe.Event) *errx.Error {
+	if s.referral == nil {
+		return nil
+	}
+	var ch stripe.Charge
+	if err := json.Unmarshal(event.Data.Raw, &ch); err != nil {
+		return errx.New(errx.Internal, "failed to parse charge")
+	}
+	if ch.Customer == nil {
+		return nil
+	}
+	sub, _ := s.subRepo.GetByStripeCustomerID(ctx, ch.Customer.ID)
+	if sub == nil {
+		return nil
+	}
+	s.referral.ClawbackForInvitee(ctx, sub.OrganizationID, event.ID, "refund")
 	return nil
 }
 
