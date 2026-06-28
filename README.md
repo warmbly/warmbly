@@ -3,113 +3,112 @@
 </p>
 
 <p align="center">
-  <b>Open-source cold email and mailbox warmup you can self-host.</b><br />
-  Your IPs, your database, your infrastructure. No vendor lock-in.
+  Open-source cold email and mailbox warmup you can self-host.<br />
+  Your sending IPs, your database, your servers.
 </p>
 
 <p align="center">
-  <a href="./LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-0369a1?style=flat-square&labelColor=0c4a6e" alt="License: Apache 2.0" /></a>
-  &nbsp;<img src="https://img.shields.io/badge/Go-1.25-00ADD8?style=flat-square&labelColor=0c4a6e&logo=go&logoColor=white" alt="Go 1.25" />
-  &nbsp;<img src="https://img.shields.io/badge/PostgreSQL-16-336791?style=flat-square&labelColor=0c4a6e&logo=postgresql&logoColor=white" alt="PostgreSQL 16" />
-  &nbsp;<img src="https://img.shields.io/badge/Self--hostable-yes-10b981?style=flat-square&labelColor=0c4a6e" alt="Self-hostable" />
-  &nbsp;<a href="./CONTRIBUTING.md"><img src="https://img.shields.io/badge/PRs-welcome-0ea5e9?style=flat-square&labelColor=0c4a6e" alt="PRs welcome" /></a>
-</p>
-
-<p align="center">
-  <a href="#features">Features</a> ·
   <a href="#quick-start">Quick start</a> ·
+  <a href="#warmup">Warmup</a> ·
   <a href="#how-it-works">How it works</a> ·
   <a href="#self-hosting">Self-hosting</a> ·
   <a href="#documentation">Docs</a> ·
   <a href="./CONTRIBUTING.md">Contributing</a>
 </p>
 
----
-
 <table>
   <tr>
-    <td width="50%"><img src="docs/assets/dashboard-campaigns.png" alt="Campaigns" /><br /><sub><b>Campaigns</b> · multi-step sends with live per-mailbox caps and status</sub></td>
-    <td width="50%"><img src="docs/assets/dashboard-inbox.png" alt="Unified inbox" /><br /><sub><b>Unified inbox</b> · every mailbox and reply in one place</sub></td>
-  </tr>
-  <tr>
-    <td width="50%"><img src="docs/assets/dashboard-deliverability.png" alt="Deliverability" /><br /><sub><b>Deliverability</b> · bounce, complaint, and inbox-placement health</sub></td>
-    <td width="50%"><img src="docs/assets/dashboard-automations.png" alt="Automations" /><br /><sub><b>Automations</b> · branching reply playbooks on a visual canvas</sub></td>
+    <td width="33%"><img src="docs/assets/dashboard-campaigns.png" alt="Campaigns" /><br /><sub><b>Campaigns</b><br />multi-step sends with per-mailbox caps</sub></td>
+    <td width="33%"><img src="docs/assets/dashboard-inbox.png" alt="Unified inbox" /><br /><sub><b>Unified inbox</b><br />every mailbox and reply in one place</sub></td>
+    <td width="33%"><img src="docs/assets/dashboard-mailboxes.png" alt="Mailboxes" /><br /><sub><b>Mailboxes</b><br />warmup state and health per account</sub></td>
   </tr>
 </table>
 
 ## What is Warmbly
 
-Warmbly is a cold-outreach and mailbox-warmup platform that runs on infrastructure
-you control. Hosted tools keep your sender reputation in someone else's IP pool and
-your data in someone else's database. Warmbly gives you the same feature set on your
-own boxes: your IPs, your Postgres, no vendor lock-in.
+Warmbly is a cold outreach platform. You connect your mailboxes, write sequenced
+campaigns, and it sends the mail, tracks the replies, and keeps your sender
+reputation healthy. The difference from hosted tools is where it runs: your
+sending IPs, your Postgres, your servers. Nothing is tied to a vendor's pool or
+a vendor's database.
 
-The same code scales from a single VPS to a fleet of cheap servers with many IPs per
-box, so you start small and add capacity by adding machines, not by paying per seat.
+Everything a sending team needs sits in one dashboard:
 
-## Features
+- **Campaigns** send multi-step sequences with per-mailbox daily caps and spacing.
+- **The unified inbox** pulls every connected mailbox and its replies into one view.
+- **A built-in CRM** tracks contacts, pipelines, deals, tasks, and meetings.
+- **Deliverability** surfaces bounces, complaints, suppression, and inbox placement.
+- **Automations** run branching reply playbooks on a visual canvas.
+- **Warmup** builds reputation in our managed pool, covered below.
 
-- **Self-hostable** — one binary per service. Postgres, Redis, and an event bus are the whole stack. No required calls to AWS, GCP, Stripe, or Cloudflare.
-- **Distributed workers** — one worker per IP, many per box. Reputation is tracked per IP, not per machine, and a multi-IP install is a single command.
-- **Real warmup** — pool-based warmup with spam-score tracking and auto-blocking on token-forgery patterns. Free and premium pools stay isolated.
-- **Mailbox-first safety** — per-mailbox send caps and spacing with gradual ramps. A worker's safe volume is the sum of its mailboxes' budgets, not a flat per-worker limit.
-- **Envelope encryption** — KMS-wrapped per-organization data keys. Workers fetch them over HTTPS and never touch Postgres directly.
-- **Pluggable backends** — KMS, blob store, event bus, and codec are chosen at deploy time: AWS or local AES, Kafka or NATS, S3 or filesystem.
-- **A real product** — campaigns, unified inbox, CRM, deliverability analytics, visual automations, and a separate admin app, all realtime by default.
+The same code runs on a single VPS or across a fleet of cheap servers with many
+IPs per box, so you add capacity by adding machines.
+
+## Warmup
+
+Warmup is where Warmbly is strongest. It runs in our own pool: real, actively
+monitored mailboxes that we operate and warm against each other. Your mailboxes
+hold genuine conversations with that pool, so the reputation they build is real,
+not the result of throwaway inboxes talking to themselves.
+
+We handle the warming end to end. Volume starts low and ramps gradually per
+mailbox, replies happen at a natural rate, and every warmup message carries a
+verification token. Mailboxes that show spam patterns or forged tokens are scored
+and auto-blocked from the pool, so it stays clean for everyone in it. Free and
+premium pools are kept separate.
 
 ## Quick start
 
-You'll need Docker, Go 1.25, and pnpm.
+You need Docker, Go 1.25, and pnpm.
+
+Run the whole stack with Docker:
 
 ```bash
 git clone https://github.com/warmbly/warmbly && cd warmbly
-
-make infra   # Postgres, Redis, Kafka + supporting services (run once, leave up)
-make app     # backend, consumer, worker, tracking, realtime, dashboard
-
-open http://localhost:5173
+make up
 ```
 
-For the fastest dev loop, run the Go services natively (no image rebuilds on change):
+That starts every service against local infra. The dashboard comes up at
+`http://localhost:5173`.
+
+For day-to-day development, skip the Docker app images and run the Go services on
+the host instead. It recompiles in a second or two on save:
 
 ```bash
-make infra            # once
-make run              # backend + consumer + worker in one terminal
-make web              # dashboard → http://localhost:5173
+make infra   # backing services in Docker, run once and leave up
+make run     # backend, consumer, and worker in one terminal
+make web     # dashboard dev server
 ```
 
-The admin app needs an account with admin permissions, and there's no way to
-bootstrap the first one from the UI. Sign up through the dashboard, then promote
-yourself from the host:
-
-```bash
-make grant-admin EMAIL=you@example.com   # then: make admin → http://localhost:5174
-```
-
-Full local-dev reference (native services, seeding, troubleshooting):
+The first admin account cannot be created from the UI. Sign up through the
+dashboard, then promote yourself from the host with
+`make grant-admin EMAIL=you@example.com` and open the admin app with `make admin`.
+Full local setup, seeding, and troubleshooting live in
 [resources/local-development.md](resources/local-development.md).
 
 ## How it works
 
-Warmbly splits into a control plane and an execution plane.
+Warmbly is split into a control plane and an execution plane.
 
-The **control plane** is the backend API, the event consumer, Postgres, Redis, and
-the event bus. It owns all stateful data and decides what to send and where.
+The control plane is the backend API, the event consumer, Postgres, Redis, and
+the event bus. It owns every piece of stateful data and decides what gets sent
+and from where.
 
-The **execution plane** is the distributed worker fleet: one Go binary per machine,
-one worker process per IP. Workers receive commands over the event bus, fetch their
-encryption keys over HTTPS, send and sync mail, and emit telemetry back. **Workers
-never connect to Postgres.**
+The execution plane is the worker fleet: one Go binary per machine, one worker
+process per IP. Workers take commands off the event bus, fetch their encryption
+keys over HTTPS, send and sync mail, and report telemetry back. **Workers never
+connect to Postgres.** Each one is a sending identity rather than a database
+client, so outbound volume spreads across many IPs instead of piling up in a
+single runtime. Reputation is tracked per IP.
 
-That separation is the point. Workers scale horizontally across many cheap machines,
-each one a sending identity rather than a database client, so outbound volume spreads
-across many IPs instead of concentrating in one runtime. Full write-up:
+Secrets use envelope encryption: a per-organization data key, wrapped by KMS, is
+what seals mailbox credentials and message content. The full write-up is in
 [resources/architecture.md](resources/architecture.md).
 
 ## Self-hosting
 
-Every external dependency has an open-source path, selected by an environment
-variable. A self-hoster pays only for the boxes they rent.
+Every external dependency has an open-source path, picked with an environment
+variable, so a self-hosted install can run without any cloud account.
 
 | Concern        | Self-host default         | Cloud option            |
 |----------------|---------------------------|-------------------------|
@@ -122,9 +121,9 @@ variable. A self-hoster pays only for the boxes they rent.
 | Captcha        | Bypass token (trusted)    | Cloudflare Turnstile    |
 | Payments       | Off                       | Stripe                  |
 
-One machine with many attached IPs becomes many sending identities in a single
-command. Each IP gets its own systemd unit and a deterministic identity, so
-reputation persists across reinstalls:
+One machine with several attached IPs becomes several sending identities in a
+single command. Each IP gets its own systemd unit and a stable identity, so
+reputation survives reinstalls:
 
 ```bash
 sudo ./scripts/install-worker.sh \
@@ -133,7 +132,7 @@ sudo ./scripts/install-worker.sh \
   --ips 5.6.7.11,5.6.7.12,5.6.7.13
 ```
 
-Production control plane + worker fleet, env reference, and day-2 operations:
+Production deployment, the full env reference, and day-2 operations are in
 [resources/deployment-guide.md](resources/deployment-guide.md).
 
 ## Tech stack
@@ -151,41 +150,28 @@ Production control plane + worker fleet, env reference, and day-2 operations:
 | Cache       | Redis 7 (or Valkey / KeyDB)       |
 | Event bus   | NATS JetStream (default) or Kafka |
 
-## Repository layout
-
-```
-cmd/        backend (API), consumer (events → Postgres), worker (one per IP), seed
-internal/   api · app (business services) · client (SMTP/IMAP) · events ·
-            infrastructure (pluggable codec/eventbus/kms/storage) · repository
-tracking/   Rust open/click service        realtime/   Elixir WebSocket gateway
-web/        user dashboard                  admin/      admin UI
-site/       marketing site (Astro)          docs/       docs site (docs.warmbly.com)
-scripts/    worker installer + dev tooling  resources/  architecture + design notes
-```
-
 ## Documentation
 
 | Doc | What it covers |
 |-----|----------------|
 | [resources/architecture.md](resources/architecture.md) | Control plane vs execution plane, encryption model |
 | [resources/local-development.md](resources/local-development.md) | Make targets, native services, seeding |
-| [resources/deployment-guide.md](resources/deployment-guide.md) | Production control plane + worker fleet |
+| [resources/deployment-guide.md](resources/deployment-guide.md) | Production control plane and worker fleet |
 | [resources/Events.md](resources/Events.md) | Event bus reference |
 | [resources/EMSG.md](resources/EMSG.md) | Encrypted-message blob format |
 | [docs.warmbly.com](https://docs.warmbly.com) | Product guides and public API reference |
 
 ## Contributing
 
-Pull requests are welcome. Keep changes scoped to one logical change, and open an
+Pull requests are welcome. Keep each one to a single logical change, and open an
 issue first for larger design or product changes. Before you open a PR, run the
-checks for the tree you touched (`make fmt` + `make lint` for Go; `pnpm typecheck` +
-`pnpm lint` for the frontends). Details in [CONTRIBUTING.md](CONTRIBUTING.md).
+checks for the tree you touched (`make fmt` and `make lint` for Go, `pnpm
+typecheck` and `pnpm lint` for the frontends). See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Security
 
-Found a vulnerability? Email `security@warmbly.com` rather than opening a public
-issue. We prefer responsible disclosure and credit reporters in the release notes.
-The encryption model is documented in [resources/architecture.md](resources/architecture.md).
+Found a vulnerability? Email `team@warmbly.com` instead of opening a public issue.
+We prefer responsible disclosure and credit reporters in the release notes.
 
 ## License
 
