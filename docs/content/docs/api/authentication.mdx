@@ -30,6 +30,29 @@ curl -X GET "https://api.warmbly.com/v1/api-keys" \
 
 For mutation retries, include an `Idempotency-Key` header with a unique value per logical operation. Warmbly stores completed mutation responses for 24 hours per organization and key, then replays matching retries instead of performing the operation again.
 
+## Verifying a credential
+
+To check that a credential is valid and see who it belongs to, call `GET /v1/me`. It works with an API key, an OAuth access token, or a dashboard session, requires no specific permission, and returns the caller's identity:
+
+```bash
+curl -X GET "https://api.warmbly.com/v1/me" \
+  -H "Authorization: Bearer wmbly_abc123..."
+```
+
+```json
+{
+  "user_id": "0b1f...",
+  "email": "jane@acme.com",
+  "name": "Jane Doe",
+  "organization_id": "9a2c...",
+  "organization_name": "Acme Inc",
+  "auth_type": "api_key",
+  "scopes": ["read_contacts", "write_contacts"]
+}
+```
+
+`auth_type` is `api_key`, `oauth`, or `jwt`, and `scopes` lists the granted API scopes for key and OAuth callers (empty for dashboard sessions, which use organization roles instead). This is the right endpoint for an integration to validate a connection and render a label. The separate `GET /v1/auth/me` is session-only and is not reachable with an API key or OAuth token.
+
 ## OAuth access tokens
 
 API keys authenticate your own scripts. If you are building an app that other people connect their Warmbly workspace to, use OAuth instead: the user grants your app scoped access and you receive a bearer **access token** (prefix `wmat_`). It goes in the same `Authorization: Bearer` header and is checked against the same permissions, so every endpoint below behaves identically whether you present an API key or an OAuth token. The difference is only how the credential is obtained. See [OAuth](/api/oauth/) for the full flow.
