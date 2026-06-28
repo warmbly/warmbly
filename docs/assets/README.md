@@ -1,17 +1,16 @@
 # Image assets for the project README
 
-Drop the following files here to populate the SaaS-style README at the repo
-root. Until they exist, the README will show broken image placeholders — that
-is expected and will resolve as soon as the files appear.
+These files populate the README at the repo root. Keep them small (the whole set
+should stay well under ~1 MB so the README loads quickly on GitHub).
 
-| File                  | Where it shows up                                                 | Suggested size       |
-|-----------------------|-------------------------------------------------------------------|----------------------|
-| `banner.png`          | Hero banner at the very top of the README                         | 1280 × 320 px        |
-| `dashboard-preview.png` | Marquee screenshot of the user dashboard (under the tagline)    | 1600 × 900 px        |
-| `admin-preview.png`   | Screenshot of the admin app in the "Admin UI" section             | 1600 × 900 px        |
+| File                            | Where it shows up                          |
+|---------------------------------|--------------------------------------------|
+| `banner.jpg`                    | Hero banner at the top of the README       |
+| `dashboard-campaigns.png`       | Gallery: campaigns list                    |
+| `dashboard-inbox.png`           | Gallery: unified inbox                      |
+| `dashboard-deliverability.png`  | Gallery: deliverability analytics          |
+| `dashboard-automations.png`     | Gallery: visual automations canvas         |
 
-Keep them PNG or WebP, under ~400KB each so the README loads quickly on GitHub.
-
-For the hero banner the safest bet is centered Warmbly wordmark + tagline on a
-solid or subtle-gradient background. For the previews, real screenshots of the
-running app (with realistic but anonymized data) beat any mockup.
+The dashboard images are exports of the product design. When real, anonymized
+screenshots of the running app are available, swap them in at the same paths and
+sizes (1440 × 900) and the README needs no changes.
