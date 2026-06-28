@@ -44,6 +44,7 @@ import TeamsSettingsPage from './app/app/settings/teams/page';
 import WorkspaceSettingsPage from './app/app/settings/workspace/page';
 import DangerSettingsPage from './app/app/settings/danger/page';
 import BillingSettingsPage from './app/app/settings/billing/page';
+import ReferralSettingsPage from './app/app/settings/referral/page';
 import LimitsSettingsPage from './app/app/settings/limits/page';
 import RolesSettingsPage from './app/app/settings/roles/page';
 import UniboxPage from './app/app/unibox/page';
@@ -324,6 +325,7 @@ const router = createBrowserRouter([
               { path: "teams", element: <TeamsSettingsPage /> },
               { path: "workspace", element: <WorkspaceSettingsPage /> },
               { path: "billing", element: <BillingSettingsPage /> },
+              { path: "referral", element: <ReferralSettingsPage /> },
               { path: "limits", element: <LimitsSettingsPage /> },
               { path: "roles", element: <RolesSettingsPage /> },
               { path: "oauth-apps", element: <OAuthAppsPage /> },
