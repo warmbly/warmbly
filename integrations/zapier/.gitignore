@@ -1,0 +1,9 @@
+node_modules/
+dist/
+build/
+*.zip
+.env
+.environment
+coverage/
+# Zapier deploy key lives in ~/.zapierrc (global), never in the repo.
+# .zapierapprc holds the app id (not a secret) and may be committed once the app is registered.

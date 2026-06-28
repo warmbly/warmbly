@@ -1,0 +1,36 @@
+{
+  "name": "warmbly-zapier",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Warmbly integration for Zapier: triggers, actions, and searches for email warmup and cold outreach.",
+  "main": "dist/index.js",
+  "engines": {
+    "node": ">=20",
+    "npm": ">=9"
+  },
+  "scripts": {
+    "clean": "rimraf ./dist",
+    "build": "npm run clean && tsc",
+    "watch": "tsc --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint \"src/**/*.ts\"",
+    "test": "jest --silent",
+    "_zapier-build": "npm run build",
+    "validate": "npm run build && zapier validate",
+    "push": "npm run build && zapier push"
+  },
+  "dependencies": {
+    "zapier-platform-core": "19.0.0"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.14",
+    "@types/node": "^22.10.0",
+    "@typescript-eslint/eslint-plugin": "^8.18.0",
+    "@typescript-eslint/parser": "^8.18.0",
+    "eslint": "^8.57.1",
+    "jest": "^29.7.0",
+    "rimraf": "^6.0.1",
+    "ts-jest": "^29.2.5",
+    "typescript": "^5.7.3"
+  }
+}
