@@ -77,7 +77,7 @@ func (r *fakeRedRepo) CancelByID(context.Context, uuid.UUID) error              
 func (r *fakeRedRepo) CountActiveByCodeAndOrg(context.Context, uuid.UUID, uuid.UUID) (int, error) {
 	return r.orgCount, nil
 }
-func (r *fakeRedRepo) ListByCode(context.Context, uuid.UUID, *uuid.UUID, int) (*models.AdminDiscountRedemptionsResult, error) {
+func (r *fakeRedRepo) ListByCode(context.Context, uuid.UUID, int, int) (*models.AdminDiscountRedemptionsResult, error) {
 	return &models.AdminDiscountRedemptionsResult{}, nil
 }
 
