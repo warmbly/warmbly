@@ -165,7 +165,7 @@ API keys with the `REALTIME_SUBSCRIBE` permission (bit 11) can connect to the sa
 - `site/`: public marketing site (Astro 5 + Tailwind v4)
 - `deploy/`: production deploy manifests, infrastructure, and runtime config
 - `docs/`: engineering documentation and operational runbooks
-- `resources/`: architecture notes and longform design context
+- `docs/development/`: architecture notes, deployment, and local-dev docs
 - `scripts/`: one-off tooling (codegen, migrations, local dev utilities)
 
 ## Worker Topology
@@ -731,7 +731,7 @@ If a new feature requires heavy joins, admin queries, billing checks, or complex
 These files are the fastest way to rebuild context:
 
 - `README.md`
-- `resources/architecture.md`
+- `docs/development/architecture.md`
 - `cmd/worker/main.go`
 - `internal/app/worker/assignment.go`
 - `internal/tasks/email_task.go`

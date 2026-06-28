@@ -24,7 +24,7 @@ The frontend talks to the backend over REST + JWT, and to the realtime service o
 
 Realtime fanout: backend publishes events to a pub/sub fanout; the Elixir realtime service subscribes and pushes to connected WebSocket clients.
 
-Object storage: encrypted email bodies (EMSG format — see [EMSG.md](EMSG.md)) live in S3.
+Object storage: encrypted email bodies (EMSG format) live in S3.
 
 ## Data stores
 
@@ -138,7 +138,7 @@ See [Events.md](Events.md) for the Kafka event reference, and the codebase's `in
 These files are the fastest way to rebuild context:
 
 - `README.md`
-- `resources/deployment-guide.md`
+- `docs/development/deployment-guide.md`
 - `cmd/worker/main.go`
 - `internal/app/worker/assignment.go`
 - `internal/app/worker_orchestrator/orchestrator.go`

@@ -8,6 +8,14 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/warmbly/warmbly/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/warmbly/warmbly/ci.yml?branch=main&style=flat-square&label=CI" alt="CI status" /></a>
+  <a href="https://github.com/warmbly/warmbly/releases"><img src="https://img.shields.io/github/v/release/warmbly/warmbly?style=flat-square" alt="Latest release" /></a>
+  <img src="https://img.shields.io/github/go-mod/go-version/warmbly/warmbly?style=flat-square&label=go" alt="Go version" />
+  <a href="./LICENSE"><img src="https://img.shields.io/github/license/warmbly/warmbly?style=flat-square" alt="License" /></a>
+  <a href="https://docs.warmbly.com"><img src="https://img.shields.io/badge/docs-docs.warmbly.com-1f6feb?style=flat-square" alt="Documentation" /></a>
+</p>
+
+<p align="center">
   <a href="#quick-start">Quick start</a> ·
   <a href="#warmup">Warmup</a> ·
   <a href="#how-it-works">How it works</a> ·
@@ -16,21 +24,27 @@
   <a href="./CONTRIBUTING.md">Contributing</a>
 </p>
 
-<table>
-  <tr>
-    <td width="33%"><img src="docs/assets/dashboard-campaigns.png" alt="Campaigns" /><br /><sub><b>Campaigns</b><br />multi-step sends with per-mailbox caps</sub></td>
-    <td width="33%"><img src="docs/assets/dashboard-inbox.png" alt="Unified inbox" /><br /><sub><b>Unified inbox</b><br />every mailbox and reply in one place</sub></td>
-    <td width="33%"><img src="docs/assets/dashboard-mailboxes.png" alt="Mailboxes" /><br /><sub><b>Mailboxes</b><br />warmup state and health per account</sub></td>
-  </tr>
-</table>
+<p align="center">
+  <img src="docs/assets/dashboard-campaigns.png" alt="Campaigns" width="100%" /><br />
+  <sub><b>Campaigns</b> · multi-step sequences with per-mailbox daily caps and spacing</sub>
+</p>
+
+<p align="center">
+  <img src="docs/assets/dashboard-inbox.png" alt="Unified inbox" width="100%" /><br />
+  <sub><b>Unified inbox</b> · every connected mailbox and reply in one place</sub>
+</p>
+
+<p align="center">
+  <img src="docs/assets/dashboard-mailboxes.png" alt="Mailboxes" width="100%" /><br />
+  <sub><b>Mailboxes</b> · warmup state and health for every account</sub>
+</p>
 
 ## What is Warmbly
 
 Warmbly is a cold outreach platform. You connect your mailboxes, write sequenced
 campaigns, and it sends the mail, tracks the replies, and keeps your sender
 reputation healthy. The difference from hosted tools is where it runs: your
-sending IPs, your Postgres, your servers. Nothing is tied to a vendor's pool or
-a vendor's database.
+sending IPs, your Postgres, your servers. Nothing is tied to a vendor's database.
 
 Everything a sending team needs sits in one dashboard:
 
@@ -39,19 +53,21 @@ Everything a sending team needs sits in one dashboard:
 - **A built-in CRM** tracks contacts, pipelines, deals, tasks, and meetings.
 - **Deliverability** surfaces bounces, complaints, suppression, and inbox placement.
 - **Automations** run branching reply playbooks on a visual canvas.
-- **Warmup** builds reputation in our managed pool, covered below.
+- **Warmup** builds real sender reputation through our pool, covered next.
 
 The same code runs on a single VPS or across a fleet of cheap servers with many
 IPs per box, so you add capacity by adding machines.
 
 ## Warmup
 
-Warmup is where Warmbly is strongest. It runs in our own pool: real, actively
-monitored mailboxes that we operate and warm against each other. Your mailboxes
-hold genuine conversations with that pool, so the reputation they build is real,
-not the result of throwaway inboxes talking to themselves.
+Warmup only produces meaningful results with a pool of real mailboxes warming
+against each other. Warmbly maintains that pool, so the practical path to real
+reputation is to run warmup through Warmbly: your mailboxes hold genuine
+conversations with monitored inboxes instead of throwaway accounts, even if you
+only have a few. If you operate enough mailboxes of your own to sustain a healthy
+pool, you can host warmup yourself instead.
 
-We handle the warming end to end. Volume starts low and ramps gradually per
+Either way the safeguards are the same. Volume starts low and ramps gradually per
 mailbox, replies happen at a natural rate, and every warmup message carries a
 verification token. Mailboxes that show spam patterns or forged tokens are scored
 and auto-blocked from the pool, so it stays clean for everyone in it. Free and
@@ -84,7 +100,7 @@ The first admin account cannot be created from the UI. Sign up through the
 dashboard, then promote yourself from the host with
 `make grant-admin EMAIL=you@example.com` and open the admin app with `make admin`.
 Full local setup, seeding, and troubleshooting live in
-[resources/local-development.md](resources/local-development.md).
+[docs/development/local-development.md](docs/development/local-development.md).
 
 ## How it works
 
@@ -103,7 +119,7 @@ single runtime. Reputation is tracked per IP.
 
 Secrets use envelope encryption: a per-organization data key, wrapped by KMS, is
 what seals mailbox credentials and message content. The full write-up is in
-[resources/architecture.md](resources/architecture.md).
+[docs/development/architecture.md](docs/development/architecture.md).
 
 ## Self-hosting
 
@@ -133,7 +149,7 @@ sudo ./scripts/install-worker.sh \
 ```
 
 Production deployment, the full env reference, and day-2 operations are in
-[resources/deployment-guide.md](resources/deployment-guide.md).
+[docs/development/deployment-guide.md](docs/development/deployment-guide.md).
 
 ## Tech stack
 
@@ -154,11 +170,10 @@ Production deployment, the full env reference, and day-2 operations are in
 
 | Doc | What it covers |
 |-----|----------------|
-| [resources/architecture.md](resources/architecture.md) | Control plane vs execution plane, encryption model |
-| [resources/local-development.md](resources/local-development.md) | Make targets, native services, seeding |
-| [resources/deployment-guide.md](resources/deployment-guide.md) | Production control plane and worker fleet |
-| [resources/Events.md](resources/Events.md) | Event bus reference |
-| [resources/EMSG.md](resources/EMSG.md) | Encrypted-message blob format |
+| [docs/development/architecture.md](docs/development/architecture.md) | Control plane vs execution plane, encryption model |
+| [docs/development/local-development.md](docs/development/local-development.md) | Make targets, native services, seeding |
+| [docs/development/deployment-guide.md](docs/development/deployment-guide.md) | Production control plane and worker fleet |
+| [docs/development/Events.md](docs/development/Events.md) | Event bus reference |
 | [docs.warmbly.com](https://docs.warmbly.com) | Product guides and public API reference |
 
 ## Contributing
