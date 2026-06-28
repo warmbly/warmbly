@@ -1,0 +1,85 @@
+---
+title: Zapier
+description: Connect Warmbly to thousands of apps with triggers, actions, and searches.
+icon: Zap
+---
+
+The Warmbly Zapier integration lets you wire Warmbly into thousands of other apps without writing code. Start a Zap when a reply lands or a meeting is booked, push new leads into a campaign from a form, or sync deals into your accounting tool.
+
+It connects over OAuth, so you click Connect and approve access on a Warmbly consent screen. There is nothing to copy or paste.
+
+## Connecting your account
+
+1. In the Zapier editor, choose Warmbly as your app and add any trigger or action.
+2. Click Connect a new account.
+3. You are sent to Warmbly to sign in and approve the permissions the app requests.
+4. After approval you are returned to Zapier with the connection ready. The connection is labelled with your organization name and email so you can tell multiple workspaces apart.
+
+The connection requests only the scopes the triggers and actions need (reading and writing contacts, campaigns, the inbox, CRM records, and templates). It does not request billing or team-management access.
+
+## Triggers
+
+Triggers start a Zap when something happens in Warmbly.
+
+| Trigger | Fires when |
+|---------|------------|
+| New Contact | A contact is added to your workspace |
+| New or Updated Contact | A contact is created or edited |
+| New Email Received | A new message lands in the unified inbox, including campaign replies |
+| New Meeting Booked | A meeting is booked through a connected scheduler |
+| New Deal | A CRM deal is created |
+| Deal Won | A deal moves to the won state |
+| New CRM Task | A CRM task is created |
+| New Campaign | A campaign is created |
+| Campaign Completed | A campaign finishes sending |
+| New Mailbox Connected | An email account is connected |
+
+### How triggers work
+
+Warmbly triggers poll the API on Zapier's schedule (how often depends on your Zapier plan). Each run reads the most recent records, and Zapier remembers which ones it has already seen, so a Zap runs once per new item. New or Updated Contact re-runs when a contact changes; the real contact id is in the `contact_id` field.
+
+New Email Received needs the Unibox feature, which is part of an active trial or paid plan.
+
+## Actions
+
+Actions create or change something in Warmbly.
+
+| Action | What it does |
+|--------|--------------|
+| Create or Update Contact | Adds a contact (or updates the one with the same email) and optionally enrols it in campaigns |
+| Update Contact | Updates an existing contact by id |
+| Add Contact to Campaign | Adds a contact as a lead in a campaign, creating it if new |
+| Create Contact Note | Adds a note to a contact |
+| Send Email | Sends a one-off email from a connected mailbox |
+| Reply in Inbox | Sends a reply, optionally threaded into an existing conversation |
+| Create Deal | Creates a CRM deal in a pipeline stage |
+| Update Deal | Moves stage, changes value, or marks a deal won or lost |
+| Create CRM Task | Creates a task linked to a contact or deal |
+| Create Campaign | Creates a draft campaign |
+| Start Campaign | Starts or resumes a campaign |
+| Stop Campaign | Pauses an active campaign |
+| Create Reply Template | Creates a reusable inbox reply template |
+| Verify Email Address | Runs a deliverability check before you send |
+
+Campaign, mailbox, pipeline, and stage fields use live dropdowns populated from your workspace, so you pick real records instead of pasting ids.
+
+## Searches
+
+Searches look up a record so a later step can use it.
+
+| Search | Finds |
+|--------|-------|
+| Find Contact | A contact by exact email |
+| Find Campaign | A campaign by name |
+| Find Mailbox | A mailbox by email or name |
+| Find Reply Template | A template by name or subject |
+
+Pair a search with an action to build idempotent flows, for example Find Contact, then Create or Update Contact.
+
+## Good to know
+
+- Sending respects your mailbox limits. Send Email and Reply in Inbox honour each mailbox's daily cap and send spacing, and support smart or scheduled send modes.
+- Adding a contact is idempotent by email. Re-running Create or Update Contact with the same address updates the existing record and merges custom fields rather than creating a duplicate.
+- If a connection stops working, reconnect the account in Zapier. Access tokens refresh automatically; reconnecting re-runs the consent step.
+
+For lower-latency, event-driven delivery you can also use Warmbly [webhooks](/guides/webhooks/) directly, or the realtime [developer websocket](/api/realtime/).
