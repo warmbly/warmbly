@@ -76,9 +76,12 @@ What happens now
 ` + deletionCancelButton + deletionFooterNote
 
 // Shared red callout: the one fact that matters, the date, plus grace.
+// Background/border live on the <td>, not the <table>: Outlook's Word
+// engine ignores those properties on <table> (the OTP code pill uses
+// the same td-level pattern).
 const deletionDetailBlock = `
-<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#fef2f2;border:1px solid #fecaca;border-radius:6px;margin:0 0 20px;">
-<tr><td style="padding:14px 16px;">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:0 0 20px;">
+<tr><td style="background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:14px 16px;">
 <p style="margin:0 0 6px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:11px;color:#b91c1c;letter-spacing:0.08em;text-transform:uppercase;font-weight:600;">Will be deleted on</p>
 <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;color:#0f172a;font-weight:600;line-height:20px;">{{.DeleteOn}}</p>
 <p style="margin:10px 0 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;color:#b91c1c;line-height:18px;">Grace period: {{.GraceDays}} days. You can cancel any time before that date.</p>
@@ -107,7 +110,7 @@ Deletion cancelled
 {{.Heading}}
 </h2>
 <p style="margin:0 0 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:13px;color:#475569;line-height:20px;">
-{{.Message}}
+{{if .IsUser}}Hi {{.Name}}, the scheduled deletion of your account has been cancelled. Your account is active and back to normal.{{else}}The scheduled deletion for <strong style="color:#0f172a;">{{.Name}}</strong> has been cancelled. Your organization is safe and operating normally.{{end}}
 </p>
 <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;color:#94a3b8;line-height:18px;">
 Originally scheduled for: {{.OriginalDate}}
@@ -144,7 +147,7 @@ Deletion completed
 The scheduled deletion has been completed. All associated data has been permanently removed.
 </p>
 <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;color:#94a3b8;line-height:18px;">
-Scheduled at: {{.ScheduledAt}}<br/>Executed at: {{.ExecutedAt}}
+Scheduled at: {{.ScheduledAt}}<br>Executed at: {{.ExecutedAt}}
 </p>
 `
 
@@ -188,25 +191,26 @@ func GenerateUserDeletionScheduledHTML(firstName string, executeAfter time.Time,
 }
 
 // GenerateOrgDeletionCancelledHTML renders the org deletion-cancelled
-// confirmation.
+// confirmation. The org name is interpolated (and auto-escaped) by the
+// template rather than pre-formatted into the message.
 func GenerateOrgDeletionCancelledHTML(orgName string, originalDate time.Time) (string, error) {
-	msg := fmt.Sprintf("The scheduled deletion for %s has been cancelled. Your organization is safe and operating normally.", orgName)
 	return renderDeletion(deletionCancelledTmpl, "Deletion cancelled", struct {
 		Heading      string
-		Message      string
+		IsUser       bool
+		Name         string
 		OriginalDate string
-	}{"Deletion cancelled", msg, formatDeletionTime(originalDate)})
+	}{"Deletion cancelled", false, orgName, formatDeletionTime(originalDate)})
 }
 
 // GenerateUserDeletionCancelledHTML renders the account deletion-
 // cancelled confirmation.
 func GenerateUserDeletionCancelledHTML(firstName string, originalDate time.Time) (string, error) {
-	msg := fmt.Sprintf("Hi %s, the scheduled deletion of your account has been cancelled. Your account is active and back to normal.", firstName)
 	return renderDeletion(deletionCancelledTmpl, "Account deletion cancelled", struct {
 		Heading      string
-		Message      string
+		IsUser       bool
+		Name         string
 		OriginalDate string
-	}{"Account deletion cancelled", msg, formatDeletionTime(originalDate)})
+	}{"Account deletion cancelled", true, firstName, formatDeletionTime(originalDate)})
 }
 
 // GenerateDeletionReminderHTML renders an approaching-deletion reminder.
