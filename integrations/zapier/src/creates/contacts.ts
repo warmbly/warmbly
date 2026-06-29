@@ -191,3 +191,118 @@ export const createContactNote = {
     },
   },
 };
+
+export const updateContactNote = {
+  key: 'updateContactNote',
+  noun: 'Note',
+  display: {
+    label: 'Update Contact Note',
+    description: 'Updates the text of an existing contact note.',
+  },
+  operation: {
+    inputFields: [
+      { key: 'contact_id', label: 'Contact ID', type: 'string', required: true },
+      { key: 'note_id', label: 'Note ID', type: 'string', required: true },
+      { key: 'content', label: 'Note', type: 'text', required: true },
+    ],
+    perform: async (z: ZObject, bundle: Bundle) => {
+      const response = await z.request({
+        url: api(
+          `/contacts/${bundle.inputData.contact_id}/notes/${bundle.inputData.note_id}`,
+        ),
+        method: 'PATCH',
+        body: { content: bundle.inputData.content },
+      });
+      return response.data;
+    },
+    sample: {
+      id: 'no1a2b3c-0000-0000-0000-000000000000',
+      contact_id: '7b6c1f2a-0000-0000-0000-000000000000',
+      content: 'Updated note text.',
+      updated_at: '2026-06-29T12:00:00Z',
+    },
+  },
+};
+
+export const removeContactFromCampaign = {
+  key: 'removeContactFromCampaign',
+  noun: 'Contact',
+  display: {
+    label: 'Remove Contact from Campaign',
+    description: 'Unenrolls a contact from a campaign without deleting the contact.',
+  },
+  operation: {
+    inputFields: [
+      { key: 'contact_id', label: 'Contact ID', type: 'string', required: true },
+      {
+        key: 'campaign_id',
+        label: 'Campaign',
+        type: 'string',
+        required: true,
+        dynamic: 'campaignList.id.name',
+      },
+    ],
+    perform: async (z: ZObject, bundle: Bundle) => {
+      // Bulk PATCH supports remove_campaigns (single PATCH only replaces the
+      // whole set), so this uses the bulk endpoint for one contact.
+      const response = await z.request({
+        url: api('/contacts'),
+        method: 'PATCH',
+        body: {
+          contacts: [bundle.inputData.contact_id],
+          remove_campaigns: [bundle.inputData.campaign_id],
+        },
+      });
+      const updated = Array.isArray(response.data) ? response.data[0] : response.data;
+      return updated;
+    },
+    sample: CONTACT_SAMPLE,
+  },
+};
+
+export const deleteContact = {
+  key: 'deleteContact',
+  noun: 'Contact',
+  display: {
+    label: 'Delete Contact',
+    description: 'Permanently deletes a contact by ID.',
+  },
+  operation: {
+    inputFields: [
+      { key: 'contact_id', label: 'Contact ID', type: 'string', required: true },
+    ],
+    perform: async (z: ZObject, bundle: Bundle) => {
+      await z.request({
+        url: api(`/contacts/${bundle.inputData.contact_id}`),
+        method: 'DELETE',
+      });
+      return { id: bundle.inputData.contact_id, success: true };
+    },
+    sample: { id: '7b6c1f2a-0000-0000-0000-000000000000', success: true },
+  },
+};
+
+export const deleteContactNote = {
+  key: 'deleteContactNote',
+  noun: 'Note',
+  display: {
+    label: 'Delete Contact Note',
+    description: 'Permanently deletes a contact note by ID.',
+  },
+  operation: {
+    inputFields: [
+      { key: 'contact_id', label: 'Contact ID', type: 'string', required: true },
+      { key: 'note_id', label: 'Note ID', type: 'string', required: true },
+    ],
+    perform: async (z: ZObject, bundle: Bundle) => {
+      await z.request({
+        url: api(
+          `/contacts/${bundle.inputData.contact_id}/notes/${bundle.inputData.note_id}`,
+        ),
+        method: 'DELETE',
+      });
+      return { id: bundle.inputData.note_id, success: true };
+    },
+    sample: { id: 'no1a2b3c-0000-0000-0000-000000000000', success: true },
+  },
+};
