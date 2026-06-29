@@ -1,4 +1,4 @@
-import type { Bundle, ZObject } from '../types';
+import type { Bundle, ZObject } from './types';
 
 // Base URLs. Production defaults; override per-environment with
 // `zapier env:set WARMBLY_API_BASE=... WARMBLY_APP_BASE=...`.
@@ -28,6 +28,7 @@ export const DEFAULT_SCOPES = [
   'write_crm',
   'read_templates',
   'write_templates',
+  'read_analytics',
 ].join(' ');
 
 // OAuth client credentials. Set once with `zapier env:set CLIENT_ID=... CLIENT_SECRET=...`.

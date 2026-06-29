@@ -1,4 +1,4 @@
-import type { Bundle, ZObject } from './types';
+import type { Bundle, ZObject } from './lib/types';
 import {
   api,
   APP_BASE,

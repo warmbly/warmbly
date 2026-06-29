@@ -1,4 +1,4 @@
-import type { Bundle, ZObject } from '../types';
+import type { Bundle, ZObject } from './types';
 import { api, listData } from './client';
 
 type PollOptions = {
