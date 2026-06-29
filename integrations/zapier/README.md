@@ -6,10 +6,12 @@ The customer-facing guide lives at [docs.warmbly.com/guides/zapier](https://docs
 
 ## What's inside
 
+Code is organized by **resource**: each file in `src/resources/` owns that resource's triggers, creates, and searches and exports `triggers` / `creates` / `searches` arrays. `src/index.ts` assembles them. To find or add a feature, open the matching resource file (for example `src/resources/deals.ts`).
+
 - **Auth**: OAuth2 authorization-code with rotating refresh tokens. The connection test and label come from `GET /v1/me`.
-- **Triggers** (polling): New Contact, New or Updated Contact, New Email Received (Unibox), New Meeting Booked, New Deal, Deal Won, New CRM Task, New Campaign, Campaign Completed, New Mailbox Connected. Plus hidden list triggers that power campaign / mailbox / pipeline / stage / template dropdowns.
-- **Creates** (26): contacts (create-or-update, update, delete, add-to-campaign, remove-from-campaign, note create/update/delete), email (send, reply, verify), CRM (deal create/update/delete, task create/update/delete), campaigns (create, update, delete, start, stop), templates (create, update, delete), and delete mailbox.
-- **Searches**: Find Contact, Find Campaign, Find Mailbox, Find Reply Template.
+- **Triggers** (10 polling + hidden dropdown lists): New Contact, New or Updated Contact, New Email Received (Unibox), New Meeting Booked, New Deal, Deal Won, New CRM Task, New Campaign, Campaign Completed, New Mailbox Connected. Hidden list triggers power the campaign / mailbox / pipeline / stage / template / contact dropdowns.
+- **Creates** (38): contacts (create-or-update, update, delete, add/remove campaign, note create/update/delete), email and inbox (send, reply, verify, mark seen), CRM (deal create/update/delete, task create/update/delete), campaigns (create, update, delete, start, stop), mailboxes (update, delete, warmup start/pause/resume/stop), templates (create, update, delete, render), meetings (log, delete), and groups (create category/tag/folder).
+- **Searches** (9): Find Contact, Find Deal, Find CRM Task, Find Campaign, Find Mailbox, Find Meeting, Find Reply Template, Get Campaign Analytics, Get Dashboard Analytics.
 
 ### Why triggers poll instead of using webhooks
 
@@ -38,7 +40,7 @@ The robust fix for all three is instant webhook triggers (see above). For typica
    ```
    (Zapier shows the exact value under your integration's Authentication settings.)
 2. Note the `client_id` (`wmcid_…`) and `client_secret` (`wmcs_…`, shown once).
-3. Request these scopes on the app: `read_emails write_emails send_campaigns read_campaigns write_campaigns read_contacts write_contacts bulk_contacts read_unibox write_unibox read_crm write_crm read_templates write_templates` (`write_emails` backs Delete Mailbox; `bulk_contacts` backs Remove Contact from Campaign).
+3. Request these scopes on the app: `read_emails write_emails send_campaigns read_campaigns write_campaigns read_contacts write_contacts bulk_contacts read_unibox write_unibox read_crm write_crm read_templates write_templates read_analytics` (`write_emails` backs mailbox update/delete and warmup; `bulk_contacts` backs Remove Contact from Campaign; `read_analytics` backs the analytics searches).
 
 ## Environment
 
@@ -69,13 +71,15 @@ npm run push          # build + zapier push (deploy a new version)
 
 ```
 src/
-  index.ts            App definition (wires triggers/creates/searches)
+  index.ts            App definition (assembles resources + dropdowns)
   authentication.ts   OAuth2 config + GET /v1/me test and connection label
   lib/
+    types.ts          shared types (Bundle, ZObject, ResourceModule)
     client.ts         base URLs, scopes, auth + error middleware, helpers
     poll.ts           polling-trigger factory for list endpoints
-  triggers/           polling triggers + hidden dropdown list triggers
-  creates/            actions
-  searches/           lookups
+    dropdowns.ts      hidden list triggers powering dynamic dropdowns
+  resources/          one file per resource, each exporting triggers/creates/searches
+    contacts.ts  deals.ts  tasks.ts  campaigns.ts  mailboxes.ts
+    inbox.ts  meetings.ts  templates.ts  groups.ts  analytics.ts
 test/                 jest tests
 ```

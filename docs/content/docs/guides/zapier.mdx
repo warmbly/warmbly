@@ -15,7 +15,7 @@ It connects over OAuth, so you click Connect and approve access on a Warmbly con
 3. You are sent to Warmbly to sign in and approve the permissions the app requests.
 4. After approval you are returned to Zapier with the connection ready. The connection is labelled with your organization name and email so you can tell multiple workspaces apart.
 
-The connection requests only the scopes the triggers and actions need (reading and writing contacts, campaigns, mailboxes, the inbox, CRM records, and templates). It does not request billing or team-management access.
+The connection requests only the scopes the triggers and actions need (reading and writing contacts, campaigns, mailboxes, the inbox, CRM records, and templates, plus read-only analytics). It does not request billing or team-management access.
 
 ## Triggers
 
@@ -56,7 +56,14 @@ Actions create or change something in Warmbly.
 | Delete Contact Note | Deletes a contact note by id |
 | Send Email | Sends a one-off email from a connected mailbox |
 | Reply in Inbox | Sends a reply, optionally threaded into an existing conversation |
+| Mark Inbox Emails Seen | Marks one or more inbox messages as read or unread |
 | Verify Email Address | Runs a deliverability check before you send |
+| Update Mailbox | Edits mailbox settings such as daily cap, send gap, or reply-to |
+| Delete Mailbox | Disconnects and deletes an email account (stops all sending; irreversible) |
+| Start Warmup | Enables or resumes warmup on a mailbox |
+| Pause Warmup | Pauses warmup, keeping ramp progress |
+| Resume Warmup | Resumes a paused warmup |
+| Stop Warmup | Disables warmup and resets ramp progress |
 | Create Deal | Creates a CRM deal in a pipeline stage |
 | Update Deal | Moves stage, changes value, or marks a deal won or lost |
 | Delete Deal | Permanently deletes a deal by id |
@@ -71,9 +78,14 @@ Actions create or change something in Warmbly.
 | Create Reply Template | Creates a reusable inbox reply template |
 | Update Reply Template | Edits a reply template |
 | Delete Reply Template | Deletes a reply template by id |
-| Delete Mailbox | Disconnects and deletes an email account (stops all sending; irreversible) |
+| Render Reply Template | Fills a template with variables and returns the rendered subject and body |
+| Log Meeting | Records a meeting and attributes it to a contact |
+| Delete Meeting | Deletes a meeting booking by id |
+| Create Contact Category | Creates a category for organising contacts |
+| Create Mailbox Tag | Creates a tag for grouping mailboxes |
+| Create Campaign Folder | Creates a folder for grouping campaigns |
 
-Campaign, mailbox, pipeline, and stage fields use live dropdowns populated from your workspace, so you pick real records instead of pasting ids.
+Campaign, mailbox, pipeline, stage, and contact fields use live dropdowns populated from your workspace, so you pick real records instead of pasting ids.
 
 Delete and destructive actions (Delete Campaign, Delete Mailbox) are irreversible and run unattended in a Zap, so add them deliberately.
 
@@ -84,9 +96,14 @@ Searches look up a record so a later step can use it.
 | Search | Finds |
 |--------|-------|
 | Find Contact | A contact by exact email |
+| Find Deal | A deal by name (and optional status) |
+| Find CRM Task | A task by title (and optional status) |
 | Find Campaign | A campaign by name |
 | Find Mailbox | A mailbox by email or name |
+| Find Meeting | A meeting by invitee or event name |
 | Find Reply Template | A template by name or subject |
+| Get Campaign Analytics | Summary stats for one campaign |
+| Get Dashboard Analytics | Workspace-wide stats for a period |
 
 Pair a search with an action to build idempotent flows, for example Find Contact, then Create or Update Contact.
 
