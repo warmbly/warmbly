@@ -1,0 +1,7 @@
+[
+    { "name": "template_id", "type": "select", "label": "Template", "required": true, "options": "rpc://templateList" },
+    { "name": "name", "type": "text", "label": "Name" },
+    { "name": "subject", "type": "text", "label": "Subject" },
+    { "name": "body_html", "type": "text", "label": "HTML body" },
+    { "name": "body_plain", "type": "text", "label": "Plain-text body" }
+]

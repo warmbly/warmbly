@@ -1,0 +1,13 @@
+{
+    "url": "/templates/{{parameters.template_id}}",
+    "method": "PATCH",
+    "body": {
+        "name": "{{parameters.name}}",
+        "subject": "{{parameters.subject}}",
+        "body_html": "{{parameters.body_html}}",
+        "body_plain": "{{parameters.body_plain}}"
+    },
+    "response": {
+        "output": "{{body}}"
+    }
+}

@@ -1,0 +1,3 @@
+[
+    { "name": "query", "type": "text", "label": "Name or subject contains", "required": true }
+]

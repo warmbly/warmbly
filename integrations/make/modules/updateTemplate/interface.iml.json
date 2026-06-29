@@ -1,0 +1,8 @@
+[
+    { "name": "id", "type": "text", "label": "Template ID" },
+    { "name": "name", "type": "text", "label": "Name" },
+    { "name": "subject", "type": "text", "label": "Subject" },
+    { "name": "body_plain", "type": "text", "label": "Plain-text body" },
+    { "name": "position", "type": "integer", "label": "Position" },
+    { "name": "created_at", "type": "date", "label": "Created at" }
+]

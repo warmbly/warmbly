@@ -1,0 +1,10 @@
+{
+    "url": "/templates/{{parameters.template_id}}",
+    "method": "DELETE",
+    "response": {
+        "output": {
+            "id": "{{parameters.template_id}}",
+            "success": true
+        }
+    }
+}

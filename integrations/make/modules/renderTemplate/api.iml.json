@@ -1,0 +1,10 @@
+{
+    "url": "/templates/{{parameters.template_id}}/render",
+    "method": "POST",
+    "body": {
+        "variables": "{{toCollection(ifempty(parameters.variables, emptyarray), 'key', 'value')}}"
+    },
+    "response": {
+        "output": "{{body}}"
+    }
+}
