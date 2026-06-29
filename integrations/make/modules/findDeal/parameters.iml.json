@@ -1,0 +1,13 @@
+[
+    { "name": "query", "type": "text", "label": "Name contains", "required": true },
+    {
+        "name": "status",
+        "type": "select",
+        "label": "Status",
+        "options": [
+            { "label": "Open", "value": "open" },
+            { "label": "Won", "value": "won" },
+            { "label": "Lost", "value": "lost" }
+        ]
+    }
+]

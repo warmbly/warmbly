@@ -1,0 +1,17 @@
+{
+    "url": "/crm/deals/{{parameters.deal_id}}",
+    "method": "PATCH",
+    "body": {
+        "stage_id": "{{parameters.stage_id}}",
+        "name": "{{parameters.name}}",
+        "value": "{{parameters.value}}",
+        "currency": "{{parameters.currency}}",
+        "status": "{{parameters.status}}",
+        "lost_reason": "{{parameters.lost_reason}}",
+        "expected_close_date": "{{parameters.expected_close_date}}",
+        "assigned_to": "{{parameters.assigned_to}}"
+    },
+    "response": {
+        "output": "{{body}}"
+    }
+}

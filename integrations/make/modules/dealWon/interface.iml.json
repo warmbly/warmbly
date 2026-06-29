@@ -1,0 +1,11 @@
+[
+    { "name": "id", "type": "text", "label": "Deal ID" },
+    { "name": "name", "type": "text", "label": "Name" },
+    { "name": "value", "type": "number", "label": "Value" },
+    { "name": "currency", "type": "text", "label": "Currency" },
+    { "name": "status", "type": "text", "label": "Status" },
+    { "name": "pipeline_id", "type": "text", "label": "Pipeline ID" },
+    { "name": "stage_id", "type": "text", "label": "Stage ID" },
+    { "name": "contact_id", "type": "text", "label": "Contact ID" },
+    { "name": "created_at", "type": "date", "label": "Created at" }
+]

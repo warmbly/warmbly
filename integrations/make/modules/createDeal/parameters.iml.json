@@ -1,0 +1,27 @@
+[
+    {
+        "name": "pipeline_id",
+        "type": "select",
+        "label": "Pipeline",
+        "required": true,
+        "options": "rpc://pipelineList"
+    },
+    {
+        "name": "stage_id",
+        "type": "select",
+        "label": "Stage",
+        "required": true,
+        "options": "rpc://stageList"
+    },
+    { "name": "name", "type": "text", "label": "Name", "required": true },
+    { "name": "value", "type": "number", "label": "Value" },
+    { "name": "currency", "type": "text", "label": "Currency", "help": "ISO code, e.g. USD." },
+    {
+        "name": "contact_id",
+        "type": "select",
+        "label": "Contact",
+        "options": "rpc://contactList"
+    },
+    { "name": "expected_close_date", "type": "date", "label": "Expected close date" },
+    { "name": "assigned_to", "type": "text", "label": "Owner (user ID)" }
+]
