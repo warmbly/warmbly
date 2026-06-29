@@ -17,6 +17,19 @@ Warmbly's webhook subscriptions created by an OAuth app must echo a verification
 
 Instant (webhook) triggers are possible with a small additive backend change: an authenticated `POST /v1/webhooks/:id/confirm` that lets the credential owner verify the endpoint without the async echo. See the integration design notes / PR description.
 
+### Polling caveats
+
+Each trigger reads the first ~100 rows of a list endpoint. Triggers whose list is ordered by the same field as the event are fully reliable at any volume:
+
+- newest-first by `created_at`: New Contact, New Deal, New CRM Task, New Campaign, New Mailbox, New Email Received (`internal_date`). New or Updated Contact sorts by `updated_at` so edits re-surface.
+
+Triggers where the event time differs from the list order are best-effort and can miss the tail only in high-volume workspaces:
+
+- **New Meeting Booked** lists by `scheduled_for DESC`, not booking time, so a new booking for a near date could fall past the first 100 if more than 100 future-dated meetings exist.
+- **Campaign Completed** and **Deal Won** poll creation-ordered lists and filter by status, so a status change on a much older record can fall past the first 100.
+
+The robust fix for all three is instant webhook triggers (see above). For typical workspaces (well under 100 future meetings / open deals) polling catches everything.
+
 ## Prerequisites
 
 1. Register an OAuth application in the Warmbly dashboard (`POST /v1/oauth/applications`, or Settings → Developer → OAuth apps). Set the redirect URI to Zapier's callback:
