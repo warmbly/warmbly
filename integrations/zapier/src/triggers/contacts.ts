@@ -27,10 +27,11 @@ const CONTACT_OUTPUT = [
   { key: 'updated_at', label: 'Updated at' },
 ];
 
-// Search contacts newest-first. Dedupe is by the returned `id`; ordering is
-// best-effort so even if the sort column is ignored, recent rows still surface.
+// Search contacts newest-first. `sort_by` must be a bare, whitelisted column
+// (created_at | updated_at | ...); direction defaults to DESC, so omitting
+// `reverse` returns the most recent rows first. Dedupe is by the returned `id`.
 const searchContacts =
-  (sortBy: string) =>
+  (sortBy: 'created_at' | 'updated_at') =>
   async (z: ZObject, _bundle: Bundle): Promise<any[]> => {
     const response = await z.request({
       url: api('/contacts/search'),
@@ -49,7 +50,7 @@ export const newContact = {
     description: 'Triggers when a contact is added to your Warmbly workspace.',
   },
   operation: {
-    perform: searchContacts('created_at DESC'),
+    perform: searchContacts('created_at'),
     sample: CONTACT_SAMPLE,
     outputFields: CONTACT_OUTPUT,
   },
@@ -65,7 +66,7 @@ export const newOrUpdatedContact = {
   },
   operation: {
     perform: async (z: ZObject, bundle: Bundle): Promise<any[]> => {
-      const items = await searchContacts('updated_at DESC')(z, bundle);
+      const items = await searchContacts('updated_at')(z, bundle);
       return items.map((c) => ({
         ...c,
         contact_id: c.id,
