@@ -1,0 +1,12 @@
+{
+    "url": "/emails",
+    "method": "GET",
+    "qs": {
+        "q": "{{parameters.query}}",
+        "limit": 25
+    },
+    "response": {
+        "iterate": "{{ifempty(body.data, body)}}",
+        "output": "{{item}}"
+    }
+}

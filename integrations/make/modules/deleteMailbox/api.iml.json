@@ -1,0 +1,10 @@
+{
+    "url": "/emails/{{parameters.email_account_id}}",
+    "method": "DELETE",
+    "response": {
+        "output": {
+            "id": "{{parameters.email_account_id}}",
+            "success": true
+        }
+    }
+}
