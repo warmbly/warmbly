@@ -19,12 +19,30 @@ import {
   createContact,
   updateContact,
   addContactToCampaign,
+  removeContactFromCampaign,
   createContactNote,
+  updateContactNote,
+  deleteContact,
+  deleteContactNote,
 } from './creates/contacts';
 import { sendEmail, replyToEmail, verifyEmail } from './creates/email';
-import { createDeal, updateDeal, createCrmTask } from './creates/crm';
-import { createCampaign, startCampaign, stopCampaign } from './creates/campaigns';
-import { createTemplate } from './creates/templates';
+import {
+  createDeal,
+  updateDeal,
+  deleteDeal,
+  createCrmTask,
+  updateCrmTask,
+  deleteCrmTask,
+} from './creates/crm';
+import {
+  createCampaign,
+  updateCampaign,
+  deleteCampaign,
+  startCampaign,
+  stopCampaign,
+} from './creates/campaigns';
+import { createTemplate, updateTemplate, deleteTemplate } from './creates/templates';
+import { deleteMailbox } from './creates/mailboxes';
 
 import {
   findContact,
@@ -59,20 +77,38 @@ const triggers = [
 ];
 
 const creates = [
+  // Contacts
   createContact,
   updateContact,
+  deleteContact,
   addContactToCampaign,
+  removeContactFromCampaign,
   createContactNote,
+  updateContactNote,
+  deleteContactNote,
+  // Email
   sendEmail,
   replyToEmail,
   verifyEmail,
+  // CRM
   createDeal,
   updateDeal,
+  deleteDeal,
   createCrmTask,
+  updateCrmTask,
+  deleteCrmTask,
+  // Campaigns
   createCampaign,
+  updateCampaign,
+  deleteCampaign,
   startCampaign,
   stopCampaign,
+  // Templates
   createTemplate,
+  updateTemplate,
+  deleteTemplate,
+  // Mailboxes
+  deleteMailbox,
 ];
 
 const searches = [findContact, findCampaign, findMailbox, findTemplate];
