@@ -1,0 +1,17 @@
+{
+    "read_emails": "Read connected mailboxes and their settings",
+    "write_emails": "Update or delete mailboxes and control warmup",
+    "send_campaigns": "Send one-off emails and inbox replies",
+    "read_campaigns": "Read campaigns",
+    "write_campaigns": "Create, update, start, stop, and delete campaigns",
+    "read_contacts": "Read contacts and notes",
+    "write_contacts": "Create, update, and delete contacts and notes",
+    "bulk_contacts": "Bulk contact operations (campaign enroll/unenroll)",
+    "read_unibox": "Read the unified inbox",
+    "write_unibox": "Reply and mark messages seen in the unified inbox",
+    "read_crm": "Read CRM deals, tasks, and pipelines",
+    "write_crm": "Create, update, and delete CRM deals and tasks",
+    "read_templates": "Read reply templates",
+    "write_templates": "Create, update, delete, and render reply templates",
+    "read_analytics": "Read campaign and dashboard analytics"
+}
