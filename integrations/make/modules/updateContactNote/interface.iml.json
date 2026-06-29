@@ -1,0 +1,6 @@
+[
+    { "name": "id", "type": "text", "label": "Note ID" },
+    { "name": "contact_id", "type": "text", "label": "Contact ID" },
+    { "name": "content", "type": "text", "label": "Note" },
+    { "name": "created_at", "type": "date", "label": "Created at" }
+]

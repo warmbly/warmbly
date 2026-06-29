@@ -1,0 +1,4 @@
+[
+    { "name": "id", "type": "text", "label": "Contact ID" },
+    { "name": "success", "type": "boolean", "label": "Success" }
+]

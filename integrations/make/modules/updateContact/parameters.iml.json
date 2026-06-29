@@ -1,0 +1,24 @@
+[
+    { "name": "contact_id", "type": "select", "label": "Contact", "required": true, "options": "rpc://contactList" },
+    { "name": "first_name", "type": "text", "label": "First name" },
+    { "name": "last_name", "type": "text", "label": "Last name" },
+    { "name": "company", "type": "text", "label": "Company" },
+    { "name": "phone", "type": "text", "label": "Phone" },
+    { "name": "subscribed", "type": "boolean", "label": "Subscribed" },
+    {
+        "name": "campaigns",
+        "type": "array",
+        "label": "Set campaigns",
+        "help": "Replaces the full set of campaigns this contact belongs to.",
+        "spec": { "type": "select", "options": "rpc://campaignList", "label": "Campaign" }
+    },
+    {
+        "name": "custom_fields",
+        "type": "array",
+        "label": "Custom fields",
+        "spec": [
+            { "name": "key", "type": "text", "label": "Field key", "required": true },
+            { "name": "value", "type": "text", "label": "Value" }
+        ]
+    }
+]

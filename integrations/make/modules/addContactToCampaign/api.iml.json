@@ -1,0 +1,16 @@
+{
+    "url": "/contacts",
+    "method": "POST",
+    "body": [
+        {
+            "email": "{{parameters.email}}",
+            "first_name": "{{parameters.first_name}}",
+            "last_name": "{{parameters.last_name}}",
+            "company": "{{parameters.company}}",
+            "campaigns": "{{add(emptyarray, parameters.campaign_id)}}"
+        }
+    ],
+    "response": {
+        "output": "{{ifempty(body.data.0, body)}}"
+    }
+}

@@ -1,0 +1,31 @@
+[
+    { "name": "email", "type": "email", "label": "Email", "required": true },
+    { "name": "first_name", "type": "text", "label": "First name" },
+    { "name": "last_name", "type": "text", "label": "Last name" },
+    { "name": "company", "type": "text", "label": "Company" },
+    { "name": "phone", "type": "text", "label": "Phone" },
+    {
+        "name": "campaigns",
+        "type": "array",
+        "label": "Enroll in campaigns",
+        "help": "Campaigns to enroll this contact into as a lead.",
+        "spec": { "type": "select", "options": "rpc://campaignList", "label": "Campaign" }
+    },
+    {
+        "name": "categories",
+        "type": "array",
+        "label": "Category IDs",
+        "help": "Contact category UUIDs to assign.",
+        "spec": { "type": "text", "label": "Category ID" }
+    },
+    {
+        "name": "custom_fields",
+        "type": "array",
+        "label": "Custom fields",
+        "help": "Free-form key/value attributes stored on the contact. Custom fields merge by key.",
+        "spec": [
+            { "name": "key", "type": "text", "label": "Field key", "required": true },
+            { "name": "value", "type": "text", "label": "Value" }
+        ]
+    }
+]

@@ -1,0 +1,4 @@
+[
+    { "name": "contact_id", "type": "select", "label": "Contact", "required": true, "options": "rpc://contactList" },
+    { "name": "note_id", "type": "text", "label": "Note ID", "required": true }
+]

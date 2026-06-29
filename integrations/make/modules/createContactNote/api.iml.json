@@ -1,0 +1,10 @@
+{
+    "url": "/contacts/{{parameters.contact_id}}/notes",
+    "method": "POST",
+    "body": {
+        "content": "{{parameters.content}}"
+    },
+    "response": {
+        "output": "{{body}}"
+    }
+}

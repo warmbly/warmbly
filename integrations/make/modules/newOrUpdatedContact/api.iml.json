@@ -1,0 +1,20 @@
+{
+    "url": "/contacts/search",
+    "method": "POST",
+    "qs": {
+        "limit": 100
+    },
+    "body": {
+        "sort_by": "updated_at"
+    },
+    "response": {
+        "iterate": "{{body.data}}",
+        "trigger": {
+            "id": "{{item.id + ':' + item.updated_at}}",
+            "date": "{{item.updated_at}}",
+            "type": "id",
+            "order": "desc"
+        },
+        "output": "{{item}}"
+    }
+}

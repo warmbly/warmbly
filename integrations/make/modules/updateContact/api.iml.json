@@ -1,0 +1,16 @@
+{
+    "url": "/contacts/{{parameters.contact_id}}",
+    "method": "PATCH",
+    "body": {
+        "first_name": "{{parameters.first_name}}",
+        "last_name": "{{parameters.last_name}}",
+        "company": "{{parameters.company}}",
+        "phone": "{{parameters.phone}}",
+        "subscribed": "{{parameters.subscribed}}",
+        "campaigns": "{{parameters.campaigns}}",
+        "custom_fields": "{{if(length(parameters.custom_fields) > 0, toCollection(parameters.custom_fields, 'key', 'value'))}}"
+    },
+    "response": {
+        "output": "{{body}}"
+    }
+}
