@@ -1,0 +1,11 @@
+{
+    "url": "/tags",
+    "method": "POST",
+    "body": {
+        "title": "{{parameters.title}}",
+        "color": "{{parameters.color}}"
+    },
+    "response": {
+        "output": "{{body}}"
+    }
+}

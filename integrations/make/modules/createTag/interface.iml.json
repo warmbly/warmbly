@@ -1,0 +1,8 @@
+[
+    { "name": "id", "type": "text", "label": "ID" },
+    { "name": "title", "type": "text", "label": "Title" },
+    { "name": "color", "type": "text", "label": "Color" },
+    { "name": "position", "type": "integer", "label": "Position" },
+    { "name": "created_at", "type": "date", "label": "Created at" },
+    { "name": "updated_at", "type": "date", "label": "Updated at" }
+]
