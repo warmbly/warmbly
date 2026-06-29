@@ -1,0 +1,11 @@
+{
+    "url": "/crm/pipelines/{{parameters.pipeline_id}}",
+    "method": "GET",
+    "response": {
+        "iterate": "{{body.stages}}",
+        "output": {
+            "label": "{{item.name}}",
+            "value": "{{item.id}}"
+        }
+    }
+}

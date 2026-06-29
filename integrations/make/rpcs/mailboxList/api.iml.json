@@ -1,0 +1,14 @@
+{
+    "url": "/emails",
+    "method": "GET",
+    "qs": {
+        "limit": 100
+    },
+    "response": {
+        "iterate": "{{body.data}}",
+        "output": {
+            "label": "{{item.email}}",
+            "value": "{{item.id}}"
+        }
+    }
+}

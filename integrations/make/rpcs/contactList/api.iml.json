@@ -1,0 +1,17 @@
+{
+    "url": "/contacts/search",
+    "method": "POST",
+    "qs": {
+        "limit": 100
+    },
+    "body": {
+        "sort_by": "updated_at"
+    },
+    "response": {
+        "iterate": "{{body.data}}",
+        "output": {
+            "label": "{{ifempty(item.email, trim(item.first_name + ' ' + item.last_name), item.id)}}",
+            "value": "{{item.id}}"
+        }
+    }
+}
