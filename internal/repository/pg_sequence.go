@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
@@ -19,6 +20,10 @@ type SequenceRepository interface {
 	Create(ctx context.Context, userID, campaignID string) (*models.Sequence, *errx.Error)
 	Get(ctx context.Context, userID, campaignID string) ([]models.Sequence, *errx.Error)
 	Update(ctx context.Context, userID, campaignID, sequenceID string, data *models.UpdateSequence) (*models.Sequence, *errx.Error)
+	// UpdateLayout merges only x/y for the given steps under a campaign, in one
+	// statement, without bumping updated_at — so a drag never reads as a content
+	// change. Cosmetic and unaudited.
+	UpdateLayout(ctx context.Context, userID, campaignID string, positions []models.SequencePosition) *errx.Error
 	Delete(ctx context.Context, userID, campaignID, sequenceID string) *errx.Error
 }
 
@@ -43,6 +48,8 @@ var SequenceSelections []string = []string{
 	"body_code",
 	"wait_after",
 	"position",
+	"x",
+	"y",
 	"conditions",
 	"kind",
 	"action",
@@ -68,7 +75,7 @@ var (
 func GetSequence(row db.Scannable, seq *models.Sequence) error {
 	return row.Scan(
 		&seq.ID, &seq.Name, &seq.Subject, &seq.BodyPlain, &seq.BodyHTML, &seq.BodySync,
-		&seq.BodyCode, &seq.WaitAfter, &seq.Position, &seq.Conditions, &seq.Kind, &seq.Action,
+		&seq.BodyCode, &seq.WaitAfter, &seq.Position, &seq.X, &seq.Y, &seq.Conditions, &seq.Kind, &seq.Action,
 		&seq.UpdatedAt, &seq.CreatedAt,
 	)
 }
@@ -315,6 +322,42 @@ func (r *sequenceRepository) Update(ctx context.Context, userID, campaignID, seq
 	}
 
 	return &seq, nil
+}
+
+// UpdateLayout writes only canvas coordinates for a batch of steps under one
+// campaign, in a single statement scoped to the campaign owner. It leaves every
+// content column (and updated_at) untouched, so a position move never reads as a
+// content change to teammates. Unknown ids are silently ignored.
+func (r *sequenceRepository) UpdateLayout(ctx context.Context, userID, campaignID string, positions []models.SequencePosition) *errx.Error {
+	ids := make([]uuid.UUID, 0, len(positions))
+	xs := make([]float64, 0, len(positions))
+	ys := make([]float64, 0, len(positions))
+	for _, p := range positions {
+		id, err := uuid.Parse(p.ID)
+		if err != nil {
+			continue
+		}
+		ids = append(ids, id)
+		xs = append(xs, p.X)
+		ys = append(ys, p.Y)
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+
+	query := `
+		UPDATE sequences AS s
+		SET x = v.x, y = v.y
+		FROM unnest($3::uuid[], $4::float8[], $5::float8[]) AS v(id, x, y)
+		WHERE s.id = v.id
+		  AND s.campaign_id = $2
+		  AND EXISTS (SELECT 1 FROM campaigns c WHERE c.id = $2 AND c.user_id = $1)`
+	args := []any{userID, campaignID, ids, xs, ys}
+	if _, err := r.DB.Exec(ctx, query, args...); err != nil {
+		db.CaptureError(err, query, args, "exec")
+		return errx.InternalError()
+	}
+	return nil
 }
 
 func (r *sequenceRepository) Delete(ctx context.Context, userID, campaignID, sequenceID string) *errx.Error {
