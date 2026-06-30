@@ -42,6 +42,11 @@ export function useRealtimeEvents() {
       // (presence diffs fire on every teammate navigation).
       if (event.startsWith('PRESENCE') || event === 'RATE_LIMITED') return
 
+      // Ephemeral live-collaboration frames (cursor moves, card drags) are
+      // consumed by the canvas's own subscription; they carry no durable state
+      // and must never trigger a react-query refetch.
+      if (event.startsWith('LIVE_')) return
+
       const getString = (key: string) => {
         const value = payload[key]
         return typeof value === 'string' && value.length > 0 ? value : null
