@@ -49,6 +49,9 @@ import useCreateDeal from "@/lib/api/hooks/app/crm/deals/useCreateDeal";
 import useUpdateDeal from "@/lib/api/hooks/app/crm/deals/useUpdateDeal";
 import useDeleteDeal from "@/lib/api/hooks/app/crm/deals/useDeleteDeal";
 import { useConfirm } from "@/hooks/context/confirm";
+import { usePresenceResource } from "@/hooks/PresenceProvider";
+import { useSuppressGlobalCursors } from "@/components/app/presence/GlobalCursors";
+import ResourceViewers from "@/components/app/presence/ResourceViewers";
 import type Deal from "@/lib/api/models/app/crm/Deal";
 import type { Stage } from "@/lib/api/models/app/crm/Pipeline";
 import type { AppError } from "@/lib/api/client/normalizeError";
@@ -559,6 +562,10 @@ function DealDialog({
     const del = useDeleteDeal();
     const confirm = useConfirm();
 
+    usePresenceResource(editing?.id ? `deal:${editing.id}` : null, "editing");
+    // While this full-screen dialog is open it owns the pointer; silence the page cursor.
+    useSuppressGlobalCursors(open);
+
     const [name, setName] = React.useState("");
     const [stageId, setStageId] = React.useState<string>("");
     const [value, setValue] = React.useState<string>("");
@@ -680,6 +687,10 @@ function DealDialog({
                             </span>
                             <div className="h-4 w-px bg-slate-200" />
                             <span className="text-[12.5px] text-slate-900 font-medium">Deal</span>
+                            <ResourceViewers
+                                resource={editing?.id ? `deal:${editing.id}` : null}
+                                className="shrink-0"
+                            />
                             {editing && (
                                 <button
                                     type="button"
