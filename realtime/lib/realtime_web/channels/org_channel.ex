@@ -28,6 +28,17 @@ defmodule RealtimeWeb.OrgChannel do
 
   @presence_actions ~w(viewing editing replying idle)
 
+  # Ephemeral live-collaboration frames (cursor moves, card drags) on a shared
+  # canvas like the automation builder. They are far too frequent for the
+  # per-minute ws_event / ws_message Redis limiters and carry no durable value,
+  # so they ride a separate fast path: a cheap in-process token bucket on the
+  # sending socket, a direct PubSub fan-out that skips the sequenced/resumable
+  # event log, and best-effort delivery (a dropped frame is fine — the next one
+  # is milliseconds away).
+  @live_kinds ~w(cursor node)
+  @live_rate 50.0
+  @live_burst 60.0
+
   @impl true
   def join("org:" <> org_id, params, socket) do
     user_id = socket.assigns.user_id
@@ -159,6 +170,19 @@ defmodule RealtimeWeb.OrgChannel do
     {:noreply, socket}
   end
 
+  # Ephemeral live-collaboration fan-out (cursor / card drag). Pushed straight to
+  # the client with no ws_message rate limit (the sender's token bucket already
+  # bounds volume) and no sequence number (these are never resumed). Only human
+  # (JWT) members are collaborators; developer API-key sockets ignore them.
+  @impl true
+  def handle_info({:live_event, event}, socket) do
+    if Map.get(socket.assigns, :auth_type) == :jwt do
+      push(socket, event["event_type"], event)
+    end
+
+    {:noreply, socket}
+  end
+
   @impl true
   def handle_info({:pubsub_event, event}, socket) do
     # Rate limit outbound messages
@@ -204,6 +228,45 @@ defmodule RealtimeWeb.OrgChannel do
   @impl true
   def handle_in("ping", _payload, socket) do
     {:reply, {:ok, %{pong: System.system_time(:millisecond)}}, socket}
+  end
+
+  # Ephemeral live-collaboration frame (cursor move / card drag). Bypasses the
+  # Redis ws_event limiter for an in-process token bucket, then fans out to the
+  # org's other sockets without a sequence number (so it is never replayed on
+  # resume). Best-effort: over-budget frames are dropped silently.
+  @impl true
+  def handle_in("live:" <> kind, payload, socket) when kind in @live_kinds do
+    cond do
+      Map.get(socket.assigns, :auth_type) != :jwt ->
+        {:noreply, socket}
+
+      not socket.assigns[:presence_show_online] or not socket.assigns[:presence_show_activity] ->
+        # The org has hidden this member's live activity; suppress their cursor
+        # and drag frames too, mirroring presence:update's privacy gate.
+        {:noreply, socket}
+
+      true ->
+        case take_live_token(socket) do
+          {:ok, socket} ->
+            case build_live_event(kind, payload, socket) do
+              nil ->
+                :ok
+
+              event ->
+                Phoenix.PubSub.broadcast_from(
+                  Realtime.PubSub,
+                  self(),
+                  "org:#{socket.assigns.org_id}",
+                  {:live_event, event}
+                )
+            end
+
+            {:noreply, socket}
+
+          {:drop, socket} ->
+            {:noreply, socket}
+        end
+    end
   end
 
   @impl true
@@ -454,6 +517,69 @@ defmodule RealtimeWeb.OrgChannel do
   end
 
   defp sanitize_presence(_), do: %{page: nil, resource: nil, action: nil}
+
+  # In-process token bucket on the sending socket. Refills at @live_rate tokens
+  # per second up to @live_burst; each accepted frame spends one. Cheap (no
+  # Redis) and per-socket, so one hot dragger throttles only itself.
+  defp take_live_token(socket) do
+    now = System.monotonic_time(:millisecond)
+
+    %{tokens: tokens, last: last} =
+      Map.get(socket.assigns, :live_bucket, %{tokens: @live_burst, last: now})
+
+    tokens = min(@live_burst, tokens + (now - last) / 1000 * @live_rate)
+
+    if tokens >= 1.0 do
+      {:ok, assign(socket, :live_bucket, %{tokens: tokens - 1.0, last: now})}
+    else
+      {:drop, assign(socket, :live_bucket, %{tokens: tokens, last: now})}
+    end
+  end
+
+  # Build the broadcast body for a live frame, or nil when it lacks the resource
+  # (and, for a node move, the node id) the receiver needs to scope it.
+  defp build_live_event("cursor", payload, socket) do
+    case presence_string(payload["resource"]) do
+      nil ->
+        nil
+
+      resource ->
+        %{
+          "event_type" => "LIVE_CURSOR",
+          "user_id" => socket.assigns.user_id,
+          "org_id" => socket.assigns.org_id,
+          "resource" => resource,
+          "x" => num(payload["x"]),
+          "y" => num(payload["y"]),
+          "gone" => payload["gone"] == true,
+          "ts" => System.system_time(:millisecond)
+        }
+    end
+  end
+
+  defp build_live_event("node", payload, socket) do
+    resource = presence_string(payload["resource"])
+    id = presence_string(payload["id"])
+
+    if resource && id do
+      %{
+        "event_type" => "LIVE_NODE",
+        "user_id" => socket.assigns.user_id,
+        "org_id" => socket.assigns.org_id,
+        "resource" => resource,
+        "id" => id,
+        "x" => num(payload["x"]),
+        "y" => num(payload["y"]),
+        "dragging" => payload["dragging"] == true,
+        "ts" => System.system_time(:millisecond)
+      }
+    end
+  end
+
+  defp build_live_event(_kind, _payload, _socket), do: nil
+
+  defp num(v) when is_number(v), do: v
+  defp num(_), do: 0
 
   defp presence_string(value) when is_binary(value) do
     case String.trim(value) do
