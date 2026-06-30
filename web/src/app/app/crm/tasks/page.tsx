@@ -69,6 +69,9 @@ import useDeleteCRMTask from "@/lib/api/hooks/app/crm/tasks/useDeleteCRMTask";
 import useTaskTypes from "@/lib/api/hooks/app/crm/taskTypes/useTaskTypes";
 import useMembers from "@/lib/api/hooks/app/organizations/useMembers";
 import { useConfirm } from "@/hooks/context/confirm";
+import { usePresenceResource } from "@/hooks/PresenceProvider";
+import { useSuppressGlobalCursors } from "@/components/app/presence/GlobalCursors";
+import ResourceViewers from "@/components/app/presence/ResourceViewers";
 import type CRMTask from "@/lib/api/models/app/crm/CRMTask";
 import type { CRMTaskPriority, CRMTaskStatus } from "@/lib/api/models/app/crm/CRMTask";
 import type SearchTasks from "@/lib/api/models/app/crm/SearchTasks";
@@ -1393,6 +1396,10 @@ function TaskDialog({
     const del = useDeleteCRMTask();
     const confirm = useConfirm();
 
+    usePresenceResource(editing?.id ? `task:${editing.id}` : null, "editing");
+    // While this full-screen dialog is open it owns the pointer; silence the page cursor.
+    useSuppressGlobalCursors(open);
+
     const [title, setTitle] = React.useState("");
     const [description, setDescription] = React.useState("");
     const [dueDays, setDueDays] = React.useState<number | null>(null);
@@ -1507,6 +1514,10 @@ function TaskDialog({
                             </span>
                             <div className="h-4 w-px bg-slate-200" />
                             <span className="text-[12.5px] text-slate-900 font-medium">Task</span>
+                            <ResourceViewers
+                                resource={editing?.id ? `task:${editing.id}` : null}
+                                className="shrink-0"
+                            />
                             {editing && (
                                 <button
                                     type="button"
