@@ -68,9 +68,11 @@ import useUpdateCRMTask from "@/lib/api/hooks/app/crm/tasks/useUpdateCRMTask";
 import useDeleteCRMTask from "@/lib/api/hooks/app/crm/tasks/useDeleteCRMTask";
 import useTaskTypes from "@/lib/api/hooks/app/crm/taskTypes/useTaskTypes";
 import useMembers from "@/lib/api/hooks/app/organizations/useMembers";
+import { useQueryClient } from "@tanstack/react-query";
 import { useConfirm } from "@/hooks/context/confirm";
 import { usePresenceResource } from "@/hooks/PresenceProvider";
 import { useSuppressGlobalCursors } from "@/components/app/presence/GlobalCursors";
+import { useLivePatch } from "@/hooks/useLivePatch";
 import ResourceViewers from "@/components/app/presence/ResourceViewers";
 import type CRMTask from "@/lib/api/models/app/crm/CRMTask";
 import type { CRMTaskPriority, CRMTaskStatus } from "@/lib/api/models/app/crm/CRMTask";
@@ -166,6 +168,13 @@ export default function TasksPage() {
     const tasks = search.tasks ?? [];
     const total = search.total;
     const sum = summary.data;
+
+    // Live: a teammate's task change (status toggle, create, delete) refreshes
+    // this view instantly, ahead of the durable audit refetch.
+    const qc = useQueryClient();
+    useLivePatch("crm_tasks", {
+        onPatch: () => void qc.invalidateQueries({ queryKey: ["crm", "tasks"] }),
+    });
 
     const { data: members = [] } = useMembers();
     const memberByUser = React.useMemo(() => {
