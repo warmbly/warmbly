@@ -35,7 +35,7 @@ defmodule RealtimeWeb.OrgChannel do
   # sending socket, a direct PubSub fan-out that skips the sequenced/resumable
   # event log, and best-effort delivery (a dropped frame is fine — the next one
   # is milliseconds away).
-  @live_kinds ~w(cursor node)
+  @live_kinds ~w(cursor node patch)
   @live_rate 50.0
   @live_burst 60.0
 
@@ -576,7 +576,49 @@ defmodule RealtimeWeb.OrgChannel do
     end
   end
 
+  # Generic collaborative-state hint (e.g. a deal moved to a stage). Carries a
+  # small sanitized data map so teammates on the same resource can update
+  # optimistically before the durable audit refetch lands. Coordinate-free.
+  defp build_live_event("patch", payload, socket) do
+    resource = presence_string(payload["resource"])
+    data = sanitize_data(payload["data"])
+
+    if resource && map_size(data) > 0 do
+      %{
+        "event_type" => "LIVE_PATCH",
+        "user_id" => socket.assigns.user_id,
+        "org_id" => socket.assigns.org_id,
+        "resource" => resource,
+        "data" => data,
+        "ts" => System.system_time(:millisecond)
+      }
+    end
+  end
+
   defp build_live_event(_kind, _payload, _socket), do: nil
+
+  # Keep a live:patch payload small and scalar-only: at most 20 keys, string
+  # values capped, numbers/booleans passed through, everything else dropped.
+  defp sanitize_data(m) when is_map(m) do
+    m
+    |> Enum.take(20)
+    |> Enum.reduce(%{}, fn {k, v}, acc ->
+      key = presence_string(k)
+
+      case {key, scalar(v)} do
+        {nil, _} -> acc
+        {_, :drop} -> acc
+        {key, val} -> Map.put(acc, key, val)
+      end
+    end)
+  end
+
+  defp sanitize_data(_), do: %{}
+
+  defp scalar(v) when is_binary(v), do: String.slice(v, 0, 200)
+  defp scalar(v) when is_number(v), do: v
+  defp scalar(v) when is_boolean(v), do: v
+  defp scalar(_), do: :drop
 
   defp num(v) when is_number(v), do: v
   defp num(_), do: 0
