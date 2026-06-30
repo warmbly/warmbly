@@ -267,8 +267,9 @@ Clients push:
 
 - `live:cursor` with `{ "resource": "<resource>", "x": <number>, "y": <number> }` for a pointer move, or `{ "resource": "<resource>", "gone": true }` when the pointer leaves.
 - `live:node` with `{ "resource": "<canvas-resource>", "id": "<node-id>", "x": <number>, "y": <number>, "dragging": <bool> }` while a card is being moved (builder canvases only).
+- `live:patch` with `{ "resource": "<resource>", "data": { ... } }` for a generic collaborative-state hint, where `data` is a small flat map of scalar values (strings are capped, at most 20 keys). The dashboard uses it so a teammate's action lands instantly, for example a deal moved on a board (`{ "kind": "deal_move", "deal_id": "...", "stage_id": "..." }`) ahead of the durable refetch.
 
-They fan out to the other members on the same org channel as `LIVE_CURSOR` and `LIVE_NODE` events carrying the same fields plus `user_id`. Resolve the mover's name and avatar from presence.
+They fan out to the other members on the same org channel as `LIVE_CURSOR`, `LIVE_NODE`, and `LIVE_PATCH` events carrying the same fields plus `user_id`. Resolve the mover's name and avatar from presence. A `live:patch` is a best-effort hint, not a source of truth: the change itself still persists over REST and re-syncs through the normal event stream, so a dropped frame self-heals.
 
 These frames are deliberately lightweight:
 
