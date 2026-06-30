@@ -34,8 +34,12 @@ export function useLivePatch(
     const onPatchRef = React.useRef(opts.onPatch);
     onPatchRef.current = opts.onPatch;
 
+    // Send-only callers (mutation hooks that just broadcast) pass no onPatch and
+    // never open a channel subscription.
+    const listening = !!opts.onPatch;
+
     React.useEffect(() => {
-        if (!isConnected || !orgId) return;
+        if (!listening || !isConnected || !orgId) return;
         return subscribeToChannel(`org:${orgId}`, "LIVE_PATCH", (p) => {
             const by = typeof p.user_id === "string" ? p.user_id : "";
             if (!by || by === selfRef.current) return;
@@ -43,7 +47,7 @@ export function useLivePatch(
             const data = (p.data ?? {}) as LivePatchData;
             onPatchRef.current?.(data, by);
         });
-    }, [isConnected, orgId, subscribeToChannel]);
+    }, [listening, isConnected, orgId, subscribeToChannel]);
 
     const pushPatch = React.useCallback(
         (data: LivePatchData) => {
