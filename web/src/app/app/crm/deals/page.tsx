@@ -49,8 +49,10 @@ import useCreateDeal from "@/lib/api/hooks/app/crm/deals/useCreateDeal";
 import useUpdateDeal from "@/lib/api/hooks/app/crm/deals/useUpdateDeal";
 import useDeleteDeal from "@/lib/api/hooks/app/crm/deals/useDeleteDeal";
 import { useConfirm } from "@/hooks/context/confirm";
+import { useQueryClient } from "@tanstack/react-query";
 import { usePresenceResource } from "@/hooks/PresenceProvider";
 import { useSuppressGlobalCursors } from "@/components/app/presence/GlobalCursors";
+import { useLivePatch } from "@/hooks/useLivePatch";
 import ResourceViewers from "@/components/app/presence/ResourceViewers";
 import type Deal from "@/lib/api/models/app/crm/Deal";
 import type { Stage } from "@/lib/api/models/app/crm/Pipeline";
@@ -104,12 +106,27 @@ export default function DealsPage() {
     );
     const boardSummary = useDealsSummary(boardFilters, view === "board" && !!pipelineId).data;
 
+    // Live collaboration: when a teammate moves a deal on this pipeline's board,
+    // refresh instantly instead of waiting out the durable audit refetch.
+    const qc = useQueryClient();
+    const liveDeals = useLivePatch(pipelineId ? `crm_deals:${pipelineId}` : null, {
+        onPatch: (data) => {
+            if (data.kind === "deal_move") {
+                void qc.invalidateQueries({ queryKey: ["crm", "deals"] });
+                void qc.invalidateQueries({ queryKey: ["contacts"] });
+            }
+        },
+    });
+
     async function moveDeal(dealId: string, newStageId: string) {
         try {
             await toast.promise(
                 updateDeal.mutateAsync({ id: dealId, data: { stage_id: newStageId } as Partial<Deal> }),
                 { loading: "Moving…", success: "Moved", error: (e: AppError) => buildError(e) },
             );
+            // Nudge teammates on the same board to update now (the audit refetch is
+            // the durable backstop if this best-effort frame is dropped).
+            liveDeals.pushPatch({ kind: "deal_move", deal_id: dealId, stage_id: newStageId });
         } catch {
             /* surfaced */
         }
