@@ -18,6 +18,7 @@ Anywhere a record can be opened, Warmbly shows you when a teammate already has i
 - **Automations**: opening a flow that a teammate is editing shows an amber "is editing" pill next to the automation name. Coordinate before saving; the last save wins.
 - **Campaigns**: the campaign header shows who else is viewing the same campaign.
 - **Contacts**: the contact panel shows when someone else has the same person open for editing.
+- **Everywhere else a record opens**: the same indicator appears on a deal, a CRM task, an email template, a mailbox's settings, and an integration connection, so you always know when someone else is already in the same record.
 
 Indicators are scoped to your workspace. Only members of the same organization can see your presence, and what they see is limited to your name, avatar, the dashboard page you are on, and the record you have open.
 
@@ -33,6 +34,18 @@ Beyond presence, the dashboard reflects changes from any source in real time:
 - The [audit log](/guides/security/) streams new entries as teammates act, so the activity trail is also a live feed.
 
 Events are permission-aware: a member without inbox access never receives unibox events, and billing events only reach members who can manage billing. See [Team roles](/guides/team-roles/) for the permission model.
+
+## Live cursors
+
+Wherever two teammates are on the same page, you see each other's cursors move in real time, each labeled with its owner's name. This works across the dashboard: the contacts table, the deal board, the unibox, settings, and every other page. Cursors are anchored to the page content, so they point at the same thing for both of you and follow along as either person scrolls.
+
+## Live on the builder canvases
+
+The [automation builder](/guides/automations/) and the campaign [sequence](/guides/sequences/) editor are shared canvases. When a teammate is in the same flow, you see their cursor and watch cards slide as they drag them. Everyone is looking at the same live layout, so you can arrange a flow together without narrating every move.
+
+Card positions also stick. However you arrange the cards, that layout saves automatically and is exactly what you and your teammates see the next time the flow is opened. There is no separate "save layout" step, and moving a card never marks the flow as having unsaved changes. Only edits to the logic do.
+
+Live cursors and drags follow the same privacy rules as the rest of presence: with "show activity" off, a member's pointer and card movements are not shared.
 
 ## Presence privacy
 
