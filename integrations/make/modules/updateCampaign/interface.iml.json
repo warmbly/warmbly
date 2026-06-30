@@ -1,0 +1,7 @@
+[
+    { "name": "id", "type": "text", "label": "Campaign ID" },
+    { "name": "name", "type": "text", "label": "Name" },
+    { "name": "status", "type": "text", "label": "Status" },
+    { "name": "daily_limit", "type": "integer", "label": "Daily limit" },
+    { "name": "created_at", "type": "date", "label": "Created at" }
+]

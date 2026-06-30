@@ -1,0 +1,17 @@
+[
+    "read_emails",
+    "write_emails",
+    "send_campaigns",
+    "read_campaigns",
+    "write_campaigns",
+    "read_contacts",
+    "write_contacts",
+    "bulk_contacts",
+    "read_unibox",
+    "write_unibox",
+    "read_crm",
+    "write_crm",
+    "read_templates",
+    "write_templates",
+    "read_analytics"
+]

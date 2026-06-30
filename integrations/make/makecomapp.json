@@ -1,0 +1,809 @@
+{
+    "fileVersion": 1,
+    "generalCodeFiles": {
+        "base": "general/base.iml.json",
+        "common": "general/common.json",
+        "readme": "README.md",
+        "groups": "general/groups.json"
+    },
+    "components": {
+        "connection": {
+            "warmbly": {
+                "label": "Warmbly",
+                "connectionType": "oauth",
+                "codeFiles": {
+                    "communication": "connections/warmbly/api.iml.json",
+                    "common": "connections/warmbly/common.json",
+                    "params": "connections/warmbly/parameters.iml.json",
+                    "scopeList": "connections/warmbly/scopes.iml.json",
+                    "defaultScope": "connections/warmbly/scope.iml.json"
+                }
+            }
+        },
+        "rpc": {
+            "campaignList": {
+                "label": "List Campaigns",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "rpcs/campaignList/api.iml.json",
+                    "params": "rpcs/campaignList/parameters.iml.json"
+                }
+            },
+            "mailboxList": {
+                "label": "List Mailboxes",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "rpcs/mailboxList/api.iml.json",
+                    "params": "rpcs/mailboxList/parameters.iml.json"
+                }
+            },
+            "pipelineList": {
+                "label": "List Pipelines",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "rpcs/pipelineList/api.iml.json",
+                    "params": "rpcs/pipelineList/parameters.iml.json"
+                }
+            },
+            "stageList": {
+                "label": "List Pipeline Stages",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "rpcs/stageList/api.iml.json",
+                    "params": "rpcs/stageList/parameters.iml.json"
+                }
+            },
+            "templateList": {
+                "label": "List Reply Templates",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "rpcs/templateList/api.iml.json",
+                    "params": "rpcs/templateList/parameters.iml.json"
+                }
+            },
+            "contactList": {
+                "label": "List Contacts",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "rpcs/contactList/api.iml.json",
+                    "params": "rpcs/contactList/parameters.iml.json"
+                }
+            }
+        },
+        "module": {
+            "newContact": {
+                "label": "New Contact",
+                "description": "Triggers when a contact is added to your Warmbly workspace.",
+                "moduleType": "trigger",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/newContact/api.iml.json",
+                    "mappableParams": "modules/newContact/parameters.iml.json",
+                    "interface": "modules/newContact/interface.iml.json",
+                    "samples": "modules/newContact/samples.iml.json"
+                }
+            },
+            "newOrUpdatedContact": {
+                "label": "New or Updated Contact",
+                "description": "Triggers when a contact is created or changed. The dedupe key combines the contact id with the update time so edits re-fire.",
+                "moduleType": "trigger",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/newOrUpdatedContact/api.iml.json",
+                    "mappableParams": "modules/newOrUpdatedContact/parameters.iml.json",
+                    "interface": "modules/newOrUpdatedContact/interface.iml.json",
+                    "samples": "modules/newOrUpdatedContact/samples.iml.json"
+                }
+            },
+            "newInboundEmail": {
+                "label": "New Email Received",
+                "description": "Triggers on a new incoming email in the unified inbox, including replies to your campaigns. Requires Unibox (active trial or paid plan).",
+                "moduleType": "trigger",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/newInboundEmail/api.iml.json",
+                    "mappableParams": "modules/newInboundEmail/parameters.iml.json",
+                    "interface": "modules/newInboundEmail/interface.iml.json",
+                    "samples": "modules/newInboundEmail/samples.iml.json"
+                }
+            },
+            "newMeeting": {
+                "label": "New Meeting Booked",
+                "description": "Triggers when a meeting is booked through a connected scheduler (Calendly, Cal.com) or logged manually.",
+                "moduleType": "trigger",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/newMeeting/api.iml.json",
+                    "mappableParams": "modules/newMeeting/parameters.iml.json",
+                    "interface": "modules/newMeeting/interface.iml.json",
+                    "samples": "modules/newMeeting/samples.iml.json"
+                }
+            },
+            "newDeal": {
+                "label": "New Deal",
+                "description": "Triggers when a CRM deal is created.",
+                "moduleType": "trigger",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/newDeal/api.iml.json",
+                    "mappableParams": "modules/newDeal/parameters.iml.json",
+                    "interface": "modules/newDeal/interface.iml.json",
+                    "samples": "modules/newDeal/samples.iml.json"
+                }
+            },
+            "dealWon": {
+                "label": "Deal Won",
+                "description": "Triggers when a CRM deal is in the won state.",
+                "moduleType": "trigger",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/dealWon/api.iml.json",
+                    "mappableParams": "modules/dealWon/parameters.iml.json",
+                    "interface": "modules/dealWon/interface.iml.json",
+                    "samples": "modules/dealWon/samples.iml.json"
+                }
+            },
+            "newCrmTask": {
+                "label": "New CRM Task",
+                "description": "Triggers when a CRM task is created.",
+                "moduleType": "trigger",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/newCrmTask/api.iml.json",
+                    "mappableParams": "modules/newCrmTask/parameters.iml.json",
+                    "interface": "modules/newCrmTask/interface.iml.json",
+                    "samples": "modules/newCrmTask/samples.iml.json"
+                }
+            },
+            "newCampaign": {
+                "label": "New Campaign",
+                "description": "Triggers when a campaign is created.",
+                "moduleType": "trigger",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/newCampaign/api.iml.json",
+                    "mappableParams": "modules/newCampaign/parameters.iml.json",
+                    "interface": "modules/newCampaign/interface.iml.json",
+                    "samples": "modules/newCampaign/samples.iml.json"
+                }
+            },
+            "campaignCompleted": {
+                "label": "Campaign Completed",
+                "description": "Triggers when a campaign reaches the completed state.",
+                "moduleType": "trigger",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/campaignCompleted/api.iml.json",
+                    "mappableParams": "modules/campaignCompleted/parameters.iml.json",
+                    "interface": "modules/campaignCompleted/interface.iml.json",
+                    "samples": "modules/campaignCompleted/samples.iml.json"
+                }
+            },
+            "newMailbox": {
+                "label": "New Mailbox Connected",
+                "description": "Triggers when an email account (mailbox) is connected.",
+                "moduleType": "trigger",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/newMailbox/api.iml.json",
+                    "mappableParams": "modules/newMailbox/parameters.iml.json",
+                    "interface": "modules/newMailbox/interface.iml.json",
+                    "samples": "modules/newMailbox/samples.iml.json"
+                }
+            },
+            "createContact": {
+                "label": "Create or Update Contact",
+                "description": "Adds a contact (or updates the existing one with the same email) and optionally enrolls it into campaigns. Custom fields merge by key.",
+                "moduleType": "action",
+                "actionCrud": "create",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/createContact/api.iml.json",
+                    "mappableParams": "modules/createContact/parameters.iml.json",
+                    "interface": "modules/createContact/interface.iml.json",
+                    "samples": "modules/createContact/samples.iml.json"
+                }
+            },
+            "updateContact": {
+                "label": "Update Contact",
+                "description": "Updates an existing contact by ID. Email cannot be changed.",
+                "moduleType": "action",
+                "actionCrud": "update",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/updateContact/api.iml.json",
+                    "mappableParams": "modules/updateContact/parameters.iml.json",
+                    "interface": "modules/updateContact/interface.iml.json",
+                    "samples": "modules/updateContact/samples.iml.json"
+                }
+            },
+            "deleteContact": {
+                "label": "Delete Contact",
+                "description": "Permanently deletes a contact by ID.",
+                "moduleType": "action",
+                "actionCrud": "delete",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/deleteContact/api.iml.json",
+                    "mappableParams": "modules/deleteContact/parameters.iml.json",
+                    "interface": "modules/deleteContact/interface.iml.json",
+                    "samples": "modules/deleteContact/samples.iml.json"
+                }
+            },
+            "addContactToCampaign": {
+                "label": "Add Contact to Campaign",
+                "description": "Adds a contact (creating it if new) as a lead in a campaign. Idempotent by email.",
+                "moduleType": "action",
+                "actionCrud": "create",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/addContactToCampaign/api.iml.json",
+                    "mappableParams": "modules/addContactToCampaign/parameters.iml.json",
+                    "interface": "modules/addContactToCampaign/interface.iml.json",
+                    "samples": "modules/addContactToCampaign/samples.iml.json"
+                }
+            },
+            "removeContactFromCampaign": {
+                "label": "Remove Contact from Campaign",
+                "description": "Unenrolls a contact from a campaign without deleting the contact.",
+                "moduleType": "action",
+                "actionCrud": "update",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/removeContactFromCampaign/api.iml.json",
+                    "mappableParams": "modules/removeContactFromCampaign/parameters.iml.json",
+                    "interface": "modules/removeContactFromCampaign/interface.iml.json",
+                    "samples": "modules/removeContactFromCampaign/samples.iml.json"
+                }
+            },
+            "createContactNote": {
+                "label": "Create Contact Note",
+                "description": "Adds a note to a contact.",
+                "moduleType": "action",
+                "actionCrud": "create",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/createContactNote/api.iml.json",
+                    "mappableParams": "modules/createContactNote/parameters.iml.json",
+                    "interface": "modules/createContactNote/interface.iml.json",
+                    "samples": "modules/createContactNote/samples.iml.json"
+                }
+            },
+            "updateContactNote": {
+                "label": "Update Contact Note",
+                "description": "Updates the text of an existing contact note.",
+                "moduleType": "action",
+                "actionCrud": "update",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/updateContactNote/api.iml.json",
+                    "mappableParams": "modules/updateContactNote/parameters.iml.json",
+                    "interface": "modules/updateContactNote/interface.iml.json",
+                    "samples": "modules/updateContactNote/samples.iml.json"
+                }
+            },
+            "deleteContactNote": {
+                "label": "Delete Contact Note",
+                "description": "Permanently deletes a contact note by ID.",
+                "moduleType": "action",
+                "actionCrud": "delete",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/deleteContactNote/api.iml.json",
+                    "mappableParams": "modules/deleteContactNote/parameters.iml.json",
+                    "interface": "modules/deleteContactNote/interface.iml.json",
+                    "samples": "modules/deleteContactNote/samples.iml.json"
+                }
+            },
+            "sendEmail": {
+                "label": "Send Email",
+                "description": "Sends a one-off email from one of your connected mailboxes.",
+                "moduleType": "action",
+                "actionCrud": "create",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/sendEmail/api.iml.json",
+                    "mappableParams": "modules/sendEmail/parameters.iml.json",
+                    "interface": "modules/sendEmail/interface.iml.json",
+                    "samples": "modules/sendEmail/samples.iml.json"
+                }
+            },
+            "replyToEmail": {
+                "label": "Reply in Inbox",
+                "description": "Sends a reply from a mailbox, optionally threading it into an existing conversation.",
+                "moduleType": "action",
+                "actionCrud": "create",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/replyToEmail/api.iml.json",
+                    "mappableParams": "modules/replyToEmail/parameters.iml.json",
+                    "interface": "modules/replyToEmail/interface.iml.json",
+                    "samples": "modules/replyToEmail/samples.iml.json"
+                }
+            },
+            "markEmailSeen": {
+                "label": "Mark Inbox Emails Seen",
+                "description": "Marks one or more inbox messages as read or unread.",
+                "moduleType": "action",
+                "actionCrud": "update",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/markEmailSeen/api.iml.json",
+                    "mappableParams": "modules/markEmailSeen/parameters.iml.json",
+                    "interface": "modules/markEmailSeen/interface.iml.json",
+                    "samples": "modules/markEmailSeen/samples.iml.json"
+                }
+            },
+            "verifyEmail": {
+                "label": "Verify Email Address",
+                "description": "Runs a deliverability check (syntax, MX, SMTP probe, catch-all) on an address before you send.",
+                "moduleType": "action",
+                "actionCrud": "read",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/verifyEmail/api.iml.json",
+                    "mappableParams": "modules/verifyEmail/parameters.iml.json",
+                    "interface": "modules/verifyEmail/interface.iml.json",
+                    "samples": "modules/verifyEmail/samples.iml.json"
+                }
+            },
+            "createDeal": {
+                "label": "Create Deal",
+                "description": "Creates a CRM deal in a pipeline stage.",
+                "moduleType": "action",
+                "actionCrud": "create",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/createDeal/api.iml.json",
+                    "mappableParams": "modules/createDeal/parameters.iml.json",
+                    "interface": "modules/createDeal/interface.iml.json",
+                    "samples": "modules/createDeal/samples.iml.json"
+                }
+            },
+            "updateDeal": {
+                "label": "Update Deal",
+                "description": "Updates a CRM deal: move stages, change value, or mark it won/lost.",
+                "moduleType": "action",
+                "actionCrud": "update",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/updateDeal/api.iml.json",
+                    "mappableParams": "modules/updateDeal/parameters.iml.json",
+                    "interface": "modules/updateDeal/interface.iml.json",
+                    "samples": "modules/updateDeal/samples.iml.json"
+                }
+            },
+            "deleteDeal": {
+                "label": "Delete Deal",
+                "description": "Permanently deletes a CRM deal by ID.",
+                "moduleType": "action",
+                "actionCrud": "delete",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/deleteDeal/api.iml.json",
+                    "mappableParams": "modules/deleteDeal/parameters.iml.json",
+                    "interface": "modules/deleteDeal/interface.iml.json",
+                    "samples": "modules/deleteDeal/samples.iml.json"
+                }
+            },
+            "createCrmTask": {
+                "label": "Create CRM Task",
+                "description": "Creates a CRM task, optionally linked to a contact or deal.",
+                "moduleType": "action",
+                "actionCrud": "create",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/createCrmTask/api.iml.json",
+                    "mappableParams": "modules/createCrmTask/parameters.iml.json",
+                    "interface": "modules/createCrmTask/interface.iml.json",
+                    "samples": "modules/createCrmTask/samples.iml.json"
+                }
+            },
+            "updateCrmTask": {
+                "label": "Update CRM Task",
+                "description": "Updates a CRM task, for example to mark it complete or change status, priority, or due date.",
+                "moduleType": "action",
+                "actionCrud": "update",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/updateCrmTask/api.iml.json",
+                    "mappableParams": "modules/updateCrmTask/parameters.iml.json",
+                    "interface": "modules/updateCrmTask/interface.iml.json",
+                    "samples": "modules/updateCrmTask/samples.iml.json"
+                }
+            },
+            "deleteCrmTask": {
+                "label": "Delete CRM Task",
+                "description": "Permanently deletes a CRM task by ID.",
+                "moduleType": "action",
+                "actionCrud": "delete",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/deleteCrmTask/api.iml.json",
+                    "mappableParams": "modules/deleteCrmTask/parameters.iml.json",
+                    "interface": "modules/deleteCrmTask/interface.iml.json",
+                    "samples": "modules/deleteCrmTask/samples.iml.json"
+                }
+            },
+            "createCampaign": {
+                "label": "Create Campaign",
+                "description": "Creates a draft campaign. Add sequence steps, senders, and leads in Warmbly, then start it.",
+                "moduleType": "action",
+                "actionCrud": "create",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/createCampaign/api.iml.json",
+                    "mappableParams": "modules/createCampaign/parameters.iml.json",
+                    "interface": "modules/createCampaign/interface.iml.json",
+                    "samples": "modules/createCampaign/samples.iml.json"
+                }
+            },
+            "updateCampaign": {
+                "label": "Update Campaign",
+                "description": "Updates campaign settings such as name, description, or daily send cap. Use Start/Stop Campaign to change its running state.",
+                "moduleType": "action",
+                "actionCrud": "update",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/updateCampaign/api.iml.json",
+                    "mappableParams": "modules/updateCampaign/parameters.iml.json",
+                    "interface": "modules/updateCampaign/interface.iml.json",
+                    "samples": "modules/updateCampaign/samples.iml.json"
+                }
+            },
+            "deleteCampaign": {
+                "label": "Delete Campaign",
+                "description": "Permanently deletes a campaign by ID. This is irreversible.",
+                "moduleType": "action",
+                "actionCrud": "delete",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/deleteCampaign/api.iml.json",
+                    "mappableParams": "modules/deleteCampaign/parameters.iml.json",
+                    "interface": "modules/deleteCampaign/interface.iml.json",
+                    "samples": "modules/deleteCampaign/samples.iml.json"
+                }
+            },
+            "startCampaign": {
+                "label": "Start Campaign",
+                "description": "Starts (or resumes) a campaign so it begins sending.",
+                "moduleType": "action",
+                "actionCrud": "update",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/startCampaign/api.iml.json",
+                    "mappableParams": "modules/startCampaign/parameters.iml.json",
+                    "interface": "modules/startCampaign/interface.iml.json",
+                    "samples": "modules/startCampaign/samples.iml.json"
+                }
+            },
+            "stopCampaign": {
+                "label": "Stop Campaign",
+                "description": "Pauses an active campaign.",
+                "moduleType": "action",
+                "actionCrud": "update",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/stopCampaign/api.iml.json",
+                    "mappableParams": "modules/stopCampaign/parameters.iml.json",
+                    "interface": "modules/stopCampaign/interface.iml.json",
+                    "samples": "modules/stopCampaign/samples.iml.json"
+                }
+            },
+            "updateMailbox": {
+                "label": "Update Mailbox",
+                "description": "Updates mailbox settings such as display name, daily cap, send gap, or reply-to.",
+                "moduleType": "action",
+                "actionCrud": "update",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/updateMailbox/api.iml.json",
+                    "mappableParams": "modules/updateMailbox/parameters.iml.json",
+                    "interface": "modules/updateMailbox/interface.iml.json",
+                    "samples": "modules/updateMailbox/samples.iml.json"
+                }
+            },
+            "deleteMailbox": {
+                "label": "Delete Mailbox",
+                "description": "Permanently disconnects and deletes an email account. This stops all warmup and campaign sending from it and is irreversible. Use with care.",
+                "moduleType": "action",
+                "actionCrud": "delete",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/deleteMailbox/api.iml.json",
+                    "mappableParams": "modules/deleteMailbox/parameters.iml.json",
+                    "interface": "modules/deleteMailbox/interface.iml.json",
+                    "samples": "modules/deleteMailbox/samples.iml.json"
+                }
+            },
+            "startWarmup": {
+                "label": "Start Warmup",
+                "description": "Enables or resumes warmup on a mailbox, keeping ramp progress.",
+                "moduleType": "action",
+                "actionCrud": "update",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/startWarmup/api.iml.json",
+                    "mappableParams": "modules/startWarmup/parameters.iml.json",
+                    "interface": "modules/startWarmup/interface.iml.json",
+                    "samples": "modules/startWarmup/samples.iml.json"
+                }
+            },
+            "pauseWarmup": {
+                "label": "Pause Warmup",
+                "description": "Pauses warmup without losing ramp progress.",
+                "moduleType": "action",
+                "actionCrud": "update",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/pauseWarmup/api.iml.json",
+                    "mappableParams": "modules/pauseWarmup/parameters.iml.json",
+                    "interface": "modules/pauseWarmup/interface.iml.json",
+                    "samples": "modules/pauseWarmup/samples.iml.json"
+                }
+            },
+            "resumeWarmup": {
+                "label": "Resume Warmup",
+                "description": "Resumes a paused warmup, continuing the ramp.",
+                "moduleType": "action",
+                "actionCrud": "update",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/resumeWarmup/api.iml.json",
+                    "mappableParams": "modules/resumeWarmup/parameters.iml.json",
+                    "interface": "modules/resumeWarmup/interface.iml.json",
+                    "samples": "modules/resumeWarmup/samples.iml.json"
+                }
+            },
+            "stopWarmup": {
+                "label": "Stop Warmup",
+                "description": "Disables warmup entirely and resets ramp progress.",
+                "moduleType": "action",
+                "actionCrud": "update",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/stopWarmup/api.iml.json",
+                    "mappableParams": "modules/stopWarmup/parameters.iml.json",
+                    "interface": "modules/stopWarmup/interface.iml.json",
+                    "samples": "modules/stopWarmup/samples.iml.json"
+                }
+            },
+            "createTemplate": {
+                "label": "Create Reply Template",
+                "description": "Creates a reusable reply template for the unified inbox.",
+                "moduleType": "action",
+                "actionCrud": "create",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/createTemplate/api.iml.json",
+                    "mappableParams": "modules/createTemplate/parameters.iml.json",
+                    "interface": "modules/createTemplate/interface.iml.json",
+                    "samples": "modules/createTemplate/samples.iml.json"
+                }
+            },
+            "updateTemplate": {
+                "label": "Update Reply Template",
+                "description": "Updates an existing reply template.",
+                "moduleType": "action",
+                "actionCrud": "update",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/updateTemplate/api.iml.json",
+                    "mappableParams": "modules/updateTemplate/parameters.iml.json",
+                    "interface": "modules/updateTemplate/interface.iml.json",
+                    "samples": "modules/updateTemplate/samples.iml.json"
+                }
+            },
+            "deleteTemplate": {
+                "label": "Delete Reply Template",
+                "description": "Permanently deletes a reply template by ID.",
+                "moduleType": "action",
+                "actionCrud": "delete",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/deleteTemplate/api.iml.json",
+                    "mappableParams": "modules/deleteTemplate/parameters.iml.json",
+                    "interface": "modules/deleteTemplate/interface.iml.json",
+                    "samples": "modules/deleteTemplate/samples.iml.json"
+                }
+            },
+            "renderTemplate": {
+                "label": "Render Reply Template",
+                "description": "Fills a template with variables and returns the rendered subject and body.",
+                "moduleType": "action",
+                "actionCrud": "read",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/renderTemplate/api.iml.json",
+                    "mappableParams": "modules/renderTemplate/parameters.iml.json",
+                    "interface": "modules/renderTemplate/interface.iml.json",
+                    "samples": "modules/renderTemplate/samples.iml.json"
+                }
+            },
+            "createMeeting": {
+                "label": "Log Meeting",
+                "description": "Records a meeting (source \"manual\") and attributes it to a contact by email or id.",
+                "moduleType": "action",
+                "actionCrud": "create",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/createMeeting/api.iml.json",
+                    "mappableParams": "modules/createMeeting/parameters.iml.json",
+                    "interface": "modules/createMeeting/interface.iml.json",
+                    "samples": "modules/createMeeting/samples.iml.json"
+                }
+            },
+            "deleteMeeting": {
+                "label": "Delete Meeting",
+                "description": "Deletes a meeting booking by ID.",
+                "moduleType": "action",
+                "actionCrud": "delete",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/deleteMeeting/api.iml.json",
+                    "mappableParams": "modules/deleteMeeting/parameters.iml.json",
+                    "interface": "modules/deleteMeeting/interface.iml.json",
+                    "samples": "modules/deleteMeeting/samples.iml.json"
+                }
+            },
+            "createCategory": {
+                "label": "Create Contact Category",
+                "description": "Creates a contact category. Returns its id for use when creating contacts.",
+                "moduleType": "action",
+                "actionCrud": "create",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/createCategory/api.iml.json",
+                    "mappableParams": "modules/createCategory/parameters.iml.json",
+                    "interface": "modules/createCategory/interface.iml.json",
+                    "samples": "modules/createCategory/samples.iml.json"
+                }
+            },
+            "createTag": {
+                "label": "Create Mailbox Tag",
+                "description": "Creates a tag used to group mailboxes.",
+                "moduleType": "action",
+                "actionCrud": "create",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/createTag/api.iml.json",
+                    "mappableParams": "modules/createTag/parameters.iml.json",
+                    "interface": "modules/createTag/interface.iml.json",
+                    "samples": "modules/createTag/samples.iml.json"
+                }
+            },
+            "createFolder": {
+                "label": "Create Campaign Folder",
+                "description": "Creates a folder used to group campaigns.",
+                "moduleType": "action",
+                "actionCrud": "create",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/createFolder/api.iml.json",
+                    "mappableParams": "modules/createFolder/parameters.iml.json",
+                    "interface": "modules/createFolder/interface.iml.json",
+                    "samples": "modules/createFolder/samples.iml.json"
+                }
+            },
+            "findContact": {
+                "label": "Find Contact",
+                "description": "Finds a contact by exact email address.",
+                "moduleType": "search",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/findContact/api.iml.json",
+                    "mappableParams": "modules/findContact/parameters.iml.json",
+                    "interface": "modules/findContact/interface.iml.json",
+                    "samples": "modules/findContact/samples.iml.json"
+                }
+            },
+            "findDeal": {
+                "label": "Find Deal",
+                "description": "Finds a CRM deal by name (and optional status).",
+                "moduleType": "search",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/findDeal/api.iml.json",
+                    "mappableParams": "modules/findDeal/parameters.iml.json",
+                    "interface": "modules/findDeal/interface.iml.json",
+                    "samples": "modules/findDeal/samples.iml.json"
+                }
+            },
+            "findCrmTask": {
+                "label": "Find CRM Task",
+                "description": "Finds a CRM task by title (and optional status).",
+                "moduleType": "search",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/findCrmTask/api.iml.json",
+                    "mappableParams": "modules/findCrmTask/parameters.iml.json",
+                    "interface": "modules/findCrmTask/interface.iml.json",
+                    "samples": "modules/findCrmTask/samples.iml.json"
+                }
+            },
+            "findCampaign": {
+                "label": "Find Campaign",
+                "description": "Finds a campaign by name.",
+                "moduleType": "search",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/findCampaign/api.iml.json",
+                    "mappableParams": "modules/findCampaign/parameters.iml.json",
+                    "interface": "modules/findCampaign/interface.iml.json",
+                    "samples": "modules/findCampaign/samples.iml.json"
+                }
+            },
+            "findMailbox": {
+                "label": "Find Mailbox",
+                "description": "Finds a connected mailbox by email or name.",
+                "moduleType": "search",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/findMailbox/api.iml.json",
+                    "mappableParams": "modules/findMailbox/parameters.iml.json",
+                    "interface": "modules/findMailbox/interface.iml.json",
+                    "samples": "modules/findMailbox/samples.iml.json"
+                }
+            },
+            "findMeeting": {
+                "label": "Find Meeting",
+                "description": "Finds a meeting by invitee name, invitee email, or event name.",
+                "moduleType": "search",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/findMeeting/api.iml.json",
+                    "mappableParams": "modules/findMeeting/parameters.iml.json",
+                    "interface": "modules/findMeeting/interface.iml.json",
+                    "samples": "modules/findMeeting/samples.iml.json"
+                }
+            },
+            "findTemplate": {
+                "label": "Find Reply Template",
+                "description": "Finds a reply template by name or subject.",
+                "moduleType": "search",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/findTemplate/api.iml.json",
+                    "mappableParams": "modules/findTemplate/parameters.iml.json",
+                    "interface": "modules/findTemplate/interface.iml.json",
+                    "samples": "modules/findTemplate/samples.iml.json"
+                }
+            },
+            "getCampaignAnalytics": {
+                "label": "Get Campaign Analytics",
+                "description": "Fetches summary stats (sends, opens, clicks, replies, bounces) for a campaign.",
+                "moduleType": "search",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/getCampaignAnalytics/api.iml.json",
+                    "mappableParams": "modules/getCampaignAnalytics/parameters.iml.json",
+                    "interface": "modules/getCampaignAnalytics/interface.iml.json",
+                    "samples": "modules/getCampaignAnalytics/samples.iml.json"
+                }
+            },
+            "getDashboardAnalytics": {
+                "label": "Get Dashboard Analytics",
+                "description": "Fetches workspace-wide stats for a period (7d, 30d, or 90d).",
+                "moduleType": "search",
+                "connection": "warmbly",
+                "codeFiles": {
+                    "communication": "modules/getDashboardAnalytics/api.iml.json",
+                    "mappableParams": "modules/getDashboardAnalytics/parameters.iml.json",
+                    "interface": "modules/getDashboardAnalytics/interface.iml.json",
+                    "samples": "modules/getDashboardAnalytics/samples.iml.json"
+                }
+            }
+        },
+        "webhook": {},
+        "function": {
+            "filterByStatus": {
+                "label": "filterByStatus",
+                "codeFiles": {
+                    "code": "functions/filterByStatus/code.js",
+                    "test": "functions/filterByStatus/test.js"
+                }
+            }
+        }
+    },
+    "origins": []
+}

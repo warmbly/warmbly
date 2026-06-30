@@ -1,0 +1,6 @@
+[
+    { "name": "campaign_id", "type": "select", "label": "Campaign", "required": true, "options": "rpc://campaignList" },
+    { "name": "name", "type": "text", "label": "Name" },
+    { "name": "description", "type": "text", "label": "Description" },
+    { "name": "daily_limit", "type": "integer", "label": "Daily send cap" }
+]

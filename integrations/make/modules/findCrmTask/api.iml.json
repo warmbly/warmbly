@@ -1,0 +1,15 @@
+{
+    "url": "/crm/tasks/search",
+    "method": "POST",
+    "qs": {
+        "limit": 25
+    },
+    "body": {
+        "query": "{{parameters.query}}",
+        "statuses": "{{if(parameters.status, add(emptyarray, parameters.status))}}"
+    },
+    "response": {
+        "iterate": "{{body.data}}",
+        "output": "{{item}}"
+    }
+}

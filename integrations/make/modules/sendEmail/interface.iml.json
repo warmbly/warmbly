@@ -1,0 +1,5 @@
+[
+    { "name": "task_id", "type": "text", "label": "Task ID" },
+    { "name": "scheduled_at", "type": "date", "label": "Scheduled at" },
+    { "name": "send_mode", "type": "text", "label": "Send mode" }
+]

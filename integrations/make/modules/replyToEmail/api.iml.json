@@ -1,0 +1,20 @@
+{
+    "url": "/unibox/reply",
+    "method": "POST",
+    "body": {
+        "email_account_id": "{{parameters.email_account_id}}",
+        "to": "{{parameters.to}}",
+        "cc": "{{parameters.cc}}",
+        "bcc": "{{parameters.bcc}}",
+        "subject": "{{parameters.subject}}",
+        "body_html": "{{parameters.body_html}}",
+        "body_plain": "{{parameters.body_plain}}",
+        "thread_id": "{{parameters.thread_id}}",
+        "in_reply_to": "{{parameters.in_reply_to}}",
+        "send_mode": "{{parameters.send_mode}}",
+        "scheduled_at": "{{parameters.scheduled_at}}"
+    },
+    "response": {
+        "output": "{{body}}"
+    }
+}

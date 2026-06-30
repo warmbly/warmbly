@@ -1,0 +1,9 @@
+[
+    { "name": "id", "type": "text", "label": "Message ID" },
+    { "name": "email_id", "type": "text", "label": "Mailbox ID" },
+    { "name": "thread_id", "type": "text", "label": "Thread ID" },
+    { "name": "subject", "type": "text", "label": "Subject" },
+    { "name": "snippet", "type": "text", "label": "Snippet" },
+    { "name": "internal_date", "type": "date", "label": "Received at" },
+    { "name": "seen", "type": "boolean", "label": "Seen" }
+]

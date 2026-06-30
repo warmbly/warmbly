@@ -1,0 +1,17 @@
+{
+    "url": "/crm/deals",
+    "method": "POST",
+    "body": {
+        "pipeline_id": "{{parameters.pipeline_id}}",
+        "stage_id": "{{parameters.stage_id}}",
+        "name": "{{parameters.name}}",
+        "value": "{{parameters.value}}",
+        "currency": "{{parameters.currency}}",
+        "contact_id": "{{parameters.contact_id}}",
+        "expected_close_date": "{{parameters.expected_close_date}}",
+        "assigned_to": "{{parameters.assigned_to}}"
+    },
+    "response": {
+        "output": "{{body}}"
+    }
+}

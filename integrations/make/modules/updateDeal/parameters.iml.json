@@ -1,0 +1,32 @@
+[
+    { "name": "deal_id", "type": "text", "label": "Deal ID", "required": true },
+    {
+        "name": "pipeline_id",
+        "type": "select",
+        "label": "Pipeline (for stage picker)",
+        "help": "Optional: pick the pipeline to populate the stage dropdown.",
+        "options": "rpc://pipelineList"
+    },
+    {
+        "name": "stage_id",
+        "type": "select",
+        "label": "Stage",
+        "options": "rpc://stageList"
+    },
+    { "name": "name", "type": "text", "label": "Name" },
+    { "name": "value", "type": "number", "label": "Value" },
+    { "name": "currency", "type": "text", "label": "Currency" },
+    {
+        "name": "status",
+        "type": "select",
+        "label": "Status",
+        "options": [
+            { "label": "Open", "value": "open" },
+            { "label": "Won", "value": "won" },
+            { "label": "Lost", "value": "lost" }
+        ]
+    },
+    { "name": "lost_reason", "type": "text", "label": "Lost reason" },
+    { "name": "expected_close_date", "type": "date", "label": "Expected close date" },
+    { "name": "assigned_to", "type": "text", "label": "Owner (user ID)" }
+]

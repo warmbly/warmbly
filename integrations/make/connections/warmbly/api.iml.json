@@ -1,0 +1,68 @@
+{
+    "authorize": {
+        "url": "https://app.warmbly.com/oauth/authorize",
+        "qs": {
+            "client_id": "{{ifempty(common.clientId, parameters.clientId)}}",
+            "redirect_uri": "{{oauth.redirectUri}}",
+            "response_type": "code",
+            "scope": "{{join(oauth.scope, ' ')}}",
+            "state": "{{oauth.state}}"
+        },
+        "response": {
+            "temp": {
+                "code": "{{query.code}}"
+            }
+        }
+    },
+    "token": {
+        "url": "https://api.warmbly.com/v1/oauth/token",
+        "method": "POST",
+        "type": "urlencoded",
+        "body": {
+            "grant_type": "authorization_code",
+            "code": "{{temp.code}}",
+            "client_id": "{{ifempty(common.clientId, parameters.clientId)}}",
+            "client_secret": "{{ifempty(common.clientSecret, parameters.clientSecret)}}",
+            "redirect_uri": "{{oauth.redirectUri}}"
+        },
+        "response": {
+            "data": {
+                "access_token": "{{body.access_token}}",
+                "refresh_token": "{{body.refresh_token}}",
+                "expires": "{{if(body.expires_in, addSeconds(now, body.expires_in), undefined)}}"
+            }
+        }
+    },
+    "refresh": {
+        "condition": "{{data.refresh_token}}",
+        "url": "https://api.warmbly.com/v1/oauth/token",
+        "method": "POST",
+        "type": "urlencoded",
+        "body": {
+            "grant_type": "refresh_token",
+            "refresh_token": "{{data.refresh_token}}",
+            "client_id": "{{ifempty(common.clientId, parameters.clientId)}}",
+            "client_secret": "{{ifempty(common.clientSecret, parameters.clientSecret)}}"
+        },
+        "response": {
+            "data": {
+                "access_token": "{{body.access_token}}",
+                "refresh_token": "{{body.refresh_token}}",
+                "expires": "{{if(body.expires_in, addSeconds(now, body.expires_in), undefined)}}"
+            }
+        }
+    },
+    "info": {
+        "url": "https://api.warmbly.com/v1/me",
+        "headers": {
+            "authorization": "Bearer {{connection.access_token}}"
+        },
+        "response": {
+            "uid": "{{body.user_id}}",
+            "metadata": {
+                "type": "text",
+                "value": "{{body.organization_name}} ({{body.email}})"
+            }
+        }
+    }
+}

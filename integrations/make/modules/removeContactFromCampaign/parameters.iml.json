@@ -1,0 +1,4 @@
+[
+    { "name": "contact_id", "type": "select", "label": "Contact", "required": true, "options": "rpc://contactList" },
+    { "name": "campaign_id", "type": "select", "label": "Campaign", "required": true, "options": "rpc://campaignList" }
+]

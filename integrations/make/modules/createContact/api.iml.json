@@ -1,0 +1,19 @@
+{
+    "url": "/contacts",
+    "method": "POST",
+    "body": [
+        {
+            "email": "{{parameters.email}}",
+            "first_name": "{{parameters.first_name}}",
+            "last_name": "{{parameters.last_name}}",
+            "company": "{{parameters.company}}",
+            "phone": "{{parameters.phone}}",
+            "campaigns": "{{parameters.campaigns}}",
+            "categories": "{{parameters.categories}}",
+            "custom_fields": "{{if(length(parameters.custom_fields) > 0, toCollection(parameters.custom_fields, 'key', 'value'))}}"
+        }
+    ],
+    "response": {
+        "output": "{{ifempty(body.data.0, body)}}"
+    }
+}

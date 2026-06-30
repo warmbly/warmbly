@@ -1,0 +1,11 @@
+{
+    "url": "/unibox/seen",
+    "method": "PATCH",
+    "body": {
+        "email_ids": "{{parameters.email_ids}}",
+        "seen": "{{parameters.seen}}"
+    },
+    "response": {
+        "output": "{{body}}"
+    }
+}

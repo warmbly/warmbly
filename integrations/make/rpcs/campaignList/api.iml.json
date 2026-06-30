@@ -1,0 +1,14 @@
+{
+    "url": "/campaigns",
+    "method": "GET",
+    "qs": {
+        "limit": 100
+    },
+    "response": {
+        "iterate": "{{body.data}}",
+        "output": {
+            "label": "{{item.name}}",
+            "value": "{{item.id}}"
+        }
+    }
+}

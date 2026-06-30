@@ -1,0 +1,11 @@
+[
+    { "name": "id", "type": "text", "label": "Booking ID" },
+    { "name": "source", "type": "text", "label": "Source" },
+    { "name": "status", "type": "text", "label": "Status" },
+    { "name": "invitee_email", "type": "text", "label": "Invitee email" },
+    { "name": "invitee_name", "type": "text", "label": "Invitee name" },
+    { "name": "event_name", "type": "text", "label": "Event name" },
+    { "name": "scheduled_for", "type": "date", "label": "Scheduled for" },
+    { "name": "join_url", "type": "text", "label": "Join URL" },
+    { "name": "contact_id", "type": "text", "label": "Contact ID" }
+]

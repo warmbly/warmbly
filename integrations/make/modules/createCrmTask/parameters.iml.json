@@ -1,0 +1,20 @@
+[
+    { "name": "title", "type": "text", "label": "Title", "required": true },
+    { "name": "description", "type": "text", "label": "Description" },
+    { "name": "contact_id", "type": "select", "label": "Contact", "options": "rpc://contactList" },
+    { "name": "deal_id", "type": "text", "label": "Deal ID" },
+    { "name": "assigned_to", "type": "text", "label": "Assignee (user ID)" },
+    { "name": "due_date", "type": "date", "label": "Due date" },
+    {
+        "name": "priority",
+        "type": "select",
+        "label": "Priority",
+        "options": [
+            { "label": "Low", "value": "low" },
+            { "label": "Medium", "value": "medium" },
+            { "label": "High", "value": "high" },
+            { "label": "Urgent", "value": "urgent" }
+        ]
+    },
+    { "name": "type", "type": "text", "label": "Type", "help": "e.g. Call, Email, Meeting." }
+]

@@ -1,0 +1,10 @@
+{
+    "url": "/crm/deals/{{parameters.deal_id}}",
+    "method": "DELETE",
+    "response": {
+        "output": {
+            "id": "{{parameters.deal_id}}",
+            "success": true
+        }
+    }
+}

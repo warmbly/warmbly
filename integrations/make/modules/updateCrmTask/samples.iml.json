@@ -1,0 +1,12 @@
+{
+    "id": "ta5b6c7d-0000-0000-0000-000000000000",
+    "organization_id": "00000000-0000-0000-0000-000000000000",
+    "title": "Call Example Co",
+    "description": "Discuss pilot",
+    "status": "completed",
+    "priority": "medium",
+    "type": "Call",
+    "contact_id": "7b6c1f2a-0000-0000-0000-000000000000",
+    "due_date": "2026-06-30T09:00:00Z",
+    "created_at": "2026-06-28T12:00:00Z"
+}

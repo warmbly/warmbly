@@ -1,0 +1,11 @@
+{
+    "url": "/contacts/lookup",
+    "method": "GET",
+    "qs": {
+        "email": "{{parameters.email}}"
+    },
+    "response": {
+        "iterate": "{{if(body.contact, add(emptyarray, body.contact), emptyarray)}}",
+        "output": "{{item}}"
+    }
+}

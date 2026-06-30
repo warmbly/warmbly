@@ -1,0 +1,13 @@
+{
+    "url": "/emails/{{parameters.email_account_id}}",
+    "method": "PATCH",
+    "body": {
+        "name": "{{parameters.name}}",
+        "campaign_limit": "{{parameters.campaign_limit}}",
+        "min_wait_time": "{{parameters.min_wait_time}}",
+        "reply_to": "{{parameters.reply_to}}"
+    },
+    "response": {
+        "output": "{{body}}"
+    }
+}

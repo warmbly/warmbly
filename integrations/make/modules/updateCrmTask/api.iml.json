@@ -1,0 +1,18 @@
+{
+    "url": "/crm/tasks/{{parameters.task_id}}",
+    "method": "PATCH",
+    "body": {
+        "title": "{{parameters.title}}",
+        "description": "{{parameters.description}}",
+        "status": "{{parameters.status}}",
+        "priority": "{{parameters.priority}}",
+        "due_date": "{{parameters.due_date}}",
+        "type": "{{parameters.type}}",
+        "contact_id": "{{parameters.contact_id}}",
+        "deal_id": "{{parameters.deal_id}}",
+        "assigned_to": "{{parameters.assigned_to}}"
+    },
+    "response": {
+        "output": "{{body}}"
+    }
+}

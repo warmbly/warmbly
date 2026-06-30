@@ -1,0 +1,3 @@
+[
+    { "name": "template_id", "type": "select", "label": "Template", "required": true, "options": "rpc://templateList" }
+]

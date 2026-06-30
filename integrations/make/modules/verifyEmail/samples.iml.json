@@ -1,0 +1,8 @@
+{
+    "email": "lead@example.com",
+    "status": "valid",
+    "reason": "deliverable",
+    "is_catch_all": false,
+    "has_mx": true,
+    "checked_at": "2026-06-28T12:00:00Z"
+}

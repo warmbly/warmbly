@@ -1,0 +1,32 @@
+[
+    { "name": "task_id", "type": "text", "label": "Task ID", "required": true },
+    { "name": "title", "type": "text", "label": "Title" },
+    { "name": "description", "type": "text", "label": "Description" },
+    {
+        "name": "status",
+        "type": "select",
+        "label": "Status",
+        "options": [
+            { "label": "Pending", "value": "pending" },
+            { "label": "In progress", "value": "in_progress" },
+            { "label": "Completed", "value": "completed" },
+            { "label": "Cancelled", "value": "cancelled" }
+        ]
+    },
+    {
+        "name": "priority",
+        "type": "select",
+        "label": "Priority",
+        "options": [
+            { "label": "Low", "value": "low" },
+            { "label": "Medium", "value": "medium" },
+            { "label": "High", "value": "high" },
+            { "label": "Urgent", "value": "urgent" }
+        ]
+    },
+    { "name": "due_date", "type": "date", "label": "Due date" },
+    { "name": "type", "type": "text", "label": "Type" },
+    { "name": "contact_id", "type": "select", "label": "Contact", "options": "rpc://contactList" },
+    { "name": "deal_id", "type": "text", "label": "Deal ID" },
+    { "name": "assigned_to", "type": "text", "label": "Assignee (user ID)" }
+]

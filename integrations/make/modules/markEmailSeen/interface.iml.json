@@ -1,0 +1,4 @@
+[
+    { "name": "email_ids", "type": "array", "label": "Message IDs" },
+    { "name": "seen", "type": "boolean", "label": "Seen" }
+]

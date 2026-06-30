@@ -1,0 +1,11 @@
+{
+    "url": "/templates",
+    "method": "GET",
+    "qs": {
+        "q": "{{parameters.query}}"
+    },
+    "response": {
+        "iterate": "{{ifempty(body.data, body)}}",
+        "output": "{{item}}"
+    }
+}

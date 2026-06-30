@@ -1,0 +1,10 @@
+{
+    "url": "/emails/verify",
+    "method": "POST",
+    "body": {
+        "email": "{{parameters.email}}"
+    },
+    "response": {
+        "output": "{{body}}"
+    }
+}

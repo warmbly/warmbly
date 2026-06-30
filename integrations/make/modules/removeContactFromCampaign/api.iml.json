@@ -1,0 +1,11 @@
+{
+    "url": "/contacts",
+    "method": "PATCH",
+    "body": {
+        "contacts": "{{add(emptyarray, parameters.contact_id)}}",
+        "remove_campaigns": "{{add(emptyarray, parameters.campaign_id)}}"
+    },
+    "response": {
+        "output": "{{ifempty(body.data.0, body)}}"
+    }
+}

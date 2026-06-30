@@ -1,0 +1,7 @@
+{
+    "url": "/emails/{{parameters.email_account_id}}/warmup/stop",
+    "method": "POST",
+    "response": {
+        "output": "{{body}}"
+    }
+}

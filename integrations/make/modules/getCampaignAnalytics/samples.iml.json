@@ -1,0 +1,14 @@
+{
+    "campaign_id": "ca1b2c3d-0000-0000-0000-000000000000",
+    "name": "Q3 Outbound",
+    "status": "active",
+    "summary": {
+        "emails_sent": 420,
+        "unique_opens": 210,
+        "unique_clicks": 38,
+        "replies": 12,
+        "bounces": 3,
+        "open_rate": 50,
+        "reply_rate": 2.9
+    }
+}

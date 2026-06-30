@@ -1,0 +1,4 @@
+[
+    { "name": "title", "type": "text", "label": "Title", "required": true },
+    { "name": "color", "type": "text", "label": "Color", "help": "Optional hex color, e.g. #0ea5e9." }
+]

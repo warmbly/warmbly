@@ -1,0 +1,10 @@
+{
+    "url": "/contacts/{{parameters.contact_id}}",
+    "method": "DELETE",
+    "response": {
+        "output": {
+            "id": "{{parameters.contact_id}}",
+            "success": true
+        }
+    }
+}

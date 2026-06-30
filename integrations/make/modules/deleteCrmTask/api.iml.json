@@ -1,0 +1,10 @@
+{
+    "url": "/crm/tasks/{{parameters.task_id}}",
+    "method": "DELETE",
+    "response": {
+        "output": {
+            "id": "{{parameters.task_id}}",
+            "success": true
+        }
+    }
+}

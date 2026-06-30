@@ -1,0 +1,18 @@
+[
+    {
+        "name": "email_account_id",
+        "type": "select",
+        "label": "Mailbox",
+        "required": true,
+        "options": "rpc://mailboxList"
+    },
+    { "name": "name", "type": "text", "label": "Display name" },
+    {
+        "name": "campaign_limit",
+        "type": "integer",
+        "label": "Daily campaign cap",
+        "help": "3 to 100."
+    },
+    { "name": "min_wait_time", "type": "integer", "label": "Minimum gap between sends (seconds)" },
+    { "name": "reply_to", "type": "text", "label": "Reply-to address" }
+]

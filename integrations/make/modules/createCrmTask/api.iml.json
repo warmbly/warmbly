@@ -1,0 +1,17 @@
+{
+    "url": "/crm/tasks",
+    "method": "POST",
+    "body": {
+        "title": "{{parameters.title}}",
+        "description": "{{parameters.description}}",
+        "contact_id": "{{parameters.contact_id}}",
+        "deal_id": "{{parameters.deal_id}}",
+        "assigned_to": "{{parameters.assigned_to}}",
+        "due_date": "{{parameters.due_date}}",
+        "priority": "{{parameters.priority}}",
+        "type": "{{parameters.type}}"
+    },
+    "response": {
+        "output": "{{body}}"
+    }
+}

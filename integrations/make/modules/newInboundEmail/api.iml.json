@@ -1,0 +1,17 @@
+{
+    "url": "/unibox",
+    "method": "GET",
+    "qs": {
+        "limit": 100
+    },
+    "response": {
+        "iterate": "{{body.data}}",
+        "trigger": {
+            "id": "{{item.id}}",
+            "date": "{{item.internal_date}}",
+            "type": "id",
+            "order": "desc"
+        },
+        "output": "{{item}}"
+    }
+}

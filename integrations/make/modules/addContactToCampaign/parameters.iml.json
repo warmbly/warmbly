@@ -1,0 +1,7 @@
+[
+    { "name": "email", "type": "email", "label": "Email", "required": true },
+    { "name": "campaign_id", "type": "select", "label": "Campaign", "required": true, "options": "rpc://campaignList" },
+    { "name": "first_name", "type": "text", "label": "First name" },
+    { "name": "last_name", "type": "text", "label": "Last name" },
+    { "name": "company", "type": "text", "label": "Company" }
+]

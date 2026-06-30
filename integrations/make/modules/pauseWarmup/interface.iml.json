@@ -1,0 +1,9 @@
+[
+    { "name": "id", "type": "text", "label": "Mailbox ID" },
+    { "name": "email", "type": "email", "label": "Email" },
+    { "name": "name", "type": "text", "label": "Name" },
+    { "name": "provider", "type": "text", "label": "Provider" },
+    { "name": "status", "type": "text", "label": "Status" },
+    { "name": "campaign_limit", "type": "integer", "label": "Daily campaign cap" },
+    { "name": "created_at", "type": "date", "label": "Created at" }
+]

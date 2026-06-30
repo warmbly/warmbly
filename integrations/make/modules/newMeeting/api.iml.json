@@ -1,0 +1,17 @@
+{
+    "url": "/meetings",
+    "method": "GET",
+    "qs": {
+        "limit": 100
+    },
+    "response": {
+        "iterate": "{{body.data}}",
+        "trigger": {
+            "id": "{{item.id}}",
+            "date": "{{item.scheduled_for}}",
+            "type": "id",
+            "order": "desc"
+        },
+        "output": "{{item}}"
+    }
+}

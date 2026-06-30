@@ -1,0 +1,13 @@
+{
+    "id": "mb1c2d3e-0000-0000-0000-000000000000",
+    "organization_id": "00000000-0000-0000-0000-000000000000",
+    "source": "calendly",
+    "status": "booked",
+    "invitee_email": "lead@example.com",
+    "invitee_name": "Sam Rivera",
+    "event_name": "Intro call",
+    "scheduled_for": "2026-07-01T15:00:00Z",
+    "join_url": "https://meet.example.com/abc",
+    "contact_id": "7b6c1f2a-0000-0000-0000-000000000000",
+    "created_at": "2026-06-28T12:00:00Z"
+}

@@ -1,0 +1,17 @@
+{
+    "url": "/meetings",
+    "method": "POST",
+    "body": {
+        "title": "{{parameters.title}}",
+        "invitee_name": "{{parameters.invitee_name}}",
+        "invitee_email": "{{parameters.invitee_email}}",
+        "scheduled_for": "{{parameters.scheduled_for}}",
+        "duration_minutes": "{{parameters.duration_minutes}}",
+        "location": "{{parameters.location}}",
+        "join_url": "{{parameters.join_url}}",
+        "contact_id": "{{parameters.contact_id}}"
+    },
+    "response": {
+        "output": "{{ifempty(body.meeting, body)}}"
+    }
+}

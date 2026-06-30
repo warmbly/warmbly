@@ -1,0 +1,10 @@
+[
+    { "name": "title", "type": "text", "label": "Title", "help": "Defaults to \"Call\"." },
+    { "name": "invitee_name", "type": "text", "label": "Invitee name" },
+    { "name": "invitee_email", "type": "email", "label": "Invitee email" },
+    { "name": "scheduled_for", "type": "date", "label": "Scheduled for", "required": true },
+    { "name": "duration_minutes", "type": "integer", "label": "Duration (minutes)" },
+    { "name": "location", "type": "text", "label": "Location" },
+    { "name": "join_url", "type": "text", "label": "Join URL" },
+    { "name": "contact_id", "type": "select", "label": "Contact", "options": "rpc://contactList" }
+]

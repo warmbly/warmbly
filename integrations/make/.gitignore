@@ -1,0 +1,10 @@
+node_modules/
+*.zip
+.env
+.environment
+# Make Apps Editor local state and pulled secrets.
+.tmp/
+*.local.json
+# OAuth client credentials are committed as empty placeholders in
+# general/common.json and connections/warmbly/common.json. Set the real
+# clientId / clientSecret on the deployed app, never commit them.

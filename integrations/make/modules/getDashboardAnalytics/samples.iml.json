@@ -1,0 +1,12 @@
+{
+    "period": "7d",
+    "overall_stats": {
+        "total_emails_sent": 1280,
+        "total_opens": 640,
+        "total_replies": 44,
+        "open_rate": 50,
+        "reply_rate": 3.4,
+        "active_campaigns": 6,
+        "active_accounts": 9
+    }
+}

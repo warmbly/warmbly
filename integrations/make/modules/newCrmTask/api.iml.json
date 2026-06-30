@@ -1,0 +1,17 @@
+{
+    "url": "/crm/tasks",
+    "method": "GET",
+    "qs": {
+        "limit": 100
+    },
+    "response": {
+        "iterate": "{{body.data}}",
+        "trigger": {
+            "id": "{{item.id}}",
+            "date": "{{item.created_at}}",
+            "type": "id",
+            "order": "desc"
+        },
+        "output": "{{item}}"
+    }
+}

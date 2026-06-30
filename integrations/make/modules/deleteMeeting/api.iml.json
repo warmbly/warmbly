@@ -1,0 +1,10 @@
+{
+    "url": "/meetings/{{parameters.meeting_id}}",
+    "method": "DELETE",
+    "response": {
+        "output": {
+            "id": "{{parameters.meeting_id}}",
+            "success": true
+        }
+    }
+}

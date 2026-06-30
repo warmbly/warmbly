@@ -1,0 +1,11 @@
+{
+    "url": "/analytics/dashboard",
+    "method": "GET",
+    "qs": {
+        "period": "{{parameters.period}}"
+    },
+    "response": {
+        "iterate": "{{if(body, add(emptyarray, body), emptyarray)}}",
+        "output": "{{item}}"
+    }
+}

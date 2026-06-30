@@ -1,0 +1,104 @@
+[
+    {
+        "label": "Contacts",
+        "modules": [
+            "newContact",
+            "newOrUpdatedContact",
+            "createContact",
+            "updateContact",
+            "deleteContact",
+            "addContactToCampaign",
+            "removeContactFromCampaign",
+            "createContactNote",
+            "updateContactNote",
+            "deleteContactNote",
+            "findContact"
+        ]
+    },
+    {
+        "label": "Email & Inbox",
+        "modules": [
+            "newInboundEmail",
+            "sendEmail",
+            "replyToEmail",
+            "markEmailSeen",
+            "verifyEmail"
+        ]
+    },
+    {
+        "label": "Campaigns",
+        "modules": [
+            "newCampaign",
+            "campaignCompleted",
+            "createCampaign",
+            "updateCampaign",
+            "deleteCampaign",
+            "startCampaign",
+            "stopCampaign",
+            "findCampaign"
+        ]
+    },
+    {
+        "label": "Mailboxes & Warmup",
+        "modules": [
+            "newMailbox",
+            "updateMailbox",
+            "deleteMailbox",
+            "startWarmup",
+            "pauseWarmup",
+            "resumeWarmup",
+            "stopWarmup",
+            "findMailbox"
+        ]
+    },
+    {
+        "label": "CRM",
+        "modules": [
+            "newDeal",
+            "dealWon",
+            "createDeal",
+            "updateDeal",
+            "deleteDeal",
+            "findDeal",
+            "newCrmTask",
+            "createCrmTask",
+            "updateCrmTask",
+            "deleteCrmTask",
+            "findCrmTask"
+        ]
+    },
+    {
+        "label": "Meetings",
+        "modules": [
+            "newMeeting",
+            "createMeeting",
+            "deleteMeeting",
+            "findMeeting"
+        ]
+    },
+    {
+        "label": "Templates",
+        "modules": [
+            "createTemplate",
+            "updateTemplate",
+            "deleteTemplate",
+            "renderTemplate",
+            "findTemplate"
+        ]
+    },
+    {
+        "label": "Groups",
+        "modules": [
+            "createCategory",
+            "createTag",
+            "createFolder"
+        ]
+    },
+    {
+        "label": "Analytics",
+        "modules": [
+            "getCampaignAnalytics",
+            "getDashboardAnalytics"
+        ]
+    }
+]

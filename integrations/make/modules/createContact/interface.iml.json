@@ -1,0 +1,11 @@
+[
+    { "name": "id", "type": "text", "label": "Contact ID" },
+    { "name": "email", "type": "email", "label": "Email" },
+    { "name": "first_name", "type": "text", "label": "First name" },
+    { "name": "last_name", "type": "text", "label": "Last name" },
+    { "name": "company", "type": "text", "label": "Company" },
+    { "name": "phone", "type": "text", "label": "Phone" },
+    { "name": "subscribed", "type": "boolean", "label": "Subscribed" },
+    { "name": "created_at", "type": "date", "label": "Created at" },
+    { "name": "updated_at", "type": "date", "label": "Updated at" }
+]

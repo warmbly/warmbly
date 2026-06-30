@@ -1,0 +1,12 @@
+{
+    "url": "/campaigns/{{parameters.campaign_id}}",
+    "method": "PATCH",
+    "body": {
+        "name": "{{parameters.name}}",
+        "description": "{{parameters.description}}",
+        "daily_limit": "{{parameters.daily_limit}}"
+    },
+    "response": {
+        "output": "{{body}}"
+    }
+}

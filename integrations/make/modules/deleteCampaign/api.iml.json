@@ -1,0 +1,10 @@
+{
+    "url": "/campaigns/{{parameters.campaign_id}}",
+    "method": "DELETE",
+    "response": {
+        "output": {
+            "id": "{{parameters.campaign_id}}",
+            "success": true
+        }
+    }
+}

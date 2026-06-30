@@ -1,0 +1,8 @@
+[
+    { "name": "email", "type": "email", "label": "Email" },
+    { "name": "status", "type": "text", "label": "Status" },
+    { "name": "reason", "type": "text", "label": "Reason" },
+    { "name": "is_catch_all", "type": "boolean", "label": "Catch-all" },
+    { "name": "has_mx", "type": "boolean", "label": "Has MX" },
+    { "name": "checked_at", "type": "date", "label": "Checked at" }
+]

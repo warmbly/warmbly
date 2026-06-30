@@ -1,0 +1,55 @@
+[
+    {
+        "name": "email_account_id",
+        "type": "select",
+        "label": "From mailbox",
+        "required": true,
+        "options": "rpc://mailboxList"
+    },
+    {
+        "name": "to",
+        "type": "array",
+        "label": "To",
+        "required": true,
+        "spec": { "type": "email" }
+    },
+    { "name": "subject", "type": "text", "label": "Subject", "required": true },
+    { "name": "body_html", "type": "text", "label": "HTML body" },
+    { "name": "body_plain", "type": "text", "label": "Plain-text body" },
+    {
+        "name": "cc",
+        "type": "array",
+        "label": "CC",
+        "spec": { "type": "email" }
+    },
+    {
+        "name": "bcc",
+        "type": "array",
+        "label": "BCC",
+        "spec": { "type": "email" }
+    },
+    {
+        "name": "thread_id",
+        "type": "text",
+        "label": "Thread ID",
+        "help": "Thread to attach the reply to (from a New Email Received trigger)."
+    },
+    {
+        "name": "in_reply_to",
+        "type": "array",
+        "label": "In reply to (message IDs)",
+        "spec": { "type": "text" }
+    },
+    {
+        "name": "send_mode",
+        "type": "select",
+        "label": "Send mode",
+        "default": "instant",
+        "options": [
+            { "label": "Instant", "value": "instant" },
+            { "label": "Smart", "value": "smart" },
+            { "label": "Scheduled", "value": "scheduled" }
+        ]
+    },
+    { "name": "scheduled_at", "type": "date", "label": "Scheduled at" }
+]

@@ -1,0 +1,12 @@
+{
+    "baseUrl": "https://api.warmbly.com/v1",
+    "headers": {
+        "authorization": "Bearer {{connection.access_token}}"
+    },
+    "response": {
+        "error": {
+            "type": "RuntimeError",
+            "message": "[{{statusCode}}] {{ifempty(body.message, body.error, 'Request failed')}}{{if(body.code, ' [' + body.code + ']', '')}}{{if(body.request_id, ' (request_id ' + body.request_id + ')', '')}}"
+        }
+    }
+}

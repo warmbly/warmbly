@@ -1,0 +1,11 @@
+[
+    { "name": "id", "type": "text", "label": "Task ID" },
+    { "name": "title", "type": "text", "label": "Title" },
+    { "name": "status", "type": "text", "label": "Status" },
+    { "name": "priority", "type": "text", "label": "Priority" },
+    { "name": "type", "type": "text", "label": "Type" },
+    { "name": "contact_id", "type": "text", "label": "Contact ID" },
+    { "name": "deal_id", "type": "text", "label": "Deal ID" },
+    { "name": "due_date", "type": "date", "label": "Due date" },
+    { "name": "created_at", "type": "date", "label": "Created at" }
+]

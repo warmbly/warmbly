@@ -1,0 +1,48 @@
+[
+    {
+        "name": "email_account_id",
+        "type": "select",
+        "label": "Mailbox",
+        "required": true,
+        "options": "rpc://mailboxList"
+    },
+    {
+        "name": "to",
+        "type": "array",
+        "label": "To",
+        "required": true,
+        "spec": { "type": "email" }
+    },
+    { "name": "subject", "type": "text", "label": "Subject", "required": true },
+    { "name": "body_html", "type": "text", "label": "HTML body" },
+    { "name": "body_plain", "type": "text", "label": "Plain-text body" },
+    {
+        "name": "cc",
+        "type": "array",
+        "label": "CC",
+        "spec": { "type": "email" }
+    },
+    {
+        "name": "bcc",
+        "type": "array",
+        "label": "BCC",
+        "spec": { "type": "email" }
+    },
+    {
+        "name": "send_mode",
+        "type": "select",
+        "label": "Send mode",
+        "default": "instant",
+        "options": [
+            { "label": "Instant", "value": "instant" },
+            { "label": "Smart (respect the mailbox send gap)", "value": "smart" },
+            { "label": "Scheduled (use the scheduled time)", "value": "scheduled" }
+        ]
+    },
+    {
+        "name": "scheduled_at",
+        "type": "date",
+        "label": "Scheduled at",
+        "help": "Only used when send mode is Scheduled. Must be in the future."
+    }
+]

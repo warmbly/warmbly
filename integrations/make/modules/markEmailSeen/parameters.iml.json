@@ -1,0 +1,16 @@
+[
+    {
+        "name": "email_ids",
+        "type": "array",
+        "label": "Message IDs",
+        "required": true,
+        "spec": { "type": "text" }
+    },
+    {
+        "name": "seen",
+        "type": "boolean",
+        "label": "Mark as",
+        "default": true,
+        "help": "On = read, off = unread."
+    }
+]

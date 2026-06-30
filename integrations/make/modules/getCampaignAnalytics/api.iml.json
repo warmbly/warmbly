@@ -1,0 +1,8 @@
+{
+    "url": "/analytics/campaigns/{{parameters.campaign_id}}",
+    "method": "GET",
+    "response": {
+        "iterate": "{{if(body, add(emptyarray, body), emptyarray)}}",
+        "output": "{{item}}"
+    }
+}

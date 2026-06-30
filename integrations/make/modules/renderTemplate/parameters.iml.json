@@ -1,0 +1,13 @@
+[
+    { "name": "template_id", "type": "select", "label": "Template", "required": true, "options": "rpc://templateList" },
+    {
+        "name": "variables",
+        "type": "array",
+        "label": "Variables",
+        "help": "Placeholder values, for example first_name = Sam.",
+        "spec": [
+            { "name": "key", "type": "text", "label": "Field key", "required": true },
+            { "name": "value", "type": "text", "label": "Value" }
+        ]
+    }
+]

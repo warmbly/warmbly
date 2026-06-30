@@ -1,0 +1,17 @@
+{
+    "url": "/emails/{{parameters.email_account_id}}/send",
+    "method": "POST",
+    "body": {
+        "to": "{{parameters.to}}",
+        "cc": "{{parameters.cc}}",
+        "bcc": "{{parameters.bcc}}",
+        "subject": "{{parameters.subject}}",
+        "body_html": "{{parameters.body_html}}",
+        "body_plain": "{{parameters.body_plain}}",
+        "send_mode": "{{parameters.send_mode}}",
+        "scheduled_at": "{{parameters.scheduled_at}}"
+    },
+    "response": {
+        "output": "{{body}}"
+    }
+}

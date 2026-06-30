@@ -1,0 +1,3 @@
+[
+    { "name": "campaign_id", "type": "select", "label": "Campaign", "required": true, "options": "rpc://campaignList" }
+]

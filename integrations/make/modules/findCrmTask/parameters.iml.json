@@ -1,0 +1,14 @@
+[
+    { "name": "query", "type": "text", "label": "Title contains", "required": true },
+    {
+        "name": "status",
+        "type": "select",
+        "label": "Status",
+        "options": [
+            { "label": "Pending", "value": "pending" },
+            { "label": "In progress", "value": "in_progress" },
+            { "label": "Completed", "value": "completed" },
+            { "label": "Cancelled", "value": "cancelled" }
+        ]
+    }
+]

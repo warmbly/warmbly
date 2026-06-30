@@ -1,0 +1,116 @@
+---
+title: Make
+description: Connect Warmbly to Make.com with triggers, actions, and searches.
+icon: Workflow
+---
+
+The Warmbly Make integration lets you wire Warmbly into Make.com scenarios without writing code. Start a scenario when a reply lands or a meeting is booked, push new leads into a campaign from a form, or sync deals into another tool in your stack.
+
+It connects over OAuth, so you click Connect and approve access on a Warmbly consent screen. There is nothing to copy or paste.
+
+## Connecting your account
+
+1. In the Make scenario editor, add a Warmbly module (any trigger, action, or search).
+2. Click Add next to Connection.
+3. You are sent to Warmbly to sign in and approve the permissions the app requests.
+4. After approval you are returned to Make with the connection ready. The connection is labelled with your organization name and email so you can tell multiple workspaces apart.
+
+The connection requests only the scopes the modules need (reading and writing contacts, campaigns, mailboxes, the inbox, CRM records, and templates, plus read-only analytics). It does not request billing or team-management access.
+
+## Triggers
+
+Triggers start a scenario when something happens in Warmbly.
+
+| Trigger | Fires when |
+|---------|------------|
+| New Contact | A contact is added to your workspace |
+| New or Updated Contact | A contact is created or edited |
+| New Email Received | A new message lands in the unified inbox, including campaign replies |
+| New Meeting Booked | A meeting is booked through a connected scheduler |
+| New Deal | A CRM deal is created |
+| Deal Won | A deal moves to the won state |
+| New CRM Task | A CRM task is created |
+| New Campaign | A campaign is created |
+| Campaign Completed | A campaign finishes sending |
+| New Mailbox Connected | An email account is connected |
+
+### How triggers work
+
+Warmbly triggers poll the API on your scenario's schedule. Each run reads the most recent records, and Make remembers which ones it has already seen, so a scenario runs once per new item. New or Updated Contact re-runs when a contact changes, because its dedupe key combines the contact id with the update time.
+
+New Email Received needs the Unibox feature, which is part of an active trial or paid plan.
+
+## Actions
+
+Actions create or change something in Warmbly.
+
+| Action | What it does |
+|--------|--------------|
+| Create or Update Contact | Adds a contact (or updates the one with the same email) and optionally enrols it in campaigns |
+| Update Contact | Updates an existing contact by id |
+| Delete Contact | Permanently deletes a contact by id |
+| Add Contact to Campaign | Adds a contact as a lead in a campaign, creating it if new |
+| Remove Contact from Campaign | Unenrols a contact from a campaign without deleting it |
+| Create Contact Note | Adds a note to a contact |
+| Update Contact Note | Edits the text of an existing note |
+| Delete Contact Note | Deletes a contact note by id |
+| Send Email | Sends a one-off email from a connected mailbox |
+| Reply in Inbox | Sends a reply, optionally threaded into an existing conversation |
+| Mark Inbox Emails Seen | Marks one or more inbox messages as read or unread |
+| Verify Email Address | Runs a deliverability check before you send |
+| Update Mailbox | Edits mailbox settings such as daily cap, send gap, or reply-to |
+| Delete Mailbox | Disconnects and deletes an email account (stops all sending; irreversible) |
+| Start Warmup | Enables or resumes warmup on a mailbox |
+| Pause Warmup | Pauses warmup, keeping ramp progress |
+| Resume Warmup | Resumes a paused warmup |
+| Stop Warmup | Disables warmup and resets ramp progress |
+| Create Deal | Creates a CRM deal in a pipeline stage |
+| Update Deal | Moves stage, changes value, or marks a deal won or lost |
+| Delete Deal | Permanently deletes a deal by id |
+| Create CRM Task | Creates a task linked to a contact or deal |
+| Update CRM Task | Edits a task, for example to mark it complete |
+| Delete CRM Task | Permanently deletes a task by id |
+| Create Campaign | Creates a draft campaign |
+| Update Campaign | Edits campaign settings such as name or daily send cap |
+| Start Campaign | Starts or resumes a campaign |
+| Stop Campaign | Pauses an active campaign |
+| Delete Campaign | Permanently deletes a campaign (irreversible) |
+| Create Reply Template | Creates a reusable inbox reply template |
+| Update Reply Template | Edits a reply template |
+| Delete Reply Template | Deletes a reply template by id |
+| Render Reply Template | Fills a template with variables and returns the rendered subject and body |
+| Log Meeting | Records a meeting and attributes it to a contact |
+| Delete Meeting | Deletes a meeting booking by id |
+| Create Contact Category | Creates a category for organising contacts |
+| Create Mailbox Tag | Creates a tag for grouping mailboxes |
+| Create Campaign Folder | Creates a folder for grouping campaigns |
+
+Campaign, mailbox, pipeline, stage, template, and contact fields use live dropdowns populated from your workspace, so you pick real records instead of pasting ids.
+
+Delete and destructive actions (Delete Campaign, Delete Mailbox) are irreversible and run unattended in a scenario, so add them deliberately.
+
+## Searches
+
+Searches look up a record so a later module can use it.
+
+| Search | Finds |
+|--------|-------|
+| Find Contact | A contact by exact email |
+| Find Deal | A deal by name (and optional status) |
+| Find CRM Task | A task by title (and optional status) |
+| Find Campaign | A campaign by name |
+| Find Mailbox | A mailbox by email or name |
+| Find Meeting | A meeting by invitee or event name |
+| Find Reply Template | A template by name or subject |
+| Get Campaign Analytics | Summary stats for one campaign |
+| Get Dashboard Analytics | Workspace-wide stats for a period |
+
+Pair a search with an action to build idempotent flows, for example Find Contact, then Create or Update Contact.
+
+## Good to know
+
+- Sending respects your mailbox limits. Send Email and Reply in Inbox honour each mailbox's daily cap and send spacing, and support smart or scheduled send modes.
+- Adding a contact is idempotent by email. Re-running Create or Update Contact with the same address updates the existing record and merges custom fields rather than creating a duplicate.
+- If a connection stops working, reconnect the account in Make. Access tokens refresh automatically; reconnecting re-runs the consent step.
+
+For lower-latency, event-driven delivery you can also use Warmbly [webhooks](/guides/webhooks/) directly, or the realtime [developer websocket](/api/realtime/).

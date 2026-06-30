@@ -1,0 +1,6 @@
+[
+    { "name": "campaign_id", "type": "text", "label": "Campaign ID" },
+    { "name": "name", "type": "text", "label": "Name" },
+    { "name": "status", "type": "text", "label": "Status" },
+    { "name": "summary", "type": "collection", "label": "Summary" }
+]

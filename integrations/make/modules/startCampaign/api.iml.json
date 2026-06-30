@@ -1,0 +1,10 @@
+{
+    "url": "/campaigns/{{parameters.campaign_id}}/start",
+    "method": "POST",
+    "response": {
+        "output": {
+            "campaign_id": "{{parameters.campaign_id}}",
+            "status": "{{body.status}}"
+        }
+    }
+}
