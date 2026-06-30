@@ -123,7 +123,7 @@ function GlobalCursorsOverlay({ scrollRef }: { scrollRef: React.RefObject<HTMLEl
             style={{ left: r.left, top: r.top, width: r.width, height: r.height }}
         >
             {live.cursors.map((c) => (
-                <Cursor key={c.userId} color={c.color} name={c.name} left={c.x - sl} top={c.y - st} />
+                <Cursor key={c.userId} color={c.color} name={c.name} avatar={c.avatar} left={c.x - sl} top={c.y - st} />
             ))}
         </div>
     );
