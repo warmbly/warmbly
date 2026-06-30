@@ -33,6 +33,7 @@ jobs:
       web: ${{ steps.filter.outputs.web }}
       admin: ${{ steps.filter.outputs.admin }}
       site: ${{ steps.filter.outputs.site }}
+      make: ${{ steps.filter.outputs.make }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -64,6 +65,8 @@ jobs:
               - 'admin/**'
             site:
               - 'site/**'
+            make:
+              - 'integrations/make/**'
 
   go-ci:
     name: Go CI
@@ -207,6 +210,27 @@ jobs:
         # in package.json today.
         run: pnpm build
 
+  make-ci:
+    name: Make App CI
+    needs: changes
+    if: needs.changes.outputs.make == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: integrations/make
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Validate Make app
+        # IML is interpreted by Make (no compile step); validate.mjs checks the
+        # manifest, JSON validity, code-file references, and component enums.
+        run: node scripts/validate.mjs
+
   rust-ci:
     name: Rust CI
     needs: changes
@@ -314,7 +338,7 @@ jobs:
   ci-status:
     name: CI Status
     runs-on: ubuntu-latest
-    needs: [changes, go-ci, web-ci, admin-ci, site-ci, rust-ci, elixir-ci, security]
+    needs: [changes, go-ci, web-ci, admin-ci, site-ci, make-ci, rust-ci, elixir-ci, security]
     if: always()
     steps:
       - name: Check CI status
@@ -323,6 +347,7 @@ jobs:
              [[ "${{ needs.web-ci.result }}" == "failure" ]] || \
              [[ "${{ needs.admin-ci.result }}" == "failure" ]] || \
              [[ "${{ needs.site-ci.result }}" == "failure" ]] || \
+             [[ "${{ needs.make-ci.result }}" == "failure" ]] || \
              [[ "${{ needs.rust-ci.result }}" == "failure" ]] || \
              [[ "${{ needs.elixir-ci.result }}" == "failure" ]] || \
              [[ "${{ needs.security.result }}" == "failure" ]]; then
