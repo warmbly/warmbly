@@ -174,9 +174,19 @@ defmodule RealtimeWeb.OrgChannel do
   # the client with no ws_message rate limit (the sender's token bucket already
   # bounds volume) and no sequence number (these are never resumed). Only human
   # (JWT) members are collaborators; developer API-key sockets ignore them.
+  # Coordinates and node ids are non-sensitive and flow ungated, but cursor-chat
+  # TEXT is human content: it is stripped (cursor still delivered) for members
+  # the durable event gates would exclude from the frame's surface.
   @impl true
   def handle_info({:live_event, event}, socket) do
     if Map.get(socket.assigns, :auth_type) == :jwt do
+      event =
+        if is_binary(event["chat"]) and not can_see_live_chat?(socket, event["resource"]) do
+          Map.put(event, "chat", nil)
+        else
+          event
+        end
+
       push(socket, event["event_type"], event)
     end
 
@@ -233,9 +243,11 @@ defmodule RealtimeWeb.OrgChannel do
   # Ephemeral live-collaboration frame (cursor move / card drag / selection).
   # Bypasses the Redis ws_event limiter for an in-process token bucket, then fans out to the
   # org's other sockets without a sequence number (so it is never replayed on
-  # resume). Best-effort: over-budget frames are dropped silently.
+  # resume). Best-effort: over-budget frames are dropped silently. The is_map
+  # guard keeps a scalar payload from crashing the channel; a non-map falls to
+  # the generic (rate-limited, no-op) handler below.
   @impl true
-  def handle_in("live:" <> kind, payload, socket) when kind in @live_kinds do
+  def handle_in("live:" <> kind, payload, socket) when kind in @live_kinds and is_map(payload) do
     cond do
       Map.get(socket.assigns, :auth_type) != :jwt ->
         {:noreply, socket}
@@ -476,6 +488,43 @@ defmodule RealtimeWeb.OrgChannel do
     end
   end
 
+  # Gate cursor-chat text by the frame's surface, mirroring can_see_event?'s
+  # family mapping: chat typed on a unibox thread should not reach a member the
+  # unibox events themselves would never reach. Unknown surfaces default-allow,
+  # matching the durable stream's default branch.
+  defp can_see_live_chat?(socket, resource) when is_binary(resource) do
+    permissions = socket.assigns.permissions
+    has = fn perm -> Auth.has_permission?(%{permissions: permissions}, Auth.permission(perm)) end
+
+    cond do
+      String.starts_with?(resource, ["thread:", "page:/app/unibox"]) ->
+        has.(:access_unibox)
+
+      String.starts_with?(resource, ["campaign:", "page:/app/campaigns"]) ->
+        has.(:view_campaigns)
+
+      String.starts_with?(resource, [
+        "contact:",
+        "deal:",
+        "task:",
+        "page:/app/contacts",
+        "page:/app/crm"
+      ]) ->
+        has.(:view_contacts)
+
+      String.starts_with?(resource, ["mailbox:", "page:/app/emails"]) ->
+        has.(:manage_emails)
+
+      String.starts_with?(resource, "page:/app/settings") ->
+        has.(:manage_settings)
+
+      true ->
+        true
+    end
+  end
+
+  defp can_see_live_chat?(_socket, _resource), do: true
+
   # presence:update — merge the client's sanitized activity descriptor into its
   # presence meta. Only tracked (JWT) members can update presence. Gated by the
   # org privacy policy: if "show who's online" is off the member isn't tracked
@@ -624,8 +673,8 @@ defmodule RealtimeWeb.OrgChannel do
     list
     |> Enum.take(150)
     |> Enum.filter(&is_binary/1)
-    |> Enum.map(&String.slice(&1, 0, 64))
-    |> Enum.reject(&(&1 == ""))
+    |> Enum.map(&bounded_string(&1, 64, 256))
+    |> Enum.reject(&(&1 in [nil, ""]))
     |> Enum.take(100)
   end
 
@@ -634,12 +683,39 @@ defmodule RealtimeWeb.OrgChannel do
   # Cursor-chat text: trimmed-empty and non-strings become nil (no chat).
   defp chat_string(v) when is_binary(v) do
     case String.trim(v) do
-      "" -> nil
-      _ -> String.slice(v, 0, 120)
+      "" ->
+        nil
+
+      _ ->
+        case bounded_string(v, 120, 480) do
+          "" -> nil
+          s -> s
+        end
     end
   end
 
   defp chat_string(_), do: nil
+
+  # Cap a string by graphemes AND bytes. String.slice alone counts graphemes,
+  # and one grapheme cluster is byte-unbounded (combining marks), so a grapheme
+  # cap alone would let a crafted frame fan out megabytes org-wide.
+  defp bounded_string(v, count, max_bytes) do
+    s = String.slice(v, 0, count)
+    if byte_size(s) <= max_bytes, do: s, else: take_bytes(s, max_bytes)
+  end
+
+  defp take_bytes(s, max) do
+    s
+    |> String.graphemes()
+    |> Enum.reduce_while({[], 0}, fn g, {acc, n} ->
+      if n + byte_size(g) > max,
+        do: {:halt, {acc, n}},
+        else: {:cont, {[g | acc], n + byte_size(g)}}
+    end)
+    |> elem(0)
+    |> Enum.reverse()
+    |> Enum.join()
+  end
 
   # Keep a live:patch payload small and scalar-only: at most 20 keys, string
   # values capped, numbers/booleans passed through, everything else dropped.
@@ -669,8 +745,14 @@ defmodule RealtimeWeb.OrgChannel do
 
   defp presence_string(value) when is_binary(value) do
     case String.trim(value) do
-      "" -> nil
-      trimmed -> String.slice(trimmed, 0, 160)
+      "" ->
+        nil
+
+      trimmed ->
+        case bounded_string(trimmed, 160, 640) do
+          "" -> nil
+          s -> s
+        end
     end
   end
 

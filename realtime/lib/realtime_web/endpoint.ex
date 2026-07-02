@@ -12,7 +12,11 @@ defmodule RealtimeWeb.Endpoint do
     websocket: [
       timeout: 60_000,
       compress: true,
-      check_origin: false
+      check_origin: false,
+      # Client frames are small (joins, presence, live cursor/select/patch);
+      # without a cap cowboy accepts unbounded frames, which compress makes
+      # cheap to send and the org fan-out makes expensive to receive.
+      max_frame_size: 65_536
     ],
     longpoll: false
   )
