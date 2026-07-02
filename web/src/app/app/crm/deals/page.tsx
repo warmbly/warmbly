@@ -49,6 +49,12 @@ import useCreateDeal from "@/lib/api/hooks/app/crm/deals/useCreateDeal";
 import useUpdateDeal from "@/lib/api/hooks/app/crm/deals/useUpdateDeal";
 import useDeleteDeal from "@/lib/api/hooks/app/crm/deals/useDeleteDeal";
 import { useConfirm } from "@/hooks/context/confirm";
+import { useQueryClient } from "@tanstack/react-query";
+import { usePresenceResource } from "@/hooks/PresenceProvider";
+import { useSuppressGlobalCursors } from "@/components/app/presence/GlobalCursors";
+import { useLivePatch } from "@/hooks/useLivePatch";
+import { cursorColor } from "@/hooks/useLiveCursors";
+import ResourceViewers from "@/components/app/presence/ResourceViewers";
 import type Deal from "@/lib/api/models/app/crm/Deal";
 import type { Stage } from "@/lib/api/models/app/crm/Pipeline";
 import type { AppError } from "@/lib/api/client/normalizeError";
@@ -101,12 +107,64 @@ export default function DealsPage() {
     );
     const boardSummary = useDealsSummary(boardFilters, view === "board" && !!pipelineId).data;
 
+    // Live collaboration: when a teammate moves a deal on this pipeline's board,
+    // refresh instantly instead of waiting out the durable audit refetch.
+    const qc = useQueryClient();
+    // Deal ids a teammate is currently dragging, in their cursor color, so the
+    // card shows a live "being moved" ring. Keyed by deal id.
+    const [dragColors, setDragColors] = React.useState<Map<string, { color: string; ts: number }>>(new Map());
+    const liveDeals = useLivePatch(pipelineId ? `crm_deals:${pipelineId}` : null, {
+        onPatch: (data, by) => {
+            if (data.kind === "deal_move") {
+                void qc.invalidateQueries({ queryKey: ["crm", "deals"] });
+                void qc.invalidateQueries({ queryKey: ["contacts"] });
+            } else if (data.kind === "deal_drag" && typeof data.deal_id === "string") {
+                const dealId = data.deal_id;
+                setDragColors((m) => {
+                    const next = new Map(m);
+                    if (data.on === true) next.set(dealId, { color: cursorColor(by), ts: performance.now() });
+                    else next.delete(dealId);
+                    return next;
+                });
+            }
+        },
+    });
+    // Safety net: drop any drag marker whose end frame was missed.
+    React.useEffect(() => {
+        const t = setInterval(() => {
+            setDragColors((m) => {
+                if (m.size === 0) return m;
+                const now = performance.now();
+                let changed = false;
+                const next = new Map(m);
+                for (const [id, v] of next) if (now - v.ts > 20000) { next.delete(id); changed = true; }
+                return changed ? next : m;
+            });
+        }, 2000);
+        return () => clearInterval(t);
+    }, []);
+    const onDragLive = React.useCallback(
+        (dealId: string, on: boolean) => liveDeals.pushPatch({ kind: "deal_drag", deal_id: dealId, on }),
+        [liveDeals],
+    );
+    // A teammate editing the pipeline's stages (rename, reorder, add, remove)
+    // refreshes the board's columns instantly.
+    useLivePatch("crm_pipelines", {
+        onPatch: () => {
+            void qc.invalidateQueries({ queryKey: ["crm", "pipelines"] });
+            void qc.invalidateQueries({ queryKey: ["crm", "deals"] });
+        },
+    });
+
     async function moveDeal(dealId: string, newStageId: string) {
         try {
             await toast.promise(
                 updateDeal.mutateAsync({ id: dealId, data: { stage_id: newStageId } as Partial<Deal> }),
                 { loading: "Moving…", success: "Moved", error: (e: AppError) => buildError(e) },
             );
+            // Nudge teammates on the same board to update now (the audit refetch is
+            // the durable backstop if this best-effort frame is dropped).
+            liveDeals.pushPatch({ kind: "deal_move", deal_id: dealId, stage_id: newStageId });
         } catch {
             /* surfaced */
         }
@@ -195,6 +253,8 @@ export default function DealsPage() {
                                 summary={boardSummary}
                                 onMove={moveDeal}
                                 onOpen={(d) => setEditing(d)}
+                                dragColors={dragColors}
+                                onDragLive={onDragLive}
                             />
                         )}
                     </PageBody>
@@ -258,6 +318,8 @@ function Board({
     summary,
     onMove,
     onOpen,
+    dragColors,
+    onDragLive,
 }: {
     pipelineId?: string;
     stages: Stage[];
@@ -265,6 +327,8 @@ function Board({
     summary?: DealsSummary;
     onMove: (dealId: string, stageId: string) => void | Promise<void>;
     onOpen: (deal: Deal) => void;
+    dragColors: Map<string, { color: string; ts: number }>;
+    onDragLive: (dealId: string, on: boolean) => void;
 }) {
     return (
         <div className="grid gap-3 grid-flow-col auto-cols-[280px] overflow-x-auto pb-2">
@@ -277,6 +341,8 @@ function Board({
                     stat={summary?.stages.find((s) => s.stage_id === stage.id)}
                     onDrop={(dealId) => onMove(dealId, stage.id)}
                     onOpen={onOpen}
+                    dragColors={dragColors}
+                    onDragLive={onDragLive}
                 />
             ))}
         </div>
@@ -294,6 +360,8 @@ function BoardColumn({
     stat,
     onDrop,
     onOpen,
+    dragColors,
+    onDragLive,
 }: {
     pipelineId?: string;
     stage: Stage;
@@ -301,6 +369,8 @@ function BoardColumn({
     stat?: { count: number; value: number };
     onDrop: (dealId: string) => void;
     onOpen: (deal: Deal) => void;
+    dragColors: Map<string, { color: string; ts: number }>;
+    onDragLive: (dealId: string, on: boolean) => void;
 }) {
     const [hover, setHover] = React.useState(false);
     const filters = React.useMemo(
@@ -365,7 +435,13 @@ function BoardColumn({
                 ) : (
                     <>
                         {deals.map((d) => (
-                            <DealCard key={d.id} deal={d} onOpen={onOpen} />
+                            <DealCard
+                                key={d.id}
+                                deal={d}
+                                onOpen={onOpen}
+                                peerColor={dragColors.get(d.id)?.color ?? null}
+                                onDragLive={onDragLive}
+                            />
                         ))}
                         {q.hasNextPage && (
                             <button
@@ -388,7 +464,17 @@ function BoardColumn({
     );
 }
 
-function DealCard({ deal, onOpen }: { deal: Deal; onOpen: (d: Deal) => void }) {
+function DealCard({
+    deal,
+    onOpen,
+    peerColor,
+    onDragLive,
+}: {
+    deal: Deal;
+    onOpen: (d: Deal) => void;
+    peerColor?: string | null;
+    onDragLive?: (dealId: string, on: boolean) => void;
+}) {
     const status = STATUS_LABEL[deal.status];
     return (
         <div
@@ -396,9 +482,16 @@ function DealCard({ deal, onOpen }: { deal: Deal; onOpen: (d: Deal) => void }) {
             onDragStart={(e) => {
                 e.dataTransfer.effectAllowed = "move";
                 e.dataTransfer.setData("text/deal", deal.id);
+                onDragLive?.(deal.id, true);
             }}
+            onDragEnd={() => onDragLive?.(deal.id, false)}
             onClick={() => onOpen(deal)}
-            className="cursor-pointer rounded-md bg-white border border-slate-200 hover:border-slate-300 hover:shadow-sm transition-all px-2.5 py-2"
+            style={peerColor ? { boxShadow: `0 0 0 2px ${peerColor}` } : undefined}
+            className={`cursor-pointer rounded-md bg-white border px-2.5 py-2 transition-all ${
+                peerColor
+                    ? "border-transparent opacity-80 animate-pulse"
+                    : "border-slate-200 hover:border-slate-300 hover:shadow-sm"
+            }`}
         >
             <div className="flex items-center gap-1.5 mb-1">
                 <div className="text-[12px] font-medium text-slate-900 truncate flex-1">
@@ -559,6 +652,10 @@ function DealDialog({
     const del = useDeleteDeal();
     const confirm = useConfirm();
 
+    usePresenceResource(editing?.id ? `deal:${editing.id}` : null, "editing");
+    // While this full-screen dialog is open it owns the pointer; silence the page cursor.
+    useSuppressGlobalCursors(open);
+
     const [name, setName] = React.useState("");
     const [stageId, setStageId] = React.useState<string>("");
     const [value, setValue] = React.useState<string>("");
@@ -680,6 +777,10 @@ function DealDialog({
                             </span>
                             <div className="h-4 w-px bg-slate-200" />
                             <span className="text-[12.5px] text-slate-900 font-medium">Deal</span>
+                            <ResourceViewers
+                                resource={editing?.id ? `deal:${editing.id}` : null}
+                                className="shrink-0"
+                            />
                             {editing && (
                                 <button
                                     type="button"

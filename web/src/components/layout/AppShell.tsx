@@ -15,7 +15,7 @@
 // where it meets the chrome's inner corner. Reads as one continuous
 // frame around a clean work surface.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { SkyChrome } from "./SkyChrome";
 import { AppHeader } from "./AppHeader";
@@ -25,6 +25,7 @@ import { RouteBoundary } from "./ErrorBoundary";
 import { ShortcutsModal } from "@/components/shared/ShortcutsModal";
 import { CommandPalette } from "@/components/shared/CommandPalette";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
+import { GlobalCursorsProvider } from "@/components/app/presence/GlobalCursors";
 
 export function AppShell() {
     useKeyboardShortcuts();
@@ -35,6 +36,9 @@ export function AppShell() {
     const { pathname } = useLocation();
     // Close the drawer whenever the route changes (tapping a nav link).
     useEffect(() => setNavOpen(false), [pathname]);
+
+    // The page content's scroll container, anchor for the global cursor layer.
+    const scrollRef = useRef<HTMLDivElement>(null);
 
     return (
         <div className="fixed inset-0 flex flex-col">
@@ -56,11 +60,13 @@ export function AppShell() {
                         the sidebar sits beside it; on mobile the panel is
                         full-bleed with just a top hairline. */}
                     <main className="flex-1 min-w-0 bg-white overflow-hidden border-t border-slate-200/70 md:rounded-tl-2xl md:border-l">
-                        <div className="h-full overflow-auto">
-                            <RouteBoundary>
-                                <Outlet />
-                            </RouteBoundary>
-                        </div>
+                        <GlobalCursorsProvider scrollRef={scrollRef}>
+                            <div ref={scrollRef} className="h-full overflow-auto">
+                                <RouteBoundary>
+                                    <Outlet />
+                                </RouteBoundary>
+                            </div>
+                        </GlobalCursorsProvider>
                     </main>
                 </div>
             </div>

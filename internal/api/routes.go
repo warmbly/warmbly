@@ -348,6 +348,10 @@ func Run(
 					sequences.PATCH("/:sid", m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.UpdateSequence)
 					sequences.DELETE("/:sid", m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.DeleteSequence)
 				}
+				// Position-only persist for the sequence canvas (drag-to-stick);
+				// cosmetic and unaudited. Kept off the /steps/:sid path so it does
+				// not collide with the step param route.
+				campaigns.PATCH("/:id/step-layout", m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.PatchSequenceLayout)
 			}
 
 			generation := protected.Group("/generation")
@@ -583,6 +587,8 @@ func Run(
 				automations.POST("", awrite, h.CreateAutomation)
 				automations.GET("/:id", aread, h.GetAutomation)
 				automations.PATCH("/:id", awrite, h.UpdateAutomation)
+				// Position-only persist (drag-to-stick); cosmetic, unaudited.
+				automations.PATCH("/:id/layout", awrite, h.PatchAutomationLayout)
 				automations.DELETE("/:id", awrite, h.DeleteAutomation)
 				automations.POST("/:id/test", aread, h.TestAutomation)
 				automations.GET("/:id/runs", aread, h.ListAutomationRuns)

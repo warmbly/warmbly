@@ -23,6 +23,12 @@ func (s *sequenceService) Update(ctx context.Context, userID, campaignID, sequen
 	return s.sequenceRepository.Update(ctx, userID, campaignID, sequenceID, data)
 }
 
+// UpdateLayout persists only step canvas coordinates (drag-to-stick). Cosmetic
+// and high-churn, so it stays out of the audited content-update path.
+func (s *sequenceService) UpdateLayout(ctx context.Context, userID, campaignID string, positions []models.SequencePosition) *errx.Error {
+	return s.sequenceRepository.UpdateLayout(ctx, userID, campaignID, positions)
+}
+
 func (s *sequenceService) Delete(ctx context.Context, userID, campaignID, sequenceID string) *errx.Error {
 	return s.sequenceRepository.Delete(ctx, userID, campaignID, sequenceID)
 }

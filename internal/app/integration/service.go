@@ -70,6 +70,9 @@ type Service interface {
 	GetAutomation(ctx context.Context, orgID, id uuid.UUID) (*models.Automation, error)
 	CreateAutomation(ctx context.Context, orgID uuid.UUID, w models.AutomationWrite) (*models.Automation, error)
 	UpdateAutomation(ctx context.Context, orgID, id uuid.UUID, w models.AutomationWrite) (*models.Automation, error)
+	// UpdateAutomationLayout persists only node canvas coordinates (drag-to-stick),
+	// separate from a full graph save and without bumping updated_at.
+	UpdateAutomationLayout(ctx context.Context, orgID, id uuid.UUID, positions []models.AutomationNodePosition) error
 	DeleteAutomation(ctx context.Context, orgID, id uuid.UUID) error
 	// RunAutomationByID executes one automation graph on demand (e.g. launched
 	// from a campaign step), regardless of its configured trigger event. data is
@@ -557,6 +560,13 @@ func (s *service) UpdateAutomation(ctx context.Context, orgID, id uuid.UUID, w m
 		return nil, err
 	}
 	return s.GetAutomation(ctx, orgID, id)
+}
+
+// UpdateAutomationLayout persists only the canvas coordinates of the given
+// nodes. Cosmetic and high-churn (written as cards are dragged), so it stays out
+// of the build/validate path of a full save and never bumps updated_at.
+func (s *service) UpdateAutomationLayout(ctx context.Context, orgID, id uuid.UUID, positions []models.AutomationNodePosition) error {
+	return s.repo.UpdateAutomationLayout(ctx, orgID, id, positions)
 }
 
 // isInboundTrigger reports whether a trigger event is the inbound webhook.

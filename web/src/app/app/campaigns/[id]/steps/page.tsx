@@ -71,7 +71,10 @@ function StepsBuilder({ campaignId }: { campaignId: string }) {
         );
     }
 
-    return <CampaignFlow campaignId={campaignId} />;
+    // Keyed by campaign: a param-only navigation (e.g. jump-to-teammate from
+    // one campaign's steps to another's) must remount the canvas, never reuse
+    // one seeded from the previous campaign.
+    return <CampaignFlow key={campaignId} campaignId={campaignId} />;
 }
 
 function StepsSkeleton() {

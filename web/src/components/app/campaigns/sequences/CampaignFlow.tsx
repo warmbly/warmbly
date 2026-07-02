@@ -58,6 +58,7 @@ import {
     type Connection,
     type NodeProps,
     type EdgeProps,
+    type ReactFlowInstance,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import dagre from "@dagrejs/dagre";
@@ -70,6 +71,14 @@ import useSequences from "@/lib/api/hooks/app/campaigns/sequences/useSequences";
 import useCreateSequence from "@/lib/api/hooks/app/campaigns/sequences/useCreateSequence";
 import useDeleteSequence from "@/lib/api/hooks/app/campaigns/sequences/useDeleteSequence";
 import updateSequence from "@/lib/api/client/app/campaigns/sequences/updateSequence";
+import updateSequenceLayout from "@/lib/api/client/app/campaigns/sequences/updateSequenceLayout";
+import { cursorColor, useLiveCanvas } from "@/hooks/useLiveCanvas";
+import CanvasCursors from "@/components/app/presence/CanvasCursors";
+import CanvasSelections from "@/components/app/presence/CanvasSelections";
+import CursorChat from "@/components/app/presence/CursorChat";
+import { useSuppressGlobalCursors } from "@/components/app/presence/GlobalCursors";
+import { useResourceViewers } from "@/hooks/PresenceProvider";
+import { useUserProfile } from "@/hooks/context/user";
 import useCampaign from "@/lib/api/hooks/app/campaigns/useCampaign";
 import useUpdateCampaign from "@/lib/api/hooks/app/campaigns/useUpdateCampaign";
 import { useConfirm } from "@/hooks/context/confirm";
@@ -628,6 +637,68 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
     // which only gates the API-key WRITE_CAMPAIGNS path and can diverge for custom roles.
     const canEditFlow = usePermission("MANAGE_CAMPAIGNS");
     const ifMetaRef = React.useRef<Record<string, IfMeta>>({});
+
+    // ── Live collaboration (mirrors the automation builder) ────────────────────
+    // Teammates on the same campaign see each other's cursors and watch step
+    // cards move in real time; step positions persist (drag-to-stick). Presence
+    // is already claimed by the campaign layout, so we only read it here. The
+    // page-level cursor layer is silenced in favour of this flow-space one.
+    const resource = `campaign:${campaignId}`;
+    useSuppressGlobalCursors();
+    const hasPeers = useResourceViewers(resource).length > 0;
+    const rfRef = React.useRef<ReactFlowInstance | null>(null);
+    const draggingRef = React.useRef<Set<string>>(new Set());
+    const nodesRef = React.useRef<Node[]>(nodes);
+    nodesRef.current = nodes;
+    const commitTimer = React.useRef<number | null>(null);
+
+    // Persist only real step coordinates (synthetic IF / STOP nodes have no row
+    // and are re-derived from their source step). Silent on the server: no audit,
+    // no updated_at bump.
+    const persistLayout = React.useCallback(() => {
+        const positions = nodesRef.current
+            .filter((n) => !isIfId(n.id) && n.id !== STOP_ID)
+            .map((n) => ({ id: n.id, x: Math.round(n.position.x), y: Math.round(n.position.y) }));
+        if (positions.length) void updateSequenceLayout(campaignId, positions);
+    }, [campaignId]);
+
+    const commitLayout = React.useCallback(() => {
+        if (commitTimer.current != null) clearTimeout(commitTimer.current);
+        commitTimer.current = window.setTimeout(() => {
+            commitTimer.current = null;
+            persistLayout();
+        }, 600);
+    }, [persistLayout]);
+
+    React.useEffect(
+        () => () => {
+            if (commitTimer.current != null) {
+                clearTimeout(commitTimer.current);
+                commitTimer.current = null;
+                persistLayout();
+            }
+        },
+        [persistLayout],
+    );
+
+    // Apply a teammate's drag, unless we're dragging that very node ourselves.
+    const onRemoteNode = React.useCallback(
+        (id: string, x: number, y: number) => {
+            if (draggingRef.current.has(id)) return;
+            setNodes((ns) => ns.map((n) => (n.id === id ? { ...n, position: { x, y } } : n)));
+        },
+        [setNodes],
+    );
+
+    const live = useLiveCanvas(resource, { enabled: hasPeers, onRemoteNode });
+    const { pushSelect } = live;
+    // Broadcast what we have selected so teammates see a colored outline.
+    const onSelectionChange = React.useCallback(
+        ({ nodes: sel }: { nodes: Node[]; edges: Edge[] }) => pushSelect(sel.map((n) => n.id)),
+        [pushSelect],
+    );
+    const { user: selfUser } = useUserProfile();
+    const selfColor = cursorColor(selfUser?.id ?? "");
 
     const seqById = React.useMemo(() => {
         const m = new Map<string, Sequence>();
@@ -1229,7 +1300,17 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
             // from (or the computed layout position on first load / unknown source).
             // The "Tidy up" button is the one explicit full re-layout.
             const pos = new Map(cur.map((n) => [n.id, n.position]));
-            if (pos.size === 0) return laid; // first load: use the computed layout
+            if (pos.size === 0) {
+                // First mount: seed from persisted step positions so a teammate's
+                // arrangement sticks across visits. Synthetic IF / STOP nodes have
+                // no saved position and fall through to the relative placement
+                // below (hung off their source step). With nothing saved yet
+                // (every step at 0/0), use the computed dagre layout.
+                for (const s of sequences) {
+                    if ((s.x ?? 0) !== 0 || (s.y ?? 0) !== 0) pos.set(s.id, { x: s.x, y: s.y });
+                }
+                if (pos.size === 0) return laid;
+            }
             const sourceOf = new Map<string, { source: string; handle?: string | null }>();
             smoothEdges.forEach((e) => {
                 if (!sourceOf.has(e.target)) sourceOf.set(e.target, { source: e.source, handle: e.sourceHandle });
@@ -1335,10 +1416,21 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
             className={`campaign-flow relative h-[70dvh] w-full overflow-hidden rounded-md border border-slate-200 bg-slate-50/40 sm:h-[78vh] ${
                 dragging ? "rf-dragging" : ""
             }`}
+            onPointerMove={(e) => {
+                if (!live.active) return;
+                const inst = rfRef.current;
+                if (!inst) return;
+                const p = inst.screenToFlowPosition({ x: e.clientX, y: e.clientY });
+                live.pushCursor(p.x, p.y);
+            }}
+            onPointerLeave={() => live.clearCursor()}
         >
             <ReactFlow
                 nodes={nodes}
                 edges={edges}
+                onInit={(inst) => {
+                    rfRef.current = inst;
+                }}
                 onNodesChange={(changes) => {
                     if (!canEditFlow) {
                         // Block structural edits (drag-move, delete); keep
@@ -1357,14 +1449,38 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                     }
                     onEdgesChange(changes);
                 }}
-                onNodeDragStart={() => {
+                onNodeDragStart={(_, __, dragged) => {
                     if (!canEditFlow) {
                         showPermissionDenied("MANAGE_CAMPAIGNS");
                         return;
                     }
                     setDragging(true);
+                    for (const n of dragged) draggingRef.current.add(n.id);
                 }}
-                onNodeDragStop={() => setDragging(false)}
+                onNodeDrag={(_, __, dragged) => {
+                    for (const n of dragged) live.pushNode(n.id, n.position.x, n.position.y, true);
+                }}
+                onNodeDragStop={(_, __, dragged) => {
+                    setDragging(false);
+                    for (const n of dragged) {
+                        draggingRef.current.delete(n.id);
+                        live.pushNode(n.id, n.position.x, n.position.y, false);
+                    }
+                    commitLayout();
+                }}
+                onSelectionDragStart={(_, dragged) => {
+                    for (const n of dragged) draggingRef.current.add(n.id);
+                }}
+                onSelectionDrag={(_, dragged) => {
+                    for (const n of dragged) live.pushNode(n.id, n.position.x, n.position.y, true);
+                }}
+                onSelectionDragStop={(_, dragged) => {
+                    for (const n of dragged) {
+                        draggingRef.current.delete(n.id);
+                        live.pushNode(n.id, n.position.x, n.position.y, false);
+                    }
+                    commitLayout();
+                }}
                 onConnect={(c) => {
                     if (!canEditFlow) {
                         showPermissionDenied("MANAGE_CAMPAIGNS");
@@ -1433,6 +1549,7 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                         if (d?.sourceId && d?.branchId) deleteBranch(d.sourceId, d.branchId);
                     })
                 }
+                onSelectionChange={onSelectionChange}
                 nodeTypes={nodeTypes}
                 edgeTypes={edgeTypes}
                 onEdgeClick={(_, edge) => {
@@ -1452,6 +1569,8 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
             >
                 <Background color="#e9eef5" gap={24} size={1} />
                 <Controls showInteractive={false} />
+                <CanvasSelections selections={live.selections} />
+                <CanvasCursors cursors={live.cursors} />
 
                 <Panel position="top-left">
                     <div className="flex max-w-[calc(100vw-1.5rem)] flex-col gap-1.5">
@@ -1471,7 +1590,10 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                             />
                             <button
                                 type="button"
-                                onClick={() => setNodes((ns) => stackComponents(layoutGraph(ns, edges), edges))}
+                                onClick={() => {
+                                    setNodes((ns) => stackComponents(layoutGraph(ns, edges), edges));
+                                    commitLayout();
+                                }}
                                 className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 text-[12px] font-medium text-slate-700 shadow-sm transition-colors hover:border-slate-300 hover:text-slate-900"
                             >
                                 Tidy up
@@ -1494,10 +1616,12 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                     <div className="hidden md:flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md bg-white/95 px-3 py-1.5 text-[11px] text-slate-500 shadow-sm">
                         <span className="text-slate-400">
                             drag a node’s bottom dot onto another node to connect, or onto empty space to pick what to add (email, action, or a condition) · click a line to set its condition · add Condition nodes to branch, and chain them for nested trees · click a line then press Delete to remove it · no match = stop
+                            {live.active ? " · press / to chat" : ""}
                         </span>
                     </div>
                 </Panel>
             </ReactFlow>
+            <CursorChat active={live.active} color={selfColor} setChat={live.setChat} />
 
             {dragCreate && (
                 <DragCreateMenu

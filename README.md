@@ -16,6 +16,8 @@
 </p>
 
 <p align="center">
+  <a href="#connect-your-mailboxes">Mailboxes</a> ·
+  <a href="#integrations">Integrations</a> ·
   <a href="#quick-start">Quick start</a> ·
   <a href="#warmup">Warmup</a> ·
   <a href="#how-it-works">How it works</a> ·
@@ -53,10 +55,53 @@ Everything a sending team needs sits in one dashboard:
 - **A built-in CRM** tracks contacts, pipelines, deals, tasks, and meetings.
 - **Deliverability** surfaces bounces, complaints, suppression, and inbox placement.
 - **Automations** run branching reply playbooks on a visual canvas.
+- **Integrations** sync the CRM and automations out to HubSpot, Slack, and more.
 - **Warmup** builds real sender reputation through our pool, covered next.
+
+The dashboard is collaborative in real time: teammates see each other's live
+cursors, presence, and edits across campaigns, the CRM, and the automation
+canvas, with no refresh.
 
 The same code runs on a single VPS or across a fleet of cheap servers with many
 IPs per box, so you add capacity by adding machines.
+
+## Connect your mailboxes
+
+Warmbly sends and receives through the mailboxes you already own. There are three
+ways to connect one, and you can mix them freely across a workspace:
+
+- **Google / Gmail and Google Workspace.** Connect with one-click OAuth, no app
+  password to store or rotate. Sending goes through the Gmail API.
+- **Microsoft 365 / Outlook.** Connect with one-click OAuth over authenticated
+  SMTP and IMAP.
+- **Any other provider over SMTP + IMAP.** Zoho, Fastmail, a self-hosted mail
+  server, anything that speaks SMTP and IMAP. Add the host, port, and an app
+  password.
+
+Each mailbox warms, sends, and syncs on its own, with its own daily cap, minimum
+spacing between sends, and reputation tracked per IP. Replies stream into the
+unified inbox in near real time. Credentials and OAuth tokens are sealed with
+per-organization envelope encryption and are only decrypted on the worker that
+owns the mailbox, never stored in plaintext.
+
+## Integrations
+
+Automations and the built-in CRM connect out to the tools you already run: ping
+Slack on a positive reply, push a won deal to your CRM, book meetings straight
+from replies, or fan events out to your own stack.
+
+| Category      | Providers                              |
+|---------------|----------------------------------------|
+| CRM           | HubSpot, Salesforce, Pipedrive, Close  |
+| Automation    | Zapier, Make, n8n                      |
+| Notifications | Slack, Discord                         |
+| Meetings      | Calendly, Cal.com                      |
+| Data          | Google Sheets                          |
+
+Everything is also reachable through a scoped REST API, HMAC-signed webhooks, and
+a realtime WebSocket, so you can wire Warmbly into anything that is not on the
+list. Open tracking, click tracking, and reply detection feed the same event
+stream. See the [API reference](https://docs.warmbly.com/api/).
 
 ## Warmup
 

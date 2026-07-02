@@ -56,6 +56,8 @@ import WeekdayBitmask from "../campaigns/schedule/WeekdayBitmask";
 import { Loading } from "@/components/loader";
 import { NumberInput, TextInput } from "@/components/ui/field";
 import { useConfirm } from "@/hooks/context/confirm";
+import { usePresenceResource } from "@/hooks/PresenceProvider";
+import ResourceViewers from "@/components/app/presence/ResourceViewers";
 import { cn } from "@/lib/utils";
 
 /* ── small themed primitives ─────────────────────── */
@@ -184,6 +186,8 @@ function Detail({ mailbox, onClose, initialTab = "overview", canWarmup = true }:
     const [form, setForm] = useState<Inbox>(mailbox);
     const update = (patch: Partial<Inbox>) => setForm((f) => ({ ...f, ...patch }));
 
+    usePresenceResource(mailbox.id ? `mailbox:${mailbox.id}` : null, "editing");
+
     const status = useAccountStatus(mailbox.id);
     const { from, to } = useMemo(() => {
         const end = new Date();
@@ -231,6 +235,7 @@ function Detail({ mailbox, onClose, initialTab = "overview", canWarmup = true }:
                 <span className={cn("h-5 px-2 rounded-full border text-[10px] font-semibold uppercase tracking-wide inline-flex items-center shrink-0", statusTone(mailbox.status))}>
                     {mailbox.status}
                 </span>
+                <ResourceViewers resource={mailbox.id ? `mailbox:${mailbox.id}` : null} className="shrink-0" />
                 <button onClick={onClose} aria-label="Close" className="w-7 h-7 rounded-md flex items-center justify-center text-slate-400 hover:text-slate-900 hover:bg-slate-100 transition-colors shrink-0">
                     <XIcon className="w-4 h-4" />
                 </button>

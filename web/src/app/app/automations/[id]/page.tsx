@@ -36,7 +36,12 @@ export default function AutomationBuilderPage() {
     }
 
     return (
+        // Keyed by id: a param-only navigation (e.g. jump-to-teammate from one
+        // automation to another) must remount the builder, not hand a seeded
+        // canvas a different automation — Save would write the old graph into
+        // the new record.
         <AutomationFlow
+            key={autoQ.data.automation.id}
             automation={autoQ.data.automation}
             connections={connQ.data?.connections ?? []}
             catalog={catQ.data?.catalog ?? []}

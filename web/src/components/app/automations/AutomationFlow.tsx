@@ -28,6 +28,7 @@ import {
     type Connection,
     type NodeProps,
     type EdgeProps,
+    type ReactFlowInstance,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { AnimatePresence, motion } from "framer-motion";
@@ -64,7 +65,7 @@ import type { AppError } from "@/lib/api/client/normalizeError";
 import { Label, NumberInput, TextInput } from "@/components/ui/field";
 import { SelectMenu, type SelectOption } from "@/components/ui/select-menu";
 import { useConfirm } from "@/hooks/context/confirm";
-import { useUpdateAutomation, useTestAutomation } from "@/lib/api/hooks/app/automations/useAutomationMutations";
+import { useUpdateAutomation, useUpdateAutomationLayout, useTestAutomation } from "@/lib/api/hooks/app/automations/useAutomationMutations";
 import { useAutomationRuns } from "@/lib/api/hooks/app/automations/useAutomationRuns";
 import type {
     Automation,
@@ -114,7 +115,13 @@ import AssigneeTeamPicker, { type AssigneeValue } from "@/components/app/crm/Ass
 import { useAutomations } from "@/lib/api/hooks/app/automations/useAutomations";
 import ProviderGlyph from "@/app/app/integrations/_components/ProviderGlyph";
 import ResourceViewers from "@/components/app/presence/ResourceViewers";
-import { usePresenceResource } from "@/hooks/PresenceProvider";
+import CanvasCursors from "@/components/app/presence/CanvasCursors";
+import CanvasSelections from "@/components/app/presence/CanvasSelections";
+import CursorChat from "@/components/app/presence/CursorChat";
+import { useSuppressGlobalCursors } from "@/components/app/presence/GlobalCursors";
+import { usePresenceResource, useResourceViewers } from "@/hooks/PresenceProvider";
+import { useUserProfile } from "@/hooks/context/user";
+import { cursorColor, useLiveCanvas } from "@/hooks/useLiveCanvas";
 import { isSelfMutation } from "@/lib/realtime/selfActivity";
 import { cn } from "@/lib/utils";
 
@@ -433,6 +440,8 @@ export default function AutomationFlow({
     // integration permission (view-only) show as "viewing".
     const canEditAutomation = usePermission("USE_INTEGRATIONS");
     usePresenceResource(`automation:${automation.id}`, canEditAutomation ? "editing" : "viewing");
+    // This canvas has its own flow-space cursor layer; silence the page layer.
+    useSuppressGlobalCursors();
 
     const [name, setName] = React.useState(automation.name);
     const [enabled, setEnabled] = React.useState(automation.enabled);
@@ -457,11 +466,82 @@ export default function AutomationFlow({
 
     const confirm = useConfirm();
 
+    // ── Live collaboration ────────────────────────────────────────────────────
+    // Two independent halves. (1) Positions persist so the arrangement sticks
+    // across visits — written continuously as cards settle, even when alone. (2)
+    // When a teammate is on this same automation, cursor and card-drag frames
+    // stream both ways so everyone sees the canvas move in real time.
+    const layout = useUpdateAutomationLayout();
+    const resource = `automation:${automation.id}`;
+    const hasPeers = useResourceViewers(resource).length > 0;
+    const rfRef = React.useRef<ReactFlowInstance | null>(null);
+    const draggingRef = React.useRef<Set<string>>(new Set());
+    const nodesRef = React.useRef<Node[]>(nodes);
+    nodesRef.current = nodes;
+    const layoutMutateRef = React.useRef(layout.mutate);
+    layoutMutateRef.current = layout.mutate;
+    const commitTimer = React.useRef<number | null>(null);
+
+    // Persist the whole arrangement (so auto-laid-out nodes get saved too, not
+    // only the ones a hand touched). Silent on the server: no audit, no
+    // updated_at bump, so it never nudges a teammate's editor.
+    const persistLayout = React.useCallback(() => {
+        const positions = nodesRef.current.map((n) => ({
+            id: n.id,
+            x: Math.round(n.position.x),
+            y: Math.round(n.position.y),
+        }));
+        if (positions.length) layoutMutateRef.current({ id: automation.id, positions });
+    }, [automation.id]);
+
+    // Debounced so a flurry of drags coalesces into one write.
+    const commitLayout = React.useCallback(() => {
+        if (commitTimer.current != null) clearTimeout(commitTimer.current);
+        commitTimer.current = window.setTimeout(() => {
+            commitTimer.current = null;
+            persistLayout();
+        }, 600);
+    }, [persistLayout]);
+
+    // Flush a still-pending write on unmount so a card moved just before leaving
+    // the builder still sticks.
+    React.useEffect(
+        () => () => {
+            if (commitTimer.current != null) {
+                clearTimeout(commitTimer.current);
+                commitTimer.current = null;
+                persistLayout();
+            }
+        },
+        [persistLayout],
+    );
+
+    // Apply a teammate's drag to our canvas — unless we're dragging that very node
+    // (our pointer wins locally; our drag-stop broadcasts the final position).
+    const onRemoteNode = React.useCallback(
+        (id: string, x: number, y: number) => {
+            if (draggingRef.current.has(id)) return;
+            setNodes((ns) => ns.map((n) => (n.id === id ? { ...n, position: { x, y } } : n)));
+        },
+        [setNodes],
+    );
+
+    const live = useLiveCanvas(resource, { enabled: hasPeers, onRemoteNode });
+    const { pushSelect } = live;
+    // Broadcast what we have selected so teammates see a colored outline.
+    const onSelectionChange = React.useCallback(
+        ({ nodes: sel }: { nodes: Node[]; edges: Edge[] }) => pushSelect(sel.map((n) => n.id)),
+        [pushSelect],
+    );
+    const { user: selfUser } = useUserProfile();
+    const selfColor = cursorColor(selfUser?.id ?? "");
+
     // Dirty tracking: a stable signature of everything we persist (name, enabled,
     // trigger, and the graph). The baseline is captured from the seeded canvas and
     // reset on every successful save, so the Save button only lights up — and the
-    // leave guard only fires — when there are real unsaved changes. Positions are
-    // rounded so sub-pixel drift never reads as a change.
+    // leave guard only fires — when there are real unsaved changes. Card positions
+    // are excluded: they persist on their own (drag-to-stick) and must never light
+    // up Save as if the flow's logic changed.
     const baselineRef = React.useRef<string>("");
     const flowSig = React.useCallback(
         (nm: string, en: boolean, tr: string, ns: Node[], es: Edge[]) =>
@@ -474,8 +554,6 @@ export default function AutomationFlow({
                     return {
                         id: n.id,
                         type: n.type,
-                        x: Math.round(n.position.x),
-                        y: Math.round(n.position.y),
                         action: d?.action ?? null,
                         connection_id: d?.connection_id ?? null,
                         config: d?.config ?? null,
@@ -973,7 +1051,10 @@ export default function AutomationFlow({
                     </button>
                     <button
                         type="button"
-                        onClick={() => setNodes((ns) => stackComponents(layoutGraph(ns, edges), edges))}
+                        onClick={() => {
+                            setNodes((ns) => stackComponents(layoutGraph(ns, edges), edges));
+                            commitLayout();
+                        }}
                         aria-label="Tidy up"
                         className="h-7 px-2.5 rounded-md border border-slate-200 hover:border-slate-300 text-slate-700 hover:text-slate-900 text-[12px] inline-flex items-center transition-colors"
                     >
@@ -1006,13 +1087,52 @@ export default function AutomationFlow({
                 </div>
             </header>
 
-            <div className="campaign-flow relative flex-1 min-h-0 bg-slate-50/40">
+            <div
+                className="campaign-flow relative flex-1 min-h-0 bg-slate-50/40"
+                onPointerMove={(e) => {
+                    if (!live.active) return;
+                    const inst = rfRef.current;
+                    if (!inst) return;
+                    const p = inst.screenToFlowPosition({ x: e.clientX, y: e.clientY });
+                    live.pushCursor(p.x, p.y);
+                }}
+                onPointerLeave={() => live.clearCursor()}
+            >
                 <ReactFlow
                     nodes={nodes}
                     edges={edges}
+                    onInit={(inst) => {
+                        rfRef.current = inst;
+                    }}
                     onNodesChange={onNodesChange}
                     onEdgesChange={onEdgesChange}
                     onConnect={onConnect}
+                    onNodeDragStart={(_, __, dragged) => {
+                        for (const n of dragged) draggingRef.current.add(n.id);
+                    }}
+                    onNodeDrag={(_, __, dragged) => {
+                        for (const n of dragged) live.pushNode(n.id, n.position.x, n.position.y, true);
+                    }}
+                    onNodeDragStop={(_, __, dragged) => {
+                        for (const n of dragged) {
+                            draggingRef.current.delete(n.id);
+                            live.pushNode(n.id, n.position.x, n.position.y, false);
+                        }
+                        commitLayout();
+                    }}
+                    onSelectionDragStart={(_, dragged) => {
+                        for (const n of dragged) draggingRef.current.add(n.id);
+                    }}
+                    onSelectionDrag={(_, dragged) => {
+                        for (const n of dragged) live.pushNode(n.id, n.position.x, n.position.y, true);
+                    }}
+                    onSelectionDragStop={(_, dragged) => {
+                        for (const n of dragged) {
+                            draggingRef.current.delete(n.id);
+                            live.pushNode(n.id, n.position.x, n.position.y, false);
+                        }
+                        commitLayout();
+                    }}
                     onConnectStart={(_, params) => {
                         connectStartRef.current = params.nodeId ?? null;
                         connectHandleRef.current = params.handleId ?? null;
@@ -1034,6 +1154,7 @@ export default function AutomationFlow({
                         setDragCreate({ x: pt.clientX, y: pt.clientY, sourceId: fromId, when: handleToWhen(fromHandle) });
                     }}
                     onReconnect={onReconnect}
+                    onSelectionChange={onSelectionChange}
                     deleteKeyCode={["Backspace", "Delete"]}
                     nodeTypes={nodeTypes}
                     edgeTypes={edgeTypes}
@@ -1052,6 +1173,8 @@ export default function AutomationFlow({
                 >
                     <Background color="#e9eef5" gap={24} size={1} />
                     <Controls showInteractive={false} />
+                    <CanvasSelections selections={live.selections} />
+                    <CanvasCursors cursors={live.cursors} />
                     {remoteUpdate && (
                         <Panel position="top-center">
                             <div className="flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-1.5 shadow-sm">
@@ -1101,9 +1224,11 @@ export default function AutomationFlow({
                     <Panel position="bottom-center">
                         <div className="hidden md:block rounded-md bg-white/95 px-3 py-1.5 text-[11px] text-slate-500 shadow-sm">
                             drag a node's dot to connect · IF block: right dot = yes, bottom dot = no · drag to empty canvas to pick what comes next · click a line then Delete to remove
+                            {live.active ? " · press / to chat" : ""}
                         </div>
                     </Panel>
                 </ReactFlow>
+                <CursorChat active={live.active} color={selfColor} setChat={live.setChat} />
 
                 {dragCreate && (
                     <DragCreateMenu

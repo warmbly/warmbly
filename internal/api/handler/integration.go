@@ -718,6 +718,39 @@ func (h *Handler) UpdateAutomation(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"automation": a})
 }
 
+// PatchAutomationLayout persists only the canvas coordinates of automation nodes
+// so a teammate's arrangement "sticks" across visits. It is written continuously
+// as nodes are dragged (the live cursor/drag stream is the realtime half), so it
+// is deliberately NOT audited and does NOT bump updated_at: a reposition is
+// cosmetic and must not spam the audit log or read as a content change that makes
+// every teammate's builder reload. Retries are naturally safe (positions are
+// last-write-wins with no accumulation), so no Idempotency-Key is required.
+func (h *Handler) PatchAutomationLayout(c *gin.Context) {
+	orgID, _, ok := h.requireIntegrationActor(c, true)
+	if !ok {
+		return
+	}
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "invalid id"))
+		return
+	}
+	var w models.AutomationLayout
+	if err := c.ShouldBindJSON(&w); err != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "invalid payload"))
+		return
+	}
+	if len(w.Positions) > 1000 {
+		errx.JSON(c, errx.New(errx.BadRequest, "too many positions"))
+		return
+	}
+	if err := h.IntegrationService.UpdateAutomationLayout(c.Request.Context(), orgID, id, w.Positions); err != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, err.Error()))
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
 func (h *Handler) DeleteAutomation(c *gin.Context) {
 	orgID, userID, ok := h.requireIntegrationActor(c, true)
 	if !ok {
