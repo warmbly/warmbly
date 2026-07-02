@@ -43,7 +43,10 @@ defmodule Realtime.Application do
     opts = [strategy: :one_for_one, name: Realtime.Supervisor]
 
     Logger.info("Starting Realtime application...")
-    Logger.info("Redis URL: #{Application.get_env(:realtime, :redis_url, "not configured")}")
+    # Redact userinfo: the URL carries the redis password
+    Logger.info(
+      "Redis URL: #{Application.get_env(:realtime, :redis_url, "not configured") |> String.replace(~r|//[^@]*@|, "//***@")}"
+    )
 
     Logger.info(
       "Connection limits: user=#{Application.get_env(:realtime, :max_connections_per_user, 10)}, ip=#{Application.get_env(:realtime, :max_connections_per_ip, 50)}, global=#{Application.get_env(:realtime, :max_connections_global, 100_000)}"

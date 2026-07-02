@@ -22,9 +22,7 @@ defmodule Realtime.Redis.EventSubscriber do
 
   @impl true
   def init(_opts) do
-    redis_url = Application.get_env(:realtime, :redis_url, "redis://localhost:6379/0")
-
-    case Redix.PubSub.start_link(redis_url) do
+    case Redix.PubSub.start_link(Realtime.Redis.start_options()) do
       {:ok, conn} ->
         {:ok, _ref} = Redix.PubSub.subscribe(conn, @channel, self())
         Logger.info("Realtime Redis event bridge subscribing to '#{@channel}'")

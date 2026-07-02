@@ -5,6 +5,9 @@ RUN apk add --no-cache git build-base
 
 WORKDIR /app
 
+# BEAM JIT segfaults under qemu/rosetta when cross-building amd64 from ARM
+ENV ERL_FLAGS="+JMsingle true"
+
 # Install hex + rebar
 RUN mix local.hex --force && mix local.rebar --force
 
@@ -24,8 +27,9 @@ COPY realtime/lib lib/
 RUN mix compile
 RUN mix release
 
-# Runtime stage
-FROM alpine:3.20
+# Runtime stage — must match the builder's alpine release, or the crypto NIF
+# links against a newer libcrypto than the runtime ships
+FROM alpine:3.24
 
 RUN apk add --no-cache libstdc++ openssl ncurses-libs
 RUN adduser -D -u 1000 warmbly

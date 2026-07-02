@@ -19,17 +19,28 @@ defmodule Realtime.Redis do
 
   @impl true
   def init(_opts) do
-    redis_url = Application.get_env(:realtime, :redis_url, "redis://localhost:6379/0")
+    opts = start_options()
 
     children =
       for i <- 0..(@pool_size - 1) do
         Supervisor.child_spec(
-          {Redix, {redis_url, [name: :"redix_#{i}"]}},
+          {Redix, opts ++ [name: :"redix_#{i}"]},
           id: {Redix, i}
         )
       end
 
     Supervisor.init(children, strategy: :one_for_one)
+  end
+
+  @doc """
+  Redix start options for the configured redis URL. Redix passes the URI
+  userinfo through verbatim, so percent-encoded credentials must be decoded here.
+  """
+  def start_options do
+    Application.get_env(:realtime, :redis_url, "redis://localhost:6379/0")
+    |> Redix.URI.to_start_options()
+    |> Keyword.replace_lazy(:username, &URI.decode/1)
+    |> Keyword.replace_lazy(:password, &URI.decode/1)
   end
 
   @doc """
