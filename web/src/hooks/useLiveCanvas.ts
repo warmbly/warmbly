@@ -1,23 +1,39 @@
 // useLiveCanvas — live collaboration for a shared @xyflow canvas. It composes the
-// generic live-cursor transport (useLiveCursors) with a second ephemeral stream
-// for card drags ("live:node"), so teammates see both each other's pointers and
-// each other's nodes moving in real time. Coordinates are flow-space.
+// generic live-cursor transport (useLiveCursors) with two more ephemeral streams:
+// card drags ("live:node") and selections ("live:select"), so teammates see each
+// other's pointers, moving nodes, and colored selection outlines in real time.
+// Coordinates are flow-space.
 
 import React from "react";
 import { useSocket } from "./context/socket";
 import { useUserProfile } from "./context/user";
 import { useAppStore } from "@/stores";
-import { useLiveCursors, type LiveCursors } from "./useLiveCursors";
+import { cursorColor, useLiveCursors, type LiveCursors } from "./useLiveCursors";
 
 export { cursorColor } from "./useLiveCursors";
 export type { RemoteCursor } from "./useLiveCursors";
 
 // ~22 Hz, matching the cursor stream: smooth, well under the channel budget.
 const NODE_INTERVAL_MS = 45;
+// Re-emit a non-empty selection this often so a teammate who opens the canvas
+// mid-session sees existing outlines, and a dropped frame self-heals.
+const SELECT_HEARTBEAT_MS = 5000;
+
+export interface RemoteSelection {
+    userId: string;
+    /** Node ids this teammate currently has selected. Never empty. */
+    ids: string[];
+    name: string | null;
+    color: string;
+}
 
 export interface LiveCanvas extends LiveCursors {
     /** Broadcast a node position; dragging=false sends immediately (final spot). */
     pushNode: (id: string, x: number, y: number, dragging: boolean) => void;
+    /** Broadcast our current selection (deduped; empty clears it for teammates). */
+    pushSelect: (ids: string[]) => void;
+    /** Teammates' selections on this canvas, ready to outline. */
+    selections: RemoteSelection[];
 }
 
 export function useLiveCanvas(
@@ -31,6 +47,7 @@ export function useLiveCanvas(
 
     const { isConnected, subscribeToChannel, pushToChannel } = useSocket();
     const orgId = useAppStore((s) => s.currentOrganization?.id ?? null);
+    const presence = useAppStore((s) => s.presence);
     const { user } = useUserProfile();
 
     const resourceRef = React.useRef(resource);
@@ -66,6 +83,90 @@ export function useLiveCanvas(
             pushToChannel(`org:${o}`, event, payload);
         },
         [pushToChannel],
+    );
+    // Stable handle for [] effects (heartbeat), mirroring useLiveCursors.
+    const rawPushRef = React.useRef(rawPush);
+    rawPushRef.current = rawPush;
+
+    // ── Selections ────────────────────────────────────────────────────────────
+    // Raw per-teammate selection map from the wire. Display additionally gates
+    // on presence (the teammate must still be on this resource), so a closed
+    // tab's outline disappears with their presence rather than lingering.
+    const [selMap, setSelMap] = React.useState<Map<string, string[]>>(new Map());
+
+    React.useEffect(() => {
+        if (!isConnected || !orgId) return;
+        return subscribeToChannel(`org:${orgId}`, "LIVE_SELECT", (p) => {
+            const by = typeof p.user_id === "string" ? p.user_id : "";
+            if (!by || by === selfRef.current) return;
+            if (resourceRef.current && p.resource !== resourceRef.current) return;
+            const ids = Array.isArray(p.ids) ? p.ids.filter((v): v is string => typeof v === "string") : [];
+            setSelMap((m) => {
+                if (!ids.length && !m.has(by)) return m;
+                const next = new Map(m);
+                if (ids.length) next.set(by, ids);
+                else next.delete(by);
+                return next;
+            });
+        });
+    }, [isConnected, orgId, subscribeToChannel]);
+
+    // Selections are per-surface: wipe on resource change and when idle.
+    React.useEffect(() => {
+        setSelMap((m) => (m.size ? new Map() : m));
+    }, [resource]);
+    React.useEffect(() => {
+        if (cursors.active) return;
+        setSelMap((m) => (m.size ? new Map() : m));
+    }, [cursors.active]);
+
+    const selections = React.useMemo<RemoteSelection[]>(() => {
+        const out: RemoteSelection[] = [];
+        for (const [uid, ids] of selMap) {
+            const metas = presence[uid];
+            if (!metas?.some((m) => m.resource === resource)) continue;
+            const meta = metas[metas.length - 1];
+            out.push({ userId: uid, ids, name: meta?.name ?? null, color: cursorColor(uid) });
+        }
+        return out;
+    }, [selMap, presence, resource]);
+
+    // Track our latest selection even while inactive, so the heartbeat can
+    // surface it the moment a teammate arrives.
+    const lastSelIds = React.useRef<string[]>([]);
+    const lastSelKey = React.useRef("");
+
+    const pushSelect = React.useCallback(
+        (ids: string[]) => {
+            const key = ids.join("\n");
+            if (key === lastSelKey.current) return;
+            lastSelKey.current = key;
+            lastSelIds.current = ids;
+            if (!activeRef.current || !resourceRef.current) return;
+            rawPush("live:select", { resource: resourceRef.current, ids });
+        },
+        [rawPush],
+    );
+
+    React.useEffect(() => {
+        const t = setInterval(() => {
+            if (!activeRef.current || !resourceRef.current || !lastSelIds.current.length) return;
+            rawPushRef.current("live:select", { resource: resourceRef.current, ids: lastSelIds.current });
+        }, SELECT_HEARTBEAT_MS);
+        return () => clearInterval(t);
+    }, []);
+
+    // Clear our selection for teammates when the canvas unmounts. Presence
+    // alone is not enough here: on surfaces that claim presence above the
+    // canvas (the campaign layout), leaving the canvas tab keeps the member on
+    // the resource, so without this the outline would linger.
+    React.useEffect(
+        () => () => {
+            if (lastSelIds.current.length && activeRef.current && resourceRef.current) {
+                rawPushRef.current("live:select", { resource: resourceRef.current, ids: [] });
+            }
+        },
+        [],
     );
 
     // Node-drag throttle, keyed by node id so two nodes dragged in quick
@@ -117,5 +218,5 @@ export function useLiveCanvas(
         };
     }, []);
 
-    return { ...cursors, pushNode };
+    return { ...cursors, pushNode, pushSelect, selections };
 }

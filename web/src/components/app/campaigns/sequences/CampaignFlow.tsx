@@ -72,10 +72,13 @@ import useCreateSequence from "@/lib/api/hooks/app/campaigns/sequences/useCreate
 import useDeleteSequence from "@/lib/api/hooks/app/campaigns/sequences/useDeleteSequence";
 import updateSequence from "@/lib/api/client/app/campaigns/sequences/updateSequence";
 import updateSequenceLayout from "@/lib/api/client/app/campaigns/sequences/updateSequenceLayout";
-import { useLiveCanvas } from "@/hooks/useLiveCanvas";
+import { cursorColor, useLiveCanvas } from "@/hooks/useLiveCanvas";
 import CanvasCursors from "@/components/app/presence/CanvasCursors";
+import CanvasSelections from "@/components/app/presence/CanvasSelections";
+import CursorChat from "@/components/app/presence/CursorChat";
 import { useSuppressGlobalCursors } from "@/components/app/presence/GlobalCursors";
 import { useResourceViewers } from "@/hooks/PresenceProvider";
+import { useUserProfile } from "@/hooks/context/user";
 import useCampaign from "@/lib/api/hooks/app/campaigns/useCampaign";
 import useUpdateCampaign from "@/lib/api/hooks/app/campaigns/useUpdateCampaign";
 import { useConfirm } from "@/hooks/context/confirm";
@@ -688,6 +691,14 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
     );
 
     const live = useLiveCanvas(resource, { enabled: hasPeers, onRemoteNode });
+    const { pushSelect } = live;
+    // Broadcast what we have selected so teammates see a colored outline.
+    const onSelectionChange = React.useCallback(
+        ({ nodes: sel }: { nodes: Node[]; edges: Edge[] }) => pushSelect(sel.map((n) => n.id)),
+        [pushSelect],
+    );
+    const { user: selfUser } = useUserProfile();
+    const selfColor = cursorColor(selfUser?.id ?? "");
 
     const seqById = React.useMemo(() => {
         const m = new Map<string, Sequence>();
@@ -1538,6 +1549,7 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                         if (d?.sourceId && d?.branchId) deleteBranch(d.sourceId, d.branchId);
                     })
                 }
+                onSelectionChange={onSelectionChange}
                 nodeTypes={nodeTypes}
                 edgeTypes={edgeTypes}
                 onEdgeClick={(_, edge) => {
@@ -1557,6 +1569,7 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
             >
                 <Background color="#e9eef5" gap={24} size={1} />
                 <Controls showInteractive={false} />
+                <CanvasSelections selections={live.selections} />
                 <CanvasCursors cursors={live.cursors} />
 
                 <Panel position="top-left">
@@ -1603,10 +1616,12 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                     <div className="hidden md:flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md bg-white/95 px-3 py-1.5 text-[11px] text-slate-500 shadow-sm">
                         <span className="text-slate-400">
                             drag a node’s bottom dot onto another node to connect, or onto empty space to pick what to add (email, action, or a condition) · click a line to set its condition · add Condition nodes to branch, and chain them for nested trees · click a line then press Delete to remove it · no match = stop
+                            {live.active ? " · press / to chat" : ""}
                         </span>
                     </div>
                 </Panel>
             </ReactFlow>
+            <CursorChat active={live.active} color={selfColor} setChat={live.setChat} />
 
             {dragCreate && (
                 <DragCreateMenu

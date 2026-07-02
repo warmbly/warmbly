@@ -116,9 +116,12 @@ import { useAutomations } from "@/lib/api/hooks/app/automations/useAutomations";
 import ProviderGlyph from "@/app/app/integrations/_components/ProviderGlyph";
 import ResourceViewers from "@/components/app/presence/ResourceViewers";
 import CanvasCursors from "@/components/app/presence/CanvasCursors";
+import CanvasSelections from "@/components/app/presence/CanvasSelections";
+import CursorChat from "@/components/app/presence/CursorChat";
 import { useSuppressGlobalCursors } from "@/components/app/presence/GlobalCursors";
 import { usePresenceResource, useResourceViewers } from "@/hooks/PresenceProvider";
-import { useLiveCanvas } from "@/hooks/useLiveCanvas";
+import { useUserProfile } from "@/hooks/context/user";
+import { cursorColor, useLiveCanvas } from "@/hooks/useLiveCanvas";
 import { isSelfMutation } from "@/lib/realtime/selfActivity";
 import { cn } from "@/lib/utils";
 
@@ -524,6 +527,14 @@ export default function AutomationFlow({
     );
 
     const live = useLiveCanvas(resource, { enabled: hasPeers, onRemoteNode });
+    const { pushSelect } = live;
+    // Broadcast what we have selected so teammates see a colored outline.
+    const onSelectionChange = React.useCallback(
+        ({ nodes: sel }: { nodes: Node[]; edges: Edge[] }) => pushSelect(sel.map((n) => n.id)),
+        [pushSelect],
+    );
+    const { user: selfUser } = useUserProfile();
+    const selfColor = cursorColor(selfUser?.id ?? "");
 
     // Dirty tracking: a stable signature of everything we persist (name, enabled,
     // trigger, and the graph). The baseline is captured from the seeded canvas and
@@ -1143,6 +1154,7 @@ export default function AutomationFlow({
                         setDragCreate({ x: pt.clientX, y: pt.clientY, sourceId: fromId, when: handleToWhen(fromHandle) });
                     }}
                     onReconnect={onReconnect}
+                    onSelectionChange={onSelectionChange}
                     deleteKeyCode={["Backspace", "Delete"]}
                     nodeTypes={nodeTypes}
                     edgeTypes={edgeTypes}
@@ -1161,6 +1173,7 @@ export default function AutomationFlow({
                 >
                     <Background color="#e9eef5" gap={24} size={1} />
                     <Controls showInteractive={false} />
+                    <CanvasSelections selections={live.selections} />
                     <CanvasCursors cursors={live.cursors} />
                     {remoteUpdate && (
                         <Panel position="top-center">
@@ -1211,9 +1224,11 @@ export default function AutomationFlow({
                     <Panel position="bottom-center">
                         <div className="hidden md:block rounded-md bg-white/95 px-3 py-1.5 text-[11px] text-slate-500 shadow-sm">
                             drag a node's dot to connect · IF block: right dot = yes, bottom dot = no · drag to empty canvas to pick what comes next · click a line then Delete to remove
+                            {live.active ? " · press / to chat" : ""}
                         </div>
                     </Panel>
                 </ReactFlow>
+                <CursorChat active={live.active} color={selfColor} setChat={live.setChat} />
 
                 {dragCreate && (
                     <DragCreateMenu
