@@ -28,14 +28,14 @@ defmodule RealtimeWeb.OrgChannel do
 
   @presence_actions ~w(viewing editing replying idle)
 
-  # Ephemeral live-collaboration frames (cursor moves, card drags) on a shared
-  # canvas like the automation builder. They are far too frequent for the
-  # per-minute ws_event / ws_message Redis limiters and carry no durable value,
-  # so they ride a separate fast path: a cheap in-process token bucket on the
-  # sending socket, a direct PubSub fan-out that skips the sequenced/resumable
-  # event log, and best-effort delivery (a dropped frame is fine — the next one
-  # is milliseconds away).
-  @live_kinds ~w(cursor node patch)
+  # Ephemeral live-collaboration frames (cursor moves, card drags, selections)
+  # on a shared canvas like the automation builder. They are far too frequent
+  # for the per-minute ws_event / ws_message Redis limiters and carry no durable
+  # value, so they ride a separate fast path: a cheap in-process token bucket on
+  # the sending socket, a direct PubSub fan-out that skips the
+  # sequenced/resumable event log, and best-effort delivery (a dropped frame is
+  # fine — the next one is milliseconds away).
+  @live_kinds ~w(cursor node patch select)
   @live_rate 50.0
   @live_burst 60.0
 
@@ -230,8 +230,8 @@ defmodule RealtimeWeb.OrgChannel do
     {:reply, {:ok, %{pong: System.system_time(:millisecond)}}, socket}
   end
 
-  # Ephemeral live-collaboration frame (cursor move / card drag). Bypasses the
-  # Redis ws_event limiter for an in-process token bucket, then fans out to the
+  # Ephemeral live-collaboration frame (cursor move / card drag / selection).
+  # Bypasses the Redis ws_event limiter for an in-process token bucket, then fans out to the
   # org's other sockets without a sequence number (so it is never replayed on
   # resume). Best-effort: over-budget frames are dropped silently.
   @impl true
@@ -551,6 +551,8 @@ defmodule RealtimeWeb.OrgChannel do
           "resource" => resource,
           "x" => num(payload["x"]),
           "y" => num(payload["y"]),
+          # Optional cursor-chat text riding the frame; nil when not chatting.
+          "chat" => chat_string(payload["chat"]),
           "gone" => payload["gone"] == true,
           "ts" => System.system_time(:millisecond)
         }
@@ -595,7 +597,47 @@ defmodule RealtimeWeb.OrgChannel do
     end
   end
 
+  # Canvas selection: which node ids this member currently has selected on the
+  # shared surface. An empty list is meaningful (deselected), so it broadcasts.
+  defp build_live_event("select", payload, socket) do
+    case presence_string(payload["resource"]) do
+      nil ->
+        nil
+
+      resource ->
+        %{
+          "event_type" => "LIVE_SELECT",
+          "user_id" => socket.assigns.user_id,
+          "org_id" => socket.assigns.org_id,
+          "resource" => resource,
+          "ids" => sanitize_ids(payload["ids"]),
+          "ts" => System.system_time(:millisecond)
+        }
+    end
+  end
+
   defp build_live_event(_kind, _payload, _socket), do: nil
+
+  # Keep a selection list small and string-only: ids capped in length and count.
+  defp sanitize_ids(list) when is_list(list) do
+    list
+    |> Enum.filter(&is_binary/1)
+    |> Enum.map(&String.slice(&1, 0, 64))
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.take(100)
+  end
+
+  defp sanitize_ids(_), do: []
+
+  # Cursor-chat text: trimmed-empty and non-strings become nil (no chat).
+  defp chat_string(v) when is_binary(v) do
+    case String.trim(v) do
+      "" -> nil
+      _ -> String.slice(v, 0, 120)
+    end
+  end
+
+  defp chat_string(_), do: nil
 
   # Keep a live:patch payload small and scalar-only: at most 20 keys, string
   # values capped, numbers/booleans passed through, everything else dropped.
