@@ -22,6 +22,8 @@ export interface RemoteCursor {
     name: string | null;
     avatar: string | null;
     color: string;
+    /** Cursor-chat text riding this teammate's frames; null when not chatting. */
+    chat: string | null;
     /** performance.now() of the last frame, for TTL pruning. */
     lastSeen: number;
 }
@@ -63,6 +65,8 @@ export interface LiveCursors {
     pushCursor: (x: number, y: number) => void;
     /** Tell teammates our cursor left this surface. */
     clearCursor: () => void;
+    /** Attach (or clear, with null) cursor-chat text to our outgoing frames. */
+    setChat: (text: string | null) => void;
 }
 
 export function useLiveCursors(resource: string | null, opts: { enabled: boolean }): LiveCursors {
@@ -127,6 +131,7 @@ export function useLiveCursors(resource: string | null, opts: { enabled: boolean
                 name: meta?.name ?? null,
                 avatar: meta?.avatar ?? null,
                 color: cursorColor(uid),
+                chat: typeof p.chat === "string" && p.chat.trim() ? p.chat : null,
                 lastSeen: performance.now(),
             });
             scheduleFlush();
@@ -188,13 +193,17 @@ export function useLiveCursors(resource: string | null, opts: { enabled: boolean
     // Last position + presence, for the keep-alive heartbeat below.
     const lastCursorPos = React.useRef<{ x: number; y: number } | null>(null);
     const cursorPresent = React.useRef(false);
+    // Cursor-chat text attached to every outgoing frame while set.
+    const chatRef = React.useRef<string | null>(null);
 
     const sendCursor = React.useCallback(
         (x: number, y: number) => {
             cursorLastSent.current = performance.now();
             lastCursorPos.current = { x, y };
             cursorPresent.current = true;
-            rawPush("live:cursor", { resource: resourceRef.current, x, y });
+            const payload: Record<string, unknown> = { resource: resourceRef.current, x, y };
+            if (chatRef.current) payload.chat = chatRef.current;
+            rawPush("live:cursor", payload);
         },
         [rawPush],
     );
@@ -236,13 +245,28 @@ export function useLiveCursors(resource: string | null, opts: { enabled: boolean
         rawPush("live:cursor", { resource: resourceRef.current, x: 0, y: 0, gone: true });
     }, [rawPush]);
 
+    // Chat travels on the cursor frames themselves, so the bubble is glued to
+    // the pointer with zero extra transport. Setting/clearing emits a frame
+    // immediately (at the last known position) so it never waits for movement.
+    const setChat = React.useCallback(
+        (text: string | null) => {
+            chatRef.current = text && text.trim() ? text : null;
+            const p = lastCursorPos.current;
+            if (activeRef.current && resourceRef.current && cursorPresent.current && p) sendCursor(p.x, p.y);
+        },
+        [sendCursor],
+    );
+
     // Keep-alive: while present but holding still, re-emit the last cursor so
     // teammates' TTL never prunes a genuinely-present idle user.
     React.useEffect(() => {
         const t = setInterval(() => {
             if (!activeRef.current || !cursorPresent.current || !resourceRef.current) return;
             const p = lastCursorPos.current;
-            if (p) rawPushRef.current("live:cursor", { resource: resourceRef.current, x: p.x, y: p.y });
+            if (!p) return;
+            const payload: Record<string, unknown> = { resource: resourceRef.current, x: p.x, y: p.y };
+            if (chatRef.current) payload.chat = chatRef.current;
+            rawPushRef.current("live:cursor", payload);
         }, CURSOR_HEARTBEAT_MS);
         return () => clearInterval(t);
     }, []);
@@ -260,6 +284,8 @@ export function useLiveCursors(resource: string | null, opts: { enabled: boolean
             if (orgRef.current) rawPushRef.current("live:cursor", { resource: prev, x: 0, y: 0, gone: true });
             cursorPresent.current = false;
             lastCursorPos.current = null;
+            // Chat is a conversation on a surface; it never follows across one.
+            chatRef.current = null;
         }
     }, [resource]);
 
@@ -275,5 +301,5 @@ export function useLiveCursors(resource: string | null, opts: { enabled: boolean
         };
     }, []);
 
-    return { cursors, active, pushCursor, clearCursor };
+    return { cursors, active, pushCursor, clearCursor, setChat };
 }

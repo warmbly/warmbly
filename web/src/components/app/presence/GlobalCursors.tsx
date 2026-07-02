@@ -12,9 +12,11 @@
 
 import React from "react";
 import { useLocation } from "react-router-dom";
-import { useLiveCursors } from "@/hooks/useLiveCursors";
+import { cursorColor, useLiveCursors } from "@/hooks/useLiveCursors";
 import { useOnlineMembers } from "@/hooks/PresenceProvider";
+import { useUserProfile } from "@/hooks/context/user";
 import Cursor from "./Cursor";
+import CursorChat from "./CursorChat";
 
 interface SuppressValue {
     claim: () => () => void;
@@ -112,19 +114,34 @@ function GlobalCursorsOverlay({ scrollRef }: { scrollRef: React.RefObject<HTMLEl
         };
     }, [scrollRef, pushCursor, clearCursor]);
 
+    const { user } = useUserProfile();
+    const selfColor = cursorColor(user?.id ?? "");
+
     const el = scrollRef.current;
-    if (!el || !live.cursors.length) return null;
-    const r = el.getBoundingClientRect();
-    const sl = el.scrollLeft;
-    const st = el.scrollTop;
+    const r = el?.getBoundingClientRect();
+    const sl = el?.scrollLeft ?? 0;
+    const st = el?.scrollTop ?? 0;
     return (
-        <div
-            className="pointer-events-none fixed z-30 overflow-hidden"
-            style={{ left: r.left, top: r.top, width: r.width, height: r.height }}
-        >
-            {live.cursors.map((c) => (
-                <Cursor key={c.userId} color={c.color} name={c.name} avatar={c.avatar} left={c.x - sl} top={c.y - st} />
-            ))}
-        </div>
+        <>
+            {el && r && live.cursors.length ? (
+                <div
+                    className="pointer-events-none fixed z-30 overflow-hidden"
+                    style={{ left: r.left, top: r.top, width: r.width, height: r.height }}
+                >
+                    {live.cursors.map((c) => (
+                        <Cursor
+                            key={c.userId}
+                            color={c.color}
+                            name={c.name}
+                            avatar={c.avatar}
+                            chat={c.chat}
+                            left={c.x - sl}
+                            top={c.y - st}
+                        />
+                    ))}
+                </div>
+            ) : null}
+            <CursorChat active={live.active} color={selfColor} setChat={live.setChat} />
+        </>
     );
 }

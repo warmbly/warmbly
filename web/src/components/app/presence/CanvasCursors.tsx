@@ -14,7 +14,15 @@ export default function CanvasCursors({ cursors }: { cursors: RemoteCursor[] }) 
     return (
         <div className="pointer-events-none absolute inset-0 z-20 overflow-hidden">
             {cursors.map((c) => (
-                <Cursor key={c.userId} color={c.color} name={c.name} avatar={c.avatar} left={x + c.x * zoom} top={y + c.y * zoom} />
+                <Cursor
+                    key={c.userId}
+                    color={c.color}
+                    name={c.name}
+                    avatar={c.avatar}
+                    chat={c.chat}
+                    left={x + c.x * zoom}
+                    top={y + c.y * zoom}
+                />
             ))}
         </div>
     );

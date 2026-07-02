@@ -18,12 +18,15 @@ export default function Cursor({
     color,
     name,
     avatar,
+    chat,
     left,
     top,
 }: {
     color: string;
     name: string | null;
     avatar?: string | null;
+    /** Cursor-chat text; renders as a speech bubble under the name pill. */
+    chat?: string | null;
     left: number;
     top: number;
 }) {
@@ -61,6 +64,14 @@ export default function Cursor({
                     {name ? (
                         <span className="truncate text-[10.5px] font-medium leading-none text-white">{name}</span>
                     ) : null}
+                </div>
+            ) : null}
+            {chat ? (
+                <div
+                    className="absolute left-3 top-9 w-max max-w-[240px] break-words rounded-xl rounded-tl-sm px-2.5 py-1.5 text-[11.5px] leading-snug text-white shadow-md"
+                    style={{ backgroundColor: color }}
+                >
+                    {chat}
                 </div>
             ) : null}
         </div>
