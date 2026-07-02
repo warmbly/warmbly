@@ -18,6 +18,12 @@ const NODE_INTERVAL_MS = 45;
 // Re-emit a non-empty selection this often so a teammate who opens the canvas
 // mid-session sees existing outlines, and a dropped frame self-heals.
 const SELECT_HEARTBEAT_MS = 5000;
+// A teammate's selection expires this long after its last frame. Selection is
+// a live claim, not durable state: the sender heartbeats while holding one, so
+// an outline that stops being refreshed (crash, dropped clear frame, sender
+// left the canvas without a clean unmount) dies on its own.
+const SELECT_TTL_MS = SELECT_HEARTBEAT_MS * 2 + 2000;
+const SELECT_PRUNE_INTERVAL_MS = 2000;
 
 export interface RemoteSelection {
     userId: string;
@@ -89,10 +95,12 @@ export function useLiveCanvas(
     rawPushRef.current = rawPush;
 
     // ── Selections ────────────────────────────────────────────────────────────
-    // Raw per-teammate selection map from the wire. Display additionally gates
-    // on presence (the teammate must still be on this resource), so a closed
-    // tab's outline disappears with their presence rather than lingering.
-    const [selMap, setSelMap] = React.useState<Map<string, string[]>>(new Map());
+    // Raw per-teammate selection map from the wire, TTL-pruned like cursors:
+    // the sender heartbeats while holding a selection, so any outline that
+    // stops being refreshed self-heals away. Display additionally gates on
+    // presence (the teammate must still be on this resource) so a clean leave
+    // hides the outline instantly rather than after the TTL.
+    const [selMap, setSelMap] = React.useState<Map<string, { ids: string[]; lastSeen: number }>>(new Map());
 
     React.useEffect(() => {
         if (!isConnected || !orgId) return;
@@ -104,12 +112,33 @@ export function useLiveCanvas(
             setSelMap((m) => {
                 if (!ids.length && !m.has(by)) return m;
                 const next = new Map(m);
-                if (ids.length) next.set(by, ids);
+                if (ids.length) next.set(by, { ids, lastSeen: performance.now() });
                 else next.delete(by);
                 return next;
             });
         });
     }, [isConnected, orgId, subscribeToChannel]);
+
+    // Drop selections whose sender went quiet (their heartbeat re-emits every
+    // SELECT_HEARTBEAT_MS while a selection is held).
+    React.useEffect(() => {
+        const t = setInterval(() => {
+            const now = performance.now();
+            setSelMap((m) => {
+                let changed = false;
+                for (const [, v] of m)
+                    if (now - v.lastSeen > SELECT_TTL_MS) {
+                        changed = true;
+                        break;
+                    }
+                if (!changed) return m;
+                const next = new Map<string, { ids: string[]; lastSeen: number }>();
+                for (const [k, v] of m) if (now - v.lastSeen <= SELECT_TTL_MS) next.set(k, v);
+                return next;
+            });
+        }, SELECT_PRUNE_INTERVAL_MS);
+        return () => clearInterval(t);
+    }, []);
 
     // Selections are per-surface: wipe on resource change and when idle.
     React.useEffect(() => {
@@ -122,44 +151,72 @@ export function useLiveCanvas(
 
     const selections = React.useMemo<RemoteSelection[]>(() => {
         const out: RemoteSelection[] = [];
-        for (const [uid, ids] of selMap) {
+        for (const [uid, entry] of selMap) {
             const metas = presence[uid];
             if (!metas?.some((m) => m.resource === resource)) continue;
             const meta = metas[metas.length - 1];
-            out.push({ userId: uid, ids, name: meta?.name ?? null, color: cursorColor(uid) });
+            out.push({ userId: uid, ids: entry.ids, name: meta?.name ?? null, color: cursorColor(uid) });
         }
         return out;
     }, [selMap, presence, resource]);
 
-    // Track our latest selection even while inactive, so the heartbeat can
-    // surface it the moment a teammate arrives.
+    // Our latest selection (tracked even while inactive, so the heartbeat can
+    // surface it the moment a teammate arrives) and the last state actually put
+    // on the wire. Keeping them separate means a change made while suppressed
+    // (no peers, mid-reconnect) is retried by the heartbeat instead of being
+    // swallowed by the dedupe.
     const lastSelIds = React.useRef<string[]>([]);
-    const lastSelKey = React.useRef("");
+    const lastSentKey = React.useRef("");
+
+    const sendSelect = React.useCallback((ids: string[]) => {
+        const r = resourceRef.current;
+        if (!r) return;
+        lastSentKey.current = ids.join("\n");
+        rawPushRef.current("live:select", { resource: r, ids });
+    }, []);
 
     const pushSelect = React.useCallback(
         (ids: string[]) => {
-            const key = ids.join("\n");
-            if (key === lastSelKey.current) return;
-            lastSelKey.current = key;
             lastSelIds.current = ids;
             if (!activeRef.current || !resourceRef.current) return;
-            rawPush("live:select", { resource: resourceRef.current, ids });
+            if (ids.join("\n") === lastSentKey.current) return;
+            sendSelect(ids);
         },
-        [rawPush],
+        [sendSelect],
     );
 
+    // Heartbeat: re-emit a held selection (TTL keep-alive + late joiners), and
+    // retry any state the immediate push could not deliver — including a
+    // deselect made while suppressed, which would otherwise be lost for good.
     React.useEffect(() => {
         const t = setInterval(() => {
-            if (!activeRef.current || !resourceRef.current || !lastSelIds.current.length) return;
-            rawPushRef.current("live:select", { resource: resourceRef.current, ids: lastSelIds.current });
+            if (!activeRef.current || !resourceRef.current) return;
+            const ids = lastSelIds.current;
+            if (ids.length || ids.join("\n") !== lastSentKey.current) sendSelect(ids);
         }, SELECT_HEARTBEAT_MS);
         return () => clearInterval(t);
-    }, []);
+    }, [sendSelect]);
+
+    // In-place resource change (jump-to-teammate can swap one canvas for
+    // another without an unmount): clear our selection on the surface we left
+    // and forget the sent state, mirroring the cursor hook's gone-frame.
+    const prevSelResource = React.useRef(resource);
+    React.useEffect(() => {
+        const prev = prevSelResource.current;
+        prevSelResource.current = resource;
+        if (prev && prev !== resource) {
+            if (lastSentKey.current !== "" && orgRef.current) {
+                rawPushRef.current("live:select", { resource: prev, ids: [] });
+            }
+            lastSelIds.current = [];
+            lastSentKey.current = "";
+        }
+    }, [resource]);
 
     // Clear our selection for teammates when the canvas unmounts. Presence
     // alone is not enough here: on surfaces that claim presence above the
     // canvas (the campaign layout), leaving the canvas tab keeps the member on
-    // the resource, so without this the outline would linger.
+    // the resource, so without this the outline would linger a TTL long.
     React.useEffect(
         () => () => {
             if (lastSelIds.current.length && activeRef.current && resourceRef.current) {
