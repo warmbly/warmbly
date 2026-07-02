@@ -14,6 +14,12 @@ export default interface Sequence {
 
     wait_after: number;
 
+    // Persisted canvas coordinates in the sequence builder. 0/0 means "not
+    // placed yet" (the editor auto-arranges until a step is first dragged).
+    // Written only through the layout endpoint, never a content PATCH.
+    x: number;
+    y: number;
+
     // Conditional step routing. Absent when the step has no branches; a PATCH
     // with this field replaces the step's branch set wholesale.
     conditions?: SequenceConditions | null;

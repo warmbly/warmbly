@@ -317,12 +317,14 @@ export function Drawer({
     name,
     provider,
     onClose,
+    headerExtra,
     children,
 }: {
     title: string;
     name: string;
     provider: string;
     onClose: () => void;
+    headerExtra?: React.ReactNode;
     children: React.ReactNode;
 }) {
     return (
@@ -348,6 +350,7 @@ export function Drawer({
                         <div className="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">{title}</div>
                         <div className="text-[12.5px] text-slate-900 font-medium truncate">{name}</div>
                     </div>
+                    {headerExtra}
                     <button
                         type="button"
                         onClick={onClose}

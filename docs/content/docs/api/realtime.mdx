@@ -254,6 +254,33 @@ Presence is subject to the workspace's privacy settings. An admin can turn off "
 
 API-key connections receive presence events but are never tracked as presences themselves: machines are not teammates.
 
+## Live collaboration
+
+The dashboard streams ephemeral collaboration frames so teammates see each other in real time: live cursors everywhere, cursor chat, in-flight card drags, and selections on the builder canvases. These ride a separate fast path from the sequenced event stream above.
+
+Every frame is scoped by a `resource` string, and a client only renders frames for the resource it is currently on:
+
+- `page:<route>` for an ordinary dashboard page (cursors only). Coordinates are relative to the page's content area; on pages that scroll at the app level they track the content as either person scrolls, and otherwise they mark where the teammate's pointer is within the viewport.
+- `automation:<id>` and `campaign:<id>` for the automation and campaign-sequence builder canvases (cursors, card drags, and selections). Coordinates are canvas (flow) space, so a point lands in the same place for everyone regardless of pan or zoom.
+
+Clients push:
+
+- `live:cursor` with `{ "resource": "<resource>", "x": <number>, "y": <number> }` for a pointer move, or `{ "resource": "<resource>", "gone": true }` when the pointer leaves. An optional `"chat"` string (capped at 120 characters) attaches cursor-chat text to the frame; teammates render it as a bubble next to the pointer, and it clears when frames stop carrying it.
+- `live:node` with `{ "resource": "<canvas-resource>", "id": "<node-id>", "x": <number>, "y": <number>, "dragging": <bool> }` while a card is being moved (builder canvases only).
+- `live:select` with `{ "resource": "<canvas-resource>", "ids": ["<node-id>", ...] }` when the set of selected nodes changes (builder canvases only). At most 100 ids per frame; an empty list clears the selection for teammates.
+- `live:patch` with `{ "resource": "<resource>", "data": { ... } }` for a generic collaborative-state hint, where `data` is a small flat map of scalar values (strings are capped, at most 20 keys). The dashboard uses it so a teammate's action lands instantly, for example a deal moved on a board (`{ "kind": "deal_move", "deal_id": "...", "stage_id": "..." }`) ahead of the durable refetch.
+
+They fan out to the other members on the same org channel as `LIVE_CURSOR`, `LIVE_NODE`, `LIVE_SELECT`, and `LIVE_PATCH` events carrying the same fields plus `user_id`. Resolve the mover's name and avatar from presence. A `live:patch` is a best-effort hint, not a source of truth: the change itself still persists over REST and re-syncs through the normal event stream, so a dropped frame self-heals.
+
+These frames are deliberately lightweight:
+
+- they are **not** sequenced and **not** resumable. A dropped frame is fine: the next one is milliseconds away, and a reconnecting client never replays them.
+- they follow the workspace privacy settings. A member whose activity is hidden ("show activity" off) emits no cursor or drag frames, the same gate as `presence:update`.
+- only human (JWT) members exchange them. API-key connections neither send nor receive live frames.
+- they are exempt from the per-minute client-event budget below (which they would exhaust instantly). Each socket is bounded by a small in-process burst limit instead, and clients should throttle pointer and drag frames to roughly 20 to 30 per second.
+
+Card positions are also persisted separately over REST, so an arrangement sticks across visits even with nobody else watching. The live stream is only the moment-to-moment motion.
+
 ## Rate limits and connection caps
 
 The realtime service protects itself against connection spam. All limits are per user (the key's owner) unless noted:
@@ -267,6 +294,8 @@ The realtime service protects itself against connection spam. All limits are per
 | Server-to-client messages | 120/minute |
 
 When a client-sent event is throttled you receive an error reply with `reason: "rate_limited"` and a `retry_after_ms` hint. When outbound delivery is throttled the channel pushes a `rate_limited` message instead of the event.
+
+Ephemeral [live-collaboration](#live-collaboration) frames (`live:cursor`, `live:node`, `live:select`, `live:patch`) are exempt from the client-event budget above: they are bounded by a separate small per-socket burst limit, and over-budget frames are dropped silently rather than rejected.
 
 ## Connection rejections
 

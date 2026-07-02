@@ -45,6 +45,9 @@ import useDeleteTemplate from "@/lib/api/hooks/app/templates/useDeleteTemplate";
 import useDuplicateTemplate from "@/lib/api/hooks/app/templates/useDuplicateTemplate";
 import useReorderTemplates from "@/lib/api/hooks/app/templates/useReorderTemplates";
 import { useConfirm } from "@/hooks/context/confirm";
+import { usePresenceResource } from "@/hooks/PresenceProvider";
+import { useSuppressGlobalCursors } from "@/components/app/presence/GlobalCursors";
+import ResourceViewers from "@/components/app/presence/ResourceViewers";
 import type Template from "@/lib/api/models/app/templates/Template";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
@@ -447,6 +450,11 @@ function TemplateEditor({
     const update = useUpdateTemplate();
     const confirm = useConfirm();
 
+    const templateId = state?.mode === "edit" ? state.template.id : null;
+    usePresenceResource(templateId ? `template:${templateId}` : null, "editing");
+    // While this full-screen editor is open it owns the pointer; silence the page cursor.
+    useSuppressGlobalCursors(!!state);
+
     const [name, setName] = React.useState("");
     const [subject, setSubject] = React.useState("");
     const [bodyPlain, setBodyPlain] = React.useState("");
@@ -579,6 +587,10 @@ function TemplateEditor({
                             </span>
                             <div className="h-4 w-px bg-slate-200" />
                             <span className="text-[12.5px] text-slate-900 font-medium">Template</span>
+                            <ResourceViewers
+                                resource={templateId ? `template:${templateId}` : null}
+                                className="shrink-0"
+                            />
                             <button
                                 type="button"
                                 onClick={onClose}

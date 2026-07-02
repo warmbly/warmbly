@@ -83,6 +83,11 @@ type IntegrationRepository interface {
 	// token points at, across orgs (the token is the credential). nil = no match.
 	GetAutomationByInboundToken(ctx context.Context, token string) (*models.Automation, error)
 	UpdateAutomation(ctx context.Context, a *models.Automation) error
+	// UpdateAutomationLayout merges only the x/y of the named nodes into the
+	// graph, atomically and without touching edges, node config, or updated_at —
+	// so a position move (continuously written as teammates drag cards) never
+	// reads as a content change. Unknown ids are ignored.
+	UpdateAutomationLayout(ctx context.Context, orgID, id uuid.UUID, positions []models.AutomationNodePosition) error
 	DeleteAutomation(ctx context.Context, orgID, id uuid.UUID) error
 	// CampaignsUsingAutomation returns the names of campaigns whose sequence has a
 	// "run_automation" step pointing at this automation (so deletion can refuse to
@@ -498,6 +503,54 @@ func (r *integrationRepository) UpdateAutomation(ctx context.Context, a *models.
 		UPDATE automations SET name = $3, enabled = $4, trigger_event = $5, filter = $6, graph = $7, updated_at = $8, inbound_token = NULLIF($9, '')
 		WHERE id = $1 AND organization_id = $2`,
 		a.ID, a.OrganizationID, a.Name, a.Enabled, a.TriggerEvent, filter, graph, now, a.InboundToken)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return errors.New("automation not found")
+	}
+	return nil
+}
+
+// UpdateAutomationLayout rewrites only node coordinates. It is a single atomic
+// UPDATE that walks the existing graph->'nodes' array and, for each node whose
+// id appears in the supplied position map, replaces its x/y in place — leaving
+// edges, action config, order, and updated_at untouched. Doing it in one
+// statement (rather than read-modify-write) avoids clobbering a concurrent full
+// graph save with stale logic.
+func (r *integrationRepository) UpdateAutomationLayout(ctx context.Context, orgID, id uuid.UUID, positions []models.AutomationNodePosition) error {
+	pos := make(map[string]map[string]float64, len(positions))
+	for _, p := range positions {
+		if p.ID == "" {
+			continue
+		}
+		pos[p.ID] = map[string]float64{"x": p.X, "y": p.Y}
+	}
+	if len(pos) == 0 {
+		return nil
+	}
+	posJSON, err := json.Marshal(pos)
+	if err != nil {
+		return err
+	}
+	tag, err := r.db.Exec(ctx, `
+		UPDATE automations
+		SET graph = jsonb_set(graph, '{nodes}', COALESCE((
+			SELECT jsonb_agg(
+				CASE WHEN $3::jsonb ? (e.value->>'id')
+					THEN e.value || jsonb_build_object(
+						'x', ($3::jsonb -> (e.value->>'id') ->> 'x')::float8,
+						'y', ($3::jsonb -> (e.value->>'id') ->> 'y')::float8)
+					ELSE e.value END
+				ORDER BY e.ord)
+			-- Guard the scalar/null case: an automation saved with an empty graph
+			-- stores "nodes": null, and jsonb_array_elements errors on a non-array.
+			FROM jsonb_array_elements(
+				CASE WHEN jsonb_typeof(graph->'nodes') = 'array' THEN graph->'nodes' ELSE '[]'::jsonb END
+			) WITH ORDINALITY AS e(value, ord)
+		), '[]'::jsonb))
+		WHERE id = $1 AND organization_id = $2`,
+		id, orgID, posJSON)
 	if err != nil {
 		return err
 	}

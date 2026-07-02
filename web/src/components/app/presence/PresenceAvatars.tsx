@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { EyeIcon, PencilIcon, ReplyIcon } from "lucide-react";
+import { ArrowRightIcon, EyeIcon, PencilIcon, ReplyIcon } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useOnlineMembers, type PresenceUser } from "@/hooks/PresenceProvider";
 import useClickOutside from "@/hooks/useClickOutside";
@@ -73,6 +74,7 @@ export default function PresenceAvatars() {
     const members = useOnlineMembers();
     const [open, setOpen] = useState(false);
     const ref = useRef<HTMLDivElement>(null);
+    const navigate = useNavigate();
     useClickOutside(ref, () => setOpen(false));
 
     if (members.length === 0) return null;
@@ -144,15 +146,31 @@ export default function PresenceAvatars() {
                         </div>
                         {members.map((m) => {
                             const act = activityOf(m);
+                            // Click a teammate to jump to the page they are on.
+                            const jumpable = !!m.page;
                             return (
-                                <div key={m.userId} className="px-3 py-1.5 flex items-center gap-2.5">
+                                <button
+                                    key={m.userId}
+                                    type="button"
+                                    disabled={!jumpable}
+                                    title={jumpable ? "Go where they are" : undefined}
+                                    onClick={() => {
+                                        if (!m.page) return;
+                                        setOpen(false);
+                                        navigate(m.page);
+                                    }}
+                                    className={cn(
+                                        "group w-full px-3 py-1.5 flex items-center gap-2.5 text-left",
+                                        jumpable ? "hover:bg-slate-50" : "cursor-default",
+                                    )}
+                                >
                                     <Avatar size="sm">
                                         {m.avatar ? <AvatarImage src={m.avatar} alt={m.name ?? ""} /> : null}
                                         <AvatarFallback className="bg-sky-50 text-sky-700 text-[9.5px] font-semibold">
                                             {initialsOf(m.name)}
                                         </AvatarFallback>
                                     </Avatar>
-                                    <div className="min-w-0">
+                                    <div className="min-w-0 flex-1">
                                         <div className="text-[12.5px] text-slate-900 font-medium truncate">
                                             {m.name ?? "Teammate"}
                                         </div>
@@ -161,7 +179,10 @@ export default function PresenceAvatars() {
                                             {act.label}
                                         </div>
                                     </div>
-                                </div>
+                                    {jumpable && (
+                                        <ArrowRightIcon className="w-3 h-3 shrink-0 text-slate-300 opacity-0 transition-opacity group-hover:opacity-100" />
+                                    )}
+                                </button>
                             );
                         })}
                     </motion.div>

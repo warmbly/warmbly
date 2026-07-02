@@ -396,6 +396,24 @@ type AutomationWrite struct {
 	Graph        AutomationGraph `json:"graph"`
 }
 
+// AutomationLayout is a position-only update: the canvas x/y of some or all
+// nodes, persisted without rewriting the rest of the graph (logic, edges,
+// config) and without bumping updated_at. It lets a teammate's arrangement
+// "stick" across visits and is written continuously as nodes are dragged (the
+// live cursor/drag stream is the realtime half). Retries are naturally safe —
+// positions are last-write-wins with no accumulation — so it needs no
+// Idempotency-Key.
+type AutomationLayout struct {
+	Positions []AutomationNodePosition `json:"positions"`
+}
+
+// AutomationNodePosition is one node's canvas coordinates.
+type AutomationNodePosition struct {
+	ID string  `json:"id"`
+	X  float64 `json:"x"`
+	Y  float64 `json:"y"`
+}
+
 // AutomationRun is one execution of an automation graph (per fired event or
 // manual launch), with per-node outcomes for the builder's history panel.
 type AutomationRun struct {

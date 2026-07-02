@@ -21,6 +21,8 @@ import toast from "react-hot-toast";
 
 import { TextInput } from "@/components/ui/field";
 import { useConfirm } from "@/hooks/context/confirm";
+import { usePresenceResource } from "@/hooks/PresenceProvider";
+import ResourceViewers from "@/components/app/presence/ResourceViewers";
 import useConnectionDetail from "@/lib/api/hooks/app/integrations/useConnectionDetail";
 import useDisconnectIntegration from "@/lib/api/hooks/app/integrations/useDisconnectIntegration";
 import {
@@ -72,6 +74,8 @@ export default function ConnectionDetail({
     const conn = detail.data?.connection ?? connection;
     const runs = detail.data?.runs ?? [];
 
+    usePresenceResource(conn.id ? `integration_connection:${conn.id}` : null, "editing");
+
     // Only webhook-tool connections expose the "Send test event" control, so only
     // those need the automations list (avoid an extra request per drawer open).
     const isWebhookTool = WEBHOOK_TOOL_PROVIDERS.includes(conn.provider);
@@ -122,7 +126,18 @@ export default function ConnectionDetail({
 
 
     return (
-        <Drawer title="Manage" name={conn.label} provider={conn.provider} onClose={onClose}>
+        <Drawer
+            title="Manage"
+            name={conn.label}
+            provider={conn.provider}
+            onClose={onClose}
+            headerExtra={
+                <ResourceViewers
+                    resource={conn.id ? `integration_connection:${conn.id}` : null}
+                    className="shrink-0"
+                />
+            }
+        >
             <div className="flex-1 overflow-auto">
                 {/* Status header */}
                 <div className="px-5 py-4 border-b border-slate-200 space-y-3">

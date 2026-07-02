@@ -38,6 +38,8 @@ import {
     PopoverMenuItem,
     PopoverMenuTrigger,
 } from "@/components/ui/popover-menu";
+import { useQueryClient } from "@tanstack/react-query";
+import { useLivePatch } from "@/hooks/useLivePatch";
 import usePipelines from "@/lib/api/hooks/app/crm/pipelines/usePipelines";
 import useCreatePipeline from "@/lib/api/hooks/app/crm/pipelines/useCreatePipeline";
 import useDeletePipeline from "@/lib/api/hooks/app/crm/pipelines/useDeletePipeline";
@@ -70,6 +72,12 @@ function colorForHex(hex: string) {
 export default function PipelinesPage() {
     const pipelines = usePipelines();
     const [newPipelineOpen, setNewPipelineOpen] = React.useState(false);
+
+    // Live: a teammate's pipeline or stage edit refreshes this view instantly.
+    const qc = useQueryClient();
+    useLivePatch("crm_pipelines", {
+        onPatch: () => void qc.invalidateQueries({ queryKey: ["crm", "pipelines"] }),
+    });
 
     const list = pipelines.data ?? [];
     const totalStages = list.reduce((acc, p) => acc + (p.stages?.length ?? 0), 0);

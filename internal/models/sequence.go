@@ -20,6 +20,13 @@ type Sequence struct {
 	WaitAfter int `json:"wait_after"`
 	Position  int `json:"position"`
 
+	// X/Y are the step's canvas coordinates in the sequence builder. Persisted
+	// so the arrangement sticks across visits; 0/0 means "not placed yet" (the
+	// editor auto-arranges until a step is first dragged). Written only through
+	// the layout endpoint, never the audited content update.
+	X float64 `json:"x"`
+	Y float64 `json:"y"`
+
 	// Conditions is the per-step branching tree. When empty (`{}` / no
 	// branches), the step keeps the default linear behaviour (advance to the
 	// next position). When populated, the scheduler evaluates the contact's
@@ -117,6 +124,22 @@ type UpdateSequence struct {
 	// Kind / Action, when non-nil, switch the node between email and action/wait.
 	Kind   *string       `json:"kind"`
 	Action *ActionConfig `json:"action"`
+}
+
+// SequenceLayout is a position-only update for the sequence builder: the canvas
+// x/y of some or all steps. Like the automation layout endpoint it is written
+// continuously as steps are dragged and is deliberately NOT audited and does not
+// bump updated_at — a reposition is cosmetic. Retries are naturally safe
+// (positions are last-write-wins), so it needs no Idempotency-Key.
+type SequenceLayout struct {
+	Positions []SequencePosition `json:"positions"`
+}
+
+// SequencePosition is one step's canvas coordinates.
+type SequencePosition struct {
+	ID string  `json:"id"`
+	X  float64 `json:"x"`
+	Y  float64 `json:"y"`
 }
 
 // BranchConditions is the typed branching tree persisted in the sequence

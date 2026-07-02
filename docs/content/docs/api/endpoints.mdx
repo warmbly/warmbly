@@ -49,6 +49,7 @@ All paths below are relative to the versioned base URL `https://api.warmbly.com/
 | POST | `/campaigns/:id/stop` | `SEND_CAMPAIGNS` |
 | GET | `/campaigns/:id/logs` | `READ_CAMPAIGNS` |
 | GET/POST/PATCH/DELETE | `/campaigns/:id/steps[/:sid]` | `READ_CAMPAIGNS` for GET, `WRITE_CAMPAIGNS` otherwise |
+| PATCH | `/campaigns/:id/step-layout` | `WRITE_CAMPAIGNS` |
 
 ### Contacts
 
@@ -143,6 +144,8 @@ Registering and managing the OAuth apps your workspace owns. The flow itself (au
 | POST | `/webhooks/deliveries/:deliveryId/redeliver` | `WEBHOOKS` |
 | GET | `/webhooks/throttle-drops` | `WEBHOOKS` |
 | GET/POST/DELETE | `/integrations/*` | `INTEGRATIONS` |
+| GET/POST/PATCH/DELETE | `/automations[/:id]` | `INTEGRATIONS` |
+| PATCH | `/automations/:id/layout` | `INTEGRATIONS` |
 | GET/POST/PATCH/DELETE | `/warmup/routing[/:id]` | `WARMUP_ROUTING` |
 
 ### Retry safety
