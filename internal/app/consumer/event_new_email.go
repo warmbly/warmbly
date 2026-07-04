@@ -192,11 +192,14 @@ func (s *JobsService) performWarmupActions(ctx context.Context, e *models.JobEve
 		RFCMessageID: e.Message.MessageID,
 	}
 
-	// Resolve the receiving mailbox's worker once.
+	// Resolve the receiving mailbox once (worker routing + timezone for the
+	// waking-hours engagement guard).
 	var workerID *uuid.UUID
+	var recipientTZ string
 	if s.EmailRepository != nil {
 		if account, xerr := s.EmailRepository.GetByID(ctx, e.Message.EmailID); xerr == nil && account != nil {
 			workerID = account.WorkerID
+			recipientTZ = account.Timezone
 		}
 	}
 	if workerID == nil {
@@ -238,7 +241,7 @@ func (s *JobsService) performWarmupActions(ctx context.Context, e *models.JobEve
 		s.Publisher.PublishWarmupAction(ctx, *workerID, &act)
 		return
 	}
-	fireAt := time.Now().Add(time.Duration(delaySeconds) * time.Second)
+	fireAt := humanizeFireAt(time.Now().Add(time.Duration(delaySeconds)*time.Second), recipientTZ)
 	if err := s.WarmupEngagementRepo.EnqueuePendingEngagement(ctx, e.Message.EmailID, payload, fireAt); err != nil {
 		log.Warn().Err(err).Str("email_id", e.Message.EmailID.String()).Msg("Failed to enqueue delayed warmup engagement; publishing immediately")
 		s.Publisher.PublishWarmupAction(ctx, *workerID, &act)

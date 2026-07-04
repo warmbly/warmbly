@@ -78,6 +78,8 @@ Real inboxes do not only send. They also reply. Warmup mimics this with a config
 
 A portion of the time, instead of starting a new message, a mailbox will reply to an existing warmup thread it received. The reply stays on the same topic as the original message and threads correctly with a real `Re:` subject and reply headers, so the exchange looks like a genuine back-and-forth rather than a one-way blast. Replies are tracked separately in your warmup stats as a healthy-engagement signal.
 
+Timing follows human behavior throughout. Sends are spread over the day in bursts and lulls rather than a fixed rhythm, never land on round clock marks, and replies only go to messages that arrived long enough ago to have plausibly been read. On the receiving side, opens and reads happen on a natural delay (most within minutes, some up to an hour later) and only during the recipient's waking hours, so no mailbox in the pool "reads" email at 3am or reacts to every message within seconds.
+
 ## Keeping warmup out of your inbox
 
 Warmup traffic should build reputation without cluttering the mailbox you actually read. When a warmup message is received, Warmbly recognizes it by its verification token and files it away automatically: the message is moved out of the inbox into a dedicated `Warmbly` folder and marked as read, and anything that landed in spam is rescued back to the inbox first so providers record a positive placement signal. This works across Gmail, Outlook (via Microsoft Graph), and generic IMAP mailboxes, and warmup mail never appears in your unified inbox. The engagement (open, read, occasional reply, importance) still happens, so providers see the healthy signals while you see a clean inbox.

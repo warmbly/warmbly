@@ -97,6 +97,8 @@ func (w *WMail) onImapEmailUpdate(ctx context.Context, msg *models.EmailMessageD
 			return err
 		}
 
+		w.maybeEmitBounce(msg)
+
 		if err := w.onEvent(models.JobEventTypeNewEmail, data); err != nil {
 			return err
 		}

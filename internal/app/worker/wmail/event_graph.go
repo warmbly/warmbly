@@ -77,6 +77,7 @@ func (w *WMail) onGraphMessageAdd(ctx context.Context, msg *models.EmailMessageD
 		return err
 	}
 
+	w.maybeEmitBounce(msg)
 	return w.onEvent(models.JobEventTypeNewEmail, data)
 }
 

@@ -19,6 +19,7 @@ type JobEventType string
 
 const (
 	JobEventTypeNewEmail      JobEventType = "NEW_EMAIL"
+	JobEventTypeInboundBounce JobEventType = "INBOUND_BOUNCE"
 	JobEventTypeRemoveEmail   JobEventType = "REMOVE_EMAIL"
 	JobEventTypeFlagsAdd      JobEventType = "FLAGS_ADD"
 	JobEventTypeFlagsRemove   JobEventType = "FLAGS_REMOVE"

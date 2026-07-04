@@ -140,6 +140,10 @@ Campaigns skip suppressed recipients automatically. This is intentional: when a 
 
 The **Suppressed** count on the dashboard shows how many recipients are currently held back this way.
 
+### How bounces are detected
+
+When a message can't be delivered, the recipient's mail server sends back a bounce notification (a delivery-status report) that lands in your mailbox. Warmbly reads those automatically and, only for permanent failures (a `5.x.x` status, such as an address that doesn't exist), records the bounce against the exact send and suppresses that recipient. Temporary failures (a `4.x.x` status, such as a full mailbox or a greylisting delay) are never treated as permanent, so a recipient is never suppressed over a transient hiccup. This works the same for every provider, including mailboxes connected over the provider APIs (Gmail and Microsoft Graph), where the send itself reports success and the bounce only shows up later.
+
 ## How to read your dashboard
 
 A practical way to use the page:

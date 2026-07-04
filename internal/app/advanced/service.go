@@ -37,6 +37,11 @@ type Service interface {
 
 	IngestDeliverabilityEvent(ctx context.Context, organizationID uuid.UUID, req *models.IngestDeliverabilityEventRequest) *errx.Error
 
+	// RecordInboundBounce resolves a permanent NDR (parsed worker-side) back to
+	// the original campaign send via its Message-ID and records a bounce
+	// deliverability event. Best-effort: unresolvable bounces are a no-op.
+	RecordInboundBounce(ctx context.Context, emailAccountID uuid.UUID, originalMessageID, failedRecipient, reason string) *errx.Error
+
 	ShouldSuppressRecipient(ctx context.Context, organizationID uuid.UUID, recipient string) (bool, string, *errx.Error)
 	// Unsubscribe suppresses a contact in response to a List-Unsubscribe action
 	// (one-click POST or the manual link). Always suppresses — it's an explicit

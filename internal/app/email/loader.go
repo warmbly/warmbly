@@ -19,14 +19,22 @@ func (s *emailService) WireGraphDelta(repo repository.EmailGraphDeltaRepository)
 	s.graphDelta = repo
 }
 
+// reconcileRepublishInterval bounds how often the reconciler re-publishes a
+// given account. The immediate onboarding load and any reassignment still fire
+// right away (they call LoadAccountOntoWorker directly); this only throttles the
+// steady-state safety-net loop so the fleet isn't re-shipping every account's
+// decrypted credentials over Kafka every tick. A restarted worker is re-seeded
+// within this window rather than within one tick.
+const reconcileRepublishInterval = 5 * time.Minute
+
 // StartWorkerReconciler periodically ensures every active mailbox is assigned to
 // a worker and loaded onto it. Workers hold accounts in memory only, so this is
-// what makes onboarding, worker restarts, and reassignment converge: a fresh
-// account gets picked up within one interval, and a restarted worker is
-// re-seeded. PublishAddEmail is idempotent worker-side (already-loaded accounts
-// are skipped), so re-publishing every tick is safe.
+// what makes onboarding, worker restarts, and reassignment converge. Each
+// account is republished at most once per reconcileRepublishInterval;
+// PublishAddEmail is idempotent worker-side, so a republish is always safe.
 func (s *emailService) StartWorkerReconciler(ctx context.Context, interval time.Duration) {
-	s.reconcileWorkerAccounts(ctx)
+	lastPublished := map[uuid.UUID]time.Time{}
+	s.reconcileWorkerAccounts(ctx, lastPublished)
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -35,20 +43,37 @@ func (s *emailService) StartWorkerReconciler(ctx context.Context, interval time.
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			s.reconcileWorkerAccounts(ctx)
+			s.reconcileWorkerAccounts(ctx, lastPublished)
 		}
 	}
 }
 
-func (s *emailService) reconcileWorkerAccounts(ctx context.Context) {
+func (s *emailService) reconcileWorkerAccounts(ctx context.Context, lastPublished map[uuid.UUID]time.Time) {
 	ids, err := s.emailRepository.ListActiveWorkerAccounts(ctx)
 	if err != nil {
 		log.Warn().Err(err).Msg("worker reconciler: list active accounts failed")
 		return
 	}
+
+	active := make(map[uuid.UUID]struct{}, len(ids))
+	now := time.Now()
 	for _, id := range ids {
+		active[id] = struct{}{}
+		if last, ok := lastPublished[id]; ok && now.Sub(last) < reconcileRepublishInterval {
+			continue
+		}
 		if err := s.LoadAccountOntoWorker(ctx, id); err != nil {
 			log.Warn().Err(err).Str("email_id", id.String()).Msg("worker reconciler: load account failed")
+			continue
+		}
+		lastPublished[id] = now
+	}
+
+	// Drop throttle entries for accounts no longer active so the map can't grow
+	// without bound as mailboxes are disconnected.
+	for id := range lastPublished {
+		if _, ok := active[id]; !ok {
+			delete(lastPublished, id)
 		}
 	}
 }

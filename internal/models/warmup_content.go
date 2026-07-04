@@ -143,8 +143,11 @@ func DefaultWarmupGenerationSettings() WarmupGenerationSettings {
 			MarkImportantRate: 30,
 			MarkReadRate:      95,
 			StarRate:          20,
-			MinDwellSeconds:   20,
-			MaxDwellSeconds:   240,
+			// Heavy-tailed sample (see dwellSeconds): most reads land within
+			// minutes, the tail waits up to an hour — "always read within 4
+			// minutes, around the clock" was a lockstep signature.
+			MinDwellSeconds: 45,
+			MaxDwellSeconds: 3600,
 		},
 	}
 }

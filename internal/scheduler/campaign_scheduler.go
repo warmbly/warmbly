@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"math/rand"
 	"time"
 
 	"github.com/google/uuid"
@@ -413,7 +414,10 @@ func (s *schedulerService) CalculateNextCampaignTime(ctx context.Context, campai
 			currentMinutes := nowLocal.Hour()*60 + nowLocal.Minute()
 			remainingMinutes := dayEnd - max(currentMinutes, dayStart)
 			if remainingMinutes > 0 {
-				idealInterval := time.Minute * time.Duration(remainingMinutes/remainingEmails)
+				// Vary the pace multiplicatively (bursts and lulls) — evenly
+				// metronomed sends are a pattern even with additive jitter.
+				varied := float64(remainingMinutes/remainingEmails) * (0.55 + rand.Float64()*0.9)
+				idealInterval := time.Duration(varied * float64(time.Minute))
 				minInterval := time.Second * time.Duration(account.MinWaitTime)
 				if idealInterval < minInterval {
 					idealInterval = minInterval
@@ -443,10 +447,10 @@ func (s *schedulerService) CalculateNextCampaignTime(ctx context.Context, campai
 		}
 	}
 
-	// STEP 11: Add jitter and round to nearest 5 minutes
+	// STEP 11: Add jitter. Deliberately NOT rounded to a 5-minute grid — a
+	// fleet that only ever sends at :x0/:x5 marks is a detectable pattern.
 	jitter := randomJitter(-20, 20)
 	candidateTime = candidateTime.Add(time.Minute * time.Duration(jitter))
-	candidateTime = roundToNearestMinute(candidateTime, 5)
 
 	// STEP 12: Check conflicts with other scheduled tasks
 	dateToCheck := candidateTime
@@ -464,7 +468,8 @@ func (s *schedulerService) CalculateNextCampaignTime(ctx context.Context, campai
 	// (jitter/conflict/distribution can push into a gap between intervals).
 	candidateTime = nextScheduleSlot(candidateTime, windows, campaignTZ)
 
-	return candidateTime, nextPair, account.ID, nil
+	// STEP 15: Randomise the sub-minute component so sends never land on :00.
+	return humanizeSeconds(candidateTime), nextPair, account.ID, nil
 }
 
 // deferToNextDay pushes a candidate time to the next valid campaign day within

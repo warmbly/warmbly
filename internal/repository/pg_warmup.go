@@ -1167,6 +1167,11 @@ func (r *warmupRepository) GetLatestReplyCandidate(ctx context.Context, senderAc
 		  AND t.status = 'completed'
 		  AND t.message_id <> ''
 		  AND t.completed_at IS NOT NULL
+		  -- Human reply timing: never reply to a message that just arrived (the
+		  -- recipient-side read engagement hasn't plausibly happened yet), and
+		  -- don't necro-reply to threads older than a week.
+		  AND t.completed_at < NOW() - INTERVAL '45 minutes'
+		  AND t.completed_at > NOW() - INTERVAL '7 days'
 		ORDER BY t.completed_at DESC
 		LIMIT 1
 	`

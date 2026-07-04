@@ -127,7 +127,7 @@ func calculateFirstSlotTomorrow(timezone string) time.Time {
 
 	// Add random jitter
 	jitter := randomJitter(0, 60)
-	return firstSlot.Add(time.Minute * time.Duration(jitter))
+	return humanizeSeconds(firstSlot.Add(time.Minute * time.Duration(jitter)))
 }
 
 // randomJitter generates random jitter between min and max minutes
@@ -136,18 +136,4 @@ func randomJitter(min, max int) int {
 		return min
 	}
 	return min + rand.Intn(max-min)
-}
-
-// roundToNearestMinute rounds time to nearest N minutes
-func roundToNearestMinute(t time.Time, minutes int) time.Time {
-	if minutes <= 0 {
-		return t
-	}
-
-	rounded := t.Truncate(time.Minute * time.Duration(minutes))
-	if t.Sub(rounded) >= time.Minute*time.Duration(minutes)/2 {
-		rounded = rounded.Add(time.Minute * time.Duration(minutes))
-	}
-
-	return rounded
 }

@@ -76,6 +76,8 @@ func (w *WMail) onGoogleMessageAdd(ctx context.Context, msg *models.EmailMessage
 		return err
 	}
 
+	w.maybeEmitBounce(msg)
+
 	if err := w.onEvent(models.JobEventTypeNewEmail, data); err != nil {
 		return err
 	}
