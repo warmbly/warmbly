@@ -35,7 +35,11 @@ type WarmupEmailAction struct {
 	GmailID            string    `json:"gmail_id"`
 	UID                uint32    `json:"uid"`
 	MailboxUIDValidity uint32    `json:"mailbox_uid_validity"`
-	Actions            []string  `json:"actions"` // "move_to_warmbly", "mark_read", "remove_from_spam", "mark_important"
+	// RFCMessageID is the immutable RFC 5322 Message-ID. Graph provider ids
+	// change when a message is moved (copy+delete), so the worker re-resolves
+	// the live Graph id from this stable key at action time.
+	RFCMessageID string   `json:"rfc_message_id,omitempty"`
+	Actions      []string `json:"actions"` // "move_to_warmbly", "mark_read", "remove_from_spam", "mark_important"
 
 	// DelaySeconds is retained for wire compatibility but is now always 0: the
 	// recipient-side "dwell" is owned by the consumer's durable schedule

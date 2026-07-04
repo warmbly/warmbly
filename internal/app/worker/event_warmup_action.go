@@ -49,6 +49,8 @@ func (w *WorkerService) HandleWarmupAction(ctx context.Context, body any) error 
 	switch {
 	case mail.GoogleData != nil && mail.GoogleData.Client != nil:
 		w.runGoogleWarmupActions(ctx, mail, action)
+	case mail.GraphData != nil && mail.GraphData.Client != nil:
+		w.runGraphWarmupActions(ctx, mail, action)
 	case mail.SmtpImapData != nil && mail.SmtpImapData.ImapClient != nil:
 		w.runImapWarmupActions(ctx, mail, action)
 	default:
@@ -81,6 +83,61 @@ func (w *WorkerService) runGoogleWarmupActions(ctx context.Context, mail *wmail.
 		case "star":
 			if err := mail.GoogleData.Client.AddStar(ctx, action.GmailID); err != nil {
 				log.Error().Err(err).Str("gmail_id", action.GmailID).Msg("Failed to star warmup message")
+			}
+		default:
+			log.Warn().Str("action", act).Msg("Unknown warmup action")
+		}
+	}
+}
+
+// runGraphWarmupActions applies recipient-side warmup engagement to a Microsoft
+// Graph mailbox. action.GmailID carries the Graph message id (the provider id
+// field is provider-agnostic). Star maps to the follow-up flag, the closest
+// Outlook equivalent of a Gmail star.
+func (w *WorkerService) runGraphWarmupActions(ctx context.Context, mail *wmail.WMail, action models.WarmupEmailAction) {
+	client := mail.GraphData.Client
+
+	// A Graph message id changes whenever the message is moved (copy+delete), so
+	// resolve the live id from the immutable RFC Message-ID before acting. This
+	// leg may run after an earlier leg already moved the message to Warmbly.
+	msgID := action.GmailID
+	if action.RFCMessageID != "" {
+		if resolved, err := client.ResolveMessageID(ctx, action.RFCMessageID); err == nil && resolved != "" {
+			msgID = resolved
+		}
+	}
+
+	for _, act := range action.Actions {
+		switch act {
+		case "move_to_warmbly":
+			newID, err := client.MoveToFolder(ctx, msgID, imap.WarmupFolderName)
+			if err != nil {
+				log.Error().Err(err).Str("graph_id", msgID).Msg("Failed to move to Warmbly folder (Graph)")
+				continue
+			}
+			if newID != "" {
+				msgID = newID // subsequent actions target the moved copy
+			}
+		case "mark_read":
+			if err := client.MarkAsRead(ctx, msgID); err != nil {
+				log.Error().Err(err).Str("graph_id", msgID).Msg("Failed to mark as read (Graph)")
+			}
+		case "remove_from_spam":
+			newID, err := client.RemoveFromSpam(ctx, msgID)
+			if err != nil {
+				log.Error().Err(err).Str("graph_id", msgID).Msg("Failed to rescue from junk (Graph)")
+				continue
+			}
+			if newID != "" {
+				msgID = newID
+			}
+		case "mark_important":
+			if err := client.MarkImportant(ctx, msgID); err != nil {
+				log.Error().Err(err).Str("graph_id", msgID).Msg("Failed to mark important (Graph)")
+			}
+		case "star":
+			if err := client.AddFlag(ctx, msgID); err != nil {
+				log.Error().Err(err).Str("graph_id", msgID).Msg("Failed to flag warmup message (Graph)")
 			}
 		default:
 			log.Warn().Str("action", act).Msg("Unknown warmup action")

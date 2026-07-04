@@ -187,6 +187,9 @@ func (s *JobsService) performWarmupActions(ctx context.Context, e *models.JobEve
 		GmailID:            e.Message.GmailID,
 		UID:                e.Message.UID,
 		MailboxUIDValidity: e.Message.Mailbox,
+		// Stable key so Graph accounts re-resolve the live message id at action
+		// time (Graph ids change on move).
+		RFCMessageID: e.Message.MessageID,
 	}
 
 	// Resolve the receiving mailbox's worker once.
