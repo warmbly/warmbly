@@ -813,6 +813,10 @@ func main() {
 				EventBusProvider:         os.Getenv("EVENTBUS_PROVIDER"),
 				NATSURL:                  os.Getenv("NATS_URL"),
 				CodecProvider:            os.Getenv("CODEC_PROVIDER"),
+				BoxGoogleClientID:        os.Getenv("BOX_GOOGLE_CLIENT_ID"),
+				BoxGoogleClientSecret:    os.Getenv("BOX_GOOGLE_CLIENT_SECRET"),
+				BoxOutlookClientID:       os.Getenv("BOX_OUTLOOK_CLIENT_ID"),
+				BoxOutlookClientSecret:   os.Getenv("BOX_OUTLOOK_CLIENT_SECRET"),
 			},
 			getenvDefault("WORKER_INSTALLER_PATH", "/app/scripts/install-worker.sh"),
 		)
@@ -854,6 +858,8 @@ func main() {
 		// only the prod backend has a real cache; jobs / tests build
 		// emailService without one.
 		emailService.WireThrottle(dailyThrottleService)
+		// Seed Graph delta cursors when the reconciler reloads mailboxes.
+		emailService.WireGraphDelta(repository.NewEmailGraphDeltaRepository(primaryDB))
 		analyticsRepository := repository.NewAnalyticsRepository(primaryDB)
 		emailAccountErrorRepository := repository.NewEmailAccountErrorRepository(primaryDB)
 		analyticsService = analytics.NewService(analyticsRepository, emailRepostory, campaignRepostory, emailAccountErrorRepository, warmupRepository)
@@ -995,6 +1001,11 @@ func main() {
 		// crash between send and enqueue). Campaigns have no other bootstrap once
 		// started, so without this a stranded campaign stops sending forever.
 		go tasksService.StartCampaignReconciler(ctx, 5*time.Minute)
+
+		// Worker reconciler: assign + (re)load every active mailbox onto its
+		// worker. Workers hold accounts in memory only, so this is what makes a
+		// freshly onboarded account send/sync and re-seeds a restarted worker.
+		go emailService.StartWorkerReconciler(ctx, 60*time.Second)
 
 		// Danger zone: schedule + execute delayed deletions (orgs, accounts).
 		dangerZoneRepository := repository.NewDangerZoneRepository(primaryDB.Pool)

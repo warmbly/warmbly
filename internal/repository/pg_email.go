@@ -82,6 +82,11 @@ type EmailRepository interface {
 	// actively warming, or backing a live campaign (the health-check lane).
 	// Used by the warmup reconciler to (re)seed chains.
 	ListWarmupScheduleCandidates(ctx context.Context, limit int) ([]uuid.UUID, error)
+
+	// ListActiveWorkerAccounts returns the ids of every active mailbox. The
+	// worker reconciler uses it to (re)load accounts onto their assigned workers
+	// after onboarding, worker restarts, or reassignment.
+	ListActiveWorkerAccounts(ctx context.Context) ([]uuid.UUID, error)
 }
 
 type emailRepository struct {
@@ -130,6 +135,25 @@ func (r *emailRepository) ListWarmupScheduleCandidates(ctx context.Context, limi
 		LIMIT $1`
 
 	rows, err := r.DB.Query(ctx, query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var ids []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+func (r *emailRepository) ListActiveWorkerAccounts(ctx context.Context) ([]uuid.UUID, error) {
+	const query = `SELECT id FROM email_accounts WHERE status = 'active'`
+	rows, err := r.DB.Query(ctx, query)
 	if err != nil {
 		return nil, err
 	}

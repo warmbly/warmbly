@@ -2,6 +2,7 @@ package email
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/app/cipher"
@@ -39,6 +40,12 @@ type EmailService interface {
 	// set, account-lifecycle events fan out to customer webhook endpoints.
 	WireWebhooks(w webhook.Service)
 	WireThrottle(t dailythrottle.Service)
+	// WireGraphDelta attaches the Graph delta-cursor repository so the worker
+	// reconciler can seed a mailbox's saved cursors when loading it.
+	WireGraphDelta(repo repository.EmailGraphDeltaRepository)
+	// StartWorkerReconciler periodically ensures every active mailbox is
+	// assigned to a worker and loaded onto it (blocks until ctx is cancelled).
+	StartWorkerReconciler(ctx context.Context, interval time.Duration)
 }
 
 type emailService struct {
@@ -53,6 +60,7 @@ type emailService struct {
 	oauthInbox         *config.Oauth2Inbox
 	workerAssignment   worker.WorkerAssignmentService
 	throttle           dailythrottle.Service
+	graphDelta         repository.EmailGraphDeltaRepository
 	// webhookService is optional. When non-nil, account lifecycle events
 	// (email_account.connected, email_account.removed) are dispatched to
 	// subscribed customer webhooks.

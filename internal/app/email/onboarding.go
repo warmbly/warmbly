@@ -165,6 +165,9 @@ func (s *emailService) OAuthFinish(ctx context.Context, userID, code, state stri
 		s.syncWarmupPoolMembership(ctx, acc)
 		s.publishAccountEvent(ctx, pubsub.EventAccountConnected, acc)
 		s.dispatchAccountConnected(ctx, sess.OrganizationID, acc)
+		// Assign a worker and load the mailbox so it starts sending/syncing
+		// immediately; the reconciler is the fallback if this fails.
+		s.loadAccountBestEffort(ctx, acc.ID)
 	}
 	return acc, xerr
 }
@@ -229,6 +232,9 @@ func (s *emailService) OnboardSMTPIMAP(ctx context.Context, userID string, orgID
 	s.syncWarmupPoolMembership(ctx, acc)
 	s.publishAccountEvent(ctx, pubsub.EventAccountConnected, acc)
 	s.dispatchAccountConnected(ctx, orgID, acc)
+	// Load the mailbox onto its assigned worker so it starts sending/syncing
+	// immediately; the reconciler is the fallback if this fails.
+	s.loadAccountBestEffort(ctx, acc.ID)
 	return acc, nil
 }
 
