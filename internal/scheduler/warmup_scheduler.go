@@ -75,6 +75,31 @@ func warmupRampTarget(activelyWarming bool, base, increase, max, daysWarming int
 	return target
 }
 
+// dailyVolumeFactor returns a stable-per-day multiplier (0.75–1.10, with an
+// occasional lighter day near 0.6) for a mailbox's warmup volume. Real senders
+// don't send exactly N every day; a flat daily count is a pattern. Deterministic
+// on (accountID, localDate) so the scheduler's many intra-day recomputations
+// don't thrash the target.
+func dailyVolumeFactor(accountID uuid.UUID, day time.Time) float64 {
+	y, m, d := day.Date()
+	var seed uint64 = 1469598103934665603 // FNV-1a offset basis
+	mix := func(b []byte) {
+		for _, c := range b {
+			seed ^= uint64(c)
+			seed *= 1099511628211
+		}
+	}
+	id := accountID
+	mix(id[:])
+	mix([]byte{byte(y), byte(y >> 8), byte(m), byte(d)})
+
+	u := float64(seed%1000) / 1000.0 // stable [0,1)
+	if u < 0.15 {
+		return 0.60 // ~15% of days are lighter
+	}
+	return 0.75 + u*0.35 // 0.75–1.10
+}
+
 // resolveHealthState looks up the participant's current health state across
 // the warmup pools they may belong to. Returns Healthy if the account is not
 // in any pool or the lookup fails — failing open keeps warmup running rather
@@ -154,6 +179,23 @@ func (s *schedulerService) CalculateNextWarmupTime(ctx context.Context, accountI
 		daysWarming = int(time.Since(*account.Warmup).Hours() / 24)
 	}
 	targetVolume := warmupRampTarget(activelyWarming, account.WarmupBase, account.WarmupIncrease, account.WarmupMax, daysWarming, inCampaign)
+
+	// Vary the day's target so a mailbox doesn't send an identical count every
+	// day. Deterministic per (account, local day) so it's stable across the
+	// day's reschedules. Actively-warming mailboxes keep a floor of WarmupBase.
+	if activelyWarming && targetVolume > 0 {
+		factor := dailyVolumeFactor(accountID, time.Now().In(loadLocation(account.Timezone)))
+		varied := int(float64(targetVolume)*factor + 0.5)
+		if varied < account.WarmupBase {
+			varied = account.WarmupBase
+		}
+		if varied < 1 {
+			varied = 1
+		}
+		if varied < targetVolume {
+			targetVolume = varied
+		}
+	}
 
 	// STEP 2.1: Cap per-mailbox volume to actual recipient capacity. The
 	// sender should not send multiple warmup messages to the same recipient

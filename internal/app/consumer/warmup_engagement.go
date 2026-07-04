@@ -63,21 +63,31 @@ func engagementPlan(accountID uuid.UUID, e models.WarmupEngagementSettings) (act
 	// Foldering is organisational, not an engagement fingerprint — always do it.
 	actions = append(actions, "move_to_warmbly")
 
-	if rollPct(e.MarkReadRate, p.Bias("read", 0.85, 1.15)) {
-		actions = append(actions, "mark_read")
-	}
-	// Spam-rescue: the worker only actually moves it if it's in spam.
+	// Spam-rescue is the reputation-critical "not spam" signal warmup exists for,
+	// so it fires regardless of neglect (and the worker only acts if it's really
+	// in spam).
 	if rollPct(e.SpamRescueRate, p.Bias("rescue", 0.8, 1.2)) {
 		actions = append(actions, "remove_from_spam")
 	}
-	if rollPct(e.MarkImportantRate, p.Bias("important", 0.7, 1.3)) {
-		actions = append(actions, "mark_important")
-	}
-	// Starring is a separate, lower-rate positive signal (Gmail STARRED). On
-	// IMAP the worker no-ops it because \Flagged is already covered by
-	// mark_important — so it never double-flags the same message.
-	if rollPct(e.StarRate, p.Bias("star", 0.6, 1.4)) {
-		actions = append(actions, "star")
+
+	// Occasionally a mailbox files a message but never engages with it — real
+	// inboxes are full of read-later-and-forgotten mail. Skip the positive
+	// engagement signals on those so the pool never shows perfect, every-message
+	// engagement. Spam-rescue and foldering above still happen.
+	neglect := rand.Float64() < 0.07*p.Bias("neglect", 0.6, 1.4)
+	if !neglect {
+		if rollPct(e.MarkReadRate, p.Bias("read", 0.85, 1.15)) {
+			actions = append(actions, "mark_read")
+		}
+		if rollPct(e.MarkImportantRate, p.Bias("important", 0.7, 1.3)) {
+			actions = append(actions, "mark_important")
+		}
+		// Starring is a separate, lower-rate positive signal (Gmail STARRED). On
+		// IMAP the worker no-ops it because \Flagged is already covered by
+		// mark_important — so it never double-flags the same message.
+		if rollPct(e.StarRate, p.Bias("star", 0.6, 1.4)) {
+			actions = append(actions, "star")
+		}
 	}
 
 	delaySeconds = dwellSeconds(e.MinDwellSeconds, e.MaxDwellSeconds, p.Bias("dwell", 0.7, 1.3))
