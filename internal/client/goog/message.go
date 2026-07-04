@@ -52,12 +52,13 @@ func getSingleHeader(headers []*gmail.MessagePartHeader, name string) string {
 
 func extractBody(parts []*gmail.MessagePart) (plain, html string) {
 	for _, p := range parts {
+		if p == nil {
+			continue
+		}
 		if p.MimeType == "text/plain" && p.Body != nil && p.Body.Data != "" {
-			decoded, _ := base64.URLEncoding.DecodeString(p.Body.Data)
-			plain += string(decoded)
+			plain += decodeBase64URL(p.Body.Data)
 		} else if p.MimeType == "text/html" && p.Body != nil && p.Body.Data != "" {
-			decoded, _ := base64.URLEncoding.DecodeString(p.Body.Data)
-			html += string(decoded)
+			html += decodeBase64URL(p.Body.Data)
 		} else if len(p.Parts) > 0 {
 			pPlain, pHTML := extractBody(p.Parts)
 			plain += pPlain
@@ -65,6 +66,16 @@ func extractBody(parts []*gmail.MessagePart) (plain, html string) {
 		}
 	}
 	return
+}
+
+// decodeBase64URL decodes Gmail body data, which is base64url and usually
+// unpadded (padded URLEncoding rejects it, which silently emptied bodies).
+func decodeBase64URL(data string) string {
+	decoded, err := base64.RawURLEncoding.DecodeString(strings.TrimRight(data, "="))
+	if err != nil {
+		return ""
+	}
+	return string(decoded)
 }
 
 func parseGmailDate(dateText string) time.Time {
@@ -76,7 +87,15 @@ func parseGmailDate(dateText string) time.Time {
 }
 
 func GmailMessageToEmailData(msg *gmail.Message) *models.EmailMessageData {
-	headers := msg.Payload.Headers
+	var headers []*gmail.MessagePartHeader
+	if msg.Payload != nil {
+		headers = msg.Payload.Headers
+	}
+
+	// Walk from the payload itself, not payload.Parts: single-part messages
+	// (most plaintext mail) carry their body directly on the payload and have
+	// no parts at all.
+	plain, html := extractBody([]*gmail.MessagePart{msg.Payload})
 
 	return &models.EmailMessageData{
 		GmailID:  msg.Id,
@@ -84,17 +103,33 @@ func GmailMessageToEmailData(msg *gmail.Message) *models.EmailMessageData {
 		ThreadID: msg.ThreadId,
 		Flags: func() []string {
 			flags := []string{}
+			// Gmail models read state inversely: the UNREAD label is present on
+			// unread mail, so \Seen applies only when UNREAD is absent.
+			seen := true
 			for _, label := range msg.LabelIds {
 				switch label {
 				case "UNREAD":
-					flags = append(flags, "\\Seen")
+					seen = false
 				case "STARRED":
 					flags = append(flags, "\\Flagged")
 				case "IMPORTANT":
 					flags = append(flags, "\\Important")
 				case "DRAFT":
 					flags = append(flags, "\\Draft")
+				case "SPAM":
+					// Drives warmup spam-placement detection and placement
+					// tests (containsSpamFlag matches "SPAM").
+					flags = append(flags, "SPAM")
+				default:
+					// CATEGORY_* tab labels feed placement classification
+					// (promotions tab detection).
+					if strings.HasPrefix(label, "CATEGORY_") {
+						flags = append(flags, label)
+					}
 				}
+			}
+			if seen {
+				flags = append(flags, "\\Seen")
 			}
 			// Surface the warmup verification token as a pseudo-flag so the
 			// consumer can categorize warmup mail into the Warmbly folder.
@@ -123,13 +158,8 @@ func GmailMessageToEmailData(msg *gmail.Message) *models.EmailMessageData {
 		Size:         msg.SizeEstimate,
 		InternalDate: time.Unix(msg.InternalDate/1000, 0),
 		ModSeq:       msg.HistoryId,
-		BodyPlain: func() string {
-			plain, _ := extractBody(msg.Payload.Parts)
-			return plain
-		}(),
-		BodyHTML: func() string {
-			_, html := extractBody(msg.Payload.Parts)
-			return html
-		}(),
+		Snippet:      msg.Snippet,
+		BodyPlain:    plain,
+		BodyHTML:     html,
 	}
 }
