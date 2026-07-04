@@ -50,6 +50,7 @@ type Attachment struct {
 func (c *Client) Send(
 	ctx context.Context,
 	to, cc, bcc []string,
+	messageID,
 	subject, bodyPlain, bodyHTML,
 	inReplyTo string,
 	attachments []Attachment,
@@ -64,6 +65,12 @@ func (c *Client) Send(
 		"Subject":      subject,
 		"Date":         time.Now().Format(time.RFC1123Z),
 		"MIME-Version": "1.0",
+	}
+	if messageID != "" {
+		// Write the caller's Message-ID so the id we record matches what was
+		// actually sent; without it the receiving server assigns its own and
+		// reply/bounce correlation and threading break.
+		headers["Message-ID"] = "<" + strings.Trim(messageID, "<>") + ">"
 	}
 	if len(cc) > 0 {
 		headers["Cc"] = strings.Join(cc, ", ")
@@ -213,7 +220,8 @@ func (c *Client) sendRaw(ctx context.Context, from string, to []string, data []b
 	}
 	defer conn.Close()
 
-	client, err := smtp.NewClient(conn, c.Credentials.Host)
+	// Use the resolved host: c.Credentials is nil for OAuth2-configured clients.
+	client, err := smtp.NewClient(conn, host)
 	if err != nil {
 		return errx.ErrMailServerUnreachable
 	}
@@ -256,7 +264,10 @@ func (c *Client) sendRaw(ctx context.Context, from string, to []string, data []b
 	}
 	for _, r := range to {
 		if err := client.Rcpt(r); err != nil {
-			return errx.ErrMailServerUnreachable
+			// A refused RCPT is a recipient problem (bad address, policy
+			// rejection), not a dead server; classifying it as unreachable
+			// hid rejections from bounce accounting.
+			return errx.ErrMailRecipientRejected
 		}
 	}
 	w, err := client.Data()

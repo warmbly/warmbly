@@ -303,6 +303,7 @@ func (w *WMail) sendViaSMTP(ctx context.Context, req *SendRequest, bodyHTML stri
 		req.To,
 		req.Cc,
 		req.Bcc,
+		req.MessageID,
 		req.Subject,
 		req.BodyPlain,
 		bodyHTML,
