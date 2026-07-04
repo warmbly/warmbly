@@ -158,7 +158,16 @@ func calculateFirstSlotTomorrowAt(timezone, startTime string) time.Time {
 	firstSlot := time.Date(tomorrow.Year(), tomorrow.Month(), tomorrow.Day(),
 		startMinutes/60, startMinutes%60, 0, 0, loc)
 	jitter := randomJitter(0, 60)
-	return firstSlot.Add(time.Minute * time.Duration(jitter))
+	return humanizeSeconds(firstSlot.Add(time.Minute * time.Duration(jitter)))
+}
+
+// humanizeSeconds randomises the sub-minute component of a scheduled time. All
+// jitter above is minute-granular and every time.Date construction lands on
+// second :00, so without this the whole platform sends at second zero — a
+// fleet-wide fingerprint in Received headers. Applied as the last step of the
+// schedulers.
+func humanizeSeconds(t time.Time) time.Time {
+	return t.Truncate(time.Minute).Add(time.Duration(rand.Intn(60)) * time.Second)
 }
 
 // avoidRoundTimes adds randomness to avoid exact round times (10:00, 11:00)

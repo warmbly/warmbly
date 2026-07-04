@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"math/rand"
 	"time"
 
 	"github.com/google/uuid"
@@ -142,7 +143,7 @@ func (s *schedulerService) CalculateNextWarmupTime(ctx context.Context, accountI
 			firstSlot := time.Date(nextDay.Year(), nextDay.Month(), nextDay.Day(),
 				startMinutes/60, startMinutes%60, 0, 0, loc)
 			jitter := randomJitter(0, 60)
-			return firstSlot.Add(time.Minute * time.Duration(jitter)), nil
+			return humanizeSeconds(firstSlot.Add(time.Minute * time.Duration(jitter))), nil
 		}
 	}
 
@@ -240,9 +241,13 @@ func (s *schedulerService) CalculateNextWarmupTime(ctx context.Context, accountI
 		earliestNext = now
 	}
 
-	// STEP 7: Add ideal interval to last email time
+	// STEP 7: Add ideal interval to last email time. The interval is varied
+	// multiplicatively (0.55x–1.45x) so the day reads as bursts and lulls
+	// rather than a metronome: perfectly even spacing is its own signature
+	// even with additive jitter on top.
 	if lastEmailTime != nil && idealIntervalHours > 0 {
-		idealNext := lastEmailTime.Add(time.Duration(idealIntervalHours * float64(time.Hour)))
+		varied := idealIntervalHours * (0.55 + rand.Float64()*0.9)
+		idealNext := lastEmailTime.Add(time.Duration(varied * float64(time.Hour)))
 		if idealNext.After(earliestNext) {
 			earliestNext = idealNext
 		}
@@ -288,5 +293,6 @@ func (s *schedulerService) CalculateNextWarmupTime(ctx context.Context, accountI
 		}
 	}
 
-	return candidateTime, nil
+	// Randomise the sub-minute component so warmup sends never land on :00.
+	return humanizeSeconds(candidateTime), nil
 }
