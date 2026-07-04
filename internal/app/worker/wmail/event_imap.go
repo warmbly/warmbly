@@ -36,7 +36,16 @@ func (w *WMail) onImapEmailUpdate(ctx context.Context, msg *models.EmailMessageD
 		if parentID != "" {
 			internalParent, _ := w.EmailMessageMapRepository.Get(ctx, w.UserID, w.ID, parentID)
 			if internalParent != nil {
-				threadID = internalParent.ID
+				// Join the parent's thread; using the parent's internal id here
+				// forked a new thread at every reply depth.
+				threadID = internalParent.ThreadID
+				if threadID == "" {
+					threadID = parentID
+				}
+			} else {
+				// Parent unknown (e.g. reply to a pre-connect message): root a
+				// thread on the parent's RFC id so siblings still group.
+				threadID = parentID
 			}
 		} else {
 			threadID = msg.MessageID

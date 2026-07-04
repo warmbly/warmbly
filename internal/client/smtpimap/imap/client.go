@@ -1,11 +1,15 @@
 package imap
 
 import (
+	"bufio"
 	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"io"
 	"net"
+	"net/textproto"
+	"strings"
 	"sync"
 
 	"github.com/emersion/go-imap/v2"
@@ -18,6 +22,13 @@ import (
 	"github.com/warmbly/warmbly/internal/models"
 	"golang.org/x/oauth2"
 )
+
+// headerFetchFields are the internet headers fetched alongside each changed
+// message (BODY.PEEK[HEADER.FIELDS ...]) and surfaced into Flags as
+// "Header:value" pseudo-flags: the warmup verification token plus the
+// machine-reply/DSN markers the consumer's reply/bounce classifier reads.
+// The IMAP ENVELOPE carries none of these.
+var headerFetchFields = append([]string{config.WarmupVerifyHeader}, config.InboundClassificationHeaders...)
 
 type Client struct {
 	Email       string
@@ -166,12 +177,20 @@ func (c *Client) FetchChanges(ctx context.Context, lastModSeq uint64) *errx.Mail
 		ModSeq:       true,
 		InternalDate: true,
 		ChangedSince: lastModSeq,
+		BodySection: []*imap.FetchItemBodySection{{
+			Specifier:    imap.PartSpecifierHeader,
+			HeaderFields: headerFetchFields,
+			Peek:         true,
+		}},
 	})
 	for em := cmd.Next(); em != nil; em = cmd.Next() {
 		var email models.EmailMessageData
 		var euid imap.UID
 
 		var bodyStructure imap.BodyStructure
+		// Collected separately: the FLAGS item resets email.Flags and item
+		// order is server-dependent, so appending inline could be wiped.
+		var headerFlags []string
 
 		for item := em.Next(); item != nil; item = em.Next() {
 			switch item := item.(type) {
@@ -202,9 +221,12 @@ func (c *Client) FetchChanges(ctx context.Context, lastModSeq uint64) *errx.Mail
 				email.ModSeq = item.ModSeq
 			case imapclient.FetchItemDataBodyStructure:
 				bodyStructure = item.BodyStructure
+			case imapclient.FetchItemDataBodySection:
+				headerFlags = parseHeaderFlags(item.Literal)
 			}
 		}
 
+		email.Flags = append(email.Flags, headerFlags...)
 		email.BodyPlain, email.BodyHTML = fetchTextParts(c.client, euid, bodyStructure)
 
 		if err := c.OnUpdate(ctx, &email); err != nil {
@@ -218,4 +240,25 @@ func (c *Client) FetchChanges(ctx context.Context, lastModSeq uint64) *errx.Mail
 	}
 
 	return nil
+}
+
+// parseHeaderFlags reads a HEADER.FIELDS literal and renders the fetched
+// headers as "Header:value" pseudo-flags, using the canonical names from
+// headerFetchFields so the consumer's prefix matching always hits.
+func parseHeaderFlags(lit io.Reader) []string {
+	if lit == nil {
+		return nil
+	}
+	tp := textproto.NewReader(bufio.NewReader(io.LimitReader(lit, 32*1024)))
+	hdr, err := tp.ReadMIMEHeader()
+	if len(hdr) == 0 && err != nil {
+		return nil
+	}
+	var out []string
+	for _, name := range headerFetchFields {
+		if v := strings.TrimSpace(hdr.Get(name)); v != "" {
+			out = append(out, name+":"+v)
+		}
+	}
+	return out
 }

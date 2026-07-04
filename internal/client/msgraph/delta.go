@@ -56,7 +56,7 @@ func (c *Client) syncFolder(ctx context.Context, folder string) error {
 
 		if !priming {
 			for i := range page.Value {
-				if err := c.applyDelta(ctx, &page.Value[i]); err != nil {
+				if err := c.applyDelta(ctx, folder, &page.Value[i]); err != nil {
 					return err
 				}
 			}
@@ -83,7 +83,7 @@ func (c *Client) syncFolder(ctx context.Context, folder string) error {
 // or move-out) fire OnMessageRemove; live items are hydrated and fire
 // OnMessageAdd (the wmail layer dedupes by Message-ID) plus OnFlagsChange to keep
 // read state fresh for messages that already exist.
-func (c *Client) applyDelta(ctx context.Context, item *graphMessage) error {
+func (c *Client) applyDelta(ctx context.Context, folder string, item *graphMessage) error {
 	if item.Removed != nil {
 		if c.OnMessageRemove != nil {
 			return c.OnMessageRemove(ctx, item.ID)
@@ -100,7 +100,13 @@ func (c *Client) applyDelta(ctx context.Context, item *graphMessage) error {
 	}
 
 	if c.OnMessageAdd != nil {
-		if err := c.OnMessageAdd(ctx, full.toEmailData()); err != nil {
+		data := full.toEmailData()
+		// Junk-folder arrivals carry a spam flag so warmup spam-placement
+		// detection and placement tests see where the message landed.
+		if folder == FolderJunk {
+			data.Flags = append(data.Flags, "\\Junk")
+		}
+		if err := c.OnMessageAdd(ctx, data); err != nil {
 			return err
 		}
 	}

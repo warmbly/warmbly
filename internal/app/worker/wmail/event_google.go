@@ -11,7 +11,11 @@ import (
 )
 
 func (w *WMail) onGoogleMessageAdd(ctx context.Context, msg *models.EmailMessageData) error {
-	internalMessage, err := w.EmailMessageMapRepository.Get(ctx, w.UserID, w.ID, msg.MessageID)
+	// The messageId map is keyed by the Gmail message id: it is the only
+	// identifier the history feed reports on remove/label events, so add must
+	// key the same way for those lookups to ever match (same principle as the
+	// Graph path).
+	internalMessage, err := w.EmailMessageMapRepository.Get(ctx, w.UserID, w.ID, msg.GmailID)
 	if err != nil {
 		return err
 	}
@@ -58,7 +62,7 @@ func (w *WMail) onGoogleMessageAdd(ctx context.Context, msg *models.EmailMessage
 	if err := w.EmailMessageMapRepository.Add(ctx, repository.EmailMessageData{
 		UserID:    w.UserID.String(),
 		EmailID:   w.ID.String(),
-		MessageID: data.MessageID,
+		MessageID: msg.GmailID,
 		ID:        msg.ID.String(),
 		ThreadID:  msg.ThreadID,
 	}); err != nil {
@@ -105,34 +109,44 @@ func (w *WMail) onGoogleMessageRemove(ctx context.Context, messageID string) err
 	return nil
 }
 
+// translateGmailLabels maps a Gmail label transition onto internal flag
+// add/remove sets. Gmail models read state inversely (the UNREAD label marks
+// unread mail), so gaining UNREAD removes \Seen and losing it adds \Seen.
+// Unmapped labels pass through in the transition's own direction.
+func translateGmailLabels(labelIDs []string, added bool) (addFlags, removeFlags []string) {
+	for _, label := range labelIDs {
+		var flag string
+		inverted := false
+		switch label {
+		case "UNREAD":
+			flag, inverted = "\\Seen", true
+		case "STARRED":
+			flag = "\\Flagged"
+		case "IMPORTANT":
+			flag = "\\Important"
+		case "DRAFT":
+			flag = "\\Draft"
+		default:
+			flag = label
+		}
+		if added != inverted {
+			addFlags = append(addFlags, flag)
+		} else {
+			removeFlags = append(removeFlags, flag)
+		}
+	}
+	return addFlags, removeFlags
+}
+
 func (w *WMail) onGoogleMessageLabelsAdded(ctx context.Context, messageID string, labelIDs []string) error {
-	internalMessage, err := w.EmailMessageMapRepository.Get(ctx, w.UserID, w.ID, messageID)
-	if err != nil {
-		return err
-	}
-
-	if internalMessage == nil {
-		return nil
-	}
-
-	internalID, err := uuid.Parse(internalMessage.ID)
-	if err != nil {
-		return err
-	}
-
-	if err := w.onEvent(models.JobEventTypeFlagsAdd, &models.JobEventFlags{
-		UserID:  w.UserID,
-		EmailID: w.ID,
-		ID:      internalID,
-		Flags:   labelIDs,
-	}); err != nil {
-		return err
-	}
-
-	return nil
+	return w.emitGoogleFlagEvents(ctx, messageID, labelIDs, true)
 }
 
 func (w *WMail) onGoogleMessageLabelsRemoved(ctx context.Context, messageID string, labelIDs []string) error {
+	return w.emitGoogleFlagEvents(ctx, messageID, labelIDs, false)
+}
+
+func (w *WMail) emitGoogleFlagEvents(ctx context.Context, messageID string, labelIDs []string, added bool) error {
 	internalMessage, err := w.EmailMessageMapRepository.Get(ctx, w.UserID, w.ID, messageID)
 	if err != nil {
 		return err
@@ -147,13 +161,27 @@ func (w *WMail) onGoogleMessageLabelsRemoved(ctx context.Context, messageID stri
 		return err
 	}
 
-	if err := w.onEvent(models.JobEventTypeFlagsRemove, &models.JobEventFlags{
-		UserID:  w.UserID,
-		EmailID: w.ID,
-		ID:      internalID,
-		Flags:   labelIDs,
-	}); err != nil {
-		return err
+	addFlags, removeFlags := translateGmailLabels(labelIDs, added)
+
+	if len(addFlags) > 0 {
+		if err := w.onEvent(models.JobEventTypeFlagsAdd, &models.JobEventFlags{
+			UserID:  w.UserID,
+			EmailID: w.ID,
+			ID:      internalID,
+			Flags:   addFlags,
+		}); err != nil {
+			return err
+		}
+	}
+	if len(removeFlags) > 0 {
+		if err := w.onEvent(models.JobEventTypeFlagsRemove, &models.JobEventFlags{
+			UserID:  w.UserID,
+			EmailID: w.ID,
+			ID:      internalID,
+			Flags:   removeFlags,
+		}); err != nil {
+			return err
+		}
 	}
 
 	return nil
