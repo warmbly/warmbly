@@ -1,0 +1,92 @@
+---
+title: 'How many mailboxes and domains do you need for the volume you want?'
+description: 'Planning cold email volume comes down to per-mailbox budgets. Work backward from your daily target to the mailboxes, domains, and IP spread you actually need.'
+pubDate: 2026-06-22
+tags: ['sending', 'deliverability']
+---
+import Callout from '../../components/blog/Callout.astro';
+
+Short version: to send N cold emails a day, divide N by a safe per-mailbox cap of 50, then add a buffer for mailboxes that are warming or resting. That puts 1,000 sends a day at around 20 to 25 active mailboxes, spread across 4 to 8 domains and never concentrated behind one IP. The rest is the math and where each number comes from.
+
+## Start from the mailbox budget, not the daily target
+
+Most people pick the daily number first ("I want 1,000 sends a day") and then look for a tool that will do it. That order is backwards. The daily number you can safely send is an output, not an input. It's the sum of what each of your mailboxes can carry without looking suspicious to Gmail and Outlook.
+
+A mailbox's safe volume is set by the provider, per mailbox, based on how that mailbox has behaved. You don't get to raise it by paying more. You raise total volume by adding mailboxes, each with its own small budget, and letting the sum grow. We covered why that limit isn't a server setting in [your send limit is a mailbox budget](/blog/mailbox-budgets-not-server-settings/). This post is the sizing math that follows from it.
+
+Warmbly defaults to 50 campaign emails per mailbox per day, with a minimum of 600 seconds (10 minutes) between sends from the same mailbox. You can push a mailbox to 100 in settings, and validation stops you there, but 50 is the number a normal mailbox with a few months of clean history can sustain without drawing attention. Treat 50 as your planning cap, not 100.
+
+## The formula: daily volume divided by the per-mailbox cap, plus buffer
+
+Here's the whole calculation.
+
+```
+mailboxes needed = (daily volume / safe per-mailbox cap) x buffer
+```
+
+Use 50 as the safe cap. The buffer covers reality: some mailboxes are still warming (they start at 10/day and ramp +1/day toward a 40/day ceiling), some are resting, and one or two may be in a health band you'd rather not send from. A buffer of 1.2 to 1.4 (add 20 to 40 percent) keeps your target reachable on a normal day.
+
+For 1,000 sends a day: 1,000 / 50 = 20 mailboxes at the cap, times a 1.25 buffer, is about 25 mailboxes provisioned. You send from the healthy ones and let the rest catch up.
+
+Two things the formula quietly assumes. First, every mailbox is warmed. A brand-new mailbox typically takes 3 to 6 weeks to reach a stable warmed state, so it can't contribute its full 50 on day one. Second, you keep [warmup](/warmup/) running after campaigns start, not just before, so mailboxes stay warm while they send.
+
+## Per inbox, not per domain: how many mailboxes a domain can carry
+
+Search results love the phrase "inboxes per domain," and the common advice is 2 to 3 mailboxes per domain. That number isn't a hard provider rule. It's a hedge against domain-level blast radius.
+
+The reasoning: reputation lives at both the mailbox and the domain level. If you put 10 sending mailboxes on one domain and that domain picks up a spam reputation, all 10 go down together. Spread the same 10 across 4 domains and a single bad domain costs you 2 or 3 mailboxes, not the whole operation. Fewer mailboxes per domain means smaller correlated failures.
+
+A workable rule of thumb:
+
+| Mailboxes per domain | Blast radius if the domain sours | When it fits |
+| --- | --- | --- |
+| 1 to 2 | tiny | high-value or fragile sending |
+| 3 | small | most cold outreach |
+| 5+ | large | only with proven, stable domains |
+
+Whatever the count, every domain needs SPF, DKIM, and DMARC with alignment before it sends. Google's bulk-sender guidance requires all three plus one-click unsubscribe for bulk mail. DMARC needs SPF or DKIM to align with the visible From domain, so both can pass authentication while alignment still fails. If that distinction is new, [SPF, DKIM, DMARC alignment](/blog/spf-dkim-dmarc-alignment-cold-email/) walks through it.
+
+## Why no single IP should carry a large share of your sends
+
+Splitting mailboxes across domains handles domain reputation. It does nothing for IP reputation, and that's a separate failure mode.
+
+Warmbly runs one worker per machine, each with its own IP, and email accounts are assigned to specific workers. A worker's planned volume equals the sum of its mailboxes' daily caps, never an independent higher target. We don't give workers a global throttle, because that would either duplicate the per-mailbox math or silently override it. The rule is an assignment rule instead: don't pile many active sending mailboxes onto one worker, because every worker is also one IP, and concentrating traffic through one IP recreates the exact problem the per-domain split was preventing.
+
+The principle holds past our architecture. Whatever sends your mail, no single IP should carry a large share of your total volume. 500 emails a day through one IP looks different to Gmail than the same 500 spread across five sending identities, even if the mailboxes and domains are otherwise identical.
+
+<Callout title="One number to hold onto">
+Your planned daily volume is the sum of your mailbox caps. It is never a higher number you set on top of them, and it should never funnel through one IP. If a tool lets you type a big daily target that isn't backed by that many warmed mailboxes on distinct sending identities, the number is fiction.
+</Callout>
+
+## Worked examples: mailbox and domain counts for 200, 500, 1,000 a day
+
+Using a 50/day cap, a 1.25 buffer, and 3 mailboxes per domain:
+
+| Daily target | Mailboxes at cap | Provisioned (with buffer) | Domains (3/domain) |
+| --- | --- | --- | --- |
+| 200 | 4 | 5 | 2 |
+| 500 | 10 | 13 | 4 to 5 |
+| 1,000 | 20 | 25 | 8 to 9 |
+
+Read the 1,000 row carefully, since [mailboxes for 1,000 emails a day](/blog/how-many-cold-emails-per-day-per-mailbox/) is where most people underprovision. 20 mailboxes gets you there on paper. 25 gets you there on a Tuesday when three are resting and two are still ramping. And 8 to 9 domains keeps any single domain's failure to roughly a tenth of your capacity.
+
+If you're running this for clients rather than one brand, the counts multiply fast, and domain hygiene per client matters more. See [running cold email for agencies](/use-cases/agencies/).
+
+None of these counts guarantee inbox placement. They size the fleet so that no single mailbox, domain, or IP is doing too much. Placement still depends on your content, your list quality, and your complaint rate.
+
+## When to add domains versus stretching existing mailboxes
+
+You have two levers when you want more volume: raise per-mailbox caps toward 100, or add mailboxes and domains. Reach for caps last.
+
+Raising a mailbox from 50 toward 100 is reasonable only when three numbers have been quiet for a few weeks: complaint rate, hard bounce rate, and where that mailbox's warmup messages have been landing. If you don't know those numbers, that's your answer. And the thresholds aren't yours to negotiate. Amazon SES puts an account under review around a 0.1% complaint rate and may pause it near 0.5%, and reviews bounce rates at 5%. Google says keep reported spam under 0.10% and never reach 0.30%.
+
+So the order of operations:
+
+- Under target and mailboxes are healthy? Add mailboxes first, on new or existing stable domains.
+- Adding mailboxes to a domain that already carries 3? Add a domain instead.
+- Every mailbox pristine for weeks and still short? Then nudge a few caps from 50 toward 60 or 70, one step at a time, watching complaints and bounces.
+- A mailbox landing in spam over 20% on 20+ warmup deliveries in 7 days? It's quarantined and out of your budget until it requalifies. Don't backfill by overloading its neighbors. See [quarantine early](/blog/quarantine-early/).
+
+Stretching existing mailboxes trades a little setup work for concentrated risk. Adding mailboxes and domains trades more setup work for spread-out risk. For cold email, spread wins almost every time.
+
+Warmbly is open source under Apache 2.0 ([github.com/warmbly/warmbly](https://github.com/warmbly/warmbly)), so you can run the whole thing yourself: [sending](/sending/), warmup, and per-mailbox tracking. The docs at [docs.warmbly.com/learn](https://docs.warmbly.com/learn/) cover warmup pools and inbox placement if you want the mechanics before you size your fleet.

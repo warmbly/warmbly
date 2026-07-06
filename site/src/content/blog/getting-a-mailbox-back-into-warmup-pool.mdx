@@ -1,0 +1,90 @@
+---
+title: 'Getting a burned mailbox back: a reputation recovery playbook'
+description: 'A step-by-step recovery ramp for a mailbox that has been quarantined or blacklisted: confirm listings, stop the bleeding, fix the root cause, re-warm at 5 to 10/day.'
+pubDate: 2026-06-19
+tags: ['warmup', 'deliverability']
+---
+import Callout from '../../components/blog/Callout.astro';
+
+A burned mailbox recovers by fixing the cause, sitting silent while the damage ages out, then re-warming from 5 to 10 emails a day once placement is back under 10% on a fresh sample. There's no reset button, and requesting delisting doesn't reset reputation. Here's the sequence that tends to work, and the numbers that tell you where you are.
+
+## First, confirm what's actually wrong
+
+Before you fix anything, name the failure. "Everything went to spam" is four different problems, and each has a different way out.
+
+Check these in order:
+
+- DNSBL listings. Query your sending IP and domain against Spamhaus, Barracuda, and SURBL. A listing tells you which list and usually why (snowshoe, dictionary attack, honeypot hit).
+- Complaint rate. Amazon SES puts an account under review around 0.1% and may pause sending around 0.5%. Google's bulk-sender guidance says keep user-reported spam under 0.10% and never reach 0.30%. Above 0.10% is the fire.
+- Bounce rate. SES flags at 5% and may pause at 10%. A high hard-bounce rate points at list quality, not content.
+- Authentication. Run your From domain through an SPF, DKIM, and DMARC check. SPF has a 10 DNS-lookup limit, and DMARC needs SPF or DKIM to align with the visible From domain, so both can pass while DMARC alignment fails.
+- Warmup token behavior, if you're on a pool. Warmbly quarantines a mailbox at 3 or more invalid warmup tokens in 24 hours, which usually means someone's gaming the pool or your mailbox is misclassifying.
+
+Keep these separate. A bounce problem is a list problem. A complaint problem is a content or targeting problem. Collapsing them into one "reputation" number hides the repair. Our [deliverability](/deliverability/) page walks the same signal-by-signal split.
+
+## Stop sending from the affected mailbox and infrastructure
+
+Once you know it's burned, stop. Every message you send while the mailbox lands in spam adds another negative data point that has to age out before you recover.
+
+Stopping means the mailbox and the infrastructure around it. In Warmbly, email accounts are assigned to specific workers, and each worker runs on one machine with its own IP. Planned worker volume equals the sum of its mailboxes' daily caps, so no single IP becomes a concentration point. If a mailbox is burned, check what else shares its worker and its domain. A shared IP that carried a spam-flagged sender may need the same pause. A burned domain affects every mailbox on it, not only the one that tripped the alarm.
+
+Pause the campaigns. Pull the mailbox out of any warmup pool. If it was in a shared pool, its bad placement was already damaging its partners, which is why Warmbly quarantines at 20% placement (over at least 20 deliveries in 7 days) rather than waiting.
+
+## Fix the root cause before you request anything
+
+Delisting or re-warming a mailbox whose underlying problem is still live puts you right back where you started. Fix the cause first.
+
+Match the fix to the signal you found:
+
+| Signal | Likely cause | Fix |
+| --- | --- | --- |
+| DNSBL listing | Compromised account, bad list, honeypot | Secure the account, purge the list segment, then request delisting |
+| Complaints over 0.10% | Content, targeting, no easy unsubscribe | Tighten targeting, add one-click unsubscribe, cut frequency |
+| Bounces over 5% | Stale or unverified list | Verify addresses, remove hard bounces, stop importing scraped lists |
+| DMARC alignment fails | SPF/DKIM pass but don't align to From | Align the visible From domain with a signing or SPF-authorized domain |
+| Invalid warmup tokens | Pool gaming or misclassification | Investigate the mailbox before requalifying |
+
+Google requires SPF, DKIM, and DMARC with alignment plus one-click unsubscribe for bulk and marketing mail. If any of that is missing, add it now. It's the entry requirement, and you can't recover reputation while failing it.
+
+## Requesting delisting, and why it doesn't reset reputation
+
+If you're on a DNSBL, most operators (Spamhaus, Barracuda) have a removal request form. Fill it out honestly, state what you fixed, and submit once. Repeated requests without a real fix tend to slow things down, not speed them up.
+
+Here's the part people miss. Delisting removes a specific blacklist entry. It doesn't reset the reputation that mailbox providers (Google, Microsoft, Apple) track independently. Those providers score your domain and IP on their own history: complaint rate, engagement, spam-folder placement, how long you've sent from that identity. A clean DNSBL and a healthy provider reputation are two different things. You can be off every blacklist and still land in Gmail's spam folder because Gmail's own history of your sender is still bad.
+
+Treat delisting as one item on the checklist, not the finish line. Provider reputation recovers by sending good mail slowly, not by filling out a form.
+
+## The re-entry checklist: what has to be true before re-warming
+
+A mailbox doesn't go back into rotation because time passed. It requalifies. These are the conditions Warmbly requires before a quarantined mailbox re-enters the shared pool, and they work as a general re-entry bar too:
+
+- Authentication intact: SPF within the 10-lookup limit, DKIM signing, DMARC aligned to the visible From domain.
+- No recent complaint or bounce spikes. Complaints back under 0.10%, bounces under 5%.
+- Clean token behavior: no recent invalid or forged warmup tokens.
+- Spam-folder placement back under 10% on a fresh probation sample, not on the old poisoned data.
+- Willingness to re-warm from low volume, 5 to 10 a day, instead of resuming at the old cap.
+
+<Callout title="Placement, not opens" variant="warn">
+  Judge re-entry on where mail lands, not on open rate. Apple Mail Privacy Protection pre-fetches images, so it inflates opens whether or not a human looked. Gmail proxies and caches images too. A high open rate on a burned mailbox is often Apple and Gmail machinery, not recovery. Use seed placement or your pool's spam-folder rate instead.
+</Callout>
+
+## The recovery ramp: back in at 5 to 10 a day on a probation sample
+
+When the checklist passes, re-warm like the mailbox is new, because to the providers it partly is. Start at 5 to 10 emails a day. That's below Warmbly's normal warmup start of 10/day, on purpose, because a recovering mailbox carries negative history a fresh one doesn't.
+
+Run a probation sample first. Send a small, low-risk batch (warmup traffic or a tightly targeted, high-engagement segment) and watch placement before you scale. If placement holds under 10%, ramp gradually, roughly +1 a day, the way our [warmup](/warmup/) ramps toward its 40/day ceiling. If placement climbs back toward the Watch band at 10%, cut volume and add spacing. Warmbly keeps at least 600 seconds (10 minutes) between sends from one mailbox during normal sending, and spacing matters more during recovery.
+
+Keep the signals separate on the way back up. If bounces are clean but complaints creep, that's a targeting fix, not a volume fix. Our post on [quarantining early](/blog/quarantine-early/) covers why one blended health score hides the thing you need to see during a ramp.
+
+## Recovery timelines: reading the weeks
+
+Recovery time depends on what's damaged. IP reputation tends to recover faster than domain reputation, because providers weight the domain more heavily and it carries more history. No one outside the provider controls the score, so treat any timeline as an estimate:
+
+- IP reputation: often a few weeks of consistent, low-volume, low-complaint sending before placement stabilizes.
+- Domain reputation: often longer, sometimes much longer if the domain took repeated complaint or bounce spikes.
+
+For comparison, a brand-new Warmbly mailbox typically takes 3 to 6 weeks to reach a stable warmed state. A recovering mailbox can run longer, because it's climbing out of a hole a new mailbox never dug.
+
+These aren't countdowns. Two weeks of sending bad mail recovers nothing. Two weeks of clean, spaced, low-volume sending with placement trending under 10% is what moves the number. If the timeline stalls, the cause isn't fixed. Go back to the top and re-check the signals one at a time.
+
+Warmbly is open source under Apache 2.0 ([github.com/warmbly/warmbly](https://github.com/warmbly/warmbly)), and the recovery bands here are the same ones the pool enforces. The full walkthrough lives at [docs.warmbly.com/learn](https://docs.warmbly.com/learn/reputation-recovery/).

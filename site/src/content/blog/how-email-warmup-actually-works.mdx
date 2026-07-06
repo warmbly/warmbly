@@ -1,0 +1,73 @@
+---
+title: 'How email warmup actually works, ramp curve and all'
+description: 'Warmup ramps a mailbox from 10/day, +1/day, to a 40/day ceiling over a few weeks. Here is the real mechanism: pools, partner selection, tokens, and why we cap it.'
+pubDate: 2026-06-30
+tags: ['warmup', 'deliverability']
+---
+import Callout from '../../components/blog/Callout.astro';
+
+Email warmup sends low-volume, human-looking mail from a mailbox and slowly raises the count so providers build a reputation for the sending domain and IP before real campaigns start. It takes 3 to 6 weeks for a brand-new domain, not 3 days, and no setting makes it faster without raising your spam risk. Here's what each piece does, with the numbers Warmbly uses.
+
+## What warmup is doing, in one paragraph
+
+Gmail and Outlook decide inbox versus spam partly on history: how much this domain sends, how steadily, and how recipients react. A cold domain has no history, so a sudden burst of 50 outreach emails on day one reads as a spammer who bought a domain yesterday. Warmup builds the missing history. It sends small batches of plain messages between real mailboxes, gets some opened and replied to, and ramps the daily count on a fixed curve so the pattern looks like a person's inbox slowly getting busier. It can't fix bad SPF, DKIM, or DMARC, and it can't rescue a spammy pitch. It builds the sending reputation that lets a clean pitch reach the inbox.
+
+## The ramp curve: 10 a day, +1 a day, 40 ceiling
+
+Warmbly starts a new mailbox at 10 warmup emails a day, adds 1 a day, and stops at 40. That's about a month of ramp: 10 on day one, 20 around day ten, 40 near day thirty. The steady +1 matters as much as the numbers. Providers watch for consistency, so a mailbox that sends 10, then 60, then 5 looks less trustworthy than one that climbs by one each day.
+
+We cap at 40, not 100, on purpose. The ceiling is a warmup ceiling, not your send limit. Warmup traffic is filler. Its job is to show that the mailbox handles a modest, steady flow, and past about 40 a day the extra volume adds reputation risk without adding much signal. Your cold campaign budget sits on top of this and is capped separately: Warmbly's default cold cap is 50 emails per mailbox per day (hard max 100), with a minimum 600 seconds (10 minutes) between sends from one mailbox so the pattern isn't bursty. Warmup and campaign budgets are tracked apart, which is why raising one doesn't touch the other. More on splitting volume across inboxes in [mailbox budgets, not server settings](/blog/mailbox-budgets-not-server-settings/).
+
+| Setting | Value | Why |
+| --- | --- | --- |
+| Warmup start | 10 a day | low enough that a cold domain doesn't spike |
+| Ramp | +1 a day | steady climb reads as natural growth |
+| Warmup ceiling | 40 a day | past this, risk rises faster than signal |
+| Cold cap (default) | 50 a day | separate budget, on top of warmup |
+| Min gap between sends | 600 seconds | avoids bursty patterns from one mailbox |
+
+## How a warmup pool picks partner mailboxes
+
+A warmup pool is a set of participating mailboxes that send to and reply to each other. When your mailbox sends a warmup message, the pool picks a partner mailbox from the same pool to receive it, and that partner may reply so providers see a two-sided conversation instead of one-way blasting.
+
+The selection avoids repeat pairings. Warmbly excludes any mailbox you've been paired with in the last 7 days, so you're not sending the same two addresses back and forth all week. Repetitive pairing is a pattern spam filters can learn, and it's the opposite of what a real inbox looks like. Pool quality matters more than pool size here: a small pool of warmed, monitored mailboxes beats a large one padded with throwaway inboxes. Warmbly keeps free and premium pools separate, and a free-pool mailbox never silently joins the premium pool, because mixing low-trust senders into a paid pool spreads their risk to everyone in it. Pool mechanics in more depth are in the [warmup-pools reference](https://docs.warmbly.com/learn/warmup-pools/).
+
+## How long warmup takes a new domain
+
+Plan on 3 to 6 weeks for a brand-new domain to reach a stable warmed state, and don't rush it. The ramp itself is about 30 days to climb from 10 to 40 a day at +1. On top of that, reputation is cumulative: providers need repeated days of consistent, well-received mail before they trust the domain, and that trust builds over weeks, not sends.
+
+Named sources land in the same range. Postmark describes domain warmup as slowly increasing volume over weeks, often stabilizing in 3 to 6 weeks. Mailgun frames IP warmup as gradually raising volume so mailbox providers can observe behavior and build reputation. The theme is consistent: gradual, observed, and measured in weeks. A domain that skips warmup and starts at 50 cold emails on day one may see early sends land, then watch placement fall once providers have enough data to score it as a bulk sender with no track record.
+
+## Verification tokens: telling real warmup from gaming
+
+A pool only works if the messages inside it are genuine warmup traffic. If a mailbox could claim it sent warmup mail without delivering it, or an outsider could forge pool messages, the reputation signal would be worthless. So every Warmbly warmup message carries a signed HMAC verification token, embedded as a footer reference line.
+
+When the receiving side classifies a warmup message, it validates that token on five checks: the HMAC signature, a 48-hour expiry, a single-use ULID so a token can't be replayed, pool membership, and a sender/recipient match. A message that fails these isn't counted as valid warmup. Failed tokens are also an abuse signal. A mailbox that logs 3 or more invalid tokens in 24 hours gets quarantined, because forged or malformed tokens usually mean someone's trying to inflate warmup numbers without doing the sending.
+
+<Callout title="Tokens catch gaming, not deliverability problems">
+  A clean token record means the warmup happened as claimed. It says nothing about whether those
+  messages hit the inbox. Token checks and placement checks are separate signals, and a mailbox can
+  pass every token check while still landing in spam. Watch both.
+</Callout>
+
+## Why a bad mailbox poisons a shared pool
+
+In a shared pool, every mailbox's reputation touches every partner it sends to. A mailbox that lands in spam drags its partners into fishing messages out of the junk folder, or leaves replies unanswered, and each healthy mailbox paired with it absorbs a little damage. Left in the pool, one bad sender degrades the signal for everyone paying for a clean one.
+
+Warmbly pulls mailboxes on health bands, set well below where providers start penalizing. The full band math and the reasoning for acting early is in [quarantine early](/blog/quarantine-early/).
+
+| Band | Trigger | What happens |
+| --- | --- | --- |
+| Watch | 10% spam placement | lower volume, more spacing |
+| Quarantine | 20% placement, or 0.10% complaints, or 5% bounces | out of the shared pool, 7 days |
+| Block | 40% placement, or 0.30% complaints, or 10% bounces | out 30 days, manual review |
+
+Those complaint numbers track named provider thresholds. Google's bulk-sender guidance says keep user-reported spam under 0.10% and never reach 0.30%. Amazon SES says keep complaint rate under 0.1% (review around 0.1%, possible pause around 0.5%) and bounce rate under 5% (review at 5%, possible pause at 10%). Warmbly's quarantine and block triggers sit at or below those, so a mailbox leaves the shared pool before provider enforcement hits your IP.
+
+Time served doesn't restore a mailbox. Re-entry requires authentication intact, no recent complaint or bounce spikes, clean token behavior, spam placement back under 10% on a fresh probation sample, and re-warming from low volume (5 to 10 a day). Getting a specific mailbox back is covered in [getting a mailbox back into the warmup pool](/blog/getting-a-mailbox-back-into-warmup-pool/).
+
+## Keep warming after campaigns start
+
+The common mistake is treating warmup as a one-time setup you switch off once campaigns begin. Reputation decays when a domain's only traffic becomes cold outreach, so warmup should keep running alongside campaigns to hold the baseline of normal, well-received mail. The warmup budget stays separate from the cold cap, so ongoing warmup doesn't eat into your outreach volume. It runs underneath it.
+
+Warmup builds reputation. It can't hold it up under a bad list or a spammy pitch, and it can't undo failing DMARC alignment (SPF and DKIM can both pass while DMARC alignment fails against your visible From domain). Pair warmup with clean authentication and a low complaint rate, and read [delivery rate is not inbox placement](/blog/delivery-rate-is-not-inbox-placement/) before you trust a delivery percentage. Warmbly is open source under Apache 2.0 at [github.com/warmbly/warmbly](https://github.com/warmbly/warmbly), and the [warmup](/warmup/) and [deliverability](/deliverability/) pages cover how the pool and tracking fit together.

@@ -1,0 +1,95 @@
+---
+title: 'SPF, DKIM, DMARC alignment: why your green checkmarks can still lie'
+description: 'SPF and DKIM can both pass while DMARC alignment quietly fails. How to read your Authentication-Results header and confirm the From domain actually aligns.'
+pubDate: 2026-06-24
+tags: ['deliverability']
+---
+import Callout from '../../components/blog/Callout.astro';
+
+Your mail can pass SPF, pass DKIM, and still fail DMARC. Authentication passing and alignment passing are two different checks, and the second one is where cold email quietly breaks while your vendor dashboard shows green.
+
+This post walks through the mechanism, reads a real `Authentication-Results` header line by line, and gives you a 5-minute audit you can run today. If you want the full setup reference, the [SPF, DKIM, and DMARC guide](https://docs.warmbly.com/learn/spf-dkim-dmarc/) covers the DNS records themselves.
+
+## Authentication passing is not the same as alignment passing
+
+DMARC does two things when a message arrives. It checks that SPF or DKIM passed, and then it checks that the passing one lines up with the domain in your visible `From:` address. That second step is alignment. You can clear the first and fail the second. When you do, DMARC fails even though both `spf=pass` and `dkim=pass` are sitting right there in the header.
+
+That's the trap. A sending service signs your mail with its own domain, the signature verifies cleanly, and DMARC still returns `dmarc=fail` because the domain that authenticated isn't yours. Google's bulk sender guidance requires SPF, DKIM, and DMARC with alignment for anyone sending bulk or marketing mail, so this isn't a technicality you can skip.
+
+## SPF, DKIM, and DMARC in one sentence each
+
+SPF is a DNS record listing which servers can send mail for your domain, checked against the envelope sender (the `MAIL FROM`, not the `From:` you see).
+
+DKIM attaches a cryptographic signature to each message, tied to a domain in the signature's `d=` tag, so the receiver can confirm the mail wasn't forged or tampered with.
+
+DMARC ties the two together. It tells receivers what to do when a message fails both, and it requires that at least one of SPF or DKIM aligns with the `From:` domain the recipient actually reads.
+
+## Why one of SPF or DKIM must align with your From domain
+
+Alignment exists because the `From:` address is the only sender identity a human sees, and it's trivial to forge on its own. SPF checks a hidden envelope address. DKIM checks whatever domain is in the signature. Neither is guaranteed to match the friendly `From:` unless DMARC forces the question.
+
+So DMARC passes only if one of these holds:
+
+- **SPF alignment:** the `MAIL FROM` domain matches your `From:` domain
+- **DKIM alignment:** the DKIM `d=` domain matches your `From:` domain
+
+You need one, not both. Most senders should run relaxed alignment, which matches on the organizational domain, so `bounce.outreach.acme.com` aligns with `outreach@acme.com`. Strict alignment demands an exact match and only matters when you're blocking a specific subdomain spoof. The common cold-email failure: a third-party sender authenticates everything under its own domain, so nothing aligns with yours, and DMARC fails despite two green passes.
+
+## Reading a real Authentication-Results header line by line
+
+Open a message you sent to a Gmail or Outlook account, show the original or raw source, and find the `Authentication-Results` line. Here's one that passes authentication but fails alignment:
+
+```
+Authentication-Results: mx.google.com;
+  spf=pass (google.com: domain of bounce@mail.sendingtool.com
+    designates 198.51.100.7 as permitted sender)
+    smtp.mailfrom=bounce@mail.sendingtool.com;
+  dkim=pass header.i=@mail.sendingtool.com header.s=s1 header.b=Ab3xQ;
+  dmarc=fail (p=NONE sp=NONE dis=NONE) header.from=acme.com
+```
+
+Read it in order. `spf=pass`, good, but `smtp.mailfrom=bounce@mail.sendingtool.com` is the vendor's domain, not `acme.com`. Then `dkim=pass`, good, but `header.i=@mail.sendingtool.com` is again the vendor. The `From:` the recipient sees is `header.from=acme.com`. Neither authenticated domain matches it, so `dmarc=fail`.
+
+The two tags that decide alignment are `smtp.mailfrom` (for SPF) and `header.i` or `header.d` (for DKIM). If neither matches your `From:` domain, you have work to do. A healthy result shows `dkim=pass header.d=acme.com` and `dmarc=pass` with `header.from=acme.com`.
+
+## The green-checkmark trap in vendor dashboards
+
+Dashboards tend to render three rows: SPF pass, DKIM pass, DMARC pass. What they often mean is that the records exist and parse, not that they align with the `From:` domain on your live campaigns. A tool can honestly report DKIM pass while signing with `header.d=mail.sendingtool.com`, and unless it checks alignment against your sending domain specifically, the row stays green.
+
+<Callout title="Trust the header, not the dashboard" variant="warn">
+  A checkmark that reads "DKIM: pass" tells you a signature verified. It doesn't tell you whose domain signed it. The only check that catches broken alignment is opening a delivered message and confirming `header.d=` (or `smtp.mailfrom=`) equals your `From:` domain. If they differ, DMARC is failing no matter how green the panel looks.
+</Callout>
+
+This is a common issue we see in support, and it maps onto the two details Google's rules catch people on, which we walk through in [what the bulk sender rules actually ask of cold emailers](/blog/reading-the-bulk-sender-rules/).
+
+## The SPF 10-lookup limit and other quiet failure modes
+
+SPF has a hard cap: 10 DNS lookups per evaluation. Every `include:` in your record counts, and popular senders (Google Workspace, a CRM, a warmup or sending tool, a support desk) each add one or more. Stack enough and SPF returns `PermError`, which DMARC treats as a fail. The record still looks fine in a text editor, so this one hides well.
+
+A few other ways both records read as present but the check breaks:
+
+| Failure mode | What you see | Why it fails |
+| --- | --- | --- |
+| Over 10 SPF lookups | `spf=permerror` | too many `include:` chains |
+| Third-party DKIM only | `dkim=pass`, `header.d` is the vendor's | signature doesn't align with your From |
+| SPF-only alignment with forwarding | `spf=fail` after a forward | forwarding breaks the envelope path, and no DKIM to fall back on |
+| DMARC `p=none` | `dmarc=pass` or `fail` but no enforcement | policy is published but takes no action |
+| Multiple SPF records | `spf=permerror` | more than one `v=spf1` record is invalid |
+
+The forwarding row is why relying on SPF alignment alone is fragile. When a message is forwarded, the envelope sender changes and SPF breaks, but a valid DKIM signature survives because it travels with the message body. Aligned DKIM is the more durable of the two. Get both, but if you only fix one, fix DKIM alignment.
+
+## A 5-minute alignment audit you can run today
+
+Run this whenever you connect a new mailbox or change a sending tool:
+
+1. Send one campaign-style message from the mailbox to a Gmail address and one to an Outlook address.
+2. Open the message, view original or raw source, and find `Authentication-Results`.
+3. Confirm `dmarc=pass`. If it says `fail`, keep going.
+4. Check `header.d=` (DKIM) against your `From:` domain. If they match, DKIM aligns.
+5. Check `smtp.mailfrom=` (SPF) against your `From:` domain. If they match, SPF aligns.
+6. If neither aligns, add a DKIM key for your domain in the sending tool and republish so it signs with `d=yourdomain.com`.
+7. Count the `include:` entries in your SPF record. If you're near 10, flatten or drop unused senders before you hit `PermError`.
+
+Do this per domain, not per tool, since a domain aligned in one product can be unaligned in another. Alignment is the foundation, but it doesn't move you from spam to inbox on its own. That comes from reputation and complaint rates, a separate problem from authentication. We pull that apart in [why delivery rate isn't inbox placement](/blog/delivery-rate-is-not-inbox-placement/) and across the broader [deliverability guide](/deliverability/).
+
+Warmbly is open source under Apache 2.0, so if you want to see how the sending path handles authentication and signing, the code is at [github.com/warmbly/warmbly](https://github.com/warmbly/warmbly). Fix alignment first. Everything downstream of the inbox assumes it.
