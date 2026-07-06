@@ -23,6 +23,11 @@ export function readingTimeOf(post: BlogPost): string {
   return getReadingTime(post.body ?? '').text;
 }
 
+/** Word count from the raw markdown body, for BlogPosting.wordCount schema. */
+export function wordCountOf(post: BlogPost): number {
+  return getReadingTime(post.body ?? '').words;
+}
+
 /** Editorial date for article headers: "June 10, 2026". */
 export function formatDate(date: Date): string {
   return date.toLocaleDateString('en-US', {

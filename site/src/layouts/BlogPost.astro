@@ -3,7 +3,7 @@ import type { MarkdownHeading } from 'astro';
 import Layout from './Layout.astro';
 import Icon from '../components/Icon.astro';
 import CTA from '../components/CTA.astro';
-import { formatDate, isoDate, readingTimeOf, type BlogPost } from '../lib/blog';
+import { formatDate, isoDate, readingTimeOf, wordCountOf, type BlogPost } from '../lib/blog';
 
 interface Props {
   post: BlogPost;
@@ -12,21 +12,29 @@ interface Props {
   headings?: MarkdownHeading[];
 }
 const { post, prev, next, headings = [] } = Astro.props;
-const { title, description, pubDate, updatedDate, author, tags } = post.data;
+const { title, description, pubDate, updatedDate, author, tags, cover } = post.data;
 const reading = readingTimeOf(post);
+const words = wordCountOf(post);
 const chapters = headings.filter((h) => h.depth === 2);
 
 const siteOrigin = (Astro.site ?? new URL('https://warmbly.com')).toString().replace(/\/$/, '');
 const canonical = new URL(Astro.url.pathname, Astro.site ?? 'https://warmbly.com').toString();
+// Per-post social/share image: use the post cover when set, else the site card.
+const shareImage = cover ?? '/og-image.jpg';
+const shareImageAbsolute = new URL(shareImage, Astro.site ?? 'https://warmbly.com').toString();
 
 const articleJsonLd = {
   '@context': 'https://schema.org',
   '@type': 'BlogPosting',
   headline: title,
   description,
-  image: `${siteOrigin}/og-image.png`,
+  image: shareImageAbsolute,
+  inLanguage: 'en',
   datePublished: pubDate.toISOString(),
   dateModified: (updatedDate ?? pubDate).toISOString(),
+  articleSection: tags[0] ?? 'Deliverability',
+  keywords: tags.join(', '),
+  wordCount: words,
   author:
     author === 'Warmbly team'
       ? { '@id': `${siteOrigin}#org` }
@@ -36,12 +44,24 @@ const articleJsonLd = {
   isAccessibleForFree: true,
 };
 
+// BreadcrumbList: Home > Blog > <title>. One of the few schema types Google
+// still renders as a rich result, and it replaces the raw URL in the SERP.
+const breadcrumbJsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'BreadcrumbList',
+  itemListElement: [
+    { '@type': 'ListItem', position: 1, name: 'Home', item: `${siteOrigin}/` },
+    { '@type': 'ListItem', position: 2, name: 'Blog', item: `${siteOrigin}/blog/` },
+    { '@type': 'ListItem', position: 3, name: title, item: canonical },
+  ],
+};
+
 const neighbors = [
   prev ? { label: 'Previously', post: prev } : null,
   next ? { label: 'Up next', post: next } : null,
 ].filter(Boolean) as { label: string; post: BlogPost }[];
 ---
-<Layout title={`${title} | Warmbly Blog`} description={description} ogType="article" jsonLd={articleJsonLd}>
+<Layout title={`${title} | Warmbly Blog`} description={description} ogImage={shareImage} ogType="article" jsonLd={[articleJsonLd, breadcrumbJsonLd]}>
   <!-- TOP BAR: sticky under the site header, carries the reading progress -->
   <div class="sticky top-14 z-30 bg-white/90 backdrop-blur-md border-b border-[color:var(--border)]">
     <div class="container-page py-3 flex items-center justify-between text-[11.5px] font-mono">
