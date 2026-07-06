@@ -39,7 +39,7 @@ const posture = [
   },
   {
     label: 'Encryption at rest via AWS KMS',
-    note: 'Per-user data keys, AES-256-GCM application layer.',
+    note: 'Per-organization data keys, AES-256-GCM application layer.',
     state: 'shipped',
   },
   {
@@ -64,12 +64,12 @@ const flow = [
   {
     n: '01',
     title: 'AWS KMS',
-    body: 'Customer Master Key lives in KMS and never leaves it. KMS generates a 32-byte data encryption key for each user on first use.',
+    body: 'Customer Master Key lives in KMS and never leaves it. KMS generates a 32-byte data encryption key for each organization on first use.',
     tag: 'Root of trust',
   },
   {
     n: '02',
-    title: 'Per-user DEK',
+    title: 'Per-organization DEK',
     body: 'The plaintext DEK is returned briefly to the application. The encrypted DEK blob comes back in the same call and is the only long-term copy.',
     tag: 'AES-256',
   },
