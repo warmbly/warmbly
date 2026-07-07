@@ -34,10 +34,16 @@ final class CampaignsStore {
 
     var query = ""
     var scope: CampaignListScope = .all
+    /// Row-level start/pause failures (cooldown, readiness, plan gate).
+    var actionError: String?
 
     private var generation = 0
 
     // MARK: Derived
+
+    var isSearching: Bool {
+        !query.trimmingCharacters(in: .whitespaces).isEmpty
+    }
 
     var filtered: [Campaign] {
         scope == .all ? campaigns : campaigns.filter { scope.matches($0) }
@@ -143,6 +149,22 @@ final class CampaignsStore {
             if let total = totalCount { totalCount = total + 1 }
         }
         return campaign
+    }
+
+    /// Quick start/pause straight from the list row. Preconditions (60s
+    /// cooldown, readiness, plan gate) come back as 400s with a specific
+    /// message; surface it verbatim. Refresh the row either way, since a
+    /// failed start can still flip status server-side (paused_no_accounts).
+    func toggle(_ api: APIClient, campaign: Campaign, start: Bool) async {
+        do {
+            let _: CampaignActionResponse = try await api.post("campaigns/\(campaign.id)/\(start ? "start" : "stop")")
+        } catch {
+            actionError = error.localizedDescription
+        }
+        if let fresh: Campaign = try? await api.get("campaigns/\(campaign.id)"),
+           let index = campaigns.firstIndex(where: { $0.id == campaign.id }) {
+            withAnimation(.snappy) { campaigns[index] = fresh }
+        }
     }
 
     /// DELETE is creator-only server-side; a teammate gets 404 even with
