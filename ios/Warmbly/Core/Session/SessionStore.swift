@@ -3,6 +3,9 @@ import Foundation
 enum SessionPhase: Equatable {
     case launching
     case loggedOut
+    /// A stored session exists but the backend can't be reached: keep the
+    /// login and retry instead of bouncing the user to sign-in.
+    case unreachable
     case onboarding
     case selectOrg
     case ready
@@ -67,13 +70,13 @@ final class SessionStore {
             await enterApp()
         } catch let error as APIError {
             if case .unauthorized = error {
-                phase = .loggedOut
+                // The token really is dead; only then drop to sign-in.
+                await clearSession()
             } else {
-                // Server unreachable; stay on launch screen state, caller may retry.
-                phase = .loggedOut
+                phase = .unreachable
             }
         } catch {
-            phase = .loggedOut
+            phase = .unreachable
         }
     }
 
