@@ -26,12 +26,14 @@ struct UniboxComposer: View {
     @State private var showTemplateBrowser = false
 
     /// AI is inline, not a sheet: a prompt bar above the keyboard plus
-    /// rewrite actions on the current draft, with one-tap undo.
+    /// rewrite actions on the current draft or just the selected text,
+    /// with one-tap undo.
     @State private var aiBarVisible: Bool
     @State private var aiPrompt = ""
     @State private var aiTone: AIWriteTone = .standard
     @State private var isGenerating = false
     @State private var aiUndo: String?
+    @State private var selection: TextSelection?
     @FocusState private var aiFocused: Bool
 
     /// Template names inline in the dropdown; the rest through the browser.
@@ -279,7 +281,7 @@ struct UniboxComposer: View {
 
     /// The draft takes all remaining space, borderless, aligned with the rows.
     private var editor: some View {
-        TextEditor(text: $messageBody)
+        TextEditor(text: $messageBody, selection: $selection)
             .font(.body)
             .scrollContentBackground(.hidden)
             .padding(.horizontal, 11)
@@ -351,7 +353,17 @@ struct UniboxComposer: View {
         .padding(.vertical, 10)
     }
 
-    /// AI dropdown: draft from a prompt, or rewrite what's already written.
+    /// Text the user has highlighted in the editor, if any — AI actions then
+    /// target just that range instead of the whole draft.
+    private var selectedTextRange: Range<String.Index>? {
+        guard let selection, !selection.isInsertion,
+              case let .selection(range) = selection.indices,
+              !range.isEmpty else { return nil }
+        return range
+    }
+
+    /// AI dropdown: draft from a prompt, rewrite the selection when there is
+    /// one, or rewrite the whole draft.
     private var aiMenu: some View {
         Menu {
             Button {
@@ -359,22 +371,42 @@ struct UniboxComposer: View {
             } label: {
                 Label("Draft with AI", systemImage: "square.and.pencil")
             }
-            if !messageBody.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Section("Rewrite draft") {
-                    Button("Improve writing") {
-                        Task { await rewrite("Improve the writing of this email reply; keep the meaning and roughly the same length") }
+            // Capture the range at menu build: opening the menu can drop the
+            // editor's focus and clear the live selection state.
+            if let range = selectedTextRange {
+                Section("Selected text") {
+                    Button("Rephrase") {
+                        Task { await rewriteSelection("Rephrase this text from an email reply", range) }
                     }
                     Button("Shorten") {
-                        Task { await rewrite("Make this email reply shorter and tighter without losing the point") }
+                        Task { await rewriteSelection("Make this text from an email reply shorter and tighter", range) }
+                    }
+                    Button("Expand") {
+                        Task { await rewriteSelection("Expand this text from an email reply with a bit more detail", range) }
                     }
                     Button("More formal") {
-                        Task { await rewrite("Rewrite this email reply in a more formal, professional tone") }
-                    }
-                    Button("More casual") {
-                        Task { await rewrite("Rewrite this email reply in a relaxed, casual tone") }
+                        Task { await rewriteSelection("Rewrite this text from an email reply in a more formal tone", range) }
                     }
                     Button("Fix spelling & grammar") {
-                        Task { await rewrite("Fix the spelling and grammar of this email reply; change nothing else") }
+                        Task { await rewriteSelection("Fix the spelling and grammar of this text; change nothing else", range) }
+                    }
+                }
+            } else if !messageBody.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Section("Rewrite draft") {
+                    Button("Improve writing") {
+                        Task { await rewriteDraft("Improve the writing of this email reply; keep the meaning and roughly the same length") }
+                    }
+                    Button("Shorten") {
+                        Task { await rewriteDraft("Make this email reply shorter and tighter without losing the point") }
+                    }
+                    Button("More formal") {
+                        Task { await rewriteDraft("Rewrite this email reply in a more formal, professional tone") }
+                    }
+                    Button("More casual") {
+                        Task { await rewriteDraft("Rewrite this email reply in a relaxed, casual tone") }
+                    }
+                    Button("Fix spelling & grammar") {
+                        Task { await rewriteDraft("Fix the spelling and grammar of this email reply; change nothing else") }
                     }
                 }
             }
@@ -470,35 +502,55 @@ struct UniboxComposer: View {
     private func draftFromPrompt() async {
         let prompt = aiPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !prompt.isEmpty, !isGenerating else { return }
-        await generate(prompt: prompt, replace: false)
+        guard let text = await aiText(prompt: prompt) else { return }
+        withAnimation(.snappy) {
+            aiUndo = messageBody
+            insert(text)
+            aiBarVisible = false
+            aiPrompt = ""
+        }
     }
 
-    /// Rewrite actions replace the draft wholesale; Undo brings the old text back.
-    private func rewrite(_ instruction: String) async {
-        await generate(
-            prompt: "\(instruction). Reply with only the rewritten email body, no commentary.\n\n\(messageBody)",
-            replace: true
-        )
+    /// Rewrites the whole draft; Undo brings the old text back.
+    private func rewriteDraft(_ instruction: String) async {
+        let original = messageBody
+        let prompt = "\(instruction). Reply with only the rewritten email body, no commentary.\n\n\(original)"
+        guard let text = await aiText(prompt: prompt) else { return }
+        withAnimation(.snappy) {
+            aiUndo = original
+            messageBody = text
+        }
     }
 
-    private func generate(prompt: String, replace: Bool) async {
+    /// Rewrites just the highlighted range. The range is only valid against
+    /// the draft it was captured from, so bail out if the text changed while
+    /// the request was in flight.
+    private func rewriteSelection(_ instruction: String, _ range: Range<String.Index>) async {
+        let original = messageBody
+        let fragment = String(original[range])
+        let prompt = "\(instruction). Reply with only the rewritten text, no commentary.\n\n\(fragment)"
+        guard let text = await aiText(prompt: prompt) else { return }
+        guard messageBody == original else {
+            store.setError("The draft changed while AI was working. Try again.")
+            return
+        }
+        withAnimation(.snappy) {
+            aiUndo = original
+            messageBody.replaceSubrange(range, with: text)
+            selection = nil
+        }
+    }
+
+    private func aiText(prompt: String) async -> String? {
         isGenerating = true
+        defer { isGenerating = false }
         do {
             var body = ["prompt": prompt]
             if aiTone != .standard { body["tone"] = aiTone.rawValue }
             let response: AIWriteResponse = try await env.api.post(
                 "generation/write", body: body, idempotent: true
             )
-            withAnimation(.snappy) {
-                aiUndo = messageBody
-                if replace {
-                    messageBody = response.text
-                } else {
-                    insert(response.text)
-                }
-                aiBarVisible = false
-                aiPrompt = ""
-            }
+            return response.text
         } catch let error as APIError {
             if case let .server(status, _) = error, status == 402 {
                 store.setError("You're out of AI credits for this billing period.")
@@ -508,7 +560,7 @@ struct UniboxComposer: View {
         } catch {
             store.setError(error.localizedDescription)
         }
-        isGenerating = false
+        return nil
     }
 
     // MARK: Schedule sheet
