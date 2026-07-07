@@ -47,6 +47,9 @@ struct CampaignCreateFlow: View {
     @State private var errorMessage: String?
     @State private var errorPulse = 0
     @State private var badgeAppeared = false
+    /// The 40fps flight-scene canvas mounts only after the cover's slide-up
+    /// finishes, so presenting the flow never competes with it for frames.
+    @State private var ambienceReady = false
 
     @State private var folderQuery = ""
 
@@ -89,6 +92,11 @@ struct CampaignCreateFlow: View {
         }
         .sensoryFeedback(.impact(weight: .light), trigger: page)
         .sensoryFeedback(.error, trigger: errorPulse)
+        .task {
+            try? await Task.sleep(for: .milliseconds(480))
+            withAnimation(.easeIn(duration: 0.7)) { ambienceReady = true }
+            if page == .name, name.isEmpty { focusedField = .name }
+        }
     }
 
     private var pageTransition: AnyTransition {
@@ -158,7 +166,10 @@ struct CampaignCreateFlow: View {
                 .contentShape(Rectangle())
                 .onTapGesture { focusedField = nil }
 
-            HeroFlightScene()
+            if ambienceReady {
+                HeroFlightScene()
+                    .transition(.opacity)
+            }
 
             pageBadge
                 .scaleEffect(badgeAppeared ? 1 : 0.9)
@@ -393,9 +404,6 @@ struct CampaignCreateFlow: View {
                     Task { await advance() }
                 }
             }
-        }
-        .onAppear {
-            if name.isEmpty { focusedField = .name }
         }
     }
 

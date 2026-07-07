@@ -179,84 +179,90 @@ struct AirTabItem: Identifiable, Hashable {
     let icon: String
 }
 
-/// Horizontally scrollable pill tab bar. The selected pill carries an accent
-/// gradient capsule that slides between tabs; selection is auto-scrolled into
-/// view and gives a selection haptic.
-struct AirPillTabBar: View {
+/// Flat full-width tab bar in the dashboard's underline language: every tab
+/// gets an equal share (no horizontal scrolling or cut-off tabs), the active
+/// one is bold with an accent underline that slides between tabs.
+struct AirUnderlineTabBar: View {
     let tabs: [AirTabItem]
     @Binding var selection: String
-    @Namespace private var pillNS
+    @Namespace private var underlineNS
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 7) {
-                    ForEach(tabs) { tab in
-                        pill(tab)
-                            .id(tab.id)
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-            }
-            .onChange(of: selection) {
-                withAnimation(.snappy) { proxy.scrollTo(selection, anchor: .center) }
+        HStack(spacing: 0) {
+            ForEach(tabs) { tab in
+                tabButton(tab)
             }
         }
+        .padding(.horizontal, 8)
+        .overlay(alignment: .bottom) { Divider() }
         .sensoryFeedback(.selection, trigger: selection)
     }
 
-    private func pill(_ tab: AirTabItem) -> some View {
+    private func tabButton(_ tab: AirTabItem) -> some View {
         let selected = tab.id == selection
         return Button {
             withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
                 selection = tab.id
             }
         } label: {
-            HStack(spacing: 6) {
-                Image(systemName: tab.icon)
-                    .font(.system(size: 12, weight: .semibold))
-                Text(tab.title)
-                    .font(.subheadline.weight(selected ? .semibold : .medium))
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .foregroundStyle(selected ? Color.white : Color.primary)
-            .background {
-                if selected {
-                    Capsule()
-                        .fill(WTheme.accent.gradient)
-                        .matchedGeometryEffect(id: "air-pill", in: pillNS)
-                } else {
-                    Capsule().fill(Tone.slate.background)
+            VStack(spacing: 0) {
+                HStack(spacing: 5) {
+                    Image(systemName: tab.icon)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(selected ? WTheme.accent : Color.secondary)
+                    Text(tab.title)
+                        .font(.system(size: 13.5, weight: selected ? .semibold : .regular))
+                        .foregroundStyle(selected ? Color.primary : .secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
                 }
+                .frame(maxWidth: .infinity)
+                .frame(height: 46)
+                ZStack {
+                    if selected {
+                        Capsule()
+                            .fill(WTheme.accent)
+                            .frame(height: 3)
+                            .matchedGeometryEffect(id: "air-underline", in: underlineNS)
+                    } else {
+                        Color.clear.frame(height: 3)
+                    }
+                }
+                .padding(.horizontal, 10)
             }
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
 }
 
 /// Detail-screen scaffold: sky hero fixed at the top (behind a transparent
-/// nav bar), a rounded white sheet whose pill tab bar stays pinned, and the
-/// tab content swiping horizontally underneath (Gmail-profile style). Tab
-/// contents keep their own Lists, scrolling, and swipe actions.
+/// nav bar), a rounded white sheet whose underline tab bar stays pinned, and
+/// the tab content swiping horizontally underneath (Gmail-profile style). Tab
+/// contents keep their own Lists, scrolling, and swipe actions. The sheet is
+/// clipped so scrolling content never bleeds over its rounded corners.
 struct AirDetailScaffold<Hero: View, Content: View>: View {
     let tabs: [AirTabItem]
     @Binding var selection: String
     @ViewBuilder var hero: Hero
     @ViewBuilder var content: Content
 
+    private var sheetShape: UnevenRoundedRectangle {
+        UnevenRoundedRectangle(topLeadingRadius: 26, topTrailingRadius: 26, style: .continuous)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             hero
                 .frame(maxWidth: .infinity, alignment: .leading)
             VStack(spacing: 0) {
-                AirPillTabBar(tabs: tabs, selection: $selection)
+                AirUnderlineTabBar(tabs: tabs, selection: $selection)
                 content
             }
+            .clipShape(sheetShape)
             .background(
-                UnevenRoundedRectangle(topLeadingRadius: 26, topTrailingRadius: 26, style: .continuous)
-                    .fill(Color(.systemGroupedBackground))
+                sheetShape
+                    .fill(Color(.systemBackground))
                     .ignoresSafeArea(edges: .bottom)
                     .shadow(color: .black.opacity(0.12), radius: 18, y: -4)
             )
