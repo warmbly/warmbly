@@ -254,6 +254,11 @@ final class UniboxThreadStore {
     private(set) var hasLoaded = false
     private(set) var didMarkSeen = false
 
+    /// Expansion + measured body heights live here, not in row `@State`, so
+    /// LazyVStack recycling can't silently collapse a message or lose its height.
+    var expandedIDs: Set<String> = []
+    var bodyHeights: [String: CGFloat] = [:]
+
     private var generation = 0
 
     init(thread: UniboxThread) {
@@ -298,6 +303,10 @@ final class UniboxThreadStore {
             guard gen == generation else { return }
             let rows = page.data ?? []
             withAnimation(.snappy) { messages = rows }
+            // Open on the newest message, like a mail client.
+            if expandedIDs.isEmpty, let last = rows.last?.id {
+                expandedIDs.insert(last)
+            }
             errorMessage = nil
             hasLoaded = true
             isLoading = false

@@ -159,7 +159,6 @@ struct UniboxThreadView: View {
                                 isFirst: index == 0,
                                 isLast: index == store.messages.count - 1,
                                 repliedTo: store.repliedToMessage(before: index),
-                                initiallyExpanded: message.id == store.messages.last?.id,
                                 onReply: canReply && composeContext != nil ? {
                                     showComposer = true
                                 } : nil,
@@ -284,12 +283,9 @@ private struct UniboxMessageRow: View {
     let isFirst: Bool
     let isLast: Bool
     let repliedTo: UniboxMessage?
-    let initiallyExpanded: Bool
     var onReply: (() -> Void)?
     let onJump: (String) -> Void
 
-    @State private var bodyHeight: CGFloat = 40
-    @State private var expanded = false
     @State private var showDetails = false
     @State private var copied = false
 
@@ -297,11 +293,11 @@ private struct UniboxMessageRow: View {
     private static let avatarSize: CGFloat = 36
     private static let contentInset: CGFloat = 16 + avatarSize + 12
     private static let railX: CGFloat = 16 + avatarSize / 2
-    private static let avatarCenterY: CGFloat = 14 + avatarSize / 2
 
     private var detail: UniboxMessageDetail? { store.bodies[message.id] }
     private var isUnread: Bool { message.seen == false }
     private var isFromMe: Bool { Self.fromMe(message, store: store) }
+    private var expanded: Bool { store.expandedIDs.contains(message.id) }
 
     /// A message sent from the org's own mailbox reads as "You".
     static func fromMe(_ message: UniboxMessage, store: UniboxThreadStore) -> Bool {
@@ -325,9 +321,12 @@ private struct UniboxMessageRow: View {
                     UniboxWebView(
                         html: detail?.bodyHTML,
                         plain: detail?.bodyPlain,
-                        height: $bodyHeight
+                        height: Binding(
+                            get: { store.bodyHeights[message.id] ?? 40 },
+                            set: { store.bodyHeights[message.id] = $0 }
+                        )
                     )
-                    .frame(height: bodyHeight)
+                    .frame(height: store.bodyHeights[message.id] ?? 40)
                     toolsRow
                 } else {
                     HStack(spacing: 8) {
@@ -363,31 +362,37 @@ private struct UniboxMessageRow: View {
                 Divider().padding(.leading, Self.contentInset)
             }
         }
-        .onAppear {
-            if initiallyExpanded, !expanded {
-                expanded = true
-            }
-        }
         .task(id: expanded) {
             if expanded { await store.loadBody(env.api, messageID: message.id) }
         }
     }
 
-    /// The connector: full-height for middle messages, from the avatar down
-    /// for the first, up to the avatar for the last. Skipped for singletons.
+    /// The connector between avatars. Segments stop at the avatar's edges
+    /// (the avatar fill is translucent, so a through-line would show inside it):
+    /// a stub from the row top to the avatar unless first, and a run from the
+    /// avatar to the row bottom unless last. Skipped for singletons.
     @ViewBuilder
     private var rail: some View {
         if !(isFirst && isLast) {
             VStack(spacing: 0) {
-                Rectangle()
-                    .fill(Color(.systemGray4))
-                    .frame(width: 2)
-                    .frame(maxHeight: isLast ? Self.avatarCenterY : .infinity)
-                if isLast { Spacer(minLength: 0) }
+                railSegment
+                    .frame(height: 14)
+                    .opacity(isFirst ? 0 : 1)
+                Color.clear.frame(width: 2, height: Self.avatarSize)
+                if isLast {
+                    Spacer(minLength: 0)
+                } else {
+                    railSegment.frame(maxHeight: .infinity)
+                }
             }
-            .padding(.top, isFirst ? Self.avatarCenterY : 0)
             .padding(.leading, Self.railX - 1)
         }
+    }
+
+    private var railSegment: some View {
+        Rectangle()
+            .fill(Color(.systemGray4))
+            .frame(width: 2)
     }
 
     /// Small "Replying to X" reference naming the quoted message; tapping
@@ -554,7 +559,13 @@ private struct UniboxMessageRow: View {
     }
 
     private func toggle() {
-        withAnimation(.snappy) { expanded.toggle() }
+        withAnimation(.snappy) {
+            if expanded {
+                store.expandedIDs.remove(message.id)
+            } else {
+                store.expandedIDs.insert(message.id)
+            }
+        }
     }
 }
 
