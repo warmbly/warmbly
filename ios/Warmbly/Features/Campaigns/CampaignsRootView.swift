@@ -1,19 +1,23 @@
 import SwiftUI
 
-/// Campaigns tab root, matching the unibox language: a compact search-pill
-/// header (nav bar hidden), flat underline scope tabs, and a dense full-width
-/// hairline list on the plain background. Rows carry their own tools
-/// (start/pause + delete swipes, context menu) and live signals (pulsing
-/// status dot, presence dot when a teammate is on the record).
+/// Campaigns tab root, matching the unibox browser: a compact search-pill
+/// header with a hamburger that slides in the navigation drawer (status
+/// scopes + folders with counts), a dense full-width hairline list, and
+/// server-side filtering so every scope has correct totals and infinite
+/// scroll. Rows carry their own tools (start/pause + delete swipes, context
+/// menu) and live signals (pulsing status dot, teammate presence dot).
 struct CampaignsRootView: View {
     @Environment(AppEnvironment.self) private var env
     @State private var store = CampaignsStore()
     @State private var path: [Campaign] = []
+    @State private var sidebarOpen = false
+    @State private var sidebarDrag: CGFloat = 0
     @State private var showCreate = false
     @State private var pendingDelete: Campaign?
     @State private var deleteError: String?
     @FocusState private var searchFocused: Bool
-    @Namespace private var tabUnderline
+
+    private static let sidebarWidth: CGFloat = 300
 
     private var canManage: Bool { env.session.can(.manageCampaigns) }
     private var canSend: Bool { env.session.can(.sendCampaigns) }
@@ -22,17 +26,28 @@ struct CampaignsRootView: View {
         env.realtime.pulse(for: .campaigns) &+ env.realtime.pulse(for: .analytics)
     }
 
+    /// The member's campaign folders (session), in position order.
+    private var drawerFolders: [UserGroup] {
+        (env.session.user?.folders ?? []).sorted { ($0.position ?? 0) < ($1.position ?? 0) }
+    }
+
     var body: some View {
-        @Bindable var store = store
         NavigationStack(path: $path) {
-            VStack(spacing: 0) {
-                searchBar
-                scopeTabs
-                scopeCaption
-                list
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    mainPane
+                        .scaleEffect(sidebarOpen ? 0.97 : 1, anchor: .trailing)
+                    if sidebarOpen {
+                        Color.black.opacity(0.32)
+                            .ignoresSafeArea()
+                            .transition(.opacity)
+                            .onTapGesture { closeSidebar() }
+                    }
+                    drawer(topInset: geo.safeAreaInsets.top)
+                }
             }
-            .background(Color(.systemBackground))
             .toolbar(.hidden, for: .navigationBar)
+            .toolbarVisibility(sidebarOpen ? .hidden : .automatic, for: .tabBar)
             .navigationDestination(for: Campaign.self) { campaign in
                 CampaignDetailView(campaign: campaign)
             }
@@ -81,10 +96,34 @@ struct CampaignsRootView: View {
             guard !Task.isCancelled else { return }
             await store.load(env.api)
         }
+        .onChange(of: store.scope) {
+            Task { await store.load(env.api) }
+        }
         .onChange(of: pulseKey) {
             Task { await store.load(env.api) }
         }
+        .sensoryFeedback(.impact(weight: .light), trigger: sidebarOpen)
         .sensoryFeedback(.selection, trigger: store.scope)
+    }
+
+    // MARK: Main pane
+
+    private var mainPane: some View {
+        VStack(spacing: 0) {
+            searchBar
+            scopeCaption
+            list
+        }
+        .background(Color(.systemBackground))
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 25)
+                .onEnded { value in
+                    // Gmail's edge swipe: open the drawer from the left edge.
+                    if !sidebarOpen, value.startLocation.x < 44, value.translation.width > 70 {
+                        openSidebar()
+                    }
+                }
+        )
     }
 
     // MARK: Search pill
@@ -92,11 +131,18 @@ struct CampaignsRootView: View {
     private var searchBar: some View {
         @Bindable var store = store
         return HStack(spacing: 10) {
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .padding(.leading, 14)
+            HStack(spacing: 6) {
+                Button {
+                    openSidebar()
+                } label: {
+                    Image(systemName: "line.3.horizontal")
+                        .font(.system(size: 17, weight: .medium))
+                        .foregroundStyle(.primary)
+                        .frame(width: 38, height: 38)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Open campaigns menu")
 
                 TextField("Search campaigns", text: $store.query)
                     .font(.subheadline)
@@ -117,7 +163,7 @@ struct CampaignsRootView: View {
                     .accessibilityLabel("Clear search")
                 }
                 PresenceAvatars()
-                    .padding(.trailing, 10)
+                    .padding(.trailing, 8)
             }
             .frame(height: 44)
             .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
@@ -141,75 +187,31 @@ struct CampaignsRootView: View {
         .padding(.bottom, 6)
     }
 
-    // MARK: Scope tabs
-
-    private var scopeTabs: some View {
-        HStack(spacing: 0) {
-            scopeTab("All", count: store.displayTotal, scope: .all)
-            scopeTab("Sending", count: store.runningCount, scope: .running, dot: .emerald)
-            scopeTab("Paused", count: store.pausedCount, scope: .paused, dot: .amber)
-            scopeTab("Finished", count: store.finishedCount, scope: .finished, dot: .slate)
-        }
-        .padding(.horizontal, 8)
-        .overlay(alignment: .bottom) { Divider() }
-    }
-
-    private func scopeTab(_ label: String, count: Int, scope: CampaignListScope, dot: Tone? = nil) -> some View {
-        let selected = store.scope == scope
-        return Button {
-            withAnimation(.snappy) { store.scope = scope }
-        } label: {
-            VStack(spacing: 0) {
-                HStack(spacing: 5) {
-                    if let dot {
-                        Circle().fill(dot.color).frame(width: 6, height: 6)
-                    }
-                    Text(label)
-                        .font(.subheadline.weight(selected ? .semibold : .regular))
-                        .foregroundStyle(selected ? Color.primary : .secondary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.85)
-                    if count > 0 {
-                        Text(WFormat.compact(count))
-                            .font(.caption.weight(.semibold))
-                            .monospacedDigit()
-                            .foregroundStyle(selected ? AnyShapeStyle(WTheme.accent) : AnyShapeStyle(.tertiary))
-                            .contentTransition(.numericText())
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .frame(height: 40)
-                ZStack {
-                    if selected {
-                        Capsule()
-                            .fill(WTheme.accent)
-                            .frame(height: 3)
-                            .matchedGeometryEffect(id: "scope", in: tabUnderline)
-                    } else {
-                        Color.clear.frame(height: 3)
-                    }
-                }
-                .padding(.horizontal, 14)
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
+    // MARK: Scope caption
 
     private var scopeCaption: some View {
         HStack(spacing: 6) {
-            Text(store.isSearching ? "SEARCH RESULTS" : scopeTitle.uppercased())
+            Text(store.isSearching ? "SEARCH RESULTS" : store.scope.title.uppercased())
                 .font(.caption.weight(.semibold))
                 .tracking(0.9)
                 .foregroundStyle(.secondary)
-            Spacer()
-            if store.isSearching, store.hasLoaded {
-                Text("\(store.filtered.count) result\(store.filtered.count == 1 ? "" : "s")")
+            if !store.isSearching, let count = store.totalCount, count > 0 {
+                Text(WFormat.compact(count))
                     .font(.caption.weight(.semibold))
                     .monospacedDigit()
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.tertiary)
                     .contentTransition(.numericText())
-            } else if store.runningCount > 0 {
+            }
+            Spacer()
+            if store.isSearching {
+                if store.hasLoaded, let count = store.totalCount {
+                    Text("\(count) found")
+                        .font(.caption.weight(.semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                        .contentTransition(.numericText())
+                }
+            } else if store.scope == .all, store.runningCount > 0 {
                 Text("\(WFormat.compact(store.runningCount)) sending")
                     .font(.caption.weight(.semibold))
                     .monospacedDigit()
@@ -222,15 +224,6 @@ struct CampaignsRootView: View {
         .padding(.bottom, 2)
     }
 
-    private var scopeTitle: String {
-        switch store.scope {
-        case .all: "All campaigns"
-        case .running: "Sending"
-        case .paused: "Paused"
-        case .finished: "Finished"
-        }
-    }
-
     // MARK: List
 
     @ViewBuilder
@@ -241,14 +234,14 @@ struct CampaignsRootView: View {
             ErrorStateView(title: "Couldn't load campaigns", message: error) {
                 await store.load(env.api)
             }
-        } else if store.filtered.isEmpty {
+        } else if store.campaigns.isEmpty {
             emptyState
         } else {
             List {
-                ForEach(store.filtered) { campaign in
+                ForEach(store.campaigns) { campaign in
                     row(campaign)
                 }
-                if store.hasMore, store.scope == .all {
+                if store.hasMore {
                     HStack(spacing: 8) {
                         Spacer()
                         ProgressView().controlSize(.small)
@@ -272,9 +265,9 @@ struct CampaignsRootView: View {
         }
     }
 
-    /// End-of-list marker: the visible count, doubling as the result count.
+    /// End-of-list marker: the exact total for this scope/search.
     private var endMarker: some View {
-        let count = store.filtered.count
+        let count = store.totalCount ?? store.campaigns.count
         return HStack {
             Spacer()
             Text("\(count) campaign\(count == 1 ? "" : "s")")
@@ -289,8 +282,7 @@ struct CampaignsRootView: View {
 
     @ViewBuilder
     private var emptyState: some View {
-        let searching = !store.query.trimmingCharacters(in: .whitespaces).isEmpty
-        if searching {
+        if store.isSearching {
             EmptyStateView(title: "No matching campaigns", message: "Try a different search.")
         } else {
             switch store.scope {
@@ -298,8 +290,12 @@ struct CampaignsRootView: View {
                 EmptyStateView(title: "Nothing is sending", message: "Start a campaign and it shows up here.")
             case .paused:
                 EmptyStateView(title: "Nothing paused", message: "Paused campaigns show up here.")
+            case .draft:
+                EmptyStateView(title: "No drafts", message: "Campaigns that haven't started yet show up here.")
             case .finished:
                 EmptyStateView(title: "Nothing finished yet", message: "Completed campaigns show up here.")
+            case .folder:
+                EmptyStateView(title: "Folder is empty", message: "File campaigns into this folder on the web dashboard.")
             case .all:
                 if canManage {
                     EmptyStateView(
@@ -471,6 +467,61 @@ struct CampaignsRootView: View {
             Text("No sends yet")
                 .font(.subheadline)
                 .foregroundStyle(.tertiary)
+        }
+    }
+
+    // MARK: Drawer
+
+    private func drawer(topInset: CGFloat) -> some View {
+        CampaignsSidebar(
+            store: store,
+            folders: drawerFolders,
+            selection: store.scope,
+            topInset: topInset,
+            revealed: sidebarOpen
+        ) { scope in
+            withAnimation(.spring(response: 0.38, dampingFraction: 0.8)) { store.scope = scope }
+            // Let the highlight capsule slide to the tapped row before closing.
+            Task {
+                try? await Task.sleep(for: .milliseconds(280))
+                closeSidebar()
+            }
+        }
+        .frame(width: Self.sidebarWidth)
+        .frame(maxHeight: .infinity)
+        .background(Color(.systemBackground))
+        .clipShape(UnevenRoundedRectangle(bottomTrailingRadius: 26, topTrailingRadius: 26, style: .continuous))
+        .shadow(color: .black.opacity(sidebarOpen ? 0.22 : 0), radius: 30, x: 6, y: 0)
+        .ignoresSafeArea()
+        .offset(x: drawerOffset)
+        .gesture(
+            DragGesture()
+                .onChanged { value in
+                    sidebarDrag = min(0, value.translation.width)
+                }
+                .onEnded { value in
+                    if value.translation.width < -80 || value.predictedEndTranslation.width < -160 {
+                        closeSidebar()
+                    } else {
+                        withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) { sidebarDrag = 0 }
+                    }
+                }
+        )
+    }
+
+    private var drawerOffset: CGFloat {
+        (sidebarOpen ? 0 : -Self.sidebarWidth - 40) + sidebarDrag
+    }
+
+    private func openSidebar() {
+        searchFocused = false
+        withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) { sidebarOpen = true }
+    }
+
+    private func closeSidebar() {
+        withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
+            sidebarOpen = false
+            sidebarDrag = 0
         }
     }
 

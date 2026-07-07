@@ -1,18 +1,39 @@
 import SwiftUI
 
-/// Client-side status filter driven by the tappable stat strip.
-enum CampaignListScope: Equatable {
+/// Server-backed browse scope: status buckets map to the list endpoint's
+/// `status` param, folders to `folder`. Every scope pages server-side, so
+/// infinite scroll and result totals are correct in all of them.
+enum CampaignListScope: Equatable, Hashable {
     case all
     case running
     case paused
+    case draft
     case finished
+    case folder(id: String, label: String)
 
-    func matches(_ campaign: Campaign) -> Bool {
+    var statusParam: String? {
         switch self {
-        case .all: return true
-        case .running: return campaign.statusBucket == .running
-        case .paused: return campaign.statusBucket == .paused
-        case .finished: return campaign.statusBucket == .finished
+        case .running: "active"
+        case .paused: "paused"
+        case .draft: "draft"
+        case .finished: "completed"
+        case .all, .folder: nil
+        }
+    }
+
+    var folderParam: String? {
+        if case let .folder(id, _) = self { return id }
+        return nil
+    }
+
+    var title: String {
+        switch self {
+        case .all: "All campaigns"
+        case .running: "Sending"
+        case .paused: "Paused"
+        case .draft: "Drafts"
+        case .finished: "Finished"
+        case let .folder(_, label): label
         }
     }
 }
@@ -24,7 +45,10 @@ final class CampaignsStore {
     /// Sent/opened/replied per campaign id, derived from the owner-scoped
     /// compare endpoint; teammates' campaigns simply have no entry.
     private(set) var rowStats: [String: CampaignRowStats] = [:]
+    /// Count matching the current scope + search (`pagination.total`).
     private(set) var totalCount: Int?
+    /// Drawer counts from `GET /campaigns-overview`.
+    private(set) var overview: CampaignsOverview?
     private(set) var nextCursor: String?
     private(set) var hasMore = false
     private(set) var isLoading = false
@@ -45,14 +69,25 @@ final class CampaignsStore {
         !query.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
-    var filtered: [Campaign] {
-        scope == .all ? campaigns : campaigns.filter { scope.matches($0) }
+    var allCount: Int { overview?.total ?? campaigns.count }
+    var runningCount: Int { overview?.active ?? 0 }
+    var pausedCount: Int { overview?.paused ?? 0 }
+    var draftCount: Int { overview?.draft ?? 0 }
+    var finishedCount: Int { overview?.completed ?? 0 }
+
+    func folderCount(_ id: String) -> Int {
+        overview?.folders?.first { $0.folderID == id }?.total ?? 0
     }
 
-    var runningCount: Int { campaigns.filter { $0.statusBucket == .running }.count }
-    var pausedCount: Int { campaigns.filter { $0.statusBucket == .paused }.count }
-    var finishedCount: Int { campaigns.filter { $0.statusBucket == .finished }.count }
-    var displayTotal: Int { totalCount ?? campaigns.count }
+    private func listParams(cursor: String? = nil) -> [String: String?] {
+        var params: [String: String?] = ["limit": "50"]
+        let trimmed = query.trimmingCharacters(in: .whitespaces)
+        if !trimmed.isEmpty { params["q"] = trimmed }
+        if let status = scope.statusParam { params["status"] = status }
+        if let folder = scope.folderParam { params["folder"] = folder }
+        if let cursor { params["cursor"] = cursor }
+        return params
+    }
 
     // MARK: Loading
 
@@ -62,10 +97,7 @@ final class CampaignsStore {
         isLoading = true
         if !hasLoaded { errorMessage = nil }
         do {
-            var params: [String: String?] = ["limit": "100"]
-            let trimmed = query.trimmingCharacters(in: .whitespaces)
-            if !trimmed.isEmpty { params["q"] = trimmed }
-            let page: CampaignListPage = try await api.get("campaigns", query: params)
+            let page: CampaignListPage = try await api.get("campaigns", query: listParams())
             guard gen == generation else { return }
             withAnimation(.snappy) {
                 campaigns = page.data ?? []
@@ -76,11 +108,18 @@ final class CampaignsStore {
             errorMessage = nil
             hasLoaded = true
             isLoading = false
+            await loadOverview(api)
             await enrichStats(api, ids: campaigns.map(\.id), generation: gen)
         } catch {
             guard gen == generation else { return }
             errorMessage = error.localizedDescription
             isLoading = false
+        }
+    }
+
+    func loadOverview(_ api: APIClient) async {
+        if let fresh: CampaignsOverview = try? await api.get("campaigns-overview") {
+            withAnimation(.snappy) { overview = fresh }
         }
     }
 
@@ -90,10 +129,7 @@ final class CampaignsStore {
         isLoadingMore = true
         defer { isLoadingMore = false }
         do {
-            var params: [String: String?] = ["limit": "100", "cursor": cursor]
-            let trimmed = query.trimmingCharacters(in: .whitespaces)
-            if !trimmed.isEmpty { params["q"] = trimmed }
-            let page: CampaignListPage = try await api.get("campaigns", query: params)
+            let page: CampaignListPage = try await api.get("campaigns", query: listParams(cursor: cursor))
             guard gen == generation else { return }
             let fresh = (page.data ?? []).filter { new in !campaigns.contains(where: { $0.id == new.id }) }
             withAnimation(.snappy) {
@@ -138,19 +174,6 @@ final class CampaignsStore {
 
     // MARK: Mutations
 
-    func create(_ api: APIClient, name: String) async throws -> Campaign {
-        let campaign: Campaign = try await api.post(
-            "campaigns",
-            body: CampaignCreateBody(name: name),
-            idempotent: true
-        )
-        withAnimation(.snappy) {
-            campaigns.insert(campaign, at: 0)
-            if let total = totalCount { totalCount = total + 1 }
-        }
-        return campaign
-    }
-
     /// Quick start/pause straight from the list row. Preconditions (60s
     /// cooldown, readiness, plan gate) come back as 400s with a specific
     /// message; surface it verbatim. Refresh the row either way, since a
@@ -165,6 +188,21 @@ final class CampaignsStore {
            let index = campaigns.firstIndex(where: { $0.id == campaign.id }) {
             withAnimation(.snappy) { campaigns[index] = fresh }
         }
+        await loadOverview(api)
+    }
+
+    func create(_ api: APIClient, name: String) async throws -> Campaign {
+        let campaign: Campaign = try await api.post(
+            "campaigns",
+            body: CampaignCreateBody(name: name),
+            idempotent: true
+        )
+        withAnimation(.snappy) {
+            campaigns.insert(campaign, at: 0)
+            if let total = totalCount { totalCount = total + 1 }
+        }
+        await loadOverview(api)
+        return campaign
     }
 
     /// DELETE is creator-only server-side; a teammate gets 404 even with
@@ -182,5 +220,6 @@ final class CampaignsStore {
             campaigns.removeAll { $0.id == campaign.id }
             if let total = totalCount, total > 0 { totalCount = total - 1 }
         }
+        await loadOverview(api)
     }
 }

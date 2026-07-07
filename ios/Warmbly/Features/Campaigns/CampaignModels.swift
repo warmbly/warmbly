@@ -53,6 +53,27 @@ struct CampaignListPage: Codable, Sendable {
     var pagination: Pagination?
 }
 
+/// `GET /campaigns-overview` — status-bucket and per-folder counts that
+/// drive the campaigns browser sidebar.
+struct CampaignsOverview: Codable, Sendable {
+    var total: Int?
+    var active: Int?
+    var paused: Int?
+    var draft: Int?
+    var completed: Int?
+    var folders: [CampaignFolderCount]?
+}
+
+struct CampaignFolderCount: Codable, Sendable {
+    var folderID: String
+    var total: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case folderID = "folder_id"
+        case total
+    }
+}
+
 struct CampaignCreateBody: Encodable {
     var name: String
 }
