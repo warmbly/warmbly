@@ -2,6 +2,7 @@
 title: 'Your send limit is a mailbox budget, not a server setting'
 description: 'People keep asking us to raise their daily limit. The honest answer is that the limit they are asking about does not exist.'
 pubDate: 2026-06-10
+cover: '/blog/mailbox-budgets-not-server-settings.webp'
 tags: ['sending', 'deliverability']
 ---
 
