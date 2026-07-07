@@ -23,6 +23,7 @@ struct UniboxComposer: View {
     @State private var scheduledAt = Date().addingTimeInterval(3600)
     @State private var showAIWriter = false
     @State private var showTemplates = false
+    @State private var showSchedulePicker = false
 
     init(context: UniboxComposeContext, openAIOnAppear: Bool = false, onSent: @escaping (UniboxSendResponse) -> Void) {
         self.context = context
@@ -52,36 +53,68 @@ struct UniboxComposer: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 14) {
-                    addressCard
-                    messageCard
-                    sendOptionsCard
-                    if let error = store.errorMessage {
-                        Text(error)
-                            .font(.subheadline)
-                            .foregroundStyle(WTheme.negative)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 4)
+            VStack(spacing: 0) {
+                labeledRow("From") {
+                    Text(context.accountEmail ?? "This mailbox")
+                        .font(.subheadline)
+                        .lineLimit(1)
+                }
+                hairline
+                labeledRow("To") {
+                    TextField("", text: $to)
+                        .font(.subheadline)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .keyboardType(.emailAddress)
+                    if !showCC {
+                        Button("Cc") {
+                            withAnimation(.snappy) { showCC = true }
+                        }
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                     }
                 }
-                .padding(16)
-                .padding(.bottom, 8)
+                hairline
+                if showCC {
+                    labeledRow("Cc") {
+                        TextField("", text: $cc)
+                            .font(.subheadline)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .keyboardType(.emailAddress)
+                    }
+                    hairline
+                }
+                TextField("Subject", text: $subject)
+                    .font(.subheadline.weight(.medium))
+                    .padding(.horizontal, 16)
+                    .frame(minHeight: 46)
+                hairline
+                if sendMode != .instant {
+                    scheduleBanner
+                    hairline
+                }
+                if let error = store.errorMessage {
+                    Text(error)
+                        .font(.footnote)
+                        .foregroundStyle(WTheme.negative)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                    hairline
+                }
+                editor
             }
-            .background(Color(.systemGroupedBackground))
-            .scrollDismissesKeyboard(.interactively)
+            .background(Color(.systemBackground))
             .navigationTitle("Reply")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-            }
-            .safeAreaInset(edge: .bottom) { sendButton }
+            .toolbar { toolbarContent }
+            .safeAreaInset(edge: .bottom) { helperBar }
         }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .interactiveDismissDisabled(store.isSending)
+        .sheet(isPresented: $showSchedulePicker) { scheduleSheet }
         .sheet(isPresented: $showAIWriter) {
             UniboxAIWriterSheet(replySubject: subject) { text in
                 insert(text)
@@ -105,20 +138,161 @@ struct UniboxComposer: View {
         }
     }
 
-    // MARK: Assist row
+    // MARK: Toolbar
 
-    private var assistRow: some View {
+    /// Gmail-style chrome: X to close, paperplane to send, and a menu holding
+    /// the when-to-send choice plus the helpers.
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        ToolbarItem(placement: .cancellationAction) {
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "xmark")
+            }
+            .accessibilityLabel("Close")
+        }
+        ToolbarItemGroup(placement: .topBarTrailing) {
+            if store.isSending {
+                ProgressView()
+            } else {
+                Button {
+                    Task { await send() }
+                } label: {
+                    Image(systemName: sendMode == .scheduled ? "clock.badge.checkmark" : "paperplane.fill")
+                }
+                .disabled(!canSend)
+                .accessibilityLabel(sendLabel)
+            }
+            Menu {
+                Picker("When to send", selection: $sendMode) {
+                    Label("Send now", systemImage: "paperplane").tag(UniboxSendMode.instant)
+                    Label("Smart send", systemImage: "wand.and.stars").tag(UniboxSendMode.smart)
+                    if sendMode == .scheduled {
+                        Label("Scheduled", systemImage: "clock").tag(UniboxSendMode.scheduled)
+                    }
+                }
+                Button {
+                    showSchedulePicker = true
+                } label: {
+                    Label(
+                        sendMode == .scheduled ? "Change send time" : "Schedule send",
+                        systemImage: "clock"
+                    )
+                }
+                if canTemplates {
+                    Button {
+                        showTemplates = true
+                    } label: {
+                        Label("Templates", systemImage: "doc.on.doc")
+                    }
+                }
+                if canAI {
+                    Button {
+                        showAIWriter = true
+                    } label: {
+                        Label("Write with AI", systemImage: "sparkles")
+                    }
+                }
+            } label: {
+                Image(systemName: "ellipsis")
+            }
+            .sensoryFeedback(.selection, trigger: sendMode)
+        }
+    }
+
+    // MARK: Field rows
+
+    private func labeledRow(_ label: String, @ViewBuilder value: () -> some View) -> some View {
+        HStack(spacing: 12) {
+            Text(label)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .frame(width: 44, alignment: .leading)
+            value()
+        }
+        .padding(.horizontal, 16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(minHeight: 46)
+    }
+
+    private var hairline: some View {
+        Divider()
+    }
+
+    /// Gmail-style schedule strip under the fields: names the chosen timing,
+    /// tap to change it, x to just send now.
+    private var scheduleBanner: some View {
         HStack(spacing: 8) {
+            Image(systemName: sendMode == .scheduled ? "clock" : "wand.and.stars")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(WTheme.accent)
+            Text(
+                sendMode == .scheduled
+                    ? "Scheduled for \(scheduledAt.formatted(date: .abbreviated, time: .shortened))"
+                    : "Smart send: goes out at the next safe slot for this mailbox"
+            )
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            Spacer(minLength: 8)
+            Button {
+                withAnimation(.snappy) { sendMode = .instant }
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 15))
+                    .foregroundStyle(.tertiary)
+            }
+            .accessibilityLabel("Send now instead")
+        }
+        .padding(.horizontal, 16)
+        .frame(minHeight: 40)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if sendMode == .scheduled { showSchedulePicker = true }
+        }
+    }
+
+    // MARK: Editor
+
+    /// The draft takes all remaining space, borderless, aligned with the rows.
+    private var editor: some View {
+        TextEditor(text: $messageBody)
+            .font(.body)
+            .scrollContentBackground(.hidden)
+            .padding(.horizontal, 11)
+            .padding(.top, 6)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .overlay(alignment: .topLeading) {
+                if messageBody.isEmpty {
+                    Text("Compose email")
+                        .font(.body)
+                        .foregroundStyle(.tertiary)
+                        .padding(.top, 14)
+                        .padding(.leading, 16)
+                        .allowsHitTesting(false)
+                }
+            }
+            .onChange(of: messageBody) {
+                if messageBody.count > UniboxComposerStore.bodyLimit {
+                    messageBody = String(messageBody.prefix(UniboxComposerStore.bodyLimit))
+                }
+            }
+    }
+
+    // MARK: Helper bar
+
+    /// Quiet helpers above the keyboard: AI, templates, character count.
+    @ViewBuilder
+    private var helperBar: some View {
+        HStack(spacing: 18) {
             if canAI {
                 Button {
                     showAIWriter = true
                 } label: {
                     Label("Write with AI", systemImage: "sparkles")
-                        .font(.subheadline.weight(.semibold))
+                        .font(.footnote.weight(.semibold))
                         .foregroundStyle(Tone.indigo.color)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 7)
-                        .background(Tone.indigo.background, in: Capsule())
                 }
                 .buttonStyle(TapScaleStyle())
             }
@@ -127,182 +301,55 @@ struct UniboxComposer: View {
                     showTemplates = true
                 } label: {
                     Label("Templates", systemImage: "doc.on.doc")
-                        .font(.subheadline.weight(.semibold))
+                        .font(.footnote.weight(.semibold))
                         .foregroundStyle(WTheme.accent)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 7)
-                        .background(Tone.sky.background, in: Capsule())
                 }
                 .buttonStyle(TapScaleStyle())
             }
-            Spacer()
-        }
-        .listRowSeparator(.hidden)
-    }
-
-    // MARK: Cards
-
-    /// Settings-style addressing card: labeled hairline rows in one surface.
-    private var addressCard: some View {
-        VStack(spacing: 0) {
-            addressRow("From") {
-                HStack(spacing: 8) {
-                    WAvatar(name: context.accountEmail ?? "M", seed: context.accountID, size: 24)
-                    Text(context.accountEmail ?? "This mailbox")
-                        .font(.subheadline.weight(.medium))
-                        .lineLimit(1)
-                    Spacer(minLength: 0)
-                }
-            }
-            cardDivider
-            addressRow("To") {
-                TextField("name@example.com", text: $to)
-                    .font(.subheadline)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .keyboardType(.emailAddress)
-            }
-            if showCC {
-                cardDivider
-                addressRow("Cc") {
-                    TextField("name@example.com", text: $cc)
-                        .font(.subheadline)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .keyboardType(.emailAddress)
-                }
-            }
-            cardDivider
-            addressRow("Subject") {
-                TextField("Subject", text: $subject)
-                    .font(.subheadline)
-            }
-        }
-        .airCard(padding: 0)
-        .overlay(alignment: .topTrailing) {
-            if !showCC {
-                Button("Cc") {
-                    withAnimation(.snappy) { showCC = true }
-                }
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(WTheme.accent)
-                .padding(.top, 13)
-                .padding(.trailing, 16)
-            }
-        }
-    }
-
-    private func addressRow(_ label: String, @ViewBuilder value: () -> some View) -> some View {
-        HStack(spacing: 12) {
-            Text(label)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .frame(width: 56, alignment: .leading)
-            value()
+            Spacer(minLength: 0)
+            Text("\(messageBody.count) / \(UniboxComposerStore.bodyLimit)")
+                .font(.caption2)
+                .monospacedDigit()
+                .foregroundStyle(.tertiary)
         }
         .padding(.horizontal, 16)
-        .frame(minHeight: 46)
+        .padding(.vertical, 10)
+        .background(.bar)
+        .overlay(alignment: .top) { Divider() }
     }
 
-    private var cardDivider: some View {
-        Divider().padding(.leading, 84)
-    }
+    // MARK: Schedule sheet
 
-    /// Message card: assist chips + the draft editor in one surface.
-    private var messageCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if canAI || canTemplates {
-                assistRow
-            }
-            TextEditor(text: $messageBody)
-                .frame(minHeight: 180)
-                .font(.body)
-                .scrollContentBackground(.hidden)
-                .overlay(alignment: .topLeading) {
-                    if messageBody.isEmpty {
-                        Text("Write a reply")
-                            .font(.body)
-                            .foregroundStyle(.tertiary)
-                            .padding(.top, 8)
-                            .padding(.leading, 5)
-                            .allowsHitTesting(false)
-                    }
-                }
-                .onChange(of: messageBody) {
-                    if messageBody.count > UniboxComposerStore.bodyLimit {
-                        messageBody = String(messageBody.prefix(UniboxComposerStore.bodyLimit))
-                    }
-                }
-            HStack {
-                Spacer()
-                Text("\(messageBody.count) / \(UniboxComposerStore.bodyLimit)")
-                    .font(.caption)
-                    .monospacedDigit()
-                    .foregroundStyle(.tertiary)
-            }
-        }
-        .airCard()
-    }
-
-    /// Send timing card: segmented mode + the schedule picker when relevant.
-    private var sendOptionsCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            EyebrowLabel("When to send")
-            Picker("When", selection: $sendMode) {
-                ForEach(UniboxSendMode.allCases) { mode in
-                    Text(mode.label).tag(mode)
-                }
-            }
-            .pickerStyle(.segmented)
-            .sensoryFeedback(.selection, trigger: sendMode)
-            if sendMode == .scheduled {
+    private var scheduleSheet: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
                 DatePicker(
                     "Send at",
                     selection: $scheduledAt,
                     in: scheduleBounds,
                     displayedComponents: [.date, .hourAndMinute]
                 )
-                .font(.subheadline)
-            } else if sendMode == .smart {
-                Text("Sends at the next safe slot for this mailbox.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                .datePickerStyle(.graphical)
+                .padding(.horizontal, 12)
+                Spacer(minLength: 0)
             }
-        }
-        .airCard()
-    }
-
-    /// The auth-flow CTA carried into the composer: one full-width gradient
-    /// capsule that names what will happen.
-    private var sendButton: some View {
-        Button {
-            Task { await send() }
-        } label: {
-            HStack(spacing: 8) {
-                if store.isSending {
-                    ProgressView().tint(.white)
-                    Text("Sending")
-                } else {
-                    Image(systemName: sendMode == .scheduled ? "clock.badge.checkmark" : "paperplane.fill")
-                        .font(.system(size: 15, weight: .semibold))
-                    Text(sendLabel)
+            .navigationTitle("Schedule send")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { showSchedulePicker = false }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Set") {
+                        withAnimation(.snappy) { sendMode = .scheduled }
+                        showSchedulePicker = false
+                    }
+                    .fontWeight(.semibold)
                 }
             }
-            .font(.body.weight(.semibold))
-            .foregroundStyle(.white)
-            .frame(maxWidth: .infinity)
-            .frame(height: 50)
-            .background(
-                canSend ? AnyShapeStyle(WTheme.accent.gradient) : AnyShapeStyle(Color(.systemGray3)),
-                in: Capsule()
-            )
         }
-        .buttonStyle(TapScaleStyle())
-        .disabled(!canSend)
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
-        .padding(.bottom, 6)
-        .background(.bar)
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
     }
 
     // MARK: Labels + bounds
