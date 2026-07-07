@@ -73,7 +73,9 @@ struct CampaignOverviewTab: View {
                     dailySection
                     stepsSection
                 }
-                .listStyle(.insetGrouped)
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .background(Color(.systemBackground))
                 .refreshable { await store.load(env.api, campaignID: campaign.id) }
             }
         }
@@ -87,6 +89,9 @@ struct CampaignOverviewTab: View {
     private var summarySection: some View {
         let summary = store.analytics?.summary
         Section {
+            EyebrowLabel("Performance")
+                .padding(.top, 14)
+                .listRowSeparator(.hidden)
             LazyVGrid(columns: columns, alignment: .leading, spacing: 14) {
                 CampaignStatCell(label: "Sent", value: WFormat.compact(summary?.emailsSent ?? 0))
                 CampaignStatCell(label: "Opens", value: WFormat.compact(summary?.uniqueOpens ?? 0), tone: .sky)
@@ -105,8 +110,6 @@ struct CampaignOverviewTab: View {
                     .foregroundStyle(.secondary)
                     .listRowSeparator(.hidden)
             }
-        } header: {
-            EyebrowLabel("Performance")
         }
     }
 
@@ -114,6 +117,9 @@ struct CampaignOverviewTab: View {
     private var dailySection: some View {
         if chartDays.count > 1, chartDays.contains(where: { $0.sent > 0 }) {
             Section {
+                EyebrowLabel("Last 30 days")
+                    .padding(.top, 10)
+                    .listRowSeparator(.hidden)
                 Chart(chartDays, id: \.id) { day in
                     BarMark(x: .value("Day", day.day), y: .value("Sent", day.sent))
                         .foregroundStyle(Tone.sky.color.opacity(0.75))
@@ -132,8 +138,6 @@ struct CampaignOverviewTab: View {
                 .frame(height: 130)
                 .padding(.vertical, 6)
                 .listRowSeparator(.hidden)
-            } header: {
-                EyebrowLabel("Last 30 days")
             }
         }
     }
@@ -143,6 +147,9 @@ struct CampaignOverviewTab: View {
         let steps = store.analytics?.steps ?? []
         if !steps.isEmpty {
             Section {
+                EyebrowLabel("Per step")
+                    .padding(.top, 10)
+                    .listRowSeparator(.hidden)
                 ForEach(steps) { step in
                     HStack(spacing: 12) {
                         Text("\(step.position ?? 0)")
@@ -165,8 +172,6 @@ struct CampaignOverviewTab: View {
                     }
                     .padding(.vertical, 6)
                 }
-            } header: {
-                EyebrowLabel("Per step")
             }
         }
     }
