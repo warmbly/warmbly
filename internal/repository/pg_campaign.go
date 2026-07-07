@@ -1130,8 +1130,11 @@ func (r *campaignRepository) Update(ctx context.Context, userID, campaignID stri
 func (r *campaignRepository) GetByID(ctx context.Context, campaignID uuid.UUID) (*models.Campaign, error) {
 	var campaign models.Campaign
 
+	// organization_id is scanned explicitly: callers (start/stop, sender pool,
+	// advanced settings, tracking domain) gate on campaign.OrganizationID, so it
+	// must be populated or those org checks 404 every campaign.
 	query := fmt.Sprintf(
-		`SELECT c.user_id, %s
+		`SELECT c.user_id, c.organization_id, %s
 		 FROM campaigns c
 		 LEFT JOIN campaign_email_tags cet ON cet.campaign_id = c.id
 		 LEFT JOIN campaign_folders cec ON cec.campaign_id = c.id
@@ -1142,7 +1145,7 @@ func (r *campaignRepository) GetByID(ctx context.Context, campaignID uuid.UUID) 
 
 	row := r.DB.QueryRow(ctx, query, campaignID)
 	err := row.Scan(
-		&campaign.UserID,
+		&campaign.UserID, &campaign.OrganizationID,
 		&campaign.ID, &campaign.Name, &campaign.Description, &campaign.Status,
 		&campaign.StopOnReply, &campaign.OpenTracking, &campaign.LinkTracking,
 		&campaign.TextOnly, &campaign.DailyLimit, &campaign.UnsubscribeHeader, &campaign.RiskyEmails,
