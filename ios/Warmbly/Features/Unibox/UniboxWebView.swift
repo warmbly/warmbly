@@ -14,7 +14,10 @@ struct UniboxWebView: UIViewRepresentable {
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         config.defaultWebpagePreferences.allowsContentJavaScript = false
-        let webView = WKWebView(frame: .zero, configuration: config)
+        // A realistic starting frame: a .zero-sized webview created mid
+        // navigation transition can lay out at width 0 and blank its first load.
+        let initialFrame = CGRect(x: 0, y: 0, width: 360, height: 120)
+        let webView = WKWebView(frame: initialFrame, configuration: config)
         webView.navigationDelegate = context.coordinator
         webView.scrollView.isScrollEnabled = false
         webView.scrollView.bounces = false
@@ -38,7 +41,11 @@ struct UniboxWebView: UIViewRepresentable {
     func updateUIView(_ webView: WKWebView, context: Context) {
         context.coordinator.parent = self
         let document = Self.document(html: html, plain: plain)
-        guard document != context.coordinator.lastLoaded else { return }
+        // Reload when the content changed, or when the first load never
+        // committed (url stays nil if it was dropped mid-transition) — that is
+        // the "message stays blank until you tap it" failure.
+        let firstLoadDied = webView.url == nil && !webView.isLoading
+        guard document != context.coordinator.lastLoaded || firstLoadDied else { return }
         context.coordinator.lastLoaded = document
         webView.loadHTMLString(document, baseURL: nil)
     }
@@ -93,8 +100,19 @@ struct UniboxWebView: UIViewRepresentable {
         init(_ parent: UniboxWebView) { self.parent = parent }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            measure(webView)
+            // Second pass after layout settles; the first measurement can run
+            // before the final width is applied.
+            Task { @MainActor [weak self, weak webView] in
+                try? await Task.sleep(for: .milliseconds(300))
+                guard let self, let webView else { return }
+                self.measure(webView)
+            }
+        }
+
+        private func measure(_ webView: WKWebView) {
             webView.evaluateJavaScript("document.body.scrollHeight") { [weak self] result, _ in
-                guard let self, let value = result as? CGFloat else { return }
+                guard let self, let value = result as? CGFloat, value > 1 else { return }
                 if abs(self.parent.height - value) > 1 { self.parent.height = value }
             }
         }
