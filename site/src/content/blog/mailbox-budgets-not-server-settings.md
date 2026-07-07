@@ -2,6 +2,7 @@
 title: 'Your send limit is a mailbox budget, not a server setting'
 description: 'People keep asking us to raise their daily limit. The honest answer is that the limit they are asking about does not exist.'
 pubDate: 2026-06-10
+cover: '/blog/mailbox-budgets-not-server-settings.webp'
 tags: ['sending', 'deliverability']
 ---
 
@@ -17,8 +18,8 @@ The 600-second gap matters more than people think. Mailbox providers see timing.
 
 More mailboxes. That's the whole answer.
 
-If you need 1,000 sends a day, that is twenty mailboxes at the default cap, ideally spread over a few domains. It is genuinely more setup work than typing 1000 into a box, and it is also the only version that survives contact with Gmail.
+If you need 1,000 sends a day, that is twenty mailboxes at the default cap, ideally spread over a few domains. We work that arithmetic out for 200, 500, and 1,000 a day in [how many mailboxes and domains you need](/blog/how-many-mailboxes-and-domains-cold-email/). It is genuinely more setup work than typing 1000 into a box, and it is also the only version that survives contact with Gmail.
 
-This shapes our infrastructure too, in a way that took us a while to get right. Workers (the processes that actually deliver mail) do not have their own send limits. A worker's capacity is the sum of the budgets of the mailboxes assigned to it, nothing more. Early on we were tempted to give workers a global throttle as a safety net, and we ended up removing the idea: it either duplicates the per-mailbox math or silently overrides it, and both are bugs. What we kept instead is an assignment rule. We don't pile many active sending mailboxes onto one worker, because every worker is also an IP address, and concentrating traffic through one IP recreates the exact problem the mailbox budgets were preventing.
+This shapes our [sending infrastructure](/sending/) too, in a way that took us a while to get right. Workers (the processes that actually deliver mail) do not have their own send limits. A worker's capacity is the sum of the budgets of the mailboxes assigned to it, nothing more. Early on we were tempted to give workers a global throttle as a safety net, and we ended up removing the idea: it either duplicates the per-mailbox math or silently overrides it, and both are bugs. What we kept instead is an assignment rule. We don't pile many active sending mailboxes onto one worker, because every worker is also an IP address, and concentrating traffic through one IP recreates the exact problem the mailbox budgets were preventing.
 
-One more thing about raising the cap, since the settings page will let you go to 100. Before you do, look at three numbers for that mailbox: complaint rate, hard bounce rate, and where your warmup messages have been landing. If all three have been quiet for a few weeks, going from 50 to 60 or 70 is reasonable. If you don't know what those numbers are, that is itself the answer.
+One more thing about raising the cap, since the settings page will let you go to 100. Before you do, look at three numbers for that mailbox: [complaint rate, hard bounce rate](/blog/complaint-rate-that-gets-you-throttled/), and where your warmup messages have been landing. If all three have been quiet for a few weeks, going from 50 to 60 or 70 is reasonable. If you don't know what those numbers are, that is itself the answer.

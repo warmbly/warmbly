@@ -3,6 +3,8 @@ import Layout from '../layouts/Layout.astro';
 import HeroAtmosphere from '../components/HeroAtmosphere.astro';
 import Icon from '../components/Icon.astro';
 import CTA from '../components/CTA.astro';
+import WarmupPoolNotice from '../components/WarmupPoolNotice.astro';
+import PillarPosts from '../components/PillarPosts.astro';
 
 // All numbers below come from the Warmbly codebase / CLAUDE.md
 // (internal/scheduler/warmup_scheduler.go, internal/repository/pg_warmup.go,
@@ -519,6 +521,24 @@ for (let wk = 0; wk < 5; wk++) {
   </section>
 
   <!-- ============================================================
+       SELF-HOST NOTICE · the shared pool is a cloud feature
+  ============================================================ -->
+  <section class="border-b border-[color:var(--border)] py-14 md:py-16">
+    <div class="container-page">
+      <div class="max-w-2xl mb-8">
+        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Running this yourself</div>
+        <h2 class="text-[26px] md:text-[36px] font-semibold tracking-[-0.025em] leading-[1.08] text-heading">
+          The pool needs scale. That is what the cloud provides.
+        </h2>
+        <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed">
+          Warmbly is open source, so you can self-host all of it. The one part that does not travel is the shared warmup pool, because a pool only works once enough vetted mailboxes are in it.
+        </p>
+      </div>
+      <WarmupPoolNotice class="max-w-3xl" />
+    </div>
+  </section>
+
+  <!-- ============================================================
        DEFAULTS · clean 2-column spec sheet with big mono values
   ============================================================ -->
   <section class="py-20 md:py-28">
@@ -607,6 +627,15 @@ for (let wk = 0; wk < 5; wk++) {
       </script>
     </div>
   </section>
+
+  <PillarPosts
+    title="How warmup actually behaves"
+    items={[
+      { kicker: 'Warmup', href: '/blog/how-email-warmup-actually-works/', title: 'How email warmup actually works, ramp curve and all' },
+      { kicker: 'Policy', href: '/blog/quarantine-early/', title: 'Quarantine early: how we protect shared warmup pools' },
+      { kicker: 'Recovery', href: '/blog/getting-a-mailbox-back-into-warmup-pool/', title: 'Getting a burned mailbox back: a recovery playbook' },
+    ]}
+  />
 
   <CTA
     title="Connect a mailbox. Start warming today."

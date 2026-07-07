@@ -1,0 +1,65 @@
+---
+title: "What Google's bulk sender rules actually ask of cold emailers"
+description: 'SPF, DKIM, DMARC alignment, one-click unsubscribe, spam under 0.10%: Google and Microsoft now enforce the same bulk bar. The checklist, and the two gotchas.'
+pubDate: 2026-06-08
+cover: '/blog/reading-the-bulk-sender-rules.webp'
+tags: ['deliverability']
+---
+import Callout from '../../components/blog/Callout.astro';
+
+Google's bulk sender rules reduce to a short list: SPF and DKIM, a DMARC policy that aligns with your visible From domain, one-click unsubscribe on bulk mail, and a user-reported spam rate under 0.10%. Most of it is hygiene you should already run. Two details catch cold senders out, and in 2026 the cost of missing them went up: Gmail stopped quietly spam-foldering non-compliant mail and started rejecting it outright. Microsoft now enforces the same list.
+
+## The full checklist, in one place
+
+Google defines a bulk sender as anyone sending 5,000 or more messages to Gmail in a 24-hour window. Microsoft draws the same 5,000-a-day line for Outlook.com, Hotmail, and Live. Cross it and you land in the strict tier. Almost everything on the list is what any sender should do at any volume, but past 5,000 a day it stops being optional.
+
+| Requirement | What it means |
+| --- | --- |
+| SPF | a DNS record listing the servers allowed to send for your domain |
+| DKIM | a cryptographic signature on every message, tied to your domain |
+| DMARC | a published policy (`p=none` is the floor) that requires SPF or DKIM to align |
+| Alignment | the authenticated domain matches the `From:` address the recipient reads |
+| One-click unsubscribe | a `List-Unsubscribe` header (RFC 8058) plus a visible link in the body |
+| Spam rate | user-reported spam under 0.10% in Postmaster Tools, never reaching 0.30% |
+| Valid PTR / rDNS | reverse DNS on your sending IPs that resolves back to the sending host |
+| TLS | messages transmitted over TLS, not in the clear |
+| Honest headers | RFC 5322 formatting, a real `From:`, no impersonating Gmail or another domain |
+
+The quiet ones are PTR and TLS. Nobody talks about them because most managed sending already sets them, but a self-run mailserver on a fresh IP can ship without reverse DNS and fail the check before a single recipient sees the mail. For the DNS records themselves, our [SPF, DKIM, and DMARC guide](https://docs.warmbly.com/learn/spf-dkim-dmarc/) has the setup. The rest of this post is about the parts that pass a checker and still fail in production.
+
+## Microsoft joined Google, so there is one bar now
+
+For a while the read on Microsoft was that Exchange Online discouraged bulk commercial mail and pointed senders at specialized providers. That stopped being the interesting part. Since May 5, 2025, Outlook.com, Hotmail, and Live require SPF, DKIM, and DMARC with alignment for any domain sending more than 5,000 messages a day. Microsoft junk-foldered non-compliant mail first, then moved to rejection with a `550 5.7.515` error, the same escalation Google ran a year earlier.
+
+So the two providers that hold most consumer inboxes now enforce the same authentication bar. There is no configuration that satisfies one and not the other. Get alignment right once and it holds for both. Miss it and both bounce you. Both are drawing the same line, and it is worth saying plainly: traffic that looks like a person corresponding gets through, traffic that looks like infrastructure gets pushed out. The bulk sender rules are that line written down with numbers attached.
+
+## The first gotcha: alignment is not authentication
+
+This is the one that shows up most in support. A domain passes SPF and passes DKIM and still fails DMARC, because the signature that passed belongs to a sending tool's domain instead of yours. Dashboards love showing green rows for "SPF: pass, DKIM: pass" while alignment is quietly broken underneath.
+
+Authentication asks whether a signature verified. Alignment asks whether the verified domain matches the `From:` a human reads. You can clear the first and fail the second, and DMARC passes only if at least one of SPF or DKIM aligns with your visible `From:` domain. The only check worth trusting is opening a delivered message and reading its `Authentication-Results` header yourself. If `dkim=pass` is followed by a `header.d=` that is not your domain, you have work to do. We read a real header tag by tag in [why your green checkmarks can still lie](/blog/spf-dkim-dmarc-alignment-cold-email/).
+
+## The second gotcha: 0.10% is smaller than it sounds
+
+0.10% reads as a generous allowance until you divide it by cold-email volume. A mailbox sending 50 cold emails a day sends about 1,500 a month. Staying under 0.10% means at most one spam complaint per mailbox per month. One. There is no filtering trick downstream of that number: the message has to be relevant enough that essentially nobody who receives it is angry about receiving it.
+
+That reframes what every other tactic is for. Warmup, authentication, and spacing all sit downstream of writing mail the recipient does not resent. The full enforcement math, Google and Amazon SES side by side, is in [what complaint, bounce, and spam rate gets you throttled](/blog/complaint-rate-that-gets-you-throttled/).
+
+<Callout title="Enforcement got teeth in 2026" variant="warn">
+  Through 2024 and 2025, a blown spam rate mostly meant spam-foldering, a soft signal you could
+  recover from. By 2026 the enforcement had escalated to rejection: non-compliant bulk mail gets a
+  550 error and never reaches any folder, not even junk. The 0.10% target did not change. What
+  changed is that crossing it now costs you delivery, not just placement.
+</Callout>
+
+## What "cold" changes about the rules
+
+The rules were written for marketing mail sent to people who subscribed. You can argue a two-line intro email is not "bulk" in that sense, and whether one-click unsubscribe (RFC 8058, the `List-Unsubscribe` headers) even applies to it. Skip the argument. The recipient who wants out has two buttons in front of them, and one of them reports you to Google. Handing them the other one is not compliance, it is self-interest. Warmbly adds the headers and treats any opt-out as workspace-wide suppression rather than a per-campaign flag, so a person who leaves one sequence does not get hit by the next.
+
+The other cold-specific reality is that you reach these thresholds at low absolute volume. A marketing team sending 5,000 a day has statistical room to absorb a handful of complaints. A cold mailbox at 50 a day has room for almost none. The rules bite harder on you precisely because your sample is smaller, which is why [spreading volume across more mailboxes and domains](/blog/how-many-mailboxes-and-domains-cold-email/) is a compliance move, not only a scaling one.
+
+## The short version
+
+Run SPF, DKIM, and DMARC, and confirm alignment by reading a real header instead of a dashboard. Add one-click unsubscribe and suppress opt-outs everywhere. Keep reported spam under 0.10%, which at cold volume means roughly one complaint per mailbox per month. Do that and you clear both Google's and Microsoft's bar, because in 2026 it is the same bar.
+
+Warmbly is open source under Apache 2.0, so you can read exactly how the sending path handles authentication, unsubscribe headers, and suppression at [github.com/warmbly/warmbly](https://github.com/warmbly/warmbly). The [deliverability](/deliverability/) page collects the thresholds in one place.

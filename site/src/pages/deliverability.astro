@@ -3,6 +3,7 @@ import Layout from '../layouts/Layout.astro';
 import HeroAtmosphere from '../components/HeroAtmosphere.astro';
 import Icon from '../components/Icon.astro';
 import CTA from '../components/CTA.astro';
+import PillarPosts from '../components/PillarPosts.astro';
 
 // Every number on this page is a real default from the codebase:
 //   internal/config/constants.go
@@ -855,6 +856,15 @@ const numbers = [
       </script>
     </div>
   </section>
+
+  <PillarPosts
+    title="Deliverability, in more depth"
+    items={[
+      { kicker: 'Authentication', href: '/blog/spf-dkim-dmarc-alignment-cold-email/', title: 'SPF, DKIM, DMARC alignment: why your green checkmarks can lie' },
+      { kicker: 'Metrics', href: '/blog/delivery-rate-is-not-inbox-placement/', title: 'Delivery rate is not inbox placement' },
+      { kicker: 'Thresholds', href: '/blog/complaint-rate-that-gets-you-throttled/', title: 'What complaint, bounce, and spam rate gets you throttled?' },
+    ]}
+  />
 
   <CTA
     title="See where your mailbox really stands."

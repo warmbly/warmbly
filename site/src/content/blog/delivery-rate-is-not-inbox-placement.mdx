@@ -1,0 +1,72 @@
+---
+title: 'Delivery rate is not inbox placement, and the gap is where your emails die'
+description: 'A 99% delivery rate can still mean the spam folder. What delivered actually means, why it is not placement, and how to tell where your cold email lands.'
+pubDate: 2026-06-27
+cover: '/blog/delivery-rate-is-not-inbox-placement.webp'
+tags: ['deliverability']
+---
+import Callout from '../../components/blog/Callout.astro';
+
+Your ESP says 99% delivered. Your reply count says something else. Both can be true, because delivered is an accounting term, not a placement fact. This post explains the gap between the two numbers, why open rate can't measure it, and which signals can.
+
+## Answer first: delivered means accepted, not seen
+
+Delivered means the receiving mail server accepted the message at the SMTP handshake and didn't bounce it. That's all it means. The message could be in the primary inbox, in Promotions, in the spam folder, or filtered into a folder nobody reads. All of those count as delivered. None of them are the same thing.
+
+Inbox placement rate is the fraction of accepted mail that reaches the primary inbox where a human might read it. A mailbox can post a 99% delivery rate and a 40% inbox placement rate at the same time. That 59-point gap is invisible on the dashboard your ESP hands you, and it's where cold email dies: accepted, filed in spam, never opened, never answered.
+
+If your delivered number looks great and your replies are near zero, you're probably reading the wrong number.
+
+## What your ESP's 99% delivery number is really counting
+
+The 99% counts SMTP acceptances minus bounces. Google, Amazon SES, and Microsoft all accept mail first and sort it second. A hard bounce (no such mailbox, domain doesn't exist) fails the handshake and drops your delivery rate. Spam filing happens after acceptance, so it never touches that number.
+
+Here's the same send counted two ways.
+
+| Metric | What it counts | Where it's decided |
+| --- | --- | --- |
+| Delivery rate | accepted minus bounced | at the SMTP handshake |
+| Inbox placement rate | accepted mail reaching the primary inbox | after acceptance, by the filter |
+| Bounce rate | rejected at handshake | at the SMTP handshake |
+
+Amazon SES tells senders to keep bounce rate under 5% (account review at 5%, possible pause at 10%). That's a delivery-side number, and it matters. But low bounces say nothing about whether the accepted mail landed in the inbox or in junk. Two mailboxes with identical 0.5% bounce rates can have wildly different placement, and only one of them gets replies.
+
+## Why open rate can't fix the gap (Apple MPP and image proxies)
+
+The instinct is to fill the gap with open rate. Don't. Open rate is measured with a tracking pixel, and the two largest mail clients load that pixel without a human involved.
+
+Apple Mail Privacy Protection pre-fetches images the moment mail arrives, before the recipient opens anything. Apple loads your pixel for messages the user never sees, including messages sitting in spam. Gmail proxies and caches every image through its own servers, so a Gmail open can fire from Google's infrastructure on a schedule you don't control. Add security scanners and link-preview bots that fetch images to inspect them, and a large share of your opens are machines.
+
+An inflated open rate can't tell you about placement, because a pixel in the spam folder still loads. You can post a 45% open rate and a 2% reply rate, and the honest read is: the pixel is firing, the humans aren't.
+
+## The signals that indicate placement
+
+Placement leaves fingerprints that don't depend on a pixel. Three are worth watching.
+
+Warmup seed data is the most direct. In a warmup pool, participating mailboxes send to and reply to each other, so you control both ends and can check which folder each message landed in. Warmbly pools draw partner mailboxes from the same pool, exclude recent partners for 7 days, and judge spam-folder placement on at least 20 deliveries over 7 days before acting. That folder-level truth is the closest thing to a placement measurement you can get without paid seed lists.
+
+Replies are the signal a machine can't fake. A reply means the message reached a human, that human read it, and they cared enough to type. Reply rate tends to track inbox placement more honestly than any pixel, because Apple's servers don't answer your questions and Gmail's proxy doesn't ask for a demo.
+
+Complaint rate is the negative signal, and providers publish the thresholds. Google's bulk-sender guidance says keep user-reported spam under 0.10% and never reach 0.30%. Amazon SES says keep complaint rate under 0.1% (review around 0.1%, possible pause around 0.5%). A rising complaint rate means your mail is reaching inboxes and people are rejecting it, which is a targeting or content problem, not a placement one. Both matter, and they fail in different directions.
+
+## How Warmbly reads placement without trusting the open pixel
+
+Warmbly runs its own open and click tracking service, so it can separate the machine loads from the human ones. It classifies prefetches (Apple MPP), the Gmail image proxy, and known scanner user agents, and it deliberately does not filter Gmail's image proxy, because that proxy is the only open signal Gmail exposes. Filter it and you go blind to every Gmail open. Keep it and you know the load is Gmail-shaped, so you can weight it accordingly. Either way, the raw pixel count never gets treated as a human read.
+
+<Callout title="Why the Gmail proxy stays unfiltered">
+  Apple MPP and scanner fetches get flagged as machine loads. Gmail's proxy is the exception we keep on purpose: it's the single open signal Gmail gives up, so filtering it would erase all visibility into Gmail opens. We surface it and weight it, rather than trust it as a human open or throw it away.
+</Callout>
+
+The measurement that carries weight comes from the warmup pool, where both ends are instrumented. Each warmup message carries a signed HMAC verification token in a footer ref line, validated on classification for signature, a 48-hour expiry, single use, pool membership, and a sender/recipient match. That lets Warmbly confirm a given message is a real pool send and see which folder it reached. That folder-level read feeds the health bands: Watch at 10% spam placement, Quarantine at 20% placement or 0.10% complaints or 5% bounces. It's placement data, not pixel data. You can see the reasoning behind [how deliverability signals drive pool decisions](/deliverability/) and [what the dashboard surfaces](/analytics/), and the tracking service is open source at [github.com/warmbly/warmbly](https://github.com/warmbly/warmbly) under Apache 2.0.
+
+## A quick self-audit when delivered looks great but replies are zero
+
+Run this before you blame your copy. It takes about 15 minutes and points at the real failure.
+
+1. Send a test to three seed mailboxes you own on Gmail, Outlook, and one more provider, from the sending mailbox in question. Check which folder each one lands in by hand. Delivered but in spam is the exact condition this whole post is about, and manual folder checks catch it when the dashboard won't.
+2. Compare reply rate to open rate on your last 200 sends. A high open rate with near-zero replies is the Apple-and-Gmail-pixel pattern, not a sign of interest.
+3. Check authentication alignment, not just pass/fail. SPF has a 10 DNS-lookup limit, and DMARC needs SPF or DKIM to align with your visible From domain. Both can pass while DMARC alignment fails, and Google requires alignment for bulk mail. See [SPF, DKIM, DMARC alignment for cold email](/blog/spf-dkim-dmarc-alignment-cold-email/).
+4. Read your bounce rate and complaint rate as separate numbers. Bounces are a list problem, complaints are a targeting problem, and [the complaint rate that gets you throttled](/blog/complaint-rate-that-gets-you-throttled/) starts well below where a provider pauses you.
+5. If placement is bad on a mailbox, slow it down before you push more volume through it. Warmbly's default cold cap is 50 emails per mailbox per day with a minimum 600 seconds between sends, and a brand-new mailbox typically needs 3 to 6 weeks of warmup to reach a stable state. More volume through a filtered mailbox digs the hole deeper.
+
+The number to trust is the one a machine can't inflate. Watch folder placement in a pool where you control both ends, watch reply rate, watch complaint rate against Google's 0.10% and Amazon SES's 0.1% lines. When those three agree, your delivered number finally means what you thought it meant.

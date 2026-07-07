@@ -12,7 +12,7 @@ const groups = [
       ['How long does warmup take?', 'Plan on 3–6 weeks for a brand-new mailbox to reach a stable warmed state. We ramp +1 / day from a 10 / day start with a 40 / day ceiling.'],
       ['Do free and premium pools mix?', 'No. Free-pool mailboxes never silently appear in the premium pool. Dedicated workers still participate in the premium pool by default.'],
       ['What gets a mailbox quarantined?', '≥ 3 invalid warmup tokens in 24h, spam score above 50, complaint rate over 0.10%, or spam-folder placement over 20% on a sufficient sample.'],
-      ['Can I keep warming after I start cold sending?', 'Yes — and you should. Warmup should keep running even after campaigns begin.'],
+      ['Can I keep warming after I start cold sending?', 'Yes, and you should. Warmup should keep running even after campaigns begin.'],
     ],
   },
   {
@@ -30,7 +30,7 @@ const groups = [
     title: 'Inbox & replies',
     items: [
       ['How accurate is reply detection?', 'Reply detection survives quoted text, signatures, "sent from" footers, and forwarded threads. OOO and unsubscribe replies are classified separately.'],
-      ['Can I unify several mailboxes in one view?', 'Yes — that is the whole point. Filters, search and assignment span every connected mailbox.'],
+      ['Can I unify several mailboxes in one view?', 'Yes, that is the whole point. Filters, search and assignment span every connected mailbox.'],
       ['Are open and click trackers reliable?', 'Honestly: opens are noisy because of Apple Mail Privacy and image proxies. We surface opens but never use them for deliverability decisions.'],
     ],
   },
@@ -39,7 +39,7 @@ const groups = [
     title: 'Security',
     items: [
       ['Where is data stored?', 'AWS regions. us-east-1 by default, eu-west-1 on Grow and Business. Custom residency on Enterprise.'],
-      ['How is mailbox auth stored?', 'Refresh tokens are envelope-encrypted with per-user KMS-derived data keys. Decrypted keys are cached briefly in Redis, never persisted to disk.'],
+      ['How is mailbox auth stored?', 'Refresh tokens are envelope-encrypted with per-organization KMS-derived data keys. Decrypted keys are cached briefly in Redis, never persisted to disk.'],
       ['Do you have SOC 2?', 'SOC 2 Type II audit is in progress. We can share the bridge letter once the report is issued.'],
       ['Do you sign DPAs?', 'Yes. Email hello@warmbly.com and we will turn it around within 48 hours.'],
     ],
@@ -55,10 +55,26 @@ const groups = [
     ],
   },
 ];
+
+// FAQPage schema from the groups above. Google deprecated the FAQ rich result,
+// but the type still feeds answer engines clean question and answer pairs, and
+// these answers carry the concrete numbers (50/day cap, 600s gap, warmup bands).
+const faqJsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'FAQPage',
+  mainEntity: groups.flatMap((g) =>
+    g.items.map(([q, a]) => ({
+      '@type': 'Question',
+      name: q,
+      acceptedAnswer: { '@type': 'Answer', text: a },
+    })),
+  ),
+};
 ---
 <Layout
   title="Frequently Asked Questions | Warmbly"
   description="Answers to common questions about email warmup, cold email sending limits, deliverability, mailbox connections, security, and billing on Warmbly."
+  jsonLd={faqJsonLd}
 >
   <!-- HERO with sticky-nav teaser -->
   <section class="relative isolate overflow-hidden text-white" style="background: radial-gradient(ellipse 130% 140% at 72% 28%, #0284c7 0%, #0369a1 25%, #075985 50%, #0c4a6e 80%, #0a3d5c 100%);">

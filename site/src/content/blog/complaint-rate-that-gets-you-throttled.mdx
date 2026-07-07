@@ -1,0 +1,70 @@
+---
+title: 'What complaint, bounce, and spam rate gets you throttled?'
+description: 'The numbers that actually trigger enforcement: Google spam under 0.10%, SES complaint under 0.1% and bounce under 5%. Plus the stricter bands we quarantine at.'
+pubDate: 2026-06-16
+cover: '/blog/complaint-rate-that-gets-you-throttled.webp'
+tags: ['deliverability', 'policy']
+---
+import Callout from '../../components/blog/Callout.astro';
+
+Google wants your user-reported spam rate under 0.10% and says never reach 0.30%. Amazon SES wants complaint rate under 0.1% and bounce rate under 5%, and it starts account reviews at those numbers. Below is every threshold that triggers enforcement, anchored to the provider that enforces it, then the stricter bands Warmbly uses to pull a mailbox before providers see the problem.
+
+## The thresholds that trigger provider enforcement, in one table
+
+Three separate failures get you throttled: complaints, bounces, and spam-folder placement. Providers publish numbers for the first two. Here's what each one does when you cross it.
+
+| Signal | Named threshold | What triggers it | Consequence |
+| --- | --- | --- | --- |
+| User-reported spam (Google) | under 0.10%, never 0.30% | recipients hit "report spam" | filtering, then rejection near 0.30% |
+| Complaint rate (Amazon SES) | under 0.1% | complaint feedback loops | account review around 0.1%, possible pause around 0.5% |
+| Bounce rate (Amazon SES) | under 5% | invalid or rejecting recipients | review at 5%, possible pause at 10% |
+
+The two providers measure slightly different things. Google publishes a spam rate, SES publishes a complaint rate. The practical target is the same: keep reported spam and complaints under one tenth of one percent, and keep hard bounces well under 5%.
+
+## Google: spam rate under 0.10%, never 0.30%
+
+Google's bulk sender guidance gives one hard number for reputation: keep your user-reported spam rate under 0.10%, and never let it reach 0.30%. The rate is measured in Google Postmaster Tools against messages Gmail can identify as yours, which is another reason [SPF, DKIM, and DMARC alignment](/blog/spf-dkim-dmarc-alignment-cold-email/) matter. Without alignment, Google can't attribute your good behavior to you.
+
+The same guidance requires SPF, DKIM, and DMARC with alignment to the visible From domain, plus one-click unsubscribe on bulk and marketing mail. We walk through the full requirement list in [what Google's bulk sender rules ask of cold emailers](/blog/reading-the-bulk-sender-rules/). The number to remember here is 0.10%, because it's the one you can blow through with a single bad campaign.
+
+## Amazon SES: complaint under 0.1%, bounce under 5% for review
+
+If you send through Amazon SES, the enforcement is explicit and automated. SES says to keep complaint rate under 0.1%. Around 0.1% it puts the account under review, and around 0.5% it may pause sending. For bounces, SES wants you under 5%. At 5% the account can go under review, and at 10% SES may pause sending outright.
+
+SES enforces these at the account level, not per mailbox, so one bad list can freeze every mailbox on the account. That's a reason to spread sending across mailboxes and domains, which is also the [right way to scale volume](/blog/how-many-cold-emails-per-day-per-mailbox/).
+
+## What 0.10% means at 50 emails a day per mailbox
+
+The percentage sounds forgiving until you do the division at cold-email volume. Warmbly's default cap is 50 campaign emails per mailbox per day. That's about 1,500 sends a month per mailbox.
+
+<Callout title="The math that should change how you write">
+At 50 emails a day, a mailbox sends about 1,500 a month. Staying under Google's 0.10% spam rate means at most one complaint per mailbox per month. One person out of 1,500 hitting "report spam" puts that mailbox at the line. There's no filtering trick downstream of that number: the message has to be relevant enough that nearly nobody who gets it is angry about getting it.
+</Callout>
+
+One complaint per mailbox per month is the whole budget. It reframes what "good targeting" means. Every deliverability tactic (warmup, authentication, spacing) sits downstream of writing mail the person on the other end doesn't resent. If your list quality forces you above one complaint per 1,500 sends, no configuration change saves you.
+
+## Why we quarantine stricter than the providers do
+
+Providers act at their thresholds to protect their own users. A shared warmup pool has to act earlier, because a mailbox that reaches the provider's line has already spent weeks degrading the pool it sends into. Warmbly's health bands sit below the provider numbers on purpose.
+
+| Band | Trigger | What happens |
+| --- | --- | --- |
+| Watch | 10% spam placement | lower volume, wider spacing |
+| Quarantine | 20% placement, or 0.10% complaints, or 5% bounce | out of the shared pool, 7 days |
+| Block | 40% placement, or 0.30% complaints, or 10% bounce | out 30 days, manual review |
+
+Notice where the block band lands. 0.30% complaints and 10% bounce are the exact points Google and SES escalate to rejection or pause. By the time a mailbox hits our block band, it's already at the provider's cliff. Quarantine fires at 0.10% complaints and 5% bounce, one full band earlier, so the mailbox leaves the pool while its reputation can still recover. We make the case for acting early in [quarantine early: how we protect shared warmup pools](/blog/quarantine-early/).
+
+None of these bands fire on one bad data point. Placement is judged on at least 20 warmup deliveries across 7 days, so a single message in spam on a Tuesday quarantines nobody. Re-entry isn't automatic when the 7 days expire, either. A mailbox has to requalify with authentication intact, no new complaint or bounce spike, clean warmup-token behavior, and placement back under 10% on a fresh probation sample, [re-warming from 5 to 10 a day](/blog/getting-a-mailbox-back-into-warmup-pool/).
+
+## Bounce, complaint, and placement are different failures, measure them apart
+
+The most common mistake is collapsing these into one "deliverability score." They have different causes and different fixes, so a single number hides what's wrong.
+
+- Bounce rate is a list-quality problem. Hard bounces mean the address is dead or rejecting. The fix is list hygiene and verification, not warmup. SES reviews at 5%.
+- Complaint rate is a content and targeting problem. The message reached the inbox and the person didn't want it. The fix is relevance and suppression on any opt-out. Google's line is 0.10%, SES's is 0.1%.
+- Spam-folder placement is a reputation and authentication problem. The message was accepted but filed in junk. Providers don't hand you this number directly, which is why seed and warmup observations exist to estimate it. Placement is [not the same as your delivery rate](/blog/delivery-rate-is-not-inbox-placement/): a message can "deliver" and still land in spam.
+
+Measure them apart because the response differs. A bounce spike means stop and clean the list. A complaint spike means fix the message or the audience. A placement drop with clean bounces and complaints usually points at authentication or a warmup gap. Warmbly's [analytics](/analytics/) track the three separately so you react to the real failure, and the broader [deliverability](/deliverability/) picture stays readable instead of averaged into one figure.
+
+If you want the source numbers, read Google's bulk sender guidance and Amazon SES's sending-review documentation directly. Our own [deliverability guide](https://docs.warmbly.com/learn/deliverability/) collects the thresholds in one place, and Warmbly is open source if you want to read exactly how the bands are wired ([github.com/warmbly/warmbly](https://github.com/warmbly/warmbly)). The one number to carry out of here: one complaint per mailbox per month is your entire budget at 50 sends a day. Write like that's true, because to Gmail it is.

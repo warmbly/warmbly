@@ -1,0 +1,85 @@
+---
+title: 'How many cold emails can you actually send per day?'
+description: 'The safe number is per mailbox, not per account: 50/day default, 100 hard max, a 600s gap between sends. Here is the math to plan any daily volume.'
+pubDate: 2026-07-02
+cover: '/blog/how-many-cold-emails-per-day-per-mailbox.webp'
+tags: ['sending', 'deliverability']
+---
+import Callout from '../../components/blog/Callout.astro';
+
+Fifty cold emails per mailbox per day. That's the default cap Warmbly ships, and it's a deliberately conservative number, not a technical ceiling. You can go higher (the hard max is 100 per mailbox), but 50 is the default because of what Gmail and Outlook tolerate from a sender they don't yet trust, not because of anything in the tool.
+
+This post covers why that number holds, why spacing matters as much as the daily count, and how to do the mailbox math when you need 200, 500, or 1,000 sends a day.
+
+## The short answer: 50 per mailbox per day
+
+Warmbly caps cold campaigns at 50 emails per mailbox per day by default and enforces a hard maximum of 100. Fifty is the safe band for most cold mailboxes. One hundred is the point past which you should have positive reputation signals and a reason, not a default.
+
+Why 50 and not 51? The daily count is a proxy for a pattern. A mailbox sending 50 well-spaced messages to real people looks like a person working an inbox. The same mailbox sending 300 looks like software, and the receiving provider treats it that way. It's the volume at which a normal, recently connected mailbox tends to stay out of trouble while you watch complaint and bounce signals.
+
+Your sending limit isn't one server setting you turn up. It's the sum of per-mailbox budgets. We covered that split in [mailbox budgets, not server settings](/blog/mailbox-budgets-not-server-settings/), and it's the model that makes the rest of this math work.
+
+## Why the limit is Gmail's and Outlook's, not your tool's
+
+No cold email tool can raise the number of emails a mailbox lands in the inbox. That decision belongs to the receiving provider. Warmbly can pace your sends, sign your DKIM, and pull risky mailboxes out of the warmup pool, but the inbox-or-spam call is made by Gmail, Outlook, and Apple based on how your mail behaves over time.
+
+Google's bulk-sender guidance tells you what it watches: keep the user-reported spam rate under 0.10%, never reach 0.30%, and authenticate with SPF, DKIM, and DMARC with alignment plus one-click unsubscribe for bulk mail. Amazon SES, which many senders route through, says keep your complaint rate under 0.1% (SES starts reviewing accounts around 0.1% and may pause sending near 0.5%) and your bounce rate under 5% (review at 5%, possible pause at 10%).
+
+Those are the enforcers. The 50/day default sits well below the volume where a healthy mailbox would trip them, which is the point. You want headroom, not a number that dares the provider to notice you. More on reading those rules in [reading the bulk sender rules](/blog/reading-the-bulk-sender-rules/).
+
+## The 600-second gap: spacing matters as much as the daily cap
+
+Warmbly enforces a minimum of 600 seconds (10 minutes) between sends from a single mailbox. This matters as much as the daily number, and most advice skips it.
+
+Fifty emails a day is about one every 10 minutes across an 8-hour window. That's the shape of a person sending mail, not a script firing a batch at 9:00 a.m. Two mailboxes can both send 50 a day and look completely different to Gmail: one drips them out, the other dumps them in a burst. The burst pattern is the one that gets filtered, even at the same daily count.
+
+So when you plan volume, plan the clock too. A 600-second gap means one mailbox tops out around 144 sends in a 24-hour day at the theoretical limit (86,400 seconds divided by 600), but you're capping at 50 for reputation reasons, which leaves plenty of natural spacing. Don't collapse that spacing to hit a daily number faster. Bursty sending from one mailbox is a reputation risk on its own.
+
+## Do the math: mailboxes for 200, 500, or 1,000 sends a day
+
+Total daily volume is mailbox count times per-mailbox cap. At the 50/day default, the math is direct.
+
+| Target sends/day | Mailboxes at 50/day | Mailboxes at 30/day (conservative) |
+| --- | --- | --- |
+| 200 | 4 | 7 |
+| 500 | 10 | 17 |
+| 1,000 | 20 | 34 |
+
+A fresh mailbox shouldn't start at 50. Warmbly's operational posture is to open cold outreach around 10 to 20 a day, ramp slowly while the mailbox proves stable, then settle into the 30 to 50 band. So the right column (30/day) is closer to what a newer setup should plan for, and it means more mailboxes for the same volume.
+
+There's a matching constraint on the infrastructure side. Warmbly runs one worker per machine, each with its own IP, and a worker's planned volume equals the sum of its mailboxes' caps. No single worker or IP should carry a large share of your total traffic. Spreading 1,000 sends across 20 mailboxes on distributed IPs is safer than concentrating them, even when the per-mailbox number is identical. We go deeper on mailbox and domain planning in [how many mailboxes and domains you need](/blog/how-many-mailboxes-and-domains-cold-email/).
+
+## When it's safe to push a mailbox past 50 toward 100
+
+The 100 hard max exists for mailboxes that have earned it. Moving from 50 toward 100 should follow positive signals, not a deadline.
+
+Before you raise a mailbox above 50, you want:
+
+- A complaint rate holding well under Google's 0.10% line, ideally near zero.
+- A bounce rate under Amazon SES's 5% review threshold, and ideally under 2%.
+- Weeks of stable sending, not days. A brand-new mailbox typically takes 3 to 6 weeks of warmup to reach a stable state (warmup itself starts at 10/day, ramps +1/day, and tops out at 40/day).
+- Clean warmup behavior with no quarantine events.
+
+<Callout title="Raise volume by adding mailboxes first">
+The safest way to grow sending is more healthy mailboxes, not more emails per mailbox. Pushing a single inbox toward 100/day concentrates risk on one reputation surface. Adding mailboxes spreads that risk across IPs and domains, which is what the receiving providers reward. Treat 100 as a reachable ceiling for proven mailboxes, not a target for all of them.
+</Callout>
+
+If you push a mailbox up and complaint or bounce signals move, back off. Warmbly's health bands trigger before providers do: a mailbox enters Watch at 10% spam-folder placement, then Quarantine at 20% placement or 0.10% complaints or 5% bounce, and gets pulled from the shared warmup pool. Acting at 10% placement is the point, not waiting for 40%. [Quarantine early](/blog/quarantine-early/) covers why the early action beats the late one.
+
+## What the SERP gets wrong about 20 to 100 per day
+
+Search "how many cold emails per day" and you'll get numbers from 20 to 100, often on the same page, with no explanation of why they differ. The advice contradicts itself because it collapses three questions into one.
+
+Here's the split that resolves it:
+
+| The number | What it describes |
+| --- | --- |
+| 10 to 20/day | A fresh or recently connected mailbox, still warming |
+| 30 to 50/day | A stable, warmed mailbox in the normal safe band |
+| Up to 100/day | A proven mailbox with clean reputation signals, deliberately raised |
+
+All three numbers are correct. They describe mailboxes at different stages, not one universal limit. "20 per day" is right for a two-week-old mailbox and wrong for one that's been sending clean mail for two months. "100 per day" is fine for the proven mailbox and reckless for the new one. The SERP rarely says which stage it means.
+
+The honest answer is a range tied to mailbox health, not a single figure. Warmbly encodes that as defaults you can see and change: 50 default, 100 max, 600-second gap, all open source under Apache 2.0 at [github.com/warmbly/warmbly](https://github.com/warmbly/warmbly). The docs at [docs.warmbly.com/learn](https://docs.warmbly.com/learn/) cover the cold-email-rules and inbox-placement detail behind each number.
+
+Start each mailbox at 10 to 20, ramp toward 50 as it proves stable, and only reach for 100 with reputation to back it. Then scale total volume by adding mailboxes, not by leaning harder on the ones you have. If you want the pacing, warmup, and quarantine handled for you, that's what the [sending](/sending/) and [deliverability](/deliverability/) sides of Warmbly do.

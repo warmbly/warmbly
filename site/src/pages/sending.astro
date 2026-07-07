@@ -3,6 +3,7 @@ import Layout from '../layouts/Layout.astro';
 import HeroAtmosphere from '../components/HeroAtmosphere.astro';
 import Icon from '../components/Icon.astro';
 import CTA from '../components/CTA.astro';
+import PillarPosts from '../components/PillarPosts.astro';
 
 // Single-send trace
 const trace = [
@@ -409,6 +410,15 @@ const faq = [
       </script>
     </div>
   </section>
+
+  <PillarPosts
+    title="Sending, in more depth"
+    items={[
+      { kicker: 'Limits', href: '/blog/how-many-cold-emails-per-day-per-mailbox/', title: 'How many cold emails can you actually send per day?' },
+      { kicker: 'Planning', href: '/blog/how-many-mailboxes-and-domains-cold-email/', title: 'How many mailboxes and domains do you need?' },
+      { kicker: 'Budgets', href: '/blog/mailbox-budgets-not-server-settings/', title: 'Your send limit is a mailbox budget, not a server setting' },
+    ]}
+  />
 
   <CTA
     title="Connect a mailbox. Send your first campaign today."

@@ -41,7 +41,7 @@ const contribute = [
 const selfhost = [
   'Run on your own infra: Postgres, Redis, Kafka, S3, KMS',
   'One make up command boots the whole stack',
-  'Or skip the ops and use our managed cloud',
+  'Cloud, with the shared warmup pool, is coming soon',
   'BYOK encryption and SSO on enterprise',
 ];
 const links = [
@@ -196,9 +196,9 @@ const links = [
           ))}
         </ul>
         <p class="mt-4 text-[12px] text-white/60 leading-relaxed">
-          Heads up: shared warmup pools only work with a large, vetted base of mailboxes, which a single
-          self-hosted instance usually will not have, so the shared pool is really only effective on our cloud.
-          Self-hosting still gives you the full sending, inbox and CRM stack.
+          One caveat: the shared warmup pool runs on our cloud. It only works with a large base of vetted
+          mailboxes sending to each other, which a single self-hosted instance starts without. Self-hosting
+          still gives you the full sending, inbox, CRM and API stack. The pool is the one part that needs the cloud.
         </p>
       </div>
     </div>

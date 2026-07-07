@@ -1,0 +1,84 @@
+---
+title: 'An open source cold email and warmup platform: what self-hosting actually gives you'
+description: 'Warmbly is Apache 2.0 cold email plus warmup you can self-host. What running it yourself means for IPs, workers, and your data, and when cloud is the better call.'
+pubDate: 2026-07-04
+cover: '/blog/open-source-cold-email-platform.webp'
+tags: ['deliverability', 'sending', 'open-source']
+---
+import Callout from '../../components/blog/Callout.astro';
+
+Self-hosting Warmbly gives you a full cold email and warmup stack you run on your own IPs, under Apache 2.0, with mailbox credentials and message content sealed with keys you control. What it can't give you is the shared warmup pool, because a pool needs many organizations' mailboxes talking to each other, and one instance is one organization.
+
+That trade is the point of this post. Here's what you own, what you have to run yourself, and where the coming cloud does something a single self-hosted box can't.
+
+## Why an open source cold email tool is worth wanting
+
+Most cold email tools are closed SaaS: your mailbox passwords, your prospect lists, and your reply content live on someone else's servers, and you find out how sending works when it breaks. An [open source cold email platform](https://github.com/warmbly/warmbly) changes what you can inspect and control. You can read how the scheduler paces sends, how tokens get validated, and what gets encrypted before it hits disk.
+
+Three concrete things you get that a closed tool won't give you:
+
+- The sending logic is auditable. When a mailbox stops sending, you can read the guardrail that stopped it instead of filing a support ticket.
+- Your data stays on infrastructure you picked. No third party holds your mailbox OAuth tokens or the bodies of your replies.
+- No per-seat or per-mailbox billing on the software itself. You pay for servers and IPs, not a license.
+
+If your only goal is to send today with zero ops, that's a real reason to wait for hosted. If you care about controlling where credentials live and how sending behaves, running the code yourself is the way to get both.
+
+## What you run when you self-host Warmbly
+
+Warmbly isn't one binary. It's six services, and self-hosting means operating all of them:
+
+| Service | Language | Job |
+| --- | --- | --- |
+| Backend | Go | API and business logic, the control plane |
+| Consumer | Go | reads events, updates platform state |
+| Workers | Go | execute sends and mailbox sync, one per machine |
+| Tracking | Rust | serves open pixels and click redirects |
+| Realtime | Elixir | websocket fanout to the dashboard |
+| Dashboard | React | the in-product UI |
+
+Behind those sit Postgres, Redis, and Kafka. The workers are the part that makes distribution work: each runs on its own machine with its own IP, and email accounts get assigned to specific workers. Planned volume for a worker equals the sum of its mailboxes' daily caps, so no single worker or IP becomes a concentration point for a large share of your traffic. That spread is a deliverability decision, and self-hosting means you decide how many machines to run.
+
+The dashboard, tracking, and realtime services are the same code that will back the hosted product. Nothing is stubbed for the open source build.
+
+## The parts self-hosting makes you own: IPs, domains, and worker spread
+
+This is the honest part. Running the code is the easy 20%. The other 80% is the sending infrastructure the code assumes you have.
+
+You own the IPs. Warmbly spreads sending across worker IPs to avoid concentration, but it can't manufacture reputation for an IP that's never sent mail. A fresh IP has no history, and mailbox providers treat it that way until it proves itself.
+
+You own the domains and their auth. SPF has a 10 DNS-lookup limit, and going over it breaks SPF. DMARC needs SPF or DKIM to align with the visible From domain, so both can pass authentication while DMARC alignment still fails. Google's bulk-sender guidance requires SPF, DKIM, and DMARC with alignment plus one-click unsubscribe for bulk mail. Getting that right is on you. Our [SPF, DKIM, DMARC guide](https://docs.warmbly.com/learn/spf-dkim-dmarc/) and the [alignment post](/blog/spf-dkim-dmarc-alignment-cold-email/) walk through the failure modes.
+
+You own deliverability monitoring. Warmbly runs its own [open and click tracking](/analytics/) and reports the signals, but you decide what to do when complaint rate climbs toward Amazon SES's 0.1% review line or Google's 0.10% reported-spam threshold. The product's defaults help: a 50 emails/mailbox/day cold cap (hard max 100), a minimum 600 seconds between sends from one mailbox, and warmup that starts at 10/day and ramps +1/day to a 40/day ceiling. A brand-new mailbox typically takes 3 to 6 weeks to reach a stable warmed state. Those numbers ship in the code. Whether your IPs and domains can sustain them is your call. See [how many mailboxes and domains you need](/blog/how-many-mailboxes-and-domains-cold-email/) and [budgets, not server settings](/blog/mailbox-budgets-not-server-settings/).
+
+<Callout title="The shared warmup pool is a cloud feature, not a self-host feature" variant="warn">
+  A warmup pool works by pairing your mailboxes with other participants so providers see two-way conversation. A single self-hosted instance is one organization, so its mailboxes can only talk to each other, which providers learn to recognize. The pool mechanics (partner selection from the same pool, recent partners excluded for 7 days, HMAC-signed verification tokens, health-band quarantine) are in the code, but the network effect that makes a pool credible needs many organizations. That's the [hosted cloud](/pricing/), coming soon.
+</Callout>
+
+## How the encryption model keeps credentials and message content private
+
+The design assumption is that mailbox passwords, OAuth tokens, and message content are secrets, and the storage layer should never see them in the clear.
+
+The chain works like this. AWS KMS is the root of trust. Each organization gets its own data encryption key (a DEK), generated by KMS. Sensitive fields are sealed with AES-256-GCM using that DEK, and only the encrypted DEK blob is stored. The plaintext DEK is cached with a TTL, then dropped. Keys are per-organization, never per-user, so offboarding one person never orphans a mailbox the whole org depends on.
+
+Two properties matter for self-hosting. First, workers never open a Postgres connection. When a worker needs a DEK to decrypt a mailbox credential, it fetches it over the backend's internal HTTP API, so the SQL blast radius stays on the control plane, not on the many disposable machines doing the sending. Second, because you hold the KMS key, no one outside your AWS account can decrypt a stored field. That's the concrete meaning of your credentials staying private: it's enforced by key custody, not a privacy policy. More on the model in [what we do with your data](/trust/).
+
+## Self-host vs the coming cloud: an honest decision table
+
+| Question | Self-host | Cloud (coming soon) |
+| --- | --- | --- |
+| Who runs the six services? | You | Warmbly |
+| Who owns the IPs and domains? | You | You (mailboxes), Warmbly (sending infra) |
+| Who holds the KMS key? | You | Warmbly |
+| Shared warmup pool? | No, single-org only | Yes, cross-org pool |
+| Deliverability monitoring? | You watch and react | Managed with the same thresholds |
+| Best fit | You want full data custody and control, and can run infra | You want to send without operating Kafka and IP pools |
+
+Neither is strictly better. If you can run distributed infrastructure and you want your credentials never to leave keys you hold, self-host. If you want sending plus a real warmup pool without operating any of it, the [cloud waitlist](https://app.warmbly.com) is open, and the [14-day trial](/pricing/) gives you 3 mailboxes with no credit card. The free tier exists to try the product, not to run production, and its warmup pool is deliberately not filled.
+
+## Where the code lives and what Apache 2.0 lets you do
+
+The code is at [github.com/warmbly/warmbly](https://github.com/warmbly/warmbly) under Apache 2.0. That license lets you use it commercially, modify it, run it privately, and redistribute it, including as part of a product you sell. Apache 2.0 also includes an express patent grant from contributors, so you're not exposed to a contributor asserting a patent on the code they gave you. The main obligations are keeping the license and notices, and stating significant changes you make.
+
+In practice, you can fork the scheduler to change how sends are paced, add a provider integration, or wire the tracking service into your own analytics, and ship the result. If you're building on the API rather than the source, start at the [developer docs](/developers/) and the [learn section](https://docs.warmbly.com/learn/), which cover warmup, inbox placement, and reputation recovery.
+
+A fair starting move: clone the repo, read `internal/scheduler` to see the 50/day cap and 600-second gap enforced in code, then decide whether you'd rather run that yourself or let the cloud run it for you. Either way, you've read the sending logic before you trusted it, which is the thing a closed tool never lets you do.

@@ -1,36 +1,70 @@
 ---
 title: 'Quarantine early: how we protect shared warmup pools'
-description: 'The industry default is to pull a mailbox from warmup when it is already landing in spam 80% of the time. We think that is roughly 70 points too late.'
+description: 'Most warmup tools pull a mailbox at 80% spam placement. Warmbly quarantines at 20%, on separate signals with sample floors, and re-entry you have to earn.'
 pubDate: 2026-06-09
+cover: '/blog/quarantine-early.webp'
 tags: ['warmup', 'policy']
 ---
 import Callout from '../../components/blog/Callout.astro';
 
-While building our warmup pools we looked at how other tools decide when a mailbox no longer belongs in one. The pattern we kept finding: a mailbox gets removed when its spam placement crosses something like 80%.
+Most warmup tools pull a mailbox when its spam placement crosses something like 80%. Warmbly's first action fires at 10%, and a full removal from the shared pool happens at 20%. The bands sit well below where providers start penalizing, they judge each failure signal separately, and none of them fire on a single bad day. Here is why each line is where it is, and why re-entry is something a mailbox earns back rather than waits out.
 
-Think about what 80% means in a shared pool. The pool works by having participating mailboxes send to and reply to each other, so providers see normal conversational traffic. A mailbox that is landing in spam four times out of five has been poisoning those interactions for weeks. Its partners have been opening junk folders to fish its messages out (or not), its replies have been going unanswered, and every healthy mailbox paired with it has absorbed a little of that damage. Removing it at 80% is not a policy. It is a memorial service.
+## What 80% actually costs a shared pool
 
-So our bands are set much lower, and they went through a few revisions before we were happy:
+Think about what 80% means. A [warmup pool](/blog/how-email-warmup-actually-works/) works by having participating mailboxes send to and reply to each other, so providers see normal conversational traffic. A mailbox that is landing in spam four times out of five has been poisoning those interactions for weeks. Its partners have been opening junk folders to fish its messages out (or not), its replies have gone unanswered, and every healthy mailbox paired with it has absorbed a little of that damage. Removing it at 80% is not a policy. It is a memorial service.
+
+The cost is shared, which is the whole reason to act early. In a pool, one mailbox's reputation touches every partner it sends to. The healthy paying customers are the asset worth protecting. The failing mailbox is the cost the rest of them absorb.
+
+## The bands, and why each line sits where it does
+
+Our bands went through a few revisions before we were happy with them:
 
 | Band | Trigger | What happens |
 | --- | --- | --- |
 | Watch | 10% spam placement | volume down, spacing up |
 | Quarantine | 20% placement, or 0.10% complaints, or 5% bounces | out of the pool, 7 days |
-| Block | 40% placement, or 0.30% complaints | out 30 days, manual review |
+| Block | 40% placement, or 0.30% complaints, or 10% bounces | out 30 days, manual review |
 | Catastrophic | 80% placement | long block, full reset |
 
-Two design decisions worth explaining.
+The complaint and bounce triggers are not arbitrary. They are anchored to the exact points Google and Amazon SES escalate. Quarantine's 0.10% complaints and 5% bounce are where SES opens an account review. Block's 0.30% complaints and 10% bounce are where Google moves toward rejection and SES may pause sending outright. So quarantine fires a full band before the provider cliff, while the mailbox's reputation can still recover. The [enforcement numbers, provider by provider](/blog/complaint-rate-that-gets-you-throttled/) are worth reading alongside this.
 
-First, the signals stay separate. An earlier draft combined everything into one health score, and we walked away from it because a single number hides what is actually wrong. A bounce problem is a list-quality problem. A complaint problem is a content or targeting problem. A token problem (every warmup message we send carries a verification token, and we count attempts with missing or forged ones) is usually someone trying to game the pool. Same quarantine, different ways back out.
+## Separate signals, not one blended score
 
-Second, none of this fires on one bad data point. Placement is judged on at least 20 warmup deliveries across a week. A single message in spam on a Tuesday does not quarantine anyone.
+An earlier draft rolled everything into a single health score, and we walked away from it, because one number hides what is actually wrong. A bounce problem is a list-quality problem. A complaint problem is a content or targeting problem. A placement problem is usually reputation or authentication. A token problem (every warmup message we send carries a verification token, and we count attempts with missing or forged ones) is usually someone trying to game the pool. Same quarantine, four different ways back out.
+
+Collapse them into one score and you fix the wrong thing. Re-warming a mailbox whose real problem is a scraped list burns it again at lower volume. The signal you separate out is the repair you make.
+
+## Good engagement does not cancel a complaint
+
+Open and reply rates are a weak positive signal, and we treat them that way. A mailbox with healthy engagement and a rising complaint rate still gets quarantined, because the people hitting "report spam" are not the people opening the mail, and one group's approval does not buy back the other group's damage. Engagement can nudge a borderline mailbox. It cannot offset placement or complaints. That is also why open rate is the wrong number to judge a mailbox on: [Apple and Gmail inflate opens](/blog/getting-a-mailbox-back-into-warmup-pool/) by prefetching images whether or not a human looked, so a burned mailbox can post a healthy open rate the whole time it is landing in spam.
+
+## Nothing fires on one bad day
+
+A band only triggers on enough data to mean something. Placement is judged on at least 20 warmup deliveries across 7 days, so a single message in spam on a Tuesday quarantines nobody. Complaints get their own floor, at least 100 delivered messages over 30 days, before the rate is worth acting on, because one complaint out of ten sends is not a 10% complaint rate, it is noise.
+
+The sample floors matter as much as the thresholds. A strict threshold read off a tiny sample is a random number generator with a serious face. Wait for the floor, then act on the number.
+
+## Token forgery is its own quarantine
+
+Placement and complaints are reputation signals. Token behavior is an abuse signal, and it gets its own trigger. Every warmup message carries a signed verification token, and a mailbox that logs 3 or more invalid tokens in 24 hours gets quarantined regardless of its placement, because forged or malformed tokens usually mean someone is inflating warmup numbers without doing the sending. The [token mechanics](/blog/how-email-warmup-actually-works/) are in the warmup walkthrough.
 
 <Callout title="Where the numbers come from">
-  Google asks senders to keep reported spam under 0.10% and to never reach 0.30%. Our
-  quarantine and block triggers sit at exactly those two numbers, on purpose: by the time a
-  mailbox is there, the question is not whether to act but whether we already acted too late.
+  Google asks senders to keep reported spam under 0.10% and to never reach 0.30%. Amazon SES puts
+  accounts under review around a 0.1% complaint rate and a 5% bounce rate. Our quarantine and block
+  triggers sit at exactly those numbers, on purpose: by the time a mailbox is there, the question is
+  not whether to act but whether we already waited too long.
 </Callout>
 
-The part people push back on is re-entry. The 7 days expiring does not put a mailbox back in the pool. It has to requalify: authentication intact, no new complaint or bounce spikes, clean token behaviour, and placement back under 10% on a fresh probation sample, starting from low volume again. We had a few users annoyed by this, usually with one specific mailbox they were sure was fine. Checking the data, it mostly wasn't.
+## Re-entry is not a timer
 
-If you only take one number from this post, take 20%, not 80%. That is the point where a mailbox stops being a participant in a shared pool and starts being a cost to everyone else in it.
+The 7 days expiring does not put a mailbox back in the pool. It has to requalify: authentication intact, no new complaint or bounce spikes, clean token behavior, and placement back under 10% on a fresh probation sample, starting from low volume again. Time served proves nothing. Two weeks of sending bad mail recovers nothing; two weeks of clean, spaced, low-volume sending is what moves the number. The full sequence is in our [reputation recovery playbook](/blog/getting-a-mailbox-back-into-warmup-pool/).
+
+The cleanest version of this keeps a recovering mailbox off the shared pool entirely while it climbs back, on isolated infrastructure rather than the surface healthy customers depend on. A mailbox digging out of a hole should not do it inside the pool it was damaging.
+
+We have had users annoyed by the requalification step, usually over one specific mailbox they were sure was fine. Checking the data, it mostly was not. That is the pattern that convinced us the bands should be strict: the mailbox owner is the last person positioned to see placement, because they cannot see the spam folder their own mail lands in.
+
+## The one number to keep
+
+If you take one number from this post, take 20%, not 80%. That is the point where a mailbox stops being a participant in a shared pool and starts being a cost to everyone else in it. Every band above it is cleanup, and the point of quarantining early is to never need those bands at all.
+
+Warmbly is open source under Apache 2.0 ([github.com/warmbly/warmbly](https://github.com/warmbly/warmbly)), and the bands here are the ones the pool actually enforces. The [warmup](/warmup/) and [deliverability](/deliverability/) pages cover how the pool and health tracking fit together.

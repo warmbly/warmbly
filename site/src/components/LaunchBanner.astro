@@ -1,0 +1,43 @@
+---
+/**
+ * Launch announcement bar, rendered site-wide above the header.
+ *
+ * Warmbly Cloud (hosted sending + the shared warmup pool) is not live yet.
+ * The whole platform is open source and self-hostable today; the cloud
+ * waitlist lives at app.warmbly.com. Keep this until cloud launches, then
+ * remove it from the Layout.
+ *
+ * Built from the site's own hero vocabulary: a rich single-family sky gradient
+ * with a soft light source, a glass CTA chip (same as the hero badges), a
+ * typographic mid-dot separator, tight heading tracking. Not dismissible.
+ */
+---
+<aside
+  class="relative z-40 w-full text-white"
+  style="
+    background:
+      radial-gradient(135% 240% at 15% -60%, rgba(186,230,253,0.55) 0%, rgba(56,189,248,0) 48%),
+      linear-gradient(180deg, #0ea5e9 0%, #0284c7 100%);
+    box-shadow: inset 0 1px 0 0 rgba(255,255,255,0.16), inset 0 -1px 0 0 rgba(2,33,54,0.22);
+  "
+  aria-label="Launch status"
+>
+  <div class="container-page flex h-12 items-center justify-center gap-x-3.5 sm:gap-x-5 text-[13px] sm:text-[13.5px]">
+    <p class="min-w-0 truncate leading-none">
+      <span class="font-semibold tracking-[-0.012em] text-white">Warmbly Cloud is coming soon</span>
+      <span class="hidden md:inline text-white/40">&nbsp;&nbsp;·&nbsp;&nbsp;</span>
+      <span class="hidden md:inline text-white/75">open source and self-hostable today</span>
+    </p>
+
+    <a
+      href="https://app.warmbly.com"
+      class="group shrink-0 inline-flex items-center gap-1.5 h-8 pl-4 pr-3 rounded-full bg-white/15 ring-1 ring-inset ring-white/30 text-[12.5px] font-semibold text-white backdrop-blur-sm shadow-[0_2px_10px_-4px_rgba(2,33,54,0.5)] hover:bg-white/25 hover:ring-white/45 transition-colors"
+    >
+      <span class="hidden sm:inline">Join the waitlist</span>
+      <span class="sm:hidden">Waitlist</span>
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true" class="text-white/90 transition-transform group-hover:translate-x-0.5">
+        <path d="M3.5 3l3 3-3 3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </a>
+  </div>
+</aside>

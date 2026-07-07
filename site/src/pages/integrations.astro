@@ -167,7 +167,7 @@ const guarantees = [
 
 // --- Security ----------------------------------------------------------------
 const security = [
-  { icon: 'lock',   t: 'OAuth tokens encrypted at rest',     d: 'AES-256-GCM with a per-user data key wrapped by AWS KMS. Plaintext lives only in a TTL-bounded cache during active use.' },
+  { icon: 'lock',   t: 'OAuth tokens encrypted at rest',     d: 'AES-256-GCM with a per-organization data key wrapped by AWS KMS. Plaintext lives only in a TTL-bounded cache during active use.' },
   { icon: 'key',    t: 'API keys are opaque blobs',          d: 'CRM, automation and notification keys are never serialized back to the API. The dashboard sees only public display fields.' },
   { icon: 'link',   t: 'Inbound URLs are per-organization',  d: 'A leaked URL touches one organization. Rotating the secret invalidates the old path immediately.' },
   { icon: 'shield', t: 'SSRF-guarded by default',            d: 'Outbound webhook targets are HTTPS-only and blocked from obvious internal addresses. Self-hosted can opt into unsafe URLs.' },
@@ -630,7 +630,7 @@ X-Warmbly-Signature: t=1748443269,v1=9f2a…c1b7
           Credentials are sealed, not stored.
         </h2>
         <p class="mt-5 text-[15px] text-foreground/70 leading-relaxed max-w-md">
-          Integration credentials use the same encryption envelope as mailbox OAuth tokens. Per-user data encryption keys are wrapped by AWS KMS, and plaintext keys are never written to disk.
+          Integration credentials use the same encryption envelope as mailbox OAuth tokens. Per-organization data encryption keys are wrapped by AWS KMS, and plaintext keys are never written to disk.
         </p>
       </div>
 
