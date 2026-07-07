@@ -48,8 +48,10 @@ struct CampaignCreateFlow: View {
     @State private var errorPulse = 0
     @State private var badgeAppeared = false
 
+    @State private var folderQuery = ""
+
     @FocusState private var focusedField: Field?
-    private enum Field { case name, description }
+    private enum Field { case name, description, folderSearch }
 
     /// Per-mailbox daily budgets, mirroring the product's conservative
     /// defaults (50 is the built-in cap; fresh mailboxes should start low).
@@ -533,48 +535,104 @@ struct CampaignCreateFlow: View {
         .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 17))
     }
 
+    /// Folders shown on the folder page, filtered by the search box once the
+    /// list is big enough to need one.
+    private var visibleFolders: [UserGroup] {
+        let trimmed = folderQuery.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return folders }
+        return folders.filter { ($0.name ?? "").localizedCaseInsensitiveContains(trimmed) }
+    }
+
     private var folderPage: some View {
         VStack(alignment: .leading, spacing: 0) {
             pageTitle("File it in a folder?", "Optional. Folders keep the campaign list browsable as it grows.")
 
-            VStack(spacing: 10) {
-                ForEach(folders) { folder in
-                    folderRow(folder, selected: folderID == folder.id) {
+            if folders.count > 8 {
+                folderSearchField
+                    .padding(.bottom, 12)
+            }
+
+            // Two-up chips so big folder libraries stay a short scroll, not
+            // a wall of full-width rows.
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
+                ForEach(visibleFolders) { folder in
+                    folderChip(folder, selected: folderID == folder.id) {
                         withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
                             folderID = folderID == folder.id ? nil : folder.id
                         }
                     }
                 }
             }
+
+            if visibleFolders.isEmpty {
+                Text("No folders match \"\(folderQuery.trimmingCharacters(in: .whitespaces))\"")
+                    .font(.system(size: 13.5))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 24)
+            }
         }
     }
 
-    private func folderRow(_ folder: UserGroup, selected: Bool, action: @escaping () -> Void) -> some View {
+    private var folderSearchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(.secondary)
+            TextField("Search folders", text: $folderQuery)
+                .focused($focusedField, equals: .folderSearch)
+                .font(.system(size: 15))
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            if !folderQuery.isEmpty {
+                Button {
+                    folderQuery = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 15))
+                        .foregroundStyle(.tertiary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear folder search")
+            }
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 44)
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .strokeBorder(focusedField == .folderSearch ? WTheme.accent : .clear, lineWidth: 1.8)
+        )
+        .animation(.easeOut(duration: 0.18), value: focusedField)
+    }
+
+    private func folderChip(_ folder: UserGroup, selected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack(spacing: 12) {
+            HStack(spacing: 9) {
                 Circle()
                     .fill(Color(uniboxHex: folder.color) ?? WTheme.accent)
-                    .frame(width: 11, height: 11)
+                    .frame(width: 10, height: 10)
                 Text(folder.name ?? "Folder")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
-                Spacer(minLength: 8)
+                    .minimumScaleFactor(0.8)
+                Spacer(minLength: 4)
                 if selected {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 19))
+                        .font(.system(size: 17))
                         .foregroundStyle(.white, WTheme.accent)
                         .transition(.scale(scale: 0.4).combined(with: .opacity))
                 }
             }
-            .padding(.horizontal, 16)
-            .frame(height: 54)
+            .padding(.horizontal, 13)
+            .frame(height: 46)
             .background(
                 selected ? AnyShapeStyle(WTheme.accent.opacity(0.08)) : AnyShapeStyle(Color(.secondarySystemBackground)),
-                in: RoundedRectangle(cornerRadius: 17)
+                in: RoundedRectangle(cornerRadius: 14)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 17)
+                RoundedRectangle(cornerRadius: 14)
                     .strokeBorder(selected ? WTheme.accent : .clear, lineWidth: 1.8)
             )
         }

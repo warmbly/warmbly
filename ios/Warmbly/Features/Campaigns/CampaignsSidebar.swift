@@ -195,9 +195,10 @@ struct CampaignsSidebar: View {
         .buttonStyle(TapScaleStyle())
         .opacity(revealed ? 1 : 0)
         .offset(x: revealed ? 0 : -18)
+        // Cap the stagger so a long folder list doesn't cascade for seconds.
         .animation(
             .spring(response: 0.42, dampingFraction: 0.82)
-                .delay(revealed ? 0.03 + Double(index) * 0.022 : 0),
+                .delay(revealed ? 0.03 + min(Double(index), 14) * 0.022 : 0),
             value: revealed
         )
     }
