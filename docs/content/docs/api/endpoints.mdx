@@ -172,6 +172,7 @@ Mutating API requests may include an `Idempotency-Key` header. Warmbly stores th
 These never accept an API key. They depend on a human-bound session: billing flows, governance, OAuth onboarding, websocket bootstrap, and operational destruction.
 
 - `POST /auth/login`, `/auth/login/confirm`, `/auth/register`, `/auth/register/confirm`, `/auth/refresh`, `/auth/reset-password`, `/auth/reset-password/confirm`
+- `GET /auth/providers`, `POST /auth/apple`, `POST /auth/google` (native-app social sign-in)
 - `POST /auth/logout`, `POST /auth/logout-all`, `GET /auth/me`, `PATCH /auth/me/onboarding`
 - `POST /auth/me/avatar`, `DELETE /auth/me/avatar`
 - `POST /emails/onboarding/oauth/start`, `POST /emails/onboarding/oauth/finish`, `POST /emails/onboarding/smtp-imap`

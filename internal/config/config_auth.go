@@ -17,6 +17,13 @@ type AuthConfig struct {
 	AppleKeyID     string
 	AppleKeySecret string
 
+	// Native-app (iOS) social sign-in. ID-token verification only needs the
+	// expected audiences: the app's bundle ID for Sign in with Apple (fixed by
+	// the shipped binary) and the iOS OAuth client ID for Google (empty
+	// disables the Google option and hides its button in the app).
+	AppleIOSBundleID  string
+	GoogleIOSClientID string
+
 	AuthSecret      string
 	TurnstileSecret string
 	TurnstileBypass string
@@ -78,6 +85,9 @@ func (c *Config) LoadAuthConfig(ctx context.Context) (*AuthConfig, error) {
 		return nil, err
 	}
 
+	appleIOSBundleID := c.GetStringOptional(ctx, "APPLE_IOS_BUNDLE_ID", "apple-auth/ios_bundle_id", "com.warmbly.app")
+	googleIOSClientID := c.GetStringOptional(ctx, "GOOGLE_IOS_CLIENT_ID", "google-auth/ios_client_id", "")
+
 	authSecret, err := c.GetSecret(ctx, "AUTH_SECRET", "auth_secret")
 	if err != nil {
 		return nil, err
@@ -107,6 +117,9 @@ func (c *Config) LoadAuthConfig(ctx context.Context) (*AuthConfig, error) {
 		AppleTeamID:    appleTeamID,
 		AppleKeyID:     appleKeyID,
 		AppleKeySecret: appleKeySecret,
+
+		AppleIOSBundleID:  appleIOSBundleID,
+		GoogleIOSClientID: googleIOSClientID,
 
 		AuthSecret:      authSecret,
 		TurnstileSecret: turnstileSecret,

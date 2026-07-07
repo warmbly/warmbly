@@ -36,8 +36,9 @@ var (
 	ErrCode        = New(BadRequest, "Invalid or expired verification code.")
 	ErrAuthLimit   = New(BadRequest, "Too many attempts, please try again later.")
 
-	ErrExternalCode  = New(BadRequest, "Invalid or expired code, please try again.")
-	ErrExternalEmail = New(BadRequest, "Invalid or unverified email address.")
+	ErrExternalCode     = New(BadRequest, "Invalid or expired code, please try again.")
+	ErrExternalEmail    = New(BadRequest, "Invalid or unverified email address.")
+	ErrExternalProvider = New(BadRequest, "This sign-in method isn't available on this server.")
 
 	// Sessions
 	ErrSessionNotFound = New(NotFound, "Session not found.")

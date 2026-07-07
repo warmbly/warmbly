@@ -44,6 +44,15 @@ type AuthService interface {
 	// referral attribution at signup).
 	WireReferral(r ReferralAttributor)
 
+	// Native-app social sign-in: the client authenticates with the provider on
+	// device and exchanges the resulting ID token for a session. First sign-in
+	// provisions the account (org + trial) like password registration.
+	AppleIDTokenAuth(ctx context.Context, rawToken, firstName, lastName, ipaddr, userAgent string) (*models.Token, *errx.Error)
+	GoogleIDTokenAuth(ctx context.Context, rawToken, ipaddr, userAgent string) (*models.Token, *errx.Error)
+	// WireExternalIDTokens attaches the ID-token verifiers (post-construction;
+	// a nil verifier disables that provider).
+	WireExternalIDTokens(apple, google IDTokenVerifier)
+
 	ResetPasswordStart(ctx context.Context, data *ResetPasswordStart, ipaddr string) *errx.Error
 	ResetPasswordConfirm(ctx context.Context, data *ResetPasswordConfirm, session, ipaddr string) *errx.Error
 
@@ -63,6 +72,8 @@ type authService struct {
 	cache                    *cache.Cache
 	captcha                  *captcha.Turnstile
 	externalAuth             *models.ExternalAuth
+	appleIDTokens            IDTokenVerifier
+	googleIDTokens           IDTokenVerifier
 	twofa                    TwoFAChallenger
 	referral                 ReferralAttributor
 }

@@ -193,6 +193,15 @@ func Run(
 		auth.POST("/passkey/login/begin", h.PasskeyLoginBegin)
 		auth.POST("/passkey/login/finish", h.PasskeyLoginFinish)
 
+		// Native-app social sign-in: the app authenticates with Apple/Google
+		// on device and exchanges the provider-signed ID token for a session.
+		// Public like the passkey routes — the token signature is the
+		// protection. /providers lets the one shipped app binary discover
+		// what a hosted or self-hosted backend supports.
+		auth.GET("/providers", h.AuthProviders)
+		auth.POST("/apple", h.AppleTokenLogin)
+		auth.POST("/google", h.GoogleTokenLogin)
+
 		// 2FA login challenge (PUBLIC): exchanges a single-use pending token +
 		// TOTP/recovery code for a real session. Rate-limited in the service
 		// (no user context here, so RateLimitMiddleware would be a no-op).

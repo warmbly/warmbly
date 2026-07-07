@@ -51,21 +51,25 @@ import (
 	"github.com/warmbly/warmbly/internal/infrastructure/encryptedkeys"
 	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/infrastructure/storage"
+	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/notify"
 	"github.com/warmbly/warmbly/internal/repository"
 	"github.com/warmbly/warmbly/internal/tasks"
 )
 
 type Handler struct {
-	AuthService     auth.AuthService
-	TokenService    token.TokenService
-	PasskeyService  passkey.Service
-	UserService     user.UserService
-	EmailService    email.EmailService
-	CampaignService campaign.CampaignService
-	ContactService  contact.ContactService
-	SequenceService sequence.SequenceService
-	UniboxService   unibox.UniboxService
+	AuthService    auth.AuthService
+	TokenService   token.TokenService
+	PasskeyService passkey.Service
+
+	// Native-app social sign-in discovery (GET /auth/providers).
+	ExternalAuthProviders models.ExternalAuthProviders
+	UserService           user.UserService
+	EmailService          email.EmailService
+	CampaignService       campaign.CampaignService
+	ContactService        contact.ContactService
+	SequenceService       sequence.SequenceService
+	UniboxService         unibox.UniboxService
 
 	FolderService   group.GroupService
 	TagService      group.GroupService

@@ -92,6 +92,7 @@ import (
 	"github.com/warmbly/warmbly/internal/pkg/emailverify"
 	"github.com/warmbly/warmbly/internal/pkg/generation"
 	"github.com/warmbly/warmbly/internal/pkg/geo"
+	"github.com/warmbly/warmbly/internal/pkg/idtoken"
 	"github.com/warmbly/warmbly/internal/repository"
 	"github.com/warmbly/warmbly/internal/scheduler"
 	"github.com/warmbly/warmbly/internal/tasks"
@@ -110,6 +111,7 @@ func main() {
 
 	var tokenService token.TokenService
 	var authService auth.AuthService
+	var externalAuthProviders models.ExternalAuthProviders
 	var userService user.UserService
 	var emailService email.EmailService
 	var campaignService campaign.CampaignService
@@ -638,6 +640,22 @@ func main() {
 		twofaService = twofa.NewService(repository.NewTOTPRepository(primaryDB.Pool), userRepostory, tokenService, cache, twofa.DeriveKey(authCfg.TwoFASecret))
 		authService.WireTwoFA(twofaService)
 
+		// Native-app social sign-in. Declared as the interface type so an
+		// unconfigured provider stays a true nil (no typed-nil pitfall) and
+		// the service reports it as unavailable.
+		var appleIDTokens, googleIDTokens auth.IDTokenVerifier
+		if authCfg.AppleIOSBundleID != "" {
+			appleIDTokens = idtoken.AppleVerifier(authCfg.AppleIOSBundleID)
+		}
+		if authCfg.GoogleIOSClientID != "" {
+			googleIDTokens = idtoken.GoogleVerifier(authCfg.GoogleIOSClientID)
+		}
+		authService.WireExternalIDTokens(appleIDTokens, googleIDTokens)
+		externalAuthProviders = models.ExternalAuthProviders{
+			AppleBundleID:     authCfg.AppleIOSBundleID,
+			GoogleIOSClientID: authCfg.GoogleIOSClientID,
+		}
+
 		// Referral program. Wired bidirectionally with Stripe (webhooks reward and
 		// claw back; the earnings ledger nets onto the referrer's customer balance)
 		// and into auth so a signup carrying ?ref= is attributed to its referrer.
@@ -1070,7 +1088,9 @@ func main() {
 	}
 
 	h := &handler.Handler{
-		AuthService:      authService,
+		AuthService:           authService,
+		ExternalAuthProviders: externalAuthProviders,
+
 		TokenService:     tokenService,
 		PasskeyService:   passkeyService,
 		UserService:      userService,

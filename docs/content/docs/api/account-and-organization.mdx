@@ -6,7 +6,7 @@ icon: Users
 
 This group covers everything tied to a human account and the workspace it belongs to: signing in, managing sessions, editing your profile and security settings (notification preferences, two-factor authentication, passkeys), running an organization (members, invitations, custom roles), grouping members into teams, and billing.
 
-Almost every endpoint here is session only. They depend on a human-bound JWT and are never reachable with an API key. The two exceptions are the team endpoints, which accept either a JWT or an API key, and the public auth endpoints (login, register, refresh, password reset, passkey login, 2FA verify), which carry no session at all because they exist to create one. Each endpoint below states its auth explicitly.
+Almost every endpoint here is session only. They depend on a human-bound JWT and are never reachable with an API key. The two exceptions are the team endpoints, which accept either a JWT or an API key, and the public auth endpoints (login, register, refresh, password reset, passkey login, social sign-in, 2FA verify), which carry no session at all because they exist to create one. Each endpoint below states its auth explicitly.
 
 All error responses use the shared envelope (`error`, `message`, `code`, `request_id`). See [Error codes](/api/error-codes/).
 
@@ -229,6 +229,61 @@ Auth: public (not available to API keys).
 |-------|------|----------|-------------|
 | `session` | string | yes | The session value from the begin step. |
 | `credential` | object | yes | The raw WebAuthn assertion (`PublicKeyCredential`) from the browser. |
+
+#### Response
+
+A token pair (same shape as the login confirm success response).
+
+### List sign-in providers
+
+`GET /auth/providers`
+
+Advertises which native-app social sign-in options this deployment supports, so the mobile app adapts to hosted and self-hosted backends without a rebuild. Client IDs are public identifiers, not secrets.
+
+Auth: public (not available to API keys).
+
+#### Response
+
+```json
+{
+  "apple": { "enabled": true, "client_id": "com.warmbly.app" },
+  "google": { "enabled": true, "client_id": "1234-abc.apps.googleusercontent.com" }
+}
+```
+
+### Sign in with Apple
+
+`POST /auth/apple`
+
+Exchanges a native Sign in with Apple identity token for a session. The token is verified against Apple's published keys (signature, issuer, audience, expiry). A provider-verified identity is strong auth, so there is no email code step. The first sign-in creates the account, organization, and free trial.
+
+Auth: public (not available to API keys).
+
+#### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `identity_token` | string | yes | The `identityToken` from the Apple authorization credential. |
+| `first_name` | string | no | Apple shares the name only with the app, never inside the token; forwarded for first-sign-in profile prefill. |
+| `last_name` | string | no | See `first_name`. |
+
+#### Response
+
+A token pair (same shape as the login confirm success response).
+
+### Sign in with Google
+
+`POST /auth/google`
+
+Exchanges a native Google Sign-In ID token for a session. The token is verified against Google's published keys and must be issued for the client ID advertised by `/auth/providers`. The first sign-in creates the account, organization, and free trial.
+
+Auth: public (not available to API keys).
+
+#### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id_token` | string | yes | The ID token from Google Sign-In. |
 
 #### Response
 
