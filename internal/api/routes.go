@@ -315,6 +315,11 @@ func Run(
 			// contact — read-level access, no side effects.
 			protected.POST("/campaign-template-preview", m.RequireOrganization(), m.RequireAccess(models.PermViewCampaigns, models.APIPermReadCampaigns), h.PreviewCampaignTemplate)
 
+			// Status-bucket + folder counts for the campaigns browser (no
+			// campaign id; can't be a static sibling of /campaigns/:id, so it
+			// lives one level up).
+			protected.GET("/campaigns-overview", m.RequireOrganization(), m.RequireAccess(models.PermViewCampaigns, models.APIPermReadCampaigns), h.GetCampaignsOverview)
+
 			campaigns := protected.Group("/campaigns")
 			campaigns.Use(m.RateLimitMiddleware(models.RateLimitWrite))
 			{

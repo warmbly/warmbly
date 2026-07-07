@@ -124,9 +124,28 @@ func (h *Handler) SearchCampaigns(c *gin.Context) {
 	query := c.Query("q")
 	cursor := c.Query("cursor")
 	folder := c.Query("folder")
+	status := c.Query("status")
 	limit := c.Query("limit")
 
-	resp, err := h.CampaignService.Search(c.Request.Context(), orgID.String(), query, cursor, folder, limit)
+	resp, err := h.CampaignService.Search(c.Request.Context(), orgID.String(), query, cursor, folder, status, limit)
+	if err != nil {
+		errx.JSON(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, resp)
+}
+
+// GetCampaignsOverview returns status-bucket counts and per-folder totals
+// for the campaigns browser sidebar.
+func (h *Handler) GetCampaignsOverview(c *gin.Context) {
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "no organization selected"))
+		return
+	}
+
+	resp, err := h.CampaignService.Overview(c.Request.Context(), orgID.String())
 	if err != nil {
 		errx.JSON(c, err)
 		return

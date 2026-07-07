@@ -75,7 +75,7 @@ func (s *campaignService) Get(ctx context.Context, orgID, id string) (*models.Ca
 	return resp, nil
 }
 
-func (s *campaignService) Search(ctx context.Context, orgID, query, cursor, folder, limit string) (*models.CampaignsResult, *errx.Error) {
+func (s *campaignService) Search(ctx context.Context, orgID, query, cursor, folder, status, limit string) (*models.CampaignsResult, *errx.Error) {
 	cursorId, err := paging.DecodeCursor(cursor)
 	if err != nil {
 		return nil, err
@@ -88,12 +88,25 @@ func (s *campaignService) Search(ctx context.Context, orgID, query, cursor, fold
 	if err != nil {
 		return nil, err
 	}
+	switch status {
+	case "", "draft", "active", "paused", "completed":
+	default:
+		return nil, errx.New(errx.BadRequest, "invalid status filter: must be draft, active, paused, or completed")
+	}
 
-	resp, xerr := s.campaignRepository.Search(ctx, orgID, query, cursorId, folderId, limitN)
+	resp, xerr := s.campaignRepository.Search(ctx, orgID, query, cursorId, folderId, status, limitN)
 	if xerr != nil {
 		return nil, errx.InternalError()
 	}
 
+	return resp, nil
+}
+
+func (s *campaignService) Overview(ctx context.Context, orgID string) (*models.CampaignsOverview, *errx.Error) {
+	resp, err := s.campaignRepository.Overview(ctx, orgID)
+	if err != nil {
+		return nil, errx.InternalError()
+	}
 	return resp, nil
 }
 

@@ -18,12 +18,13 @@ Search and page through the organization's campaigns. **Scope** `READ_CAMPAIGNS`
 | --- | --- | --- | --- |
 | `q` | query | string | Free-text filter on campaign name. Optional. |
 | `folder` | query | string | Restrict to a single folder id. Optional. |
+| `status` | query | string | Status bucket filter: `draft`, `active`, `paused` (matches every paused variant), or `completed`. Any other value returns `400`. Optional. |
 | `cursor` | query | string | Opaque cursor from the previous page's `pagination.next_cursor`. Optional. |
 | `limit` | query | string | Page size. Optional. |
 
 ### Response
 
-A `data` plus `pagination` envelope. `next_cursor` is the campaign id to resume from (`null` on the last page), and `total` is the unfiltered count.
+A `data` plus `pagination` envelope. `next_cursor` is the campaign id to resume from (`null` on the last page), and `total` is the count matching the current `q`/`folder`/`status` filters.
 
 ```json
 {
@@ -76,6 +77,27 @@ A `data` plus `pagination` envelope. `next_cursor` is the campaign id to resume 
     "next_cursor": "c1_b3BhcXVlLWN1cnNvcg",
     "has_more": true
   }
+}
+```
+
+## Campaigns overview
+
+`GET /campaigns-overview`
+
+Status-bucket counts plus per-folder totals for the organization, used to drive campaign browsing UIs. `paused` sums every paused variant (`paused`, `paused_no_accounts`, `paused_trial_expired`). The path has no campaign id, so it lives beside `/campaigns` rather than under it. **Scope** `READ_CAMPAIGNS` · **Org permission** `view_campaigns`.
+
+### Response
+
+```json
+{
+  "total": 12,
+  "active": 3,
+  "paused": 2,
+  "draft": 4,
+  "completed": 3,
+  "folders": [
+    { "folder_id": "6b9c1c8e-1f2a-4d3b-8c7e-9a0b1c2d3e4f", "total": 5 }
+  ]
 }
 ```
 
