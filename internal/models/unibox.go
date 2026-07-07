@@ -178,8 +178,11 @@ type MailSearchParams struct {
 	// CategoryIDs restricts results to threads carrying at least one of
 	// these conversation labels. Empty = no category filter.
 	CategoryIDs []uuid.UUID
-	PageSize    int
-	Cursor      string
+	// Uncategorized, when true, narrows to threads carrying no
+	// conversation labels at all. nil = no filter.
+	Uncategorized *bool
+	PageSize      int
+	Cursor        string
 }
 
 type MarkSeen struct {

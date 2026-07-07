@@ -139,6 +139,12 @@ func (h *Handler) GetUniboxIncoming(c *gin.Context) {
 		collectAccountIDs(v)
 	}
 
+	// Uncategorized: threads carrying no conversation labels at all.
+	if c.Query("uncategorized") == "true" {
+		v := true
+		params.Uncategorized = &v
+	}
+
 	// Conversation-label filter: category_ids=<uuid>,<uuid>. A thread
 	// matches if it carries any of the listed labels. Invalid UUIDs are
 	// dropped, matching the email_ids behaviour.

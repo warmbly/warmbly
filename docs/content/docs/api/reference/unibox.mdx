@@ -28,6 +28,7 @@ Returns the inbox list, collapsed to one row per thread (the newest message), wi
 | `email_id` | query | string | Restrict to a single mailbox by UUID. |
 | `email_ids` | query | string | Comma-separated mailbox UUIDs. A thread matches if it landed in any of them. Invalid UUIDs are dropped. |
 | `category_ids` | query | string | Comma-separated conversation-label UUIDs. A thread matches if it carries any of them. |
+| `uncategorized` | query | boolean | `true` returns only threads carrying no conversation labels. |
 
 The response is a `data` plus `pagination` envelope. Each row summarises the whole thread behind it (`message_count`, `has_unread`) plus the conversation's labels.
 

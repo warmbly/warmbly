@@ -405,7 +405,12 @@ func (r *uniboxRepository) Search(ctx context.Context, orgID, userID uuid.UUID, 
 	}
 
 	if params.Sender != nil && *params.Sender != "" {
-		inner += fmt.Sprintf(` AND $%d = ANY(ue.from_addr)`, argPos)
+		// Substring match on the raw header entries ("Name <addr>"),
+		// per the documented contract; exact ANY() was unusable.
+		inner += fmt.Sprintf(` AND EXISTS (
+				SELECT 1 FROM unnest(ue.from_addr) AS f(addr)
+				WHERE f.addr ILIKE '%%' || $%d || '%%'
+			)`, argPos)
 		args = append(args, *params.Sender)
 		argPos++
 	}
@@ -457,6 +462,15 @@ func (r *uniboxRepository) Search(ctx context.Context, orgID, userID uuid.UUID, 
 			)`, argPos)
 		args = append(args, params.CategoryIDs)
 		argPos++
+	}
+
+	if params.Uncategorized != nil && *params.Uncategorized {
+		query += `
+			AND NOT EXISTS (
+				SELECT 1 FROM unibox_thread_labels utl
+				WHERE utl.user_id = $2
+				  AND utl.thread_id = b.thread_id
+			)`
 	}
 
 	if params.Cursor != "" {
