@@ -178,6 +178,16 @@ func (c *Client) Mailbox(mailbox string, uidvali, opts *imap.SelectOptions) erro
 	return nil
 }
 
+// SelectForSync opens a mailbox read-only with CONDSTORE enabled. FETCH is
+// only valid against a selected mailbox, so the sync loop must call this
+// before FetchChanges; CONDSTORE on the SELECT is what arms ChangedSince.
+func (c *Client) SelectForSync(mailbox string) *errx.MailError {
+	if _, err := c.client.Select(mailbox, &imap.SelectOptions{ReadOnly: true, CondStore: true}).Wait(); err != nil {
+		return c.handleError(err)
+	}
+	return nil
+}
+
 func (c *Client) FetchChanges(ctx context.Context, lastModSeq uint64) *errx.MailError {
 	// 1:* — an empty SeqSet has no encodable ranges and panics inside
 	// go-imap; ChangedSince narrows the result server-side.
