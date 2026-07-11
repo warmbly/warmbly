@@ -503,6 +503,8 @@ Response:
 }
 ```
 
+After the user approves, the provider redirects to the API's callback page, which hands `code` and `state` back to the client: a web opener receives them via `postMessage`, and when there is no opener (a native in-app browser session) the page redirects to `warmbly://email-oauth?provider=...&code=...&state=...&error=...` instead. Either way, the client then calls Finish OAuth.
+
 ### Finish OAuth
 
 `POST /emails/onboarding/oauth/finish`
