@@ -526,11 +526,13 @@ enum MailboxFormat {
         return "\(seconds) s"
     }
 
-    /// Weekday bitmask (bit 0 = Monday); 0 or 127 = every day.
+    /// Weekday bitmask (bit 0 = Sunday, matching Go's time.Weekday in the
+    /// scheduler); 0 or 127 = every day. Rendered Mon-first.
     static func weekdays(_ mask: Int) -> String {
         guard mask > 0, mask < 127 else { return "every day" }
-        let names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-        let picked = (0 ..< 7).filter { mask & (1 << $0) != 0 }.map { names[$0] }
+        let names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+        let monFirst = [1, 2, 3, 4, 5, 6, 0]
+        let picked = monFirst.filter { mask & (1 << $0) != 0 }.map { names[$0] }
         return picked.joined(separator: " ")
     }
 }

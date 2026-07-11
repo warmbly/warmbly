@@ -16,7 +16,15 @@ final class MailboxDetailStore {
     private(set) var banStatus: MailboxBanStatus?
     private(set) var isCheckingAuth = false
     private(set) var isSaving = false
+    /// True once a local edit or PATCH response refreshed the row, so views
+    /// can stop preferring analytics for fields the list response omits.
+    private(set) var rowEdited = false
     var actionError: String?
+
+    // Debounce state for stepper bursts: one snapshot per burst, one body.
+    private var pendingBody = MailboxUpdateBody()
+    private var pendingSnapshot: EmailAccount?
+    private var editGeneration = 0
 
     init(account: EmailAccount) {
         self.account = account
@@ -75,7 +83,67 @@ final class MailboxDetailStore {
         defer { isSaving = false }
         do {
             let updated: EmailAccount = try await api.patch("emails/\(account.id)", body: body)
+            rowEdited = true
             apply(updated)
+            return true
+        } catch {
+            actionError = error.localizedDescription
+            return false
+        }
+    }
+
+    /// Optimistic partial update: apply the local mutation immediately, PATCH,
+    /// then adopt the server's row (or roll back and surface the error).
+    func update(_ api: APIClient, body: MailboxUpdateBody, mutate: (inout EmailAccount) -> Void) async {
+        let previous = account
+        rowEdited = true
+        withAnimation(.snappy) { mutate(&account) }
+        do {
+            let updated: EmailAccount = try await api.patch("emails/\(account.id)", body: body)
+            withAnimation(.snappy) { account = updated }
+        } catch {
+            withAnimation(.snappy) { account = previous }
+            actionError = error.localizedDescription
+        }
+    }
+
+    /// Stepper variant: every tap applies locally right away, but rapid taps
+    /// coalesce into one PATCH after 600ms of quiet. A failed PATCH rolls the
+    /// whole burst back to the pre-burst row.
+    func updateDebounced(
+        _ api: APIClient,
+        mutateBody: (inout MailboxUpdateBody) -> Void,
+        mutate: (inout EmailAccount) -> Void
+    ) async {
+        if pendingSnapshot == nil { pendingSnapshot = account }
+        mutateBody(&pendingBody)
+        rowEdited = true
+        withAnimation(.snappy) { mutate(&account) }
+        editGeneration += 1
+        let generation = editGeneration
+        try? await Task.sleep(for: .milliseconds(600))
+        guard generation == editGeneration else { return }
+        let body = pendingBody
+        let snapshot = pendingSnapshot
+        pendingBody = MailboxUpdateBody()
+        pendingSnapshot = nil
+        do {
+            let updated: EmailAccount = try await api.patch("emails/\(account.id)", body: body)
+            withAnimation(.snappy) { account = updated }
+        } catch {
+            if let snapshot {
+                withAnimation(.snappy) { account = snapshot }
+            }
+            actionError = error.localizedDescription
+        }
+    }
+
+    // MARK: Disconnect
+
+    /// DELETE /emails/:id (204); true on success so the view can pop.
+    func deleteAccount(_ api: APIClient) async -> Bool {
+        do {
+            let _: EmptyBody = try await api.delete("emails/\(account.id)")
             return true
         } catch {
             actionError = error.localizedDescription

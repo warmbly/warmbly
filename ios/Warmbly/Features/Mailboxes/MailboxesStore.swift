@@ -1,8 +1,49 @@
 import Foundation
 import SwiftUI
 
+// MARK: - Scope
+
+/// Which slice of the fleet the list shows. Every scope is a client-side
+/// filter over the loaded rows; Issues additionally needs analytics statuses.
+enum MailboxScope: Hashable, CaseIterable {
+    case all, warming, paused, issues, off
+
+    var title: String {
+        switch self {
+        case .all: "All mailboxes"
+        case .warming: "Warming"
+        case .paused: "Paused"
+        case .issues: "Issues"
+        case .off: "Warmup off"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .all: "tray.full"
+        case .warming: "flame.fill"
+        case .paused: "pause.circle"
+        case .issues: "exclamationmark.triangle"
+        case .off: "moon.zzz"
+        }
+    }
+
+    var tone: Tone {
+        switch self {
+        case .all: .sky
+        case .warming: .orange
+        case .paused: .amber
+        case .issues: .rose
+        case .off: .slate
+        }
+    }
+}
+
+// MARK: - Store
+
 /// List-screen store: the mailbox rows plus the per-account health snapshot
-/// from `/analytics/accounts`, merged by id.
+/// from `/analytics/accounts`, merged by id. Owns multi-select and the bulk
+/// warmup/remove actions behind the floating selection bar.
 @MainActor
 @Observable
 final class MailboxesStore {
@@ -19,11 +60,66 @@ final class MailboxesStore {
 
     // MARK: Derived stats
 
+    var allCount: Int { totalCount ?? accounts.count }
+
     /// Warming = warmup anchor set and not paused; never a status string.
     var warmingCount: Int { accounts.filter(\.isWarmingActive).count }
 
+    var pausedCount: Int { accounts.filter(\.isWarmupPaused).count }
+
     var issueCount: Int {
         accounts.filter { statuses[$0.id]?.health?.hasIssue == true }.count
+    }
+
+    /// Warmup never enabled: no ramp anchor at all.
+    var offCount: Int { accounts.filter { $0.warmup == nil }.count }
+
+    func count(for scope: MailboxScope) -> Int {
+        switch scope {
+        case .all: allCount
+        case .warming: warmingCount
+        case .paused: pausedCount
+        case .issues: issueCount
+        case .off: offCount
+        }
+    }
+
+    // MARK: Selection
+
+    private(set) var selectedIDs: Set<String> = []
+    var isSelecting = false
+
+    var selectedCount: Int { selectedIDs.count }
+
+    func isSelected(_ id: String) -> Bool { selectedIDs.contains(id) }
+
+    func toggleSelected(_ id: String) {
+        if selectedIDs.contains(id) { selectedIDs.remove(id) } else { selectedIDs.insert(id) }
+    }
+
+    func enterSelection(with id: String? = nil) {
+        withAnimation(.snappy) {
+            isSelecting = true
+            if let id { selectedIDs.insert(id) }
+        }
+    }
+
+    func exitSelection() {
+        withAnimation(.snappy) {
+            isSelecting = false
+            selectedIDs.removeAll()
+        }
+    }
+
+    /// Toggle select-all over the rows currently visible in the list.
+    func selectAll(_ ids: [String]) {
+        withAnimation(.snappy) {
+            if allSelected(of: ids) { selectedIDs.removeAll() } else { selectedIDs = Set(ids) }
+        }
+    }
+
+    func allSelected(of ids: [String]) -> Bool {
+        !ids.isEmpty && ids.allSatisfy { selectedIDs.contains($0) }
     }
 
     // MARK: Loading
@@ -88,6 +184,18 @@ final class MailboxesStore {
         return params
     }
 
+    /// Optimistic insert from the connect flow; realtime refreshes the rest.
+    func insert(_ account: EmailAccount) {
+        withAnimation {
+            if let index = accounts.firstIndex(where: { $0.id == account.id }) {
+                accounts[index] = account
+            } else {
+                accounts.insert(account, at: 0)
+                if let total = totalCount { totalCount = total + 1 }
+            }
+        }
+    }
+
     // MARK: Row actions
 
     /// action: "start" | "pause" | "resume" | "stop"; returns the updated row.
@@ -113,5 +221,51 @@ final class MailboxesStore {
         } catch {
             actionError = error.localizedDescription
         }
+    }
+
+    // MARK: Bulk actions
+
+    /// action: "start" | "pause". Applies per-row results as they land and
+    /// reports partial failures in one line.
+    func bulkWarmup(_ api: APIClient, action: String) async {
+        let ids = Array(selectedIDs)
+        guard !ids.isEmpty else { return }
+        var failures = 0
+        for id in ids {
+            do {
+                let updated: EmailAccount = try await api.post("emails/\(id)/warmup/\(action)")
+                if let index = accounts.firstIndex(where: { $0.id == id }) {
+                    withAnimation { accounts[index] = updated }
+                }
+            } catch {
+                failures += 1
+            }
+        }
+        if failures > 0 {
+            actionError = "\(failures) of \(ids.count) mailboxes couldn't \(action)"
+        }
+        exitSelection()
+    }
+
+    func bulkRemove(_ api: APIClient) async {
+        let ids = Array(selectedIDs)
+        guard !ids.isEmpty else { return }
+        var failures = 0
+        for id in ids {
+            do {
+                let _: EmptyBody = try await api.delete("emails/\(id)")
+                withAnimation {
+                    accounts.removeAll { $0.id == id }
+                    statuses.removeValue(forKey: id)
+                    if let total = totalCount { totalCount = max(0, total - 1) }
+                }
+            } catch {
+                failures += 1
+            }
+        }
+        if failures > 0 {
+            actionError = "\(failures) of \(ids.count) mailboxes couldn't be removed"
+        }
+        exitSelection()
     }
 }

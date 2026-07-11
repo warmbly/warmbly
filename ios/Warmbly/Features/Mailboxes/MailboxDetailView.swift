@@ -27,10 +27,18 @@ enum MailboxDetailTab: String, CaseIterable, Identifiable {
 /// NOT create its own NavigationStack. Claims presence on `mailbox:<id>` and
 /// reloads on the emailAccounts/analytics pulse.
 struct MailboxDetailView: View {
+    private enum SetupField: Hashable { case name, replyTo }
+
     @Environment(AppEnvironment.self) private var env
+    @Environment(\.dismiss) private var dismiss
 
     @State private var store: MailboxDetailStore
     @State private var tab: MailboxDetailTab = .overview
+    @State private var displayName = ""
+    @State private var replyTo = ""
+    @State private var fieldsSeeded = false
+    @State private var confirmDisconnect = false
+    @FocusState private var focusedField: SetupField?
 
     init(account: EmailAccount) {
         _store = State(initialValue: MailboxDetailStore(account: account))
@@ -55,13 +63,34 @@ struct MailboxDetailView: View {
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .presenceResource(store.presenceKey)
-        .task { await store.loadAnalytics(env.api) }
+        .task {
+            seedFieldsIfNeeded()
+            await store.loadAnalytics(env.api)
+        }
         .task { await store.loadBanStatus(env.api) }
         .onChange(of: env.realtime.pulse(for: .emailAccounts)) {
             Task { await store.loadAnalytics(env.api) }
         }
         .onChange(of: env.realtime.pulse(for: .analytics)) {
             Task { await store.loadAnalytics(env.api) }
+        }
+        .onChange(of: focusedField) { previous, current in
+            // Text rows save on focus loss, like the profile settings rows.
+            if previous == .name, current != .name { saveDisplayName() }
+            if previous == .replyTo, current != .replyTo { saveReplyTo() }
+        }
+        .confirmationDialog(
+            "Disconnect \(account.email)?",
+            isPresented: $confirmDisconnect,
+            titleVisibility: .visible
+        ) {
+            Button("Disconnect", role: .destructive) {
+                Task {
+                    if await store.deleteAccount(env.api) { dismiss() }
+                }
+            }
+        } message: {
+            Text("Campaigns stop sending from it and history stays.")
         }
         .alert(
             "Something went wrong",
@@ -185,8 +214,7 @@ struct MailboxDetailView: View {
                 }
             }
         }
-        .listStyle(.insetGrouped)
-        .scrollContentBackground(.hidden)
+        .listStyle(.plain)
     }
 
     private func healthSection(_ health: MailboxHealth) -> some View {
@@ -239,9 +267,10 @@ struct MailboxDetailView: View {
     private var warmupTab: some View {
         List {
             warmupSection
+            rampSection
+            windowSection
         }
-        .listStyle(.insetGrouped)
-        .scrollContentBackground(.hidden)
+        .listStyle(.plain)
     }
 
     @ViewBuilder
@@ -327,15 +356,351 @@ struct MailboxDetailView: View {
         }
     }
 
+    // MARK: Warmup ramp (editable)
+
+    // List responses omit warmup_reply_rate (decodes as 0), so prefer the
+    // analytics snapshot until a PATCH refreshes the row.
+    private var replyRateValue: Int {
+        if store.rowEdited { return account.warmupReplyRate ?? 0 }
+        return store.analytics?.warmupStatus?.replyRate ?? account.warmupReplyRate ?? 0
+    }
+
+    private var rampSection: some View {
+        Section {
+            settingStepper(
+                "Starting volume", helper: "Emails per day when warmup begins.",
+                value: account.warmupBase ?? 10, range: 1...100, suffix: "/day",
+                write: { $0.warmupBase = $1 }, mutate: { $0.warmupBase = $1 }
+            )
+            settingStepper(
+                "Daily increase", helper: "How many more each day as reputation builds.",
+                value: account.warmupIncrease ?? 1, range: 1...50, suffix: "+/day",
+                write: { $0.warmupIncrease = $1 }, mutate: { $0.warmupIncrease = $1 }
+            )
+            settingStepper(
+                "Maximum volume", helper: "Keep conservative for new mailboxes, about 40 a day.",
+                value: account.warmupMax ?? 40, range: max(1, account.warmupBase ?? 10)...500, suffix: "/day",
+                write: { $0.warmupMax = $1 }, mutate: { $0.warmupMax = $1 }
+            )
+            settingStepper(
+                "Reply rate", helper: "Share of warmup mail that gets a reply.",
+                value: replyRateValue, range: 0...100, suffix: "%",
+                write: { $0.warmupReplyRate = $1 }, mutate: { $0.warmupReplyRate = $1 }
+            )
+        } header: {
+            EyebrowLabel("Ramp configuration")
+        }
+    }
+
+    // MARK: Sending window (editable)
+
+    /// HH:MM in 30-minute steps, the format the scheduler parses ("15:04").
+    private static let timeSlots: [String] = (0..<48).map {
+        String(format: "%02d:%02d", $0 / 2, $0 % 2 * 30)
+    }
+
+    /// Backend bit layout is Go time.Weekday: bit 0 = Sunday ... bit 6 =
+    /// Saturday (scheduler findNextValidDay); mask 0 means every day.
+    private static let dayBits: [(label: String, bit: Int)] = [
+        ("Mon", 1), ("Tue", 2), ("Wed", 3), ("Thu", 4), ("Fri", 5), ("Sat", 6), ("Sun", 0),
+    ]
+
+    private var windowSection: some View {
+        Section {
+            timeRow("Start time", current: timeValue(account.warmupStartTime, fallback: "08:00")) { slot in
+                Task {
+                    await store.update(env.api, body: MailboxUpdateBody(warmupStartTime: slot)) {
+                        $0.warmupStartTime = slot
+                    }
+                }
+            }
+            timeRow("End time", current: timeValue(account.warmupEndTime, fallback: "20:00")) { slot in
+                Task {
+                    await store.update(env.api, body: MailboxUpdateBody(warmupEndTime: slot)) {
+                        $0.warmupEndTime = slot
+                    }
+                }
+            }
+            sendingDaysRow
+        } header: {
+            EyebrowLabel("Sending window")
+        }
+    }
+
+    private func timeValue(_ raw: String?, fallback: String) -> String {
+        guard let raw, !raw.isEmpty else { return fallback }
+        return raw
+    }
+
+    private func timeRow(_ title: String, current: String, apply: @escaping (String) -> Void) -> some View {
+        HStack(spacing: 12) {
+            Text(title)
+                .font(.body.weight(.medium))
+            Spacer(minLength: 8)
+            if canManage {
+                Menu {
+                    ForEach(Self.timeSlots, id: \.self) { slot in
+                        Button {
+                            apply(slot)
+                        } label: {
+                            if slot == current {
+                                Label(slot, systemImage: "checkmark")
+                            } else {
+                                Text(slot)
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 3) {
+                        Text(current)
+                            .font(.subheadline)
+                            .monospacedDigit()
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.system(size: 11, weight: .semibold))
+                    }
+                    .foregroundStyle(WTheme.accent)
+                }
+            } else {
+                Text(current)
+                    .font(.subheadline)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    private var sendingDaysRow: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Sending days")
+                .font(.body.weight(.medium))
+            HStack(spacing: 6) {
+                ForEach(Self.dayBits, id: \.bit) { day in
+                    dayChip(day.label, bit: day.bit)
+                }
+            }
+            Text("Leave all off to send every day.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 6)
+    }
+
+    private func dayChip(_ label: String, bit: Int) -> some View {
+        let mask = account.warmupDays ?? 0
+        let on = mask & (1 << bit) != 0
+        return Button {
+            let next = mask ^ (1 << bit)
+            Task {
+                await store.update(env.api, body: MailboxUpdateBody(warmupDays: next)) {
+                    $0.warmupDays = next
+                }
+            }
+        } label: {
+            Text(label)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(on ? Color.white : Color.secondary)
+                .frame(maxWidth: .infinity)
+                .frame(height: 30)
+                .background(on ? AnyShapeStyle(WTheme.accent) : AnyShapeStyle(Tone.slate.background), in: Capsule())
+        }
+        .buttonStyle(TapScaleStyle())
+        .disabled(!canManage)
+    }
+
+    // MARK: Shared editing controls
+
+    private func settingStepper(
+        _ title: String,
+        helper: String,
+        value: Int,
+        range: ClosedRange<Int>,
+        suffix: String,
+        write: @escaping (inout MailboxUpdateBody, Int) -> Void,
+        mutate: @escaping (inout EmailAccount, Int) -> Void
+    ) -> some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.body.weight(.medium))
+                Text(helper)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 8)
+            if canManage {
+                HStack(spacing: 10) {
+                    stepButton("minus", enabled: value > range.lowerBound) {
+                        step(to: max(range.lowerBound, value - 1), write: write, mutate: mutate)
+                    }
+                    Text("\(value)\(suffix)")
+                        .font(.system(size: 15, weight: .semibold))
+                        .monospacedDigit()
+                        .frame(minWidth: 46)
+                        .contentTransition(.numericText())
+                    stepButton("plus", enabled: value < range.upperBound) {
+                        step(to: min(range.upperBound, value + 1), write: write, mutate: mutate)
+                    }
+                }
+            } else {
+                Text("\(value)\(suffix)")
+                    .font(.subheadline)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func step(
+        to newValue: Int,
+        write: @escaping (inout MailboxUpdateBody, Int) -> Void,
+        mutate: @escaping (inout EmailAccount, Int) -> Void
+    ) {
+        Task {
+            await store.updateDebounced(
+                env.api,
+                mutateBody: { write(&$0, newValue) },
+                mutate: { mutate(&$0, newValue) }
+            )
+        }
+    }
+
+    private func stepButton(_ symbol: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(enabled ? AnyShapeStyle(WTheme.accent) : AnyShapeStyle(Color(.tertiaryLabel)))
+                .frame(width: 30, height: 30)
+                .background(Tone.slate.background, in: Circle())
+        }
+        .buttonStyle(TapScaleStyle())
+        .disabled(!enabled)
+    }
+
     // MARK: Setup tab (domain auth + identity details)
 
     private var setupTab: some View {
         List {
+            senderProfileSection
+            limitsSection
             authSection
             identitySection
+            if canManage {
+                dangerSection
+            }
         }
-        .listStyle(.insetGrouped)
-        .scrollContentBackground(.hidden)
+        .listStyle(.plain)
+    }
+
+    // MARK: Sender profile (editable)
+
+    private var senderProfileSection: some View {
+        Section {
+            fieldRow("Display name") {
+                TextField("Sender name", text: $displayName)
+                    .focused($focusedField, equals: .name)
+                    .submitLabel(.done)
+                    .onSubmit { saveDisplayName() }
+                    .disabled(!canManage)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                fieldRow("Reply-to") {
+                    TextField(account.email, text: $replyTo)
+                        .keyboardType(.emailAddress)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .focused($focusedField, equals: .replyTo)
+                        .submitLabel(.done)
+                        .onSubmit { saveReplyTo() }
+                        .disabled(!canManage)
+                }
+                Text("Where replies land. Empty uses the mailbox address.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        } header: {
+            EyebrowLabel("Sender profile")
+        }
+    }
+
+    private func fieldRow<Field: View>(_ label: String, @ViewBuilder field: () -> Field) -> some View {
+        HStack(spacing: 12) {
+            Text(label)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .frame(width: 96, alignment: .leading)
+            field()
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func seedFieldsIfNeeded() {
+        guard !fieldsSeeded else { return }
+        displayName = account.name ?? ""
+        replyTo = account.replyTo ?? ""
+        fieldsSeeded = true
+    }
+
+    private func saveDisplayName() {
+        let trimmed = displayName.trimmingCharacters(in: .whitespaces)
+        guard trimmed != (account.name ?? "") else { return }
+        Task {
+            await store.update(env.api, body: MailboxUpdateBody(name: trimmed)) { $0.name = trimmed }
+            displayName = store.account.name ?? trimmed
+        }
+    }
+
+    private func saveReplyTo() {
+        let trimmed = replyTo.trimmingCharacters(in: .whitespaces)
+        guard trimmed != (account.replyTo ?? "") else { return }
+        Task {
+            // Empty string clears reply-to; replies go to the mailbox itself.
+            await store.update(env.api, body: MailboxUpdateBody(replyTo: trimmed)) { $0.replyTo = trimmed }
+            replyTo = store.account.replyTo ?? ""
+        }
+    }
+
+    // MARK: Sending limits (editable)
+
+    // min_wait_time is stored in seconds; edit it in whole minutes.
+    private var minGapMinutes: Int {
+        max(1, min(120, (account.minWaitTime ?? 600) / 60))
+    }
+
+    private var limitsSection: some View {
+        Section {
+            settingStepper(
+                "Daily campaign cap", helper: "Max cold emails per day. Default 50, raise only with good reputation.",
+                value: account.campaignLimit ?? 50, range: 1...100, suffix: "/day",
+                write: { $0.campaignLimit = $1 }, mutate: { $0.campaignLimit = $1 }
+            )
+            settingStepper(
+                "Minimum gap", helper: "Time between two sends from this mailbox.",
+                value: minGapMinutes, range: 1...120, suffix: " min",
+                write: { $0.minWaitTime = $1 * 60 }, mutate: { $0.minWaitTime = $1 * 60 }
+            )
+        } header: {
+            EyebrowLabel("Sending limits")
+        }
+    }
+
+    // MARK: Danger zone
+
+    private var dangerSection: some View {
+        Section {
+            Button(role: .destructive) {
+                confirmDisconnect = true
+            } label: {
+                HStack {
+                    Spacer()
+                    Text("Disconnect mailbox")
+                    Spacer()
+                }
+            }
+        } header: {
+            EyebrowLabel("Danger zone")
+        }
     }
 
     @ViewBuilder
@@ -381,23 +746,10 @@ struct MailboxDetailView: View {
         .padding(.vertical, 2)
     }
 
+    // Name, reply-to, cap and gap moved into the editable sections above.
     private var identitySection: some View {
         Section("Details") {
-            if let name = account.name, !name.isEmpty {
-                LabeledContent("Sender name", value: name)
-            }
             LabeledContent("Provider", value: account.providerLabel)
-            LabeledContent("Daily cap") {
-                Text("\(account.campaignLimit ?? 50)/day")
-                    .monospacedDigit()
-            }
-            LabeledContent("Min gap") {
-                Text(MailboxFormat.gap(account.minWaitTime ?? 600))
-                    .monospacedDigit()
-            }
-            if let replyTo = account.replyTo, !replyTo.isEmpty {
-                LabeledContent("Reply-to", value: replyTo)
-            }
             if let synced = account.lastSyncedAt {
                 LabeledContent("Last synced", value: WFormat.relative(synced))
             }
