@@ -53,9 +53,9 @@ func seedWorkerAssignments(ctx context.Context, pool *pgxpool.Pool, _ *Result) e
 	// re-running the seed updates rather than duplicates.
 	assignmentID := uuid.MustParse("00000000-0000-0000-0000-000000000280")
 	_, err := pool.Exec(ctx, `
-		INSERT INTO dedicated_worker_assignments (id, worker_id, user_id, subscription_id, assigned_at)
+		INSERT INTO dedicated_worker_assignments (id, worker_id, organization_id, subscription_id, assigned_at)
 		VALUES ($1, $2, $3, $4, NOW())
 		ON CONFLICT (id) DO NOTHING
-	`, assignmentID, WorkerDedicatedID, UserOwnerID, SubAcmeID)
+	`, assignmentID, WorkerDedicatedID, OrgAcmeID, SubAcmeID)
 	return err
 }
