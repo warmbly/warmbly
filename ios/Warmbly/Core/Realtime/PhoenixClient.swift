@@ -24,7 +24,10 @@ final class PhoenixSocket: NSObject, URLSessionWebSocketDelegate, @unchecked Sen
 
     /// Fetches a fresh socket URL before every (re)connect. The token inside
     /// is single-session and expires in 10 minutes, so it can't be reused.
-    var urlProvider: (() async -> URL?)?
+    // Non-optional on purpose: an optional async closure property crashes
+    // the Xcode 26.6 type checker at the use site (fixed in 27). The nil
+    // default reads as "not configured yet".
+    var urlProvider: () async -> URL? = { nil }
     /// Join payload per topic, asked on every join/rejoin (carries resume state).
     var joinPayloadProvider: ((String) -> [String: Any])?
     var onEvent: ((PhoenixMessage) -> Void)?
@@ -88,9 +91,7 @@ final class PhoenixSocket: NSObject, URLSessionWebSocketDelegate, @unchecked Sen
         guard proceed else { return }
 
         state = .connecting
-        // Two-step unwrap: `await urlProvider?()` crashes the Xcode 26.6
-        // type checker (fixed in 27).
-        guard let provider = urlProvider, let url = await provider() else {
+        guard let url = await urlProvider() else {
             scheduleReconnect()
             return
         }
