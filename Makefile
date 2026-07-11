@@ -221,7 +221,7 @@ DEV_COMPOSE := $(COMPOSE) -f docker-compose.yml -f docker-compose.dev.yml
 # bucket. localstack runs with PERSISTENCE=0, so those are wiped on every
 # restart and must be recreated before any service (incl. the natively-run
 # backend) touches KMS/S3.
-INFRA_SVCS  := postgres redis zookeeper kafka kafka-init schema-registry \
+INFRA_SVCS  := postgres redis zookeeper kafka kafka-init schema-registry schema-registry-init \
                mailpit dovecot localstack localstack-init stripe-mock cloud-tasks-emulator
 
 # Language services. The things you iterate on; recreated per worktree.

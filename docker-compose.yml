@@ -183,6 +183,24 @@ services:
         kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic "$$topic" --partitions 1 --replication-factor 1;
         done
 
+  # One-shot: registers the tracking-events Avro schema. The Rust tracking
+  # service encodes fetch-only (no auto-register), so without this every
+  # open/click event fails serialization and is dropped. Mirrors
+  # TRACKING_EVENT_SCHEMA in tracking/src/kafka.rs.
+  schema-registry-init:
+    image: curlimages/curl:latest
+    depends_on:
+      schema-registry:
+        condition: service_started
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        until curl -sf http://schema-registry:8081/subjects >/dev/null; do sleep 2; done;
+        curl -sf -X POST -H 'Content-Type: application/vnd.schemaregistry.v1+json'
+        --data '{"schema":"{\"type\":\"record\",\"name\":\"TrackingEvent\",\"namespace\":\"com.warmbly.tracking\",\"fields\":[{\"name\":\"event_type\",\"type\":\"string\"},{\"name\":\"task_id\",\"type\":\"string\"},{\"name\":\"original_url\",\"type\":[\"null\",\"string\"],\"default\":null},{\"name\":\"timestamp\",\"type\":\"string\"},{\"name\":\"user_agent\",\"type\":[\"null\",\"string\"],\"default\":null},{\"name\":\"ip_hash\",\"type\":[\"null\",\"string\"],\"default\":null}]}"}'
+        http://schema-registry:8081/subjects/tracking-events-value/versions
+        && echo "tracking-events schema registered"
+
   schema-registry:
     image: confluentinc/cp-schema-registry:7.5.0
     depends_on:
