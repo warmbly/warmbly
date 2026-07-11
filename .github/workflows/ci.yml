@@ -341,11 +341,12 @@ jobs:
 
       - name: Build (iOS Simulator, no signing)
         run: |
+          set -o pipefail
           xcodebuild build \
             -project ios/Warmbly.xcodeproj \
             -scheme Warmbly \
             -destination 'generic/platform=iOS Simulator' \
-            CODE_SIGNING_ALLOWED=NO | tail -80; exit "${PIPESTATUS[0]}"
+            CODE_SIGNING_ALLOWED=NO
 
   security:
     name: Security Scan
