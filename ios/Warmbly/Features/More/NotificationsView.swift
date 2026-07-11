@@ -131,7 +131,9 @@ private enum MoreNotificationMeta {
     ]
 }
 
-/// In-app notification feed plus per-category preferences.
+/// In-app notification feed plus per-category preferences, rendered as one
+/// flat surface: dense tile-led feed rows with hairline separators, eyebrow
+/// captions instead of grouped bands.
 struct NotificationsView: View {
     @Environment(AppEnvironment.self) private var env
     @State private var store = MoreNotificationsStore()
@@ -148,6 +150,7 @@ struct NotificationsView: View {
             .padding(.bottom, 8)
             content
         }
+        .background(Color(.systemBackground))
         .navigationTitle("Notifications")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -204,16 +207,21 @@ struct NotificationsView: View {
                     message: "Replies, deliverability alerts, and sign-in notices land here."
                 )
                 .listRowSeparator(.hidden)
+                .listRowBackground(Color(.systemBackground))
             }
             .listStyle(.plain)
+            .scrollContentBackground(.hidden)
             .refreshable { await store.load(env.api) }
         } else {
             List {
                 ForEach(store.items) { item in
                     feedRow(item)
+                        .moreFlatRow(textLeading: MoreFlatMetrics.tileTextLeading)
                 }
             }
             .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .environment(\.defaultMinListRowHeight, 0)
             .refreshable { await store.load(env.api) }
         }
     }
@@ -227,31 +235,34 @@ struct NotificationsView: View {
                 IconTile(symbol: MoreNotificationMeta.icon(item.category), tone: tone, size: 34)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(item.title ?? "Notification")
-                        .font(.body.weight(item.isUnread ? .semibold : .regular))
+                        .font(.subheadline.weight(item.isUnread ? .semibold : .regular))
                         .foregroundStyle(.primary)
                         .lineLimit(2)
                     if let body = item.body, !body.isEmpty {
                         Text(body)
-                            .font(.subheadline)
+                            .font(.footnote)
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
                     }
+                }
+                Spacer(minLength: 8)
+                VStack(alignment: .trailing, spacing: 6) {
                     if let created = item.createdAt {
                         Text(WFormat.relative(created))
                             .font(.footnote)
                             .monospacedDigit()
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(item.isUnread ? AnyShapeStyle(WTheme.accent) : AnyShapeStyle(Color(.tertiaryLabel)))
+                    }
+                    if item.isUnread {
+                        Circle()
+                            .fill(WTheme.accent)
+                            .frame(width: 7, height: 7)
                     }
                 }
-                Spacer(minLength: 0)
-                if item.isUnread {
-                    Circle()
-                        .fill(WTheme.accent)
-                        .frame(width: 7, height: 7)
-                        .padding(.top, 6)
-                }
+                .padding(.top, 2)
             }
-            .padding(.vertical, 6)
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
         }
         .buttonStyle(TapScaleStyle())
     }
@@ -268,44 +279,53 @@ struct NotificationsView: View {
             ForEach(MoreNotificationMeta.knownGroups, id: \.title) { group in
                 let present = group.keys.filter { store.preferences[$0] != nil }
                 if !present.isEmpty {
-                    Section(group.title) {
-                        ForEach(present, id: \.self) { key in
-                            preferenceRow(key)
-                        }
-                    }
-                }
-            }
-            if !extraKeys.isEmpty {
-                Section("Other") {
-                    ForEach(extraKeys, id: \.self) { key in
+                    MoreFlatSectionHeader(group.title, top: group.title == MoreNotificationMeta.knownGroups.first?.title ? 8 : 20)
+                    ForEach(present, id: \.self) { key in
                         preferenceRow(key)
                     }
                 }
             }
-            Section {
-                Text("Only in-app delivery is live today. Email and Slack channels are coming.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+            if !extraKeys.isEmpty {
+                MoreFlatSectionHeader("Other")
+                ForEach(extraKeys, id: \.self) { key in
+                    preferenceRow(key)
+                }
             }
+            Text("Only in-app delivery is live today. Email and Slack channels are coming.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .padding(.top, 16)
+                .padding(.bottom, 28)
+                .moreFlatRow(separator: .hidden)
         }
-        .listStyle(.insetGrouped)
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .environment(\.defaultMinListRowHeight, 0)
         .refreshable { await store.load(env.api) }
     }
 
     private func preferenceRow(_ key: String) -> some View {
         Toggle(isOn: preferenceBinding(key)) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(MoreNotificationMeta.label(key))
-                    .font(.body.weight(.medium))
-                if let caption = MoreNotificationMeta.caption(key) {
-                    Text(caption)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+            HStack(spacing: 12) {
+                IconTile(
+                    symbol: MoreNotificationMeta.icon(key),
+                    tone: store.preferences[key]?.enabled == true ? MoreNotificationMeta.tone(key) : .slate,
+                    size: 34
+                )
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(MoreNotificationMeta.label(key))
+                        .font(.body.weight(.medium))
+                    if let caption = MoreNotificationMeta.caption(key) {
+                        Text(caption)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
-            .padding(.vertical, 2)
         }
         .tint(WTheme.accent)
+        .padding(.vertical, 9)
+        .moreFlatRow(textLeading: MoreFlatMetrics.tileTextLeading)
     }
 
     private func preferenceBinding(_ key: String) -> Binding<Bool> {

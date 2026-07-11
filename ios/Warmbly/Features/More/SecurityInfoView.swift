@@ -26,8 +26,8 @@ final class MoreSecurityStore {
     }
 }
 
-/// Read-only security overview: 2FA state and enrolled passkeys.
-/// Enrollment flows live on the web dashboard.
+/// Read-only security overview: 2FA state and enrolled passkeys as flat,
+/// tile-led status rows. Enrollment flows live on the web dashboard.
 struct SecurityInfoView: View {
     @Environment(AppEnvironment.self) private var env
     @State private var store = MoreSecurityStore()
@@ -56,52 +56,68 @@ struct SecurityInfoView: View {
             List {
                 twoFASection
                 passkeysSection
-                Section {
-                    Text("Two-factor enrollment and passkey registration are managed on the web dashboard.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
+                handoffRow
             }
-            .listStyle(.insetGrouped)
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .background(Color(.systemBackground))
+            .environment(\.defaultMinListRowHeight, 0)
             .refreshable { await store.load(env.api) }
         }
     }
 
+    // MARK: Two-factor
+
+    @ViewBuilder
     private var twoFASection: some View {
-        Section("Two-factor authentication") {
+        MoreFlatSectionHeader("Two-factor authentication", top: 8)
+        HStack(spacing: 12) {
+            IconTile(
+                symbol: "lock.shield.fill",
+                tone: store.twoFAEnabled == true ? .emerald : .slate,
+                size: 34
+            )
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Authenticator app")
+                    .font(.body.weight(.medium))
+                Text("Time-based one-time codes")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 8)
+            StatusPill(
+                text: store.twoFAEnabled == true ? "Enabled" : "Off",
+                tone: store.twoFAEnabled == true ? .emerald : .slate
+            )
+        }
+        .padding(.vertical, 10)
+        .moreFlatRow(separator: .hidden, textLeading: MoreFlatMetrics.tileTextLeading)
+    }
+
+    // MARK: Passkeys
+
+    @ViewBuilder
+    private var passkeysSection: some View {
+        MoreFlatSectionHeader("Passkeys")
+        if store.passkeys.isEmpty {
             HStack(spacing: 12) {
-                IconTile(
-                    symbol: "lock.shield.fill",
-                    tone: store.twoFAEnabled == true ? .emerald : .slate,
-                    size: 34
-                )
+                IconTile(symbol: "key.fill", tone: .slate, size: 34)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Authenticator app")
+                    Text("No passkeys yet")
                         .font(.body.weight(.medium))
-                    Text("Time-based one-time codes")
+                    Text("Add one on the web for phishing-resistant sign-in")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
-                Spacer()
-                StatusPill(
-                    text: store.twoFAEnabled == true ? "Enabled" : "Off",
-                    tone: store.twoFAEnabled == true ? .emerald : .slate
-                )
+                Spacer(minLength: 8)
+                StatusPill(text: "None", tone: .slate)
             }
-            .padding(.vertical, 4)
+            .padding(.vertical, 10)
+            .moreFlatRow(separator: .hidden, textLeading: MoreFlatMetrics.tileTextLeading)
         }
-    }
-
-    private var passkeysSection: some View {
-        Section("Passkeys") {
-            if store.passkeys.isEmpty {
-                Text("No passkeys yet. Add one from the web dashboard for phishing-resistant sign-in.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-            ForEach(store.passkeys) { credential in
-                passkeyRow(credential)
-            }
+        ForEach(store.passkeys) { credential in
+            passkeyRow(credential)
+                .moreFlatRow(textLeading: MoreFlatMetrics.tileTextLeading)
         }
     }
 
@@ -132,7 +148,7 @@ struct SecurityInfoView: View {
                     .foregroundStyle(.tertiary)
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 10)
     }
 
     private func passkeyDetail(_ credential: PasskeyCredential) -> String {
@@ -149,5 +165,14 @@ struct SecurityInfoView: View {
             parts.append("never used")
         }
         return parts.joined(separator: " · ")
+    }
+
+    // MARK: Web handoff
+
+    private var handoffRow: some View {
+        WebHandoffBanner(text: "Two-factor enrollment and passkey registration are managed on the web dashboard.")
+            .padding(.top, 20)
+            .padding(.bottom, 28)
+            .moreFlatRow(separator: .hidden)
     }
 }

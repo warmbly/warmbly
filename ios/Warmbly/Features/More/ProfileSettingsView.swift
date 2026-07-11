@@ -33,7 +33,9 @@ final class MoreProfileStore {
     }
 }
 
-/// Name edits, password change, and the active-session list.
+/// Name edits, password change, and the active-session list, laid out as one
+/// flat, full-bleed sheet: identity header up top, hairline field rows, and
+/// the destructive session sign-out at the bottom.
 struct ProfileSettingsView: View {
     @Environment(AppEnvironment.self) private var env
     @State private var store = MoreProfileStore()
@@ -55,11 +57,15 @@ struct ProfileSettingsView: View {
 
     var body: some View {
         List {
+            identityHeader
             profileSection
             passwordSection
             sessionsSection
         }
-        .listStyle(.insetGrouped)
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(Color(.systemBackground))
+        .environment(\.defaultMinListRowHeight, 0)
         .navigationTitle("Profile")
         .navigationBarTitleDisplayMode(.inline)
         .task {
@@ -103,6 +109,30 @@ struct ProfileSettingsView: View {
         seeded = true
     }
 
+    // MARK: Identity header
+
+    @ViewBuilder
+    private var identityHeader: some View {
+        if let user = env.session.user {
+            HStack(spacing: 14) {
+                WAvatar(name: user.displayName, imageURL: user.avatarURL, seed: user.id, size: 60)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(user.displayName)
+                        .font(.title3.weight(.semibold))
+                        .lineLimit(1)
+                    Text(user.email)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.top, 10)
+            .padding(.bottom, 6)
+            .moreFlatRow(separator: .hidden)
+        }
+    }
+
     // MARK: Profile
 
     private var profileDirty: Bool {
@@ -116,42 +146,24 @@ struct ProfileSettingsView: View {
         return !f.isEmpty && !l.isEmpty && f.count <= 50 && l.count <= 50
     }
 
+    @ViewBuilder
     private var profileSection: some View {
-        Section("Profile") {
-            if let user = env.session.user {
-                HStack(spacing: 12) {
-                    WAvatar(name: user.displayName, imageURL: user.avatarURL, seed: user.id, size: 44)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(user.displayName)
-                            .font(.body.weight(.semibold))
-                        Text(user.email)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .padding(.vertical, 4)
-            }
+        MoreFlatSectionHeader("Name", top: 14)
+        fieldRow("First name") {
             TextField("First name", text: $firstName)
                 .textContentType(.givenName)
+        }
+        fieldRow("Last name") {
             TextField("Last name", text: $lastName)
                 .textContentType(.familyName)
-            Button {
-                saveProfile()
-            } label: {
-                HStack {
-                    Text("Save changes")
-                        .font(.body.weight(.medium))
-                    Spacer()
-                    if savingProfile {
-                        ProgressView().controlSize(.small)
-                    } else if profileSaved, !profileDirty {
-                        Image(systemName: "checkmark")
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(WTheme.positive)
-                    }
-                }
-            }
-            .disabled(!profileDirty || !profileValid || savingProfile)
+        }
+        actionRow(
+            "Save changes",
+            busy: savingProfile,
+            done: profileSaved && !profileDirty,
+            disabled: !profileDirty || !profileValid || savingProfile
+        ) {
+            saveProfile()
         }
     }
 
@@ -184,36 +196,30 @@ struct ProfileSettingsView: View {
         !currentPassword.isEmpty && newPassword.count >= 8 && confirmPassword == newPassword
     }
 
+    @ViewBuilder
     private var passwordSection: some View {
-        Section {
+        MoreFlatSectionHeader("Password")
+        fieldRow("Current") {
             SecureField("Current password", text: $currentPassword)
                 .textContentType(.password)
+        }
+        fieldRow("New") {
             SecureField("New password", text: $newPassword)
                 .textContentType(.newPassword)
+        }
+        fieldRow("Confirm") {
             SecureField("Confirm new password", text: $confirmPassword)
                 .textContentType(.newPassword)
-            Button {
-                changePassword()
-            } label: {
-                HStack {
-                    Text("Update password")
-                        .font(.body.weight(.medium))
-                    Spacer()
-                    if changingPassword {
-                        ProgressView().controlSize(.small)
-                    } else if passwordChanged {
-                        Image(systemName: "checkmark")
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(WTheme.positive)
-                    }
-                }
-            }
-            .disabled(!passwordValid || changingPassword)
-        } header: {
-            Text("Password")
-        } footer: {
-            Text("At least 8 characters. Other sessions stay signed in.")
         }
+        actionRow(
+            "Update password",
+            busy: changingPassword,
+            done: passwordChanged,
+            disabled: !passwordValid || changingPassword
+        ) {
+            changePassword()
+        }
+        footnoteRow("At least 8 characters. Other sessions stay signed in.")
     }
 
     private func changePassword() {
@@ -239,54 +245,60 @@ struct ProfileSettingsView: View {
 
     // MARK: Sessions
 
+    @ViewBuilder
     private var sessionsSection: some View {
-        Section {
-            if !store.loadedOnce {
-                if let message = store.errorMessage {
-                    HStack {
-                        Text(message)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Button("Retry") {
-                            Task { await store.load(env.api) }
-                        }
-                        .font(.subheadline.weight(.medium))
+        MoreFlatSectionHeader("Sessions")
+        if !store.loadedOnce {
+            if let message = store.errorMessage {
+                HStack {
+                    Text(message)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Retry") {
+                        Task { await store.load(env.api) }
                     }
-                } else {
-                    HStack {
-                        ProgressView().controlSize(.small)
-                        Text("Loading sessions")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
+                    .font(.subheadline.weight(.medium))
                 }
+                .padding(.vertical, 12)
+                .moreFlatRow(separator: .hidden)
             } else {
-                ForEach(store.sessions) { session in
-                    sessionRow(session)
-                        .swipeActions(edge: .trailing) {
-                            if session.current != true {
-                                Button(role: .destructive) {
-                                    Task { await revoke(session) }
-                                } label: {
-                                    Label("Revoke", systemImage: "xmark.circle")
-                                }
+                HStack(spacing: 10) {
+                    ProgressView().controlSize(.small)
+                    Text("Loading sessions")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 12)
+                .moreFlatRow(separator: .hidden)
+            }
+        } else {
+            ForEach(store.sessions) { session in
+                sessionRow(session)
+                    .moreFlatRow(textLeading: MoreFlatMetrics.tileTextLeading)
+                    .swipeActions(edge: .trailing) {
+                        if session.current != true {
+                            Button(role: .destructive) {
+                                Task { await revoke(session) }
+                            } label: {
+                                Label("Revoke", systemImage: "xmark.circle")
                             }
                         }
-                }
-                if store.sessions.contains(where: { $0.current != true }) {
-                    Button(role: .destructive) {
-                        confirmRevokeOthers = true
-                    } label: {
-                        Text("Sign out other sessions")
-                            .font(.body.weight(.medium))
                     }
-                }
             }
-        } header: {
-            Text("Sessions")
-        } footer: {
-            Text("Swipe a session to revoke it. The current session can't be revoked here.")
+            if store.sessions.contains(where: { $0.current != true }) {
+                Button(role: .destructive) {
+                    confirmRevokeOthers = true
+                } label: {
+                    Text("Sign out other sessions")
+                        .font(.body.weight(.medium))
+                        .padding(.vertical, 12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .moreFlatRow(separator: .hidden)
+            }
+            footnoteRow("Swipe a session to revoke it. The current session can't be revoked here.", bottom: 28)
         }
     }
 
@@ -315,7 +327,7 @@ struct ProfileSettingsView: View {
                     .foregroundStyle(.tertiary)
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 10)
     }
 
     private func deviceIcon(_ session: UserSession) -> String {
@@ -358,5 +370,55 @@ struct ProfileSettingsView: View {
         } catch {
             actionError = error.localizedDescription
         }
+    }
+
+    // MARK: Flat building blocks
+
+    private func fieldRow<Field: View>(_ label: String, @ViewBuilder field: () -> Field) -> some View {
+        HStack(spacing: 12) {
+            Text(label)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .frame(width: 84, alignment: .leading)
+            field()
+        }
+        .padding(.vertical, 12)
+        .moreFlatRow()
+    }
+
+    private func actionRow(
+        _ title: String,
+        busy: Bool,
+        done: Bool,
+        disabled: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack {
+                Text(title)
+                    .font(.body.weight(.medium))
+                Spacer()
+                if busy {
+                    ProgressView().controlSize(.small)
+                } else if done {
+                    Image(systemName: "checkmark")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(WTheme.positive)
+                }
+            }
+            .padding(.vertical, 12)
+            .contentShape(Rectangle())
+        }
+        .disabled(disabled)
+        .moreFlatRow()
+    }
+
+    private func footnoteRow(_ text: String, bottom: CGFloat = 4) -> some View {
+        Text(text)
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .padding(.top, 8)
+            .padding(.bottom, bottom)
+            .moreFlatRow(separator: .hidden)
     }
 }

@@ -51,8 +51,9 @@ final class MoreTeamStore {
     }
 }
 
-/// Workspace roster: members with role chips, pending invitations, invite sheet.
-/// Visible to every member; writes gated on manage_team.
+/// Workspace roster: search pill up top, dense flat member rows with role
+/// pills, pending invitations, invite sheet. Visible to every member; writes
+/// gated on manage_team.
 struct TeamMembersView: View {
     @Environment(AppEnvironment.self) private var env
     @State private var store = MoreTeamStore()
@@ -60,6 +61,7 @@ struct TeamMembersView: View {
     @State private var showInvite = false
     @State private var memberPendingRemoval: TeamMember?
     @State private var actionError: String?
+    @FocusState private var searchFocused: Bool
 
     private var canManage: Bool { env.session.can(.manageTeam) }
 
@@ -83,6 +85,7 @@ struct TeamMembersView: View {
                         } label: {
                             Image(systemName: "person.badge.plus")
                         }
+                        .accessibilityLabel("Invite member")
                     }
                 }
             }
@@ -133,57 +136,103 @@ struct TeamMembersView: View {
                 SkeletonRows()
             }
         } else {
-            List {
-                statsSection
-                membersSection
-                if canManage, !store.invitations.isEmpty {
-                    invitationsSection
-                }
+            VStack(spacing: 0) {
+                searchBar
+                list
             }
-            .listStyle(.plain)
-            .searchable(text: $search, prompt: "Search members")
-            .refreshable { await store.load(env.api, canManage: canManage) }
+            .background(Color(.systemBackground))
         }
     }
 
-    private var statsSection: some View {
-        Section {
-            HStack(spacing: 12) {
-                StatCell(label: "Members", value: "\(store.members.count)")
+    // MARK: Search pill
+
+    private var searchBar: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(.secondary)
+                .padding(.leading, 14)
+            TextField("Search members", text: $search)
+                .font(.subheadline)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .submitLabel(.search)
+                .focused($searchFocused)
+            if !search.isEmpty {
+                Button {
+                    search = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 16))
+                        .foregroundStyle(.tertiary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear search")
+            }
+            PresenceAvatars()
+                .padding(.trailing, 8)
+        }
+        .frame(height: 44)
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .padding(.horizontal, 12)
+        .padding(.top, 4)
+        .padding(.bottom, 6)
+    }
+
+    // MARK: List
+
+    private var list: some View {
+        List {
+            statsRow
+            membersSection
+            if canManage, !store.invitations.isEmpty {
+                invitationsSection
+            }
+        }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .environment(\.defaultMinListRowHeight, 0)
+        .refreshable { await store.load(env.api, canManage: canManage) }
+    }
+
+    private var statsRow: some View {
+        HStack(spacing: 12) {
+            StatCell(label: "Members", value: "\(store.members.count)")
+            Divider().frame(height: 32)
+            StatCell(label: "Online", value: "\(env.realtime.presence.onlineCount)", tone: .emerald)
+            if canManage {
                 Divider().frame(height: 32)
-                StatCell(label: "Online", value: "\(env.realtime.presence.onlineCount)", tone: .emerald)
-                if canManage {
-                    Divider().frame(height: 32)
-                    StatCell(
-                        label: "Pending",
-                        value: "\(store.invitations.count)",
-                        tone: store.invitations.isEmpty ? nil : .amber
-                    )
-                }
+                StatCell(
+                    label: "Pending",
+                    value: "\(store.invitations.count)",
+                    tone: store.invitations.isEmpty ? nil : .amber
+                )
             }
-            .padding(.vertical, 4)
-            .listRowSeparator(.hidden)
         }
+        .padding(.top, 8)
+        .padding(.bottom, 4)
+        .moreFlatRow(separator: .hidden)
     }
 
+    @ViewBuilder
     private var membersSection: some View {
-        Section {
-            if filteredMembers.isEmpty {
-                EmptyStateView(title: "No matches", message: "No member matches that search.")
-                    .listRowSeparator(.hidden)
-            }
-            ForEach(filteredMembers) { member in
-                memberRow(member)
-                    .swipeActions(edge: .trailing) {
-                        if canRemove(member) {
-                            Button(role: .destructive) {
-                                memberPendingRemoval = member
-                            } label: {
-                                Label("Remove", systemImage: "person.badge.minus")
-                            }
+        MoreFlatSectionHeader("Members", top: 12)
+        if filteredMembers.isEmpty {
+            EmptyStateView(title: "No matches", message: "No member matches that search.")
+                .moreFlatRow(separator: .hidden)
+        }
+        ForEach(filteredMembers) { member in
+            memberRow(member)
+                .moreFlatRow(textLeading: MoreFlatMetrics.avatarTextLeading)
+                .swipeActions(edge: .trailing) {
+                    if canRemove(member) {
+                        Button(role: .destructive) {
+                            memberPendingRemoval = member
+                        } label: {
+                            Label("Remove", systemImage: "person.badge.minus")
                         }
                     }
-            }
+                }
         }
     }
 
@@ -223,7 +272,7 @@ struct TeamMembersView: View {
             Spacer(minLength: 8)
             roleChips(member)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 9)
     }
 
     @ViewBuilder
@@ -249,19 +298,26 @@ struct TeamMembersView: View {
         }
     }
 
+    @ViewBuilder
     private var invitationsSection: some View {
-        Section("Pending invitations") {
-            ForEach(store.invitations) { invitation in
-                invitationRow(invitation)
-                    .swipeActions(edge: .trailing) {
-                        Button(role: .destructive) {
-                            Task { await revoke(invitation) }
-                        } label: {
-                            Label("Revoke", systemImage: "xmark.circle")
-                        }
+        MoreFlatSectionHeader("Pending invitations")
+        ForEach(store.invitations) { invitation in
+            invitationRow(invitation)
+                .moreFlatRow(textLeading: MoreFlatMetrics.tileTextLeading)
+                .swipeActions(edge: .trailing) {
+                    Button(role: .destructive) {
+                        Task { await revoke(invitation) }
+                    } label: {
+                        Label("Revoke", systemImage: "xmark.circle")
                     }
-            }
+                }
         }
+        Text("Swipe an invitation to revoke it.")
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .padding(.top, 8)
+            .padding(.bottom, 28)
+            .moreFlatRow(separator: .hidden)
     }
 
     private func invitationRow(_ invitation: TeamInvitation) -> some View {
@@ -285,7 +341,7 @@ struct TeamMembersView: View {
                 }
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 9)
     }
 
     private func expiryText(_ invitation: TeamInvitation) -> String {
@@ -330,28 +386,37 @@ struct MoreInviteMemberSheet: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section("Invite by email") {
-                    TextField("name@company.com", text: $email)
-                        .keyboardType(.emailAddress)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
+            List {
+                MoreFlatSectionHeader("Invite by email", top: 8)
+                TextField("name@company.com", text: $email)
+                    .keyboardType(.emailAddress)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .padding(.vertical, 12)
+                    .moreFlatRow()
+                MoreFlatSectionHeader("Roles")
+                if store.roles.isEmpty {
+                    Text("No roles in this workspace yet.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .padding(.vertical, 8)
+                        .moreFlatRow(separator: .hidden)
                 }
-                Section {
-                    if store.roles.isEmpty {
-                        Text("No roles in this workspace yet.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                    ForEach(store.roles) { role in
-                        roleRow(role)
-                    }
-                } header: {
-                    Text("Roles")
-                } footer: {
-                    Text("You can only grant permissions you hold yourself.")
+                ForEach(store.roles) { role in
+                    roleRow(role)
+                        .moreFlatRow()
                 }
+                Text("You can only grant permissions you hold yourself.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 8)
+                    .padding(.bottom, 28)
+                    .moreFlatRow(separator: .hidden)
             }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .background(Color(.systemBackground))
+            .environment(\.defaultMinListRowHeight, 0)
             .navigationTitle("Invite member")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -418,7 +483,8 @@ struct MoreInviteMemberSheet: View {
                     .font(.system(size: 18))
                     .foregroundStyle(selected ? WTheme.accent : Color.secondary)
             }
-            .padding(.vertical, 2)
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }

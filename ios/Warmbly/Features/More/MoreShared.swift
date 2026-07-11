@@ -2,13 +2,21 @@ import SwiftUI
 
 // Small shared pieces used across the More tab screens.
 
-/// Settings-style hub row: tinted icon square + title (+ optional subtitle).
+/// Flat hub row: 34pt tinted icon tile + medium title (+ optional footnote
+/// subtitle), with an optional trailing value and a live unread count chip.
 struct MoreHubRow: View {
     let icon: String
     let title: String
     var subtitle: String? = nil
     let tone: Tone
     var titleTone: Tone? = nil
+    var value: String? = nil
+    var badge: Int = 0
+
+    private var hasSubtitle: Bool {
+        if let subtitle, !subtitle.isEmpty { return true }
+        return false
+    }
 
     var body: some View {
         HStack(spacing: 12) {
@@ -24,8 +32,27 @@ struct MoreHubRow: View {
                         .lineLimit(1)
                 }
             }
+            Spacer(minLength: 8)
+            if let value {
+                Text(value)
+                    .font(.footnote)
+                    .monospacedDigit()
+                    .foregroundStyle(.tertiary)
+                    .contentTransition(.numericText())
+            }
+            if badge > 0 {
+                Text(badge > 99 ? "99+" : "\(badge)")
+                    .font(.system(size: 10, weight: .bold))
+                    .monospacedDigit()
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 5)
+                    .frame(minWidth: 18, minHeight: 18)
+                    .background(WTheme.accent, in: Capsule())
+                    .contentTransition(.numericText())
+                    .animation(.default, value: badge)
+            }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, hasSubtitle ? 9 : 11)
     }
 }
 

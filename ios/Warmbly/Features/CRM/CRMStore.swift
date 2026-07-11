@@ -48,6 +48,25 @@ final class CRMDealsStore {
         summary?.currency ?? deals.first?.currency
     }
 
+    /// Drawer scope count for a status filter (nil = all). The summary is
+    /// requested without the status filter so these stay stable across scopes.
+    func statusCount(_ status: String?) -> Int? {
+        guard let summary else { return nil }
+        switch status {
+        case "open": return summary.openCount
+        case "won": return summary.wonCount
+        case "lost": return summary.lostCount
+        default: return summary.total
+        }
+    }
+
+    /// Open deals in a pipeline, summed from the stage counts when present.
+    func pipelineDealCount(_ pipeline: CRMPipeline) -> Int? {
+        let counts = (pipeline.stages ?? []).compactMap(\.dealCount)
+        guard !counts.isEmpty else { return nil }
+        return counts.reduce(0, +)
+    }
+
     private func searchBody() -> CRMDealSearchBody {
         var body = CRMDealSearchBody()
         let trimmed = query.trimmingCharacters(in: .whitespaces)
@@ -74,8 +93,14 @@ final class CRMDealsStore {
             }
 
             let body = searchBody()
+            // Summary without status/query so drawer scope counts stay stable
+            // while a scope or search is active (pipeline-scoped only).
+            var unfiltered = body
+            unfiltered.statuses = nil
+            unfiltered.query = nil
+            let summaryBody = unfiltered
             async let dealsPage: CRMPage<CRMDeal> = api.post("crm/deals/search", body: body, query: ["limit": "200"])
-            async let summaryResult: CRMDealsSummary = api.post("crm/deals/summary", body: body)
+            async let summaryResult: CRMDealsSummary = api.post("crm/deals/summary", body: summaryBody)
             let page = try await dealsPage
             let summaryValue = try? await summaryResult
             guard gen == generation else { return }
@@ -121,6 +146,34 @@ final class CRMDealsStore {
 
 // MARK: - Tasks
 
+/// Drawer scopes for the tasks browser. All are client-side slices of the
+/// loaded page; the search endpoint has no due-date bucket filters.
+enum CRMTaskScope: String, CaseIterable, Identifiable {
+    case open, dueToday, overdue, upcoming, completed
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .open: "Open"
+        case .dueToday: "Due today"
+        case .overdue: "Overdue"
+        case .upcoming: "Upcoming"
+        case .completed: "Completed"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .open: "tray.full.fill"
+        case .dueToday: "sun.max.fill"
+        case .overdue: "exclamationmark.circle.fill"
+        case .upcoming: "calendar"
+        case .completed: "checkmark.circle.fill"
+        }
+    }
+}
+
 @MainActor
 @Observable
 final class CRMTasksStore {
@@ -132,6 +185,7 @@ final class CRMTasksStore {
     private(set) var hasLoaded = false
 
     var query = ""
+    var scope: CRMTaskScope = .open
 
     private var generation = 0
 
@@ -156,6 +210,48 @@ final class CRMTasksStore {
 
     var done: [CRMTask] {
         tasks.filter { $0.isDone }
+    }
+
+    /// Everything not completed/cancelled, overdue included (the Open scope).
+    var notDone: [CRMTask] {
+        tasks.filter { !$0.isDone }
+    }
+
+    /// Tasks in a drawer scope, sliced client-side from the loaded page.
+    func tasks(in scope: CRMTaskScope) -> [CRMTask] {
+        let calendar = Calendar.current
+        switch scope {
+        case .open:
+            return notDone
+        case .dueToday:
+            return notDone.filter { $0.dueDate.map(calendar.isDateInToday) ?? false }
+        case .overdue:
+            return overdue
+        case .upcoming:
+            return notDone.filter { task in
+                guard let due = task.dueDate else { return false }
+                return due > Date() && !calendar.isDateInToday(due)
+            }
+        case .completed:
+            return done
+        }
+    }
+
+    /// Scope counts for the drawer. Open/overdue/completed prefer the server
+    /// summary; due today and upcoming are derived from the loaded page
+    /// (limit 200), so they can undercount very large task lists.
+    func count(for scope: CRMTaskScope) -> Int {
+        switch scope {
+        case .open:
+            return summary?.openCount ?? notDone.count
+        case .overdue:
+            return summary?.overdueCount ?? overdue.count
+        case .completed:
+            if let summary { return (summary.completedCount ?? 0) + (summary.cancelledCount ?? 0) }
+            return done.count
+        case .dueToday, .upcoming:
+            return tasks(in: scope).count
+        }
     }
 
     func load(_ api: APIClient) async {
@@ -212,6 +308,33 @@ final class CRMTasksStore {
 
 // MARK: - Meetings
 
+/// Drawer scopes for the meetings browser. Today is a client-side slice of the
+/// upcoming timeframe (the API only knows upcoming/past).
+enum CRMMeetingScope: String, CaseIterable, Identifiable {
+    case upcoming, today, past
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .upcoming: "Upcoming"
+        case .today: "Today"
+        case .past: "Past"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .upcoming: "calendar.badge.clock"
+        case .today: "sun.max.fill"
+        case .past: "clock.arrow.circlepath"
+        }
+    }
+
+    /// API `timeframe` query value backing this scope.
+    var timeframe: String { self == .past ? "past" : "upcoming" }
+}
+
 @MainActor
 @Observable
 final class CRMMeetingsStore {
@@ -223,8 +346,29 @@ final class CRMMeetingsStore {
     private(set) var hasLoaded = false
 
     var query = ""
-    /// "upcoming" | "past".
-    var timeframe = "upcoming"
+    var scope: CRMMeetingScope = .upcoming
+    /// "upcoming" | "past" — derived from the scope.
+    var timeframe: String { scope.timeframe }
+
+    /// Meetings for the active scope; Today filters the upcoming load.
+    var visibleMeetings: [CRMMeeting] {
+        scope == .today ? meetings.filter(\.isToday) : meetings
+    }
+
+    /// Drawer scope counts from the server summary (past has none).
+    func count(for scope: CRMMeetingScope) -> Int? {
+        switch scope {
+        case .upcoming: summary?.upcoming
+        case .today: summary?.today
+        case .past: nil
+        }
+    }
+
+    /// Soonest non-canceled meeting from an upcoming load, for the hero badge.
+    var nextUpcoming: CRMMeeting? {
+        guard scope != .past else { return nil }
+        return meetings.first { $0.status != "canceled" && ($0.scheduledFor ?? .distantPast) >= Date() }
+    }
 
     private var generation = 0
 

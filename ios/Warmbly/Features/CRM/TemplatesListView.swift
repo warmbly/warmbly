@@ -1,58 +1,32 @@
 import SwiftUI
 import WebKit
 
-/// Reply templates list pushed from the More tab. Rows show name + snippet;
-/// tapping pushes a detail with the rendered preview. Duplicate is gated behind
-/// manageCampaigns. Reloads on the .templates pulse.
+/// Reply templates browser pushed from the More tab, in the flat browser
+/// language: search pill with presence, a tracked-uppercase caption row with
+/// the live count, and dense hairline rows (name + subject + two-line snippet
+/// + relative updated time) that push the rendered detail. Duplicate is gated
+/// behind manageCampaigns. Reloads on the .templates pulse.
 struct TemplatesListView: View {
     @Environment(AppEnvironment.self) private var env
     @State private var store = TemplatesStore()
+    @State private var openTemplate: EmailTemplate?
 
     private var canWrite: Bool { env.session.can(.manageCampaigns) }
+    private var isSearching: Bool { !store.query.trimmingCharacters(in: .whitespaces).isEmpty }
 
     var body: some View {
         @Bindable var store = store
-        Group {
-            if store.isLoading, !store.hasLoaded {
-                ScrollView { SkeletonRows(rows: 8) }
-            } else if let error = store.errorMessage, store.templates.isEmpty {
-                ErrorStateView(title: "Couldn't load templates", message: error) {
-                    await store.load(env.api)
-                }
-            } else if store.templates.isEmpty {
-                emptyState
-            } else {
-                List {
-                    ForEach(store.templates) { template in
-                        NavigationLink {
-                            TemplateDetailView(store: store, template: template)
-                        } label: {
-                            row(template)
-                        }
-                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                            if canWrite {
-                                Button {
-                                    Task { try? await store.duplicate(env.api, template: template) }
-                                } label: {
-                                    Label("Duplicate", systemImage: "plus.square.on.square")
-                                }
-                                .tint(WTheme.accent)
-                            }
-                        }
-                    }
-                }
-                .listStyle(.plain)
-                .refreshable { await store.load(env.api) }
-            }
+        VStack(spacing: 0) {
+            CRMSearchBar(query: $store.query, prompt: "Search templates")
+            captionRow
+            list
         }
+        .background(Color(.systemBackground))
         .navigationTitle("Templates")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                PresenceAvatars()
-            }
+        .navigationDestination(item: $openTemplate) { template in
+            TemplateDetailView(store: store, template: template)
         }
-        .searchable(text: $store.query, prompt: "Search templates")
         .task(id: store.query) {
             if store.hasLoaded {
                 try? await Task.sleep(for: .milliseconds(350))
@@ -65,34 +39,116 @@ struct TemplatesListView: View {
         }
     }
 
+    // MARK: Caption
+
+    private var captionRow: some View {
+        HStack(spacing: 6) {
+            Text(isSearching ? "SEARCH RESULTS" : "REPLY TEMPLATES")
+                .font(.caption.weight(.semibold))
+                .tracking(0.9)
+                .foregroundStyle(.secondary)
+            if !isSearching, !store.templates.isEmpty {
+                Text(WFormat.compact(store.templates.count))
+                    .font(.caption.weight(.semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(.tertiary)
+                    .contentTransition(.numericText())
+            }
+            Spacer()
+            if isSearching, store.hasLoaded {
+                Text("\(store.templates.count) found")
+                    .font(.caption.weight(.semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .contentTransition(.numericText())
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 8)
+        .padding(.bottom, 2)
+    }
+
+    // MARK: List
+
+    @ViewBuilder
+    private var list: some View {
+        if store.isLoading, !store.hasLoaded {
+            ScrollView { SkeletonRows(rows: 8) }
+        } else if let error = store.errorMessage, store.templates.isEmpty {
+            ErrorStateView(title: "Couldn't load templates", message: error) {
+                await store.load(env.api)
+            }
+        } else if store.templates.isEmpty {
+            emptyState
+        } else {
+            List {
+                ForEach(store.templates) { template in
+                    row(template)
+                }
+                CRMEndMarker(store.templates.count, "template")
+            }
+            .listStyle(.plain)
+            .scrollDismissesKeyboard(.immediately)
+            .refreshable { await store.load(env.api) }
+        }
+    }
+
     @ViewBuilder
     private var emptyState: some View {
-        let searching = !store.query.trimmingCharacters(in: .whitespaces).isEmpty
         EmptyStateView(
-            title: searching ? "No matching templates" : "No templates yet",
-            message: searching
+            title: isSearching ? "No matching templates" : "No templates yet",
+            message: isSearching
                 ? "Try a different search."
                 : "Reply templates you save on the web dashboard show up here."
         )
     }
 
+    // MARK: Row
+
     private func row(_ template: EmailTemplate) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(template.name)
-                .font(.body.weight(.medium))
-                .lineLimit(1)
-            if let subject = template.subject, !subject.isEmpty {
-                Text(subject)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+        Button {
+            openTemplate = template
+        } label: {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(template.name)
+                        .font(.body.weight(.medium))
+                        .lineLimit(1)
+                    Spacer(minLength: 8)
+                    if let updated = template.updatedAt {
+                        Text(WFormat.relative(updated))
+                            .font(.caption)
+                            .monospacedDigit()
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                if let subject = template.subject, !subject.isEmpty {
+                    Text(subject)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Text(template.snippet)
+                    .font(.footnote)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(2)
             }
-            Text(template.snippet)
-                .font(.footnote)
-                .foregroundStyle(.tertiary)
-                .lineLimit(1)
+            .padding(.vertical, 6)
+            .contentShape(Rectangle())
         }
-        .padding(.vertical, 6)
+        .buttonStyle(.plain)
+        .listRowInsets(EdgeInsets(top: 4, leading: 20, bottom: 4, trailing: 16))
+        .listRowBackground(Color(.systemBackground))
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            if canWrite {
+                Button {
+                    Task { try? await store.duplicate(env.api, template: template) }
+                } label: {
+                    Label("Duplicate", systemImage: "plus.square.on.square")
+                }
+                .tint(WTheme.accent)
+            }
+        }
     }
 }
 

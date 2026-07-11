@@ -361,6 +361,52 @@ struct MoreSubscriptionLimits: Codable, Sendable {
     }
 }
 
+// MARK: - Flat list language
+
+/// Shared metrics for the flat account screens (mirrors CampaignDetailView).
+enum MoreFlatMetrics {
+    /// Hairline leading for IconTile(34) rows: 34 tile + 12 gap + 16.
+    static let tileTextLeading: CGFloat = 62
+    /// Hairline leading for WAvatar(40) rows: 40 avatar + 12 gap + 16.
+    static let avatarTextLeading: CGFloat = 68
+}
+
+/// Eyebrow caption as a bare row, never a grouped `Section` header (that
+/// reintroduces the sticky gray band). Whitespace above is the separator.
+struct MoreFlatSectionHeader: View {
+    let title: String
+    var top: CGFloat = 20
+
+    init(_ title: String, top: CGFloat = 20) {
+        self.title = title
+        self.top = top
+    }
+
+    var body: some View {
+        EyebrowLabel(title)
+            .padding(.horizontal, 20)
+            .padding(.top, top)
+            .padding(.bottom, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .listRowInsets(EdgeInsets())
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color(.systemBackground))
+    }
+}
+
+extension View {
+    /// Flat full-bleed row; the hairline tucks under the text column when
+    /// `textLeading` is given, Gmail-style.
+    func moreFlatRow(separator: Visibility = .automatic, textLeading: CGFloat? = nil) -> some View {
+        listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 20))
+            .listRowSeparator(separator)
+            .alignmentGuide(.listRowSeparatorLeading) { dims in
+                textLeading ?? dims[.listRowSeparatorLeading]
+            }
+            .listRowBackground(Color(.systemBackground))
+    }
+}
+
 // MARK: - Styling helpers
 
 enum MoreStyle {

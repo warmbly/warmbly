@@ -1,40 +1,41 @@
 import SwiftUI
 
-/// Tasks checklist pushed from the More tab. Overdue / open / done sections,
-/// tap the circle to complete or reopen (gated behind manageContacts), create
-/// sheet with title, due date and type. Reloads on the .crm pulse.
+/// Tasks browser presented as a full-screen cover from the More hub, copying
+/// the campaign leads browser: its own NavigationStack, a slide-in drawer (sky
+/// hero with open/overdue badges + scope pills with live counts and a sliding
+/// capsule, edge-swipe to open), a search pill with hamburger + presence +
+/// circular create and close buttons, a tracked-uppercase scope caption, and
+/// the scoped tasks grouped under due-date eyebrow captions (overdue in rose
+/// with a ping, today, tomorrow, upcoming, no due date, done). Tap the circle
+/// to complete or reopen (gated behind manageContacts). Reloads on the .crm
+/// realtime pulse.
 struct CRMTasksView: View {
     @Environment(AppEnvironment.self) private var env
+    @Environment(\.dismiss) private var dismiss
     @State private var store = CRMTasksStore()
     @State private var showCreate = false
+    @State private var sidebarOpen = false
 
     private var canWrite: Bool { env.session.can(.manageContacts) }
+    private var isSearching: Bool { !store.query.trimmingCharacters(in: .whitespaces).isEmpty }
+    private var scopedTasks: [CRMTask] { store.tasks(in: store.scope) }
 
     var body: some View {
-        @Bindable var store = store
-        VStack(spacing: 0) {
-            statStrip
-            Divider()
-            list
-        }
-        .navigationTitle("Tasks")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                PresenceAvatars()
-                if canWrite {
-                    Button {
-                        showCreate = true
-                    } label: {
-                        Image(systemName: "plus")
-                    }
-                    .accessibilityLabel("New task")
-                }
+        NavigationStack {
+            CRMBrowserShell(sidebarOpen: $sidebarOpen) {
+                mainPane
+            } drawer: { topInset in
+                CRMTasksSidebar(
+                    store: store,
+                    topInset: topInset,
+                    revealed: sidebarOpen,
+                    onSelect: { select($0) }
+                )
             }
-        }
-        .searchable(text: $store.query, prompt: "Search tasks")
-        .sheet(isPresented: $showCreate) {
-            CRMTaskCreateSheet(store: store)
+            .toolbar(.hidden, for: .navigationBar)
+            .sheet(isPresented: $showCreate) {
+                CRMTaskCreateSheet(store: store)
+            }
         }
         .task(id: store.query) {
             if store.hasLoaded {
@@ -46,31 +47,124 @@ struct CRMTasksView: View {
         .onChange(of: env.realtime.pulse(for: .crm)) {
             Task { await store.load(env.api) }
         }
+        .sensoryFeedback(.selection, trigger: store.scope)
     }
 
-    // MARK: Stat strip
+    // MARK: Drawer plumbing
 
-    private var statStrip: some View {
-        HStack(spacing: 0) {
-            StatCell(label: "Open", value: WFormat.compact(store.summary?.openCount ?? store.open.count))
-                .padding(.horizontal, 8)
-            hairline
-            StatCell(
-                label: "Overdue",
-                value: WFormat.compact(store.summary?.overdueCount ?? store.overdue.count),
-                tone: store.overdue.isEmpty ? nil : .rose
-            )
-            .padding(.horizontal, 8)
-            hairline
-            StatCell(label: "Done", value: WFormat.compact(store.summary?.completedCount ?? store.done.count), tone: .slate)
-                .padding(.horizontal, 8)
+    private func openSidebar() {
+        withAnimation(CRMBrowser.spring) { sidebarOpen = true }
+    }
+
+    /// Scope changes are a client-side refilter of the loaded page; no reload.
+    private func select(_ scope: CRMTaskScope) {
+        withAnimation(.spring(response: 0.38, dampingFraction: 0.8)) { store.scope = scope }
+        Task {
+            try? await Task.sleep(for: .milliseconds(280))
+            withAnimation(CRMBrowser.spring) { sidebarOpen = false }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
     }
 
-    private var hairline: some View {
-        Rectangle().fill(Color(.separator)).frame(width: 0.5, height: 34)
+    // MARK: Main pane
+
+    private var mainPane: some View {
+        @Bindable var store = store
+        return VStack(spacing: 0) {
+            CRMSearchBar(
+                query: $store.query,
+                prompt: "Search tasks",
+                onMenu: { openSidebar() },
+                menuLabel: "Open tasks menu"
+            ) {
+                if canWrite {
+                    CRMCircleButton(symbol: "plus", label: "New task") {
+                        showCreate = true
+                    }
+                }
+                CRMCircleButton(symbol: "xmark", label: "Close tasks", weight: .semibold, size: 15) {
+                    dismiss()
+                }
+            }
+            scopeCaption
+            list
+        }
+        .background(Color(.systemBackground))
+    }
+
+    // MARK: Caption
+
+    private var scopeCaption: some View {
+        HStack(spacing: 6) {
+            Text(isSearching ? "SEARCH RESULTS" : store.scope.title.uppercased())
+                .font(.caption.weight(.semibold))
+                .tracking(0.9)
+                .foregroundStyle(.secondary)
+            if !isSearching, store.count(for: store.scope) > 0 {
+                Text(WFormat.compact(store.count(for: store.scope)))
+                    .font(.caption.weight(.semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(.tertiary)
+                    .contentTransition(.numericText())
+            }
+            Spacer()
+            if isSearching, store.hasLoaded {
+                Text("\(scopedTasks.count) found")
+                    .font(.caption.weight(.semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .contentTransition(.numericText())
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 8)
+        .padding(.bottom, 2)
+    }
+
+    // MARK: Due-date groups
+
+    private struct TaskBucket: Identifiable {
+        let id: String
+        let title: String
+        var tone: Tone?
+        var ping = false
+        let tasks: [CRMTask]
+    }
+
+    /// Buckets computed over the scoped tasks; scopes narrower than Open
+    /// naturally collapse to their own group(s).
+    private var groups: [TaskBucket] {
+        var result: [TaskBucket] = []
+        let scoped = scopedTasks
+        let overdue = scoped.filter(\.isOverdue)
+        if !overdue.isEmpty {
+            result.append(TaskBucket(id: "overdue", title: "Overdue", tone: .rose, ping: true, tasks: overdue))
+        }
+        let open = scoped.filter { !$0.isDone && !$0.isOverdue }
+        let calendar = Calendar.current
+        let today = open.filter { $0.dueDate.map(calendar.isDateInToday) ?? false }
+        let tomorrow = open.filter { $0.dueDate.map(calendar.isDateInTomorrow) ?? false }
+        let later = open.filter { task in
+            guard let due = task.dueDate else { return false }
+            return !calendar.isDateInToday(due) && !calendar.isDateInTomorrow(due)
+        }
+        let undated = open.filter { $0.dueDate == nil }
+        if !today.isEmpty {
+            result.append(TaskBucket(id: "today", title: "Due today", tone: .sky, tasks: today))
+        }
+        if !tomorrow.isEmpty {
+            result.append(TaskBucket(id: "tomorrow", title: "Due tomorrow", tasks: tomorrow))
+        }
+        if !later.isEmpty {
+            result.append(TaskBucket(id: "later", title: "Upcoming", tasks: later))
+        }
+        if !undated.isEmpty {
+            result.append(TaskBucket(id: "undated", title: "No due date", tasks: undated))
+        }
+        let done = scoped.filter(\.isDone)
+        if !done.isEmpty {
+            result.append(TaskBucket(id: "done", title: "Done", tone: .slate, tasks: done))
+        }
+        return result
     }
 
     // MARK: List
@@ -83,52 +177,51 @@ struct CRMTasksView: View {
             ErrorStateView(title: "Couldn't load tasks", message: error) {
                 await store.load(env.api)
             }
-        } else if store.tasks.isEmpty {
+        } else if scopedTasks.isEmpty {
             emptyState
         } else {
             List {
-                if !store.overdue.isEmpty {
-                    Section {
-                        ForEach(store.overdue) { task in row(task) }
-                    } header: {
-                        CRMSectionHeader(title: "Overdue", count: store.overdue.count, tone: .rose, ping: true)
+                ForEach(groups) { group in
+                    CRMListCaption(title: group.title, count: group.tasks.count, tone: group.tone, ping: group.ping)
+                    ForEach(group.tasks) { task in
+                        row(task)
                     }
                 }
-                if !store.open.isEmpty {
-                    Section {
-                        ForEach(store.open) { task in row(task) }
-                    } header: {
-                        CRMSectionHeader(title: "Open", count: store.open.count)
-                    }
-                }
-                if !store.done.isEmpty {
-                    Section {
-                        ForEach(store.done) { task in row(task) }
-                    } header: {
-                        CRMSectionHeader(title: "Done", count: store.done.count, tone: .slate)
-                    }
-                }
+                CRMEndMarker(scopedTasks.count, "task")
             }
             .listStyle(.plain)
+            .scrollDismissesKeyboard(.immediately)
             .refreshable { await store.load(env.api) }
         }
     }
 
     @ViewBuilder
     private var emptyState: some View {
-        let searching = !store.query.trimmingCharacters(in: .whitespaces).isEmpty
-        if searching {
+        if isSearching {
             EmptyStateView(title: "No matching tasks", message: "Try a different search.")
-        } else if canWrite {
-            EmptyStateView(
-                title: "No tasks yet",
-                message: "Track follow-ups and reminders here.",
-                ctaTitle: "New task"
-            ) {
-                showCreate = true
-            }
         } else {
-            EmptyStateView(title: "No tasks yet", message: "Tasks your team creates will show up here.")
+            switch store.scope {
+            case .open:
+                if canWrite {
+                    EmptyStateView(
+                        title: "No tasks yet",
+                        message: "Track follow-ups and reminders here.",
+                        ctaTitle: "New task"
+                    ) {
+                        showCreate = true
+                    }
+                } else {
+                    EmptyStateView(title: "No tasks yet", message: "Tasks your team creates will show up here.")
+                }
+            case .dueToday:
+                EmptyStateView(title: "Nothing due today", message: "Tasks with a due date of today show up here.")
+            case .overdue:
+                EmptyStateView(title: "Nothing overdue", message: "You're all caught up.")
+            case .upcoming:
+                EmptyStateView(title: "Nothing upcoming", message: "Tasks due after today show up here.")
+            case .completed:
+                EmptyStateView(title: "Nothing completed yet", message: "Finished tasks land here.")
+            }
         }
     }
 
@@ -142,9 +235,13 @@ struct CRMTasksView: View {
                 Image(systemName: task.isDone ? "checkmark.circle.fill" : "circle")
                     .font(.system(size: 22))
                     .foregroundStyle(task.isDone ? WTheme.positive : (task.isOverdue ? WTheme.negative : Color.secondary))
+                    .contentTransition(.symbolEffect(.replace))
+                    .frame(width: 30, height: 30)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .disabled(!canWrite)
+            .accessibilityLabel(task.isDone ? "Reopen task" : "Complete task")
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(task.title)
@@ -153,7 +250,6 @@ struct CRMTasksView: View {
                     .strikethrough(task.isDone, color: .secondary)
                     .lineLimit(1)
                 HStack(spacing: 6) {
-                    if task.isOverdue { CRMPingDot(color: WTheme.negative) }
                     if let due = task.dueDate {
                         Text(CRMFormat.dueLabel(due))
                             .font(.footnote)
@@ -171,6 +267,8 @@ struct CRMTasksView: View {
             }
         }
         .padding(.vertical, 6)
+        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+        .listRowBackground(Color(.systemBackground))
         .swipeActions(edge: .leading, allowsFullSwipe: true) {
             if canWrite {
                 Button {
@@ -190,6 +288,65 @@ struct CRMTasksView: View {
     private func toggle(_ task: CRMTask) async {
         guard canWrite else { return }
         try? await store.setDone(env.api, task: task, done: !task.isDone)
+    }
+}
+
+// MARK: - Drawer
+
+/// Tasks drawer: sky hero with live open/overdue badges (overdue pings when
+/// non-zero) and the five scopes as pill rows. Counts prefer the server
+/// summary; due today and upcoming are derived from the loaded page.
+private struct CRMTasksSidebar: View {
+    let store: CRMTasksStore
+    let topInset: CGFloat
+    let revealed: Bool
+    let onSelect: (CRMTaskScope) -> Void
+
+    @Namespace private var activeNS
+
+    var body: some View {
+        CRMDrawer(title: "Tasks", topInset: topInset) {
+            CRMDrawerBadge(symbol: "checklist", text: "\(WFormat.compact(store.count(for: .open))) open")
+            let overdue = store.count(for: .overdue)
+            if overdue > 0 {
+                CRMDrawerBadge(
+                    symbol: "exclamationmark.circle.fill",
+                    text: "\(WFormat.compact(overdue)) overdue",
+                    live: true,
+                    pingColor: Tone.rose.color
+                )
+            }
+        } rows: {
+            CRMDrawerSectionLabel("Scope")
+            ForEach(Array(CRMTaskScope.allCases.enumerated()), id: \.element) { index, scope in
+                let count = store.count(for: scope)
+                if scope == .overdue, count > 0 {
+                    CRMDrawerRow(
+                        pingDot: Tone.rose.color,
+                        title: scope.title,
+                        count: count,
+                        selected: store.scope == scope,
+                        index: index,
+                        revealed: revealed,
+                        namespace: activeNS
+                    ) {
+                        onSelect(scope)
+                    }
+                } else {
+                    CRMDrawerRow(
+                        icon: scope.icon,
+                        title: scope.title,
+                        count: count,
+                        selected: store.scope == scope,
+                        index: index,
+                        revealed: revealed,
+                        namespace: activeNS
+                    ) {
+                        onSelect(scope)
+                    }
+                }
+            }
+        }
     }
 }
 

@@ -22,18 +22,28 @@ final class MoreHubStore {
     }
 }
 
-/// The More tab hub. Owns the tab's NavigationStack; every screen in this
-/// module is pushed from here.
+/// The More tab hub: one flat, full-bleed list (no grouped cards) — a rich
+/// workspace header up top, then eyebrow-captioned, hairline-separated rows
+/// that push every screen in this module.
 struct MoreRootView: View {
     @Environment(AppEnvironment.self) private var env
     @State private var store = MoreHubStore()
     @State private var showSwitcher = false
     @State private var confirmLogout = false
+    @State private var showDeals = false
+    @State private var showTasks = false
+    @State private var showMeetings = false
+    @State private var showMailboxes = false
+    @State private var showAnalytics = false
+
+    /// Content leading where row text starts (inset + 34 tile + 12 gap), so
+    /// hairlines tuck under the text column, Gmail-style.
+    private static let rowTextLeading: CGFloat = 62
 
     var body: some View {
         NavigationStack {
             List {
-                workspaceSection
+                workspaceHeader
                 if env.session.can(.manageEmails) { sendingSection }
                 if env.session.can(.viewAnalytics) { insightsSection }
                 if env.session.can(.viewContacts) { crmSection }
@@ -42,7 +52,11 @@ struct MoreRootView: View {
                 accountSection
                 systemSection
             }
-            .listStyle(.insetGrouped)
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .environment(\.defaultMinListRowHeight, 0)
+            .background(Color(.systemBackground))
+            .contentMargins(.bottom, 28, for: .scrollContent)
             .navigationTitle("More")
             .task { await store.load(env.api) }
             .onChange(of: env.realtime.pulse(for: .billing)) {
@@ -73,7 +87,51 @@ struct MoreRootView: View {
         }
     }
 
-    // MARK: Workspace
+    // MARK: Flat-list helpers
+
+    /// Eyebrow caption as a bare row — never a grouped `Section` header (that
+    /// reintroduces the sticky gray band). Whitespace above is the separator.
+    private func sectionHeader(_ title: String, top: CGFloat = 22) -> some View {
+        EyebrowLabel(title)
+            .padding(.horizontal, 20)
+            .padding(.top, top)
+            .padding(.bottom, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .listRowInsets(EdgeInsets())
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color(.systemBackground))
+    }
+
+    private func plainRow<Content: View>(
+        separator: Visibility = .automatic,
+        @ViewBuilder _ content: () -> Content
+    ) -> some View {
+        content()
+            .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 20))
+            .listRowSeparator(separator)
+            .alignmentGuide(.listRowSeparatorLeading) { _ in Self.rowTextLeading }
+            .listRowBackground(Color(.systemBackground))
+    }
+
+    private func navRow<Destination: View>(
+        icon: String,
+        tone: Tone,
+        title: String,
+        subtitle: String? = nil,
+        value: String? = nil,
+        badge: Int = 0,
+        @ViewBuilder destination: @escaping () -> Destination
+    ) -> some View {
+        plainRow {
+            NavigationLink {
+                destination()
+            } label: {
+                MoreHubRow(icon: icon, title: title, subtitle: subtitle, tone: tone, value: value, badge: badge)
+            }
+        }
+    }
+
+    // MARK: Workspace header
 
     private var connectionLabel: String {
         switch env.realtime.connectionState {
@@ -91,20 +149,23 @@ struct MoreRootView: View {
         }
     }
 
-    private var workspaceSection: some View {
-        Section {
+    /// One premium header block: the workspace identity (tap to switch) with
+    /// the live connection + presence strip tucked underneath.
+    @ViewBuilder
+    private var workspaceHeader: some View {
+        plainRow(separator: .hidden) {
             Button {
                 showSwitcher = true
             } label: {
-                HStack(spacing: 12) {
+                HStack(spacing: 13) {
                     if let org = env.session.currentOrg {
                         WAvatar(name: org.name, imageURL: org.avatarURL, seed: org.id, size: 46)
-                        VStack(alignment: .leading, spacing: 4) {
+                        VStack(alignment: .leading, spacing: 5) {
                             Text(org.name)
-                                .font(.headline)
+                                .font(.system(size: 19, weight: .semibold))
                                 .foregroundStyle(.primary)
                                 .lineLimit(1)
-                            HStack(spacing: 6) {
+                            HStack(spacing: 7) {
                                 MorePlanPill(subscription: store.subscription)
                                 if let role = env.session.role {
                                     Text(role.capitalized)
@@ -116,23 +177,28 @@ struct MoreRootView: View {
                     } else {
                         Text("Select workspace")
                             .font(.body.weight(.medium))
+                            .foregroundStyle(.primary)
                     }
-                    Spacer()
+                    Spacer(minLength: 8)
                     Image(systemName: "chevron.up.chevron.down")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(.tertiary)
                 }
-                .padding(.vertical, 2)
+                .padding(.top, 6)
+                .padding(.bottom, 12)
+                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-
+            .buttonStyle(TapScaleStyle())
+            .accessibilityLabel("Switch workspace")
+        }
+        plainRow(separator: .hidden) {
             HStack(spacing: 10) {
                 StatusPill(
                     text: connectionLabel,
                     tone: connectionTone,
                     pulsing: env.realtime.connectionState == .connected
                 )
-                Spacer()
+                Spacer(minLength: 8)
                 PresenceAvatars()
                 Text("\(env.realtime.presence.onlineCount) online")
                     .font(.footnote.weight(.medium))
@@ -141,123 +207,121 @@ struct MoreRootView: View {
                     .contentTransition(.numericText())
                     .animation(.default, value: env.realtime.presence.onlineCount)
             }
+            .padding(.bottom, 4)
         }
     }
 
     // MARK: Sections
 
+    @ViewBuilder
     private var sendingSection: some View {
-        Section("Sending") {
-            NavigationLink {
-                MailboxesRootView()
-            } label: {
-                MoreHubRow(icon: "envelope.fill", title: "Mailboxes", subtitle: "Sender accounts and warmup", tone: .orange)
-            }
+        sectionHeader("Sending")
+        coverRow(icon: "envelope.fill", tone: .orange, title: "Mailboxes", subtitle: "Sender accounts and warmup", isPresented: $showMailboxes) {
+            MailboxesRootView(onClose: { showMailboxes = false })
         }
     }
 
+    @ViewBuilder
     private var insightsSection: some View {
-        Section("Insights") {
-            NavigationLink {
-                AnalyticsRootView()
-            } label: {
-                MoreHubRow(icon: "chart.bar.fill", title: "Analytics", subtitle: "Sends, opens, replies", tone: .sky)
-            }
-            NavigationLink {
-                AuditLogView()
-            } label: {
-                MoreHubRow(icon: "clock.arrow.circlepath", title: "Activity", subtitle: "Audit log, last 90 days", tone: .indigo)
-            }
+        sectionHeader("Insights")
+        coverRow(icon: "chart.bar.fill", tone: .sky, title: "Analytics", subtitle: "Sends, opens, replies", isPresented: $showAnalytics) {
+            AnalyticsRootView(onClose: { showAnalytics = false })
+        }
+        navRow(icon: "clock.arrow.circlepath", tone: .indigo, title: "Activity", subtitle: "Audit log, last 90 days") {
+            AuditLogView()
         }
     }
 
+    @ViewBuilder
     private var crmSection: some View {
-        Section("CRM") {
-            NavigationLink {
-                CRMDealsView()
+        sectionHeader("CRM")
+        coverRow(icon: "briefcase.fill", tone: .sky, title: "Deals", isPresented: $showDeals) {
+            CRMDealsView()
+        }
+        coverRow(icon: "checklist", tone: .emerald, title: "Tasks", isPresented: $showTasks) {
+            CRMTasksView()
+        }
+        coverRow(icon: "calendar", tone: .orange, title: "Meetings", isPresented: $showMeetings) {
+            CRMMeetingsView()
+        }
+    }
+
+    /// CRM rows open full-screen drawer browsers, not pushes; a chevron keeps
+    /// them reading as navigable.
+    private func coverRow<Content: View>(
+        icon: String,
+        tone: Tone,
+        title: String,
+        subtitle: String? = nil,
+        isPresented: Binding<Bool>,
+        @ViewBuilder content: @escaping () -> Content
+    ) -> some View {
+        plainRow {
+            Button {
+                isPresented.wrappedValue = true
             } label: {
-                MoreHubRow(icon: "briefcase.fill", title: "Deals", tone: .sky)
+                HStack(spacing: 8) {
+                    MoreHubRow(icon: icon, title: title, subtitle: subtitle, tone: tone)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.tertiary)
+                }
+                .contentShape(Rectangle())
             }
-            NavigationLink {
-                CRMTasksView()
-            } label: {
-                MoreHubRow(icon: "checklist", title: "Tasks", tone: .emerald)
-            }
-            NavigationLink {
-                CRMMeetingsView()
-            } label: {
-                MoreHubRow(icon: "calendar", title: "Meetings", tone: .orange)
+            .buttonStyle(.plain)
+            .fullScreenCover(isPresented: isPresented) {
+                content()
             }
         }
     }
 
+    @ViewBuilder
     private var resourcesSection: some View {
-        Section("Resources") {
-            NavigationLink {
-                TemplatesListView()
-            } label: {
-                MoreHubRow(icon: "doc.on.doc.fill", title: "Templates", tone: .indigo)
-            }
+        sectionHeader("Resources")
+        navRow(icon: "doc.on.doc.fill", tone: .indigo, title: "Templates") {
+            TemplatesListView()
         }
     }
 
+    @ViewBuilder
     private var teamSection: some View {
-        Section("Team") {
-            NavigationLink {
-                TeamMembersView()
-            } label: {
-                MoreHubRow(
-                    icon: "person.2.fill",
-                    title: "Members",
-                    subtitle: memberCountSubtitle,
-                    tone: .sky
-                )
-            }
+        sectionHeader("Team")
+        navRow(icon: "person.2.fill", tone: .sky, title: "Members", value: memberCountValue) {
+            TeamMembersView()
         }
     }
 
-    private var memberCountSubtitle: String? {
+    private var memberCountValue: String? {
         guard let count = env.session.currentOrg?.counts?.totalMembers else { return nil }
         return count == 1 ? "1 member" : "\(count) members"
     }
 
+    @ViewBuilder
     private var accountSection: some View {
-        Section("Account") {
-            NavigationLink {
-                ProfileSettingsView()
-            } label: {
-                MoreHubRow(icon: "person.crop.circle", title: "Profile", subtitle: env.session.user?.email, tone: .slate)
-            }
-            NavigationLink {
-                NotificationsView()
-            } label: {
-                MoreHubRow(icon: "bell", title: "Notifications", tone: .amber)
-            }
-            .badge(store.unreadNotifications)
-            NavigationLink {
-                SecurityInfoView()
-            } label: {
-                MoreHubRow(icon: "lock.shield", title: "Security", subtitle: "2FA, passkeys, sessions", tone: .emerald)
-            }
-            if env.session.can(.manageBilling) {
-                NavigationLink {
-                    BillingView()
-                } label: {
-                    MoreHubRow(icon: "creditcard", title: "Billing", subtitle: "Plan and usage", tone: .indigo)
-                }
+        sectionHeader("Account")
+        navRow(icon: "person.crop.circle", tone: .slate, title: "Profile", subtitle: env.session.user?.email) {
+            ProfileSettingsView()
+        }
+        navRow(icon: "bell", tone: .amber, title: "Notifications", badge: store.unreadNotifications) {
+            NotificationsView()
+        }
+        navRow(icon: "lock.shield", tone: .emerald, title: "Security", subtitle: "2FA, passkeys, sessions") {
+            SecurityInfoView()
+        }
+        if env.session.can(.manageBilling) {
+            navRow(icon: "creditcard", tone: .indigo, title: "Billing", subtitle: "Plan and usage") {
+                BillingView()
             }
         }
     }
 
+    @ViewBuilder
     private var systemSection: some View {
-        Section {
+        sectionHeader("System")
+        plainRow {
             HStack(spacing: 12) {
-                Image(systemName: "server.rack")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Tone.slate.color)
-                    .frame(width: 28, height: 28)
-                    .background(Tone.slate.background, in: RoundedRectangle(cornerRadius: 7))
-                VStack(alignment: .leading, spacing: 1) {
+                IconTile(symbol: "server.rack", tone: .slate, size: 34)
+                VStack(alignment: .leading, spacing: 1.5) {
                     Text("Server")
                         .font(.body.weight(.medium))
                     Text(AppConfig.serverOrigin)
@@ -265,12 +329,19 @@ struct MoreRootView: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
+                Spacer(minLength: 0)
             }
+            .padding(.vertical, 9)
+        }
+        plainRow {
             Button(role: .destructive) {
                 confirmLogout = true
             } label: {
                 MoreHubRow(icon: "rectangle.portrait.and.arrow.right", title: "Log out", tone: .rose, titleTone: .rose)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
         }
     }
 }
@@ -281,38 +352,28 @@ struct MoreWorkspaceSwitcherSheet: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.dismiss) private var dismiss
     @State private var switchingID: String?
-    @State private var creating = false
-    @State private var newName = ""
+    @State private var showCreate = false
+    @State private var orgBeforeCreate: String?
     @State private var errorMessage: String?
+
+    /// Avatar 32 + 12 gap: hairlines start under the workspace names.
+    private static let rowTextLeading: CGFloat = 44
 
     var body: some View {
         NavigationStack {
             List {
-                Section("Workspaces") {
-                    ForEach(env.session.memberships) { membership in
-                        if let org = membership.organization {
-                            workspaceRow(membership: membership, org: org)
-                        }
+                sheetHeader("Workspaces", top: 10)
+                ForEach(env.session.memberships) { membership in
+                    if let org = membership.organization {
+                        sheetRow { workspaceRow(membership: membership, org: org) }
                     }
                 }
-                Section("New workspace") {
-                    TextField("Workspace name", text: $newName)
-                        .font(.system(size: 14))
-                    Button {
-                        create()
-                    } label: {
-                        HStack {
-                            Text("Create workspace")
-                                .font(.system(size: 14, weight: .medium))
-                            if creating {
-                                Spacer()
-                                ProgressView().controlSize(.small)
-                            }
-                        }
-                    }
-                    .disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty || creating)
-                }
+                sheetRow(separator: .hidden) { createRow }
             }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .environment(\.defaultMinListRowHeight, 0)
+            .background(Color(.systemBackground))
             .navigationTitle("Workspace")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -334,6 +395,35 @@ struct MoreWorkspaceSwitcherSheet: View {
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
+        .fullScreenCover(isPresented: $showCreate, onDismiss: {
+            // Creation switches the session into the new workspace; close the
+            // switcher too so the user lands straight in it.
+            if env.session.currentOrgID != orgBeforeCreate { dismiss() }
+        }) {
+            WorkspaceCreateFlow(context: .cover, onClose: { showCreate = false })
+        }
+    }
+
+    private func sheetHeader(_ title: String, top: CGFloat = 22) -> some View {
+        EyebrowLabel(title)
+            .padding(.horizontal, 20)
+            .padding(.top, top)
+            .padding(.bottom, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .listRowInsets(EdgeInsets())
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color(.systemBackground))
+    }
+
+    private func sheetRow<Content: View>(
+        separator: Visibility = .automatic,
+        @ViewBuilder _ content: () -> Content
+    ) -> some View {
+        content()
+            .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 20))
+            .listRowSeparator(separator)
+            .alignmentGuide(.listRowSeparatorLeading) { _ in Self.rowTextLeading }
+            .listRowBackground(Color(.systemBackground))
     }
 
     private func workspaceRow(membership: OrganizationMember, org: Organization) -> some View {
@@ -360,7 +450,7 @@ struct MoreWorkspaceSwitcherSheet: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-                Spacer()
+                Spacer(minLength: 8)
                 if switchingID == org.id {
                     ProgressView().controlSize(.small)
                 } else if org.id == env.session.currentOrgID {
@@ -369,8 +459,35 @@ struct MoreWorkspaceSwitcherSheet: View {
                         .foregroundStyle(WTheme.accent)
                 }
             }
+            .padding(.vertical, 9)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .disabled(switchingID != nil)
+    }
+
+    /// Opens the full workspace-creation onboarding rather than an inline form.
+    private var createRow: some View {
+        Button {
+            orgBeforeCreate = env.session.currentOrgID
+            showCreate = true
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "plus")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(WTheme.accent)
+                    .frame(width: 32, height: 32)
+                    .background(Tone.sky.background, in: Circle())
+                Text("New workspace")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(WTheme.accent)
+                Spacer(minLength: 8)
+            }
+            .padding(.top, 10)
+            .padding(.bottom, 16)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(TapScaleStyle())
         .disabled(switchingID != nil)
     }
 
@@ -392,18 +509,4 @@ struct MoreWorkspaceSwitcherSheet: View {
         }
     }
 
-    private func create() {
-        let name = newName.trimmingCharacters(in: .whitespaces)
-        guard !name.isEmpty, !creating else { return }
-        creating = true
-        Task {
-            do {
-                try await env.session.createOrganization(name: name)
-                dismiss()
-            } catch {
-                errorMessage = error.localizedDescription
-            }
-            creating = false
-        }
-    }
 }

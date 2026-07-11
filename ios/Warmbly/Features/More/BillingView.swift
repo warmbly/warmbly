@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// Read-only billing surface: current plan, trial state, and workspace usage
-/// against plan limits. Changing plans stays on the web dashboard.
+/// Read-only billing surface, flattened: plan header with pill + renewal,
+/// usage as thin accent bars on hairline tracks, and the manage-on-web
+/// handoff. Changing plans stays on the web dashboard.
 struct BillingView: View {
     @Environment(AppEnvironment.self) private var env
 
@@ -44,105 +45,141 @@ struct BillingView: View {
             usageSection
             manageSection
         }
-        .listStyle(.insetGrouped)
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(Color(.systemBackground))
+        .environment(\.defaultMinListRowHeight, 0)
     }
 
+    // MARK: Plan
+
+    @ViewBuilder
     private var planSection: some View {
-        Section {
-            HStack(spacing: 12) {
-                IconTile(symbol: "creditcard.fill", tone: .indigo, size: 34)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(planName)
-                        .font(.body.weight(.semibold))
-                    if let period = renewalText {
-                        Text(period)
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                Spacer()
-                MorePlanPill(subscription: subscription)
-            }
-            .padding(.vertical, 4)
-
-            if let price = subscription?.plan?.price, price > 0 {
-                LabeledContent {
-                    Text(priceText(price))
-                        .font(.subheadline.weight(.medium))
-                        .monospacedDigit()
-                } label: {
-                    Text("Price")
-                }
-            }
-            if subscription?.cancelAtPeriodEnd == true {
-                Label("Cancels at the end of the current period", systemImage: "exclamationmark.circle")
-                    .font(.footnote)
-                    .foregroundStyle(WTheme.warning)
-            }
-        } header: {
-            EyebrowLabel("Plan")
-        }
-    }
-
-    private func trialSection(_ trial: TrialInfo) -> some View {
-        Section {
-            HStack {
-                Label("Free trial", systemImage: "clock.badge.fill")
-                    .font(.body.weight(.medium))
-                Spacer()
-                if trial.isExpired == true {
-                    StatusPill(text: "Expired", tone: .rose)
-                } else if let days = trial.daysRemaining {
-                    StatusPill(text: days == 1 ? "1 day left" : "\(days) days left", tone: days <= 3 ? .amber : .emerald)
-                }
-            }
-            .padding(.vertical, 2)
-            if let ends = trial.trialEndsAt {
-                LabeledContent("Ends") {
-                    Text(ends, format: .dateTime.month().day().year())
-                        .font(.subheadline)
+        MoreFlatSectionHeader("Plan", top: 8)
+        HStack(spacing: 12) {
+            IconTile(symbol: "creditcard.fill", tone: .indigo, size: 34)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(planName)
+                    .font(.body.weight(.semibold))
+                if let period = renewalText {
+                    Text(period)
+                        .font(.footnote)
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
                 }
             }
-        } header: {
-            EyebrowLabel("Trial")
+            Spacer(minLength: 8)
+            MorePlanPill(subscription: subscription)
         }
-    }
-
-    private var usageSection: some View {
-        Section {
-            let counts = env.session.currentOrg?.counts
-            let limits = env.session.currentOrg?.limits
-            MoreUsageBar(label: "Email accounts", used: counts?.emailAccounts, limit: limits?.maxEmailAccounts)
-            MoreUsageBar(label: "Active campaigns", used: counts?.activeCampaigns, limit: limits?.maxActiveCampaigns)
-            MoreUsageBar(label: "Contacts", used: counts?.totalContacts, limit: limits?.maxContacts)
-            MoreUsageBar(label: "Team members", used: counts?.totalMembers, limit: limits?.maxTeamMembers)
-        } header: {
-            EyebrowLabel("Usage this workspace")
-        } footer: {
-            Text("Usage reflects the current workspace against your plan limits.")
-        }
-    }
-
-    private var manageSection: some View {
-        Section {
-            Link(destination: URL(string: "https://app.warmbly.com/app/settings/billing")!) {
-                HStack(spacing: 12) {
-                    IconTile(symbol: "safari.fill", tone: .sky, size: 34)
-                    Text("Manage billing on the web")
-                        .font(.body.weight(.medium))
-                        .foregroundStyle(.primary)
-                    Spacer()
-                    Image(systemName: "arrow.up.forward.square")
-                        .font(.footnote.weight(.medium))
-                        .foregroundStyle(.tertiary)
-                }
-                .padding(.vertical, 2)
+        .padding(.vertical, 10)
+        .moreFlatRow(textLeading: MoreFlatMetrics.tileTextLeading)
+        if let price = subscription?.plan?.price, price > 0 {
+            HStack {
+                Text("Price")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text(priceText(price))
+                    .font(.subheadline.weight(.medium))
+                    .monospacedDigit()
             }
-        } footer: {
-            Text("Change plan, update payment method, and download invoices from the web dashboard.")
+            .padding(.vertical, 11)
+            .moreFlatRow(separator: .hidden)
         }
+        if subscription?.cancelAtPeriodEnd == true {
+            Label("Cancels at the end of the current period", systemImage: "exclamationmark.circle")
+                .font(.footnote)
+                .foregroundStyle(WTheme.warning)
+                .padding(.vertical, 8)
+                .moreFlatRow(separator: .hidden)
+        }
+    }
+
+    // MARK: Trial
+
+    @ViewBuilder
+    private func trialSection(_ trial: TrialInfo) -> some View {
+        MoreFlatSectionHeader("Trial")
+        HStack(spacing: 12) {
+            IconTile(symbol: "clock.badge.fill", tone: trialTone(trial), size: 34)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Free trial")
+                    .font(.body.weight(.medium))
+                if let ends = trial.trialEndsAt {
+                    Text("Ends \(ends.formatted(.dateTime.month().day().year()))")
+                        .font(.footnote)
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Spacer(minLength: 8)
+            if trial.isExpired == true {
+                StatusPill(text: "Expired", tone: .rose)
+            } else if let days = trial.daysRemaining {
+                StatusPill(text: days == 1 ? "1 day left" : "\(days) days left", tone: days <= 3 ? .amber : .emerald)
+            }
+        }
+        .padding(.vertical, 10)
+        .moreFlatRow(separator: .hidden, textLeading: MoreFlatMetrics.tileTextLeading)
+    }
+
+    private func trialTone(_ trial: TrialInfo) -> Tone {
+        if trial.isExpired == true { return .rose }
+        if let days = trial.daysRemaining, days <= 3 { return .amber }
+        return .emerald
+    }
+
+    // MARK: Usage
+
+    @ViewBuilder
+    private var usageSection: some View {
+        MoreFlatSectionHeader("Usage this workspace")
+        let counts = env.session.currentOrg?.counts
+        let limits = env.session.currentOrg?.limits
+        usageRow(MoreUsageBar(label: "Email accounts", used: counts?.emailAccounts, limit: limits?.maxEmailAccounts))
+        usageRow(MoreUsageBar(label: "Active campaigns", used: counts?.activeCampaigns, limit: limits?.maxActiveCampaigns))
+        usageRow(MoreUsageBar(label: "Contacts", used: counts?.totalContacts, limit: limits?.maxContacts))
+        usageRow(MoreUsageBar(label: "Team members", used: counts?.totalMembers, limit: limits?.maxTeamMembers))
+        footnoteRow("Usage reflects the current workspace against your plan limits.")
+    }
+
+    private func usageRow(_ bar: MoreUsageBar) -> some View {
+        bar
+            .padding(.vertical, 4)
+            .moreFlatRow(separator: .hidden)
+    }
+
+    // MARK: Manage on the web
+
+    @ViewBuilder
+    private var manageSection: some View {
+        MoreFlatSectionHeader("Manage")
+        Link(destination: URL(string: "https://app.warmbly.com/app/settings/billing")!) {
+            HStack(spacing: 12) {
+                IconTile(symbol: "safari.fill", tone: .sky, size: 34)
+                Text("Manage billing on the web")
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(.primary)
+                Spacer(minLength: 8)
+                Image(systemName: "arrow.up.forward.square")
+                    .font(.footnote.weight(.medium))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.vertical, 11)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(TapScaleStyle())
+        .moreFlatRow(separator: .hidden, textLeading: MoreFlatMetrics.tileTextLeading)
+        footnoteRow("Change plan, update payment method, and download invoices from the web dashboard.", bottom: 28)
+    }
+
+    private func footnoteRow(_ text: String, bottom: CGFloat = 4) -> some View {
+        Text(text)
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .padding(.top, 6)
+            .padding(.bottom, bottom)
+            .moreFlatRow(separator: .hidden)
     }
 
     private var loadingPlaceholder: some View {
