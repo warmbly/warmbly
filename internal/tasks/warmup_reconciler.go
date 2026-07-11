@@ -20,6 +20,12 @@ const warmupReconcileBatch = 500
 // campaign does not itself enqueue a task, so without this pass a freshly
 // enabled mailbox would never start warming.
 func (s *tasksService) ReconcileWarmupSchedules(ctx context.Context, limit int) (int, error) {
+	// Same lost-callback backstop as the campaign reconciler: a pending
+	// warmup task stranded past its slot blocks the candidate query below.
+	if n, err := s.taskRepo.CancelOverduePendingTasks(ctx, "warmup", overduePendingGrace); err == nil && n > 0 {
+		log.Info().Int64("cancelled", n).Msg("warmup reconcile: cancelled overdue pending tasks")
+	}
+
 	ids, err := s.emailRepo.ListWarmupScheduleCandidates(ctx, limit)
 	if err != nil {
 		return 0, err
