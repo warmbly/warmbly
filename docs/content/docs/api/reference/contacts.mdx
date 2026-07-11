@@ -29,6 +29,7 @@ Every field is optional; an empty body matches all contacts in the organization.
 | `query` | string | No | Text search across core fields (name, email, company). |
 | `custom_field_filters` | array | No | Per custom-field filters: `{ "name", "value", "type" }` where `type` is one of `equal`, `starts_with`, `ends_with`, `contains`. |
 | `campaign_ids` | string[] | No | Contact must be in ALL of these campaigns. |
+| `lead_status` | string | No | Filter to one derived lead status: `pending`, `active`, `replied`, `bounced`, or `unsubscribed`. Requires exactly one `campaign_ids` entry, otherwise the request is rejected. |
 | `category_ids` | string[] | No | Contact must have ALL of these categories. |
 | `min_campaigns` | integer | No | Minimum number of associated campaigns. |
 | `max_campaigns` | integer | No | Maximum number of associated campaigns. |
@@ -85,7 +86,39 @@ Returns a `data` array of contacts plus a `pagination` envelope.
 }
 ```
 
-When the search filters by exactly one campaign, each contact additionally carries a `campaign_lead` object with its processing state inside that campaign (`status`, `sent`, `opened`, `clicked`, `replied`, `bounced`, `current_step`, `last_activity_at`).
+When the search filters by exactly one campaign, each contact additionally carries a `campaign_lead` object with its processing state inside that campaign (`status`, `sent`, `opened`, `clicked`, `replied`, `bounced`, `current_step`, `last_activity_at`). The `status` derivation, highest priority first, is `unsubscribed` (not subscribed), then `bounced`, `replied`, `active` (at least one email sent), and `pending` (queued, nothing sent). The `lead_status` filter narrows to one of these buckets.
+
+When the search filters by exactly one campaign, the first page (no `cursor`) also includes a `lead_counts` object: per-status lead totals for that campaign, independent of the `lead_status` filter so every scope's total is available at once.
+
+```json
+{
+  "lead_counts": {
+    "total": 3140,
+    "queued": 1980,
+    "processing": 940,
+    "replied": 180,
+    "bounced": 22,
+    "unsubscribed": 18
+  }
+}
+```
+
+On the first page (no `cursor`), the response includes a `counts` object with org-wide facet totals (independent of the request filters), useful for a browse sidebar. Later pages omit it:
+
+```json
+{
+  "counts": {
+    "total": 12480,
+    "subscribed": 11902,
+    "unsubscribed": 578,
+    "in_campaign": 3140,
+    "not_contacted": 9340,
+    "categories": [
+      { "category_id": "6f1c0b1e-0c2a-4b3a-9c1e-2d3f4a5b6c7d", "count": 420 }
+    ]
+  }
+}
+```
 
 ## Create contacts
 

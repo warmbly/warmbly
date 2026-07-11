@@ -57,7 +57,30 @@ func (s *contactService) Search(ctx context.Context, orgID, cursor, category, li
 		return nil, err
 	}
 
+	// The lead_status filter is a single-campaign Leads-view feature: an invalid
+	// value or the wrong campaign cardinality is a client contract error (400),
+	// not a silently-ignored no-op.
+	if filters.LeadStatus != "" {
+		if !models.ValidLeadStatus(filters.LeadStatus) {
+			return nil, errx.New(errx.BadRequest, "invalid lead_status")
+		}
+		if len(filters.CampaignIDs) != 1 {
+			return nil, errx.New(errx.BadRequest, "lead_status requires exactly one campaign_id")
+		}
+	}
+
 	return s.contactRepository.Search(ctx, orgID, categoryId, cursorId, filters, limitN)
+}
+
+func (s *contactService) SearchCounts(ctx context.Context, orgID string) (*models.ContactsCounts, *errx.Error) {
+	return s.contactRepository.SearchCounts(ctx, orgID)
+}
+
+func (s *contactService) CampaignLeadCounts(ctx context.Context, orgID, campaignID string) (*models.CampaignLeadCounts, *errx.Error) {
+	if _, err := validate.Uuid(campaignID); err != nil {
+		return nil, err
+	}
+	return s.contactRepository.CampaignLeadCounts(ctx, orgID, campaignID)
 }
 
 func (s *contactService) BulkUpdate(ctx context.Context, userID string, orgID uuid.UUID, data *models.BulkEditContactsData) ([]models.Contact, *errx.Error) {

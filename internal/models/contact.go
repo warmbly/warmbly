@@ -87,9 +87,59 @@ const (
 	LeadStatusUnsubscribed = "unsubscribed"
 )
 
+// ValidLeadStatus reports whether s is one of the derived lead-status values.
+// Used to gate the single-campaign Leads-view `lead_status` search filter.
+func ValidLeadStatus(s string) bool {
+	switch s {
+	case LeadStatusPending, LeadStatusActive, LeadStatusReplied, LeadStatusBounced, LeadStatusUnsubscribed:
+		return true
+	default:
+		return false
+	}
+}
+
 type ContactsResult struct {
 	Data       []Contact  `json:"data"`
 	Pagination Pagination `json:"pagination"`
+	// Counts is populated only when the search request asks for it
+	// (`?counts=true`, first page). It carries org-wide facet totals for the
+	// browse sidebar (all/subscribed/unsubscribed/in-campaign/not-contacted +
+	// per category) and is independent of the request's filters, like the
+	// campaigns-overview drawer counts.
+	Counts *ContactsCounts `json:"counts,omitempty"`
+	// LeadCounts carries per-status lead totals for ONE campaign (the campaign
+	// Leads view). Populated only on the first page when the search filters by
+	// exactly one campaign_id; nil otherwise. Independent of the request's
+	// lead_status filter, so the scope chips can show every bucket's total.
+	LeadCounts *CampaignLeadCounts `json:"lead_counts,omitempty"`
+}
+
+// CampaignLeadCounts are per-status lead totals within a single campaign,
+// derived the same way as ContactCampaignProgress.Status (unsubscribed >
+// bounced > replied > processing > queued). Drives the Leads-view scope chips.
+type CampaignLeadCounts struct {
+	Total        int `json:"total"`
+	Queued       int `json:"queued"`     // pending: a lead, no email sent yet
+	Processing   int `json:"processing"` // active: sending through the flow
+	Replied      int `json:"replied"`
+	Bounced      int `json:"bounced"`
+	Unsubscribed int `json:"unsubscribed"`
+}
+
+// ContactsCounts are org-wide contact facet totals for the browse sidebar.
+type ContactsCounts struct {
+	Total        int                    `json:"total"`
+	Subscribed   int                    `json:"subscribed"`
+	Unsubscribed int                    `json:"unsubscribed"`
+	InCampaign   int                    `json:"in_campaign"`
+	NotContacted int                    `json:"not_contacted"`
+	Categories   []ContactCategoryCount `json:"categories"`
+}
+
+// ContactCategoryCount is the number of org contacts carrying one category.
+type ContactCategoryCount struct {
+	CategoryID string `json:"category_id"`
+	Count      int    `json:"count"`
 }
 
 // ContactEngagement summarises every email touchpoint we have for a
@@ -275,6 +325,7 @@ type SearchContacts struct {
 	Query              string                 `json:"query"`                // Text search across core fields
 	CustomFieldFilters []SearchContactsFilter `json:"custom_field_filters"` // Custom Field Filters
 	CampaignIDs        []string               `json:"campaign_ids"`         // Contacts must be in ALL these campaigns
+	LeadStatus         string                 `json:"lead_status"`          // Filter by derived lead status; requires exactly one campaign_id
 	CategoryIDs        []string               `json:"category_ids"`         // Contacts must have ALL these categories
 	MinCampaigns       *int                   `json:"min_campaigns"`        // Minimum number of associated campaigns
 	MaxCampaigns       *int                   `json:"max_campaigns"`        // Maximum number of associated campaigns

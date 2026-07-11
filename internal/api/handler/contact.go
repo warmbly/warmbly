@@ -75,6 +75,23 @@ func (h *Handler) SearchContacts(c *gin.Context) {
 		return
 	}
 
+	// Org-wide facet counts for the browse sidebar, returned by default on the
+	// first page (no cursor); a `loadMore` reuses the counts the client already
+	// has. Best-effort: a counts failure must not fail the search itself.
+	if cursor == "" {
+		if counts, cerr := h.ContactService.SearchCounts(c.Request.Context(), orgID.String()); cerr == nil {
+			resp.Counts = counts
+		}
+		// Per-status lead totals for the campaign Leads view: only when the
+		// search targets exactly one campaign. Independent of the request's
+		// lead_status filter so every scope chip shows its own total.
+		if len(data.CampaignIDs) == 1 {
+			if lc, cerr := h.ContactService.CampaignLeadCounts(c.Request.Context(), orgID.String(), data.CampaignIDs[0]); cerr == nil {
+				resp.LeadCounts = lc
+			}
+		}
+	}
+
 	c.JSON(http.StatusOK, resp)
 }
 

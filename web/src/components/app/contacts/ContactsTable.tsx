@@ -161,15 +161,28 @@ export default function ContactsTable({
         );
     }, [contacts, subFilter]);
 
+    // Prefer the server's org-wide facet counts (first page's `counts` block) so
+    // the stat strip is accurate at scale. Before that lands, fall back to a
+    // count over the loaded rows so the strip isn't blank on first paint.
+    const serverCounts = contactsData.data?.pages[0]?.counts;
     const counts = React.useMemo(() => {
-        const stats = { total: contacts?.length ?? 0, subscribed: 0, unsubscribed: 0, inCampaign: 0 };
+        if (serverCounts) {
+            return {
+                total: serverCounts.total,
+                subscribed: serverCounts.subscribed,
+                unsubscribed: serverCounts.unsubscribed,
+                inCampaign: serverCounts.in_campaign,
+                exact: true,
+            };
+        }
+        const stats = { total: contacts?.length ?? 0, subscribed: 0, unsubscribed: 0, inCampaign: 0, exact: false };
         for (const c of contacts ?? []) {
             if (c.subscribed) stats.subscribed++;
             else stats.unsubscribed++;
             if (c.campaigns && c.campaigns.length > 0) stats.inCampaign++;
         }
         return stats;
-    }, [contacts]);
+    }, [serverCounts, contacts]);
 
     const isSelectedAll = React.useMemo(() => {
         if (!filtered.length) return false;
@@ -419,7 +432,7 @@ export default function ContactsTable({
                 <Stat
                     label="All"
                     value={counts.total}
-                    sub="on this page"
+                    sub={counts.exact ? "total contacts" : "on this page"}
                     onClick={() => setSubFilter("all")}
                 />
                 <Stat
