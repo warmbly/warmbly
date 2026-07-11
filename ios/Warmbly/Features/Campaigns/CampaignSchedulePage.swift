@@ -78,7 +78,7 @@ struct CampaignSchedulePage: View {
             VStack(alignment: .leading, spacing: 1) {
                 EyebrowLabel("Weekly sending windows")
                 if totalWindows == 0 {
-                    Text("No windows yet — tap + on a day.")
+                    Text("No windows yet — tap a day's track to add one.")
                         .font(.footnote)
                         .foregroundStyle(WTheme.negative)
                 } else {
@@ -161,7 +161,7 @@ struct CampaignSchedulePage: View {
     }
 
     private var footer: some View {
-        Text("Each day is independent — tap + for several windows a day (e.g. morning and afternoon), drag a bar to move it, tap it to set exact times. In \(CampaignSchedulePage.cityName(timezone)) time; run dates are set on the web.")
+        Text("Each day is independent — tap an empty stretch to add a window there (several a day is fine, e.g. morning and afternoon), drag a bar to move it, tap it to set exact times. Drag two bars together and they merge into one. In \(CampaignSchedulePage.cityName(timezone)) time; run dates are set on the web.")
             .font(.caption)
             .foregroundStyle(.tertiary)
             .padding(.horizontal, 16)
@@ -229,6 +229,16 @@ struct CampaignScheduleBoard: View {
     private static let rowH: CGFloat = 54
     private static let barH: CGFloat = 38
     private static let minBar: CGFloat = 38
+
+    /// A softer, brighter sky than the deep accent — the bars used to read as
+    /// dark slabs; sky-400 → sky-500 keeps white legible while feeling airy.
+    private static let barGradient = LinearGradient(
+        colors: [
+            Color.dynamic(light: 0x38BDF8, dark: 0x0EA5E9),
+            Color.dynamic(light: 0x0EA5E9, dark: 0x0369A1),
+        ],
+        startPoint: .top, endPoint: .bottom
+    )
 
     private var todayIndex: Int { (Calendar.current.component(.weekday, from: Date()) + 5) % 7 }
 
@@ -344,12 +354,17 @@ struct CampaignScheduleBoard: View {
     private func track(day: Int, W: CGFloat, isToday: Bool) -> some View {
         let on = !windows[day].isEmpty
         return ZStack(alignment: .leading) {
+            // The empty track: tap anywhere blank to drop a window at that time.
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(isToday ? AnyShapeStyle(WTheme.accent.opacity(0.05)) : AnyShapeStyle(Color(.systemBackground).opacity(0.7)))
                 .overlay(
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .strokeBorder(Color(.separator).opacity(0.3), lineWidth: 1)
                 )
+                .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .conditionalGesture(editable, SpatialTapGesture().onEnded { v in
+                    addWindow(day, at: v.location.x, W: W)
+                })
             // hour gridlines
             ForEach(Self.hourMarks.dropFirst().dropLast(), id: \.self) { h in
                 Rectangle()
@@ -358,11 +373,20 @@ struct CampaignScheduleBoard: View {
                     .frame(maxHeight: .infinity)
                     .offset(x: x(h * 60, W))
             }
+            // A faint + in every open stretch, so it reads as "tap here to add".
+            if editable {
+                gapHints(day: day, W: W)
+            }
             if !on, editable {
-                Text("Tap + to add a window")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.tertiary)
-                    .frame(maxWidth: .infinity)
+                HStack(spacing: 5) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 11, weight: .bold))
+                    Text("Add a sending window")
+                        .font(.system(size: 11, weight: .medium))
+                }
+                .foregroundStyle(WTheme.accent.opacity(0.55))
+                .frame(maxWidth: .infinity)
+                .allowsHitTesting(false)
             }
             ForEach(Array(windows[day].enumerated()), id: \.offset) { idx, iv in
                 bar(day: day, idx: idx, iv: iv, W: W)
@@ -370,6 +394,42 @@ struct CampaignScheduleBoard: View {
         }
         .frame(height: Self.rowH)
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    /// Faint + markers centred in each open gap between windows (and the ends),
+    /// shown only when the day already has at least one window (the empty-day
+    /// affordance is the centred "Add a sending window" hint instead).
+    @ViewBuilder
+    private func gapHints(day: Int, W: CGFloat) -> some View {
+        if !windows[day].isEmpty {
+            let centers = gapCenters(day: day, W: W)
+            ForEach(Array(centers.enumerated()), id: \.offset) { _, cx in
+                Image(systemName: "plus")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(WTheme.accent.opacity(0.32))
+                    .frame(width: 16)
+                    .offset(x: cx - 8)
+            }
+            .allowsHitTesting(false)
+        }
+    }
+
+    /// Pixel x of the centre of every gap wide enough to hold a window.
+    private func gapCenters(day: Int, W: CGFloat) -> [CGFloat] {
+        let sorted = windows[day].sorted { $0.start < $1.start }
+        var out: [CGFloat] = []
+        var cursor = 0
+        func consider(_ from: Int, _ to: Int) {
+            let px = CGFloat(to - from) / CGFloat(kDay) * W
+            guard to - from >= 120, px >= 44 else { return }
+            out.append(x((from + to) / 2, W))
+        }
+        for iv in sorted {
+            consider(cursor, iv.start)
+            cursor = max(cursor, iv.end)
+        }
+        consider(cursor, kDay)
+        return out
     }
 
     // MARK: A window bar
@@ -381,13 +441,12 @@ struct CampaignScheduleBoard: View {
         let wide = w >= 86
         return ZStack {
             RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [WTheme.accent.opacity(0.95), WTheme.accent.opacity(0.72)],
-                        startPoint: .top, endPoint: .bottom
-                    )
+                .fill(Self.barGradient)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .strokeBorder(.white.opacity(0.18), lineWidth: 0.5)
                 )
-                .shadow(color: WTheme.accent.opacity(0.3), radius: 3, y: 1)
+                .shadow(color: Color(hex: 0x0EA5E9).opacity(0.16), radius: 2.5, y: 1)
 
             HStack(spacing: 4) {
                 if wide, editable {
@@ -399,6 +458,7 @@ struct CampaignScheduleBoard: View {
                     .font(.system(size: 10.5, weight: .semibold))
                     .monospacedDigit()
                     .foregroundStyle(.white)
+                    .shadow(color: .black.opacity(0.22), radius: 0.5, y: 0.5)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
             }
@@ -461,6 +521,28 @@ struct CampaignScheduleBoard: View {
         }
         guard let slot = freeSlot(in: sorted) else { return }
         withAnimation(.snappy) { windows[day] = merge(sorted + [slot]) }
+    }
+
+    /// Tap a blank stretch of a day's track to drop a ~2h window centred on the
+    /// tapped time, clamped to sit inside that gap. Overlapping the edge of a
+    /// neighbour just merges into it (see `merge`), which is the natural
+    /// "actually make it one longer window" gesture.
+    private func addWindow(_ day: Int, at px: CGFloat, W: CGFloat) {
+        guard editable, W > 0 else { return }
+        let tap = clampInt(snap(Int(px / W * CGFloat(kDay))), 0, kDay)
+        let sorted = windows[day].sorted { $0.start < $1.start }
+        // Bars capture their own taps; if a tap still lands inside one, ignore.
+        if sorted.contains(where: { tap >= $0.start && tap < $0.end }) { return }
+        var lo = 0, hi = kDay
+        for iv in sorted {
+            if iv.end <= tap { lo = max(lo, iv.end) }
+            if iv.start >= tap { hi = min(hi, iv.start); break }
+        }
+        guard hi - lo >= kMinDur else { return }
+        let dur = min(120, hi - lo)
+        let start = clampInt(snap(tap - dur / 2), lo, hi - dur)
+        let end = min(start + dur, hi)
+        withAnimation(.snappy) { windows[day] = merge(windows[day] + [ScheduleInterval(start: start, end: end)]) }
     }
 
     /// A fresh ~2h window dropped into a free gap and kept an hour clear of its

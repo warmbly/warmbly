@@ -81,9 +81,8 @@ struct ContactDetailView: View {
     private var hero: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .center, spacing: 14) {
-                WAvatar(name: contact.displayName, seed: contact.id, size: 64)
-                    .overlay(Circle().strokeBorder(.white.opacity(0.55), lineWidth: 2))
-                    .shadow(color: .black.opacity(0.12), radius: 8, y: 3)
+                WAvatar(name: contact.displayName, seed: contact.id, size: 64, onSky: true)
+                    .shadow(color: Color(hex: 0x0C4A6E).opacity(0.28), radius: 10, y: 4)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(contact.displayName)
                         .font(.title2.bold())

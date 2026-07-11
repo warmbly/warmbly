@@ -595,6 +595,13 @@ struct CampaignLead: Codable, Identifiable, Sendable {
     }
 }
 
+extension CampaignLead: Hashable {
+    // Identity by id: enough for navigation and list diffing; the row re-renders
+    // from the value when the list reloads.
+    static func == (lhs: CampaignLead, rhs: CampaignLead) -> Bool { lhs.id == rhs.id }
+    func hash(into hasher: inout Hasher) { hasher.combine(id) }
+}
+
 struct CampaignLeadProgress: Codable, Sendable {
     var status: String?
     var sent: Int?
@@ -636,15 +643,100 @@ struct CampaignLeadProgress: Codable, Sendable {
 struct CampaignLeadsPage: Codable, Sendable {
     var data: [CampaignLead]?
     var pagination: Pagination?
-}
-
-struct CampaignLeadsSearchBody: Encodable {
-    var query: String
-    var campaignIDs: [String]
+    /// Per-status lead totals for the scope chips (first page, single campaign).
+    var leadCounts: CampaignLeadCounts?
 
     enum CodingKeys: String, CodingKey {
-        case query
-        case campaignIDs = "campaign_ids"
+        case data, pagination
+        case leadCounts = "lead_counts"
+    }
+}
+
+/// Per-status lead totals within one campaign (`lead_counts` block).
+struct CampaignLeadCounts: Codable, Sendable {
+    var total: Int?
+    var queued: Int?
+    var processing: Int?
+    var replied: Int?
+    var bounced: Int?
+    var unsubscribed: Int?
+}
+
+/// The Leads browser's status scopes, mirroring the contacts browse scopes but
+/// scoped inside one campaign. Each maps to the server's `lead_status` filter
+/// (nil for "All"), and reads its live total from `CampaignLeadCounts`.
+enum CampaignLeadScope: String, CaseIterable, Identifiable, Hashable {
+    case all, processing, replied, bounced, queued, unsubscribed
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .all: "All"
+        case .processing: "Processing"
+        case .replied: "Replied"
+        case .bounced: "Bounced"
+        case .queued: "Queued"
+        case .unsubscribed: "Unsubscribed"
+        }
+    }
+
+    /// The wire `lead_status` value; nil means no status filter (All).
+    var leadStatus: String? {
+        switch self {
+        case .all: nil
+        case .processing: "active"
+        case .replied: "replied"
+        case .bounced: "bounced"
+        case .queued: "pending"
+        case .unsubscribed: "unsubscribed"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .all: "person.2.fill"
+        case .processing: "paperplane.fill"
+        case .replied: "arrowshape.turn.up.left.fill"
+        case .bounced: "exclamationmark.arrow.circlepath"
+        case .queued: "hourglass"
+        case .unsubscribed: "bell.slash.fill"
+        }
+    }
+
+    var tone: Tone {
+        switch self {
+        case .all: .sky
+        case .processing: .sky
+        case .replied: .emerald
+        case .bounced: .rose
+        case .queued: .slate
+        case .unsubscribed: .slate
+        }
+    }
+
+    func count(_ counts: CampaignLeadCounts?) -> Int {
+        guard let counts else { return 0 }
+        switch self {
+        case .all: return counts.total ?? 0
+        case .processing: return counts.processing ?? 0
+        case .replied: return counts.replied ?? 0
+        case .bounced: return counts.bounced ?? 0
+        case .queued: return counts.queued ?? 0
+        case .unsubscribed: return counts.unsubscribed ?? 0
+        }
+    }
+}
+
+extension CampaignLeadProgress {
+    /// The engagement funnel shown in the lead detail, in order.
+    var funnel: [(label: String, value: Int, tone: Tone)] {
+        [
+            ("Sent", sent ?? 0, .sky),
+            ("Opened", opened ?? 0, .indigo),
+            ("Clicked", clicked ?? 0, .amber),
+            ("Replied", replied ?? 0, .emerald),
+        ]
     }
 }
 

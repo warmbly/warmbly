@@ -19,11 +19,17 @@ struct ContactEditSheet: View {
     @State private var phone: String
     @State private var subscribed: Bool
     @State private var selectedCategoryIDs: Set<String>
+    @State private var selectedCampaignIDs: Set<String>
+    @State private var customFields: [CustomFieldRow]
+    @State private var campaignOptions: [ContactMiniCampaign] = []
 
     @State private var saving = false
     @State private var confirmDelete = false
     @State private var deleting = false
     @State private var errorMessage: String?
+
+    private let originalCampaignIDs: Set<String>
+    private let originalFields: [String: String]
 
     init(
         contact: Contact,
@@ -41,9 +47,26 @@ struct ContactEditSheet: View {
         _phone = State(initialValue: contact.phone ?? "")
         _subscribed = State(initialValue: contact.subscribed ?? true)
         _selectedCategoryIDs = State(initialValue: Set((contact.categories ?? []).map(\.id)))
+        let campIDs = Set((contact.campaigns ?? []).map(\.id))
+        _selectedCampaignIDs = State(initialValue: campIDs)
+        originalCampaignIDs = campIDs
+        let fields = contact.customFields ?? [:]
+        originalFields = fields
+        _customFields = State(initialValue: fields.sorted { $0.key < $1.key }.map { CustomFieldRow(key: $0.key, value: $0.value) })
     }
 
     private var canManage: Bool { env.session.can(.manageContacts) }
+
+    /// The edited custom fields as a dict, dropping blank-key rows.
+    private var customFieldsDict: [String: String] {
+        var out: [String: String] = [:]
+        for row in customFields {
+            let k = row.key.trimmingCharacters(in: .whitespaces)
+            guard !k.isEmpty else { continue }
+            out[k] = row.value
+        }
+        return out
+    }
 
     private var isDirty: Bool {
         firstName != (contact.firstName ?? "")
@@ -52,6 +75,8 @@ struct ContactEditSheet: View {
             || phone != (contact.phone ?? "")
             || subscribed != (contact.subscribed ?? true)
             || selectedCategoryIDs != Set((contact.categories ?? []).map(\.id))
+            || selectedCampaignIDs != originalCampaignIDs
+            || customFieldsDict != originalFields
     }
 
     var body: some View {
@@ -73,10 +98,13 @@ struct ContactEditSheet: View {
                     Toggle("Subscribed", isOn: $subscribed)
                         .tint(WTheme.accent)
                 }
+                campaignsSection
+                customFieldsSection
                 categorySection
             }
             .navigationTitle("Edit contact")
             .navigationBarTitleDisplayMode(.inline)
+            .task { await loadCampaignOptions() }
             .presenceEditingWhileVisible(contact.id)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -113,6 +141,69 @@ struct ContactEditSheet: View {
             }
         }
         .presentationDragIndicator(.visible)
+    }
+
+    @ViewBuilder
+    private var campaignsSection: some View {
+        Section {
+            if campaignOptions.isEmpty {
+                Text("No campaigns yet.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(campaignOptions) { campaign in
+                    Button {
+                        toggleCampaign(campaign.id)
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "paperplane.fill")
+                                .font(.system(size: 13))
+                                .foregroundStyle(.secondary)
+                                .frame(width: 16)
+                            Text(campaign.name ?? "Campaign")
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                            Spacer()
+                            if selectedCampaignIDs.contains(campaign.id) {
+                                Image(systemName: "checkmark").fontWeight(.semibold).foregroundStyle(WTheme.accent)
+                            }
+                        }
+                    }
+                    .disabled(!canManage)
+                }
+            }
+        } header: {
+            Text("Campaigns")
+        } footer: {
+            Text("Add this contact as a lead, or remove them from a campaign.")
+        }
+    }
+
+    @ViewBuilder
+    private var customFieldsSection: some View {
+        Section {
+            ForEach($customFields) { $row in
+                HStack(spacing: 8) {
+                    TextField("Field", text: $row.key)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .frame(maxWidth: 130, alignment: .leading)
+                    Divider()
+                    TextField("Value", text: $row.value)
+                }
+                .disabled(!canManage)
+            }
+            .onDelete { customFields.remove(atOffsets: $0) }
+            if canManage {
+                Button {
+                    customFields.append(CustomFieldRow(key: "", value: ""))
+                } label: {
+                    Label("Add custom field", systemImage: "plus")
+                }
+            }
+        } header: {
+            Text("Custom fields")
+        }
     }
 
     @ViewBuilder
@@ -172,11 +263,26 @@ struct ContactEditSheet: View {
         }
     }
 
+    private func toggleCampaign(_ id: String) {
+        if selectedCampaignIDs.contains(id) {
+            selectedCampaignIDs.remove(id)
+        } else {
+            selectedCampaignIDs.insert(id)
+        }
+    }
+
+    private func loadCampaignOptions() async {
+        guard campaignOptions.isEmpty else { return }
+        if let page: ListResponse<ContactMiniCampaign> = try? await env.api.get("campaigns", query: ["limit": "100"]) {
+            campaignOptions = page.data
+        }
+    }
+
     private func save() async {
         saving = true
         defer { saving = false }
         // Send the full category SET so removals stick.
-        let body = ContactUpdateBody(
+        var body = ContactUpdateBody(
             firstName: firstName,
             lastName: lastName,
             company: company,
@@ -184,6 +290,14 @@ struct ContactEditSheet: View {
             subscribed: subscribed,
             categories: Array(selectedCategoryIDs)
         )
+        // Campaigns/custom fields REPLACE the full set, so only send them when
+        // the user actually changed them (avoids wiping membership past 100).
+        if selectedCampaignIDs != originalCampaignIDs {
+            body.campaigns = Array(selectedCampaignIDs)
+        }
+        if customFieldsDict != originalFields {
+            body.customFields = customFieldsDict
+        }
         do {
             let updated: Contact = try await env.api.patch("contacts/\(contact.id)", body: body)
             onSaved(updated)
@@ -331,6 +445,13 @@ struct ContactCreateSheet: View {
             errorMessage = error.localizedDescription
         }
     }
+}
+
+/// One editable custom-field key/value row in the contact edit form.
+struct CustomFieldRow: Identifiable, Hashable {
+    let id = UUID()
+    var key: String
+    var value: String
 }
 
 // MARK: - Presence helper

@@ -79,6 +79,7 @@ struct CampaignDetailView: View {
     @State private var stepsStore = CampaignStepsStore()
     @State private var sendersStore = CampaignSendersStore()
     @State private var leadsStore = CampaignLeadsStore()
+    @State private var showLeads = false
     @State private var confirmToggle = false
     @State private var confirmDelete = false
     @State private var deleteError: String?
@@ -187,6 +188,9 @@ struct CampaignDetailView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(deleteError ?? "")
+        }
+        .fullScreenCover(isPresented: $showLeads, onDismiss: { leadsStore.exitSelection() }) {
+            CampaignLeadsPageView(campaignID: campaign.id, campaignName: campaign.name, store: leadsStore)
         }
     }
 
@@ -444,12 +448,32 @@ struct CampaignDetailView: View {
     private var browseSection: some View {
         sectionHeader("Manage")
         plainRow {
-            navRow(
-                icon: "person.2.fill", tone: .sky, title: "Leads",
-                value: overviewStore.analytics?.summary?.totalContacts.map(WFormat.compact)
-            ) {
-                CampaignLeadsPageView(campaignID: campaign.id, store: leadsStore)
+            // Leads opens the full browser as a cover (its own drawer + filters),
+            // not a push, so it gets the same browsing surface as the Contacts tab.
+            Button {
+                showLeads = true
+            } label: {
+                HStack(spacing: 12) {
+                    IconTile(symbol: "person.2.fill", tone: .sky, size: 34)
+                    Text("Leads")
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(.primary)
+                    Spacer(minLength: 8)
+                    if let value = overviewStore.analytics?.summary?.totalContacts.map(WFormat.compact) {
+                        Text(value)
+                            .font(.footnote)
+                            .monospacedDigit()
+                            .foregroundStyle(.tertiary)
+                            .contentTransition(.numericText())
+                    }
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.tertiary)
+                }
+                .padding(.vertical, 11)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
         }
         plainRow {
             navRow(

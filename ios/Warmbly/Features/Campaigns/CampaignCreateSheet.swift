@@ -256,17 +256,13 @@ struct CampaignCreateFlow: View {
 
     private var sheet: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Hug the page's natural height so the sky keeps the rest; only
-            // fall back to scrolling when a page genuinely overflows.
-            ViewThatFits(in: .vertical) {
+            // Always a ScrollView: ViewThatFits swaps identities when the
+            // keyboard shrinks the space, which destroys the focused field.
+            ScrollView {
                 pageContent
-
-                ScrollView {
-                    pageContent
-                }
-                .scrollBounceBehavior(.basedOnSize)
-                .scrollDismissesKeyboard(.interactively)
             }
+            .scrollBounceBehavior(.basedOnSize)
+            .scrollDismissesKeyboard(.interactively)
 
             footer
         }

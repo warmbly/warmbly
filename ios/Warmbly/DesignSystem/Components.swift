@@ -152,6 +152,9 @@ struct WAvatar: View {
     var imageURL: String?
     var seed: String = ""
     var size: CGFloat = 28
+    /// Light treatment for placement on the sky/Air hero: a clean white disc
+    /// with tinted initials, instead of a saturated fill that muddies on blue.
+    var onSky: Bool = false
 
     private var initials: String {
         let parts = name.split(separator: " ")
@@ -161,11 +164,28 @@ struct WAvatar: View {
     }
 
     var body: some View {
+        let tint = WTheme.avatarColor(for: seed.isEmpty ? name : seed)
         ZStack {
-            Circle().fill(WTheme.avatarColor(for: seed.isEmpty ? name : seed).opacity(0.18))
-            Text(initials)
-                .font(.system(size: size * 0.38, weight: .semibold))
-                .foregroundStyle(WTheme.avatarColor(for: seed.isEmpty ? name : seed))
+            if onSky {
+                Circle().fill(.white)
+                Circle().fill(tint.opacity(0.12))
+                Text(initials)
+                    .font(.system(size: size * 0.4, weight: .bold))
+                    .foregroundStyle(tint)
+            } else {
+                // Solid, softly-graded fill with white initials — the clean
+                // email-client look, not a pale rainbow wash.
+                Circle().fill(
+                    LinearGradient(
+                        colors: [tint.opacity(0.92), tint],
+                        startPoint: .top, endPoint: .bottom
+                    )
+                )
+                Text(initials)
+                    .font(.system(size: size * 0.4, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .shadow(color: tint.opacity(0.35), radius: 0.5, y: 0.5)
+            }
             if let imageURL, let url = URL(string: imageURL) {
                 AsyncImage(url: url) { phase in
                     if case let .success(image) = phase {
