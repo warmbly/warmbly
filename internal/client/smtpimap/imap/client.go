@@ -178,14 +178,17 @@ func (c *Client) Mailbox(mailbox string, uidvali, opts *imap.SelectOptions) erro
 	return nil
 }
 
-// SelectForSync opens a mailbox read-only with CONDSTORE enabled. FETCH is
-// only valid against a selected mailbox, so the sync loop must call this
-// before FetchChanges; CONDSTORE on the SELECT is what arms ChangedSince.
-func (c *Client) SelectForSync(mailbox string) *errx.MailError {
-	if _, err := c.client.Select(mailbox, &imap.SelectOptions{ReadOnly: true, CondStore: true}).Wait(); err != nil {
-		return c.handleError(err)
+// SelectForSync opens a mailbox read-only with CONDSTORE enabled and returns
+// its message count. FETCH is only valid against a selected mailbox, so the
+// sync loop must call this before FetchChanges; CONDSTORE on the SELECT is
+// what arms ChangedSince. The count lets the caller skip the fetch entirely
+// for an empty mailbox, where a 1:* set is a server error.
+func (c *Client) SelectForSync(mailbox string) (uint32, *errx.MailError) {
+	data, err := c.client.Select(mailbox, &imap.SelectOptions{ReadOnly: true, CondStore: true}).Wait()
+	if err != nil {
+		return 0, c.handleError(err)
 	}
-	return nil
+	return data.NumMessages, nil
 }
 
 func (c *Client) FetchChanges(ctx context.Context, lastModSeq uint64) *errx.MailError {
