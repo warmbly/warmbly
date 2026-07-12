@@ -8,6 +8,7 @@ import (
 	workerapp "github.com/warmbly/warmbly/internal/app/worker"
 	"github.com/warmbly/warmbly/internal/events"
 	"github.com/warmbly/warmbly/internal/infrastructure/cache"
+	"github.com/warmbly/warmbly/internal/infrastructure/codec"
 	"github.com/warmbly/warmbly/internal/infrastructure/kafka"
 	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/models"
@@ -15,7 +16,11 @@ import (
 )
 
 type JobsService struct {
-	Consumer                    *kafka.Consumer
+	Consumer *kafka.Consumer
+	// Codec decodes bus payloads (jobs.worker-events); it must match the
+	// CODEC_PROVIDER the producing services run with. When nil, the
+	// consumer's attached Avro deserializer is used.
+	Codec                       codec.Codec
 	UniboxRepository            repository.UniboxRepository
 	MailboxRepository           repository.MailboxRepository
 	EmailRepository             repository.EmailRepository

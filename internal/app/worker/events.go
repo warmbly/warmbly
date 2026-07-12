@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -29,9 +30,18 @@ func (w *WorkerService) InitEvents() {
 
 func Register[T any](w *WorkerService, eventType models.WorkerEventType, handler EventHandler[T]) {
 	w.eventHandlers[eventType] = func(ctx context.Context, body any) error {
-		data, ok := body.(T)
-		if !ok {
-			return fmt.Errorf("invalid event body for type %v", eventType)
+		if data, ok := body.(T); ok {
+			return handler(ctx, data)
+		}
+		// The JSON codec decodes the envelope's `body` into map[string]any;
+		// round-trip it into the typed payload.
+		raw, err := json.Marshal(body)
+		if err != nil {
+			return fmt.Errorf("invalid event body for type %v: %w", eventType, err)
+		}
+		var data T
+		if err := json.Unmarshal(raw, &data); err != nil {
+			return fmt.Errorf("invalid event body for type %v: %w", eventType, err)
 		}
 		return handler(ctx, data)
 	}

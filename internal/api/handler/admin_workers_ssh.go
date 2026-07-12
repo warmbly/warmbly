@@ -406,7 +406,7 @@ func (h *Handler) AdminRebootWorker(c *gin.Context) {
 // Body:
 //
 //	{
-//	  "user_id":         "uuid",           // the org/user that gets exclusive use
+//	  "organization_id": "uuid",           // the org that gets exclusive use
 //	  "subscription_id": "uuid",           // their active sub
 //	  "drain_to_worker_id": "uuid|null"    // optional: target for evicted accounts.
 //	                                       //   null = let assignment service pick
@@ -419,7 +419,7 @@ func (h *Handler) AdminRebootWorker(c *gin.Context) {
 // are individually idempotent: re-running the endpoint with the same
 // inputs converges.
 type convertToDedicatedBody struct {
-	UserID          string  `json:"user_id" binding:"required"`
+	OrganizationID  string  `json:"organization_id" binding:"required"`
 	SubscriptionID  string  `json:"subscription_id" binding:"required"`
 	DrainToWorkerID *string `json:"drain_to_worker_id"`
 }
@@ -435,9 +435,9 @@ func (h *Handler) AdminConvertWorkerToDedicated(c *gin.Context) {
 		errx.JSON(c, errx.New(errx.BadRequest, "invalid request body"))
 		return
 	}
-	userID, err := uuid.Parse(body.UserID)
+	orgID, err := uuid.Parse(body.OrganizationID)
 	if err != nil {
-		errx.JSON(c, errx.New(errx.BadRequest, "invalid user_id"))
+		errx.JSON(c, errx.New(errx.BadRequest, "invalid organization_id"))
 		return
 	}
 	subID, err := uuid.Parse(body.SubscriptionID)
@@ -506,7 +506,7 @@ func (h *Handler) AdminConvertWorkerToDedicated(c *gin.Context) {
 	created, err := h.WorkerRepo.CreateDedicatedAssignmentIfNotExists(c.Request.Context(), &models.DedicatedWorkerAssignment{
 		ID:             uuid.New(),
 		WorkerID:       id,
-		UserID:         userID,
+		OrganizationID: orgID,
 		SubscriptionID: subID,
 		AssignedAt:     time.Now(),
 	})
@@ -516,7 +516,7 @@ func (h *Handler) AdminConvertWorkerToDedicated(c *gin.Context) {
 	}
 
 	h.audit(c, "convert_to_dedicated", models.AuditEntityWorker, &id, map[string]string{
-		"user_id":         userID.String(),
+		"organization_id": orgID.String(),
 		"subscription_id": subID.String(),
 		"drained_to":      movedTo,
 		"accounts_moved":  itoa(len(accountIDs)),

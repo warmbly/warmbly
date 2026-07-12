@@ -90,6 +90,7 @@ import (
 	"github.com/warmbly/warmbly/internal/observability"
 	"github.com/warmbly/warmbly/internal/pkg/captcha"
 	"github.com/warmbly/warmbly/internal/pkg/emailverify"
+	"github.com/warmbly/warmbly/internal/pkg/encrypt"
 	"github.com/warmbly/warmbly/internal/pkg/generation"
 	"github.com/warmbly/warmbly/internal/pkg/geo"
 	"github.com/warmbly/warmbly/internal/pkg/idtoken"
@@ -431,9 +432,17 @@ func main() {
 			log.Fatal(err)
 		}
 
-		// Codec wraps the same Avrov2 client so EventBus payloads decode the
-		// same way regardless of transport.
-		codecImpl := codec.NewAvroFromClient(avrov2Client)
+		// Codec for EventBus payloads. Must match the worker fleet's
+		// CODEC_PROVIDER: the worker command envelopes (WorkerEvent/JobEvent
+		// carry `any` bodies) only serialize as JSON, so json is required
+		// wherever workers are exercised; avro remains the default for the
+		// historical Schema Registry topics.
+		var codecImpl codec.Codec
+		if os.Getenv("CODEC_PROVIDER") == "json" {
+			codecImpl = codec.NewJSON()
+		} else {
+			codecImpl = codec.NewAvroFromClient(avrov2Client)
+		}
 
 		// Legacy Kafka producer still used by email + tasks services that
 		// haven't been migrated to EventBus yet. Removing this is follow-up
@@ -480,7 +489,12 @@ func main() {
 		authRepostory := repository.NewAuthRepostory(primaryDB)
 		tokenRepostory := repository.NewTokenRepostory(primaryDB)
 		webauthnRepository := repository.NewWebAuthnRepository(primaryDB)
-		emailRepostory := repository.NewEmailRepostory(primaryDB)
+		credEncrypter, cerr := encrypt.FromEnv()
+		if cerr != nil {
+			sentry.CaptureException(cerr)
+			log.Fatal("Invalid CREDENTIALS_ENCRYPTION_KEY: ", cerr)
+		}
+		emailRepostory := repository.NewEmailRepostory(primaryDB, credEncrypter)
 		campaignRepostory := repository.NewCampaignRepostory(primaryDB)
 		sequenceRepostory := repository.NewSequenceRepostory(primaryDB)
 		contactRepostory := repository.NewContactRepostory(primaryDB)

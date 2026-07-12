@@ -32,6 +32,7 @@ import (
 	"github.com/warmbly/warmbly/internal/infrastructure/storage"
 	"github.com/warmbly/warmbly/internal/notify"
 	"github.com/warmbly/warmbly/internal/observability"
+	"github.com/warmbly/warmbly/internal/pkg/encrypt"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
@@ -182,7 +183,12 @@ func main() {
 	}
 
 	// Repositories
-	emailRepo := repository.NewEmailRepostory(primaryDB)
+	credEncrypter, err := encrypt.FromEnv()
+	if err != nil {
+		sentry.CaptureException(err)
+		log.Fatal("Invalid CREDENTIALS_ENCRYPTION_KEY: ", err)
+	}
+	emailRepo := repository.NewEmailRepostory(primaryDB, credEncrypter)
 	uniboxRepo := repository.NewUniboxRepository(primaryDB)
 	mailboxRepo := repository.NewMailboxRepository(primaryDB)
 	emailHistoryIDRepo := repository.NewEmailHistoryIDRepository(primaryDB)
@@ -289,12 +295,21 @@ func main() {
 		Bootstrap: kafkaBootstrapServers,
 		SASL:      kafkaSaslConfig,
 	})
-	consumerCodec := codec.NewAvroFromClient(avrov2Client)
+	// Same CODEC_PROVIDER contract as backend/worker: the worker event
+	// envelopes only serialize as JSON. tracking-events stays on its own
+	// Avro deserializer (the Rust producer always writes Avro).
+	var consumerCodec codec.Codec
+	if os.Getenv("CODEC_PROVIDER") == "json" {
+		consumerCodec = codec.NewJSON()
+	} else {
+		consumerCodec = codec.NewAvroFromClient(avrov2Client)
+	}
 	eventsPublisher := events.NewPublisher(consumerBus, s3Client, consumerCodec, cipherService)
 
 	// JobsService
 	jobsService := &jobs.JobsService{
 		Consumer:                    kafkaConsumer,
+		Codec:                       consumerCodec,
 		UniboxRepository:            uniboxRepo,
 		MailboxRepository:           mailboxRepo,
 		EmailRepository:             emailRepo,

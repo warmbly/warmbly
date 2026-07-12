@@ -2,6 +2,7 @@ package wmail
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -21,9 +22,7 @@ func (w *WMail) StartSyncWorker(ctx context.Context) {
 	}
 
 	// Run an initial sync immediately so the inbox is fresh on startup.
-	if err := w.SyncMail(ctx); err != nil {
-		log.Warn().Err(err).Str("email_id", w.ID.String()).Msg("initial mail sync failed")
-	}
+	w.syncOnce(ctx)
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -33,10 +32,24 @@ func (w *WMail) StartSyncWorker(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if err := w.SyncMail(ctx); err != nil {
-				w.CaptureError(err)
-				log.Warn().Err(err).Str("email_id", w.ID.String()).Msg("mail sync error")
-			}
+			w.syncOnce(ctx)
 		}
+	}
+}
+
+// syncOnce runs one sync pass, containing panics: the worker is multi-tenant,
+// so one mailbox's bad server response must not take down every other
+// account's sync and send loops.
+func (w *WMail) syncOnce(ctx context.Context) {
+	defer func() {
+		if r := recover(); r != nil {
+			err := fmt.Errorf("mail sync panic: %v", r)
+			w.CaptureError(err)
+			log.Error().Err(err).Str("email_id", w.ID.String()).Msg("mail sync panicked")
+		}
+	}()
+	if err := w.SyncMail(ctx); err != nil {
+		w.CaptureError(err)
+		log.Warn().Err(err).Str("email_id", w.ID.String()).Msg("mail sync error")
 	}
 }

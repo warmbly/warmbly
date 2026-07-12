@@ -15,6 +15,12 @@ import (
 // re-seed. Plenty for steady state; the next tick mops up any overflow.
 const campaignReconcileBatch = 500
 
+// overduePendingGrace is how far past its slot a pending task may run before
+// the reconcilers treat its Cloud Tasks callback as lost and cancel it. Cloud
+// Tasks fires within seconds of the scheduled time, so 15 minutes is far
+// outside any legitimate delivery or retry window.
+const overduePendingGrace = 15 * time.Minute
+
 // ReconcileCampaignSchedules re-seeds the wakeup chain for active campaigns that
 // have no pending task. A campaign chain is self-perpetuating (each tick
 // enqueues the next), so a swallowed enqueue, a worker bounce mid-tick, or a
@@ -23,6 +29,15 @@ const campaignReconcileBatch = 500
 // is the backstop that keeps them from silently stalling. Returns the number of
 // chains re-seeded this pass.
 func (s *tasksService) ReconcileCampaignSchedules(ctx context.Context, limit int) (int, error) {
+	// A pending task stranded well past its slot means the Cloud Tasks
+	// callback was lost (queue wipe, emulator restart, dropped retry). It
+	// blocks the "no pending task" candidate check below forever, so cancel
+	// first; a late callback for a cancelled row no-ops (handler requires
+	// 'pending').
+	if n, err := s.taskRepo.CancelOverduePendingTasks(ctx, "campaign", overduePendingGrace); err == nil && n > 0 {
+		log.Info().Int64("cancelled", n).Msg("campaign reconcile: cancelled overdue pending tasks")
+	}
+
 	ids, err := s.campaignRepo.ListCampaignScheduleCandidates(ctx, limit)
 	if err != nil {
 		return 0, err

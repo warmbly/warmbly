@@ -18,6 +18,7 @@ import (
 
 const (
 	envBindIP      = "WORKER_BIND_IP"
+	envInsecureTLS = "MAIL_TLS_INSECURE"
 	defaultTimeout = 10 * time.Second
 )
 
@@ -57,8 +58,26 @@ func Dialer(local *net.TCPAddr) *net.Dialer {
 
 // TLSDialer mirrors Dialer for TLS connections (IMAP, HTTPS).
 func TLSDialer(local *net.TCPAddr, cfg *tls.Config) *tls.Dialer {
+	if cfg != nil && InsecureTLS() {
+		cfg.InsecureSkipVerify = true
+	}
 	return &tls.Dialer{
 		NetDialer: Dialer(local),
 		Config:    cfg,
 	}
+}
+
+var (
+	insecureOnce sync.Once
+	insecureTLS  bool
+)
+
+// InsecureTLS reports whether MAIL_TLS_INSECURE=true is set. Local-dev-only
+// escape hatch for the sandbox stack (mailpit/dovecot with self-signed or no
+// TLS); production deployments never set it, so mail TLS stays verified.
+func InsecureTLS() bool {
+	insecureOnce.Do(func() {
+		insecureTLS = os.Getenv(envInsecureTLS) == "true"
+	})
+	return insecureTLS
 }

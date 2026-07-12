@@ -96,7 +96,7 @@ func (s *workerAssignmentService) AssignWorkerToEmail(ctx context.Context, email
 		}
 		if plan != nil && plan.DedicatedWorkers > 0 {
 			// Check if org has a dedicated worker
-			dedicatedWorker, err := s.workerRepo.GetDedicatedWorkerByUserID(ctx, orgID)
+			dedicatedWorker, err := s.workerRepo.GetDedicatedWorkerByOrgID(ctx, orgID)
 			if err != nil {
 				return nil, err
 			}
@@ -114,7 +114,7 @@ func (s *workerAssignmentService) AssignWorkerToEmail(ctx context.Context, email
 					return nil, aerr
 				}
 				if aerr == nil || errors.Is(aerr, ErrOrgAlreadyAssigned) {
-					dedicatedWorker, err = s.workerRepo.GetDedicatedWorkerByUserID(ctx, orgID)
+					dedicatedWorker, err = s.workerRepo.GetDedicatedWorkerByOrgID(ctx, orgID)
 					if err != nil {
 						return nil, err
 					}
@@ -426,7 +426,7 @@ func (s *workerAssignmentService) AssignDedicatedWorker(ctx context.Context, org
 	assignment := &models.DedicatedWorkerAssignment{
 		ID:             uuid.New(),
 		WorkerID:       worker.ID,
-		UserID:         orgID,
+		OrganizationID: orgID,
 		SubscriptionID: subscriptionID,
 		AssignedAt:     time.Now(),
 	}
@@ -465,7 +465,7 @@ func (s *workerAssignmentService) ReleaseDedicatedWorker(ctx context.Context, or
 
 // GetDedicatedWorker gets the dedicated worker for an organization
 func (s *workerAssignmentService) GetDedicatedWorker(ctx context.Context, orgID uuid.UUID) (*models.Worker, error) {
-	return s.workerRepo.GetDedicatedWorkerByUserID(ctx, orgID)
+	return s.workerRepo.GetDedicatedWorkerByOrgID(ctx, orgID)
 }
 
 // MigrateOrgToPremiumWorkers migrates all org's emails from free to premium workers
@@ -552,7 +552,7 @@ func (s *workerAssignmentService) MigrateOrgToDedicated(ctx context.Context, org
 	}
 
 	// Get the dedicated worker
-	dedicatedWorker, err := s.workerRepo.GetDedicatedWorkerByUserID(ctx, orgID)
+	dedicatedWorker, err := s.workerRepo.GetDedicatedWorkerByOrgID(ctx, orgID)
 	if err != nil {
 		return err
 	}

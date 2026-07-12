@@ -11,12 +11,16 @@ import (
 func (s *JobsService) Receive(msg *cfk.Message) error {
 	var event models.JobEvent
 
-	if err := s.Consumer.Avrov2.Deser.DeserializeInto(*msg.TopicPartition.Topic, msg.Value, &event); err != nil {
-		return err
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+
+	if s.Codec != nil {
+		if err := s.Codec.Deserialize(ctx, *msg.TopicPartition.Topic, msg.Value, &event); err != nil {
+			return err
+		}
+	} else if err := s.Consumer.Avrov2.Deser.DeserializeInto(*msg.TopicPartition.Topic, msg.Value, &event); err != nil {
+		return err
+	}
 
 	return s.HandleEvent(ctx, &event)
 }

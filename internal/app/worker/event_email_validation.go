@@ -7,25 +7,12 @@ import (
 
 	"github.com/getsentry/sentry-go"
 	"github.com/warmbly/warmbly/internal/email"
-	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 )
 
-func (w *WorkerService) HandleEmailValidation(ctx context.Context, body any) error {
+func (w *WorkerService) HandleEmailValidation(ctx context.Context, data models.EventWorkerEmailValidation) error {
 	ctx, cancel := context.WithDeadline(ctx, time.Now().Add(5*time.Second))
 	defer cancel()
-
-	data, ok := body.(models.EventWorkerEmailValidation)
-	if !ok {
-		err := errx.ErrInvalidEventFormat
-		sentry.WithScope(func(scope *sentry.Scope) {
-			scope.SetTag("event_type", string(models.WorkerEventTypeEmailValidation))
-			scope.SetTag("process_id", data.ProcessID.String())
-			scope.SetTag("org_id", data.OrgID.String())
-			sentry.CaptureException(err)
-		})
-		return err
-	}
 
 	cipher, err := w.CipherService.Cipher(ctx, data.OrgID)
 	if err != nil {

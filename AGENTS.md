@@ -75,12 +75,15 @@ Do not:
 
 ## Local Development
 
+Event codec: `CODEC_PROVIDER=json` is required wherever workers are exercised (the worker command/result envelopes carry untyped bodies Avro cannot serialize); the Makefile and docker-compose set it everywhere. `tracking-events` keeps its own Avro path regardless.
+
 Infra runs in docker; the Go services and frontends run natively on the host for fast iteration — no docker image rebuilds when you change app code. Targets live in the `Makefile`.
 
 - `make infra` — start the backing services in docker (postgres, redis, kafka, schema-registry, mailpit, localstack + init, cloud-tasks, stripe-mock). Run once; leave running.
 - `make backend` — run the API natively on `:8080` (applies the embedded migrations on boot against the docker postgres).
-- `make consumer` / `make worker` — run those Go services natively, each in its own terminal. The worker reads encrypted DEKs through the backend's `/internal/dek` endpoint (the prod `http` provider, no worker DB), so `make backend` must be running and their `INTERNAL_API_TOKEN` must match (the targets are pre-wired to match).
-- `make run` — backend + consumer + worker together in one terminal (Ctrl-C stops all).
+- `make consumer` / `make worker` / `make worker-premium` — run those Go services natively, each in its own terminal. Two native workers exist because tier placement is strict: free-trial orgs place onto the free-tier worker (`make worker`), paid orgs onto the premium one (`make worker-premium`). The workers read encrypted DEKs through the backend's `/internal/dek` endpoint (the prod `http` provider, no worker DB), so `make backend` must be running and their `INTERNAL_API_TOKEN` must match (the targets are pre-wired to match).
+- `make run` — backend + consumer + both workers together in one terminal (Ctrl-C stops all).
+- `make sandbox` — fully working demo environment: seeds the "Sunrise Labs" showcase org (live mailboxes: SMTP -> mailpit, IMAP -> dovecot, credentials sealed with `CREDENTIALS_ENCRYPTION_KEY`) and runs the simulator that plays the internet (delivers mail into dovecot inboxes, opens pixels, clicks tracked links, replies as contacts). Needs `make run` + `make tracking` alongside. Docs: `docs/content/docs/development/sandbox.mdx`.
 - `make tracking` / `make realtime` — the Rust tracking pixel service (:3000) and Elixir/Phoenix websocket fanout (:4000). Deliberately kept out of `make run`; start them only when needed, and only if you have the cargo / elixir toolchains on the host.
 - `make web` / `make admin` / `make site` — frontend dev servers (5173 / 5174 / 4321), pointed at the native backend.
 - `make seed` — load fixtures (after the backend has applied migrations).

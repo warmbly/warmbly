@@ -12,10 +12,14 @@ type Cipher struct {
 }
 
 func (s *cipherService) Cipher(ctx context.Context, orgID uuid.UUID) (*Cipher, error) {
-	key, err := s.getDecryptedKey(ctx, orgID)
-	if err != nil {
-		return nil, err
+	// Cache hit: reuse the decrypted DEK. Any miss or cache error (redis.Nil
+	// on first use of an org's key) falls through to the KMS path — a cache
+	// problem must never block crypto.
+	if key, err := s.getDecryptedKey(ctx, orgID); err == nil && len(key) > 0 {
+		return &Cipher{plainDEK: key}, nil
 	}
+
+	var key []byte
 
 	encDEKB64, err := s.encryptedKeys.Get(ctx, orgID)
 	if err != nil {

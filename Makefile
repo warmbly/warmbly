@@ -23,9 +23,9 @@ PROTO_DIR := internal/tasks/proto
 PROTO_GEN_FILES := $(PROTO_DIR)/tasks.pb.go
 
 .PHONY: setup-tools fmt lint proto check-proto \
-        up sim seed seed-plan reset logs status stop down tools test-seed \
+        up sim seed seed-plan sandbox sandbox-seed reset logs status stop down tools test-seed \
         restart restart-go restart-all infra infra-down app app-down app-logs \
-        backend consumer worker run tracking realtime web \
+        backend consumer worker worker-premium run tracking realtime web \
         admin site docs grant-admin revoke-admin
 
 setup-tools:
@@ -70,6 +70,19 @@ up:
 # Full simulation: infra + app + premium and dedicated workers.
 sim:
 	$(COMPOSE) --profile sim up
+
+# Fully working demo environment: seeds the "Sunrise Labs" showcase org
+# (live mailboxes on mailpit/dovecot, active campaigns, warmup pool, pro
+# plan) and then runs the simulator that plays the internet: delivering
+# captured mail into recipient inboxes, opening pixels, clicking tracked
+# links, and replying as the seeded contacts. Requires the rest of the
+# stack: `make infra` + `make run` + `make tracking` (and `make realtime`
+# + `make web` for the live dashboard). Docs: /development/sandbox/.
+sandbox:
+	$(GO_DEV_ENV) go run ./cmd/sandbox
+
+sandbox-seed:
+	$(GO_DEV_ENV) go run ./cmd/sandbox -seed-only
 
 # Load rich fixture data. Runs natively like the other dev services — the
 # seeder only needs Postgres, so it does not depend on a (re)built docker
@@ -208,8 +221,8 @@ DEV_COMPOSE := $(COMPOSE) -f docker-compose.yml -f docker-compose.dev.yml
 # bucket. localstack runs with PERSISTENCE=0, so those are wiped on every
 # restart and must be recreated before any service (incl. the natively-run
 # backend) touches KMS/S3.
-INFRA_SVCS  := postgres redis zookeeper kafka kafka-init schema-registry \
-               mailpit localstack localstack-init stripe-mock cloud-tasks-emulator
+INFRA_SVCS  := postgres redis zookeeper kafka kafka-init schema-registry schema-registry-init \
+               mailpit dovecot localstack localstack-init stripe-mock cloud-tasks-emulator
 
 # Language services. The things you iterate on; recreated per worktree.
 APP_SVCS    := backend consumer worker-shared-1 tracking realtime web
@@ -283,7 +296,12 @@ app-logs:
 #   make run INFRA_HOST=192.168.1.50 SELF_HOST=192.168.1.42
 #
 INFRA_HOST ?= localhost
-SELF_HOST  ?= localhost
+# SELF_HOST is how the DOCKERIZED cloud-tasks emulator reaches the natively
+# running backend; from inside a container "localhost" is the container
+# itself, so the Docker Desktop host alias is the working default (the
+# emulator's compose service adds a host-gateway mapping so it also resolves
+# on Linux). Override when the backend runs on another machine.
+SELF_HOST  ?= host.docker.internal
 
 # ─── expose the dev servers off-box (Tailscale / LAN) ───────────────────
 #
@@ -325,8 +343,18 @@ CORS_ORIGINS := $(if $(PUBLIC_HOST),http://$(PUBLIC_HOST):5173$(comma)http://$(P
 
 # Shared by the control-plane services (backend, consumer). Flattened to
 # one line by make so it can prefix a command as inline env.
+# Fixed dev key sealing SMTP/IMAP credentials at rest (64 hex chars). The
+# backend/consumer decrypt with it and cmd/sandbox seeds with it, so all
+# three must share the value. Never reuse in production.
+CREDENTIALS_KEY_DEV := 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+
+# CODEC_PROVIDER=json: the worker command/result envelopes carry `any`
+# bodies that Avro cannot serialize, so worker messaging only works on the
+# JSON codec. tracking-events stays Avro (dedicated Avrov2 path).
 GO_DEV_ENV := \
 	APP_ENV=dev \
+	CODEC_PROVIDER=json \
+	CREDENTIALS_ENCRYPTION_KEY=$(CREDENTIALS_KEY_DEV) \
 	AWS_CONFIG_ENABLED=false \
 	AWS_ENDPOINT_URL=http://$(INFRA_HOST):4566 \
 	AWS_REGION=us-east-1 \
@@ -347,6 +375,8 @@ GO_DEV_ENV := \
 # — it has no relational access by design.
 WORKER_DEV_ENV := \
 	APP_ENV=dev \
+	CODEC_PROVIDER=json \
+	MAIL_TLS_INSECURE=true \
 	AWS_CONFIG_ENABLED=false \
 	AWS_ENDPOINT_URL=http://$(INFRA_HOST):4566 \
 	AWS_REGION=us-east-1 \
@@ -414,14 +444,27 @@ worker:
 	ENCRYPTED_KEYS_WORKER_TOKEN=local-dev-internal-token \
 	go run ./cmd/worker
 
+# The premium shared worker (seeded as premium-1, free_tier=false). Paid
+# orgs place strictly onto premium workers, so without this one running
+# natively their mailboxes never send or sync (the sandbox org needs it).
+worker-premium:
+	$(WORKER_DEV_ENV) \
+	WORKER_ID=10c8f5e4-1c39-5b2a-9c8b-3d2f0a8b1a02 \
+	WORKER_TIER=shared \
+	ENCRYPTED_KEYS_PROVIDER=http \
+	ENCRYPTED_KEYS_BACKEND_URL=http://localhost:8080 \
+	ENCRYPTED_KEYS_WORKER_TOKEN=local-dev-internal-token \
+	go run ./cmd/worker
+
 # backend + consumer + worker together in one terminal. Ctrl-C stops all
 # (kill 0 takes down go run and its child binaries). Run `make infra` first.
 run:
-	@echo "backend + consumer + worker (native). Ctrl-C stops all. Run 'make infra' first if infra is down."
+	@echo "backend + consumer + both shared workers (native). Ctrl-C stops all. Run 'make infra' first if infra is down."
 	@trap 'kill 0' INT TERM; \
 	$(MAKE) --no-print-directory backend & \
 	$(MAKE) --no-print-directory consumer & \
 	$(MAKE) --no-print-directory worker & \
+	$(MAKE) --no-print-directory worker-premium & \
 	wait
 
 # ─── other native services (Rust tracking, Elixir realtime) ──────────────

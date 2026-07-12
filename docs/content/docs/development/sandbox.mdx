@@ -1,0 +1,103 @@
+---
+title: Sandbox
+description: A fully working local demo environment, with live sending, replies, opens, clicks, and warmup running end to end.
+icon: FlaskConical
+---
+
+The sandbox turns a local stack into a living product demo. It seeds a paid showcase organization ("Sunrise Labs") whose mailboxes really send and really sync, then runs a simulator that plays the internet: it delivers captured mail into recipient inboxes, opens tracking pixels, clicks tracked links, and replies as the seeded contacts. Campaign stats climb, the unibox fills with threaded replies, warmup interactions verify, and the dashboard updates in realtime, all through production code paths. The only simulated thing is the humans.
+
+## Quick start
+
+Run each in its own terminal:
+
+```bash
+make infra      # postgres, kafka, mailpit, dovecot, localstack, ... (once)
+make run        # backend + consumer + both shared workers
+make tracking   # open/click tracking (Rust; needs cargo + cmake)
+make realtime   # websocket fanout (Elixir; optional but recommended)
+make web        # dashboard on http://localhost:5173
+make sandbox    # seed the showcase org + run the simulator (foreground)
+```
+
+Then sign in at `http://localhost:5173`:
+
+| Field | Value |
+|-------|-------|
+| Email | `sandbox@warmbly.test` |
+| Password | `password123` |
+| Organization | Sunrise Labs (Starter plan) |
+
+Campaign sending starts within about five minutes (the campaign reconciler's first sweep), warmup within about ten. From there the simulator keeps everything moving: watch `make sandbox`'s output for a running feed of `delivered` / `opened` / `clicked` / `replied` lines, and Mailpit at `http://localhost:18025` for every message on the wire.
+
+## What gets seeded
+
+`make sandbox` (or `make sandbox-seed` for seeding without the simulator) is idempotent and safe to re-run. It provisions:
+
+- the full `internal/seed` fixture first (plans, workers, the demo orgs), so it works on a fresh database
+- the Sunrise Labs org on an active Starter subscription, owned by `sandbox@warmbly.test`
+- 6 sender mailboxes on `@sunrise.test`, assigned to the premium shared worker (paid orgs place onto premium workers; `make run` now runs both native workers), warmup enabled 10 days ago (mid-ramp), premium warmup pool, demo-friendly pacing (90s minimum gap, 100/day cap)
+- two active campaigns with tracking enabled ("Sunrise Q3 launch outreach", 3 steps, 24 contacts; "Agency partnerships", 2 steps, 12 contacts) plus one draft; two contacts are unsubscribed so suppression is visible
+- working credentials for every `smtp_imap` account in the database, including the older `make seed` fixtures, sealed with `CREDENTIALS_ENCRYPTION_KEY` so the worker can decrypt and use them
+
+## How it works
+
+Real mail servers stand in for the internet's mail infrastructure:
+
+- **Mailpit** is the SMTP sink. Every mailbox's outbound server points at it, so all sends (campaign and warmup) are captured and visible in its UI.
+- **Dovecot** hosts the mailboxes' inboxes. It accepts any username with the password `sandbox` and auto-creates the maildir on first use. The worker's real IMAP sync polls it every minute.
+
+The simulator bridges the two and plays every human:
+
+1. It polls Mailpit's API for new messages (the read flag is its cursor).
+2. Mail addressed to a hosted mailbox (for example warmup mail between pool members) is appended into that user's Dovecot inbox. The recipient's worker sync picks it up, the warmup token verifies, and engagement actions run against the real IMAP folders.
+3. Mail addressed to a seeded contact triggers a persona: after humanized delays, most contacts open the pixel against the local tracking service, some click the tracked link, and some reply. Replies are composed with correct `In-Reply-To` threading and appended into the sending mailbox's inbox, so reply attribution, the reply classifier, `EMAIL_REPLIED` realtime events, and the unibox all behave exactly as in production. A slice of replies are out-of-office autoresponders (with `Auto-Submitted` headers) so classifier gating is visible too.
+
+Personas are derived from a hash of the contact's address, so behavior is stable across restarts without any extra state: roughly 85% open, 43% of openers click, 36% of openers reply, with reply tones split across interested, question, not-interested, and out-of-office.
+
+## Pieces involved
+
+| Piece | Role |
+|-------|------|
+| `cmd/sandbox` | seeder + simulator binary (`-seed-only`, `-simulate-only`) |
+| `internal/sandbox` | seeding, Mailpit client, personas, IMAP delivery |
+| `dovecot` compose service | IMAP host for sandbox inboxes (ports 10143/10993) |
+| `mailpit` compose service | SMTP sink + capture API (ports 11025/18025) |
+| `CREDENTIALS_ENCRYPTION_KEY` | seals mailbox credentials at rest; fixed dev value in the Makefile |
+| `MAIL_TLS_INSECURE=true` | worker-only dev knob: skip TLS verification and allow the TLS-less Mailpit; never set in production |
+
+## Environment variables
+
+`make sandbox` sets everything for the default stack. When running `cmd/sandbox` by hand:
+
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `PRIMARY_DB` | dev postgres on `:15432` | database for seeding and directory lookups |
+| `MAILPIT_URL` | `http://localhost:18025` | Mailpit API base |
+| `TRACKING_URL` | `http://localhost:3000` | tracking service for pixel/click hits |
+| `DOVECOT_IMAP_ADDR` | `localhost:10993` | where the simulator appends mail |
+| `DOVECOT_PASSWORD` | `sandbox` | Dovecot's static password |
+| `SANDBOX_SMTP_HOST` / `SANDBOX_SMTP_PORT` | `localhost` / `11025` | seeded as the mailboxes' outbound server (the worker dials it) |
+| `SANDBOX_IMAP_HOST` / `SANDBOX_IMAP_PORT` | `localhost` / `10993` | seeded as the mailboxes' inbound server (the worker dials it) |
+| `CREDENTIALS_ENCRYPTION_KEY` | set by the Makefile | must match the backend's key |
+
+## Demo script
+
+A tour that shows the platform working end to end:
+
+1. **Campaigns**: open the Sunrise Q3 launch campaign. Sent counts tick up as the scheduler paces sends across the six mailboxes; opens, clicks, and replies accumulate within minutes of each send.
+2. **Unibox**: replies arrive threaded under the original message with full bodies, synced by the worker over IMAP. Out-of-office autoresponders appear but do not count as human replies.
+3. **Mailboxes**: each sender shows warmup activity climbing its ramp; the warmup pool exchanges verified mail between accounts.
+4. **Mailpit** (`http://localhost:18025`): the raw wire view; every message the platform sends, including warmup tokens and tracking rewrites.
+5. **Realtime**: with `make realtime` and a second browser window, watch counts and inbox rows update live without refreshing.
+
+## Troubleshooting
+
+**No sends after ~5 minutes.** Check the backend log for campaign reconciler lines and that the worker is running with the account loaded (`email account added to worker`). The worker learns about mailboxes from the backend's reconciler within a minute of both being up.
+
+**Sends fail with TLS errors.** The worker must run with `MAIL_TLS_INSECURE=true` (set by `make worker`). Production configurations must never set it.
+
+**Replies missing from the unibox.** Confirm the simulator is running and `make consumer` is up: delivery is simulator → Dovecot → worker IMAP sync → Kafka → consumer.
+
+**Opens/clicks not counting.** `make tracking` must be running (it needs `cargo` and `cmake` on the host), and the consumer processes `tracking-events` into campaign stats.
+
+**Start over.** `make db-wipe && make migrate && make sandbox` reseeds from scratch; Dovecot and Mailpit state can be cleared with `docker compose -p warmbly rm -sf dovecot mailpit` followed by `make infra`.

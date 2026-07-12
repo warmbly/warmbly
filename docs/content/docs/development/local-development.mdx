@@ -23,10 +23,11 @@ For native development (running services outside Docker against the containerize
 Day-one:
 
 ```bash
-make infra      # postgres, redis, kafka, mailpit, localstack, etc. (leave running)
+make infra      # postgres, redis, kafka, mailpit, dovecot, localstack, etc. (leave running)
 make app        # backend, consumer, worker, tracking, realtime, web (hot reload)
 make sim        # adds premium + dedicated workers; full simulation (prod-image flow)
 make seed       # load rich fixtures (3 orgs, 6 mailboxes, a campaign)
+make sandbox    # fully working demo environment (see /development/sandbox/)
 make tools      # debugging UIs (kafka-ui at :18090)
 make reset      # nuke everything including volumes, start over
 ```
@@ -80,6 +81,7 @@ After `make infra && make app`:
 - **localstack**: KMS + S3 emulation
 - **stripe-mock**: Stripe API surrogate
 - **mailpit**: SMTP catcher with a web UI
+- **dovecot**: real IMAP server hosting sandbox mailbox inboxes
 - **cloud-tasks-emulator**: Google Cloud Tasks surrogate
 - **backend**, **consumer**, **tracking**, **realtime**, **web**: app services
 - **worker-shared-1**: one worker bound to the shared profile
@@ -97,6 +99,7 @@ Mostly standard ports. A few are offset because their defaults conflict too ofte
 | Realtime | `http://localhost:4000` |
 | Web (Vite dev) | `http://localhost:5173` |
 | Mailpit | `http://localhost:18025` |
+| Dovecot IMAP / IMAPS | `localhost:10143` / `localhost:10993` |
 | Kafka | `localhost:9092` |
 | Schema Registry | `http://localhost:8081` |
 | Postgres | `localhost:15432` |
@@ -205,13 +208,13 @@ mix deps.get && mix phx.server
 
 ## Mailpit
 
-All outbound mail is captured by Mailpit. The backend uses plain SMTP (`mailpit:1025`) in dev rather than SES, so no AWS credentials are needed.
+All outbound mail is captured by Mailpit. The backend uses plain SMTP (`mailpit:1025`) in dev rather than SES, so no AWS credentials are needed. Mailpit accepts SMTP AUTH with any credentials (no TLS required), so worker sends from sandbox mailboxes are captured too.
 
 - Web UI: `http://localhost:18025`
 - SMTP from inside docker: `mailpit:1025`
 - SMTP from host: `localhost:11025`
 
-Note: Mailpit speaks SMTP only, not IMAP. The worker's IMAP sync path is not exercised by the default stack; for that, add a real IMAP server (e.g. GreenMail) to the stack.
+Note: Mailpit speaks SMTP only, not IMAP. The worker's IMAP sync path is exercised through the Dovecot service instead; see the [sandbox](/development/sandbox/) for the full live-mail environment.
 
 ## Email templates
 
@@ -279,8 +282,11 @@ curl http://localhost:8081/subjects/tracking-events-value/versions/latest | jq
 
 **LocalStack init failed.** Check `docker compose logs localstack-init`. Usually means LocalStack itself isn't ready yet; the dependency wait should handle it, but re-running `make infra` works.
 
+**Scheduled sends never fire (native flow).** The cloud-tasks emulator runs in docker and calls the natively-run backend back at `host.docker.internal:8080` (the `SELF_HOST` default). Check `docker compose logs cloud-tasks-emulator` for connection errors; the task reconcilers cancel and re-enqueue lost callbacks within a few minutes either way.
+
 ## Next steps
 
+- [Sandbox](/development/sandbox/): a fully working demo environment on this stack
 - [Architecture](/development/architecture/): control vs execution plane, encryption model
 - [Deployment guide](/development/deployment-guide/): running in production
 - [Event system](/development/events/): Kafka event reference

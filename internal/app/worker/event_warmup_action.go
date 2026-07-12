@@ -2,7 +2,6 @@ package worker
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/rs/zerolog/log"
 	"github.com/warmbly/warmbly/internal/app/worker/wmail"
@@ -19,13 +18,7 @@ import (
 // the delayed leg (read / important / star) when its fire_at passes, each with
 // DelaySeconds=0. That makes the dwell survive a worker restart, which the old
 // in-process time.AfterFunc here could not.
-func (w *WorkerService) HandleWarmupAction(ctx context.Context, body any) error {
-	action, ok := body.(models.WarmupEmailAction)
-	if !ok {
-		log.Debug().Msg("Invalid HandleWarmupAction body type")
-		return fmt.Errorf("invalid body type")
-	}
-
+func (w *WorkerService) HandleWarmupAction(ctx context.Context, action models.WarmupEmailAction) error {
 	log.Info().
 		Str("email_id", action.EmailID.String()).
 		Str("gmail_id", action.GmailID).

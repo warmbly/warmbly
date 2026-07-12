@@ -107,6 +107,13 @@ type TaskRepository interface {
 
 	// Update operations
 	UpdateTaskStatus(ctx context.Context, taskID uuid.UUID, status string) error
+	// CancelOverduePendingTasks marks pending tasks of the given type whose
+	// scheduled_at is more than `overdue` in the past as cancelled. A pending
+	// task that far past its slot means the Cloud Tasks callback was lost
+	// (queue wipe, emulator restart, dropped retry); cancelling unblocks the
+	// reconcilers' "no pending task" checks so the chain re-seeds. A late
+	// callback for a cancelled row is a no-op (handlers require 'pending').
+	CancelOverduePendingTasks(ctx context.Context, taskType string, overdue time.Duration) (int64, error)
 	UpdateTaskScheduledAt(ctx context.Context, taskID uuid.UUID, scheduledAt time.Time, cloudTaskName string) error
 	RecordTaskFailure(ctx context.Context, taskID uuid.UUID, title, message string) error
 
@@ -544,7 +551,7 @@ func (r *taskRepository) GetScheduledTasksToday(ctx context.Context, accountID u
 func (r *taskRepository) UpdateTaskStatus(ctx context.Context, taskID uuid.UUID, status string) error {
 	query := `
 		UPDATE tasks
-		SET status = $1,
+		SET status = $1::task_status,
 		    updated_at = NOW(),
 		    completed_at = CASE WHEN $1 = 'completed' THEN NOW() ELSE completed_at END
 		WHERE id = $2
@@ -552,6 +559,23 @@ func (r *taskRepository) UpdateTaskStatus(ctx context.Context, taskID uuid.UUID,
 
 	_, err := r.db.Exec(ctx, query, status, taskID)
 	return err
+}
+
+// CancelOverduePendingTasks cancels pending tasks stranded past their slot;
+// see the interface comment for why.
+func (r *taskRepository) CancelOverduePendingTasks(ctx context.Context, taskType string, overdue time.Duration) (int64, error) {
+	query := `
+		UPDATE tasks
+		SET status = 'cancelled', updated_at = NOW()
+		WHERE task_type = $1
+		  AND status = 'pending'
+		  AND scheduled_at < NOW() - $2::interval
+	`
+	tag, err := r.db.Exec(ctx, query, taskType, overdue.String())
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
 }
 
 // UpdateTaskScheduledAt updates the scheduled time and cloud task name
@@ -718,7 +742,7 @@ func (r *taskRepository) UpdateTaskStatusWithLock(ctx context.Context, taskID uu
 	// Update status
 	query := `
 		UPDATE tasks
-		SET status = $1,
+		SET status = $1::task_status,
 		    updated_at = NOW(),
 		    completed_at = CASE WHEN $1 = 'completed' THEN NOW() ELSE completed_at END
 		WHERE id = $2

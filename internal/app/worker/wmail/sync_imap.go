@@ -25,8 +25,17 @@ func (w *WMail) Sync(ctx context.Context) *errx.MailError {
 				return nil
 			}
 
-			if err := w.SmtpImapData.ImapClient.FetchChanges(ctx, 0); err != nil {
+			// FETCH requires a selected mailbox; the select also arms
+			// CONDSTORE for the ChangedSince filtering. An empty mailbox is
+			// skipped: 1:* on zero messages is a server error.
+			count, err := w.SmtpImapData.ImapClient.SelectForSync(box.Name)
+			if err != nil {
 				return err
+			}
+			if count > 0 {
+				if err := w.SmtpImapData.ImapClient.FetchChanges(ctx, 0); err != nil {
+					return err
+				}
 			}
 
 			w.SmtpImapData.Mailboxes = append(w.SmtpImapData.Mailboxes, &box)
@@ -35,8 +44,14 @@ func (w *WMail) Sync(ctx context.Context) *errx.MailError {
 
 		if befBox.HighestModSeq != box.HighestModSeq {
 			w.SmtpImapData.mailbox = box.UIDValidity
-			if err := w.SmtpImapData.ImapClient.FetchChanges(ctx, befBox.HighestModSeq); err != nil {
+			count, err := w.SmtpImapData.ImapClient.SelectForSync(box.Name)
+			if err != nil {
 				return err
+			}
+			if count > 0 {
+				if err := w.SmtpImapData.ImapClient.FetchChanges(ctx, befBox.HighestModSeq); err != nil {
+					return err
+				}
 			}
 		}
 

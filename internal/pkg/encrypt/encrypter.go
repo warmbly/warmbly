@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
+	"os"
 )
 
 // Encrypted holds the hex-encoded ciphertext and nonce.
@@ -19,6 +20,17 @@ type Encrypted struct {
 // Encrypter performs AES-GCM encryption with a fixed 32-byte key.
 type Encrypter struct {
 	aead cipher.AEAD
+}
+
+// FromEnv creates an Encrypter from the CREDENTIALS_ENCRYPTION_KEY env var
+// (64 hex chars = 32 bytes). Returns (nil, nil) when the var is unset so
+// callers can keep booting without credential sealing configured.
+func FromEnv() (*Encrypter, error) {
+	key := os.Getenv("CREDENTIALS_ENCRYPTION_KEY")
+	if key == "" {
+		return nil, nil
+	}
+	return NewEncrypterFromHex(key)
 }
 
 // NewEncrypterFromHex creates an Encrypter from a 64-character hex key.

@@ -6,6 +6,7 @@
   "pages": [
     "architecture",
     "local-development",
+    "sandbox",
     "deployment-guide",
     "events"
   ]

@@ -39,6 +39,11 @@ type (
 )
 
 type TasksService interface {
+	// HandleTask routes a Cloud Tasks callback by the task row's task_type.
+	// Every enqueue shares one webhook URL (gtasks.Client holds a single
+	// callback), so the receiving endpoint cannot infer the type from the
+	// route it was hit on.
+	HandleTask(task *proto.ProcessTask) *errx.Error
 	HandleCampaignTask(task *proto.ProcessTask) *errx.Error
 	HandleEmailTask(task *proto.ProcessTask) *errx.Error
 	HandleUserEmailTask(task *proto.ProcessTask) *errx.Error
