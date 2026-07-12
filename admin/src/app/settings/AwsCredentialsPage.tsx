@@ -248,7 +248,7 @@ function CredentialDialog({
                         <Label htmlFor="aws-access-key">Access key ID</Label>
                         <Input
                             id="aws-access-key"
-                            placeholder="AKIAXXXXXXXXXXXXXXXX"
+                            placeholder="the key ID, starts with AKIA"
                             className="font-mono"
                             value={form.access_key_id}
                             onChange={(e) => set({ access_key_id: e.target.value })}
@@ -264,7 +264,7 @@ function CredentialDialog({
                             placeholder={
                                 isEdit
                                     ? "leave blank to keep current secret, fill to rotate"
-                                    : "wJalrXUtnFEMI/K7MDENG..."
+                                    : "the secret access key"
                             }
                             value={form.secret_access_key}
                             onChange={(e) => set({ secret_access_key: e.target.value })}
