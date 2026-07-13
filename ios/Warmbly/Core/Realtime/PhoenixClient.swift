@@ -164,6 +164,29 @@ final class PhoenixSocket: NSObject, URLSessionWebSocketDelegate, @unchecked Sen
         scheduleReconnect()
     }
 
+    /// Fast-path recovery after app foregrounding: sockets die during
+    /// suspension, and the watchdog/backoff can take ~30s to notice on their
+    /// own. Verifies a live socket with an immediate heartbeat, or reconnects
+    /// right away instead of waiting out the scheduled backoff.
+    func nudge() {
+        let (running, connected) = locked { (shouldRun, state == .connected && task != nil) }
+        guard running else { return }
+        if connected {
+            let ref = nextRef()
+            locked { heartbeatAwaitingRef = ref }
+            sendFrame(topic: "phoenix", event: "heartbeat", payload: [:], ref: ref, joinRef: nil)
+            Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 8_000_000_000)
+                guard let self else { return }
+                let stillWaiting = self.locked { self.heartbeatAwaitingRef == ref }
+                if stillWaiting { self.forceReconnect() }
+            }
+        } else {
+            locked { reconnectAttempt = 0 }
+            Task { await openSocket() }
+        }
+    }
+
     // MARK: - URLSessionWebSocketDelegate
 
     func urlSession(

@@ -214,6 +214,13 @@ final class RealtimeService {
         socket.connect()
     }
 
+    /// Foreground kick: recheck the socket immediately instead of letting the
+    /// heartbeat watchdog discover a suspension-killed connection ~30s late.
+    func nudge() {
+        guard userID != nil else { return }
+        socket.nudge()
+    }
+
     func disconnect() {
         socket.disconnect()
         presence.reset()
@@ -319,7 +326,7 @@ final class RealtimeService {
         "step": [.campaigns],
         "email_account": [.emailAccounts, .analytics],
         "api_key": [.apiKeys],
-        "webhook": [.settings],
+        "webhook": [.settings, .integrations],
         "template": [.templates],
         "organization": [.team, .settings],
         "organization_member": [.team],
@@ -340,7 +347,7 @@ final class RealtimeService {
         "crm_stage": [.crm],
         "crm_deal": [.crm],
         "crm_task": [.crm],
-        "warmup_routing_rule": [.emailAccounts],
+        "warmup_routing_rule": [.emailAccounts, .analytics],
         "folder": [.me, .campaigns],
         "tag": [.me, .emailAccounts, .unibox],
         "category": [.me, .contacts],
@@ -348,19 +355,25 @@ final class RealtimeService {
 
     private static func domains(forEventName name: String) -> [RealtimeDomain] {
         if name.contains("NOTIFICATION") { return [.notifications] }
-        if name.contains("INBOX") || name == "EMAIL_RECEIVED" || name == "EMAIL_UPDATED" || name == "EMAIL_DELETED" {
-            return [.unibox]
+        if name.contains("INBOX") || name == "EMAIL_RECEIVED" {
+            return [.unibox, .analytics, .emailAccounts]
         }
+        if name == "EMAIL_UPDATED" || name == "EMAIL_DELETED" { return [.unibox, .analytics] }
         if name == "EMAIL_REPLIED" { return [.campaigns, .analytics, .unibox] }
         if name == "EMAIL_SENT" || name == "EMAIL_OPENED" || name == "EMAIL_CLICKED"
             || name == "EMAIL_FAILED" || name == "EMAIL_BOUNCED" || name.contains("TASK_PROGRESS") {
             return [.campaigns, .analytics]
         }
+        if name == "EMAIL_STATUS" || name == "EMAIL_ERROR" { return [.emailAccounts, .analytics] }
         if name.contains("CAMPAIGN") { return [.campaigns, .analytics] }
-        if name.contains("CONTACT") { return [.contacts] }
+        if name.contains("CONTACT") { return [.contacts, .campaigns, .analytics] }
         if name.contains("ACCOUNT") || name.contains("WARMUP") { return [.emailAccounts, .analytics] }
         if name.contains("BULK") { return [.contacts] }
-        if name.contains("MEETING") { return [.meetings, .crm] }
+        if name.contains("MEETING") || name.contains("BOOKING") { return [.meetings, .crm] }
+        if name.contains("DEAL") { return [.crm, .contacts] }
+        if name.contains("SUBSCRIPTION") || name.contains("PLAN") || name.contains("BILLING") || name.contains("LIMIT") {
+            return [.billing, .me]
+        }
         if name.contains("AUTOMATION") { return [.automations] }
         if name.contains("TASK") { return [.campaigns] }
         return []
