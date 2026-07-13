@@ -4,6 +4,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/admin"
 	"github.com/warmbly/warmbly/internal/app/adminoutreach"
 	"github.com/warmbly/warmbly/internal/app/advanced"
+	"github.com/warmbly/warmbly/internal/app/aitools"
 	"github.com/warmbly/warmbly/internal/app/analytics"
 	"github.com/warmbly/warmbly/internal/app/apikey"
 	"github.com/warmbly/warmbly/internal/app/audit"
@@ -152,6 +153,10 @@ type Handler struct {
 	// inbox agent. Nil when no LLM provider is configured.
 	AIProvider generation.Provider
 	AISearch   generation.SearchClient
+
+	// AITools is the shared tool registry the dashboard agent and MCP server
+	// run on. Handlers bound to the invoking user's permissions.
+	AITools *aitools.Registry
 
 	// Seed inbox-placement testing.
 	PlacementRepo    repository.PlacementRepository

@@ -23,6 +23,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/admin"
 	"github.com/warmbly/warmbly/internal/app/adminoutreach"
 	"github.com/warmbly/warmbly/internal/app/advanced"
+	"github.com/warmbly/warmbly/internal/app/aitools"
 	"github.com/warmbly/warmbly/internal/app/analytics"
 	"github.com/warmbly/warmbly/internal/app/apikey"
 	"github.com/warmbly/warmbly/internal/app/audit"
@@ -144,6 +145,7 @@ func main() {
 	var writingGenerator generation.WritingGenerator
 	var aiProvider generation.Provider
 	var aiSearch generation.SearchClient
+	var aiToolRegistry *aitools.Registry
 	var emailVerifyService emailverifyapp.Service
 	var placementRepository repository.PlacementRepository
 	var placementService placement.Service
@@ -974,6 +976,24 @@ func main() {
 		// tasksClient isn't initialised until the Cloud Tasks config
 		// block runs.
 		uniboxService = unibox.NewService(cache, s3, uniboxRepository, taskRepository, tasksClient)
+
+		// Shared AI tool registry: every tool calls a service-layer function as
+		// the invoking user, so the dashboard agent (M3) and MCP server (M8) can
+		// never exceed the caller's permissions. Built once here with the same
+		// service instances the HTTP handlers use.
+		aiToolRegistry = aitools.BuildRegistry(aitools.Deps{
+			Contacts:    contactService,
+			CRM:         crmService,
+			Campaigns:   campaignService,
+			Analytics:   analyticsService,
+			Unibox:      uniboxService,
+			Automations: integrationServiceForHandler,
+			Audit:       auditService,
+			Search:      aiSearch,
+			Cache:       cache,
+			FeatureGate: featureGateService,
+			AppBaseURL:  cfg.GetStringOptional(ctx, "APP_BASE_URL", "app_base_url", ""),
+		})
 		advancedService = advanced.NewService(
 			advancedRepository,
 			campaignRepostory,
@@ -1247,6 +1267,7 @@ func main() {
 		WritingGenerator: writingGenerator,
 		AIProvider:       aiProvider,
 		AISearch:         aiSearch,
+		AITools:          aiToolRegistry,
 
 		// Pre-send email verification
 		EmailVerifyService: emailVerifyService,
