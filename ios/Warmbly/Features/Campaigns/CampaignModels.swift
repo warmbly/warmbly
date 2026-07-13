@@ -371,11 +371,13 @@ struct CampaignStep: Codable, Identifiable, Sendable {
     var waitAfter: Int?
     var position: Int?
     var kind: String?
+    var conditions: StepBranchConditions?
+    var action: StepActionConfig?
     var updatedAt: Date?
     var createdAt: Date?
 
     enum CodingKeys: String, CodingKey {
-        case id, name, subject, kind
+        case id, name, subject, kind, conditions, action
         case bodyPlain = "body_plain"
         case bodyHTML = "body_html"
         case waitAfter = "wait_after"
@@ -383,6 +385,16 @@ struct CampaignStep: Codable, Identifiable, Sendable {
         case updatedAt = "updated_at"
         case createdAt = "created_at"
     }
+
+    /// Older rows persist an empty kind; treat it as the email default.
+    var stepKind: String {
+        if let kind, !kind.isEmpty { return kind }
+        return "email"
+    }
+
+    var isEmail: Bool { stepKind == "email" }
+
+    var branches: [StepBranch] { conditions?.branches ?? [] }
 
     /// Plaintext preview: body_plain first, else tags stripped from body_html.
     var bodyPreview: String {
@@ -403,6 +415,55 @@ struct CampaignStep: Codable, Identifiable, Sendable {
             .components(separatedBy: .whitespacesAndNewlines)
             .filter { !$0.isEmpty }
             .joined(separator: " ")
+    }
+}
+
+/// The per-step branching tree (sequences.conditions jsonb). Branches are
+/// evaluated in order; the first branch whose conditions all match routes the
+/// contact, a nil target means stop, no match falls through linearly.
+struct StepBranchConditions: Codable, Sendable {
+    var branches: [StepBranch]?
+}
+
+struct StepBranch: Codable, Sendable {
+    var branchID: String?
+    var targetStepID: String?
+    var conditions: [StepBranchCondition]?
+    var instant: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case branchID = "branch_id"
+        case targetStepID = "target_step_id"
+        case conditions, instant
+    }
+}
+
+struct StepBranchCondition: Codable, Sendable {
+    var field: String?
+    var op: String?
+    var value: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case field, value
+        case op = "operator"
+    }
+}
+
+/// The non-email node config (sequences.action jsonb); only the fields the
+/// read-only preview summarizes.
+struct StepActionConfig: Codable, Sendable {
+    var type: String?
+    var waitMinutes: Int?
+    var taskTitle: String?
+    var dealName: String?
+    var eventName: String?
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case waitMinutes = "wait_minutes"
+        case taskTitle = "task_title"
+        case dealName = "deal_name"
+        case eventName = "event_name"
     }
 }
 

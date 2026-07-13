@@ -130,9 +130,9 @@ struct CampaignSequencePage: View {
                 List {
                     ForEach(store.steps) { step in
                         NavigationLink {
-                            CampaignStepReader(step: step)
+                            CampaignStepReader(step: step, all: store.steps)
                         } label: {
-                            CampaignStepRow(step: step)
+                            CampaignStepRow(step: step, all: store.steps)
                         }
                     }
                     WebHandoffBanner(text: "Writing and rearranging steps needs the full sequence editor. Open this campaign in Warmbly on the web to edit it.")
@@ -152,8 +152,136 @@ struct CampaignSequencePage: View {
     }
 }
 
+/// Read-only presentation for sequence step nodes: kind icon/tone, action
+/// summaries, and human-readable branch routes (mirrors the web editor's copy).
+enum StepMeta {
+    static func tone(_ step: CampaignStep) -> Tone {
+        switch step.stepKind {
+        case "wait": return .amber
+        case "action": return .indigo
+        default: return .sky
+        }
+    }
+
+    static func icon(_ step: CampaignStep) -> String {
+        switch step.stepKind {
+        case "wait": return "hourglass"
+        case "action": return actionIcon(step.action?.type)
+        default: return "envelope.fill"
+        }
+    }
+
+    static func title(_ step: CampaignStep) -> String {
+        if let name = step.name, !name.isEmpty { return name }
+        switch step.stepKind {
+        case "wait": return "Wait"
+        case "action": return "Action"
+        default: return "Step"
+        }
+    }
+
+    private static func actionIcon(_ type: String?) -> String {
+        switch type {
+        case "wait": return "hourglass"
+        case "add_tag", "remove_tag": return "tag.fill"
+        case "label_email": return "tray.full.fill"
+        case "unsubscribe": return "person.fill.xmark"
+        case "notify": return "bell.fill"
+        case "create_task": return "checklist"
+        case "create_deal", "move_deal_stage": return "briefcase.fill"
+        case "run_automation": return "gearshape.2.fill"
+        case "fire_event": return "dot.radiowaves.left.and.right"
+        case "end": return "stop.circle.fill"
+        default: return "bolt.fill"
+        }
+    }
+
+    /// One-line summary of what a non-email node does when a contact hits it.
+    static func actionSummary(_ step: CampaignStep) -> String {
+        let action = step.action
+        switch action?.type {
+        case "wait":
+            if let minutes = action?.waitMinutes, minutes > 0 { return "Waits \(duration(minutes))" }
+            return "Waits before the next step"
+        case "add_tag": return "Adds a tag to the contact"
+        case "remove_tag": return "Removes a tag from the contact"
+        case "label_email": return "Labels the reply conversation"
+        case "unsubscribe": return "Unsubscribes the contact"
+        case "notify": return "Notifies your team"
+        case "create_task":
+            if let title = action?.taskTitle, !title.isEmpty { return "Creates task \"\(title)\"" }
+            return "Creates a CRM task"
+        case "create_deal":
+            if let name = action?.dealName, !name.isEmpty { return "Creates deal \"\(name)\"" }
+            return "Creates a CRM deal"
+        case "move_deal_stage": return "Moves the contact's deal to another stage"
+        case "run_automation": return "Runs an automation"
+        case "fire_event":
+            if let name = action?.eventName, !name.isEmpty { return "Fires event \"\(name)\"" }
+            return "Fires a custom event"
+        case "end": return "Ends the sequence"
+        default:
+            if step.stepKind == "wait" { return "Waits before the next step" }
+            return "Runs an action"
+        }
+    }
+
+    static func duration(_ minutes: Int) -> String {
+        if minutes % 1440 == 0 {
+            let days = minutes / 1440
+            return "\(days) day\(days == 1 ? "" : "s")"
+        }
+        if minutes % 60 == 0 {
+            let hours = minutes / 60
+            return "\(hours) hour\(hours == 1 ? "" : "s")"
+        }
+        return "\(minutes) min"
+    }
+
+    static func conditionText(_ cond: StepBranchCondition) -> String {
+        let field = cond.field ?? ""
+        if field == "random" {
+            if let value = cond.value { return "random split (\(value)%)" }
+            return "random split"
+        }
+        let label: String
+        switch field {
+        case "opened": label = "opened the email"
+        case "clicked": label = "clicked a link"
+        case "replied": label = "replied"
+        case "not_opened": label = "didn't open"
+        case "not_clicked": label = "didn't click"
+        case "not_replied": label = "didn't reply"
+        case "reply_positive": label = "replied: positive"
+        case "reply_negative": label = "replied: negative"
+        case "reply_neutral": label = "replied: neutral"
+        case "reply_automated": label = "auto-reply / out of office"
+        default: label = field.replacingOccurrences(of: "_", with: " ")
+        }
+        if cond.op == "within_days", let value = cond.value {
+            return "\(label) within \(value) day\(value == 1 ? "" : "s")"
+        }
+        return label
+    }
+
+    /// "If opened the email within 3 days → Step 4" / "Otherwise → stops".
+    static func branchText(_ branch: StepBranch, in all: [CampaignStep]) -> String {
+        let conditions = (branch.conditions ?? []).map(conditionText)
+        let lhs = conditions.isEmpty ? "Otherwise" : "If " + conditions.joined(separator: " and ")
+        let rhs: String
+        if let target = branch.targetStepID,
+           let step = all.first(where: { $0.id == target }) {
+            rhs = "goes to step \(step.position ?? 0)"
+        } else {
+            rhs = "stops the sequence"
+        }
+        return "\(lhs), \(rhs)"
+    }
+}
+
 struct CampaignStepRow: View {
     let step: CampaignStep
+    let all: [CampaignStep]
 
     private var waitLine: String? {
         guard let wait = step.waitAfter, wait > 0 else { return nil }
@@ -163,13 +291,23 @@ struct CampaignStepRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 10) {
-                Text("\(step.position ?? 0)")
-                    .font(.footnote.weight(.semibold))
-                    .monospacedDigit()
-                    .foregroundStyle(Tone.sky.color)
-                    .frame(width: 28, height: 28)
-                    .background(Tone.sky.background, in: RoundedRectangle(cornerRadius: 8))
-                Text(step.name ?? "Step")
+                ZStack(alignment: .bottomTrailing) {
+                    Text("\(step.position ?? 0)")
+                        .font(.footnote.weight(.semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(StepMeta.tone(step).color)
+                        .frame(width: 28, height: 28)
+                        .background(StepMeta.tone(step).background, in: RoundedRectangle(cornerRadius: 8))
+                    if !step.isEmail {
+                        Image(systemName: StepMeta.icon(step))
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 13, height: 13)
+                            .background(StepMeta.tone(step).color, in: Circle())
+                            .offset(x: 4, y: 4)
+                    }
+                }
+                Text(StepMeta.title(step))
                     .font(.body.weight(.medium))
                     .lineLimit(1)
                 Spacer(minLength: 8)
@@ -180,28 +318,49 @@ struct CampaignStepRow: View {
                         .foregroundStyle(.tertiary)
                 }
             }
-            if let subject = step.subject, !subject.isEmpty {
-                Text(subject)
-                    .font(.subheadline.weight(.medium))
+            if step.isEmail {
+                if let subject = step.subject, !subject.isEmpty {
+                    Text(subject)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                let preview = step.bodyPreview
+                if !preview.isEmpty {
+                    Text(preview)
+                        .font(.subheadline)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(2)
+                }
+            } else {
+                Text(StepMeta.actionSummary(step))
+                    .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
-            let preview = step.bodyPreview
-            if !preview.isEmpty {
-                Text(preview)
-                    .font(.subheadline)
-                    .foregroundStyle(.tertiary)
-                    .lineLimit(2)
+            ForEach(Array(step.branches.enumerated()), id: \.offset) { _, branch in
+                HStack(alignment: .firstTextBaseline, spacing: 5) {
+                    Image(systemName: "arrow.triangle.branch")
+                        .font(.caption2)
+                        .foregroundStyle(Tone.indigo.color)
+                    Text(StepMeta.branchText(branch, in: all))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
             }
         }
         .padding(.vertical, 6)
     }
 }
 
-/// Read-only step viewer: subject line and the full body exactly as it sends
-/// (HTML through the shared webview, plain text as a fallback).
+/// Read-only step viewer. Email nodes show the subject and the full body
+/// exactly as it sends (HTML through the shared webview, plain text as a
+/// fallback); action/wait nodes show what fires, and every node lists its
+/// branch routes.
 struct CampaignStepReader: View {
     let step: CampaignStep
+    let all: [CampaignStep]
 
     @State private var bodyHeight: CGFloat = 120
 
@@ -212,29 +371,65 @@ struct CampaignStepReader: View {
                     HStack(spacing: 8) {
                         Text("Step \(step.position ?? 0)")
                             .font(.caption.weight(.semibold))
-                            .foregroundStyle(Tone.sky.color)
+                            .foregroundStyle(StepMeta.tone(step).color)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 3)
-                            .background(Tone.sky.background, in: Capsule())
+                            .background(StepMeta.tone(step).background, in: Capsule())
                         if let wait = step.waitAfter, wait > 0 {
-                            Text("sends \(wait) day\(wait == 1 ? "" : "s") after the previous step")
+                            Text("\(step.isEmail ? "sends" : "runs") \(wait) day\(wait == 1 ? "" : "s") after the previous step")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
                     }
-                    if let subject = step.subject, !subject.isEmpty {
+                    if step.isEmail, let subject = step.subject, !subject.isEmpty {
                         Text(subject)
                             .font(.title3.weight(.semibold))
                     }
                 }
                 Divider()
-                if step.bodyHTML?.isEmpty == false || step.bodyPlain?.isEmpty == false {
-                    UniboxWebView(html: step.bodyHTML, plain: step.bodyPlain, height: $bodyHeight)
-                        .frame(height: bodyHeight)
+                if step.isEmail {
+                    if step.bodyHTML?.isEmpty == false || step.bodyPlain?.isEmpty == false {
+                        UniboxWebView(html: step.bodyHTML, plain: step.bodyPlain, height: $bodyHeight)
+                            .frame(height: bodyHeight)
+                    } else {
+                        Text("This step has no body yet.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
                 } else {
-                    Text("This step has no body yet.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                    HStack(spacing: 12) {
+                        IconTile(symbol: StepMeta.icon(step), tone: StepMeta.tone(step), size: 34)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(StepMeta.actionSummary(step))
+                                .font(.body.weight(.medium))
+                            Text(step.stepKind == "wait" ? "Delay step, nothing is sent." : "Runs automatically, nothing is sent.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                if !step.branches.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("BRANCHING")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                            .kerning(1.1)
+                        ForEach(Array(step.branches.enumerated()), id: \.offset) { _, branch in
+                            HStack(alignment: .firstTextBaseline, spacing: 7) {
+                                Image(systemName: "arrow.triangle.branch")
+                                    .font(.caption)
+                                    .foregroundStyle(Tone.indigo.color)
+                                Text(StepMeta.branchText(branch, in: all))
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        Text("If no branch matches, the contact continues to the next step.")
+                            .font(.footnote)
+                            .foregroundStyle(.tertiary)
+                    }
+                    .padding(.top, 4)
                 }
                 WebHandoffBanner(text: "Edit this step in the sequence editor in Warmbly on the web.")
                     .padding(.top, 6)
@@ -242,7 +437,7 @@ struct CampaignStepReader: View {
             .padding(16)
         }
         .background(Color(.systemBackground))
-        .navigationTitle(step.name ?? "Step")
+        .navigationTitle(StepMeta.title(step))
         .navigationBarTitleDisplayMode(.inline)
     }
 }
