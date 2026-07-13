@@ -263,6 +263,8 @@ export function useRealtimeEvents() {
           // change the billing/credits view for every teammate.
           credit_purchase: [['subscription', 'credits'], ['subscription']],
           credit_grant: [['subscription', 'credits'], ['subscription']],
+          // AI assistant sessions (per-user; refreshes the session list).
+          ai_session: [['ai', 'sessions']],
           settings: [['organizations', 'current']],
           unibox: [['unibox']],
           crm_note: [['crm'], ['contacts']],

@@ -834,6 +834,19 @@ func Run(
 			// Websocket bootstrap. The token returned here is single-session.
 			jwtOnly.POST("/getaway", h.GenerateWebsocket)
 
+			// Dashboard AI agent (JWT-only; per-user sessions). Each tool the
+			// agent runs is gated by the invoking member's org permission bits in
+			// the registry, so no extra per-route permission is needed beyond
+			// membership. Message/approval runs stream over SSE.
+			ai := jwtOnly.Group("/ai")
+			ai.Use(m.RequireOrganization())
+			{
+				ai.POST("/sessions", h.CreateAgentSession)
+				ai.GET("/sessions", h.ListAgentSessions)
+				ai.POST("/sessions/:id/messages", h.AgentMessage)
+				ai.POST("/sessions/:id/approve", h.AgentApprove)
+			}
+
 			subscriptions := jwtOnly.Group("/subscription")
 			subscriptions.Use(m.RateLimitMiddleware(models.RateLimitWrite))
 			{

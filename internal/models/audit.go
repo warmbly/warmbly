@@ -102,6 +102,9 @@ const (
 	// billing/credits view, so the spine refreshes teammates on either.
 	AuditEntityCreditPurchase AuditEntityType = "credit_purchase"
 	AuditEntityCreditGrant    AuditEntityType = "credit_grant"
+
+	// AI assistant session (per-user dashboard agent conversation).
+	AuditEntityAISession AuditEntityType = "ai_session"
 )
 
 // AuditActor is the minimal identity of the member who performed an action,

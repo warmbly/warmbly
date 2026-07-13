@@ -18,6 +18,7 @@ export function useKeyboardShortcuts() {
   const setShortcutsModalOpen = useAppStore((state) => state.setShortcutsModalOpen)
   const setCommandPaletteOpen = useAppStore((state) => state.setCommandPaletteOpen)
   const toggleSidebar = useAppStore((state) => state.toggleSidebar)
+  const toggleAIAssistant = useAppStore((state) => state.toggleAIAssistant)
 
   // Navigation shortcuts (g + key)
   const navigationShortcuts: Record<string, string> = {
@@ -36,6 +37,14 @@ export function useKeyboardShortcuts() {
 
   const handleKeyDown = useCallback(
     (event: KeyboardEvent) => {
+      // Cmd/Ctrl+I toggles the AI assistant from anywhere (even while typing),
+      // since it is a modifier combo, not text input.
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'i') {
+        event.preventDefault()
+        toggleAIAssistant()
+        return
+      }
+
       // Ignore if typing in an input, textarea, or contenteditable
       const target = event.target as HTMLElement
       const isEditing =
@@ -131,6 +140,7 @@ export function useKeyboardShortcuts() {
       setShortcutsModalOpen,
       setCommandPaletteOpen,
       toggleSidebar,
+      toggleAIAssistant,
       navigationShortcuts,
     ]
   )

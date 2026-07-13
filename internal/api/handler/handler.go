@@ -4,6 +4,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/admin"
 	"github.com/warmbly/warmbly/internal/app/adminoutreach"
 	"github.com/warmbly/warmbly/internal/app/advanced"
+	"github.com/warmbly/warmbly/internal/app/aiagent"
 	"github.com/warmbly/warmbly/internal/app/aitools"
 	"github.com/warmbly/warmbly/internal/app/analytics"
 	"github.com/warmbly/warmbly/internal/app/apikey"
@@ -157,6 +158,10 @@ type Handler struct {
 	// AITools is the shared tool registry the dashboard agent and MCP server
 	// run on. Handlers bound to the invoking user's permissions.
 	AITools *aitools.Registry
+
+	// AIAgentService orchestrates the dashboard agent (sessions, SSE runs,
+	// approvals, per-iteration credits). Nil when no LLM provider is configured.
+	AIAgentService aiagent.Service
 
 	// Seed inbox-placement testing.
 	PlacementRepo    repository.PlacementRepository

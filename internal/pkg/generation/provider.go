@@ -105,6 +105,12 @@ type AgentRequest struct {
 	// holds the tool call awaiting approval, so the caller can persist state
 	// and resume. Returning any other error aborts the run.
 	Approve func(ctx context.Context, tool ToolDef, call ToolCall) error
+	// PreIteration, if set, is called at the start of each loop iteration
+	// (before the model call). Returning an error stops the loop cleanly with
+	// StopReason "stopped" and returns the transcript so far. Used to charge
+	// per-iteration credits and enforce a per-run budget; the caller records
+	// its own reason (e.g. out-of-credits) before returning.
+	PreIteration func(ctx context.Context, iteration int) error
 }
 
 // PendingToolCall is the tool awaiting approval when a run stops with

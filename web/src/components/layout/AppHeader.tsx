@@ -12,7 +12,7 @@
 // AppShell, not here.
 
 import { Link, useLocation } from "react-router-dom";
-import { ChevronRight, Menu, Search } from "lucide-react";
+import { ChevronRight, Menu, Search, Sparkles } from "lucide-react";
 import { Logo } from "@/components/svg";
 import { useAppStore } from "@/stores";
 import { ConnectionIndicator } from "@/components/shared/ConnectionIndicator";
@@ -56,6 +56,7 @@ function pretty(segment: string): string {
 export function AppHeader({ onMenu }: { onMenu?: () => void }) {
     const { pathname } = useLocation();
     const setCommandPaletteOpen = useAppStore((s) => s.setCommandPaletteOpen);
+    const toggleAIAssistant = useAppStore((s) => s.toggleAIAssistant);
 
     // Path under /app — first segment is the section ("emails", "admin", ...),
     // subsequent ones are subpages. Don't show UUID-looking segments verbatim
@@ -134,6 +135,14 @@ export function AppHeader({ onMenu }: { onMenu?: () => void }) {
                 <PresenceAvatars />
                 <ConnectionIndicator />
                 <NotificationBell />
+                <button
+                    onClick={toggleAIAssistant}
+                    title="AI assistant (⌘I)"
+                    aria-label="AI assistant"
+                    className="flex items-center justify-center size-7 rounded-md text-slate-500 hover:text-sky-700 hover:bg-sky-50 transition-colors"
+                >
+                    <Sparkles className="w-3.5 h-3.5" />
+                </button>
                 <button
                     onClick={() => setCommandPaletteOpen(true)}
                     className="flex items-center gap-2 px-2 h-7 rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-200/60 transition-colors text-[12.5px]"

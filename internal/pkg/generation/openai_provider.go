@@ -234,6 +234,13 @@ func (p *openAIProvider) RunAgent(ctx context.Context, req AgentRequest) (*Agent
 	result := &AgentResult{Model: model}
 
 	for iter := 0; iter < maxIter; iter++ {
+		if req.PreIteration != nil {
+			if err := req.PreIteration(ctx, iter+1); err != nil {
+				result.Messages = messages
+				result.StopReason = "stopped"
+				return result, nil
+			}
+		}
 		result.Iterations++
 		if req.OnEvent != nil {
 			req.OnEvent(AgentEvent{Type: EventIteration, Iteration: result.Iterations})

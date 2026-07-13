@@ -23,6 +23,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/admin"
 	"github.com/warmbly/warmbly/internal/app/adminoutreach"
 	"github.com/warmbly/warmbly/internal/app/advanced"
+	"github.com/warmbly/warmbly/internal/app/aiagent"
 	"github.com/warmbly/warmbly/internal/app/aitools"
 	"github.com/warmbly/warmbly/internal/app/analytics"
 	"github.com/warmbly/warmbly/internal/app/apikey"
@@ -146,6 +147,7 @@ func main() {
 	var aiProvider generation.Provider
 	var aiSearch generation.SearchClient
 	var aiToolRegistry *aitools.Registry
+	var aiAgentService aiagent.Service
 	var emailVerifyService emailverifyapp.Service
 	var placementRepository repository.PlacementRepository
 	var placementService placement.Service
@@ -994,6 +996,15 @@ func main() {
 			FeatureGate: featureGateService,
 			AppBaseURL:  cfg.GetStringOptional(ctx, "APP_BASE_URL", "app_base_url", ""),
 		})
+
+		// Dashboard AI agent: sessions + streamed, approval-gated, credit-charged
+		// runs over the tool registry. Only constructed when a provider is set.
+		if aiProvider != nil {
+			aiAgentService = aiagent.NewService(
+				repository.NewAgentRepository(primaryDB),
+				aiToolRegistry, aiProvider, creditService, featureGateService, auditService,
+			)
+		}
 		advancedService = advanced.NewService(
 			advancedRepository,
 			campaignRepostory,
@@ -1268,6 +1279,7 @@ func main() {
 		AIProvider:       aiProvider,
 		AISearch:         aiSearch,
 		AITools:          aiToolRegistry,
+		AIAgentService:   aiAgentService,
 
 		// Pre-send email verification
 		EmailVerifyService: emailVerifyService,

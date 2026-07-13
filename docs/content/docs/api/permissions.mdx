@@ -34,6 +34,7 @@ These same permissions are the [OAuth](/api/oauth/) scopes, lowercased: `READ_EM
 | `READ_AUDIT_LOGS` | 19 | 524288 | read | View organization audit logs |
 | `INTEGRATIONS` | 20 | 1048576 | special | Connect and manage third-party integrations |
 | `WARMUP_ROUTING` | 21 | 2097152 | special | Manage warmup routing rules |
+| `AI_AGENT` | 22 | 4194304 | special | Run the AI assistant and MCP tools |
 
 `SEND_CAMPAIGNS` is intentionally separate from `WRITE_CAMPAIGNS`: editing a campaign draft and starting one that actually transmits mail are different blast radii, so a key can be granted the first without the second.
 
@@ -53,7 +54,7 @@ High-volume operations. These can touch large numbers of rows in a single reques
 
 ### Special
 
-Realtime subscriptions, webhooks, integrations, warmup routing, and self-service key management. Grant individually.
+Realtime subscriptions, webhooks, integrations, warmup routing, AI assistant / MCP access, and self-service key management. Grant individually.
 
 ## Preset combinations
 
@@ -70,12 +71,12 @@ READ_EMAILS | READ_CAMPAIGNS | READ_CONTACTS | READ_UNIBOX | READ_ANALYTICS
 = 688159
 ```
 
-### Full access (4194303)
+### Full access (8388607)
 
-All 22 permissions:
+All 23 permissions:
 
 ```
-(1 << 22) - 1 = 4194303
+(1 << 23) - 1 = 8388607
 ```
 
 ## Working with bitmasks
@@ -178,6 +179,7 @@ export const Permissions = {
   READ_AUDIT_LOGS: 524288,
   INTEGRATIONS: 1048576,
   WARMUP_ROUTING: 2097152,
+  AI_AGENT: 4194304,
 } as const;
 ```
 
@@ -209,6 +211,7 @@ class Permissions:
     READ_AUDIT_LOGS = 524288
     INTEGRATIONS = 1048576
     WARMUP_ROUTING = 2097152
+    AI_AGENT = 4194304
 ```
 
 </Tab>
@@ -239,6 +242,7 @@ const (
     APIPermReadAuditLogs                        // 524288
     APIPermIntegrations                         // 1048576
     APIPermWarmupRouting                        // 2097152
+    APIPermAIAgent                              // 4194304
 )
 ```
 

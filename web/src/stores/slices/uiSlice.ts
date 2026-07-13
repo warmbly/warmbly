@@ -18,6 +18,9 @@ export interface UISlice {
   shortcutsModalOpen: boolean
   commandPaletteOpen: boolean
 
+  // AI assistant panel (right-side, persistent across routes)
+  aiAssistantOpen: boolean
+
   // Actions - Sidebar
   toggleSidebar: () => void
   setSidebarCollapsed: (collapsed: boolean) => void
@@ -33,6 +36,8 @@ export interface UISlice {
   setAddEmailModalOpen: (open: boolean) => void
   setShortcutsModalOpen: (open: boolean) => void
   setCommandPaletteOpen: (open: boolean) => void
+  setAIAssistantOpen: (open: boolean) => void
+  toggleAIAssistant: () => void
 }
 
 const getInitialTheme = (): Theme => {
@@ -63,6 +68,7 @@ export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set, get) 
   addEmailModalOpen: false,
   shortcutsModalOpen: false,
   commandPaletteOpen: false,
+  aiAssistantOpen: false,
 
   // Actions - Sidebar
   toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
@@ -93,4 +99,7 @@ export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set, get) 
     set((state) => (state.shortcutsModalOpen === shortcutsModalOpen ? state : { shortcutsModalOpen })),
   setCommandPaletteOpen: (commandPaletteOpen) =>
     set((state) => (state.commandPaletteOpen === commandPaletteOpen ? state : { commandPaletteOpen })),
+  setAIAssistantOpen: (aiAssistantOpen) =>
+    set((state) => (state.aiAssistantOpen === aiAssistantOpen ? state : { aiAssistantOpen })),
+  toggleAIAssistant: () => set((state) => ({ aiAssistantOpen: !state.aiAssistantOpen })),
 })
