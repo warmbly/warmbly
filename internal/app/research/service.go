@@ -43,6 +43,11 @@ type FeatureGate interface {
 	IsPaidOrganization(ctx context.Context, orgID uuid.UUID) (bool, *errx.Error)
 }
 
+// SkillPreamble renders the org's enabled playbooks for the research prompt.
+type SkillPreamble interface {
+	EnabledPreamble(ctx context.Context, orgID uuid.UUID) string
+}
+
 // Service is the contact-research application API.
 type Service interface {
 	// RunResearch executes one research run synchronously and returns the
@@ -67,13 +72,14 @@ type service struct {
 	contacts  contact.ContactService
 	orgs      organization.OrganizationService
 	publisher *pubsub.StreamingPublisher
+	skills    SkillPreamble
 	wake      chan struct{}
 }
 
-func NewService(repo repository.ResearchRepository, registry *aitools.Registry, provider generation.Provider, creditSvc credits.CreditService, feature FeatureGate, contacts contact.ContactService, orgs organization.OrganizationService, publisher *pubsub.StreamingPublisher) Service {
+func NewService(repo repository.ResearchRepository, registry *aitools.Registry, provider generation.Provider, creditSvc credits.CreditService, feature FeatureGate, contacts contact.ContactService, orgs organization.OrganizationService, publisher *pubsub.StreamingPublisher, skills SkillPreamble) Service {
 	return &service{
 		repo: repo, registry: registry, provider: provider, credits: creditSvc,
-		feature: feature, contacts: contacts, orgs: orgs, publisher: publisher,
+		feature: feature, contacts: contacts, orgs: orgs, publisher: publisher, skills: skills,
 		wake: make(chan struct{}, 1),
 	}
 }
@@ -227,18 +233,23 @@ func (s *service) execute(ctx context.Context, inv aitools.Invocation, run *mode
 		pd.ICPNotes = org.ICPNotes
 		pd.VoiceProfile = org.VoiceProfile
 	}
+	if s.skills != nil {
+		pd.Skills = s.skills.EnabledPreamble(ctx, orgID)
+	}
 
-	// Tools: budgeted web tools + save_research.
+	// Tools: budgeted web tools + load_skill + save_research.
 	searchBudget, fetchBudget := defaultSearchBudget, defaultFetchBudget
 	var captured *models.ResearchResult
 	saveAttempts := 0
-	tools := make([]generation.ToolDef, 0, 3)
-	for _, t := range s.registry.ToolDefsByName(inv, "search_web", "fetch_url") {
+	tools := make([]generation.ToolDef, 0, 4)
+	for _, t := range s.registry.ToolDefsByName(inv, "search_web", "fetch_url", "load_skill") {
 		switch t.Name {
 		case "search_web":
 			tools = append(tools, budgeted(t, &searchBudget))
 		case "fetch_url":
 			tools = append(tools, budgeted(t, &fetchBudget))
+		default: // load_skill: unbudgeted
+			tools = append(tools, t)
 		}
 	}
 	tools = append(tools, saveResearchTool(&captured, &saveAttempts))

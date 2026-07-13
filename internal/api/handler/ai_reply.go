@@ -87,9 +87,15 @@ func (h *Handler) DraftReply(c *gin.Context) {
 		return
 	}
 
+	system := generation.BuildReplyRules(voice)
+	if h.SkillsService != nil {
+		if pre := h.SkillsService.EnabledPreamble(c.Request.Context(), *orgID); pre != "" {
+			system += "\n\n" + pre
+		}
+	}
 	prompt := buildReplyPrompt(history, contactCtx, req.Instruction)
 	result, gerr := h.AIProvider.Complete(c.Request.Context(), generation.CompletionRequest{
-		System: generation.BuildReplyRules(voice),
+		System: system,
 		Prompt: prompt,
 		Model:  model,
 	})

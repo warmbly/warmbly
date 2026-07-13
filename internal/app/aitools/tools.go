@@ -38,10 +38,18 @@ type Deps struct {
 	// handlers do (e.g. unibox requires an active trial/paid plan), so a tool
 	// can never read data a 403'd HTTP route would refuse.
 	FeatureGate feature.FeatureGateService
+	// Skills backs the load_skill tool (org playbooks). Optional.
+	Skills SkillLookup
 	// AppBaseURL is the dashboard origin used to build deep links in draft
 	// artifacts (e.g. https://app.warmbly.com). Empty falls back to a relative
 	// path.
 	AppBaseURL string
+}
+
+// SkillLookup returns an enabled org playbook's full content by name (backs the
+// load_skill tool). *skills.service satisfies it.
+type SkillLookup interface {
+	GetByName(ctx context.Context, orgID uuid.UUID, name string) (*models.AISkill, error)
 }
 
 // BuildRegistry constructs the registry with every initial tool registered.
@@ -54,6 +62,7 @@ func BuildRegistry(d Deps) *Registry {
 	d.registerUniboxTools(r)
 	d.registerAutomationTools(r)
 	d.registerWebTools(r)
+	d.registerSkillTools(r)
 	return r
 }
 

@@ -277,6 +277,8 @@ export function useRealtimeEvents() {
           credit_grant: [['subscription', 'credits'], ['subscription']],
           // AI assistant sessions (per-user; refreshes the session list).
           ai_session: [['ai', 'sessions']],
+          // AI skills (org playbooks).
+          ai_skill: [['ai', 'skills']],
           settings: [['organizations', 'current']],
           unibox: [['unibox']],
           crm_note: [['crm'], ['contacts']],

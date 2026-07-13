@@ -33,6 +33,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/releases"
 	"github.com/warmbly/warmbly/internal/app/research"
 	"github.com/warmbly/warmbly/internal/app/sequence"
+	"github.com/warmbly/warmbly/internal/app/skills"
 	"github.com/warmbly/warmbly/internal/app/socket"
 	"github.com/warmbly/warmbly/internal/app/stripe"
 	"github.com/warmbly/warmbly/internal/app/subscription"
@@ -166,6 +167,10 @@ type Handler struct {
 
 	// ResearchService runs the AI contact-research agent (sync + batch).
 	ResearchService research.Service
+
+	// SkillsService manages org AI skills (playbooks) and injects them into AI
+	// prompts.
+	SkillsService skills.Service
 
 	// Seed inbox-placement testing.
 	PlacementRepo    repository.PlacementRepository

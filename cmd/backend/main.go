@@ -59,6 +59,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/research"
 	"github.com/warmbly/warmbly/internal/app/sequence"
 	"github.com/warmbly/warmbly/internal/app/settings"
+	"github.com/warmbly/warmbly/internal/app/skills"
 	"github.com/warmbly/warmbly/internal/app/socket"
 	"github.com/warmbly/warmbly/internal/app/stripe"
 	"github.com/warmbly/warmbly/internal/app/subscription"
@@ -150,6 +151,7 @@ func main() {
 	var aiToolRegistry *aitools.Registry
 	var aiAgentService aiagent.Service
 	var researchService research.Service
+	var skillsService skills.Service
 	var emailVerifyService emailverifyapp.Service
 	var placementRepository repository.PlacementRepository
 	var placementService placement.Service
@@ -981,6 +983,10 @@ func main() {
 		// block runs.
 		uniboxService = unibox.NewService(cache, s3, uniboxRepository, taskRepository, tasksClient)
 
+		// Org AI skills (playbooks): CRUD for settings + prompt injection + the
+		// load_skill tool source.
+		skillsService = skills.NewService(repository.NewSkillRepository(primaryDB))
+
 		// Shared AI tool registry: every tool calls a service-layer function as
 		// the invoking user, so the dashboard agent (M3) and MCP server (M8) can
 		// never exceed the caller's permissions. Built once here with the same
@@ -996,6 +1002,7 @@ func main() {
 			Search:      aiSearch,
 			Cache:       cache,
 			FeatureGate: featureGateService,
+			Skills:      skillsService,
 			AppBaseURL:  cfg.GetStringOptional(ctx, "APP_BASE_URL", "app_base_url", ""),
 		})
 
@@ -1004,13 +1011,13 @@ func main() {
 		if aiProvider != nil {
 			aiAgentService = aiagent.NewService(
 				repository.NewAgentRepository(primaryDB),
-				aiToolRegistry, aiProvider, creditService, featureGateService, auditService,
+				aiToolRegistry, aiProvider, creditService, featureGateService, auditService, skillsService,
 			)
 			// Contact research agent + its bounded background drain pool.
 			researchService = research.NewService(
 				repository.NewResearchRepository(primaryDB),
 				aiToolRegistry, aiProvider, creditService, featureGateService,
-				contactService, organizationService, streamingPublisher,
+				contactService, organizationService, streamingPublisher, skillsService,
 			)
 			researchService.StartDrainPool(ctx)
 		}
@@ -1290,6 +1297,7 @@ func main() {
 		AITools:          aiToolRegistry,
 		AIAgentService:   aiAgentService,
 		ResearchService:  researchService,
+		SkillsService:    skillsService,
 
 		// Pre-send email verification
 		EmailVerifyService: emailVerifyService,

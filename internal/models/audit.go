@@ -105,6 +105,9 @@ const (
 
 	// AI assistant session (per-user dashboard agent conversation).
 	AuditEntityAISession AuditEntityType = "ai_session"
+
+	// AI skill (org playbook) create/update/delete.
+	AuditEntityAISkill AuditEntityType = "ai_skill"
 )
 
 // AuditActor is the minimal identity of the member who performed an action,

@@ -37,6 +37,11 @@ type AuditLogger interface {
 	LogAction(ctx context.Context, orgID, actorID uuid.UUID, action models.AuditAction, entityType models.AuditEntityType, entityID *uuid.UUID, ip, userAgent string, changes, metadata map[string]string)
 }
 
+// SkillPreamble renders the org's enabled playbooks for the system prompt.
+type SkillPreamble interface {
+	EnabledPreamble(ctx context.Context, orgID uuid.UUID) string
+}
+
 // StreamEvent is one SSE step emitted to the client.
 type StreamEvent struct {
 	Type             string `json:"type"`
@@ -107,10 +112,11 @@ type service struct {
 	credits  credits.CreditService
 	feature  FeatureGate
 	audit    AuditLogger
+	skills   SkillPreamble
 }
 
-func NewService(repo repository.AgentRepository, registry *aitools.Registry, provider generation.Provider, creditSvc credits.CreditService, feature FeatureGate, audit AuditLogger) Service {
-	return &service{repo: repo, registry: registry, provider: provider, credits: creditSvc, feature: feature, audit: audit}
+func NewService(repo repository.AgentRepository, registry *aitools.Registry, provider generation.Provider, creditSvc credits.CreditService, feature FeatureGate, audit AuditLogger, skills SkillPreamble) Service {
+	return &service{repo: repo, registry: registry, provider: provider, credits: creditSvc, feature: feature, audit: audit, skills: skills}
 }
 
 func (s *service) CreateSession(ctx context.Context, orgID, userID uuid.UUID, page, resource string) (*models.AgentSession, *errx.Error) {
@@ -246,8 +252,12 @@ func (s *service) runLoop(ctx context.Context, inv aitools.Invocation, sess *mod
 		lastRemaining int
 	)
 
+	skillsBlock := ""
+	if s.skills != nil {
+		skillsBlock = s.skills.EnabledPreamble(ctx, inv.OrgID)
+	}
 	req := generation.AgentRequest{
-		System:        s.systemPrompt(sess),
+		System:        s.systemPrompt(sess, skillsBlock),
 		Messages:      genMsgs,
 		Tools:         s.registry.ToolDefs(inv),
 		Model:         model,
@@ -380,7 +390,7 @@ func (s *service) persist(ctx context.Context, orgID, userID, sessionID uuid.UUI
 	return s.repo.AppendMessages(ctx, orgID, userID, sessionID, rows)
 }
 
-func (s *service) systemPrompt(sess *models.AgentSession) string {
+func (s *service) systemPrompt(sess *models.AgentSession, skillsBlock string) string {
 	var b strings.Builder
 	b.WriteString(`You are Warmbly's in-product AI assistant. You help the user manage their cold email outreach: contacts, campaigns, the unified inbox, CRM, and automations. Use the available tools to look things up and take actions. Be concise and specific.
 
@@ -395,6 +405,10 @@ Rules:
 			fmt.Fprintf(&b, " looking at %q", sess.Context.Resource)
 		}
 		b.WriteString(". Use this as context for what they mean by \"this\" or \"here\".")
+	}
+	if strings.TrimSpace(skillsBlock) != "" {
+		b.WriteString("\n\n")
+		b.WriteString(skillsBlock)
 	}
 	return b.String()
 }

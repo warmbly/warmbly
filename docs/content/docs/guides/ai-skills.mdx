@@ -1,0 +1,60 @@
+---
+title: AI skills
+description: Teach your AI features how your team works by writing reusable playbooks the assistant, research, and reply drafts follow.
+icon: Sparkles
+---
+
+AI skills are short playbooks you write once and your AI features reuse everywhere. A skill captures how your team actually works: how you qualify a lead, handle a common objection, or run a first call. The assistant, contact research, and reply drafts all read your enabled skills, so their output follows your process instead of a generic default.
+
+Skills live under **Settings, AI skills** and require the **Manage settings** permission.
+
+## How skills are used
+
+Every skill has a short **name**, a one-line **description**, and a **playbook** (the full instructions, written in plain markdown).
+
+When an AI feature runs, it is shown the name and description of each enabled skill. When one is relevant to what it is doing, it loads the full playbook and follows it. This keeps prompts short while still giving the AI access to everything you have written down. A skill you switch off is hidden from the AI entirely.
+
+## Writing a good skill
+
+- Keep the **name** short and specific, like "Objection handling" or "Discovery call".
+- Make the **description** a single line about when to use it, so the AI knows when it applies.
+- In the **playbook**, write plain, direct instructions. Bullet points and short steps work well. Say what to do and what to avoid.
+
+## Example: objection handling
+
+```
+Name: Objection handling
+Description: How to respond when a prospect pushes back on price or timing.
+
+When a prospect says it is too expensive:
+- Acknowledge it directly, do not get defensive.
+- Ask what they are comparing the price to.
+- Reframe around the cost of the problem staying unsolved, with a specific number if you have one.
+- Offer a smaller first step, never a discount as the first move.
+
+When a prospect says "not right now":
+- Ask what would need to be true for it to be the right time.
+- Offer to send one useful thing and check back, do not push for a meeting.
+- Keep it short and low pressure.
+```
+
+## Example: discovery call booking
+
+```
+Name: Discovery call booking
+Description: How to ask for and frame a first call.
+
+- Only ask for a call once the prospect has shown a real signal of interest.
+- Frame it as a short, specific conversation, not a demo. "15 minutes to see if this is even a fit."
+- Always offer an easy out in the same message ("or if this isn't a priority, no worries").
+- Never stack asks or send more than one call link.
+- Match our voice: direct, warm, lowercase openers are fine.
+```
+
+## Where skills apply
+
+- **The assistant**: follows relevant skills when it drafts, plans, or answers.
+- **Contact research**: uses skills to judge what is worth surfacing about a contact.
+- **Reply drafts**: writes replies that follow your playbooks.
+
+Because skills are shared across your workspace, one person can capture how the team works and everyone's AI output improves at once.

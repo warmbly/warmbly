@@ -22,6 +22,8 @@ type PromptData struct {
 	Objective    string
 	SearchBudget int
 	FetchBudget  int
+	// Skills is the enabled-playbooks preamble (M6), empty when the org has none.
+	Skills string
 }
 
 // systemPromptTemplate is the contact-research runtime system prompt. It frames
@@ -48,7 +50,11 @@ OBJECTIVE
 YOUR TOOLS
 - search_web: find pages about the person or company. Prefer their name plus company, the company domain, recent news, their LinkedIn, and their own posts.
 - fetch_url: read a specific page you found to confirm a fact and get the exact wording. Only https public pages.
+- load_skill: read one of this workspace's playbooks in full when it is relevant.
 - save_research: save your findings in the strict schema below. Call this exactly once, at the end.
+{{if .Skills}}
+{{.Skills}}
+{{end}}
 
 BUDGET (stay within it)
 - At most {{.SearchBudget}} web searches and {{.FetchBudget}} page fetches. Spend them on the highest-signal leads. When you are out of budget or out of good leads, save and stop.

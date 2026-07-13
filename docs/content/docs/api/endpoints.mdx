@@ -228,6 +228,17 @@ The dashboard AI assistant is JWT only: sessions are private to the member who s
 | POST | `/ai/sessions/:id/messages` | organization member (SSE) |
 | POST | `/ai/sessions/:id/approve` | organization member (SSE) |
 
+### AI skills
+
+Org playbooks the AI features follow (see the [AI skills](/guides/ai-skills/) guide). Gated on `manage_settings` for JWT callers, or the `AI_AGENT` scope for API keys.
+
+| Method | Path | Permission |
+|--------|------|------------|
+| GET | `/ai/skills` | `manage_settings` / `AI_AGENT` |
+| POST | `/ai/skills` | `manage_settings` / `AI_AGENT` |
+| PATCH | `/ai/skills/:id` | `manage_settings` / `AI_AGENT` |
+| DELETE | `/ai/skills/:id` | `manage_settings` / `AI_AGENT` |
+
 ## Public
 
 - `GET /health`

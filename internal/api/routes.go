@@ -378,6 +378,17 @@ func Run(
 				generation.POST("/write", m.RequireOrganization(), m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.GenerateWriting)
 			}
 
+			// AI skills (org playbooks). CRUD gated on manage_settings (JWT) or
+			// the AI_AGENT scope (API key); every mutation audits (ai_skill).
+			skillsGroup := protected.Group("/ai/skills")
+			skillsGroup.Use(m.RequireOrganization())
+			{
+				skillsGroup.GET("", m.RequireAccess(models.PermManageSettings, models.APIPermAIAgent), h.ListSkills)
+				skillsGroup.POST("", m.RequireAccess(models.PermManageSettings, models.APIPermAIAgent), h.CreateSkill)
+				skillsGroup.PATCH("/:id", m.RequireAccess(models.PermManageSettings, models.APIPermAIAgent), h.UpdateSkill)
+				skillsGroup.DELETE("/:id", m.RequireAccess(models.PermManageSettings, models.APIPermAIAgent), h.DeleteSkill)
+			}
+
 			contacts := protected.Group("/contacts")
 			contacts.Use(m.RateLimitMiddleware(models.RateLimitWrite))
 			{
