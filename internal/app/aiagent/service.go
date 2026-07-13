@@ -211,7 +211,10 @@ func (s *service) Resume(ctx context.Context, inv aitools.Invocation, sessionID 
 		toolResult = `{"status":"denied","note":"The user declined to run this action."}`
 	} else {
 		emit(StreamEvent{Type: evTool, Tool: pending.ToolName, Risk: pending.Risk, ArgsSummary: pending.ArgsSummary, ToolCallID: pending.ToolCallID})
-		out, cerr := s.registry.Call(ctx, inv, pending.ToolName, pending.Args)
+		// Resolve the pending tool from the invocation's full tool set (static
+		// registry tools PLUS dynamic per-org tools like connected MCP servers),
+		// which registry.Call does not cover.
+		out, cerr := s.executeTool(ctx, inv, pending.ToolName, pending.Args)
 		if cerr != nil {
 			b, _ := json.Marshal(map[string]string{"error": cerr.Error()})
 			out = string(b)
@@ -259,7 +262,7 @@ func (s *service) runLoop(ctx context.Context, inv aitools.Invocation, sess *mod
 	req := generation.AgentRequest{
 		System:        s.systemPrompt(sess, skillsBlock),
 		Messages:      genMsgs,
-		Tools:         s.registry.ToolDefs(inv),
+		Tools:         s.registry.ToolDefs(ctx, inv),
 		Model:         model,
 		MaxIterations: DefaultRunBudget,
 		OnEvent: func(ev generation.AgentEvent) {
@@ -293,9 +296,10 @@ func (s *service) runLoop(ctx context.Context, inv aitools.Invocation, sess *mod
 			return nil
 		},
 		Approve: func(ctx context.Context, tool generation.ToolDef, call generation.ToolCall) error {
-			// Send-class is always per-action (never auto-allowed). Write-class
-			// auto-runs only when an org policy says always_allow.
-			if tool.Risk == generation.RiskWrite && policies[tool.Name] == "always_allow" {
+			// Send-class is always per-action (never auto-allowed). External MCP
+			// tools are also never auto-allowed. Write-class auto-runs only when
+			// an org policy says always_allow.
+			if tool.Risk == generation.RiskWrite && policies[tool.Name] == "always_allow" && !strings.HasPrefix(tool.Name, "mcp_") {
 				return nil
 			}
 			sess.Context.Pending = &models.PendingAgentTool{
@@ -354,6 +358,18 @@ func (s *service) emitStop(emit func(StreamEvent), reason string, remaining int)
 	default:
 		emit(StreamEvent{Type: evError, Code: "stopped", Message: "The run was stopped.", CreditsRemaining: remaining})
 	}
+}
+
+// executeTool runs an approved tool by name, resolving it from the invocation's
+// full tool set (static + dynamic per-org tools). This is how a resumed run
+// executes a paused write/MCP tool, since registry.Call only knows static tools.
+func (s *service) executeTool(ctx context.Context, inv aitools.Invocation, name string, args json.RawMessage) (string, error) {
+	for _, d := range s.registry.ToolDefs(ctx, inv) {
+		if d.Name == name {
+			return d.Handler(ctx, args)
+		}
+	}
+	return "", aitools.ErrToolNotFound
 }
 
 // --- helpers ---

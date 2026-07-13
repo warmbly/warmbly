@@ -108,6 +108,9 @@ const (
 
 	// AI skill (org playbook) create/update/delete.
 	AuditEntityAISkill AuditEntityType = "ai_skill"
+
+	// Connected MCP server (external tools) connect/update/disconnect.
+	AuditEntityMCPServer AuditEntityType = "mcp_server"
 )
 
 // AuditActor is the minimal identity of the member who performed an action,

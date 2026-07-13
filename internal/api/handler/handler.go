@@ -23,6 +23,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/group"
 	"github.com/warmbly/warmbly/internal/app/integration"
 	"github.com/warmbly/warmbly/internal/app/leadsync"
+	"github.com/warmbly/warmbly/internal/app/mcp"
 	"github.com/warmbly/warmbly/internal/app/notification"
 	"github.com/warmbly/warmbly/internal/app/oauth"
 	"github.com/warmbly/warmbly/internal/app/organization"
@@ -171,6 +172,9 @@ type Handler struct {
 	// SkillsService manages org AI skills (playbooks) and injects them into AI
 	// prompts.
 	SkillsService skills.Service
+
+	// MCPService manages org-connected MCP servers (external tools).
+	MCPService mcp.Service
 
 	// Seed inbox-placement testing.
 	PlacementRepo    repository.PlacementRepository

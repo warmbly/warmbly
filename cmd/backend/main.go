@@ -46,6 +46,7 @@ import (
 	idempotencyapp "github.com/warmbly/warmbly/internal/app/idempotency"
 	"github.com/warmbly/warmbly/internal/app/integration"
 	"github.com/warmbly/warmbly/internal/app/leadsync"
+	"github.com/warmbly/warmbly/internal/app/mcp"
 	"github.com/warmbly/warmbly/internal/app/nativeactions"
 	"github.com/warmbly/warmbly/internal/app/notification"
 	"github.com/warmbly/warmbly/internal/app/oauth"
@@ -152,6 +153,7 @@ func main() {
 	var aiAgentService aiagent.Service
 	var researchService research.Service
 	var skillsService skills.Service
+	var mcpService mcp.Service
 	var emailVerifyService emailverifyapp.Service
 	var placementRepository repository.PlacementRepository
 	var placementService placement.Service
@@ -1006,6 +1008,12 @@ func main() {
 			AppBaseURL:  cfg.GetStringOptional(ctx, "APP_BASE_URL", "app_base_url", ""),
 		})
 
+		// Connected MCP servers (client direction): their enabled tools are
+		// contributed to the dashboard agent per-org (approval-gated, never
+		// auto-allowed).
+		mcpService = mcp.NewService(repository.NewMCPRepository(primaryDB), cipherService)
+		aiToolRegistry.AddDynamicSource(mcpService)
+
 		// Dashboard AI agent: sessions + streamed, approval-gated, credit-charged
 		// runs over the tool registry. Only constructed when a provider is set.
 		if aiProvider != nil {
@@ -1298,6 +1306,7 @@ func main() {
 		AIAgentService:   aiAgentService,
 		ResearchService:  researchService,
 		SkillsService:    skillsService,
+		MCPService:       mcpService,
 
 		// Pre-send email verification
 		EmailVerifyService: emailVerifyService,

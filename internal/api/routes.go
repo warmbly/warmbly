@@ -865,6 +865,14 @@ func Run(
 				ai.GET("/sessions", h.ListAgentSessions)
 				ai.POST("/sessions/:id/messages", h.AgentMessage)
 				ai.POST("/sessions/:id/approve", h.AgentApprove)
+
+				// Connected MCP servers (external tools). Admin-only; sealing
+				// credentials and exposing external tools is a settings action.
+				ai.GET("/connections", m.RequirePermission(models.PermManageSettings), h.ListMCPServers)
+				ai.POST("/connections", m.RequirePermission(models.PermManageSettings), h.CreateMCPServer)
+				ai.PATCH("/connections/:id", m.RequirePermission(models.PermManageSettings), h.UpdateMCPServer)
+				ai.DELETE("/connections/:id", m.RequirePermission(models.PermManageSettings), h.DeleteMCPServer)
+				ai.POST("/connections/:id/refresh", m.RequirePermission(models.PermManageSettings), h.RefreshMCPServer)
 			}
 
 			subscriptions := jwtOnly.Group("/subscription")

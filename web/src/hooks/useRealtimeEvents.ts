@@ -279,6 +279,8 @@ export function useRealtimeEvents() {
           ai_session: [['ai', 'sessions']],
           // AI skills (org playbooks).
           ai_skill: [['ai', 'skills']],
+          // Connected MCP servers (external tools).
+          mcp_server: [['ai', 'connections']],
           settings: [['organizations', 'current']],
           unibox: [['unibox']],
           crm_note: [['crm'], ['contacts']],

@@ -239,6 +239,18 @@ Org playbooks the AI features follow (see the [AI skills](/guides/ai-skills/) gu
 | PATCH | `/ai/skills/:id` | `manage_settings` / `AI_AGENT` |
 | DELETE | `/ai/skills/:id` | `manage_settings` / `AI_AGENT` |
 
+### Connected MCP servers
+
+External MCP servers whose tools the assistant can use (see [Connect MCP tools](/guides/connect-mcp-tools/)). JWT-only and `manage_settings`-gated; bearer tokens are sealed with the org key and never returned.
+
+| Method | Path | JWT permission |
+|--------|------|----------------|
+| GET | `/ai/connections` | `manage_settings` |
+| POST | `/ai/connections` | `manage_settings` |
+| PATCH | `/ai/connections/:id` | `manage_settings` |
+| DELETE | `/ai/connections/:id` | `manage_settings` |
+| POST | `/ai/connections/:id/refresh` | `manage_settings` |
+
 ## Public
 
 - `GET /health`

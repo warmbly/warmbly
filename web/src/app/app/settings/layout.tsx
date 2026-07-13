@@ -20,6 +20,7 @@ import {
     GaugeIcon,
     GiftIcon,
     Loader2Icon,
+    PlugIcon,
     ShieldCheckIcon,
     ShieldIcon,
     SparklesIcon,
@@ -73,6 +74,7 @@ const GROUPS: SectionGroup[] = [
         items: [
             { path: "oauth-apps", label: "OAuth apps", icon: BoxesIcon, description: "Apps that connect via OAuth2, and the apps you've authorized.", permission: "MANAGE_API_KEYS" },
             { path: "webhooks", label: "Webhooks", icon: WebhookIcon, description: "Realtime HTTP callbacks for workspace events.", permission: "MANAGE_SETTINGS" },
+            { path: "connections", label: "Connections", icon: PlugIcon, description: "External MCP servers that add tools to the AI.", permission: "MANAGE_SETTINGS" },
         ],
     },
     {

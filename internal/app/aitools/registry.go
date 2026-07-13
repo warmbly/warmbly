@@ -59,16 +59,31 @@ func (t Tool) allowed(inv Invocation) bool {
 	return t.RequiredOrgPerm == 0 || inv.OrgPerms&t.RequiredOrgPerm == t.RequiredOrgPerm
 }
 
+// DynamicToolSource contributes per-invocation tools that are not statically
+// registered (e.g. an org's connected MCP servers, M7). Sources are queried on
+// every ToolDefs call.
+type DynamicToolSource interface {
+	ToolsForInvocation(ctx context.Context, inv Invocation) []generation.ToolDef
+}
+
 // Registry holds the tool set. It is built once at startup with the service
 // dependencies bound into each handler, then queried per invocation.
 type Registry struct {
-	tools map[string]Tool
-	order []string
+	tools   map[string]Tool
+	order   []string
+	dynamic []DynamicToolSource
 }
 
 // NewRegistry returns an empty registry.
 func NewRegistry() *Registry {
 	return &Registry{tools: make(map[string]Tool)}
+}
+
+// AddDynamicSource registers a per-invocation tool source (post-construction).
+func (r *Registry) AddDynamicSource(src DynamicToolSource) {
+	if src != nil {
+		r.dynamic = append(r.dynamic, src)
+	}
 }
 
 // Register adds or replaces a tool, preserving first-registration order.
@@ -99,9 +114,10 @@ func (r *Registry) PermittedTools(inv Invocation) []Tool {
 }
 
 // ToolDefs returns the provider-facing tool defs the invocation is permitted to
-// use, each bound to execute under inv. This is what the agent loop passes to
+// use (static registry tools plus any dynamic per-org tools), each bound to
+// execute under inv. This is what the dashboard agent passes to
 // generation.Provider.RunAgent.
-func (r *Registry) ToolDefs(inv Invocation) []generation.ToolDef {
+func (r *Registry) ToolDefs(ctx context.Context, inv Invocation) []generation.ToolDef {
 	permitted := r.PermittedTools(inv)
 	defs := make([]generation.ToolDef, 0, len(permitted))
 	for _, t := range permitted {
@@ -115,6 +131,9 @@ func (r *Registry) ToolDefs(inv Invocation) []generation.ToolDef {
 				return t.Handler(ctx, inv, args)
 			},
 		})
+	}
+	for _, src := range r.dynamic {
+		defs = append(defs, src.ToolsForInvocation(ctx, inv)...)
 	}
 	return defs
 }
