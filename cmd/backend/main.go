@@ -601,8 +601,10 @@ func main() {
 
 		tzService = tz.NewService()
 
-		// Initialize new services for trial, feature gates, and worker assignment
-		trialService = trial.NewService(subscriptionRepository, userRepostory)
+		// Initialize new services for trial, feature gates, and worker assignment.
+		// The trial service seeds the free plan's monthly AI-credit allowance at
+		// trial start (planRepo + creditService, both already constructed above).
+		trialService = trial.NewService(subscriptionRepository, userRepostory, planRepository, creditService)
 		featureGateService = feature.NewService(subscriptionRepository, planRepository)
 		workerAssignmentService = worker.NewAssignmentService(workerRepository, subscriptionRepository, planRepository)
 		subscriptionService = subscription.NewService(subscriptionRepository, planRepository)
@@ -637,6 +639,12 @@ func main() {
 		// Bridge audited mutations to typed customer webhooks (campaign/contact/
 		// template/CRM/team/role/settings/subscription .created/.updated/.deleted).
 		auditService.WireWebhookDispatcher(webhookService)
+
+		// Wire AI-credit grants into the Stripe webhook flow: monthly allowance
+		// reset on invoice.paid and top-up fulfillment on checkout.session.completed
+		// (mode=payment). The audit logger fires AUDIT_CREATED so teammates' credit
+		// views refresh live via the spine.
+		stripeService.WireCredits(creditService, auditService)
 
 		authService = auth.NewService(
 			authRepostory,

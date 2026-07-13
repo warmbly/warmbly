@@ -259,6 +259,10 @@ export function useRealtimeEvents() {
           subscription: [['subscription'], ['organizations', 'limits']],
           referral: [['subscription', 'referral']],
           referral_credit: [['subscription', 'referral'], ['subscription']],
+          // AI credits: a top-up purchase or a monthly allowance reset both
+          // change the billing/credits view for every teammate.
+          credit_purchase: [['subscription', 'credits'], ['subscription']],
+          credit_grant: [['subscription', 'credits'], ['subscription']],
           settings: [['organizations', 'current']],
           unibox: [['unibox']],
           crm_note: [['crm'], ['contacts']],

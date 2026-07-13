@@ -1,0 +1,86 @@
+---
+title: AI credits
+description: How AI credits work in Warmbly, what each AI action costs, the monthly allowance and reset rules, and how to buy top-up packs.
+icon: Sparkles
+---
+
+AI features in Warmbly run on credits. Your plan grants a monthly allowance that refreshes every billing cycle, and you can buy top-up packs that never expire when you need more. This guide covers what each action costs, how the two credit pools work, and how to buy more.
+
+<Callout type="info" title="Who can manage credits">
+The credits card lives under **Settings, Billing** and requires the **Manage billing** permission, the same permission that controls the rest of billing. The owner and any role granted billing access can view the balance and buy packs; other members do not see it.
+</Callout>
+
+## The two credit pools
+
+Every workspace has two separate credit pools:
+
+- **Monthly allowance.** Granted by your plan and reset to the plan amount at the start of each billing cycle. Unused monthly credits do not roll over, they are replaced by the fresh grant.
+- **Purchased credits.** Bought as top-up packs. They never expire and are not touched by the monthly reset, so they carry over cycle to cycle.
+
+When you run an AI action, Warmbly spends your monthly allowance first and only draws on purchased credits once the monthly pool is empty. That way your top-ups are held in reserve for months where you go over the allowance.
+
+## What each action costs
+
+Costs are fixed per action, not per token. A single request always costs the same number of credits no matter how long the input or output is.
+
+| Action | Credits |
+|--------|---------|
+| Writing assistant draft | 1 |
+| AI assistant step (one turn of the dashboard agent) | 1 |
+| Reply draft in the unibox | 2 |
+| Contact research run | 2 |
+| AI step in an automation | 1 |
+| Inbox agent handled thread | 5 |
+
+A few rules apply across all of them:
+
+- If an AI action fails because of a provider error, the credit is refunded automatically. You are never charged for output you did not receive.
+- A contact research run that finds nothing is still a successful run and costs its credits. You are paying for the search, not the result.
+- Running out mid-action returns a clear "insufficient credits" response before any work starts, so a depleted balance never leaves you half-charged.
+
+## Monthly allowance by plan
+
+Each plan grants a monthly allowance:
+
+| Plan | Monthly credits |
+|------|-----------------|
+| Free trial | 50 |
+| Starter | 250 |
+| Pro | 2,000 |
+| Enterprise | 25,000 |
+
+Free-trial workspaces get their allowance once, at the start of the trial. Paid workspaces get a fresh grant on every billing cycle. The exact reset date is shown on the credits card next to your balance.
+
+## Buying top-up packs
+
+Paid workspaces can buy top-up packs at any time. Three fixed sizes are available:
+
+- 500 credits
+- 2,000 credits
+- 10,000 credits
+
+Open **Settings, Billing**, find the **AI credits** card, and pick a pack. You are taken to Stripe Checkout to pay with the card on file. As soon as the payment settles, the credits land in your purchased pool and the balance on the card updates live.
+
+<Callout type="warn" title="Purchases settle through Stripe">
+Credits are added only after Stripe confirms the payment, not the moment you click. If you close the checkout tab before paying, nothing is charged and nothing is granted. A completed purchase is applied exactly once, even if Stripe retries the confirmation.
+</Callout>
+
+Top-up purchases require an active paid plan. On the free trial the pack buttons are replaced with a prompt to upgrade first.
+
+## Reading the transaction log
+
+The credits card shows a running log of every grant, purchase, and spend, newest first. Each row shows the activity, the signed credit change (green for grants and purchases, plain for spends), the balance afterward, and when it happened. Use **Load more** to page back through older activity.
+
+## Frequently asked questions
+
+**Do unused monthly credits roll over?**
+No. The monthly pool is reset to your plan's allowance each cycle. Buy a top-up pack if you want credits that carry over.
+
+**Do purchased credits expire?**
+No. Purchased credits stay on your balance until you spend them, through any number of resets.
+
+**What happens to my credits if I change plans?**
+Your monthly allowance follows your new plan from the next billing cycle. Purchased credits are unaffected.
+
+**What happens to purchased credits if I cancel?**
+They remain on the ledger. Monthly grants stop once the subscription ends, but any purchased balance you already hold stays until spent.

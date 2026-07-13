@@ -199,6 +199,16 @@ The referral program and billing discount history are part of `/subscription/*`,
 | GET | `/subscription/referral/earnings` | `manage_billing` |
 | GET | `/subscription/discounts` | `manage_billing` |
 
+### AI credits
+
+Credit balance, top-up purchases, and the transaction log are part of `/subscription/*`, so they are JWT only and never accept an API key. Purchases are fulfilled only in the Stripe webhook, never in the checkout call. See the [AI credits](/guides/ai-credits/) guide for what each action costs and the pack and reset rules.
+
+| Method | Path | JWT permission |
+|--------|------|----------------|
+| GET | `/subscription/credits` | `manage_billing` |
+| GET | `/subscription/credits/transactions` | `manage_billing` |
+| POST | `/subscription/credits/checkout` | `manage_billing` |
+
 ## Public
 
 - `GET /health`

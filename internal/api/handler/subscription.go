@@ -199,8 +199,11 @@ func (h *Handler) HandleStripeWebhook(c *gin.Context) {
 
 	errX = h.StripeService.ProcessWebhookEvent(c.Request.Context(), event)
 	if errX != nil {
-		// Log but don't fail - Stripe will retry
-		c.JSON(http.StatusOK, gin.H{"received": true, "error": errX.Message})
+		// Return a retryable 5xx so Stripe re-delivers. The event was NOT
+		// recorded as processed (see ProcessWebhookEvent), and every handler is
+		// idempotent on the event id, so a retry safely re-runs without
+		// double-applying. Silently 200-ing here would strand paid-for credits.
+		c.JSON(http.StatusInternalServerError, gin.H{"received": false, "error": errX.Message})
 		return
 	}
 
