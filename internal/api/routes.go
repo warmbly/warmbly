@@ -268,6 +268,14 @@ func Run(
 		jwtOnly := base.Group("")
 		jwtOnly.Use(m.AuthMiddleware())
 
+		// Warmbly MCP server: exposes the shared tool registry over the MCP
+		// streamable-HTTP transport. API-key only; each tool is gated by its
+		// RequiredAPIPerm, send-class tools are never exposed, and per-key rate
+		// limits apply.
+		mcpServer := base.Group("/mcp")
+		mcpServer.Use(m.APIKeyMiddleware(), m.APIKeyUsageMiddleware(), m.RateLimitMiddleware(models.RateLimitWrite))
+		mcpServer.POST("", h.MCPEndpoint)
+
 		// API-accessible group: routes that accept either a JWT or an API key.
 		// CombinedAuthMiddleware sets the same context keys for both; the usage
 		// middleware records one log row per API-key request (JWT skipped).

@@ -251,6 +251,10 @@ External MCP servers whose tools the assistant can use (see [Connect MCP tools](
 | DELETE | `/ai/connections/:id` | `manage_settings` |
 | POST | `/ai/connections/:id/refresh` | `manage_settings` |
 
+## MCP server
+
+`POST /v1/mcp` exposes the tool registry over the [Model Context Protocol](/api/mcp/) streamable-HTTP transport. It is API-key only, each tool is gated by its scope, `tools/list` reflects only what the key allows, and send-class tools are never exposed. Per-key rate limits apply.
+
 ## Public
 
 - `GET /health`

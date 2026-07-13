@@ -1,0 +1,91 @@
+---
+title: MCP server
+description: Connect any MCP client (Claude Code, Claude Desktop, Cursor) to Warmbly and use your data and workflows as tools, scoped to an API key.
+icon: Plug
+---
+
+Warmbly speaks the [Model Context Protocol](https://modelcontextprotocol.io). Point any MCP client at Warmbly's server and it can search contacts, check campaigns, read your inbox, draft replies, and create draft campaigns and automations, all scoped to an API key you control.
+
+## Connection
+
+- **URL**: `https://api.warmbly.com/v1/mcp`
+- **Transport**: streamable HTTP
+- **Auth**: send your API key as a bearer token in the `Authorization` header.
+
+```
+Authorization: Bearer wmbly_...
+```
+
+The server exposes exactly the tools your key is allowed to use. A key with only read scopes sees only the read tools; a key with write scopes sees those too. This is the same tool set the in-product assistant uses, so an MCP client acts with precisely the permissions you granted the key, and nothing more.
+
+<Callout type="info" title="Scope your key">
+Create a dedicated API key for each MCP client and grant it only the scopes it needs (see [Permissions](/api/permissions/)). The `AI_AGENT` scope is a convenient way to grant assistant-style access; combine it with the read/write scopes for the data you want the client to reach.
+</Callout>
+
+## What is exposed
+
+Every tool is gated by its API permission. `tools/list` returns only the tools your key's mask allows. Sending-class actions (anything that would transmit email) are never exposed over MCP; the assistant only ever produces drafts.
+
+| Tool | Does | Required scope |
+|------|------|----------------|
+| `search_contacts` | Find contacts by text | `READ_CONTACTS` |
+| `get_contact` | Read one contact | `READ_CONTACTS` |
+| `update_contact_fields` | Update contact fields | `WRITE_CONTACTS` |
+| `add_tag` / `remove_tag` | Tag a contact | `WRITE_CONTACTS` |
+| `list_campaigns` | List campaigns | `READ_CAMPAIGNS` |
+| `get_campaign_stats` | Campaign stats | `READ_CAMPAIGNS` |
+| `create_campaign_draft` | Create a draft campaign | `WRITE_CAMPAIGNS` |
+| `create_task` / `create_deal` | Create CRM records | `WRITE_CRM` |
+| `list_threads` / `get_thread` | Read the unified inbox | `READ_UNIBOX` |
+| `draft_reply` | Draft a reply (never sends) | `READ_UNIBOX` |
+| `create_automation_draft` | Create a disabled automation | `INTEGRATIONS` |
+| `search_web` / `fetch_url` | Search and read public pages | any |
+| `load_skill` | Read one of your playbooks | any |
+
+Per-key rate limits apply to MCP calls exactly as they do to the rest of the API.
+
+## Client configuration
+
+### Claude Code
+
+```
+claude mcp add --transport http warmbly https://api.warmbly.com/v1/mcp \
+  --header "Authorization: Bearer wmbly_..."
+```
+
+### Claude Desktop
+
+Add to your `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "warmbly": {
+      "type": "http",
+      "url": "https://api.warmbly.com/v1/mcp",
+      "headers": { "Authorization": "Bearer wmbly_..." }
+    }
+  }
+}
+```
+
+### Cursor
+
+Add to `.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "warmbly": {
+      "url": "https://api.warmbly.com/v1/mcp",
+      "headers": { "Authorization": "Bearer wmbly_..." }
+    }
+  }
+}
+```
+
+## See also
+
+- [Authentication](/api/authentication/) for how API keys work.
+- [Permissions](/api/permissions/) for the full scope list.
+- To connect Warmbly to external MCP servers instead (the other direction), see the [Connect MCP tools](/guides/connect-mcp-tools/) guide.
