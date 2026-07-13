@@ -21,6 +21,7 @@ import (
 	workerapp "github.com/warmbly/warmbly/internal/app/worker"
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/events"
+	"github.com/warmbly/warmbly/internal/infrastructure/apns"
 	"github.com/warmbly/warmbly/internal/infrastructure/cache"
 	"github.com/warmbly/warmbly/internal/infrastructure/codec"
 	"github.com/warmbly/warmbly/internal/infrastructure/db"
@@ -283,6 +284,17 @@ func main() {
 		}
 	}
 	notificationService.WireDelivery(notifEmail, integrationServiceC, repository.NewUserRepostory(primaryDB, kmsClient))
+	// Mobile push (APNs) fires from THIS process too: reply/bounce/complaint
+	// notifications are created here. Redis backs the immediate-then-digest
+	// window shared with the backend. The sender stays a nil interface (not a
+	// typed-nil *apns.Client) when unconfigured.
+	var pushSender notification.PushSender
+	if apnsClient, aerr := apns.FromEnv(); aerr != nil {
+		log.Printf("Warning: APNs push disabled: %v", aerr)
+	} else if apnsClient != nil {
+		pushSender = apnsClient
+	}
+	notificationService.WirePush(pushSender, repository.NewDeviceTokenRepository(primaryDB.Pool), redisCache.Client)
 	advancedService.WireNotifier(notificationService)
 	// Reply pulses fire in THIS process too (inbox ingest classifies replies).
 	advancedService.WireRealtime(streamingPublisher)

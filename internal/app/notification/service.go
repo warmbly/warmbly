@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
 
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
@@ -53,6 +54,14 @@ type Service interface {
 	// the email/Slack channels (wired post-construction in both mains). Any
 	// may be nil — the matching channel is then skipped.
 	WireDelivery(email EmailSender, slack SlackNotifier, users UserLookup)
+
+	// WirePush attaches APNs + device-token storage + the Redis digest window
+	// and starts the digest loop. Any nil dependency leaves push disabled.
+	WirePush(sender PushSender, tokens repository.DeviceTokenRepository, rdb *redis.Client)
+
+	// RegisterDevice / UnregisterDevice manage the caller's APNs tokens.
+	RegisterDevice(ctx context.Context, userID uuid.UUID, platform, token, environment string) error
+	UnregisterDevice(ctx context.Context, userID uuid.UUID, token string) error
 }
 
 type service struct {
@@ -61,6 +70,10 @@ type service struct {
 	email     EmailSender
 	slack     SlackNotifier
 	users     UserLookup
+
+	push         PushSender
+	deviceTokens repository.DeviceTokenRepository
+	pushRedis    *redis.Client
 }
 
 func (s *service) WireDelivery(email EmailSender, slack SlackNotifier, users UserLookup) {
@@ -162,6 +175,11 @@ func (s *service) Notify(ctx context.Context, userID uuid.UUID, orgID *uuid.UUID
 			defer cancel()
 			_ = s.slack.NotifySlack(ctx, org, title, body)
 		}()
+	}
+
+	// Push: immediate on a quiet window, digest-batched inside one (detached).
+	if cat.Channels.Push && s.push != nil && s.deviceTokens != nil && s.pushRedis != nil {
+		go s.deliverPush(userID, category, title, body, link)
 	}
 }
 

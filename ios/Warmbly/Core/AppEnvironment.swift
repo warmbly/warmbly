@@ -21,13 +21,16 @@ final class AppEnvironment {
         self.api = api
         session = SessionStore(api: api)
         realtime = RealtimeService(api: api)
+        PushManager.shared.configure(api: api)
 
         session.onReady = { [weak self] userID, orgID in
             self?.realtime.connect(userID: userID, orgID: orgID)
+            PushManager.shared.sessionReady()
         }
         session.onLoggedOut = { [weak self] in
             self?.realtime.disconnect()
             self?.badges.uniboxUnread = 0
+            PushManager.shared.sessionEnded()
         }
     }
 }

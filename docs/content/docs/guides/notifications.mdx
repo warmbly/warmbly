@@ -22,7 +22,7 @@ The feed updates live. When a notification is raised, it appears in your feed an
 
 ## Categories
 
-Warmbly notifies on a fixed set of categories, grouped by what they tell you. They fall into two groups: inbound activity and health.
+Warmbly notifies on a fixed set of categories, grouped by what they tell you: inbound activity, health, and security.
 
 ### Inbound activity
 
@@ -41,6 +41,10 @@ These are deliverability and infrastructure alerts. They are about your sending 
 
 For more on what bounces and complaints mean for your reputation, and the thresholds Warmbly acts on, see [Deliverability](/guides/deliverability).
 
+### Security
+
+- **New sign-in**: your account was accessed from a device you have not used before, with the browser, OS, and approximate location in the notification body.
+
 ## Per-category preferences
 
 You control notifications per category from **Settings → Notifications**. Each category has its own toggle, so you can keep the ones that matter to you and silence the rest.
@@ -49,8 +53,9 @@ The settings page groups the toggles the same way as above:
 
 - **Inbound activity** Reply received, Out-of-office detected.
 - **Health** Bounce detected, Spam complaint, Worker downtime.
+- **Security** New sign-in.
 
-Changes are not saved as you click. When you flip a toggle, a **Save** and a **Discard** action appear; your changes only take effect once you press Save. Discard returns the toggles to their last saved state.
+Toggles save automatically as you flip them; the save indicator next to the page title confirms each change has persisted.
 
 ## Defaults
 
@@ -61,6 +66,7 @@ The defaults are chosen to be useful without being noisy. The shipped defaults a
 | Bounce detected | Health | On |
 | Spam complaint | Health | On |
 | Worker downtime | Health | On |
+| New sign-in | Security | On |
 | Reply received | Inbound | Off |
 | Out-of-office detected | Inbound | Off |
 
@@ -77,6 +83,7 @@ Even with the reply notification off, you never miss responses. Every reply stil
 The settings page controls where enabled notifications are delivered. The channel toggles apply across every category above.
 
 - **In-app**: the bell in the dashboard. Always on, controlled by the per-category toggles above.
+- **Mobile push**: alerts on devices signed in with the Warmbly iOS app. Registration happens automatically when you allow notifications in the app, and signing out on a device stops its pushes. Push is batched so a burst never pings you once per event: the first notification in a quiet stretch is delivered immediately, and anything else that arrives inside the batching window (five hours by default) is held and sent as a single summary, like "3 new replies", when the window closes.
 - **Email**: delivery to your account email. Turn it on to also receive each enabled notification as an email with a link back into the app.
 - **Slack**: posts each enabled notification to your connected Slack, on the channel you have configured for Slack in the [Integrations](/guides/integrations) tab. Connect Slack and set up a channel there first; until a Slack channel is configured the toggle saves but nothing is delivered.
 

@@ -72,6 +72,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/worker_orchestrator"
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/events"
+	"github.com/warmbly/warmbly/internal/infrastructure/apns"
 	"github.com/warmbly/warmbly/internal/infrastructure/cache"
 	"github.com/warmbly/warmbly/internal/infrastructure/cloudprovider"
 	"github.com/warmbly/warmbly/internal/infrastructure/cloudprovider/hetzner"
@@ -970,6 +971,17 @@ func main() {
 		// here too).
 		notificationService = notification.NewService(repository.NewNotificationRepository(primaryDB.Pool), streamingPublisher)
 		notificationService.WireDelivery(emailNotificationService, integrationServiceForHandler, userRepostory)
+		// Mobile push (APNs): device registration always works; delivery only
+		// activates when the APNS_* env is configured. The Redis client backs
+		// the shared immediate-then-digest push window. The sender stays a nil
+		// interface (not a typed-nil *apns.Client) when unconfigured.
+		var pushSender notification.PushSender
+		if apnsClient, aerr := apns.FromEnv(); aerr != nil {
+			log.Printf("Warning: APNs push disabled: %v", aerr)
+		} else if apnsClient != nil {
+			pushSender = apnsClient
+		}
+		notificationService.WirePush(pushSender, repository.NewDeviceTokenRepository(primaryDB.Pool), cache.Client)
 		advancedService.WireNotifier(notificationService)
 		// New-device sign-in alerts: the token service fires this on session
 		// creation from an unrecognized device, delivered as a security

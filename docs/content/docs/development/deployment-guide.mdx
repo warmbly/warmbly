@@ -73,6 +73,16 @@ WORKER_AWS_ACCESS_KEY_ID=...
 WORKER_AWS_SECRET_ACCESS_KEY=...
 ```
 
+Mobile push via APNs (optional; omit to disable push delivery while device registration keeps working). Set on the backend and the consumer; the digest window controls how push bursts are batched (first event immediate, the rest summarized when the window closes):
+
+```
+APNS_KEY_PATH=/etc/warmbly/AuthKey_ABC123.p8   # or APNS_KEY with the PEM contents inline
+APNS_KEY_ID=ABC123DEFG
+APNS_TEAM_ID=TEAM123456
+APNS_TOPIC=com.warmbly.app
+NOTIFICATION_PUSH_WINDOW=5h                    # optional, default 5h
+```
+
 Release auto-update (optional; safe to omit on a fresh install):
 
 ```

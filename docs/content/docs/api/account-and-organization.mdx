@@ -532,12 +532,12 @@ Auth: Session only (not available to API keys).
 ```json
 {
   "preferences": {
-    "inbound_reply": { "enabled": false, "channels": { "in_app": true, "email": false, "slack": false } },
-    "inbound_out_of_office": { "enabled": false, "channels": { "in_app": true, "email": false, "slack": false } },
-    "health_bounce": { "enabled": true, "channels": { "in_app": true, "email": false, "slack": false } },
-    "health_complaint": { "enabled": true, "channels": { "in_app": true, "email": false, "slack": false } },
-    "health_worker_downtime": { "enabled": true, "channels": { "in_app": true, "email": false, "slack": false } },
-    "security_new_signin": { "enabled": true, "channels": { "in_app": true, "email": false, "slack": false } }
+    "inbound_reply": { "enabled": false, "channels": { "in_app": true, "email": false, "slack": false, "push": true } },
+    "inbound_out_of_office": { "enabled": false, "channels": { "in_app": true, "email": false, "slack": false, "push": true } },
+    "health_bounce": { "enabled": true, "channels": { "in_app": true, "email": false, "slack": false, "push": true } },
+    "health_complaint": { "enabled": true, "channels": { "in_app": true, "email": false, "slack": false, "push": true } },
+    "health_worker_downtime": { "enabled": true, "channels": { "in_app": true, "email": false, "slack": false, "push": true } },
+    "security_new_signin": { "enabled": true, "channels": { "in_app": true, "email": false, "slack": false, "push": true } }
   }
 }
 ```
@@ -554,17 +554,17 @@ Auth: Session only (not available to API keys).
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `preferences` | object | yes | The complete preferences object. Each of the six categories has `enabled` plus a `channels` object (`in_app`, `email`, `slack`). |
+| `preferences` | object | yes | The complete preferences object. Each of the six categories has `enabled` plus a `channels` object (`in_app`, `email`, `slack`, `push`). |
 
 ```json
 {
   "preferences": {
-    "inbound_reply": { "enabled": true, "channels": { "in_app": true, "email": true, "slack": false } },
-    "inbound_out_of_office": { "enabled": false, "channels": { "in_app": true, "email": false, "slack": false } },
-    "health_bounce": { "enabled": true, "channels": { "in_app": true, "email": false, "slack": false } },
-    "health_complaint": { "enabled": true, "channels": { "in_app": true, "email": false, "slack": false } },
-    "health_worker_downtime": { "enabled": true, "channels": { "in_app": true, "email": false, "slack": false } },
-    "security_new_signin": { "enabled": true, "channels": { "in_app": true, "email": false, "slack": false } }
+    "inbound_reply": { "enabled": true, "channels": { "in_app": true, "email": true, "slack": false, "push": true } },
+    "inbound_out_of_office": { "enabled": false, "channels": { "in_app": true, "email": false, "slack": false, "push": true } },
+    "health_bounce": { "enabled": true, "channels": { "in_app": true, "email": false, "slack": false, "push": true } },
+    "health_complaint": { "enabled": true, "channels": { "in_app": true, "email": false, "slack": false, "push": true } },
+    "health_worker_downtime": { "enabled": true, "channels": { "in_app": true, "email": false, "slack": false, "push": true } },
+    "security_new_signin": { "enabled": true, "channels": { "in_app": true, "email": false, "slack": false, "push": true } }
   }
 }
 ```
@@ -632,6 +632,50 @@ Auth: Session only (not available to API keys).
 | Parameter | In | Type | Description |
 |-----------|----|------|-------------|
 | `id` | path | uuid | The notification id. |
+
+#### Response
+
+```json
+{ "ok": true }
+```
+
+### Register a device token
+
+`POST /auth/me/device-tokens`
+
+Registers an APNs device token for mobile push delivery. The mobile app calls this automatically after the user allows notifications; it is an upsert, so repeating it on every launch is safe. A token already registered by another account moves to the caller (the device changed accounts). Delivery of enabled notifications follows the `push` channel in the preferences above, batched server-side: the first event in a quiet stretch pushes immediately, later events inside the batching window arrive as one summary.
+
+Auth: Session only (not available to API keys).
+
+#### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `token` | string | yes | The hex APNs device token. |
+| `platform` | string | no | Only `ios` today (the default). |
+| `environment` | string | no | `production` (default) or `development` for sandbox builds. |
+
+```json
+{ "token": "a1b2c3...", "platform": "ios", "environment": "production" }
+```
+
+#### Response
+
+```json
+{ "ok": true }
+```
+
+### Delete a device token
+
+`DELETE /auth/me/device-tokens/:token`
+
+Removes one of the caller's device tokens. The mobile app calls this on sign-out so the device stops receiving the account's pushes.
+
+Auth: Session only (not available to API keys).
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `token` | path | string | The hex device token to remove. |
 
 #### Response
 

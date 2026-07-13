@@ -225,9 +225,10 @@ struct MoreChannelPrefs: Codable, Sendable {
     var inApp: Bool?
     var email: Bool?
     var slack: Bool?
+    var push: Bool?
 
     enum CodingKeys: String, CodingKey {
-        case email, slack
+        case email, slack, push
         case inApp = "in_app"
     }
 }

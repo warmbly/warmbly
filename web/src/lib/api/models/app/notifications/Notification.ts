@@ -4,6 +4,7 @@ export interface ChannelPrefs {
     in_app: boolean;
     email: boolean;
     slack: boolean;
+    push: boolean;
 }
 
 export interface CategoryPref {

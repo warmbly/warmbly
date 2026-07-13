@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 @MainActor
 @Observable
@@ -22,6 +23,7 @@ final class MoreNotificationsStore {
             )
             items = feed.notifications ?? []
             unread = feed.unread ?? 0
+            PushManager.shared.setBadge(unread)
             let envelope: MoreNotificationPreferencesEnvelope = try await api.get("auth/me/notification-preferences")
             preferences = envelope.preferences?.categories ?? [:]
             loadedOnce = true
@@ -35,6 +37,7 @@ final class MoreNotificationsStore {
         guard let index = items.firstIndex(where: { $0.id == id }), items[index].isUnread else { return }
         items[index].readAt = Date()
         unread = max(0, unread - 1)
+        PushManager.shared.setBadge(unread)
         let _: MoreOkResponse? = try? await api.post("auth/me/notifications/\(id)/read")
     }
 
@@ -44,19 +47,44 @@ final class MoreNotificationsStore {
             items[index].readAt = now
         }
         unread = 0
+        PushManager.shared.setBadge(0)
         // PUT on the collection marks everything read; the handler ignores the body.
         let _: MoreOkResponse? = try? await api.put("auth/me/notifications", body: EmptyBody())
     }
 
     /// Autosaves the full preferences object, mirroring the web settings page.
     func setEnabled(_ key: String, _ enabled: Bool, _ api: APIClient) async {
-        let previous = preferences[key]
-        var pref = previous ?? MoreCategoryPref(
+        let previous = preferences
+        var pref = preferences[key] ?? MoreCategoryPref(
             enabled: enabled,
-            channels: MoreChannelPrefs(inApp: true, email: false, slack: false)
+            channels: MoreChannelPrefs(inApp: true, email: false, slack: false, push: true)
         )
         pref.enabled = enabled
         preferences[key] = pref
+        await persist(previous: previous, api)
+    }
+
+    /// Global channel state, like the web settings page: a channel reads "on"
+    /// only when every category delivers to it.
+    func channelOn(_ channel: WritableKeyPath<MoreChannelPrefs, Bool?>) -> Bool {
+        !preferences.isEmpty && preferences.values.allSatisfy { $0.channels?[keyPath: channel] == true }
+    }
+
+    /// Flips a delivery channel across every category at once (the web has the
+    /// same all-or-nothing toggle; per-category channel splits stay web/API-only).
+    func setChannel(_ channel: WritableKeyPath<MoreChannelPrefs, Bool?>, _ on: Bool, _ api: APIClient) async {
+        let previous = preferences
+        for key in preferences.keys {
+            var pref = preferences[key] ?? MoreCategoryPref(enabled: false, channels: nil)
+            var channels = pref.channels ?? MoreChannelPrefs(inApp: true, email: false, slack: false, push: true)
+            channels[keyPath: channel] = on
+            pref.channels = channels
+            preferences[key] = pref
+        }
+        await persist(previous: previous, api)
+    }
+
+    private func persist(previous: [String: MoreCategoryPref], _ api: APIClient) async {
         do {
             let body = MorePreferencesBody(preferences: NotificationPreferences(categories: preferences))
             let echoed: MoreNotificationPreferencesEnvelope = try await api.put(
@@ -67,7 +95,7 @@ final class MoreNotificationsStore {
                 preferences = categories
             }
         } catch {
-            preferences[key] = previous
+            preferences = previous
             actionError = error.localizedDescription
         }
     }
@@ -162,7 +190,10 @@ struct NotificationsView: View {
                 }
             }
         }
-        .task { await store.load(env.api) }
+        .task {
+            await store.load(env.api)
+            await PushManager.shared.refreshAuthorization()
+        }
         .onChange(of: env.realtime.pulse(for: .notifications)) {
             Task { await store.load(env.api) }
         }
@@ -291,7 +322,68 @@ struct NotificationsView: View {
                     preferenceRow(key)
                 }
             }
-            Text("Only in-app delivery is live today. Email and Slack channels are coming.")
+            MoreFlatSectionHeader("Channels")
+            channelRow(
+                symbol: "app.badge.fill",
+                tone: .sky,
+                label: "In-app",
+                caption: "The feed above; always on for enabled categories."
+            ) {
+                Text("On")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Tone.emerald.color)
+            }
+            channelRow(
+                symbol: "iphone.gen3.radiowaves.left.and.right",
+                tone: .rose,
+                label: "Push",
+                caption: "Alerts on this device. The first event pushes right away; bursts arrive as one summary instead of a ping per event."
+            ) {
+                Toggle("", isOn: channelBinding(\.push))
+                    .labelsHidden()
+                    .tint(WTheme.accent)
+                    .disabled(PushManager.shared.authorization == .denied)
+            }
+            if PushManager.shared.authorization == .denied {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(Tone.amber.color)
+                    Text("Notifications are off for Warmbly in iOS Settings.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 8)
+                    Button("Open Settings") {
+                        if let url = URL(string: UIApplication.openNotificationSettingsURLString) {
+                            UIApplication.shared.open(url)
+                        }
+                    }
+                    .font(.footnote.weight(.medium))
+                }
+                .padding(.vertical, 6)
+                .moreFlatRow(textLeading: MoreFlatMetrics.tileTextLeading)
+            }
+            channelRow(
+                symbol: "envelope.fill",
+                tone: .indigo,
+                label: "Email",
+                caption: "Delivery to your account email."
+            ) {
+                Toggle("", isOn: channelBinding(\.email))
+                    .labelsHidden()
+                    .tint(WTheme.accent)
+            }
+            channelRow(
+                symbol: "bubble.left.and.bubble.right.fill",
+                tone: .emerald,
+                label: "Slack",
+                caption: "Posts to the Slack channel set up in Integrations on the web."
+            ) {
+                Toggle("", isOn: channelBinding(\.slack))
+                    .labelsHidden()
+                    .tint(WTheme.accent)
+            }
+            Text("Channels apply across every enabled category above.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .padding(.top, 16)
@@ -335,5 +427,37 @@ struct NotificationsView: View {
                 Task { await store.setEnabled(key, newValue, env.api) }
             }
         )
+    }
+
+    private func channelBinding(_ channel: WritableKeyPath<MoreChannelPrefs, Bool?>) -> Binding<Bool> {
+        Binding(
+            get: { store.channelOn(channel) },
+            set: { newValue in
+                Task { await store.setChannel(channel, newValue, env.api) }
+            }
+        )
+    }
+
+    private func channelRow(
+        symbol: String,
+        tone: Tone,
+        label: String,
+        caption: String,
+        @ViewBuilder trailing: () -> some View
+    ) -> some View {
+        HStack(spacing: 12) {
+            IconTile(symbol: symbol, tone: tone, size: 34)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                    .font(.body.weight(.medium))
+                Text(caption)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 8)
+            trailing()
+        }
+        .padding(.vertical, 9)
+        .moreFlatRow(textLeading: MoreFlatMetrics.tileTextLeading)
     }
 }

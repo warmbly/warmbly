@@ -61,9 +61,9 @@ export default function NotificationsSettingsPage() {
         "security_new_signin",
     ];
     // Channels present globally: "on" when every category carries the channel.
-    const channelOn = (ch: "email" | "slack") =>
+    const channelOn = (ch: "email" | "slack" | "push") =>
         !!draft && CATEGORY_KEYS.every((k) => draft[k].channels[ch]);
-    const setChannel = (ch: "email" | "slack", on: boolean) =>
+    const setChannel = (ch: "email" | "slack" | "push", on: boolean) =>
         setDraft((d) => {
             if (!d) return d;
             const next = { ...d };
@@ -105,6 +105,12 @@ export default function NotificationsSettingsPage() {
                     <Section eyebrow="Channels" description="Where enabled notifications are delivered. Applies across every category above.">
                         <Row label="In-app" description="The bell in the dashboard chrome (controlled per category above).">
                             <span className="text-[11px] font-medium text-emerald-600">On</span>
+                        </Row>
+                        <Row
+                            label="Mobile push"
+                            description="Alerts on devices signed in with the Warmbly iOS app. The first event pushes right away; bursts arrive as one summary instead of a ping per event."
+                        >
+                            <Toggle on={channelOn("push")} onChange={(v) => setChannel("push", v)} />
                         </Row>
                         <Row label="Email" description="Delivery to your account email.">
                             <Toggle on={channelOn("email")} onChange={(v) => setChannel("email", v)} />

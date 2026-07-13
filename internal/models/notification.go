@@ -20,12 +20,13 @@ const (
 	NotifSecuritySignIn  NotificationCategory = "security_new_signin"
 )
 
-// ChannelPrefs is the per-category delivery toggles. Only InApp is delivered
-// today across in-app, email, and a connected Slack workspace.
+// ChannelPrefs is the per-category delivery toggles: in-app feed, account
+// email, a connected Slack workspace, and mobile push (APNs).
 type ChannelPrefs struct {
 	InApp bool `json:"in_app"`
 	Email bool `json:"email"`
 	Slack bool `json:"slack"`
+	Push  bool `json:"push"`
 }
 
 // CategoryPref is the enable flag + channel toggles for one category.
@@ -48,9 +49,12 @@ type NotificationPreferences struct {
 // DefaultNotificationPreferences is the merge base. Health categories default ON
 // (operationally important + low volume); inbound categories default OFF (a big
 // campaign would otherwise flood the feed with a notification per recipient).
+// Push defaults on: it only fires for devices the user explicitly registered by
+// granting the OS notification permission, and enabled categories should reach
+// those devices without a second opt-in.
 func DefaultNotificationPreferences() NotificationPreferences {
-	on := CategoryPref{Enabled: true, Channels: ChannelPrefs{InApp: true}}
-	off := CategoryPref{Enabled: false, Channels: ChannelPrefs{InApp: true}}
+	on := CategoryPref{Enabled: true, Channels: ChannelPrefs{InApp: true, Push: true}}
+	off := CategoryPref{Enabled: false, Channels: ChannelPrefs{InApp: true, Push: true}}
 	return NotificationPreferences{
 		InboundReply:    off,
 		InboundOOO:      off,
@@ -98,4 +102,22 @@ type Notification struct {
 // UpdateNotificationPreferencesRequest is the PUT payload.
 type UpdateNotificationPreferencesRequest struct {
 	Preferences NotificationPreferences `json:"preferences"`
+}
+
+// DeviceToken is one push-capable device registration (APNs).
+type DeviceToken struct {
+	ID          uuid.UUID `json:"id"`
+	UserID      uuid.UUID `json:"user_id"`
+	Platform    string    `json:"platform"`
+	Token       string    `json:"token"`
+	Environment string    `json:"environment"`
+	CreatedAt   time.Time `json:"created_at"`
+	LastSeenAt  time.Time `json:"last_seen_at"`
+}
+
+// RegisterDeviceTokenRequest is the POST payload from the mobile app.
+type RegisterDeviceTokenRequest struct {
+	Token       string `json:"token" binding:"required"`
+	Platform    string `json:"platform"`
+	Environment string `json:"environment"`
 }

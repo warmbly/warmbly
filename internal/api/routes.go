@@ -234,6 +234,10 @@ func Run(
 		protectedAuth.PUT("/me/notifications", h.MarkAllNotificationsRead)
 		protectedAuth.POST("/me/notifications/:id/read", h.MarkNotificationRead)
 
+		// APNs device registration for mobile push (user-scoped).
+		protectedAuth.POST("/me/device-tokens", h.RegisterDeviceToken)
+		protectedAuth.DELETE("/me/device-tokens/:token", h.DeleteDeviceToken)
+
 		// 2FA enrollment + management (user-scoped, behind a live session).
 		protectedAuth.GET("/2fa/status", h.TwoFAStatus)
 		protectedAuth.POST("/2fa/enroll/start", h.TwoFAEnrollStart)
