@@ -149,10 +149,22 @@ var (
 	_ WritingGenerator = (*GenerationClient)(nil)
 )
 
+// CompletionRequest is a single, tool-less generation with an explicit system
+// prompt. Used by reply drafts (M4) and automation ai_generate (M9).
+type CompletionRequest struct {
+	System    string
+	Prompt    string
+	Model     string
+	MaxTokens int
+}
+
 // Provider is a pluggable LLM backend that can run a tool-use agent loop.
 type Provider interface {
 	// RunAgent executes the tool-use loop and returns the final result.
 	RunAgent(ctx context.Context, req AgentRequest) (*AgentResult, error)
+	// Complete runs a single completion (no tools) with an explicit system
+	// prompt, returning the text + token usage.
+	Complete(ctx context.Context, req CompletionRequest) (*WritingResult, error)
 	// ModelForTier returns the provider's model id for the org tier (paid gets
 	// the stronger model).
 	ModelForTier(paid bool) string

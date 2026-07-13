@@ -28,6 +28,7 @@ import {
     SearchIcon,
     SendIcon,
     SettingsIcon,
+    SparklesIcon,
     XIcon,
 } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -41,6 +42,9 @@ import { bookingURL, prefilledBookingURL } from "@/lib/api/models/app/integratio
 import { useAppStore } from "@/stores";
 import type Template from "@/lib/api/models/app/templates/Template";
 import WriteWithAI from "@/components/app/campaigns/sequences/WriteWithAI";
+import useDraftReply from "@/lib/api/hooks/app/unibox/useDraftReply";
+import type { AppError } from "@/lib/api/client/normalizeError";
+import buildError from "@/lib/helper/buildError";
 import type UniboxEmail from "@/lib/api/models/app/unibox/UniboxEmail";
 import {
     PopoverMenu,
@@ -205,6 +209,23 @@ export function ReplyComposer({ threadId, replyTo, mode, onClose }: ReplyCompose
     const [customMode, setCustomMode] = React.useState(false);
     const [customValue, setCustomValue] = React.useState(defaultCustomScheduleValue);
     const [templateOpen, setTemplateOpen] = React.useState(false);
+
+    // Context-grounded AI reply draft. Fills the composer; the human sends.
+    const draftReplyMut = useDraftReply();
+    async function draftAIReply() {
+        try {
+            const res = await toast.promise(draftReplyMut.mutateAsync({ thread_id: threadId, idempotency_key: crypto.randomUUID() }), {
+                loading: "Drafting reply…",
+                success: "Draft ready",
+                error: (e: AppError) => buildError(e),
+            });
+            setBody((b) =>
+                (b.trim() ? `${b.trimEnd()}\n\n${res.text}` : res.text).slice(0, MAX_BODY_LEN),
+            );
+        } catch {
+            /* surfaced via toast */
+        }
+    }
 
     // Reset whenever the user picks a different target message or
     // switches between reply and forward. Without this the body, chips,
@@ -585,6 +606,21 @@ export function ReplyComposer({ threadId, replyTo, mode, onClose }: ReplyCompose
                         <SendIcon className="w-3 h-3" />
                     )}
                     {isSending ? "Sending" : "Send"}
+                </button>
+
+                <button
+                    type="button"
+                    onClick={draftAIReply}
+                    disabled={draftReplyMut.isPending}
+                    title="Draft a context-grounded reply with AI"
+                    className="h-7 px-2.5 rounded-md border border-slate-200 hover:border-sky-400 hover:text-sky-700 text-[12px] text-slate-600 inline-flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                >
+                    {draftReplyMut.isPending ? (
+                        <Loader2Icon className="w-3 h-3 animate-spin" />
+                    ) : (
+                        <SparklesIcon className="w-3 h-3" />
+                    )}
+                    Draft reply
                 </button>
 
                 <WriteWithAI

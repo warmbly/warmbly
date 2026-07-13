@@ -96,10 +96,50 @@ func BuildVoiceRules(vc VoiceContext) string {
 	return b.String()
 }
 
-// writingSystemPrompt builds the instruction shared by the writing-assistant
-// providers, folding in the optional caller tone on top of the human-writing
-// rules. Retained as a thin wrapper over BuildVoiceRules so the existing
-// writing-assistant call sites are unchanged.
-func writingSystemPrompt(tone string) string {
-	return BuildVoiceRules(VoiceContext{Tone: tone})
+// replyRules is the humanizer voice + hard bans, framed for REPLYING to an
+// inbound message rather than writing a cold first-touch email. Shares the same
+// no-em-dash / no-AI-vocab / vary-rhythm rules so replies read like the same
+// person, but the structure responds to what the other person said.
+const replyRules = `You are helping the user reply to an email they received. Write the reply body as the user, in their voice, as a real busy person would type it.
+
+OUTPUT
+- Output only the reply body. No subject, no preamble, no "Sure, here is", no quoted original.
+- Keep it tight. Answer what they asked, move it forward, stop. Usually 2 to 5 sentences.
+
+STRUCTURE
+- Respond directly to the last message. Acknowledge their point in one line, then answer or propose the next step.
+- If they asked a question, answer it plainly. If they raised an objection, address it without getting defensive.
+- End with one clear, low-friction next step (a specific time, a yes/no question, a short offer). One ask, not three.
+
+VOICE AND RHYTHM
+- Contractions always. Active voice. Vary sentence length; let a short line land alone.
+- Warm but direct. Sound like a person between meetings, not a support macro.
+
+HARD BANS (never produce these)
+- Em dashes. Use a period, comma, or parentheses.
+- AI vocabulary: delve, leverage, utilize, robust, seamless, elevate, streamline, comprehensive, foster, showcase, synergy, circle back, touch base, moreover, furthermore, additionally.
+- Formulaic openers: "I hope this email finds you well", "Thank you for reaching out", "I wanted to follow up".
+- Over-politeness and exclamation-point friendliness. Summary closers ("Looking forward to hearing from you").
+- Passive voice that hides who acted. ALL-CAPS, spammy phrasing.
+
+SELF-CHECK: does it answer their actual message? one clear next step? zero em dashes, zero banned phrases? sounds like a person typed it fast? If not, rewrite.`
+
+// BuildReplyRules composes the reply-framed humanizer with the org grounding.
+// Used by the unibox reply-draft endpoint (M4) and the inbox agent (M10).
+func BuildReplyRules(vc VoiceContext) string {
+	var b strings.Builder
+	b.WriteString(replyRules)
+	if p := strings.TrimSpace(vc.ProductDescription); p != "" {
+		fmt.Fprintf(&b, "\n\nWHAT THE USER SELLS (context only, do not pitch unless relevant): %s", p)
+	}
+	if icp := strings.TrimSpace(vc.ICPNotes); icp != "" {
+		fmt.Fprintf(&b, "\n\nWHO THEY SELL TO: %s", icp)
+	}
+	if vp := strings.TrimSpace(vc.VoiceProfile); vp != "" {
+		fmt.Fprintf(&b, "\n\nHOUSE VOICE (match where it does not conflict with the rules above): %s", vp)
+	}
+	if tone := strings.TrimSpace(vc.Tone); tone != "" {
+		fmt.Fprintf(&b, "\n\nTONE: %s.", tone)
+	}
+	return b.String()
 }

@@ -122,7 +122,8 @@ func (h *Handler) GenerateWriting(c *gin.Context) {
 	// Generate. On provider failure, refund the credit so the customer is not
 	// charged for a completion they never received. The refund is best-effort;
 	// a failed refund is logged via the audit trail rather than surfaced.
-	result, gerr := h.WritingGenerator.GenerateWriting(c.Request.Context(), model, req.Prompt, req.Tone)
+	voice := h.orgVoice(c.Request.Context(), *orgID, req.Tone)
+	result, gerr := h.WritingGenerator.GenerateWriting(c.Request.Context(), model, req.Prompt, voice)
 	if gerr != nil {
 		if bal, rerr := h.CreditService.Grant(c.Request.Context(), *orgID, creditsPerWrite, "writing_assistant_refund"); rerr == nil {
 			remaining = bal

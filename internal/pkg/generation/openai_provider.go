@@ -313,12 +313,39 @@ func (p *openAIProvider) RunAgent(ctx context.Context, req AgentRequest) (*Agent
 	return result, nil
 }
 
+// Complete runs a single tool-less completion with an explicit system prompt.
+func (p *openAIProvider) Complete(ctx context.Context, req CompletionRequest) (*WritingResult, error) {
+	if p == nil {
+		return nil, ErrNotConfigured
+	}
+	model := req.Model
+	if model == "" {
+		model = p.modelTrial
+	}
+	maxTokens := req.MaxTokens
+	if maxTokens <= 0 {
+		maxTokens = defaultAgentTokens
+	}
+	resp, err := p.complete(ctx, model, maxTokens, []oaiMessage{
+		{Role: "system", Content: req.System},
+		{Role: "user", Content: req.Prompt},
+	}, nil)
+	if err != nil {
+		return nil, err
+	}
+	text := strings.TrimSpace(resp.Choices[0].Message.Content)
+	if text == "" {
+		return nil, errors.New("openai: empty completion")
+	}
+	return &WritingResult{Text: text, Model: model, TokensUsed: resp.Usage.TotalTokens}, nil
+}
+
 // --- WritingGenerator port ---
 
 // GenerateWriting implements WritingGenerator over the chat-completions API,
 // behaviorally identical to the prior OpenAI writing path (voice system prompt,
 // single completion, writingMaxTokens cap).
-func (p *openAIProvider) GenerateWriting(ctx context.Context, model, prompt, tone string) (*WritingResult, error) {
+func (p *openAIProvider) GenerateWriting(ctx context.Context, model, prompt string, voice VoiceContext) (*WritingResult, error) {
 	if p == nil {
 		return nil, ErrNotConfigured
 	}
@@ -326,7 +353,7 @@ func (p *openAIProvider) GenerateWriting(ctx context.Context, model, prompt, ton
 		model = p.modelTrial
 	}
 	resp, err := p.complete(ctx, model, writingMaxTokens, []oaiMessage{
-		{Role: "system", Content: writingSystemPrompt(tone)},
+		{Role: "system", Content: BuildVoiceRules(voice)},
 		{Role: "user", Content: prompt},
 	}, nil)
 	if err != nil {

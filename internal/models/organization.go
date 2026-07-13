@@ -30,6 +30,13 @@ type Organization struct {
 	PresenceShowOnline   bool `json:"presence_show_online"`
 	PresenceShowActivity bool `json:"presence_show_activity"`
 
+	// AI voice profile: org grounding folded into every AI writing surface via
+	// generation.BuildVoiceRules. All optional; empty falls back to the built-in
+	// humanizer rules. Gated behind manage_settings.
+	ProductDescription string `json:"product_description"`
+	ICPNotes           string `json:"icp_notes"`
+	VoiceProfile       string `json:"voice_profile"`
+
 	// Joined data
 	Owner *User `json:"owner,omitempty"`
 }
@@ -138,6 +145,11 @@ type UpdateOrganizationRequest struct {
 	// Org-wide team presence privacy toggles (admin-controlled).
 	PresenceShowOnline   *bool `json:"presence_show_online,omitempty"`
 	PresenceShowActivity *bool `json:"presence_show_activity,omitempty"`
+	// AI voice profile (manage_settings). Pointers so an unset field is left
+	// unchanged; empty string clears it.
+	ProductDescription *string `json:"product_description,omitempty"`
+	ICPNotes           *string `json:"icp_notes,omitempty"`
+	VoiceProfile       *string `json:"voice_profile,omitempty"`
 }
 
 // InviteMemberRequest represents the request to invite a new member

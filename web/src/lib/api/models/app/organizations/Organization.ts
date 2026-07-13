@@ -12,4 +12,8 @@ export default interface Organization {
     // realtime service stops broadcasting that signal to teammates.
     presence_show_online?: boolean
     presence_show_activity?: boolean
+    // AI voice profile (manage_settings). Grounds every AI writing surface.
+    product_description?: string
+    icp_notes?: string
+    voice_profile?: string
 }

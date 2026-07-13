@@ -1,6 +1,7 @@
 import React from "react";
 import { useAppStore } from "@/stores";
 import { TextInput } from "@/components/ui/field";
+import { Textarea } from "@/components/ui/textarea";
 import useUpdateOrganization from "@/lib/api/hooks/app/organizations/useUpdateOrganization";
 import { AvatarUploader } from "@/components/app/avatar/AvatarUploader";
 import {
@@ -43,6 +44,26 @@ export default function WorkspaceSettingsPage() {
     const onToggleActivity = (next: boolean) => {
         setShowActivity(next);
         updateOrg.mutate({ presence_show_activity: next });
+    };
+
+    // AI voice profile. Grounds every AI writing surface. Saved on blur when
+    // changed. Manage settings only.
+    const [productDesc, setProductDesc] = React.useState("");
+    const [icpNotes, setIcpNotes] = React.useState("");
+    const [voiceProfile, setVoiceProfile] = React.useState("");
+    React.useEffect(() => {
+        if (!orgQuery.data) return;
+        setProductDesc(orgQuery.data.product_description ?? "");
+        setIcpNotes(orgQuery.data.icp_notes ?? "");
+        setVoiceProfile(orgQuery.data.voice_profile ?? "");
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [
+        orgQuery.data?.product_description,
+        orgQuery.data?.icp_notes,
+        orgQuery.data?.voice_profile,
+    ]);
+    const saveVoiceField = (key: "product_description" | "icp_notes" | "voice_profile", value: string, saved: string) => {
+        if (value !== saved) updateOrg.mutate({ [key]: value });
     };
 
     // Auto-save the workspace name ~700ms after typing stops. An empty name is
@@ -161,6 +182,60 @@ export default function WorkspaceSettingsPage() {
                     onChange={onToggleActivity}
                     disabled={!canManageSettings || !showOnline}
                 />
+            </Section>
+
+            <Section
+                eyebrow="AI voice profile"
+                description="Grounds every AI writing surface (assistant, reply drafts, research openers) so drafts sound like you and know what you sell. All optional."
+            >
+                <Row
+                    label="What you sell"
+                    description="One or two sentences on your product and the outcome it delivers."
+                    align="start"
+                >
+                    <Textarea
+                        value={productDesc}
+                        onChange={(e) => setProductDesc(e.target.value)}
+                        onBlur={() => saveVoiceField("product_description", productDesc, orgQuery.data?.product_description ?? "")}
+                        disabled={!canManageSettings}
+                        rows={3}
+                        maxLength={2000}
+                        placeholder="We help RevOps teams keep their CRM clean by..."
+                        className="w-full max-w-[420px] text-[12.5px]"
+                    />
+                </Row>
+                <Row
+                    label="Who you sell to"
+                    description="Your ideal customer: role, company type, the pain they feel."
+                    align="start"
+                >
+                    <Textarea
+                        value={icpNotes}
+                        onChange={(e) => setIcpNotes(e.target.value)}
+                        onBlur={() => saveVoiceField("icp_notes", icpNotes, orgQuery.data?.icp_notes ?? "")}
+                        disabled={!canManageSettings}
+                        rows={3}
+                        maxLength={2000}
+                        placeholder="Heads of RevOps at 50-500 person B2B SaaS companies who..."
+                        className="w-full max-w-[420px] text-[12.5px]"
+                    />
+                </Row>
+                <Row
+                    label="House voice"
+                    description="How you want to sound. Casual or formal, phrases to use or avoid."
+                    align="start"
+                >
+                    <Textarea
+                        value={voiceProfile}
+                        onChange={(e) => setVoiceProfile(e.target.value)}
+                        onBlur={() => saveVoiceField("voice_profile", voiceProfile, orgQuery.data?.voice_profile ?? "")}
+                        disabled={!canManageSettings}
+                        rows={3}
+                        maxLength={2000}
+                        placeholder="Direct and warm, lowercase openers are fine, never salesy."
+                        className="w-full max-w-[420px] text-[12.5px]"
+                    />
+                </Row>
             </Section>
 
             <Section

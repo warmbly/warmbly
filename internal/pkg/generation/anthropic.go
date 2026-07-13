@@ -60,9 +60,11 @@ type WritingResult struct {
 // ErrNotConfigured at call time, and the provider (Anthropic vs OpenAI
 // fallback) can be swapped without touching the handler.
 type WritingGenerator interface {
-	// GenerateWriting produces assistant text for the given model, prompt, and
-	// optional tone. model is a provider model ID (see ModelForTier).
-	GenerateWriting(ctx context.Context, model, prompt, tone string) (*WritingResult, error)
+	// GenerateWriting produces assistant text for the given model and prompt,
+	// grounded in the org voice profile (product/ICP/house style) plus the
+	// caller's optional tone carried in VoiceContext. model is a provider model
+	// ID (see ModelForTier).
+	GenerateWriting(ctx context.Context, model, prompt string, voice VoiceContext) (*WritingResult, error)
 
 	// ModelForTier returns the model ID this provider should use for the org's
 	// tier (paid → stronger model). The handler calls this rather than knowing
@@ -126,7 +128,7 @@ type anthropicResponse struct {
 }
 
 // GenerateWriting implements WritingGenerator against the Anthropic API.
-func (c *AnthropicClient) GenerateWriting(ctx context.Context, model, prompt, tone string) (*WritingResult, error) {
+func (c *AnthropicClient) GenerateWriting(ctx context.Context, model, prompt string, voice VoiceContext) (*WritingResult, error) {
 	if c == nil {
 		return nil, ErrNotConfigured
 	}
@@ -137,7 +139,7 @@ func (c *AnthropicClient) GenerateWriting(ctx context.Context, model, prompt, to
 	body, err := json.Marshal(anthropicRequest{
 		Model:     model,
 		MaxTokens: writingMaxTokens,
-		System:    writingSystemPrompt(tone),
+		System:    BuildVoiceRules(voice),
 		Messages: []anthropicMessage{
 			{Role: "user", Content: prompt},
 		},

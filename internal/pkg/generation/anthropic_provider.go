@@ -177,6 +177,37 @@ func (p *anthropicProvider) complete(ctx context.Context, model string, maxToken
 	return &parsed, nil
 }
 
+// Complete runs a single tool-less completion with an explicit system prompt.
+func (p *anthropicProvider) Complete(ctx context.Context, req CompletionRequest) (*WritingResult, error) {
+	if p == nil {
+		return nil, ErrNotConfigured
+	}
+	model := req.Model
+	if model == "" {
+		model = ModelAgentFreeAnthropic
+	}
+	maxTokens := req.MaxTokens
+	if maxTokens <= 0 {
+		maxTokens = defaultAgentTokens
+	}
+	msgs := []antMessage{{Role: "user", Content: []antContentBlock{{Type: "text", Text: req.Prompt}}}}
+	resp, err := p.complete(ctx, model, maxTokens, req.System, msgs, nil)
+	if err != nil {
+		return nil, err
+	}
+	var sb strings.Builder
+	for _, b := range resp.Content {
+		if b.Type == "text" {
+			sb.WriteString(b.Text)
+		}
+	}
+	text := strings.TrimSpace(sb.String())
+	if text == "" {
+		return nil, errors.New("anthropic: empty completion")
+	}
+	return &WritingResult{Text: text, Model: model, TokensUsed: resp.Usage.InputTokens + resp.Usage.OutputTokens}, nil
+}
+
 // RunAgent implements the tool-use loop against Anthropic. Same approval/resume
 // contract as the OpenAI provider (see provider.go).
 func (p *anthropicProvider) RunAgent(ctx context.Context, req AgentRequest) (*AgentResult, error) {

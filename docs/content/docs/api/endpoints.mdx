@@ -79,6 +79,9 @@ All paths below are relative to the versioned base URL `https://api.warmbly.com/
 | GET | `/unibox/:id` | `READ_UNIBOX` |
 | PATCH | `/unibox/seen` | `WRITE_UNIBOX` |
 | POST | `/unibox/reply` | `WRITE_UNIBOX` |
+| POST | `/unibox/reply/draft` | `READ_UNIBOX` |
+
+`POST /unibox/reply/draft` returns an AI-drafted reply (it never sends) grounded in the thread, the contact, and your [voice profile](/guides/unibox/#ai-reply-drafts). It charges AI credits; see [AI credits](/guides/ai-credits/).
 
 ### Templates and CRM
 
