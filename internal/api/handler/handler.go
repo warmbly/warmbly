@@ -176,6 +176,11 @@ type Handler struct {
 	// MCPService manages org-connected MCP servers (external tools).
 	MCPService mcp.Service
 
+	// AIDraftRepo stores inbox-agent reply drafts awaiting human review (M10).
+	// The draft is created in the consumer; these list/approve/discard handlers
+	// read + resolve it. Nil disables the review endpoints.
+	AIDraftRepo repository.AIDraftRepository
+
 	// Seed inbox-placement testing.
 	PlacementRepo    repository.PlacementRepository
 	PlacementService placement.Service

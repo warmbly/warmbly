@@ -99,6 +99,9 @@ type Service interface {
 	// WireAutomationRunner attaches the automation runner so instant
 	// "run_automation" action nodes (reply/open/click branches) can launch a flow.
 	WireAutomationRunner(r AutomationRunner)
+	// WireInboxAgent attaches the inbox agent so an inbound human reply drafts a
+	// suggested reply for review (M10). Best-effort; nil = feature off.
+	WireInboxAgent(a InboxAgent)
 
 	// EmitCampaignEvent dispatches a campaign event (e.g. from a sequence
 	// "notify" action node) to customer webhooks and wired integrations.
@@ -139,6 +142,7 @@ type service struct {
 	notifier             Notifier
 	realtime             ReplyRealtimePublisher
 	automationRunner     AutomationRunner
+	inboxAgent           InboxAgent
 }
 
 func NewService(
@@ -844,6 +848,27 @@ func (s *service) ProcessIncomingReply(ctx context.Context, emailAccountID uuid.
 			// campaign without a refresh.
 			if s.realtime != nil && account.OrganizationID != nil {
 				s.realtime.PublishEmailReplied(ctx, account.OrganizationID.String(), account.UserID, cID.String(), ctID.String(), sender, sID.String())
+			}
+
+			// Inbox agent (M10): best-effort, paid + opt-in checked inside. Drafts a
+			// suggested reply for this human reply, awaiting human approval in the
+			// unibox. Self-detaches, so it never blocks reply ingest.
+			if s.inboxAgent != nil && account.OrganizationID != nil {
+				ownerID, _ := uuid.Parse(account.UserID)
+				s.inboxAgent.DraftForReply(ctx, models.InboxAgentReply{
+					OrganizationID:  *account.OrganizationID,
+					EmailAccountID:  emailAccountID,
+					OwnerUserID:     ownerID,
+					SourceMessageID: msg.ID,
+					ThreadID:        msg.ThreadID,
+					Counterpart:     sender,
+					Subject:         msg.Subject,
+					InReplyTo:       msg.MessageID,
+					ContactID:       ctID,
+					CampaignID:      cID,
+					IntentClass:     replyResult.Class,
+					Confidence:      replyResult.Confidence,
+				})
 			}
 		}
 

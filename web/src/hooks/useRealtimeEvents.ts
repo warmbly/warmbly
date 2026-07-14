@@ -60,6 +60,19 @@ export function useRealtimeEvents() {
       const threadId = getString('thread_id')
       const emailId = getString('email_id') ?? getString('message_id')
 
+      // An AI-suggested unibox reply was drafted and is awaiting human review.
+      // Refresh the unibox (badge/overview) + the drafts list, and the specific
+      // thread if present.
+      if (includes('AI_DRAFT')) {
+        invalidate([
+          ['unibox'],
+          ['unibox', 'overview'],
+          ['unibox', 'agent-drafts'],
+        ])
+        if (threadId) invalidate([['unibox', 'thread', threadId]])
+        return
+      }
+
       if (includes('EMAIL_RECEIVED', 'NEW_EMAIL', 'INBOX_NEW')) {
         addUniboxEmail(payload as any)
         incrementUnseenCount()

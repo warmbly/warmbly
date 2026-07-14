@@ -14,6 +14,8 @@ import (
 	"github.com/warmbly/warmbly/internal/app/cipher"
 	jobs "github.com/warmbly/warmbly/internal/app/consumer"
 	"github.com/warmbly/warmbly/internal/app/credits"
+	"github.com/warmbly/warmbly/internal/app/feature"
+	"github.com/warmbly/warmbly/internal/app/inboxagent"
 	"github.com/warmbly/warmbly/internal/app/integration"
 	"github.com/warmbly/warmbly/internal/app/nativeactions"
 	"github.com/warmbly/warmbly/internal/app/notification"
@@ -326,6 +328,21 @@ func main() {
 	advancedService.WireNotifier(notificationService)
 	// Reply pulses fire in THIS process too (inbox ingest classifies replies).
 	advancedService.WireRealtime(streamingPublisher)
+	// Inbox agent (M10): inbound human replies are ingested + classified in THIS
+	// process, so the agent that drafts a suggested reply must be wired here. It
+	// is paid + opt-in (checked inside) and self-detaches, so a slow model never
+	// blocks reply ingest. Nil provider leaves it inert.
+	inboxAgentServiceC := inboxagent.NewService(
+		aiProviderC,
+		creditServiceC,
+		feature.NewService(subscriptionRepoConsumer, planRepoConsumer),
+		orgRepoConsumer,
+		uniboxRepo,
+		nil, // skills preamble optional; not constructed in the consumer
+		repository.NewAIDraftRepository(primaryDB.Pool),
+		streamingPublisher,
+	)
+	advancedService.WireInboxAgent(inboxAgentServiceC)
 
 	// Events publisher — wraps the existing Kafka producer in an EventBus,
 	// wraps Avrov2 in a Codec. Once EVENTBUS_PROVIDER=nats is exercised in

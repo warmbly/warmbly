@@ -143,7 +143,7 @@ func (r *organizationRepository) GetByID(ctx context.Context, id uuid.UUID) (*mo
 		SELECT id, name, slug, avatar_url, owner_user_id, created_at, updated_at,
 		       deletion_scheduled_at, deletion_scheduled_for,
 		       presence_show_online, presence_show_activity,
-		       product_description, icp_notes, voice_profile
+		       product_description, icp_notes, voice_profile, inbox_agent_enabled
 		FROM organizations WHERE id = $1
 	`
 	return r.scanOrganization(ctx, query, id)
@@ -155,7 +155,7 @@ func (r *organizationRepository) GetBySlug(ctx context.Context, slug string) (*m
 		SELECT id, name, slug, avatar_url, owner_user_id, created_at, updated_at,
 		       deletion_scheduled_at, deletion_scheduled_for,
 		       presence_show_online, presence_show_activity,
-		       product_description, icp_notes, voice_profile
+		       product_description, icp_notes, voice_profile, inbox_agent_enabled
 		FROM organizations WHERE slug = $1
 	`
 	return r.scanOrganization(ctx, query, slug)
@@ -164,7 +164,7 @@ func (r *organizationRepository) GetBySlug(ctx context.Context, slug string) (*m
 func (r *organizationRepository) scanOrganization(ctx context.Context, query string, args ...interface{}) (*models.Organization, error) {
 	row := r.db.QueryRow(ctx, query, args...)
 	var org models.Organization
-	err := row.Scan(&org.ID, &org.Name, &org.Slug, &org.AvatarURL, &org.OwnerUserID, &org.CreatedAt, &org.UpdatedAt, &org.DeletionScheduledAt, &org.DeletionScheduledFor, &org.PresenceShowOnline, &org.PresenceShowActivity, &org.ProductDescription, &org.ICPNotes, &org.VoiceProfile)
+	err := row.Scan(&org.ID, &org.Name, &org.Slug, &org.AvatarURL, &org.OwnerUserID, &org.CreatedAt, &org.UpdatedAt, &org.DeletionScheduledAt, &org.DeletionScheduledFor, &org.PresenceShowOnline, &org.PresenceShowActivity, &org.ProductDescription, &org.ICPNotes, &org.VoiceProfile, &org.InboxAgentEnabled)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -181,10 +181,11 @@ func (r *organizationRepository) Update(ctx context.Context, org *models.Organiz
 		SET name = $2, slug = $3, presence_show_online = $4,
 		    presence_show_activity = $5,
 		    product_description = $7, icp_notes = $8, voice_profile = $9,
+		    inbox_agent_enabled = $10,
 		    updated_at = $6
 		WHERE id = $1
 	`
-	_, err := r.db.Exec(ctx, query, org.ID, org.Name, org.Slug, org.PresenceShowOnline, org.PresenceShowActivity, time.Now(), org.ProductDescription, org.ICPNotes, org.VoiceProfile)
+	_, err := r.db.Exec(ctx, query, org.ID, org.Name, org.Slug, org.PresenceShowOnline, org.PresenceShowActivity, time.Now(), org.ProductDescription, org.ICPNotes, org.VoiceProfile, org.InboxAgentEnabled)
 	return err
 }
 
@@ -245,7 +246,7 @@ func (r *organizationRepository) GetUserDefaultOrganization(ctx context.Context,
 		SELECT id, name, slug, avatar_url, owner_user_id, created_at, updated_at,
 		       deletion_scheduled_at, deletion_scheduled_for,
 		       presence_show_online, presence_show_activity,
-		       product_description, icp_notes, voice_profile
+		       product_description, icp_notes, voice_profile, inbox_agent_enabled
 		FROM organizations WHERE owner_user_id = $1
 		ORDER BY created_at ASC LIMIT 1
 	`

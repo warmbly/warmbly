@@ -1,0 +1,62 @@
+---
+title: Inbox agent
+description: When someone replies, the inbox agent drafts a suggested reply in your voice and holds it in the unibox for you to approve, edit, or discard. It never sends on its own.
+icon: Sparkles
+---
+
+The inbox agent watches your replies. When a real person replies to one of your campaigns, it reads the thread, drafts a suggested reply in your [voice](/guides/unibox/#ai-reply-drafts), and attaches it to the conversation for you to review. You approve and send it, edit it first, or discard it. Nothing is ever sent because the agent wrote it: a person decides every time.
+
+This is a paid feature and it is off until you turn it on.
+
+## Turning it on
+
+Open **Settings, Workspace** and find **Inbox agent** (it needs the **Manage settings** permission). Toggle **Draft replies for me** on. From then on, every inbound human reply to a campaign gets a draft.
+
+<Callout type="info" title="Paid and opt-in">
+The inbox agent is available on paid plans and is off by default. Turning it on is an explicit choice, and each reply it drafts costs 5 AI credits. See [AI credits](/guides/ai-credits/).
+</Callout>
+
+## What triggers a draft
+
+A draft is created when all of these are true:
+
+- A person replies to one of your campaign emails (automated replies like out-of-office and bounces never trigger it).
+- Your workspace is on a paid plan and has the inbox agent turned on.
+- You have at least 5 AI credits.
+
+The agent does not start new conversations and never messages a new recipient. It only ever drafts a reply to someone who already replied to you.
+
+## Reviewing a draft
+
+A new draft shows up two ways:
+
+- In the conversation itself: open the thread in the unibox and the draft appears below the messages, in an editable box, with **Approve and send**, and **Discard**.
+- In the scope rail: the **Agent drafts** filter lists every conversation with a draft waiting, with a live count next to it. The count and list update the moment a new draft lands, no refresh needed.
+
+From the draft box you can:
+
+- **Edit** the text right there. The box is editable, so tweak a line, fix a detail, or rewrite it before sending.
+- **Approve and send.** Sends the text as it stands (with your edits) through the normal reply path, from the same mailbox, threaded to their reply. This is the only action that sends.
+- **Discard.** Dismisses the draft without sending. Use it when the reply is better handled by hand.
+
+Each thread holds at most one pending draft at a time, and once you approve or discard it the draft is resolved.
+
+## What the draft is grounded in
+
+The agent writes with the same context as an [AI reply draft](/guides/unibox/#ai-reply-drafts): the full thread so far, your workspace [voice profile](/guides/unibox/#ai-reply-drafts) (what you sell, who you sell to, your house voice), and any [enabled skills](/guides/ai-skills/). The more you fill in your voice profile, the more the drafts sound like you.
+
+## Credits and failures
+
+- **5 credits per handled reply**, charged when a draft is created. If the model is unavailable, no draft is created and nothing is charged.
+- **Out of credits.** When your balance is below 5, the agent simply does not draft that reply. Your inbox and campaigns are unaffected; you just handle that one by hand. Top up under **Settings, Billing**.
+- **No auto-send, ever.** There is no setting that lets the agent send for you. Approving is always a person's explicit action.
+
+## Turning it off
+
+Toggle **Draft replies for me** off under **Settings, Workspace**. New replies stop getting drafts immediately. Any drafts already waiting stay until you approve or discard them.
+
+## See also
+
+- [Unified inbox](/guides/unibox/) for the inbox and the manual AI reply draft.
+- [AI credits](/guides/ai-credits/) for costs and the balance.
+- [AI skills](/guides/ai-skills/) for playbooks the agent follows.

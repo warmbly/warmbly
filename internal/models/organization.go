@@ -37,6 +37,11 @@ type Organization struct {
 	ICPNotes           string `json:"icp_notes"`
 	VoiceProfile       string `json:"voice_profile"`
 
+	// InboxAgentEnabled opts the org into the inbox agent: on an inbound human
+	// reply it drafts a suggested reply for review. Off by default; paid-only and
+	// admin-controlled (manage_settings). The agent never sends on its own.
+	InboxAgentEnabled bool `json:"inbox_agent_enabled"`
+
 	// Joined data
 	Owner *User `json:"owner,omitempty"`
 }
@@ -150,6 +155,8 @@ type UpdateOrganizationRequest struct {
 	ProductDescription *string `json:"product_description,omitempty"`
 	ICPNotes           *string `json:"icp_notes,omitempty"`
 	VoiceProfile       *string `json:"voice_profile,omitempty"`
+	// InboxAgentEnabled opts the org in/out of the inbox agent (manage_settings).
+	InboxAgentEnabled *bool `json:"inbox_agent_enabled,omitempty"`
 }
 
 // InviteMemberRequest represents the request to invite a new member

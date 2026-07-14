@@ -175,6 +175,9 @@ type MailSearchParams struct {
 	// message in the thread was sent by the user (i.e. the recipient
 	// hasn't replied yet). nil = no filter.
 	AwaitingReply *bool
+	// AgentDraft, when true, narrows to threads that have a pending
+	// inbox-agent draft awaiting human review (M10). nil = no filter.
+	AgentDraft *bool
 	// CategoryIDs restricts results to threads carrying at least one of
 	// these conversation labels. Empty = no category filter.
 	CategoryIDs []uuid.UUID
@@ -238,13 +241,16 @@ type UniboxCategoryOverview struct {
 // UniboxOverview powers the scope rail + top metric strip in one
 // request. Computed at /unibox/overview.
 type UniboxOverview struct {
-	Total            int64 `json:"total"`
-	Unread           int64 `json:"unread"`
-	Today            int64 `json:"today"`
-	Week             int64 `json:"week"`
-	Snoozed          int64 `json:"snoozed"`
-	AwaitingReply    int64 `json:"awaiting_reply"`
-	ScheduledPending int64 `json:"scheduled_pending"`
+	Total         int64 `json:"total"`
+	Unread        int64 `json:"unread"`
+	Today         int64 `json:"today"`
+	Week          int64 `json:"week"`
+	Snoozed       int64 `json:"snoozed"`
+	AwaitingReply int64 `json:"awaiting_reply"`
+	// AwaitingAgentDraft is the count of threads with a pending inbox-agent draft
+	// waiting for human review (M10).
+	AwaitingAgentDraft int64 `json:"awaiting_agent_draft"`
+	ScheduledPending   int64 `json:"scheduled_pending"`
 	// ScheduledPendingMax is the hard cap on pending scheduled email
 	// tasks per user. The dashboard shows current/max so the user
 	// sees how close they are to the limit before hitting it.

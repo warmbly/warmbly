@@ -44,6 +44,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/fleet"
 	"github.com/warmbly/warmbly/internal/app/group"
 	idempotencyapp "github.com/warmbly/warmbly/internal/app/idempotency"
+	"github.com/warmbly/warmbly/internal/app/inboxagent"
 	"github.com/warmbly/warmbly/internal/app/integration"
 	"github.com/warmbly/warmbly/internal/app/leadsync"
 	"github.com/warmbly/warmbly/internal/app/mcp"
@@ -147,6 +148,7 @@ func main() {
 	var warmupContentService warmupcontent.Service
 	var creditRepository repository.CreditRepository
 	var creditService credits.CreditService
+	var aiDraftRepo repository.AIDraftRepository
 	var writingGenerator generation.WritingGenerator
 	var aiProvider generation.Provider
 	var aiSearch generation.SearchClient
@@ -1096,6 +1098,15 @@ func main() {
 		// notification (in-app + email per the user's channels).
 		tokenService.WireSignInAlerter(notification.NewSignInAlerter(notificationService))
 		advancedService.WireRealtime(streamingPublisher)
+		// Inbox agent (M10): the draft repo the review endpoints read, plus the
+		// agent wired onto the advanced service so any reply processed here also
+		// drafts. Paid + opt-in checked inside; nil provider leaves it inert.
+		aiDraftRepo = repository.NewAIDraftRepository(primaryDB.Pool)
+		advancedService.WireInboxAgent(inboxagent.NewService(
+			aiProvider, creditService, featureGateService,
+			organizationRepository, uniboxRepository, skillsService,
+			aiDraftRepo, streamingPublisher,
+		))
 		emailSender := tasks.NewEmailSender(emailRepostory, eventsPublisher)
 		tasksService = tasks.NewService(
 			tasksClient,
@@ -1324,6 +1335,7 @@ func main() {
 		ResearchService:  researchService,
 		SkillsService:    skillsService,
 		MCPService:       mcpService,
+		AIDraftRepo:      aiDraftRepo,
 
 		// Pre-send email verification
 		EmailVerifyService: emailVerifyService,

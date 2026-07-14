@@ -27,6 +27,8 @@ export interface UniboxSearchParams {
   snoozed?: true | "any";
   /** Awaiting reply: threads where the last message was from us. */
   awaitingReply?: boolean;
+  /** Agent drafts: threads with a pending inbox-agent reply draft. */
+  agentDrafts?: boolean;
   /**
    * Conversation-label filter. Threads carrying any of these category
    * ids match. Sent to the server as `category_ids`.

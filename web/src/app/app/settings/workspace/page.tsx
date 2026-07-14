@@ -66,6 +66,18 @@ export default function WorkspaceSettingsPage() {
         if (value !== saved) updateOrg.mutate({ [key]: value });
     };
 
+    // Inbox agent opt-in (paid). When on, an inbound human reply gets an
+    // AI-drafted suggested reply awaiting review in the unibox.
+    const [inboxAgent, setInboxAgent] = React.useState(false);
+    React.useEffect(() => {
+        if (orgQuery.data) setInboxAgent(orgQuery.data.inbox_agent_enabled ?? false);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [orgQuery.data?.inbox_agent_enabled]);
+    const onToggleInboxAgent = (next: boolean) => {
+        setInboxAgent(next);
+        updateOrg.mutate({ inbox_agent_enabled: next });
+    };
+
     // Auto-save the workspace name ~700ms after typing stops. An empty name is
     // never persisted; the field just stays unsaved until it's valid again.
     const autosave = useAutosave({
@@ -236,6 +248,19 @@ export default function WorkspaceSettingsPage() {
                         className="w-full max-w-[420px] text-[12.5px]"
                     />
                 </Row>
+            </Section>
+
+            <Section
+                eyebrow="Inbox agent"
+                description="On an inbound human reply, draft a suggested reply in your voice and hold it in the unibox for review. It never sends on its own. Paid feature; each handled reply costs 5 AI credits."
+            >
+                <ToggleRow
+                    label="Draft replies for me"
+                    description="When someone replies, the agent writes a suggested reply and attaches it to the thread under Agent drafts. You approve-and-send, edit, or discard it."
+                    checked={inboxAgent}
+                    onChange={onToggleInboxAgent}
+                    disabled={!canManageSettings}
+                />
             </Section>
 
             <Section

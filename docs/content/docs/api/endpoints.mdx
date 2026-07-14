@@ -85,8 +85,13 @@ AI contact research charges credits (2 per run, billable even when it finds noth
 | PATCH | `/unibox/seen` | `WRITE_UNIBOX` |
 | POST | `/unibox/reply` | `WRITE_UNIBOX` |
 | POST | `/unibox/reply/draft` | `READ_UNIBOX` |
+| GET | `/unibox/agent-drafts` | `READ_UNIBOX` |
+| POST | `/unibox/agent-drafts/:id/approve` | `WRITE_UNIBOX` |
+| POST | `/unibox/agent-drafts/:id/discard` | `WRITE_UNIBOX` |
 
 `POST /unibox/reply/draft` returns an AI-drafted reply (it never sends) grounded in the thread, the contact, and your [voice profile](/guides/unibox/#ai-reply-drafts). It charges AI credits; see [AI credits](/guides/ai-credits/).
+
+The `agent-drafts` endpoints back the [inbox agent](/guides/inbox-agent/): the agent drafts a suggested reply on an inbound human reply and holds it here for review. `GET` lists the pending drafts; `approve` sends one (optionally with an edited `body`) through the normal reply path and is safe to retry with an `Idempotency-Key`; `discard` dismisses it. Approving is the only path that sends.
 
 ### Templates and CRM
 

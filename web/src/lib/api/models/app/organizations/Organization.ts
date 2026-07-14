@@ -16,4 +16,7 @@ export default interface Organization {
     product_description?: string
     icp_notes?: string
     voice_profile?: string
+    // Inbox agent opt-in (manage_settings, paid). When on, an inbound human
+    // reply gets an AI-drafted suggested reply awaiting review in the unibox.
+    inbox_agent_enabled?: boolean
 }

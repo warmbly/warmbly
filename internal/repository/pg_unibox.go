@@ -452,6 +452,17 @@ func (r *uniboxRepository) Search(ctx context.Context, orgID, userID uuid.UUID, 
 			)`
 	}
 
+	// Agent drafts: threads with a pending inbox-agent draft awaiting review.
+	if params.AgentDraft != nil && *params.AgentDraft {
+		query += `
+			AND EXISTS (
+				SELECT 1 FROM ai_thread_drafts d
+				WHERE d.organization_id = $1
+				  AND d.thread_id = b.thread_id
+				  AND d.status = 'pending'
+			)`
+	}
+
 	if len(params.CategoryIDs) > 0 {
 		query += fmt.Sprintf(`
 			AND EXISTS (
@@ -888,7 +899,9 @@ func (r *uniboxRepository) Overview(ctx context.Context, orgID uuid.UUID) (*mode
 			COUNT(*) FILTER (WHERE NOT t.is_snoozed AND t.last_date >= $3)      AS week,
 			COUNT(*) FILTER (WHERE t.is_snoozed)                                AS snoozed,
 			(SELECT COUNT(*) FROM latest_per_thread l
-				WHERE EXISTS (SELECT 1 FROM user_mailbox_emails u WHERE u.email = ANY(l.from_addr)))             AS awaiting
+				WHERE EXISTS (SELECT 1 FROM user_mailbox_emails u WHERE u.email = ANY(l.from_addr)))             AS awaiting,
+			(SELECT COUNT(*) FROM ai_thread_drafts d
+				WHERE d.organization_id = $1 AND d.status = 'pending')                                          AS awaiting_agent_draft
 		FROM threads t
 	`, orgID, todayStart, weekStart).Scan(
 		&overview.Total,
@@ -897,6 +910,7 @@ func (r *uniboxRepository) Overview(ctx context.Context, orgID uuid.UUID) (*mode
 		&overview.Week,
 		&overview.Snoozed,
 		&overview.AwaitingReply,
+		&overview.AwaitingAgentDraft,
 	)
 	if err != nil {
 		return nil, err

@@ -57,6 +57,7 @@ export default async function searchIncoming(
   if (p.snoozed === true) usp.set("snoozed", "true");
   else if (p.snoozed === "any") usp.set("snoozed", "any");
   if (p.awaitingReply) usp.set("awaiting_reply", "true");
+  if (p.agentDrafts) usp.set("agent_drafts", "true");
   if (p.categoryIds && p.categoryIds.length > 0) {
     usp.set("category_ids", p.categoryIds.join(","));
   }

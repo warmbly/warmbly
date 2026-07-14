@@ -23,6 +23,7 @@ import {
   SearchIcon,
   SendIcon,
   SparkleIcon,
+  SparklesIcon,
 } from "lucide-react";
 import useUniboxOverview from "@/lib/api/hooks/app/unibox/useUniboxOverview";
 import { cn } from "@/lib/utils";
@@ -33,6 +34,7 @@ export type UniboxScope =
   | { kind: "today" }
   | { kind: "week" }
   | { kind: "awaiting" }
+  | { kind: "agent_drafts" }
   | { kind: "snoozed" }
   | { kind: "scheduled" }
   | { kind: "mailbox"; mailboxId: string }
@@ -105,6 +107,14 @@ export function ScopeRail({ scope, onChange }: ScopeRailProps) {
           countTone={data?.awaiting_reply ? "accent" : "muted"}
           active={active === "awaiting"}
           onClick={() => onChange({ kind: "awaiting" })}
+        />
+        <Item
+          icon={<SparklesIcon className="w-3.5 h-3.5" />}
+          label="Agent drafts"
+          count={data?.awaiting_agent_draft}
+          countTone={data?.awaiting_agent_draft ? "accent" : "muted"}
+          active={active === "agent_drafts"}
+          onClick={() => onChange({ kind: "agent_drafts" })}
         />
         <Item
           icon={<MoonIcon className="w-3.5 h-3.5" />}

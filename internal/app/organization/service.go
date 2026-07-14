@@ -297,6 +297,9 @@ func (s *organizationService) Update(ctx context.Context, orgID uuid.UUID, req *
 	if req.VoiceProfile != nil {
 		org.VoiceProfile = strings.TrimSpace(*req.VoiceProfile)
 	}
+	if req.InboxAgentEnabled != nil {
+		org.InboxAgentEnabled = *req.InboxAgentEnabled
+	}
 
 	org.UpdatedAt = time.Now()
 

@@ -465,6 +465,14 @@ func Run(
 				// AI reply draft: context-grounded, charges credits, never sends.
 				unibox.POST("/reply/draft", m.RequireOrganization(), m.RequireAccess(models.PermAccessUnibox, models.APIPermReadUnibox), h.DraftReply)
 
+				// Inbox agent drafts (M10): review the pending drafts the agent
+				// suggested on inbound human replies, then approve-and-send or
+				// discard. Approve reuses the normal reply send path. Registered
+				// before /:id so the fixed path wins over the catch-all.
+				unibox.GET("/agent-drafts", m.RequireAccess(models.PermAccessUnibox, models.APIPermReadUnibox), h.ListAgentDrafts)
+				unibox.POST("/agent-drafts/:id/approve", m.RequireOrganization(), m.RequireAccess(models.PermAccessUnibox, models.APIPermWriteUnibox), h.ApproveAgentDraft)
+				unibox.POST("/agent-drafts/:id/discard", m.RequireOrganization(), m.RequireAccess(models.PermAccessUnibox, models.APIPermWriteUnibox), h.DiscardAgentDraft)
+
 				// Snoozes — POST/DELETE on a thread, GET lists active ones.
 				unibox.GET("/snoozes", m.RequireAccess(models.PermAccessUnibox, models.APIPermReadUnibox), h.ListUniboxSnoozes)
 				unibox.POST("/snooze", m.RequireAccess(models.PermAccessUnibox, models.APIPermWriteUnibox), h.CreateUniboxSnooze)

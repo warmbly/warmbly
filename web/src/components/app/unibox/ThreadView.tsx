@@ -29,6 +29,7 @@ import {
 
 import { MessageBubble } from "./MessageBubble";
 import { ReplyComposer, type ReplyMode } from "./ReplyComposer";
+import AgentDraftCard from "./AgentDraftCard";
 import ResourceViewers from "@/components/app/presence/ResourceViewers";
 import { DateTimePicker } from "@/components/ui/DateTimePicker";
 import { usePresenceResource } from "@/hooks/PresenceProvider";
@@ -541,6 +542,8 @@ export function ThreadView({ threadId, emailId }: ThreadViewProps) {
           />
         ))}
       </div>
+
+      <AgentDraftCard threadId={threadId} />
 
       <AnimatePresence mode="wait" initial={false}>
         {replyState ? (
