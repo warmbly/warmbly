@@ -156,6 +156,18 @@ type CompletionRequest struct {
 	Prompt    string
 	Model     string
 	MaxTokens int
+	// Temperature optionally pins sampling. nil leaves it to the provider default
+	// (creative writing); a pointer to 0 forces deterministic output (the reply
+	// classifier's Layer 3 needs a stable single-label verdict).
+	Temperature *float64
+}
+
+// Deterministic returns a *float64 pointing at 0, for
+// CompletionRequest.Temperature when a caller needs a stable, non-sampled result
+// (e.g. single-label classification). Each call returns a fresh pointer.
+func Deterministic() *float64 {
+	z := 0.0
+	return &z
 }
 
 // Provider is a pluggable LLM backend that can run a tool-use agent loop.

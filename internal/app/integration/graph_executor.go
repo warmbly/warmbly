@@ -46,6 +46,10 @@ func (s *service) executeAutomationGraph(ctx context.Context, a models.Automatio
 	// Best-effort run record — observability, never blocks the walk.
 	run := &models.AutomationRun{AutomationID: a.ID, OrganizationID: a.OrganizationID, TriggerEvent: eventType, Status: "running"}
 	_ = s.repo.CreateAutomationRun(ctx, run)
+	// Carry the run id through the event data (internal, underscore-prefixed so
+	// it's stripped from outbound webhooks) so an AI node can scope its credit
+	// idempotency key to this run.
+	data[automationRunIDKey] = run.ID.String()
 	results := []models.AutomationNodeResult{}
 	anyError := false
 
@@ -231,14 +235,21 @@ func (s *service) DryRunAutomation(ctx context.Context, orgID, id uuid.UUID, req
 	for _, id := range req.SkipNodeIDs {
 		skip[id] = true
 	}
-	return &models.DryRunResponse{Trace: dryRunGraph(*a, data, skip), Data: data}, nil
+	// A dry-run executes AI nodes for real (and is charged), so scope their
+	// credit idempotency keys to a fresh id. "dryrun:" namespaces it so a test
+	// can never collide with a live run's charge.
+	data[automationRunIDKey] = "dryrun:" + uuid.NewString()
+	return &models.DryRunResponse{Trace: s.dryRunGraph(ctx, *a, data, skip), Data: data}, nil
 }
 
 // dryRunGraph mirrors executeAutomationGraph's walk but records a preview trace
-// instead of executing anything (conditions are pure, so they evaluate for real).
-// Action nodes in skip are recorded as "skipped" and not previewed, but the walk
-// still follows their normal edge so downstream steps are reflected.
-func dryRunGraph(a models.Automation, data map[string]any, skip map[string]bool) []models.AutomationNodeResult {
+// instead of executing side-effecting actions (conditions are pure, so they
+// evaluate for real). AI nodes are the exception: a dry-run runs them for real
+// (and is charged) so the test shows the actual model output and downstream
+// conditions branch on it, matching a live run. Action nodes in skip are
+// recorded as "skipped" and not previewed, but the walk still follows their
+// normal edge so downstream steps are reflected.
+func (s *service) dryRunGraph(ctx context.Context, a models.Automation, data map[string]any, skip map[string]bool) []models.AutomationNodeResult {
 	baseSeed := stringFromMap(data, "delivery_id", "id", "booking_id", "contact_email", "invitee_email", "email")
 	byID := make(map[string]models.AutomationNode, len(a.Graph.Nodes))
 	for _, n := range a.Graph.Nodes {
@@ -291,7 +302,8 @@ func dryRunGraph(a models.Automation, data map[string]any, skip map[string]bool)
 				}
 			}
 		case models.AutomationNodeAction:
-			if skip[id] {
+			switch {
+			case skip[id]:
 				// Toggled off for this test: record as skipped, no preview.
 				trace = append(trace, models.AutomationNodeResult{
 					NodeID: id,
@@ -300,7 +312,17 @@ func dryRunGraph(a models.Automation, data map[string]any, skip map[string]bool)
 					Label:  string(n.Action),
 					Status: "skipped",
 				})
-			} else {
+			case models.IsAIAction(n.Action):
+				// Run the AI node for real (charged) but never let a dry-run's
+				// credit miss auto-pause the flow (feedPause=false).
+				nr := models.AutomationNodeResult{NodeID: id, Type: "action", Action: string(n.Action), Label: aiActionLabel(n.Action), Status: "success"}
+				if aerr := s.execAIAction(ctx, a, n, data, false); aerr != nil {
+					nr.Status = "error"
+					nr.Error = truncate(aerr.Error(), 300)
+				}
+				nr.Preview = actionRunOutput(n, data)
+				trace = append(trace, nr)
+			default:
 				trace = append(trace, models.AutomationNodeResult{
 					NodeID:  id,
 					Type:    "action",
@@ -361,13 +383,18 @@ func actionPreview(n models.AutomationNode, data map[string]any) map[string]any 
 // cheap to store in the run's node_results jsonb.
 func actionRunOutput(n models.AutomationNode, data map[string]any) map[string]any {
 	out := actionPreview(n, data)
-	switch n.Action {
-	case models.IntegrationActionSetVariables:
+	switch {
+	case n.Action == models.IntegrationActionSetVariables:
 		cfg := parseNativeConfig(n.Config)
 		for _, v := range cfg.SetVars {
 			if k := strings.TrimSpace(v.Key); k != "" {
 				out[k] = truncate(valueString(data[k]), 200)
 			}
+		}
+	case models.IsAIAction(n.Action):
+		cfg := parseAIConfig(n.Config)
+		for _, k := range aiOutputKeys(n.Action, cfg) {
+			out[k] = truncate(valueString(data[k]), 200)
 		}
 	}
 	if len(out) == 0 {
@@ -423,6 +450,9 @@ func sampleEventData(triggerEvent string) map[string]any {
 // connection; everything else builds a synthetic dispatch target and reuses
 // runAction -> execAction.
 func (s *service) runGraphAction(ctx context.Context, a models.Automation, n models.AutomationNode, eventType string, data map[string]any) (string, error) {
+	if models.IsAIAction(n.Action) {
+		return aiActionLabel(n.Action), s.execAIAction(ctx, a, n, data, true)
+	}
 	if models.IsNativeAction(n.Action) {
 		return string(n.Action), s.execNativeAction(ctx, a, n, data)
 	}

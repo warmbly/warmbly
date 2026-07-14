@@ -57,6 +57,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/ratelimit"
 	"github.com/warmbly/warmbly/internal/app/referral"
 	"github.com/warmbly/warmbly/internal/app/releases"
+	"github.com/warmbly/warmbly/internal/app/replyclassify"
 	"github.com/warmbly/warmbly/internal/app/research"
 	"github.com/warmbly/warmbly/internal/app/sequence"
 	"github.com/warmbly/warmbly/internal/app/settings"
@@ -1057,6 +1058,22 @@ func main() {
 			Orgs:     organizationRepository,
 		})
 		integrationServiceForHandler.SetPublisher(streamingPublisher)
+		// AI automation nodes (ai_classify / ai_extract / ai_generate) run over the
+		// same provider + credit ledger as the rest of the AI layer. Nil provider
+		// (no OPENAI_API_KEY) leaves the nodes returning a clean "not available".
+		integrationServiceForHandler.SetAI(aiProvider, creditService)
+		// Port reply-classifier Layer 3 onto the platform provider (OpenAI-first,
+		// self-hostable). Platform-paid, never charged to org credits. Nil provider
+		// leaves Layer 3 disabled (the ambiguous middle resolves to "unknown").
+		if aiProvider != nil {
+			replyclassify.SetModelClassifier(func(ctx context.Context, system, user string) (string, error) {
+				res, err := aiProvider.Complete(ctx, generation.CompletionRequest{System: system, Prompt: user, MaxTokens: 16, Temperature: generation.Deterministic()})
+				if err != nil {
+					return "", err
+				}
+				return res.Text, nil
+			})
+		}
 		// In-app notifications: API reads/writes happen here; also wire the gate
 		// onto the backend's advanced service (deliverability webhooks can ingest
 		// here too).

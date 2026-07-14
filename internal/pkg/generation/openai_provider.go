@@ -96,11 +96,12 @@ type oaiMessage struct {
 }
 
 type oaiRequest struct {
-	Model      string       `json:"model"`
-	MaxTokens  int          `json:"max_tokens,omitempty"`
-	Messages   []oaiMessage `json:"messages"`
-	Tools      []oaiTool    `json:"tools,omitempty"`
-	ToolChoice string       `json:"tool_choice,omitempty"`
+	Model       string       `json:"model"`
+	MaxTokens   int          `json:"max_tokens,omitempty"`
+	Messages    []oaiMessage `json:"messages"`
+	Tools       []oaiTool    `json:"tools,omitempty"`
+	ToolChoice  string       `json:"tool_choice,omitempty"`
+	Temperature *float64     `json:"temperature,omitempty"`
 }
 
 type oaiResponse struct {
@@ -164,8 +165,8 @@ func transcriptToWire(system string, msgs []AgentMessage) []oaiMessage {
 }
 
 // complete performs one chat-completion call.
-func (p *openAIProvider) complete(ctx context.Context, model string, maxTokens int, msgs []oaiMessage, tools []oaiTool) (*oaiResponse, error) {
-	reqBody := oaiRequest{Model: model, MaxTokens: maxTokens, Messages: msgs}
+func (p *openAIProvider) complete(ctx context.Context, model string, maxTokens int, msgs []oaiMessage, tools []oaiTool, temperature *float64) (*oaiResponse, error) {
+	reqBody := oaiRequest{Model: model, MaxTokens: maxTokens, Messages: msgs, Temperature: temperature}
 	if len(tools) > 0 {
 		reqBody.Tools = tools
 		reqBody.ToolChoice = "auto"
@@ -246,7 +247,7 @@ func (p *openAIProvider) RunAgent(ctx context.Context, req AgentRequest) (*Agent
 			req.OnEvent(AgentEvent{Type: EventIteration, Iteration: result.Iterations})
 		}
 
-		resp, err := p.complete(ctx, model, maxTokens, transcriptToWire(req.System, messages), wireTools)
+		resp, err := p.complete(ctx, model, maxTokens, transcriptToWire(req.System, messages), wireTools, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -329,7 +330,7 @@ func (p *openAIProvider) Complete(ctx context.Context, req CompletionRequest) (*
 	resp, err := p.complete(ctx, model, maxTokens, []oaiMessage{
 		{Role: "system", Content: req.System},
 		{Role: "user", Content: req.Prompt},
-	}, nil)
+	}, nil, req.Temperature)
 	if err != nil {
 		return nil, err
 	}
@@ -355,7 +356,7 @@ func (p *openAIProvider) GenerateWriting(ctx context.Context, model, prompt stri
 	resp, err := p.complete(ctx, model, writingMaxTokens, []oaiMessage{
 		{Role: "system", Content: BuildVoiceRules(voice)},
 		{Role: "user", Content: prompt},
-	}, nil)
+	}, nil, nil)
 	if err != nil {
 		return nil, err
 	}

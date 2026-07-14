@@ -13,10 +13,12 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/warmbly/warmbly/internal/app/cipher"
+	"github.com/warmbly/warmbly/internal/app/credits"
 	"github.com/warmbly/warmbly/internal/app/webhook"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/generation"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
@@ -91,6 +93,11 @@ type Service interface {
 	// publisher post-construction (they depend on services built after this one).
 	SetNativeActions(n NativeActions)
 	SetPublisher(p *pubsub.StreamingPublisher)
+	// SetAI wires the LLM provider + credit ledger the AI automation nodes
+	// (ai_classify / ai_extract / ai_generate) use. Both may be nil (AI steps
+	// then fail with a clear "not available" error); the provider is nil when no
+	// OPENAI_API_KEY / ANTHROPIC_API_KEY is configured.
+	SetAI(p generation.Provider, c credits.CreditService)
 
 	// ListSyncRuns returns recent observability records for a connection.
 	ListSyncRuns(ctx context.Context, orgID, connID uuid.UUID, limit int) ([]models.IntegrationSyncRun, error)
@@ -155,11 +162,13 @@ type Service interface {
 }
 
 type service struct {
-	repo      repository.IntegrationRepository
-	cipher    cipher.CipherService
-	oauth     *OAuthManager
-	native    NativeActions
-	publisher *pubsub.StreamingPublisher
+	repo       repository.IntegrationRepository
+	cipher     cipher.CipherService
+	oauth      *OAuthManager
+	native     NativeActions
+	publisher  *pubsub.StreamingPublisher
+	aiProvider generation.Provider
+	credits    credits.CreditService
 }
 
 // NewService builds the integration service. cipherSvc seals provider secrets
@@ -175,6 +184,10 @@ func NewService(repo repository.IntegrationRepository, cipherSvc cipher.CipherSe
 
 func (s *service) SetNativeActions(n NativeActions)          { s.native = n }
 func (s *service) SetPublisher(p *pubsub.StreamingPublisher) { s.publisher = p }
+func (s *service) SetAI(p generation.Provider, c credits.CreditService) {
+	s.aiProvider = p
+	s.credits = c
+}
 
 func (s *service) Repo() repository.IntegrationRepository { return s.repo }
 

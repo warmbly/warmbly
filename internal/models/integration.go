@@ -284,7 +284,27 @@ const (
 	// with REALTIME_SUBSCRIBE on the org websocket) receive it with no public URL,
 	// so it replaces an outbound webhook for "tell my system this happened".
 	IntegrationActionFireEvent IntegrationAction = "warmbly.fire_event"
+
+	// AI nodes: run one LLM step over the event data and merge the output back
+	// via set_variables so downstream conditions can branch on it. Config is
+	// {instruction (templated), output_keys[] | labels[]}. 1 credit per run.
+	//   ai_classify: pick one of labels[] -> variable "ai_class".
+	//   ai_extract:  pull output_keys[] structured values from the text.
+	//   ai_generate: write text from the instruction -> variable "ai_text".
+	IntegrationActionAIClassify IntegrationAction = "warmbly.ai_classify"
+	IntegrationActionAIExtract  IntegrationAction = "warmbly.ai_extract"
+	IntegrationActionAIGenerate IntegrationAction = "warmbly.ai_generate"
 )
+
+// IsAIAction reports whether an action is an AI node (LLM-backed, credit-charged).
+func IsAIAction(a IntegrationAction) bool {
+	switch a {
+	case IntegrationActionAIClassify, IntegrationActionAIExtract, IntegrationActionAIGenerate:
+		return true
+	default:
+		return false
+	}
+}
 
 // IsNativeAction reports whether an action is a Warmbly-internal CRM/contact
 // mutation (no external connection required).
@@ -293,7 +313,8 @@ func IsNativeAction(a IntegrationAction) bool {
 	case IntegrationActionAddTag, IntegrationActionRemoveTag, IntegrationActionCreateTask,
 		IntegrationActionCreateDeal, IntegrationActionMoveDealStage, IntegrationActionUnsubscribe,
 		IntegrationActionRunAutomation, IntegrationActionLabelEmail,
-		IntegrationActionSetVariables, IntegrationActionFireEvent:
+		IntegrationActionSetVariables, IntegrationActionFireEvent,
+		IntegrationActionAIClassify, IntegrationActionAIExtract, IntegrationActionAIGenerate:
 		return true
 	default:
 		return false

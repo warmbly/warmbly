@@ -13,9 +13,11 @@ import (
 	"github.com/warmbly/warmbly/internal/app/advanced"
 	"github.com/warmbly/warmbly/internal/app/cipher"
 	jobs "github.com/warmbly/warmbly/internal/app/consumer"
+	"github.com/warmbly/warmbly/internal/app/credits"
 	"github.com/warmbly/warmbly/internal/app/integration"
 	"github.com/warmbly/warmbly/internal/app/nativeactions"
 	"github.com/warmbly/warmbly/internal/app/notification"
+	"github.com/warmbly/warmbly/internal/app/replyclassify"
 	warmupapp "github.com/warmbly/warmbly/internal/app/warmup"
 	"github.com/warmbly/warmbly/internal/app/webhook"
 	workerapp "github.com/warmbly/warmbly/internal/app/worker"
@@ -34,6 +36,7 @@ import (
 	"github.com/warmbly/warmbly/internal/notify"
 	"github.com/warmbly/warmbly/internal/observability"
 	"github.com/warmbly/warmbly/internal/pkg/encrypt"
+	"github.com/warmbly/warmbly/internal/pkg/generation"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
@@ -230,6 +233,31 @@ func main() {
 	integrationRepoC := repository.NewIntegrationRepository(primaryDB.Pool)
 	integrationServiceC := integration.NewService(integrationRepoC, cipherService, integration.NewOAuthManager())
 	webhookService.WireDispatchSink(integrationServiceC.DispatchAny)
+	// AI automation nodes + reply-classifier Layer 3 run in THIS process (reply /
+	// warmup / bounce events dispatch here). Build the credit ledger + provider so
+	// ai_classify / ai_extract / ai_generate nodes can charge + call, and so the
+	// classifier's optional model layer rides the same OpenAI-first provider.
+	creditServiceC := credits.NewService(repository.NewCreditRepository(primaryDB), redisCache)
+	var aiProviderC generation.Provider
+	if p, perr := generation.NewProvider(generation.ProviderConfig{
+		OpenAIAPIKey:     cfg.GetSecretOptional(ctx, "OPENAI_API_KEY", "openai_api_key", ""),
+		OpenAIBaseURL:    cfg.GetStringOptional(ctx, "OPENAI_BASE_URL", "openai_base_url", ""),
+		OpenAIModelTrial: cfg.GetStringOptional(ctx, "OPENAI_MODEL_TRIAL", "openai_model_trial", ""),
+		OpenAIModelPaid:  cfg.GetStringOptional(ctx, "OPENAI_MODEL_PAID", "openai_model_paid", ""),
+		AnthropicAPIKey:  cfg.GetSecretOptional(ctx, "ANTHROPIC_API_KEY", "anthropic_api_key", ""),
+	}); perr == nil {
+		aiProviderC = p
+	}
+	integrationServiceC.SetAI(aiProviderC, creditServiceC)
+	if aiProviderC != nil {
+		replyclassify.SetModelClassifier(func(ctx context.Context, system, user string) (string, error) {
+			res, err := aiProviderC.Complete(ctx, generation.CompletionRequest{System: system, Prompt: user, MaxTokens: 16, Temperature: generation.Deterministic()})
+			if err != nil {
+				return "", err
+			}
+			return res.Text, nil
+		})
+	}
 	// Warmup health transitions happen in THIS process (the health sweep + all
 	// event-driven re-evaluations run in the consumer). Without wiring the
 	// webhook dispatcher here, dispatchHealthEvent saw s.webhooks == nil and

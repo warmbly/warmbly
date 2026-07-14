@@ -66,11 +66,12 @@ type antMessage struct {
 }
 
 type antRequest struct {
-	Model     string       `json:"model"`
-	MaxTokens int          `json:"max_tokens"`
-	System    string       `json:"system,omitempty"`
-	Messages  []antMessage `json:"messages"`
-	Tools     []antTool    `json:"tools,omitempty"`
+	Model       string       `json:"model"`
+	MaxTokens   int          `json:"max_tokens"`
+	System      string       `json:"system,omitempty"`
+	Messages    []antMessage `json:"messages"`
+	Tools       []antTool    `json:"tools,omitempty"`
+	Temperature *float64     `json:"temperature,omitempty"`
 }
 
 type antResponse struct {
@@ -142,8 +143,8 @@ func antToolsFromDefs(tools []ToolDef, enableWebSearch bool) []antTool {
 	return out
 }
 
-func (p *anthropicProvider) complete(ctx context.Context, model string, maxTokens int, system string, msgs []antMessage, tools []antTool) (*antResponse, error) {
-	body, err := json.Marshal(antRequest{Model: model, MaxTokens: maxTokens, System: system, Messages: msgs, Tools: tools})
+func (p *anthropicProvider) complete(ctx context.Context, model string, maxTokens int, system string, msgs []antMessage, tools []antTool, temperature *float64) (*antResponse, error) {
+	body, err := json.Marshal(antRequest{Model: model, MaxTokens: maxTokens, System: system, Messages: msgs, Tools: tools, Temperature: temperature})
 	if err != nil {
 		return nil, err
 	}
@@ -191,7 +192,7 @@ func (p *anthropicProvider) Complete(ctx context.Context, req CompletionRequest)
 		maxTokens = defaultAgentTokens
 	}
 	msgs := []antMessage{{Role: "user", Content: []antContentBlock{{Type: "text", Text: req.Prompt}}}}
-	resp, err := p.complete(ctx, model, maxTokens, req.System, msgs, nil)
+	resp, err := p.complete(ctx, model, maxTokens, req.System, msgs, nil, req.Temperature)
 	if err != nil {
 		return nil, err
 	}
@@ -246,7 +247,7 @@ func (p *anthropicProvider) RunAgent(ctx context.Context, req AgentRequest) (*Ag
 			req.OnEvent(AgentEvent{Type: EventIteration, Iteration: result.Iterations})
 		}
 
-		resp, err := p.complete(ctx, model, maxTokens, req.System, transcriptToAnthropic(messages), tools)
+		resp, err := p.complete(ctx, model, maxTokens, req.System, transcriptToAnthropic(messages), tools, nil)
 		if err != nil {
 			return nil, err
 		}
