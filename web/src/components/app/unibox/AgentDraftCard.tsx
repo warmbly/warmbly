@@ -70,6 +70,10 @@ export default function AgentDraftCard({ threadId }: { threadId: string }) {
                 <span className="ml-auto text-[10.5px] text-slate-400">Review before sending</span>
             </div>
 
+            <p className="mt-1 truncate text-[11px] text-slate-500">
+                Reply to <span className="font-medium text-slate-700">{draft.to_addr}</span>
+            </p>
+
             <textarea
                 value={body}
                 onChange={(e) => setBody(e.target.value)}
