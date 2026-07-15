@@ -13,9 +13,10 @@ import { createAnalyticsSlice, type AnalyticsSlice } from './slices/analyticsSli
 import { createSubscriptionSlice, type SubscriptionSlice } from './slices/subscriptionSlice'
 import { createAPIKeysSlice, type APIKeysSlice } from './slices/apiKeysSlice'
 import { createPresenceSlice, type PresenceSlice } from './slices/presenceSlice'
+import { createAgentSlice, type AgentSlice } from './slices/agentSlice'
 
 export type AppStore = UserSlice & OrganizationSlice & UISlice & ShortcutSlice & DataSlice
-  & RealtimeSlice & CRMSlice & UniboxSlice & AnalyticsSlice & SubscriptionSlice & APIKeysSlice & PresenceSlice
+  & RealtimeSlice & CRMSlice & UniboxSlice & AnalyticsSlice & SubscriptionSlice & APIKeysSlice & PresenceSlice & AgentSlice
 
 export const useAppStore = create<AppStore>()(
   devtools(
@@ -33,6 +34,7 @@ export const useAppStore = create<AppStore>()(
         ...createSubscriptionSlice(...args),
         ...createAPIKeysSlice(...args),
         ...createPresenceSlice(...args),
+        ...createAgentSlice(...args),
       }),
       {
         name: 'warmbly-storage',
