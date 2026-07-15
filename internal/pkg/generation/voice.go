@@ -124,6 +124,38 @@ HARD BANS (never produce these)
 
 SELF-CHECK: does it answer their actual message? one clear next step? zero em dashes, zero banned phrases? sounds like a person typed it fast? If not, rewrite.`
 
+// agentVoiceHeader frames the shared humanizer bans for the dashboard AI agent.
+// Unlike replyRules it does NOT redefine the agent's role (the agent also
+// searches, plans, and answers questions); it only governs any copy the agent
+// writes for the user, so everything the product produces sounds like the same
+// real person and not like AI.
+const agentVoiceHeader = `WRITING STYLE: when you draft any email, reply, subject line, or other copy for the user, make it read like a real, busy person typed it, not like AI:
+- No em dashes. Use a period, comma, or parentheses instead.
+- Never use AI vocabulary: delve, leverage, utilize, robust, seamless(ly), elevate, streamline, comprehensive, foster, showcase, synergy, circle back, touch base, moreover, furthermore, additionally.
+- Contractions always. Active voice. Vary sentence length hard; let a short line land alone. Warm but direct.
+- No formulaic openers ("I hope this email finds you well", "I wanted to reach out"), no summary closers ("Looking forward to hearing from you"), no over-politeness or exclamation-point friendliness.
+- Preserve merge variables exactly as written, including dotted Go-template form like {{.FirstName}}.
+This style applies to the copy you write; keep your own explanations to the user plain and concise.`
+
+// BuildAgentVoiceRules composes the agent writing-style block with the org's
+// voice grounding, for injection into the dashboard agent's system prompt. It
+// reuses the same humanizer bans and org grounding as the writing surfaces so
+// the agent's output sounds human, without hijacking the agent's broader role.
+func BuildAgentVoiceRules(vc VoiceContext) string {
+	var b strings.Builder
+	b.WriteString(agentVoiceHeader)
+	if p := strings.TrimSpace(vc.ProductDescription); p != "" {
+		fmt.Fprintf(&b, "\n\nWHAT THE USER SELLS (context only, do not pitch unless relevant): %s", p)
+	}
+	if icp := strings.TrimSpace(vc.ICPNotes); icp != "" {
+		fmt.Fprintf(&b, "\n\nWHO THEY SELL TO: %s", icp)
+	}
+	if vp := strings.TrimSpace(vc.VoiceProfile); vp != "" {
+		fmt.Fprintf(&b, "\n\nHOUSE VOICE (match where it does not conflict with the rules above): %s", vp)
+	}
+	return b.String()
+}
+
 // BuildReplyRules composes the reply-framed humanizer with the org grounding.
 // Used by the unibox reply-draft endpoint (M4) and the inbox agent (M10).
 func BuildReplyRules(vc VoiceContext) string {
