@@ -451,7 +451,7 @@ defmodule RealtimeWeb.OrgChannel do
       # Unibox rows carry subject + preview snippets; AI reply drafts are unibox
       # content awaiting review, so they ride the same access_unibox gate.
       String.contains?(event_type, "INBOX") or
-          String.contains?(event_type, "AI_DRAFT") or
+        String.contains?(event_type, "AI_DRAFT") or
           event_type in ["EMAIL_RECEIVED", "EMAIL_UPDATED", "EMAIL_DELETED"] ->
         has.(:access_unibox)
 
