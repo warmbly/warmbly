@@ -79,12 +79,21 @@ func (h *Handler) DraftReply(c *gin.Context) {
 	voice := h.orgVoice(c.Request.Context(), *orgID, "")
 
 	// Charge 2 credits up front (idempotent on the client's key); refund on
-	// provider failure.
+	// provider failure. A free/local model (AI_LOCAL_MODEL) runs un-metered.
 	idemKey := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
-	remaining, cerr := h.CreditService.Consume(c.Request.Context(), *orgID, credits.CostReplyDraft, "reply_draft", model, 0, idemKey)
-	if cerr != nil {
-		mapCreditError(c, cerr)
-		return
+	local := h.AIProvider != nil && h.AIProvider.IsLocal()
+	var remaining int
+	if local {
+		if bal, berr := h.CreditService.GetBalance(c.Request.Context(), *orgID); berr == nil {
+			remaining = bal
+		}
+	} else {
+		var cerr error
+		remaining, cerr = h.CreditService.Consume(c.Request.Context(), *orgID, credits.CostReplyDraft, "reply_draft", model, 0, idemKey)
+		if cerr != nil {
+			mapCreditError(c, cerr)
+			return
+		}
 	}
 
 	system := generation.BuildReplyRules(voice)
@@ -100,8 +109,10 @@ func (h *Handler) DraftReply(c *gin.Context) {
 		Model:  model,
 	})
 	if gerr != nil {
-		if bal, rerr := h.CreditService.Grant(c.Request.Context(), *orgID, credits.CostReplyDraft, "reply_draft_refund"); rerr == nil {
-			remaining = bal
+		if !local {
+			if bal, rerr := h.CreditService.Grant(c.Request.Context(), *orgID, credits.CostReplyDraft, "reply_draft_refund"); rerr == nil {
+				remaining = bal
+			}
 		}
 		errx.JSON(c, errx.New(errx.ServiceUnavailable, "The reply drafter is temporarily unavailable. Your credits were not charged."))
 		return
