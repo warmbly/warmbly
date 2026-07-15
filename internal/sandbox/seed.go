@@ -135,6 +135,9 @@ func Seed(ctx context.Context, pool *pgxpool.Pool, cfg Config) error {
 	if err := seedCampaigns(ctx, pool); err != nil {
 		return err
 	}
+	if err := seedHistory(ctx, pool); err != nil {
+		return err
+	}
 	if err := repairSMTPIMAPCredentials(ctx, pool, cfg, enc); err != nil {
 		return err
 	}
@@ -150,6 +153,7 @@ func Seed(ctx context.Context, pool *pgxpool.Pool, cfg Config) error {
 	fmt.Printf("  mailboxes  %d senders on @sunrise.test (SMTP -> mailpit, IMAP -> dovecot)\n", len(sandboxMailboxes))
 	fmt.Println("  campaigns  Sunrise Q3 launch + Agency partnerships (active), Dormant reactivation (draft)")
 	fmt.Println("  warmup     enabled on all senders, premium pool")
+	fmt.Println("  history    funnel progress, unified inbox, CRM pipeline, templates, notifications, chart rollups")
 	return nil
 }
 
