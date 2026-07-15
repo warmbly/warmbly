@@ -79,8 +79,15 @@ type OrganizationMember struct {
 	Name  string `json:"name"`
 }
 
-// HasPermission checks if the member has a specific permission
+// HasPermission checks if the member has a specific permission. The owner always
+// has every permission by definition (RolePermissions[RoleOwner] == AllPermissions),
+// so it is granted regardless of the stored mask — this matches the web client,
+// which short-circuits owners, and keeps an owner from ever being locked out of
+// their own org by a bad/empty stored permissions value.
 func (m *OrganizationMember) HasPermission(perm OrganizationPermission) bool {
+	if m.IsOwner() {
+		return true
+	}
 	return m.Permissions.HasPermission(perm)
 }
 

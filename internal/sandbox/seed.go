@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/argon2"
 	"github.com/warmbly/warmbly/internal/pkg/encrypt"
 	"github.com/warmbly/warmbly/internal/seed"
@@ -178,11 +179,18 @@ func seedIdentity(ctx context.Context, pool *pgxpool.Pool) error {
 		sandboxOrg, sandboxUser); err != nil {
 		return err
 	}
+	// Seed the owner with the full owner permission mask, exactly like a real
+	// signup (organization.Service.Create). Without this the member row defaults
+	// to permissions = 0 and every org-scoped route 403s ("you don't have access
+	// to this feature") across the whole dashboard. DO UPDATE (not DO NOTHING) so
+	// re-seeding a DB that already has a broken 0-mask owner repairs it.
 	_, err := pool.Exec(ctx, `
-		INSERT INTO organization_members (organization_id, user_id, role, accepted_at)
-		VALUES ($1, $2, 'owner', NOW())
-		ON CONFLICT DO NOTHING`,
-		sandboxOrg, sandboxUser)
+		INSERT INTO organization_members (organization_id, user_id, role, permissions, accepted_at)
+		VALUES ($1, $2, 'owner', $3, NOW())
+		ON CONFLICT (organization_id, user_id) DO UPDATE SET
+			role = 'owner',
+			permissions = EXCLUDED.permissions`,
+		sandboxOrg, sandboxUser, models.RolePermissions[models.RoleOwner])
 	return err
 }
 
