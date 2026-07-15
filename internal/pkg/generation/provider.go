@@ -180,8 +180,14 @@ type Provider interface {
 	// ModelForTier returns the provider's model id for the org tier (paid gets
 	// the stronger model).
 	ModelForTier(paid bool) string
-	// Name identifies the provider ("openai" or "anthropic").
+	// Name identifies the provider ("openai" or "anthropic"). Stays stable for
+	// accounting even when pointed at a local/self-hosted endpoint.
 	Name() string
+	// IsLocal reports whether this provider is an explicitly-declared free/local
+	// backend (AI_LOCAL_MODEL). Callers use it to warn the user and to skip
+	// credit charges; it is never inferred from the base URL (OpenRouter/Azure
+	// also set one), so it stays a deliberate operator opt-in.
+	IsLocal() bool
 }
 
 // ErrApprovalRequired is returned by an AgentRequest.Approve hook to pause the
@@ -209,9 +215,15 @@ type ProviderConfig struct {
 	OpenAIBaseURL string
 	// OpenAIModelTrial / OpenAIModelPaid override the per-tier model ids (so a
 	// self-hoster can route to whatever their endpoint serves). Empty uses the
-	// built-in gpt-4o-mini / gpt-4o defaults.
+	// built-in gpt-4o-mini / gpt-4o defaults (or the local default when Local).
 	OpenAIModelTrial string
 	OpenAIModelPaid  string
+
+	// Local marks this as a free/local model backend (AI_LOCAL_MODEL). It flips
+	// the empty-model default to a local-friendly tag and lets the agent warn
+	// the user and skip credit charges. Set deliberately by the operator; never
+	// inferred from OpenAIBaseURL.
+	Local bool
 
 	// AnthropicAPIKey enables the Anthropic connector (used only when no OpenAI
 	// key is set).

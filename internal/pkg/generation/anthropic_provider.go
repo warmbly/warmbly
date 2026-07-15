@@ -31,6 +31,10 @@ func newAnthropicProvider(cfg ProviderConfig) *anthropicProvider {
 
 func (p *anthropicProvider) Name() string { return "anthropic" }
 
+// IsLocal is always false: the Anthropic connector targets Anthropic's hosted
+// API, which is never a free/local backend.
+func (p *anthropicProvider) IsLocal() bool { return false }
+
 func (p *anthropicProvider) ModelForTier(paid bool) string {
 	if paid {
 		return ModelAgentPaidAnthropic

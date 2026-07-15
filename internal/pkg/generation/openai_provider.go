@@ -23,6 +23,7 @@ type openAIProvider struct {
 	modelTrial string
 	modelPaid  string
 	search     SearchClient
+	local      bool
 	http       *http.Client
 }
 
@@ -30,18 +31,30 @@ type openAIProvider struct {
 // OpenAI-compatible self-hosted endpoints (Ollama, vLLM, LocalAI, OpenRouter).
 const defaultOpenAIBaseURL = "https://api.openai.com/v1"
 
+// defaultLocalModel is the fall-back model tag for a free/local backend
+// (AI_LOCAL_MODEL) when no explicit model id is set, so a dev who forgets
+// OPENAI_MODEL_* does not 404 on "gpt-4o-mini". llama3.1 has reliable
+// tool-calling in Ollama; override with OPENAI_MODEL_TRIAL / _PAID.
+const defaultLocalModel = "llama3.1"
+
 func newOpenAIProvider(cfg ProviderConfig) *openAIProvider {
 	base := strings.TrimRight(strings.TrimSpace(cfg.OpenAIBaseURL), "/")
 	if base == "" {
 		base = defaultOpenAIBaseURL
 	}
+	// Empty model ids default to the hosted OpenAI models, or a local-friendly
+	// tag when this is an explicit free/local backend.
+	fallbackTrial, fallbackPaid := ModelWritingFreeOpenAI, ModelWritingPaidOpenAI
+	if cfg.Local {
+		fallbackTrial, fallbackPaid = defaultLocalModel, defaultLocalModel
+	}
 	trial := cfg.OpenAIModelTrial
 	if trial == "" {
-		trial = ModelWritingFreeOpenAI
+		trial = fallbackTrial
 	}
 	paid := cfg.OpenAIModelPaid
 	if paid == "" {
-		paid = ModelWritingPaidOpenAI
+		paid = fallbackPaid
 	}
 	return &openAIProvider{
 		apiKey:     cfg.OpenAIAPIKey,
@@ -49,11 +62,14 @@ func newOpenAIProvider(cfg ProviderConfig) *openAIProvider {
 		modelTrial: trial,
 		modelPaid:  paid,
 		search:     cfg.Search,
+		local:      cfg.Local,
 		http:       &http.Client{Timeout: 90 * time.Second},
 	}
 }
 
 func (p *openAIProvider) Name() string { return "openai" }
+
+func (p *openAIProvider) IsLocal() bool { return p.local }
 
 func (p *openAIProvider) ModelForTier(paid bool) string {
 	if paid {
