@@ -96,6 +96,11 @@ type Service interface {
 	ListSessions(ctx context.Context, orgID, userID uuid.UUID, limit int, beforeCreatedAt time.Time, beforeID uuid.UUID) ([]models.AgentSession, error)
 	GetSession(ctx context.Context, orgID, userID, sessionID uuid.UUID) (*models.AgentSession, error)
 
+	// Transcript returns the session's persisted history hydrated into the same
+	// turn/block shape the live stream renders, so a reopened tab looks identical
+	// to a fresh run.
+	Transcript(ctx context.Context, orgID, userID, sessionID uuid.UUID) ([]HydratedTurn, *errx.Error)
+
 	// RunMessage streams a new user message's run. inv carries the caller's
 	// identity + org permission bits. emit is called for each SSE step.
 	RunMessage(ctx context.Context, inv aitools.Invocation, sessionID uuid.UUID, messageID, text, page, resource string, emit func(StreamEvent)) *errx.Error
@@ -136,6 +141,80 @@ func (s *service) ListSessions(ctx context.Context, orgID, userID uuid.UUID, lim
 
 func (s *service) GetSession(ctx context.Context, orgID, userID, sessionID uuid.UUID) (*models.AgentSession, error) {
 	return s.repo.GetSession(ctx, orgID, userID, sessionID)
+}
+
+// HydratedBlock is one rendered piece of a persisted turn, mirroring the
+// client's live block model (text or tool step) so a reopened session renders
+// identically to a live one.
+type HydratedBlock struct {
+	Kind        string `json:"kind"` // "text" | "tool"
+	Text        string `json:"text,omitempty"`
+	Tool        string `json:"tool,omitempty"`
+	ArgsSummary string `json:"args_summary,omitempty"`
+	Result      string `json:"result,omitempty"`
+	EntityType  string `json:"entity_type,omitempty"`
+	EntityID    string `json:"entity_id,omitempty"`
+	OpenURL     string `json:"open_url,omitempty"`
+	Done        bool   `json:"done"`
+}
+
+// HydratedTurn is one user or assistant turn rebuilt from the transcript.
+type HydratedTurn struct {
+	Role   string          `json:"role"` // "user" | "assistant"
+	Blocks []HydratedBlock `json:"blocks"`
+}
+
+func (s *service) Transcript(ctx context.Context, orgID, userID, sessionID uuid.UUID) ([]HydratedTurn, *errx.Error) {
+	msgs, xerr := s.loadTranscript(ctx, orgID, userID, sessionID)
+	if xerr != nil {
+		return nil, xerr
+	}
+	return hydrateTranscript(msgs), nil
+}
+
+// hydrateTranscript folds the stored provider-agnostic messages into the
+// client's turn/block model. Consecutive assistant + tool messages collapse into
+// one assistant turn (interleaved text and tool steps), matching how the live
+// SSE loop appends events to the current assistant turn until the next user
+// message.
+func hydrateTranscript(msgs []generation.AgentMessage) []HydratedTurn {
+	turns := make([]HydratedTurn, 0, len(msgs))
+	// tool_call_id -> (turnIndex, blockIndex) so a tool result completes its step.
+	loc := map[string][2]int{}
+	ensureAssistant := func() int {
+		if len(turns) == 0 || turns[len(turns)-1].Role != "assistant" {
+			turns = append(turns, HydratedTurn{Role: "assistant"})
+		}
+		return len(turns) - 1
+	}
+	for _, m := range msgs {
+		switch m.Role {
+		case "user":
+			turns = append(turns, HydratedTurn{Role: "user", Blocks: []HydratedBlock{{Kind: "text", Text: m.Content, Done: true}}})
+		case "assistant":
+			ti := ensureAssistant()
+			if strings.TrimSpace(m.Content) != "" {
+				turns[ti].Blocks = append(turns[ti].Blocks, HydratedBlock{Kind: "text", Text: m.Content, Done: true})
+			}
+			for _, tc := range m.ToolCalls {
+				turns[ti].Blocks = append(turns[ti].Blocks, HydratedBlock{Kind: "tool", Tool: tc.Name, ArgsSummary: summarizeArgs(tc.Args)})
+				loc[tc.ID] = [2]int{ti, len(turns[ti].Blocks) - 1}
+			}
+		case "tool":
+			at, ok := loc[m.ToolCallID]
+			if !ok {
+				continue
+			}
+			ev := toolResultEvent(turns[at[0]].Blocks[at[1]].Tool, m.Content)
+			b := &turns[at[0]].Blocks[at[1]]
+			b.Done = true
+			b.Result = ev.Result
+			b.EntityType = ev.EntityType
+			b.EntityID = ev.EntityID
+			b.OpenURL = ev.OpenURL
+		}
+	}
+	return turns
 }
 
 // errOutOfCredits / errCapExceeded are recorded by the credit PreIteration hook

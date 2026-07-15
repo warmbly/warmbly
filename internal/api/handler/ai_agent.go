@@ -109,6 +109,40 @@ func (h *Handler) ListAgentSessions(c *gin.Context) {
 	})
 }
 
+// AgentSessionMessages — GET /ai/sessions/:id/messages returns a session's
+// hydrated transcript (+ any pending approval) so a reopened tab rehydrates.
+func (h *Handler) AgentSessionMessages(c *gin.Context) {
+	if h.AIAgentService == nil {
+		errx.JSON(c, errx.New(errx.ServiceUnavailable, "the AI assistant is not configured"))
+		return
+	}
+	inv, xerr := h.jwtInvocation(c)
+	if xerr != nil {
+		errx.JSON(c, xerr)
+		return
+	}
+	sessionID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "invalid session id"))
+		return
+	}
+	sess, gerr := h.AIAgentService.GetSession(c.Request.Context(), inv.OrgID, inv.UserID, sessionID)
+	if gerr != nil || sess == nil {
+		errx.JSON(c, errx.New(errx.NotFound, "session not found"))
+		return
+	}
+	turns, terr := h.AIAgentService.Transcript(c.Request.Context(), inv.OrgID, inv.UserID, sessionID)
+	if terr != nil {
+		errx.JSON(c, terr)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"title":   sess.Title,
+		"turns":   turns,
+		"pending": sess.Context.Pending,
+	})
+}
+
 // AgentMessage — POST /ai/sessions/:id/messages (SSE)
 func (h *Handler) AgentMessage(c *gin.Context) {
 	if h.AIAgentService == nil {

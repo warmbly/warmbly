@@ -879,6 +879,7 @@ func Run(
 			{
 				ai.POST("/sessions", h.CreateAgentSession)
 				ai.GET("/sessions", h.ListAgentSessions)
+				ai.GET("/sessions/:id/messages", h.AgentSessionMessages)
 				ai.POST("/sessions/:id/messages", h.AgentMessage)
 				ai.POST("/sessions/:id/approve", h.AgentApprove)
 
