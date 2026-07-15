@@ -42,6 +42,40 @@ type SkillPreamble interface {
 	EnabledPreamble(ctx context.Context, orgID uuid.UUID) string
 }
 
+// VoicePreamble renders the org's writing-style/voice rules (the shared M4
+// humanizer + the org's product/ICP/house-voice grounding) for the agent system
+// prompt, so anything the agent writes for the user sounds human.
+type VoicePreamble interface {
+	VoiceInstructions(ctx context.Context, orgID uuid.UUID) string
+}
+
+// OrgVoiceGetter is the slice of the organization service the voice preamble
+// needs: the org's voice-grounding columns.
+type OrgVoiceGetter interface {
+	Get(ctx context.Context, orgID uuid.UUID) (*models.Organization, *errx.Error)
+}
+
+type orgVoicePreamble struct{ orgs OrgVoiceGetter }
+
+// NewVoicePreamble builds the agent voice preamble from the organization
+// service. A nil getter (or a load failure) yields the built-in humanizer rules
+// with no org grounding, so the agent still sounds human.
+func NewVoicePreamble(orgs OrgVoiceGetter) VoicePreamble {
+	return &orgVoicePreamble{orgs: orgs}
+}
+
+func (v *orgVoicePreamble) VoiceInstructions(ctx context.Context, orgID uuid.UUID) string {
+	vc := generation.VoiceContext{}
+	if v != nil && v.orgs != nil {
+		if org, err := v.orgs.Get(ctx, orgID); err == nil && org != nil {
+			vc.ProductDescription = org.ProductDescription
+			vc.ICPNotes = org.ICPNotes
+			vc.VoiceProfile = org.VoiceProfile
+		}
+	}
+	return generation.BuildAgentVoiceRules(vc)
+}
+
 // StreamEvent is one SSE step emitted to the client.
 type StreamEvent struct {
 	Type             string `json:"type"`
@@ -54,8 +88,11 @@ type StreamEvent struct {
 	Iteration        int    `json:"iteration,omitempty"`
 	CreditsRemaining int    `json:"credits_remaining,omitempty"`
 	Budget           int    `json:"budget,omitempty"`
-	Code             string `json:"code,omitempty"`
-	Message          string `json:"message,omitempty"`
+	// FreeModel is true when the run is on an explicitly free/local backend
+	// (AI_LOCAL_MODEL): the client warns the user and no credits are charged.
+	FreeModel bool   `json:"free_model,omitempty"`
+	Code      string `json:"code,omitempty"`
+	Message   string `json:"message,omitempty"`
 	// Draft artifact (create_campaign_draft / create_automation_draft): the
 	// client renders a card that deep-links into the real editor.
 	EntityType string `json:"entity_type,omitempty"`
@@ -118,10 +155,11 @@ type service struct {
 	feature  FeatureGate
 	audit    AuditLogger
 	skills   SkillPreamble
+	voice    VoicePreamble
 }
 
-func NewService(repo repository.AgentRepository, registry *aitools.Registry, provider generation.Provider, creditSvc credits.CreditService, feature FeatureGate, audit AuditLogger, skills SkillPreamble) Service {
-	return &service{repo: repo, registry: registry, provider: provider, credits: creditSvc, feature: feature, audit: audit, skills: skills}
+func NewService(repo repository.AgentRepository, registry *aitools.Registry, provider generation.Provider, creditSvc credits.CreditService, feature FeatureGate, audit AuditLogger, skills SkillPreamble, voice VoicePreamble) Service {
+	return &service{repo: repo, registry: registry, provider: provider, credits: creditSvc, feature: feature, audit: audit, skills: skills, voice: voice}
 }
 
 func (s *service) CreateSession(ctx context.Context, orgID, userID uuid.UUID, page, resource string) (*models.AgentSession, *errx.Error) {
@@ -326,6 +364,10 @@ func (s *service) runLoop(ctx context.Context, inv aitools.Invocation, sess *mod
 	paid, _ := s.feature.IsPaidOrganization(ctx, inv.OrgID)
 	model := s.provider.ModelForTier(paid)
 	sess.Context.Model = model
+	// Free/local backends (AI_LOCAL_MODEL) run un-metered and warn the user.
+	freeModel := s.provider.IsLocal()
+	chargeCredits := !freeModel
+	sess.Context.FreeModel = freeModel
 
 	policies, _ := s.repo.GetToolPolicies(ctx, inv.OrgID)
 
@@ -338,8 +380,12 @@ func (s *service) runLoop(ctx context.Context, inv aitools.Invocation, sess *mod
 	if s.skills != nil {
 		skillsBlock = s.skills.EnabledPreamble(ctx, inv.OrgID)
 	}
+	voiceBlock := ""
+	if s.voice != nil {
+		voiceBlock = s.voice.VoiceInstructions(ctx, inv.OrgID)
+	}
 	req := generation.AgentRequest{
-		System:        s.systemPrompt(sess, skillsBlock),
+		System:        s.systemPrompt(sess, voiceBlock, skillsBlock),
 		Messages:      genMsgs,
 		Tools:         s.registry.ToolDefs(ctx, inv),
 		Model:         model,
@@ -355,6 +401,12 @@ func (s *service) runLoop(ctx context.Context, inv aitools.Invocation, sess *mod
 			}
 		},
 		PreIteration: func(ctx context.Context, iter int) error {
+			// Free/local backend: no debit, no cap. Omit CreditsRemaining so the
+			// client shows the free-model notice instead of a misleading balance.
+			if !chargeCredits {
+				emit(StreamEvent{Type: "iteration", Iteration: iter, Budget: DefaultRunBudget, FreeModel: true})
+				return nil
+			}
 			key := messageID + ":" + strconv.Itoa(iter)
 			remaining, cerr := s.credits.Consume(ctx, inv.OrgID, credits.CostAgentIteration, "agent_iteration", model, 0, key)
 			if cerr != nil {
@@ -401,9 +453,11 @@ func (s *service) runLoop(ctx context.Context, inv aitools.Invocation, sess *mod
 	if rerr != nil {
 		// The credit for the failed iteration was charged before the model call
 		// (PreIteration); refund it so the user is not billed for output they
-		// never received.
-		if bal, gerr := s.credits.Grant(ctx, inv.OrgID, credits.CostAgentIteration, "agent_iteration_refund"); gerr == nil {
-			lastRemaining = bal
+		// never received. Nothing to refund on the free/local path.
+		if chargeCredits {
+			if bal, gerr := s.credits.Grant(ctx, inv.OrgID, credits.CostAgentIteration, "agent_iteration_refund"); gerr == nil {
+				lastRemaining = bal
+			}
 		}
 		emit(StreamEvent{Type: evError, Code: "provider_error", Message: "The assistant hit an error. Please try again.", CreditsRemaining: lastRemaining})
 		return nil
@@ -485,7 +539,7 @@ func (s *service) persist(ctx context.Context, orgID, userID, sessionID uuid.UUI
 	return s.repo.AppendMessages(ctx, orgID, userID, sessionID, rows)
 }
 
-func (s *service) systemPrompt(sess *models.AgentSession, skillsBlock string) string {
+func (s *service) systemPrompt(sess *models.AgentSession, voiceBlock, skillsBlock string) string {
 	var b strings.Builder
 	b.WriteString(`You are Warmbly's in-product AI assistant. You help the user manage their cold email outreach: contacts, campaigns, the unified inbox, CRM, and automations. Use the available tools to look things up and take actions. Be concise and specific.
 
@@ -494,6 +548,10 @@ Rules:
 - Never claim you sent an email. You can draft replies, but the user always sends.
 - When you create a draft campaign or automation, tell the user it is a draft and give them the link to open it.
 - If a tool returns an error, explain it plainly and suggest a next step.`)
+	if strings.TrimSpace(voiceBlock) != "" {
+		b.WriteString("\n\n")
+		b.WriteString(voiceBlock)
+	}
 	if sess.Context.Page != "" || sess.Context.Resource != "" {
 		fmt.Fprintf(&b, "\n\nThe user is currently on page %q", sess.Context.Page)
 		if sess.Context.Resource != "" {

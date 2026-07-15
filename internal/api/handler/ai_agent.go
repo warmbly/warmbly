@@ -137,9 +137,10 @@ func (h *Handler) AgentSessionMessages(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"title":   sess.Title,
-		"turns":   turns,
-		"pending": sess.Context.Pending,
+		"title":      sess.Title,
+		"turns":      turns,
+		"pending":    sess.Context.Pending,
+		"free_model": sess.Context.FreeModel,
 	})
 }
 
