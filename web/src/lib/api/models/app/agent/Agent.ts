@@ -27,6 +27,33 @@ export interface AgentSessionsPage {
     pagination: { next_cursor: string | null; has_more: boolean };
 }
 
+// A persisted transcript block, hydrated server-side into the same shape the
+// live stream renders (see internal/app/aiagent HydratedBlock).
+export interface AgentHydratedBlock {
+    kind: "text" | "tool";
+    text?: string;
+    tool?: string;
+    args_summary?: string;
+    result?: string;
+    entity_type?: string;
+    entity_id?: string;
+    open_url?: string;
+    done: boolean;
+}
+
+export interface AgentHydratedTurn {
+    role: "user" | "assistant";
+    blocks: AgentHydratedBlock[];
+}
+
+// GET /ai/sessions/:id/messages — a reopened session's history + any pending
+// approval, so a tab rehydrates identically to a live run.
+export interface AgentTranscript {
+    title: string;
+    turns: AgentHydratedTurn[];
+    pending: PendingAgentTool | null;
+}
+
 // AgentStreamEvent is one SSE step from a message/approval run.
 export interface AgentStreamEvent {
     type:
