@@ -205,6 +205,42 @@ function NavRow({ item }: { item: NavItem }) {
 
     const planBadge = locked && item.requires ? REQUIRES_TO_BADGE[item.requires] : null;
 
+    // Plan-gated items the org's plan doesn't include: lock the row and pop an
+    // upgrade dialog on click (mirroring the permission lock), instead of routing
+    // to a teasing empty page. Only the owner gets the direct upgrade CTA.
+    if (locked && planBadge) {
+        return (
+            <>
+                <button
+                    type="button"
+                    onClick={() => setDeniedOpen(true)}
+                    title={`${item.title} · ${planBadge.label} plan`}
+                    className="group w-[calc(100%-1rem)] mx-2 flex items-center gap-2.5 px-2.5 h-7 rounded-md text-[12.5px] text-slate-400 hover:text-slate-700 hover:bg-slate-200/40 transition-colors duration-100"
+                >
+                    <LockIcon className="w-[13px] h-[13px] shrink-0 text-slate-300 group-hover:text-slate-500" strokeWidth={1.8} />
+                    <span className="truncate flex-1 min-w-0 text-left">{item.title}</span>
+                    <span
+                        className={cn(
+                            "h-4 px-1.5 rounded text-[9.5px] font-semibold uppercase tracking-[0.06em] border inline-flex items-center",
+                            planBadge.classes,
+                        )}
+                    >
+                        {planBadge.label}
+                    </span>
+                </button>
+                <AccessLockedDialog
+                    open={deniedOpen}
+                    onClose={() => setDeniedOpen(false)}
+                    feature={item.title}
+                    variant="plan"
+                    planLabel={planBadge.label}
+                    upgradeTo={access.isOwner ? "/app/settings/billing" : "/app/settings/roles"}
+                    canUpgrade={access.isOwner}
+                />
+            </>
+        );
+    }
+
     return (
         <Link
             to={item.url}
