@@ -266,12 +266,22 @@ export default function TaskPreview({ campaignId, campaignStatus: initialStatus 
                 ) : (
                     <div className="px-5 py-16 text-center">
                         <p className="text-[12.5px] text-slate-700 font-medium mb-1">
-                            {isActive ? "Waiting for the next send…" : "Nothing sending yet"}
+                            {currentStatus === "completed"
+                                ? "All caught up — sending complete"
+                                : currentStatus === "paused"
+                                  ? "Campaign paused"
+                                  : isActive
+                                    ? "Waiting for the next send…"
+                                    : "Nothing sending yet"}
                         </p>
                         <p className="text-[11.5px] text-slate-400 max-w-[34ch] mx-auto leading-relaxed">
-                            {isActive
-                                ? "Opens, clicks, replies and bounces will stream in here live as your campaign sends."
-                                : "Start the campaign to watch it send live."}
+                            {currentStatus === "completed"
+                                ? "Every lead has finished the sequence. Replies and clicks still stream in here as they arrive."
+                                : currentStatus === "paused"
+                                  ? "Resume the campaign to keep sending. Replies and clicks still stream in here."
+                                  : isActive
+                                    ? "Opens, clicks, replies and bounces will stream in here live as your campaign sends."
+                                    : "Start the campaign to watch it send live."}
                         </p>
                     </div>
                 )}
