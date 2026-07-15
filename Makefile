@@ -351,6 +351,26 @@ CREDENTIALS_KEY_DEV := 0123456789abcdef0123456789abcdef0123456789abcdef012345678
 # CODEC_PROVIDER=json: the worker command/result envelopes carry `any`
 # bodies that Avro cannot serialize, so worker messaging only works on the
 # JSON codec. tracking-events stays Avro (dedicated Avrov2 path).
+# Free local AI model for dev. Off by default: with no key the assistant returns
+# a clean 503, so nothing accidentally hits an Ollama that isn't running. Turn it
+# on with `make backend AI_LOCAL=1` (needs `ollama serve` + `ollama pull llama3.1`).
+# Any OpenAI-compatible endpoint works; override host/model as needed. AI_LOCAL_MODEL
+# tells the backend this is a free/local model, so it skips credit charges and the
+# assistant shows a "free model" notice.
+AI_LOCAL ?=
+OLLAMA_HOST ?= localhost
+OLLAMA_MODEL ?= llama3.1
+ifeq ($(AI_LOCAL),1)
+AI_DEV_ENV := \
+	OPENAI_API_KEY=ollama \
+	OPENAI_BASE_URL=http://$(OLLAMA_HOST):11434/v1 \
+	OPENAI_MODEL_TRIAL=$(OLLAMA_MODEL) \
+	OPENAI_MODEL_PAID=$(OLLAMA_MODEL) \
+	AI_LOCAL_MODEL=true
+else
+AI_DEV_ENV :=
+endif
+
 GO_DEV_ENV := \
 	APP_ENV=dev \
 	CODEC_PROVIDER=json \
@@ -390,6 +410,7 @@ WORKER_DEV_ENV := \
 # the docker postgres.
 backend:
 	$(GO_DEV_ENV) \
+	$(AI_DEV_ENV) \
 	API_HOST=0.0.0.0:8080 \
 	GIN_MODE=debug \
 	APP_URL=http://$(WEB_HOST):5173 \
@@ -426,6 +447,7 @@ backend:
 # Kafka -> postgres consumer.
 consumer:
 	$(GO_DEV_ENV) \
+	$(AI_DEV_ENV) \
 	go run ./cmd/consumer
 
 # Send/sync worker. No Postgres by design. WORKER_ID is an explicit UUID
