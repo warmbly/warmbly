@@ -36,6 +36,26 @@ export interface CampaignDeliverability {
     band: DeliverabilityBand;
 }
 
+export interface ProviderPlacement {
+    provider: string;
+    samples: number;
+    inbox: number;
+    promotions: number;
+    spam: number;
+    other: number;
+    inbox_rate: number;
+    spam_rate: number;
+}
+
+export interface WarmupDomainPlacement {
+    provider: string;
+    domain: string;
+    delivered: number;
+    spam: number;
+    inbox_rate: number;
+    spam_rate: number;
+}
+
 export default interface DeliverabilityDashboard {
     from: string;
     to: string;
@@ -67,8 +87,11 @@ export default interface DeliverabilityDashboard {
     placement_samples: number;
 
     band: DeliverabilityBand;
+    score: number;
 
     timeseries: DeliverabilityDailyPoint[];
     by_mailbox: MailboxDeliverability[];
     by_campaign: CampaignDeliverability[];
+    by_provider: ProviderPlacement[];
+    warmup_placement: WarmupDomainPlacement[];
 }

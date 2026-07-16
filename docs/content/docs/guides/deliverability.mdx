@@ -17,8 +17,9 @@ You can scope the whole dashboard to a time window with the range tabs: `7d`, `3
 
 ### Headline rates
 
-At the top of the page are four headline numbers for the selected window:
+At the top of the page are five headline numbers for the selected window:
 
+- **Deliverability score**: a `0-100` composite for the window, shown with its health band chip. The score starts at `100` and subtracts a penalty per signal: bounce rate costs up to `40` points (maxed at a `10%` bounce rate), complaint rate up to `30` points (maxed at `0.30%`), and spam placement up to `40` points (maxed at `40%` spam placement). It shows a dash until the window has any activity.
 - **Bounce rate**: the share of sent emails that bounced, shown as a percentage along with the raw counts (for example, bounces out of total sent). This number is highlighted when it reaches `5%` or higher.
 - **Complaint rate**: the share of recipients who marked your mail as spam. This number is highlighted when it reaches `0.1%` or higher.
 - **Spam placement**: the share of monitored test deliveries that landed in spam or junk, based on seed inbox samples. If there is no seed data yet, this shows a dash.
@@ -42,11 +43,27 @@ Seed placement is the most direct signal you have. Bounces and complaints tell y
 Spam placement and inbox placement only appear once there is enough seed data. A small number of samples can be noisy, so treat a low sample count as a hint, not a verdict. Warmbly only starts acting on placement once it has a meaningful sample (see the bands below).
 </Callout>
 
+### Placement by provider
+
+Seed placement results are also broken down per recipient provider (Gmail, Outlook, IMAP/SMTP). Each row shows a stacked bar of where your test mail landed (inbox, promotions, spam, or another folder), the inbox and spam rates, and the number of samples behind them.
+
+This is the view to check before scaling up a campaign: an aggregate placement rate can look fine while one provider is quietly junking everything. If Gmail shows `95%` inbox but Outlook shows `40%`, the problem is provider-specific (often authentication or content), not general volume.
+
+### Warmup placement by domain
+
+While seed tests are point-in-time probes, warmup gives you a continuous placement signal for free: every verified warmup delivery reports whether it arrived in the recipient's inbox or was filed into spam. The dashboard rolls this up per recipient domain, showing deliveries, inbox rate, and spam rate for each, with a status dot that turns amber at `10%` spam and red at `20%`.
+
+Because warmup partners are real monitored mailboxes across providers, this section keeps updating as long as warmup runs, so placement drift shows up here first, before it shows up as complaints on a campaign.
+
 ### Mailboxes and campaigns at risk
 
 Below the charts, two lists rank the mailboxes and campaigns that have bounce or complaint activity in the window, worst first. Each row shows how many emails were sent, the bounce rate, the complaint (spam) rate, and a colored health band chip.
 
 Clicking a campaign row opens that campaign. From the mailboxes list you can jump to **All mailboxes** to manage individual senders.
+
+### Customizing the dashboard
+
+Use the **Customize** menu in the top bar to choose which sections are visible: the over-time chart, window totals, placement by provider, warmup placement by domain, and the two at-risk lists. Your section choices and the selected time window are remembered per browser, so the dashboard opens the way you left it.
 
 ## Health bands
 
@@ -64,7 +81,7 @@ The four bands you see on the dashboard are:
 Warmup is a paid feature, and these pool actions apply to the shared paid warmup pool that healthy paying customers depend on. Protecting that shared reputation is the reason the bands exist. For how warmup itself works, see the [Warmup](/guides/warmup) guide.
 
 <Callout type="info" title="Different metrics, different failure modes">
-Warmbly does not roll everything into one score. It tracks complaint rate, spam-folder placement, and bounce rate as separate signals, because they fail for different reasons. Any one of them crossing a threshold can move a mailbox into a worse band.
+The deliverability score is a headline summary, but Warmbly never acts on the composite alone. It tracks complaint rate, spam-folder placement, and bounce rate as separate signals, because they fail for different reasons. Any one of them crossing a threshold can move a mailbox into a worse band, even while the overall score still looks acceptable.
 </Callout>
 
 ### Sample floors
@@ -147,10 +164,11 @@ When a message can't be delivered, the recipient's mail server sends back a boun
 
 A practical way to use the page:
 
-1. Check the four headline rates first. Bounce rate at or above `5%` and complaint rate at or above `0.1%` are the two highlighted danger lines.
+1. Check the headline numbers first. The score and its band chip give you the one-glance answer; bounce rate at or above `5%` and complaint rate at or above `0.1%` are the two highlighted danger lines.
 2. If a rate looks off, switch the "Over time" chart to that metric and find the day it spiked. That usually points you at one campaign or one imported list.
-3. Scroll to **Mailboxes at risk** and **Campaigns at risk**. The band chips tell you which senders Warmbly is already acting on.
-4. For any mailbox in Watch, slow it down and let it recover before pushing more volume. For Quarantine or Blocked, leave it out of sending and let it requalify.
+3. Check **Placement by provider** and **Warmup placement by domain** to see whether mail is actually reaching inboxes, and whether a problem is concentrated at one provider.
+4. Scroll to **Mailboxes at risk** and **Campaigns at risk**. The band chips tell you which senders Warmbly is already acting on.
+5. For any mailbox in Watch, slow it down and let it recover before pushing more volume. For Quarantine or Blocked, leave it out of sending and let it requalify.
 
 The single most important habit: keep complaint rate and spam placement low. A clean reputation with modest volume beats high volume with a rising complaint rate every time.
 
