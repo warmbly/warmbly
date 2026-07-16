@@ -407,3 +407,68 @@ const searchPill = (placeholder: string) => `
     </div>
   </div>
 </section>
+
+<style>
+  /* Everything inside the phone renders in the system SF stack, like the app. */
+  .phone-screens {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', 'Segoe UI', sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* The fixed status bar never moves; only its glyph color adapts. */
+  .phone-status { color: #fff; transition: color 320ms ease; }
+  .phone-status.is-dark { color: #000; }
+
+  /* Screen switching: active screen in place, inactive parked to a side
+     (the script sets the side so slides always move toward the new tab). */
+  .phone-screen {
+    opacity: 0;
+    transform: translateX(28px);
+    pointer-events: none;
+    transition: opacity 480ms cubic-bezier(0.22, 1, 0.36, 1), transform 480ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .phone-screen.is-active {
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+  }
+
+  /* Notification banner: drops in from under the Dynamic Island. */
+  .mob-notif {
+    opacity: 0;
+    transform: translateY(-130%) scale(0.97);
+    transition: transform 600ms cubic-bezier(0.22, 1, 0.36, 1), opacity 420ms ease;
+  }
+  .mob-notif.is-in {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+
+  /* Health rings + chart lines animate via inline transitions the script arms. */
+  .mob-ring-fill { transition: stroke-dashoffset 1s cubic-bezier(0.22, 1, 0.36, 1); }
+  .mob-area, .mob-spark-dash { opacity: 0; transition: opacity 900ms ease 350ms; }
+  .mob-charted .mob-area, .mob-charted .mob-spark-dash { opacity: 1; }
+
+  /* Phone entrance (guarded by js-ready so no-JS visitors still see it). */
+  :global(html.js-ready) .mob-float {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  :global(html.js-ready) .mob-float.is-in {
+    opacity: 1;
+    transform: none;
+    transition: opacity 800ms cubic-bezier(0.22, 1, 0.36, 1), transform 800ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .phone-screen, .mob-notif, .mob-ring-fill, .mob-area, .mob-spark-dash {
+      transition: none !important;
+    }
+    :global(html.js-ready) .mob-float,
+    :global(html.js-ready) .mob-float.is-in {
+      opacity: 1;
+      transform: none;
+      transition: none;
+    }
+  }
+</style>
