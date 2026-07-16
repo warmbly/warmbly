@@ -667,13 +667,19 @@ function LivePanel() {
         >
             <div className="flex items-center gap-1.5">
                 <span className="relative inline-flex shrink-0">
-                    <span className={cn("w-1.5 h-1.5 rounded-full", dotClass)} />
-                    {/* Active mailboxes pulse; a quiet-but-connected workspace gets a
-                        soft static halo so "READY" still reads as clearly online. */}
+                    <span
+                        className={cn(
+                            "w-1.5 h-1.5 rounded-full",
+                            dotClass,
+                            connection === "connecting" && "animate-pulse",
+                        )}
+                    />
+                    {/* Active mailboxes ping; a quiet-but-connected workspace gets a
+                        slow breathing glow so "READY" reads alive, not stuck. */}
                     {live && active > 0 ? (
                         <span className="absolute inset-0 rounded-full bg-emerald-500/40 animate-ping" />
                     ) : live ? (
-                        <span className="absolute -inset-[3px] rounded-full ring-2 ring-emerald-500/20" />
+                        <span className="absolute -inset-[3px] rounded-full bg-emerald-400/30 animate-pulse [animation-duration:2.4s]" />
                     ) : null}
                 </span>
                 <span
