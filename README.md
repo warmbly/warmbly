@@ -122,24 +122,21 @@ premium pools are kept separate.
 
 You need Docker, Go 1.25, and pnpm.
 
-Run the whole stack with Docker:
-
 ```bash
 git clone https://github.com/warmbly/warmbly && cd warmbly
-make up
+make dev
 ```
 
-That starts every service against local infra. The dashboard comes up at
-`http://localhost:5173`.
+That one command brings up the backing services in Docker, waits for them to be
+ready, applies migrations, seeds demo data, and starts the backend, consumer,
+both workers, and the dashboard together in your terminal. Open
+`http://localhost:5173` and log in with `dev@warmbly.com` / `password123`.
+Ctrl-C stops the app; the Docker infra stays up so the next `make dev` is fast.
 
-For day-to-day development, skip the Docker app images and run the Go services on
-the host instead. It recompiles in a second or two on save:
-
-```bash
-make infra   # backing services in Docker, run once and leave up
-make run     # backend, consumer, and worker in one terminal
-make web     # dashboard dev server
-```
+The Go services run natively (recompiling in a second or two on save), so the
+same command is also the day-to-day loop. If you prefer separate terminals, the
+stack splits into `make infra` + `make run` + `make web`. To run everything in
+Docker instead, use `make up`.
 
 The first admin account cannot be created from the UI. Sign up through the
 dashboard, then promote yourself from the host with
