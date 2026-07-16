@@ -3,10 +3,11 @@
 // chats run as tabs (each streams its own tool-using agent over SSE), a history
 // rail lists past sessions, and the panel expands to a full-width workspace.
 //
-// Tab state lives in the store (agentSlice) so tabs survive the panel closing
-// and a background run keeps streaming into its tab while you read another.
-// Reopening a past conversation rehydrates its transcript from the server.
-// Sends never happen from AI: draft artifacts open the real editors.
+// Tab state (including the unsent composer draft) lives in the store
+// (agentSlice) so tabs survive the panel closing and a background run keeps
+// streaming into its tab while you read another. Reopening a past conversation
+// rehydrates its transcript from the server. Sends never happen from AI: draft
+// artifacts open the real editors.
 
 import React from "react";
 import { motion } from "framer-motion";
@@ -15,6 +16,7 @@ import {
     SparklesIcon,
     XIcon,
     ArrowUpIcon,
+    ArrowDownIcon,
     SquareIcon,
     PlusIcon,
     CheckIcon,
@@ -25,7 +27,6 @@ import {
     ShieldQuestionIcon,
     Maximize2Icon,
     Minimize2Icon,
-    MessageSquarePlusIcon,
     ClockIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -40,6 +41,7 @@ import createAgentSession from "@/lib/api/client/app/agent/createAgentSession";
 import getAgentMessages from "@/lib/api/client/app/agent/getAgentMessages";
 import streamAgentRun from "@/lib/api/client/app/agent/streamAgentRun";
 import useAgentSessions from "@/lib/api/hooks/app/agent/useAgentSessions";
+import Markdown from "./Markdown";
 import type {
     AgentStreamEvent,
     AgentSession,
@@ -68,11 +70,16 @@ export default function AgentPanel() {
 
     const navigate = useNavigate();
     const location = useLocation();
-    const [input, setInput] = React.useState("");
     const scrollRef = React.useRef<HTMLDivElement>(null);
+    const inputRef = React.useRef<HTMLTextAreaElement>(null);
     const hydrating = React.useRef<Set<string>>(new Set());
+    // Stick-to-bottom: autoscroll only while the user is pinned near the end,
+    // so streaming never yanks them away from scrollback they are reading.
+    const [pinned, setPinned] = React.useState(true);
 
     const activeTab = tabs.find((t) => t.key === activeKey) ?? null;
+    const draft = activeTab?.draft ?? "";
+    const composerLocked = !activeTab?.hydrated || !!activeTab?.pending;
 
     // Resource string mirrors the presence shape so the agent knows what the
     // user is looking at ("this campaign", "here").
@@ -81,13 +88,48 @@ export default function AgentPanel() {
         [location.pathname],
     );
 
-    // Opening the panel with no tabs starts a fresh conversation.
+    const openUrl = React.useCallback(
+        (u: string) => navigate(stripOrigin(u)),
+        [navigate],
+    );
+
+    function scrollToBottom(behavior: ScrollBehavior = "auto") {
+        const el = scrollRef.current;
+        if (el) el.scrollTo({ top: el.scrollHeight, behavior });
+    }
+
+    const resizeInput = React.useCallback(() => {
+        const el = inputRef.current;
+        if (!el) return;
+        el.style.height = "0px";
+        el.style.height = Math.min(el.scrollHeight, 128) + "px";
+    }, []);
+
+    // Opening the panel with no tabs starts a fresh conversation; focus lands
+    // in the composer once the slide-in starts.
     React.useEffect(() => {
-        if (open) useAppStore.getState().agentEnsureTab();
+        if (!open) return;
+        useAppStore.getState().agentEnsureTab();
+        const t = window.setTimeout(() => inputRef.current?.focus(), 80);
+        return () => window.clearTimeout(t);
     }, [open]);
 
+    // Switching tabs jumps to that conversation's latest message and refocuses
+    // the composer.
+    React.useEffect(() => {
+        setPinned(true);
+        requestAnimationFrame(() => scrollToBottom());
+        if (open) inputRef.current?.focus();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeKey]);
+
+    React.useEffect(() => {
+        resizeInput();
+    }, [draft, activeKey, resizeInput]);
+
     // Lazily rehydrate a tab opened from history (sessionId set, transcript not
-    // yet loaded). Guarded so we fetch each session once.
+    // yet loaded). Guarded so we fetch each session once; the composer stays
+    // locked until the transcript is in, so a send can never race the fetch.
     React.useEffect(() => {
         if (!activeTab || !activeTab.sessionId || activeTab.hydrated) return;
         if (hydrating.current.has(activeTab.key)) return;
@@ -125,12 +167,16 @@ export default function AgentPanel() {
             .finally(() => hydrating.current.delete(key));
     }, [activeTab]);
 
-    // Keep the transcript pinned to the newest content.
+    // Follow new content only while pinned to the bottom.
     React.useEffect(() => {
-        if (scrollRef.current) {
-            scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-        }
-    }, [activeTab?.turns, activeTab?.pending, activeKey]);
+        if (pinned) scrollToBottom();
+    }, [activeTab?.turns, activeTab?.pending, pinned]);
+
+    function onScroll() {
+        const el = scrollRef.current;
+        if (!el) return;
+        setPinned(el.scrollHeight - el.scrollTop - el.clientHeight < 48);
+    }
 
     async function runStream(
         tabKey: string,
@@ -141,61 +187,76 @@ export default function AgentPanel() {
         store.agentPatchTab(tabKey, { running: true, pending: null, iteration: 0 });
         const ac = new AbortController();
         aborts.set(tabKey, ac);
-        await streamAgentRun(
-            path,
-            body,
-            (ev) => {
-                const s = useAppStore.getState();
-                if (ev.type === "iteration") {
-                    s.agentPatchTab(tabKey, {
-                        ...(typeof ev.credits_remaining === "number"
-                            ? { credits: ev.credits_remaining }
-                            : {}),
-                        ...(typeof ev.budget === "number" ? { budget: ev.budget } : {}),
-                        ...(typeof ev.iteration === "number"
-                            ? { iteration: ev.iteration }
-                            : {}),
-                        ...(ev.free_model ? { freeModel: true } : {}),
-                    });
-                    return;
-                }
-                if (ev.type === "approval_required") {
-                    s.agentPatchTab(tabKey, {
-                        pending: {
-                            toolCallId: ev.tool_call_id || "",
-                            tool: ev.tool || "",
-                            risk: ev.risk || "write",
-                            argsSummary: ev.args_summary,
-                        },
-                    });
-                    return;
-                }
-                if (ev.type === "done") {
-                    if (typeof ev.credits_remaining === "number") {
+        try {
+            await streamAgentRun(
+                path,
+                body,
+                (ev) => {
+                    const s = useAppStore.getState();
+                    if (ev.type === "iteration") {
+                        s.agentPatchTab(tabKey, {
+                            ...(typeof ev.credits_remaining === "number"
+                                ? { credits: ev.credits_remaining }
+                                : {}),
+                            ...(typeof ev.budget === "number"
+                                ? { budget: ev.budget }
+                                : {}),
+                            ...(typeof ev.iteration === "number"
+                                ? { iteration: ev.iteration }
+                                : {}),
+                            ...(ev.free_model ? { freeModel: true } : {}),
+                        });
+                        return;
+                    }
+                    if (ev.type === "approval_required") {
+                        s.agentPatchTab(tabKey, {
+                            pending: {
+                                toolCallId: ev.tool_call_id || "",
+                                tool: ev.tool || "",
+                                risk: ev.risk || "write",
+                                argsSummary: ev.args_summary,
+                            },
+                        });
+                        return;
+                    }
+                    if (ev.type === "done") {
+                        if (typeof ev.credits_remaining === "number") {
+                            s.agentPatchTab(tabKey, {
+                                credits: ev.credits_remaining,
+                            });
+                        }
+                        return;
+                    }
+                    s.agentUpdateTab(tabKey, (t) => ({
+                        ...t,
+                        turns: foldEvent(t.turns, ev),
+                    }));
+                    if (
+                        ev.type === "error" &&
+                        typeof ev.credits_remaining === "number"
+                    ) {
                         s.agentPatchTab(tabKey, { credits: ev.credits_remaining });
                     }
-                    return;
-                }
-                s.agentUpdateTab(tabKey, (t) => ({ ...t, turns: foldEvent(t.turns, ev) }));
-                if (ev.type === "error" && typeof ev.credits_remaining === "number") {
-                    s.agentPatchTab(tabKey, { credits: ev.credits_remaining });
-                }
-            },
-            ac.signal,
-        );
-        useAppStore.getState().agentPatchTab(tabKey, { running: false });
-        aborts.delete(tabKey);
+                },
+                ac.signal,
+            );
+        } finally {
+            aborts.delete(tabKey);
+            useAppStore.getState().agentPatchTab(tabKey, { running: false });
+        }
     }
 
     async function send() {
         const tab = activeTab;
-        if (!tab) return;
-        const text = input.trim();
-        if (!text || tab.running) return;
-        setInput("");
+        if (!tab || tab.running || tab.pending || !tab.hydrated) return;
+        const text = draft.trim();
+        if (!text) return;
         const store = useAppStore.getState();
+        // running flips on synchronously so a double Enter can't double-send.
         store.agentUpdateTab(tab.key, (t) => ({
             ...t,
+            running: true,
+            draft: "",
             title:
                 t.sessionId || t.title !== "New chat" ? t.title : deriveTitle(text),
             turns: [
@@ -216,6 +277,7 @@ export default function AgentPanel() {
             } catch {
                 store.agentUpdateTab(tab.key, (t) => ({
                     ...t,
+                    running: false,
                     turns: foldEvent(t.turns, {
                         type: "error",
                         message: "Could not start a session.",
@@ -239,7 +301,9 @@ export default function AgentPanel() {
         const tab = useAppStore.getState().agentTabs.find((t) => t.key === tabKey);
         if (!tab || !tab.sessionId || !tab.pending) return;
         useAppStore.getState().agentPatchTab(tabKey, { pending: null });
-        await runStream(tabKey, `/ai/sessions/${tab.sessionId}/approve`, { decision });
+        await runStream(tabKey, `/ai/sessions/${tab.sessionId}/approve`, {
+            decision,
+        });
     }
 
     function stop(tabKey: string) {
@@ -257,6 +321,12 @@ export default function AgentPanel() {
         useAppStore.getState().agentOpenSession(s.id, s.title || "Conversation");
     }
 
+    function setDraft(value: string) {
+        if (activeTab) {
+            useAppStore.getState().agentPatchTab(activeTab.key, { draft: value });
+        }
+    }
+
     return (
         <>
             {/* Mobile backdrop. */}
@@ -270,6 +340,14 @@ export default function AgentPanel() {
                 initial={false}
                 animate={{ x: open ? 0 : "101%" }}
                 transition={{ type: "spring", stiffness: 380, damping: 40 }}
+                // inert keeps the off-screen panel out of the tab order.
+                inert={!open}
+                onKeyDown={(e) => {
+                    if (e.key === "Escape") {
+                        e.stopPropagation();
+                        setOpen(false);
+                    }
+                }}
                 className={cn(
                     "fixed right-0 top-0 z-50 h-full bg-white border-l border-slate-200 shadow-[0_0_60px_-12px_rgba(15,23,42,0.3)] flex",
                     expanded ? "w-full sm:w-[min(1080px,94vw)]" : "w-full sm:w-[440px]",
@@ -289,17 +367,6 @@ export default function AgentPanel() {
                 <div className="flex-1 min-w-0 flex flex-col">
                     {/* Header */}
                     <div className="shrink-0 px-3 h-12 flex items-center gap-2 border-b border-slate-200">
-                        <button
-                            onClick={() => setExpanded(!expanded)}
-                            title={expanded ? "Collapse" : "Expand to workspace"}
-                            className="size-7 rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100 inline-flex items-center justify-center transition-colors"
-                        >
-                            {expanded ? (
-                                <Minimize2Icon className="w-4 h-4" />
-                            ) : (
-                                <Maximize2Icon className="w-4 h-4" />
-                            )}
-                        </button>
                         <div className="size-7 rounded-md bg-sky-50 border border-sky-100 text-sky-600 flex items-center justify-center">
                             <SparklesIcon className="w-4 h-4" />
                         </div>
@@ -308,16 +375,23 @@ export default function AgentPanel() {
                         </div>
                         <div className="ml-auto flex items-center gap-1">
                             <button
-                                onClick={() => useAppStore.getState().agentNewTab()}
-                                title="New chat"
-                                className="h-7 px-2 rounded-md text-[12px] text-slate-600 hover:text-slate-900 hover:bg-slate-100 inline-flex items-center gap-1 transition-colors"
+                                onClick={() => setExpanded(!expanded)}
+                                title={expanded ? "Collapse" : "Expand to workspace"}
+                                aria-label={
+                                    expanded ? "Collapse" : "Expand to workspace"
+                                }
+                                className="size-7 rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100 hidden sm:inline-flex items-center justify-center transition-colors"
                             >
-                                <MessageSquarePlusIcon className="w-3.5 h-3.5" />
-                                <span className="hidden sm:inline">New</span>
+                                {expanded ? (
+                                    <Minimize2Icon className="w-4 h-4" />
+                                ) : (
+                                    <Maximize2Icon className="w-4 h-4" />
+                                )}
                             </button>
                             <button
                                 onClick={() => setOpen(false)}
                                 title="Close"
+                                aria-label="Close assistant"
                                 className="size-7 rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100 inline-flex items-center justify-center transition-colors"
                             >
                                 <XIcon className="w-4 h-4" />
@@ -335,97 +409,143 @@ export default function AgentPanel() {
                     />
 
                     {/* Transcript */}
-                    <div
-                        ref={scrollRef}
-                        className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-4"
-                    >
-                        {activeTab && !activeTab.hydrated && (
-                            <div className="flex items-center gap-2 text-[12px] text-slate-400">
-                                <Loader2Icon className="w-3.5 h-3.5 animate-spin" />
-                                Loading conversation…
-                            </div>
-                        )}
-                        {activeTab &&
-                            activeTab.hydrated &&
-                            activeTab.turns.length === 0 &&
-                            !activeTab.running && <EmptyState onPick={(q) => setInput(q)} />}
-                        {activeTab?.turns.map((t) => (
-                            <TurnView
-                                key={t.id}
-                                turn={t}
-                                onOpen={(u) => navigate(stripOrigin(u))}
-                            />
-                        ))}
-                        {activeTab?.pending && (
-                            <ApprovalCard
-                                pending={activeTab.pending}
-                                onDecide={(d) => decide(activeTab.key, d)}
-                            />
-                        )}
-                        {activeTab?.running && !activeTab.pending && (
-                            <div className="flex items-center gap-2 text-[12px] text-slate-400">
-                                <Loader2Icon className="w-3.5 h-3.5 animate-spin" />
-                                Working…
-                                {activeTab.iteration > 0 && (
-                                    <span className="font-mono tabular-nums text-slate-300">
-                                        step {activeTab.iteration}/{activeTab.budget}
-                                    </span>
+                    <div className="relative flex-1 min-h-0">
+                        <div
+                            ref={scrollRef}
+                            onScroll={onScroll}
+                            className="h-full overflow-y-auto"
+                        >
+                            <div
+                                className={cn(
+                                    "min-h-full flex flex-col px-4 py-4 space-y-4",
+                                    expanded && "mx-auto w-full max-w-[760px]",
+                                )}
+                            >
+                                {activeTab && !activeTab.hydrated && (
+                                    <div className="flex items-center gap-2 text-[12px] text-slate-400">
+                                        <Loader2Icon className="w-3.5 h-3.5 animate-spin" />
+                                        Loading conversation…
+                                    </div>
+                                )}
+                                {activeTab &&
+                                    activeTab.hydrated &&
+                                    activeTab.turns.length === 0 &&
+                                    !activeTab.running && (
+                                        <EmptyState
+                                            onPick={(q) => {
+                                                setDraft(q);
+                                                inputRef.current?.focus();
+                                            }}
+                                        />
+                                    )}
+                                {activeTab?.turns.map((t) => (
+                                    <TurnView key={t.id} turn={t} onOpen={openUrl} />
+                                ))}
+                                {activeTab?.pending && (
+                                    <ApprovalCard
+                                        pending={activeTab.pending}
+                                        onDecide={(d) => decide(activeTab.key, d)}
+                                    />
+                                )}
+                                {activeTab?.running && !activeTab.pending && (
+                                    <div className="flex items-center gap-2 text-[12px] text-slate-400">
+                                        <Loader2Icon className="w-3.5 h-3.5 animate-spin" />
+                                        Working…
+                                        {activeTab.iteration > 0 && (
+                                            <span className="font-mono tabular-nums text-slate-300">
+                                                step {activeTab.iteration}/
+                                                {activeTab.budget}
+                                            </span>
+                                        )}
+                                    </div>
                                 )}
                             </div>
+                        </div>
+                        {!pinned && activeTab?.running && (
+                            <button
+                                onClick={() => {
+                                    setPinned(true);
+                                    scrollToBottom("smooth");
+                                }}
+                                className="absolute bottom-3 left-1/2 -translate-x-1/2 h-7 px-3 rounded-full bg-white border border-slate-200 shadow-sm text-[11.5px] text-slate-600 hover:text-slate-900 inline-flex items-center gap-1.5 transition-colors"
+                            >
+                                <ArrowDownIcon className="w-3 h-3" />
+                                Latest
+                            </button>
                         )}
                     </div>
 
                     {/* Composer */}
                     <div className="shrink-0 border-t border-slate-200 p-3">
-                        <div className="flex items-end gap-2 rounded-lg border border-slate-200 focus-within:border-sky-400 focus-within:ring-2 focus-within:ring-sky-100 px-2.5 py-2 transition-colors">
-                            <textarea
-                                value={input}
-                                onChange={(e) => setInput(e.target.value)}
-                                onKeyDown={(e) => {
-                                    if (e.key === "Enter" && !e.shiftKey) {
-                                        e.preventDefault();
-                                        send();
+                        <div className={cn(expanded && "mx-auto w-full max-w-[760px]")}>
+                            <div className="flex items-end gap-2 rounded-lg border border-slate-200 focus-within:border-sky-400 focus-within:ring-2 focus-within:ring-sky-100 px-2.5 py-2 transition-colors">
+                                <textarea
+                                    ref={inputRef}
+                                    value={draft}
+                                    onChange={(e) => setDraft(e.target.value)}
+                                    onKeyDown={(e) => {
+                                        if (
+                                            e.key === "Enter" &&
+                                            !e.shiftKey &&
+                                            !e.nativeEvent.isComposing
+                                        ) {
+                                            e.preventDefault();
+                                            send();
+                                        }
+                                    }}
+                                    rows={1}
+                                    placeholder={
+                                        activeTab?.pending
+                                            ? "Respond to the approval above first"
+                                            : "Ask about contacts, campaigns, your inbox…"
                                     }
-                                }}
-                                rows={1}
-                                placeholder="Ask about contacts, campaigns, your inbox…"
-                                disabled={!!activeTab?.pending}
-                                className="flex-1 resize-none bg-transparent text-[13px] text-slate-900 placeholder:text-slate-400 outline-none max-h-32 disabled:opacity-60"
-                            />
-                            {activeTab?.running ? (
-                                <button
-                                    onClick={() => stop(activeTab.key)}
-                                    title="Stop"
-                                    className="size-7 rounded-md bg-slate-900 hover:bg-slate-700 text-white inline-flex items-center justify-center transition-colors"
-                                >
-                                    <SquareIcon className="w-3 h-3" fill="currentColor" />
-                                </button>
-                            ) : (
-                                <button
-                                    onClick={send}
-                                    disabled={!input.trim() || !!activeTab?.pending}
-                                    className="size-7 rounded-md bg-sky-600 hover:bg-sky-700 text-white inline-flex items-center justify-center transition-colors disabled:opacity-40"
-                                >
-                                    <ArrowUpIcon className="w-4 h-4" />
-                                </button>
-                            )}
-                        </div>
-                        {activeTab?.freeModel && (
-                            <div className="mt-2 flex items-center gap-1.5 text-[10.5px] text-amber-600">
-                                <AlertTriangleIcon className="w-3 h-3 shrink-0" />
-                                <span>
-                                    Free local model. Responses may be lower quality, and
-                                    nothing is charged.
-                                </span>
+                                    disabled={composerLocked}
+                                    className="flex-1 resize-none bg-transparent text-[13px] text-slate-900 placeholder:text-slate-400 outline-none max-h-32 disabled:opacity-60"
+                                />
+                                {activeTab?.running ? (
+                                    <button
+                                        onClick={() => stop(activeTab.key)}
+                                        title="Stop"
+                                        aria-label="Stop run"
+                                        className="size-7 rounded-md bg-slate-900 hover:bg-slate-700 text-white inline-flex items-center justify-center transition-colors"
+                                    >
+                                        <SquareIcon
+                                            className="w-3 h-3"
+                                            fill="currentColor"
+                                        />
+                                    </button>
+                                ) : (
+                                    <button
+                                        onClick={send}
+                                        disabled={!draft.trim() || composerLocked}
+                                        title="Send"
+                                        aria-label="Send message"
+                                        className="size-7 rounded-md bg-sky-600 hover:bg-sky-700 text-white inline-flex items-center justify-center transition-colors disabled:opacity-40"
+                                    >
+                                        <ArrowUpIcon className="w-4 h-4" />
+                                    </button>
+                                )}
                             </div>
-                        )}
-                        <div className="mt-2 flex items-center justify-between text-[10.5px] text-slate-400">
-                            <span>Read actions run automatically. Writes ask first.</span>
-                            {!activeTab?.freeModel && activeTab?.credits != null && (
-                                <span className="font-mono tabular-nums">
-                                    {activeTab.credits.toLocaleString()} credits
-                                </span>
+                            {activeTab?.freeModel && (
+                                <div className="mt-2 flex items-center gap-1.5 text-[10.5px] text-amber-600">
+                                    <AlertTriangleIcon className="w-3 h-3 shrink-0" />
+                                    <span>
+                                        Free local model. Responses may be lower quality,
+                                        and nothing is charged.
+                                    </span>
+                                </div>
                             )}
+                            <div className="mt-2 flex items-center justify-between text-[10.5px] text-slate-400">
+                                <span>
+                                    Read actions run automatically. Writes ask first.
+                                </span>
+                                {!activeTab?.freeModel &&
+                                    activeTab?.credits != null && (
+                                        <span className="font-mono tabular-nums">
+                                            {activeTab.credits.toLocaleString()} credits
+                                        </span>
+                                    )}
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -448,15 +568,47 @@ function TabBar({
     onClose: (k: string) => void;
     onNew: () => void;
 }) {
+    const ref = React.useRef<HTMLDivElement>(null);
+
+    // Keep the active tab visible when the bar overflows.
+    React.useEffect(() => {
+        ref.current
+            ?.querySelector('[data-active="true"]')
+            ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    }, [activeKey, tabs.length]);
+
     if (tabs.length === 0) return null;
     return (
-        <div className="shrink-0 flex items-stretch gap-1 px-2 h-9 border-b border-slate-200 overflow-x-auto">
+        <div
+            ref={ref}
+            role="tablist"
+            aria-label="Conversations"
+            className="shrink-0 flex items-stretch gap-1 px-2 h-9 border-b border-slate-200 overflow-x-auto no-scrollbar"
+        >
             {tabs.map((t) => {
                 const active = t.key === activeKey;
                 return (
                     <div
                         key={t.key}
+                        role="tab"
+                        aria-selected={active}
+                        tabIndex={0}
+                        data-active={active || undefined}
+                        title={t.title}
                         onClick={() => onSelect(t.key)}
+                        onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                onSelect(t.key);
+                            }
+                        }}
+                        // Middle-click closes, like editor tabs.
+                        onMouseDown={(e) => {
+                            if (e.button === 1) e.preventDefault();
+                        }}
+                        onAuxClick={(e) => {
+                            if (e.button === 1) onClose(t.key);
+                        }}
                         className={cn(
                             "group shrink-0 max-w-[160px] h-7 my-1 pl-2.5 pr-1.5 rounded-md inline-flex items-center gap-1.5 cursor-pointer text-[12px] transition-colors",
                             active
@@ -480,8 +632,9 @@ function TabBar({
                                 e.stopPropagation();
                                 onClose(t.key);
                             }}
-                            className="size-4 shrink-0 rounded inline-flex items-center justify-center text-slate-400 hover:text-slate-900 hover:bg-slate-200 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity"
-                            aria-label="Close tab"
+                            tabIndex={-1}
+                            className="size-4 shrink-0 rounded inline-flex items-center justify-center text-slate-400 hover:text-slate-900 hover:bg-slate-200 opacity-100 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 transition-opacity"
+                            aria-label={`Close ${t.title}`}
                         >
                             <XIcon className="w-3 h-3" />
                         </button>
@@ -491,6 +644,7 @@ function TabBar({
             <button
                 onClick={onNew}
                 title="New chat"
+                aria-label="New chat"
                 className="shrink-0 size-7 my-1 rounded-md text-slate-400 hover:text-slate-900 hover:bg-slate-100 inline-flex items-center justify-center transition-colors"
             >
                 <PlusIcon className="w-4 h-4" />
@@ -593,7 +747,10 @@ function applyEvent(turn: AgentTurn, ev: AgentStreamEvent) {
         case "text": {
             const last = turn.blocks[turn.blocks.length - 1];
             if (last && last.kind === "text") {
-                last.text += ev.text || "";
+                turn.blocks[turn.blocks.length - 1] = {
+                    kind: "text",
+                    text: last.text + (ev.text || ""),
+                };
             } else {
                 turn.blocks.push({ kind: "text", text: ev.text || "" });
             }
@@ -615,11 +772,17 @@ function applyEvent(turn: AgentTurn, ev: AgentStreamEvent) {
             for (let i = turn.blocks.length - 1; i >= 0; i--) {
                 const b = turn.blocks[i];
                 if (b.kind === "tool" && b.step.tool === ev.tool && !b.step.done) {
-                    b.step.done = true;
-                    b.step.result = ev.result;
-                    b.step.entityType = ev.entity_type;
-                    b.step.entityId = ev.entity_id;
-                    b.step.openURL = ev.open_url;
+                    turn.blocks[i] = {
+                        kind: "tool",
+                        step: {
+                            ...b.step,
+                            done: true,
+                            result: ev.result,
+                            entityType: ev.entity_type,
+                            entityId: ev.entity_id,
+                            openURL: ev.open_url,
+                        },
+                    };
                     break;
                 }
             }
@@ -661,7 +824,9 @@ function fromHydrated(turns: AgentHydratedTurn[]): AgentTurn[] {
     }));
 }
 
-function TurnView({
+// Memoized so streaming into the trailing turn doesn't re-render the whole
+// transcript on every token (fold copies only the turn it touches).
+const TurnView = React.memo(function TurnView({
     turn,
     onOpen,
 }: {
@@ -685,12 +850,7 @@ function TurnView({
             {turn.blocks.map((b, i) => {
                 if (b.kind === "text") {
                     return b.text ? (
-                        <div
-                            key={i}
-                            className="text-[13px] text-slate-800 whitespace-pre-wrap break-words leading-relaxed"
-                        >
-                            {b.text}
-                        </div>
+                        <Markdown key={i} text={b.text} onOpen={onOpen} />
                     ) : null;
                 }
                 if (b.kind === "tool") {
@@ -708,7 +868,7 @@ function TurnView({
             })}
         </div>
     );
-}
+});
 
 function ToolStepRow({
     step,
@@ -726,9 +886,13 @@ function ToolStepRow({
                     <Loader2Icon className="w-3 h-3 animate-spin text-slate-400 shrink-0" />
                 )}
                 <WrenchIcon className="w-3 h-3 text-slate-400 shrink-0" />
-                <span className="font-medium text-slate-700">{toolLabel(step.tool)}</span>
+                <span className="font-medium text-slate-700">
+                    {toolLabel(step.tool)}
+                </span>
                 {step.result && (
-                    <span className="text-slate-400 truncate">— {step.result}</span>
+                    <span className="text-slate-400 truncate" title={step.result}>
+                        — {step.result}
+                    </span>
                 )}
             </div>
             {step.done &&
@@ -804,11 +968,13 @@ const STARTERS = [
 
 function EmptyState({ onPick }: { onPick: (q: string) => void }) {
     return (
-        <div className="h-full flex flex-col items-center justify-center text-center px-6 py-10">
+        <div className="flex-1 flex flex-col items-center justify-center text-center px-6 py-10">
             <div className="size-10 rounded-xl bg-sky-50 border border-sky-100 text-sky-600 flex items-center justify-center mb-3">
                 <SparklesIcon className="w-5 h-5" />
             </div>
-            <div className="text-[13px] font-semibold text-slate-900">How can I help?</div>
+            <div className="text-[13px] font-semibold text-slate-900">
+                How can I help?
+            </div>
             <p className="text-[12px] text-slate-500 mt-1 leading-relaxed max-w-[280px]">
                 Ask me to find contacts, check a campaign, draft a reply, or set up a
                 draft campaign. I ask before changing anything.
