@@ -190,4 +190,14 @@ export const shortcutDefinitions = {
     { keys: ['?'], description: 'Show shortcuts' },
     { keys: ['Ctrl', 'k'], description: 'Command palette' },
   ],
+  // Panel-scoped shortcuts fire while focus is inside the assistant panel.
+  assistant: [
+    { keys: ['Ctrl', 'i'], description: 'Open / close the assistant' },
+    { keys: ['Ctrl', ']'], description: 'Next conversation tab' },
+    { keys: ['Ctrl', '['], description: 'Previous conversation tab' },
+    { keys: ['Alt', 'n'], description: 'New chat' },
+    { keys: ['Alt', 'w'], description: 'Close tab' },
+    { keys: ['Alt', 'm'], description: 'Minimize to dock' },
+    { keys: ['Esc'], description: 'Close the panel' },
+  ],
 }

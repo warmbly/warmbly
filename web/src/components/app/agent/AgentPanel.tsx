@@ -30,6 +30,8 @@ import {
     MinusIcon,
     ChevronUpIcon,
     ClockIcon,
+    PanelLeftIcon,
+    PanelRightIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores";
@@ -70,6 +72,9 @@ export default function AgentPanel() {
     const setExpanded = useAppStore((s) => s.setAgentExpanded);
     const minimized = useAppStore((s) => s.agentMinimized);
     const setMinimized = useAppStore((s) => s.setAgentMinimized);
+    const side = useAppStore((s) => s.agentSide);
+    const setSide = useAppStore((s) => s.setAgentSide);
+    const width = useAppStore((s) => s.agentWidth);
     const tabs = useAppStore((s) => s.agentTabs);
     const activeKey = useAppStore((s) => s.agentActiveKey);
     const visible = open && !minimized;
@@ -351,6 +356,63 @@ export default function AgentPanel() {
         setMinimized(false);
     }
 
+    function cycleTab(dir: number) {
+        const idx = tabs.findIndex((t) => t.key === activeKey);
+        if (idx === -1 || tabs.length < 2) return;
+        const next = tabs[(idx + dir + tabs.length) % tabs.length];
+        useAppStore.getState().agentSetActive(next.key);
+    }
+
+    // Panel-scoped shortcuts (fire only while focus is inside the panel).
+    // Alt combos match on e.code because macOS Option remaps e.key to symbols.
+    function onPanelKeyDown(e: React.KeyboardEvent) {
+        if (e.key === "Escape") {
+            e.stopPropagation();
+            closePanel();
+            return;
+        }
+        const mod = e.metaKey || e.ctrlKey;
+        if (mod && !e.altKey && (e.key === "]" || e.key === "[")) {
+            e.preventDefault();
+            e.stopPropagation();
+            cycleTab(e.key === "]" ? 1 : -1);
+            return;
+        }
+        if (e.altKey && !mod) {
+            switch (e.code) {
+                case "KeyN":
+                    e.preventDefault();
+                    useAppStore.getState().agentNewTab();
+                    return;
+                case "KeyW":
+                    e.preventDefault();
+                    if (activeTab) closeTab(activeTab.key);
+                    return;
+                case "KeyM":
+                    e.preventDefault();
+                    setMinimized(true);
+                    return;
+            }
+        }
+    }
+
+    // Drag the panel's inner edge to resize (persisted via the store clamp).
+    function startResize(e: React.PointerEvent) {
+        if (expanded) return;
+        e.preventDefault();
+        const onMove = (ev: PointerEvent) => {
+            const w =
+                side === "right" ? window.innerWidth - ev.clientX : ev.clientX;
+            useAppStore.getState().setAgentWidth(w);
+        };
+        const onUp = () => {
+            window.removeEventListener("pointermove", onMove);
+            window.removeEventListener("pointerup", onUp);
+        };
+        window.addEventListener("pointermove", onMove);
+        window.addEventListener("pointerup", onUp);
+    }
+
     return (
         <>
             {/* Mobile backdrop. */}
@@ -365,6 +427,7 @@ export default function AgentPanel() {
                 <DockBar
                     tabs={tabs}
                     activeKey={activeKey}
+                    side={side}
                     onRestore={(key) => {
                         if (key) useAppStore.getState().agentSetActive(key);
                         setMinimized(false);
@@ -374,22 +437,34 @@ export default function AgentPanel() {
             )}
             <motion.aside
                 initial={false}
-                animate={{ x: visible ? 0 : "101%" }}
+                animate={{ x: visible ? 0 : side === "right" ? "101%" : "-101%" }}
                 transition={{ type: "spring", stiffness: 380, damping: 40 }}
                 // inert keeps the off-screen panel out of the tab order.
                 inert={!visible}
-                onKeyDown={(e) => {
-                    if (e.key === "Escape") {
-                        e.stopPropagation();
-                        closePanel();
-                    }
-                }}
+                onKeyDown={onPanelKeyDown}
+                style={{ "--agent-w": `${width}px` } as React.CSSProperties}
                 className={cn(
-                    "fixed right-0 top-0 z-50 h-full bg-white border-l border-slate-200 shadow-[0_0_60px_-12px_rgba(15,23,42,0.3)] flex",
-                    expanded ? "w-full sm:w-[min(1080px,94vw)]" : "w-full sm:w-[440px]",
+                    "fixed top-0 z-50 h-full bg-white shadow-[0_0_60px_-12px_rgba(15,23,42,0.3)] flex",
+                    side === "right"
+                        ? "right-0 border-l border-slate-200"
+                        : "left-0 border-r border-slate-200",
+                    expanded
+                        ? "w-full sm:w-[min(1080px,94vw)]"
+                        : "w-full sm:w-[min(var(--agent-w),94vw)]",
                 )}
                 aria-hidden={!visible}
             >
+                {/* Drag handle on the inner edge (desktop, normal mode). */}
+                {!expanded && (
+                    <div
+                        onPointerDown={startResize}
+                        title="Drag to resize"
+                        className={cn(
+                            "hidden sm:block absolute top-0 h-full w-1.5 cursor-col-resize touch-none z-10 hover:bg-sky-400/40 active:bg-sky-500/50 transition-colors",
+                            side === "right" ? "left-0" : "right-0",
+                        )}
+                    />
+                )}
                 {/* History rail (expanded only). */}
                 {expanded && (
                     <SessionSidebar
@@ -409,8 +484,26 @@ export default function AgentPanel() {
                         </div>
                         <div className="ml-auto flex items-center gap-1">
                             <button
+                                onClick={() =>
+                                    setSide(side === "right" ? "left" : "right")
+                                }
+                                title={
+                                    side === "right"
+                                        ? "Move to the left edge"
+                                        : "Move to the right edge"
+                                }
+                                aria-label="Switch panel side"
+                                className="size-7 rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100 hidden sm:inline-flex items-center justify-center transition-colors"
+                            >
+                                {side === "right" ? (
+                                    <PanelLeftIcon className="w-4 h-4" />
+                                ) : (
+                                    <PanelRightIcon className="w-4 h-4" />
+                                )}
+                            </button>
+                            <button
                                 onClick={() => setMinimized(true)}
-                                title="Minimize to dock"
+                                title="Minimize to dock (⌥M)"
                                 aria-label="Minimize to dock"
                                 className="size-7 rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100 inline-flex items-center justify-center transition-colors"
                             >
@@ -709,11 +802,13 @@ function TabBar({
 function DockBar({
     tabs,
     activeKey,
+    side,
     onRestore,
     onClose,
 }: {
     tabs: AgentTab[];
     activeKey: string | null;
+    side: "left" | "right";
     onRestore: (key: string | null) => void;
     onClose: () => void;
 }) {
@@ -766,7 +861,10 @@ function DockBar({
             initial={{ y: 16, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             transition={{ type: "spring", stiffness: 420, damping: 34 }}
-            className="fixed bottom-4 right-4 z-50"
+            className={cn(
+                "fixed bottom-4 z-50",
+                side === "right" ? "right-4" : "left-4",
+            )}
         >
             <div
                 role="button"

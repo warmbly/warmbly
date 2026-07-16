@@ -62,6 +62,10 @@ export type AgentTab = {
 let tabSeq = 0
 const newTabKey = () => `tab_${++tabSeq}`
 
+export const AGENT_MIN_WIDTH = 360
+export const AGENT_MAX_WIDTH = 720
+export const AGENT_DEFAULT_WIDTH = 440
+
 function makeTab(partial?: Partial<AgentTab>): AgentTab {
   return {
     key: newTabKey(),
@@ -85,12 +89,19 @@ export interface AgentSlice {
   agentTabs: AgentTab[]
   agentActiveKey: string | null
   agentExpanded: boolean
-  // Minimized docks the open panel into a compact bottom-right status bar;
-  // runs keep streaming and the dock mirrors their state.
+  // Minimized docks the open panel into a compact status bar; runs keep
+  // streaming and the dock mirrors their state.
   agentMinimized: boolean
+  // Layout preferences, persisted: which screen edge the panel docks to and
+  // its width in the normal (non-expanded) mode.
+  agentSide: 'left' | 'right'
+  agentWidth: number
 
   setAgentExpanded: (v: boolean) => void
   setAgentMinimized: (v: boolean) => void
+  setAgentSide: (v: 'left' | 'right') => void
+  // Clamped to [AGENT_MIN_WIDTH, AGENT_MAX_WIDTH].
+  setAgentWidth: (v: number) => void
   // Ensure at least one tab exists (called when the panel first opens).
   agentEnsureTab: () => void
   // Open a brand-new empty conversation tab and focus it.
@@ -111,9 +122,14 @@ export const createAgentSlice: StateCreator<AgentSlice, [], [], AgentSlice> = (s
   agentActiveKey: null,
   agentExpanded: false,
   agentMinimized: false,
+  agentSide: 'right',
+  agentWidth: AGENT_DEFAULT_WIDTH,
 
   setAgentExpanded: (agentExpanded) => set({ agentExpanded }),
   setAgentMinimized: (agentMinimized) => set({ agentMinimized }),
+  setAgentSide: (agentSide) => set({ agentSide }),
+  setAgentWidth: (v) =>
+    set({ agentWidth: Math.min(AGENT_MAX_WIDTH, Math.max(AGENT_MIN_WIDTH, Math.round(v))) }),
 
   agentEnsureTab: () => {
     if (get().agentTabs.length > 0) return
