@@ -9,21 +9,49 @@ The whole stack runs locally via a single `docker-compose.yml` at the repo root.
 
 - Docker (20.10+) and Docker Compose v2
 - Git
-
-For native development (running services outside Docker against the containerized infra), also install:
-
 - Go 1.25+
+- Node 22+ and pnpm (for web)
+
+Optional, only for the two auxiliary services when run natively:
+
 - Rust (for tracking)
 - Elixir 1.18+ (for realtime)
-- Node 22+ and pnpm (for web)
+
+## One command
+
+```bash
+make dev
+```
+
+This is the whole setup for a fresh clone. It brings up the Docker infra
+(postgres, redis, kafka, mailpit, dovecot, localstack, and friends), waits until
+everything is actually ready, applies migrations, loads the seed fixtures,
+installs web dependencies on first run, and then starts the backend, consumer,
+both shared workers, and the dashboard together in your terminal.
+
+Open `http://localhost:5173` and log in with `dev@warmbly.com` / `password123`.
+
+Ctrl-C stops the app services; the Docker infra stays up, so the next `make dev`
+skips straight to starting the app. The Go services run natively with `go run`,
+so a code change plus Ctrl-C and re-run recompiles in a second or two. Variants:
+
+```bash
+make dev SEED=false           # skip fixture seeding
+make dev AI_PROVIDER=ollama   # with the AI assistant on (see the AI provider section)
+```
+
+Tracking (`:3000`) and realtime (`:4000`) are deliberately not part of `make dev`;
+start them with `make tracking` / `make realtime` when you need pixels, click
+redirects, or live dashboard updates. They need the Rust and Elixir toolchains.
 
 ## Make targets
 
 Day-one:
 
 ```bash
+make dev        # one command: infra + migrations + seed + backend/consumer/workers + dashboard
 make infra      # postgres, redis, kafka, mailpit, dovecot, localstack, etc. (leave running)
-make app        # backend, consumer, worker, tracking, realtime, web (hot reload)
+make app        # backend, consumer, worker, tracking, realtime, web (hot reload, in Docker)
 make sim        # adds premium + dedicated workers; full simulation (prod-image flow)
 make seed       # load rich fixtures (3 orgs, 6 mailboxes, a campaign)
 make sandbox    # fully working demo environment (see /development/sandbox/)
@@ -154,55 +182,36 @@ External clients can use:
 
 ## Running services natively
 
-If you want hot reload, run a service natively and point it at the docker infra.
-
-### Backend (Go)
+`make dev` already runs the Go services and the dashboard natively against the
+Docker infra. When you want them in separate terminals instead of one, each has
+its own target with the full dev environment pre-wired (no manual env exports):
 
 ```bash
-make infra && make app  # in another terminal, leave running
-
-# Install air for hot reload
-go install github.com/cosmtrek/air@latest
-
-# Point at containerized infra
-export PRIMARY_DB="postgres://warmbly:warmbly@localhost:15432/warmbly_dev?sslmode=disable"
-export REDIS="redis://localhost:16379"
-export KAFKA_BOOTSTRAP_SERVERS="localhost:9092"
-export SCHEMA_REGISTRY_URL="http://localhost:8081"
-export AWS_ENDPOINT_URL="http://localhost:4566"
-export AWS_REGION="us-east-1"
-export AWS_ACCESS_KEY_ID="test"
-export AWS_SECRET_ACCESS_KEY="test"
-# ... rest of env, see deploy/config/env.example
-
-air -c .air.toml
+make infra            # once: the backing services in Docker
+make backend          # API on :8080 (applies migrations on boot)
+make consumer         # kafka -> postgres consumer
+make worker           # free-tier shared worker
+make worker-premium   # premium shared worker (paid orgs place here)
+make run              # all four of the above in one terminal
+make web              # dashboard dev server on :5173
+make admin            # admin app on :5174
+make site             # marketing site on :4321
 ```
 
-### Web (React)
+Each target sets the same env you would otherwise export by hand (see
+`deploy/config/env.example` for the full reference). Saving a Go file and
+re-running the target recompiles in a second or two against the warm build
+cache.
 
-The web service in compose already mounts `./web` and runs `pnpm dev`. To run it locally instead:
+### Tracking (Rust) and realtime (Elixir)
 
-```bash
-docker compose stop web
-cd web
-pnpm install
-pnpm dev
-```
-
-### Tracking (Rust)
+Deliberately kept out of `make dev` and `make run` because they need their own
+toolchains (cargo, elixir + mix). Start them when you need open/click tracking
+or live dashboard updates:
 
 ```bash
-docker compose stop tracking
-cd tracking
-cargo run
-```
-
-### Realtime (Elixir)
-
-```bash
-docker compose stop realtime
-cd realtime
-mix deps.get && mix phx.server
+make tracking   # tracking pixel + click redirect service on :3000
+make realtime   # Phoenix websocket fanout on :4000
 ```
 
 ## AI provider
