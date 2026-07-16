@@ -403,9 +403,7 @@ export default function AgentPanel() {
                 <div className="flex-1 min-w-0 flex flex-col">
                     {/* Header */}
                     <div className="shrink-0 px-3 h-12 flex items-center gap-2 border-b border-slate-200">
-                        <div className="size-7 rounded-md bg-slate-900 text-white flex items-center justify-center">
-                            <AgentMark className="w-3.5 h-3.5" />
-                        </div>
+                        <AgentMark className="w-4 h-4 text-sky-600" />
                         <div className="text-[13px] font-semibold text-slate-900">
                             Assistant
                         </div>
@@ -780,11 +778,9 @@ function DockBar({
                         onRestore(focus?.key ?? null);
                     }
                 }}
-                className="h-10 pl-1.5 pr-1 rounded-lg border border-slate-200 bg-white shadow-lg shadow-slate-900/10 flex items-center gap-2 cursor-pointer hover:border-slate-300 transition-colors"
+                className="h-10 pl-2.5 pr-1 rounded-lg border border-slate-200 bg-white shadow-lg shadow-slate-900/10 flex items-center gap-2 cursor-pointer hover:border-slate-300 transition-colors"
             >
-                <span className="size-7 rounded-md bg-slate-900 text-white flex items-center justify-center shrink-0">
-                    <AgentMark className="w-3.5 h-3.5" />
-                </span>
+                <AgentMark className="w-4 h-4 text-sky-600 shrink-0" />
                 <span className="max-w-[160px] truncate text-[12.5px] font-medium text-slate-800">
                     {focus?.title ?? "Assistant"}
                 </span>
@@ -1134,9 +1130,7 @@ const STARTERS = [
 function EmptyState({ onPick }: { onPick: (q: string) => void }) {
     return (
         <div className="flex-1 flex flex-col items-center justify-center text-center px-6 py-10">
-            <div className="size-10 rounded-lg bg-slate-900 text-white flex items-center justify-center mb-3">
-                <AgentMark className="w-4.5 h-4.5" />
-            </div>
+            <AgentMark className="w-6 h-6 text-sky-600 mb-3" />
             <div className="text-[13px] font-semibold text-slate-900">
                 How can I help?
             </div>
