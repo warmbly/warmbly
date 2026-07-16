@@ -45,6 +45,12 @@ func Run(
 	// OAuth 2.1 authorization-server discovery (RFC 8414): public + unversioned.
 	r.GET("/.well-known/oauth-authorization-server", h.OAuthServerMetadata)
 
+	// OAuth 2.1 protected-resource metadata (RFC 9728) for the MCP endpoint. An
+	// MCP client is pointed here by the WWW-Authenticate challenge on /v1/mcp; the
+	// path-suffixed form covers clients that build the URL from the resource path.
+	r.GET("/.well-known/oauth-protected-resource", h.OAuthProtectedResourceMetadata)
+	r.GET("/.well-known/oauth-protected-resource/v1/mcp", h.OAuthProtectedResourceMetadata)
+
 	// Public worker enrollment. The one-time enrollment token is the
 	// credential; successful exchange returns a dotenv file for the installer
 	// and consumes the token.
@@ -261,6 +267,10 @@ func Run(
 		// outside the JWT/API-key groups.
 		base.POST("/oauth/token", h.OAuthToken)
 		base.POST("/oauth/revoke", h.OAuthRevoke)
+		// Dynamic Client Registration (RFC 7591): open + unauthenticated so MCP
+		// clients self-register a public (PKCE) client. Per-IP rate-limited in the
+		// service; grants no access on its own (consent is still required).
+		base.POST("/oauth/register", h.OAuthRegisterClient)
 
 		// JWT-only group: routes tied to a human session, never reachable via a
 		// long-lived API key (billing, org governance, websocket bootstrap, and
@@ -269,11 +279,13 @@ func Run(
 		jwtOnly.Use(m.AuthMiddleware())
 
 		// Warmbly MCP server: exposes the shared tool registry over the MCP
-		// streamable-HTTP transport. API-key only; each tool is gated by its
-		// RequiredAPIPerm, send-class tools are never exposed, and per-key rate
-		// limits apply.
+		// streamable-HTTP transport. Accepts an API key (static header) or an OAuth
+		// 2.1 access token (one-command `claude mcp add` + browser sign-in); an
+		// unauthenticated request gets the RFC 9728 discovery challenge. Each tool is
+		// gated by its RequiredAPIPerm, send-class tools are never exposed, and
+		// per-key rate limits apply.
 		mcpServer := base.Group("/mcp")
-		mcpServer.Use(m.APIKeyMiddleware(), m.APIKeyUsageMiddleware(), m.RateLimitMiddleware(models.RateLimitWrite))
+		mcpServer.Use(m.MCPAuthMiddleware(), m.APIKeyUsageMiddleware(), m.RateLimitMiddleware(models.RateLimitWrite))
 		mcpServer.POST("", h.MCPEndpoint)
 
 		// API-accessible group: routes that accept either a JWT or an API key.

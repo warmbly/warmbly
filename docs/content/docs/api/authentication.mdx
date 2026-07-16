@@ -157,9 +157,9 @@ Set an expiration date for temporary access:
 
 After expiration, the key returns `401 Unauthorized`.
 
-## Using a key with MCP
+## Using a credential with MCP
 
-An API key is also how an [MCP client](/api/mcp/) (Claude Code, Claude Desktop, Cursor) authenticates to Warmbly. Send the key as a bearer token to `https://api.warmbly.com/v1/mcp`; the client then sees exactly the tools the key's scopes allow.
+An [MCP client](/api/mcp/) (Claude Code, Claude Desktop, Cursor) authenticates to Warmbly with either an OAuth sign-in (the one-command path, no key to paste) or a static API key. For a key, send it as a bearer token to `https://api.warmbly.com/v1/mcp`; the client then sees exactly the tools the credential's scopes allow. See the [MCP server](/api/mcp/) page for both paths.
 
 ## Error responses
 
