@@ -1,0 +1,409 @@
+---
+import Cloud from './Cloud.astro';
+
+/**
+ * Landing-page section for the iOS app. A deep-sky band with a compact
+ * header, a minimal story-progress switcher, and a pixel-faithful iPhone
+ * whose bottom half is cut off by the section edge.
+ *
+ * The screens are 1:1 recreations of the real SwiftUI app in ios/Warmbly:
+ * the 400px stage maps to a 393pt iPhone, so every pt in the Swift code is
+ * one px here. Home mirrors HomeView.swift (AirSkyWash hero, AirStatChips
+ * with the gradient stroke, the 30pt sheet, airCards, 34pt HealthRings).
+ * Inbox and Campaigns mirror UniboxRootView / CampaignsRootView (44pt search
+ * pill with the hamburger inside, tracked scope caption, 44pt avatars,
+ * iOS type ramp: 17 body / 15 subheadline / 13 footnote / 12 caption, red
+ * unread accents, quiet label chips). Text inside the phone uses the system
+ * SF stack, not the site font.
+ */
+
+// WTheme.avatarColor palette from ios/Warmbly/DesignSystem/Theme.swift.
+// WAvatar fills with a soft top-to-bottom grade of the tint.
+const av = (tint: string) => `background: linear-gradient(180deg, ${tint}eb 0%, ${tint} 100%);`;
+
+const homeMailboxes = [
+  { email: 'mia@sunriselabs.io',  sub: 'Warming',          warming: true,  score: 92, tone: '#059669', tint: '#0284C7', initial: 'M' },
+  { email: 'sales@northwind.dev', sub: 'Google Workspace', warming: false, score: 84, tone: '#059669', tint: '#7C3AED', initial: 'S' },
+  { email: 'ben@coastline.io',    sub: 'Warming',          warming: true,  score: 61, tone: '#D97706', tint: '#DB2777', initial: 'B' },
+];
+
+// Tone.background / Tone.color pairs from DesignSystem/Components.swift.
+const homeCampaigns = [
+  { name: 'Q1 SaaS founders', sent: '1,248 sent', open: '41%', reply: '6.2%', bg: '#ECFDF5', fg: '#059669' },
+  { name: 'Berlin startups',  sent: '312 sent',   open: '44%', reply: '7.1%', bg: '#FFFBEB', fg: '#D97706' },
+];
+
+// Quiet label chips from the unibox rows: colored dot, neutral capsule.
+const labelDots: Record<string, string> = {
+  'Interested':    '#059669',
+  'Out of office': '#D97706',
+  'Pricing':       '#0284C7',
+  'Not now':       '#64748B',
+  'Unsubscribe':   '#DC2626',
+};
+
+const inboxRows = [
+  { name: 'Jenna Ortiz', time: '9:12',  subject: 'Re: Quick question about Northwind',  snippet: 'Thursday 10am works for me, send over an invite and I will get the team in the room.', lines: 2, label: 'Interested',    tint: '#0284C7', unread: true,  count: 3, live: true },
+  { name: 'Marcus Hale', time: '8:47',  subject: 'Automatic reply: Following up',        snippet: 'I am out of the office until Monday with limited access to email.', lines: 1, label: 'Out of office', tint: '#7C3AED', unread: false, count: 0, live: false },
+  { name: 'Priya Nair',  time: '8:15',  subject: 'Re: Warmbly for agencies',             snippet: 'Can you send pricing for around 40 mailboxes? We would move our whole client roster.', lines: 2, label: 'Pricing',       tint: '#059669', unread: true,  count: 0, live: false },
+  { name: 'Tom Becker',  time: 'Yesterday', subject: 'Re: Intro from Sunrise Labs',      snippet: 'You: Following up here, any thoughts on the trial?', lines: 1, label: '',              tint: '#D97706', unread: false, count: 2, live: false, fromMe: true },
+  { name: 'Ana Silva',   time: 'Yesterday', subject: 'Re: A quicker way to warm inboxes', snippet: 'Interesting. How does the warmup pool actually work under the hood?', lines: 1, label: '',            tint: '#DB2777', unread: false, count: 0, live: false },
+  { name: 'Leo Fischer', time: 'Tue',   subject: 'Re: Berlin startup outreach',          snippet: 'Please remove me from this list.', lines: 1, label: 'Unsubscribe',   tint: '#4F46E5', unread: false, count: 0, live: false },
+];
+
+// statusAvatar symbol + Tone from CampaignsRootView: paperplane running,
+// pause paused, checkmark finished, doc draft.
+const campaignRows = [
+  { name: 'Q1 SaaS founders',      time: '2d', stats: '1.2K sent · 486 opens · 78 replies', status: 'Running',  cap: '50/day', bg: '#ECFDF5', fg: '#059669', symbol: 'plane',  live: true },
+  { name: 'Agency outreach',       time: '5d', stats: '640 sent · 243 opens · 31 replies',  status: 'Running',  cap: '40/day', bg: '#ECFDF5', fg: '#059669', symbol: 'plane',  live: true },
+  { name: 'Berlin startups',       time: '1w', stats: '312 sent · 137 opens · 22 replies',  status: 'Paused',   cap: '30/day', bg: '#FFFBEB', fg: '#D97706', symbol: 'pause',  live: false },
+  { name: 'Post-demo follow-up',   time: '3w', stats: '96 sent · 59 opens · 17 replies',    status: 'Finished', cap: '20/day', bg: '#F0F9FF', fg: '#0284C7', symbol: 'check',  live: false },
+  { name: 'Dormant leads revival', time: '4w', stats: 'No sends yet',                       status: 'Draft',    cap: '50/day', bg: '#F1F5F9', fg: '#64748B', symbol: 'doc',    live: false },
+];
+
+const campaignSymbols: Record<string, string> = {
+  plane: '<path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.5.5 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/><path d="m21.854 2.147-10.94 10.939"/>',
+  pause: '<rect x="6" y="4" width="4" height="16" rx="1" fill="currentColor" stroke="none"/><rect x="14" y="4" width="4" height="16" rx="1" fill="currentColor" stroke="none"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  doc:   '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/>',
+};
+
+// iOS status bar: one fixed 59pt safe-area strip above the sliding screens
+// (it never moves on a device; only its glyph color adapts to the screen).
+const statusBar = `
+<div class="phone-status absolute top-0 left-0 right-0 z-[25] flex items-center justify-between h-[59px] px-[32px]">
+  <span class="text-[15px] font-semibold tracking-[-0.01em]">9:41</span>
+  <span class="flex items-center gap-[6px]">
+    <svg width="17" height="11" viewBox="0 0 17 11" fill="currentColor"><rect x="0" y="7" width="3" height="4" rx="0.8"/><rect x="4.5" y="4.8" width="3" height="6.2" rx="0.8"/><rect x="9" y="2.4" width="3" height="8.6" rx="0.8"/><rect x="13.5" y="0" width="3" height="11" rx="0.8"/></svg>
+    <svg width="15" height="11" viewBox="0 0 15 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M1.4 3.4a9.4 9.4 0 0 1 12.2 0"/><path d="M3.7 5.9a6 6 0 0 1 7.6 0"/><path d="M6 8.3a2.8 2.8 0 0 1 3 0"/></svg>
+    <svg width="25" height="12" viewBox="0 0 25 12" fill="none"><rect x="0.5" y="0.5" width="21" height="11" rx="3.2" stroke="currentColor" opacity="0.4"/><rect x="2" y="2" width="15.5" height="8" rx="1.8" fill="currentColor"/><path d="M23 4v4a2.1 2.1 0 0 0 0-4Z" fill="currentColor" opacity="0.4"/></svg>
+  </span>
+</div>`;
+
+// AirSkyWash from ios/Warmbly/DesignSystem/Air.swift: brand radial + soft bloom.
+const skyWash = 'background: radial-gradient(circle 420px at 60% 8%, rgba(186,230,253,0.55) 0%, transparent 60%), radial-gradient(circle 560px at 55% 4%, #7dd3fc 0%, #38bdf8 34%, #0ea5e9 66%, #0284c7 100%);';
+
+// The search pill both browser tabs share: hamburger inside, presence on the right.
+const searchPill = (placeholder: string) => `
+<div class="px-[12px] pt-[4px] pb-[6px]">
+  <div class="h-[44px] rounded-[22px] bg-[#f2f2f7] flex items-center">
+    <span class="w-[38px] h-[38px] grid place-items-center shrink-0">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="1.8" stroke-linecap="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>
+    </span>
+    <span class="flex-1 min-w-0 truncate text-[15px]" style="color: rgba(60,60,67,0.45);">${placeholder}</span>
+    <span class="flex items-center shrink-0 pl-[6px] pr-[9px]">
+      <span class="relative w-[26px] h-[26px] rounded-full grid place-items-center text-[10.5px] font-semibold text-white ring-[1.5px] ring-[#34d399]" style="background: linear-gradient(180deg, #7c3aedeb, #7c3aed); z-index:1;">P</span>
+      <span class="w-[26px] h-[26px] rounded-full grid place-items-center text-[10.5px] font-semibold text-white ring-[1.5px] ring-[#fbbf24] -ml-[7px]" style="background: linear-gradient(180deg, #059669eb, #059669);">L</span>
+    </span>
+  </div>
+</div>`;
+---
+<section id="mobile-app" class="relative isolate overflow-hidden" style="background: radial-gradient(ellipse 130% 120% at 50% -10%, #38bdf8 0%, #0ea5e9 34%, #0284c7 68%, #0369a1 100%);">
+  <div class="cloud-drift cloud-1 absolute pointer-events-none" style="top: 4%; left: -6%; width: 560px;" aria-hidden="true">
+    <Cloud variant={5} opacity={0.5} />
+  </div>
+  <div class="cloud-drift cloud-2 absolute pointer-events-none" style="top: 22%; right: -5%; width: 480px;" aria-hidden="true">
+    <Cloud variant={2} opacity={0.42} />
+  </div>
+  <div class="cloud-drift cloud-3 absolute pointer-events-none hidden md:block" style="bottom: 8%; left: 12%; width: 360px;" aria-hidden="true">
+    <Cloud variant={3} opacity={0.3} />
+  </div>
+
+  <div class="container-page relative pt-14 md:pt-20 pb-0">
+    <div class="text-center max-w-2xl mx-auto">
+      <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-white/60 mb-3">iOS app</div>
+      <h2 class="text-[30px] md:text-[44px] font-semibold tracking-[-0.03em] leading-[1.05] text-white">
+        The whole workspace, in your pocket.
+      </h2>
+      <p class="mt-4 text-[15px] md:text-[15.5px] text-white/75 leading-relaxed max-w-lg mx-auto">
+        Replies classified as they land, campaigns you can pause from anywhere, mailbox health at a glance. SwiftUI, in the same open-source repo, on the same realtime socket as the dashboard.
+      </p>
+    </div>
+
+    <!-- Story switcher: three bare segments, story-style. They fill, auto-advance
+         the phone screen, and are tappable to jump. -->
+    <div class="mob-stories mt-8 mx-auto w-[200px] flex gap-1.5" role="tablist" aria-label="App screens">
+      {['Home', 'Inbox', 'Campaigns'].map((label, i) => (
+        <button class="mob-story flex-1 py-2" data-screen={['home', 'inbox', 'campaigns'][i]} role="tab" aria-selected="false" aria-label={label}>
+          <span class="block h-[3px] rounded-full bg-white/30 overflow-hidden">
+            <span class="mob-story-fill block h-full w-0 rounded-full bg-white"></span>
+          </span>
+        </button>
+      ))}
+    </div>
+
+    <!-- The phone. The 400px stage maps 1:1 onto a 393pt iPhone and is scaled
+         to fit; the section's bottom edge slices it so only the top shows. -->
+    <div class="mob-clip relative mt-6 md:mt-8" style="height: 492px;">
+      <div class="mob-stage absolute top-0 left-1/2 w-[400px]" style="transform: translateX(-50%) scale(0.82); transform-origin: top center;">
+        <div class="mob-float relative">
+          <!-- side buttons -->
+          <div class="absolute -left-[3px] top-[148px] w-[3px] h-[26px] rounded-l-[2px] bg-[#26282e]" aria-hidden="true"></div>
+          <div class="absolute -left-[3px] top-[202px] w-[3px] h-[46px] rounded-l-[2px] bg-[#26282e]" aria-hidden="true"></div>
+          <div class="absolute -left-[3px] top-[256px] w-[3px] h-[46px] rounded-l-[2px] bg-[#26282e]" aria-hidden="true"></div>
+          <div class="absolute -right-[3px] top-[232px] w-[3px] h-[72px] rounded-r-[2px] bg-[#26282e]" aria-hidden="true"></div>
+
+          <!-- titanium body -->
+          <div class="relative h-[864px] rounded-[62px] p-[11px]" style="background: linear-gradient(180deg, #4b4e56 0%, #2a2c31 24%, #232529 70%, #3c3f46 100%); box-shadow: 0 60px 120px -40px rgba(2,32,71,0.6), 0 24px 50px -24px rgba(2,32,71,0.5), inset 0 1px 1px rgba(255,255,255,0.28);">
+            <div class="absolute inset-[3px] rounded-[59px] ring-1 ring-white/15 pointer-events-none" aria-hidden="true"></div>
+            <!-- black bezel -->
+            <div class="relative h-full rounded-[51px] bg-black p-[4px]">
+              <!-- screen -->
+              <div class="phone-screens relative h-full rounded-[47px] overflow-hidden bg-[#0284c7]">
+                <!-- Dynamic Island -->
+                <div class="absolute top-[11px] left-1/2 -translate-x-1/2 z-40 w-[118px] h-[35px] rounded-full bg-black" aria-hidden="true">
+                  <span class="absolute right-[10px] top-1/2 -translate-y-1/2 w-[11px] h-[11px] rounded-full" style="background: radial-gradient(circle at 35% 35%, #1d2836 0%, #0a0f16 60%);"></span>
+                </div>
+
+                <!-- pt canvas: the screen glass is 370px wide, an iPhone is 393pt.
+                     Content is authored at 393 (so every pt in the Swift code is
+                     one unit here) and scaled down to the glass. -->
+                <div class="phone-canvas absolute top-0 left-0 w-[393px] h-[886px]" style="transform: scale(0.94147); transform-origin: top left;">
+
+                <Fragment set:html={statusBar} />
+
+                <!-- push notification: frosted iOS banner with the real app icon -->
+                <div class="mob-notif absolute left-2 right-2 top-[58px] z-30 rounded-[24px] px-3.5 py-3" role="status" aria-live="off"
+                     style="background: rgba(248,250,252,0.82); backdrop-filter: blur(24px) saturate(180%); -webkit-backdrop-filter: blur(24px) saturate(180%); box-shadow: inset 0 1px 0 rgba(255,255,255,0.75), inset 0 -0.5px 0 rgba(15,23,42,0.06), 0 12px 32px -8px rgba(15,23,42,0.28);">
+                  <div class="flex items-center gap-2.5">
+                    <img src="/brand/app-icon.png" alt="" width="36" height="36" class="shrink-0 w-9 h-9 rounded-[9px]" loading="lazy" decoding="async" />
+                    <div class="flex-1 min-w-0">
+                      <div class="flex items-baseline justify-between gap-2">
+                        <span class="mob-notif-title text-[13px] font-semibold text-black truncate">Positive reply</span>
+                        <span class="text-[11px] shrink-0" style="color: rgba(60,60,67,0.6);">now</span>
+                      </div>
+                      <p class="mob-notif-body text-[13px] leading-[1.3] mt-px" style="color: rgba(0,0,0,0.78);">jenna@northwind.dev: Thursday 10am works for me, send over an invite</p>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- ─────────── HOME · 1:1 with Features/Home/HomeView.swift ─────────── -->
+                <div class="phone-screen absolute inset-0 flex flex-col" data-screen="home" style={skyWash}>
+                  <!-- hero: below the 59pt safe area, .padding(h20, top6, bottom22), spacing 18 -->
+                  <div class="relative px-[20px] pt-[65px] pb-[22px]">
+                    <div class="flex items-center gap-[12px]">
+                      <div class="flex-1 min-w-0">
+                        <div class="text-[11px] font-semibold text-white/65" style="letter-spacing: 1.3px;">THURSDAY, JULY 16</div>
+                        <div class="mt-[3px] text-[28px] font-bold text-white leading-[1.15] truncate" style="letter-spacing: -0.4px;">Good morning, Mia</div>
+                      </div>
+                      <div class="flex" aria-hidden="true">
+                        <span class="relative z-[1] w-[26px] h-[26px] rounded-full grid place-items-center text-[10.5px] font-semibold text-white ring-[1.5px] ring-[#34d399]" style={av('#7C3AED')}>P</span>
+                        <span class="w-[26px] h-[26px] rounded-full grid place-items-center text-[10.5px] font-semibold text-white ring-[1.5px] ring-[#fbbf24] -ml-[7px]" style={av('#059669')}>L</span>
+                      </div>
+                      <span class="w-[38px] h-[38px] rounded-full grid place-items-center text-[15px] font-semibold text-white shrink-0 ring-[1.5px] ring-white/55" style={av('#DB2777')}>SL</span>
+                    </div>
+                    <!-- AirStatChips: white 0.14 fill, gradient stroke .38 → .06 -->
+                    <div class="mt-[18px] flex gap-[10px]">
+                      {[
+                        { value: '2.4K', label: 'Sent this week', icon: 'M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.5.5 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z' },
+                        { value: '61%',  label: 'Open rate',      icon: 'M3 9l9-6 9 6v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z M3 9.5l9 6 9-6' },
+                        { value: '148',  label: 'Replies',        icon: 'M9 17l-5-5 5-5 M20 18v-2a4 4 0 0 0-4-4H4' },
+                      ].map((s) => (
+                        <div class="flex-1 rounded-[16px] px-[14px] py-[11px]" style="border: 1px solid transparent; background: linear-gradient(rgba(255,255,255,0.14), rgba(255,255,255,0.14)) padding-box, linear-gradient(135deg, rgba(255,255,255,0.38), rgba(255,255,255,0.06)) border-box;">
+                          <div class="flex items-center gap-[5px]">
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.85)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d={s.icon}/></svg>
+                            <span class="text-[21px] font-bold text-white leading-none" style="font-family: ui-rounded, -apple-system, inherit; font-variant-numeric: tabular-nums;">{s.value}</span>
+                          </div>
+                          <div class="mt-[3px] text-[11.5px] font-medium text-white/72 leading-tight whitespace-nowrap">{s.label}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <!-- sheet: 30pt top corners, systemGroupedBackground, padding 20, section spacing 24 -->
+                  <div class="relative flex-1 rounded-t-[30px] bg-[#f2f2f7] px-[20px] pt-[20px] space-y-[24px]" style="box-shadow: 0 -4px 22px rgba(0,0,0,0.12);">
+                    <div>
+                      <!-- AirSectionHeader: title3 bold + subheadline medium accent -->
+                      <div class="flex items-baseline justify-between px-[4px]">
+                        <span class="text-[20px] font-bold text-black" style="letter-spacing: -0.26px;">Mailboxes</span>
+                        <span class="inline-flex items-center gap-[3px] text-[15px] font-medium text-[#0284c7]">All 12
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                        </span>
+                      </div>
+                      <!-- airCard(padding 6), rows: avatar 40, body 17, footnote 13, HealthRing 34 -->
+                      <div class="mt-[10px] rounded-[22px] bg-white p-[6px]" style="box-shadow: 0 5px 14px rgba(0,0,0,0.045);">
+                        {homeMailboxes.map((m, i) => (
+                          <>
+                            <div class="flex items-center gap-[12px] px-[10px] py-[10px]">
+                              <span class="w-[40px] h-[40px] rounded-full grid place-items-center text-[16px] font-semibold text-white shrink-0" style={av(m.tint)}>{m.initial}</span>
+                              <div class="flex-1 min-w-0">
+                                <div class="text-[17px] font-medium text-black truncate leading-[1.25]">{m.email}</div>
+                                <div class={`flex items-center gap-[5px] mt-[2px] text-[13px] font-medium ${m.warming ? 'text-[#EA580C]' : ''}`} style={m.warming ? '' : 'color: rgba(60,60,67,0.6);'}>
+                                  {m.warming && (
+                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>
+                                  )}
+                                  {m.sub}
+                                </div>
+                              </div>
+                              <svg class="mob-ring shrink-0" width="34" height="34" viewBox="0 0 34 34" data-score={m.score}>
+                                <circle cx="17" cy="17" r="14.5" fill="none" stroke={m.tone} stroke-opacity="0.18" stroke-width="3.5" />
+                                <circle class="mob-ring-fill" cx="17" cy="17" r="14.5" fill="none" stroke={m.tone} stroke-width="3.5" stroke-linecap="round" stroke-dasharray="91.1" stroke-dashoffset="91.1" transform="rotate(-90 17 17)" />
+                                <text x="17" y="17.5" text-anchor="middle" dominant-baseline="central" font-size="11.5" font-weight="600" fill={m.tone}>{m.score}</text>
+                              </svg>
+                            </div>
+                            {i < homeMailboxes.length - 1 && <div class="h-px ml-[62px]" style="background: rgba(60,60,67,0.29); transform: scaleY(0.5);"></div>}
+                          </>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <div class="flex items-baseline justify-between px-[4px]">
+                        <span class="text-[20px] font-bold text-black" style="letter-spacing: -0.26px;">This week</span>
+                        <span class="inline-flex items-center gap-[3px] text-[15px] font-medium text-[#0284c7]">Analytics
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                        </span>
+                      </div>
+                      <div class="mt-[10px] rounded-[22px] bg-white p-[16px]" style="box-shadow: 0 5px 14px rgba(0,0,0,0.045);">
+                        <div class="flex items-center gap-[18px]">
+                          <span class="flex items-center gap-[5px] text-[13px] font-medium" style="color: rgba(60,60,67,0.6);"><span class="w-[7px] h-[7px] rounded-full bg-[#0284c7]"></span>Sent</span>
+                          <span class="flex items-center gap-[5px] text-[13px] font-medium" style="color: rgba(60,60,67,0.6);"><span class="w-[7px] h-[7px] rounded-full bg-[#059669]"></span>Opens</span>
+                        </div>
+                        <svg class="mt-[14px] w-full h-auto" viewBox="0 0 320 150" fill="none">
+                          <defs>
+                            <linearGradient id="mob-sent-grad" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0" stop-color="#0284c7" stop-opacity="0.32"/>
+                              <stop offset="1" stop-color="#0284c7" stop-opacity="0.02"/>
+                            </linearGradient>
+                          </defs>
+                          <g stroke="rgba(60,60,67,0.12)" stroke-width="1">
+                            <line x1="10" y1="26" x2="310" y2="26"/><line x1="10" y1="70" x2="310" y2="70"/><line x1="10" y1="114" x2="310" y2="114"/>
+                          </g>
+                          <path class="mob-area" fill="url(#mob-sent-grad)" d="M10 102 C 35 88, 40 72, 60 72 C 80 72, 90 86, 110 86 C 130 86, 140 46, 160 46 C 180 46, 190 60, 210 60 C 230 60, 240 26, 260 26 C 280 26, 295 40, 310 40 L 310 130 L 10 130 Z"/>
+                          <path class="mob-spark" stroke="#0284c7" stroke-width="2.5" stroke-linecap="round" d="M10 102 C 35 88, 40 72, 60 72 C 80 72, 90 86, 110 86 C 130 86, 140 46, 160 46 C 180 46, 190 60, 210 60 C 230 60, 240 26, 260 26 C 280 26, 295 40, 310 40"/>
+                          <path class="mob-spark-dash" stroke="#059669" stroke-width="2" stroke-linecap="round" stroke-dasharray="4 5" d="M10 116 C 35 108, 40 98, 60 98 C 80 98, 90 106, 110 106 C 130 106, 140 76, 160 76 C 180 76, 190 88, 210 88 C 230 88, 240 60, 260 60 C 280 60, 295 70, 310 70"/>
+                          <g fill="rgba(60,60,67,0.6)" font-size="10" text-anchor="middle">
+                            <text x="10" y="145">Mon</text><text x="60" y="145">Tue</text><text x="110" y="145">Wed</text><text x="160" y="145">Thu</text><text x="210" y="145">Fri</text><text x="260" y="145">Sat</text><text x="310" y="145">Sun</text>
+                          </g>
+                        </svg>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div class="flex items-baseline justify-between px-[4px]">
+                        <span class="text-[20px] font-bold text-black" style="letter-spacing: -0.26px;">Campaigns</span>
+                        <span class="inline-flex items-center gap-[3px] text-[15px] font-medium text-[#0284c7]">See all
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                        </span>
+                      </div>
+                      <div class="mt-[10px] rounded-[22px] bg-white p-[6px]" style="box-shadow: 0 5px 14px rgba(0,0,0,0.045);">
+                        {homeCampaigns.map((c, i) => (
+                          <>
+                            <div class="flex items-center gap-[12px] px-[10px] py-[10px]">
+                              <span class="w-[38px] h-[38px] rounded-[12px] grid place-items-center shrink-0" style={`background:${c.bg}; color:${c.fg};`}>
+                                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>
+                              </span>
+                              <div class="flex-1 min-w-0">
+                                <div class="text-[17px] font-medium text-black truncate leading-[1.25]">{c.name}</div>
+                                <div class="text-[13px] mt-[2px]" style="color: rgba(60,60,67,0.6);">{c.sent}</div>
+                              </div>
+                              <div class="flex items-center gap-[14px]">
+                                <span class="text-right"><span class="block text-[15px] font-semibold text-black" style="font-variant-numeric: tabular-nums;">{c.open}</span><span class="block text-[10.5px]" style="color: rgba(60,60,67,0.3);">open</span></span>
+                                <span class="text-right"><span class="block text-[15px] font-semibold text-black" style="font-variant-numeric: tabular-nums;">{c.reply}</span><span class="block text-[10.5px]" style="color: rgba(60,60,67,0.3);">reply</span></span>
+                              </div>
+                            </div>
+                            {i < homeCampaigns.length - 1 && <div class="h-px ml-[62px]" style="background: rgba(60,60,67,0.29); transform: scaleY(0.5);"></div>}
+                          </>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- ─────────── INBOX · 1:1 with Features/Unibox/UniboxRootView.swift ─────────── -->
+                <div class="phone-screen absolute inset-0 flex flex-col bg-white pt-[59px]" data-screen="inbox">
+                  <Fragment set:html={searchPill('Search in emails')} />
+                  <!-- scopeCaption: caption semibold tracked, count tertiary, unread negative -->
+                  <div class="flex items-center gap-[6px] px-[20px] pt-[8px] pb-[2px]">
+                    <span class="text-[12px] font-semibold" style="letter-spacing: 0.9px; color: rgba(60,60,67,0.6);">ALL INBOXES</span>
+                    <span class="text-[12px] font-semibold" style="color: rgba(60,60,67,0.3); font-variant-numeric: tabular-nums;">1.2K</span>
+                    <span class="flex-1"></span>
+                    <span class="text-[12px] font-semibold text-[#DC2626]" style="font-variant-numeric: tabular-nums;">24 unread</span>
+                  </div>
+                  <div class="flex-1">
+                    {inboxRows.map((r) => (
+                      <div class="relative flex gap-[12px] pl-[14px] pr-[16px] py-[10px]">
+                        <!-- avatarZone: WAvatar 44 + live dot / thread-count bubble -->
+                        <span class="relative w-[44px] h-[44px] shrink-0">
+                          <span class="w-[44px] h-[44px] rounded-full grid place-items-center text-[17.5px] font-semibold text-white" style={av(r.tint)}>{r.name.split(' ').map((p) => p[0]).join('')}</span>
+                          {r.live && <span class="absolute -top-[1px] right-[1px] w-[10px] h-[10px] rounded-full bg-[#059669] ring-[1.5px] ring-white animate-pulse-soft"></span>}
+                          {r.count > 1 && <span class="absolute -bottom-[3px] -right-[4px] min-w-[17px] h-[17px] px-[4.5px] grid place-items-center rounded-full bg-[#8e8e93] ring-[1.5px] ring-white text-[10px] font-bold text-white" style="font-variant-numeric: tabular-nums;">{r.count}</span>}
+                        </span>
+                        <div class="flex-1 min-w-0">
+                          <div class="flex items-baseline gap-[6px]">
+                            <span class={`flex-1 text-[17px] truncate leading-[1.25] text-black ${r.unread ? 'font-semibold' : 'font-medium'}`}>{r.name}</span>
+                            <span class={`shrink-0 text-[13px] ${r.unread ? 'font-semibold text-[#DC2626]' : ''}`} style={`font-variant-numeric: tabular-nums;${r.unread ? '' : ' color: rgba(60,60,67,0.6);'}`}>{r.time}</span>
+                          </div>
+                          <div class="flex gap-[8px] mt-[2.5px]">
+                            <div class="flex-1 min-w-0">
+                              <div class={`text-[15px] truncate leading-[1.3] ${r.unread ? 'font-medium text-black' : ''}`} style={r.unread ? '' : 'color: rgba(60,60,67,0.6);'}>{r.subject}</div>
+                              <div class={`text-[15px] leading-[1.3] mt-[2px] ${r.lines === 2 ? 'line-clamp-2' : 'truncate'}`} style="color: rgba(60,60,67,0.3);">
+                                {r.fromMe && (
+                                  <svg class="inline-block mr-[2px] -mt-[2px]" width="9" height="9" viewBox="0 0 24 24" fill="rgba(60,60,67,0.3)"><path d="M9 17l-6-5.5L9 6v3.5c5 0 9 1.5 11 8-2.5-3.2-6-4-11-4z"/></svg>
+                                )}
+                                {r.snippet}
+                              </div>
+                            </div>
+                            {r.unread && <span class="w-[8px] h-[8px] rounded-full bg-[#DC2626] shrink-0 mt-[6px]"></span>}
+                          </div>
+                          {r.label && (
+                            <div class="flex gap-[4px] mt-[4px]">
+                              <span class="inline-flex items-center gap-[4px] h-[18px] px-[7px] rounded-full bg-[#f2f2f7]">
+                                <span class="w-[6px] h-[6px] rounded-full" style={`background:${labelDots[r.label]};`}></span>
+                                <span class="text-[11px] font-medium" style="color: rgba(60,60,67,0.6);">{r.label}</span>
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                        <div class="absolute bottom-0 left-[70px] right-0 h-px" style="background: rgba(60,60,67,0.29); transform: scaleY(0.5);"></div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <!-- ─────────── CAMPAIGNS · 1:1 with Features/Campaigns/CampaignsRootView.swift ─────────── -->
+                <div class="phone-screen absolute inset-0 flex flex-col bg-white pt-[59px]" data-screen="campaigns">
+                  <Fragment set:html={searchPill('Search campaigns')} />
+                  <div class="flex items-center gap-[6px] px-[20px] pt-[8px] pb-[2px]">
+                    <span class="text-[12px] font-semibold" style="letter-spacing: 0.9px; color: rgba(60,60,67,0.6);">ALL CAMPAIGNS</span>
+                    <span class="text-[12px] font-semibold" style="color: rgba(60,60,67,0.3); font-variant-numeric: tabular-nums;">12</span>
+                    <span class="flex-1"></span>
+                    <span class="text-[12px] font-semibold text-[#059669]" style="font-variant-numeric: tabular-nums;">6 sending</span>
+                  </div>
+                  <div class="flex-1">
+                    {campaignRows.map((c) => (
+                      <div class="relative flex gap-[12px] pl-[14px] pr-[16px] py-[10px]">
+                        <!-- statusAvatar: tone disc + status symbol -->
+                        <span class="w-[44px] h-[44px] rounded-full grid place-items-center shrink-0" style={`background:${c.bg}; color:${c.fg};`}>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" set:html={campaignSymbols[c.symbol]} />
+                        </span>
+                        <div class="flex-1 min-w-0">
+                          <div class="flex items-baseline gap-[6px]">
+                            <span class="flex-1 text-[17px] font-medium text-black truncate leading-[1.25]">{c.name}</span>
+                            <span class="shrink-0 text-[13px]" style="color: rgba(60,60,67,0.6); font-variant-numeric: tabular-nums;">{c.time}</span>
+                          </div>
+                          <div class="text-[15px] truncate leading-[1.3] mt-[2.5px]" style="color: rgba(60,60,67,0.3); font-variant-numeric: tabular-nums;">{c.stats}</div>
+                          <div class="flex items-center gap-[6px] mt-[3.5px]">
+                            <span class="flex items-center gap-[4px]">
+                              <span class={`w-[6px] h-[6px] rounded-full ${c.live ? 'animate-pulse-soft' : ''}`} style={`background:${c.fg};`}></span>
+                              <span class="text-[12px] font-medium" style={`color:${c.fg};`}>{c.status}</span>
+                            </span>
+                            <span class="text-[12px]" style="color: rgba(60,60,67,0.3);">·</span>
+                            <span class="text-[12px]" style="color: rgba(60,60,67,0.3); font-variant-numeric: tabular-nums;">{c.cap}</span>
+                          </div>
+                        </div>
+                        <div class="absolute bottom-0 left-[70px] right-0 h-px" style="background: rgba(60,60,67,0.29); transform: scaleY(0.5);"></div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                </div><!-- /phone-canvas -->
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
