@@ -241,14 +241,25 @@ func main() {
 	// classifier's optional model layer rides the same OpenAI-first provider.
 	creditServiceC := credits.NewService(repository.NewCreditRepository(primaryDB), redisCache)
 	var aiProviderC generation.Provider
-	if p, perr := generation.NewProvider(generation.ProviderConfig{
-		OpenAIAPIKey:     cfg.GetSecretOptional(ctx, "OPENAI_API_KEY", "openai_api_key", ""),
-		OpenAIBaseURL:    cfg.GetStringOptional(ctx, "OPENAI_BASE_URL", "openai_base_url", ""),
-		OpenAIModelTrial: cfg.GetStringOptional(ctx, "OPENAI_MODEL_TRIAL", "openai_model_trial", ""),
-		OpenAIModelPaid:  cfg.GetStringOptional(ctx, "OPENAI_MODEL_PAID", "openai_model_paid", ""),
-		AnthropicAPIKey:  cfg.GetSecretOptional(ctx, "ANTHROPIC_API_KEY", "anthropic_api_key", ""),
-		Local:            cfg.GetBoolOptional(ctx, "AI_LOCAL_MODEL", "ai_local_model", false),
-	}); perr == nil {
+	// Provider selection mirrors the backend: AI_PROVIDER preset + AI_* vars, with
+	// the legacy OPENAI_* / ANTHROPIC_API_KEY vars as fallbacks.
+	openaiKeyC := cfg.GetSecretOptional(ctx, "OPENAI_API_KEY", "openai_api_key", "")
+	aiFreeC := cfg.GetBoolPtr(ctx, "AI_FREE", "ai_free")
+	if aiFreeC == nil {
+		aiFreeC = cfg.GetBoolPtr(ctx, "AI_LOCAL_MODEL", "ai_local_model")
+	}
+	if cfgAI, rerr := generation.Resolve(generation.ProviderSettings{
+		Provider:     cfg.GetStringOptional(ctx, "AI_PROVIDER", "ai_provider", ""),
+		APIKey:       cfg.GetSecretOptional(ctx, "AI_API_KEY", "ai_api_key", openaiKeyC),
+		BaseURL:      cfg.GetStringOptional(ctx, "AI_BASE_URL", "ai_base_url", cfg.GetStringOptional(ctx, "OPENAI_BASE_URL", "openai_base_url", "")),
+		Model:        cfg.GetStringOptional(ctx, "AI_MODEL", "ai_model", ""),
+		ModelTrial:   cfg.GetStringOptional(ctx, "AI_MODEL_TRIAL", "ai_model_trial", cfg.GetStringOptional(ctx, "OPENAI_MODEL_TRIAL", "openai_model_trial", "")),
+		ModelPaid:    cfg.GetStringOptional(ctx, "AI_MODEL_PAID", "ai_model_paid", cfg.GetStringOptional(ctx, "OPENAI_MODEL_PAID", "openai_model_paid", "")),
+		Free:         aiFreeC,
+		AnthropicKey: cfg.GetSecretOptional(ctx, "ANTHROPIC_API_KEY", "anthropic_api_key", ""),
+	}); rerr != nil {
+		log.Printf("AI provider misconfigured, AI features disabled: %v", rerr)
+	} else if p, perr := generation.NewProvider(cfgAI); perr == nil {
 		aiProviderC = p
 	}
 	integrationServiceC.SetAI(aiProviderC, creditServiceC)

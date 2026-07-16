@@ -583,15 +583,26 @@ func main() {
 			cfg.GetStringOptional(ctx, "SEARCH_API_URL", "search/api_url", ""),
 			cfg.GetSecretOptional(ctx, "SEARCH_API_KEY", "search/api_key", ""),
 		)
-		if provider, perr := generation.NewProvider(generation.ProviderConfig{
-			OpenAIAPIKey:     openaiKey,
-			OpenAIBaseURL:    cfg.GetStringOptional(ctx, "OPENAI_BASE_URL", "openai_base_url", ""),
-			OpenAIModelTrial: cfg.GetStringOptional(ctx, "OPENAI_MODEL_TRIAL", "openai_model_trial", ""),
-			OpenAIModelPaid:  cfg.GetStringOptional(ctx, "OPENAI_MODEL_PAID", "openai_model_paid", ""),
-			AnthropicAPIKey:  anthropicKey,
-			Search:           aiSearch,
-			Local:            cfg.GetBoolOptional(ctx, "AI_LOCAL_MODEL", "ai_local_model", false),
-		}); perr == nil {
+		// Provider selection: AI_PROVIDER picks a preset (openrouter/groq/ollama/
+		// openai/anthropic/custom) that fills in the base URL + free default; the
+		// legacy OPENAI_* / ANTHROPIC_API_KEY vars still work as fallbacks.
+		aiFree := cfg.GetBoolPtr(ctx, "AI_FREE", "ai_free")
+		if aiFree == nil {
+			aiFree = cfg.GetBoolPtr(ctx, "AI_LOCAL_MODEL", "ai_local_model")
+		}
+		if cfgAI, rerr := generation.Resolve(generation.ProviderSettings{
+			Provider:     cfg.GetStringOptional(ctx, "AI_PROVIDER", "ai_provider", ""),
+			APIKey:       cfg.GetSecretOptional(ctx, "AI_API_KEY", "ai_api_key", openaiKey),
+			BaseURL:      cfg.GetStringOptional(ctx, "AI_BASE_URL", "ai_base_url", cfg.GetStringOptional(ctx, "OPENAI_BASE_URL", "openai_base_url", "")),
+			Model:        cfg.GetStringOptional(ctx, "AI_MODEL", "ai_model", ""),
+			ModelTrial:   cfg.GetStringOptional(ctx, "AI_MODEL_TRIAL", "ai_model_trial", cfg.GetStringOptional(ctx, "OPENAI_MODEL_TRIAL", "openai_model_trial", "")),
+			ModelPaid:    cfg.GetStringOptional(ctx, "AI_MODEL_PAID", "ai_model_paid", cfg.GetStringOptional(ctx, "OPENAI_MODEL_PAID", "openai_model_paid", "")),
+			Free:         aiFree,
+			AnthropicKey: anthropicKey,
+			Search:       aiSearch,
+		}); rerr != nil {
+			log.Printf("AI provider misconfigured, AI features disabled: %v", rerr)
+		} else if provider, perr := generation.NewProvider(cfgAI); perr == nil {
 			aiProvider = provider
 		}
 
