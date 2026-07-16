@@ -48,6 +48,7 @@ import {
     PlayIcon,
     PlusIcon,
     SendIcon,
+    SparklesIcon,
     TagIcon,
     TagsIcon,
     TriangleAlertIcon,
@@ -100,6 +101,7 @@ import {
     NATIVE_CONNECTION,
     NATIVE_ACTIONS,
     isNativeAction,
+    isAIAction,
     nativeActionNeeds,
     triggerCarriesThread,
     triggerIsInboundWebhook,
@@ -633,7 +635,11 @@ export default function AutomationFlow({
                     connection_id: n.connection_id,
                     config: n.config ?? {},
                     title: n.action ? actionLabel(n.action) : "Choose an action",
-                    sub: isNativeAction(String(n.action ?? "")) ? "Built-in action" : connLabel(n.connection_id),
+                    sub: isAIAction(String(n.action ?? ""))
+                        ? "Built-in AI step · 1 credit"
+                        : isNativeAction(String(n.action ?? ""))
+                          ? "Built-in action"
+                          : connLabel(n.connection_id),
                     provider: providerOf(n.connection_id),
                     native: isNativeAction(String(n.action ?? "")),
                     onDelete: () => deleteNode(n.id),
@@ -867,6 +873,28 @@ export default function AutomationFlow({
                 }
                 if (need === "event" && !String(d.config?.event_name ?? "").trim()) {
                     toast.error("A fire-event action needs an event name");
+                    setSelectedId(n.id);
+                    return false;
+                }
+                const aiInstruction = String(d.config?.instruction ?? "").trim();
+                if ((need === "ai_classify" || need === "ai_extract" || need === "ai_generate") && !aiInstruction) {
+                    toast.error("An AI step needs an instruction");
+                    setSelectedId(n.id);
+                    return false;
+                }
+                if (
+                    need === "ai_classify" &&
+                    !(Array.isArray(d.config?.labels) && (d.config.labels as unknown[]).filter((l) => String(l).trim()).length >= 2)
+                ) {
+                    toast.error("An AI classify step needs at least two labels");
+                    setSelectedId(n.id);
+                    return false;
+                }
+                if (
+                    need === "ai_extract" &&
+                    !(Array.isArray(d.config?.output_keys) && (d.config.output_keys as unknown[]).some((k) => String(k).trim()))
+                ) {
+                    toast.error("An AI extract step needs at least one output key");
                     setSelectedId(n.id);
                     return false;
                 }
@@ -1859,6 +1887,9 @@ const ACTION_VISUAL: Record<string, { Icon: typeof TagIcon; tint: string; bg: st
     "warmbly.label_email": { Icon: TagsIcon, tint: "text-fuchsia-600", bg: "bg-fuchsia-50", desc: "Label the conversation the contact replied on." },
     "warmbly.set_variables": { Icon: WandSparklesIcon, tint: "text-amber-600", bg: "bg-amber-50", desc: "Compute named values from templates for later steps to reuse." },
     "warmbly.fire_event": { Icon: SendIcon, tint: "text-sky-600", bg: "bg-sky-50", desc: "Publish a custom event to the realtime gateway — your app receives it over the API websocket, no public URL." },
+    "warmbly.ai_classify": { Icon: SparklesIcon, tint: "text-purple-600", bg: "bg-purple-50", desc: "Read the event with AI and pick one label (stored as ai_class). Costs 1 credit." },
+    "warmbly.ai_extract": { Icon: SparklesIcon, tint: "text-indigo-600", bg: "bg-indigo-50", desc: "Pull named fields out of the event with AI. Costs 1 credit." },
+    "warmbly.ai_generate": { Icon: SparklesIcon, tint: "text-cyan-600", bg: "bg-cyan-50", desc: "Write a short piece of text from an instruction (stored as ai_text). Costs 1 credit." },
     "slack.notify": { Icon: MessageSquareIcon, tint: "text-violet-600", bg: "bg-violet-50" },
     "discord.notify": { Icon: MessageSquareIcon, tint: "text-indigo-600", bg: "bg-indigo-50" },
     "webhook.ping": { Icon: SendIcon, tint: "text-sky-600", bg: "bg-sky-50" },
@@ -2274,6 +2305,12 @@ function NativeActionConfig({
 
             {need === "vars" && <SetVariablesFields config={config} patchConfig={patchConfig} />}
 
+            {need === "ai_classify" && <AIClassifyFields config={config} patchConfig={patchConfig} />}
+
+            {need === "ai_extract" && <AIExtractFields config={config} patchConfig={patchConfig} />}
+
+            {need === "ai_generate" && <AIGenerateFields config={config} patchConfig={patchConfig} />}
+
             {need === "none" && (
                 <p className="text-[11px] text-slate-400 leading-relaxed">
                     Works when the event carries a campaign (reply / bounce / unsubscribe triggers).
@@ -2420,6 +2457,205 @@ function FireEventFields({
                     Each value is a Go template against the event data. Your app receives <code>{`{ name, payload }`}</code> over the websocket.
                 </p>
             </div>
+        </div>
+    );
+}
+
+// AIInstruction is the shared instruction textarea for every AI node: plain-
+// language guidance the model follows, templated against the event data.
+function AIInstruction({
+    value,
+    onChange,
+    placeholder,
+}: {
+    value: string;
+    onChange: (v: string) => void;
+    placeholder: string;
+}) {
+    return (
+        <div>
+            <Label>Instruction</Label>
+            <textarea
+                value={value}
+                onChange={(e) => onChange(e.target.value)}
+                rows={3}
+                placeholder={placeholder}
+                className="w-full px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-[12.5px] text-slate-900 placeholder:text-slate-400 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 resize-y leading-relaxed"
+            />
+            <p className="mt-1 text-[11px] text-slate-400 leading-relaxed">
+                Reference event fields with <code>{`{{.field}}`}</code>. The model also sees the rest of the event data.
+            </p>
+        </div>
+    );
+}
+
+// AIStringList edits a plain list of strings (labels or output keys) with the
+// same add/remove pattern as the set-variables rows, minus the value column.
+function AIStringList({
+    label,
+    values,
+    onChange,
+    placeholder,
+    addLabel,
+}: {
+    label: string;
+    values: string[];
+    onChange: (next: string[]) => void;
+    placeholder: string;
+    addLabel: string;
+}) {
+    // Keep blank rows while editing; the backend + save-time check drop empties.
+    const display = values.length ? values : [""];
+    const setRow = (i: number, v: string) => onChange(display.map((r, idx) => (idx === i ? v : r)));
+    const addRow = () => onChange([...display, ""]);
+    const removeRow = (i: number) => onChange(display.filter((_, idx) => idx !== i));
+    return (
+        <div>
+            <Label>{label}</Label>
+            <div className="space-y-2">
+                {display.map((row, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                        <TextInput
+                            value={row}
+                            onChange={(v) => setRow(i, v)}
+                            placeholder={placeholder}
+                            className="flex-1 min-w-0 font-mono"
+                        />
+                        <button
+                            type="button"
+                            onClick={() => removeRow(i)}
+                            className="shrink-0 text-slate-400 hover:text-rose-500"
+                            aria-label={`Remove ${label}`}
+                        >
+                            <XIcon className="w-3.5 h-3.5" />
+                        </button>
+                    </div>
+                ))}
+            </div>
+            <button
+                type="button"
+                onClick={addRow}
+                className="mt-2 inline-flex items-center gap-1 text-[12px] text-sky-600 hover:text-sky-700"
+            >
+                <PlusIcon className="w-3.5 h-3.5" /> {addLabel}
+            </button>
+        </div>
+    );
+}
+
+// AIOutputVariable is the optional target-variable override for classify/generate
+// (so two AI nodes don't both write ai_class / ai_text).
+function AIOutputVariable({
+    value,
+    onChange,
+    defaultName,
+}: {
+    value: string;
+    onChange: (v: string) => void;
+    defaultName: string;
+}) {
+    return (
+        <div>
+            <Label>Output variable (optional)</Label>
+            <TextInput value={value} onChange={onChange} placeholder={defaultName} className="w-40 font-mono" />
+            <p className="mt-1 text-[11px] text-slate-400 leading-relaxed">
+                Where the result is stored. Defaults to <code>{`{{.${defaultName}}}`}</code>; set a name if another AI step already uses it.
+            </p>
+        </div>
+    );
+}
+
+// AIClassifyFields: instruction + a closed label set + optional output var. The
+// model returns one label, stored in ai_class (or the override) for downstream IFs.
+function AIClassifyFields({
+    config,
+    patchConfig,
+}: {
+    config: Record<string, unknown>;
+    patchConfig: (p: Record<string, unknown>) => void;
+}) {
+    const labels = Array.isArray(config.labels) ? (config.labels as unknown[]).map(String) : [];
+    return (
+        <div className="space-y-3">
+            <AIInstruction
+                value={String(config.instruction ?? "")}
+                onChange={(v) => patchConfig({ instruction: v })}
+                placeholder="Classify this reply by how interested the sender is."
+            />
+            <AIStringList
+                label="Labels"
+                values={labels}
+                onChange={(next) => patchConfig({ labels: next })}
+                placeholder="interested"
+                addLabel="Add label"
+            />
+            <AIOutputVariable
+                value={String(config.output_key ?? "")}
+                onChange={(v) => patchConfig({ output_key: v })}
+                defaultName="ai_class"
+            />
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+                The model picks exactly one label. Add at least two. Costs 1 credit each time it runs.
+            </p>
+        </div>
+    );
+}
+
+// AIExtractFields: instruction + the field names to pull. Each output key becomes
+// a variable of that name for later steps to read.
+function AIExtractFields({
+    config,
+    patchConfig,
+}: {
+    config: Record<string, unknown>;
+    patchConfig: (p: Record<string, unknown>) => void;
+}) {
+    const keys = Array.isArray(config.output_keys) ? (config.output_keys as unknown[]).map(String) : [];
+    return (
+        <div className="space-y-3">
+            <AIInstruction
+                value={String(config.instruction ?? "")}
+                onChange={(v) => patchConfig({ instruction: v })}
+                placeholder="Pull the company size, budget, and timeline from this message."
+            />
+            <AIStringList
+                label="Output keys"
+                values={keys}
+                onChange={(next) => patchConfig({ output_keys: next })}
+                placeholder="company_size"
+                addLabel="Add key"
+            />
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+                Each key becomes a variable ( <code>{`{{.company_size}}`}</code> ). A field the model can't find is empty. Costs 1 credit.
+            </p>
+        </div>
+    );
+}
+
+// AIGenerateFields: instruction + optional output var. The model writes text into
+// ai_text (or the override) for a later step to send. It never sends on its own.
+function AIGenerateFields({
+    config,
+    patchConfig,
+}: {
+    config: Record<string, unknown>;
+    patchConfig: (p: Record<string, unknown>) => void;
+}) {
+    return (
+        <div className="space-y-3">
+            <AIInstruction
+                value={String(config.instruction ?? "")}
+                onChange={(v) => patchConfig({ instruction: v })}
+                placeholder="Write a one-line summary of this reply for a Slack alert."
+            />
+            <AIOutputVariable
+                value={String(config.output_key ?? "")}
+                onChange={(v) => patchConfig({ output_key: v })}
+                defaultName="ai_text"
+            />
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+                The result is stored, not sent. Use it in a later step (a Slack message, a task). Costs 1 credit.
+            </p>
         </div>
     );
 }

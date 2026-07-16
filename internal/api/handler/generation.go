@@ -100,32 +100,46 @@ func (h *Handler) GenerateWriting(c *gin.Context) {
 	}
 	model := h.WritingGenerator.ModelForTier(paid)
 
-	// Consume one credit up front. The DB enforces the no-negative / no-replay
-	// invariants; on a depleted balance this returns 402 with no provider call.
+	// Consume one credit up front, unless this is a free/local model, which runs
+	// un-metered (AI_FREE). On the metered path the DB enforces the
+	// no-negative / no-replay invariants and returns 402 on a depleted balance.
 	idemKey := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
-	remaining, err := h.CreditService.Consume(
-		c.Request.Context(), *orgID, creditsPerWrite,
-		"writing_assistant", model, 0, idemKey,
-	)
-	if err != nil {
-		switch {
-		case errors.Is(err, credits.ErrInsufficientCredits):
-			paymentRequiredJSON(c, "You're out of AI credits. Upgrade or purchase more to keep using the writing assistant.")
-		case errors.Is(err, credits.ErrCapExceeded):
-			errx.JSON(c, errx.New(errx.TooManyRequests, "AI writing assistant usage limit reached, please try again later."))
-		default:
-			errx.JSON(c, errx.InternalError())
+	local := h.WritingGenerator.IsLocal()
+	var remaining int
+	if local {
+		if bal, berr := h.CreditService.GetBalance(c.Request.Context(), *orgID); berr == nil {
+			remaining = bal
 		}
-		return
+	} else {
+		var err error
+		remaining, err = h.CreditService.Consume(
+			c.Request.Context(), *orgID, creditsPerWrite,
+			"writing_assistant", model, 0, idemKey,
+		)
+		if err != nil {
+			switch {
+			case errors.Is(err, credits.ErrInsufficientCredits):
+				paymentRequiredJSON(c, "You're out of AI credits. Upgrade or purchase more to keep using the writing assistant.")
+			case errors.Is(err, credits.ErrCapExceeded):
+				errx.JSON(c, errx.New(errx.TooManyRequests, "AI writing assistant usage limit reached, please try again later."))
+			default:
+				errx.JSON(c, errx.InternalError())
+			}
+			return
+		}
 	}
 
 	// Generate. On provider failure, refund the credit so the customer is not
-	// charged for a completion they never received. The refund is best-effort;
-	// a failed refund is logged via the audit trail rather than surfaced.
-	result, gerr := h.WritingGenerator.GenerateWriting(c.Request.Context(), model, req.Prompt, req.Tone)
+	// charged for a completion they never received (nothing to refund on the
+	// free/local path). The refund is best-effort; a failed refund is logged via
+	// the audit trail rather than surfaced.
+	voice := h.orgVoice(c.Request.Context(), *orgID, req.Tone)
+	result, gerr := h.WritingGenerator.GenerateWriting(c.Request.Context(), model, req.Prompt, voice)
 	if gerr != nil {
-		if bal, rerr := h.CreditService.Grant(c.Request.Context(), *orgID, creditsPerWrite, "writing_assistant_refund"); rerr == nil {
-			remaining = bal
+		if !local {
+			if bal, rerr := h.CreditService.Grant(c.Request.Context(), *orgID, creditsPerWrite, "writing_assistant_refund"); rerr == nil {
+				remaining = bal
+			}
 		}
 		if errors.Is(gerr, generation.ErrNotConfigured) {
 			errx.JSON(c, errx.New(errx.ServiceUnavailable, "AI writing assistant is not configured."))

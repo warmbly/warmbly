@@ -1,7 +1,6 @@
 ---
 title: Campaigns
 description: "Create and send cold outreach campaigns safely."
-icon: Send
 ---
 
 A campaign is a sequence of emails that Warmbly sends to a list of contacts on your behalf, spread across your connected mailboxes. Warmbly handles the timing, the volume limits, and the rotation between mailboxes so your sending looks natural and stays safe.
@@ -85,6 +84,19 @@ The ramp is applied as another minimum on top of the per-mailbox cap, so it only
 ### Lead flow
 
 You can also throttle how many brand-new contacts a campaign starts each day with **Max new leads per day** (set to `0` for no limit, up to `1000`). When the cap is reached, Warmbly keeps sending follow-ups to contacts already in flight and resumes adding new leads the next day. You can optionally prioritize new leads over follow-ups, and choose whether to attempt delivery to addresses flagged risky by verification.
+
+### Lead statuses
+
+The **Leads** tab shows one status per contact so you can see where each lead stands in the sequence at a glance:
+
+- **Queued**: a lead in the campaign that has not been emailed yet.
+- **Processing**: some, but not all, sequence steps have been sent. The lead is still moving through the flow.
+- **Done**: every step in the sequence has been sent and the lead has not replied or bounced. There is nothing left to send this contact.
+- **Replied**: the contact replied. Sending to them stops.
+- **Bounced**: a send hard-bounced.
+- **Unsubscribed**: the contact unsubscribed or is suppressed.
+
+A lead stays **Processing** only while steps remain to send. Once the last step goes out it moves to **Done**, so a finished campaign reads as done rather than stuck mid-flight.
 
 ## Scheduling windows
 

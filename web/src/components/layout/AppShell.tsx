@@ -26,6 +26,7 @@ import { ShortcutsModal } from "@/components/shared/ShortcutsModal";
 import { CommandPalette } from "@/components/shared/CommandPalette";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { GlobalCursorsProvider } from "@/components/app/presence/GlobalCursors";
+import AgentPanel from "@/components/app/agent/AgentPanel";
 
 export function AppShell() {
     useKeyboardShortcuts();
@@ -73,6 +74,8 @@ export function AppShell() {
 
             <ShortcutsModal />
             <CommandPalette />
+            {/* Right-side AI assistant, persistent across routes. */}
+            <AgentPanel />
         </div>
     );
 }

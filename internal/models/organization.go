@@ -30,6 +30,18 @@ type Organization struct {
 	PresenceShowOnline   bool `json:"presence_show_online"`
 	PresenceShowActivity bool `json:"presence_show_activity"`
 
+	// AI voice profile: org grounding folded into every AI writing surface via
+	// generation.BuildVoiceRules. All optional; empty falls back to the built-in
+	// humanizer rules. Gated behind manage_settings.
+	ProductDescription string `json:"product_description"`
+	ICPNotes           string `json:"icp_notes"`
+	VoiceProfile       string `json:"voice_profile"`
+
+	// InboxAgentEnabled opts the org into the inbox agent: on an inbound human
+	// reply it drafts a suggested reply for review. Off by default; paid-only and
+	// admin-controlled (manage_settings). The agent never sends on its own.
+	InboxAgentEnabled bool `json:"inbox_agent_enabled"`
+
 	// Joined data
 	Owner *User `json:"owner,omitempty"`
 }
@@ -67,8 +79,15 @@ type OrganizationMember struct {
 	Name  string `json:"name"`
 }
 
-// HasPermission checks if the member has a specific permission
+// HasPermission checks if the member has a specific permission. The owner always
+// has every permission by definition (RolePermissions[RoleOwner] == AllPermissions),
+// so it is granted regardless of the stored mask — this matches the web client,
+// which short-circuits owners, and keeps an owner from ever being locked out of
+// their own org by a bad/empty stored permissions value.
 func (m *OrganizationMember) HasPermission(perm OrganizationPermission) bool {
+	if m.IsOwner() {
+		return true
+	}
 	return m.Permissions.HasPermission(perm)
 }
 
@@ -138,6 +157,13 @@ type UpdateOrganizationRequest struct {
 	// Org-wide team presence privacy toggles (admin-controlled).
 	PresenceShowOnline   *bool `json:"presence_show_online,omitempty"`
 	PresenceShowActivity *bool `json:"presence_show_activity,omitempty"`
+	// AI voice profile (manage_settings). Pointers so an unset field is left
+	// unchanged; empty string clears it.
+	ProductDescription *string `json:"product_description,omitempty"`
+	ICPNotes           *string `json:"icp_notes,omitempty"`
+	VoiceProfile       *string `json:"voice_profile,omitempty"`
+	// InboxAgentEnabled opts the org in/out of the inbox agent (manage_settings).
+	InboxAgentEnabled *bool `json:"inbox_agent_enabled,omitempty"`
 }
 
 // InviteMemberRequest represents the request to invite a new member

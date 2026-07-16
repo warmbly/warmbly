@@ -205,6 +205,42 @@ function NavRow({ item }: { item: NavItem }) {
 
     const planBadge = locked && item.requires ? REQUIRES_TO_BADGE[item.requires] : null;
 
+    // Plan-gated items the org's plan doesn't include: lock the row and pop an
+    // upgrade dialog on click (mirroring the permission lock), instead of routing
+    // to a teasing empty page. Only the owner gets the direct upgrade CTA.
+    if (locked && planBadge) {
+        return (
+            <>
+                <button
+                    type="button"
+                    onClick={() => setDeniedOpen(true)}
+                    title={`${item.title} · ${planBadge.label} plan`}
+                    className="group w-[calc(100%-1rem)] mx-2 flex items-center gap-2.5 px-2.5 h-7 rounded-md text-[12.5px] text-slate-400 hover:text-slate-700 hover:bg-slate-200/40 transition-colors duration-100"
+                >
+                    <LockIcon className="w-[13px] h-[13px] shrink-0 text-slate-300 group-hover:text-slate-500" strokeWidth={1.8} />
+                    <span className="truncate flex-1 min-w-0 text-left">{item.title}</span>
+                    <span
+                        className={cn(
+                            "h-4 px-1.5 rounded text-[9.5px] font-semibold uppercase tracking-[0.06em] border inline-flex items-center",
+                            planBadge.classes,
+                        )}
+                    >
+                        {planBadge.label}
+                    </span>
+                </button>
+                <AccessLockedDialog
+                    open={deniedOpen}
+                    onClose={() => setDeniedOpen(false)}
+                    feature={item.title}
+                    variant="plan"
+                    planLabel={planBadge.label}
+                    upgradeTo={access.isOwner ? "/app/settings/billing" : "/app/settings/roles"}
+                    canUpgrade={access.isOwner}
+                />
+            </>
+        );
+    }
+
     return (
         <Link
             to={item.url}
@@ -590,6 +626,9 @@ function LivePanel() {
     }, [emails]);
 
     const live = connection === "connected";
+    // Connected == green, always. When quiet we say READY (not the old "IDLE",
+    // which with a gray dot read as "not connected"); when a mailbox is warming
+    // or sending we say LIVE and pulse. Only a real disconnect is gray.
     const label =
         connection === "disconnected"
             ? "OFFLINE"
@@ -597,7 +636,19 @@ function LivePanel() {
                 ? "CONNECTING"
                 : active > 0
                     ? "LIVE"
-                    : "IDLE";
+                    : "READY";
+    const dotClass =
+        connection === "disconnected"
+            ? "bg-slate-300"
+            : connection === "connecting"
+                ? "bg-amber-500"
+                : "bg-emerald-500";
+    const labelTone =
+        connection === "disconnected"
+            ? "text-slate-400"
+            : connection === "connecting"
+                ? "text-amber-600"
+                : "text-emerald-600";
 
     // Latency bucketing: <100ms great, <300ms okay, ≥300ms poor.
     const latencyTone =
@@ -619,20 +670,24 @@ function LivePanel() {
                     <span
                         className={cn(
                             "w-1.5 h-1.5 rounded-full",
-                            connection === "disconnected"
-                                ? "bg-slate-400"
-                                : connection === "connecting"
-                                    ? "bg-amber-500"
-                                    : active > 0
-                                        ? "bg-emerald-500"
-                                        : "bg-slate-400",
+                            dotClass,
+                            connection === "connecting" && "animate-pulse",
                         )}
                     />
-                    {live && active > 0 && (
+                    {/* Active mailboxes ping; a quiet-but-connected workspace gets a
+                        slow breathing glow so "READY" reads alive, not stuck. */}
+                    {live && active > 0 ? (
                         <span className="absolute inset-0 rounded-full bg-emerald-500/40 animate-ping" />
-                    )}
+                    ) : live ? (
+                        <span className="absolute -inset-[3px] rounded-full bg-emerald-400/50 status-breathe" />
+                    ) : null}
                 </span>
-                <span className="text-[10px] uppercase tracking-[0.14em] text-slate-500 font-semibold">
+                <span
+                    className={cn(
+                        "text-[10px] uppercase tracking-[0.14em] font-semibold",
+                        labelTone,
+                    )}
+                >
                     {label}
                 </span>
                 <span

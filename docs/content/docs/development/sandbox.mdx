@@ -1,7 +1,6 @@
 ---
 title: Sandbox
 description: A fully working local demo environment, with live sending, replies, opens, clicks, and warmup running end to end.
-icon: FlaskConical
 ---
 
 The sandbox turns a local stack into a living product demo. It seeds a paid showcase organization ("Sunrise Labs") whose mailboxes really send and really sync, then runs a simulator that plays the internet: it delivers captured mail into recipient inboxes, opens tracking pixels, clicks tracked links, and replies as the seeded contacts. Campaign stats climb, the unibox fills with threaded replies, warmup interactions verify, and the dashboard updates in realtime, all through production code paths. The only simulated thing is the humans.
@@ -35,6 +34,7 @@ Campaign sending starts within about five minutes (the campaign reconciler's fir
 
 - the full `internal/seed` fixture first (plans, workers, the demo orgs), so it works on a fresh database
 - the Sunrise Labs org on an active Starter subscription, owned by `sandbox@warmbly.test`
+- AI credits: the plan's monthly allowance plus a 5,000-credit purchased top-up, so the assistant and every other AI surface work out of the box (re-seeding refills both pools)
 - 6 sender mailboxes on `@sunrise.test`, assigned to the premium shared worker (paid orgs place onto premium workers; `make run` now runs both native workers), warmup enabled 10 days ago (mid-ramp), premium warmup pool, demo-friendly pacing (90s minimum gap, 100/day cap)
 - two active campaigns with tracking enabled ("Sunrise Q3 launch outreach", 3 steps, 24 contacts; "Agency partnerships", 2 steps, 12 contacts) plus one draft; two contacts are unsubscribed so suppression is visible
 - working credentials for every `smtp_imap` account in the database, including the older `make seed` fixtures, sealed with `CREDENTIALS_ENCRYPTION_KEY` so the worker can decrypt and use them

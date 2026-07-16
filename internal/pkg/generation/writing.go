@@ -16,11 +16,15 @@ func (c *GenerationClient) ModelForTier(paid bool) string {
 	return ModelWritingFreeOpenAI
 }
 
+// IsLocal is false: GenerationClient targets the hosted OpenAI API (batch /
+// conversation paths); a local OpenAI-compatible endpoint uses openAIProvider as
+// the WritingGenerator instead.
+func (c *GenerationClient) IsLocal() bool { return false }
+
 // GenerateWriting implements WritingGenerator using the existing OpenAI client.
-// It is the fallback provider used only when ANTHROPIC_API_KEY is unset but
-// OPENAI_API_KEY is present. The handler depends on the WritingGenerator
-// interface, so it never needs to know which provider is active.
-func (c *GenerationClient) GenerateWriting(ctx context.Context, model, prompt, tone string) (*WritingResult, error) {
+// The handler depends on the WritingGenerator interface, so it never needs to
+// know which provider is active.
+func (c *GenerationClient) GenerateWriting(ctx context.Context, model, prompt string, voice VoiceContext) (*WritingResult, error) {
 	if c == nil {
 		return nil, ErrNotConfigured
 	}
@@ -32,7 +36,7 @@ func (c *GenerationClient) GenerateWriting(ctx context.Context, model, prompt, t
 	resp, err := c.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
 		Model: chatModel,
 		Messages: []openai.ChatCompletionMessageParamUnion{
-			openai.SystemMessage(writingSystemPrompt(tone)),
+			openai.SystemMessage(BuildVoiceRules(voice)),
 			openai.UserMessage(prompt),
 		},
 	})

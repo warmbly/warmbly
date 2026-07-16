@@ -448,8 +448,10 @@ defmodule RealtimeWeb.OrgChannel do
       String.contains?(event_type, "SETTINGS") ->
         has.(:manage_settings)
 
-      # Unibox rows carry subject + preview snippets
+      # Unibox rows carry subject + preview snippets; AI reply drafts are unibox
+      # content awaiting review, so they ride the same access_unibox gate.
       String.contains?(event_type, "INBOX") or
+        String.contains?(event_type, "AI_DRAFT") or
           event_type in ["EMAIL_RECEIVED", "EMAIL_UPDATED", "EMAIL_DELETED"] ->
         has.(:access_unibox)
 
@@ -466,6 +468,10 @@ defmodule RealtimeWeb.OrgChannel do
 
       # Contact changes
       String.contains?(event_type, "CONTACT") ->
+        has.(:view_contacts)
+
+      # AI contact research progress: findings are about contacts.
+      String.contains?(event_type, "RESEARCH") ->
         has.(:view_contacts)
 
       # Mailbox account + warmup health transitions

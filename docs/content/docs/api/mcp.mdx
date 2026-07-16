@@ -1,0 +1,138 @@
+---
+title: MCP server
+description: Connect any MCP client (Claude Code, Claude Desktop, Cursor) to Warmbly and use your data and workflows as tools. Sign in with OAuth, or scope a static API key.
+---
+
+Warmbly speaks the [Model Context Protocol](https://modelcontextprotocol.io). Point any MCP client at Warmbly's server and it can search contacts, check campaigns, read your inbox, draft replies, and create draft campaigns and automations, all scoped to what you grant it.
+
+- **URL**: `https://api.warmbly.com/v1/mcp`
+- **Transport**: streamable HTTP
+- **Auth**: an OAuth 2.1 access token (browser sign-in) or a static API key (bearer header).
+
+There are two ways to connect. OAuth is the one-command path: you run a single `add` command, approve access in the browser, and the client holds a short-lived token it can refresh. An API key is the static path: you mint a key and paste it into the client config. Both reach the exact same tools, gated the exact same way.
+
+## Connect with OAuth
+
+This is the recommended path. You do not paste a key anywhere: the client discovers Warmbly's authorization server, opens a browser for you to sign in and approve the scopes, and stores the resulting token itself.
+
+### Claude Code
+
+```
+claude mcp add --transport http warmbly https://api.warmbly.com/v1/mcp
+```
+
+Then run `/mcp` inside Claude Code and pick **Authenticate**. A browser opens, you sign in to Warmbly, approve the requested scopes, and you are connected. No header, no key.
+
+### Claude Desktop and Cursor
+
+Add the server with just its URL, and the client runs the OAuth flow on first use:
+
+```json
+{
+  "mcpServers": {
+    "warmbly": { "type": "http", "url": "https://api.warmbly.com/v1/mcp" }
+  }
+}
+```
+
+<Callout type="info" title="What you are approving">
+The consent screen shows exactly which scopes the client is asking for. Sending real mail is never one of them: `SEND_CAMPAIGNS` and API-key management are excluded from OAuth-connected MCP clients by design, and the assistant only ever drafts. You can revoke a connected client at any time from your dashboard under connected apps.
+</Callout>
+
+## Connect with an API key
+
+Prefer a static, long-lived credential (CI, a shared script, a client that does not implement OAuth)? Mint an API key and send it as a bearer token:
+
+```
+Authorization: Bearer wmbly_...
+```
+
+<Callout type="info" title="Scope your key">
+Create a dedicated API key for each MCP client and grant it only the scopes it needs (see [Permissions](/api/permissions/)). The `AI_AGENT` scope is a convenient way to grant assistant-style access; combine it with the read/write scopes for the data you want the client to reach.
+</Callout>
+
+### Claude Code
+
+```
+claude mcp add --transport http warmbly https://api.warmbly.com/v1/mcp \
+  --header "Authorization: Bearer wmbly_..."
+```
+
+### Claude Desktop
+
+Add to your `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "warmbly": {
+      "type": "http",
+      "url": "https://api.warmbly.com/v1/mcp",
+      "headers": { "Authorization": "Bearer wmbly_..." }
+    }
+  }
+}
+```
+
+### Cursor
+
+Add to `.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "warmbly": {
+      "url": "https://api.warmbly.com/v1/mcp",
+      "headers": { "Authorization": "Bearer wmbly_..." }
+    }
+  }
+}
+```
+
+## What is exposed
+
+The server exposes exactly the tools your credential is allowed to use, whether that credential is an OAuth token or an API key. A credential with only read scopes sees only the read tools; one with write scopes sees those too. This is the same tool set the in-product assistant uses, so an MCP client acts with precisely the permissions you granted, and nothing more.
+
+Every tool is gated by its API permission. `tools/list` returns only the tools your mask allows. Sending-class actions (anything that would transmit email) are never exposed over MCP; the assistant only ever produces drafts.
+
+| Tool | Does | Required scope |
+|------|------|----------------|
+| `search_contacts` | Find contacts by text | `READ_CONTACTS` |
+| `get_contact` | Read one contact | `READ_CONTACTS` |
+| `update_contact_fields` | Update contact fields | `WRITE_CONTACTS` |
+| `add_tag` / `remove_tag` | Tag a contact | `WRITE_CONTACTS` |
+| `list_campaigns` | List campaigns | `READ_CAMPAIGNS` |
+| `get_campaign_stats` | Campaign stats | `READ_CAMPAIGNS` |
+| `list_campaign_leads` | A campaign's leads with derived status + totals | `READ_CONTACTS` |
+| `create_campaign_draft` | Create a draft campaign | `WRITE_CAMPAIGNS` |
+| `set_campaign_status` | Start or stop a campaign | `SEND_CAMPAIGNS` |
+| `get_dashboard_analytics` | Org-wide sending stats for a period | `READ_ANALYTICS` |
+| `list_mailboxes` | Sender mailboxes with health + warmup state | `READ_ANALYTICS` |
+| `list_pipelines` / `list_deals` | Read CRM pipelines and deals | `READ_CRM` |
+| `create_task` / `create_deal` | Create CRM records | `WRITE_CRM` |
+| `add_contact_note` | Add a note to a contact's timeline | `WRITE_CRM` |
+| `list_threads` / `get_thread` | Read the unified inbox | `READ_UNIBOX` |
+| `draft_reply` | Draft a reply (never sends) | `READ_UNIBOX` |
+| `create_automation_draft` | Create a disabled automation | `INTEGRATIONS` |
+| `search_web` / `fetch_url` | Search and read public pages | any |
+| `load_skill` | Read one of your playbooks | any |
+
+Rate limits apply to MCP calls exactly as they do to the rest of the API (per-key for API keys, per-user for OAuth tokens). `SEND_CAMPAIGNS` appears in the table because `set_campaign_status` needs it, but that tool is still withheld from MCP: no send-class tool is ever exposed over the MCP transport regardless of scope.
+
+## How OAuth discovery works
+
+The one-command flow is standard MCP authorization, so any spec-compliant client works without Warmbly-specific setup. On a request with no valid token, `/v1/mcp` returns `401` with a `WWW-Authenticate` header pointing at the protected-resource metadata. The client then walks:
+
+- `GET /.well-known/oauth-protected-resource` — the resource and its authorization server ([RFC 9728](https://www.rfc-editor.org/rfc/rfc9728)).
+- `GET /.well-known/oauth-authorization-server` — the authorize, token, and registration endpoints ([RFC 8414](https://www.rfc-editor.org/rfc/rfc8414)).
+- `POST /v1/oauth/register` — dynamic client registration, so the client mints a public (PKCE) `client_id` with no manual app setup ([RFC 7591](https://www.rfc-editor.org/rfc/rfc7591)).
+- Authorization code with PKCE (S256) in the browser, then `POST /v1/oauth/token` for a short-lived access token and a rotating refresh token.
+
+The same discovery drives Warmbly's OAuth server for any client. See the [OAuth 2.1](/api/oauth/) page for the full authorization-server reference.
+
+## See also
+
+- [OAuth 2.1](/api/oauth/) for the authorization-server endpoints, scopes, and dynamic registration.
+- [Authentication](/api/authentication/) for how API keys and OAuth tokens work.
+- [Permissions](/api/permissions/) for the full scope list.
+- To connect Warmbly to external MCP servers instead (the other direction), see the [Connect MCP tools](/guides/connect-mcp-tools/) guide.

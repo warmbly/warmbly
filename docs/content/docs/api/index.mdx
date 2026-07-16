@@ -1,7 +1,6 @@
 ---
 title: API overview
 description: Base URL, conventions, and a quickstart for the Warmbly API.
-icon: Rocket
 ---
 
 The Warmbly API lets you drive everything you can do in the dashboard programmatically: mailboxes, campaigns, contacts, the unibox, and more. It is a JSON API over HTTPS.
@@ -46,4 +45,6 @@ The API is versioned in the URL. The current version is `v1`, and the base URL i
 
 ## Client libraries
 
-There are no official client libraries yet; any HTTP client works against the API directly. Official libraries (Node.js, Python, Go) will get their own sections in these docs when they ship.
+Warmbly publishes official, typed SDKs for JavaScript and TypeScript, Python, and Go. They wrap the REST API, the OAuth2 flows, and the realtime gateway, with auto-pagination, retries, and typed errors built in. Any HTTP client also works against the API directly.
+
+See [SDKs](/api/sdks/) for install commands and quickstarts.

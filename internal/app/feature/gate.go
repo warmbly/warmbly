@@ -57,6 +57,12 @@ type FeatureGateService interface {
 	// CanUseWritingAssistant reports whether the org may use the AI writing
 	// assistant (paid or in free trial; expired/no-subscription is blocked).
 	CanUseWritingAssistant(ctx context.Context, orgID uuid.UUID) (bool, *errx.Error)
+
+	// CanUseInboxAgent reports whether the org may use the inbox agent (paid
+	// only — it drafts unattended, so it is not offered on the free trial). The
+	// org must ALSO have opted in (organizations.inbox_agent_enabled), which is
+	// checked separately by the caller.
+	CanUseInboxAgent(ctx context.Context, orgID uuid.UUID) (bool, *errx.Error)
 }
 
 // SubscriptionStatus contains status info for feature gating
@@ -254,6 +260,20 @@ func (s *featureGateService) CanUseWritingAssistant(ctx context.Context, orgID u
 		return false, nil
 	}
 	return sub.HasPaidSubscription() || sub.IsInFreeTrial(), nil
+}
+
+// CanUseInboxAgent gates the inbox agent to paid subscribers only. Unlike the
+// writing assistant, it drafts on inbound replies without a human first asking,
+// so it is not part of the free-trial allowance.
+func (s *featureGateService) CanUseInboxAgent(ctx context.Context, orgID uuid.UUID) (bool, *errx.Error) {
+	sub, err := s.subRepo.GetByOrganizationID(ctx, orgID)
+	if err != nil {
+		return false, errx.New(errx.Internal, "failed to get subscription")
+	}
+	if sub == nil {
+		return false, nil
+	}
+	return sub.HasPaidSubscription(), nil
 }
 
 // IsPaidOrganization checks if the organization has an active paid subscription

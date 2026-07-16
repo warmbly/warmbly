@@ -1,12 +1,11 @@
 ---
 title: OAuth
 description: Let third-party apps act on behalf of a Warmbly workspace with the authorization-code flow.
-icon: LockKeyhole
 ---
 
 API keys are for your own scripts. When you build an app that other people connect their Warmbly workspace to, use OAuth instead: the user grants your app scoped access on a consent screen, and you receive tokens that act on their behalf. You never see their password or API key.
 
-Warmbly implements the OAuth 2.0 authorization-code flow. Every app holds a client secret, with PKCE available as an optional extra layer. The implicit and password grants are not supported.
+Warmbly implements the OAuth 2.1 authorization-code flow with PKCE. Confidential apps (registered in the dashboard) hold a client secret; public clients (native, mobile, and CLI apps, including MCP clients that self-register) use PKCE with no secret. The implicit and password grants are not supported.
 
 ## Register your app
 
@@ -17,7 +16,41 @@ In the dashboard, open **Settings -> OAuth apps** and register an application. Y
 - the **scopes** your app may request,
 - optionally, **allowed webhook domains** (see below).
 
-You receive a **client ID** and a **client secret**, shown only once. Every app has a secret: keep it server-side and use it to authenticate the token exchange. Browser and mobile apps that cannot safely hold a secret should add PKCE on top (see below) rather than embedding it.
+You receive a **client ID** and a **client secret**, shown only once. Keep the secret server-side and use it to authenticate the token exchange.
+
+## Public clients and dynamic registration
+
+Native apps, CLI tools, and MCP clients cannot safely hold a secret. They connect as public clients: no client secret, and PKCE is mandatory rather than optional. There are two ways to get a public `client_id`.
+
+Self-register at runtime with Dynamic Client Registration ([RFC 7591](https://www.rfc-editor.org/rfc/rfc7591)). This is the path MCP clients use, so a user connects with one command:
+
+```bash
+curl -X POST "https://api.warmbly.com/v1/oauth/register" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "client_name": "My MCP client",
+    "redirect_uris": ["http://127.0.0.1:8080/callback"],
+    "token_endpoint_auth_method": "none",
+    "grant_types": ["authorization_code", "refresh_token"],
+    "response_types": ["code"]
+  }'
+```
+
+```json
+{
+  "client_id": "wmcid_...",
+  "client_id_issued_at": 1752624000,
+  "redirect_uris": ["http://127.0.0.1:8080/callback"],
+  "token_endpoint_auth_method": "none",
+  "grant_types": ["authorization_code", "refresh_token"],
+  "response_types": ["code"],
+  "scope": "read_campaigns read_contacts ..."
+}
+```
+
+The registration endpoint is open (unauthenticated) and rate-limited per source IP. Registering grants no access on its own: a human still signs in and approves scopes at the consent screen. Redirect URIs may be HTTPS, loopback (`http://127.0.0.1` or `localhost`, any port), or a private-use scheme (`myapp://`), matched exactly at authorize and token time. Self-registered clients can never request `SEND_CAMPAIGNS` or `API_KEYS`.
+
+For a public client the token exchange sends no `client_secret`, only the PKCE `code_verifier`. Everything else in the flow below is identical. If you are connecting an AI assistant, you do not run any of this by hand: see the [MCP server](/api/mcp/) page for the one-command setup.
 
 ## Scopes
 
@@ -58,7 +91,7 @@ If the user denies, the redirect carries `?error=access_denied&state=...` instea
 
 ### 3. Exchange the code for tokens
 
-Verify `state` matches, then `POST` to the token endpoint. The request is `application/x-www-form-urlencoded`; send your `client_secret` (in the body or via HTTP Basic auth), plus the original `code_verifier` if you used PKCE.
+Verify `state` matches, then `POST` to the token endpoint. The request is `application/x-www-form-urlencoded`; send your `client_secret` (in the body or via HTTP Basic auth), plus the original `code_verifier` if you used PKCE. A public client omits `client_secret` and always sends `code_verifier`.
 
 ```bash
 curl -X POST "https://api.warmbly.com/v1/oauth/token" \
@@ -124,13 +157,23 @@ Users can also revoke your app themselves under **Settings -> OAuth apps -> Auth
 
 ## Discovery
 
-Endpoint URLs and capabilities are published per RFC 8414:
+Endpoint URLs and capabilities are published for automatic client configuration.
+
+Authorization-server metadata ([RFC 8414](https://www.rfc-editor.org/rfc/rfc8414)):
 
 ```
 GET https://api.warmbly.com/.well-known/oauth-authorization-server
 ```
 
-It lists the authorization, token, and revocation endpoints, the supported scopes, `code` as the only response type, `authorization_code` and `refresh_token` grants, and `S256` as the only PKCE method.
+It lists the authorization, token, revocation, and registration endpoints, the supported scopes, `code` as the only response type, `authorization_code` and `refresh_token` grants, `S256` as the only PKCE method, and `none` (public), `client_secret_basic`, and `client_secret_post` as the client authentication methods.
+
+Protected-resource metadata for the MCP endpoint ([RFC 9728](https://www.rfc-editor.org/rfc/rfc9728)):
+
+```
+GET https://api.warmbly.com/.well-known/oauth-protected-resource
+```
+
+It names the resource and its authorization server, so an MCP client that gets a `401` with a `WWW-Authenticate` challenge from `/v1/mcp` can find where to authenticate. See the [MCP server](/api/mcp/) page.
 
 ## Webhook domains for OAuth apps
 
@@ -277,8 +320,9 @@ Both are equally valid depending on what you are building. A dashboard-like inte
 
 - Redirect URIs are matched exactly, so register every callback you use.
 - Always send and verify `state`.
-- PKCE is optional but recommended; when used, only `S256` is accepted.
-- Keep your client secret server-side. Browser and mobile apps should add PKCE rather than embedding the secret.
+- PKCE is required for public clients and recommended for confidential apps; when used, only `S256` is accepted.
+- Keep your client secret server-side. Native, mobile, and CLI apps should register as public clients and use PKCE rather than embedding a secret.
+- Dynamic registration is open and per-IP rate-limited; a self-registered client is public, cannot request `SEND_CAMPAIGNS` or `API_KEYS`, and grants no access until a human approves scopes at consent.
 - Set `allowed_webhook_domains` to the smallest set of domains your app needs. An overly broad list widens the surface for SSRF if a user tricks your app into registering an unexpected URL.
 - The app webhook secret is shared across all org installs. Rotate it if it is compromised, and update your receiver promptly: in-flight deliveries that were already signed continue to verify against the old secret until they settle.
 

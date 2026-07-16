@@ -45,24 +45,52 @@ var ErrCapExceeded = errors.New("generation rate cap exceeded")
 
 // CreditService is the application-facing API for AI credits.
 type CreditService interface {
-	// GetBalance returns the org's current credit balance (0 if no ledger yet).
+	// GetBalance returns the org's current spendable balance across both pools
+	// (0 if no ledger yet).
 	GetBalance(ctx context.Context, orgID uuid.UUID) (int, *errx.Error)
 
-	// Consume enforces the abuse caps, then atomically debits `amount` credits.
-	// On success it returns the resulting balance. idempotencyKey may be empty;
-	// when set, a retry with the same key does not double-charge and does not
-	// re-count against the caps.
+	// GetLedger returns the org's full ledger (monthly + purchased pools, reset
+	// date, lifetime purchased). Returns a zero-value ledger (not nil) when the
+	// org has no ledger row yet.
+	GetLedger(ctx context.Context, orgID uuid.UUID) (*models.CreditLedger, *errx.Error)
+
+	// Consume enforces the abuse caps, then atomically debits `amount` credits,
+	// draining the monthly pool first then purchased. On success it returns the
+	// resulting combined balance. idempotencyKey may be empty; when set, a retry
+	// with the same key does not double-charge and does not re-count against the
+	// caps.
 	//
 	// Returns ErrInsufficientCredits (→402) or ErrCapExceeded (→429) as
 	// sentinel errors the handler maps; any other error is an internal failure.
 	Consume(ctx context.Context, orgID uuid.UUID, amount int, reason, model string, tokens int, idempotencyKey string) (int, error)
 
-	// Grant credits to an org (monthly plan grant or purchase). Returns the
-	// resulting balance.
+	// Grant adds credits to an org's monthly pool (e.g. a provider-failure
+	// refund). Returns the resulting combined balance.
 	Grant(ctx context.Context, orgID uuid.UUID, amount int, reason string) (int, *errx.Error)
+
+	// GrantPurchased adds top-up credits to the purchased pool (never expire,
+	// survive resets) and bumps lifetime total_purchased. idempotencyKey (the
+	// Stripe event id) makes webhook retries safe. Plain error return so the
+	// stripe package's CreditGranter can satisfy it without importing errx.
+	GrantPurchased(ctx context.Context, orgID uuid.UUID, amount int, reason, idempotencyKey string) (int, error)
+
+	// ResetMonthlyAllowance sets the monthly pool to `allowance` (set-to-N;
+	// purchased pool untouched) and stamps the reset time. idempotencyKey (the
+	// Stripe event id) makes webhook retries safe.
+	ResetMonthlyAllowance(ctx context.Context, orgID uuid.UUID, allowance int, idempotencyKey string) error
+
+	// CheckUsageCaps returns ErrCapExceeded when the org has hit a rolling 5h
+	// or daily generation cap, WITHOUT consuming. Lets a caller gate expensive
+	// AI work (e.g. a research run) before doing it, so a cap trip at charge
+	// time does not waste a full run.
+	CheckUsageCaps(ctx context.Context, orgID uuid.UUID) error
 
 	// ListTransactions returns recent ledger transactions, newest first.
 	ListTransactions(ctx context.Context, orgID uuid.UUID, limit int) ([]models.CreditTransaction, *errx.Error)
+
+	// ListTransactionsBefore keyset-paginates the history (rows older than the
+	// cursor). Pass zero values for the first page.
+	ListTransactionsBefore(ctx context.Context, orgID uuid.UUID, limit int, beforeCreatedAt time.Time, beforeID uuid.UUID) ([]models.CreditTransaction, *errx.Error)
 }
 
 type creditService struct {
@@ -89,7 +117,19 @@ func (s *creditService) GetBalance(ctx context.Context, orgID uuid.UUID) (int, *
 	if ledger == nil {
 		return 0, nil
 	}
-	return ledger.Balance, nil
+	return ledger.Total(), nil
+}
+
+func (s *creditService) GetLedger(ctx context.Context, orgID uuid.UUID) (*models.CreditLedger, *errx.Error) {
+	ledger, err := s.repo.GetBalance(ctx, orgID)
+	if err != nil {
+		return nil, errx.New(errx.Internal, "failed to read credit ledger")
+	}
+	if ledger == nil {
+		// No ledger yet: report an empty one so callers get a stable shape.
+		return &models.CreditLedger{OrgID: orgID}, nil
+	}
+	return ledger, nil
 }
 
 func (s *creditService) Consume(ctx context.Context, orgID uuid.UUID, amount int, reason, model string, tokens int, idempotencyKey string) (int, error) {
@@ -125,15 +165,46 @@ func (s *creditService) Grant(ctx context.Context, orgID uuid.UUID, amount int, 
 	if amount <= 0 {
 		return 0, errx.New(errx.BadRequest, "grant amount must be positive")
 	}
-	bal, _, err := s.repo.Grant(ctx, orgID, amount, reason)
+	bal, _, err := s.repo.Grant(ctx, orgID, amount, reason, "")
 	if err != nil {
 		return 0, errx.New(errx.Internal, "failed to grant credits")
 	}
 	return bal, nil
 }
 
+func (s *creditService) GrantPurchased(ctx context.Context, orgID uuid.UUID, amount int, reason, idempotencyKey string) (int, error) {
+	if amount <= 0 {
+		return 0, errors.New("grant amount must be positive")
+	}
+	bal, _, err := s.repo.GrantPurchased(ctx, orgID, amount, reason, idempotencyKey)
+	if err != nil {
+		return 0, err
+	}
+	return bal, nil
+}
+
+func (s *creditService) ResetMonthlyAllowance(ctx context.Context, orgID uuid.UUID, allowance int, idempotencyKey string) error {
+	if allowance < 0 {
+		return errors.New("allowance must be non-negative")
+	}
+	_, err := s.repo.ResetMonthly(ctx, orgID, allowance, idempotencyKey)
+	return err
+}
+
+func (s *creditService) CheckUsageCaps(ctx context.Context, orgID uuid.UUID) error {
+	return s.checkCaps(ctx, orgID, "")
+}
+
 func (s *creditService) ListTransactions(ctx context.Context, orgID uuid.UUID, limit int) ([]models.CreditTransaction, *errx.Error) {
 	txns, err := s.repo.ListTransactions(ctx, orgID, limit)
+	if err != nil {
+		return nil, errx.New(errx.Internal, "failed to list credit transactions")
+	}
+	return txns, nil
+}
+
+func (s *creditService) ListTransactionsBefore(ctx context.Context, orgID uuid.UUID, limit int, beforeCreatedAt time.Time, beforeID uuid.UUID) ([]models.CreditTransaction, *errx.Error) {
+	txns, err := s.repo.ListTransactionsBefore(ctx, orgID, limit, beforeCreatedAt, beforeID)
 	if err != nil {
 		return nil, errx.New(errx.Internal, "failed to list credit transactions")
 	}

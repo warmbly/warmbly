@@ -166,7 +166,15 @@ export type IntegrationAction =
     | "warmbly.create_task"
     | "warmbly.create_deal"
     | "warmbly.move_deal_stage"
-    | "warmbly.unsubscribe";
+    | "warmbly.unsubscribe"
+    | "warmbly.run_automation"
+    | "warmbly.label_email"
+    | "warmbly.set_variables"
+    | "warmbly.fire_event"
+    // AI steps: one LLM call over the event, output merged back as a variable.
+    | "warmbly.ai_classify"
+    | "warmbly.ai_extract"
+    | "warmbly.ai_generate";
 
 export interface IntegrationEventSubscription {
     id: string;

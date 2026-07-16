@@ -62,15 +62,33 @@ func NewOAuthRepository(db *pgxpool.Pool) OAuthRepository {
 
 const oauthAppCols = `id, organization_id, created_by, name, description, logo_url, website_url,
 	client_id, client_secret_hash, redirect_uris, allowed_webhook_domains,
-	webhook_url, webhook_events, webhook_secret, scopes, status, created_at, updated_at`
+	webhook_url, webhook_events, webhook_secret, scopes, status, is_public, dynamically_registered, created_at, updated_at`
+
+// nullableUUID renders uuid.Nil as SQL NULL, so a dynamically-registered client
+// (which has no owning org/user) writes NULL into the nullable FK columns rather
+// than the all-zero uuid, which would violate the foreign key.
+func nullableUUID(id uuid.UUID) any {
+	if id == uuid.Nil {
+		return nil
+	}
+	return id
+}
 
 func scanOAuthApp(row pgx.Row, a *models.OAuthApplication) error {
 	var scopes int64
 	var status string
-	if err := row.Scan(&a.ID, &a.OrganizationID, &a.CreatedBy, &a.Name, &a.Description, &a.LogoURL, &a.WebsiteURL,
+	// organization_id/created_by are nullable for dynamically-registered clients.
+	var orgID, createdBy *uuid.UUID
+	if err := row.Scan(&a.ID, &orgID, &createdBy, &a.Name, &a.Description, &a.LogoURL, &a.WebsiteURL,
 		&a.ClientID, &a.ClientSecretHash, &a.RedirectURIs, &a.AllowedWebhookDomains,
-		&a.WebhookURL, &a.WebhookEvents, &a.WebhookSecret, &scopes, &status, &a.CreatedAt, &a.UpdatedAt); err != nil {
+		&a.WebhookURL, &a.WebhookEvents, &a.WebhookSecret, &scopes, &status, &a.IsPublic, &a.DynamicallyRegistered, &a.CreatedAt, &a.UpdatedAt); err != nil {
 		return err
+	}
+	if orgID != nil {
+		a.OrganizationID = *orgID
+	}
+	if createdBy != nil {
+		a.CreatedBy = *createdBy
 	}
 	a.Scopes = uint64(scopes)
 	a.Status = models.OAuthAppStatus(status)
@@ -99,11 +117,11 @@ func (r *oauthRepository) CreateApplication(ctx context.Context, a *models.OAuth
 	_, err := r.db.Exec(ctx, `
 		INSERT INTO oauth_applications (id, organization_id, created_by, name, description, logo_url, website_url,
 			client_id, client_secret_hash, redirect_uris, allowed_webhook_domains,
-			webhook_url, webhook_events, webhook_secret, scopes, status, created_at, updated_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$17)`,
-		a.ID, a.OrganizationID, a.CreatedBy, a.Name, a.Description, a.LogoURL, a.WebsiteURL,
+			webhook_url, webhook_events, webhook_secret, scopes, status, is_public, dynamically_registered, created_at, updated_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$19)`,
+		a.ID, nullableUUID(a.OrganizationID), nullableUUID(a.CreatedBy), a.Name, a.Description, a.LogoURL, a.WebsiteURL,
 		a.ClientID, a.ClientSecretHash, a.RedirectURIs, a.AllowedWebhookDomains,
-		a.WebhookURL, a.WebhookEvents, a.WebhookSecret, int64(a.Scopes), string(a.Status), now)
+		a.WebhookURL, a.WebhookEvents, a.WebhookSecret, int64(a.Scopes), string(a.Status), a.IsPublic, a.DynamicallyRegistered, now)
 	return err
 }
 

@@ -288,6 +288,18 @@ func (s *organizationService) Update(ctx context.Context, orgID uuid.UUID, req *
 	if req.PresenceShowActivity != nil {
 		org.PresenceShowActivity = *req.PresenceShowActivity
 	}
+	if req.ProductDescription != nil {
+		org.ProductDescription = strings.TrimSpace(*req.ProductDescription)
+	}
+	if req.ICPNotes != nil {
+		org.ICPNotes = strings.TrimSpace(*req.ICPNotes)
+	}
+	if req.VoiceProfile != nil {
+		org.VoiceProfile = strings.TrimSpace(*req.VoiceProfile)
+	}
+	if req.InboxAgentEnabled != nil {
+		org.InboxAgentEnabled = *req.InboxAgentEnabled
+	}
 
 	org.UpdatedAt = time.Now()
 

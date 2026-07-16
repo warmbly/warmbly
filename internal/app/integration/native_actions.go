@@ -48,6 +48,27 @@ func validateNativeActionConfig(action models.IntegrationAction, raw json.RawMes
 		if strings.TrimSpace(cfg.EventName) == "" {
 			return fmt.Errorf("a fire-event action needs an event name")
 		}
+	case models.IntegrationActionAIClassify:
+		ai := parseAIConfig(raw)
+		if strings.TrimSpace(ai.Instruction) == "" {
+			return fmt.Errorf("an AI classify step needs an instruction")
+		}
+		if len(nonEmptyStrings(ai.Labels)) < 2 {
+			return fmt.Errorf("an AI classify step needs at least two labels")
+		}
+	case models.IntegrationActionAIExtract:
+		ai := parseAIConfig(raw)
+		if strings.TrimSpace(ai.Instruction) == "" {
+			return fmt.Errorf("an AI extract step needs an instruction")
+		}
+		if len(nonEmptyStrings(ai.OutputKeys)) == 0 {
+			return fmt.Errorf("an AI extract step needs at least one output key")
+		}
+	case models.IntegrationActionAIGenerate:
+		ai := parseAIConfig(raw)
+		if strings.TrimSpace(ai.Instruction) == "" {
+			return fmt.Errorf("an AI generate step needs an instruction")
+		}
 	}
 	return nil
 }

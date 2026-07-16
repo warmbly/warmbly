@@ -13,9 +13,13 @@ import (
 	"github.com/warmbly/warmbly/internal/app/advanced"
 	"github.com/warmbly/warmbly/internal/app/cipher"
 	jobs "github.com/warmbly/warmbly/internal/app/consumer"
+	"github.com/warmbly/warmbly/internal/app/credits"
+	"github.com/warmbly/warmbly/internal/app/feature"
+	"github.com/warmbly/warmbly/internal/app/inboxagent"
 	"github.com/warmbly/warmbly/internal/app/integration"
 	"github.com/warmbly/warmbly/internal/app/nativeactions"
 	"github.com/warmbly/warmbly/internal/app/notification"
+	"github.com/warmbly/warmbly/internal/app/replyclassify"
 	warmupapp "github.com/warmbly/warmbly/internal/app/warmup"
 	"github.com/warmbly/warmbly/internal/app/webhook"
 	workerapp "github.com/warmbly/warmbly/internal/app/worker"
@@ -34,6 +38,7 @@ import (
 	"github.com/warmbly/warmbly/internal/notify"
 	"github.com/warmbly/warmbly/internal/observability"
 	"github.com/warmbly/warmbly/internal/pkg/encrypt"
+	"github.com/warmbly/warmbly/internal/pkg/generation"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
@@ -230,6 +235,36 @@ func main() {
 	integrationRepoC := repository.NewIntegrationRepository(primaryDB.Pool)
 	integrationServiceC := integration.NewService(integrationRepoC, cipherService, integration.NewOAuthManager())
 	webhookService.WireDispatchSink(integrationServiceC.DispatchAny)
+	// AI automation nodes + reply-classifier Layer 3 run in THIS process (reply /
+	// warmup / bounce events dispatch here). Build the credit ledger + provider so
+	// ai_classify / ai_extract / ai_generate nodes can charge + call, and so the
+	// classifier's optional model layer rides the same OpenAI-first provider.
+	creditServiceC := credits.NewService(repository.NewCreditRepository(primaryDB), redisCache)
+	var aiProviderC generation.Provider
+	// Provider selection mirrors the backend: AI_PROVIDER preset + AI_* vars.
+	if cfgAI, rerr := generation.Resolve(generation.ProviderSettings{
+		Provider:   cfg.GetStringOptional(ctx, "AI_PROVIDER", "ai_provider", ""),
+		APIKey:     cfg.GetSecretOptional(ctx, "AI_API_KEY", "ai_api_key", ""),
+		BaseURL:    cfg.GetStringOptional(ctx, "AI_BASE_URL", "ai_base_url", ""),
+		Model:      cfg.GetStringOptional(ctx, "AI_MODEL", "ai_model", ""),
+		ModelTrial: cfg.GetStringOptional(ctx, "AI_MODEL_TRIAL", "ai_model_trial", ""),
+		ModelPaid:  cfg.GetStringOptional(ctx, "AI_MODEL_PAID", "ai_model_paid", ""),
+		Free:       cfg.GetBoolPtr(ctx, "AI_FREE", "ai_free"),
+	}); rerr != nil {
+		log.Printf("AI provider misconfigured, AI features disabled: %v", rerr)
+	} else if p, perr := generation.NewProvider(cfgAI); perr == nil {
+		aiProviderC = p
+	}
+	integrationServiceC.SetAI(aiProviderC, creditServiceC)
+	if aiProviderC != nil {
+		replyclassify.SetModelClassifier(func(ctx context.Context, system, user string) (string, error) {
+			res, err := aiProviderC.Complete(ctx, generation.CompletionRequest{System: system, Prompt: user, MaxTokens: 16, Temperature: generation.Deterministic()})
+			if err != nil {
+				return "", err
+			}
+			return res.Text, nil
+		})
+	}
 	// Warmup health transitions happen in THIS process (the health sweep + all
 	// event-driven re-evaluations run in the consumer). Without wiring the
 	// webhook dispatcher here, dispatchHealthEvent saw s.webhooks == nil and
@@ -298,6 +333,22 @@ func main() {
 	advancedService.WireNotifier(notificationService)
 	// Reply pulses fire in THIS process too (inbox ingest classifies replies).
 	advancedService.WireRealtime(streamingPublisher)
+	// Inbox agent (M10): inbound human replies are ingested + classified in THIS
+	// process, so the agent that drafts a suggested reply must be wired here. It
+	// is paid + opt-in (checked inside) and self-detaches, so a slow model never
+	// blocks reply ingest. Nil provider leaves it inert.
+	inboxAgentServiceC := inboxagent.NewService(
+		aiProviderC,
+		creditServiceC,
+		feature.NewService(subscriptionRepoConsumer, planRepoConsumer),
+		orgRepoConsumer,
+		uniboxRepo,
+		nil, // skills preamble optional; not constructed in the consumer
+		contactRepo,
+		repository.NewAIDraftRepository(primaryDB.Pool),
+		streamingPublisher,
+	)
+	advancedService.WireInboxAgent(inboxAgentServiceC)
 
 	// Events publisher — wraps the existing Kafka producer in an EventBus,
 	// wraps Avrov2 in a Codec. Once EVENTBUS_PROVIDER=nats is exercised in

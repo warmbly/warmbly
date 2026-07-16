@@ -24,7 +24,7 @@ import (
 )
 
 // ErrNotConfigured is returned when generation is requested but no AI client is
-// wired (OPENAI_API_KEY unset).
+// wired (the provider is not OpenAI or AI_API_KEY is unset).
 var ErrNotConfigured = errors.New("warmup AI generation is not configured")
 
 // defaultThemes seed topic variety when a generation run doesn't pin a theme.
@@ -85,7 +85,7 @@ type service struct {
 	gen  *generation.GenerationClient
 }
 
-// NewService creates the generation service. gen may be nil (no OPENAI_API_KEY),
+// NewService creates the generation service. gen may be nil (provider not OpenAI),
 // in which case generation requests return ErrNotConfigured.
 func NewService(repo repository.WarmupContentRepository, gen *generation.GenerationClient) Service {
 	return &service{repo: repo, gen: gen}

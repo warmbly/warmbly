@@ -60,6 +60,19 @@ export function useRealtimeEvents() {
       const threadId = getString('thread_id')
       const emailId = getString('email_id') ?? getString('message_id')
 
+      // An AI-suggested unibox reply was drafted and is awaiting human review.
+      // Refresh the unibox (badge/overview) + the drafts list, and the specific
+      // thread if present.
+      if (includes('AI_DRAFT')) {
+        invalidate([
+          ['unibox'],
+          ['unibox', 'overview'],
+          ['unibox', 'agent-drafts'],
+        ])
+        if (threadId) invalidate([['unibox', 'thread', threadId]])
+        return
+      }
+
       if (includes('EMAIL_RECEIVED', 'NEW_EMAIL', 'INBOX_NEW')) {
         addUniboxEmail(payload as any)
         incrementUnseenCount()
@@ -77,6 +90,18 @@ export function useRealtimeEvents() {
         invalidate([['unibox'], ['analytics']])
         if (threadId) invalidate([['unibox', 'thread', threadId]])
         if (emailId) invalidate([['unibox', 'email', emailId]])
+        return
+      }
+
+      // AI contact research finished for one contact (batch progress arrives as
+      // one of these per completion).
+      if (includes('AI_RESEARCH', 'RESEARCH_PROGRESS')) {
+        invalidate([['contacts']])
+        if (contactId)
+          invalidate([
+            ['contacts', contactId],
+            ['contacts', contactId, 'research'],
+          ])
         return
       }
 
@@ -259,6 +284,16 @@ export function useRealtimeEvents() {
           subscription: [['subscription'], ['organizations', 'limits']],
           referral: [['subscription', 'referral']],
           referral_credit: [['subscription', 'referral'], ['subscription']],
+          // AI credits: a top-up purchase or a monthly allowance reset both
+          // change the billing/credits view for every teammate.
+          credit_purchase: [['subscription', 'credits'], ['subscription']],
+          credit_grant: [['subscription', 'credits'], ['subscription']],
+          // AI assistant sessions (per-user; refreshes the session list).
+          ai_session: [['ai', 'sessions']],
+          // AI skills (org playbooks).
+          ai_skill: [['ai', 'skills']],
+          // Connected MCP servers (external tools).
+          mcp_server: [['ai', 'connections']],
           settings: [['organizations', 'current']],
           unibox: [['unibox']],
           crm_note: [['crm'], ['contacts']],

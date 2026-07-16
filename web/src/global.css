@@ -321,8 +321,18 @@ svg.loading circle {
   75%      { transform: scale(1.05) rotate(1deg); opacity: 1; }
 }
 
+/* Sidebar status halo: a quiet-but-connected workspace (READY) breathes —
+   the glow swells and fades on a slow cycle so it visibly reads as alive. */
+.status-breathe {
+  animation: status-breathe 2.2s ease-in-out infinite;
+}
+@keyframes status-breathe {
+  0%, 100% { transform: scale(0.6); opacity: 0.9; }
+  50%      { transform: scale(1.4); opacity: 0.2; }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .sky-breathe, .sun-glow, .cloud-drift, .animate-card-float, .animate-fade-in, .campaign-grid::before, .flame-flicker { animation: none !important; }
+  .sky-breathe, .sun-glow, .cloud-drift, .animate-card-float, .animate-fade-in, .campaign-grid::before, .flame-flicker, .status-breathe { animation: none !important; }
 }
 
 /* ── Utilities ─────────────────────── */

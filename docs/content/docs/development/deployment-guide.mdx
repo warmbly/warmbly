@@ -1,7 +1,6 @@
 ---
 title: Deployment guide
 description: Deploy the control plane and a distributed worker fleet to production.
-icon: Server
 ---
 
 End-to-end guide for deploying Warmbly. The control plane runs on a container host (Railway in production); workers run on as many VPSes as you want and are managed from the admin dashboard.
@@ -91,6 +90,44 @@ RELEASES_GITHUB_REPO=warmbly/warmbly             # or your fork
 RELEASES_WORKER_IMAGE_REPO=ghcr.io/warmbly/warmbly/worker
 RELEASES_WEBHOOK_SECRET=<shared with GitHub>
 RELEASES_GITHUB_TOKEN=<optional PAT for higher API limits>
+```
+
+AI provider (optional; omit all of it to run with the AI features off, in which case the assistant returns a clean `503`). Warmbly is OpenAI-first, but the provider is a plain OpenAI-compatible client. Pick a backend with `AI_PROVIDER` and supply a key plus a model; the preset fills in the base URL. Set these on the backend and the consumer:
+
+```
+AI_PROVIDER=openai       # openai | openrouter | groq | ollama | anthropic | custom
+AI_API_KEY=sk-...        # the key for that provider (not needed for ollama)
+AI_MODEL=                # model id; blank uses the provider's default
+AI_BASE_URL=             # override the preset endpoint (required for custom)
+AI_FREE=                 # true => free/un-metered model (skips credits); auto-true for ollama
+
+SEARCH_PROVIDER=         # optional; enables the assistant's web-search tool
+SEARCH_API_URL=
+SEARCH_API_KEY=
+```
+
+The presets:
+
+| `AI_PROVIDER` | Endpoint | Key | Notes |
+|---|---|---|---|
+| `openai` | api.openai.com | required | default `gpt-4o-mini` / `gpt-4o` |
+| `openrouter` | openrouter.ai | required | one key fronts every vendor; switch models via `AI_MODEL` (e.g. `anthropic/claude-3.7-sonnet`, `deepseek/deepseek-chat`, `...:free`) |
+| `groq` | api.groq.com | required (free tier) | fast; e.g. `AI_MODEL=openai/gpt-oss-20b` |
+| `ollama` | localhost:11434 | none | free local model; `AI_FREE` defaults true |
+| `anthropic` | api.anthropic.com | required | the Anthropic connector |
+| `custom` | your `AI_BASE_URL` | as needed | any OpenAI-compatible endpoint (vLLM, LocalAI, LM Studio) |
+
+Examples:
+
+```
+# OpenRouter: one key, switch models by changing AI_MODEL
+AI_PROVIDER=openrouter
+AI_API_KEY=sk-or-...
+AI_MODEL=deepseek/deepseek-chat
+
+# Free local model (Ollama): no key, un-metered
+AI_PROVIDER=ollama
+AI_MODEL=llama3.1        # or qwen2.5
 ```
 
 A full env reference is `deploy/config/env.example`.

@@ -93,6 +93,14 @@ type IntegrationRepository interface {
 	// "run_automation" step pointing at this automation (so deletion can refuse to
 	// orphan those steps). Capped; order is stable for a readable message.
 	CampaignsUsingAutomation(ctx context.Context, orgID, automationID uuid.UUID) ([]string, error)
+	// BumpAutomationAICreditFailures atomically increments the consecutive
+	// out-of-credits counter for an AI node and returns the new value.
+	BumpAutomationAICreditFailures(ctx context.Context, id uuid.UUID) (int, error)
+	// ResetAutomationAICreditFailures clears the counter (a successful AI node ran).
+	ResetAutomationAICreditFailures(ctx context.Context, id uuid.UUID) error
+	// DisableAutomationForCredits pauses a flow (enabled=false) and clears the
+	// counter after too many consecutive AI-credit failures.
+	DisableAutomationForCredits(ctx context.Context, id uuid.UUID) error
 
 	// Field mappings (Warmbly field -> provider field). ListFieldMappings returns
 	// every mapping for a connection; ReplaceConnectionFieldMappings swaps the
@@ -588,6 +596,32 @@ func (r *integrationRepository) CampaignsUsingAutomation(ctx context.Context, or
 		names = append(names, n)
 	}
 	return names, rows.Err()
+}
+
+// BumpAutomationAICreditFailures increments and returns the consecutive
+// out-of-credits counter, so the caller can auto-pause the flow at the threshold.
+func (r *integrationRepository) BumpAutomationAICreditFailures(ctx context.Context, id uuid.UUID) (int, error) {
+	var n int
+	err := r.db.QueryRow(ctx, `
+		UPDATE automations SET ai_credit_failures = ai_credit_failures + 1
+		WHERE id = $1 RETURNING ai_credit_failures`, id).Scan(&n)
+	return n, err
+}
+
+// ResetAutomationAICreditFailures zeros the counter (skipped when already zero).
+func (r *integrationRepository) ResetAutomationAICreditFailures(ctx context.Context, id uuid.UUID) error {
+	_, err := r.db.Exec(ctx, `
+		UPDATE automations SET ai_credit_failures = 0
+		WHERE id = $1 AND ai_credit_failures <> 0`, id)
+	return err
+}
+
+// DisableAutomationForCredits pauses the flow and clears the counter.
+func (r *integrationRepository) DisableAutomationForCredits(ctx context.Context, id uuid.UUID) error {
+	_, err := r.db.Exec(ctx, `
+		UPDATE automations SET enabled = false, ai_credit_failures = 0, updated_at = NOW()
+		WHERE id = $1`, id)
+	return err
 }
 
 func (r *integrationRepository) GetAutomation(ctx context.Context, orgID, id uuid.UUID) (*models.Automation, error) {

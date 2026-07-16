@@ -45,6 +45,12 @@ func Run(
 	// OAuth 2.1 authorization-server discovery (RFC 8414): public + unversioned.
 	r.GET("/.well-known/oauth-authorization-server", h.OAuthServerMetadata)
 
+	// OAuth 2.1 protected-resource metadata (RFC 9728) for the MCP endpoint. An
+	// MCP client is pointed here by the WWW-Authenticate challenge on /v1/mcp; the
+	// path-suffixed form covers clients that build the URL from the resource path.
+	r.GET("/.well-known/oauth-protected-resource", h.OAuthProtectedResourceMetadata)
+	r.GET("/.well-known/oauth-protected-resource/v1/mcp", h.OAuthProtectedResourceMetadata)
+
 	// Public worker enrollment. The one-time enrollment token is the
 	// credential; successful exchange returns a dotenv file for the installer
 	// and consumes the token.
@@ -261,12 +267,26 @@ func Run(
 		// outside the JWT/API-key groups.
 		base.POST("/oauth/token", h.OAuthToken)
 		base.POST("/oauth/revoke", h.OAuthRevoke)
+		// Dynamic Client Registration (RFC 7591): open + unauthenticated so MCP
+		// clients self-register a public (PKCE) client. Per-IP rate-limited in the
+		// service; grants no access on its own (consent is still required).
+		base.POST("/oauth/register", h.OAuthRegisterClient)
 
 		// JWT-only group: routes tied to a human session, never reachable via a
 		// long-lived API key (billing, org governance, websocket bootstrap, and
 		// the email onboarding flow that writes user-encrypted secrets).
 		jwtOnly := base.Group("")
 		jwtOnly.Use(m.AuthMiddleware())
+
+		// Warmbly MCP server: exposes the shared tool registry over the MCP
+		// streamable-HTTP transport. Accepts an API key (static header) or an OAuth
+		// 2.1 access token (one-command `claude mcp add` + browser sign-in); an
+		// unauthenticated request gets the RFC 9728 discovery challenge. Each tool is
+		// gated by its RequiredAPIPerm, send-class tools are never exposed, and
+		// per-key rate limits apply.
+		mcpServer := base.Group("/mcp")
+		mcpServer.Use(m.MCPAuthMiddleware(), m.APIKeyUsageMiddleware(), m.RateLimitMiddleware(models.RateLimitWrite))
+		mcpServer.POST("", h.MCPEndpoint)
 
 		// API-accessible group: routes that accept either a JWT or an API key.
 		// CombinedAuthMiddleware sets the same context keys for both; the usage
@@ -378,6 +398,17 @@ func Run(
 				generation.POST("/write", m.RequireOrganization(), m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.GenerateWriting)
 			}
 
+			// AI skills (org playbooks). CRUD gated on manage_settings (JWT) or
+			// the AI_AGENT scope (API key); every mutation audits (ai_skill).
+			skillsGroup := protected.Group("/ai/skills")
+			skillsGroup.Use(m.RequireOrganization())
+			{
+				skillsGroup.GET("", m.RequireAccess(models.PermManageSettings, models.APIPermAIAgent), h.ListSkills)
+				skillsGroup.POST("", m.RequireAccess(models.PermManageSettings, models.APIPermAIAgent), h.CreateSkill)
+				skillsGroup.PATCH("/:id", m.RequireAccess(models.PermManageSettings, models.APIPermAIAgent), h.UpdateSkill)
+				skillsGroup.DELETE("/:id", m.RequireAccess(models.PermManageSettings, models.APIPermAIAgent), h.DeleteSkill)
+			}
+
 			contacts := protected.Group("/contacts")
 			contacts.Use(m.RateLimitMiddleware(models.RateLimitWrite))
 			{
@@ -404,6 +435,13 @@ func Run(
 				contacts.GET("/:id", m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts), h.GetContact)
 				contacts.GET("/:id/emails", m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts), h.ListContactEmails)
 				contacts.GET("/:id/timeline", m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts), h.ListContactTimeline)
+
+				// AI contact research (dedicated AI_RESEARCH scope; JWT callers by
+				// the matching contact permission). Batch queues and drains in the
+				// background; the sync run executes in the request.
+				contacts.POST("/research/batch", m.RequireAccess(models.PermManageContacts, models.APIPermAIResearch), h.BatchResearch)
+				contacts.POST("/:id/research", m.RequireAccess(models.PermManageContacts, models.APIPermAIResearch), h.ResearchContact)
+				contacts.GET("/:id/research", m.RequireAccess(models.PermViewContacts, models.APIPermAIResearch), h.ListContactResearch)
 
 				// CRM: Notes & Activities (under contacts)
 				contacts.GET("/:id/notes", m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts), h.ListContactNotes)
@@ -436,6 +474,16 @@ func Run(
 
 				unibox.PATCH("/seen", m.RequireAccess(models.PermAccessUnibox, models.APIPermWriteUnibox), h.UniboxMarkSeen)
 				unibox.POST("/reply", m.RequireOrganization(), m.RequireAccess(models.PermAccessUnibox, models.APIPermWriteUnibox), h.UniboxReply)
+				// AI reply draft: context-grounded, charges credits, never sends.
+				unibox.POST("/reply/draft", m.RequireOrganization(), m.RequireAccess(models.PermAccessUnibox, models.APIPermReadUnibox), h.DraftReply)
+
+				// Inbox agent drafts (M10): review the pending drafts the agent
+				// suggested on inbound human replies, then approve-and-send or
+				// discard. Approve reuses the normal reply send path. Registered
+				// before /:id so the fixed path wins over the catch-all.
+				unibox.GET("/agent-drafts", m.RequireAccess(models.PermAccessUnibox, models.APIPermReadUnibox), h.ListAgentDrafts)
+				unibox.POST("/agent-drafts/:id/approve", m.RequireOrganization(), m.RequireAccess(models.PermAccessUnibox, models.APIPermWriteUnibox), h.ApproveAgentDraft)
+				unibox.POST("/agent-drafts/:id/discard", m.RequireOrganization(), m.RequireAccess(models.PermAccessUnibox, models.APIPermWriteUnibox), h.DiscardAgentDraft)
 
 				// Snoozes — POST/DELETE on a thread, GET lists active ones.
 				unibox.GET("/snoozes", m.RequireAccess(models.PermAccessUnibox, models.APIPermReadUnibox), h.ListUniboxSnoozes)
@@ -834,6 +882,28 @@ func Run(
 			// Websocket bootstrap. The token returned here is single-session.
 			jwtOnly.POST("/getaway", h.GenerateWebsocket)
 
+			// Dashboard AI agent (JWT-only; per-user sessions). Each tool the
+			// agent runs is gated by the invoking member's org permission bits in
+			// the registry, so no extra per-route permission is needed beyond
+			// membership. Message/approval runs stream over SSE.
+			ai := jwtOnly.Group("/ai")
+			ai.Use(m.RequireOrganization())
+			{
+				ai.POST("/sessions", h.CreateAgentSession)
+				ai.GET("/sessions", h.ListAgentSessions)
+				ai.GET("/sessions/:id/messages", h.AgentSessionMessages)
+				ai.POST("/sessions/:id/messages", h.AgentMessage)
+				ai.POST("/sessions/:id/approve", h.AgentApprove)
+
+				// Connected MCP servers (external tools). Admin-only; sealing
+				// credentials and exposing external tools is a settings action.
+				ai.GET("/connections", m.RequirePermission(models.PermManageSettings), h.ListMCPServers)
+				ai.POST("/connections", m.RequirePermission(models.PermManageSettings), h.CreateMCPServer)
+				ai.PATCH("/connections/:id", m.RequirePermission(models.PermManageSettings), h.UpdateMCPServer)
+				ai.DELETE("/connections/:id", m.RequirePermission(models.PermManageSettings), h.DeleteMCPServer)
+				ai.POST("/connections/:id/refresh", m.RequirePermission(models.PermManageSettings), h.RefreshMCPServer)
+			}
+
 			subscriptions := jwtOnly.Group("/subscription")
 			subscriptions.Use(m.RateLimitMiddleware(models.RateLimitWrite))
 			{
@@ -852,6 +922,12 @@ func Run(
 				// Promo code redemption history for the current org (better
 				// promo visibility on the billing page).
 				subscriptions.GET("/discounts", m.RequireOrganization(), m.RequirePermission(models.PermManageBilling), h.ListAppliedDiscounts)
+
+				// AI credits: balance, top-up checkout, transaction log. All
+				// manage_billing-gated; purchase fulfillment is webhook-only.
+				subscriptions.GET("/credits", m.RequireOrganization(), m.RequirePermission(models.PermManageBilling), h.GetCreditBalance)
+				subscriptions.GET("/credits/transactions", m.RequireOrganization(), m.RequirePermission(models.PermManageBilling), h.ListCreditTransactions)
+				subscriptions.POST("/credits/checkout", m.RequireOrganization(), m.RequirePermission(models.PermManageBilling), h.CreateCreditCheckoutSession)
 
 				// Referral program (owner-scoped, gated like the rest of billing).
 				subscriptions.GET("/referral", m.RequireOrganization(), m.RequirePermission(models.PermManageBilling), h.GetReferralSummary)

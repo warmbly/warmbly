@@ -1,0 +1,69 @@
+---
+title: AI steps in automations
+description: Add a classify, extract, or generate step to an automation so a flow can read the event with a model, then branch on what it found.
+---
+
+An AI step runs one model call in the middle of an automation. It reads the trigger event, does one job (label it, pull fields out of it, or write a line of text), and stores the result back into the flow as a variable. Later conditions and action text can then use that result, so a flow can branch on what the model decided.
+
+AI steps are built-in actions, so they need no integration or connection. They cost one credit each. See [AI credits](/guides/ai-credits/) for how credits work.
+
+## The three steps
+
+Add one from an action node: pick **Warmbly (built-in)** under **Run**, then choose the AI step.
+
+| Step | What it does | Where the result lands |
+| --- | --- | --- |
+| AI classify | Picks exactly one of the labels you list | `ai_class` |
+| AI extract | Pulls the fields you name out of the event text | one variable per field |
+| AI generate | Writes a short piece of text from your instruction | `ai_text` |
+
+Every step takes an **instruction**: plain-language guidance for the model. The instruction is templated, so you can drop event fields into it with `{{.field}}` (for example `{{.subject}}` or `{{.snippet}}`). The step also sees the rest of the event data, so you do not have to list every field in the instruction.
+
+### AI classify
+
+Give it an instruction and a list of **labels**. The model reads the event and returns exactly one label from your list, stored in the variable `ai_class`. Use it to sort replies, tickets, or inbound leads into buckets your flow already branches on.
+
+Example: on a **Reply received** trigger, an instruction of "Classify this reply" with labels `interested`, `not_now`, `wrong_person`, `unsubscribe` lets the next condition test `ai_class equals interested` and route only hot replies to a deal.
+
+You need at least two labels. If the model's answer does not match any label exactly, the closest match is used, and if none is close the raw answer is stored so you can see what happened in the run history.
+
+### AI extract
+
+Give it an instruction and a list of **output keys**. The model returns one value per key, each stored in a variable of that name. Use it to turn a free-text event into structured fields.
+
+Example: from an inbound webhook body or a reply, extract `company_size`, `budget`, and `timeline` and then branch on them or write them into a CRM deal with a Create deal step. A key the model cannot fill is stored as an empty string, so a later condition can test whether it was found.
+
+### AI generate
+
+Give it an instruction. The model writes a short piece of text, stored in `ai_text`. Use it to compose a one-line summary, a task title, or a Slack message body that a later step sends.
+
+<Callout type="warn" title="Generated text is never sent on its own">
+An AI generate step only writes text into a variable. Nothing is emailed or sent because a model wrote it. To use the text you connect a later step (a Slack message, a task, a webhook) that you control, and Warmbly never sends outreach email from an AI step. See the sending-safety note below.
+</Callout>
+
+## Using the result downstream
+
+An AI step writes its result into the flow the same way a **Set variables** step does. Every step after it can read the result:
+
+- **Conditions.** Add an IF node and test the variable. For classify, `ai_class equals interested`. For extract, `budget exists` or `company_size contains enterprise`. Because a condition tests a named field, any AI output variable is reachable by typing its name.
+- **Action text.** Reference it with `{{.ai_class}}`, `{{.ai_text}}`, or `{{.your_key}}` in any templated field, like a Slack message or a task title.
+
+If two AI steps in one flow would both write `ai_class` or `ai_text`, set an **output variable name** on one of them so they do not overwrite each other.
+
+## Cost, failures, and safety
+
+- **One credit per step.** Charged to your workspace when the step runs. If the model call fails for a provider reason, the credit is refunded automatically.
+- **Out of credits.** A step with no credits left fails with a clear message and the run continues down the normal path, so the rest of the flow still runs. Nothing is half-charged. Connect the step's **on error** branch if you want a specific fallback path.
+- **Auto-pause.** If a flow's AI steps keep failing for lack of credits, run after run, Warmbly turns the automation off so it stops trying against an empty balance. Top up your credits and switch it back on.
+- **Timing.** Each AI step is bounded to a few seconds so a slow model never stalls the flow.
+- **Sending safety.** An AI step never sends email and never contacts anyone. It only writes a variable. Any outbound message is a step you added and controls, and Warmbly never sends cold outreach from a model decision.
+
+## Testing an AI step
+
+Press **Test** in the builder to dry-run the flow. Unlike other actions, AI steps run **for real** in a Test so you can see the actual model output and the branch it drives. That means a Test spends one credit per AI step. The trace panel shows each step's output next to the node, and the path the flow took. See [Testing and run history](/guides/automations/#testing-and-run-history).
+
+## See also
+
+- [Automations](/guides/automations/) for the flow builder, triggers, and conditions.
+- [AI credits](/guides/ai-credits/) for what a step costs and how the balance works.
+- [Personalization and expressions](/guides/expressions/) for the `{{.field}}` variables each trigger carries.

@@ -38,6 +38,7 @@ import buildError from "@/lib/helper/buildError";
 import { TextInput } from "@/components/ui/field";
 import { Row, Section, SectionShell, TableSurface } from "../_components/SectionShell";
 import { PLAN_ACCENT_CLASSES, PAID_PLANS, getPlan, type PlanID } from "@/lib/plans";
+import CreditsCard from "./CreditsCard";
 
 type BillingInterval = "monthly" | "annual";
 
@@ -405,6 +406,8 @@ export default function BillingSettingsPage() {
                     max={currentPlan.id === "enterprise" ? "Custom" : currentPlan.id === "business" ? 1 : 0}
                 />
             </Section>
+
+            <CreditsCard isPaid={currentPlan.id !== "free"} />
 
             <Section
                 eyebrow="Payment"

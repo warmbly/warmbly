@@ -52,6 +52,9 @@ export const ACTION_LABELS: Record<string, string> = {
     "warmbly.label_email": "Label the email",
     "warmbly.set_variables": "Set variables",
     "warmbly.fire_event": "Fire event",
+    "warmbly.ai_classify": "AI classify",
+    "warmbly.ai_extract": "AI extract",
+    "warmbly.ai_generate": "AI generate",
 };
 
 export function actionLabel(a: string): string {
@@ -74,7 +77,16 @@ export const NATIVE_ACTIONS: string[] = [
     "warmbly.label_email",
     "warmbly.set_variables",
     "warmbly.fire_event",
+    "warmbly.ai_classify",
+    "warmbly.ai_extract",
+    "warmbly.ai_generate",
 ];
+
+// AI action nodes run one LLM step over the event and store the result as a
+// variable for later steps to branch on. They cost one credit each.
+export function isAIAction(a: string): boolean {
+    return a === "warmbly.ai_classify" || a === "warmbly.ai_extract" || a === "warmbly.ai_generate";
+}
 
 export function isNativeAction(a: string): boolean {
     return a.startsWith("warmbly.");
@@ -83,7 +95,18 @@ export function isNativeAction(a: string): boolean {
 // What config a native action needs, so the editor shows the right picker.
 export function nativeActionNeeds(
     action: string,
-): "tag" | "label" | "deal" | "task" | "automation" | "vars" | "event" | "none" {
+):
+    | "tag"
+    | "label"
+    | "deal"
+    | "task"
+    | "automation"
+    | "vars"
+    | "event"
+    | "ai_classify"
+    | "ai_extract"
+    | "ai_generate"
+    | "none" {
     switch (action) {
         case "warmbly.add_tag":
         case "warmbly.remove_tag":
@@ -101,6 +124,12 @@ export function nativeActionNeeds(
             return "vars";
         case "warmbly.fire_event":
             return "event";
+        case "warmbly.ai_classify":
+            return "ai_classify";
+        case "warmbly.ai_extract":
+            return "ai_extract";
+        case "warmbly.ai_generate":
+            return "ai_generate";
         default:
             return "none";
     }

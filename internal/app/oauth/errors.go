@@ -43,3 +43,17 @@ func errAccessDenied(desc string) *OAuthError {
 func errServer(desc string) *OAuthError {
 	return newOAuthError(http.StatusInternalServerError, "server_error", desc)
 }
+
+// Dynamic Client Registration errors (RFC 7591 §3.2.2).
+func errInvalidRedirectURI(desc string) *OAuthError {
+	return newOAuthError(http.StatusBadRequest, "invalid_redirect_uri", desc)
+}
+func errInvalidClientMetadata(desc string) *OAuthError {
+	return newOAuthError(http.StatusBadRequest, "invalid_client_metadata", desc)
+}
+
+// errTooManyRegistrations throttles the open (unauthenticated) registration
+// endpoint per source IP so it can't be used to bloat the clients table.
+func errTooManyRegistrations() *OAuthError {
+	return newOAuthError(http.StatusTooManyRequests, "temporarily_unavailable", "registration rate limit exceeded, retry later")
+}

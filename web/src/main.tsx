@@ -42,6 +42,8 @@ import SecuritySettingsPage from './app/app/settings/security/page';
 import MembersSettingsPage from './app/app/settings/members/page';
 import TeamsSettingsPage from './app/app/settings/teams/page';
 import WorkspaceSettingsPage from './app/app/settings/workspace/page';
+import SkillsSettingsPage from './app/app/settings/ai-skills/page';
+import ConnectionsSettingsPage from './app/app/settings/connections/page';
 import DangerSettingsPage from './app/app/settings/danger/page';
 import BillingSettingsPage from './app/app/settings/billing/page';
 import ReferralSettingsPage from './app/app/settings/referral/page';
@@ -324,12 +326,14 @@ const router = createBrowserRouter([
               { path: "members", element: <MembersSettingsPage /> },
               { path: "teams", element: <TeamsSettingsPage /> },
               { path: "workspace", element: <WorkspaceSettingsPage /> },
+              { path: "ai-skills", element: <SkillsSettingsPage /> },
               { path: "billing", element: <BillingSettingsPage /> },
               { path: "referral", element: <ReferralSettingsPage /> },
               { path: "limits", element: <LimitsSettingsPage /> },
               { path: "roles", element: <RolesSettingsPage /> },
               { path: "oauth-apps", element: <OAuthAppsPage /> },
               { path: "webhooks", element: <WebhooksSettingsPage /> },
+              { path: "connections", element: <ConnectionsSettingsPage /> },
               { path: "danger", element: <DangerSettingsPage /> },
             ],
           },

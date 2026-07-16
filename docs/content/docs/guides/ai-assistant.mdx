@@ -1,0 +1,71 @@
+---
+title: AI assistant
+description: The in-product AI assistant that searches your data, drafts replies, and sets up draft campaigns and automations, asking before it changes anything.
+---
+
+The AI assistant is a chat panel built into the dashboard. It can look things up across your contacts, campaigns, unified inbox, and CRM, and it can take actions on your behalf, but it always asks before changing anything, and it never sends email for you.
+
+Open it from the spark button in the top bar, or press `Cmd/Ctrl + I`. The panel stays with you as you move between pages, so you can keep a conversation going while you work.
+
+## Tabs, minimizing, and background runs
+
+Conversations run as tabs, like an editor: open several at once with the **+** button, and a run keeps streaming in its own tab while you read another. The expand button turns the panel into a full workspace with your conversation history down the side.
+
+The panel is yours to arrange: drag its inner edge to resize, and move it to the left or right edge of the screen from the header (both remembered). Inside the panel, `Ctrl/Cmd + ]` and `[` switch tabs, `Alt + N` opens a new chat, `Alt + W` closes the tab, and `Alt + M` minimizes; the full list is in the shortcuts dialog (`?`).
+
+You do not have to keep the panel open to keep the assistant working:
+
+- **Minimize** docks it into a compact status bar at the bottom of the screen. The bar shows what the assistant is doing live: working (with the step count), waiting for an approval, or holding a finished response you have not read. Click it to bring the panel back on that conversation.
+- **Close it entirely** and any running work carries on. The spark button in the top bar shows a pulsing dot while a run streams, an amber dot when an action is waiting for your approval, and a solid dot when a response is ready; click it to reopen.
+
+<Callout type="info" title="What it can and cannot do">
+The assistant acts as you. It can only see and do what your own role allows, so it can never reach data or actions you could not reach by hand. It drafts replies but never sends them, and it never starts a campaign on its own.
+</Callout>
+
+## What you can ask
+
+The assistant has a set of tools it uses to answer you:
+
+- Find and read contacts, and update contact fields, tags, or notes
+- List campaigns, read send/open/click/reply stats, and list a campaign's leads by status (queued, in progress, done with no reply, replied, bounced, unsubscribed) — this is how it finds leads that went cold
+- Read org-wide analytics for a period and list your mailboxes with health and warmup state
+- Read your unified inbox threads and draft a reply for you to review
+- Read CRM pipelines and deals, and create a task, deal, or contact note
+- Start or stop a campaign (always asks first)
+- Create a draft campaign or a disabled automation for you to finish and turn on
+- Search the web and read a public page
+
+Because it knows what page you are on, you can say things like "summarize this campaign" or "draft a reply here" and it understands what "this" and "here" mean.
+
+## How actions are approved
+
+The assistant splits what it does into two kinds:
+
+- **Reading** runs automatically. Looking up a contact or checking campaign stats needs no confirmation.
+- **Changing** always asks first. When the assistant wants to update a contact, create a task, or set up a draft campaign, it pauses and shows you an approval card with a plain-language summary of exactly what it will do.
+
+On an approval card you can:
+
+- **Approve** to run just that action
+- **Skip** to decline it and let the assistant carry on differently
+- **Always allow** to let that kind of action run automatically from now on, for your whole workspace
+
+Sending is different. If an action would send mail it is never auto-approved, and the card shows the full message with an explicit send step. In this version the assistant only ever drafts replies; you send them yourself from the composer.
+
+## Draft campaigns and automations
+
+When you ask the assistant to build a campaign or an automation, it creates it as a **draft** (a campaign is never started, an automation is left disabled) and gives you a button to open it in the real editor. You review, adjust, and turn it on yourself. Nothing the assistant builds goes live on its own.
+
+Any email copy or reply the assistant writes is grounded in your workspace [voice profile](/guides/unibox/#ai-reply-drafts) (what you sell, who you sell to, and your house voice, set under Settings, Workspace), and runs through the same human-writing rules as the rest of Warmbly, so it reads like a real person and not like AI.
+
+## Credits and limits
+
+Each step the assistant takes costs one AI credit, and a single request is capped at a set number of steps (shown as the run progresses) so a question can never run away. The credits remaining are shown at the bottom of the panel. If you run out, the assistant stops and tells you; see [AI credits](/guides/ai-credits/) for how allowances and top-ups work.
+
+On a self-hosted install pointed at a free or local model, runs are not charged and the assistant shows a "free model" notice, since a smaller local model can produce lower-quality answers.
+
+You can stop a run at any time with the stop button, and start a fresh conversation with the **+** tab button.
+
+## Privacy
+
+Conversations are private to you. Other members of your workspace do not see your assistant sessions. When the assistant changes something (creates a task, updates a contact), that change shows up in the shared activity feed like any other edit, so your teammates' views stay current.

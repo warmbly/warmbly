@@ -264,7 +264,7 @@ func (h *Handler) AdminGenerateWarmupContent(c *gin.Context) {
 	})
 	if err != nil {
 		if errors.Is(err, warmupcontent.ErrNotConfigured) {
-			errx.JSON(c, errx.New(errx.BadRequest, "warmup AI generation is not configured (set OPENAI_API_KEY)"))
+			errx.JSON(c, errx.New(errx.BadRequest, "warmup AI generation is not configured (set AI_PROVIDER=openai and AI_API_KEY)"))
 			return
 		}
 		errx.JSON(c, errx.InternalError())

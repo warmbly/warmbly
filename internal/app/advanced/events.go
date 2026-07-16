@@ -86,6 +86,20 @@ func (s *service) WireAutomationRunner(r AutomationRunner) {
 	s.automationRunner = r
 }
 
+// InboxAgent drafts a suggested reply when an inbound human reply lands (M10).
+// Best-effort and self-detaching (it fans onto its own goroutine), so the reply
+// hot path never blocks. Satisfied structurally by *inboxagent.Service via the
+// shared models.InboxAgentReply param, so this package needs no import of it.
+type InboxAgent interface {
+	DraftForReply(ctx context.Context, r models.InboxAgentReply)
+}
+
+// WireInboxAgent attaches the inbox agent after construction. No-op if never
+// called (the reply hook guards on a nil agent).
+func (s *service) WireInboxAgent(a InboxAgent) {
+	s.inboxAgent = a
+}
+
 // notify raises an in-app notification off the hot path. It detaches from the
 // request context (the ingest call may return first) and is best-effort.
 func (s *service) notify(userID uuid.UUID, orgID *uuid.UUID, category models.NotificationCategory, title, body, link string, meta map[string]any) {

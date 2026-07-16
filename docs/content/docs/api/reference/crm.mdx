@@ -1,7 +1,6 @@
 ---
 title: CRM
 description: Manage pipelines, stages, deals, task types, and CRM tasks for your organization.
-icon: Briefcase
 ---
 
 The CRM endpoints model your sales pipeline: deals move through stages of a pipeline, and CRM tasks track the follow-up work attached to contacts and deals. Every route is organization-scoped and requires an active organization on the session or API key. Read access uses the **CRM** read scope (`READ_CRM` / org permission `view_contacts`), and mutations use the **CRM** write scope (`WRITE_CRM` / org permission `manage_contacts`), except team membership operations which gate on `manage_team`. See [authentication](/api/authentication/) and [permissions](/api/permissions/) for how scopes map to API keys and member roles.

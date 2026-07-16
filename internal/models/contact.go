@@ -61,7 +61,8 @@ type Contact struct {
 type ContactCampaignProgress struct {
 	// Status is the single derived state shown in the Leads list:
 	//   pending      — a lead, but no email sent yet (queued)
-	//   active       — at least one email sent, still progressing through the flow
+	//   active       — some but not all steps sent, still progressing through the flow
+	//   completed    — every sequence step was sent, no reply (done, nothing left to send)
 	//   replied      — the contact has replied (terminal/positive)
 	//   bounced      — a send hard-bounced (terminal/negative)
 	//   unsubscribed — the contact is unsubscribed/suppressed (terminal)
@@ -82,6 +83,7 @@ type ContactCampaignProgress struct {
 const (
 	LeadStatusPending      = "pending"
 	LeadStatusActive       = "active"
+	LeadStatusCompleted    = "completed"
 	LeadStatusReplied      = "replied"
 	LeadStatusBounced      = "bounced"
 	LeadStatusUnsubscribed = "unsubscribed"
@@ -91,7 +93,7 @@ const (
 // Used to gate the single-campaign Leads-view `lead_status` search filter.
 func ValidLeadStatus(s string) bool {
 	switch s {
-	case LeadStatusPending, LeadStatusActive, LeadStatusReplied, LeadStatusBounced, LeadStatusUnsubscribed:
+	case LeadStatusPending, LeadStatusActive, LeadStatusCompleted, LeadStatusReplied, LeadStatusBounced, LeadStatusUnsubscribed:
 		return true
 	default:
 		return false
@@ -116,11 +118,13 @@ type ContactsResult struct {
 
 // CampaignLeadCounts are per-status lead totals within a single campaign,
 // derived the same way as ContactCampaignProgress.Status (unsubscribed >
-// bounced > replied > processing > queued). Drives the Leads-view scope chips.
+// bounced > replied > completed > processing > queued). Drives the Leads-view
+// scope chips.
 type CampaignLeadCounts struct {
 	Total        int `json:"total"`
 	Queued       int `json:"queued"`     // pending: a lead, no email sent yet
-	Processing   int `json:"processing"` // active: sending through the flow
+	Processing   int `json:"processing"` // active: some steps sent, more to send
+	Completed    int `json:"completed"`  // done: every step sent, no reply
 	Replied      int `json:"replied"`
 	Bounced      int `json:"bounced"`
 	Unsubscribed int `json:"unsubscribed"`

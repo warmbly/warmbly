@@ -1,7 +1,6 @@
 ---
 title: API keys
 description: Create, inspect, rotate, and revoke programmatic API keys and read their usage analytics.
-icon: KeyRound
 ---
 
 API keys are how integrations authenticate to the Warmbly API. Each key belongs to an organization, carries a permission bitmask that scopes what it can do, and can be restricted to specific source IPs or specific mailboxes. This group is self-service: a key that holds the `API_KEYS` scope can manage its own organization's keys without going through the dashboard, so an integration can rotate its credentials programmatically.

@@ -23,6 +23,8 @@ import (
 	"github.com/warmbly/warmbly/internal/app/admin"
 	"github.com/warmbly/warmbly/internal/app/adminoutreach"
 	"github.com/warmbly/warmbly/internal/app/advanced"
+	"github.com/warmbly/warmbly/internal/app/aiagent"
+	"github.com/warmbly/warmbly/internal/app/aitools"
 	"github.com/warmbly/warmbly/internal/app/analytics"
 	"github.com/warmbly/warmbly/internal/app/apikey"
 	"github.com/warmbly/warmbly/internal/app/audit"
@@ -42,8 +44,10 @@ import (
 	"github.com/warmbly/warmbly/internal/app/fleet"
 	"github.com/warmbly/warmbly/internal/app/group"
 	idempotencyapp "github.com/warmbly/warmbly/internal/app/idempotency"
+	"github.com/warmbly/warmbly/internal/app/inboxagent"
 	"github.com/warmbly/warmbly/internal/app/integration"
 	"github.com/warmbly/warmbly/internal/app/leadsync"
+	"github.com/warmbly/warmbly/internal/app/mcp"
 	"github.com/warmbly/warmbly/internal/app/nativeactions"
 	"github.com/warmbly/warmbly/internal/app/notification"
 	"github.com/warmbly/warmbly/internal/app/oauth"
@@ -54,8 +58,11 @@ import (
 	"github.com/warmbly/warmbly/internal/app/ratelimit"
 	"github.com/warmbly/warmbly/internal/app/referral"
 	"github.com/warmbly/warmbly/internal/app/releases"
+	"github.com/warmbly/warmbly/internal/app/replyclassify"
+	"github.com/warmbly/warmbly/internal/app/research"
 	"github.com/warmbly/warmbly/internal/app/sequence"
 	"github.com/warmbly/warmbly/internal/app/settings"
+	"github.com/warmbly/warmbly/internal/app/skills"
 	"github.com/warmbly/warmbly/internal/app/socket"
 	"github.com/warmbly/warmbly/internal/app/stripe"
 	"github.com/warmbly/warmbly/internal/app/subscription"
@@ -141,7 +148,15 @@ func main() {
 	var warmupContentService warmupcontent.Service
 	var creditRepository repository.CreditRepository
 	var creditService credits.CreditService
+	var aiDraftRepo repository.AIDraftRepository
 	var writingGenerator generation.WritingGenerator
+	var aiProvider generation.Provider
+	var aiSearch generation.SearchClient
+	var aiToolRegistry *aitools.Registry
+	var aiAgentService aiagent.Service
+	var researchService research.Service
+	var skillsService skills.Service
+	var mcpService mcp.Service
 	var emailVerifyService emailverifyapp.Service
 	var placementRepository repository.PlacementRepository
 	var placementService placement.Service
@@ -546,24 +561,51 @@ func main() {
 		warmupRoutingRepository := repository.NewWarmupRoutingRepository(primaryDB.Pool)
 		warmupRoutingRepoForHandler = warmupRoutingRepository
 
-		// Warmup content bank + offline AI generator. The generation client is
-		// optional: without OPENAI_API_KEY the live send path simply keeps using
-		// the static library and admin generation returns "not configured".
 		warmupContentRepo = repository.NewWarmupContentRepository(primaryDB.Pool)
+
+		// AI provider layer. AI_PROVIDER picks a preset (openai/openrouter/groq/
+		// ollama/anthropic/custom) that fills in the base URL + free default; the
+		// AI_* vars supply the key/model/endpoint. Pluggable web search
+		// (Serper/SearXNG) backs search_web.
+		aiProviderName := strings.ToLower(strings.TrimSpace(cfg.GetStringOptional(ctx, "AI_PROVIDER", "ai_provider", "")))
+		aiKey := cfg.GetSecretOptional(ctx, "AI_API_KEY", "ai_api_key", "")
+		aiSearch = generation.NewSearchClient(
+			cfg.GetStringOptional(ctx, "SEARCH_PROVIDER", "search/provider", ""),
+			cfg.GetStringOptional(ctx, "SEARCH_API_URL", "search/api_url", ""),
+			cfg.GetSecretOptional(ctx, "SEARCH_API_KEY", "search/api_key", ""),
+		)
+		if cfgAI, rerr := generation.Resolve(generation.ProviderSettings{
+			Provider:   aiProviderName,
+			APIKey:     aiKey,
+			BaseURL:    cfg.GetStringOptional(ctx, "AI_BASE_URL", "ai_base_url", ""),
+			Model:      cfg.GetStringOptional(ctx, "AI_MODEL", "ai_model", ""),
+			ModelTrial: cfg.GetStringOptional(ctx, "AI_MODEL_TRIAL", "ai_model_trial", ""),
+			ModelPaid:  cfg.GetStringOptional(ctx, "AI_MODEL_PAID", "ai_model_paid", ""),
+			Free:       cfg.GetBoolPtr(ctx, "AI_FREE", "ai_free"),
+			Search:     aiSearch,
+		}); rerr != nil {
+			log.Printf("AI provider misconfigured, AI features disabled: %v", rerr)
+		} else if provider, perr := generation.NewProvider(cfgAI); perr == nil {
+			aiProvider = provider
+		}
+
+		// Warmup content bank + offline AI generator. The generator rides OpenAI's
+		// Batch API specifically, so it only runs when the selected provider is
+		// OpenAI itself; otherwise the live send path keeps using the static
+		// library and admin generation returns "not configured".
 		var generationClient *generation.GenerationClient
-		if openaiKey := cfg.GetSecretOptional(ctx, "OPENAI_API_KEY", "openai_api_key", ""); openaiKey != "" {
-			generationClient = generation.NewClient(openaiKey)
+		if (aiProviderName == "" || aiProviderName == "openai") && aiKey != "" {
+			generationClient = generation.NewClient(aiKey)
 		}
 		warmupContentService = warmupcontent.NewService(warmupContentRepo, generationClient)
 
-		// AI writing assistant: prefer Anthropic (claude-haiku free / sonnet paid);
-		// fall back to the existing OpenAI client when ANTHROPIC_API_KEY is unset.
-		// If neither is configured, writingGenerator stays nil and the endpoint
-		// returns 503 "not configured".
-		if anthropicKey := cfg.GetSecretOptional(ctx, "ANTHROPIC_API_KEY", "anthropic_api_key", ""); anthropicKey != "" {
-			writingGenerator = generation.NewAnthropicClient(anthropicKey)
-		} else if generationClient != nil {
-			writingGenerator = generationClient
+		// Writing assistant generator: the OpenAI-compatible provider implements
+		// WritingGenerator directly; the Anthropic connector delegates writing to
+		// the dedicated Anthropic writing client. Neither configured => nil => 503.
+		if wg, ok := aiProvider.(generation.WritingGenerator); ok {
+			writingGenerator = wg
+		} else if aiProviderName == "anthropic" && aiKey != "" {
+			writingGenerator = generation.NewAnthropicClient(aiKey)
 		}
 		creditRepository = repository.NewCreditRepository(primaryDB)
 		creditService = credits.NewService(creditRepository, cache)
@@ -573,7 +615,7 @@ func main() {
 
 		integrationRepository := repository.NewIntegrationRepository(primaryDB.Pool)
 		// OAuth 2.1 authorization server (third-party app registration + token flow).
-		oauthService = oauth.NewService(repository.NewOAuthRepository(primaryDB.Pool))
+		oauthService = oauth.NewService(repository.NewOAuthRepository(primaryDB.Pool), cache)
 		// Enforce the per-app webhook-domain allowlist on app-scoped endpoints (at
 		// write time, and re-checked at delivery time via the worker below).
 		webhookService.WireAppDomainResolver(oauthService.AllowedWebhookDomains)
@@ -601,8 +643,10 @@ func main() {
 
 		tzService = tz.NewService()
 
-		// Initialize new services for trial, feature gates, and worker assignment
-		trialService = trial.NewService(subscriptionRepository, userRepostory)
+		// Initialize new services for trial, feature gates, and worker assignment.
+		// The trial service seeds the free plan's monthly AI-credit allowance at
+		// trial start (planRepo + creditService, both already constructed above).
+		trialService = trial.NewService(subscriptionRepository, userRepostory, planRepository, creditService)
 		featureGateService = feature.NewService(subscriptionRepository, planRepository)
 		workerAssignmentService = worker.NewAssignmentService(workerRepository, subscriptionRepository, planRepository)
 		subscriptionService = subscription.NewService(subscriptionRepository, planRepository)
@@ -637,6 +681,12 @@ func main() {
 		// Bridge audited mutations to typed customer webhooks (campaign/contact/
 		// template/CRM/team/role/settings/subscription .created/.updated/.deleted).
 		auditService.WireWebhookDispatcher(webhookService)
+
+		// Wire AI-credit grants into the Stripe webhook flow: monthly allowance
+		// reset on invoice.paid and top-up fulfillment on checkout.session.completed
+		// (mode=payment). The audit logger fires AUDIT_CREATED so teammates' credit
+		// views refresh live via the spine.
+		stripeService.WireCredits(creditService, auditService)
 
 		authService = auth.NewService(
 			authRepostory,
@@ -942,6 +992,52 @@ func main() {
 		// tasksClient isn't initialised until the Cloud Tasks config
 		// block runs.
 		uniboxService = unibox.NewService(cache, s3, uniboxRepository, taskRepository, tasksClient)
+
+		// Org AI skills (playbooks): CRUD for settings + prompt injection + the
+		// load_skill tool source.
+		skillsService = skills.NewService(repository.NewSkillRepository(primaryDB))
+
+		// Shared AI tool registry: every tool calls a service-layer function as
+		// the invoking user, so the dashboard agent (M3) and MCP server (M8) can
+		// never exceed the caller's permissions. Built once here with the same
+		// service instances the HTTP handlers use.
+		aiToolRegistry = aitools.BuildRegistry(aitools.Deps{
+			Contacts:    contactService,
+			CRM:         crmService,
+			Campaigns:   campaignService,
+			Analytics:   analyticsService,
+			Unibox:      uniboxService,
+			Automations: integrationServiceForHandler,
+			Audit:       auditService,
+			Search:      aiSearch,
+			Cache:       cache,
+			FeatureGate: featureGateService,
+			Skills:      skillsService,
+			AppBaseURL:  cfg.GetStringOptional(ctx, "APP_BASE_URL", "app_base_url", ""),
+		})
+
+		// Connected MCP servers (client direction): their enabled tools are
+		// contributed to the dashboard agent per-org (approval-gated, never
+		// auto-allowed).
+		mcpService = mcp.NewService(repository.NewMCPRepository(primaryDB), cipherService)
+		aiToolRegistry.AddDynamicSource(mcpService)
+
+		// Dashboard AI agent: sessions + streamed, approval-gated, credit-charged
+		// runs over the tool registry. Only constructed when a provider is set.
+		if aiProvider != nil {
+			aiAgentService = aiagent.NewService(
+				repository.NewAgentRepository(primaryDB),
+				aiToolRegistry, aiProvider, creditService, featureGateService, auditService, skillsService,
+				aiagent.NewVoicePreamble(organizationService),
+			)
+			// Contact research agent + its bounded background drain pool.
+			researchService = research.NewService(
+				repository.NewResearchRepository(primaryDB),
+				aiToolRegistry, aiProvider, creditService, featureGateService,
+				contactService, organizationService, streamingPublisher, skillsService,
+			)
+			researchService.StartDrainPool(ctx)
+		}
 		advancedService = advanced.NewService(
 			advancedRepository,
 			campaignRepostory,
@@ -970,6 +1066,22 @@ func main() {
 			Orgs:     organizationRepository,
 		})
 		integrationServiceForHandler.SetPublisher(streamingPublisher)
+		// AI automation nodes (ai_classify / ai_extract / ai_generate) run over the
+		// same provider + credit ledger as the rest of the AI layer. Nil provider
+		// (no AI_PROVIDER) leaves the nodes returning a clean "not available".
+		integrationServiceForHandler.SetAI(aiProvider, creditService)
+		// Port reply-classifier Layer 3 onto the platform provider (OpenAI-first,
+		// self-hostable). Platform-paid, never charged to org credits. Nil provider
+		// leaves Layer 3 disabled (the ambiguous middle resolves to "unknown").
+		if aiProvider != nil {
+			replyclassify.SetModelClassifier(func(ctx context.Context, system, user string) (string, error) {
+				res, err := aiProvider.Complete(ctx, generation.CompletionRequest{System: system, Prompt: user, MaxTokens: 16, Temperature: generation.Deterministic()})
+				if err != nil {
+					return "", err
+				}
+				return res.Text, nil
+			})
+		}
 		// In-app notifications: API reads/writes happen here; also wire the gate
 		// onto the backend's advanced service (deliverability webhooks can ingest
 		// here too).
@@ -992,6 +1104,15 @@ func main() {
 		// notification (in-app + email per the user's channels).
 		tokenService.WireSignInAlerter(notification.NewSignInAlerter(notificationService))
 		advancedService.WireRealtime(streamingPublisher)
+		// Inbox agent (M10): the draft repo the review endpoints read, plus the
+		// agent wired onto the advanced service so any reply processed here also
+		// drafts. Paid + opt-in checked inside; nil provider leaves it inert.
+		aiDraftRepo = repository.NewAIDraftRepository(primaryDB.Pool)
+		advancedService.WireInboxAgent(inboxagent.NewService(
+			aiProvider, creditService, featureGateService,
+			organizationRepository, uniboxRepository, skillsService,
+			contactRepostory, aiDraftRepo, streamingPublisher,
+		))
 		emailSender := tasks.NewEmailSender(emailRepostory, eventsPublisher)
 		tasksService = tasks.NewService(
 			tasksClient,
@@ -1213,6 +1334,14 @@ func main() {
 		// AI writing assistant + credit ledger
 		CreditService:    creditService,
 		WritingGenerator: writingGenerator,
+		AIProvider:       aiProvider,
+		AISearch:         aiSearch,
+		AITools:          aiToolRegistry,
+		AIAgentService:   aiAgentService,
+		ResearchService:  researchService,
+		SkillsService:    skillsService,
+		MCPService:       mcpService,
+		AIDraftRepo:      aiDraftRepo,
 
 		// Pre-send email verification
 		EmailVerifyService: emailVerifyService,

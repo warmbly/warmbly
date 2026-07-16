@@ -351,6 +351,30 @@ CREDENTIALS_KEY_DEV := 0123456789abcdef0123456789abcdef0123456789abcdef012345678
 # CODEC_PROVIDER=json: the worker command/result envelopes carry `any`
 # bodies that Avro cannot serialize, so worker messaging only works on the
 # JSON codec. tracking-events stays Avro (dedicated Avrov2 path).
+# AI provider for dev. Off by default (no provider => the assistant returns a
+# clean 503). Pick a backend with AI_PROVIDER and supply a key + model; the preset
+# fills in the base URL. AI_PROVIDER=ollama runs a free local model with no key.
+#   make backend AI_PROVIDER=ollama                                    # free, local, no key
+#   make backend AI_PROVIDER=openrouter AI_KEY=sk-or-... AI_MODEL=deepseek/deepseek-chat
+#   make backend AI_PROVIDER=groq AI_KEY=gsk_... AI_MODEL=openai/gpt-oss-20b
+#   make backend AI_PROVIDER=openai AI_KEY=sk-...
+# Switch models by changing AI_MODEL (OpenRouter fronts every vendor). AI_FREE=true
+# marks a free model so credits are not charged; ollama sets it automatically.
+AI_PROVIDER ?=
+AI_KEY ?=
+AI_MODEL ?=
+AI_BASE_URL ?=
+AI_FREE ?=
+ifeq ($(AI_PROVIDER),)
+AI_DEV_ENV :=
+else
+AI_DEV_ENV := AI_PROVIDER=$(AI_PROVIDER) \
+	$(if $(AI_KEY),AI_API_KEY=$(AI_KEY),) \
+	$(if $(AI_MODEL),AI_MODEL=$(AI_MODEL),) \
+	$(if $(AI_BASE_URL),AI_BASE_URL=$(AI_BASE_URL),) \
+	$(if $(AI_FREE),AI_FREE=$(AI_FREE),)
+endif
+
 GO_DEV_ENV := \
 	APP_ENV=dev \
 	CODEC_PROVIDER=json \
@@ -390,6 +414,7 @@ WORKER_DEV_ENV := \
 # the docker postgres.
 backend:
 	$(GO_DEV_ENV) \
+	$(AI_DEV_ENV) \
 	API_HOST=0.0.0.0:8080 \
 	GIN_MODE=debug \
 	APP_URL=http://$(WEB_HOST):5173 \
@@ -426,6 +451,7 @@ backend:
 # Kafka -> postgres consumer.
 consumer:
 	$(GO_DEV_ENV) \
+	$(AI_DEV_ENV) \
 	go run ./cmd/consumer
 
 # Send/sync worker. No Postgres by design. WORKER_ID is an explicit UUID

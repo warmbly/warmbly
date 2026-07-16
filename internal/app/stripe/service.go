@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"strconv"
 	"time"
 
 	"github.com/getsentry/sentry-go"
@@ -63,9 +64,36 @@ type StripeService interface {
 	// balance (negative = credit the customer). Satisfies referral.StripeBalancer.
 	ApplyCustomerCredit(ctx context.Context, customerID string, amountCents int64, currency, idempotencyKey string) (string, *errx.Error)
 
+	// CreateCreditCheckoutSession creates a one-time (mode=payment) Stripe
+	// Checkout session to buy a top-up credit pack, reusing the org's existing
+	// Stripe customer. Fulfillment happens only in the webhook. packKey is a
+	// credits.CreditPack.Key; credits is the pack's credit count (recorded in
+	// session metadata so the webhook grants the right amount). The pack's
+	// Stripe price is resolved from config; an unconfigured pack returns 503.
+	CreateCreditCheckoutSession(ctx context.Context, userID, orgID uuid.UUID, packKey string, credits int, successURL, cancelURL string) (*stripe.CheckoutSession, *errx.Error)
+
 	// WireReferral attaches the referral program (post-construction; nil = the
 	// referral hooks in the webhook flow are skipped).
 	WireReferral(r ReferralRewarder)
+
+	// WireCredits attaches the AI-credit granter and an audit logger
+	// (post-construction; nil = the credit grant/reset hooks are skipped).
+	WireCredits(g CreditGranter, a AuditLogger)
+}
+
+// CreditGranter is the slice of the credit service the Stripe webhook flow
+// drives: reset the monthly allowance each billing cycle and fulfill top-up
+// purchases. *credits.creditService satisfies it (plain error returns).
+type CreditGranter interface {
+	ResetMonthlyAllowance(ctx context.Context, orgID uuid.UUID, allowance int, idempotencyKey string) error
+	GrantPurchased(ctx context.Context, orgID uuid.UUID, amount int, reason, idempotencyKey string) (int, error)
+}
+
+// AuditLogger is the slice of the audit service the webhook flow uses to fire
+// AUDIT_CREATED so teammates' billing/credits views refresh live after a grant
+// or purchase. *audit.auditService satisfies it.
+type AuditLogger interface {
+	LogAction(ctx context.Context, orgID, actorID uuid.UUID, action models.AuditAction, entityType models.AuditEntityType, entityID *uuid.UUID, ip, userAgent string, changes, metadata map[string]string)
 }
 
 // ReferralRewarder is the slice of the referral service the Stripe webhook flow
@@ -86,9 +114,13 @@ type stripeService struct {
 	workerAssignment worker.WorkerAssignmentService
 	discountService  discount.DiscountService
 	referral         ReferralRewarder
+	credits          CreditGranter
+	audit            AuditLogger
 }
 
 func (s *stripeService) WireReferral(r ReferralRewarder) { s.referral = r }
+
+func (s *stripeService) WireCredits(g CreditGranter, a AuditLogger) { s.credits = g; s.audit = a }
 
 func NewService(
 	cfg *config.StripeConfig,
@@ -311,6 +343,57 @@ func (s *stripeService) mintCoupon(dc *models.DiscountCode) (string, *errx.Error
 		return "", errx.New(errx.Internal, "failed to apply discount")
 	}
 	return c.ID, nil
+}
+
+// CreateCreditCheckoutSession creates a one-time payment Checkout session for a
+// credit top-up pack. Unlike the subscription checkout it never mutates local
+// state: fulfillment (granting purchased credits) happens solely in the
+// checkout.session.completed webhook, keyed by the Stripe event id so a retry
+// can't double-grant. The org must already have a Stripe customer (paid-org
+// gating is enforced in the handler).
+func (s *stripeService) CreateCreditCheckoutSession(ctx context.Context, userID, orgID uuid.UUID, packKey string, credits int, successURL, cancelURL string) (*stripe.CheckoutSession, *errx.Error) {
+	priceID := ""
+	if s.cfg != nil && s.cfg.CreditPackPriceIDs != nil {
+		priceID = s.cfg.CreditPackPriceIDs[packKey]
+	}
+	if priceID == "" {
+		return nil, errx.New(errx.ServiceUnavailable, "credit packs are not configured")
+	}
+
+	sub, err := s.subRepo.GetByOrganizationID(ctx, orgID)
+	if err != nil {
+		return nil, errx.New(errx.Internal, "failed to get subscription")
+	}
+
+	params := &stripe.CheckoutSessionParams{
+		Mode: stripe.String(string(stripe.CheckoutSessionModePayment)),
+		LineItems: []*stripe.CheckoutSessionLineItemParams{
+			{Price: stripe.String(priceID), Quantity: stripe.Int64(1)},
+		},
+		SuccessURL: stripe.String(successURL),
+		CancelURL:  stripe.String(cancelURL),
+		Metadata: map[string]string{
+			"user_id": userID.String(),
+			"org_id":  orgID.String(),
+			// purpose disambiguates this from a subscription checkout in the
+			// shared checkout.session.completed handler.
+			"purpose":  "credit_topup",
+			"pack_key": packKey,
+			"credits":  strconv.Itoa(credits),
+		},
+	}
+	if sub != nil && sub.StripeCustomerID != "" {
+		params.Customer = stripe.String(sub.StripeCustomerID)
+	} else {
+		params.CustomerCreation = stripe.String("always")
+	}
+
+	sess, serr := session.New(params)
+	if serr != nil {
+		sentry.CaptureException(fmt.Errorf("stripe credit checkout session failed: %w", serr))
+		return nil, errx.New(errx.Internal, "failed to create checkout session")
+	}
+	return sess, nil
 }
 
 func (s *stripeService) CreatePortalSession(ctx context.Context, customerID, returnURL string) (string, *errx.Error) {
@@ -566,14 +649,22 @@ func (s *stripeService) ProcessWebhookEvent(ctx context.Context, event *stripe.E
 		processErr = s.handleChargeRefunded(ctx, event)
 	}
 
-	// Record event for idempotency
-	webhookEvent := &models.StripeWebhookEvent{
-		ID:          event.ID,
-		EventType:   string(event.Type),
-		ProcessedAt: time.Now(),
-	}
-	if err := s.subRepo.RecordWebhookEvent(ctx, webhookEvent); err != nil {
-		// Log but don't fail - idempotency is best-effort
+	// Record the event as processed ONLY on success. If a handler failed
+	// (e.g. a transient DB error while granting purchased credits), we must
+	// NOT mark it done: recording it would make WebhookEventExists short-
+	// circuit the Stripe retry, and the customer would have paid without
+	// receiving credits. Leaving it unrecorded lets the retry re-run the
+	// handler, which is safe because every handler is idempotent on the
+	// Stripe event id (credit grants, referral rewards, subscription upserts).
+	if processErr == nil {
+		webhookEvent := &models.StripeWebhookEvent{
+			ID:          event.ID,
+			EventType:   string(event.Type),
+			ProcessedAt: time.Now(),
+		}
+		if err := s.subRepo.RecordWebhookEvent(ctx, webhookEvent); err != nil {
+			// Log but don't fail - idempotency is best-effort on the happy path.
+		}
 	}
 
 	return processErr
@@ -583,6 +674,13 @@ func (s *stripeService) handleCheckoutCompleted(ctx context.Context, event *stri
 	var checkoutSession stripe.CheckoutSession
 	if err := json.Unmarshal(event.Data.Raw, &checkoutSession); err != nil {
 		return errx.New(errx.Internal, "failed to parse checkout session")
+	}
+
+	// Credit top-up purchases (mode=payment) are fulfilled here and here only,
+	// so a retried webhook can't double-grant. Diverges from the subscription
+	// path completely.
+	if checkoutSession.Metadata["purpose"] == "credit_topup" {
+		return s.fulfillCreditTopup(ctx, event, &checkoutSession)
 	}
 
 	userIDStr, ok := checkoutSession.Metadata["user_id"]
@@ -701,6 +799,45 @@ func (s *stripeService) handleCheckoutExpired(ctx context.Context, event *stripe
 	}
 	if codeID, ok := checkoutSession.Metadata["discount_code_id"]; ok && codeID != "" {
 		return s.discountService.CancelRedemption(ctx, checkoutSession.ID)
+	}
+	return nil
+}
+
+// fulfillCreditTopup grants purchased credits for a completed top-up checkout.
+// Idempotent on the Stripe event id; the granted amount comes from the session
+// metadata written at checkout creation (not the price) so the ledger reflects
+// exactly the pack sold. Fires a credit_purchase audit so teammates' credit
+// views refresh live.
+func (s *stripeService) fulfillCreditTopup(ctx context.Context, event *stripe.Event, sess *stripe.CheckoutSession) *errx.Error {
+	if s.credits == nil {
+		return nil // credits not wired; nothing to fulfill
+	}
+	// Only a paid session actually grants (payment_status=paid). An async or
+	// unpaid session is ignored; Stripe re-sends when it settles.
+	if sess.PaymentStatus != stripe.CheckoutSessionPaymentStatusPaid {
+		return nil
+	}
+
+	orgID, err := uuid.Parse(sess.Metadata["org_id"])
+	if err != nil {
+		return errx.New(errx.BadRequest, "invalid org_id in credit checkout metadata")
+	}
+	credits, err := strconv.Atoi(sess.Metadata["credits"])
+	if err != nil || credits <= 0 {
+		return errx.New(errx.BadRequest, "invalid credits amount in credit checkout metadata")
+	}
+
+	if _, gerr := s.credits.GrantPurchased(ctx, orgID, credits, "credit_topup", event.ID); gerr != nil {
+		return errx.New(errx.Internal, "failed to grant purchased credits")
+	}
+
+	// Realtime refresh for the whole org via the audit spine.
+	if s.audit != nil {
+		actorID, _ := uuid.Parse(sess.Metadata["user_id"])
+		s.audit.LogAction(ctx, orgID, actorID, models.AuditActionCreate, models.AuditEntityCreditPurchase, nil, "", "", nil, map[string]string{
+			"pack_key": sess.Metadata["pack_key"],
+			"credits":  strconv.Itoa(credits),
+		})
 	}
 	return nil
 }
@@ -859,25 +996,13 @@ func (s *stripeService) handleSubscriptionDeleted(ctx context.Context, event *st
 }
 
 func (s *stripeService) handleInvoicePaid(ctx context.Context, event *stripe.Event) *errx.Error {
-	// Subscription activation is handled via subscription.updated. This hook
-	// rewards the referrer on the invitee's FIRST paid invoice.
-	if s.referral == nil {
-		return nil
-	}
 	var inv stripe.Invoice
 	if err := json.Unmarshal(event.Data.Raw, &inv); err != nil {
 		return errx.New(errx.Internal, "failed to parse invoice")
 	}
-	// Only the first invoice of a new subscription, and only once real money has
-	// changed hands (a $0 invoice is not a payment), earns a referral reward.
-	if inv.BillingReason != stripe.InvoiceBillingReasonSubscriptionCreate {
-		return nil
-	}
-	if inv.AmountPaid <= 0 {
-		return nil
-	}
 
-	// Resolve the invitee org from the subscription, falling back to customer.
+	// Resolve the org from the subscription, falling back to customer. Shared by
+	// the credit-grant and referral-reward paths below.
 	var sub *models.Subscription
 	if inv.Subscription != nil {
 		sub, _ = s.subRepo.GetByStripeSubscriptionID(ctx, inv.Subscription.ID)
@@ -889,8 +1014,8 @@ func (s *stripeService) handleInvoicePaid(ctx context.Context, event *stripe.Eve
 		return nil
 	}
 
-	// Resolve the invitee's plan: prefer the invoiced price, fall back to the
-	// local subscription's plan.
+	// Resolve the plan: prefer the invoiced price, fall back to the local
+	// subscription's plan.
 	var plan *models.Plan
 	if inv.Lines != nil && len(inv.Lines.Data) > 0 && inv.Lines.Data[0].Price != nil {
 		plan, _ = s.planRepo.GetByStripePriceID(ctx, inv.Lines.Data[0].Price.ID)
@@ -902,7 +1027,31 @@ func (s *stripeService) handleInvoicePaid(ctx context.Context, event *stripe.Eve
 		return nil
 	}
 
-	return s.referral.RewardOnFirstInvoice(ctx, sub.OrganizationID, plan.ID, event.ID)
+	// Monthly credit allowance: RESET (set-to-N) the monthly pool to the plan's
+	// grant on each subscription billing cycle. Only subscription create/cycle
+	// invoices refresh the allowance; plan-change or one-off invoices don't, and
+	// the top-up (purchased) pool is never touched. Idempotent on the event id.
+	if s.credits != nil && inv.Subscription != nil &&
+		(inv.BillingReason == stripe.InvoiceBillingReasonSubscriptionCreate ||
+			inv.BillingReason == stripe.InvoiceBillingReasonSubscriptionCycle) {
+		if err := s.credits.ResetMonthlyAllowance(ctx, sub.OrganizationID, plan.MonthlyCredits, event.ID); err != nil {
+			sentry.CaptureException(fmt.Errorf("monthly credit reset failed for org %s: %w", sub.OrganizationID, err))
+		} else if s.audit != nil {
+			s.audit.LogAction(ctx, sub.OrganizationID, sub.UserID, models.AuditActionUpdate, models.AuditEntityCreditGrant, nil, "", "", nil, map[string]string{
+				"reason":  "monthly_reset",
+				"credits": strconv.Itoa(plan.MonthlyCredits),
+			})
+		}
+	}
+
+	// Referral reward: only the first invoice of a new subscription, and only
+	// once real money has changed hands (a $0 invoice is not a payment).
+	if s.referral != nil &&
+		inv.BillingReason == stripe.InvoiceBillingReasonSubscriptionCreate &&
+		inv.AmountPaid > 0 {
+		return s.referral.RewardOnFirstInvoice(ctx, sub.OrganizationID, plan.ID, event.ID)
+	}
+	return nil
 }
 
 // handleChargeRefunded claws back a referral reward when an invitee's charge is

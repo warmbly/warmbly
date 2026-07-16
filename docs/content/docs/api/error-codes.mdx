@@ -1,7 +1,6 @@
 ---
 title: Error codes
 description: Reference for all API error codes and their meanings.
-icon: TriangleAlert
 ---
 
 The Warmbly API uses standard HTTP status codes and returns structured error responses in JSON format.
@@ -29,11 +28,12 @@ All errors follow this structure:
 |------|-------|-------------|
 | 400 | Bad Request | Invalid request syntax or parameters |
 | 401 | Unauthorized | Missing or invalid authentication |
+| 402 | Payment Required | Out of AI credits (`insufficient_credits`) |
 | 403 | Forbidden | Authenticated but lacks permission |
 | 404 | Not Found | Resource doesn't exist |
 | 409 | Conflict | Resource already exists |
 | 422 | Unprocessable | Validation failed |
-| 429 | Too Many Requests | Rate limit exceeded |
+| 429 | Too Many Requests | Rate limit or AI usage cap exceeded (`rate_limit_exceeded`, `usage_cap_exceeded`) |
 
 ### Server errors (5xx)
 
@@ -97,6 +97,23 @@ Returned when authentication fails.
 - Verify your API key is correct
 - Check if your key has expired or been revoked
 - Generate a new key if necessary
+
+### 402 Payment Required
+
+Returned when an AI action is requested but the organization is out of credits. The response carries the stable code `insufficient_credits`.
+
+```json
+{
+  "error": "Payment Required",
+  "message": "You're out of AI credits. Add more to keep using the assistant.",
+  "code": "insufficient_credits",
+  "request_id": "req_..."
+}
+```
+
+**How to fix:**
+- Wait for the monthly allowance to reset, or buy a top-up pack (see [AI credits](/guides/ai-credits/))
+- Related: a `429` with code `usage_cap_exceeded` means a short-term AI usage cap was hit; retry later
 
 ### 403 Forbidden
 

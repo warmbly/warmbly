@@ -20,8 +20,10 @@ import {
     GaugeIcon,
     GiftIcon,
     Loader2Icon,
+    PlugIcon,
     ShieldCheckIcon,
     ShieldIcon,
+    SparklesIcon,
     UserIcon,
     UsersIcon,
     WebhookIcon,
@@ -61,6 +63,7 @@ const GROUPS: SectionGroup[] = [
             { path: "teams", label: "Teams", icon: UsersIcon, description: "Group members into teams." },
             { path: "roles", label: "Roles & access", icon: ShieldCheckIcon, description: "Who can do what.", ownerOnly: true },
             { path: "workspace", label: "Workspace", icon: BriefcaseIcon, description: "Org-wide settings.", ownerOnly: true },
+            { path: "ai-skills", label: "AI skills", icon: SparklesIcon, description: "Playbooks your AI features follow.", permission: "MANAGE_SETTINGS" },
             { path: "billing", label: "Billing", icon: CreditCardIcon, description: "Plan, payment, invoices.", ownerOnly: true },
             { path: "referral", label: "Refer & earn", icon: GiftIcon, description: "Invite teams and earn account credit.", ownerOnly: true },
             { path: "limits", label: "Limits", icon: GaugeIcon, description: "Request more capacity than your plan allows.", ownerOnly: true },
@@ -71,6 +74,7 @@ const GROUPS: SectionGroup[] = [
         items: [
             { path: "oauth-apps", label: "OAuth apps", icon: BoxesIcon, description: "Apps that connect via OAuth2, and the apps you've authorized.", permission: "MANAGE_API_KEYS" },
             { path: "webhooks", label: "Webhooks", icon: WebhookIcon, description: "Realtime HTTP callbacks for workspace events.", permission: "MANAGE_SETTINGS" },
+            { path: "connections", label: "Connections", icon: PlugIcon, description: "External MCP servers that add tools to the AI.", permission: "MANAGE_SETTINGS" },
         ],
     },
     {

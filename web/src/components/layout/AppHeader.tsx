@@ -14,6 +14,7 @@
 import { Link, useLocation } from "react-router-dom";
 import { ChevronRight, Menu, Search } from "lucide-react";
 import { Logo } from "@/components/svg";
+import AgentMark from "@/components/app/agent/AgentMark";
 import { useAppStore } from "@/stores";
 import { ConnectionIndicator } from "@/components/shared/ConnectionIndicator";
 import PresenceAvatars from "@/components/app/presence/PresenceAvatars";
@@ -134,6 +135,7 @@ export function AppHeader({ onMenu }: { onMenu?: () => void }) {
                 <PresenceAvatars />
                 <ConnectionIndicator />
                 <NotificationBell />
+                <AssistantButton />
                 <button
                     onClick={() => setCommandPaletteOpen(true)}
                     className="flex items-center gap-2 px-2 h-7 rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-200/60 transition-colors text-[12.5px]"
@@ -151,4 +153,52 @@ export function AppHeader({ onMenu }: { onMenu?: () => void }) {
 
 function Crumb({ children }: { children: React.ReactNode }) {
     return <div className="flex items-center gap-2 min-w-0">{children}</div>;
+}
+
+// The assistant toggle, with a live status badge so background work is never
+// invisible: pulsing sky while a run streams, amber when a tool waits for
+// approval, solid sky when a finished response hasn't been read yet.
+function AssistantButton() {
+    const open = useAppStore((s) => s.aiAssistantOpen);
+    const minimized = useAppStore((s) => s.agentMinimized);
+    const setOpen = useAppStore((s) => s.setAIAssistantOpen);
+    const setMinimized = useAppStore((s) => s.setAgentMinimized);
+    const tabs = useAppStore((s) => s.agentTabs);
+
+    const running = tabs.some((t) => t.running);
+    const pending = tabs.some((t) => t.pending);
+    const unseen = tabs.some((t) => t.unseen);
+
+    return (
+        <button
+            onClick={() => {
+                if (open && minimized) {
+                    // Docked: bring the panel back instead of closing it.
+                    setMinimized(false);
+                } else if (open) {
+                    setOpen(false);
+                } else {
+                    setMinimized(false);
+                    setOpen(true);
+                }
+            }}
+            title="AI assistant (⌘I)"
+            aria-label="AI assistant"
+            className="relative flex items-center justify-center size-7 rounded-md text-slate-500 hover:text-sky-700 hover:bg-sky-50 transition-colors"
+        >
+            <AgentMark className="w-4 h-4" />
+            {(running || pending || unseen) && (
+                <span
+                    className={
+                        "absolute top-0.5 right-0.5 size-1.5 rounded-full ring-2 ring-white " +
+                        (running
+                            ? "bg-sky-500 animate-pulse"
+                            : pending
+                              ? "bg-amber-500"
+                              : "bg-sky-500")
+                    }
+                />
+            )}
+        </button>
+    );
 }

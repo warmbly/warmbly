@@ -4,6 +4,7 @@
 
 import React from "react";
 import { Link } from "react-router-dom";
+import { AnimatePresence, motion } from "framer-motion";
 import { BellIcon } from "lucide-react";
 import useClickOutside from "@/hooks/useClickOutside";
 import {
@@ -52,8 +53,15 @@ export function NotificationBell() {
                 )}
             </button>
 
-            {open && (
-                <div className="absolute right-0 top-full mt-1.5 w-80 max-w-[90vw] rounded-md border border-slate-200 bg-white shadow-[0_12px_32px_-8px_rgba(15,23,42,0.18)] z-50 overflow-hidden">
+            <AnimatePresence>
+                {open && (
+                    <motion.div
+                        initial={{ opacity: 0, y: -4 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -4 }}
+                        transition={{ duration: 0.12 }}
+                        className="absolute right-0 top-full mt-1.5 w-80 max-w-[90vw] rounded-md border border-slate-200 bg-white shadow-[0_12px_32px_-8px_rgba(15,23,42,0.18)] z-50 overflow-hidden"
+                    >
                     <div className="h-9 px-3 flex items-center border-b border-slate-200">
                         <span className="text-[12px] font-medium text-slate-900">Notifications</span>
                         {unread > 0 && (
@@ -97,8 +105,9 @@ export function NotificationBell() {
                             })
                         )}
                     </div>
-                </div>
-            )}
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </div>
     );
 }

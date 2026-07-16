@@ -33,6 +33,7 @@ import NewMeetingDialog from "@/components/app/meetings/NewMeetingDialog";
 import OverviewTab from "./contact-edit/OverviewTab";
 import ActivityTab from "./contact-edit/ActivityTab";
 import NotesTab from "./contact-edit/NotesTab";
+import ResearchTab from "./contact-edit/ResearchTab";
 import DetailsTab, { type CustomField } from "./contact-edit/DetailsTab";
 import {
     CONTACT_SLIDE_TABS,
@@ -235,6 +236,7 @@ function ContactEditPanel({
                     )}
                     {tab === "activity" && <ActivityTab contactId={contact.id} />}
                     {tab === "notes" && <NotesTab contactId={contact.id} />}
+                    {tab === "research" && <ResearchTab contactId={contact.id} />}
                     {tab === "details" && (
                         <DetailsTab
                             contact={contact}

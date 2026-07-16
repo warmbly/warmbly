@@ -1,7 +1,6 @@
 {
   "title": "Development",
   "description": "Self-host, deploy, and develop Warmbly",
-  "icon": "Wrench",
   "root": true,
   "pages": [
     "architecture",
