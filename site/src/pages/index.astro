@@ -16,6 +16,7 @@ import TemplatingShowcase from '../components/TemplatingShowcase.astro';
 import ChangelogShowcase from '../components/ChangelogShowcase.astro';
 import OpenSourceShowcase from '../components/OpenSourceShowcase.astro';
 import AutomationsShowcase from '../components/AutomationsShowcase.astro';
+import MobileAppShowcase from '../components/MobileAppShowcase.astro';
 
 const compare = [
   ['Per-mailbox cold cap',     '50 / day default',                 '200 / day if you ask for it'],
@@ -343,6 +344,12 @@ const softwareJsonLd = {
     >
       <IntegrationsMock />
     </FeatureSection>
+
+    <!-- ============================================================
+         MOBILE APP — sky band with the iOS app in a half-cut iPhone,
+         air-glass tabs flipping between the real app's screens.
+    ============================================================ -->
+    <MobileAppShowcase />
 
     <!-- ============================================================
          AUTOMATIONS — full-width centerpiece: the live builder demo
