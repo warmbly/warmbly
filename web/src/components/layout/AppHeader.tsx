@@ -186,7 +186,7 @@ function AssistantButton() {
             aria-label="AI assistant"
             className="relative flex items-center justify-center size-7 rounded-md text-slate-500 hover:text-sky-700 hover:bg-sky-50 transition-colors"
         >
-            <AgentMark className="w-3.5 h-3.5" />
+            <AgentMark className="w-4 h-4" />
             {(running || pending || unseen) && (
                 <span
                     className={
