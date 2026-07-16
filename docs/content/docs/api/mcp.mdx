@@ -1,7 +1,6 @@
 ---
 title: MCP server
 description: Connect any MCP client (Claude Code, Claude Desktop, Cursor) to Warmbly and use your data and workflows as tools, scoped to an API key.
-icon: Plug
 ---
 
 Warmbly speaks the [Model Context Protocol](https://modelcontextprotocol.io). Point any MCP client at Warmbly's server and it can search contacts, check campaigns, read your inbox, draft replies, and create draft campaigns and automations, all scoped to an API key you control.
@@ -34,8 +33,14 @@ Every tool is gated by its API permission. `tools/list` returns only the tools y
 | `add_tag` / `remove_tag` | Tag a contact | `WRITE_CONTACTS` |
 | `list_campaigns` | List campaigns | `READ_CAMPAIGNS` |
 | `get_campaign_stats` | Campaign stats | `READ_CAMPAIGNS` |
+| `list_campaign_leads` | A campaign's leads with derived status + totals | `READ_CONTACTS` |
 | `create_campaign_draft` | Create a draft campaign | `WRITE_CAMPAIGNS` |
+| `set_campaign_status` | Start or stop a campaign | `SEND_CAMPAIGNS` |
+| `get_dashboard_analytics` | Org-wide sending stats for a period | `READ_ANALYTICS` |
+| `list_mailboxes` | Sender mailboxes with health + warmup state | `READ_ANALYTICS` |
+| `list_pipelines` / `list_deals` | Read CRM pipelines and deals | `READ_CRM` |
 | `create_task` / `create_deal` | Create CRM records | `WRITE_CRM` |
+| `add_contact_note` | Add a note to a contact's timeline | `WRITE_CRM` |
 | `list_threads` / `get_thread` | Read the unified inbox | `READ_UNIBOX` |
 | `draft_reply` | Draft a reply (never sends) | `READ_UNIBOX` |
 | `create_automation_draft` | Create a disabled automation | `INTEGRATIONS` |

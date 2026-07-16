@@ -30,9 +30,9 @@ Other CI-touching rules:
 Docs stay in sync:
 
 - the customer docs site lives in `docs/` (Fumadocs, served at docs.warmbly.com); content is MDX under `docs/content/docs/` in three sections: `guides/` (product behavior), `learn/` (fundamentals), `api/` (API reference)
-- any change that alters user-visible behavior must update the matching docs page in the same change: a new or changed endpoint updates `api/endpoints.mdx` (scope map) and, where relevant, `api/authentication.mdx`; a new or changed API permission updates `api/permissions.mdx` including the permission table, presets, and all three language tabs in the constants section; a new or changed error code updates `api/error-codes.mdx`; a new or changed product feature, default, limit, or setting updates the relevant `guides/` page (or adds one, registered in `guides/meta.json` with an `icon`)
+- any change that alters user-visible behavior must update the matching docs page in the same change: a new or changed endpoint updates `api/endpoints.mdx` (scope map) and, where relevant, `api/authentication.mdx`; a new or changed API permission updates `api/permissions.mdx` including the permission table, presets, and all three language tabs in the constants section; a new or changed error code updates `api/error-codes.mdx`; a new or changed product feature, default, limit, or setting updates the relevant `guides/` page (or adds one, registered in `guides/meta.json` under the right section group)
 - removing or renaming a feature, endpoint, or permission means removing or updating its docs too; do not leave stale docs behind
-- follow the docs conventions: frontmatter `title` is the H1 (no `#` heading in the body), every page has a lucide `icon`, sentence-case headings, no em dashes in prose, internal links use trailing slashes (`/guides/mailboxes/`)
+- follow the docs conventions: frontmatter `title` is the H1 (no `#` heading in the body), no decorative sidebar icons (pages and `meta.json` sections carry no `icon`; the source loader has the lucide icon plugin disabled, and code-sample tabs use the real language logo instead), sentence-case headings, no em dashes in prose, internal links use trailing slashes (`/guides/mailboxes/`)
 - verify with `pnpm types:check` and `pnpm lint` in `docs/` (the site is a fully static export; `pnpm build` writes `out/`)
 
 Commit hygiene:

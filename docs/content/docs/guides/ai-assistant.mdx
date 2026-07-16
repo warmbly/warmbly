@@ -1,7 +1,6 @@
 ---
 title: AI assistant
 description: The in-product AI assistant that searches your data, drafts replies, and sets up draft campaigns and automations, asking before it changes anything.
-icon: Sparkles
 ---
 
 The AI assistant is a chat panel built into the dashboard. It can look things up across your contacts, campaigns, unified inbox, and CRM, and it can take actions on your behalf, but it always asks before changing anything, and it never sends email for you.
@@ -11,6 +10,8 @@ Open it from the spark button in the top bar, or press `Cmd/Ctrl + I`. The panel
 ## Tabs, minimizing, and background runs
 
 Conversations run as tabs, like an editor: open several at once with the **+** button, and a run keeps streaming in its own tab while you read another. The expand button turns the panel into a full workspace with your conversation history down the side.
+
+The panel is yours to arrange: drag its inner edge to resize, and move it to the left or right edge of the screen from the header (both remembered). Inside the panel, `Ctrl/Cmd + ]` and `[` switch tabs, `Alt + N` opens a new chat, `Alt + W` closes the tab, and `Alt + M` minimizes; the full list is in the shortcuts dialog (`?`).
 
 You do not have to keep the panel open to keep the assistant working:
 
@@ -25,10 +26,12 @@ The assistant acts as you. It can only see and do what your own role allows, so 
 
 The assistant has a set of tools it uses to answer you:
 
-- Find and read contacts, and update contact fields or tags
-- List campaigns and read a campaign's send, open, click, and reply stats
+- Find and read contacts, and update contact fields, tags, or notes
+- List campaigns, read send/open/click/reply stats, and list a campaign's leads by status (queued, in progress, done with no reply, replied, bounced, unsubscribed) — this is how it finds leads that went cold
+- Read org-wide analytics for a period and list your mailboxes with health and warmup state
 - Read your unified inbox threads and draft a reply for you to review
-- Create a CRM task or deal
+- Read CRM pipelines and deals, and create a task, deal, or contact note
+- Start or stop a campaign (always asks first)
 - Create a draft campaign or a disabled automation for you to finish and turn on
 - Search the web and read a public page
 
@@ -61,7 +64,7 @@ Each step the assistant takes costs one AI credit, and a single request is cappe
 
 On a self-hosted install pointed at a free or local model, runs are not charged and the assistant shows a "free model" notice, since a smaller local model can produce lower-quality answers.
 
-You can stop a run at any time with the stop button, and start a fresh conversation with **New**.
+You can stop a run at any time with the stop button, and start a fresh conversation with the **+** tab button.
 
 ## Privacy
 

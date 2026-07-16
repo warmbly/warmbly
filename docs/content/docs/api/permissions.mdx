@@ -1,7 +1,6 @@
 ---
 title: Permissions reference
 description: Complete reference for the 22 API permissions available in Warmbly.
-icon: ShieldCheck
 ---
 
 Warmbly uses a bitmask system for API permissions. Each permission is one bit in a `uint64`, so a single integer can express any combination of the permissions below.
@@ -152,9 +151,15 @@ Same as above, plus `SEND_CAMPAIGNS` (16384). Grant only when the integration ge
 
 ## Permission constants
 
-<Tabs items={['JavaScript', 'Python', 'Go']}>
+<Tabs defaultValue="javascript">
 
-<Tab value="JavaScript">
+<TabsList>
+  <LangTab lang="javascript" />
+  <LangTab lang="python" />
+  <LangTab lang="go" />
+</TabsList>
+
+<Tab value="javascript">
 
 ```typescript
 export const Permissions = {
@@ -187,7 +192,7 @@ export const Permissions = {
 
 </Tab>
 
-<Tab value="Python">
+<Tab value="python">
 
 ```python
 class Permissions:
@@ -219,7 +224,7 @@ class Permissions:
 
 </Tab>
 
-<Tab value="Go">
+<Tab value="go">
 
 ```go
 const (

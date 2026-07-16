@@ -1,7 +1,6 @@
 ---
 title: Realtime WebSocket
 description: Subscribe to live Warmbly events over a WebSocket connection.
-icon: Radio
 ---
 
 Warmbly pushes dashboard events (campaign sends, opens, clicks, replies, inbox arrivals, audit entries, and more) over a WebSocket. The same socket that powers the live dashboard is available to developers. Events are ordered and carry a monotonic `seq`, and a reconnecting client can resume and replay what it missed.
