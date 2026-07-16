@@ -75,7 +75,7 @@ Returns the main dashboard overview for the active organization: aggregate stats
 
 `GET /analytics/deliverability`
 
-Returns the organization's deliverability posture for a time window: bounce, complaint, open, click, and reply counts and rates, suppression and dead-letter pressure, reply-intent breakdown, seed inbox-placement, an overall health band (from the documented thresholds), a daily timeseries, and per-mailbox and per-campaign breakdowns. Requires an organization context. Auth: **Scope** `READ_ANALYTICS` · **Org permission** `view_analytics`.
+Returns the organization's deliverability posture for a time window: bounce, complaint, open, click, and reply counts and rates, suppression and dead-letter pressure, reply-intent breakdown, seed inbox-placement (overall and per recipient provider), warmup-derived placement per recipient domain, an overall health band and a `0-100` composite score (both from the documented thresholds), a daily timeseries, and per-mailbox and per-campaign breakdowns. Requires an organization context. Auth: **Scope** `READ_ANALYTICS` · **Org permission** `view_analytics`.
 
 | Parameter | In | Type | Description |
 | --- | --- | --- | --- |
@@ -112,6 +112,7 @@ Returns the organization's deliverability posture for a time window: bounce, com
   "inbox_placement_rate": 93.5,
   "placement_samples": 40,
   "band": "healthy",
+  "score": 91,
   "timeseries": [
     {
       "date": "2026-06-05",
@@ -147,11 +148,33 @@ Returns the organization's deliverability posture for a time window: bounce, com
       "complaint_rate": 0.12,
       "band": "watch"
     }
+  ],
+  "by_provider": [
+    {
+      "provider": "gmail",
+      "samples": 24,
+      "inbox": 22,
+      "promotions": 1,
+      "spam": 1,
+      "other": 0,
+      "inbox_rate": 91.67,
+      "spam_rate": 4.17
+    }
+  ],
+  "warmup_placement": [
+    {
+      "provider": "outlook",
+      "domain": "outlook.com",
+      "delivered": 132,
+      "spam": 6,
+      "inbox_rate": 95.45,
+      "spam_rate": 4.55
+    }
   ]
 }
 ```
 
-`spam_placement_rate` and `inbox_placement_rate` are omitted when there are no seed samples in the window.
+`spam_placement_rate` and `inbox_placement_rate` are omitted when there are no seed samples in the window. `by_provider` rolls the same seed samples up per recipient provider; `warmup_placement` is the continuous warmup signal per recipient domain, where `delivered` counts verified warmup arrivals and `spam` the subset the recipient's provider filed into junk. `score` starts at `100` and subtracts saturating penalties for bounce rate (up to `40` points, maxed at `10%`), complaint rate (up to `30` points, maxed at `0.30%`), and spam placement (up to `40` points, maxed at `40%`).
 
 ## Get warmup analytics
 
