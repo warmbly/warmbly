@@ -206,21 +206,25 @@ cd realtime
 mix deps.get && mix phx.server
 ```
 
-## Free local AI model
+## AI provider
 
-The AI features (the dashboard assistant, reply drafts, contact research, and automation AI nodes) are off by default in local dev, so the assistant returns a clean `503` until you configure a provider. You do not need a paid OpenAI key to develop against them: the provider is a plain OpenAI-compatible client, so a local model served by [Ollama](https://ollama.com/) works.
+The AI features (the dashboard assistant, reply drafts, contact research, and automation AI nodes) are off by default in local dev, so the assistant returns a clean `503` until you pick a provider. Pass `AI_PROVIDER` to the dev targets; the preset fills in the base URL, so you supply just a key and (optionally) a model.
 
 ```bash
-# one-time: install Ollama, then pull a tool-capable model
+# free local model, no key: install Ollama, pull a tool-capable model, run
 ollama pull llama3.1        # or qwen2.5
+make backend AI_PROVIDER=ollama
+make run     AI_PROVIDER=ollama AI_MODEL=qwen2.5
 
-# run the backend against it
-make backend AI_LOCAL=1
-# override the model or host if you like
-make run AI_LOCAL=1 OLLAMA_MODEL=qwen2.5
+# OpenRouter: one key fronts every vendor; switch models via AI_MODEL
+make backend AI_PROVIDER=openrouter AI_KEY=sk-or-... AI_MODEL=deepseek/deepseek-chat
+
+# Groq free tier (fast) or hosted OpenAI
+make backend AI_PROVIDER=groq   AI_KEY=gsk_... AI_MODEL=openai/gpt-oss-20b
+make backend AI_PROVIDER=openai AI_KEY=sk-...
 ```
 
-`AI_LOCAL=1` points the backend at `http://localhost:11434/v1`, uses the local model for both tiers, and sets `AI_LOCAL_MODEL=true`. That flag marks the model as free/local, so AI credits are not charged and the assistant shows a "free model" notice. Local models are less capable, but tool calls and the full agent loop work. Leave `AI_LOCAL` unset to keep AI off.
+`AI_PROVIDER=ollama` needs no key and marks the model free (`AI_FREE`), so AI credits are not charged and the assistant shows a "free model" notice. Local and free-tier models are less capable, but tool calls and the full agent loop work; use `llama3.1` (8B) or `qwen2.5`, not a 1–3B model. Leave `AI_PROVIDER` unset to keep AI off. See the [deployment guide](/development/deployment-guide/) for the full provider list.
 
 ## Mailpit
 
