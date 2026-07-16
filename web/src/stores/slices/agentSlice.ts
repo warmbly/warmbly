@@ -43,6 +43,8 @@ export type AgentTab = {
   turns: AgentTurn[]
   pending: AgentPending | null
   running: boolean
+  // Unsent composer text, kept per tab so switching tabs never leaks input.
+  draft: string
   // hydrated is false for a tab opened from history until its transcript loads.
   hydrated: boolean
   credits: number | null
@@ -64,6 +66,7 @@ function makeTab(partial?: Partial<AgentTab>): AgentTab {
     turns: [],
     pending: null,
     running: false,
+    draft: '',
     hydrated: true,
     credits: null,
     budget: 20,
@@ -127,6 +130,11 @@ export const createAgentSlice: StateCreator<AgentSlice, [], [], AgentSlice> = (s
       const idx = s.agentTabs.findIndex((t) => t.key === key)
       if (idx === -1) return s
       const tabs = s.agentTabs.filter((t) => t.key !== key)
+      // Closing the last tab starts a fresh one so the panel is never blank.
+      if (tabs.length === 0) {
+        const tab = makeTab()
+        return { agentTabs: [tab], agentActiveKey: tab.key }
+      }
       let active = s.agentActiveKey
       if (active === key) {
         const neighbor = tabs[idx] ?? tabs[idx - 1] ?? tabs[0]
