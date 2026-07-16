@@ -13,6 +13,43 @@ import (
 
 func (d Deps) registerCRMTools(r *Registry) {
 	r.Register(Tool{
+		Name:            "list_pipelines",
+		Description:     "List CRM pipelines with their stages (ids + names). Use this to discover pipeline_id/stage_id before creating or filtering deals.",
+		InputSchema:     objectSchema(map[string]any{}),
+		Risk:            generation.RiskRead,
+		RequiredOrgPerm: models.PermViewContacts,
+		RequiredAPIPerm: models.APIPermReadCRM,
+		Handler:         d.listPipelines,
+	})
+
+	r.Register(Tool{
+		Name:        "list_deals",
+		Description: "List CRM deals, optionally filtered by pipeline and status (open, won, lost). Includes value, stage, and linked contact.",
+		InputSchema: objectSchema(map[string]any{
+			"pipeline_id": strProp("Optional pipeline UUID filter."),
+			"status":      enumProp("Optional status filter.", "open", "won", "lost"),
+			"limit":       intProp("Max deals (1-50, default 20)."),
+		}),
+		Risk:            generation.RiskRead,
+		RequiredOrgPerm: models.PermViewContacts,
+		RequiredAPIPerm: models.APIPermReadCRM,
+		Handler:         d.listDeals,
+	})
+
+	r.Register(Tool{
+		Name:        "add_contact_note",
+		Description: "Add a note to a contact's CRM timeline (call summaries, context, next steps).",
+		InputSchema: objectSchema(map[string]any{
+			"contact_id": strProp("The contact's UUID."),
+			"body":       strProp("The note text."),
+		}, "contact_id", "body"),
+		Risk:            generation.RiskWrite,
+		RequiredOrgPerm: models.PermManageContacts,
+		RequiredAPIPerm: models.APIPermWriteCRM,
+		Handler:         d.addContactNote,
+	})
+
+	r.Register(Tool{
 		Name:        "create_task",
 		Description: "Create a CRM task, optionally linked to a contact or deal. Use for follow-ups the user asks to schedule.",
 		InputSchema: objectSchema(map[string]any{
@@ -45,6 +82,95 @@ func (d Deps) registerCRMTools(r *Registry) {
 		RequiredAPIPerm: models.APIPermWriteCRM,
 		Handler:         d.createDeal,
 	})
+}
+
+func (d Deps) listPipelines(ctx context.Context, inv Invocation, _ json.RawMessage) (string, error) {
+	pipelines, xerr := d.CRM.ListPipelines(ctx, inv.OrgID)
+	if xerr != nil {
+		return "", fromErrx(xerr)
+	}
+	out := make([]map[string]any, 0, len(pipelines))
+	for _, p := range pipelines {
+		stages := make([]map[string]any, 0, len(p.Stages))
+		for _, s := range p.Stages {
+			stages = append(stages, map[string]any{"stage_id": s.ID.String(), "name": s.Name, "deal_count": s.DealCount})
+		}
+		out = append(out, map[string]any{"pipeline_id": p.ID.String(), "name": p.Name, "stages": stages})
+	}
+	return jsonResult(map[string]any{"pipelines": out, "count": len(out)})
+}
+
+func (d Deps) listDeals(ctx context.Context, inv Invocation, args json.RawMessage) (string, error) {
+	in, err := decodeArgs[struct {
+		PipelineID string `json:"pipeline_id"`
+		Status     string `json:"status"`
+		Limit      int    `json:"limit"`
+	}](args)
+	if err != nil {
+		return "", err
+	}
+	limit := in.Limit
+	if limit <= 0 || limit > 50 {
+		limit = 20
+	}
+	var pipelineID *uuid.UUID
+	if in.PipelineID != "" {
+		pid, err := parseUUIDArg(in.PipelineID)
+		if err != nil {
+			return "", err
+		}
+		pipelineID = &pid
+	}
+	var status *string
+	if in.Status != "" {
+		status = &in.Status
+	}
+	res, xerr := d.CRM.ListDeals(ctx, inv.OrgID, pipelineID, nil, status, limit, nil)
+	if xerr != nil {
+		return "", fromErrx(xerr)
+	}
+	out := make([]map[string]any, 0, len(res.Data))
+	for _, dl := range res.Data {
+		row := map[string]any{
+			"deal_id":     dl.ID.String(),
+			"name":        dl.Name,
+			"status":      dl.Status,
+			"pipeline_id": dl.PipelineID.String(),
+			"stage_id":    dl.StageID.String(),
+			"currency":    dl.Currency,
+		}
+		if dl.Value != nil {
+			row["value"] = *dl.Value
+		}
+		if dl.ContactID != nil {
+			row["contact_id"] = dl.ContactID.String()
+		}
+		out = append(out, row)
+	}
+	return jsonResult(map[string]any{"deals": out, "count": len(out)})
+}
+
+func (d Deps) addContactNote(ctx context.Context, inv Invocation, args json.RawMessage) (string, error) {
+	in, err := decodeArgs[struct {
+		ContactID string `json:"contact_id"`
+		Body      string `json:"body"`
+	}](args)
+	if err != nil {
+		return "", err
+	}
+	cid, err := parseUUIDArg(in.ContactID)
+	if err != nil {
+		return "", err
+	}
+	if in.Body == "" {
+		return "", ErrInvalidArgs
+	}
+	note, xerr := d.CRM.CreateNote(ctx, inv.OrgID, cid, inv.UserID, &models.CreateContactNote{Content: in.Body})
+	if xerr != nil {
+		return "", fromErrx(xerr)
+	}
+	d.logAudit(ctx, inv, models.AuditActionCreate, models.AuditEntityCRMNote, &note.ID, nil)
+	return jsonResult(map[string]any{"ok": true, "note_id": note.ID.String()})
 }
 
 func (d Deps) createTask(ctx context.Context, inv Invocation, args json.RawMessage) (string, error) {

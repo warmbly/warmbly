@@ -15,12 +15,12 @@ import (
 func (d Deps) registerUniboxTools(r *Registry) {
 	r.Register(Tool{
 		Name:        "list_threads",
-		Description: "List unified-inbox conversation threads, newest first, with optional filters.",
+		Description: "List unified-inbox conversation threads (received/synced mail), newest first, with optional filters. The inbox only contains synced mailbox mail; to find leads that never replied or went cold, use list_campaign_leads instead. If a filtered call returns 0, retry without filters before concluding the inbox is empty.",
 		InputSchema: objectSchema(map[string]any{
 			"subject":        strProp("Optional subject contains filter."),
 			"sender":         strProp("Optional sender email filter."),
 			"unseen_only":    boolProp("Only threads with unread messages."),
-			"awaiting_reply": boolProp("Only threads where the latest message is from us (no reply yet)."),
+			"awaiting_reply": boolProp("Only threads whose LATEST message was sent by one of our mailboxes (we spoke last, still waiting on them)."),
 			"limit":          intProp("Max threads (1-50, default 20)."),
 		}),
 		Risk:            generation.RiskRead,

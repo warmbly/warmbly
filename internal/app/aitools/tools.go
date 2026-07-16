@@ -59,6 +59,7 @@ func BuildRegistry(d Deps) *Registry {
 	d.registerContactTools(r)
 	d.registerCRMTools(r)
 	d.registerCampaignTools(r)
+	d.registerAnalyticsTools(r)
 	d.registerUniboxTools(r)
 	d.registerAutomationTools(r)
 	d.registerWebTools(r)
