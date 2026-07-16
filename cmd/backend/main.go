@@ -561,58 +561,51 @@ func main() {
 		warmupRoutingRepository := repository.NewWarmupRoutingRepository(primaryDB.Pool)
 		warmupRoutingRepoForHandler = warmupRoutingRepository
 
-		// Warmup content bank + offline AI generator. The generation client is
-		// optional: without OPENAI_API_KEY the live send path simply keeps using
-		// the static library and admin generation returns "not configured".
 		warmupContentRepo = repository.NewWarmupContentRepository(primaryDB.Pool)
-		openaiKey := cfg.GetSecretOptional(ctx, "OPENAI_API_KEY", "openai_api_key", "")
-		var generationClient *generation.GenerationClient
-		if openaiKey != "" {
-			// The SDK client stays dedicated to the warmup Batch API path.
-			generationClient = generation.NewClient(openaiKey)
-		}
-		warmupContentService = warmupcontent.NewService(warmupContentRepo, generationClient)
 
-		// AI provider layer (OpenAI-first; the Anthropic connector is used only
-		// when no OpenAI key is set). One RunAgent tool-loop backend serves every
-		// server-side AI feature; self-hosters retarget it with OPENAI_BASE_URL or
-		// the Anthropic key. Pluggable web search (Serper/SearXNG) backs search_web.
-		anthropicKey := cfg.GetSecretOptional(ctx, "ANTHROPIC_API_KEY", "anthropic_api_key", "")
+		// AI provider layer. AI_PROVIDER picks a preset (openai/openrouter/groq/
+		// ollama/anthropic/custom) that fills in the base URL + free default; the
+		// AI_* vars supply the key/model/endpoint. Pluggable web search
+		// (Serper/SearXNG) backs search_web.
+		aiProviderName := strings.ToLower(strings.TrimSpace(cfg.GetStringOptional(ctx, "AI_PROVIDER", "ai_provider", "")))
+		aiKey := cfg.GetSecretOptional(ctx, "AI_API_KEY", "ai_api_key", "")
 		aiSearch = generation.NewSearchClient(
 			cfg.GetStringOptional(ctx, "SEARCH_PROVIDER", "search/provider", ""),
 			cfg.GetStringOptional(ctx, "SEARCH_API_URL", "search/api_url", ""),
 			cfg.GetSecretOptional(ctx, "SEARCH_API_KEY", "search/api_key", ""),
 		)
-		// Provider selection: AI_PROVIDER picks a preset (openrouter/groq/ollama/
-		// openai/anthropic/custom) that fills in the base URL + free default; the
-		// legacy OPENAI_* / ANTHROPIC_API_KEY vars still work as fallbacks.
-		aiFree := cfg.GetBoolPtr(ctx, "AI_FREE", "ai_free")
-		if aiFree == nil {
-			aiFree = cfg.GetBoolPtr(ctx, "AI_LOCAL_MODEL", "ai_local_model")
-		}
 		if cfgAI, rerr := generation.Resolve(generation.ProviderSettings{
-			Provider:     cfg.GetStringOptional(ctx, "AI_PROVIDER", "ai_provider", ""),
-			APIKey:       cfg.GetSecretOptional(ctx, "AI_API_KEY", "ai_api_key", openaiKey),
-			BaseURL:      cfg.GetStringOptional(ctx, "AI_BASE_URL", "ai_base_url", cfg.GetStringOptional(ctx, "OPENAI_BASE_URL", "openai_base_url", "")),
-			Model:        cfg.GetStringOptional(ctx, "AI_MODEL", "ai_model", ""),
-			ModelTrial:   cfg.GetStringOptional(ctx, "AI_MODEL_TRIAL", "ai_model_trial", cfg.GetStringOptional(ctx, "OPENAI_MODEL_TRIAL", "openai_model_trial", "")),
-			ModelPaid:    cfg.GetStringOptional(ctx, "AI_MODEL_PAID", "ai_model_paid", cfg.GetStringOptional(ctx, "OPENAI_MODEL_PAID", "openai_model_paid", "")),
-			Free:         aiFree,
-			AnthropicKey: anthropicKey,
-			Search:       aiSearch,
+			Provider:   aiProviderName,
+			APIKey:     aiKey,
+			BaseURL:    cfg.GetStringOptional(ctx, "AI_BASE_URL", "ai_base_url", ""),
+			Model:      cfg.GetStringOptional(ctx, "AI_MODEL", "ai_model", ""),
+			ModelTrial: cfg.GetStringOptional(ctx, "AI_MODEL_TRIAL", "ai_model_trial", ""),
+			ModelPaid:  cfg.GetStringOptional(ctx, "AI_MODEL_PAID", "ai_model_paid", ""),
+			Free:       cfg.GetBoolPtr(ctx, "AI_FREE", "ai_free"),
+			Search:     aiSearch,
 		}); rerr != nil {
 			log.Printf("AI provider misconfigured, AI features disabled: %v", rerr)
 		} else if provider, perr := generation.NewProvider(cfgAI); perr == nil {
 			aiProvider = provider
 		}
 
-		// Writing assistant generator: the OpenAI provider implements
+		// Warmup content bank + offline AI generator. The generator rides OpenAI's
+		// Batch API specifically, so it only runs when the selected provider is
+		// OpenAI itself; otherwise the live send path keeps using the static
+		// library and admin generation returns "not configured".
+		var generationClient *generation.GenerationClient
+		if (aiProviderName == "" || aiProviderName == "openai") && aiKey != "" {
+			generationClient = generation.NewClient(aiKey)
+		}
+		warmupContentService = warmupcontent.NewService(warmupContentRepo, generationClient)
+
+		// Writing assistant generator: the OpenAI-compatible provider implements
 		// WritingGenerator directly; the Anthropic connector delegates writing to
 		// the dedicated Anthropic writing client. Neither configured => nil => 503.
 		if wg, ok := aiProvider.(generation.WritingGenerator); ok {
 			writingGenerator = wg
-		} else if anthropicKey != "" {
-			writingGenerator = generation.NewAnthropicClient(anthropicKey)
+		} else if aiProviderName == "anthropic" && aiKey != "" {
+			writingGenerator = generation.NewAnthropicClient(aiKey)
 		}
 		creditRepository = repository.NewCreditRepository(primaryDB)
 		creditService = credits.NewService(creditRepository, cache)
@@ -1075,7 +1068,7 @@ func main() {
 		integrationServiceForHandler.SetPublisher(streamingPublisher)
 		// AI automation nodes (ai_classify / ai_extract / ai_generate) run over the
 		// same provider + credit ledger as the rest of the AI layer. Nil provider
-		// (no OPENAI_API_KEY) leaves the nodes returning a clean "not available".
+		// (no AI_PROVIDER) leaves the nodes returning a clean "not available".
 		integrationServiceForHandler.SetAI(aiProvider, creditService)
 		// Port reply-classifier Layer 3 onto the platform provider (OpenAI-first,
 		// self-hostable). Platform-paid, never charged to org credits. Nil provider

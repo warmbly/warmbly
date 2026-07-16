@@ -10,30 +10,24 @@ import (
 // and supplies just a key + model; the preset fills in the base URL and the
 // free/un-metered default. OpenRouter is the OSS-agentic-tool pattern: one
 // OpenAI-compatible endpoint + one key fronting every vendor's models, so
-// "switching models" is just changing AI_MODEL. Legacy OPENAI_* / ANTHROPIC_*
-// still work (the caller passes them as fallbacks), so existing deploys are
-// unaffected.
+// "switching models" is just changing AI_MODEL.
 
 // ProviderSettings are the raw, env-sourced inputs for provider selection.
 type ProviderSettings struct {
-	// Provider is the AI_PROVIDER preset. Empty infers from the keys for
-	// backward compatibility (OpenAI when a key is present, else Anthropic).
+	// Provider is the AI_PROVIDER preset. Empty means openai.
 	Provider string
-	// APIKey is the key for the selected provider (AI_API_KEY, or the legacy
-	// OPENAI_API_KEY fallback).
+	// APIKey is the key for the selected provider (AI_API_KEY).
 	APIKey string
-	// BaseURL overrides the preset endpoint (AI_BASE_URL / OPENAI_BASE_URL).
+	// BaseURL overrides the preset endpoint (AI_BASE_URL).
 	BaseURL string
 	// Model sets both tiers (AI_MODEL). ModelTrial / ModelPaid override per tier.
 	Model      string
 	ModelTrial string
 	ModelPaid  string
-	// Free marks the model as un-metered (AI_FREE / AI_LOCAL_MODEL). nil uses the
-	// preset default (true for local backends like Ollama).
-	Free *bool
-	// AnthropicKey is the fallback for the Anthropic connector (ANTHROPIC_API_KEY).
-	AnthropicKey string
-	Search       SearchClient
+	// Free marks the model as un-metered (AI_FREE). nil uses the preset default
+	// (true for local backends like Ollama).
+	Free   *bool
+	Search SearchClient
 }
 
 type providerPreset struct {
@@ -75,20 +69,12 @@ func presetFor(name string) (providerPreset, bool) {
 func Resolve(s ProviderSettings) (ProviderConfig, error) {
 	name := strings.ToLower(strings.TrimSpace(s.Provider))
 	if name == "" {
-		if strings.TrimSpace(s.APIKey) == "" && strings.TrimSpace(s.AnthropicKey) != "" {
-			name = "anthropic"
-		} else {
-			name = "openai"
-		}
+		name = "openai"
 	}
 	preset, _ := presetFor(name)
 
 	if preset.anthropic {
-		key := s.APIKey
-		if strings.TrimSpace(key) == "" {
-			key = s.AnthropicKey
-		}
-		return ProviderConfig{AnthropicAPIKey: key, Search: s.Search}, nil
+		return ProviderConfig{AnthropicAPIKey: s.APIKey, Search: s.Search}, nil
 	}
 
 	free := preset.free
