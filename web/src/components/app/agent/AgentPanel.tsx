@@ -1,7 +1,8 @@
 // Right-side AI assistant workspace. Persistent across routes, opened from the
-// header sparkle button or Cmd+I. A real multi-conversation surface: several
+// header spark button or Cmd+I. A real multi-conversation surface: several
 // chats run as tabs (each streams its own tool-using agent over SSE), a history
-// rail lists past sessions, and the panel expands to a full-width workspace.
+// rail lists past sessions, the panel expands to a full-width workspace, and
+// minimizing docks it into a bottom-right status bar while runs keep going.
 //
 // Tab state (including the unsent composer draft) lives in the store
 // (agentSlice) so tabs survive the panel closing and a background run keeps
@@ -13,7 +14,6 @@ import React from "react";
 import { motion } from "framer-motion";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
-    SparklesIcon,
     XIcon,
     ArrowUpIcon,
     ArrowDownIcon,
@@ -27,6 +27,8 @@ import {
     ShieldQuestionIcon,
     Maximize2Icon,
     Minimize2Icon,
+    MinusIcon,
+    ChevronUpIcon,
     ClockIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -42,6 +44,7 @@ import getAgentMessages from "@/lib/api/client/app/agent/getAgentMessages";
 import streamAgentRun from "@/lib/api/client/app/agent/streamAgentRun";
 import useAgentSessions from "@/lib/api/hooks/app/agent/useAgentSessions";
 import Markdown from "./Markdown";
+import AgentMark from "./AgentMark";
 import type {
     AgentStreamEvent,
     AgentSession,
@@ -65,8 +68,11 @@ export default function AgentPanel() {
     const setOpen = useAppStore((s) => s.setAIAssistantOpen);
     const expanded = useAppStore((s) => s.agentExpanded);
     const setExpanded = useAppStore((s) => s.setAgentExpanded);
+    const minimized = useAppStore((s) => s.agentMinimized);
+    const setMinimized = useAppStore((s) => s.setAgentMinimized);
     const tabs = useAppStore((s) => s.agentTabs);
     const activeKey = useAppStore((s) => s.agentActiveKey);
+    const visible = open && !minimized;
 
     const navigate = useNavigate();
     const location = useLocation();
@@ -105,21 +111,28 @@ export default function AgentPanel() {
         el.style.height = Math.min(el.scrollHeight, 128) + "px";
     }, []);
 
-    // Opening the panel with no tabs starts a fresh conversation; focus lands
-    // in the composer once the slide-in starts.
+    // Opening (or restoring from the dock) with no tabs starts a fresh
+    // conversation; focus lands in the composer once the slide-in starts.
     React.useEffect(() => {
-        if (!open) return;
+        if (!visible) return;
         useAppStore.getState().agentEnsureTab();
         const t = window.setTimeout(() => inputRef.current?.focus(), 80);
         return () => window.clearTimeout(t);
-    }, [open]);
+    }, [visible]);
+
+    // Viewing a tab (panel open, not minimized) marks its finished runs seen.
+    React.useEffect(() => {
+        if (visible && activeTab?.unseen) {
+            useAppStore.getState().agentPatchTab(activeTab.key, { unseen: false });
+        }
+    }, [visible, activeTab?.key, activeTab?.unseen]);
 
     // Switching tabs jumps to that conversation's latest message and refocuses
     // the composer.
     React.useEffect(() => {
         setPinned(true);
         requestAnimationFrame(() => scrollToBottom());
-        if (open) inputRef.current?.focus();
+        if (visible) inputRef.current?.focus();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeKey]);
 
@@ -242,7 +255,13 @@ export default function AgentPanel() {
             );
         } finally {
             aborts.delete(tabKey);
-            useAppStore.getState().agentPatchTab(tabKey, { running: false });
+            const st = useAppStore.getState();
+            st.agentPatchTab(tabKey, { running: false });
+            // Finished while the user wasn't looking at this tab: flag it so the
+            // tab dot, dock, and header icon can say a response is ready.
+            if (!st.aiAssistantOpen || st.agentMinimized || st.agentActiveKey !== tabKey) {
+                st.agentPatchTab(tabKey, { unseen: true });
+            }
         }
     }
 
@@ -327,32 +346,49 @@ export default function AgentPanel() {
         }
     }
 
+    function closePanel() {
+        setOpen(false);
+        setMinimized(false);
+    }
+
     return (
         <>
             {/* Mobile backdrop. */}
-            {open && (
+            {visible && (
                 <div
-                    onClick={() => setOpen(false)}
+                    onClick={closePanel}
                     className="fixed inset-0 z-40 bg-slate-900/20 md:hidden"
+                />
+            )}
+            {/* Minimized dock: compact status bar; runs keep streaming into it. */}
+            {open && minimized && (
+                <DockBar
+                    tabs={tabs}
+                    activeKey={activeKey}
+                    onRestore={(key) => {
+                        if (key) useAppStore.getState().agentSetActive(key);
+                        setMinimized(false);
+                    }}
+                    onClose={closePanel}
                 />
             )}
             <motion.aside
                 initial={false}
-                animate={{ x: open ? 0 : "101%" }}
+                animate={{ x: visible ? 0 : "101%" }}
                 transition={{ type: "spring", stiffness: 380, damping: 40 }}
                 // inert keeps the off-screen panel out of the tab order.
-                inert={!open}
+                inert={!visible}
                 onKeyDown={(e) => {
                     if (e.key === "Escape") {
                         e.stopPropagation();
-                        setOpen(false);
+                        closePanel();
                     }
                 }}
                 className={cn(
                     "fixed right-0 top-0 z-50 h-full bg-white border-l border-slate-200 shadow-[0_0_60px_-12px_rgba(15,23,42,0.3)] flex",
                     expanded ? "w-full sm:w-[min(1080px,94vw)]" : "w-full sm:w-[440px]",
                 )}
-                aria-hidden={!open}
+                aria-hidden={!visible}
             >
                 {/* History rail (expanded only). */}
                 {expanded && (
@@ -367,13 +403,21 @@ export default function AgentPanel() {
                 <div className="flex-1 min-w-0 flex flex-col">
                     {/* Header */}
                     <div className="shrink-0 px-3 h-12 flex items-center gap-2 border-b border-slate-200">
-                        <div className="size-7 rounded-md bg-sky-50 border border-sky-100 text-sky-600 flex items-center justify-center">
-                            <SparklesIcon className="w-4 h-4" />
+                        <div className="size-7 rounded-md bg-slate-900 text-white flex items-center justify-center">
+                            <AgentMark className="w-3.5 h-3.5" />
                         </div>
                         <div className="text-[13px] font-semibold text-slate-900">
                             Assistant
                         </div>
                         <div className="ml-auto flex items-center gap-1">
+                            <button
+                                onClick={() => setMinimized(true)}
+                                title="Minimize to dock"
+                                aria-label="Minimize to dock"
+                                className="size-7 rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100 inline-flex items-center justify-center transition-colors"
+                            >
+                                <MinusIcon className="w-4 h-4" />
+                            </button>
                             <button
                                 onClick={() => setExpanded(!expanded)}
                                 title={expanded ? "Collapse" : "Expand to workspace"}
@@ -389,7 +433,7 @@ export default function AgentPanel() {
                                 )}
                             </button>
                             <button
-                                onClick={() => setOpen(false)}
+                                onClick={closePanel}
                                 title="Close"
                                 aria-label="Close assistant"
                                 className="size-7 rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100 inline-flex items-center justify-center transition-colors"
@@ -478,7 +522,10 @@ export default function AgentPanel() {
                     {/* Composer */}
                     <div className="shrink-0 border-t border-slate-200 p-3">
                         <div className={cn(expanded && "mx-auto w-full max-w-[760px]")}>
-                            <div className="flex items-end gap-2 rounded-lg border border-slate-200 focus-within:border-sky-400 focus-within:ring-2 focus-within:ring-sky-100 px-2.5 py-2 transition-colors">
+                            {/* py-1 + leading-5 make a single line exactly the
+                                size-7 button height, so text centers against it;
+                                items-end keeps the button pinned when it grows. */}
+                            <div className="flex items-end gap-2 rounded-lg border border-slate-200 focus-within:border-sky-400 focus-within:ring-2 focus-within:ring-sky-100 px-2.5 py-1.5 transition-colors">
                                 <textarea
                                     ref={inputRef}
                                     value={draft}
@@ -500,7 +547,7 @@ export default function AgentPanel() {
                                             : "Ask about contacts, campaigns, your inbox…"
                                     }
                                     disabled={composerLocked}
-                                    className="flex-1 resize-none bg-transparent text-[13px] text-slate-900 placeholder:text-slate-400 outline-none max-h-32 disabled:opacity-60"
+                                    className="flex-1 resize-none bg-transparent py-1 text-[13px] leading-5 text-slate-900 placeholder:text-slate-400 outline-none max-h-32 disabled:opacity-60"
                                 />
                                 {activeTab?.running ? (
                                     <button
@@ -622,7 +669,11 @@ function TabBar({
                             <span
                                 className={cn(
                                     "size-1.5 shrink-0 rounded-full",
-                                    t.pending ? "bg-amber-500" : "bg-slate-300",
+                                    t.pending
+                                        ? "bg-amber-500"
+                                        : t.unseen
+                                          ? "bg-sky-500"
+                                          : "bg-slate-300",
                                 )}
                             />
                         )}
@@ -650,6 +701,120 @@ function TabBar({
                 <PlusIcon className="w-4 h-4" />
             </button>
         </div>
+    );
+}
+
+// ── Minimized dock ──────────────────────────────────────────────────
+// Compact bottom-right status bar shown while the panel is minimized. It
+// mirrors the most urgent tab (running > approval > unread > active) live;
+// clicking it restores the panel on that tab.
+function DockBar({
+    tabs,
+    activeKey,
+    onRestore,
+    onClose,
+}: {
+    tabs: AgentTab[];
+    activeKey: string | null;
+    onRestore: (key: string | null) => void;
+    onClose: () => void;
+}) {
+    const focus =
+        tabs.find((t) => t.running) ??
+        tabs.find((t) => t.pending) ??
+        tabs.find((t) => t.unseen) ??
+        tabs.find((t) => t.key === activeKey) ??
+        tabs[0] ??
+        null;
+
+    let status: React.ReactNode;
+    if (focus?.running) {
+        status = (
+            <span className="inline-flex items-center gap-1.5 text-slate-500">
+                <Loader2Icon className="w-3 h-3 animate-spin text-sky-500" />
+                Working
+                {focus.iteration > 0 && (
+                    <span className="font-mono tabular-nums text-slate-400">
+                        {focus.iteration}/{focus.budget}
+                    </span>
+                )}
+            </span>
+        );
+    } else if (focus?.pending) {
+        status = (
+            <span className="inline-flex items-center gap-1.5 text-amber-700">
+                <span className="size-1.5 rounded-full bg-amber-500" />
+                Needs approval
+            </span>
+        );
+    } else if (focus?.unseen) {
+        status = (
+            <span className="inline-flex items-center gap-1.5 text-sky-700">
+                <span className="size-1.5 rounded-full bg-sky-500" />
+                Response ready
+            </span>
+        );
+    } else {
+        status = (
+            <span className="inline-flex items-center gap-1.5 text-slate-400">
+                <span className="size-1.5 rounded-full bg-slate-300" />
+                Idle
+            </span>
+        );
+    }
+
+    return (
+        <motion.div
+            initial={{ y: 16, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ type: "spring", stiffness: 420, damping: 34 }}
+            className="fixed bottom-4 right-4 z-50"
+        >
+            <div
+                role="button"
+                tabIndex={0}
+                onClick={() => onRestore(focus?.key ?? null)}
+                onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        onRestore(focus?.key ?? null);
+                    }
+                }}
+                className="h-10 pl-1.5 pr-1 rounded-lg border border-slate-200 bg-white shadow-lg shadow-slate-900/10 flex items-center gap-2 cursor-pointer hover:border-slate-300 transition-colors"
+            >
+                <span className="size-7 rounded-md bg-slate-900 text-white flex items-center justify-center shrink-0">
+                    <AgentMark className="w-3.5 h-3.5" />
+                </span>
+                <span className="max-w-[160px] truncate text-[12.5px] font-medium text-slate-800">
+                    {focus?.title ?? "Assistant"}
+                </span>
+                <span className="text-[11.5px]">{status}</span>
+                <span className="flex items-center gap-0.5 pl-1">
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onRestore(focus?.key ?? null);
+                        }}
+                        title="Restore"
+                        aria-label="Restore assistant"
+                        className="size-6 rounded inline-flex items-center justify-center text-slate-400 hover:text-slate-900 hover:bg-slate-100 transition-colors"
+                    >
+                        <ChevronUpIcon className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onClose();
+                        }}
+                        title="Close"
+                        aria-label="Close assistant"
+                        className="size-6 rounded inline-flex items-center justify-center text-slate-400 hover:text-slate-900 hover:bg-slate-100 transition-colors"
+                    >
+                        <XIcon className="w-3.5 h-3.5" />
+                    </button>
+                </span>
+            </div>
+        </motion.div>
     );
 }
 
@@ -969,8 +1134,8 @@ const STARTERS = [
 function EmptyState({ onPick }: { onPick: (q: string) => void }) {
     return (
         <div className="flex-1 flex flex-col items-center justify-center text-center px-6 py-10">
-            <div className="size-10 rounded-xl bg-sky-50 border border-sky-100 text-sky-600 flex items-center justify-center mb-3">
-                <SparklesIcon className="w-5 h-5" />
+            <div className="size-10 rounded-lg bg-slate-900 text-white flex items-center justify-center mb-3">
+                <AgentMark className="w-4.5 h-4.5" />
             </div>
             <div className="text-[13px] font-semibold text-slate-900">
                 How can I help?
