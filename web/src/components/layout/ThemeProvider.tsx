@@ -1,39 +1,17 @@
 import { useEffect } from 'react'
 import { useAppStore } from '@/stores'
 
+// The dashboard is light-only today. This used to mirror the OS preference
+// onto a `.dark` root class, but only the CSS-variable components (command
+// palette, toasts) have dark styles, so on a dark-mode OS the palette went
+// dark inside an all-white app. Force light until a real dark theme ships.
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const theme = useAppStore((state) => state.theme)
   const setResolvedTheme = useAppStore((state) => state.setResolvedTheme)
 
   useEffect(() => {
-    const root = document.documentElement
-
-    const applyTheme = () => {
-      if (theme === 'system') {
-        const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches
-          ? 'dark'
-          : 'light'
-        root.classList.toggle('dark', systemTheme === 'dark')
-        setResolvedTheme(systemTheme)
-      } else {
-        root.classList.toggle('dark', theme === 'dark')
-        setResolvedTheme(theme)
-      }
-    }
-
-    applyTheme()
-
-    // Listen for system theme changes
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
-    const handleChange = () => {
-      if (theme === 'system') {
-        applyTheme()
-      }
-    }
-
-    mediaQuery.addEventListener('change', handleChange)
-    return () => mediaQuery.removeEventListener('change', handleChange)
-  }, [theme, setResolvedTheme])
+    document.documentElement.classList.remove('dark')
+    setResolvedTheme('light')
+  }, [setResolvedTheme])
 
   return <>{children}</>
 }

@@ -45,12 +45,12 @@ const getInitialTheme = (): Theme => {
   return (localStorage.getItem('theme') as Theme) || 'system'
 }
 
-const getResolvedTheme = (theme: Theme): 'light' | 'dark' => {
-  if (theme === 'system') {
-    if (typeof window === 'undefined') return 'light'
-    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-  }
-  return theme
+// The dashboard is light-only today: every surface is styled on white, so a
+// resolved dark theme would flip only the CSS-variable components (command
+// palette, toasts) and look broken. 'dark'/'system' are accepted but resolve
+// to light until a real dark theme ships.
+const getResolvedTheme = (_theme: Theme): 'light' | 'dark' => {
+  return 'light'
 }
 
 export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set, get) => ({
@@ -82,7 +82,7 @@ export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set, get) 
     if (get().theme === theme) return
     localStorage.setItem('theme', theme)
     const resolvedTheme = getResolvedTheme(theme)
-    document.documentElement.classList.toggle('dark', resolvedTheme === 'dark')
+    document.documentElement.classList.remove('dark')
     set({ theme, resolvedTheme })
   },
   setResolvedTheme: (resolvedTheme) =>
