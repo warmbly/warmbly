@@ -49,7 +49,7 @@ type Sequence struct {
 // ActionConfig is the persisted config for a non-email (action/wait) node. Type
 // is the switch the task executes on; the remaining fields are type-scoped.
 type ActionConfig struct {
-	Type string `json:"type"` // wait | add_tag | remove_tag | label_email | unsubscribe | notify | create_task | create_deal | move_deal_stage | run_automation | fire_event | end
+	Type string `json:"type"` // wait | add_tag | remove_tag | label_email | unsubscribe | notify | create_task | create_deal | move_deal_stage | run_automation | fire_event | ai | end
 
 	// wait
 	WaitMinutes *int `json:"wait_minutes,omitempty"`
@@ -97,6 +97,56 @@ type ActionConfig struct {
 	// templated against the contact; the fields become the event payload.
 	EventName   string     `json:"event_name,omitempty"`
 	EventFields []ActionKV `json:"event_fields,omitempty"`
+
+	// ai — a free-form AI step: the model follows AIInstruction (templated
+	// against the contact) over the contact's data. AILabels, when set, has it
+	// pick EXACTLY one label, stored on the contact's progress row for this step
+	// so an "ai_label" branch routes on it. AIOutputFields, when set, are
+	// contact custom-field names the model fills (usable as {{.field}} in later
+	// emails). AIActions, when set, are pre-configured side effects the model
+	// may choose to trigger for the contact. Costs one AI credit per contact;
+	// always runs through the scheduler (never the instant chain), so an
+	// instant branch pauses at it.
+	AIInstruction  string         `json:"ai_instruction,omitempty"`
+	AILabels       []string       `json:"ai_labels,omitempty"`
+	AIOutputFields []string       `json:"ai_output_fields,omitempty"`
+	AIActions      []AIStepAction `json:"ai_actions,omitempty"`
+
+	// Context opt-outs for the ai step. By default the model also sees the
+	// contact's campaign history (which steps ran, opens/clicks/replies, prior
+	// AI labels) and the newest email received from them, so decisions can be
+	// grounded in "what happened so far". Stored inverted so existing steps
+	// keep the richer context.
+	AINoEngagement bool `json:"ai_no_engagement,omitempty"`
+	AINoReplies    bool `json:"ai_no_replies,omitempty"`
+}
+
+// AIStepAction is one action an "ai" step is allowed to trigger. The user
+// configures the action (same shapes as a normal action node); the model
+// decides WHETHER it runs for a contact and, for tag/label actions with a
+// Choices set, WHICH of the allowed targets apply. When is optional
+// plain-language guidance for those decisions ("when they look interested").
+// Nested ai/wait/end types are rejected on write, so an AI step can never
+// chain into another model call.
+type AIStepAction struct {
+	ID     string       `json:"id"`
+	When   string       `json:"when,omitempty"`
+	Action ActionConfig `json:"action"`
+	// Choices, for add_tag / remove_tag / label_email actions, is the closed
+	// set of tags/labels the model may pick from (any that apply, up to
+	// MaxChoices). When empty the action runs exactly as configured. Names are
+	// denormalized by the editor so the model can reason in words; ids are what
+	// executes.
+	Choices []AIStepChoice `json:"choices,omitempty"`
+	// MaxChoices caps how many of the Choices the model may apply. 0 = no cap
+	// (any subset of the configured set).
+	MaxChoices int `json:"max_choices,omitempty"`
+}
+
+// AIStepChoice is one allowed tag/label target for an AI-decided action.
+type AIStepChoice struct {
+	CategoryID uuid.UUID `json:"category_id"`
+	Name       string    `json:"name"`
 }
 
 // ActionKV is one templated input passed to a launched automation.
@@ -192,13 +242,20 @@ type BranchCondition struct {
 	// replies (auto_reply / out_of_office) — only a human reply sets replied_at,
 	// so a vacation autoresponder never trips "replied" or stop_on_reply. Use the
 	// reply_automated field to branch specifically on an automated reply.
+	//
+	// "ai_label" (operator "is", value in Label) matches when the AI step that
+	// owns this branch stored that label for the contact — deterministic at
+	// schedule time, no model call.
 	Field string `json:"field"`
 	// Operator is the comparison. "within_days" (the signal occurred in the last
 	// Value days) and "ever" (the signal occurred at all). For the not_* fields
 	// the meaning inverts (did NOT happen within / ever). The reply_* fields take
-	// operator "ever" (no Value).
+	// operator "ever" (no Value). "is" pairs with "ai_label" (compare to Label).
 	Operator string `json:"operator"`
 	// Value is the day window for "within_days". nil for operators that take no
 	// argument (e.g. "ever").
 	Value *int `json:"value"`
+	// Label is the AI-step label an "ai_label" condition compares against
+	// (case-insensitive). Empty for every other field.
+	Label string `json:"label,omitempty"`
 }
