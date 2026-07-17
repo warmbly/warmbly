@@ -399,13 +399,16 @@ type AutomationEdge struct {
 // For the generic "field" type, Key names the event-data key to test. For the
 // "expression" type, Expression is a Go-template predicate (truthy when it
 // renders a non-empty, non-false value) evaluated against the native event data,
-// giving full string/number/boolean logic.
+// giving full string/number/boolean logic. For the "ai" type, Prompt is a
+// plain-language yes/no question the model answers over the event data (the
+// true edge is YES, false is NO; costs one AI credit per evaluation).
 type AutomationCondition struct {
 	Field      string `json:"field"`
 	Key        string `json:"key,omitempty"`
 	Operator   string `json:"operator"`
 	Value      any    `json:"value,omitempty"`
 	Expression string `json:"expression,omitempty"`
+	Prompt     string `json:"prompt,omitempty"`
 }
 
 // AutomationWrite is the create/update payload from the flow builder.

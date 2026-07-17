@@ -39,7 +39,51 @@ const (
 	aiClassVar         = "ai_class"
 	aiTextVar          = "ai_text"
 	automationRunIDKey = "_run_id"
+
+	// maxAIConditionPrompt bounds an Ask-AI branch question at write time.
+	maxAIConditionPrompt = 2000
+
+	// aiLabelEdgePrefix marks a per-label edge out of an ai_classify node
+	// ("label:<x>"): the walk follows it only when the model picked <x>, so
+	// one classify node routes multi-way on the canvas.
+	aiLabelEdgePrefix = "label:"
 )
+
+// aiClassifyHasLabel reports whether label is one of the classify node's
+// configured labels (case-insensitive). Used to validate per-label edges.
+func aiClassifyHasLabel(raw json.RawMessage, label string) bool {
+	for _, l := range nonEmptyStrings(parseAIConfig(raw).Labels) {
+		if strings.EqualFold(l, strings.TrimSpace(label)) {
+			return true
+		}
+	}
+	return false
+}
+
+// actionSuccessEdges picks the edges to follow after an action node ran
+// without an unhandled error. Plain edges always follow; "error" edges never
+// follow here; an ai_classify node's "label:<x>" edges follow only when the
+// model's stored verdict matches x, giving the canvas multi-way AI routing.
+func actionSuccessEdges(n models.AutomationNode, data map[string]any, edges []models.AutomationEdge) []models.AutomationEdge {
+	verdict := ""
+	if n.Action == models.IntegrationActionAIClassify {
+		verdict = strings.TrimSpace(valueString(data[classifyOutputKey(parseAIConfig(n.Config))]))
+	}
+	out := make([]models.AutomationEdge, 0, len(edges))
+	for _, e := range edges {
+		if e.When == "error" {
+			continue
+		}
+		if lbl, ok := strings.CutPrefix(e.When, aiLabelEdgePrefix); ok {
+			if verdict != "" && strings.EqualFold(strings.TrimSpace(lbl), verdict) {
+				out = append(out, e)
+			}
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
+}
 
 // aiActionConfig is the per-node config for an AI action node.
 type aiActionConfig struct {
@@ -126,8 +170,11 @@ func (s *service) execAIAction(ctx context.Context, a models.Automation, n model
 		Temperature: aiTemperature(n.Action),
 	})
 	if gerr != nil || res == nil {
-		// The org paid for a step the provider couldn't complete: refund it.
-		_, _ = s.credits.Grant(ctx, a.OrganizationID, aiNodeCredits, "automation_ai_refund")
+		// The org paid for a step the provider couldn't complete: refund it. A
+		// free/local model was never charged, so never mint credits for it.
+		if !s.aiProvider.IsLocal() {
+			_, _ = s.credits.Grant(ctx, a.OrganizationID, aiNodeCredits, "automation_ai_refund")
+		}
 		if gerr != nil {
 			return fmt.Errorf("AI step failed: %w", gerr)
 		}
@@ -142,6 +189,78 @@ func (s *service) execAIAction(ctx context.Context, a models.Automation, n model
 		_ = s.repo.ResetAutomationAICreditFailures(ctx, a.ID)
 	}
 	return nil
+}
+
+// evalAICondition answers an Ask-AI branch node's yes/no question about the
+// event. Same lifecycle as execAIAction: one credit (idempotent per run+node,
+// refunded on provider failure), 20s ceiling, deterministic sampling. Any error
+// (no provider, out of credits, provider failure, ambiguous answer) is returned
+// so the caller records it — the walk fails safe down the false edge.
+func (s *service) evalAICondition(ctx context.Context, a models.Automation, n models.AutomationNode, data map[string]any, feedPause bool) (bool, error) {
+	if s.aiProvider == nil || s.credits == nil {
+		return false, errors.New("AI branches are not available on this deployment")
+	}
+	if n.Condition == nil {
+		return false, errors.New("this Ask AI branch has no question")
+	}
+	question := strings.TrimSpace(renderTemplate(n.Condition.Prompt, data))
+	if question == "" {
+		return false, errors.New("this Ask AI branch has no question")
+	}
+
+	model := s.aiProvider.ModelForTier(false)
+	idemKey := "auto_ai:" + stringFromMap(data, automationRunIDKey) + ":" + n.ID
+	if !s.aiProvider.IsLocal() {
+		if _, cerr := s.credits.Consume(ctx, a.OrganizationID, aiNodeCredits, "automation_ai", model, 0, idemKey); cerr != nil {
+			switch {
+			case errors.Is(cerr, credits.ErrInsufficientCredits):
+				if feedPause {
+					s.noteAICreditFailure(ctx, a)
+				}
+				return false, fmt.Errorf("out of AI credits: this branch needs %d credit", aiNodeCredits)
+			case errors.Is(cerr, credits.ErrCapExceeded):
+				return false, errors.New("AI usage cap reached; try again later")
+			default:
+				return false, cerr
+			}
+		}
+	}
+
+	cctx, cancel := context.WithTimeout(ctx, aiNodeTimeout)
+	defer cancel()
+
+	system := "You answer a yes/no question about an automation event. Follow the question, read the event data, and reply with EXACTLY one word: YES or NO."
+	prompt := "Question: " + question + "\n\nEvent data:\n" + aiEventContext(data)
+	res, gerr := s.aiProvider.Complete(cctx, generation.CompletionRequest{
+		System:      system,
+		Prompt:      prompt,
+		Model:       model,
+		MaxTokens:   8,
+		Temperature: generation.Deterministic(),
+	})
+	if gerr != nil || res == nil {
+		if !s.aiProvider.IsLocal() {
+			_, _ = s.credits.Grant(ctx, a.OrganizationID, aiNodeCredits, "automation_ai_refund")
+		}
+		if gerr != nil {
+			return false, fmt.Errorf("AI branch failed: %w", gerr)
+		}
+		return false, errors.New("AI branch returned no output")
+	}
+
+	if feedPause {
+		_ = s.repo.ResetAutomationAICreditFailures(ctx, a.ID)
+	}
+	ans := strings.ToUpper(strings.Trim(strings.TrimSpace(res.Text), ".\"'` \n\t"))
+	switch {
+	case strings.HasPrefix(ans, "YES"):
+		return true, nil
+	case strings.HasPrefix(ans, "NO"):
+		return false, nil
+	default:
+		// Ambiguous answers fail safe to NO, surfaced in run history.
+		return false, fmt.Errorf("AI gave an ambiguous answer: %s", truncate(res.Text, 80))
+	}
 }
 
 // noteAICreditFailure advances the consecutive out-of-credits counter and pauses

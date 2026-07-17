@@ -70,8 +70,15 @@ func (s *service) executeAutomationGraph(ctx context.Context, a models.Automatio
 		switch n.Type {
 		case models.AutomationNodeCondition:
 			res := false
+			var condErr error
 			if n.Condition != nil {
-				res = evaluateAutomationCondition(*n.Condition, data, baseSeed+"|"+id)
+				if n.Condition.Field == models.AutoCondAI {
+					// Ask-AI branch: credit-charged model call; errors fail safe
+					// down the false edge and are recorded on the run.
+					res, condErr = s.evalAICondition(ctx, a, n, data, true)
+				} else {
+					res = evaluateAutomationCondition(*n.Condition, data, baseSeed+"|"+id)
+				}
 			}
 			want := "false"
 			status := "branch_false"
@@ -79,7 +86,11 @@ func (s *service) executeAutomationGraph(ctx context.Context, a models.Automatio
 				want = "true"
 				status = "branch_true"
 			}
-			results = append(results, models.AutomationNodeResult{NodeID: id, Type: "condition", Label: conditionSummary(n.Condition), Status: status})
+			nr := models.AutomationNodeResult{NodeID: id, Type: "condition", Label: conditionSummary(n.Condition), Status: status}
+			if condErr != nil {
+				nr.Error = truncate(condErr.Error(), 300)
+			}
+			results = append(results, nr)
 			// A condition only follows the branch matching its outcome. Edges
 			// out of a condition are always labeled true/false (enforced on
 			// write); an unlabeled edge here is malformed and ignored.
@@ -110,17 +121,13 @@ func (s *service) executeAutomationGraph(ctx context.Context, a models.Automatio
 				}
 				if !handled {
 					anyError = true
-					for _, e := range outEdges[id] {
-						if e.When != "error" {
-							queue = append(queue, e.Target)
-						}
+					for _, e := range actionSuccessEdges(n, data, outEdges[id]) {
+						queue = append(queue, e.Target)
 					}
 				}
 			} else {
-				for _, e := range outEdges[id] {
-					if e.When != "error" {
-						queue = append(queue, e.Target)
-					}
+				for _, e := range actionSuccessEdges(n, data, outEdges[id]) {
+					queue = append(queue, e.Target)
 				}
 			}
 			results = append(results, nr)
@@ -150,6 +157,9 @@ func conditionSummary(c *models.AutomationCondition) string {
 	}
 	if c.Field == models.AutoCondExpression {
 		return "expression"
+	}
+	if c.Field == models.AutoCondAI {
+		return "ask AI"
 	}
 	field := c.Field
 	if c.Field == models.AutoCondField && c.Key != "" {
@@ -286,8 +296,16 @@ func (s *service) dryRunGraph(ctx context.Context, a models.Automation, data map
 		switch n.Type {
 		case models.AutomationNodeCondition:
 			res := false
+			var condErr error
 			if n.Condition != nil {
-				res = evaluateAutomationCondition(*n.Condition, data, baseSeed+"|"+id)
+				if n.Condition.Field == models.AutoCondAI {
+					// Like AI action nodes, an Ask-AI branch runs for real in a
+					// dry-run (and is charged) so the test branches like a live
+					// run — but never feeds the auto-pause counter.
+					res, condErr = s.evalAICondition(ctx, a, n, data, false)
+				} else {
+					res = evaluateAutomationCondition(*n.Condition, data, baseSeed+"|"+id)
+				}
 			}
 			want := "false"
 			status := "branch_false"
@@ -295,7 +313,11 @@ func (s *service) dryRunGraph(ctx context.Context, a models.Automation, data map
 				want = "true"
 				status = "branch_true"
 			}
-			trace = append(trace, models.AutomationNodeResult{NodeID: id, Type: "condition", Label: conditionSummary(n.Condition), Status: status})
+			nr := models.AutomationNodeResult{NodeID: id, Type: "condition", Label: conditionSummary(n.Condition), Status: status}
+			if condErr != nil {
+				nr.Error = truncate(condErr.Error(), 300)
+			}
+			trace = append(trace, nr)
 			for _, e := range outEdges[id] {
 				if e.When == want {
 					queue = append(queue, e.Target)
@@ -333,11 +355,11 @@ func (s *service) dryRunGraph(ctx context.Context, a models.Automation, data map
 				})
 			}
 			// A dry run never fails an action, so it follows the normal path and
-			// not the "on error" branch (a skipped action still continues the walk).
-			for _, e := range outEdges[id] {
-				if e.When != "error" {
-					queue = append(queue, e.Target)
-				}
+			// not the "on error" branch (a skipped action still continues the
+			// walk; a skipped ai_classify has no verdict, so its label branches
+			// stay unfollowed).
+			for _, e := range actionSuccessEdges(n, data, outEdges[id]) {
+				queue = append(queue, e.Target)
 			}
 		default:
 			for _, e := range outEdges[id] {
