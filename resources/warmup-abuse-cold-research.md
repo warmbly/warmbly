@@ -279,6 +279,15 @@ Ordered by impact-to-effort. Recommendation 1.1/3.1 is one build (authentication
 
 **Later** (medium impact or larger build for incremental polish): items 13-21.
 
+### Status on this branch
+
+Progress already landed on `research/warmup-abuse-cold-effectiveness`:
+
+- **Item 1 (authentication) is shipped in observe-only mode.** A background consumer sweep persists each mailbox's SPF/DKIM/DMARC state (`email_accounts.auth_state` and siblings, migration `000051`) and surfaces it on the mailbox list/detail API, with `dnsauth` hardened to treat transient DNS errors as `unknown` rather than `failing`. The hard send/pool gate is deliberately NOT wired yet; flipping it on is a small follow-up against the persisted `auth_state`.
+- **Item 2 (watch-band cold throttle) is shipped.** The warmup `watch` multiplier (0.7x) now also dampens cold campaign volume via the shared `adjustmentFor` helper, so a watch-state mailbox slows across both warmup and cold sending before it hard-quarantines.
+
+Remaining items are unstarted.
+
 ### Provider-requirement vs heuristic note
 
 Hard provider requirements driving the top of the roadmap (treat as contract, not tuning): SPF+DKIM+DMARC alignment, valid PTR, TLS, and RFC 8058 one-click unsubscribe for 5,000+/day senders (Google sender guidelines effective Feb 1 2024; Yahoo Sender Hub; Microsoft/Outlook `5.7.515` enforcement from May 5 2025). Complaint <0.10% target / never reach 0.30% (Gmail/Yahoo); SES review at 0.10% complaint / 5% bounce, pause at 0.50% / 10% (AWS docs, current). Everything else (volume bands, spacing, content lint thresholds, lifecycle rotation, conversation depth) is a soft heuristic from vendor data (Woodpecker/Smartlead/Postmark/MailReach/Maildeck, 2025-2026); use for direction, not as citable contract.
