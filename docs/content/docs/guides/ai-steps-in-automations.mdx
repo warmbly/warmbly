@@ -27,6 +27,8 @@ Example: on a **Reply received** trigger, an instruction of "Classify this reply
 
 You need at least two labels. If the model's answer does not match any label exactly, the closest match is used, and if none is close the raw answer is stored so you can see what happened in the run history.
 
+A classify step can also branch **multi-way directly on the canvas**: open the node and use **Route connections by label** to mark each outgoing connection as "always" or "when `<label>`". A labeled connection runs only when the model picked that label, so one classify node fans out into one path per label with no IF nodes in between. (Conditions on `ai_class` keep working too; use them when the routing needs to combine the label with other fields.)
+
 ### AI extract
 
 Give it an instruction and a list of **output keys**. The model returns one value per key, each stored in a variable of that name. Use it to turn a free-text event into structured fields.
@@ -40,6 +42,15 @@ Give it an instruction. The model writes a short piece of text, stored in `ai_te
 <Callout type="warn" title="Generated text is never sent on its own">
 An AI generate step only writes text into a variable. Nothing is emailed or sent because a model wrote it. To use the text you connect a later step (a Slack message, a task, a webhook) that you control, and Warmbly never sends outreach email from an AI step. See the sending-safety note below.
 </Callout>
+
+## The Ask AI branch
+
+Besides the three action steps, a **condition** node can ask the model directly. Pick **Ask AI (yes/no)** as the condition's field and write a plain-language question about the event, for example "Is this reply asking about pricing?". At run time the model reads the event data and answers: yes takes the right (true) path, no takes the bottom (false) path.
+
+- The question is templated like an instruction, so `{{.subject}}` or `{{.snippet}}` work inside it.
+- Each evaluation costs one credit, refunded if the provider call fails.
+- The branch fails safe: if the model can't answer, you are out of credits, or the answer is ambiguous, the **no** path runs and the reason is recorded on the run.
+- Prefer **AI classify** plus a normal condition when you need more than two outcomes; use Ask AI when one yes/no question is all the routing needs.
 
 ## Using the result downstream
 
@@ -58,9 +69,13 @@ If two AI steps in one flow would both write `ai_class` or `ai_text`, set an **o
 - **Timing.** Each AI step is bounded to a few seconds so a slow model never stalls the flow.
 - **Sending safety.** An AI step never sends email and never contacts anyone. It only writes a variable. Any outbound message is a step you added and controls, and Warmbly never sends cold outreach from a model decision.
 
+## AI in campaign sequences
+
+Campaign sequences have their own AI step that runs per contact instead of per event: it can label the contact (and route on the label with an "AI label is …" branch) and fill contact custom fields for later emails. See [Sequences](/guides/sequences/#ai-steps).
+
 ## Testing an AI step
 
-Press **Test** in the builder to dry-run the flow. Unlike other actions, AI steps run **for real** in a Test so you can see the actual model output and the branch it drives. That means a Test spends one credit per AI step. The trace panel shows each step's output next to the node, and the path the flow took. See [Testing and run history](/guides/automations/#testing-and-run-history).
+Press **Test** in the builder to dry-run the flow. Unlike other actions, AI steps (and Ask AI branches) run **for real** in a Test so you can see the actual model output and the branch it drives. That means a Test spends one credit per AI step. The trace panel shows each step's output next to the node, and the path the flow took. See [Testing and run history](/guides/automations/#testing-and-run-history).
 
 ## See also
 
