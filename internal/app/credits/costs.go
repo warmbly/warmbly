@@ -16,8 +16,13 @@ const (
 	// CostResearchRun is one contact research run (nothing_found included).
 	CostResearchRun = 2
 
-	// CostAutomationAINode is one ai_classify/ai_extract/ai_generate node execution.
+	// CostAutomationAINode is one ai_classify/ai_extract/ai_generate node
+	// execution, and one Ask-AI branch evaluation.
 	CostAutomationAINode = 1
+
+	// CostCampaignAIStep is one campaign-sequence "ai" step execution (one
+	// contact passing through the step).
+	CostCampaignAIStep = 1
 
 	// CostInboxAgentThread is one inbound thread handled by the inbox agent.
 	CostInboxAgentThread = 5

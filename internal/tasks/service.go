@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/app/advanced"
 	"github.com/warmbly/warmbly/internal/app/cipher"
+	"github.com/warmbly/warmbly/internal/app/credits"
 	"github.com/warmbly/warmbly/internal/app/feature"
 	warmupapp "github.com/warmbly/warmbly/internal/app/warmup"
 	"github.com/warmbly/warmbly/internal/errx"
@@ -60,6 +61,11 @@ type TasksService interface {
 	// task chain died (swallowed enqueue / crash between ticks). Campaigns have
 	// no other bootstrap once started, so this is the stall backstop.
 	StartCampaignReconciler(ctx context.Context, interval time.Duration)
+
+	// SetAI wires the LLM provider + credit ledger the campaign "ai" sequence
+	// steps run over (mirrors integration.Service.SetAI). Nil provider leaves
+	// AI steps returning a clean "not available".
+	SetAI(p generation.Provider, c credits.CreditService)
 }
 
 // AutomationRunner launches an automation graph by id. It's satisfied
@@ -100,6 +106,10 @@ type tasksService struct {
 
 	// automationRunner launches automations from a campaign "run_automation" step.
 	automationRunner AutomationRunner
+
+	// aiProvider + aiCredits back the campaign "ai" sequence step (SetAI).
+	aiProvider generation.Provider
+	aiCredits  credits.CreditService
 
 	// warmupSettings caches the warmup generation settings in-process so the
 	// per-send AI-vs-static decision doesn't hit Postgres on every warmup.
@@ -164,4 +174,10 @@ func NewService(
 		automationRunner:     automationRunner,
 		warmupSettings:       &warmupSettingsCache{},
 	}
+}
+
+// SetAI wires the LLM provider + credit ledger for campaign "ai" steps.
+func (s *tasksService) SetAI(p generation.Provider, c credits.CreditService) {
+	s.aiProvider = p
+	s.aiCredits = c
 }

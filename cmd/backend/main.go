@@ -1139,6 +1139,10 @@ func main() {
 			trackedLinkRepository,
 			integrationServiceForHandler, // AutomationRunner for campaign run_automation steps
 		)
+		// Campaign "ai" sequence steps run over the same provider + credit
+		// ledger as the automation AI nodes. Nil provider leaves them
+		// returning a clean "not available".
+		tasksService.SetAI(aiProvider, creditService)
 
 		// Admin outreach composer — sends from the platform mailer
 		// (SES/SMTP) with a configurable Reply-To, audits every send.
