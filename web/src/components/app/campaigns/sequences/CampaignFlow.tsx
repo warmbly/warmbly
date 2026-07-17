@@ -33,6 +33,7 @@ import {
     MailIcon,
     PlusIcon,
     SendIcon,
+    SparklesIcon,
     TagIcon,
     TagsIcon,
     Trash2Icon,
@@ -92,7 +93,7 @@ import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import StepEmailArms from "./StepEmailArms";
 import CategoryPicker from "@/components/app/contacts/CategoryPicker";
-import type { ActionKV, SequenceAction, SequenceActionType } from "@/lib/api/models/app/campaigns/sequences/Action";
+import type { ActionKV, AIStepAction, SequenceAction, SequenceActionType } from "@/lib/api/models/app/campaigns/sequences/Action";
 import { useAutomations } from "@/lib/api/hooks/app/automations/useAutomations";
 import { triggerLabel } from "@/lib/api/models/app/automations/meta";
 import TaskTypePicker from "@/components/app/crm/TaskTypePicker";
@@ -158,6 +159,7 @@ function conditionText(b: SequenceBranch): string {
             if (c.field === "random") return `${c.value ?? 50}% random`;
             const f = BRANCH_FIELD_LABELS[c.field] ?? c.field;
             // Reply-class conditions are "ever" (no day window).
+            if (c.field === "ai_label") return `AI: ${c.label ?? "…"}`;
             if (isReplyBranchField(c.field)) return f;
             return `${f} within ${c.value ?? 3}d`;
         })
@@ -407,6 +409,7 @@ const ACTION_META: Record<string, { label: string; Icon: typeof ClockIcon; tint:
     unsubscribe: { label: "Unsubscribe", Icon: BellOffIcon, tint: "text-rose-600" },
     run_automation: { label: "Run automation", Icon: ZapIcon, tint: "text-indigo-600" },
     fire_event: { label: "Fire event", Icon: SendIcon, tint: "text-sky-600" },
+    ai: { label: "AI step", Icon: SparklesIcon, tint: "text-purple-600" },
 };
 
 // actionSummary is the one-line subtitle shown on an action node.
@@ -429,6 +432,19 @@ function actionSummary(a?: SequenceAction | null): string {
             return a.automation_id ? "Launch an automation" : "Pick an automation…";
         case "fire_event":
             return a.event_name ? `Fire "${a.event_name}"` : "Name the event…";
+        case "ai": {
+            if (!a.ai_instruction?.trim()) return "Tell AI what to do…";
+            const labels = (a.ai_labels ?? []).filter((l) => l.trim());
+            const fields = (a.ai_output_fields ?? []).filter((f) => f.trim());
+            const acts = (a.ai_actions ?? []).length;
+            const parts: string[] = [];
+            if (labels.length) parts.push(`pick 1 of ${labels.length} labels`);
+            if (fields.length) parts.push(`fill ${fields.length} field${fields.length === 1 ? "" : "s"}`);
+            if (acts) parts.push(`decide ${acts} action${acts === 1 ? "" : "s"}`);
+            if (!parts.length) return "Add labels, fields, or actions…";
+            const s = parts.join(" + ");
+            return s.charAt(0).toUpperCase() + s.slice(1);
+        }
         default:
             return "Action";
     }
@@ -1691,6 +1707,21 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                         deleteBranch(selected.source.id, selected.branch.branch_id);
                         setSelectedEdge(null);
                     }}
+                    onAddAILabel={async (label) => {
+                        // Append the new label to the source AI step's config so
+                        // the model can actually pick it; the branch save follows.
+                        const src = selected.source;
+                        const existing = (src.action?.ai_labels ?? []).filter(Boolean);
+                        try {
+                            await updateSequence(campaignId, src.id, {
+                                kind: "action",
+                                action: { ...(src.action ?? { type: "ai" }), type: "ai", ai_labels: [...existing, label] },
+                            });
+                            invalidate();
+                        } catch (err) {
+                            toast.error(buildError(err as AppError));
+                        }
+                    }}
                 />
             )}
 
@@ -1829,6 +1860,9 @@ function WaitRow({ value, onCommit }: { value: number; onCommit: (v: number) => 
 }
 
 // ── Connection editor (optional condition + wait behind a connection) ───────
+// Sentinel select value for "type a new AI label" on connections out of an AI step.
+const NEW_AI_LABEL_VALUE = "__new_ai_label__";
+
 const BRANCH_PATH_OPTIONS: SelectOption[] = [
     { value: "always", label: "always (right after the wait)" },
     { value: "opened", label: "if opened the email", group: "Engagement" },
@@ -1856,6 +1890,7 @@ function ConnectionEditor({
     onClose,
     onSave,
     onDelete,
+    onAddAILabel,
 }: {
     source: Sequence;
     branch: SequenceBranch;
@@ -1868,9 +1903,17 @@ function ConnectionEditor({
     onClose: () => void;
     onSave: (b: SequenceBranch) => void;
     onDelete: () => void;
+    // Persist a freshly typed AI label onto the source AI step's label set.
+    onAddAILabel?: (label: string) => void;
 }) {
     const c0 = branch.conditions?.[0];
-    const [field, setField] = React.useState<string>(c0 ? c0.field : "always");
+    // AI-label routes are encoded as "ai_label:<label>" select values, one per
+    // label configured on the source AI step, plus a "new label" affordance
+    // that creates the label on the step as part of saving the connection.
+    const [field, setField] = React.useState<string>(
+        c0 ? (c0.field === "ai_label" ? `ai_label:${c0.label ?? ""}` : c0.field) : "always",
+    );
+    const [newLabel, setNewLabel] = React.useState("");
     const [value, setValue] = React.useState<number>(c0?.value ?? (c0?.field === "random" ? 50 : 3));
     // Instant-capable branches (reply intent, opened, clicked) fire the moment
     // the event lands by default; this lets the user opt out so the path routes
@@ -1879,6 +1922,8 @@ function ConnectionEditor({
 
     const isAlways = field === "always";
     const isRandom = field === "random";
+    const isNewAILabel = field === NEW_AI_LABEL_VALUE;
+    const isAILabel = field.startsWith("ai_label:") || isNewAILabel;
     const isReply = isReplyBranchField(field as BranchField);
     const isInstantCapable = isInstantCapableField(field as BranchField);
     const instantVerb = field === "opened" ? "open" : field === "clicked" ? "click" : "reply";
@@ -1886,14 +1931,40 @@ function ConnectionEditor({
     const target = steps.find((s) => s.id === branch.target_step_id);
     const targetLabel = branch.target_step_id === null ? "Stop the sequence" : target ? `“${stepName(target)}”` : "—";
 
+    // AI-label paths only make sense out of an AI step; offer one option per
+    // configured label plus "new label" (created on the step when this
+    // connection saves). A previously saved label that was since removed from
+    // the step still shows so the connection isn't silently blank.
+    const isAISource = source.kind === "action" && source.action?.type === "ai";
+    const sourceAILabels = isAISource ? (source.action?.ai_labels ?? []).map((l) => l.trim()).filter(Boolean) : [];
+    const savedAILabel = c0?.field === "ai_label" ? (c0.label ?? "").trim() : "";
+    const aiLabelOptions: SelectOption[] = [...new Set([...sourceAILabels, ...(savedAILabel ? [savedAILabel] : [])])].map(
+        (l) => ({ value: `ai_label:${l}`, label: `if AI label is “${l}”`, group: "AI label" }),
+    );
+    if (isAISource) {
+        aiLabelOptions.push({ value: NEW_AI_LABEL_VALUE, label: "if AI label is… (new label)", group: "AI label" });
+    }
+    const pathOptions: SelectOption[] = [...BRANCH_PATH_OPTIONS, ...aiLabelOptions];
+    const effectiveAILabel = isNewAILabel ? newLabel.trim() : isAILabel ? field.slice("ai_label:".length) : "";
+
     const buildConditions = (): BranchCondition[] => {
         if (isAlways) return [];
         if (isRandom) return [{ field: "random", operator: "chance", value }];
+        if (isAILabel) return [{ field: "ai_label", operator: "is", label: effectiveAILabel }];
         // Reply-class conditions are checked once, ever (no day window / value).
         if (isReply) return [{ field: field as BranchField, operator: "ever" }];
         return [{ field: field as BranchField, operator: "within_days", value }];
     };
-    const save = (target_step_id: string | null) =>
+    const save = (target_step_id: string | null) => {
+        if (isAILabel && !effectiveAILabel) {
+            toast.error("Name the AI label for this path");
+            return;
+        }
+        // A newly typed label is added to the source AI step's label set so the
+        // model can actually pick it — one save wires both sides.
+        if (isNewAILabel && !sourceAILabels.some((l) => l.toLowerCase() === effectiveAILabel.toLowerCase())) {
+            onAddAILabel?.(effectiveAILabel);
+        }
         onSave({
             branch_id: branch.branch_id,
             target_step_id,
@@ -1902,6 +1973,7 @@ function ConnectionEditor({
             // intent, opened, clicked). Other fields can't fire instantly.
             instant: isInstantCapable ? instant : undefined,
         });
+    };
 
     return (
         <div className="absolute right-3 top-3 z-20 w-[300px] max-w-[calc(100vw-1.5rem)] max-h-[calc(100%-1.5rem)] overflow-y-auto rounded-md border border-slate-200 bg-white p-3 shadow-[0_12px_32px_-8px_rgba(15,23,42,0.18)]">
@@ -1962,11 +2034,16 @@ function ConnectionEditor({
                     <SelectMenu
                         className="w-full"
                         value={field}
-                        options={BRANCH_PATH_OPTIONS}
+                        options={pathOptions}
                         onChange={(f) => {
                             setField(f);
                             if (f === "random") setValue((v) => (v >= 1 && v <= 99 ? v : 50));
-                            else if (f !== "always" && !isReplyBranchField(f as BranchField))
+                            else if (
+                                f !== "always" &&
+                                f !== NEW_AI_LABEL_VALUE &&
+                                !f.startsWith("ai_label:") &&
+                                !isReplyBranchField(f as BranchField)
+                            )
                                 setValue((v) => (v >= 1 && v <= 60 ? v : 3));
                         }}
                     />
@@ -1978,7 +2055,27 @@ function ConnectionEditor({
                         <span>% of contacts (chosen at random)</span>
                     </div>
                 )}
-                {!isAlways && !isRandom && !isReply && (
+                {isNewAILabel && (
+                    <div>
+                        <p className="mb-1 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">New label</p>
+                        <TextInput
+                            value={newLabel}
+                            onChange={(v) => setNewLabel(v.slice(0, 80))}
+                            placeholder="e.g. enterprise"
+                            className="w-full"
+                        />
+                        <p className="mt-1 text-[10.5px] text-slate-400">
+                            Saving adds this label to the AI step, so the model can pick it.
+                        </p>
+                    </div>
+                )}
+                {isAILabel && (
+                    <p className="rounded-md border border-purple-200 bg-purple-50/60 px-2 py-1.5 text-[11px] leading-relaxed text-purple-700">
+                        Routes contacts the AI step labeled “{effectiveAILabel || "…"}”. Checked at the step boundary,
+                        right after the AI step runs — no extra credits.
+                    </p>
+                )}
+                {!isAlways && !isRandom && !isReply && !isAILabel && (
                     <div className="flex flex-wrap items-center gap-1.5">
                         <span>within</span>
                         <NumberInput value={value} onChange={(v) => setValue(Math.max(1, Math.min(60, Math.round(v) || 1)))} min={1} max={60} className="w-16" align="center" />
@@ -2089,6 +2186,7 @@ const ADD_ACTION_OPTIONS: { type: SequenceActionType; label: string }[] = [
     { type: "unsubscribe", label: "Unsubscribe" },
     { type: "run_automation", label: "Run automation" },
     { type: "fire_event", label: "Fire event" },
+    { type: "ai", label: "AI step" },
 ];
 
 type CreateChoice = "email" | "condition" | SequenceActionType;
@@ -2429,6 +2527,36 @@ function ActionEditor({
                 <p className="mt-1.5 text-[11px] text-slate-400">Internal label only — shown on the node.</p>
             </div>
 
+            <ActionConfigFields action={action} setAction={setAction} />
+            {action.type === "ai" && <AIStepFields action={action} setAction={setAction} />}
+
+            <div className="flex items-center justify-end pt-1">
+                <button
+                    type="button"
+                    onClick={save}
+                    disabled={saving}
+                    className="h-7 rounded-md bg-sky-600 px-3 text-[12px] font-medium text-white transition-colors hover:bg-sky-700 disabled:opacity-60"
+                >
+                    {saving ? "Saving…" : "Save action"}
+                </button>
+            </div>
+        </div>
+    );
+}
+
+// ActionConfigFields renders the per-type configuration for one action config.
+// Shared by the action-step editor and the AI step's "actions AI may take"
+// rows (where the nested action can be any type except "ai", so this component
+// never recurses).
+function ActionConfigFields({
+    action,
+    setAction,
+}: {
+    action: SequenceAction;
+    setAction: React.Dispatch<React.SetStateAction<SequenceAction>>;
+}) {
+    return (
+        <>
             {(action.type === "add_tag" || action.type === "remove_tag") && (
                 <div>
                     <Label>{action.type === "add_tag" ? "Tag to add" : "Tag to remove"}</Label>
@@ -2602,18 +2730,7 @@ function ActionEditor({
 
             {action.type === "run_automation" && <RunAutomationFields action={action} setAction={setAction} />}
             {action.type === "fire_event" && <FireEventStepFields action={action} setAction={setAction} />}
-
-            <div className="flex items-center justify-end pt-1">
-                <button
-                    type="button"
-                    onClick={save}
-                    disabled={saving}
-                    className="h-7 rounded-md bg-sky-600 px-3 text-[12px] font-medium text-white transition-colors hover:bg-sky-700 disabled:opacity-60"
-                >
-                    {saving ? "Saving…" : "Save action"}
-                </button>
-            </div>
-        </div>
+        </>
     );
 }
 
@@ -2786,6 +2903,363 @@ function FireEventStepFields({
                     </div>
                 )}
             </div>
+        </div>
+    );
+}
+
+// AIStepFields — the "tell AI what to do" step. One instruction (contact-
+// templated), an optional closed label set the model must pick one of (branch
+// on it with an "AI label is …" path out of this step), and optional contact
+// custom fields the model fills for later emails to use.
+function AIStepFields({
+    action,
+    setAction,
+}: {
+    action: SequenceAction;
+    setAction: React.Dispatch<React.SetStateAction<SequenceAction>>;
+}) {
+    const setList = (key: "ai_labels" | "ai_output_fields", next: string[]) =>
+        setAction((a) => ({ ...a, [key]: next }));
+    const list = (key: "ai_labels" | "ai_output_fields") => action[key] ?? [];
+    const updateItem = (key: "ai_labels" | "ai_output_fields", i: number, v: string) =>
+        setList(key, list(key).map((x, idx) => (idx === i ? v : x)));
+    const addItem = (key: "ai_labels" | "ai_output_fields") => {
+        if (list(key).length >= 10) return;
+        setList(key, [...list(key), ""]);
+    };
+    const removeItem = (key: "ai_labels" | "ai_output_fields", i: number) =>
+        setList(key, list(key).filter((_, idx) => idx !== i));
+
+    const stringList = (
+        key: "ai_labels" | "ai_output_fields",
+        title: string,
+        addLabel: string,
+        placeholder: string,
+        hint: string,
+        mono?: boolean,
+    ) => (
+        <div>
+            <div className="mb-1.5 flex items-center justify-between gap-2">
+                <Label className="mb-0">{title}</Label>
+                <button
+                    type="button"
+                    onClick={() => addItem(key)}
+                    className="inline-flex h-6 items-center gap-1 rounded-md border border-slate-200 bg-white px-2 text-[11.5px] font-medium text-slate-600 transition-colors hover:border-slate-300 hover:text-slate-900"
+                >
+                    <PlusIcon className="w-3 h-3" /> {addLabel}
+                </button>
+            </div>
+            {list(key).length === 0 ? (
+                <p className="text-[11px] text-slate-400">{hint}</p>
+            ) : (
+                <div className="space-y-1.5">
+                    {list(key).map((row, i) => (
+                        <div key={i} className="flex items-center gap-1.5">
+                            <TextInput
+                                value={row}
+                                onChange={(v) => updateItem(key, i, v)}
+                                placeholder={placeholder}
+                                className={`flex-1 min-w-0 ${mono ? "font-mono" : ""}`}
+                            />
+                            <button
+                                type="button"
+                                onClick={() => removeItem(key, i)}
+                                title="Remove"
+                                className="inline-flex size-6 shrink-0 items-center justify-center rounded text-slate-300 transition-colors hover:bg-rose-50 hover:text-rose-600"
+                            >
+                                <XIcon className="w-3.5 h-3.5" />
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+
+    return (
+        <div className="space-y-4">
+            <div>
+                <div className="mb-1.5 flex items-center justify-between gap-2">
+                    <Label className="mb-0">Tell AI what to do</Label>
+                    <DealNameVariableMenu
+                        onPick={(token) => setAction((a) => ({ ...a, ai_instruction: (a.ai_instruction ?? "") + token }))}
+                    />
+                </div>
+                <textarea
+                    value={action.ai_instruction ?? ""}
+                    onChange={(e) => setAction((a) => ({ ...a, ai_instruction: e.target.value }))}
+                    rows={4}
+                    maxLength={4000}
+                    placeholder={
+                        "Read this contact's reply and company details. Decide whether they're interested, not ready yet, or the wrong person."
+                    }
+                    className="w-full px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-[12.5px] text-slate-900 placeholder:text-slate-400 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 resize-y leading-relaxed"
+                />
+                <p className="mt-1 text-[11px] text-slate-400">
+                    Runs once per contact reaching this step. Supports the same {"{{.FirstName}}"} / {"{{.Company}}"} variables
+                    as your email copy. Costs 1 credit per contact.
+                </p>
+            </div>
+
+            {stringList(
+                "ai_labels",
+                "Labels (AI picks exactly one)",
+                "Add label",
+                "e.g. interested",
+                "Give AI a closed set of labels — then branch out of this step with an “AI label is …” path.",
+            )}
+
+            {stringList(
+                "ai_output_fields",
+                "Contact fields AI fills",
+                "Add field",
+                "e.g. icebreaker",
+                "Named contact custom fields the AI writes — use them later as {{.field}} in emails.",
+                true,
+            )}
+
+            <AIActionsList action={action} setAction={setAction} />
+
+            <div>
+                <Label>What AI can see</Label>
+                <div className="space-y-1">
+                    <AIContextToggle
+                        label="Campaign history"
+                        detail="Which steps ran, opens, clicks, replies, and earlier AI labels"
+                        on={!action.ai_no_engagement}
+                        onToggle={() => setAction((a) => ({ ...a, ai_no_engagement: !a.ai_no_engagement || undefined }))}
+                    />
+                    <AIContextToggle
+                        label="Incoming email"
+                        detail="The newest email received from the contact (subject + preview)"
+                        on={!action.ai_no_replies}
+                        onToggle={() => setAction((a) => ({ ...a, ai_no_replies: !a.ai_no_replies || undefined }))}
+                    />
+                </div>
+                <p className="mt-1 text-[11px] text-slate-400">Contact fields are always included.</p>
+            </div>
+
+            <p className="rounded-md border border-purple-200 bg-purple-50/60 px-2.5 py-2 text-[11px] leading-relaxed text-purple-700">
+                Give the step labels, output fields, actions, or any mix — one with none is skipped. AI only decides
+                <em> whether</em> each configured action runs; every decision is written to the campaign log. If it can't
+                decide on a label, the contact stays unlabeled and follows your “always” / fallback connection.
+            </p>
+        </div>
+    );
+}
+
+// AIContextToggle — one row of the AI step's "what AI can see" section.
+function AIContextToggle({
+    label,
+    detail,
+    on,
+    onToggle,
+}: {
+    label: string;
+    detail: string;
+    on: boolean;
+    onToggle: () => void;
+}) {
+    return (
+        <div
+            className={`flex items-center gap-2 rounded-md px-2 py-1.5 ring-1 transition-colors ${
+                on ? "bg-purple-50 ring-purple-200" : "bg-slate-50 ring-slate-200"
+            }`}
+        >
+            <div className="min-w-0 flex-1">
+                <div className={`text-[11.5px] font-medium ${on ? "text-purple-700" : "text-slate-500"}`}>{label}</div>
+                <div className="text-[10.5px] text-slate-400">{detail}</div>
+            </div>
+            <button
+                type="button"
+                role="switch"
+                aria-checked={on}
+                aria-label={label}
+                onClick={onToggle}
+                className={`relative inline-flex h-[18px] w-8 shrink-0 items-center rounded-full transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-300 ${
+                    on ? "bg-purple-600" : "bg-slate-300"
+                }`}
+            >
+                <span
+                    className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-sm transition-transform duration-200 ${
+                        on ? "translate-x-[15px]" : "translate-x-[2px]"
+                    }`}
+                />
+            </button>
+        </div>
+    );
+}
+
+// The action types an AI step may be allowed to trigger: every normal action
+// except another AI step (mirrors the backend whitelist in
+// internal/repository/sequence_actions.go).
+const AI_ACTION_TYPE_OPTIONS: SelectOption[] = ADD_ACTION_OPTIONS.filter((o) => o.type !== "ai").map((o) => ({
+    value: o.type,
+    label: o.label,
+}));
+
+const newAIActionID = () =>
+    typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
+
+// AIActionsList — the "actions AI may take" palette on an AI step. Each row is
+// a fully configured action (same editors as a normal action step) plus an
+// optional plain-language hint for when the model should pick it.
+// The tag/label action types whose targets the model may pick from a set.
+const AI_CHOICE_TYPES = new Set<string>(["add_tag", "remove_tag", "label_email"]);
+
+function AIActionsList({
+    action,
+    setAction,
+}: {
+    action: SequenceAction;
+    setAction: React.Dispatch<React.SetStateAction<SequenceAction>>;
+}) {
+    const { user } = useUserProfile();
+    const categoryName = React.useCallback(
+        (id: string) => (user.categories ?? []).find((c) => c.id === id)?.title ?? "",
+        [user.categories],
+    );
+    const rows = action.ai_actions ?? [];
+    const setRows = (next: AIStepAction[]) => setAction((a) => ({ ...a, ai_actions: next }));
+    const updateRow = (i: number, patch: Partial<AIStepAction>) =>
+        setRows(rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+    const setRowAction = (i: number): React.Dispatch<React.SetStateAction<SequenceAction>> => (upd) =>
+        setRows(
+            rows.map((r, idx) =>
+                idx === i ? { ...r, action: typeof upd === "function" ? upd(r.action) : upd } : r,
+            ),
+        );
+
+    return (
+        <div>
+            <div className="mb-1.5 flex items-center justify-between gap-2">
+                <Label className="mb-0">Actions AI may take</Label>
+                <button
+                    type="button"
+                    onClick={() => {
+                        if (rows.length >= 10) return;
+                        setRows([...rows, { id: newAIActionID(), when: "", action: { type: "add_tag" } }]);
+                    }}
+                    className="inline-flex h-6 items-center gap-1 rounded-md border border-slate-200 bg-white px-2 text-[11.5px] font-medium text-slate-600 transition-colors hover:border-slate-300 hover:text-slate-900"
+                >
+                    <PlusIcon className="w-3 h-3" /> Add action
+                </button>
+            </div>
+            {rows.length === 0 ? (
+                <p className="text-[11px] text-slate-400">
+                    Configure actions (create a deal, run an automation, fire an event…) and let AI decide per contact
+                    which ones to run. You set every parameter — AI only pulls the trigger.
+                </p>
+            ) : (
+                <div className="space-y-2">
+                    {rows.map((row, i) => {
+                        const meta = ACTION_META[row.action.type];
+                        const Icon = meta?.Icon ?? ZapIcon;
+                        const canChoose = AI_CHOICE_TYPES.has(row.action.type);
+                        const aiPicks = canChoose && row.choices !== undefined;
+                        return (
+                            <div key={row.id} className="rounded-md border border-slate-200 bg-slate-50/40 p-2.5 space-y-2.5">
+                                <div className="flex items-center gap-1.5">
+                                    <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-md bg-slate-100 ring-1 ring-slate-200/70">
+                                        <Icon className={`w-3 h-3 ${meta?.tint ?? "text-slate-500"}`} />
+                                    </span>
+                                    <SelectMenu
+                                        value={row.action.type}
+                                        onChange={(t) =>
+                                            updateRow(i, {
+                                                action: { type: t as SequenceActionType },
+                                                choices: undefined,
+                                                max_choices: undefined,
+                                            })
+                                        }
+                                        options={AI_ACTION_TYPE_OPTIONS}
+                                        className="flex-1 min-w-0"
+                                        fullWidth
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setRows(rows.filter((_, idx) => idx !== i))}
+                                        title="Remove action"
+                                        className="inline-flex size-6 shrink-0 items-center justify-center rounded text-slate-300 transition-colors hover:bg-rose-50 hover:text-rose-600"
+                                    >
+                                        <Trash2Icon className="w-3.5 h-3.5" />
+                                    </button>
+                                </div>
+                                <TextInput
+                                    value={row.when ?? ""}
+                                    onChange={(v) => updateRow(i, { when: v.slice(0, 200) })}
+                                    placeholder="When should AI do this? e.g. when they look interested"
+                                    className="w-full"
+                                />
+                                {canChoose && (
+                                    <div className="inline-flex rounded-md border border-slate-200 bg-white p-0.5">
+                                        {([
+                                            [false, "Fixed target"],
+                                            [true, "AI picks which"],
+                                        ] as const).map(([mode, lbl]) => (
+                                            <button
+                                                key={lbl}
+                                                type="button"
+                                                onClick={() =>
+                                                    updateRow(
+                                                        i,
+                                                        mode
+                                                            ? { choices: row.choices ?? [] }
+                                                            : { choices: undefined, max_choices: undefined },
+                                                    )
+                                                }
+                                                className={`h-6 px-2 rounded text-[11px] font-medium transition-colors ${
+                                                    aiPicks === mode
+                                                        ? "bg-purple-600 text-white shadow-sm"
+                                                        : "text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+                                                }`}
+                                            >
+                                                {lbl}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                                {aiPicks ? (
+                                    <div className="space-y-2">
+                                        <div>
+                                            <Label>{row.action.type === "label_email" ? "Labels AI may apply" : "Tags AI may pick from"}</Label>
+                                            <CategoryPicker
+                                                value={(row.choices ?? []).map((c) => c.category_id)}
+                                                onChange={(ids) =>
+                                                    updateRow(i, {
+                                                        choices: ids.slice(0, 20).map((id) => ({
+                                                            category_id: id,
+                                                            name:
+                                                                (row.choices ?? []).find((c) => c.category_id === id)?.name ||
+                                                                categoryName(id),
+                                                        })),
+                                                    })
+                                                }
+                                                placeholder="Pick the allowed set…"
+                                            />
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <Label className="mb-0">Max picks</Label>
+                                            <NumberInput
+                                                value={row.max_choices ?? 0}
+                                                onChange={(n) =>
+                                                    updateRow(i, { max_choices: Math.max(0, Math.min(20, Math.round(n))) || undefined })
+                                                }
+                                                min={0}
+                                                max={20}
+                                                className="w-20"
+                                            />
+                                            <span className="text-[11px] text-slate-400">0 = any that apply</span>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <ActionConfigFields action={row.action} setAction={setRowAction(i)} />
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
         </div>
     );
 }
