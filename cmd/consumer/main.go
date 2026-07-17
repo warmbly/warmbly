@@ -410,6 +410,10 @@ func main() {
 	// Start warmup health evaluation sweep (every hour)
 	go jobsService.StartWarmupHealthSweep(ctx, 1*time.Hour)
 
+	// Persist each mailbox's sending-domain SPF/DKIM/DMARC state (observe-only,
+	// not yet a send gate): sweep hourly, rechecking each domain at most daily.
+	go jobsService.StartAuthCheckSweep(ctx, 1*time.Hour, 24*time.Hour)
+
 	// Drains the durable delayed-engagement schedule (read/important/star) so the
 	// recipient-side dwell survives worker restarts. Short interval keeps the
 	// effective dwell close to the requested value.

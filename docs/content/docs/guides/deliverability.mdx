@@ -104,7 +104,7 @@ These are the default bands and the metrics that move a mailbox into each one. A
 
 What each band does:
 
-- **Watch**: lower the mailbox's warmup volume, increase spacing between sends, and watch it more closely.
+- **Watch**: lower the mailbox's warmup volume, increase spacing between sends, and watch it more closely. Cold campaign volume for the mailbox is dampened by the same factor, so a mailbox showing early warning signs slows down across both warmup and cold sending before it ever reaches quarantine.
 - **Quarantine**: immediately remove the mailbox from the shared paid warmup pool for `7 days`. If the same mailbox is also sending cold campaigns, that sending is throttled or paused. A quarantined mailbox is not selected as a warmup sender or as a warmup recipient.
 - **Blocked**: block the mailbox from the shared paid pool for `30 days` and require review before it can re-enter.
 - **Catastrophic**: a spam placement of `80%` or higher triggers an immediate long-duration block and a full reputation reset. The mailbox does not return to the shared paid pool automatically.
@@ -122,6 +122,24 @@ A blocked mailbox does not automatically come back just because the cooldown ela
 - no recent invalid warmup-token attempts
 - spam-folder placement back below `10%` on a fresh probation sample
 - re-entry is gradual, starting at low volume (for example `5-10/day` of warmup at first)
+
+## Domain authentication
+
+Authentication is the foundation of deliverability. Gmail, Yahoo, and Outlook all require a sending domain to publish SPF, DKIM, and DMARC records, and a domain that fails alignment is the most common silent reason mail lands in spam or is rejected outright.
+
+Warmbly checks each mailbox's sending domain in the background and keeps the result on the mailbox, so you can see at a glance which domains are set up correctly without running a check by hand. The state is refreshed roughly once a day, and you can also run an on-demand check from the mailbox.
+
+Each domain resolves to one of three states:
+
+- **Passing**: SPF and DMARC are both present. These are the two records Warmbly can read authoritatively from DNS.
+- **Failing**: SPF or DMARC is missing. The domain is not meeting the bulk-sender requirement and needs attention.
+- **Unknown**: the domain has not been checked yet, or the DNS lookup could not complete. Warmbly treats a lookup it could not resolve as unknown rather than failing, so a temporary DNS hiccup never looks like a misconfiguration.
+
+DKIM is reported separately and is advisory. DKIM selectors are not discoverable from DNS, so a "not found" for DKIM only means Warmbly could not confirm it with the common selectors, not that DKIM is absent. A domain can therefore be Passing on SPF and DMARC while DKIM is shown as unconfirmed.
+
+<Callout type="info" title="This is informational today">
+The authentication state is there to surface and warn about unauthenticated domains. It does not stop sending or warmup on its own yet. Fixing a Failing domain (publish SPF, DKIM, and DMARC at your DNS provider) is still the single highest-impact deliverability change you can make.
+</Callout>
 
 ## One-click unsubscribe
 

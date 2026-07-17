@@ -50,6 +50,13 @@ A `data` array of mailbox objects plus a `pagination` envelope.
       "tracking_domain": "t.acme.com",
       "tracking_domain_verified": true,
       "tracking_domain_verified_at": "2026-06-01T12:00:00Z",
+      "auth_state": "passing",
+      "auth_spf": true,
+      "auth_dkim": true,
+      "auth_dmarc": true,
+      "auth_dmarc_policy": "quarantine",
+      "auth_reason": "SPF, DKIM and DMARC all present (DMARC policy: quarantine)",
+      "auth_checked_at": "2026-06-11T03:00:00Z",
       "warmup": "2026-05-20T00:00:00Z",
       "warmup_paused_at": null,
       "warmup_base": 10,
@@ -75,7 +82,7 @@ A `data` array of mailbox objects plus a `pagination` envelope.
 }
 ```
 
-`provider` is one of `gmail`, `outlook`, or `smtp_imap`. `status` is one of `active`, `inactive`, or `revoked`. `warmup` is the warmup anchor timestamp (null when warmup has never been enabled); a non-null `warmup_paused_at` means warmup is enabled but paused. `total` and `next_cursor` may be null when not applicable.
+`provider` is one of `gmail`, `outlook`, or `smtp_imap`. `status` is one of `active`, `inactive`, or `revoked`. `warmup` is the warmup anchor timestamp (null when warmup has never been enabled); a non-null `warmup_paused_at` means warmup is enabled but paused. `auth_state` is the sending domain's authentication state, one of `passing` (SPF and DMARC present), `failing` (SPF or DMARC missing), or `unknown` (not checked yet, or the DNS lookup could not complete); it is refreshed by a background check and `auth_dkim` is advisory (DKIM selectors are not discoverable from DNS). `total` and `next_cursor` may be null when not applicable.
 
 ## Get a mailbox
 
@@ -107,6 +114,8 @@ A bare mailbox object, same shape as one element of the list `data` array.
   "warmup_pool_type": "premium",
   "tracking_domain": "t.acme.com",
   "tracking_domain_verified": true,
+  "auth_state": "passing",
+  "auth_checked_at": "2026-06-11T03:00:00Z",
   "tags": ["outbound"],
   "created_at": "2026-05-19T18:00:00Z",
   "updated_at": "2026-06-11T09:14:00Z"
