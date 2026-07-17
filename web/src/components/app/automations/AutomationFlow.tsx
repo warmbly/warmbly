@@ -396,7 +396,9 @@ function ConvergeEdge({
 
 const edgeTypes = { converge: ConvergeEdge };
 
-type When = "" | "true" | "false" | "error";
+// "" plain | "true"/"false" condition paths | "error" | "label:<x>" (an AI
+// classify action's per-label route — followed only when the model picks x).
+type When = string;
 
 function handleToWhen(h?: string | null): When {
     return h === "out" ? "true" : h === "else" ? "false" : h === "err" ? "error" : "";
@@ -406,8 +408,9 @@ function whenToHandle(w?: string): string {
 }
 
 function styledEdge(id: string, source: string, target: string, sourceHandle: string, when: When): Edge {
+    const aiLabel = when.startsWith("label:") ? when.slice("label:".length) : "";
     const color =
-        when === "true" ? "#0ea5e9" : when === "false" ? "#94a3b8" : when === "error" ? "#f43f5e" : "#cbd5e1";
+        when === "true" ? "#0ea5e9" : when === "false" ? "#94a3b8" : when === "error" ? "#f43f5e" : aiLabel ? "#a855f7" : "#cbd5e1";
     return {
         id,
         source,
@@ -415,7 +418,7 @@ function styledEdge(id: string, source: string, target: string, sourceHandle: st
         sourceHandle,
         type: "converge",
         data: { when },
-        label: when === "true" ? "yes" : when === "false" ? "no" : when === "error" ? "error" : undefined,
+        label: when === "true" ? "yes" : when === "false" ? "no" : when === "error" ? "error" : aiLabel || undefined,
         markerEnd: { type: MarkerType.ArrowClosed, color, width: 16, height: 16 },
         style: { stroke: color, strokeWidth: 1.5 },
         labelStyle: { fill: color },
@@ -916,6 +919,15 @@ export default function AutomationFlow({
                 return false;
             }
         }
+        for (const n of nodes) {
+            if (n.type !== "condition") continue;
+            const c = (n.data as { condition?: AutomationCondition }).condition;
+            if (c?.field === "ai" && !String(c.prompt ?? "").trim()) {
+                toast.error("An Ask AI branch needs a question");
+                setSelectedId(n.id);
+                return false;
+            }
+        }
         // Filtering is done with condition (IF) nodes now, so no automation-wide
         // filter is sent.
         const filter: Record<string, unknown> = {};
@@ -931,12 +943,23 @@ export default function AutomationFlow({
                 }
                 return base;
             }),
-            edges: edges.map((e) => ({
-                id: e.id,
-                source: e.source,
-                target: e.target,
-                when: ((e.data as { when?: string })?.when ?? "") as "" | "true" | "false" | "error",
-            })),
+            edges: edges.map((e) => {
+                let when = (e.data as { when?: string })?.when ?? "";
+                // Heal stale per-label routes: if the source stopped being an AI
+                // classify step, or the label was removed from its set, fall back
+                // to a plain "always" edge instead of failing the save.
+                if (when.startsWith("label:")) {
+                    const src = nodes.find((n) => n.id === e.source);
+                    const d = src?.data as { action?: string; config?: Record<string, unknown> } | undefined;
+                    const lbls = (Array.isArray(d?.config?.labels) ? (d.config.labels as unknown[]) : []).map((l) =>
+                        String(l).trim().toLowerCase(),
+                    );
+                    if (d?.action !== "warmbly.ai_classify" || !lbls.includes(when.slice("label:".length).trim().toLowerCase())) {
+                        when = "";
+                    }
+                }
+                return { id: e.id, source: e.source, target: e.target, when };
+            }),
         };
         // Open the self-save window NOW so a realtime refetch racing the HTTP
         // response is recognized as our own write, not a teammate's.
@@ -1290,6 +1313,28 @@ export default function AutomationFlow({
                         actionsForProvider={actionsForProvider}
                         providerOf={providerOf}
                         onAction={(patch) => updateNodeData(selectedNode.id, patch)}
+                        // AI classify per-label routing: this node's outgoing
+                        // plain/label edges, editable from the node editor.
+                        labelRoutes={edges
+                            .filter((e) => e.source === selectedNode.id && (e.data as { when?: string })?.when !== "error")
+                            .map((e) => {
+                                const t = nodes.find((n) => n.id === e.target);
+                                const td = t?.data as { title?: string; label?: string } | undefined;
+                                return {
+                                    id: e.id,
+                                    targetLabel: td?.title || td?.label || (t?.type === "condition" ? "Condition" : "step"),
+                                    when: ((e.data as { when?: string })?.when ?? "") as string,
+                                };
+                            })}
+                        onEdgeWhen={(edgeId, when) =>
+                            setEdges((es) =>
+                                es.map((e) =>
+                                    e.id === edgeId
+                                        ? styledEdge(e.id, e.source, e.target, e.sourceHandle ?? "s", when)
+                                        : e,
+                                ),
+                            )
+                        }
                     />
                     </SidePanel>
                 )}
@@ -1660,6 +1705,8 @@ function NodeEditor({
     actionsForProvider,
     providerOf,
     onAction,
+    labelRoutes,
+    onEdgeWhen,
 }: {
     node: Node;
     onClose: () => void;
@@ -1673,9 +1720,18 @@ function NodeEditor({
     actionsForProvider: (provider?: string) => string[];
     providerOf: (id?: string) => string;
     onAction: (patch: Record<string, unknown>) => void;
+    labelRoutes?: { id: string; targetLabel: string; when: string }[];
+    onEdgeWhen?: (edgeId: string, when: string) => void;
 }) {
     const isTrigger = node.type === "trigger";
     const isCondition = node.type === "condition";
+    const nodeAction = (node.data as { action?: string }).action;
+    const classifyLabels =
+        nodeAction === "warmbly.ai_classify"
+            ? (((node.data as { config?: Record<string, unknown> }).config?.labels as unknown[]) ?? [])
+                  .map((l) => String(l).trim())
+                  .filter(Boolean)
+            : [];
 
     const triggerOptions: SelectOption[] = TRIGGER_EVENTS.map((ev) => ({ value: ev, label: triggerLabel(ev) }));
 
@@ -1722,19 +1778,65 @@ function NodeEditor({
                         onChange={onCondition}
                     />
                 ) : (
-                    <ActionEditor
-                        trigger={trigger}
-                        selfId={selfId}
-                        data={node.data as { action?: string; connection_id?: string; config?: Record<string, unknown> }}
-                        targets={targets}
-                        connLabel={connLabel}
-                        actionsForProvider={actionsForProvider}
-                        providerOf={providerOf}
-                        onAction={onAction}
-                    />
+                    <>
+                        <ActionEditor
+                            trigger={trigger}
+                            selfId={selfId}
+                            data={node.data as { action?: string; connection_id?: string; config?: Record<string, unknown> }}
+                            targets={targets}
+                            connLabel={connLabel}
+                            actionsForProvider={actionsForProvider}
+                            providerOf={providerOf}
+                            onAction={onAction}
+                        />
+                        {classifyLabels.length > 0 && onEdgeWhen && (labelRoutes?.length ?? 0) > 0 && (
+                            <AILabelRoutes labels={classifyLabels} routes={labelRoutes!} onEdgeWhen={onEdgeWhen} />
+                        )}
+                    </>
                 )}
             </div>
         </motion.div>
+    );
+}
+
+// AILabelRoutes — per-label routing for an AI classify node: each outgoing
+// connection can run always, or only when the model picked a specific label,
+// so one classify step branches multi-way on the canvas.
+function AILabelRoutes({
+    labels,
+    routes,
+    onEdgeWhen,
+}: {
+    labels: string[];
+    routes: { id: string; targetLabel: string; when: string }[];
+    onEdgeWhen: (edgeId: string, when: string) => void;
+}) {
+    const options: SelectOption[] = [
+        { value: "", label: "always" },
+        ...labels.map((l) => ({ value: `label:${l}`, label: `when “${l}”` })),
+    ];
+    return (
+        <div>
+            <Label>Route connections by label</Label>
+            <div className="space-y-1.5">
+                {routes.map((r) => (
+                    <div key={r.id} className="flex items-center gap-2">
+                        <span className="min-w-0 flex-1 truncate text-[12px] text-slate-600">→ {r.targetLabel}</span>
+                        <SelectMenu
+                            value={options.some((o) => o.value === r.when) ? r.when : ""}
+                            onChange={(w) => onEdgeWhen(r.id, w)}
+                            options={options}
+                            className="w-40"
+                            fullWidth
+                        />
+                    </div>
+                ))}
+            </div>
+            <p className="mt-1.5 text-[10.5px] text-slate-400 leading-relaxed">
+                “Always” runs no matter the label. A labeled connection runs only when AI picks that label — connect one
+                path per label to branch multi-way.
+            </p>
+        </div>
     );
 }
 
@@ -1755,8 +1857,9 @@ function ConditionEditor({
 
     const isRandom = condition.field === "random";
     const isExpression = condition.field === "expression";
+    const isAI = condition.field === "ai";
     const op = condition.operator;
-    const needsValue = !isRandom && op !== "exists" && op !== "is_true";
+    const needsValue = !isRandom && !isAI && op !== "exists" && op !== "is_true";
     const isConfidence = selectedKey === "confidence";
     const vars = triggerVariables(trigger);
 
@@ -1767,8 +1870,8 @@ function ConditionEditor({
                 <SelectMenu value={selectedKey} onChange={pickField} options={fieldOptions} className="w-full" fullWidth />
             </div>
 
-            {/* Operator — data fields only (random + expression don't use one). */}
-            {!isRandom && !isExpression && def && (
+            {/* Operator — data fields only (random / expression / AI don't use one). */}
+            {!isRandom && !isExpression && !isAI && def && (
                 <div>
                     <Label>Condition</Label>
                     <SelectMenu
@@ -1782,7 +1885,37 @@ function ConditionEditor({
             )}
 
             {/* Value editor, by field type + operator. */}
-            {isExpression ? (
+            {isAI ? (
+                <div className="space-y-2">
+                    <Label>Ask AI</Label>
+                    <textarea
+                        value={String(condition.prompt ?? "")}
+                        onChange={(e) => set({ prompt: e.target.value })}
+                        rows={3}
+                        maxLength={2000}
+                        placeholder="Is this reply asking about pricing?"
+                        className="w-full px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-[12.5px] text-slate-900 placeholder:text-slate-400 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 resize-y leading-relaxed"
+                    />
+                    {vars.length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                            {vars.map((v) => (
+                                <button
+                                    key={v}
+                                    type="button"
+                                    onClick={() => set({ prompt: `${condition.prompt ?? ""}{{.${v}}}` })}
+                                    className="px-1.5 py-0.5 rounded border border-slate-200 bg-slate-50 font-mono text-[10.5px] text-slate-600 hover:border-sky-300 hover:text-sky-700"
+                                >
+                                    {`{{.${v}}}`}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                    <p className="text-[10.5px] text-slate-400 leading-relaxed">
+                        AI reads the event data and answers your question: yes takes the right path, no takes the bottom path. If AI
+                        can't answer, the no path runs. Costs 1 credit each time this branch is evaluated.
+                    </p>
+                </div>
+            ) : isExpression ? (
                 <div className="space-y-2">
                     <div className="flex items-center justify-between gap-2">
                         <Label className="mb-0">Expression</Label>

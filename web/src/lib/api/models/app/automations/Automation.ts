@@ -9,6 +9,9 @@ export interface AutomationCondition {
     operator: string;
     value?: unknown;
     expression?: string;
+    // "ai" field: the plain-language yes/no question the model answers over the
+    // event data (true edge = yes). Costs 1 credit per evaluation.
+    prompt?: string;
 }
 
 // One node on the flow canvas. "trigger" is the single entry (id "trigger");
@@ -33,7 +36,10 @@ export interface AutomationEdge {
     target: string;
     // "" plain/then, "true"/"false" a condition's branches, "error" an action's
     // on-error branch.
-    when?: "" | "true" | "false" | "error";
+    // "" plain | "true"/"false" (condition branches) | "error" (action on-error)
+    // | "label:<x>" (per-label branch out of an AI classify action: followed
+    // only when the model picked <x>, so one classify node routes multi-way).
+    when?: string;
 }
 
 export interface AutomationGraph {
