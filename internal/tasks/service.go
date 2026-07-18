@@ -62,7 +62,7 @@ type TasksService interface {
 	// no other bootstrap once started, so this is the stall backstop.
 	StartCampaignReconciler(ctx context.Context, interval time.Duration)
 
-	// SetAI wires the LLM provider + credit ledger the campaign "ai" sequence
+	// SetAI wires the LLM provider + credit ledger the campaign "switch" sequence
 	// steps run over (mirrors integration.Service.SetAI). Nil provider leaves
 	// AI steps returning a clean "not available".
 	SetAI(p generation.Provider, c credits.CreditService)
@@ -107,7 +107,7 @@ type tasksService struct {
 	// automationRunner launches automations from a campaign "run_automation" step.
 	automationRunner AutomationRunner
 
-	// aiProvider + aiCredits back the campaign "ai" sequence step (SetAI).
+	// aiProvider + aiCredits back the campaign "switch" sequence step (SetAI).
 	aiProvider generation.Provider
 	aiCredits  credits.CreditService
 
@@ -176,7 +176,7 @@ func NewService(
 	}
 }
 
-// SetAI wires the LLM provider + credit ledger for campaign "ai" steps.
+// SetAI wires the LLM provider + credit ledger for campaign "switch" steps.
 func (s *tasksService) SetAI(p generation.Provider, c credits.CreditService) {
 	s.aiProvider = p
 	s.aiCredits = c

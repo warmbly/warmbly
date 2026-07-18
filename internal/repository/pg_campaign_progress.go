@@ -28,7 +28,7 @@ type CampaignContactProgress struct {
 	// conditions. RepliedAt is set ONLY for human replies, so an automated reply
 	// can carry a ReplyClass here without ever tripping "replied"/stop_on_reply.
 	ReplyClass string
-	// AILabel is the label an "ai" sequence step stored for the contact on this
+	// AILabel is the case a "switch" sequence step stored for the contact on this
 	// step ("" when the step has no labels or the AI could not decide). Read by
 	// the ai_label branch conditions.
 	AILabel string
@@ -87,7 +87,7 @@ type CampaignProgressRepository interface {
 	// never trip stop_on_reply / the "replied" condition). Callers stamp
 	// replied_at separately via RecordEmailReplied for human replies only.
 	RecordReplyClassification(ctx context.Context, campaignID, contactID, sequenceID uuid.UUID, class, source string, confidence float64) error
-	// RecordAILabel stores the label an "ai" sequence step chose for the contact
+	// RecordAILabel stores the case a "switch" sequence step chose for the contact
 	// on that step. Upserts (the AI step runs before its progress row is stamped
 	// sent). Read by the ai_label branch conditions when routing out of the step.
 	RecordAILabel(ctx context.Context, campaignID, contactID, sequenceID uuid.UUID, label string) error

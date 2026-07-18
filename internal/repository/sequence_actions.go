@@ -1,6 +1,8 @@
 package repository
 
 import (
+	"strings"
+
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 )
@@ -23,13 +25,29 @@ func validateActionConfig(a *models.ActionConfig) *errx.Error {
 		// this list in sync with models.ActionConfig.Type and the task executor's
 		// switch (internal/tasks/campaign_task.go, advanced/reply_actions.go).
 		return nil
-	case "ai":
-		// The whole config is one instruction: outcomes are the step's outgoing
-		// ai_label paths and side effects are ordinary steps on those paths. An
-		// unconfigured AI node is a draft no-op like the rest; only bound the
-		// prompt surface (an oversized instruction is a malformed write).
-		if len(a.AIInstruction) > maxAIStepInstruction {
+	case "switch":
+		// A draft switch (no cases / no decider yet) is a no-op like other
+		// unconfigured nodes; bound the surface of what IS set. Cases become
+		// draggable dots on the node and route via ai_label branch conditions,
+		// so their names share the branch-label bound.
+		switch a.SwitchOn {
+		case "", "ai", "value":
+		default:
 			return errx.ErrSequenceAction
+		}
+		if len(a.AIInstruction) > maxAIStepInstruction || len(a.SwitchValue) > maxSwitchValue {
+			return errx.ErrSequenceAction
+		}
+		if len(a.SwitchCases) > maxSwitchCases {
+			return errx.ErrSequenceAction
+		}
+		seen := map[string]bool{}
+		for _, c := range a.SwitchCases {
+			name := strings.ToLower(strings.TrimSpace(c))
+			if name == "" || len(c) > maxAIStepName || seen[name] {
+				return errx.ErrSequenceAction
+			}
+			seen[name] = true
 		}
 		return nil
 	default:
@@ -37,9 +55,11 @@ func validateActionConfig(a *models.ActionConfig) *errx.Error {
 	}
 }
 
-// AI step bounds: the instruction is the step's one config field; outcome
-// names live on the ai_label branch conditions (branch_conditions.go).
+// Switch step bounds. Case names live on the node config AND on the ai_label
+// branch conditions (branch_conditions.go), so they share maxAIStepName.
 const (
 	maxAIStepInstruction = 4000
 	maxAIStepName        = 80
+	maxSwitchValue       = 500
+	maxSwitchCases       = 20
 )

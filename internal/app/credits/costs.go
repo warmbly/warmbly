@@ -20,7 +20,7 @@ const (
 	// execution, and one Ask-AI branch evaluation.
 	CostAutomationAINode = 1
 
-	// CostCampaignAIStep is one campaign-sequence "ai" step execution (one
+	// CostCampaignAIStep is one campaign-sequence AI-decided "switch" step execution (one
 	// contact passing through the step).
 	CostCampaignAIStep = 1
 

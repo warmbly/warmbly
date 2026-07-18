@@ -12,7 +12,7 @@ export type SequenceActionType =
     | "move_deal_stage"
     | "run_automation"
     | "fire_event"
-    | "ai";
+    | "switch";
 
 // One templated input passed to a launched automation (value supports the same
 // {{.FirstName}}/{{.Company}} contact templating campaign copy uses).
@@ -56,17 +56,23 @@ export interface SequenceAction {
     // value are templated against the contact; the fields become the payload.
     event_name?: string;
     event_fields?: ActionKV[];
-    // ai — a routing AI step run per contact (costs 1 credit each). The model
-    // follows ai_instruction (contact-templated) over the contact's data and
-    // picks EXACTLY one of the step's outgoing "ai_label" paths — the named
-    // connections drawn out of the step on the canvas ARE the outcome set;
-    // nothing else is configured here. Side effects are ordinary action steps
+    // switch — a multi-way router. switch_cases are the named case paths shown
+    // as draggable dots on the canvas node; each connected case is stored as a
+    // branch with an "ai_label" condition carrying the case name, and an
+    // unconditional branch is the "otherwise" fallback. switch_on picks the
+    // decider: "ai" (one model call per contact follows ai_instruction and
+    // picks exactly one case; 1 credit) or "value" (switch_value, a template
+    // like {{.Industry}}, rendered against the contact and matched to the case
+    // names; free, no model call). Side effects are ordinary action steps
     // placed on the chosen path.
+    switch_on?: "ai" | "value";
+    switch_cases?: string[];
+    switch_value?: string;
     ai_instruction?: string;
-    // Context opt-outs: by default the model also sees the contact's campaign
-    // history (steps run, opens/clicks/replies, prior AI outcomes) and their
-    // newest inbound email. Stored inverted so existing steps keep the richer
-    // context.
+    // Context opt-outs for the AI decider: by default the model also sees the
+    // contact's campaign history (steps run, opens/clicks/replies, prior
+    // outcomes) and their newest inbound email. Stored inverted so existing
+    // steps keep the richer context.
     ai_no_engagement?: boolean;
     ai_no_replies?: boolean;
 }

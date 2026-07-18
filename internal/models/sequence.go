@@ -49,7 +49,7 @@ type Sequence struct {
 // ActionConfig is the persisted config for a non-email (action/wait) node. Type
 // is the switch the task executes on; the remaining fields are type-scoped.
 type ActionConfig struct {
-	Type string `json:"type"` // wait | add_tag | remove_tag | label_email | unsubscribe | notify | create_task | create_deal | move_deal_stage | run_automation | fire_event | ai | end
+	Type string `json:"type"` // wait | add_tag | remove_tag | label_email | unsubscribe | notify | create_task | create_deal | move_deal_stage | run_automation | fire_event | switch | end
 
 	// wait
 	WaitMinutes *int `json:"wait_minutes,omitempty"`
@@ -98,23 +98,32 @@ type ActionConfig struct {
 	EventName   string     `json:"event_name,omitempty"`
 	EventFields []ActionKV `json:"event_fields,omitempty"`
 
-	// ai — a routing AI step: the model follows AIInstruction (templated
-	// against the contact) over the contact's data and picks EXACTLY one of the
-	// step's outgoing "ai_label" paths. The outcome set is NOT stored here — it
-	// is the distinct Labels of the ai_label conditions in this step's
-	// Conditions tree, so the paths drawn on the canvas ARE the config. The
-	// chosen outcome lands on the progress row (RecordAILabel) and routing
-	// reads it deterministically at the step boundary. Side effects are
-	// ordinary action steps placed on the chosen path, never executed by the
-	// model itself. Costs one AI credit per contact; always runs through the
-	// scheduler (never the instant chain), so an instant branch pauses at it.
-	AIInstruction string `json:"ai_instruction,omitempty"`
+	// switch — a multi-way router. SwitchCases are the named case paths shown
+	// as draggable dots on the canvas node; each connected case is stored as an
+	// outgoing branch with an "ai_label" condition carrying the case name, and
+	// an unconditional branch is the "otherwise" fallback. SwitchOn picks the
+	// decider:
+	//   "ai"    — one model call per contact follows AIInstruction (templated
+	//             against the contact) and picks EXACTLY one case. Costs one AI
+	//             credit per contact.
+	//   "value" — SwitchValue (a template like {{.Industry}}) is rendered
+	//             against the contact and matched to the case names. Free,
+	//             deterministic, no model call.
+	// Either way the chosen case lands on the progress row (RecordAILabel) and
+	// routing reads it at the step boundary; a contact matching no case follows
+	// the fallback. Side effects are ordinary action steps placed on the chosen
+	// path, never executed by the decider. Always runs through the scheduler
+	// (never the instant chain), so an instant branch pauses at it.
+	SwitchOn      string   `json:"switch_on,omitempty"` // "ai" (default) | "value"
+	SwitchCases   []string `json:"switch_cases,omitempty"`
+	SwitchValue   string   `json:"switch_value,omitempty"`
+	AIInstruction string   `json:"ai_instruction,omitempty"`
 
-	// Context opt-outs for the ai step. By default the model also sees the
-	// contact's campaign history (which steps ran, opens/clicks/replies, prior
-	// AI labels) and the newest email received from them, so decisions can be
-	// grounded in "what happened so far". Stored inverted so existing steps
-	// keep the richer context.
+	// Context opt-outs for the AI-decided switch. By default the model also
+	// sees the contact's campaign history (which steps ran, opens/clicks/
+	// replies, prior outcomes) and the newest email received from them, so
+	// decisions can be grounded in "what happened so far". Stored inverted so
+	// existing steps keep the richer context.
 	AINoEngagement bool `json:"ai_no_engagement,omitempty"`
 	AINoReplies    bool `json:"ai_no_replies,omitempty"`
 }

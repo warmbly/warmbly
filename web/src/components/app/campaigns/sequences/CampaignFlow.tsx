@@ -34,6 +34,7 @@ import {
     PlusIcon,
     SendIcon,
     SparklesIcon,
+    SplitIcon,
     TagIcon,
     TagsIcon,
     Trash2Icon,
@@ -54,6 +55,7 @@ import {
     getBezierPath,
     useNodesState,
     useEdgesState,
+    useUpdateNodeInternals,
     type Node,
     type Edge,
     type Connection,
@@ -153,10 +155,17 @@ function ordered(branches: SequenceBranch[]): SequenceBranch[] {
     return [...branches.filter(isCond), ...branches.filter((b) => !isCond(b))];
 }
 
-// An AI routing step: lines dragged out of it are the choices the model picks from.
-function isAIStepNode(s?: Sequence): boolean {
-    return s?.kind === "action" && s.action?.type === "ai";
+// A Switch step: its configured cases render as draggable dots on the node,
+// and an AI prompt or a rendered value decides which case each contact takes.
+function isSwitchStep(s?: Sequence): boolean {
+    return s?.kind === "action" && s.action?.type === "switch";
 }
+
+// Case names are matched to branch labels and handle ids case-insensitively.
+function caseKey(name: string): string {
+    return name.trim().toLowerCase();
+}
+const caseHandleId = (name: string) => `case:${caseKey(name)}`;
 
 function conditionText(b: SequenceBranch): string {
     return (b.conditions ?? [])
@@ -164,7 +173,7 @@ function conditionText(b: SequenceBranch): string {
             if (c.field === "random") return `${c.value ?? 50}% random`;
             const f = BRANCH_FIELD_LABELS[c.field] ?? c.field;
             // Reply-class conditions are "ever" (no day window).
-            if (c.field === "ai_label") return `AI: ${c.label ?? "…"}`;
+            if (c.field === "ai_label") return `case: ${c.label ?? "…"}`;
             if (isReplyBranchField(c.field)) return f;
             return `${f} within ${c.value ?? 3}d`;
         })
@@ -184,6 +193,10 @@ function layoutGraph(nodes: Node[], edges: Edge[]): Node[] {
         } else if (isIfId(n.id)) {
             w = 210;
             h = 40;
+        } else if (n.type === "switch") {
+            // Case rows grow the card; give dagre the real height so the
+            // fan-out below doesn't overlap it.
+            h = NODE_H + ((n.data as { cases?: string[] }).cases?.length ?? 0) * 24;
         }
         g.setNode(n.id, { width: w, height: h });
     });
@@ -414,7 +427,7 @@ const ACTION_META: Record<string, { label: string; Icon: typeof ClockIcon; tint:
     unsubscribe: { label: "Unsubscribe", Icon: BellOffIcon, tint: "text-rose-600" },
     run_automation: { label: "Run automation", Icon: ZapIcon, tint: "text-indigo-600" },
     fire_event: { label: "Fire event", Icon: SendIcon, tint: "text-sky-600" },
-    ai: { label: "AI step", Icon: SparklesIcon, tint: "text-purple-600" },
+    switch: { label: "Switch", Icon: SplitIcon, tint: "text-purple-600" },
 };
 
 // actionSummary is the one-line subtitle shown on an action node.
@@ -437,9 +450,13 @@ function actionSummary(a?: SequenceAction | null): string {
             return a.automation_id ? "Launch an automation" : "Pick an automation…";
         case "fire_event":
             return a.event_name ? `Fire "${a.event_name}"` : "Name the event…";
-        case "ai": {
+        case "switch": {
+            if (a.switch_on === "value") {
+                const v = a.switch_value?.trim();
+                return v ? `Match ${v}` : "Pick a value to match…";
+            }
             const t = a.ai_instruction?.trim();
-            if (!t) return "Tell AI what to do…";
+            if (!t) return "Tell AI how to route…";
             return t.length > 64 ? `${t.slice(0, 61)}…` : t;
         }
         default:
@@ -547,7 +564,98 @@ function ConditionNode({ data, selected }: NodeProps) {
     );
 }
 
-const nodeTypes = { step: StepNode, ifcond: IfNode, stop: StopNode, action: ActionNode, condition: ConditionNode };
+type SwitchNodeData = {
+    label: string;
+    subtitle: string;
+    cases: string[];
+    // caseKey -> the case has a connected path already (drawn dot turns solid).
+    connected: Record<string, boolean>;
+    aiMode: boolean;
+    orphan: boolean;
+    onDelete: () => void;
+};
+
+// SwitchNode — a multi-way router. Every configured case is its own row with
+// its own source dot on the right: drag a case's dot to the step that path
+// leads to (as many cases as you need). The bottom dot is the "otherwise"
+// fallback for contacts no case matched. An AI prompt or a rendered value
+// decides the case per contact.
+function SwitchNode({ id, data, selected }: NodeProps) {
+    const d = data as SwitchNodeData;
+    // Handles are added/removed as cases change; tell React Flow to re-measure.
+    const updateInternals = useUpdateNodeInternals();
+    const casesSig = d.cases.join("|");
+    React.useEffect(() => updateInternals(id), [id, casesSig, updateInternals]);
+    return (
+        <div
+            className={`w-[248px] rounded-xl border bg-white shadow-sm transition-shadow duration-200 hover:shadow-md ${
+                d.orphan ? "border-dashed border-amber-300" : "border-purple-200"
+            } ${selected ? "border-sky-400 ring-2 ring-sky-100" : ""}`}
+        >
+            <Handle type="target" position={Position.Top} className="!h-2 !w-2 !border-2 !border-white !bg-slate-300" />
+            <div className="flex items-center gap-2 rounded-t-xl border-b border-purple-200/60 bg-gradient-to-r from-purple-50/80 to-white px-2.5 py-1.5">
+                <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-md bg-purple-100 text-purple-600 ring-1 ring-purple-200/70">
+                    {d.aiMode ? <SparklesIcon className="w-3 h-3" /> : <SplitIcon className="w-3 h-3" />}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-[12.5px] font-semibold text-slate-800">{d.label}</span>
+                <button
+                    type="button"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        d.onDelete();
+                    }}
+                    title="Delete switch"
+                    className="nodrag inline-flex size-5 shrink-0 items-center justify-center rounded text-slate-300 transition-colors hover:bg-rose-50 hover:text-rose-600"
+                >
+                    <Trash2Icon className="w-3 h-3" />
+                </button>
+            </div>
+            <div className="px-2.5 pt-1.5 pb-1">
+                <div className="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-slate-300">
+                    {d.aiMode ? "AI decides" : "Value match"}
+                </div>
+                <div className="mt-0.5 truncate text-[11.5px] text-slate-500">{d.subtitle}</div>
+            </div>
+            {d.cases.length === 0 ? (
+                <div className="px-2.5 pb-2 text-[10.5px] text-slate-400">Open the step to add cases</div>
+            ) : (
+                <div className="pb-1.5">
+                    {d.cases.map((c) => {
+                        const on = !!d.connected[caseKey(c)];
+                        return (
+                            <div key={caseKey(c)} className="relative flex h-6 items-center pl-2.5 pr-4">
+                                <span
+                                    className={`min-w-0 flex-1 truncate text-[11.5px] ${on ? "text-purple-700" : "text-slate-500"}`}
+                                >
+                                    {c}
+                                </span>
+                                {/* This case's own dot: drag it to the step this path leads to. */}
+                                <Handle
+                                    type="source"
+                                    id={caseHandleId(c)}
+                                    position={Position.Right}
+                                    className={`!absolute !-right-1.5 !top-1/2 !h-3 !w-3 !-translate-y-1/2 pointer-coarse:!h-5 pointer-coarse:!w-5 !border-2 !border-white ${
+                                        on ? "!bg-purple-500" : "!bg-purple-300"
+                                    }`}
+                                />
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+            {d.orphan && (
+                <div className="flex items-center gap-1 border-t border-amber-200/70 px-2.5 py-1 text-[10.5px] text-amber-600">
+                    <UnlinkIcon className="w-3 h-3" />
+                    Not connected — drag a link in
+                </div>
+            )}
+            {/* Bottom dot: the "otherwise" fallback when no case matched. */}
+            <Handle type="source" id="s" position={Position.Bottom} className="!h-3 !w-3 pointer-coarse:!h-5 pointer-coarse:!w-5 !border-2 !border-white !bg-slate-400" />
+        </div>
+    );
+}
+
+const nodeTypes = { step: StepNode, ifcond: IfNode, stop: StopNode, action: ActionNode, condition: ConditionNode, switch: SwitchNode };
 
 // Convergent edge.
 // Several branches can route to the same next step (many in -> one node). They
@@ -638,9 +746,15 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
         // The drag started on a Condition node, so the new node becomes a
         // conditional ("if") path rather than an unconditional one.
         conditional?: boolean;
+        // The drag started on a Switch case dot: the new node becomes that
+        // case's path (keyed by caseKey).
+        switchCase?: string;
         ifSource?: { sourceId: string; branchId: string; handle: string };
     } | null>(null);
-    const connectStartRef = React.useRef<string | null>(null);
+    const connectStartRef = React.useRef<{ nodeId: string | null; handleId: string | null }>({
+        nodeId: null,
+        handleId: null,
+    });
     // While dragging a node, kill the position transition so the drag is 1:1.
     const [dragging, setDragging] = React.useState(false);
     // Editing the sequence flow (add a step, drag a node, draw a branch) needs
@@ -841,34 +955,36 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
         },
         [seqById, saveBranches, openCondition],
     );
-    // Every line dragged out of an AI step is one of its choices: the model is
-    // asked to pick exactly one of the named paths, so drag as many as you need.
-    // Saved immediately under a unique placeholder name (write-time validation
-    // needs one), then the connection editor opens to name the outcome.
-    const addAIPathTo = React.useCallback(
-        (sourceId: string, target: string | null) => {
+    // Wire one of a Switch step's case dots to a target: retarget the case's
+    // existing branch, or create it as an ai_label branch carrying the case
+    // name. The case is already named on the node, so no editor needs to open.
+    const connectSwitchCase = React.useCallback(
+        (sourceId: string, key: string, target: string | null) => {
             const src = seqById.get(sourceId);
             if (!src) return;
-            const used = new Set(
-                (src.conditions?.branches ?? [])
-                    .flatMap((b) =>
-                        (b.conditions ?? [])
-                            .filter((c) => c.field === "ai_label")
-                            .map((c) => (c.label ?? "").trim().toLowerCase()),
-                    )
-                    .filter(Boolean),
+            const name = (src.action?.switch_cases ?? []).find((c) => caseKey(c) === key)?.trim();
+            if (!name) return;
+            const all = src.conditions?.branches ?? [];
+            const existing = all.find((b) =>
+                (b.conditions ?? []).some((c) => c.field === "ai_label" && caseKey(c.label ?? "") === key),
             );
-            let n = used.size + 1;
-            while (used.has(`choice ${n}`)) n++;
-            const branch: SequenceBranch = {
-                branch_id: newBranchId(),
-                target_step_id: target,
-                conditions: [{ field: "ai_label", operator: "is", label: `choice ${n}` }],
-            };
-            saveBranches(sourceId, [...(src.conditions?.branches ?? []), branch]);
-            openCondition(sourceId, branch.branch_id);
+            if (existing) {
+                saveBranches(
+                    sourceId,
+                    all.map((b) => (b.branch_id === existing.branch_id ? { ...b, target_step_id: target } : b)),
+                );
+            } else {
+                saveBranches(sourceId, [
+                    ...all,
+                    {
+                        branch_id: newBranchId(),
+                        target_step_id: target,
+                        conditions: [{ field: "ai_label", operator: "is", label: name }],
+                    },
+                ]);
+            }
         },
-        [seqById, saveBranches, openCondition],
+        [seqById, saveBranches],
     );
     const retargetBranch = React.useCallback(
         (sourceId: string, branchId: string, target: string | null) => {
@@ -1137,6 +1253,28 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
             }
             if (isAction) {
                 const at = s.action?.type ?? "add_tag";
+                if (at === "switch") {
+                    const cases = (s.action?.switch_cases ?? []).map((c) => c.trim()).filter(Boolean);
+                    const connected: Record<string, boolean> = {};
+                    for (const b of branches) {
+                        const c0 = (b.conditions ?? []).find((c) => c.field === "ai_label");
+                        if (c0?.label) connected[caseKey(c0.label)] = true;
+                    }
+                    return {
+                        id: s.id,
+                        type: "switch",
+                        position: { x: 0, y: 0 },
+                        data: {
+                            label: s.name?.trim() || "Switch",
+                            subtitle: actionSummary(s.action),
+                            cases,
+                            connected,
+                            aiMode: s.action?.switch_on !== "value",
+                            orphan: !reachable.has(s.id),
+                            onDelete: () => deleteStepRef.current(s.id),
+                        } satisfies SwitchNodeData,
+                    };
+                }
                 const fallback = ACTION_META[at]?.label ?? "Action";
                 return {
                     id: s.id,
@@ -1176,7 +1314,34 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
 
         sequences.forEach((s) => {
             const branches = ordered(s.conditions?.branches ?? []);
-            const conds = branches.filter(isCond);
+            // A Switch draws its case paths straight from the node's per-case
+            // dots — no IF boxes. Each ai_label branch maps onto its case's
+            // handle; the unconditional branch hangs off the bottom
+            // "otherwise" dot (handled by the shared uncond block below).
+            const caseBranches = isSwitchStep(s)
+                ? branches.filter((b) => (b.conditions ?? []).some((c) => c.field === "ai_label"))
+                : [];
+            for (const b of caseBranches) {
+                const c0 = (b.conditions ?? []).find((c) => c.field === "ai_label");
+                const name = (c0?.label ?? "").trim();
+                if (!name) continue;
+                const wt = waitTag(b.target_step_id);
+                flowEdges.push({
+                    id: `case-${b.branch_id}`,
+                    source: s.id,
+                    sourceHandle: caseHandleId(name),
+                    target: b.target_step_id ?? STOP_ID,
+                    label: wt ? `${name} · ${wt}` : name,
+                    reconnectable: true,
+                    style: { stroke: "#a855f7", strokeWidth: 2 },
+                    labelStyle: { fill: "#7e22ce", fontSize: 10 },
+                    labelBgStyle: { fill: "#fff", stroke: "#e9d5ff" },
+                    labelBgPadding: [5, 3],
+                    labelBgBorderRadius: 5,
+                    data: { sourceId: s.id, branchId: b.branch_id },
+                });
+            }
+            const conds = branches.filter(isCond).filter((b) => !caseBranches.includes(b));
             const uncond = branches.find((b) => !isCond(b));
 
             conds.forEach((b, i) => {
@@ -1423,18 +1588,19 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                 else addUnconditional(m.sourceId, target);
             } else if (c.sourceHandle === "if") {
                 addIfTo(c.source, target);
+            } else if (c.sourceHandle?.startsWith("case:")) {
+                // A Switch case dot: this line IS that case's path.
+                connectSwitchCase(c.source, c.sourceHandle.slice("case:".length), target);
             } else if (seqById.get(c.source)?.kind === "wait") {
                 // A Condition node is a branch point: every path out of it is a
                 // condition ("if X, go here"), chained as if / else-if. The final
                 // catch-all is the else dot on the last IF box.
                 addIfTo(c.source, target);
-            } else if (isAIStepNode(seqById.get(c.source))) {
-                addAIPathTo(c.source, target);
             } else {
                 addUnconditional(c.source, target);
             }
         },
-        [seqById, retargetBranch, addIfTo, addUnconditional, addAIPathTo],
+        [seqById, retargetBranch, addIfTo, addUnconditional, connectSwitchCase],
     );
 
     const selected = React.useMemo(() => {
@@ -1533,7 +1699,7 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                     onConnect(c);
                 }}
                 onConnectStart={(_, params) => {
-                    connectStartRef.current = params.nodeId ?? null;
+                    connectStartRef.current = { nodeId: params.nodeId ?? null, handleId: params.handleId ?? null };
                 }}
                 nodesConnectable={canEditFlow}
                 nodesDraggable={!isCoarse}
@@ -1543,8 +1709,9 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                 minZoom={0.2}
                 maxZoom={1.75}
                 onConnectEnd={(event, state) => {
-                    const fromId = state?.fromNode?.id ?? connectStartRef.current;
-                    connectStartRef.current = null;
+                    const fromId = state?.fromNode?.id ?? connectStartRef.current.nodeId;
+                    const fromHandle = state?.fromHandle?.id ?? connectStartRef.current.handleId;
+                    connectStartRef.current = { nodeId: null, handleId: null };
                     // Only when the line is dropped on EMPTY canvas (the pane). A
                     // drop on a node/handle is a real connection that onConnect
                     // already handled. The pane class is the reliable v12 signal.
@@ -1577,6 +1744,9 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                             y: pt.clientY,
                             sourceId: fromId,
                             conditional: seqById.get(fromId)?.kind === "wait",
+                            switchCase: fromHandle?.startsWith("case:")
+                                ? fromHandle.slice("case:".length)
+                                : undefined,
                         });
                     }
                 }}
@@ -1685,6 +1855,11 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                                     addUnconditional(dc.ifSource.sourceId, id);
                                 }
                             }
+                        } else if (dc.switchCase) {
+                            // From a Switch case dot: create the node, then wire
+                            // this case's path straight to it.
+                            const id = await createTypedStep(choice);
+                            if (id) connectSwitchCase(dc.sourceId, dc.switchCase, id);
                         } else if (dc.conditional) {
                             // Dragging out of a Condition node: create the node,
                             // then attach it as a conditional ("if") branch so the
@@ -1915,10 +2090,6 @@ function ConnectionEditor({
 }) {
     const c0 = branch.conditions?.[0];
     const [field, setField] = React.useState<string>(c0?.field ?? "always");
-    // The AI outcome name typed on this path. The named paths out of an AI step
-    // ARE the step's outcome set — the model is asked to pick exactly one of
-    // them, so naming the connection is the whole configuration.
-    const [aiName, setAiName] = React.useState<string>(c0?.field === "ai_label" ? (c0.label ?? "").trim() : "");
     const [value, setValue] = React.useState<number>(c0?.value ?? (c0?.field === "random" ? 50 : 3));
     // Instant-capable branches (reply intent, opened, clicked) fire the moment
     // the event lands by default; this lets the user opt out so the path routes
@@ -1927,49 +2098,27 @@ function ConnectionEditor({
 
     const isAlways = field === "always";
     const isRandom = field === "random";
-    const isAILabel = field === "ai_label";
+    // A Switch case path: the case lives on the node (its dot + name), so this
+    // editor only handles the target/wait — the condition itself is fixed.
+    const isCasePath = c0?.field === "ai_label";
+    const caseName = isCasePath ? (c0?.label ?? "").trim() : "";
     const isReply = isReplyBranchField(field as BranchField);
-    const isInstantCapable = isInstantCapableField(field as BranchField);
+    const isInstantCapable = !isCasePath && isInstantCapableField(field as BranchField);
     const instantVerb = field === "opened" ? "open" : field === "clicked" ? "click" : "reply";
     const isNegative = field === "not_opened" || field === "not_clicked" || field === "not_replied";
     const target = steps.find((s) => s.id === branch.target_step_id);
     const targetLabel = branch.target_step_id === null ? "Stop the sequence" : target ? `“${stepName(target)}”` : "—";
-
-    // AI-decided paths only make sense out of an AI step. Sibling outcome names
-    // are shown for context and guarded against duplicates: two paths with the
-    // same name would be indistinguishable to the model.
-    const isAISource = source.kind === "action" && source.action?.type === "ai";
-    const siblingAINames = isAISource
-        ? [
-              ...new Set(
-                  (source.conditions?.branches ?? [])
-                      .filter((b) => b.branch_id !== branch.branch_id)
-                      .flatMap((b) => (b.conditions ?? []).filter((c) => c.field === "ai_label").map((c) => (c.label ?? "").trim()))
-                      .filter(Boolean),
-              ),
-          ]
-        : [];
-    const pathOptions: SelectOption[] = isAISource
-        ? [{ value: "ai_label", label: "when AI picks this path", group: "AI decision" }, ...BRANCH_PATH_OPTIONS]
-        : BRANCH_PATH_OPTIONS;
+    const aiSwitch = source.action?.switch_on !== "value";
 
     const buildConditions = (): BranchCondition[] => {
+        if (isCasePath) return branch.conditions ?? [];
         if (isAlways) return [];
         if (isRandom) return [{ field: "random", operator: "chance", value }];
-        if (isAILabel) return [{ field: "ai_label", operator: "is", label: aiName.trim() }];
         // Reply-class conditions are checked once, ever (no day window / value).
         if (isReply) return [{ field: field as BranchField, operator: "ever" }];
         return [{ field: field as BranchField, operator: "within_days", value }];
     };
     const save = (target_step_id: string | null) => {
-        if (isAILabel && !aiName.trim()) {
-            toast.error("Name this outcome so the AI can pick it");
-            return;
-        }
-        if (isAILabel && siblingAINames.some((l) => l.toLowerCase() === aiName.trim().toLowerCase())) {
-            toast.error("Another path out of this step already uses that outcome name");
-            return;
-        }
         onSave({
             branch_id: branch.branch_id,
             target_step_id,
@@ -2034,20 +2183,22 @@ function ConnectionEditor({
                     )}
                 </div>
 
-                <div>
-                    <p className="mb-1 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">Take this path</p>
-                    <SelectMenu
-                        className="w-full"
-                        value={field}
-                        options={pathOptions}
-                        onChange={(f) => {
-                            setField(f);
-                            if (f === "random") setValue((v) => (v >= 1 && v <= 99 ? v : 50));
-                            else if (f !== "always" && f !== "ai_label" && !isReplyBranchField(f as BranchField))
-                                setValue((v) => (v >= 1 && v <= 60 ? v : 3));
-                        }}
-                    />
-                </div>
+                {!isCasePath && (
+                    <div>
+                        <p className="mb-1 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">Take this path</p>
+                        <SelectMenu
+                            className="w-full"
+                            value={field}
+                            options={BRANCH_PATH_OPTIONS}
+                            onChange={(f) => {
+                                setField(f);
+                                if (f === "random") setValue((v) => (v >= 1 && v <= 99 ? v : 50));
+                                else if (f !== "always" && !isReplyBranchField(f as BranchField))
+                                    setValue((v) => (v >= 1 && v <= 60 ? v : 3));
+                            }}
+                        />
+                    </div>
+                )}
 
                 {isRandom && (
                     <div className="flex flex-wrap items-center gap-1.5">
@@ -2055,23 +2206,14 @@ function ConnectionEditor({
                         <span>% of contacts (chosen at random)</span>
                     </div>
                 )}
-                {isAILabel && (
-                    <div>
-                        <p className="mb-1 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">Outcome name</p>
-                        <TextInput
-                            value={aiName}
-                            onChange={(v) => setAiName(v.slice(0, 80))}
-                            placeholder="e.g. interested"
-                            className="w-full"
-                        />
-                        <p className="mt-1 rounded-md border border-purple-200 bg-purple-50/60 px-2 py-1.5 text-[11px] leading-relaxed text-purple-700">
-                            The named paths out of this step are the choices: the AI reads the contact and picks exactly
-                            one. Routing happens at the step boundary — no extra credits.
-                            {siblingAINames.length > 0 && <> Other paths: {siblingAINames.join(", ")}.</>}
-                        </p>
-                    </div>
+                {isCasePath && (
+                    <p className="rounded-md border border-purple-200 bg-purple-50/60 px-2 py-1.5 text-[11px] leading-relaxed text-purple-700">
+                        The “{caseName}” case of this switch: contacts take this path when{" "}
+                        {aiSwitch ? "the AI picks" : "the value matches"} “{caseName}”. Rename or remove the case on the
+                        step itself; routing happens at the step boundary with no extra credits.
+                    </p>
                 )}
-                {!isAlways && !isRandom && !isReply && !isAILabel && (
+                {!isAlways && !isRandom && !isReply && !isCasePath && (
                     <div className="flex flex-wrap items-center gap-1.5">
                         <span>within</span>
                         <NumberInput value={value} onChange={(v) => setValue(Math.max(1, Math.min(60, Math.round(v) || 1)))} min={1} max={60} className="w-16" align="center" />
@@ -2182,7 +2324,7 @@ const ADD_ACTION_OPTIONS: { type: SequenceActionType; label: string }[] = [
     { type: "unsubscribe", label: "Unsubscribe" },
     { type: "run_automation", label: "Run automation" },
     { type: "fire_event", label: "Fire event" },
-    { type: "ai", label: "AI step" },
+    { type: "switch", label: "Switch (AI / value)" },
 ];
 
 type CreateChoice = "email" | "condition" | SequenceActionType;
@@ -2395,6 +2537,10 @@ function defaultActionFor(type: SequenceActionType): SequenceAction {
     if (type === "label_email") {
         return { type, label_ids: [] };
     }
+    if (type === "switch") {
+        // Two starter cases so the node shows draggable dots immediately.
+        return { type, switch_on: "ai", switch_cases: ["interested", "not interested"] };
+    }
     return { type };
 }
 
@@ -2496,10 +2642,24 @@ function ActionEditor({
     const save = async () => {
         setSaving(true);
         try {
+            // Switch: drop case paths whose case no longer exists (renamed or
+            // removed in this edit), so no stale purple edge lingers with a
+            // handle that is gone.
+            let healed: SequenceBranch[] | null = null;
+            if (action.type === "switch") {
+                const keep = new Set((action.switch_cases ?? []).map((c) => caseKey(c)).filter(Boolean));
+                const all = sequence.conditions?.branches ?? [];
+                const next = all.filter((b) => {
+                    const c0 = (b.conditions ?? []).find((c) => c.field === "ai_label");
+                    return !c0 || keep.has(caseKey(c0.label ?? ""));
+                });
+                if (next.length !== all.length) healed = next;
+            }
             await updateSequence(campaignId, sequence.id, {
                 name,
                 kind: "action",
                 action,
+                ...(healed ? { conditions: { branches: healed } } : {}),
             });
             onSaved();
             toast.success("Action saved");
@@ -2524,7 +2684,7 @@ function ActionEditor({
             </div>
 
             <ActionConfigFields action={action} setAction={setAction} />
-            {action.type === "ai" && <AIStepFields action={action} setAction={setAction} />}
+            {action.type === "switch" && <SwitchStepFields action={action} setAction={setAction} />}
 
             <div className="flex items-center justify-end pt-1">
                 <button
@@ -2541,9 +2701,8 @@ function ActionEditor({
 }
 
 // ActionConfigFields renders the per-type configuration for one action config.
-// Shared by the action-step editor and the AI step's "actions AI may take"
-// rows (where the nested action can be any type except "ai", so this component
-// never recurses).
+// The "switch" type renders nothing here — SwitchStepFields carries its whole
+// editor.
 function ActionConfigFields({
     action,
     setAction,
@@ -2903,72 +3062,162 @@ function FireEventStepFields({
     );
 }
 
-// AIStepFields — the "tell AI what to do" step. The whole configuration is one
-// instruction (contact-templated) plus the "what AI can see" context toggles;
-// the step's outcomes are the named paths drawn out of it on the canvas, and
-// side effects are ordinary action steps placed on those paths.
-function AIStepFields({
+// SwitchStepFields — the multi-way router. Configure the case names (each one
+// becomes its own drag dot on the node) and the decider: an AI prompt over the
+// contact's data, or a template value matched against the case names.
+function SwitchStepFields({
     action,
     setAction,
 }: {
     action: SequenceAction;
     setAction: React.Dispatch<React.SetStateAction<SequenceAction>>;
 }) {
+    const aiMode = action.switch_on !== "value";
+    const cases = action.switch_cases ?? [];
+    const setCases = (next: string[]) => setAction((a) => ({ ...a, switch_cases: next }));
     return (
         <div className="space-y-4">
             <div>
-                <div className="mb-1.5 flex items-center justify-between gap-2">
-                    <Label className="mb-0">Tell AI what to do</Label>
-                    <DealNameVariableMenu
-                        onPick={(token) => setAction((a) => ({ ...a, ai_instruction: (a.ai_instruction ?? "") + token }))}
-                    />
+                <Label>Decided by</Label>
+                <div className="inline-flex rounded-md border border-slate-200 bg-white p-0.5">
+                    {(
+                        [
+                            [true, "AI prompt"],
+                            [false, "Value"],
+                        ] as const
+                    ).map(([mode, lbl]) => (
+                        <button
+                            key={lbl}
+                            type="button"
+                            onClick={() => setAction((a) => ({ ...a, switch_on: mode ? "ai" : "value" }))}
+                            className={`h-6 px-2.5 rounded text-[11px] font-medium transition-colors ${
+                                aiMode === mode
+                                    ? "bg-purple-600 text-white shadow-sm"
+                                    : "text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+                            }`}
+                        >
+                            {lbl}
+                        </button>
+                    ))}
                 </div>
-                <textarea
-                    value={action.ai_instruction ?? ""}
-                    onChange={(e) => setAction((a) => ({ ...a, ai_instruction: e.target.value }))}
-                    rows={4}
-                    maxLength={4000}
-                    placeholder={
-                        "Read this contact's reply and company details. Decide whether they're interested, not ready yet, or the wrong person."
-                    }
-                    className="w-full px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-[12.5px] text-slate-900 placeholder:text-slate-400 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 resize-y leading-relaxed"
-                />
-                <p className="mt-1 text-[11px] text-slate-400">
-                    Runs once per contact reaching this step. Supports the same {"{{.FirstName}}"} / {"{{.Company}}"} variables
-                    as your email copy. Costs 1 credit per contact.
-                </p>
             </div>
+
+            {aiMode ? (
+                <div>
+                    <div className="mb-1.5 flex items-center justify-between gap-2">
+                        <Label className="mb-0">Tell AI how to route</Label>
+                        <DealNameVariableMenu
+                            onPick={(token) => setAction((a) => ({ ...a, ai_instruction: (a.ai_instruction ?? "") + token }))}
+                        />
+                    </div>
+                    <textarea
+                        value={action.ai_instruction ?? ""}
+                        onChange={(e) => setAction((a) => ({ ...a, ai_instruction: e.target.value }))}
+                        rows={4}
+                        maxLength={4000}
+                        placeholder={
+                            "Read this contact's reply and company details. Decide whether they're interested, not ready yet, or the wrong person."
+                        }
+                        className="w-full px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-[12.5px] text-slate-900 placeholder:text-slate-400 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 resize-y leading-relaxed"
+                    />
+                    <p className="mt-1 text-[11px] text-slate-400">
+                        One model call per contact reaching this step picks exactly one case. Supports the same{" "}
+                        {"{{.FirstName}}"} / {"{{.Company}}"} variables as your email copy. Costs 1 credit per contact.
+                    </p>
+                </div>
+            ) : (
+                <div>
+                    <div className="mb-1.5 flex items-center justify-between gap-2">
+                        <Label className="mb-0">Value to match</Label>
+                        <DealNameVariableMenu
+                            onPick={(token) => setAction((a) => ({ ...a, switch_value: (a.switch_value ?? "") + token }))}
+                        />
+                    </div>
+                    <TextInput
+                        value={action.switch_value ?? ""}
+                        onChange={(v) => setAction((a) => ({ ...a, switch_value: v.slice(0, 500) }))}
+                        placeholder="e.g. {{.Industry}}"
+                        className="w-full font-mono"
+                    />
+                    <p className="mt-1 text-[11px] text-slate-400">
+                        Rendered per contact and matched to the case names (case-insensitive). No model call, no credits.
+                    </p>
+                </div>
+            )}
 
             <div>
-                <Label>What AI can see</Label>
-                <div className="space-y-1">
-                    <AIContextToggle
-                        label="Campaign history"
-                        detail="Which steps ran, opens, clicks, replies, and earlier AI labels"
-                        on={!action.ai_no_engagement}
-                        onToggle={() => setAction((a) => ({ ...a, ai_no_engagement: !a.ai_no_engagement || undefined }))}
-                    />
-                    <AIContextToggle
-                        label="Incoming email"
-                        detail="The newest email received from the contact (subject + preview)"
-                        on={!action.ai_no_replies}
-                        onToggle={() => setAction((a) => ({ ...a, ai_no_replies: !a.ai_no_replies || undefined }))}
-                    />
+                <div className="mb-1.5 flex items-center justify-between gap-2">
+                    <Label className="mb-0">Cases</Label>
+                    <button
+                        type="button"
+                        onClick={() => {
+                            if (cases.length >= 20) return;
+                            setCases([...cases, ""]);
+                        }}
+                        className="inline-flex h-6 items-center gap-1 rounded-md border border-slate-200 bg-white px-2 text-[11.5px] font-medium text-slate-600 transition-colors hover:border-slate-300 hover:text-slate-900"
+                    >
+                        <PlusIcon className="w-3 h-3" /> Add case
+                    </button>
                 </div>
-                <p className="mt-1 text-[11px] text-slate-400">Contact fields are always included.</p>
+                {cases.length === 0 ? (
+                    <p className="text-[11px] text-slate-400">
+                        Each case becomes its own dot on the node — drag it to the step that path leads to.
+                    </p>
+                ) : (
+                    <div className="space-y-1.5">
+                        {cases.map((row, i) => (
+                            <div key={i} className="flex items-center gap-1.5">
+                                <TextInput
+                                    value={row}
+                                    onChange={(v) => setCases(cases.map((x, idx) => (idx === i ? v.slice(0, 80) : x)))}
+                                    placeholder="e.g. interested"
+                                    className="flex-1 min-w-0"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => setCases(cases.filter((_, idx) => idx !== i))}
+                                    title="Remove case"
+                                    className="inline-flex size-6 shrink-0 items-center justify-center rounded text-slate-300 transition-colors hover:bg-rose-50 hover:text-rose-600"
+                                >
+                                    <XIcon className="w-3.5 h-3.5" />
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                )}
             </div>
 
+            {aiMode && (
+                <div>
+                    <Label>What AI can see</Label>
+                    <div className="space-y-1">
+                        <AIContextToggle
+                            label="Campaign history"
+                            detail="Which steps ran, opens, clicks, replies, and earlier outcomes"
+                            on={!action.ai_no_engagement}
+                            onToggle={() => setAction((a) => ({ ...a, ai_no_engagement: !a.ai_no_engagement || undefined }))}
+                        />
+                        <AIContextToggle
+                            label="Incoming email"
+                            detail="The newest email received from the contact (subject + preview)"
+                            on={!action.ai_no_replies}
+                            onToggle={() => setAction((a) => ({ ...a, ai_no_replies: !a.ai_no_replies || undefined }))}
+                        />
+                    </div>
+                    <p className="mt-1 text-[11px] text-slate-400">Contact fields are always included.</p>
+                </div>
+            )}
+
             <p className="rounded-md border border-purple-200 bg-purple-50/60 px-2.5 py-2 text-[11px] leading-relaxed text-purple-700">
-                Drag as many lines out of this step as you need — each one is a choice. Name it when the connection
-                editor opens, and the AI reads the contact and picks exactly one path. Put normal action steps (tag,
-                deal, task…) on a path to make things happen for the contacts routed down it. If AI can't decide, the
-                contact follows your “always” / fallback connection.
+                Every case gets its own dot on the node — drag each dot to the step that path leads to, and the bottom
+                dot is the “otherwise” fallback for contacts no case matched. Put normal action steps (tag, deal, task…)
+                on a path to make things happen for the contacts routed down it.
             </p>
         </div>
     );
 }
 
-// AIContextToggle — one row of the AI step's "what AI can see" section.
+// AIContextToggle — one row of the switch step's "what AI can see" section.
 function AIContextToggle({
     label,
     detail,
