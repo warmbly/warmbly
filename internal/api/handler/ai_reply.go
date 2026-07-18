@@ -82,14 +82,24 @@ func (h *Handler) DraftReply(c *gin.Context) {
 	// provider failure. A free/local model (AI_FREE) runs un-metered.
 	idemKey := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
 	local := h.AIProvider != nil && h.AIProvider.IsLocal()
+	// Attribute the charge to the teammate + the thread the draft is for.
+	reqCtx := c.Request.Context()
+	{
+		meta := models.CreditMeta{Context: models.CreditContext{ThreadID: req.ThreadID}}
+		if actor, aerr := middleware.GetUserUUID(c); aerr == nil {
+			meta.ActorID = actor
+		}
+		reqCtx = models.WithCreditMeta(reqCtx, meta)
+	}
+
 	var remaining int
 	if local {
-		if bal, berr := h.CreditService.GetBalance(c.Request.Context(), *orgID); berr == nil {
+		if bal, berr := h.CreditService.GetBalance(reqCtx, *orgID); berr == nil {
 			remaining = bal
 		}
 	} else {
 		var cerr error
-		remaining, cerr = h.CreditService.Consume(c.Request.Context(), *orgID, credits.CostReplyDraft, "reply_draft", model, 0, idemKey)
+		remaining, cerr = h.CreditService.Consume(reqCtx, *orgID, credits.CostReplyDraft, "reply_draft", model, 0, idemKey)
 		if cerr != nil {
 			mapCreditError(c, cerr)
 			return
@@ -110,7 +120,7 @@ func (h *Handler) DraftReply(c *gin.Context) {
 	})
 	if gerr != nil {
 		if !local {
-			if bal, rerr := h.CreditService.Grant(c.Request.Context(), *orgID, credits.CostReplyDraft, "reply_draft_refund"); rerr == nil {
+			if bal, rerr := h.CreditService.Grant(reqCtx, *orgID, credits.CostReplyDraft, "reply_draft_refund"); rerr == nil {
 				remaining = bal
 			}
 		}
@@ -121,7 +131,7 @@ func (h *Handler) DraftReply(c *gin.Context) {
 	// Usage-based settle: charge any overage beyond the flat minimum from the
 	// actual token usage (best-effort; the delivered draft never fails).
 	if !local {
-		if extra, serr := h.CreditService.SettleUsage(c.Request.Context(), *orgID, credits.CostReplyDraft, result.Model, result.TokensUsed, "reply_draft", settleKey(idemKey)); serr == nil && extra > 0 {
+		if extra, serr := h.CreditService.SettleUsage(reqCtx, *orgID, credits.CostReplyDraft, result.Model, result.TokensUsed, "reply_draft", settleKey(idemKey)); serr == nil && extra > 0 {
 			remaining -= extra
 		}
 	}

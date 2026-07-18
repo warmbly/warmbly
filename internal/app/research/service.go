@@ -282,6 +282,10 @@ func (s *service) execute(ctx context.Context, inv aitools.Invocation, run *mode
 		// Charge on save, idempotent per run. A free/local model (AI_FREE)
 		// runs un-metered, so skip the charge entirely.
 		if !s.provider.IsLocal() {
+			ctx = models.WithCreditMeta(ctx, models.CreditMeta{ActorID: inv.UserID, Context: models.CreditContext{
+				ContactID: run.ContactID.String(),
+				RunID:     run.ID.String(),
+			}})
 			if _, cerr := s.credits.Consume(ctx, orgID, credits.CostResearchRun, "research_run", model, run.TokensUsed, "research:"+run.ID.String()); cerr != nil {
 				run.Status = models.ResearchFailed
 				if errors.Is(cerr, credits.ErrInsufficientCredits) {

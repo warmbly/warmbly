@@ -141,6 +141,14 @@ func (s *service) execAIAction(ctx context.Context, a models.Automation, n model
 	// free/local model (AI_FREE) runs un-metered, so skip the charge.
 	model := s.aiProvider.ModelForTier(false)
 	idemKey := "auto_ai:" + stringFromMap(data, automationRunIDKey) + ":" + n.ID
+	// Attribute the charge (and its settle/refund) to this automation node run.
+	ctx = models.WithCreditMeta(ctx, models.CreditMeta{Context: models.CreditContext{
+		AutomationID:   a.ID.String(),
+		AutomationName: a.Name,
+		NodeID:         n.ID,
+		RunID:          stringFromMap(data, automationRunIDKey),
+		Detail:         string(n.Action),
+	}})
 	if !s.aiProvider.IsLocal() {
 		if _, cerr := s.credits.Consume(ctx, a.OrganizationID, aiNodeCredits, "automation_ai", model, 0, idemKey); cerr != nil {
 			switch {
@@ -216,6 +224,14 @@ func (s *service) evalAICondition(ctx context.Context, a models.Automation, n mo
 
 	model := s.aiProvider.ModelForTier(false)
 	idemKey := "auto_ai:" + stringFromMap(data, automationRunIDKey) + ":" + n.ID
+	// Attribute the charge (and its settle/refund) to this Ask AI evaluation.
+	ctx = models.WithCreditMeta(ctx, models.CreditMeta{Context: models.CreditContext{
+		AutomationID:   a.ID.String(),
+		AutomationName: a.Name,
+		NodeID:         n.ID,
+		RunID:          stringFromMap(data, automationRunIDKey),
+		Detail:         "ask_ai: " + truncate(question, 120),
+	}})
 	if !s.aiProvider.IsLocal() {
 		if _, cerr := s.credits.Consume(ctx, a.OrganizationID, aiNodeCredits, "automation_ai", model, 0, idemKey); cerr != nil {
 			switch {

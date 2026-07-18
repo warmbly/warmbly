@@ -409,7 +409,8 @@ func (s *service) runLoop(ctx context.Context, inv aitools.Invocation, sess *mod
 				return nil
 			}
 			key := messageID + ":" + strconv.Itoa(iter)
-			remaining, cerr := s.credits.Consume(ctx, inv.OrgID, credits.CostAgentIteration, "agent_iteration", model, 0, key)
+			mctx := models.WithCreditMeta(ctx, models.CreditMeta{ActorID: inv.UserID, Context: models.CreditContext{SessionID: sess.ID.String()}})
+			remaining, cerr := s.credits.Consume(mctx, inv.OrgID, credits.CostAgentIteration, "agent_iteration", model, 0, key)
 			if cerr != nil {
 				switch {
 				case errors.Is(cerr, credits.ErrInsufficientCredits):
@@ -470,7 +471,8 @@ func (s *service) runLoop(ctx context.Context, inv aitools.Invocation, sess *mod
 	// Usage-based settle: the run charged 1 credit per iteration up-front;
 	// price the run's total token usage and charge the overage (best-effort).
 	if chargeCredits && result.TokensUsed > 0 {
-		if extra, serr := s.credits.SettleUsage(ctx, inv.OrgID, result.Iterations*credits.CostAgentIteration, model, result.TokensUsed, "agent_iteration", messageID+":usage"); serr == nil && extra > 0 {
+		mctx := models.WithCreditMeta(ctx, models.CreditMeta{ActorID: inv.UserID, Context: models.CreditContext{SessionID: sess.ID.String()}})
+		if extra, serr := s.credits.SettleUsage(mctx, inv.OrgID, result.Iterations*credits.CostAgentIteration, model, result.TokensUsed, "agent_iteration", messageID+":usage"); serr == nil && extra > 0 {
 			lastRemaining -= extra
 		}
 	}

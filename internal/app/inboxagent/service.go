@@ -230,6 +230,7 @@ func (s *service) draft(ctx context.Context, r models.InboxAgentReply) {
 	// approved-and-sent for free. A free/local model (AI_FREE) runs
 	// un-metered, so skip the charge (and the unwind).
 	if !s.provider.IsLocal() {
+		ctx = models.WithCreditMeta(ctx, models.CreditMeta{Context: models.CreditContext{ThreadID: r.ThreadID, Detail: "inbound from " + r.Counterpart}})
 		if _, chErr := s.credits.Consume(ctx, r.OrganizationID, credits.CostInboxAgentThread, "inbox_agent_draft", res.Model, res.TokensUsed, "inbox_agent:"+draft.ID.String()); chErr != nil {
 			delCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()

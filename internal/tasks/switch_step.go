@@ -129,6 +129,16 @@ func (s *tasksService) execSequenceSwitchStep(ctx context.Context, campaign *mod
 		return errors.New("AI-decided switches need an organization-owned campaign")
 	}
 
+	// Attribute every charge on this step (base, search, settle, refund) to the
+	// campaign/step/contact that ran it. Scheduled work has no acting user.
+	ctx = models.WithCreditMeta(ctx, models.CreditMeta{Context: models.CreditContext{
+		CampaignID:   campaign.ID.String(),
+		CampaignName: campaign.Name,
+		StepID:       sequenceID.String(),
+		ContactID:    contact.ID.String(),
+		ContactEmail: contact.Email,
+	}})
+
 	// The key is stable per (campaign, contact, step), so an at-least-once task
 	// redelivery never double-charges. A free/local model runs un-metered.
 	// Thinking routes to the stronger model tier; its higher token pricing

@@ -36,6 +36,10 @@ export interface CreditTransaction {
     purchased_delta: number;
     purchased_balance_after: number;
     idempotency_key?: string | null;
+    // Who triggered the charge (absent for scheduled/system work) and exactly
+    // what ran (campaign/step/contact, automation/node/run, thread, session).
+    actor_user_id?: string | null;
+    context?: CreditContext;
     created_at: string;
 }
 
@@ -88,4 +92,21 @@ export interface CreditUsageOverview {
     series: CreditUsagePoint[];
     by_reason: CreditUsageBucket[];
     by_model: CreditUsageBucket[];
+}
+
+// CreditContext names exactly what an AI charge ran for; only the fields that
+// apply to the feature are present.
+export interface CreditContext {
+    campaign_id?: string;
+    campaign_name?: string;
+    step_id?: string;
+    contact_id?: string;
+    contact_email?: string;
+    automation_id?: string;
+    automation_name?: string;
+    node_id?: string;
+    run_id?: string;
+    thread_id?: string;
+    session_id?: string;
+    detail?: string;
 }

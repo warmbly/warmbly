@@ -22,6 +22,7 @@ import (
 	"github.com/warmbly/warmbly/internal/api/middleware"
 	"github.com/warmbly/warmbly/internal/app/credits"
 	"github.com/warmbly/warmbly/internal/errx"
+	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/generation"
 )
 
@@ -105,15 +106,21 @@ func (h *Handler) GenerateWriting(c *gin.Context) {
 	// no-negative / no-replay invariants and returns 402 on a depleted balance.
 	idemKey := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
 	local := h.WritingGenerator.IsLocal()
+	// Attribute the charge to the teammate who asked for the draft.
+	reqCtx := c.Request.Context()
+	if actor, aerr := middleware.GetUserUUID(c); aerr == nil {
+		reqCtx = models.WithCreditMeta(reqCtx, models.CreditMeta{ActorID: actor})
+	}
+
 	var remaining int
 	if local {
-		if bal, berr := h.CreditService.GetBalance(c.Request.Context(), *orgID); berr == nil {
+		if bal, berr := h.CreditService.GetBalance(reqCtx, *orgID); berr == nil {
 			remaining = bal
 		}
 	} else {
 		var err error
 		remaining, err = h.CreditService.Consume(
-			c.Request.Context(), *orgID, creditsPerWrite,
+			reqCtx, *orgID, creditsPerWrite,
 			"writing_assistant", model, 0, idemKey,
 		)
 		if err != nil {
@@ -137,7 +144,7 @@ func (h *Handler) GenerateWriting(c *gin.Context) {
 	result, gerr := h.WritingGenerator.GenerateWriting(c.Request.Context(), model, req.Prompt, voice)
 	if gerr != nil {
 		if !local {
-			if bal, rerr := h.CreditService.Grant(c.Request.Context(), *orgID, creditsPerWrite, "writing_assistant_refund"); rerr == nil {
+			if bal, rerr := h.CreditService.Grant(reqCtx, *orgID, creditsPerWrite, "writing_assistant_refund"); rerr == nil {
 				remaining = bal
 			}
 		}
@@ -152,7 +159,7 @@ func (h *Handler) GenerateWriting(c *gin.Context) {
 	// Usage-based settle: price the actual tokens and charge any overage
 	// beyond the flat minimum (best-effort; never fails the delivered text).
 	if !local {
-		if extra, serr := h.CreditService.SettleUsage(c.Request.Context(), *orgID, creditsPerWrite, result.Model, result.TokensUsed, "writing_assistant", settleKey(idemKey)); serr == nil && extra > 0 {
+		if extra, serr := h.CreditService.SettleUsage(reqCtx, *orgID, creditsPerWrite, result.Model, result.TokensUsed, "writing_assistant", settleKey(idemKey)); serr == nil && extra > 0 {
 			remaining -= extra
 		}
 	}

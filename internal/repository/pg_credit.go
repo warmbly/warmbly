@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -104,14 +105,21 @@ func scanLedger(row pgx.Row, l *models.CreditLedger) error {
 	return row.Scan(&l.OrgID, &l.Balance, &l.PurchasedBalance, &l.MonthResetAt, &l.TotalPurchased, &l.CreatedAt, &l.UpdatedAt)
 }
 
-const creditTxnCols = `id, org_id, amount, reason, model_used, tokens_used, balance_after, purchased_delta, purchased_balance_after, idempotency_key, created_at`
+const creditTxnCols = `id, org_id, amount, reason, model_used, tokens_used, balance_after, purchased_delta, purchased_balance_after, idempotency_key, actor_user_id, context, created_at`
 
 func scanTxn(row pgx.Row, t *models.CreditTransaction) error {
-	return row.Scan(
+	var rawCtx []byte
+	if err := row.Scan(
 		&t.ID, &t.OrgID, &t.Amount, &t.Reason, &t.ModelUsed,
 		&t.TokensUsed, &t.BalanceAfter, &t.PurchasedDelta, &t.PurchasedBalanceAfter,
-		&t.IdempotencyKey, &t.CreatedAt,
-	)
+		&t.IdempotencyKey, &t.ActorUserID, &rawCtx, &t.CreatedAt,
+	); err != nil {
+		return err
+	}
+	if len(rawCtx) > 0 {
+		_ = json.Unmarshal(rawCtx, &t.Context) // a malformed blob renders empty, never fails the read
+	}
+	return nil
 }
 
 func (r *creditRepository) GetBalance(ctx context.Context, orgID uuid.UUID) (*models.CreditLedger, error) {
@@ -165,19 +173,33 @@ func replayByKey(ctx context.Context, tx pgx.Tx, idempotencyKey string) (*models
 	return nil, err
 }
 
-// insertTxn appends one log row inside the caller's transaction.
+// insertTxn appends one log row inside the caller's transaction. Attribution
+// (actor + what-ran context) is read off the request context when the call
+// site attached it via models.WithCreditMeta.
 func insertTxn(ctx context.Context, tx pgx.Tx, orgID uuid.UUID, amount int, reason, model string, tokens, balanceAfter, purchasedDelta, purchasedAfter int, idempotencyKey string) (*models.CreditTransaction, error) {
 	var keyArg *string
 	if idempotencyKey != "" {
 		keyArg = &idempotencyKey
 	}
+	meta := models.CreditMetaFrom(ctx)
+	var actorArg *uuid.UUID
+	if meta.ActorID != uuid.Nil {
+		actor := meta.ActorID
+		actorArg = &actor
+	}
+	ctxJSON := []byte("{}")
+	if !meta.Context.Empty() {
+		if raw, err := json.Marshal(meta.Context); err == nil {
+			ctxJSON = raw
+		}
+	}
 	txn := &models.CreditTransaction{}
 	err := scanTxn(tx.QueryRow(ctx, `
 		INSERT INTO credit_ledger_transactions
-			(org_id, amount, reason, model_used, tokens_used, balance_after, purchased_delta, purchased_balance_after, idempotency_key)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+			(org_id, amount, reason, model_used, tokens_used, balance_after, purchased_delta, purchased_balance_after, idempotency_key, actor_user_id, context)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		RETURNING `+creditTxnCols,
-		orgID, amount, reason, model, tokens, balanceAfter, purchasedDelta, purchasedAfter, keyArg), txn)
+		orgID, amount, reason, model, tokens, balanceAfter, purchasedDelta, purchasedAfter, keyArg, actorArg, ctxJSON), txn)
 	if err != nil {
 		return nil, err
 	}
