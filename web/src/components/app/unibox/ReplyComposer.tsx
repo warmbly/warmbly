@@ -528,18 +528,10 @@ export function ReplyComposer({ threadId, replyTo, mode, onClose }: ReplyCompose
                 </HeaderRow>
             </div>
 
-            {/* AI draft status/review bar. Lives directly above the body so
-                drafting reads as part of the composer, not a detached tool. */}
-            <AIDraftBar
-                ctrl={aiDraft}
-                busyLabels={[
-                    "Reading the thread…",
-                    mode === "forward" ? "Writing your note…" : "Writing your reply…",
-                    "Polishing…",
-                ]}
-            />
-
-            {/* Body */}
+            {/* Body. AI drafting overlays it instead of pushing layout: a
+                light sheen sweeps the textarea while generating and the
+                status/review card floats over the bottom edge. */}
+            <div className="relative">
             <textarea
                 ref={bodyRef}
                 value={body}
@@ -560,6 +552,18 @@ export function ReplyComposer({ threadId, replyTo, mode, onClose }: ReplyCompose
                 }}
                 className="w-full min-h-[120px] max-h-72 px-5 py-3 text-[13px] text-slate-800 placeholder:text-slate-400 bg-transparent resize-y focus:outline-none"
             />
+            {aiDraft.phase === "busy" && (
+                <div className="ai-sheen pointer-events-none absolute inset-0" aria-hidden />
+            )}
+            <AIDraftBar
+                ctrl={aiDraft}
+                busyLabels={[
+                    "Reading the thread…",
+                    mode === "forward" ? "Writing your note…" : "Writing your reply…",
+                    "Polishing…",
+                ]}
+            />
+            </div>
 
             {/* Inline AI, where you type: select text and an "Edit with AI"
                 pill floats over the selection; with just a caret, a faint

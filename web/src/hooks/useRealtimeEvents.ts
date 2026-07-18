@@ -109,6 +109,14 @@ export function useRealtimeEvents() {
         return
       }
 
+      // Any fresh AI credit debit (fired per charge, including scheduled
+      // campaign/automation spends) — keep every credits view live so the
+      // meter visibly moves when credits are used.
+      if (includes('CREDITS_CHANGED')) {
+        invalidate([['subscription', 'credits']])
+        return
+      }
+
       // AI contact research finished for one contact (batch progress arrives as
       // one of these per completion).
       if (includes('AI_RESEARCH', 'RESEARCH_PROGRESS')) {

@@ -145,15 +145,20 @@ func (h *Handler) GenerateEdit(c *gin.Context) {
 		return
 	}
 
+	charged := 0
 	if !local {
+		charged = creditsPerEdit
 		if extra, serr := h.CreditService.SettleUsage(reqCtx, *orgID, creditsPerEdit, result.Model, result.TokensUsed, "writing_edit", settleKey(idemKey)); serr == nil && extra > 0 {
 			remaining -= extra
+			charged += extra
 		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"text":              stripEditFences(result.Text),
 		"credits_remaining": remaining,
+		"credits_charged":   charged,
+		"tokens_used":       result.TokensUsed,
 		"model":             result.Model,
 	})
 }

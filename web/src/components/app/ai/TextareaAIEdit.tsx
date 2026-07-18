@@ -17,13 +17,25 @@ import useGenerateEdit from "@/lib/api/hooks/app/generation/useGenerateEdit";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import AIEditPopover, { type AIEditPhase } from "./AIEditPopover";
-import textareaRangeRect, { type RangeRect } from "./textareaRange";
+import textareaRangeRect, {
+    textareaRangeRects,
+    type LineRect,
+    type RangeRect,
+} from "./textareaRange";
 import useTypewriter from "./useTypewriter";
 
 interface Selection {
     start: number;
     end: number;
     text: string;
+}
+
+// Highlight tint per phase: steady while targeting, pulsing while the model
+// rewrites, green-tinged once applied.
+function cnHighlight(phase: AIEditPhase): string {
+    if (phase === "busy") return "rounded-[3px] bg-sky-300/50 animate-pulse pointer-events-none";
+    if (phase === "applied") return "rounded-[3px] bg-emerald-200/50 pointer-events-none";
+    return "rounded-[3px] bg-sky-200/45 pointer-events-none";
 }
 
 interface TextareaAIEditProps {
@@ -47,9 +59,12 @@ export default function TextareaAIEdit({
 
     const [sel, setSel] = React.useState<Selection | null>(null);
     const [rect, setRect] = React.useState<RangeRect | null>(null);
+    // Painted selection while the popover is open: the focused popover means
+    // the textarea no longer paints its own selection, so we draw it.
+    const [highlights, setHighlights] = React.useState<LineRect[]>([]);
     const [open, setOpen] = React.useState(false);
     const [phase, setPhase] = React.useState<AIEditPhase>("idle");
-    const [credits, setCredits] = React.useState<number | null>(null);
+    const [usage, setUsage] = React.useState<{ charged: number; tokens: number } | null>(null);
 
     const rootRef = React.useRef<HTMLDivElement>(null);
     // The selection being edited, frozen when the popover opens.
@@ -74,9 +89,21 @@ export default function TextareaAIEdit({
         setPhase("idle");
         setSel(null);
         setRect(null);
+        setHighlights([]);
         frozen.current = null;
         expectedValue.current = null;
     }, []);
+
+    // Re-measures the anchor rect and the painted selection for a range.
+    const syncRects = React.useCallback(
+        (target: Selection, paint: boolean) => {
+            const ta = textareaRef.current;
+            if (!ta) return;
+            setRect(textareaRangeRect(ta, target.start, target.end));
+            setHighlights(paint ? textareaRangeRects(ta, target.start, target.end) : []);
+        },
+        [textareaRef],
+    );
 
     // Selection tracking: read the textarea's range whenever the document
     // selection changes while it is focused. Frozen while the popover is open.
@@ -104,10 +131,9 @@ export default function TextareaAIEdit({
     React.useEffect(() => {
         if (!sel && !frozen.current) return;
         const sync = () => {
-            const ta = textareaRef.current;
             const target = frozen.current ?? sel;
-            if (!ta || !target) return;
-            setRect(textareaRangeRect(ta, target.start, target.end));
+            if (!target) return;
+            syncRects(target, openRef.current);
         };
         window.addEventListener("scroll", sync, true);
         window.addEventListener("resize", sync);
@@ -115,7 +141,7 @@ export default function TextareaAIEdit({
             window.removeEventListener("scroll", sync, true);
             window.removeEventListener("resize", sync);
         };
-    }, [sel, textareaRef]);
+    }, [sel, syncRects]);
 
     // Dismiss when the user clicks anywhere outside the floating layer and
     // the textarea (mirrors useClickOutside, plus the textarea exception).
@@ -155,8 +181,15 @@ export default function TextareaAIEdit({
     }, [open, closeAll]);
 
     const applyResult = React.useCallback(
-        (target: Selection, prevValue: string, instruction: string, text: string, remaining: number) => {
-            setCredits(remaining);
+        (
+            target: Selection,
+            prevValue: string,
+            instruction: string,
+            text: string,
+            charged: number,
+            tokens: number,
+        ) => {
+            setUsage({ charged, tokens });
             const prefix = prevValue.slice(0, target.start);
             const suffix = prevValue.slice(target.end);
             const cap = (s: string) => (maxLen ? s.slice(0, maxLen) : s);
@@ -166,22 +199,30 @@ export default function TextareaAIEdit({
                     const next = cap(prefix + partial + suffix);
                     expectedValue.current = next;
                     onChange(next);
+                    // Grow the painted highlight with the typing rewrite.
+                    const ta = textareaRef.current;
+                    if (ta) {
+                        setHighlights(
+                            textareaRangeRects(ta, target.start, target.start + partial.length),
+                        );
+                    }
                 },
                 () => {
+                    const newRange = { start: target.start, end: target.start + text.length, text };
                     lastRun.current = { instruction, prevValue, start: target.start, newLen: text.length };
-                    frozen.current = { start: target.start, end: target.start + text.length, text };
+                    frozen.current = newRange;
                     const ta = textareaRef.current;
                     if (ta) {
                         // Leave the rewrite selected so it reads as "this changed"
                         // and a follow-up edit can chain on it.
-                        ta.setSelectionRange(target.start, target.start + text.length);
-                        setRect(textareaRangeRect(ta, target.start, target.start + text.length));
+                        ta.setSelectionRange(newRange.start, newRange.end);
                     }
+                    syncRects(newRange, true);
                     setPhase("applied");
                 },
             );
         },
-        [maxLen, onChange, textareaRef, typewriter],
+        [maxLen, onChange, syncRects, textareaRef, typewriter],
     );
 
     const run = React.useCallback(
@@ -199,7 +240,14 @@ export default function TextareaAIEdit({
                 {
                     onSuccess: (res) => {
                         if (!openRef.current) return;
-                        applyResult(t, prevValue, instruction, res.text, res.credits_remaining);
+                        applyResult(
+                            t,
+                            prevValue,
+                            instruction,
+                            res.text,
+                            res.credits_charged ?? 0,
+                            res.tokens_used ?? 0,
+                        );
                     },
                     onError: (e) => {
                         const err = e as unknown as AppError;
@@ -224,18 +272,17 @@ export default function TextareaAIEdit({
         onChange(last.prevValue);
         const ta = textareaRef.current;
         const origEnd = last.prevValue.length - (value.length - (last.start + last.newLen));
-        frozen.current = {
+        const restored = {
             start: last.start,
             end: origEnd,
             text: last.prevValue.slice(last.start, origEnd),
         };
-        if (ta) {
-            ta.setSelectionRange(last.start, origEnd);
-            setRect(textareaRangeRect(ta, last.start, origEnd));
-        }
+        frozen.current = restored;
+        if (ta) ta.setSelectionRange(last.start, origEnd);
+        syncRects(restored, true);
         lastRun.current = null;
         setPhase("idle");
-    }, [onChange, textareaRef, typewriter, value]);
+    }, [onChange, syncRects, textareaRef, typewriter, value]);
 
     const retry = React.useCallback(() => {
         const last = lastRun.current;
@@ -256,6 +303,7 @@ export default function TextareaAIEdit({
         expectedValue.current = value;
         lastRun.current = null;
         setPhase("idle");
+        syncRects(sel, true);
         setOpen(true);
     };
 
@@ -270,6 +318,24 @@ export default function TextareaAIEdit({
 
     return createPortal(
         <div ref={rootRef} data-floating="">
+            {/* Painted selection: the range being edited, pulsing while the
+                rewrite is generating and growing as it types in. */}
+            {open &&
+                highlights.map((h, i) => (
+                    <div
+                        key={i}
+                        aria-hidden
+                        className={cnHighlight(phase)}
+                        style={{
+                            position: "fixed",
+                            top: h.top,
+                            left: h.left,
+                            width: h.width,
+                            height: h.height,
+                            zIndex: 54,
+                        }}
+                    />
+                ))}
             <AnimatePresence>
                 {showPill && rect && (
                     <motion.button
@@ -312,7 +378,7 @@ export default function TextareaAIEdit({
                     >
                         <AIEditPopover
                             phase={phase}
-                            credits={credits}
+                            usage={usage}
                             onRun={(instruction) => run(instruction)}
                             onUndo={undo}
                             onRetry={retry}

@@ -27,6 +27,7 @@ import buildError from "@/lib/helper/buildError";
 import ShortcutTooltip from "@/components/ui/shortcut-tooltip";
 import textareaRangeRect, { type RangeRect } from "./textareaRange";
 import useTypewriter from "./useTypewriter";
+import formatUsage from "./usage";
 
 // Context window around the caret sent with freeform prompts, so long drafts
 // don't blow past the endpoint's prompt cap.
@@ -77,9 +78,16 @@ export default function TextareaAICaret({
     const [caret, setCaret] = React.useState<number | null>(null);
     const [rect, setRect] = React.useState<RangeRect | null>(null);
     const [taRight, setTaRight] = React.useState(0);
+    // Textarea bounds for the busy sheen overlay.
+    const [taBox, setTaBox] = React.useState<{
+        top: number;
+        left: number;
+        width: number;
+        height: number;
+    } | null>(null);
     const [open, setOpen] = React.useState(false);
     const [phase, setPhase] = React.useState<Phase>("idle");
-    const [credits, setCredits] = React.useState<number | null>(null);
+    const [usage, setUsage] = React.useState<{ charged: number; tokens: number } | null>(null);
     const [instruction, setInstruction] = React.useState("");
 
     const rootRef = React.useRef<HTMLDivElement>(null);
@@ -108,7 +116,9 @@ export default function TextareaAICaret({
             const ta = textareaRef.current;
             if (!ta) return;
             setRect(textareaRangeRect(ta, pos, pos));
-            setTaRight(ta.getBoundingClientRect().right);
+            const b = ta.getBoundingClientRect();
+            setTaRight(b.right);
+            setTaBox({ top: b.top, left: b.left, width: b.width, height: b.height });
         },
         [textareaRef],
     );
@@ -241,7 +251,10 @@ export default function TextareaAICaret({
                 {
                     onSuccess: (res) => {
                         if (!openRef.current) return;
-                        setCredits(res.credits_remaining);
+                        setUsage({
+                            charged: res.credits_charged ?? 0,
+                            tokens: res.tokens_used ?? 0,
+                        });
                         const before = prevValue.slice(0, pos);
                         // Breathing room around the insertion without doubling
                         // whitespace that is already there.
@@ -317,6 +330,21 @@ export default function TextareaAICaret({
 
     return createPortal(
         <div ref={rootRef} data-floating="">
+            {/* Light sweep over the input while the model writes into it. */}
+            {phase === "busy" && taBox && (
+                <div
+                    aria-hidden
+                    className="ai-sheen pointer-events-none"
+                    style={{
+                        position: "fixed",
+                        top: taBox.top,
+                        left: taBox.left,
+                        width: taBox.width,
+                        height: taBox.height,
+                        zIndex: 54,
+                    }}
+                />
+            )}
             <AnimatePresence>
                 {showCompanion && rect && (
                     <ShortcutTooltip key="ai-caret-companion" label="Write with AI" combo="mod+J">
@@ -371,9 +399,9 @@ export default function TextareaAICaret({
                                 <span className="inline-flex items-center gap-1.5 text-[12px] font-medium text-slate-900 mr-auto">
                                     <CheckIcon className="w-3.5 h-3.5 text-emerald-600" />
                                     Inserted
-                                    {credits !== null && (
+                                    {usage && formatUsage(usage.charged, usage.tokens) && (
                                         <span className="text-[10.5px] font-normal text-slate-400">
-                                            · {credits} credit{credits === 1 ? "" : "s"} left
+                                            · {formatUsage(usage.charged, usage.tokens)}
                                         </span>
                                     )}
                                 </span>
@@ -441,7 +469,7 @@ export default function TextareaAICaret({
                                         >
                                             <CornerUpLeftIcon className="w-3.5 h-3.5 text-slate-400" />
                                             Draft a reply from this thread
-                                            <span className="ml-auto text-[10px] text-slate-300">2 credits</span>
+                                            <span className="ml-auto text-[10px] text-slate-300">from 2 credits</span>
                                         </button>
                                     )}
                                     <button
@@ -456,7 +484,7 @@ export default function TextareaAICaret({
                                     >
                                         <PenLineIcon className="w-3.5 h-3.5 text-slate-400" />
                                         Continue writing
-                                        <span className="ml-auto text-[10px] text-slate-300">1 credit</span>
+                                        <span className="ml-auto text-[10px] text-slate-300">from 1 credit</span>
                                     </button>
                                 </div>
                             </div>

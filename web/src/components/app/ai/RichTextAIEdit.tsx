@@ -59,7 +59,7 @@ export default function RichTextAIEdit({ editor }: { editor: Editor }) {
     const [anchor, setAnchor] = React.useState<Anchor | null>(null);
     const [open, setOpen] = React.useState(false);
     const [phase, setPhase] = React.useState<AIEditPhase>("idle");
-    const [credits, setCredits] = React.useState<number | null>(null);
+    const [usage, setUsage] = React.useState<{ charged: number; tokens: number } | null>(null);
 
     const rootRef = React.useRef<HTMLDivElement>(null);
     const frozen = React.useRef<EditorRange | null>(null);
@@ -141,8 +141,15 @@ export default function RichTextAIEdit({ editor }: { editor: Editor }) {
     }, [open, closeAll, editor]);
 
     const apply = React.useCallback(
-        (target: EditorRange, prevHTML: string, instruction: string, text: string, remaining: number) => {
-            setCredits(remaining);
+        (
+            target: EditorRange,
+            prevHTML: string,
+            instruction: string,
+            text: string,
+            charged: number,
+            tokens: number,
+        ) => {
+            setUsage({ charged, tokens });
             editor
                 .chain()
                 .focus()
@@ -171,7 +178,14 @@ export default function RichTextAIEdit({ editor }: { editor: Editor }) {
                 {
                     onSuccess: (res) => {
                         if (!openRef.current) return;
-                        apply(t, prevHTML, instruction, res.text, res.credits_remaining);
+                        apply(
+                            t,
+                            prevHTML,
+                            instruction,
+                            res.text,
+                            res.credits_charged ?? 0,
+                            res.tokens_used ?? 0,
+                        );
                     },
                     onError: (e) => {
                         const err = e as unknown as AppError;
@@ -259,7 +273,7 @@ export default function RichTextAIEdit({ editor }: { editor: Editor }) {
                     >
                         <AIEditPopover
                             phase={phase}
-                            credits={credits}
+                            usage={usage}
                             onRun={(instruction) => run(instruction)}
                             onUndo={undo}
                             onRetry={retry}

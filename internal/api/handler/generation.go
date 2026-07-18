@@ -158,15 +158,20 @@ func (h *Handler) GenerateWriting(c *gin.Context) {
 
 	// Usage-based settle: price the actual tokens and charge any overage
 	// beyond the flat minimum (best-effort; never fails the delivered text).
+	charged := 0
 	if !local {
+		charged = creditsPerWrite
 		if extra, serr := h.CreditService.SettleUsage(reqCtx, *orgID, creditsPerWrite, result.Model, result.TokensUsed, "writing_assistant", settleKey(idemKey)); serr == nil && extra > 0 {
 			remaining -= extra
+			charged += extra
 		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"text":              result.Text,
 		"credits_remaining": remaining,
+		"credits_charged":   charged,
+		"tokens_used":       result.TokensUsed,
 		"model":             result.Model,
 	})
 }

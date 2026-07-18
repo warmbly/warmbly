@@ -9,6 +9,10 @@ export interface WriteRequest {
 export interface WriteResponse {
     text: string;
     credits_remaining: number;
+    // Real usage-based charge for this call: flat minimum plus the token
+    // overage settle. 0 on unmetered (local model) setups.
+    credits_charged: number;
+    tokens_used: number;
     model: string;
 }
 

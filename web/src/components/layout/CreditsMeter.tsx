@@ -15,6 +15,7 @@ import { Link } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowUpRightIcon } from "lucide-react";
 import useClickOutside from "@/hooks/useClickOutside";
+import AnimatedNumber from "@/components/ui/AnimatedNumber";
 import useCredits from "@/lib/api/hooks/app/subscription/useCredits";
 import { useCreditSettings } from "@/lib/api/hooks/app/subscription/useCreditSettings";
 import useCreditUsage from "@/lib/api/hooks/app/subscription/useCreditUsage";
@@ -65,7 +66,7 @@ export function CreditsMeter() {
                 )}
             >
                 <Ring fraction={fraction} />
-                {formatCredits(total)}
+                <AnimatedNumber value={total} format={(n) => formatCredits(Math.round(n))} />
             </button>
 
             <AnimatePresence>
@@ -121,14 +122,13 @@ function MeterPanel({
                         AI credits
                     </div>
                     <div className="mt-1 flex items-baseline gap-1.5">
-                        <span
+                        <AnimatedNumber
+                            value={credits.balance}
                             className={cn(
                                 "text-[22px] leading-none font-semibold tracking-tight tabular-nums",
                                 empty ? "text-red-600" : "text-slate-900",
                             )}
-                        >
-                            {credits.balance.toLocaleString()}
-                        </span>
+                        />
                         <span className="text-[11px] text-slate-400">left</span>
                     </div>
                 </div>

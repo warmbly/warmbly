@@ -36,11 +36,46 @@ export interface RangeRect {
     centerX: number;
 }
 
-export default function textareaRangeRect(
+export interface LineRect {
+    top: number;
+    left: number;
+    width: number;
+    height: number;
+}
+
+// textareaRangeRects returns one viewport rect per rendered line segment of
+// the [start, end] range, clipped to the visible textarea, for painting a
+// selection-highlight overlay (an unfocused textarea doesn't paint its own
+// selection, and the AI popover steals focus).
+export function textareaRangeRects(
     ta: HTMLTextAreaElement,
     start: number,
     end: number,
-): RangeRect | null {
+): LineRect[] {
+    const measured = measureRange(ta, start, end);
+    if (!measured) return [];
+    const { spanRects, mirrorRect, taRect } = measured;
+    const out: LineRect[] = [];
+    for (const r of spanRects) {
+        const top = taRect.top + (r.top - mirrorRect.top) - ta.scrollTop;
+        const left = taRect.left + (r.left - mirrorRect.left) - ta.scrollLeft;
+        const bottom = top + r.height;
+        if (bottom < taRect.top + 2 || top > taRect.bottom - 2) continue;
+        out.push({
+            top,
+            left,
+            width: Math.min(r.width, taRect.right - left),
+            height: r.height,
+        });
+    }
+    return out;
+}
+
+function measureRange(
+    ta: HTMLTextAreaElement,
+    start: number,
+    end: number,
+): { spanRects: DOMRect[]; mirrorRect: DOMRect; taRect: DOMRect } | null {
     if (typeof window === "undefined") return null;
     const doc = ta.ownerDocument;
     const mirror = doc.createElement("div");
@@ -57,21 +92,29 @@ export default function textareaRangeRect(
 
     mirror.appendChild(doc.createTextNode(ta.value.slice(0, start)));
     const span = doc.createElement("span");
-    // A zero-width space keeps the span measurable when the range is empty.
     span.textContent = ta.value.slice(start, end) || "​";
     mirror.appendChild(span);
     mirror.appendChild(doc.createTextNode(ta.value.slice(end)));
     doc.body.appendChild(mirror);
 
-    const spanRects = span.getClientRects();
+    const spanRects = Array.from(span.getClientRects());
     const mirrorRect = mirror.getBoundingClientRect();
-    if (spanRects.length === 0) {
-        doc.body.removeChild(mirror);
-        return null;
-    }
+    const taRect = ta.getBoundingClientRect();
+    doc.body.removeChild(mirror);
+    if (spanRects.length === 0) return null;
+    return { spanRects, mirrorRect, taRect };
+}
+
+export default function textareaRangeRect(
+    ta: HTMLTextAreaElement,
+    start: number,
+    end: number,
+): RangeRect | null {
+    const measured = measureRange(ta, start, end);
+    if (!measured) return null;
+    const { spanRects, mirrorRect, taRect } = measured;
     const first = spanRects[0];
     const last = spanRects[spanRects.length - 1];
-    const taRect = ta.getBoundingClientRect();
 
     const rect: RangeRect = {
         top: taRect.top + (first.top - mirrorRect.top) - ta.scrollTop,
@@ -82,7 +125,6 @@ export default function textareaRangeRect(
             (first.left + Math.min(first.width, taRect.width) / 2 - mirrorRect.left) -
             ta.scrollLeft,
     };
-    doc.body.removeChild(mirror);
 
     // Selection scrolled out of the visible textarea: report nothing so the
     // toolbar hides instead of floating over unrelated UI.

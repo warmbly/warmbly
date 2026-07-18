@@ -5,6 +5,7 @@
 // review row (undo / try again).
 
 import React from "react";
+import formatUsage from "./usage";
 import {
     ArrowUpIcon,
     CheckIcon,
@@ -70,8 +71,8 @@ export type AIEditPhase = "idle" | "busy" | "applied";
 
 interface AIEditPopoverProps {
     phase: AIEditPhase;
-    // Credits remaining after the last run, when known.
-    credits: number | null;
+    // What the last run actually cost (usage-based settle), when metered.
+    usage: { charged: number; tokens: number } | null;
     onRun: (instruction: string) => void;
     onUndo: () => void;
     onRetry: () => void;
@@ -80,7 +81,7 @@ interface AIEditPopoverProps {
 
 export default function AIEditPopover({
     phase,
-    credits,
+    usage,
     onRun,
     onUndo,
     onRetry,
@@ -109,14 +110,15 @@ export default function AIEditPopover({
     }
 
     if (phase === "applied") {
+        const usageText = usage ? formatUsage(usage.charged, usage.tokens) : "";
         return (
             <div className="w-[300px] px-2.5 py-2 flex items-center gap-1.5">
                 <span className="inline-flex items-center gap-1.5 text-[12px] font-medium text-slate-900 mr-auto">
                     <CheckIcon className="w-3.5 h-3.5 text-emerald-600" />
                     Rewritten
-                    {credits !== null && (
+                    {usageText && (
                         <span className="text-[10.5px] font-normal text-slate-400">
-                            · {credits} credit{credits === 1 ? "" : "s"} left
+                            · {usageText}
                         </span>
                     )}
                 </span>

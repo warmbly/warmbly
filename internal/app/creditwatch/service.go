@@ -52,6 +52,12 @@ func (w *Watch) OnBalanceChanged(orgID uuid.UUID, balance int) {
 	ctx, cancel := context.WithTimeout(context.Background(), opTimeout)
 	defer cancel()
 
+	// Broadcast every balance change so meters across the dashboard move the
+	// moment a charge lands (scheduled campaign/automation spends included).
+	if w.publisher != nil {
+		w.publisher.PublishCreditsChanged(ctx, orgID, balance)
+	}
+
 	cfg := w.loadSettings(ctx, orgID)
 
 	if balance <= cfg.LowBalanceThreshold {

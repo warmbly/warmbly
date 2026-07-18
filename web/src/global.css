@@ -269,9 +269,23 @@ svg.loading circle {
 .ai-caret {
   animation: ai-caret-blink 1s steps(1) infinite;
 }
+/* Soft diagonal light sweep over an input while AI writes into it. */
+.ai-sheen {
+  background: linear-gradient(
+    100deg,
+    transparent 25%,
+    rgba(14, 165, 233, 0.09) 45%,
+    rgba(56, 189, 248, 0.14) 50%,
+    rgba(14, 165, 233, 0.09) 55%,
+    transparent 75%
+  );
+  background-size: 220% 100%;
+  animation: ai-shimmer 1.6s linear infinite;
+}
 @media (prefers-reduced-motion: reduce) {
   .ai-shimmer-text { animation: none; background: none; color: #64748b; }
   .ai-caret { animation: none; }
+  .ai-sheen { animation: none; background: rgba(14, 165, 233, 0.06); }
 }
 
 /* 3x3 dot-grid activity indicator (adapted from Temani Afif's css-loaders

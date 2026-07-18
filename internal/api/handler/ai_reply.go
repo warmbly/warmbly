@@ -130,15 +130,20 @@ func (h *Handler) DraftReply(c *gin.Context) {
 
 	// Usage-based settle: charge any overage beyond the flat minimum from the
 	// actual token usage (best-effort; the delivered draft never fails).
+	charged := 0
 	if !local {
+		charged = credits.CostReplyDraft
 		if extra, serr := h.CreditService.SettleUsage(reqCtx, *orgID, credits.CostReplyDraft, result.Model, result.TokensUsed, "reply_draft", settleKey(idemKey)); serr == nil && extra > 0 {
 			remaining -= extra
+			charged += extra
 		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"text":              result.Text,
 		"credits_remaining": remaining,
+		"credits_charged":   charged,
+		"tokens_used":       result.TokensUsed,
 		"model":             result.Model,
 	})
 }
