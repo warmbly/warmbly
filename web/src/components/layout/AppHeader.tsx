@@ -17,6 +17,7 @@ import { Logo } from "@/components/svg";
 import AgentMark from "@/components/app/agent/AgentMark";
 import { useAppStore } from "@/stores";
 import { ConnectionIndicator } from "@/components/shared/ConnectionIndicator";
+import ShortcutTooltip from "@/components/ui/shortcut-tooltip";
 import PresenceAvatars from "@/components/app/presence/PresenceAvatars";
 import { NotificationBell } from "./NotificationBell";
 import { OrgSwitcher } from "./OrgSwitcher";
@@ -172,6 +173,7 @@ function AssistantButton() {
     const unseen = tabs.some((t) => t.unseen);
 
     return (
+        <ShortcutTooltip label="AI assistant" combo="mod+I" side="bottom">
         <button
             onClick={() => {
                 if (open && minimized) {
@@ -184,7 +186,6 @@ function AssistantButton() {
                     setOpen(true);
                 }
             }}
-            title="AI assistant (⌘I)"
             aria-label="AI assistant"
             className="relative flex items-center justify-center size-7 rounded-md text-slate-500 hover:text-sky-700 hover:bg-sky-50 transition-colors"
         >
@@ -202,5 +203,6 @@ function AssistantButton() {
                 />
             )}
         </button>
+        </ShortcutTooltip>
     );
 }

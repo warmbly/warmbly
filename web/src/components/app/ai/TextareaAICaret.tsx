@@ -24,6 +24,7 @@ import toast from "react-hot-toast";
 import useGenerateWrite from "@/lib/api/hooks/app/generation/useGenerateWrite";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
+import ShortcutTooltip from "@/components/ui/shortcut-tooltip";
 import textareaRangeRect, { type RangeRect } from "./textareaRange";
 import useTypewriter from "./useTypewriter";
 
@@ -318,30 +319,30 @@ export default function TextareaAICaret({
         <div ref={rootRef} data-floating="">
             <AnimatePresence>
                 {showCompanion && rect && (
-                    <motion.button
-                        key="ai-caret-companion"
-                        type="button"
-                        initial={{ opacity: 0, scale: 0.8 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.9 }}
-                        transition={{ duration: 0.12 }}
-                        style={{
-                            position: "fixed",
-                            top: rect.top - 1,
-                            left: taRight - 30,
-                            zIndex: 55,
-                        }}
-                        title="Write with AI (⌘J)"
-                        aria-label="Write with AI"
-                        className="size-[22px] rounded-md inline-flex items-center justify-center text-slate-300 hover:text-sky-600 hover:bg-sky-50 transition-colors"
-                        onMouseDown={(e) => {
-                            // Keep the textarea focused and the caret in place.
-                            e.preventDefault();
-                            openMenu();
-                        }}
-                    >
-                        <SparklesIcon className="w-3.5 h-3.5" />
-                    </motion.button>
+                    <ShortcutTooltip key="ai-caret-companion" label="Write with AI" combo="mod+J">
+                        <motion.button
+                            type="button"
+                            initial={{ opacity: 0, scale: 0.8 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.9 }}
+                            transition={{ duration: 0.12 }}
+                            style={{
+                                position: "fixed",
+                                top: rect.top - 1,
+                                left: taRight - 30,
+                                zIndex: 55,
+                            }}
+                            aria-label="Write with AI"
+                            className="size-[22px] rounded-md inline-flex items-center justify-center text-slate-300 hover:text-sky-600 hover:bg-sky-50 transition-colors"
+                            onMouseDown={(e) => {
+                                // Keep the textarea focused and the caret in place.
+                                e.preventDefault();
+                                openMenu();
+                            }}
+                        >
+                            <SparklesIcon className="w-3.5 h-3.5" />
+                        </motion.button>
+                    </ShortcutTooltip>
                 )}
                 {open && rect && (
                     <motion.div
