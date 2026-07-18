@@ -58,6 +58,29 @@ type CreditRepository interface {
 	// webhook retries safe.
 	ResetMonthly(ctx context.Context, orgID uuid.UUID, allowance int, idempotencyKey string) (*models.CreditLedger, error)
 
+	// ConsumeAtMost debits up to `amount` credits, draining whatever the org
+	// still has (possibly zero) instead of failing on a low balance. Used to
+	// settle metered usage AFTER an AI result was already delivered: the
+	// overage must never fail the delivered work, so it drains to zero at
+	// worst. Returns the credits actually consumed and the resulting balance.
+	// Same idempotency semantics as Consume.
+	ConsumeAtMost(ctx context.Context, orgID uuid.UUID, amount int, reason, model string, tokens int, idempotencyKey string) (consumed, balance int, replayed bool, err error)
+
+	// SpentInWindows sums debited credits since each of the three window
+	// starts (calendar day / ISO week / calendar month, all UTC).
+	SpentInWindows(ctx context.Context, orgID uuid.UUID, dayStart, weekStart, monthStart time.Time) (day, week, month int, err error)
+
+	// UsageDaily returns per-UTC-day debit totals since `since`, oldest first.
+	UsageDaily(ctx context.Context, orgID uuid.UUID, since time.Time) ([]models.CreditUsagePoint, error)
+
+	// UsageBreakdown groups debits since `since` by "reason" or "model",
+	// biggest spender first.
+	UsageBreakdown(ctx context.Context, orgID uuid.UUID, since time.Time, by string) ([]models.CreditUsageBucket, error)
+
+	// CountGrantsSince counts grant transactions with the given reason since
+	// `since` (bounds auto top-up purchases per month).
+	CountGrantsSince(ctx context.Context, orgID uuid.UUID, reason string, since time.Time) (int, error)
+
 	// ListTransactions returns the org's transaction history, newest first.
 	ListTransactions(ctx context.Context, orgID uuid.UUID, limit int) ([]models.CreditTransaction, error)
 
@@ -227,6 +250,149 @@ func (r *creditRepository) Consume(ctx context.Context, orgID uuid.UUID, amount 
 		return 0, nil, false, err
 	}
 	return newMonthly + newPurchased, txn, false, nil
+}
+
+func (r *creditRepository) ConsumeAtMost(ctx context.Context, orgID uuid.UUID, amount int, reason, model string, tokens int, idempotencyKey string) (int, int, bool, error) {
+	if amount <= 0 {
+		return 0, 0, false, errors.New("consume amount must be positive")
+	}
+	idempotencyKey = scopeKey(orgID, idempotencyKey)
+
+	tx, err := r.DB.Begin(ctx)
+	if err != nil {
+		return 0, 0, false, err
+	}
+	defer tx.Rollback(ctx)
+
+	if idempotencyKey != "" {
+		existing, err := replayByKey(ctx, tx, idempotencyKey)
+		if err != nil {
+			return 0, 0, false, err
+		}
+		if existing != nil {
+			if cerr := tx.Commit(ctx); cerr != nil {
+				return 0, 0, false, cerr
+			}
+			return -existing.Amount, existing.BalanceAfter + existing.PurchasedBalanceAfter, true, nil
+		}
+	}
+
+	var monthly, purchased int
+	err = tx.QueryRow(ctx, `SELECT balance, purchased_balance FROM credit_ledger WHERE org_id = $1 FOR UPDATE`, orgID).
+		Scan(&monthly, &purchased)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, 0, false, nil // no ledger: nothing to drain
+	}
+	if err != nil {
+		return 0, 0, false, err
+	}
+
+	// Drain up to `amount`: everything the org still has when short.
+	take := amount
+	if avail := monthly + purchased; take > avail {
+		take = avail
+	}
+	if take == 0 {
+		if cerr := tx.Commit(ctx); cerr != nil {
+			return 0, 0, false, cerr
+		}
+		return 0, 0, false, nil
+	}
+
+	monthlyUsed := take
+	if monthlyUsed > monthly {
+		monthlyUsed = monthly
+	}
+	purchasedUsed := take - monthlyUsed
+	newMonthly := monthly - monthlyUsed
+	newPurchased := purchased - purchasedUsed
+
+	if _, err := tx.Exec(ctx, `
+		UPDATE credit_ledger SET balance = $2, purchased_balance = $3, updated_at = now() WHERE org_id = $1
+	`, orgID, newMonthly, newPurchased); err != nil {
+		return 0, 0, false, err
+	}
+	if _, err := insertTxn(ctx, tx, orgID, -take, reason, model, tokens, newMonthly, -purchasedUsed, newPurchased, idempotencyKey); err != nil {
+		return 0, 0, false, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return 0, 0, false, err
+	}
+	return take, newMonthly + newPurchased, false, nil
+}
+
+func (r *creditRepository) SpentInWindows(ctx context.Context, orgID uuid.UUID, dayStart, weekStart, monthStart time.Time) (int, int, int, error) {
+	var day, week, month int
+	err := r.DB.QueryRow(ctx, `
+		SELECT
+			COALESCE(SUM(-amount) FILTER (WHERE created_at >= $2), 0),
+			COALESCE(SUM(-amount) FILTER (WHERE created_at >= $3), 0),
+			COALESCE(SUM(-amount) FILTER (WHERE created_at >= $4), 0)
+		FROM credit_ledger_transactions
+		WHERE org_id = $1 AND amount < 0 AND created_at >= LEAST($2, $3, $4)
+	`, orgID, dayStart, weekStart, monthStart).Scan(&day, &week, &month)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	return day, week, month, nil
+}
+
+func (r *creditRepository) UsageDaily(ctx context.Context, orgID uuid.UUID, since time.Time) ([]models.CreditUsagePoint, error) {
+	rows, err := r.DB.Query(ctx, `
+		SELECT to_char(date_trunc('day', created_at AT TIME ZONE 'UTC'), 'YYYY-MM-DD'),
+		       COALESCE(SUM(-amount), 0), COALESCE(SUM(tokens_used), 0)
+		FROM credit_ledger_transactions
+		WHERE org_id = $1 AND amount < 0 AND created_at >= $2
+		GROUP BY 1 ORDER BY 1
+	`, orgID, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]models.CreditUsagePoint, 0)
+	for rows.Next() {
+		var p models.CreditUsagePoint
+		if err := rows.Scan(&p.Date, &p.Credits, &p.Tokens); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+func (r *creditRepository) UsageBreakdown(ctx context.Context, orgID uuid.UUID, since time.Time, by string) ([]models.CreditUsageBucket, error) {
+	col := "reason"
+	if by == "model" {
+		col = "model_used"
+	}
+	rows, err := r.DB.Query(ctx, `
+		SELECT `+col+`, COALESCE(SUM(-amount), 0), COALESCE(SUM(tokens_used), 0), COUNT(*)
+		FROM credit_ledger_transactions
+		WHERE org_id = $1 AND amount < 0 AND created_at >= $2
+		GROUP BY 1 ORDER BY 2 DESC
+	`, orgID, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]models.CreditUsageBucket, 0)
+	for rows.Next() {
+		var b models.CreditUsageBucket
+		if err := rows.Scan(&b.Key, &b.Credits, &b.Tokens, &b.Count); err != nil {
+			return nil, err
+		}
+		out = append(out, b)
+	}
+	return out, rows.Err()
+}
+
+func (r *creditRepository) CountGrantsSince(ctx context.Context, orgID uuid.UUID, reason string, since time.Time) (int, error) {
+	var n int
+	err := r.DB.QueryRow(ctx, `
+		SELECT COUNT(*) FROM credit_ledger_transactions
+		WHERE org_id = $1 AND reason = $2 AND amount > 0 AND created_at >= $3
+	`, orgID, reason, since).Scan(&n)
+	return n, err
 }
 
 func (r *creditRepository) Grant(ctx context.Context, orgID uuid.UUID, amount int, reason, idempotencyKey string) (int, *models.CreditTransaction, error) {

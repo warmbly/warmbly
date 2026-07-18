@@ -292,6 +292,11 @@ func (s *service) execute(ctx context.Context, inv aitools.Invocation, run *mode
 				break
 			}
 			run.CreditsCharged = credits.CostResearchRun
+			// Usage-based settle: charge any overage beyond the flat run price
+			// from the run's actual tokens (best-effort; the findings stand).
+			if extra, serr := s.credits.SettleUsage(ctx, orgID, credits.CostResearchRun, model, run.TokensUsed, "research_run", "research:"+run.ID.String()+":usage"); serr == nil && extra > 0 {
+				run.CreditsCharged += extra
+			}
 		}
 		run.Result = *captured
 		if captured.NothingFound {

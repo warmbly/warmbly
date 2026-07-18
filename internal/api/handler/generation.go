@@ -149,9 +149,26 @@ func (h *Handler) GenerateWriting(c *gin.Context) {
 		return
 	}
 
+	// Usage-based settle: price the actual tokens and charge any overage
+	// beyond the flat minimum (best-effort; never fails the delivered text).
+	if !local {
+		if extra, serr := h.CreditService.SettleUsage(c.Request.Context(), *orgID, creditsPerWrite, result.Model, result.TokensUsed, "writing_assistant", settleKey(idemKey)); serr == nil && extra > 0 {
+			remaining -= extra
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"text":              result.Text,
 		"credits_remaining": remaining,
 		"model":             result.Model,
 	})
+}
+
+// settleKey derives the usage-settle idempotency key from the call's key. An
+// empty key stays empty (non-idempotent call, non-idempotent settle).
+func settleKey(idemKey string) string {
+	if idemKey == "" {
+		return ""
+	}
+	return idemKey + ":usage"
 }

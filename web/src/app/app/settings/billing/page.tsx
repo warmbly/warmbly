@@ -39,6 +39,7 @@ import { TextInput } from "@/components/ui/field";
 import { Row, Section, SectionShell, TableSurface } from "../_components/SectionShell";
 import { PLAN_ACCENT_CLASSES, PAID_PLANS, getPlan, type PlanID } from "@/lib/plans";
 import CreditsCard from "./CreditsCard";
+import AIUsageCard from "./AIUsageCard";
 
 type BillingInterval = "monthly" | "annual";
 
@@ -408,6 +409,8 @@ export default function BillingSettingsPage() {
             </Section>
 
             <CreditsCard isPaid={currentPlan.id !== "free"} />
+
+            <AIUsageCard />
 
             <Section
                 eyebrow="Payment"

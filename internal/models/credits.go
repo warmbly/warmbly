@@ -34,6 +34,42 @@ func (l *CreditLedger) Total() int {
 // IdempotencyKey is nil for non-idempotent operations (grants, monthly resets)
 // and set to the caller's Idempotency-Key for consumption so retries don't
 // double-charge.
+// AISpendSettings is an org's AI spend-control row: optional hard spend limits
+// per calendar day / ISO week / calendar month (nil = no limit), the balance
+// threshold that triggers a low-credit alert (with a stamp so the alert fires
+// at most once per day), and the auto top-up configuration (buy a pack
+// automatically when the balance dips below the threshold, bounded per month).
+type AISpendSettings struct {
+	OrgID                uuid.UUID  `json:"org_id"`
+	SpendLimitDaily      *int       `json:"spend_limit_daily"`
+	SpendLimitWeekly     *int       `json:"spend_limit_weekly"`
+	SpendLimitMonthly    *int       `json:"spend_limit_monthly"`
+	LowBalanceThreshold  int        `json:"low_balance_threshold"`
+	LowBalanceNotifiedAt *time.Time `json:"low_balance_notified_at,omitempty"`
+	AutoTopupEnabled     bool       `json:"auto_topup_enabled"`
+	AutoTopupPack        string     `json:"auto_topup_pack"`
+	AutoTopupThreshold   int        `json:"auto_topup_threshold"`
+	AutoTopupMaxPerMonth int        `json:"auto_topup_max_per_month"`
+	CreatedAt            time.Time  `json:"created_at"`
+	UpdatedAt            time.Time  `json:"updated_at"`
+}
+
+// CreditUsagePoint is one day of AI spend for the usage chart.
+type CreditUsagePoint struct {
+	Date    string `json:"date"` // YYYY-MM-DD (UTC)
+	Credits int    `json:"credits"`
+	Tokens  int    `json:"tokens"`
+}
+
+// CreditUsageBucket is one row of a usage breakdown (by feature reason or by
+// model): credits spent, tokens metered, and the number of charges.
+type CreditUsageBucket struct {
+	Key     string `json:"key"`
+	Credits int    `json:"credits"`
+	Tokens  int    `json:"tokens"`
+	Count   int    `json:"count"`
+}
+
 type CreditTransaction struct {
 	ID           uuid.UUID `json:"id"`
 	OrgID        uuid.UUID `json:"org_id"`

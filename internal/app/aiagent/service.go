@@ -467,6 +467,14 @@ func (s *service) runLoop(ctx context.Context, inv aitools.Invocation, sess *mod
 		return nil
 	}
 
+	// Usage-based settle: the run charged 1 credit per iteration up-front;
+	// price the run's total token usage and charge the overage (best-effort).
+	if chargeCredits && result.TokensUsed > 0 {
+		if extra, serr := s.credits.SettleUsage(ctx, inv.OrgID, result.Iterations*credits.CostAgentIteration, model, result.TokensUsed, "agent_iteration", messageID+":usage"); serr == nil && extra > 0 {
+			lastRemaining -= extra
+		}
+	}
+
 	// Persist the new transcript tail.
 	if len(result.Messages) > baseline {
 		if perr := s.persist(ctx, sess.OrgID, sess.UserID, sess.ID, result.Messages[baseline:], result.TokensUsed); perr != nil {

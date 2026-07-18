@@ -132,6 +132,12 @@ func (s *tasksService) execSequenceSwitchStep(ctx context.Context, campaign *mod
 		return errors.New("AI switch returned no output")
 	}
 
+	// Usage-based settle: price the actual tokens and charge any overage
+	// beyond the flat minimum (best-effort; never fails the delivered result).
+	if !s.aiProvider.IsLocal() {
+		_, _ = s.aiCredits.SettleUsage(ctx, *campaign.OrganizationID, credits.CostCampaignAIStep, model, res.TokensUsed, "campaign_ai", idemKey+":usage")
+	}
+
 	matched := matchSwitchCase(res.Text, cases)
 	if matched == "" {
 		// Unmatched answer: leave the contact caseless (fallback branch) rather

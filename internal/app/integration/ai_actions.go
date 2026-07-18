@@ -181,6 +181,12 @@ func (s *service) execAIAction(ctx context.Context, a models.Automation, n model
 		return errors.New("AI step returned no output")
 	}
 
+	// Usage-based settle: price the actual tokens and charge any overage
+	// beyond the flat minimum (best-effort; never fails the delivered node).
+	if !s.aiProvider.IsLocal() {
+		_, _ = s.credits.SettleUsage(ctx, a.OrganizationID, aiNodeCredits, model, res.TokensUsed, "automation_ai", idemKey+":usage")
+	}
+
 	mergeAIOutput(n.Action, cfg, res.Text, data)
 	// A successful LIVE AI node clears the consecutive out-of-credits counter.
 	// A dry-run (feedPause=false) must not touch the auto-pause lifecycle: it is
@@ -246,6 +252,11 @@ func (s *service) evalAICondition(ctx context.Context, a models.Automation, n mo
 			return false, fmt.Errorf("AI branch failed: %w", gerr)
 		}
 		return false, errors.New("AI branch returned no output")
+	}
+
+	// Settle actual token usage beyond the flat minimum (best-effort).
+	if !s.aiProvider.IsLocal() {
+		_, _ = s.credits.SettleUsage(ctx, a.OrganizationID, aiNodeCredits, model, res.TokensUsed, "automation_ai", idemKey+":usage")
 	}
 
 	if feedPause {

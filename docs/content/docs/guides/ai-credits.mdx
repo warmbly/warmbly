@@ -20,12 +20,12 @@ When you run an AI action, Warmbly spends your monthly allowance first and only 
 
 ## What each action costs
 
-Costs are fixed per action, not per token. A single request always costs the same number of credits no matter how long the input or output is.
+Credits are charged from what each call actually uses. Every action has a flat **minimum** that is reserved up front (this is also what gates an empty balance before any work starts), and after the call finishes the real token usage is priced per model. Small calls cost exactly the minimum; long calls with a lot of context or output pay for what they used.
 
-| Action | Credits |
-|--------|---------|
+| Action | Minimum credits |
+|--------|-----------------|
 | Writing assistant draft | 1 |
-| AI assistant step (one turn of the dashboard agent) | 1 |
+| AI assistant step (one turn of the dashboard agent) | 1 per turn |
 | Reply draft in the unibox | 2 |
 | Contact research run | 2 |
 | AI step in an automation | 1 |
@@ -33,11 +33,21 @@ Costs are fixed per action, not per token. A single request always costs the sam
 | Switch step with the AI decider in a campaign sequence (per contact; the value decider is free) | 1 |
 | Inbox agent handled thread | 5 |
 
-A few rules apply across all of them:
+How the usage pricing works:
 
-- If an AI action fails because of a provider error, the credit is refunded automatically. You are never charged for output you did not receive.
+- One credit buys a fixed token budget on the model that served the call: light models (mini and haiku class) price at 1,500 tokens per credit, standard models at 400 tokens per credit. The exact model and token count of every charge appear in the transaction log.
+- The overage settle can never fail a result you already received: at worst it drains the balance to zero.
+- If an AI action fails because of a provider error, the reserved minimum is refunded automatically. You are never charged for output you did not receive.
 - A contact research run that finds nothing is still a successful run and costs its credits. You are paying for the search, not the result.
 - Running out mid-action returns a clear "insufficient credits" response before any work starts, so a depleted balance never leaves you half-charged.
+
+## Usage overview and spend controls
+
+The **AI usage & spend controls** card under **Settings, Billing** shows today / this week / this month spend, a 30-day usage chart, and breakdowns by feature and by model (credits, tokens, and call counts). It is also where the spend controls live:
+
+- **Spend limits.** Optional hard caps per calendar day, ISO week, and calendar month. When a limit is reached, AI actions pause with a clear message until the window rolls over. Leave a limit off for no cap.
+- **Low-credit reminder.** When the balance drops below your threshold, everyone with the Manage billing permission gets an in-app alert (at most once per day) and the credits views refresh live.
+- **Auto top-up.** When enabled, Warmbly buys your chosen pack automatically with the card on file the moment the balance dips below your auto top-up threshold. A monthly purchase maximum bounds how much can ever be auto-billed; purchases appear in the transaction log like any other top-up. Auto top-up needs a saved payment method (the card your subscription bills).
 
 ## Monthly allowance by plan
 

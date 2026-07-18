@@ -238,6 +238,9 @@ func (s *service) draft(ctx context.Context, r models.InboxAgentReply) {
 			}
 			return
 		}
+		// Usage-based settle: charge any overage beyond the flat thread price
+		// from the run's actual tokens (best-effort; the draft stands).
+		_, _ = s.credits.SettleUsage(ctx, r.OrganizationID, credits.CostInboxAgentThread, res.Model, res.TokensUsed, "inbox_agent_draft", "inbox_agent:"+draft.ID.String()+":usage")
 	}
 
 	// Live: the whole team sees the draft land on the thread awaiting review. The

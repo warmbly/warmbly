@@ -1,4 +1,5 @@
 import { useCallback, useEffect } from 'react'
+import toast from 'react-hot-toast'
 import { useQueryClient, type QueryKey } from '@tanstack/react-query'
 import { useSocket } from './context/socket'
 import { useAppStore } from '@/stores'
@@ -90,6 +91,21 @@ export function useRealtimeEvents() {
         invalidate([['unibox'], ['analytics']])
         if (threadId) invalidate([['unibox', 'thread', threadId]])
         if (emailId) invalidate([['unibox', 'email', emailId]])
+        return
+      }
+
+      // AI credit balance dipped below the org's alert threshold (fired at
+      // most once per day, gated on manage_billing server-side). Popup
+      // reminder + refresh every credits view.
+      if (includes('CREDITS_LOW')) {
+        const balance = typeof payload.balance === 'number' ? payload.balance : null
+        toast(
+          balance !== null
+            ? `AI credits are running low: ${balance} left. Top up or enable auto top-up in Billing.`
+            : 'AI credits are running low. Top up or enable auto top-up in Billing.',
+          { icon: '⚠️', duration: 8000, id: 'credits-low' },
+        )
+        invalidate([['subscription', 'credits']])
         return
       }
 
