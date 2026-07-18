@@ -277,6 +277,8 @@ function describeReason(reason: string): string {
     const map: Record<string, string> = {
         writing_assistant: "Writing assistant",
         writing_assistant_refund: "Writing assistant refund",
+        writing_edit: "Selection edit",
+        writing_edit_refund: "Selection edit refund",
         agent_iteration: "AI assistant",
         reply_draft: "Reply draft",
         research_run: "Contact research",

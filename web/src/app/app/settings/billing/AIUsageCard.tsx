@@ -19,6 +19,7 @@ import { Section } from "../_components/SectionShell";
 
 const REASON_LABELS: Record<string, string> = {
     writing_assistant: "Writing assistant",
+    writing_edit: "Selection edits",
     reply_draft: "Reply drafts",
     agent_iteration: "Dashboard assistant",
     inbox_agent_draft: "Inbox agent",
