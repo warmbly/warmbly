@@ -2324,8 +2324,11 @@ const ADD_ACTION_OPTIONS: { type: SequenceActionType; label: string }[] = [
     { type: "unsubscribe", label: "Unsubscribe" },
     { type: "run_automation", label: "Run automation" },
     { type: "fire_event", label: "Fire event" },
-    { type: "switch", label: "Switch (AI / value)" },
 ];
+
+// Switch is a router like Condition, not a side effect — the menus list it in
+// the routing group, so it stays out of ADD_ACTION_OPTIONS.
+const SWITCH_OPTION = { type: "switch" as SequenceActionType, label: "Switch (AI / value)" };
 
 type CreateChoice = "email" | "condition" | SequenceActionType;
 
@@ -2383,6 +2386,7 @@ function DragCreateMenu({
                         <div className="px-2 pt-1 pb-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">Add</div>
                         <CreateRow icon={<MailIcon className="w-3.5 h-3.5 text-sky-600" />} label="Email step" onClick={() => pick("email")} />
                         <CreateRow icon={<GitBranchIcon className="w-3.5 h-3.5 text-amber-600" />} label="Condition (branch)" onClick={() => pick("condition")} />
+                        <CreateRow icon={<SplitIcon className="w-3.5 h-3.5 text-purple-600" />} label={SWITCH_OPTION.label} onClick={() => pick("switch")} />
                         <div className="my-1 h-px bg-slate-100" />
                         <div className="px-2 pt-0.5 pb-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">Actions</div>
                         {ADD_ACTION_OPTIONS.map((o) => {
@@ -2491,6 +2495,17 @@ function AddNodeMenu({
                                 default
                             </span>
                         </button>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                onAddAction("switch");
+                                setOpen(false);
+                            }}
+                            className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[12px] text-slate-700 transition-colors hover:bg-slate-100"
+                        >
+                            <SplitIcon className="w-3.5 h-3.5 text-purple-600" />
+                            {SWITCH_OPTION.label}
+                        </button>
                         <div className="my-1 border-t border-slate-100" />
                         {ADD_ACTION_OPTIONS.map((o) => {
                             const meta = ACTION_META[o.type];
@@ -2564,6 +2579,7 @@ function NodeTypeSwitcher({
 
     const items: { value: "email" | SequenceActionType; label: string; Icon: typeof MailIcon; tint: string }[] = [
         { value: "email", label: "Send email", Icon: MailIcon, tint: "text-sky-600" },
+        { value: "switch", label: SWITCH_OPTION.label, Icon: SplitIcon, tint: "text-purple-600" },
         ...ADD_ACTION_OPTIONS.map((o) => ({
             value: o.type,
             label: o.label,
