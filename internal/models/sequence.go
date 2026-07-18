@@ -98,19 +98,17 @@ type ActionConfig struct {
 	EventName   string     `json:"event_name,omitempty"`
 	EventFields []ActionKV `json:"event_fields,omitempty"`
 
-	// ai — a free-form AI step: the model follows AIInstruction (templated
-	// against the contact) over the contact's data. AILabels, when set, has it
-	// pick EXACTLY one label, stored on the contact's progress row for this step
-	// so an "ai_label" branch routes on it. AIOutputFields, when set, are
-	// contact custom-field names the model fills (usable as {{.field}} in later
-	// emails). AIActions, when set, are pre-configured side effects the model
-	// may choose to trigger for the contact. Costs one AI credit per contact;
-	// always runs through the scheduler (never the instant chain), so an
-	// instant branch pauses at it.
-	AIInstruction  string         `json:"ai_instruction,omitempty"`
-	AILabels       []string       `json:"ai_labels,omitempty"`
-	AIOutputFields []string       `json:"ai_output_fields,omitempty"`
-	AIActions      []AIStepAction `json:"ai_actions,omitempty"`
+	// ai — a routing AI step: the model follows AIInstruction (templated
+	// against the contact) over the contact's data and picks EXACTLY one of the
+	// step's outgoing "ai_label" paths. The outcome set is NOT stored here — it
+	// is the distinct Labels of the ai_label conditions in this step's
+	// Conditions tree, so the paths drawn on the canvas ARE the config. The
+	// chosen outcome lands on the progress row (RecordAILabel) and routing
+	// reads it deterministically at the step boundary. Side effects are
+	// ordinary action steps placed on the chosen path, never executed by the
+	// model itself. Costs one AI credit per contact; always runs through the
+	// scheduler (never the instant chain), so an instant branch pauses at it.
+	AIInstruction string `json:"ai_instruction,omitempty"`
 
 	// Context opt-outs for the ai step. By default the model also sees the
 	// contact's campaign history (which steps ran, opens/clicks/replies, prior
@@ -119,34 +117,6 @@ type ActionConfig struct {
 	// keep the richer context.
 	AINoEngagement bool `json:"ai_no_engagement,omitempty"`
 	AINoReplies    bool `json:"ai_no_replies,omitempty"`
-}
-
-// AIStepAction is one action an "ai" step is allowed to trigger. The user
-// configures the action (same shapes as a normal action node); the model
-// decides WHETHER it runs for a contact and, for tag/label actions with a
-// Choices set, WHICH of the allowed targets apply. When is optional
-// plain-language guidance for those decisions ("when they look interested").
-// Nested ai/wait/end types are rejected on write, so an AI step can never
-// chain into another model call.
-type AIStepAction struct {
-	ID     string       `json:"id"`
-	When   string       `json:"when,omitempty"`
-	Action ActionConfig `json:"action"`
-	// Choices, for add_tag / remove_tag / label_email actions, is the closed
-	// set of tags/labels the model may pick from (any that apply, up to
-	// MaxChoices). When empty the action runs exactly as configured. Names are
-	// denormalized by the editor so the model can reason in words; ids are what
-	// executes.
-	Choices []AIStepChoice `json:"choices,omitempty"`
-	// MaxChoices caps how many of the Choices the model may apply. 0 = no cap
-	// (any subset of the configured set).
-	MaxChoices int `json:"max_choices,omitempty"`
-}
-
-// AIStepChoice is one allowed tag/label target for an AI-decided action.
-type AIStepChoice struct {
-	CategoryID uuid.UUID `json:"category_id"`
-	Name       string    `json:"name"`
 }
 
 // ActionKV is one templated input passed to a launched automation.

@@ -56,42 +56,17 @@ export interface SequenceAction {
     // value are templated against the contact; the fields become the payload.
     event_name?: string;
     event_fields?: ActionKV[];
-    // ai — a free-form AI step run per contact (costs 1 credit each). The model
-    // follows ai_instruction (contact-templated) over the contact's data:
-    // ai_labels has it pick EXACTLY one label (branch on it with an "AI label
-    // is …" path out of this step); ai_output_fields are contact custom fields
-    // it fills (usable as {{.field}} in later emails); ai_actions are
-    // pre-configured side effects the model may choose to trigger. At least
-    // one of the three must be set for the step to do anything.
+    // ai — a routing AI step run per contact (costs 1 credit each). The model
+    // follows ai_instruction (contact-templated) over the contact's data and
+    // picks EXACTLY one of the step's outgoing "ai_label" paths — the named
+    // connections drawn out of the step on the canvas ARE the outcome set;
+    // nothing else is configured here. Side effects are ordinary action steps
+    // placed on the chosen path.
     ai_instruction?: string;
-    ai_labels?: string[];
-    ai_output_fields?: string[];
-    ai_actions?: AIStepAction[];
     // Context opt-outs: by default the model also sees the contact's campaign
-    // history (steps run, opens/clicks/replies, prior AI labels) and their
+    // history (steps run, opens/clicks/replies, prior AI outcomes) and their
     // newest inbound email. Stored inverted so existing steps keep the richer
     // context.
     ai_no_engagement?: boolean;
     ai_no_replies?: boolean;
-}
-
-// AIStepAction is one action an AI step may trigger. The action is fully
-// user-configured (same shape as a normal action step); the model decides
-// WHETHER it runs for a contact and, for tag/label actions with a `choices`
-// set, WHICH of the allowed targets apply (up to `max_choices`; 0 = no cap).
-// `when` is optional plain-language guidance ("when they look interested").
-// Nested ai/wait types are rejected on write.
-export interface AIStepAction {
-    id: string;
-    when?: string;
-    action: SequenceAction;
-    choices?: AIStepChoice[];
-    max_choices?: number;
-}
-
-// AIStepChoice is one allowed tag/label target for an AI-decided action. The
-// name is denormalized so the model reasons in words; the id is what executes.
-export interface AIStepChoice {
-    category_id: string;
-    name: string;
 }

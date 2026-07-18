@@ -53,7 +53,7 @@ A step does not have to send an email. From the add menu (the chevron next to "A
 - Unsubscribe the contact
 - Notify (sends an event to your connected webhooks and integrations, such as Slack or a CRM)
 - Run automation
-- AI step (tell AI what to do with the contact; see below)
+- AI step (tell AI what to do and it picks one of the paths you drew; see below)
 
 Action steps connect the same way as email steps and are most useful at the end of a reply branch (for example: on a positive reply, create a deal and notify your team).
 
@@ -63,18 +63,13 @@ Action steps connect the same way as email steps and are most useful at the end 
 
 ### AI steps
 
-An **AI step** runs one model call per contact who reaches it. You write a plain-language instruction (it supports the same `{{.FirstName}}` / `{{.Company}}` variables as your email copy), and the model reads the contact's data and does any mix of:
+An **AI step** routes contacts by decision. You write a plain-language instruction (it supports the same `{{.FirstName}}` / `{{.Company}}` variables as your email copy), then draw the possible paths out of the step and name each one ("when AI picks this path": for example `interested`, `not_now`, `wrong_person`). One model call runs per contact who reaches the step, reads their data, and picks exactly one of the named paths. That is the entire configuration: the canvas is the choice set.
 
-- **Pick a label.** Give the step a closed set of labels (for example `interested`, `not_now`, `wrong_person`). The model picks exactly one, and you branch on it with an "AI label is …" path out of the step (see below). If the model can't decide, the contact stays unlabeled and follows your fallback connection.
-- **Fill contact fields.** Name the custom fields the model should write (for example `icebreaker` or `industry`). They land on the contact and are usable as `{{.field}}` in every later email of the sequence.
-- **Decide which actions to run.** Attach any number of pre-configured actions to the step (create a deal, run an automation, fire an event, add or remove a tag, create a task, unsubscribe, label the thread, move a deal stage), each with an optional plain-language hint like "when they look interested". Per contact, the model decides which of them run, and each decision (ran, or chosen but failed) is written to the campaign log.
-- **Pick targets, not just triggers.** On tag and label actions you can switch from a fixed target to "AI picks which": give it an allowed set of tags or labels and an optional cap, and the model applies any that fit (more or fewer per contact). Everything else stays user-authored: the model chooses only within the sets you configured.
+To make things happen for the contacts routed down a path, place normal action steps on it (add a tag, create a deal or task, run an automation, fire an event, and so on). The model never executes actions itself, so the decision and the side effects stay separately visible on the canvas.
 
-The model's decisions can be grounded in the whole story so far. Under **What AI can see**, each step controls whether the model also gets the contact's campaign history (which steps ran, opens, clicks, replies, earlier AI labels) and the newest email received from them, on top of the contact's fields. Both are on by default.
+The decision can be grounded in the whole story so far. Under **What AI can see**, each step controls whether the model also gets the contact's campaign history (which steps ran, opens, clicks, replies, earlier AI outcomes) and the newest email received from them, on top of the contact's fields. Both are on by default. The contact's email and profile fields are treated strictly as content to evaluate: instructions inside an email ("ignore your rules", "pick X") are ignored, and the model can only ever answer with one of the paths you named.
 
-AI can also author text used inside its actions: declare an output field (say `deal_note`), reference it as `{{.deal_note}}` in the action's deal name, task title, or event payload, and the value the model writes is what the action uses.
-
-Each run costs one credit per contact regardless of how many actions it decides, charged when the step executes; a failed model call is refunded. A workspace with no credits left skips the step (the skip is visible in the campaign log) and the contact keeps moving along the fallback path. See [AI credits](/guides/ai-credits/).
+Each run costs one credit per contact, charged when the step executes; a failed model call is refunded. A workspace with no credits left skips the step (the skip is visible in the campaign log) and the contact keeps moving along the fallback path. If the model can't place a contact on any named path, the contact follows your `always` / fallback connection instead. See [AI credits](/guides/ai-credits/).
 
 AI steps always run on the normal schedule: when an instant reply branch leads into one, the instant chain pauses there and the scheduler runs the AI step at the next boundary.
 
@@ -143,14 +138,14 @@ In the connection editor, "Take this path" offers:
 | `if replied: neutral` | Reply classified neutral (Reply intent) |
 | `if auto-reply / out of office` | Reply was automated, not a human reply |
 | `random split` | A percentage of contacts, chosen at random |
-| `if AI label is …` | The AI step this connection leaves stored that label (AI label) |
+| `when AI picks this path` | The AI step this connection leaves chose this named outcome (AI decision) |
 
 Notes on each kind:
 
 - **Engagement windows** (`opened`, `clicked`, plus the `didn't` versions) take a number of days, 1 to 60. For `opened` and `clicked`, the contact must do it within that window. For the `didn't` versions, Warmbly waits the full window and then takes the path only if it still hasn't happened.
 - **Reply intent** conditions (`positive`, `negative`, `neutral`, `auto-reply / out of office`) have no day window. They are checked once, based on how the contact's reply is classified.
 - **Random split** takes a percentage (1 to 99) and routes that share of contacts at random. Useful for splitting traffic between two follow-up paths.
-- **AI label** paths only appear on connections out of an [AI step](#ai-steps), one option per label plus "new label", which creates the label on the step as part of saving the connection, so you can sketch AI routing entirely from the canvas. They check the label the step stored for the contact, so routing spends no extra credits. A contact the model couldn't label matches none of them and follows the fallback connection.
+- **AI decision** paths only appear on connections out of an [AI step](#ai-steps). Name the outcome on the connection itself; the named paths together are the choices the model picks from, so you sketch AI routing entirely from the canvas. They check the outcome the step stored for the contact, so routing spends no extra credits. A contact the model couldn't place matches none of them and follows the fallback connection.
 
 ### Instant vs at-the-next-step
 
