@@ -153,6 +153,11 @@ function ordered(branches: SequenceBranch[]): SequenceBranch[] {
     return [...branches.filter(isCond), ...branches.filter((b) => !isCond(b))];
 }
 
+// An AI routing step: lines dragged out of it are the choices the model picks from.
+function isAIStepNode(s?: Sequence): boolean {
+    return s?.kind === "action" && s.action?.type === "ai";
+}
+
 function conditionText(b: SequenceBranch): string {
     return (b.conditions ?? [])
         .map((c) => {
@@ -836,6 +841,35 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
         },
         [seqById, saveBranches, openCondition],
     );
+    // Every line dragged out of an AI step is one of its choices: the model is
+    // asked to pick exactly one of the named paths, so drag as many as you need.
+    // Saved immediately under a unique placeholder name (write-time validation
+    // needs one), then the connection editor opens to name the outcome.
+    const addAIPathTo = React.useCallback(
+        (sourceId: string, target: string | null) => {
+            const src = seqById.get(sourceId);
+            if (!src) return;
+            const used = new Set(
+                (src.conditions?.branches ?? [])
+                    .flatMap((b) =>
+                        (b.conditions ?? [])
+                            .filter((c) => c.field === "ai_label")
+                            .map((c) => (c.label ?? "").trim().toLowerCase()),
+                    )
+                    .filter(Boolean),
+            );
+            let n = used.size + 1;
+            while (used.has(`choice ${n}`)) n++;
+            const branch: SequenceBranch = {
+                branch_id: newBranchId(),
+                target_step_id: target,
+                conditions: [{ field: "ai_label", operator: "is", label: `choice ${n}` }],
+            };
+            saveBranches(sourceId, [...(src.conditions?.branches ?? []), branch]);
+            openCondition(sourceId, branch.branch_id);
+        },
+        [seqById, saveBranches, openCondition],
+    );
     const retargetBranch = React.useCallback(
         (sourceId: string, branchId: string, target: string | null) => {
             const src = seqById.get(sourceId);
@@ -1394,11 +1428,13 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                 // condition ("if X, go here"), chained as if / else-if. The final
                 // catch-all is the else dot on the last IF box.
                 addIfTo(c.source, target);
+            } else if (isAIStepNode(seqById.get(c.source))) {
+                addAIPathTo(c.source, target);
             } else {
                 addUnconditional(c.source, target);
             }
         },
-        [seqById, retargetBranch, addIfTo, addUnconditional],
+        [seqById, retargetBranch, addIfTo, addUnconditional, addAIPathTo],
     );
 
     const selected = React.useMemo(() => {
@@ -2923,10 +2959,10 @@ function AIStepFields({
             </div>
 
             <p className="rounded-md border border-purple-200 bg-purple-50/60 px-2.5 py-2 text-[11px] leading-relaxed text-purple-700">
-                The paths you draw out of this step are the choices: name each connection (“when AI picks this path”)
-                and the AI reads the contact and picks exactly one. Put normal action steps (tag, deal, task…) on a
-                path to make things happen for the contacts routed down it. If AI can't decide, the contact follows
-                your “always” / fallback connection.
+                Drag as many lines out of this step as you need — each one is a choice. Name it when the connection
+                editor opens, and the AI reads the contact and picks exactly one path. Put normal action steps (tag,
+                deal, task…) on a path to make things happen for the contacts routed down it. If AI can't decide, the
+                contact follows your “always” / fallback connection.
             </p>
         </div>
     );
