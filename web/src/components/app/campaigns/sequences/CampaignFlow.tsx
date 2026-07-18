@@ -590,7 +590,7 @@ function SwitchNode({ id, data, selected }: NodeProps) {
         <div
             className={`w-[248px] rounded-xl border bg-white shadow-sm transition-shadow duration-200 hover:shadow-md ${
                 d.orphan ? "border-dashed border-amber-300" : "border-purple-200"
-            } ${selected ? "border-sky-400 ring-2 ring-sky-100" : ""}`}
+            } ${selected ? "border-purple-400 ring-2 ring-purple-100" : ""}`}
         >
             <Handle type="target" position={Position.Top} className="!h-2 !w-2 !border-2 !border-white !bg-slate-300" />
             <div className="flex items-center gap-2 rounded-t-xl border-b border-purple-200/60 bg-gradient-to-r from-purple-50/60 to-white px-2.5 py-1.5">
@@ -3120,13 +3120,13 @@ function SwitchStepFields({
                                 onClick={() => setAction((a) => ({ ...a, switch_on: mode ? "ai" : "value" }))}
                                 className={`flex items-start gap-1.5 rounded-md border px-2 py-1.5 text-left transition-colors ${
                                     active
-                                        ? "border-sky-300 bg-sky-50"
+                                        ? "border-purple-300 bg-purple-50"
                                         : "border-slate-200 bg-white hover:border-slate-300"
                                 }`}
                             >
-                                <Icon className={`mt-0.5 w-3.5 h-3.5 shrink-0 ${active ? "text-sky-600" : "text-slate-400"}`} />
+                                <Icon className={`mt-0.5 w-3.5 h-3.5 shrink-0 ${active ? "text-purple-600" : "text-slate-400"}`} />
                                 <span className="min-w-0">
-                                    <span className={`block text-[11.5px] font-medium ${active ? "text-sky-700" : "text-slate-700"}`}>
+                                    <span className={`block text-[11.5px] font-medium ${active ? "text-purple-700" : "text-slate-700"}`}>
                                         {title}
                                     </span>
                                     <span className="block text-[10.5px] leading-snug text-slate-400">{detail}</span>
@@ -3153,7 +3153,7 @@ function SwitchStepFields({
                         placeholder={
                             "Read this contact's reply and company details. Decide whether they're interested, not ready yet, or the wrong person."
                         }
-                        className="w-full px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-[12.5px] text-slate-900 placeholder:text-slate-400 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 resize-y leading-relaxed"
+                        className="w-full px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-[12.5px] text-slate-900 placeholder:text-slate-400 outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100 resize-y leading-relaxed"
                     />
                     <p className="mt-1 text-[11px] text-slate-400">
                         One model call per contact reaching this step picks exactly one case. Supports the same{" "}
@@ -3270,11 +3270,11 @@ function AIContextToggle({
     return (
         <div
             className={`flex items-center gap-2 rounded-md px-2 py-1.5 ring-1 transition-colors ${
-                on ? "bg-sky-50 ring-sky-200" : "bg-slate-50 ring-slate-200"
+                on ? "bg-purple-50 ring-purple-200" : "bg-slate-50 ring-slate-200"
             }`}
         >
             <div className="min-w-0 flex-1">
-                <div className={`text-[11.5px] font-medium ${on ? "text-sky-700" : "text-slate-500"}`}>{label}</div>
+                <div className={`text-[11.5px] font-medium ${on ? "text-purple-700" : "text-slate-500"}`}>{label}</div>
                 <div className="text-[10.5px] text-slate-400">{detail}</div>
             </div>
             <button
@@ -3283,8 +3283,8 @@ function AIContextToggle({
                 aria-checked={on}
                 aria-label={label}
                 onClick={onToggle}
-                className={`relative inline-flex h-[18px] w-8 shrink-0 items-center rounded-full transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 ${
-                    on ? "bg-sky-600" : "bg-slate-300"
+                className={`relative inline-flex h-[18px] w-8 shrink-0 items-center rounded-full transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-300 ${
+                    on ? "bg-purple-600" : "bg-slate-300"
                 }`}
             >
                 <span
