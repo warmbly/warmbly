@@ -3157,8 +3157,26 @@ function SwitchStepFields({
                     />
                     <p className="mt-1 text-[11px] text-slate-400">
                         One model call per contact reaching this step picks exactly one case. Supports the same{" "}
-                        {"{{.FirstName}}"} / {"{{.Company}}"} variables as your email copy. Costs 1 credit per contact.
+                        {"{{.FirstName}}"} / {"{{.Company}}"} variables as your email copy. Costs 1 credit per contact
+                        plus usage on long calls.
                     </p>
+                    <div className="mt-3">
+                        <Label>Capabilities</Label>
+                        <div className="space-y-1">
+                            <AIContextToggle
+                                label="Web search"
+                                detail="Looks up the contact's company on the web before deciding. +1 credit when results are found"
+                                on={!!action.ai_web_search}
+                                onToggle={() => setAction((a) => ({ ...a, ai_web_search: !a.ai_web_search || undefined }))}
+                            />
+                            <AIContextToggle
+                                label="Extended thinking"
+                                detail="Uses the stronger model with a bigger reasoning budget. Costs more through usage metering"
+                                on={!!action.ai_thinking}
+                                onToggle={() => setAction((a) => ({ ...a, ai_thinking: !a.ai_thinking || undefined }))}
+                            />
+                        </div>
+                    </div>
                 </div>
             ) : (
                 <div>

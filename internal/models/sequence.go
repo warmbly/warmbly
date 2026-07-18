@@ -119,6 +119,14 @@ type ActionConfig struct {
 	SwitchValue   string   `json:"switch_value,omitempty"`
 	AIInstruction string   `json:"ai_instruction,omitempty"`
 
+	// AI-decider capabilities. AIWebSearch runs one bounded web search about
+	// the contact's company before deciding and feeds the results in as fenced
+	// untrusted context (+1 credit when results are found). AIThinking routes
+	// the call to the stronger model tier with a larger output budget; the
+	// extra cost flows through usage metering.
+	AIWebSearch bool `json:"ai_web_search,omitempty"`
+	AIThinking  bool `json:"ai_thinking,omitempty"`
+
 	// Context opt-outs for the AI-decided switch. By default the model also
 	// sees the contact's campaign history (which steps ran, opens/clicks/
 	// replies, prior outcomes) and the newest email received from them, so

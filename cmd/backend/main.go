@@ -1152,6 +1152,7 @@ func main() {
 		// ledger as the automation AI nodes. Nil provider leaves them
 		// returning a clean "not available".
 		tasksService.SetAI(aiProvider, creditService)
+		tasksService.SetAISearch(aiSearch)
 
 		// Admin outreach composer — sends from the platform mailer
 		// (SES/SMTP) with a configurable Reply-To, audits every send.

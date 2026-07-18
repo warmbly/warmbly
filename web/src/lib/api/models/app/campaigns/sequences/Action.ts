@@ -69,6 +69,11 @@ export interface SequenceAction {
     switch_cases?: string[];
     switch_value?: string;
     ai_instruction?: string;
+    // AI-decider capabilities: web search runs one lookup about the contact's
+    // company before deciding (+1 credit when results are found); thinking
+    // routes to the stronger model tier (costs more through usage metering).
+    ai_web_search?: boolean;
+    ai_thinking?: boolean;
     // Context opt-outs for the AI decider: by default the model also sees the
     // contact's campaign history (steps run, opens/clicks/replies, prior
     // outcomes) and their newest inbound email. Stored inverted so existing

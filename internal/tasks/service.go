@@ -66,6 +66,10 @@ type TasksService interface {
 	// steps run over (mirrors integration.Service.SetAI). Nil provider leaves
 	// AI steps returning a clean "not available".
 	SetAI(p generation.Provider, c credits.CreditService)
+
+	// SetAISearch wires the optional web-search backend the switch step's
+	// web-search capability uses (nil = capability silently unavailable).
+	SetAISearch(sc generation.SearchClient)
 }
 
 // AutomationRunner launches an automation graph by id. It's satisfied
@@ -110,6 +114,7 @@ type tasksService struct {
 	// aiProvider + aiCredits back the campaign "switch" sequence step (SetAI).
 	aiProvider generation.Provider
 	aiCredits  credits.CreditService
+	aiSearch   generation.SearchClient
 
 	// warmupSettings caches the warmup generation settings in-process so the
 	// per-send AI-vs-static decision doesn't hit Postgres on every warmup.
@@ -180,4 +185,8 @@ func NewService(
 func (s *tasksService) SetAI(p generation.Provider, c credits.CreditService) {
 	s.aiProvider = p
 	s.aiCredits = c
+}
+
+func (s *tasksService) SetAISearch(sc generation.SearchClient) {
+	s.aiSearch = sc
 }

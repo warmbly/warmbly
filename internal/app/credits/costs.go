@@ -28,6 +28,10 @@ const (
 
 	// CostInboxAgentThread is one inbound thread handled by the inbox agent.
 	CostInboxAgentThread = 5
+
+	// CostWebSearch is one web-search lookup made on behalf of an AI step
+	// (charged only when the search returned results).
+	CostWebSearch = 1
 )
 
 // Usage-based metering. The per-feature constants above are the up-front
