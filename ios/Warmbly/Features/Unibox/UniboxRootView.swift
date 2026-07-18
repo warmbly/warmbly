@@ -11,6 +11,11 @@ struct UniboxRootView: View {
     @State private var sidebarOpen = false
     @State private var sidebarDrag: CGFloat = 0
     @State private var selectedIDs: Set<String> = []
+    /// Row whose labels are being edited from the context menu.
+    @State private var labelTarget: UniboxMessage?
+    @State private var showBulkLabels = false
+    @State private var toast: String?
+    @State private var toastPulse = 0
     @FocusState private var searchFocused: Bool
 
     private static let sidebarWidth: CGFloat = 300
@@ -62,6 +67,21 @@ struct UniboxRootView: View {
         .sensoryFeedback(.impact(weight: .light), trigger: sidebarOpen)
         .sensoryFeedback(.selection, trigger: selectedIDs.count)
         .sensoryFeedback(.selection, trigger: store.scope)
+        .sensoryFeedback(.success, trigger: toastPulse)
+        .sheet(item: $labelTarget) { message in
+            UniboxLabelPicker(mode: .standalone(
+                threadKey: message.threadKey,
+                initial: message.labels ?? [],
+                onChanged: { labels in
+                    store.updateLocalLabels(threadKey: message.threadKey, labels: labels)
+                }
+            ))
+        }
+        .sheet(isPresented: $showBulkLabels) {
+            UniboxLabelPicker(mode: .bulk(count: selectedIDs.count, onApply: { ids in
+                await bulkLabel(ids)
+            }))
+        }
     }
 
     // MARK: Main pane
@@ -80,6 +100,18 @@ struct UniboxRootView: View {
         }
         .animation(.snappy, value: searchFocused)
         .background(Color(.systemBackground))
+        .overlay(alignment: .bottom) {
+            if let toast {
+                Text(toast)
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 9)
+                    .background(.black.opacity(0.82), in: Capsule())
+                    .padding(.bottom, 12)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
         .simultaneousGesture(
             DragGesture(minimumDistance: 25)
                 .onEnded { value in
@@ -179,6 +211,17 @@ struct UniboxRootView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Mark read")
+
+            Button {
+                showBulkLabels = true
+            } label: {
+                Image(systemName: "tag")
+                    .font(.system(size: 16, weight: .medium))
+                    .frame(width: 40, height: 38)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Label selected")
 
             Menu {
                 ForEach(Array(UniboxSnoozePreset.allCases.enumerated()), id: \.offset) { _, preset in
@@ -438,6 +481,11 @@ struct UniboxRootView: View {
                     }
                 } label: {
                     Label("Snooze", systemImage: "moon.zzz")
+                }
+                Button {
+                    labelTarget = message
+                } label: {
+                    Label("Labels…", systemImage: "tag")
                 }
                 Button {
                     toggleSelection(message)
@@ -719,6 +767,36 @@ struct UniboxRootView: View {
         withAnimation(.snappy) { selectedIDs.removeAll() }
         await store.markSeen(env.api, ids: ids, seen: seen)
         await store.load(env.api, badges: env.badges)
+    }
+
+    /// Applies the picked labels on top of each selected thread's existing
+    /// set (union), one PUT per thread, then reports once.
+    private func bulkLabel(_ categoryIDs: [String]) async {
+        guard !categoryIDs.isEmpty else { return }
+        let targets = store.messages.filter { selectedIDs.contains($0.id) }
+        withAnimation(.snappy) { selectedIDs.removeAll() }
+        var labeled = 0
+        for message in targets {
+            let union = Set((message.labels ?? []).map(\.id)).union(categoryIDs)
+            if (try? await store.setThreadLabels(
+                env.api, threadKey: message.threadKey, categoryIDs: Array(union)
+            )) != nil {
+                labeled += 1
+            }
+        }
+        await store.loadOverview(env.api)
+        showToast("Labeled \(labeled) conversation\(labeled == 1 ? "" : "s")")
+    }
+
+    private func showToast(_ text: String) {
+        toastPulse += 1
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { toast = text }
+        let shown = toastPulse
+        Task {
+            try? await Task.sleep(for: .seconds(2.5))
+            guard shown == toastPulse else { return }
+            withAnimation(.snappy) { toast = nil }
+        }
     }
 
     private func bulkSnooze(until: Date) async {

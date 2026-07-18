@@ -142,8 +142,12 @@ func (s *service) fireInstantActions(ctx context.Context, campaignID, contactID,
 			}
 		}
 		// A "wait" node means "not instant" — stop here and let the normal
-		// scheduler resume the contact after the wait. "end" terminates the chain.
-		if cfg.Type == "wait" {
+		// scheduler resume the contact after the wait. "switch" also hands back
+		// to the scheduler: switch steps run only through the scheduler path,
+		// where the provider + credit ledger live (the node is NOT stamped sent
+		// here, so the scheduler routes to it and runs it at the next
+		// boundary). "end" terminates the chain.
+		if cfg.Type == "wait" || cfg.Type == "switch" {
 			return
 		}
 		if cfg.Type == "end" || cfg.Type == "" {

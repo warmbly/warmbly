@@ -2,6 +2,7 @@ package repository
 
 import (
 	"hash/fnv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -30,6 +31,11 @@ var branchConditionFields = map[string]bool{
 	// "random" routes a deterministic percentage of contacts down this branch
 	// (a random split / split-test). Pairs with operator "chance", Value = %.
 	"random": true,
+	// "ai_label" matches when the AI step that owns this branch stored the given
+	// Label for the contact (campaign_contact_progress.ai_label). Pairs with
+	// operator "is". Decides instantly off the stored value — the label was
+	// written when the AI step ran, so the scheduler never calls a model here.
+	"ai_label": true,
 }
 
 var branchConditionOperators = map[string]bool{
@@ -41,6 +47,9 @@ var branchConditionOperators = map[string]bool{
 	// "chance" pairs with field "random": Value is the percent (1-99) of
 	// contacts that take the branch, chosen deterministically per contact.
 	"chance": true,
+	// "is" pairs with field "ai_label": the stored AI-step label equals the
+	// condition's Label (case-insensitive).
+	"is": true,
 }
 
 // maxBranchesPerStep / maxConditionsPerBranch bound the tree so a single step
@@ -82,6 +91,16 @@ func validateBranchConditions(bc *models.BranchConditions) *errx.Error {
 				if cond.Operator != "chance" || cond.Value == nil || *cond.Value < 1 || *cond.Value > 99 {
 					return errx.ErrSequenceBranch
 				}
+			}
+			// "ai_label" and "is" are a strict pair: the field needs the operator
+			// plus a bounded non-empty Label, and the operator fits nothing else.
+			if cond.Field == "ai_label" {
+				label := strings.TrimSpace(cond.Label)
+				if cond.Operator != "is" || label == "" || len(label) > maxAIStepName {
+					return errx.ErrSequenceBranch
+				}
+			} else if cond.Operator == "is" {
+				return errx.ErrSequenceBranch
 			}
 		}
 	}
@@ -148,6 +167,16 @@ func conditionState(cond models.BranchCondition, prog *CampaignContactProgress, 
 	switch cond.Field {
 	case "reply_positive", "reply_negative", "reply_neutral", "reply_automated":
 		if replyClassMatches(cond.Field, prog.ReplyClass) {
+			return BranchMatch, time.Time{}
+		}
+		return BranchNoMatch, time.Time{}
+	case "ai_label":
+		// Decides immediately off the stored AI-step verdict: the label was
+		// written when the AI step ran (before its branches route). A contact the
+		// AI failed to label matches no ai_label branch and falls to the
+		// catch-all "otherwise" path.
+		want := strings.TrimSpace(cond.Label)
+		if want != "" && strings.EqualFold(strings.TrimSpace(prog.AILabel), want) {
 			return BranchMatch, time.Time{}
 		}
 		return BranchNoMatch, time.Time{}

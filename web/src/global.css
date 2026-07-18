@@ -247,6 +247,47 @@ svg.loading circle {
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* AI writing surfaces — a text shimmer for "thinking/writing" status labels
+   and a caret blink for streaming text. Both quiet down under
+   prefers-reduced-motion. */
+@keyframes ai-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+.ai-shimmer-text {
+  background: linear-gradient(90deg, #64748b 30%, #0ea5e9 50%, #64748b 70%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: ai-shimmer 1.8s linear infinite;
+}
+@keyframes ai-caret-blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+.ai-caret {
+  animation: ai-caret-blink 1s steps(1) infinite;
+}
+/* Soft diagonal light sweep over an input while AI writes into it. */
+.ai-sheen {
+  background: linear-gradient(
+    100deg,
+    transparent 25%,
+    rgba(14, 165, 233, 0.09) 45%,
+    rgba(56, 189, 248, 0.14) 50%,
+    rgba(14, 165, 233, 0.09) 55%,
+    transparent 75%
+  );
+  background-size: 220% 100%;
+  animation: ai-shimmer 1.6s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ai-shimmer-text { animation: none; background: none; color: #64748b; }
+  .ai-caret { animation: none; }
+  .ai-sheen { animation: none; background: rgba(14, 165, 233, 0.06); }
+}
+
 /* 3x3 dot-grid activity indicator (adapted from Temani Afif's css-loaders
    "l26"). Native geometry is a ~52px square block, so the dot + box-shadow
    grid lives on a ::before that is scaled down (origin 0 0, after the

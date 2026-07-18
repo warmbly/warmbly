@@ -913,6 +913,8 @@ func (s *tasksService) executeActionNode(ctx context.Context, campaign *models.C
 		}
 		s.advanced.FireCampaignEvent(ctx, *campaign.OrganizationID, campaign.ID.String(), cfg.EventName, cfg.EventFields, contact)
 		return nil
+	case "switch":
+		return s.execSequenceSwitchStep(ctx, campaign, contact, sequenceID, cfg)
 	default:
 		return nil
 	}

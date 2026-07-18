@@ -1,5 +1,7 @@
 package credits
 
+import "strings"
+
 // Every AI credit cost in the product, in one place. Handlers and services
 // must reference these constants instead of hardcoding amounts, and the
 // "AI credits" guide in docs/ mirrors this table.
@@ -16,12 +18,59 @@ const (
 	// CostResearchRun is one contact research run (nothing_found included).
 	CostResearchRun = 2
 
-	// CostAutomationAINode is one ai_classify/ai_extract/ai_generate node execution.
+	// CostAutomationAINode is one ai_classify/ai_extract/ai_generate node
+	// execution, and one Ask-AI branch evaluation.
 	CostAutomationAINode = 1
+
+	// CostCampaignAIStep is one campaign-sequence AI-decided "switch" step execution (one
+	// contact passing through the step).
+	CostCampaignAIStep = 1
 
 	// CostInboxAgentThread is one inbound thread handled by the inbox agent.
 	CostInboxAgentThread = 5
+
+	// CostWebSearch is one web-search lookup made on behalf of an AI step
+	// (charged only when the search returned results).
+	CostWebSearch = 1
 )
+
+// Usage-based metering. The per-feature constants above are the up-front
+// MINIMUM charged before the provider call (they double as the reservation
+// that gates an empty balance); after the call, the real token usage is priced
+// with MeteredCost and any overage beyond the minimum is settled from the
+// ledger (draining to zero at worst — a delivered result never fails on the
+// settle). So small calls cost exactly the flat minimum, and big calls pay for
+// what they actually used.
+const (
+	// tokensPerCreditLight prices the light model tier (mini/haiku-class).
+	tokensPerCreditLight = 1500
+	// tokensPerCreditStandard prices the standard tier (4o/sonnet-class).
+	tokensPerCreditStandard = 400
+)
+
+// lightModelMarkers identify light-tier models by name substring.
+var lightModelMarkers = []string{"mini", "haiku", "nano", "flash", "lite"}
+
+// TokensPerCredit returns how many tokens one credit buys on this model.
+func TokensPerCredit(model string) int {
+	m := strings.ToLower(model)
+	for _, marker := range lightModelMarkers {
+		if strings.Contains(m, marker) {
+			return tokensPerCreditLight
+		}
+	}
+	return tokensPerCreditStandard
+}
+
+// MeteredCost prices actual token usage on a model in credits (rounded up).
+// Zero tokens price to zero: callers keep their flat minimum as the floor.
+func MeteredCost(model string, tokens int) int {
+	if tokens <= 0 {
+		return 0
+	}
+	per := TokensPerCredit(model)
+	return (tokens + per - 1) / per
+}
 
 // CreditPack is a fixed top-up pack purchasable through Stripe Checkout
 // (mode=payment). Price IDs are configured per environment

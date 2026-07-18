@@ -14,6 +14,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/cipher"
 	jobs "github.com/warmbly/warmbly/internal/app/consumer"
 	"github.com/warmbly/warmbly/internal/app/credits"
+	"github.com/warmbly/warmbly/internal/app/creditwatch"
 	"github.com/warmbly/warmbly/internal/app/feature"
 	"github.com/warmbly/warmbly/internal/app/inboxagent"
 	"github.com/warmbly/warmbly/internal/app/integration"
@@ -239,7 +240,12 @@ func main() {
 	// warmup / bounce events dispatch here). Build the credit ledger + provider so
 	// ai_classify / ai_extract / ai_generate nodes can charge + call, and so the
 	// classifier's optional model layer rides the same OpenAI-first provider.
-	creditServiceC := credits.NewService(repository.NewCreditRepository(primaryDB), redisCache)
+	creditRepoC := repository.NewCreditRepository(primaryDB)
+	aiSettingsRepoC := repository.NewAISettingsRepository(primaryDB)
+	creditServiceC := credits.NewService(creditRepoC, aiSettingsRepoC, redisCache)
+	// Consumer-side debits (automation AI nodes) also feed the low-balance
+	// alert. Auto top-up stays backend-only (no Stripe service here).
+	creditServiceC.SetMonitor(creditwatch.New(aiSettingsRepoC, creditRepoC, redisCache, streamingPublisher, nil).OnBalanceChanged)
 	var aiProviderC generation.Provider
 	// Provider selection mirrors the backend: AI_PROVIDER preset + AI_* vars.
 	if cfgAI, rerr := generation.Resolve(generation.ProviderSettings{

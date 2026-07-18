@@ -83,6 +83,15 @@ const (
 	// access_unibox). The web client invalidates the unibox + drafts queries.
 	EventAIDraftReady EventType = "AI_DRAFT_READY"
 
+	// AI credit balance dipped below the org's alert threshold (org-scoped;
+	// "BILLING" in the type gates it on manage_billing in the Elixir channel).
+	// Fired at most once per day per org by the credit watch.
+	EventBillingCreditsLow EventType = "BILLING_CREDITS_LOW"
+	// EventBillingCreditsChanged fires after every fresh credit debit so
+	// balances render live everywhere ("BILLING" prefix gates it to
+	// manage_billing members in the realtime service).
+	EventBillingCreditsChanged EventType = "BILLING_CREDITS_CHANGED"
+
 	// In-app notification feed (user-scoped). The web client refreshes the bell
 	// feed + may toast on any event type containing "NOTIFICATION".
 	EventNotificationCreated EventType = "NOTIFICATION_CREATED"
@@ -549,6 +558,74 @@ func (p *StreamingPublisher) PublishAIDraftReady(ctx context.Context, orgID, act
 		"user_id":    actorID.String(),
 		"org_id":     orgID.String(),
 		"event_type": string(EventAIDraftReady),
+	}
+	if err := p.client.Publish(ctx, TopicUserEvents, event, attrs); err != nil {
+		// Best-effort: realtime is a nicety, not a requirement.
+	}
+}
+
+// CreditsLowEvent is the org-scoped payload for BILLING_CREDITS_LOW: the
+// balance that tripped the alert and the org's configured threshold.
+type CreditsLowEvent struct {
+	BaseEvent
+	OrgID     string `json:"org_id"`
+	Balance   int    `json:"balance"`
+	Threshold int    `json:"threshold"`
+}
+
+// PublishCreditsLow emits BILLING_CREDITS_LOW when an org's spendable balance
+// crosses under its alert threshold. Best-effort, system-fired (no actor).
+func (p *StreamingPublisher) PublishCreditsLow(ctx context.Context, orgID uuid.UUID, balance, threshold int) {
+	if p == nil || p.client == nil || orgID == uuid.Nil {
+		return
+	}
+	event := &CreditsLowEvent{
+		BaseEvent: BaseEvent{
+			EventType: EventBillingCreditsLow,
+			UserID:    uuid.Nil.String(),
+			Timestamp: time.Now(),
+		},
+		OrgID:     orgID.String(),
+		Balance:   balance,
+		Threshold: threshold,
+	}
+	attrs := map[string]string{
+		"user_id":    uuid.Nil.String(),
+		"org_id":     orgID.String(),
+		"event_type": string(EventBillingCreditsLow),
+	}
+	if err := p.client.Publish(ctx, TopicUserEvents, event, attrs); err != nil {
+		// Best-effort: realtime is a nicety, not a requirement.
+	}
+}
+
+// CreditsChangedEvent is the org-scoped payload for BILLING_CREDITS_CHANGED:
+// the spendable balance after a debit, so credit meters update live.
+type CreditsChangedEvent struct {
+	BaseEvent
+	OrgID   string `json:"org_id"`
+	Balance int    `json:"balance"`
+}
+
+// PublishCreditsChanged emits BILLING_CREDITS_CHANGED after a fresh credit
+// debit. Best-effort, system-fired (no actor).
+func (p *StreamingPublisher) PublishCreditsChanged(ctx context.Context, orgID uuid.UUID, balance int) {
+	if p == nil || p.client == nil || orgID == uuid.Nil {
+		return
+	}
+	event := &CreditsChangedEvent{
+		BaseEvent: BaseEvent{
+			EventType: EventBillingCreditsChanged,
+			UserID:    uuid.Nil.String(),
+			Timestamp: time.Now(),
+		},
+		OrgID:   orgID.String(),
+		Balance: balance,
+	}
+	attrs := map[string]string{
+		"user_id":    uuid.Nil.String(),
+		"org_id":     orgID.String(),
+		"event_type": string(EventBillingCreditsChanged),
 	}
 	if err := p.client.Publish(ctx, TopicUserEvents, event, attrs); err != nil {
 		// Best-effort: realtime is a nicety, not a requirement.

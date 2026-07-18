@@ -180,6 +180,9 @@ export const RANDOM_FIELD_KEY = "__random__";
 // Sentinel field key for the advanced free-form expression condition.
 export const EXPRESSION_FIELD_KEY = "__expression__";
 
+// Sentinel field key for the Ask-AI yes/no condition.
+export const AI_FIELD_KEY = "__ai__";
+
 export const WARMUP_STATES = [
     { value: "healthy", label: "Healthy" },
     { value: "watch", label: "Watch" },
@@ -254,10 +257,19 @@ const EXPRESSION_FIELD: TriggerFieldDef = {
     defaultOperator: "",
 };
 
-// The condition fields offered for a trigger: its payload fields + random split
-// + the advanced free-form expression escape hatch.
+// Ask AI: a plain-language yes/no question answered by the model over the
+// event data (true edge = yes). Costs 1 credit per evaluation.
+const AI_FIELD: TriggerFieldDef = {
+    key: AI_FIELD_KEY,
+    label: "Ask AI (yes/no)",
+    type: "string",
+    defaultOperator: "",
+};
+
+// The condition fields offered for a trigger: its payload fields + Ask AI +
+// random split + the advanced free-form expression escape hatch.
 export function triggerConditionFields(triggerEvent: string): TriggerFieldDef[] {
-    return [...(TRIGGER_FIELDS[triggerEvent] ?? GENERIC_FIELDS), RANDOM_FIELD, EXPRESSION_FIELD];
+    return [...(TRIGGER_FIELDS[triggerEvent] ?? GENERIC_FIELDS), AI_FIELD, RANDOM_FIELD, EXPRESSION_FIELD];
 }
 
 export function triggerFieldDef(triggerEvent: string, key: string): TriggerFieldDef | undefined {
@@ -269,6 +281,7 @@ export function triggerFieldDef(triggerEvent: string, key: string): TriggerField
 export function conditionFromFieldKey(triggerEvent: string, key: string): AutomationCondition {
     if (key === RANDOM_FIELD_KEY) return { field: "random", operator: "chance", value: 50 };
     if (key === EXPRESSION_FIELD_KEY) return { field: "expression", operator: "", expression: "" };
+    if (key === AI_FIELD_KEY) return { field: "ai", operator: "", prompt: "" };
     const def = triggerFieldDef(triggerEvent, key);
     return { field: "field", key, operator: def?.defaultOperator ?? "equals" };
 }
@@ -283,6 +296,7 @@ export function defaultConditionForTrigger(triggerEvent: string): AutomationCond
 export function conditionFieldKey(c: AutomationCondition): string {
     if (c.field === "random") return RANDOM_FIELD_KEY;
     if (c.field === "expression") return EXPRESSION_FIELD_KEY;
+    if (c.field === "ai") return AI_FIELD_KEY;
     if (c.field === "field") return c.key ?? "";
     return c.field; // legacy
 }
@@ -408,6 +422,12 @@ export function conditionLabel(c?: AutomationCondition): string {
         const e = (c.expression ?? "").trim();
         if (!e) return "Set an expression";
         return `if ${e.length > 30 ? e.slice(0, 30) + "…" : e}`;
+    }
+    // Ask AI yes/no question.
+    if (c.field === "ai") {
+        const p = (c.prompt ?? "").trim();
+        if (!p) return "Ask AI a question";
+        return `AI: ${p.length > 30 ? p.slice(0, 30) + "…" : p}`;
     }
     // Generic field condition.
     if (c.field === "field") {

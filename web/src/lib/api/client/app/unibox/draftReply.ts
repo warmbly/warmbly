@@ -11,6 +11,9 @@ export interface DraftReplyInput {
 export interface DraftReplyResult {
     text: string;
     credits_remaining: number;
+    // Real usage-based charge: flat minimum plus the token overage settle.
+    credits_charged: number;
+    tokens_used: number;
     model: string;
 }
 

@@ -151,6 +151,18 @@ Baseline (always loads):
 | Email | `dev@warmbly.com` |
 | Password | `password123` |
 
+The dev user's org always loads as a mid-flight workspace, not an empty shell:
+
+- 4 warmed mailboxes on the shared worker, all in the premium warmup pool
+- Folders, tags, and categories with real bindings (mailbox tags, campaign folders, contact categories, inbox thread labels)
+- ~30 contacts with titles and companies, a few unsubscribed or suppressed
+- An active 3-step campaign with 24 leads spread across the funnel (sent, opened, replied, bounced, queued), plus a draft campaign
+- 14 days of stats history (campaign sends, warmup volume, per-mailbox counts), always including sends today
+- A unified inbox with reply chains, an objection, an out-of-office, a bounce, and a warmup-style exchange
+- A CRM pipeline with deals, tasks, and notes, reply templates, notifications, and an AI credit balance with transaction history
+
+All dates are computed relative to the current time, so the workspace looks active no matter when you seed.
+
 When `SEED_RICH=true` (default in `docker-compose.yml`), also loads:
 
 - 3 orgs (Acme free, Beta pro, Gamma enterprise) each with their own owner user (password `password123`)

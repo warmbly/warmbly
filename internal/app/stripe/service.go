@@ -18,6 +18,8 @@ import (
 	"github.com/stripe/stripe-go/v76/customer"
 	balancetxn "github.com/stripe/stripe-go/v76/customerbalancetransaction"
 	"github.com/stripe/stripe-go/v76/invoice"
+	"github.com/stripe/stripe-go/v76/paymentintent"
+	"github.com/stripe/stripe-go/v76/price"
 	"github.com/stripe/stripe-go/v76/subscription"
 	"github.com/stripe/stripe-go/v76/webhook"
 	"github.com/warmbly/warmbly/internal/app/discount"
@@ -71,6 +73,13 @@ type StripeService interface {
 	// session metadata so the webhook grants the right amount). The pack's
 	// Stripe price is resolved from config; an unconfigured pack returns 503.
 	CreateCreditCheckoutSession(ctx context.Context, userID, orgID uuid.UUID, packKey string, credits int, successURL, cancelURL string) (*stripe.CheckoutSession, *errx.Error)
+
+	// AutoTopUpCredits charges the org's saved payment method OFF-SESSION for
+	// one credit pack and fulfills it immediately on success (idempotent on
+	// the PaymentIntent id). Used by the credit-watch auto top-up; returns
+	// true when credits were granted. Fails cleanly (false, err) when the org
+	// has no saved payment method or the charge is declined.
+	AutoTopUpCredits(ctx context.Context, orgID uuid.UUID, packKey string, creditAmount int) (bool, error)
 
 	// WireReferral attaches the referral program (post-construction; nil = the
 	// referral hooks in the webhook flow are skipped).
@@ -394,6 +403,81 @@ func (s *stripeService) CreateCreditCheckoutSession(ctx context.Context, userID,
 		return nil, errx.New(errx.Internal, "failed to create checkout session")
 	}
 	return sess, nil
+}
+
+func (s *stripeService) AutoTopUpCredits(ctx context.Context, orgID uuid.UUID, packKey string, creditAmount int) (bool, error) {
+	if s.credits == nil {
+		return false, fmt.Errorf("credits not wired")
+	}
+	priceID := ""
+	if s.cfg != nil && s.cfg.CreditPackPriceIDs != nil {
+		priceID = s.cfg.CreditPackPriceIDs[packKey]
+	}
+	if priceID == "" || creditAmount <= 0 {
+		return false, fmt.Errorf("credit pack %q not configured", packKey)
+	}
+
+	sub, err := s.subRepo.GetByOrganizationID(ctx, orgID)
+	if err != nil || sub == nil || sub.StripeCustomerID == "" {
+		return false, fmt.Errorf("no billing customer for org")
+	}
+
+	p, perr := price.Get(priceID, nil)
+	if perr != nil {
+		return false, fmt.Errorf("resolve pack price: %w", perr)
+	}
+
+	// Off-session confirmation needs the customer's saved default payment
+	// method (the card the subscription bills). Without one, auto top-up
+	// cannot run and the org keeps buying manually via Checkout.
+	cust, cerr := customer.Get(sub.StripeCustomerID, &stripe.CustomerParams{
+		Params: stripe.Params{Expand: []*string{stripe.String("invoice_settings.default_payment_method")}},
+	})
+	if cerr != nil {
+		return false, fmt.Errorf("load customer: %w", cerr)
+	}
+	var pmID string
+	if cust.InvoiceSettings != nil && cust.InvoiceSettings.DefaultPaymentMethod != nil {
+		pmID = cust.InvoiceSettings.DefaultPaymentMethod.ID
+	}
+	if pmID == "" {
+		return false, fmt.Errorf("no saved payment method")
+	}
+
+	pi, ierr := paymentintent.New(&stripe.PaymentIntentParams{
+		Amount:        stripe.Int64(p.UnitAmount),
+		Currency:      stripe.String(string(p.Currency)),
+		Customer:      stripe.String(sub.StripeCustomerID),
+		PaymentMethod: stripe.String(pmID),
+		OffSession:    stripe.Bool(true),
+		Confirm:       stripe.Bool(true),
+		Metadata: map[string]string{
+			"org_id":   orgID.String(),
+			"purpose":  "credit_auto_topup",
+			"pack_key": packKey,
+			"credits":  strconv.Itoa(creditAmount),
+		},
+	})
+	if ierr != nil {
+		return false, fmt.Errorf("off-session charge failed: %w", ierr)
+	}
+	if pi.Status != stripe.PaymentIntentStatusSucceeded {
+		return false, fmt.Errorf("off-session charge not settled (status %s)", pi.Status)
+	}
+
+	// Fulfill immediately, idempotent on the PaymentIntent id so a concurrent
+	// webhook or retry can never double-grant.
+	if _, gerr := s.credits.GrantPurchased(ctx, orgID, creditAmount, "credit_auto_topup", pi.ID); gerr != nil {
+		return false, fmt.Errorf("grant after charge: %w", gerr)
+	}
+	if s.audit != nil {
+		s.audit.LogAction(ctx, orgID, uuid.Nil, models.AuditActionCreate, models.AuditEntityCreditPurchase, nil, "", "", nil, map[string]string{
+			"pack_key": packKey,
+			"credits":  strconv.Itoa(creditAmount),
+			"auto":     "true",
+		})
+	}
+	return true, nil
 }
 
 func (s *stripeService) CreatePortalSession(ctx context.Context, customerID, returnURL string) (string, *errx.Error) {

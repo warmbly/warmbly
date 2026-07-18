@@ -28,6 +28,10 @@ type CampaignContactProgress struct {
 	// conditions. RepliedAt is set ONLY for human replies, so an automated reply
 	// can carry a ReplyClass here without ever tripping "replied"/stop_on_reply.
 	ReplyClass string
+	// AILabel is the case a "switch" sequence step stored for the contact on this
+	// step ("" when the step has no labels or the AI could not decide). Read by
+	// the ai_label branch conditions.
+	AILabel string
 }
 
 // CampaignProgress represents overall campaign progress
@@ -83,6 +87,10 @@ type CampaignProgressRepository interface {
 	// never trip stop_on_reply / the "replied" condition). Callers stamp
 	// replied_at separately via RecordEmailReplied for human replies only.
 	RecordReplyClassification(ctx context.Context, campaignID, contactID, sequenceID uuid.UUID, class, source string, confidence float64) error
+	// RecordAILabel stores the case a "switch" sequence step chose for the contact
+	// on that step. Upserts (the AI step runs before its progress row is stamped
+	// sent). Read by the ai_label branch conditions when routing out of the step.
+	RecordAILabel(ctx context.Context, campaignID, contactID, sequenceID uuid.UUID, label string) error
 	// GetLatestReplyClass returns the most-recent classified reply class for a
 	// contact in a campaign ("" when none). Convenience getter for the branch
 	// evaluator / callers that need only the class.
@@ -241,6 +249,18 @@ func (r *campaignProgressRepository) RecordReplyClassification(ctx context.Conte
 	return err
 }
 
+// RecordAILabel persists an AI step's chosen label on the progress row.
+func (r *campaignProgressRepository) RecordAILabel(ctx context.Context, campaignID, contactID, sequenceID uuid.UUID, label string) error {
+	query := `
+		INSERT INTO campaign_contact_progress (campaign_id, contact_id, sequence_id, ai_label)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (campaign_id, contact_id, sequence_id)
+		DO UPDATE SET ai_label = EXCLUDED.ai_label
+	`
+	_, err := r.db.Exec(ctx, query, campaignID, contactID, sequenceID, label)
+	return err
+}
+
 // GetLatestReplyClass returns the most-recent non-empty reply_class for a
 // contact in a campaign, or "" when none has been classified.
 func (r *campaignProgressRepository) GetLatestReplyClass(ctx context.Context, contactID, campaignID uuid.UUID) (string, error) {
@@ -357,7 +377,7 @@ func (r *campaignProgressRepository) GetCampaignRollingRates(ctx context.Context
 // GetContactProgress retrieves progress for a specific contact in a campaign
 func (r *campaignProgressRepository) GetContactProgress(ctx context.Context, campaignID, contactID uuid.UUID) ([]CampaignContactProgress, error) {
 	query := `
-		SELECT campaign_id, contact_id, sequence_id, sent_at, opened_at, clicked_at, replied_at, bounced_at, complained_at, COALESCE(reply_class, '')
+		SELECT campaign_id, contact_id, sequence_id, sent_at, opened_at, clicked_at, replied_at, bounced_at, complained_at, COALESCE(reply_class, ''), COALESCE(ai_label, '')
 		FROM campaign_contact_progress
 		WHERE campaign_id = $1 AND contact_id = $2
 		ORDER BY sent_at ASC
@@ -383,6 +403,7 @@ func (r *campaignProgressRepository) GetContactProgress(ctx context.Context, cam
 			&progress.BouncedAt,
 			&progress.ComplainedAt,
 			&progress.ReplyClass,
+			&progress.AILabel,
 		)
 		if err != nil {
 			return nil, err
@@ -689,7 +710,7 @@ func (r *campaignProgressRepository) FindNextRoutedPair(ctx context.Context, cam
 
 	query := `
 		SELECT cl.contact_id,
-		       lp.sequence_id, lp.sent_at, lp.opened_at, lp.clicked_at, lp.replied_at, COALESCE(lp.reply_class, ''),
+		       lp.sequence_id, lp.sent_at, lp.opened_at, lp.clicked_at, lp.replied_at, COALESCE(lp.reply_class, ''), COALESCE(lp.ai_label, ''),
 		       COALESCE(ss.ids, '{}') AS sent_ids,
 		       EXISTS (
 		         SELECT 1 FROM campaign_contact_progress rp
@@ -698,7 +719,7 @@ func (r *campaignProgressRepository) FindNextRoutedPair(ctx context.Context, cam
 		FROM campaign_leads cl
 		JOIN contacts c ON c.id = cl.contact_id
 		LEFT JOIN LATERAL (
-			SELECT sequence_id, sent_at, opened_at, clicked_at, replied_at, reply_class
+			SELECT sequence_id, sent_at, opened_at, clicked_at, replied_at, reply_class, ai_label
 			FROM campaign_contact_progress p
 			WHERE p.campaign_id = $1 AND p.contact_id = cl.contact_id AND p.sent_at IS NOT NULL
 			ORDER BY p.sent_at DESC LIMIT 1
@@ -733,10 +754,10 @@ func (r *campaignProgressRepository) FindNextRoutedPair(ctx context.Context, cam
 		var contactID uuid.UUID
 		var lastSeq *uuid.UUID
 		var sentAt, openedAt, clickedAt, repliedAt *time.Time
-		var replyClass string
+		var replyClass, aiLabel string
 		var sentIDs []uuid.UUID
 		var hasReplied bool
-		if serr := rows.Scan(&contactID, &lastSeq, &sentAt, &openedAt, &clickedAt, &repliedAt, &replyClass, &sentIDs, &hasReplied); serr != nil {
+		if serr := rows.Scan(&contactID, &lastSeq, &sentAt, &openedAt, &clickedAt, &repliedAt, &replyClass, &aiLabel, &sentIDs, &hasReplied); serr != nil {
 			return nil, nil, serr
 		}
 
@@ -752,7 +773,7 @@ func (r *campaignProgressRepository) FindNextRoutedPair(ctx context.Context, cam
 			prog := &CampaignContactProgress{
 				CampaignID: campaignID, ContactID: contactID, SequenceID: *lastSeq,
 				SentAt: sentAt, OpenedAt: openedAt, ClickedAt: clickedAt, RepliedAt: repliedAt,
-				ReplyClass: replyClass,
+				ReplyClass: replyClass, AILabel: aiLabel,
 			}
 			sa := time.Time{}
 			if sentAt != nil {

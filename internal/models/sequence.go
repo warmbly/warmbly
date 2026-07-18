@@ -49,7 +49,7 @@ type Sequence struct {
 // ActionConfig is the persisted config for a non-email (action/wait) node. Type
 // is the switch the task executes on; the remaining fields are type-scoped.
 type ActionConfig struct {
-	Type string `json:"type"` // wait | add_tag | remove_tag | label_email | unsubscribe | notify | create_task | create_deal | move_deal_stage | run_automation | fire_event | end
+	Type string `json:"type"` // wait | add_tag | remove_tag | label_email | unsubscribe | notify | create_task | create_deal | move_deal_stage | run_automation | fire_event | switch | end
 
 	// wait
 	WaitMinutes *int `json:"wait_minutes,omitempty"`
@@ -97,6 +97,43 @@ type ActionConfig struct {
 	// templated against the contact; the fields become the event payload.
 	EventName   string     `json:"event_name,omitempty"`
 	EventFields []ActionKV `json:"event_fields,omitempty"`
+
+	// switch — a multi-way router. SwitchCases are the named case paths shown
+	// as draggable dots on the canvas node; each connected case is stored as an
+	// outgoing branch with an "ai_label" condition carrying the case name, and
+	// an unconditional branch is the "otherwise" fallback. SwitchOn picks the
+	// decider:
+	//   "ai"    — one model call per contact follows AIInstruction (templated
+	//             against the contact) and picks EXACTLY one case. Costs one AI
+	//             credit per contact.
+	//   "value" — SwitchValue (a template like {{.Industry}}) is rendered
+	//             against the contact and matched to the case names. Free,
+	//             deterministic, no model call.
+	// Either way the chosen case lands on the progress row (RecordAILabel) and
+	// routing reads it at the step boundary; a contact matching no case follows
+	// the fallback. Side effects are ordinary action steps placed on the chosen
+	// path, never executed by the decider. Always runs through the scheduler
+	// (never the instant chain), so an instant branch pauses at it.
+	SwitchOn      string   `json:"switch_on,omitempty"` // "ai" (default) | "value"
+	SwitchCases   []string `json:"switch_cases,omitempty"`
+	SwitchValue   string   `json:"switch_value,omitempty"`
+	AIInstruction string   `json:"ai_instruction,omitempty"`
+
+	// AI-decider capabilities. AIWebSearch runs one bounded web search about
+	// the contact's company before deciding and feeds the results in as fenced
+	// untrusted context (+1 credit when results are found). AIThinking routes
+	// the call to the stronger model tier with a larger output budget; the
+	// extra cost flows through usage metering.
+	AIWebSearch bool `json:"ai_web_search,omitempty"`
+	AIThinking  bool `json:"ai_thinking,omitempty"`
+
+	// Context opt-outs for the AI-decided switch. By default the model also
+	// sees the contact's campaign history (which steps ran, opens/clicks/
+	// replies, prior outcomes) and the newest email received from them, so
+	// decisions can be grounded in "what happened so far". Stored inverted so
+	// existing steps keep the richer context.
+	AINoEngagement bool `json:"ai_no_engagement,omitempty"`
+	AINoReplies    bool `json:"ai_no_replies,omitempty"`
 }
 
 // ActionKV is one templated input passed to a launched automation.
@@ -192,13 +229,20 @@ type BranchCondition struct {
 	// replies (auto_reply / out_of_office) — only a human reply sets replied_at,
 	// so a vacation autoresponder never trips "replied" or stop_on_reply. Use the
 	// reply_automated field to branch specifically on an automated reply.
+	//
+	// "ai_label" (operator "is", value in Label) matches when the AI step that
+	// owns this branch stored that label for the contact — deterministic at
+	// schedule time, no model call.
 	Field string `json:"field"`
 	// Operator is the comparison. "within_days" (the signal occurred in the last
 	// Value days) and "ever" (the signal occurred at all). For the not_* fields
 	// the meaning inverts (did NOT happen within / ever). The reply_* fields take
-	// operator "ever" (no Value).
+	// operator "ever" (no Value). "is" pairs with "ai_label" (compare to Label).
 	Operator string `json:"operator"`
 	// Value is the day window for "within_days". nil for operators that take no
 	// argument (e.g. "ever").
 	Value *int `json:"value"`
+	// Label is the AI-step label an "ai_label" condition compares against
+	// (case-insensitive). Empty for every other field.
+	Label string `json:"label,omitempty"`
 }

@@ -53,12 +53,31 @@ A step does not have to send an email. From the add menu (the chevron next to "A
 - Unsubscribe the contact
 - Notify (sends an event to your connected webhooks and integrations, such as Slack or a CRM)
 - Run automation
+- Switch (route each contact down one of several case paths, decided by an AI prompt or a value; see below)
 
 Action steps connect the same way as email steps and are most useful at the end of a reply branch (for example: on a positive reply, create a deal and notify your team).
 
 <Callout type="info">
 **Label email** is reply-only. It labels the conversation the contact replied on with the same labels you use by hand in the unibox, so it does something only once they have replied. Place it on a reply branch (if replied / positive / negative); on any other path it is a no-op because there is no thread to label.
 </Callout>
+
+### Switch steps
+
+A **Switch step** routes each contact down one of several named case paths. Give the step its cases (for example `interested`, `not_now`, `wrong_person`); every case renders as its own dot on the node, and you drag each dot to the step that path leads to — as many cases as you need. The bottom dot is the `otherwise` fallback for contacts no case matched. Side effects are ordinary action steps (add a tag, create a deal or task, run an automation, fire an event) placed on a path, so the decision and its consequences stay separately visible on the canvas.
+
+Two deciders are available per step:
+
+- **AI prompt.** Write a plain-language instruction (it supports the same `{{.FirstName}}` / `{{.Company}}` variables as your email copy). One model call runs per contact who reaches the step, reads their data, and picks exactly one case. Costs one credit per contact, charged when the step executes; a failed model call is refunded, and a workspace with no credits left skips the step (visible in the campaign log) so the contact keeps moving along the fallback path. See [AI credits](/guides/ai-credits/).
+- **Value.** Give the step a template value (for example `{{.Industry}}` or any custom field). It is rendered per contact and matched to the case names. Matching is forgiving about formatting: casing and extra whitespace are ignored, so ` VIP  Customer` matches the case `vip customer`. For pattern matching, wrap a case name in slashes to make it a case-insensitive regex (for example `/^(vip|enterprise)/`); plain cases are checked first, then regex cases in order, and the first match wins. A value matching no case takes the `otherwise` dot. No model call, no credits, fully deterministic.
+
+The AI decider has two optional capabilities, toggled per step:
+
+- **Web search** looks up the contact's company on the web (query built from their company, name, or corporate email domain, never from email content) and feeds the top results into the decision. Costs 1 extra credit when the search finds results.
+- **Extended thinking** routes the call to the stronger model tier with a bigger reasoning budget for genuinely hard routing decisions. The extra cost flows through usage metering (see [AI credits](/guides/ai-credits/)).
+
+With the AI decider, the decision can be grounded in the whole story so far. Under **What AI can see**, each step controls whether the model also gets the contact's campaign history (which steps ran, opens, clicks, replies, earlier outcomes) and the newest email received from them, on top of the contact's fields. Both are on by default. The contact's email and profile fields are treated strictly as content to evaluate: instructions inside an email ("ignore your rules", "pick X") are ignored, and the model can only ever answer with one of the cases you named.
+
+Switch steps always run on the normal schedule: when an instant reply branch leads into one, the instant chain pauses there and the scheduler runs the switch at the next boundary.
 
 ## Wait and spacing
 
@@ -125,12 +144,14 @@ In the connection editor, "Take this path" offers:
 | `if replied: neutral` | Reply classified neutral (Reply intent) |
 | `if auto-reply / out of office` | Reply was automated, not a human reply |
 | `random split` | A percentage of contacts, chosen at random |
+| Switch case paths | Drawn from a Switch step's per-case dots, not picked here (see below) |
 
 Notes on each kind:
 
 - **Engagement windows** (`opened`, `clicked`, plus the `didn't` versions) take a number of days, 1 to 60. For `opened` and `clicked`, the contact must do it within that window. For the `didn't` versions, Warmbly waits the full window and then takes the path only if it still hasn't happened.
 - **Reply intent** conditions (`positive`, `negative`, `neutral`, `auto-reply / out of office`) have no day window. They are checked once, based on how the contact's reply is classified.
 - **Random split** takes a percentage (1 to 99) and routes that share of contacts at random. Useful for splitting traffic between two follow-up paths.
+- **Switch case** paths are not chosen in the connection editor: each case of a [Switch step](#switch-steps) has its own dot on the node, and dragging that dot IS the path. They check the case the step stored for the contact, so routing spends no extra credits. A contact no case matched follows the step's bottom `otherwise` dot.
 
 ### Instant vs at-the-next-step
 

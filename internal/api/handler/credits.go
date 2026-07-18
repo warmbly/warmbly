@@ -15,6 +15,7 @@ import (
 	"github.com/warmbly/warmbly/internal/api/middleware"
 	"github.com/warmbly/warmbly/internal/app/credits"
 	"github.com/warmbly/warmbly/internal/errx"
+	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/utils/paging"
 )
 
@@ -167,6 +168,105 @@ func (h *Handler) ListCreditTransactions(c *gin.Context) {
 			"has_more":    nextCursor != nil,
 		},
 	})
+}
+
+// GetCreditUsage — GET /subscription/credits/usage?days=30
+// The AI usage overview: spend per window vs limits, a daily series, and
+// breakdowns by feature and model over the requested window (1-90 days).
+func (h *Handler) GetCreditUsage(c *gin.Context) {
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "no organization selected"))
+		return
+	}
+	if h.CreditService == nil {
+		errx.JSON(c, errx.New(errx.ServiceUnavailable, "credits are not available"))
+		return
+	}
+	days := 30
+	if raw := c.Query("days"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < 1 || n > 90 {
+			errx.JSON(c, errx.New(errx.BadRequest, "days must be 1-90"))
+			return
+		}
+		days = n
+	}
+	overview, xerr := h.CreditService.GetUsageOverview(c.Request.Context(), *orgID, days)
+	if xerr != nil {
+		errx.JSON(c, xerr)
+		return
+	}
+	c.JSON(http.StatusOK, overview)
+}
+
+// GetCreditSettings — GET /subscription/credits/settings
+// The org's AI spend controls (limits, alert threshold, auto top-up).
+func (h *Handler) GetCreditSettings(c *gin.Context) {
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "no organization selected"))
+		return
+	}
+	if h.CreditService == nil {
+		errx.JSON(c, errx.New(errx.ServiceUnavailable, "credits are not available"))
+		return
+	}
+	cfg, xerr := h.CreditService.GetSpendSettings(c.Request.Context(), *orgID)
+	if xerr != nil {
+		errx.JSON(c, xerr)
+		return
+	}
+	c.JSON(http.StatusOK, cfg)
+}
+
+// UpdateCreditSettings — PATCH /subscription/credits/settings
+// Saves the spend controls. Absent limit fields disable that limit.
+func (h *Handler) UpdateCreditSettings(c *gin.Context) {
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "no organization selected"))
+		return
+	}
+	if h.CreditService == nil {
+		errx.JSON(c, errx.New(errx.ServiceUnavailable, "credits are not available"))
+		return
+	}
+	var body struct {
+		SpendLimitDaily      *int   `json:"spend_limit_daily"`
+		SpendLimitWeekly     *int   `json:"spend_limit_weekly"`
+		SpendLimitMonthly    *int   `json:"spend_limit_monthly"`
+		LowBalanceThreshold  int    `json:"low_balance_threshold"`
+		AutoTopupEnabled     bool   `json:"auto_topup_enabled"`
+		AutoTopupPack        string `json:"auto_topup_pack"`
+		AutoTopupThreshold   int    `json:"auto_topup_threshold"`
+		AutoTopupMaxPerMonth int    `json:"auto_topup_max_per_month"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "invalid request body"))
+		return
+	}
+	if body.AutoTopupPack == "" {
+		body.AutoTopupPack = credits.CreditPacks[0].Key
+	}
+	cfg, xerr := h.CreditService.UpdateSpendSettings(c.Request.Context(), *orgID, &models.AISpendSettings{
+		SpendLimitDaily:      body.SpendLimitDaily,
+		SpendLimitWeekly:     body.SpendLimitWeekly,
+		SpendLimitMonthly:    body.SpendLimitMonthly,
+		LowBalanceThreshold:  body.LowBalanceThreshold,
+		AutoTopupEnabled:     body.AutoTopupEnabled,
+		AutoTopupPack:        body.AutoTopupPack,
+		AutoTopupThreshold:   body.AutoTopupThreshold,
+		AutoTopupMaxPerMonth: body.AutoTopupMaxPerMonth,
+	})
+	if xerr != nil {
+		errx.JSON(c, xerr)
+		return
+	}
+	h.auditOrg(c, models.AuditActionUpdate, models.AuditEntityCreditGrant, nil, nil, map[string]string{
+		"kind": "spend_settings",
+	})
+	c.JSON(http.StatusOK, cfg)
 }
 
 // parseCreditLimit parses an optional ?limit into [1, max], defaulting to def.

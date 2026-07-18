@@ -396,6 +396,7 @@ func Run(
 			generation.Use(m.RateLimitMiddleware(models.RateLimitWrite))
 			{
 				generation.POST("/write", m.RequireOrganization(), m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.GenerateWriting)
+				generation.POST("/edit", m.RequireOrganization(), m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.GenerateEdit)
 			}
 
 			// AI skills (org playbooks). CRUD gated on manage_settings (JWT) or
@@ -928,6 +929,10 @@ func Run(
 				subscriptions.GET("/credits", m.RequireOrganization(), m.RequirePermission(models.PermManageBilling), h.GetCreditBalance)
 				subscriptions.GET("/credits/transactions", m.RequireOrganization(), m.RequirePermission(models.PermManageBilling), h.ListCreditTransactions)
 				subscriptions.POST("/credits/checkout", m.RequireOrganization(), m.RequirePermission(models.PermManageBilling), h.CreateCreditCheckoutSession)
+				// AI usage overview + spend controls (limits, alerts, auto top-up).
+				subscriptions.GET("/credits/usage", m.RequireOrganization(), m.RequirePermission(models.PermManageBilling), h.GetCreditUsage)
+				subscriptions.GET("/credits/settings", m.RequireOrganization(), m.RequirePermission(models.PermManageBilling), h.GetCreditSettings)
+				subscriptions.PATCH("/credits/settings", m.RequireOrganization(), m.RequirePermission(models.PermManageBilling), h.UpdateCreditSettings)
 
 				// Referral program (owner-scoped, gated like the rest of billing).
 				subscriptions.GET("/referral", m.RequireOrganization(), m.RequirePermission(models.PermManageBilling), h.GetReferralSummary)

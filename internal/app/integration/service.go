@@ -718,6 +718,15 @@ func (s *service) validateAutomationGraph(ctx context.Context, orgID uuid.UUID, 
 				if err := ValidExpression(n.Condition.Expression); err != nil {
 					return fmt.Errorf("invalid condition expression: %w", err)
 				}
+			} else if n.Condition.Field == models.AutoCondAI {
+				// Ask-AI branch: no operator; just a bounded yes/no question.
+				p := strings.TrimSpace(n.Condition.Prompt)
+				if p == "" {
+					return errors.New("an Ask AI branch needs a question")
+				}
+				if len(p) > maxAIConditionPrompt {
+					return fmt.Errorf("an Ask AI question is limited to %d characters", maxAIConditionPrompt)
+				}
 			} else {
 				if !models.ValidAutomationConditionOperator(n.Condition.Operator) {
 					return fmt.Errorf("unknown condition operator: %s", n.Condition.Operator)
@@ -747,15 +756,25 @@ func (s *service) validateAutomationGraph(ctx context.Context, orgID uuid.UUID, 
 			return errors.New("a node cannot connect to itself")
 		}
 		// Branch labels: a condition's edges are the yes/no paths; an action may
-		// have a plain "then" edge plus an optional "on error" branch; anything
-		// else is an unconditional "then".
+		// have a plain "then" edge plus an optional "on error" branch; an AI
+		// classify action may additionally carry per-label branches
+		// ("label:<x>", x from the node's configured labels) so the canvas
+		// routes multi-way on the model's verdict; anything else is an
+		// unconditional "then".
 		switch {
 		case src.Type == models.AutomationNodeCondition:
 			if e.When != "true" && e.When != "false" {
 				return errors.New("a condition's branches must be a yes or no path")
 			}
 		case src.Type == models.AutomationNodeAction:
-			if e.When != "" && e.When != "error" {
+			if lbl, ok := strings.CutPrefix(e.When, aiLabelEdgePrefix); ok {
+				if src.Action != models.IntegrationActionAIClassify {
+					return errors.New("only an AI classify step can have per-label branches")
+				}
+				if !aiClassifyHasLabel(src.Config, lbl) {
+					return fmt.Errorf("branch label %q is not one of the AI step's labels", lbl)
+				}
+			} else if e.When != "" && e.When != "error" {
 				return errors.New("an action edge must be a plain path or an on-error branch")
 			}
 		case e.When != "":

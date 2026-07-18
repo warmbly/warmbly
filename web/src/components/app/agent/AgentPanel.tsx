@@ -573,8 +573,17 @@ export default function AgentPanel() {
                                             }}
                                         />
                                     )}
-                                {activeTab?.turns.map((t) => (
-                                    <TurnView key={t.id} turn={t} onOpen={openUrl} />
+                                {activeTab?.turns.map((t, i) => (
+                                    <TurnView
+                                        key={t.id}
+                                        turn={t}
+                                        onOpen={openUrl}
+                                        streaming={
+                                            !!activeTab.running &&
+                                            !activeTab.pending &&
+                                            i === activeTab.turns.length - 1
+                                        }
+                                    />
                                 ))}
                                 {activeTab?.pending && (
                                     <ApprovalCard
@@ -583,16 +592,23 @@ export default function AgentPanel() {
                                     />
                                 )}
                                 {activeTab?.running && !activeTab.pending && (
-                                    <div className="flex items-center gap-2 text-[12px] text-slate-400">
-                                        <Loader2Icon className="w-3.5 h-3.5 animate-spin" />
-                                        Working…
+                                    <motion.div
+                                        initial={{ opacity: 0, y: 4 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        transition={{ duration: 0.16 }}
+                                        className="flex items-center gap-2 text-[12px]"
+                                    >
+                                        <AgentMark className="w-3.5 h-3.5 text-sky-500 animate-pulse" />
+                                        <span className="ai-shimmer-text font-medium">
+                                            Working…
+                                        </span>
                                         {activeTab.iteration > 0 && (
                                             <span className="font-mono tabular-nums text-slate-300">
                                                 step {activeTab.iteration}/
                                                 {activeTab.budget}
                                             </span>
                                         )}
-                                    </div>
+                                    </motion.div>
                                 )}
                             </div>
                         </div>
@@ -843,7 +859,10 @@ function DockBar({
     } else if (focus?.unseen) {
         status = (
             <span className="inline-flex items-center gap-1.5 text-sky-700">
-                <span className="size-1.5 rounded-full bg-sky-500" />
+                <span className="relative flex size-1.5">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-sky-400 opacity-60" />
+                    <span className="relative inline-flex size-1.5 rounded-full bg-sky-500" />
+                </span>
                 Response ready
             </span>
         );
@@ -1088,28 +1107,43 @@ function fromHydrated(turns: AgentHydratedTurn[]): AgentTurn[] {
 const TurnView = React.memo(function TurnView({
     turn,
     onOpen,
+    streaming = false,
 }: {
     turn: AgentTurn;
     onOpen: (url: string) => void;
+    // True for the trailing assistant turn while its run is live; puts a
+    // blinking caret at the end of the text still being generated.
+    streaming?: boolean;
 }) {
     if (turn.role === "user") {
         const text = turn.blocks
             .map((b) => (b.kind === "text" ? b.text : ""))
             .join("");
         return (
-            <div className="flex justify-end">
+            <motion.div
+                initial={{ opacity: 0, y: 6, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                transition={{ type: "spring", stiffness: 500, damping: 36 }}
+                className="flex justify-end"
+            >
                 <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-sky-600 text-white px-3 py-2 text-[13px] whitespace-pre-wrap break-words">
                     {text}
                 </div>
-            </div>
+            </motion.div>
         );
     }
+    const lastIdx = turn.blocks.length - 1;
     return (
         <div className="space-y-2">
             {turn.blocks.map((b, i) => {
                 if (b.kind === "text") {
                     return b.text ? (
-                        <Markdown key={i} text={b.text} onOpen={onOpen} />
+                        <Markdown
+                            key={i}
+                            text={b.text}
+                            onOpen={onOpen}
+                            caret={streaming && i === lastIdx}
+                        />
                     ) : null;
                 }
                 if (b.kind === "tool") {
@@ -1137,10 +1171,22 @@ function ToolStepRow({
     onOpen: (url: string) => void;
 }) {
     return (
-        <div className="rounded-md border border-slate-200 bg-slate-50/60 px-2.5 py-1.5">
+        <motion.div
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+            className="rounded-md border border-slate-200 bg-slate-50/60 px-2.5 py-1.5"
+        >
             <div className="flex items-center gap-1.5 text-[11.5px] text-slate-600">
                 {step.done ? (
-                    <CheckIcon className="w-3 h-3 text-emerald-600 shrink-0" />
+                    <motion.span
+                        initial={{ scale: 0.5, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        transition={{ type: "spring", stiffness: 600, damping: 24 }}
+                        className="shrink-0 inline-flex"
+                    >
+                        <CheckIcon className="w-3 h-3 text-emerald-600" />
+                    </motion.span>
                 ) : (
                     <Loader2Icon className="w-3 h-3 animate-spin text-slate-400 shrink-0" />
                 )}
@@ -1167,7 +1213,7 @@ function ToolStepRow({
                         draft
                     </button>
                 )}
-        </div>
+        </motion.div>
     );
 }
 

@@ -28,7 +28,6 @@ import {
     SearchIcon,
     SendIcon,
     SettingsIcon,
-    SparklesIcon,
     XIcon,
 } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -41,10 +40,10 @@ import useIntegrationConnections from "@/lib/api/hooks/app/integrations/useInteg
 import { bookingURL, prefilledBookingURL } from "@/lib/api/models/app/integrations/Integration";
 import { useAppStore } from "@/stores";
 import type Template from "@/lib/api/models/app/templates/Template";
-import WriteWithAI from "@/components/app/campaigns/sequences/WriteWithAI";
 import useDraftReply from "@/lib/api/hooks/app/unibox/useDraftReply";
-import type { AppError } from "@/lib/api/client/normalizeError";
-import buildError from "@/lib/helper/buildError";
+import AIDraftBar, { useAIDraft } from "@/components/app/ai/AIDraftBar";
+import TextareaAIEdit from "@/components/app/ai/TextareaAIEdit";
+import TextareaAICaret from "@/components/app/ai/TextareaAICaret";
 import type UniboxEmail from "@/lib/api/models/app/unibox/UniboxEmail";
 import {
     PopoverMenu,
@@ -210,22 +209,25 @@ export function ReplyComposer({ threadId, replyTo, mode, onClose }: ReplyCompose
     const [customValue, setCustomValue] = React.useState(defaultCustomScheduleValue);
     const [templateOpen, setTemplateOpen] = React.useState(false);
 
-    // Context-grounded AI reply draft. Fills the composer; the human sends.
+    // Context-grounded AI reply draft. Types itself into the composer through
+    // the draft bar (Keep / Adjust / Retry / Discard); the human sends.
     const draftReplyMut = useDraftReply();
-    async function draftAIReply() {
-        try {
-            const res = await toast.promise(draftReplyMut.mutateAsync({ thread_id: threadId, idempotency_key: crypto.randomUUID() }), {
-                loading: "Drafting reply…",
-                success: "Draft ready",
-                error: (e: AppError) => buildError(e),
-            });
-            setBody((b) =>
-                (b.trim() ? `${b.trimEnd()}\n\n${res.text}` : res.text).slice(0, MAX_BODY_LEN),
-            );
-        } catch {
-            /* surfaced via toast */
-        }
-    }
+    const bodyRef = React.useRef<HTMLTextAreaElement>(null);
+    const generateDraft = React.useCallback(
+        (instruction?: string) =>
+            draftReplyMut.mutateAsync({
+                thread_id: threadId,
+                instruction,
+                idempotency_key: crypto.randomUUID(),
+            }),
+        [draftReplyMut, threadId],
+    );
+    const aiDraft = useAIDraft({
+        value: body,
+        onChange: setBody,
+        generate: generateDraft,
+        maxLen: MAX_BODY_LEN,
+    });
 
     // Reset whenever the user picks a different target message or
     // switches between reply and forward. Without this the body, chips,
@@ -526,14 +528,18 @@ export function ReplyComposer({ threadId, replyTo, mode, onClose }: ReplyCompose
                 </HeaderRow>
             </div>
 
-            {/* Body */}
+            {/* Body. AI drafting overlays it instead of pushing layout: a
+                light sheen sweeps the textarea while generating and the
+                status/review card floats over the bottom edge. */}
+            <div className="relative">
             <textarea
+                ref={bodyRef}
                 value={body}
                 onChange={(e) => setBody(e.target.value.slice(0, MAX_BODY_LEN))}
                 placeholder={
                     mode === "forward"
-                        ? "Add a note (optional). ⌘ + Enter to send."
-                        : "Write your reply. ⌘ + Enter to send."
+                        ? "Add a note (optional). ⌘J for AI, ⌘Enter to send."
+                        : "Write your reply. ⌘J for AI, ⌘Enter to send."
                 }
                 onKeyDown={(e) => {
                     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
@@ -545,6 +551,39 @@ export function ReplyComposer({ threadId, replyTo, mode, onClose }: ReplyCompose
                     }
                 }}
                 className="w-full min-h-[120px] max-h-72 px-5 py-3 text-[13px] text-slate-800 placeholder:text-slate-400 bg-transparent resize-y focus:outline-none"
+            />
+            {aiDraft.phase === "busy" && (
+                <div className="ai-sheen pointer-events-none absolute inset-0" aria-hidden />
+            )}
+            <AIDraftBar
+                ctrl={aiDraft}
+                busyLabels={[
+                    "Reading the thread…",
+                    mode === "forward" ? "Writing your note…" : "Writing your reply…",
+                    "Polishing…",
+                ]}
+            />
+            </div>
+
+            {/* Inline AI, where you type: select text and an "Edit with AI"
+                pill floats over the selection; with just a caret, a faint
+                sparkle rides the current line (or ⌘J) and opens the write
+                menu at the cursor — ask AI to write, draft a full reply from
+                the thread, or continue the draft. */}
+            <TextareaAIEdit
+                textareaRef={bodyRef}
+                value={body}
+                onChange={(next) => setBody(next.slice(0, MAX_BODY_LEN))}
+                getContext={() => `Subject: ${subject}\n\n${body}`}
+                maxLen={MAX_BODY_LEN}
+            />
+            <TextareaAICaret
+                textareaRef={bodyRef}
+                value={body}
+                onChange={(next) => setBody(next.slice(0, MAX_BODY_LEN))}
+                onDraftReply={() => aiDraft.start()}
+                contextHint={`It is a ${mode === "forward" ? "forward note" : "reply"} with the subject "${subject}".`}
+                maxLen={MAX_BODY_LEN}
             />
 
             {/* Signature preview / status. Three branches so the user
@@ -607,27 +646,6 @@ export function ReplyComposer({ threadId, replyTo, mode, onClose }: ReplyCompose
                     )}
                     {isSending ? "Sending" : "Send"}
                 </button>
-
-                <button
-                    type="button"
-                    onClick={draftAIReply}
-                    disabled={draftReplyMut.isPending}
-                    title="Draft a context-grounded reply with AI"
-                    className="h-7 px-2.5 rounded-md border border-slate-200 hover:border-sky-400 hover:text-sky-700 text-[12px] text-slate-600 inline-flex items-center gap-1.5 transition-colors disabled:opacity-50"
-                >
-                    {draftReplyMut.isPending ? (
-                        <Loader2Icon className="w-3 h-3 animate-spin" />
-                    ) : (
-                        <SparklesIcon className="w-3 h-3" />
-                    )}
-                    Draft reply
-                </button>
-
-                <WriteWithAI
-                    onInsert={(text) =>
-                        setBody((b) => (b.trim() ? `${b.trimEnd()}\n\n${text}` : text).slice(0, MAX_BODY_LEN))
-                    }
-                />
 
                 {/* Schedule picker. Direct button trigger (no Tooltip
                     wrapper) so PopoverMenuTrigger's asChild ref cloning

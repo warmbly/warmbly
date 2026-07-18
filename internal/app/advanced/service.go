@@ -87,6 +87,10 @@ type Service interface {
 	// (which knows the contact but not the thread id). Returns the labeled thread
 	// id, or "" when the contact has no conversation yet.
 	LabelLatestThreadForContact(ctx context.Context, userID uuid.UUID, contactEmail string, categoryIDs []uuid.UUID) (string, error)
+	// LatestInboundFromContact returns the subject + snippet of the newest email
+	// received from the contact ("" when none). Backs the campaign AI step's
+	// incoming-email context.
+	LatestInboundFromContact(ctx context.Context, userID uuid.UUID, contactEmail string) (string, string, error)
 
 	// WireDispatcher attaches the event dispatcher that fans classified
 	// replies + deliverability events out to customer webhooks and third-party

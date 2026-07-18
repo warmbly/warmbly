@@ -17,10 +17,12 @@ import { Logo } from "@/components/svg";
 import AgentMark from "@/components/app/agent/AgentMark";
 import { useAppStore } from "@/stores";
 import { ConnectionIndicator } from "@/components/shared/ConnectionIndicator";
+import ShortcutTooltip from "@/components/ui/shortcut-tooltip";
 import PresenceAvatars from "@/components/app/presence/PresenceAvatars";
 import { NotificationBell } from "./NotificationBell";
 import { OrgSwitcher } from "./OrgSwitcher";
 import { PlanPill } from "./PlanPill";
+import { CreditsMeter } from "./CreditsMeter";
 
 // Pretty labels for path segments. Anything missing falls back to the
 // raw segment with its first letter capitalised.
@@ -130,6 +132,7 @@ export function AppHeader({ onMenu }: { onMenu?: () => void }) {
             <div className="flex items-center gap-2 px-2 sm:px-4 shrink-0">
                 <div className="hidden sm:flex items-center gap-2">
                     <PlanPill />
+                    <CreditsMeter />
                     <div className="h-4 w-px bg-slate-200/80" />
                 </div>
                 <PresenceAvatars />
@@ -170,6 +173,7 @@ function AssistantButton() {
     const unseen = tabs.some((t) => t.unseen);
 
     return (
+        <ShortcutTooltip label="AI assistant" combo="mod+I" side="bottom">
         <button
             onClick={() => {
                 if (open && minimized) {
@@ -182,7 +186,6 @@ function AssistantButton() {
                     setOpen(true);
                 }
             }}
-            title="AI assistant (⌘I)"
             aria-label="AI assistant"
             className="relative flex items-center justify-center size-7 rounded-md text-slate-500 hover:text-sky-700 hover:bg-sky-50 transition-colors"
         >
@@ -200,5 +203,6 @@ function AssistantButton() {
                 />
             )}
         </button>
+        </ShortcutTooltip>
     );
 }

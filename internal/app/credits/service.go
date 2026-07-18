@@ -43,6 +43,33 @@ var ErrInsufficientCredits = errors.New("insufficient credits")
 // handler maps this to HTTP 429.
 var ErrCapExceeded = errors.New("generation rate cap exceeded")
 
+// ErrSpendLimitReached signals the org hit its own configured day/week/month
+// spend limit. It wraps ErrCapExceeded so every existing errors.Is mapping
+// (→429) keeps working while the message tells the user it was their budget.
+var ErrSpendLimitReached = fmt.Errorf("%w: configured AI spend limit reached", ErrCapExceeded)
+
+// lowBalanceCooldown bounds the low-credit alert to once per day per org.
+const lowBalanceCooldown = 24 * time.Hour
+
+// DefaultLowBalanceThreshold applies when an org has never saved settings.
+const DefaultLowBalanceThreshold = 25
+
+// UsageOverview is the composed payload for the AI usage dashboard: spend per
+// window, the configured limits, a daily series, and breakdowns.
+type UsageOverview struct {
+	SpentToday int `json:"spent_today"`
+	SpentWeek  int `json:"spent_week"`
+	SpentMonth int `json:"spent_month"`
+
+	LimitDaily   *int `json:"limit_daily"`
+	LimitWeekly  *int `json:"limit_weekly"`
+	LimitMonthly *int `json:"limit_monthly"`
+
+	Series   []models.CreditUsagePoint  `json:"series"`
+	ByReason []models.CreditUsageBucket `json:"by_reason"`
+	ByModel  []models.CreditUsageBucket `json:"by_model"`
+}
+
 // CreditService is the application-facing API for AI credits.
 type CreditService interface {
 	// GetBalance returns the org's current spendable balance across both pools
@@ -85,6 +112,30 @@ type CreditService interface {
 	// time does not waste a full run.
 	CheckUsageCaps(ctx context.Context, orgID uuid.UUID) error
 
+	// SettleUsage prices the ACTUAL token usage of a completed AI call
+	// (MeteredCost) and charges the overage beyond what was already charged
+	// up-front. Best-effort by design: it drains the balance to zero at worst
+	// and never fails the already-delivered result. Returns the extra credits
+	// charged. idempotencyKey should be the call's key with a ":usage" suffix.
+	SettleUsage(ctx context.Context, orgID uuid.UUID, alreadyCharged int, model string, tokens int, reason, idempotencyKey string) (int, error)
+
+	// GetSpendSettings returns the org's spend controls, with defaults filled
+	// in when the org never saved any.
+	GetSpendSettings(ctx context.Context, orgID uuid.UUID) (*models.AISpendSettings, *errx.Error)
+
+	// UpdateSpendSettings validates and persists the org's spend controls.
+	UpdateSpendSettings(ctx context.Context, orgID uuid.UUID, s *models.AISpendSettings) (*models.AISpendSettings, *errx.Error)
+
+	// GetUsageOverview composes the AI usage dashboard payload over the last
+	// `days` days (clamped to 1..90).
+	GetUsageOverview(ctx context.Context, orgID uuid.UUID, days int) (*UsageOverview, *errx.Error)
+
+	// SetMonitor installs a hook invoked (async, best-effort) with the
+	// resulting balance after every fresh debit. The credit-watch component
+	// uses it to drive low-balance alerts and auto top-up without the credits
+	// package depending on Stripe or pubsub.
+	SetMonitor(fn func(orgID uuid.UUID, balance int))
+
 	// ListTransactions returns recent ledger transactions, newest first.
 	ListTransactions(ctx context.Context, orgID uuid.UUID, limit int) ([]models.CreditTransaction, *errx.Error)
 
@@ -95,18 +146,80 @@ type CreditService interface {
 
 type creditService struct {
 	repo       repository.CreditRepository
+	settings   repository.AISettingsRepository
 	cache      *cache.Cache
 	shortLimit int
 	dailyLimit int
+	monitor    func(orgID uuid.UUID, balance int)
 }
 
-func NewService(repo repository.CreditRepository, c *cache.Cache) CreditService {
+func NewService(repo repository.CreditRepository, settings repository.AISettingsRepository, c *cache.Cache) CreditService {
 	return &creditService{
 		repo:       repo,
+		settings:   settings,
 		cache:      c,
 		shortLimit: DefaultShortLimit,
 		dailyLimit: DefaultDailyLimit,
 	}
+}
+
+func (s *creditService) SetMonitor(fn func(orgID uuid.UUID, balance int)) {
+	s.monitor = fn
+}
+
+// notifyMonitor hands the post-debit balance to the credit-watch hook on a
+// detached goroutine so alerting/auto-top-up can never slow or fail a charge.
+func (s *creditService) notifyMonitor(orgID uuid.UUID, balance int) {
+	if s.monitor == nil {
+		return
+	}
+	go s.monitor(orgID, balance)
+}
+
+// windowStarts returns the UTC starts of the current calendar day, ISO week
+// (Monday), and calendar month.
+func windowStarts(now time.Time) (day, week, month time.Time) {
+	now = now.UTC()
+	day = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	weekday := int(now.Weekday())
+	if weekday == 0 {
+		weekday = 7 // Sunday belongs to the week that started the prior Monday
+	}
+	week = day.AddDate(0, 0, -(weekday - 1))
+	month = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	return day, week, month
+}
+
+// checkSpendLimits rejects a fresh debit that would push the org past any of
+// its configured day/week/month spend limits. No settings row (or no limits
+// set) means no budget. Fails open on read errors: a stats hiccup must not
+// block paid-for generation.
+func (s *creditService) checkSpendLimits(ctx context.Context, orgID uuid.UUID, amount int) error {
+	if s.settings == nil {
+		return nil
+	}
+	cfg, err := s.settings.Get(ctx, orgID)
+	if err != nil || cfg == nil {
+		return nil
+	}
+	if cfg.SpendLimitDaily == nil && cfg.SpendLimitWeekly == nil && cfg.SpendLimitMonthly == nil {
+		return nil
+	}
+	dayStart, weekStart, monthStart := windowStarts(time.Now())
+	day, week, month, err := s.repo.SpentInWindows(ctx, orgID, dayStart, weekStart, monthStart)
+	if err != nil {
+		return nil
+	}
+	if cfg.SpendLimitDaily != nil && day+amount > *cfg.SpendLimitDaily {
+		return fmt.Errorf("%w (daily limit %d, spent %d)", ErrSpendLimitReached, *cfg.SpendLimitDaily, day)
+	}
+	if cfg.SpendLimitWeekly != nil && week+amount > *cfg.SpendLimitWeekly {
+		return fmt.Errorf("%w (weekly limit %d, spent %d)", ErrSpendLimitReached, *cfg.SpendLimitWeekly, week)
+	}
+	if cfg.SpendLimitMonthly != nil && month+amount > *cfg.SpendLimitMonthly {
+		return fmt.Errorf("%w (monthly limit %d, spent %d)", ErrSpendLimitReached, *cfg.SpendLimitMonthly, month)
+	}
+	return nil
 }
 
 func (s *creditService) GetBalance(ctx context.Context, orgID uuid.UUID) (int, *errx.Error) {
@@ -144,6 +257,9 @@ func (s *creditService) Consume(ctx context.Context, orgID uuid.UUID, amount int
 	if err := s.checkCaps(ctx, orgID, idempotencyKey); err != nil {
 		return 0, err
 	}
+	if err := s.checkSpendLimits(ctx, orgID, amount); err != nil {
+		return 0, err
+	}
 
 	bal, _, replayed, err := s.repo.Consume(ctx, orgID, amount, reason, model, tokens, idempotencyKey)
 	if errors.Is(err, repository.ErrInsufficientCredits) {
@@ -157,8 +273,111 @@ func (s *creditService) Consume(ctx context.Context, orgID uuid.UUID, amount int
 	// reserve/peek so a replay does not advance the window.
 	if !replayed {
 		s.commitCaps(ctx, orgID)
+		s.notifyMonitor(orgID, bal)
 	}
 	return bal, nil
+}
+
+func (s *creditService) SettleUsage(ctx context.Context, orgID uuid.UUID, alreadyCharged int, model string, tokens int, reason, idempotencyKey string) (int, error) {
+	total := MeteredCost(model, tokens)
+	extra := total - alreadyCharged
+	if extra <= 0 {
+		return 0, nil
+	}
+	// No caps and no spend-limit gate here: the work is already delivered and
+	// was gated at reservation time; the settle just prices what it used,
+	// draining to zero at worst.
+	consumed, bal, replayed, err := s.repo.ConsumeAtMost(ctx, orgID, extra, reason, model, tokens, idempotencyKey)
+	if err != nil {
+		return 0, err
+	}
+	if !replayed && consumed > 0 {
+		s.notifyMonitor(orgID, bal)
+	}
+	return consumed, nil
+}
+
+func (s *creditService) GetSpendSettings(ctx context.Context, orgID uuid.UUID) (*models.AISpendSettings, *errx.Error) {
+	if s.settings == nil {
+		return nil, errx.New(errx.Internal, "spend settings unavailable")
+	}
+	cfg, err := s.settings.Get(ctx, orgID)
+	if err != nil {
+		return nil, errx.New(errx.Internal, "failed to read spend settings")
+	}
+	if cfg == nil {
+		return &models.AISpendSettings{
+			OrgID:                orgID,
+			LowBalanceThreshold:  DefaultLowBalanceThreshold,
+			AutoTopupPack:        CreditPacks[0].Key,
+			AutoTopupThreshold:   50,
+			AutoTopupMaxPerMonth: 2,
+		}, nil
+	}
+	return cfg, nil
+}
+
+func (s *creditService) UpdateSpendSettings(ctx context.Context, orgID uuid.UUID, in *models.AISpendSettings) (*models.AISpendSettings, *errx.Error) {
+	if s.settings == nil {
+		return nil, errx.New(errx.Internal, "spend settings unavailable")
+	}
+	for _, limit := range []*int{in.SpendLimitDaily, in.SpendLimitWeekly, in.SpendLimitMonthly} {
+		if limit != nil && *limit <= 0 {
+			return nil, errx.New(errx.BadRequest, "spend limits must be positive (omit to disable)")
+		}
+	}
+	if in.LowBalanceThreshold < 0 || in.LowBalanceThreshold > 1_000_000 {
+		return nil, errx.New(errx.BadRequest, "invalid low-balance threshold")
+	}
+	if in.AutoTopupThreshold < 0 || in.AutoTopupThreshold > 1_000_000 {
+		return nil, errx.New(errx.BadRequest, "invalid auto top-up threshold")
+	}
+	if in.AutoTopupMaxPerMonth < 0 || in.AutoTopupMaxPerMonth > 100 {
+		return nil, errx.New(errx.BadRequest, "invalid auto top-up monthly maximum")
+	}
+	if PackByKey(in.AutoTopupPack) == nil {
+		return nil, errx.New(errx.BadRequest, "unknown credit pack")
+	}
+	in.OrgID = orgID
+	out, err := s.settings.Upsert(ctx, in)
+	if err != nil {
+		return nil, errx.New(errx.Internal, "failed to save spend settings")
+	}
+	return out, nil
+}
+
+func (s *creditService) GetUsageOverview(ctx context.Context, orgID uuid.UUID, days int) (*UsageOverview, *errx.Error) {
+	if days < 1 || days > 90 {
+		days = 30
+	}
+	dayStart, weekStart, monthStart := windowStarts(time.Now())
+	day, week, month, err := s.repo.SpentInWindows(ctx, orgID, dayStart, weekStart, monthStart)
+	if err != nil {
+		return nil, errx.New(errx.Internal, "failed to read AI spend")
+	}
+	since := dayStart.AddDate(0, 0, -(days - 1))
+	series, err := s.repo.UsageDaily(ctx, orgID, since)
+	if err != nil {
+		return nil, errx.New(errx.Internal, "failed to read AI usage series")
+	}
+	byReason, err := s.repo.UsageBreakdown(ctx, orgID, since, "reason")
+	if err != nil {
+		return nil, errx.New(errx.Internal, "failed to read AI usage breakdown")
+	}
+	byModel, err := s.repo.UsageBreakdown(ctx, orgID, since, "model")
+	if err != nil {
+		return nil, errx.New(errx.Internal, "failed to read AI usage breakdown")
+	}
+	out := &UsageOverview{
+		SpentToday: day, SpentWeek: week, SpentMonth: month,
+		Series: series, ByReason: byReason, ByModel: byModel,
+	}
+	if s.settings != nil {
+		if cfg, cerr := s.settings.Get(ctx, orgID); cerr == nil && cfg != nil {
+			out.LimitDaily, out.LimitWeekly, out.LimitMonthly = cfg.SpendLimitDaily, cfg.SpendLimitWeekly, cfg.SpendLimitMonthly
+		}
+	}
+	return out, nil
 }
 
 func (s *creditService) Grant(ctx context.Context, orgID uuid.UUID, amount int, reason string) (int, *errx.Error) {

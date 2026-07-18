@@ -55,7 +55,7 @@ struct UniboxThreadView: View {
                 }
             }
             .sheet(isPresented: $showLabelEditor) {
-                UniboxLabelEditor(store: store)
+                UniboxLabelPicker(mode: .thread(store))
             }
             .sheet(isPresented: $showContactPanel) {
                 UniboxContactPanel(email: store.counterpartyAddress ?? "")
@@ -575,98 +575,6 @@ private struct UniboxMessageRow: View {
                 store.expandedIDs.insert(message.id)
             }
         }
-    }
-}
-
-// MARK: - Label editor
-
-/// Replaces the thread's label set from the user's label categories.
-private struct UniboxLabelEditor: View {
-    @Environment(AppEnvironment.self) private var env
-    @Environment(\.dismiss) private var dismiss
-    let store: UniboxThreadStore
-
-    @State private var selected: Set<String> = []
-    @State private var saving = false
-    @State private var errorMessage: String?
-
-    private var options: [UserGroup] { env.session.user?.categories ?? [] }
-
-    var body: some View {
-        NavigationStack {
-            Group {
-                if options.isEmpty {
-                    EmptyStateView(
-                        title: "No labels yet",
-                        message: "Create label categories on the web dashboard, then tag conversations here."
-                    )
-                } else {
-                    List {
-                        ForEach(options) { option in
-                            Button {
-                                toggle(option.id)
-                            } label: {
-                                HStack(spacing: 10) {
-                                    Circle()
-                                        .fill(Color(uniboxHex: option.color) ?? WTheme.accent)
-                                        .frame(width: 11, height: 11)
-                                    Text(option.name ?? "Label")
-                                        .font(.body.weight(.medium))
-                                        .foregroundStyle(.primary)
-                                    Spacer()
-                                    if selected.contains(option.id) {
-                                        Image(systemName: "checkmark")
-                                            .font(.system(size: 13, weight: .semibold))
-                                            .foregroundStyle(WTheme.accent)
-                                    }
-                                }
-                            }
-                        }
-                        if let errorMessage {
-                            Text(errorMessage)
-                                .font(.footnote)
-                                .foregroundStyle(WTheme.negative)
-                        }
-                    }
-                }
-            }
-            .navigationTitle("Labels")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    if saving {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Button("Save") { Task { await save() } }
-                            .fontWeight(.semibold)
-                            .disabled(options.isEmpty)
-                    }
-                }
-            }
-        }
-        .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
-        .onAppear { selected = Set(store.labels.map(\.id)) }
-    }
-
-    private func toggle(_ id: String) {
-        withAnimation(.snappy) {
-            if selected.contains(id) { selected.remove(id) } else { selected.insert(id) }
-        }
-    }
-
-    private func save() async {
-        saving = true
-        do {
-            try await store.setLabels(env.api, categoryIDs: Array(selected))
-            dismiss()
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-        saving = false
     }
 }
 

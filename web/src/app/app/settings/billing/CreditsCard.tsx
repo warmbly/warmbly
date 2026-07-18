@@ -228,6 +228,16 @@ function TransactionRow({ row }: { row: CreditTransaction }) {
                         {row.model_used}
                     </span>
                 )}
+                {row.tokens_used > 0 && (
+                    <span className="ml-1.5 text-[10.5px] text-slate-400 tabular-nums">
+                        {row.tokens_used.toLocaleString()} tok
+                    </span>
+                )}
+                {describeContext(row) && (
+                    <div className="mt-0.5 text-[10.5px] text-slate-400 truncate max-w-[360px]">
+                        {describeContext(row)}
+                    </div>
+                )}
             </td>
             <td
                 className={`px-3 py-2 text-right font-mono tabular-nums ${
@@ -247,17 +257,41 @@ function TransactionRow({ row }: { row: CreditTransaction }) {
     );
 }
 
+// describeContext renders the charge's attribution: exactly what ran and who
+// triggered it, from the structured context recorded with the transaction.
+function describeContext(row: CreditTransaction): string {
+    const c = row.context ?? {};
+    const parts: string[] = [];
+    if (c.campaign_name || c.campaign_id) parts.push(`Campaign “${c.campaign_name || c.campaign_id}”`);
+    if (c.contact_email) parts.push(c.contact_email);
+    if (c.automation_name || c.automation_id) parts.push(`Automation “${c.automation_name || c.automation_id}”`);
+    if (c.thread_id) parts.push(`thread ${c.thread_id.slice(0, 8)}`);
+    if (c.session_id) parts.push("assistant session");
+    if (c.detail) parts.push(c.detail);
+    if (row.actor_user_id) parts.push("triggered by a teammate");
+    return parts.join(" · ");
+}
+
 // describeReason maps a ledger reason code to a short human label.
 function describeReason(reason: string): string {
     const map: Record<string, string> = {
         writing_assistant: "Writing assistant",
         writing_assistant_refund: "Writing assistant refund",
+        writing_edit: "Selection edit",
+        writing_edit_refund: "Selection edit refund",
         agent_iteration: "AI assistant",
         reply_draft: "Reply draft",
         research_run: "Contact research",
-        automation_ai_node: "Automation AI step",
-        inbox_agent: "Inbox agent",
+        automation_ai: "Automation AI step",
+        automation_ai_refund: "Automation AI refund",
+        campaign_ai: "Campaign switch",
+        campaign_ai_refund: "Campaign switch refund",
+        campaign_ai_search: "Campaign switch web search",
+        reply_draft_refund: "Reply draft refund",
+        agent_iteration_refund: "AI assistant refund",
+        inbox_agent_draft: "Inbox agent",
         credit_topup: "Top-up purchase",
+        credit_auto_topup: "Auto top-up",
         monthly_reset: "Monthly allowance",
         trial_grant: "Trial credits",
     };

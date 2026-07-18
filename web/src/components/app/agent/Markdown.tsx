@@ -69,12 +69,26 @@ function inline(
     return out;
 }
 
+// Blinking insertion caret appended to streaming text so mid-generation
+// output reads as "still typing" instead of stalled.
+function Caret() {
+    return (
+        <span
+            aria-hidden
+            className="ai-caret ml-0.5 inline-block h-[1em] w-[2px] translate-y-[0.15em] rounded-sm bg-sky-500"
+        />
+    );
+}
+
 export default function Markdown({
     text,
     onOpen,
+    caret = false,
 }: {
     text: string;
     onOpen?: (url: string) => void;
+    // Render a blinking caret at the end of the last paragraph (streaming).
+    caret?: boolean;
 }) {
     const blocks: React.ReactNode[] = [];
     // Fence splitting leaves prose at even indexes, code at odd ones; a
@@ -153,6 +167,24 @@ export default function Markdown({
         flushPara();
         flushList();
     });
+    if (caret) {
+        const last = blocks[blocks.length - 1];
+        if (React.isValidElement(last) && last.type === "p") {
+            const el = last as React.ReactElement<{ children?: React.ReactNode }>;
+            blocks[blocks.length - 1] = React.cloneElement(
+                el,
+                {},
+                ...React.Children.toArray(el.props.children),
+                <Caret key="caret" />,
+            );
+        } else {
+            blocks.push(
+                <p key="caret-line">
+                    <Caret />
+                </p>,
+            );
+        }
+    }
     return (
         <div className="space-y-2 break-words text-[13px] leading-relaxed text-slate-800">
             {blocks}

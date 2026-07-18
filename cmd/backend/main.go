@@ -33,6 +33,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/cipher"
 	"github.com/warmbly/warmbly/internal/app/contact"
 	"github.com/warmbly/warmbly/internal/app/credits"
+	"github.com/warmbly/warmbly/internal/app/creditwatch"
 	"github.com/warmbly/warmbly/internal/app/crm"
 	"github.com/warmbly/warmbly/internal/app/dailythrottle"
 	"github.com/warmbly/warmbly/internal/app/dangerzone"
@@ -147,6 +148,7 @@ func main() {
 	var warmupContentRepo repository.WarmupContentRepository
 	var warmupContentService warmupcontent.Service
 	var creditRepository repository.CreditRepository
+	var aiSettingsRepository repository.AISettingsRepository
 	var creditService credits.CreditService
 	var aiDraftRepo repository.AIDraftRepository
 	var writingGenerator generation.WritingGenerator
@@ -608,7 +610,8 @@ func main() {
 			writingGenerator = generation.NewAnthropicClient(aiKey)
 		}
 		creditRepository = repository.NewCreditRepository(primaryDB)
-		creditService = credits.NewService(creditRepository, cache)
+		aiSettingsRepository = repository.NewAISettingsRepository(primaryDB)
+		creditService = credits.NewService(creditRepository, aiSettingsRepository, cache)
 		webhookRepository := repository.NewWebhookRepository(primaryDB.Pool)
 		webhookService := webhook.NewService(webhookRepository)
 		webhookServiceForHandler = webhookService
@@ -687,6 +690,12 @@ func main() {
 		// (mode=payment). The audit logger fires AUDIT_CREATED so teammates' credit
 		// views refresh live via the spine.
 		stripeService.WireCredits(creditService, auditService)
+
+		// Credit watch: after every fresh debit it fires the low-balance alert
+		// (once per day) and, when enabled, buys the configured pack off-session
+		// (auto top-up). Runs detached so charges are never slowed.
+		creditWatch := creditwatch.New(aiSettingsRepository, creditRepository, cache, streamingPublisher, stripeService)
+		creditService.SetMonitor(creditWatch.OnBalanceChanged)
 
 		authService = auth.NewService(
 			authRepostory,
@@ -1139,6 +1148,11 @@ func main() {
 			trackedLinkRepository,
 			integrationServiceForHandler, // AutomationRunner for campaign run_automation steps
 		)
+		// Campaign "ai" sequence steps run over the same provider + credit
+		// ledger as the automation AI nodes. Nil provider leaves them
+		// returning a clean "not available".
+		tasksService.SetAI(aiProvider, creditService)
+		tasksService.SetAISearch(aiSearch)
 
 		// Admin outreach composer — sends from the platform mailer
 		// (SES/SMTP) with a configurable Reply-To, audits every send.
