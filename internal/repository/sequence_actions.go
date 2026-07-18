@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"regexp"
 	"strings"
 
 	"github.com/warmbly/warmbly/internal/errx"
@@ -48,6 +49,13 @@ func validateActionConfig(a *models.ActionConfig) *errx.Error {
 				return errx.ErrSequenceAction
 			}
 			seen[name] = true
+			// A "/pattern/" case is a regex in value mode: reject patterns that
+			// don't compile so a broken case never sits silently unmatched.
+			if len(name) >= 3 && strings.HasPrefix(name, "/") && strings.HasSuffix(name, "/") {
+				if _, err := regexp.Compile("(?i)" + name[1:len(name)-1]); err != nil {
+					return errx.ErrSequenceAction
+				}
+			}
 		}
 		return nil
 	default:

@@ -3095,26 +3095,45 @@ function SwitchStepFields({
         <div className="space-y-4">
             <div>
                 <Label>Decided by</Label>
-                <div className="inline-flex rounded-md border border-slate-200 bg-white p-0.5">
+                <div className="grid grid-cols-2 gap-1.5">
                     {(
                         [
-                            [true, "AI prompt"],
-                            [false, "Value"],
+                            {
+                                mode: true,
+                                Icon: SparklesIcon,
+                                title: "AI prompt",
+                                detail: "A model reads the contact and picks a case. 1 credit per contact.",
+                            },
+                            {
+                                mode: false,
+                                Icon: BracesIcon,
+                                title: "Value",
+                                detail: "A field or template is matched to the cases. Free, deterministic.",
+                            },
                         ] as const
-                    ).map(([mode, lbl]) => (
-                        <button
-                            key={lbl}
-                            type="button"
-                            onClick={() => setAction((a) => ({ ...a, switch_on: mode ? "ai" : "value" }))}
-                            className={`h-6 px-2.5 rounded text-[11px] font-medium transition-colors ${
-                                aiMode === mode
-                                    ? "bg-purple-600 text-white shadow-sm"
-                                    : "text-slate-500 hover:bg-slate-50 hover:text-slate-700"
-                            }`}
-                        >
-                            {lbl}
-                        </button>
-                    ))}
+                    ).map(({ mode, Icon, title, detail }) => {
+                        const active = aiMode === mode;
+                        return (
+                            <button
+                                key={title}
+                                type="button"
+                                onClick={() => setAction((a) => ({ ...a, switch_on: mode ? "ai" : "value" }))}
+                                className={`flex items-start gap-1.5 rounded-md border px-2 py-1.5 text-left transition-colors ${
+                                    active
+                                        ? "border-purple-300 bg-purple-50"
+                                        : "border-slate-200 bg-white hover:border-slate-300"
+                                }`}
+                            >
+                                <Icon className={`mt-0.5 w-3.5 h-3.5 shrink-0 ${active ? "text-purple-600" : "text-slate-400"}`} />
+                                <span className="min-w-0">
+                                    <span className={`block text-[11.5px] font-medium ${active ? "text-purple-700" : "text-slate-700"}`}>
+                                        {title}
+                                    </span>
+                                    <span className="block text-[10.5px] leading-snug text-slate-400">{detail}</span>
+                                </span>
+                            </button>
+                        );
+                    })}
                 </div>
             </div>
 
@@ -3156,7 +3175,10 @@ function SwitchStepFields({
                         className="w-full font-mono"
                     />
                     <p className="mt-1 text-[11px] text-slate-400">
-                        Rendered per contact and matched to the case names (case-insensitive). No model call, no credits.
+                        Rendered per contact and matched to the case names. Matching ignores casing and extra spaces
+                        (“ VIP  Customer” matches the case “vip customer”); wrap a case in slashes for a regex, e.g.{" "}
+                        <code className="font-mono">/^(vip|enterprise)/</code>. First matching case wins. No model call,
+                        no credits.
                     </p>
                 </div>
             )}

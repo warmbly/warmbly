@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -60,7 +61,7 @@ func (s *tasksService) execSequenceSwitchStep(ctx context.Context, campaign *mod
 		if value == "" {
 			return nil // unconfigured or empty value: fall through to the fallback path
 		}
-		matched := matchSwitchCase(value, cases)
+		matched := matchSwitchValue(value, cases)
 		if matched == "" {
 			// A value matching no case is the normal "otherwise" outcome, not an
 			// error: store nothing so routing takes the fallback branch.
@@ -289,10 +290,56 @@ func contactAIContext(contact *models.Contact) string {
 	return b.String()
 }
 
-// matchSwitchCase maps an answer (the model's reply, or a rendered value) onto
-// the case set: case-insensitive exact, then prefix, then substring. Returns
-// "" on a miss: only real cases are stored, because the case paths can only
-// ever match those.
+// normalizeSwitchText lowercases, trims, and collapses inner whitespace so
+// "VIP  Customer " matches the case "vip customer". Value matching must not
+// fail on casing or stray spaces in contact data.
+func normalizeSwitchText(s string) string {
+	return strings.ToLower(strings.Join(strings.Fields(s), " "))
+}
+
+// switchCaseRegex compiles a "/pattern/" case name into a case-insensitive
+// regex, or returns nil for a plain-text case (or an invalid pattern — the
+// write-time validator rejects those, so nil here only means "not a regex").
+func switchCaseRegex(name string) *regexp.Regexp {
+	name = strings.TrimSpace(name)
+	if len(name) < 3 || !strings.HasPrefix(name, "/") || !strings.HasSuffix(name, "/") {
+		return nil
+	}
+	re, err := regexp.Compile("(?i)" + name[1:len(name)-1])
+	if err != nil {
+		return nil
+	}
+	return re
+}
+
+// matchSwitchValue maps a rendered value onto the case set: normalized
+// equality on plain cases first (case- and whitespace-insensitive), then
+// "/pattern/" regex cases in configured order. First match wins; "" on a miss
+// routes the contact down the fallback path. Deliberately NO prefix/substring
+// fuzziness here — "not interested" must never land on an "interested" case.
+func matchSwitchValue(value string, cases []string) string {
+	norm := normalizeSwitchText(value)
+	if norm == "" {
+		return ""
+	}
+	for _, c := range cases {
+		if switchCaseRegex(c) == nil && normalizeSwitchText(c) == norm {
+			return c
+		}
+	}
+	trimmed := strings.TrimSpace(value)
+	for _, c := range cases {
+		if re := switchCaseRegex(c); re != nil && re.MatchString(trimmed) {
+			return c
+		}
+	}
+	return ""
+}
+
+// matchSwitchCase maps the model's AI-mode answer onto the case set:
+// case-insensitive exact, then prefix, then substring (models sometimes wrap
+// the case in a sentence). Returns "" on a miss: only real cases are stored,
+// because the case paths can only ever match those.
 func matchSwitchCase(text string, cases []string) string {
 	got := strings.ToLower(strings.Trim(strings.TrimSpace(text), ".\"'` \n\t"))
 	if got == "" {
