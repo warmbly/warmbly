@@ -12,6 +12,18 @@ export interface WriteResponse {
     model: string;
 }
 
+// AI selection edit — POST /generation/edit. Rewrites a passage of a draft
+// according to an instruction; `context` optionally carries the full draft for
+// tone consistency. Same credits/402 semantics as /generation/write.
+export interface EditRequest {
+    text: string;
+    instruction: string;
+    context?: string;
+    tone?: string;
+}
+
+export type EditResponse = WriteResponse;
+
 // Tone presets surfaced in the "Write with AI" popover. `value` is sent as the
 // `tone` field; an empty value lets the backend pick its default.
 export const WRITE_TONES: { value: string; label: string }[] = [

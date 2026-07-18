@@ -33,6 +33,7 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import useClickOutside from "@/hooks/useClickOutside";
+import RichTextAIEdit from "@/components/app/ai/RichTextAIEdit";
 import { WEBSITE_URL } from "@/lib/information";
 
 export default function RichTextEditor({
@@ -94,6 +95,8 @@ export default function RichTextEditor({
                     </p>
                 )}
             </div>
+            {/* Select text → floating "Edit with AI" pill over the selection. */}
+            <RichTextAIEdit editor={editor} />
         </div>
     );
 }

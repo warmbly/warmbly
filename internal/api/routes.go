@@ -396,6 +396,7 @@ func Run(
 			generation.Use(m.RateLimitMiddleware(models.RateLimitWrite))
 			{
 				generation.POST("/write", m.RequireOrganization(), m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.GenerateWriting)
+				generation.POST("/edit", m.RequireOrganization(), m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.GenerateEdit)
 			}
 
 			// AI skills (org playbooks). CRUD gated on manage_settings (JWT) or

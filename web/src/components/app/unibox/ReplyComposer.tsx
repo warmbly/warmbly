@@ -28,7 +28,6 @@ import {
     SearchIcon,
     SendIcon,
     SettingsIcon,
-    SparklesIcon,
     XIcon,
 } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -43,8 +42,9 @@ import { useAppStore } from "@/stores";
 import type Template from "@/lib/api/models/app/templates/Template";
 import WriteWithAI from "@/components/app/campaigns/sequences/WriteWithAI";
 import useDraftReply from "@/lib/api/hooks/app/unibox/useDraftReply";
-import type { AppError } from "@/lib/api/client/normalizeError";
-import buildError from "@/lib/helper/buildError";
+import AIDraftBar, { useAIDraft, AIDraftTrigger } from "@/components/app/ai/AIDraftBar";
+import TextareaAIEdit from "@/components/app/ai/TextareaAIEdit";
+import useTypewriter from "@/components/app/ai/useTypewriter";
 import type UniboxEmail from "@/lib/api/models/app/unibox/UniboxEmail";
 import {
     PopoverMenu,
@@ -210,22 +210,27 @@ export function ReplyComposer({ threadId, replyTo, mode, onClose }: ReplyCompose
     const [customValue, setCustomValue] = React.useState(defaultCustomScheduleValue);
     const [templateOpen, setTemplateOpen] = React.useState(false);
 
-    // Context-grounded AI reply draft. Fills the composer; the human sends.
+    // Context-grounded AI reply draft. Types itself into the composer through
+    // the draft bar (Keep / Adjust / Retry / Discard); the human sends.
     const draftReplyMut = useDraftReply();
-    async function draftAIReply() {
-        try {
-            const res = await toast.promise(draftReplyMut.mutateAsync({ thread_id: threadId, idempotency_key: crypto.randomUUID() }), {
-                loading: "Drafting reply…",
-                success: "Draft ready",
-                error: (e: AppError) => buildError(e),
-            });
-            setBody((b) =>
-                (b.trim() ? `${b.trimEnd()}\n\n${res.text}` : res.text).slice(0, MAX_BODY_LEN),
-            );
-        } catch {
-            /* surfaced via toast */
-        }
-    }
+    const bodyRef = React.useRef<HTMLTextAreaElement>(null);
+    const generateDraft = React.useCallback(
+        (instruction?: string) =>
+            draftReplyMut.mutateAsync({
+                thread_id: threadId,
+                instruction,
+                idempotency_key: crypto.randomUUID(),
+            }),
+        [draftReplyMut, threadId],
+    );
+    const aiDraft = useAIDraft({
+        value: body,
+        onChange: setBody,
+        generate: generateDraft,
+        maxLen: MAX_BODY_LEN,
+    });
+    // Types "Write with AI" insertions in instead of popping the whole draft.
+    const insertTypewriter = useTypewriter();
 
     // Reset whenever the user picks a different target message or
     // switches between reply and forward. Without this the body, chips,
@@ -526,8 +531,20 @@ export function ReplyComposer({ threadId, replyTo, mode, onClose }: ReplyCompose
                 </HeaderRow>
             </div>
 
+            {/* AI draft status/review bar. Lives directly above the body so
+                drafting reads as part of the composer, not a detached tool. */}
+            <AIDraftBar
+                ctrl={aiDraft}
+                busyLabels={[
+                    "Reading the thread…",
+                    mode === "forward" ? "Writing your note…" : "Writing your reply…",
+                    "Polishing…",
+                ]}
+            />
+
             {/* Body */}
             <textarea
+                ref={bodyRef}
                 value={body}
                 onChange={(e) => setBody(e.target.value.slice(0, MAX_BODY_LEN))}
                 placeholder={
@@ -545,6 +562,16 @@ export function ReplyComposer({ threadId, replyTo, mode, onClose }: ReplyCompose
                     }
                 }}
                 className="w-full min-h-[120px] max-h-72 px-5 py-3 text-[13px] text-slate-800 placeholder:text-slate-400 bg-transparent resize-y focus:outline-none"
+            />
+
+            {/* Select text in the body and a floating "Edit with AI" pill
+                appears over the selection. */}
+            <TextareaAIEdit
+                textareaRef={bodyRef}
+                value={body}
+                onChange={(next) => setBody(next.slice(0, MAX_BODY_LEN))}
+                getContext={() => `Subject: ${subject}\n\n${body}`}
+                maxLen={MAX_BODY_LEN}
             />
 
             {/* Signature preview / status. Three branches so the user
@@ -608,25 +635,20 @@ export function ReplyComposer({ threadId, replyTo, mode, onClose }: ReplyCompose
                     {isSending ? "Sending" : "Send"}
                 </button>
 
-                <button
-                    type="button"
-                    onClick={draftAIReply}
-                    disabled={draftReplyMut.isPending}
+                <AIDraftTrigger
+                    busy={aiDraft.phase === "busy"}
+                    onClick={() => aiDraft.start()}
+                    label="Draft reply"
                     title="Draft a context-grounded reply with AI"
-                    className="h-7 px-2.5 rounded-md border border-slate-200 hover:border-sky-400 hover:text-sky-700 text-[12px] text-slate-600 inline-flex items-center gap-1.5 transition-colors disabled:opacity-50"
-                >
-                    {draftReplyMut.isPending ? (
-                        <Loader2Icon className="w-3 h-3 animate-spin" />
-                    ) : (
-                        <SparklesIcon className="w-3 h-3" />
-                    )}
-                    Draft reply
-                </button>
+                />
 
                 <WriteWithAI
-                    onInsert={(text) =>
-                        setBody((b) => (b.trim() ? `${b.trimEnd()}\n\n${text}` : text).slice(0, MAX_BODY_LEN))
-                    }
+                    onInsert={(text) => {
+                        const base = body.trim() ? `${body.trimEnd()}\n\n` : "";
+                        insertTypewriter.run(text, (p) =>
+                            setBody((base + p).slice(0, MAX_BODY_LEN)),
+                        );
+                    }}
                 />
 
                 {/* Schedule picker. Direct button trigger (no Tooltip
