@@ -21,7 +21,7 @@ import PresenceAvatars from "@/components/app/presence/PresenceAvatars";
 import { NotificationBell } from "./NotificationBell";
 import { OrgSwitcher } from "./OrgSwitcher";
 import { PlanPill } from "./PlanPill";
-import { CreditsPill } from "./CreditsPill";
+import { CreditsMeter } from "./CreditsMeter";
 
 // Pretty labels for path segments. Anything missing falls back to the
 // raw segment with its first letter capitalised.
@@ -131,7 +131,7 @@ export function AppHeader({ onMenu }: { onMenu?: () => void }) {
             <div className="flex items-center gap-2 px-2 sm:px-4 shrink-0">
                 <div className="hidden sm:flex items-center gap-2">
                     <PlanPill />
-                    <CreditsPill />
+                    <CreditsMeter />
                     <div className="h-4 w-px bg-slate-200/80" />
                 </div>
                 <PresenceAvatars />
