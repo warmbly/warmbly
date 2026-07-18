@@ -236,6 +236,30 @@ final class UniboxStore {
             messages.removeAll { $0.threadKey == threadKey }
         }
     }
+
+    // MARK: Labels
+
+    /// Replaces one thread's label set from the list (quick + bulk labeling)
+    /// and reflects the result on the loaded rows.
+    @discardableResult
+    func setThreadLabels(_ api: APIClient, threadKey: String, categoryIDs: [String]) async throws -> [UniboxLabel] {
+        let envelope: UniboxDataEnvelope<UniboxLabel> = try await api.put(
+            "unibox/thread/labels",
+            body: UniboxSetLabelsRequest(threadID: threadKey, categoryIDs: categoryIDs)
+        )
+        let saved = envelope.data ?? []
+        updateLocalLabels(threadKey: threadKey, labels: saved)
+        return saved
+    }
+
+    /// Refreshes the label chips on every loaded row of a thread.
+    func updateLocalLabels(threadKey: String, labels: [UniboxLabel]) {
+        withAnimation(.snappy) {
+            for index in messages.indices where messages[index].threadKey == threadKey {
+                messages[index].labels = labels
+            }
+        }
+    }
 }
 
 // MARK: - Thread store

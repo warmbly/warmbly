@@ -529,16 +529,50 @@ extension Color {
 
 // MARK: - AI writing assistant
 
-/// `POST /v1/generation/write` result; 402 means the org is out of credits.
+/// Shared result of `POST /v1/generation/write`, `/v1/generation/edit`, and
+/// `/v1/unibox/reply/draft`; 402 means the org is out of credits.
 struct AIWriteResponse: Codable, Sendable {
     var text: String
     var creditsRemaining: Int?
+    var creditsCharged: Int?
+    var tokensUsed: Int?
     var model: String?
 
     enum CodingKeys: String, CodingKey {
         case text, model
         case creditsRemaining = "credits_remaining"
+        case creditsCharged = "credits_charged"
+        case tokensUsed = "tokens_used"
     }
+
+    /// "2 credits · 1.4k tok"; nil when nothing was charged (local model).
+    var usage: String? {
+        guard let creditsCharged, creditsCharged > 0 else { return nil }
+        let credits = "\(creditsCharged) credit\(creditsCharged == 1 ? "" : "s")"
+        guard let tokensUsed, tokensUsed > 0 else { return credits }
+        return "\(credits) · \(WFormat.compact(tokensUsed)) tok"
+    }
+}
+
+/// `POST /v1/unibox/reply/draft`: thread-grounded reply draft. The server
+/// assembles thread history + contact context + voice profile; 2 credits.
+struct AIDraftReplyRequest: Encodable, Sendable {
+    var threadID: String
+    var instruction: String?
+
+    enum CodingKeys: String, CodingKey {
+        case instruction
+        case threadID = "thread_id"
+    }
+}
+
+/// `POST /v1/generation/edit`: rewrite a passage with the instruction; the
+/// passage and context are fenced server-side as untrusted content.
+struct AIEditRequest: Encodable, Sendable {
+    var text: String
+    var instruction: String
+    var context: String?
+    var tone: String?
 }
 
 /// Tone presets mirrored from the web "Write with AI" popover.
