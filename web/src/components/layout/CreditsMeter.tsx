@@ -1,18 +1,19 @@
 // CreditsMeter — the AI credit gauge in the top header, beside the plan badge.
 //
-// The trigger is a pill with a ring gauge (how much of a full monthly
-// allowance is still spendable) and the compact remaining count. Clicking it
-// opens a panel with the full picture: plan pool vs allowance with the next
-// reset, purchased credits, today/week/month spend against any configured
-// limits, and the auto top-up state. Amber under the org's low-balance
-// threshold, red at zero. Rendered only for members who can see billing (the
-// endpoints are manage_billing-gated) and refreshed by the realtime spine on
-// purchases, resets, and the low-credit alert.
+// The trigger blends with the header chrome (no pill background): a small ring
+// gauge showing how much of a full monthly allowance is still spendable, plus
+// the compact remaining count. It only takes on color when something needs
+// attention: amber under the org's low-balance threshold, red at zero.
+// Clicking opens a panel with the full picture: plan pool vs allowance with
+// the next reset, purchased credits, today/week/month spend against any
+// configured limits, and the auto top-up state. Rendered only for members who
+// can see billing (the endpoints are manage_billing-gated) and refreshed by
+// the realtime spine on purchases, resets, and the low-credit alert.
 
 import React from "react";
 import { Link } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowUpRightIcon, SparklesIcon } from "lucide-react";
+import { ArrowUpRightIcon } from "lucide-react";
 import useClickOutside from "@/hooks/useClickOutside";
 import useCredits from "@/lib/api/hooks/app/subscription/useCredits";
 import { useCreditSettings } from "@/lib/api/hooks/app/subscription/useCreditSettings";
@@ -55,12 +56,12 @@ export function CreditsMeter() {
                 aria-label={`${total.toLocaleString()} AI credits left`}
                 title={open ? undefined : `${total.toLocaleString()} AI credits left`}
                 className={cn(
-                    "inline-flex items-center gap-1.5 h-6 pl-1.5 pr-2 rounded border text-[11px] font-semibold tabular-nums transition-colors hover:brightness-105",
+                    "flex items-center gap-1.5 px-2 h-7 rounded-md text-[11.5px] font-medium tabular-nums transition-colors",
                     empty
-                        ? "bg-red-50 text-red-700 border-red-100"
+                        ? "text-red-600 hover:bg-red-50"
                         : low
-                          ? "bg-amber-50 text-amber-700 border-amber-100"
-                          : "bg-sky-50 text-sky-700 border-sky-100",
+                          ? "text-amber-600 hover:bg-amber-50"
+                          : "text-slate-500 hover:text-slate-900 hover:bg-slate-200/60",
                 )}
             >
                 <Ring fraction={fraction} />
@@ -76,18 +77,11 @@ export function CreditsMeter() {
                         transition={{ duration: 0.12 }}
                         className="absolute right-0 top-full mt-1.5 w-72 rounded-md border border-slate-200 bg-white shadow-[0_12px_32px_-8px_rgba(15,23,42,0.18)] z-50 overflow-hidden"
                     >
-                        <div className="h-9 px-3 flex items-center border-b border-slate-200">
-                            <SparklesIcon className="w-3.5 h-3.5 text-sky-600 mr-1.5" />
-                            <span className="text-[12px] font-medium text-slate-900">AI credits</span>
-                            <span className="ml-auto text-[12px] font-semibold tabular-nums text-slate-900">
-                                {total.toLocaleString()}
-                            </span>
-                        </div>
                         <MeterPanel credits={c} settings={settings.data} low={low} empty={empty} />
                         <Link
                             to="/app/settings/billing"
                             onClick={close}
-                            className="flex items-center gap-1 px-3 h-9 border-t border-slate-200 text-[11.5px] font-medium text-sky-600 hover:text-sky-700 hover:bg-slate-50 transition-colors"
+                            className="flex items-center gap-1 px-3 h-9 border-t border-slate-200 text-[11.5px] font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition-colors"
                         >
                             Usage &amp; spend controls
                             <ArrowUpRightIcon className="w-3 h-3" />
@@ -120,13 +114,46 @@ function MeterPanel({
     const pack = credits.packs.find((p) => p.key === settings?.auto_topup_pack);
 
     return (
-        <div className="px-3 py-2.5 space-y-3">
+        <div className="px-3 pt-3 pb-2.5 space-y-3.5">
+            <div className="flex items-end justify-between">
+                <div>
+                    <div className="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">
+                        AI credits
+                    </div>
+                    <div className="mt-1 flex items-baseline gap-1.5">
+                        <span
+                            className={cn(
+                                "text-[22px] leading-none font-semibold tracking-tight tabular-nums",
+                                empty ? "text-red-600" : "text-slate-900",
+                            )}
+                        >
+                            {credits.balance.toLocaleString()}
+                        </span>
+                        <span className="text-[11px] text-slate-400">left</span>
+                    </div>
+                </div>
+                {(empty || low || (settings?.auto_topup_enabled && pack)) && (
+                    <div
+                        className={cn(
+                            "flex items-center gap-1.5 text-[10.5px] font-medium pb-0.5",
+                            empty ? "text-red-600" : low ? "text-amber-600" : "text-slate-500",
+                        )}
+                    >
+                        <span
+                            className={cn(
+                                "size-1.5 rounded-full shrink-0",
+                                empty ? "bg-red-500" : low ? "bg-amber-500" : "bg-emerald-500",
+                            )}
+                        />
+                        {empty ? "Out of credits" : low ? "Running low" : "Auto top-up on"}
+                    </div>
+                )}
+            </div>
+
             <div>
-                <div className="flex items-baseline justify-between">
-                    <span className="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">
-                        Plan credits
-                    </span>
-                    <span className="text-[11.5px] tabular-nums text-slate-900 font-medium">
+                <div className="flex items-baseline justify-between text-[11.5px]">
+                    <span className="text-slate-600">Plan credits</span>
+                    <span className="tabular-nums text-slate-900 font-medium">
                         {credits.monthly_balance.toLocaleString()}
                         <span className="text-slate-400 font-normal">
                             {" "}
@@ -134,11 +161,11 @@ function MeterPanel({
                         </span>
                     </span>
                 </div>
-                <div className="mt-1.5 h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                <div className="mt-1.5 h-1 rounded-full bg-slate-100 overflow-hidden">
                     <div
                         className={cn(
                             "h-full rounded-full transition-[width] duration-300",
-                            empty ? "bg-red-400" : low ? "bg-amber-400" : "bg-sky-500",
+                            empty ? "bg-red-400" : low ? "bg-amber-400" : "bg-slate-700",
                         )}
                         style={{ width: `${Math.min(100, Math.max(0, planFraction * 100))}%` }}
                     />
@@ -149,13 +176,11 @@ function MeterPanel({
                 </div>
             </div>
 
-            <div className="flex items-baseline justify-between">
-                <span className="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">
-                    Extra credits
-                </span>
+            <div className="flex items-baseline justify-between text-[11.5px]">
+                <span className="text-slate-600">Extra credits</span>
                 <span
                     className={cn(
-                        "text-[11.5px] tabular-nums font-medium",
+                        "tabular-nums font-medium",
                         credits.purchased_balance > 0 ? "text-slate-900" : "text-slate-400",
                     )}
                 >
@@ -183,18 +208,12 @@ function MeterPanel({
                 )}
             </div>
 
-            {settings?.auto_topup_enabled && pack ? (
-                <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
-                    <span className="size-1.5 rounded-full bg-emerald-500 shrink-0" />
-                    Auto top-up: {pack.credits.toLocaleString()} credits when below{" "}
-                    {settings.auto_topup_threshold.toLocaleString()}
+            {settings?.auto_topup_enabled && pack && (
+                <div className="text-[10.5px] text-slate-400">
+                    Buys {pack.credits.toLocaleString()} credits automatically when the balance drops below{" "}
+                    {settings.auto_topup_threshold.toLocaleString()}.
                 </div>
-            ) : low || empty ? (
-                <div className="flex items-center gap-1.5 text-[11px] text-amber-600">
-                    <span className="size-1.5 rounded-full bg-amber-500 shrink-0" />
-                    {empty ? "Out of credits — AI features are paused" : "Running low on credits"}
-                </div>
-            ) : null}
+            )}
         </div>
     );
 }
@@ -219,7 +238,7 @@ function SpendRow({ label, spent, limit }: { label: string; spent: number; limit
                     <div
                         className={cn(
                             "h-full rounded-full",
-                            fraction >= 1 ? "bg-red-400" : fraction >= 0.8 ? "bg-amber-400" : "bg-sky-400",
+                            fraction >= 1 ? "bg-red-400" : fraction >= 0.8 ? "bg-amber-400" : "bg-slate-400",
                         )}
                         style={{ width: `${fraction * 100}%` }}
                     />
@@ -229,13 +248,14 @@ function SpendRow({ label, spent, limit }: { label: string; spent: number; limit
     );
 }
 
-// Small ring gauge drawn with currentColor so it follows the pill tint.
+// Small ring gauge drawn with currentColor so it follows the trigger's text
+// color (neutral slate normally, amber/red when attention is needed).
 function Ring({ fraction }: { fraction: number }) {
     const r = 5.5;
     const circumference = 2 * Math.PI * r;
     return (
         <svg viewBox="0 0 14 14" className="w-3.5 h-3.5 -rotate-90 shrink-0" aria-hidden>
-            <circle cx="7" cy="7" r={r} fill="none" stroke="currentColor" strokeWidth="2" opacity="0.25" />
+            <circle cx="7" cy="7" r={r} fill="none" stroke="currentColor" strokeWidth="2" opacity="0.2" />
             <circle
                 cx="7"
                 cy="7"
