@@ -40,11 +40,10 @@ import useIntegrationConnections from "@/lib/api/hooks/app/integrations/useInteg
 import { bookingURL, prefilledBookingURL } from "@/lib/api/models/app/integrations/Integration";
 import { useAppStore } from "@/stores";
 import type Template from "@/lib/api/models/app/templates/Template";
-import WriteWithAI from "@/components/app/campaigns/sequences/WriteWithAI";
 import useDraftReply from "@/lib/api/hooks/app/unibox/useDraftReply";
-import AIDraftBar, { useAIDraft, AIDraftTrigger } from "@/components/app/ai/AIDraftBar";
+import AIDraftBar, { useAIDraft } from "@/components/app/ai/AIDraftBar";
 import TextareaAIEdit from "@/components/app/ai/TextareaAIEdit";
-import useTypewriter from "@/components/app/ai/useTypewriter";
+import TextareaAICaret from "@/components/app/ai/TextareaAICaret";
 import type UniboxEmail from "@/lib/api/models/app/unibox/UniboxEmail";
 import {
     PopoverMenu,
@@ -229,8 +228,6 @@ export function ReplyComposer({ threadId, replyTo, mode, onClose }: ReplyCompose
         generate: generateDraft,
         maxLen: MAX_BODY_LEN,
     });
-    // Types "Write with AI" insertions in instead of popping the whole draft.
-    const insertTypewriter = useTypewriter();
 
     // Reset whenever the user picks a different target message or
     // switches between reply and forward. Without this the body, chips,
@@ -549,8 +546,8 @@ export function ReplyComposer({ threadId, replyTo, mode, onClose }: ReplyCompose
                 onChange={(e) => setBody(e.target.value.slice(0, MAX_BODY_LEN))}
                 placeholder={
                     mode === "forward"
-                        ? "Add a note (optional). ⌘ + Enter to send."
-                        : "Write your reply. ⌘ + Enter to send."
+                        ? "Add a note (optional). ⌘J for AI, ⌘Enter to send."
+                        : "Write your reply. ⌘J for AI, ⌘Enter to send."
                 }
                 onKeyDown={(e) => {
                     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
@@ -564,13 +561,24 @@ export function ReplyComposer({ threadId, replyTo, mode, onClose }: ReplyCompose
                 className="w-full min-h-[120px] max-h-72 px-5 py-3 text-[13px] text-slate-800 placeholder:text-slate-400 bg-transparent resize-y focus:outline-none"
             />
 
-            {/* Select text in the body and a floating "Edit with AI" pill
-                appears over the selection. */}
+            {/* Inline AI, where you type: select text and an "Edit with AI"
+                pill floats over the selection; with just a caret, a faint
+                sparkle rides the current line (or ⌘J) and opens the write
+                menu at the cursor — ask AI to write, draft a full reply from
+                the thread, or continue the draft. */}
             <TextareaAIEdit
                 textareaRef={bodyRef}
                 value={body}
                 onChange={(next) => setBody(next.slice(0, MAX_BODY_LEN))}
                 getContext={() => `Subject: ${subject}\n\n${body}`}
+                maxLen={MAX_BODY_LEN}
+            />
+            <TextareaAICaret
+                textareaRef={bodyRef}
+                value={body}
+                onChange={(next) => setBody(next.slice(0, MAX_BODY_LEN))}
+                onDraftReply={() => aiDraft.start()}
+                contextHint={`It is a ${mode === "forward" ? "forward note" : "reply"} with the subject "${subject}".`}
                 maxLen={MAX_BODY_LEN}
             />
 
@@ -634,22 +642,6 @@ export function ReplyComposer({ threadId, replyTo, mode, onClose }: ReplyCompose
                     )}
                     {isSending ? "Sending" : "Send"}
                 </button>
-
-                <AIDraftTrigger
-                    busy={aiDraft.phase === "busy"}
-                    onClick={() => aiDraft.start()}
-                    label="Draft reply"
-                    title="Draft a context-grounded reply with AI"
-                />
-
-                <WriteWithAI
-                    onInsert={(text) => {
-                        const base = body.trim() ? `${body.trimEnd()}\n\n` : "";
-                        insertTypewriter.run(text, (p) =>
-                            setBody((base + p).slice(0, MAX_BODY_LEN)),
-                        );
-                    }}
-                />
 
                 {/* Schedule picker. Direct button trigger (no Tooltip
                     wrapper) so PopoverMenuTrigger's asChild ref cloning

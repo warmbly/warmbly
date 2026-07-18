@@ -14,7 +14,6 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
     ArrowUpIcon,
     CheckIcon,
-    Loader2Icon,
     RefreshCwIcon,
     SlidersHorizontalIcon,
     SparklesIcon,
@@ -303,35 +302,5 @@ export default function AIDraftBar({
                 </motion.div>
             )}
         </AnimatePresence>
-    );
-}
-
-// Small spinner-labeled trigger for hosts that want a consistent AI button.
-export function AIDraftTrigger({
-    busy,
-    onClick,
-    label,
-    title,
-}: {
-    busy: boolean;
-    onClick: () => void;
-    label: string;
-    title?: string;
-}) {
-    return (
-        <button
-            type="button"
-            onClick={onClick}
-            disabled={busy}
-            title={title}
-            className="h-7 px-2.5 rounded-md border border-slate-200 hover:border-sky-400 hover:text-sky-700 text-[12px] text-slate-600 inline-flex items-center gap-1.5 transition-colors disabled:opacity-50"
-        >
-            {busy ? (
-                <Loader2Icon className="w-3 h-3 animate-spin" />
-            ) : (
-                <SparklesIcon className="w-3 h-3" />
-            )}
-            {label}
-        </button>
     );
 }
