@@ -231,10 +231,10 @@ export default function AIDraftBar({
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: 6, scale: 0.97 }}
                         transition={{ type: "spring", stiffness: 480, damping: 34 }}
-                        className="pointer-events-auto rounded-lg border border-slate-200 bg-white/95 backdrop-blur shadow-[0_8px_24px_-8px_rgba(15,23,42,0.25)] overflow-hidden"
+                        className="pointer-events-auto w-[400px] max-w-[92vw] rounded-lg border border-slate-200 bg-white/95 backdrop-blur shadow-[0_8px_24px_-8px_rgba(15,23,42,0.25)] overflow-hidden"
                     >
                         <div className="h-9 pl-3 pr-1.5 flex items-center gap-1.5">
-                            <span className="inline-flex items-center gap-1.5 text-[12px] font-medium text-slate-900 mr-1">
+                            <span className="inline-flex items-center gap-1.5 text-[12px] font-medium text-slate-900 mr-auto">
                                 <SparklesIcon className="w-3.5 h-3.5 text-sky-500" />
                                 Draft ready
                                 {usageText && (
@@ -290,7 +290,7 @@ export default function AIDraftBar({
                                     transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
                                     className="overflow-hidden border-t border-slate-100"
                                 >
-                                    <div className="px-2 py-1.5 flex items-center gap-1.5 w-[340px] max-w-[80vw]">
+                                    <div className="px-2 py-1.5 flex items-center gap-1.5 w-full">
                                         <input
                                             autoFocus
                                             value={instruction}

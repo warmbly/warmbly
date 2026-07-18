@@ -5,6 +5,7 @@
 // review row (undo / try again).
 
 import React from "react";
+import { Kbd } from "@/components/ui/shortcut-tooltip";
 import formatUsage from "./usage";
 import {
     ArrowUpIcon,
@@ -105,6 +106,9 @@ export default function AIEditPopover({
             <div className="w-[300px] px-3 py-2.5 flex items-center gap-2">
                 <SparklesIcon className="w-3.5 h-3.5 text-sky-500 animate-pulse shrink-0" />
                 <span className="ai-shimmer-text text-[12px] font-medium">Rewriting…</span>
+                <span className="ml-auto inline-flex items-center gap-1 text-[10px] text-slate-400">
+                    <Kbd combo="esc" variant="light" /> cancel
+                </span>
             </div>
         );
     }
@@ -177,7 +181,7 @@ export default function AIEditPopover({
                     <ArrowUpIcon className="w-3.5 h-3.5" />
                 </button>
             </div>
-            <div className="px-2.5 pb-2.5 pt-2 flex flex-wrap gap-1">
+            <div className="px-2.5 pb-2 pt-2 flex flex-wrap gap-1">
                 {AI_QUICK_ACTIONS.map((a) => (
                     <button
                         key={a.key}
@@ -189,6 +193,14 @@ export default function AIEditPopover({
                         {a.label}
                     </button>
                 ))}
+            </div>
+            <div className="px-2.5 pb-2 flex items-center gap-2.5 text-[10px] text-slate-400">
+                <span className="inline-flex items-center gap-1">
+                    <Kbd combo="enter" variant="light" /> rewrite
+                </span>
+                <span className="inline-flex items-center gap-1">
+                    <Kbd combo="esc" variant="light" /> close
+                </span>
             </div>
         </div>
     );

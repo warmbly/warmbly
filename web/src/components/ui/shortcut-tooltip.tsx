@@ -31,9 +31,24 @@ export function shortcutLabel(combo: string): string {
     return IS_APPLE ? parts.join("") : parts.join("+");
 }
 
-export function Kbd({ combo }: { combo: string }) {
+export function Kbd({
+    combo,
+    variant = "dark",
+}: {
+    combo: string;
+    // "dark" sits on the tooltip's dark surface; "light" is for inline hints
+    // on white surfaces (popovers, pills).
+    variant?: "dark" | "light";
+}) {
     return (
-        <kbd className="inline-flex h-4 items-center rounded border border-white/25 bg-white/10 px-1 font-mono text-[10px] leading-none">
+        <kbd
+            className={
+                "inline-flex h-4 items-center rounded border px-1 font-mono text-[10px] leading-none " +
+                (variant === "dark"
+                    ? "border-white/25 bg-white/10"
+                    : "border-slate-200 bg-slate-50 text-slate-500")
+            }
+        >
             {shortcutLabel(combo)}
         </kbd>
     );

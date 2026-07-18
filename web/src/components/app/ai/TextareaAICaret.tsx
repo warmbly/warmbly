@@ -24,7 +24,7 @@ import toast from "react-hot-toast";
 import useGenerateWrite from "@/lib/api/hooks/app/generation/useGenerateWrite";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
-import ShortcutTooltip from "@/components/ui/shortcut-tooltip";
+import ShortcutTooltip, { Kbd } from "@/components/ui/shortcut-tooltip";
 import textareaRangeRect, { type RangeRect } from "./textareaRange";
 import useTypewriter from "./useTypewriter";
 import formatUsage from "./usage";
@@ -166,6 +166,8 @@ export default function TextareaAICaret({
         if (!ta) return;
         const onKey = (e: KeyboardEvent) => {
             if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "j") {
+                // A non-collapsed selection belongs to the edit pill's ⌘J.
+                if (ta.selectionStart !== ta.selectionEnd) return;
                 e.preventDefault();
                 const pos = ta.selectionStart ?? ta.value.length;
                 frozenCaret.current = pos;
@@ -393,6 +395,9 @@ export default function TextareaAICaret({
                             <div className="px-3 py-2.5 flex items-center gap-2">
                                 <SparklesIcon className="w-3.5 h-3.5 text-sky-500 animate-pulse shrink-0" />
                                 <span className="ai-shimmer-text text-[12px] font-medium">Writing…</span>
+                                <span className="ml-auto inline-flex items-center gap-1 text-[10px] text-slate-400">
+                                    <Kbd combo="esc" variant="light" /> cancel
+                                </span>
                             </div>
                         ) : phase === "applied" ? (
                             <div className="px-2.5 py-2 flex items-center gap-1.5">
@@ -486,6 +491,14 @@ export default function TextareaAICaret({
                                         Continue writing
                                         <span className="ml-auto text-[10px] text-slate-300">from 1 credit</span>
                                     </button>
+                                </div>
+                                <div className="px-2.5 pb-2 pt-1 flex items-center gap-2.5 text-[10px] text-slate-400 border-t border-slate-100">
+                                    <span className="inline-flex items-center gap-1">
+                                        <Kbd combo="enter" variant="light" /> write
+                                    </span>
+                                    <span className="inline-flex items-center gap-1">
+                                        <Kbd combo="esc" variant="light" /> close
+                                    </span>
                                 </div>
                             </div>
                         )}

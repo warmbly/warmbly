@@ -16,6 +16,7 @@ import toast from "react-hot-toast";
 import useGenerateEdit from "@/lib/api/hooks/app/generation/useGenerateEdit";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
+import { Kbd } from "@/components/ui/shortcut-tooltip";
 import AIEditPopover, { type AIEditPhase } from "./AIEditPopover";
 import textareaRangeRect, {
     textareaRangeRects,
@@ -104,6 +105,29 @@ export default function TextareaAIEdit({
         },
         [textareaRef],
     );
+
+    // ⌘J / Ctrl+J with a non-collapsed selection opens the editor directly
+    // (the caret companion owns the collapsed-caret case).
+    React.useEffect(() => {
+        const ta = textareaRef.current;
+        if (!ta) return;
+        const onKey = (e: KeyboardEvent) => {
+            if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "j") return;
+            const { selectionStart: s, selectionEnd: en } = ta;
+            if (s === en) return;
+            e.preventDefault();
+            const target = { start: s, end: en, text: ta.value.slice(s, en) };
+            frozen.current = target;
+            expectedValue.current = ta.value;
+            lastRun.current = null;
+            setSel(target);
+            setPhase("idle");
+            syncRects(target, true);
+            setOpen(true);
+        };
+        ta.addEventListener("keydown", onKey);
+        return () => ta.removeEventListener("keydown", onKey);
+    }, [textareaRef, syncRects]);
 
     // Selection tracking: read the textarea's range whenever the document
     // selection changes while it is focused. Frozen while the popover is open.
@@ -355,6 +379,7 @@ export default function TextareaAIEdit({
                     >
                         <SparklesIcon className="w-3 h-3 text-sky-500" />
                         Edit with AI
+                        <Kbd combo="mod+J" variant="light" />
                     </motion.button>
                 )}
                 {open && rect && (

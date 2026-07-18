@@ -1,9 +1,11 @@
 // CreditsMeter — the AI credit gauge in the top header, beside the plan badge.
 //
-// The trigger blends with the header chrome (no pill background): a small ring
-// gauge showing how much of a full monthly allowance is still spendable, plus
-// the compact remaining count. It only takes on color when something needs
-// attention: amber under the org's low-balance threshold, red at zero.
+// The trigger blends with the header chrome (no pill background) and is built
+// for foresight without a click: a ring gauge plus "left/allowance" for the
+// plan pool (or "spent/limit today|wk|mo" when a spend limit is configured,
+// since that is the real ceiling) and a "+N" for purchased credits. It only
+// takes on color when something needs attention: amber under the org's
+// low-balance threshold, red at zero.
 // Clicking opens a panel with the full picture: plan pool vs allowance with
 // the next reset, purchased credits, today/week/month spend against any
 // configured limits, and the auto top-up state. Rendered only for members who
@@ -27,6 +29,9 @@ export function CreditsMeter() {
     const canSee = usePermission("MANAGE_BILLING");
     const credits = useCredits();
     const settings = useCreditSettings();
+    // Fetched up front (not just on open) so the trigger itself can show the
+    // tightest configured spend window without a click.
+    const usage = useCreditUsage();
     const [open, setOpen] = React.useState(false);
     const ref = React.useRef<HTMLDivElement>(null);
     const close = React.useCallback(() => setOpen(false), []);
@@ -40,22 +45,41 @@ export function CreditsMeter() {
     const empty = total <= 0;
     const low = !empty && total <= threshold;
 
-    // Full ring = at least one full monthly allowance still spendable
-    // (purchased credits can push past it; the ring just caps at full).
-    const fraction =
-        c.monthly_allowance > 0
-            ? Math.min(1, total / c.monthly_allowance)
-            : total > 0
-              ? 1
-              : 0;
+    // What the trigger foregrounds: the tightest configured spend limit
+    // window when one exists (that is the real "how much can I use today"),
+    // otherwise the plan pool against its allowance. Purchased credits render
+    // as a separate "+N" so the reserve is always visible too.
+    const u = usage.data;
+    const spendWindow =
+        u?.limit_daily != null
+            ? { spent: u.spent_today, limit: u.limit_daily, word: "today" }
+            : u?.limit_weekly != null
+              ? { spent: u.spent_week, limit: u.limit_weekly, word: "this week" }
+              : u?.limit_monthly != null
+                ? { spent: u.spent_month, limit: u.limit_monthly, word: "this month" }
+                : null;
+
+    const fraction = spendWindow
+        ? Math.max(0, 1 - spendWindow.spent / Math.max(1, spendWindow.limit))
+        : c.monthly_allowance > 0
+          ? Math.min(1, c.monthly_balance / c.monthly_allowance)
+          : total > 0
+            ? 1
+            : 0;
+
+    const label = spendWindow
+        ? `${spendWindow.spent.toLocaleString()} of ${spendWindow.limit.toLocaleString()} credits used ${spendWindow.word}`
+        : `${c.monthly_balance.toLocaleString()} of ${c.monthly_allowance.toLocaleString()} plan credits left`;
+    const extraLabel =
+        c.purchased_balance > 0 ? `, plus ${c.purchased_balance.toLocaleString()} extra` : "";
 
     return (
         <div ref={ref} className="relative">
             <button
                 type="button"
                 onClick={() => setOpen((o) => !o)}
-                aria-label={`${total.toLocaleString()} AI credits left`}
-                title={open ? undefined : `${total.toLocaleString()} AI credits left`}
+                aria-label={label + extraLabel}
+                title={open ? undefined : label + extraLabel}
                 className={cn(
                     "flex items-center gap-1.5 px-2 h-7 rounded-md text-[11.5px] font-medium tabular-nums transition-colors",
                     empty
@@ -66,7 +90,27 @@ export function CreditsMeter() {
                 )}
             >
                 <Ring fraction={fraction} />
-                <AnimatedNumber value={total} format={(n) => formatCredits(Math.round(n))} />
+                {spendWindow ? (
+                    <span className="flex items-baseline gap-1">
+                        <span className="flex items-baseline">
+                            <AnimatedNumber value={spendWindow.spent} format={(n) => formatCredits(Math.round(n))} />
+                            <span className="opacity-60 font-normal">/{formatCredits(spendWindow.limit)}</span>
+                        </span>
+                        <span className="opacity-60 font-normal">{spendWindow.word === "today" ? "today" : spendWindow.word === "this week" ? "wk" : "mo"}</span>
+                    </span>
+                ) : c.monthly_allowance > 0 ? (
+                    <span className="flex items-baseline">
+                        <AnimatedNumber value={c.monthly_balance} format={(n) => formatCredits(Math.round(n))} />
+                        <span className="opacity-60 font-normal">/{formatCredits(c.monthly_allowance)}</span>
+                    </span>
+                ) : (
+                    <AnimatedNumber value={total} format={(n) => formatCredits(Math.round(n))} />
+                )}
+                {c.purchased_balance > 0 && (
+                    <span className="opacity-70 font-normal">
+                        +{formatCredits(c.purchased_balance)}
+                    </span>
+                )}
             </button>
 
             <AnimatePresence>
@@ -94,8 +138,7 @@ export function CreditsMeter() {
     );
 }
 
-// The panel body lives in its own component so the usage query (spend per
-// window) only fires once the meter is actually opened.
+// The panel body (shares the usage query cache with the trigger).
 function MeterPanel({
     credits,
     settings,
