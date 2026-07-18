@@ -593,9 +593,9 @@ function SwitchNode({ id, data, selected }: NodeProps) {
             } ${selected ? "border-sky-400 ring-2 ring-sky-100" : ""}`}
         >
             <Handle type="target" position={Position.Top} className="!h-2 !w-2 !border-2 !border-white !bg-slate-300" />
-            <div className="flex items-center gap-2 rounded-t-xl border-b border-purple-200/60 bg-gradient-to-r from-purple-50/80 to-white px-2.5 py-1.5">
+            <div className="flex items-center gap-2 rounded-t-xl border-b border-purple-200/60 bg-gradient-to-r from-purple-50/60 to-white px-2.5 py-1.5">
                 <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-md bg-purple-100 text-purple-600 ring-1 ring-purple-200/70">
-                    {d.aiMode ? <SparklesIcon className="w-3 h-3" /> : <SplitIcon className="w-3 h-3" />}
+                    <SplitIcon className="w-3 h-3" />
                 </span>
                 <span className="min-w-0 flex-1 truncate text-[12.5px] font-semibold text-slate-800">{d.label}</span>
                 <button
@@ -625,7 +625,7 @@ function SwitchNode({ id, data, selected }: NodeProps) {
                         return (
                             <div key={caseKey(c)} className="relative flex h-6 items-center pl-2.5 pr-4">
                                 <span
-                                    className={`min-w-0 flex-1 truncate text-[11.5px] ${on ? "text-purple-700" : "text-slate-500"}`}
+                                    className={`min-w-0 flex-1 truncate text-[11.5px] ${on ? "text-slate-700" : "text-slate-400"}`}
                                 >
                                     {c}
                                 </span>
@@ -635,7 +635,7 @@ function SwitchNode({ id, data, selected }: NodeProps) {
                                     id={caseHandleId(c)}
                                     position={Position.Right}
                                     className={`!absolute !-right-1.5 !top-1/2 !h-3 !w-3 !-translate-y-1/2 pointer-coarse:!h-5 pointer-coarse:!w-5 !border-2 !border-white ${
-                                        on ? "!bg-purple-500" : "!bg-purple-300"
+                                        on ? "!bg-purple-500" : "!bg-slate-300"
                                     }`}
                                 />
                             </div>
@@ -2207,7 +2207,7 @@ function ConnectionEditor({
                     </div>
                 )}
                 {isCasePath && (
-                    <p className="rounded-md border border-purple-200 bg-purple-50/60 px-2 py-1.5 text-[11px] leading-relaxed text-purple-700">
+                    <p className="rounded-md bg-slate-50 px-2 py-1.5 text-[11px] leading-relaxed text-slate-600 ring-1 ring-slate-200">
                         The “{caseName}” case of this switch: contacts take this path when{" "}
                         {aiSwitch ? "the AI picks" : "the value matches"} “{caseName}”. Rename or remove the case on the
                         step itself; routing happens at the step boundary with no extra credits.
@@ -2659,7 +2659,7 @@ function ActionEditor({
         setSaving(true);
         try {
             // Switch: drop case paths whose case no longer exists (renamed or
-            // removed in this edit), so no stale purple edge lingers with a
+            // removed in this edit), so no stale case edge lingers with a
             // handle that is gone.
             let healed: SequenceBranch[] | null = null;
             if (action.type === "switch") {
@@ -3120,13 +3120,13 @@ function SwitchStepFields({
                                 onClick={() => setAction((a) => ({ ...a, switch_on: mode ? "ai" : "value" }))}
                                 className={`flex items-start gap-1.5 rounded-md border px-2 py-1.5 text-left transition-colors ${
                                     active
-                                        ? "border-purple-300 bg-purple-50"
+                                        ? "border-sky-300 bg-sky-50"
                                         : "border-slate-200 bg-white hover:border-slate-300"
                                 }`}
                             >
-                                <Icon className={`mt-0.5 w-3.5 h-3.5 shrink-0 ${active ? "text-purple-600" : "text-slate-400"}`} />
+                                <Icon className={`mt-0.5 w-3.5 h-3.5 shrink-0 ${active ? "text-sky-600" : "text-slate-400"}`} />
                                 <span className="min-w-0">
-                                    <span className={`block text-[11.5px] font-medium ${active ? "text-purple-700" : "text-slate-700"}`}>
+                                    <span className={`block text-[11.5px] font-medium ${active ? "text-sky-700" : "text-slate-700"}`}>
                                         {title}
                                     </span>
                                     <span className="block text-[10.5px] leading-snug text-slate-400">{detail}</span>
@@ -3246,7 +3246,7 @@ function SwitchStepFields({
                 </div>
             )}
 
-            <p className="rounded-md border border-purple-200 bg-purple-50/60 px-2.5 py-2 text-[11px] leading-relaxed text-purple-700">
+            <p className="rounded-md bg-slate-50 px-2.5 py-2 text-[11px] leading-relaxed text-slate-600 ring-1 ring-slate-200">
                 Every case gets its own dot on the node — drag each dot to the step that path leads to, and the bottom
                 dot is the “otherwise” fallback for contacts no case matched. Put normal action steps (tag, deal, task…)
                 on a path to make things happen for the contacts routed down it.
@@ -3270,11 +3270,11 @@ function AIContextToggle({
     return (
         <div
             className={`flex items-center gap-2 rounded-md px-2 py-1.5 ring-1 transition-colors ${
-                on ? "bg-purple-50 ring-purple-200" : "bg-slate-50 ring-slate-200"
+                on ? "bg-sky-50 ring-sky-200" : "bg-slate-50 ring-slate-200"
             }`}
         >
             <div className="min-w-0 flex-1">
-                <div className={`text-[11.5px] font-medium ${on ? "text-purple-700" : "text-slate-500"}`}>{label}</div>
+                <div className={`text-[11.5px] font-medium ${on ? "text-sky-700" : "text-slate-500"}`}>{label}</div>
                 <div className="text-[10.5px] text-slate-400">{detail}</div>
             </div>
             <button
@@ -3283,8 +3283,8 @@ function AIContextToggle({
                 aria-checked={on}
                 aria-label={label}
                 onClick={onToggle}
-                className={`relative inline-flex h-[18px] w-8 shrink-0 items-center rounded-full transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-300 ${
-                    on ? "bg-purple-600" : "bg-slate-300"
+                className={`relative inline-flex h-[18px] w-8 shrink-0 items-center rounded-full transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 ${
+                    on ? "bg-sky-600" : "bg-slate-300"
                 }`}
             >
                 <span
