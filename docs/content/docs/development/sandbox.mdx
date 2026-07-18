@@ -35,6 +35,7 @@ Campaign sending starts within about five minutes (the campaign reconciler's fir
 - AI credits: the plan's monthly allowance plus a 5,000-credit purchased top-up, so the assistant and every other AI surface work out of the box (re-seeding refills both pools)
 - 6 sender mailboxes on `@sunrise.test`, assigned to the premium shared worker (paid orgs place onto premium workers; `make run` now runs both native workers), warmup enabled 10 days ago (mid-ramp), premium warmup pool, demo-friendly pacing (90s minimum gap, 100/day cap)
 - two active campaigns with tracking enabled ("Sunrise Q3 launch outreach", 3 steps, 24 contacts; "Agency partnerships", 2 steps, 12 contacts) plus one draft; two contacts are unsubscribed so suppression is visible
+- labels everywhere they appear in the product: folders (Outbound, Nurture), mailbox tags (VIP, Cold, Agency), and categories (Lead, Customer, Churn risk) bound to the campaigns, senders, several contacts, and four inbox threads
 - working credentials for every `smtp_imap` account in the database, including the older `make seed` fixtures, sealed with `CREDENTIALS_ENCRYPTION_KEY` so the worker can decrypt and use them
 
 ## How it works
