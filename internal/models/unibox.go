@@ -156,7 +156,11 @@ type MailSearchResult struct {
 }
 
 type MailSearchParams struct {
-	Sender  *string
+	Sender *string
+	// Address matches either side of the exchange (from_addr OR to_addr),
+	// giving "every conversation with this person" regardless of direction.
+	// Substring match on the raw header entries, like Sender.
+	Address *string
 	Unseen  *bool
 	Subject *string
 	Since   *time.Time

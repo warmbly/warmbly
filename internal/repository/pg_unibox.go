@@ -415,6 +415,17 @@ func (r *uniboxRepository) Search(ctx context.Context, orgID, userID uuid.UUID, 
 		argPos++
 	}
 
+	if params.Address != nil && *params.Address != "" {
+		// Either direction: the contact as sender OR as recipient, so the
+		// result is the full back-and-forth with that address.
+		inner += fmt.Sprintf(` AND EXISTS (
+				SELECT 1 FROM unnest(ue.from_addr || ue.to_addr) AS f(addr)
+				WHERE f.addr ILIKE '%%' || $%d || '%%'
+			)`, argPos)
+		args = append(args, *params.Address)
+		argPos++
+	}
+
 	if len(params.EmailAccountIDs) > 0 {
 		inner += fmt.Sprintf(` AND ue.email_id = ANY($%d)`, argPos)
 		args = append(args, params.EmailAccountIDs)
