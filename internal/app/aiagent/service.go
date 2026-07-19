@@ -138,6 +138,9 @@ type Service interface {
 	ListSessions(ctx context.Context, orgID, userID uuid.UUID, limit int, beforeCreatedAt time.Time, beforeID uuid.UUID) ([]models.AgentSession, error)
 	GetSession(ctx context.Context, orgID, userID, sessionID uuid.UUID) (*models.AgentSession, error)
 	DeleteSession(ctx context.Context, orgID, userID, sessionID uuid.UUID) *errx.Error
+	// ClearSessions deletes the member's entire conversation history in the
+	// org, returning the number of conversations removed.
+	ClearSessions(ctx context.Context, orgID, userID uuid.UUID) (int, *errx.Error)
 
 	// Transcript returns the session's persisted history hydrated into the same
 	// turn/block shape the live stream renders, so a reopened tab looks identical
@@ -185,6 +188,17 @@ func (s *service) ListSessions(ctx context.Context, orgID, userID uuid.UUID, lim
 
 func (s *service) GetSession(ctx context.Context, orgID, userID, sessionID uuid.UUID) (*models.AgentSession, error) {
 	return s.repo.GetSession(ctx, orgID, userID, sessionID)
+}
+
+func (s *service) ClearSessions(ctx context.Context, orgID, userID uuid.UUID) (int, *errx.Error) {
+	n, err := s.repo.DeleteAllSessions(ctx, orgID, userID)
+	if err != nil {
+		return 0, errx.New(errx.Internal, "failed to clear history")
+	}
+	if n > 0 && s.audit != nil {
+		s.audit.LogAction(ctx, orgID, userID, models.AuditActionDelete, models.AuditEntityAISession, nil, "", "", nil, map[string]string{"kind": "clear_history", "count": strconv.Itoa(n)})
+	}
+	return n, nil
 }
 
 func (s *service) DeleteSession(ctx context.Context, orgID, userID, sessionID uuid.UUID) *errx.Error {

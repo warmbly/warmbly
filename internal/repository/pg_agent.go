@@ -26,6 +26,9 @@ type AgentRepository interface {
 	UpdateSessionTitle(ctx context.Context, orgID, userID, sessionID uuid.UUID, title string) error
 	// DeleteSession removes a conversation and, via FK cascade, its transcript.
 	DeleteSession(ctx context.Context, orgID, userID, sessionID uuid.UUID) error
+	// DeleteAllSessions clears the member's entire history in the org and
+	// returns how many conversations were removed.
+	DeleteAllSessions(ctx context.Context, orgID, userID uuid.UUID) (int, error)
 
 	AppendMessages(ctx context.Context, orgID, userID, sessionID uuid.UUID, msgs []models.AgentMessageRow) error
 	LoadTranscript(ctx context.Context, orgID, userID, sessionID uuid.UUID) ([]models.AgentMessageRow, error)
@@ -146,6 +149,14 @@ func (r *agentRepository) DeleteSession(ctx context.Context, orgID, userID, sess
 		return pgx.ErrNoRows
 	}
 	return nil
+}
+
+func (r *agentRepository) DeleteAllSessions(ctx context.Context, orgID, userID uuid.UUID) (int, error) {
+	tag, err := r.DB.Exec(ctx, `DELETE FROM agent_sessions WHERE org_id = $1 AND user_id = $2`, orgID, userID)
+	if err != nil {
+		return 0, err
+	}
+	return int(tag.RowsAffected()), nil
 }
 
 func (r *agentRepository) AppendMessages(ctx context.Context, orgID, userID, sessionID uuid.UUID, msgs []models.AgentMessageRow) error {
