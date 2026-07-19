@@ -1,6 +1,6 @@
 // Infinite scroll over the inbox search endpoint.
 
-import { useInfiniteQuery, type InfiniteData } from "@tanstack/react-query";
+import { keepPreviousData, useInfiniteQuery, type InfiniteData } from "@tanstack/react-query";
 import searchIncoming from "@/lib/api/client/app/unibox/searchIncoming";
 import type { UniboxSearchParams } from "@/lib/api/models/app/unibox/UniboxSearch";
 
@@ -21,6 +21,10 @@ export default function useUniboxSearch(params: UniboxSearchParams, enabled = tr
         getNextPageParam: (last) => (last.pagination.has_more ? last.pagination.next_cursor : undefined),
         staleTime: 30_000,
         gcTime: 5 * 60 * 1000,
+        // Scope/filter switches change the query key; keep showing the
+        // previous list while the new one loads instead of flashing the
+        // whole pane to skeletons on every switch.
+        placeholderData: keepPreviousData,
         enabled,
     });
 

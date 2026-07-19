@@ -320,21 +320,13 @@ function ComposeWindowInner({ prefillTo }: { prefillTo: string | null }) {
         >
             {/* ── Main column ─────────────────────────────────────────── */}
             <div className="flex flex-col w-full sm:w-[540px] min-h-0">
-                <div className="shrink-0 pl-3 pr-1.5 py-1.5 flex items-center gap-2.5 bg-slate-50/80 border-b border-slate-200">
-                    <span className="size-6 rounded-md bg-white border border-slate-200 text-sky-600 inline-flex items-center justify-center shadow-sm shrink-0">
-                        <PenLineIcon className="w-3 h-3" />
+                <div className="shrink-0 h-8 pl-3.5 pr-1.5 flex items-center gap-2 bg-slate-100/80 border-b border-slate-200">
+                    <span className="min-w-0 flex-1 text-[11.5px] font-medium text-slate-600 truncate">
+                        {contact
+                            ? `${contactDisplay}${contact.company ? `, ${contact.company}` : ""}`
+                            : primary || "New email"}
                     </span>
-                    <div className="min-w-0 flex-1 leading-tight">
-                        <div className="text-[12px] font-semibold text-slate-900 truncate">
-                            New email
-                        </div>
-                        <div className="text-[10px] text-slate-400 truncate">
-                            {contact
-                                ? `${contactDisplay}${contact.company ? ` · ${contact.company}` : ""}`
-                                : primary || "No recipient yet"}
-                        </div>
-                    </div>
-                    <div className="ml-auto flex items-center gap-0.5 shrink-0">
+                    <div className="flex items-center gap-0.5 shrink-0">
                         <button
                             type="button"
                             onClick={() => setHistoryOpen((o) => !o)}
