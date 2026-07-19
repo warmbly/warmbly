@@ -41,28 +41,22 @@ export default function MailboxPicker({ value, onChange, candidates, loading }: 
             <button
                 type="button"
                 onClick={() => setOpen((o) => !o)}
-                className="group max-w-full inline-flex items-center gap-1.5 h-6 pl-1 pr-1.5 -ml-1 rounded-md hover:bg-slate-50 transition-colors min-w-0"
+                className="group max-w-full inline-flex items-center gap-1.5 h-6 pl-1 pr-1 -ml-1 rounded-md hover:bg-slate-50 transition-colors min-w-0"
             >
                 {value === "auto" ? (
                     <>
-                        <span className="inline-flex items-center gap-1 h-5 px-1.5 rounded bg-sky-50 text-sky-700 text-[10.5px] font-semibold shrink-0">
-                            <SparklesIcon className="w-2.5 h-2.5" />
-                            Auto
-                        </span>
                         {selected ? (
-                            <span className="font-mono text-[11px] text-slate-700 truncate">
+                            <span className="text-[12.5px] text-slate-800 truncate">
                                 {selected.email}
                             </span>
                         ) : (
-                            <span className="text-[11.5px] text-slate-400">
+                            <span className="text-[12px] text-slate-400">
                                 {loading ? "picking a mailbox…" : "no active mailbox"}
                             </span>
                         )}
-                        {selected && candidates?.recommended_reason && (
-                            <span className="hidden sm:inline text-[10.5px] text-slate-400 truncate">
-                                · {candidates.recommended_reason}
-                            </span>
-                        )}
+                        <span className="h-4 px-1 rounded bg-slate-100 text-slate-500 text-[9.5px] font-medium uppercase tracking-wide shrink-0">
+                            auto
+                        </span>
                     </>
                 ) : selected ? (
                     <>
@@ -74,9 +68,9 @@ export default function MailboxPicker({ value, onChange, candidates, loading }: 
                         </span>
                     </>
                 ) : (
-                    <span className="text-[11.5px] text-amber-700">mailbox unavailable</span>
+                    <span className="text-[12px] text-amber-700">mailbox unavailable</span>
                 )}
-                <ChevronDownIcon className="w-3 h-3 text-slate-400 shrink-0 group-hover:text-slate-600 transition-colors" />
+                <ChevronDownIcon className="w-3 h-3 text-slate-300 shrink-0 group-hover:text-slate-500 transition-colors" />
             </button>
 
             <AnimatePresence>

@@ -93,11 +93,13 @@ export function UniboxHeader({
                     </span>
                     live
                 </span>
+                {/* Desktop gets the rail's Compose button; this is the
+                    phone/tablet entry where the rail is hidden. */}
                 <ShortcutTooltip label="New email" combo="n">
                     <button
                         type="button"
                         onClick={() => useComposeStore.getState().openCompose()}
-                        className="inline-flex items-center gap-1 h-6 px-2 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-[11.5px] font-medium transition-colors"
+                        className="lg:hidden inline-flex items-center gap-1.5 h-6 px-2.5 rounded-lg bg-slate-900 hover:bg-slate-700 text-white text-[11.5px] font-medium shadow-sm transition-colors"
                     >
                         <PenLineIcon className="w-3 h-3" />
                         Compose

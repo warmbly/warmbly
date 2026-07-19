@@ -19,6 +19,7 @@ import {
   InboxIcon,
   MailboxIcon,
   MoonIcon,
+  PenLineIcon,
   ReplyIcon,
   SearchIcon,
   SendIcon,
@@ -26,6 +27,8 @@ import {
   SparklesIcon,
 } from "lucide-react";
 import useUniboxOverview from "@/lib/api/hooks/app/unibox/useUniboxOverview";
+import ShortcutTooltip from "@/components/ui/shortcut-tooltip";
+import { useComposeStore } from "@/hooks/useComposeStore";
 import { cn } from "@/lib/utils";
 
 export type UniboxScope =
@@ -70,6 +73,18 @@ export function ScopeRail({ scope, onChange }: ScopeRailProps) {
 
   return (
     <nav className="h-full bg-slate-50/60 border-r border-slate-200 overflow-y-auto py-2">
+      <div className="px-2 pb-2">
+        <ShortcutTooltip label="New email" combo="n" side="bottom">
+          <button
+            type="button"
+            onClick={() => useComposeStore.getState().openCompose()}
+            className="w-full h-8 rounded-lg bg-slate-900 text-white text-[12px] font-medium inline-flex items-center justify-center gap-1.5 hover:bg-slate-700 active:bg-slate-800 shadow-sm transition-colors"
+          >
+            <PenLineIcon className="w-3.5 h-3.5" />
+            Compose
+          </button>
+        </ShortcutTooltip>
+      </div>
       <Section label="Inbox">
         <Item
           icon={<InboxIcon className="w-3.5 h-3.5" />}
