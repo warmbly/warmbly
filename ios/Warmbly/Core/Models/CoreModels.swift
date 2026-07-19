@@ -174,6 +174,7 @@ struct OrgPermissions: OptionSet, Sendable, Codable {
     static let transferOwnership = OrgPermissions(rawValue: 4096)
     static let manageAPIKeys = OrgPermissions(rawValue: 8192)
     static let useIntegrations = OrgPermissions(rawValue: 16384)
+    static let useAI = OrgPermissions(rawValue: 32768)
 
     static let owner = OrgPermissions(rawValue: .max)
 }

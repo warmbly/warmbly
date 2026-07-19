@@ -285,4 +285,70 @@ actor APIClient {
     func delete<T: Decodable, B: Encodable>(_ path: String, body: B) async throws -> T {
         try await request(.delete, path, bodyData: try Self.encoder.encode(body))
     }
+
+    // MARK: - Server-sent events
+
+    /// POSTs and streams the response as SSE, yielding each `data:` payload.
+    /// Auth mirrors `execute` (token attached, one refresh + retry on 401);
+    /// cancelling the consuming task aborts the request, which cancels the
+    /// run server-side. The long timeout covers slow multi-tool agent runs.
+    func stream<B: Encodable>(_ path: String, body: B) async throws -> AsyncThrowingStream<Data, Error> {
+        var request = try buildRequest(.post, path, query: [:], body: try Self.encoder.encode(body), idempotencyKey: nil)
+        request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+        request.timeoutInterval = 600
+
+        var (bytes, http) = try await openStream(request)
+        if http.statusCode == 401 {
+            _ = try await refresh()
+            (bytes, http) = try await openStream(request)
+            if http.statusCode == 401 {
+                failAuth()
+                throw APIError.unauthorized(nil)
+            }
+        }
+        guard (200 ..< 300).contains(http.statusCode) else {
+            // Error responses are plain JSON; drain a bounded body for the payload.
+            var data = Data()
+            for try await byte in bytes {
+                data.append(byte)
+                if data.count > 64 * 1024 { break }
+            }
+            try validate(data, http)
+            throw APIError.network(URLError(.badServerResponse))
+        }
+
+        return AsyncThrowingStream { continuation in
+            let reader = Task {
+                do {
+                    for try await line in bytes.lines {
+                        guard line.hasPrefix("data:") else { continue }
+                        let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
+                        guard !payload.isEmpty else { continue }
+                        continuation.yield(Data(payload.utf8))
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: APIError.network(error))
+                }
+            }
+            continuation.onTermination = { _ in reader.cancel() }
+        }
+    }
+
+    private func openStream(_ request: URLRequest) async throws -> (URLSession.AsyncBytes, HTTPURLResponse) {
+        var request = request
+        let access = try await validAccessToken()
+        request.setValue("Bearer \(access)", forHTTPHeaderField: "Authorization")
+        let bytes: URLSession.AsyncBytes
+        let response: URLResponse
+        do {
+            (bytes, response) = try await session.bytes(for: request)
+        } catch {
+            throw APIError.network(error)
+        }
+        guard let http = response as? HTTPURLResponse else {
+            throw APIError.network(URLError(.badServerResponse))
+        }
+        return (bytes, http)
+    }
 }
