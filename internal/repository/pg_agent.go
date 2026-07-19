@@ -19,6 +19,11 @@ type AgentRepository interface {
 	CreateSession(ctx context.Context, orgID, userID uuid.UUID, title string, sctx models.AgentSessionContext) (*models.AgentSession, error)
 	GetSession(ctx context.Context, orgID, userID, sessionID uuid.UUID) (*models.AgentSession, error)
 	ListSessions(ctx context.Context, orgID, userID uuid.UUID, limit int, beforeCreatedAt time.Time, beforeID uuid.UUID) ([]models.AgentSession, error)
+	// Org-scoped variants for workspaces with shared assistant history: any
+	// member resolves any session, and the listing spans the whole org with
+	// owner names for attribution.
+	GetSessionOrg(ctx context.Context, orgID, sessionID uuid.UUID) (*models.AgentSession, error)
+	ListSessionsOrg(ctx context.Context, orgID uuid.UUID, limit int, beforeCreatedAt time.Time, beforeID uuid.UUID) ([]models.AgentSession, error)
 	// The transcript/context mutators are scoped by (org_id, user_id) at the
 	// SQL layer too, not only via the caller's prior GetSession, so a mis-wired
 	// future caller can never touch another member's session by raw id.
@@ -120,6 +125,66 @@ func (r *agentRepository) ListSessions(ctx context.Context, orgID, userID uuid.U
 		var s models.AgentSession
 		if err := scanSession(rows, &s); err != nil {
 			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
+func (r *agentRepository) GetSessionOrg(ctx context.Context, orgID, sessionID uuid.UUID) (*models.AgentSession, error) {
+	s := &models.AgentSession{}
+	err := scanSession(r.DB.QueryRow(ctx,
+		`SELECT `+agentSessionCols+` FROM agent_sessions WHERE id = $1 AND org_id = $2`,
+		sessionID, orgID), s)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return s, nil
+}
+
+func (r *agentRepository) ListSessionsOrg(ctx context.Context, orgID uuid.UUID, limit int, beforeCreatedAt time.Time, beforeID uuid.UUID) ([]models.AgentSession, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 25
+	}
+	const cols = `s.id, s.org_id, s.user_id, s.title, s.context, s.created_at, s.updated_at,
+		TRIM(COALESCE(u.first_name, '') || ' ' || COALESCE(u.last_name, ''))`
+	query := `
+		SELECT ` + cols + `
+		FROM agent_sessions s
+		LEFT JOIN users u ON u.id = s.user_id
+		WHERE s.org_id = $1
+		ORDER BY s.created_at DESC, s.id DESC
+		LIMIT $2`
+	args := []any{orgID, limit}
+	if !beforeCreatedAt.IsZero() {
+		query = `
+		SELECT ` + cols + `
+		FROM agent_sessions s
+		LEFT JOIN users u ON u.id = s.user_id
+		WHERE s.org_id = $1 AND (s.created_at, s.id) < ($3, $4)
+		ORDER BY s.created_at DESC, s.id DESC
+		LIMIT $2`
+		args = append(args, beforeCreatedAt, beforeID)
+	}
+	rows, err := r.DB.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]models.AgentSession, 0)
+	for rows.Next() {
+		var s models.AgentSession
+		var ctxRaw []byte
+		if err := rows.Scan(&s.ID, &s.OrgID, &s.UserID, &s.Title, &ctxRaw, &s.CreatedAt, &s.UpdatedAt, &s.UserName); err != nil {
+			return nil, err
+		}
+		if len(ctxRaw) > 0 {
+			if err := json.Unmarshal(ctxRaw, &s.Context); err != nil {
+				return nil, err
+			}
 		}
 		out = append(out, s)
 	}

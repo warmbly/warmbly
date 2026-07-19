@@ -165,10 +165,35 @@ type service struct {
 	audit    AuditLogger
 	skills   SkillPreamble
 	voice    VoicePreamble
+	// orgs resolves the workspace's assistant_shared_history flag (same
+	// getter slice the voice preamble uses). Nil means always-private.
+	orgs OrgVoiceGetter
 }
 
-func NewService(repo repository.AgentRepository, registry *aitools.Registry, provider generation.Provider, creditSvc credits.CreditService, feature FeatureGate, audit AuditLogger, skills SkillPreamble, voice VoicePreamble) Service {
-	return &service{repo: repo, registry: registry, provider: provider, credits: creditSvc, feature: feature, audit: audit, skills: skills, voice: voice}
+func NewService(repo repository.AgentRepository, registry *aitools.Registry, provider generation.Provider, creditSvc credits.CreditService, feature FeatureGate, audit AuditLogger, skills SkillPreamble, voice VoicePreamble, orgs OrgVoiceGetter) Service {
+	return &service{repo: repo, registry: registry, provider: provider, credits: creditSvc, feature: feature, audit: audit, skills: skills, voice: voice, orgs: orgs}
+}
+
+// sharedHistory reports whether this workspace shares assistant conversations
+// across members.
+func (s *service) sharedHistory(ctx context.Context, orgID uuid.UUID) bool {
+	if s.orgs == nil {
+		return false
+	}
+	org, err := s.orgs.Get(ctx, orgID)
+	return err == nil && org != nil && org.AssistantSharedHistory
+}
+
+// sessionScope resolves which member's rows a session lives under: the
+// caller's own, or — when history is shared — the session owner's, so any
+// member can open, continue, or delete any conversation in the workspace.
+func (s *service) sessionScope(ctx context.Context, orgID, callerID, sessionID uuid.UUID) uuid.UUID {
+	if s.sharedHistory(ctx, orgID) {
+		if sess, err := s.repo.GetSessionOrg(ctx, orgID, sessionID); err == nil && sess != nil {
+			return sess.UserID
+		}
+	}
+	return callerID
 }
 
 func (s *service) CreateSession(ctx context.Context, orgID, userID uuid.UUID, page, resource string) (*models.AgentSession, *errx.Error) {
@@ -183,11 +208,14 @@ func (s *service) CreateSession(ctx context.Context, orgID, userID uuid.UUID, pa
 }
 
 func (s *service) ListSessions(ctx context.Context, orgID, userID uuid.UUID, limit int, beforeCreatedAt time.Time, beforeID uuid.UUID) ([]models.AgentSession, error) {
+	if s.sharedHistory(ctx, orgID) {
+		return s.repo.ListSessionsOrg(ctx, orgID, limit, beforeCreatedAt, beforeID)
+	}
 	return s.repo.ListSessions(ctx, orgID, userID, limit, beforeCreatedAt, beforeID)
 }
 
 func (s *service) GetSession(ctx context.Context, orgID, userID, sessionID uuid.UUID) (*models.AgentSession, error) {
-	return s.repo.GetSession(ctx, orgID, userID, sessionID)
+	return s.repo.GetSession(ctx, orgID, s.sessionScope(ctx, orgID, userID, sessionID), sessionID)
 }
 
 func (s *service) ClearSessions(ctx context.Context, orgID, userID uuid.UUID) (int, *errx.Error) {
@@ -202,7 +230,7 @@ func (s *service) ClearSessions(ctx context.Context, orgID, userID uuid.UUID) (i
 }
 
 func (s *service) DeleteSession(ctx context.Context, orgID, userID, sessionID uuid.UUID) *errx.Error {
-	if err := s.repo.DeleteSession(ctx, orgID, userID, sessionID); err != nil {
+	if err := s.repo.DeleteSession(ctx, orgID, s.sessionScope(ctx, orgID, userID, sessionID), sessionID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return errx.ErrNotFound
 		}
@@ -236,7 +264,7 @@ type HydratedTurn struct {
 }
 
 func (s *service) Transcript(ctx context.Context, orgID, userID, sessionID uuid.UUID) ([]HydratedTurn, *errx.Error) {
-	msgs, xerr := s.loadTranscript(ctx, orgID, userID, sessionID)
+	msgs, xerr := s.loadTranscript(ctx, orgID, s.sessionScope(ctx, orgID, userID, sessionID), sessionID)
 	if xerr != nil {
 		return nil, xerr
 	}
@@ -300,7 +328,8 @@ func (s *service) RunMessage(ctx context.Context, inv aitools.Invocation, sessio
 	if s.provider == nil {
 		return errx.New(errx.ServiceUnavailable, "the AI assistant is not configured")
 	}
-	sess, err := s.repo.GetSession(ctx, inv.OrgID, inv.UserID, sessionID)
+	owner := s.sessionScope(ctx, inv.OrgID, inv.UserID, sessionID)
+	sess, err := s.repo.GetSession(ctx, inv.OrgID, owner, sessionID)
 	if err != nil || sess == nil {
 		return errx.New(errx.NotFound, "session not found")
 	}
@@ -310,12 +339,12 @@ func (s *service) RunMessage(ctx context.Context, inv aitools.Invocation, sessio
 	}
 
 	// Load prior transcript, append the user message, persist it.
-	genMsgs, xerr := s.loadTranscript(ctx, inv.OrgID, inv.UserID, sessionID)
+	genMsgs, xerr := s.loadTranscript(ctx, inv.OrgID, owner, sessionID)
 	if xerr != nil {
 		return xerr
 	}
 	userMsg := generation.AgentMessage{Role: "user", Content: text}
-	if perr := s.persist(ctx, inv.OrgID, inv.UserID, sessionID, []generation.AgentMessage{userMsg}, 0); perr != nil {
+	if perr := s.persist(ctx, inv.OrgID, owner, sessionID, []generation.AgentMessage{userMsg}, 0); perr != nil {
 		return errx.New(errx.Internal, "failed to save message")
 	}
 	genMsgs = append(genMsgs, userMsg)
@@ -325,14 +354,15 @@ func (s *service) RunMessage(ctx context.Context, inv aitools.Invocation, sessio
 	sess.Context.Page = page
 	sess.Context.Resource = resource
 	sess.Context.Pending = nil
-	_ = s.repo.UpdateSessionContext(ctx, inv.OrgID, inv.UserID, sessionID, sess.Context)
-	_ = s.repo.UpdateSessionTitle(ctx, inv.OrgID, inv.UserID, sessionID, deriveTitle(text))
+	_ = s.repo.UpdateSessionContext(ctx, inv.OrgID, owner, sessionID, sess.Context)
+	_ = s.repo.UpdateSessionTitle(ctx, inv.OrgID, owner, sessionID, deriveTitle(text))
 
 	return s.runLoop(ctx, inv, sess, genMsgs, len(genMsgs), messageID, emit)
 }
 
 func (s *service) Resume(ctx context.Context, inv aitools.Invocation, sessionID uuid.UUID, decision string, emit func(StreamEvent)) *errx.Error {
-	sess, err := s.repo.GetSession(ctx, inv.OrgID, inv.UserID, sessionID)
+	owner := s.sessionScope(ctx, inv.OrgID, inv.UserID, sessionID)
+	sess, err := s.repo.GetSession(ctx, inv.OrgID, owner, sessionID)
 	if err != nil || sess == nil {
 		return errx.New(errx.NotFound, "session not found")
 	}
@@ -341,7 +371,7 @@ func (s *service) Resume(ctx context.Context, inv aitools.Invocation, sessionID 
 		return errx.New(errx.BadRequest, "no tool awaiting approval")
 	}
 
-	genMsgs, xerr := s.loadTranscript(ctx, inv.OrgID, inv.UserID, sessionID)
+	genMsgs, xerr := s.loadTranscript(ctx, inv.OrgID, owner, sessionID)
 	if xerr != nil {
 		return xerr
 	}

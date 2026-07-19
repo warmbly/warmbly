@@ -8,15 +8,19 @@ import (
 )
 
 // AgentSession is one dashboard-agent conversation. Sessions are per-user
-// (private to the member who started them); the org scope is for tenancy only.
+// (private to the member who started them) unless the org enables
+// assistant_shared_history, which makes every conversation workspace-shared.
 type AgentSession struct {
-	ID        uuid.UUID           `json:"id"`
-	OrgID     uuid.UUID           `json:"org_id"`
-	UserID    uuid.UUID           `json:"user_id"`
-	Title     string              `json:"title"`
-	Context   AgentSessionContext `json:"context"`
-	CreatedAt time.Time           `json:"created_at"`
-	UpdatedAt time.Time           `json:"updated_at"`
+	ID      uuid.UUID           `json:"id"`
+	OrgID   uuid.UUID           `json:"org_id"`
+	UserID  uuid.UUID           `json:"user_id"`
+	Title   string              `json:"title"`
+	Context AgentSessionContext `json:"context"`
+	// UserName is the owner's display name, populated only by the shared
+	// org-wide listing so the history rail can attribute conversations.
+	UserName  string    `json:"user_name,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // AgentSessionContext is the read-then-execute jsonb blob on a session: the

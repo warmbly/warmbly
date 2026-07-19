@@ -7,7 +7,9 @@ The AI assistant is a chat panel built into the dashboard. It can look things up
 
 Open it from the spark button in the top bar, or press `Cmd/Ctrl + I`. The panel stays with you as you move between pages, so you can keep a conversation going while you work.
 
-Access is a role permission: members need **Use AI** (on by default for admins and managers, off for viewers) or the assistant and AI drafting are hidden entirely. Admins can also cap what each member spends per month; see [AI credits](/guides/ai-credits/) and [Team and roles](/guides/team-roles/). Conversations are private to the member who started them. Delete one from the history rail, or use **Clear history** at the bottom of the rail to remove every conversation and transcript in the workspace at once.
+Access is a role permission: members need **Use AI** (on by default for admins and managers, off for viewers) or the assistant and AI drafting are hidden entirely. Admins can also cap what each member spends per day, week, or month; see [AI credits](/guides/ai-credits/) and [Team and roles](/guides/team-roles/).
+
+Conversations are private to the member who started them by default. A workspace admin can flip **Shared history** under **Settings, Workspace, AI assistant**: then every member with the Use AI permission sees every conversation in the history rail (attributed by owner) and can open, continue, or delete any of them. Turning it on exposes existing conversations to the whole team, so decide deliberately. Either way, delete a conversation from the history rail, or use **Clear history** at the bottom of the rail to remove every conversation you own in the workspace at once.
 
 ## Tabs, minimizing, and background runs
 
@@ -70,4 +72,4 @@ You can stop a run at any time with the stop button, and start a fresh conversat
 
 ## Privacy
 
-Conversations are private to you. Other members of your workspace do not see your assistant sessions. When the assistant changes something (creates a task, updates a contact), that change shows up in the shared activity feed like any other edit, so your teammates' views stay current.
+By default, conversations are private to you: other members of your workspace do not see your assistant sessions. If an admin turns on **Shared history** (Settings, Workspace, AI assistant), every conversation in the workspace becomes visible to and continuable by every member with the Use AI permission. Either way, when the assistant changes something (creates a task, updates a contact), that change shows up in the shared activity feed like any other edit, so your teammates' views stay current.

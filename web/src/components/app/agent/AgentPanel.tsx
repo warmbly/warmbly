@@ -1293,8 +1293,11 @@ function SessionSidebar({
                                         <span className="block truncate text-[12px] text-slate-700">
                                             {s.title || "Conversation"}
                                         </span>
-                                        <span className="block text-[10.5px] text-slate-400">
+                                        <span className="block truncate text-[10.5px] text-slate-400">
                                             {relativeTime(s.updated_at || s.created_at)}
+                                            {/* Owner attribution, present only in
+                                                shared-history workspaces. */}
+                                            {s.user_name && ` · ${s.user_name}`}
                                         </span>
                                     </span>
                                     <button

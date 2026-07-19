@@ -4,6 +4,9 @@ export interface AgentSession {
     id: string;
     org_id: string;
     user_id: string;
+    // Owner display name; present only in workspaces with shared assistant
+    // history, where the listing spans every member's conversations.
+    user_name?: string;
     title: string;
     context: {
         page?: string;

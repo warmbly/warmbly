@@ -1041,6 +1041,7 @@ func main() {
 				repository.NewAgentRepository(primaryDB),
 				aiToolRegistry, aiProvider, creditService, featureGateService, auditService, skillsService,
 				aiagent.NewVoicePreamble(organizationService),
+				organizationService,
 			)
 			// Contact research agent + its bounded background drain pool.
 			researchService = research.NewService(

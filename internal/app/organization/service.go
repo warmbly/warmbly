@@ -300,6 +300,9 @@ func (s *organizationService) Update(ctx context.Context, orgID uuid.UUID, req *
 	if req.InboxAgentEnabled != nil {
 		org.InboxAgentEnabled = *req.InboxAgentEnabled
 	}
+	if req.AssistantSharedHistory != nil {
+		org.AssistantSharedHistory = *req.AssistantSharedHistory
+	}
 
 	org.UpdatedAt = time.Now()
 
