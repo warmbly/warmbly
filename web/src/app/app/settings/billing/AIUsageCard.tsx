@@ -1,8 +1,9 @@
 // AI usage & spend controls for the billing page: spend per window against
-// the configured limits, a dithered daily usage chart, breakdowns by feature
-// and model, and the spend-control form. Limits are set per window through
-// slider cells with quick presets; edits collect into a floating save bar so
-// nothing writes until you commit.
+// the configured limits, a dithered area graph switchable between 7/30/90
+// days, breakdowns by feature and model, and the spend-control form. Limits
+// are set per window through slider cells with an inline-editable value and
+// quick presets; edits collect into a floating save bar so nothing writes
+// until you commit.
 
 import React from "react";
 import toast from "react-hot-toast";
@@ -16,7 +17,7 @@ import type { AISpendSettings, CreditUsageBucket } from "@/lib/api/models/app/su
 import buildError from "@/lib/helper/buildError";
 import { Label, NumberInput } from "@/components/ui/field";
 import { SelectMenu } from "@/components/ui/select-menu";
-import { AnimatedNumber, DitherBarChart, DitherMeter, DitherSlider, type DitherBarDatum, type DitherTone } from "@/components/ui/dither";
+import { AnimatedNumber, DitherAreaChart, DitherMeter, DitherSlider, type DitherBarDatum, type DitherTone } from "@/components/ui/dither";
 import { Section } from "../_components/SectionShell";
 
 const REASON_LABELS: Record<string, string> = {
@@ -80,8 +81,11 @@ function toForm(s: AISpendSettings): SpendForm {
     };
 }
 
+type RangeDays = 7 | 30 | 90;
+
 export default function AIUsageCard() {
-    const usage = useCreditUsage(30);
+    const [range, setRange] = React.useState<RangeDays>(30);
+    const usage = useCreditUsage(range);
     const settings = useCreditSettings();
     const credits = useCredits();
     const save = useUpdateCreditSettings();
@@ -135,7 +139,7 @@ export default function AIUsageCard() {
         const byDate = new Map(u.series.map((p) => [p.date, p]));
         const days: DitherBarDatum[] = [];
         const now = new Date();
-        for (let i = 29; i >= 0; i--) {
+        for (let i = range - 1; i >= 0; i--) {
             const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - i));
             const key = d.toISOString().slice(0, 10);
             const p = byDate.get(key);
@@ -147,7 +151,7 @@ export default function AIUsageCard() {
             });
         }
         return days;
-    }, [u]);
+    }, [u, range]);
 
     return (
         <Section
@@ -165,8 +169,13 @@ export default function AIUsageCard() {
                     </div>
 
                     <div>
-                        <div className="text-[10px] uppercase tracking-[0.14em] text-slate-400 mb-2">Last 30 days</div>
-                        <DitherBarChart data={chartData} height={72} />
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                            <div className="text-[10px] uppercase tracking-[0.14em] text-slate-400">
+                                Last {range} days
+                            </div>
+                            <RangeToggle range={range} onChange={setRange} />
+                        </div>
+                        <DitherAreaChart data={chartData} height={96} />
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
@@ -421,9 +430,69 @@ function fmtCompact(n: number): string {
     return n >= 1000 ? `${n % 1000 === 0 ? n / 1000 : (n / 1000).toFixed(1)}k` : String(n);
 }
 
-// LimitCell is one spend-limit control: an on/off toggle, then a slider with
-// quick presets and the exact number, plus live spent-vs-limit context when
-// the current window's spend is known.
+// RangeToggle switches the usage graph window (the backend serves 1-90 days).
+function RangeToggle({ range, onChange }: { range: RangeDays; onChange: (r: RangeDays) => void }) {
+    return (
+        <div className="inline-flex items-center rounded-md border border-slate-200 bg-slate-50 p-0.5 text-[11px]">
+            {([7, 30, 90] as RangeDays[]).map((r) => {
+                const active = range === r;
+                return (
+                    <button
+                        key={r}
+                        type="button"
+                        onClick={() => onChange(r)}
+                        className={`h-5 px-2 rounded font-medium tabular-nums transition-colors ${
+                            active ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                        }`}
+                    >
+                        {r}d
+                    </button>
+                );
+            })}
+        </div>
+    );
+}
+
+// InlineNumber renders a value as editable text (no input chrome): click to
+// type an exact amount, Enter/blur commits, digits only.
+function InlineNumber({
+    value,
+    onCommit,
+    className,
+}: {
+    value: number;
+    onCommit: (n: number) => void;
+    className?: string;
+}) {
+    const [text, setText] = React.useState(String(value));
+    React.useEffect(() => {
+        setText(String(value));
+    }, [value]);
+    const commit = () => {
+        const n = Math.max(1, Math.round(Number(text) || value));
+        setText(String(n));
+        if (n !== value) onCommit(n);
+    };
+    return (
+        <input
+            type="text"
+            inputMode="numeric"
+            value={text}
+            onChange={(e) => setText(e.target.value.replace(/[^\d]/g, ""))}
+            onFocus={(e) => e.currentTarget.select()}
+            onBlur={commit}
+            onKeyDown={(e) => {
+                if (e.key === "Enter") e.currentTarget.blur();
+            }}
+            style={{ width: `${Math.max(2, text.length)}ch` }}
+            className={`border-0 border-b border-dashed border-slate-300 bg-transparent p-0 outline-none transition-colors hover:border-slate-400 focus:border-solid focus:border-sky-500 ${className ?? ""}`}
+        />
+    );
+}
+
+// LimitCell is one spend-limit control: an on/off toggle, the value as a big
+// inline-editable number, a dithered slider with quiet presets, and live
+// spent-vs-limit context when the current window's spend is known.
 function LimitCell({
     label,
     windowKey,
@@ -444,7 +513,7 @@ function LimitCell({
     const sliderMax = Math.max(WINDOW_SLIDER_MAX[windowKey], value ?? 0);
     const pct = on && spent !== undefined ? Math.min(100, Math.round((spent / Math.max(1, value)) * 100)) : null;
     return (
-        <div className="rounded-md border border-slate-200 bg-white px-3 py-2">
+        <div className="rounded-md border border-slate-200 bg-white px-3 py-2.5">
             <div className="flex items-center justify-between">
                 <span className="text-[11.5px] font-medium text-slate-700">{label}</span>
                 <button
@@ -464,6 +533,7 @@ function LimitCell({
                     />
                 </button>
             </div>
+            {!on && <div className="mt-1 text-[12px] text-slate-400">No cap</div>}
             <AnimatePresence initial={false}>
                 {on && (
                     <motion.div
@@ -473,7 +543,15 @@ function LimitCell({
                         transition={{ duration: 0.18, ease: "easeOut" }}
                         className="overflow-hidden"
                     >
-                        <div className="pt-2 space-y-2">
+                        <div className="pt-1.5 space-y-2">
+                            <div className="flex items-baseline gap-1">
+                                <InlineNumber
+                                    value={value}
+                                    onCommit={(n) => onChange(n)}
+                                    className="text-[17px] font-semibold text-slate-900 tabular-nums"
+                                />
+                                <span className="text-[10.5px] text-slate-400">credits</span>
+                            </div>
                             <DitherSlider
                                 value={value}
                                 min={1}
@@ -482,26 +560,16 @@ function LimitCell({
                                 onChange={(v) => onChange(v)}
                                 label={`${label} limit`}
                             />
-                            <div className="flex items-center gap-1.5">
-                                <NumberInput
-                                    value={value}
-                                    onChange={(n) => onChange(Math.max(1, Math.round(n)))}
-                                    min={1}
-                                    max={1000000}
-                                    className="w-full"
-                                />
-                                <span className="text-[11px] text-slate-400">credits</span>
-                            </div>
-                            <div className="flex flex-wrap gap-1">
+                            <div className="flex items-center gap-2.5">
                                 {presets.map((p) => (
                                     <button
                                         key={p}
                                         type="button"
                                         onClick={() => onChange(p)}
-                                        className={`h-5 px-1.5 rounded text-[10.5px] font-medium tabular-nums border transition-colors ${
+                                        className={`text-[10.5px] tabular-nums transition-colors ${
                                             value === p
-                                                ? "bg-sky-50 text-sky-700 border-sky-200"
-                                                : "border-slate-200 text-slate-500 hover:text-slate-700 hover:border-slate-300"
+                                                ? "font-semibold text-sky-700"
+                                                : "text-slate-400 hover:text-sky-700"
                                         }`}
                                     >
                                         {fmtCompact(p)}
