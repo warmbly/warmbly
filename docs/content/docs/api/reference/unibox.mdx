@@ -324,6 +324,8 @@ Sends or schedules a reply from one of your mailboxes. The send is routed throug
 }
 ```
 
+Instant sends are held for the sender's undo window (5 to 120 seconds, default 30) before they actually leave, so `scheduled_at` is that far in the future. Within the window the send can still be cancelled with `DELETE /unibox/scheduled/:task_id`.
+
 ## List active snoozes
 
 `GET /unibox/snoozes`

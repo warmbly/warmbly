@@ -114,6 +114,12 @@ The same AI experience as replies lives in the compose body: **⌘J** at the cur
 
 Instead of sending immediately, you can queue a reply to go out later. Scheduled sends appear inline at the bottom of the thread (with a dashed card and the time they will fire) and also in the **Scheduled** view in the rail. You can cancel a scheduled send any time before it goes out. There is a cap on how many sends you can have queued at once; the rail shows a small usage meter as you approach it.
 
+### Undo send
+
+Emails you send right away do not actually leave for a short window, so you can still take them back. After you hit **Send** on a compose or a reply, a countdown appears in the dashboard header (and as a banner in the mobile app) showing when the email will go out, with a **Cancel** action next to it. Cancelling returns the email to the composer with everything you wrote intact.
+
+The window is 30 seconds by default and adjustable between 5 and 120 seconds under **Settings, Profile**. It applies per user, to your own sends. Scheduled and smart-queued sends are not affected; those already wait, and you cancel them from the **Scheduled** view as before. This also applies to sends made through the API with `send_mode` set to `instant`: the response's `scheduled_at` reflects the delay, and `DELETE /unibox/scheduled/:task_id` cancels within the window.
+
 ### Snoozing
 
 Snoozing clears a conversation out of your inbox until a time you pick, then brings it back. Use the **Snooze** button in the thread header for quick presets (in 1 hour, tomorrow at 9:00, next week, and so on) or pick a custom date and time. Snoozed conversations live in the **Snoozed** view until they return. You can snooze up to 90 days out, and **Un-snooze now** brings a conversation back immediately.
