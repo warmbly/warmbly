@@ -26,15 +26,20 @@ function bayer(x: number, y: number, dpr: number): number {
     return (BAYER[by][bx] + 0.5) / 16;
 }
 
+// 500-level hues: the 600s read harsh as full dots on the white theme.
 const TONES = {
-    sky: [2, 132, 199],
-    amber: [217, 119, 6],
-    rose: [225, 29, 72],
-    emerald: [5, 150, 105],
-    violet: [124, 58, 237],
-    slate: [15, 23, 42],
+    sky: [14, 165, 233],
+    amber: [245, 158, 11],
+    rose: [244, 63, 94],
+    emerald: [16, 185, 129],
+    violet: [139, 92, 246],
+    slate: [71, 85, 105],
 } as const;
 export type DitherTone = keyof typeof TONES;
+
+// Dither dots blend into the page instead of sitting on it; lines and
+// hovered/selected elements stay fully opaque for definition.
+const FILL_ALPHA = 215;
 
 const TRACK: [number, number, number] = [226, 232, 240]; // slate-200
 
@@ -156,7 +161,7 @@ export function DitherBarChart({
                         buf[o] = cr;
                         buf[o + 1] = cg;
                         buf[o + 2] = cb;
-                        buf[o + 3] = 255;
+                        buf[o + 3] = hot ? 255 : FILL_ALPHA;
                     }
                 }
             }
@@ -347,7 +352,7 @@ export function DitherAreaChart({
                         buf[o] = cr;
                         buf[o + 1] = cg;
                         buf[o + 2] = cb;
-                        buf[o + 3] = 255;
+                        buf[o + 3] = FILL_ALPHA;
                     }
                 }
             }
@@ -516,7 +521,7 @@ export function DitherMultiAreaChart({
                     buf[o] = rgbs[owner][0];
                     buf[o + 1] = rgbs[owner][1];
                     buf[o + 2] = rgbs[owner][2];
-                    buf[o + 3] = 255;
+                    buf[o + 3] = FILL_ALPHA;
                 }
                 // Solid lines on top, later series winning ties.
                 for (let s = 0; s < S; s++) {
@@ -781,7 +786,7 @@ export function DitherColumns({
                             buf[o] = rgb[0];
                             buf[o + 1] = rgb[1];
                             buf[o + 2] = rgb[2];
-                            buf[o + 3] = 255;
+                            buf[o + 3] = hot ? 255 : FILL_ALPHA;
                         }
                     }
                 }
