@@ -84,11 +84,17 @@ AI contact research charges credits (2 per run, billable even when it finds noth
 | PATCH | `/unibox/seen` | `WRITE_UNIBOX` |
 | POST | `/unibox/reply` | `WRITE_UNIBOX` |
 | POST | `/unibox/reply/draft` | `READ_UNIBOX` |
+| GET | `/unibox/compose/candidates` | `READ_UNIBOX` |
+| POST | `/unibox/compose` | `WRITE_UNIBOX` |
 | GET | `/unibox/agent-drafts` | `READ_UNIBOX` |
 | POST | `/unibox/agent-drafts/:id/approve` | `WRITE_UNIBOX` |
 | POST | `/unibox/agent-drafts/:id/discard` | `WRITE_UNIBOX` |
 
 `POST /unibox/reply/draft` returns an AI-drafted reply (it never sends) grounded in the thread, the contact, and your [voice profile](/guides/unibox/#ai-reply-drafts). It charges AI credits; see [AI credits](/guides/ai-credits/).
+
+`POST /unibox/compose` sends a brand-new outbound email (not a reply). Omit `email_account_id` (or pass `"auto"`) and the backend picks the best mailbox for the first recipient; the response reports `account_id`, `account_email`, `auto`, and a `picked_reason`. Recipients on the workspace suppression list are rejected with a `400` before anything queues. `GET /unibox/compose/candidates?to=<address>` returns every active mailbox scored for that recipient (conversation history, remaining daily budget, domain-auth health) plus the resolved contact and suppression state; see [composing email](/guides/unibox/#composing-a-new-email).
+
+`GET /unibox` also accepts `address=<value>` (matches sender or recipient, for "every conversation with this person") and `direction=sent|received` (resolved against your own mailbox addresses).
 
 The `agent-drafts` endpoints back the [inbox agent](/guides/inbox-agent/): the agent drafts a suggested reply on an inbound human reply and holds it here for review. `GET` lists the pending drafts; `approve` sends one (optionally with an edited `body`) through the normal reply path and is safe to retry with an `Idempotency-Key`; `discard` dismisses it. Approving is the only path that sends.
 

@@ -88,6 +88,22 @@ Set your voice profile under **Settings, Workspace**: a short note on what you s
 
 Want Warmbly to draft the reply for you the moment someone replies, without pressing **Draft reply** each time? Turn on the [inbox agent](/guides/inbox-agent/): on every inbound reply it writes a suggested reply and holds it under **Agent drafts** for you to approve, edit, or discard. It still never sends on its own.
 
+## Composing a new email
+
+The **Compose** button in the Unibox header (or the **n** key anywhere in the dashboard, or the **Email** action on a contact) opens a docked compose window in the corner, so you can keep browsing the inbox while you write. The contact drawer variant arrives with the recipient prefilled.
+
+The **To** field searches your contacts as you type (name, email, company) and also accepts any raw address. If the recipient is on your workspace suppression list (bounced, complained, or unsubscribed), the composer tells you before you write a word and blocks the send.
+
+### Auto mailbox selection
+
+**From** defaults to **Auto**: Warmbly scores every active mailbox for the recipient and picks the best one, preferring the mailbox that already has a conversation with them (contacts should keep hearing from the same address), then the one with the most daily sending budget left, with domain authentication health as a tiebreaker. The picker shows the resolved pick and the reason before you send, and opening it reveals every mailbox with its budget bar (sent today against its daily limit), a history badge for past messages with that recipient, and an auth-health dot, so overriding the pick is an informed choice. The send confirmation reports which mailbox was used.
+
+### History with a recipient
+
+Once a recipient is set, the **History** button slides out a panel with every conversation you have had with them, without leaving the draft. Tabs split the full back-and-forth from just the mail you sent them, and a search box narrows by subject. Rows open the real thread in the Unibox, and the panel notes which mailbox you usually email them from.
+
+The same AI experience as replies lives in the compose body: **⌘J** at the cursor to write inline or **Draft this email with AI** (grounded in the recipient's contact record), select text to **Edit with AI**, and a sparkle next to the subject field suggests a subject line from what you wrote. Sends can also be scheduled with the same presets as replies.
+
 ### Scheduling a send
 
 Instead of sending immediately, you can queue a reply to go out later. Scheduled sends appear inline at the bottom of the thread (with a dashed card and the time they will fire) and also in the **Scheduled** view in the rail. You can cancel a scheduled send any time before it goes out. There is a cap on how many sends you can have queued at once; the rail shows a small usage meter as you approach it.
