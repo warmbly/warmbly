@@ -120,12 +120,15 @@ func toolResultEvent(tool, result string) StreamEvent {
 }
 
 const (
-	evText     = "text"
-	evTool     = "tool_start"
-	evToolDone = "tool_result"
-	evApproval = "approval_required"
-	evError    = "error"
-	evDone     = "done"
+	evText = "text"
+	// evTextDelta is a partial text chunk; a closing evText with the full
+	// block always follows (deltas are cosmetic, hydration never sees them).
+	evTextDelta = "text_delta"
+	evTool      = "tool_start"
+	evToolDone  = "tool_result"
+	evApproval  = "approval_required"
+	evError     = "error"
+	evDone      = "done"
 )
 
 // Service is the dashboard-agent application API.
@@ -395,6 +398,8 @@ func (s *service) runLoop(ctx context.Context, inv aitools.Invocation, sess *mod
 			switch ev.Type {
 			case generation.EventText:
 				emit(StreamEvent{Type: evText, Text: ev.Text})
+			case generation.EventTextDelta:
+				emit(StreamEvent{Type: evTextDelta, Text: ev.Text})
 			case generation.EventToolStart:
 				emit(StreamEvent{Type: evTool, Tool: ev.ToolName, ArgsSummary: summarizeArgs(ev.ToolArgs)})
 			case generation.EventToolResult:

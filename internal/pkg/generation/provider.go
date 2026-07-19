@@ -65,7 +65,11 @@ type AgentMessage struct {
 type AgentEventType string
 
 const (
-	EventText       AgentEventType = "text"
+	EventText AgentEventType = "text"
+	// EventTextDelta is a partial text chunk streamed while the model is
+	// still generating; a closing EventText with the full block always
+	// follows, so consumers may treat deltas as purely cosmetic.
+	EventTextDelta  AgentEventType = "text_delta"
 	EventToolStart  AgentEventType = "tool_start"
 	EventToolResult AgentEventType = "tool_result"
 	EventIteration  AgentEventType = "iteration"
