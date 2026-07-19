@@ -207,6 +207,194 @@ export function DitherBarChart({
     );
 }
 
+// Monotone cubic (Fritsch-Carlson) tangents for unit-spaced points, so the
+// curve never overshoots the data.
+function monotoneTangents(ys: number[]): number[] {
+    const n = ys.length;
+    if (n < 2) return ys.map(() => 0);
+    const d: number[] = [];
+    for (let i = 0; i < n - 1; i++) d.push(ys[i + 1] - ys[i]);
+    const m: number[] = new Array(n).fill(0);
+    m[0] = d[0];
+    m[n - 1] = d[n - 2];
+    for (let i = 1; i < n - 1; i++) {
+        m[i] = d[i - 1] * d[i] <= 0 ? 0 : (d[i - 1] + d[i]) / 2;
+    }
+    for (let i = 0; i < n - 1; i++) {
+        if (d[i] === 0) {
+            m[i] = 0;
+            m[i + 1] = 0;
+            continue;
+        }
+        const a = m[i] / d[i];
+        const b = m[i + 1] / d[i];
+        const s = a * a + b * b;
+        if (s > 9) {
+            const t = 3 / Math.sqrt(s);
+            m[i] = t * a * d[i];
+            m[i + 1] = t * b * d[i];
+        }
+    }
+    return m;
+}
+
+// Chart paddings in CSS px; shared by the canvas painter and the DOM overlay
+// so the crosshair dot lands exactly on the drawn line.
+const AREA_PAD_TOP = 5;
+const AREA_PAD_BOTTOM = 1;
+
+export function DitherAreaChart({
+    data,
+    height = 96,
+    tone = "sky",
+    className,
+    renderTooltip,
+}: {
+    data: DitherBarDatum[];
+    height?: number;
+    tone?: DitherTone;
+    className?: string;
+    renderTooltip?: (d: DitherBarDatum) => React.ReactNode;
+}) {
+    const reduced = useReducedMotion();
+    const [wrapRef, { w }] = useMeasure<HTMLDivElement>();
+    const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
+    const [hover, setHover] = React.useState<number | null>(null);
+    // Left-to-right entrance reveal fraction, mutated by the rAF loop.
+    const revealRef = React.useRef(1);
+
+    const max = Math.max(1, ...data.map((d) => d.value));
+    const yCssFor = React.useCallback(
+        (v: number) => AREA_PAD_TOP + (1 - v / max) * (height - AREA_PAD_TOP - AREA_PAD_BOTTOM),
+        [max, height],
+    );
+
+    const paint = React.useCallback(() => {
+        const el = canvasRef.current;
+        if (!el || w <= 0) return;
+        const dpr = Math.max(1, Math.floor(window.devicePixelRatio || 1));
+        const ctx = sizeCanvas(el, w, height, dpr);
+        if (!ctx) return;
+        const W = el.width;
+        const H = el.height;
+        const img = ctx.createImageData(W, H);
+        const buf = img.data;
+        const [cr, cg, cb] = TONES[tone];
+        const n = data.length;
+        if (n > 0) {
+            const ys = data.map((d) => yCssFor(d.value) * dpr);
+            const m = monotoneTangents(ys);
+            const revealX = revealRef.current * W;
+            const line = 0.9 * dpr;
+            for (let x = 0; x < W; x++) {
+                if (x > revealX) break;
+                const t = n > 1 ? (x / Math.max(1, W - 1)) * (n - 1) : 0;
+                const i = Math.min(n - 2, Math.max(0, Math.floor(t)));
+                const hh = n > 1 ? t - i : 0;
+                let yc: number;
+                if (n === 1) {
+                    yc = ys[0];
+                } else {
+                    const h00 = 2 * hh ** 3 - 3 * hh ** 2 + 1;
+                    const h10 = hh ** 3 - 2 * hh ** 2 + hh;
+                    const h01 = -2 * hh ** 3 + 3 * hh ** 2;
+                    const h11 = hh ** 3 - hh ** 2;
+                    yc = h00 * ys[i] + h10 * m[i] + h01 * ys[i + 1] + h11 * m[i + 1];
+                }
+                for (let y = 0; y < H; y++) {
+                    const o = (y * W + x) * 4;
+                    if (Math.abs(y - yc) <= line) {
+                        buf[o] = cr;
+                        buf[o + 1] = cg;
+                        buf[o + 2] = cb;
+                        buf[o + 3] = 255;
+                        continue;
+                    }
+                    if (y <= yc) continue;
+                    // Dithered area fill fading toward the baseline.
+                    const rel = (y - yc) / Math.max(1, H - yc);
+                    const a = 0.5 - 0.42 * rel;
+                    if (a >= bayer(x, y, dpr)) {
+                        buf[o] = cr;
+                        buf[o + 1] = cg;
+                        buf[o + 2] = cb;
+                        buf[o + 3] = 255;
+                    }
+                }
+            }
+        }
+        ctx.putImageData(img, 0, 0);
+    }, [data, w, height, tone, yCssFor]);
+
+    const paintRef = React.useRef(paint);
+    React.useEffect(() => {
+        paintRef.current = paint;
+        paint();
+    }, [paint]);
+
+    React.useEffect(() => {
+        if (data.length === 0) return;
+        if (reduced) {
+            revealRef.current = 1;
+            paintRef.current();
+            return;
+        }
+        revealRef.current = 0;
+        const t0 = performance.now();
+        const dur = 700;
+        let raf = 0;
+        const tick = (now: number) => {
+            const c = clamp01((now - t0) / dur);
+            revealRef.current = easeOutCubic(c);
+            paintRef.current();
+            if (c < 1) raf = requestAnimationFrame(tick);
+        };
+        raf = requestAnimationFrame(tick);
+        return () => cancelAnimationFrame(raf);
+    }, [data, reduced]);
+
+    const onMove = (e: React.PointerEvent<HTMLDivElement>) => {
+        if (data.length === 0 || w <= 0) return;
+        const rect = e.currentTarget.getBoundingClientRect();
+        const i = Math.round(((e.clientX - rect.left) / rect.width) * (data.length - 1));
+        setHover(i >= 0 && i < data.length ? i : null);
+    };
+
+    const d = hover !== null ? data[hover] : null;
+    const hoverX = hover !== null && data.length > 1 ? (hover / (data.length - 1)) * w : w / 2;
+    const [cr, cg, cb] = TONES[tone];
+
+    return (
+        <div
+            ref={wrapRef}
+            className={`relative ${className ?? ""}`}
+            style={{ height }}
+            onPointerMove={onMove}
+            onPointerLeave={() => setHover(null)}
+        >
+            <canvas ref={canvasRef} className="absolute inset-0 block h-full w-full" />
+            {d && (
+                <>
+                    <div
+                        className="pointer-events-none absolute inset-y-0 border-l border-dashed border-slate-300"
+                        style={{ left: hoverX }}
+                    />
+                    <div
+                        className="pointer-events-none absolute size-2 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-sm"
+                        style={{ left: hoverX, top: yCssFor(d.value), backgroundColor: `rgb(${cr}, ${cg}, ${cb})` }}
+                    />
+                    <div
+                        className="pointer-events-none absolute z-10 -translate-x-1/2 whitespace-nowrap rounded-md border border-slate-200 bg-white px-2 py-1 text-[10.5px] text-slate-600 shadow-sm"
+                        style={{ left: Math.max(56, Math.min(w - 56, hoverX)), bottom: height + 4 }}
+                    >
+                        {renderTooltip ? renderTooltip(d) : (d.hint ?? `${d.key} · ${d.value.toLocaleString()}`)}
+                    </div>
+                </>
+            )}
+        </div>
+    );
+}
+
 export function DitherMeter({
     frac,
     tone = "sky",
