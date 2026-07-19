@@ -302,10 +302,10 @@ function ComposeWindowInner({ prefillTo }: { prefillTo: string | null }) {
         >
             {/* ── Main column ─────────────────────────────────────────── */}
             <div className="flex flex-col w-full sm:w-[540px] min-h-0">
-                <div className="shrink-0 h-9 pl-3.5 pr-1.5 flex items-center gap-2 bg-slate-900">
-                    <span className="text-[12px] font-medium text-white">New email</span>
+                <div className="shrink-0 h-9 pl-3.5 pr-1.5 flex items-center gap-2 bg-slate-50 border-b border-slate-200">
+                    <span className="text-[12px] font-medium text-slate-800">New email</span>
                     {contact && (
-                        <span className="hidden sm:inline text-[11px] text-white/50 truncate min-w-0">
+                        <span className="hidden sm:inline text-[11px] text-slate-400 truncate min-w-0">
                             · {contactDisplay}
                             {contact.company ? `, ${contact.company}` : ""}
                         </span>
@@ -323,8 +323,8 @@ function ComposeWindowInner({ prefillTo }: { prefillTo: string | null }) {
                             className={cn(
                                 "hidden sm:inline-flex size-6 rounded-md items-center justify-center transition-colors disabled:opacity-30",
                                 showHistory
-                                    ? "bg-white/20 text-white"
-                                    : "text-white/60 hover:text-white hover:bg-white/10",
+                                    ? "bg-slate-200 text-slate-700"
+                                    : "text-slate-400 hover:text-slate-700 hover:bg-slate-200/60",
                             )}
                         >
                             <HistoryIcon className="w-3.5 h-3.5" />
@@ -333,7 +333,7 @@ function ComposeWindowInner({ prefillTo }: { prefillTo: string | null }) {
                             type="button"
                             onClick={requestClose}
                             aria-label="Close composer"
-                            className="size-6 inline-flex items-center justify-center rounded-md text-white/60 hover:text-white hover:bg-white/10 transition-colors"
+                            className="size-6 inline-flex items-center justify-center rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors"
                         >
                             <XIcon className="w-3.5 h-3.5" />
                         </button>

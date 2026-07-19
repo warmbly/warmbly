@@ -100,8 +100,8 @@ export default function ComposeHistoryPanel({
                             className={cn(
                                 "h-6 px-2 rounded-md text-[11px] font-medium transition-colors",
                                 tab === t
-                                    ? "bg-slate-900 text-white"
-                                    : "text-slate-500 hover:text-slate-900 hover:bg-slate-100",
+                                    ? "bg-slate-200/80 text-slate-800"
+                                    : "text-slate-500 hover:text-slate-800 hover:bg-slate-100",
                             )}
                         >
                             {t === "all" ? "Conversations" : "Sent"}

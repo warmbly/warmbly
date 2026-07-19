@@ -78,9 +78,9 @@ export function ScopeRail({ scope, onChange }: ScopeRailProps) {
           <button
             type="button"
             onClick={() => useComposeStore.getState().openCompose()}
-            className="w-full h-8 rounded-lg bg-slate-900 text-white text-[12px] font-medium inline-flex items-center justify-center gap-1.5 hover:bg-slate-700 active:bg-slate-800 shadow-sm transition-colors"
+            className="w-full h-8 rounded-lg bg-white border border-slate-200 text-slate-700 text-[12px] font-medium inline-flex items-center justify-center gap-1.5 hover:bg-slate-50 hover:border-slate-300 hover:text-slate-900 active:bg-slate-100 shadow-sm transition-colors"
           >
-            <PenLineIcon className="w-3.5 h-3.5" />
+            <PenLineIcon className="w-3.5 h-3.5 text-sky-600" />
             Compose
           </button>
         </ShortcutTooltip>

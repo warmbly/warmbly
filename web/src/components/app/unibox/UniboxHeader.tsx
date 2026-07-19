@@ -99,9 +99,9 @@ export function UniboxHeader({
                     <button
                         type="button"
                         onClick={() => useComposeStore.getState().openCompose()}
-                        className="lg:hidden inline-flex items-center gap-1.5 h-6 px-2.5 rounded-lg bg-slate-900 hover:bg-slate-700 text-white text-[11.5px] font-medium shadow-sm transition-colors"
+                        className="lg:hidden inline-flex items-center gap-1.5 h-6 px-2.5 rounded-lg bg-white border border-slate-200 hover:bg-slate-50 hover:border-slate-300 text-slate-700 hover:text-slate-900 text-[11.5px] font-medium shadow-sm transition-colors"
                     >
-                        <PenLineIcon className="w-3 h-3" />
+                        <PenLineIcon className="w-3 h-3 text-sky-600" />
                         Compose
                     </button>
                 </ShortcutTooltip>
