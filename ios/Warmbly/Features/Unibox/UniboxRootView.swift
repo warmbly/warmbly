@@ -16,12 +16,15 @@ struct UniboxRootView: View {
     @State private var showBulkLabels = false
     @State private var toast: String?
     @State private var toastPulse = 0
+    @State private var composeItem: ComposeSheetItem?
     @FocusState private var searchFocused: Bool
 
     private static let sidebarWidth: CGFloat = 300
 
     private var inSelectionMode: Bool { !selectedIDs.isEmpty }
     private var canAct: Bool { env.session.can(.accessUnibox) }
+    /// Compose sends need the unibox plus mailbox send rights (server gate).
+    private var canCompose: Bool { canAct && env.session.can(.manageEmails) }
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -44,6 +47,10 @@ struct UniboxRootView: View {
                 switch route {
                 case let .thread(thread, reply): UniboxThreadView(thread: thread, openComposerOnAppear: reply)
                 case .scheduled: UniboxScheduledView()
+                case .drafts:
+                    ComposeDraftsView { draft in
+                        composeItem = ComposeSheetItem(id: draft.id, draft: draft)
+                    }
                 }
             }
         }
@@ -82,6 +89,15 @@ struct UniboxRootView: View {
                 await bulkLabel(ids)
             }))
         }
+        .sheet(item: $composeItem) { item in
+            ComposeView(draft: item.draft) { response in
+                switch response.sendMode {
+                case "smart": showToast("Queued for smart send")
+                case "scheduled": showToast("Scheduled")
+                default: showToast(response.auto == true ? "Sent from \(response.accountEmail ?? "best mailbox")" : "Sent")
+                }
+            }
+        }
     }
 
     // MARK: Main pane
@@ -100,6 +116,11 @@ struct UniboxRootView: View {
         }
         .animation(.snappy, value: searchFocused)
         .background(Color(.systemBackground))
+        .overlay(alignment: .bottomTrailing) {
+            if canCompose, !inSelectionMode {
+                composeFAB
+            }
+        }
         .overlay(alignment: .bottom) {
             if let toast {
                 Text(toast)
@@ -121,6 +142,25 @@ struct UniboxRootView: View {
                     }
                 }
         )
+    }
+
+    /// Gmail-style compose FAB: opens a fresh compose window.
+    private var composeFAB: some View {
+        Button {
+            composeItem = ComposeSheetItem(id: UUID().uuidString, draft: nil)
+        } label: {
+            Image(systemName: "square.and.pencil")
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 56, height: 56)
+                .background(WTheme.accent, in: Circle())
+                .shadow(color: WTheme.accent.opacity(0.35), radius: 12, y: 5)
+        }
+        .buttonStyle(TapScaleStyle())
+        .padding(.trailing, 18)
+        .padding(.bottom, 18)
+        .accessibilityLabel("Compose email")
+        .transition(.scale(scale: 0.6).combined(with: .opacity))
     }
 
     // MARK: Top bar
@@ -711,6 +751,9 @@ struct UniboxRootView: View {
         } onScheduled: {
             closeSidebar()
             path.append(.scheduled)
+        } onDrafts: {
+            closeSidebar()
+            path.append(.drafts)
         }
         .frame(width: Self.sidebarWidth)
         .frame(maxHeight: .infinity)
@@ -836,4 +879,12 @@ struct UniboxRootView: View {
 enum UniboxRoute: Hashable {
     case thread(UniboxThread, reply: Bool)
     case scheduled
+    case drafts
+}
+
+/// One presented compose window; the id keys the sheet so reopening a draft
+/// (or tapping the FAB again) always builds a fresh composer.
+struct ComposeSheetItem: Identifiable {
+    let id: String
+    var draft: ComposeDraft?
 }

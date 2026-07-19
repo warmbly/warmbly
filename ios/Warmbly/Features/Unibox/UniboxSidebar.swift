@@ -15,6 +15,7 @@ struct UniboxSidebar: View {
     let revealed: Bool
     let onSelect: (UniboxScope) -> Void
     let onScheduled: () -> Void
+    let onDrafts: () -> Void
 
     @Namespace private var activeNS
 
@@ -32,7 +33,7 @@ struct UniboxSidebar: View {
                         sectionLabel("Labels")
                         labelRows
                         row(
-                            index: 7 + store.mailboxes.count + labels.count,
+                            index: 8 + store.mailboxes.count + labels.count,
                             icon: "tag.slash",
                             title: "Uncategorized",
                             count: 0,
@@ -148,6 +149,9 @@ struct UniboxSidebar: View {
         row(index: 6, icon: "clock.badge", title: "Scheduled", count: store.scheduledCount, selected: false, chevron: true) {
             onScheduled()
         }
+        row(index: 7, icon: "doc.text", title: "Drafts", count: 0, selected: false, chevron: true) {
+            onDrafts()
+        }
     }
 
     @ViewBuilder
@@ -156,7 +160,7 @@ struct UniboxSidebar: View {
             let label = mailbox.name?.isEmpty == false ? (mailbox.name ?? "") : (mailbox.email ?? "Mailbox")
             let scope = UniboxScope.mailbox(id: mailbox.id, label: label)
             row(
-                index: 7 + offset,
+                index: 8 + offset,
                 icon: "envelope.fill",
                 title: label,
                 count: mailbox.unread ?? 0,
@@ -174,7 +178,7 @@ struct UniboxSidebar: View {
             let label = category.title ?? "Label"
             let scope = UniboxScope.category(id: category.id, label: label, colorHex: category.color)
             row(
-                index: 7 + store.mailboxes.count + offset,
+                index: 8 + store.mailboxes.count + offset,
                 dot: Color(uniboxHex: category.color) ?? WTheme.accent,
                 title: label,
                 count: category.unread ?? 0,
