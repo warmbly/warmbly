@@ -124,7 +124,7 @@ export function CreditsMeter() {
                     >
                         <MeterPanel credits={c} settings={settings.data} low={low} empty={empty} />
                         <Link
-                            to="/app/settings/billing"
+                            to="/app/settings/billing?tab=ai"
                             onClick={close}
                             className="flex items-center gap-1 px-3 h-9 border-t border-slate-200 text-[11.5px] font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition-colors"
                         >

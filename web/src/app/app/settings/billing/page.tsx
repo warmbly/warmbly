@@ -1,4 +1,7 @@
-// Billing — owner-only, organization-scoped, flat layout.
+// Billing — owner-only, organization-scoped, split into tabs so the page is
+// browsable: Overview (plan + usage), Plans (compare/promo), AI & credits,
+// and Payment. The active tab lives in the ?tab= search param so returns from
+// Stripe (?topup=success) land back on the right tab and links can deep-link.
 //
 // Plan data lives in `lib/plans` so the dashboard mirrors warmbly-web
 // exactly — every value here (limits, descriptions, bullets) comes
@@ -11,13 +14,16 @@ import {
     CreditCardIcon,
     ExternalLinkIcon,
     FileTextIcon,
+    GaugeIcon,
+    LayersIcon,
     Loader2Icon,
     LockIcon,
     SparklesIcon,
     TicketIcon,
     XIcon,
 } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
+import { AnimatePresence, motion } from "framer-motion";
 import toast from "react-hot-toast";
 import { TopbarAction } from "@/components/layout/Page";
 import useFeatureAccess from "@/hooks/useFeatureAccess";
@@ -36,12 +42,26 @@ import type { DiscountRedemption } from "@/lib/api/models/app/subscription/Disco
 import type ServerPlan from "@/lib/api/models/app/subscription/Plan";
 import buildError from "@/lib/helper/buildError";
 import { TextInput } from "@/components/ui/field";
+import { AnimatedNumber, DitherMeter, type DitherTone } from "@/components/ui/dither";
 import { Row, Section, SectionShell, TableSurface } from "../_components/SectionShell";
 import { PLAN_ACCENT_CLASSES, PAID_PLANS, getPlan, type PlanID } from "@/lib/plans";
 import CreditsCard from "./CreditsCard";
 import AIUsageCard from "./AIUsageCard";
 
 type BillingInterval = "monthly" | "annual";
+
+type BillingTab = "overview" | "plans" | "ai" | "payment";
+
+const TABS: { id: BillingTab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+    { id: "overview", label: "Overview", icon: GaugeIcon },
+    { id: "plans", label: "Plans", icon: LayersIcon },
+    { id: "ai", label: "AI & credits", icon: SparklesIcon },
+    { id: "payment", label: "Payment", icon: CreditCardIcon },
+];
+
+function isBillingTab(v: string | null): v is BillingTab {
+    return v === "overview" || v === "plans" || v === "ai" || v === "payment";
+}
 
 export default function BillingSettingsPage() {
     const access = useFeatureAccess();
@@ -54,10 +74,29 @@ export default function BillingSettingsPage() {
     const plansQuery = usePlans();
     const redemptions = useAppliedDiscounts();
     const usage = useUsageOverview().data;
+    const [searchParams, setSearchParams] = useSearchParams();
     const [codeInput, setCodeInput] = React.useState("");
     const [applied, setApplied] = React.useState<DiscountPreview | null>(null);
     const [billingInterval, setBillingInterval] =
         React.useState<BillingInterval>("annual");
+
+    // A ?topup= return from Stripe Checkout lands on the AI tab it left from.
+    const spTab = searchParams.get("tab");
+    const tab: BillingTab = isBillingTab(spTab)
+        ? spTab
+        : searchParams.get("topup")
+            ? "ai"
+            : "overview";
+    const setTab = (t: BillingTab) => {
+        setSearchParams(
+            (prev) => {
+                const next = new URLSearchParams(prev);
+                next.set("tab", t);
+                return next;
+            },
+            { replace: true },
+        );
+    };
 
     if (!access.loading && !access.isOwner) {
         return (
@@ -208,271 +247,325 @@ export default function BillingSettingsPage() {
                 </TopbarAction>
             }
         >
-            <Section
-                eyebrow="Current plan"
-                description="Your active subscription. Limits below come from the marketing site — same plans, same numbers."
-            >
-                {sub.isPending ? (
-                    <div className="h-20 rounded bg-slate-100 animate-pulse" />
-                ) : (
-                    <div className="flex flex-wrap items-start gap-4">
-                        <div className={`size-9 rounded-md flex items-center justify-center shrink-0 border ${currentAccent.pill}`}>
-                            <SparklesIcon className="w-4 h-4" />
-                        </div>
-                        <div className="min-w-0 flex-1 basis-[200px]">
-                            <div className="flex items-center gap-2 flex-wrap">
-                                <span className="text-[15px] font-semibold text-slate-900">
-                                    {currentPlan.label}
-                                </span>
-                                <StatusPill status={status} cancelAtEnd={cancelAtEnd} />
-                            </div>
-                            <p className="text-[11.5px] text-slate-500 mt-1 leading-relaxed max-w-md">
-                                {currentPlan.description}
-                            </p>
-                            {periodEnd && status !== "canceled" && (
-                                <div className="mt-2 text-[11px] text-slate-500">
-                                    {cancelAtEnd ? "Ends on " : "Renews on "}
-                                    <span className="font-mono tabular-nums text-slate-700">
-                                        {periodEnd.toLocaleDateString("en-US", {
-                                            month: "long",
-                                            day: "numeric",
-                                            year: "numeric",
-                                        })}
-                                    </span>
-                                </div>
-                            )}
-                        </div>
-                        <button
-                            type="button"
-                            onClick={openPortal}
-                            className="h-7 px-3 rounded-md bg-slate-900 hover:bg-slate-800 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors shrink-0"
-                        >
-                            <SparklesIcon className="w-3 h-3" />
-                            {currentPlan.id === "free" ? "Subscribe" : "Change plan"}
-                        </button>
-                    </div>
-                )}
-                <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 mt-1 text-[11.5px] max-w-md">
-                    {currentPlan.bullets.map((b) => (
-                        <li key={b} className="flex items-start gap-1.5">
-                            <CheckIcon className="w-3 h-3 text-emerald-600 mt-0.5 shrink-0" />
-                            <span className="text-slate-700">{b}</span>
-                        </li>
-                    ))}
-                </ul>
-            </Section>
-
-            <Section
-                eyebrow="Promo code"
-                description="Have a discount code? Apply it to preview your price. It's applied at checkout."
-            >
-                <Row
-                    label="Discount code"
-                    description="We validate the code against your workspace and the plan you pick."
-                    align="start"
-                >
-                    <div className="flex flex-col items-stretch gap-2 sm:items-end">
-                        <div className="flex items-center gap-2">
-                            <TextInput
-                                value={codeInput}
-                                onChange={(v) => setCodeInput(v.toUpperCase())}
-                                placeholder="WELCOME10"
-                                disabled={!!applied}
-                                onKeyDown={(e) => {
-                                    if (e.key === "Enter") applyCode();
-                                }}
-                                className="w-full sm:w-[180px] font-mono uppercase"
-                            />
-                            {applied ? (
-                                <button
-                                    type="button"
-                                    onClick={clearCode}
-                                    className="h-7 px-2.5 rounded-md border border-slate-200 hover:border-slate-300 text-[12px] text-slate-700 hover:text-slate-900 transition-colors inline-flex items-center gap-1 shrink-0"
+            <div>
+                <div className="sticky top-0 z-20 bg-white/95 backdrop-blur px-2 md:px-6 flex items-center gap-1 border-b border-slate-200/70 overflow-x-auto">
+                    {TABS.map(({ id, label, icon: Icon }) => {
+                        const active = tab === id;
+                        return (
+                            <button
+                                key={id}
+                                type="button"
+                                onClick={() => setTab(id)}
+                                className={`relative h-10 px-2.5 inline-flex shrink-0 items-center gap-1.5 text-[12.5px] transition-colors ${
+                                    active
+                                        ? "text-slate-900 font-medium"
+                                        : "text-slate-500 hover:text-slate-700"
+                                }`}
+                            >
+                                <Icon className="w-3.5 h-3.5" />
+                                {label}
+                                {active && (
+                                    <motion.span
+                                        layoutId="billing-tab-underline"
+                                        className="absolute left-1.5 right-1.5 -bottom-px h-0.5 rounded-full bg-sky-600"
+                                    />
+                                )}
+                            </button>
+                        );
+                    })}
+                </div>
+                <AnimatePresence mode="wait" initial={false}>
+                    <motion.div
+                        key={tab}
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -4 }}
+                        transition={{ duration: 0.16, ease: "easeOut" }}
+                        className="divide-y divide-slate-200/70"
+                    >
+                        {tab === "overview" && (
+                            <>
+                                <Section
+                                    eyebrow="Current plan"
+                                    description="Your active subscription. Limits below come from the marketing site — same plans, same numbers."
                                 >
-                                    <XIcon className="w-3 h-3" />
-                                    Clear
-                                </button>
-                            ) : (
-                                <button
-                                    type="button"
-                                    onClick={applyCode}
-                                    disabled={validateCode.isPending || !codeInput.trim()}
-                                    className="h-7 px-3 rounded-md bg-slate-900 hover:bg-slate-800 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors disabled:opacity-50 shrink-0"
-                                >
-                                    {validateCode.isPending ? (
-                                        <Loader2Icon className="w-3 h-3 animate-spin" />
+                                    {sub.isPending ? (
+                                        <div className="h-20 rounded bg-slate-100 animate-pulse" />
                                     ) : (
-                                        <TicketIcon className="w-3 h-3" />
+                                        <div className="flex flex-wrap items-start gap-4">
+                                            <div className={`size-9 rounded-md flex items-center justify-center shrink-0 border ${currentAccent.pill}`}>
+                                                <SparklesIcon className="w-4 h-4" />
+                                            </div>
+                                            <div className="min-w-0 flex-1 basis-[200px]">
+                                                <div className="flex items-center gap-2 flex-wrap">
+                                                    <span className="text-[15px] font-semibold text-slate-900">
+                                                        {currentPlan.label}
+                                                    </span>
+                                                    <StatusPill status={status} cancelAtEnd={cancelAtEnd} />
+                                                </div>
+                                                <p className="text-[11.5px] text-slate-500 mt-1 leading-relaxed max-w-md">
+                                                    {currentPlan.description}
+                                                </p>
+                                                {periodEnd && status !== "canceled" && (
+                                                    <div className="mt-2 text-[11px] text-slate-500">
+                                                        {cancelAtEnd ? "Ends on " : "Renews on "}
+                                                        <span className="font-mono tabular-nums text-slate-700">
+                                                            {periodEnd.toLocaleDateString("en-US", {
+                                                                month: "long",
+                                                                day: "numeric",
+                                                                year: "numeric",
+                                                            })}
+                                                        </span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => setTab("plans")}
+                                                className="h-7 px-3 rounded-md bg-slate-900 hover:bg-slate-800 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors shrink-0"
+                                            >
+                                                <SparklesIcon className="w-3 h-3" />
+                                                {currentPlan.id === "free" ? "Subscribe" : "Change plan"}
+                                            </button>
+                                        </div>
                                     )}
-                                    Apply
-                                </button>
-                            )}
-                        </div>
-                        {applied && (
-                            <div className="text-[11.5px] text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-md px-2 py-1 inline-flex items-center gap-1.5">
-                                <CheckIcon className="w-3 h-3 shrink-0" />
-                                <span className="font-mono font-medium">{applied.code}</span>
-                                <span>· {describeDiscount(applied)}</span>
-                            </div>
+                                    <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 mt-1 text-[11.5px] max-w-md">
+                                        {currentPlan.bullets.map((b) => (
+                                            <li key={b} className="flex items-start gap-1.5">
+                                                <CheckIcon className="w-3 h-3 text-emerald-600 mt-0.5 shrink-0" />
+                                                <span className="text-slate-700">{b}</span>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </Section>
+
+                                <Section
+                                    eyebrow="Usage"
+                                    description="What this workspace is consuming this period."
+                                >
+                                    <UsageRow label="Mailboxes" current={usage?.email_accounts.total ?? 0} max={"Unlimited"} />
+                                    <UsageRow
+                                        label="Sends this period"
+                                        current={usage?.campaigns.emails_sent ?? 0}
+                                        max={
+                                            currentPlan.sendsPerDay === Number.POSITIVE_INFINITY
+                                                ? "Custom"
+                                                : currentPlan.sendsPerDay
+                                        }
+                                    />
+                                    <UsageRow label="Warmup" current={usage?.email_accounts.in_warmup ?? 0} max={"Unlimited"} />
+                                    <UsageRow
+                                        label="Dedicated IPs"
+                                        current={currentPlan.id === "business" ? 1 : 0}
+                                        max={currentPlan.id === "enterprise" ? "Custom" : currentPlan.id === "business" ? 1 : 0}
+                                    />
+                                </Section>
+                            </>
                         )}
-                    </div>
-                </Row>
-            </Section>
 
-            <Section
-                eyebrow="Redeemed codes"
-                description="Promo and referral codes this workspace has redeemed."
-            >
-                {redemptions.isPending ? (
-                    <div className="h-16 rounded bg-slate-100 animate-pulse" />
-                ) : (redemptions.data?.data.length ?? 0) === 0 ? (
-                    <p className="text-[12px] text-slate-500 leading-relaxed">
-                        No codes redeemed yet. Apply a code above to see it here.
-                    </p>
-                ) : (
-                    <TableSurface>
-                        <table className="w-full text-[12px]">
-                            <thead>
-                                <tr className="text-left text-[10.5px] uppercase tracking-[0.08em] text-slate-400 border-b border-slate-200">
-                                    <th className="font-medium px-3 py-2">Code</th>
-                                    <th className="font-medium px-3 py-2">Discount</th>
-                                    <th className="font-medium px-3 py-2">Status</th>
-                                    <th className="font-medium px-3 py-2 text-right">Redeemed</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                                {(redemptions.data?.data ?? []).map((d) => (
-                                    <RedemptionRow key={d.id} row={d} />
-                                ))}
-                            </tbody>
-                        </table>
-                    </TableSurface>
-                )}
-            </Section>
+                        {tab === "plans" && (
+                            <>
+                                <Section
+                                    eyebrow="Compare plans"
+                                    description="Same lineup as the public pricing page."
+                                >
+                                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                                        <span className="text-[11.5px] text-slate-500">
+                                            {billingInterval === "annual"
+                                                ? "Annual billing — save 20%."
+                                                : "Monthly billing."}
+                                        </span>
+                                        <BillingIntervalToggle
+                                            interval={billingInterval}
+                                            onChange={setBillingInterval}
+                                        />
+                                    </div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+                                        {PAID_PLANS.map((id) => (
+                                            <PlanCard
+                                                key={id}
+                                                id={id}
+                                                active={currentPlan.id === id}
+                                                discount={applied}
+                                                interval={billingInterval}
+                                                onUpgrade={() => upgrade(id)}
+                                            />
+                                        ))}
+                                    </div>
+                                    <Link
+                                        to="/#pricing"
+                                        className="inline-flex items-center gap-1 text-[11.5px] text-slate-500 hover:text-slate-900 transition-colors"
+                                    >
+                                        <ArrowUpRightIcon className="w-3 h-3" />
+                                        Open full pricing page
+                                    </Link>
+                                </Section>
 
-            <Section
-                eyebrow="Compare plans"
-                description="Same lineup as the public pricing page."
-            >
-                <div className="flex items-center justify-between gap-3 flex-wrap">
-                    <span className="text-[11.5px] text-slate-500">
-                        {billingInterval === "annual"
-                            ? "Annual billing — save 20%."
-                            : "Monthly billing."}
-                    </span>
-                    <BillingIntervalToggle
-                        interval={billingInterval}
-                        onChange={setBillingInterval}
-                    />
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-                    {PAID_PLANS.map((id) => (
-                        <PlanCard
-                            key={id}
-                            id={id}
-                            active={currentPlan.id === id}
-                            discount={applied}
-                            interval={billingInterval}
-                            onUpgrade={() => upgrade(id)}
-                        />
-                    ))}
-                </div>
-                <Link
-                    to="/#pricing"
-                    className="inline-flex items-center gap-1 text-[11.5px] text-slate-500 hover:text-slate-900 transition-colors"
-                >
-                    <ArrowUpRightIcon className="w-3 h-3" />
-                    Open full pricing page
-                </Link>
-            </Section>
+                                <Section
+                                    eyebrow="Promo code"
+                                    description="Have a discount code? Apply it to preview your price. It's applied at checkout."
+                                >
+                                    <Row
+                                        label="Discount code"
+                                        description="We validate the code against your workspace and the plan you pick."
+                                        align="start"
+                                    >
+                                        <div className="flex flex-col items-stretch gap-2 sm:items-end">
+                                            <div className="flex items-center gap-2">
+                                                <TextInput
+                                                    value={codeInput}
+                                                    onChange={(v) => setCodeInput(v.toUpperCase())}
+                                                    placeholder="WELCOME10"
+                                                    disabled={!!applied}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === "Enter") applyCode();
+                                                    }}
+                                                    className="w-full sm:w-[180px] font-mono uppercase"
+                                                />
+                                                {applied ? (
+                                                    <button
+                                                        type="button"
+                                                        onClick={clearCode}
+                                                        className="h-7 px-2.5 rounded-md border border-slate-200 hover:border-slate-300 text-[12px] text-slate-700 hover:text-slate-900 transition-colors inline-flex items-center gap-1 shrink-0"
+                                                    >
+                                                        <XIcon className="w-3 h-3" />
+                                                        Clear
+                                                    </button>
+                                                ) : (
+                                                    <button
+                                                        type="button"
+                                                        onClick={applyCode}
+                                                        disabled={validateCode.isPending || !codeInput.trim()}
+                                                        className="h-7 px-3 rounded-md bg-slate-900 hover:bg-slate-800 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors disabled:opacity-50 shrink-0"
+                                                    >
+                                                        {validateCode.isPending ? (
+                                                            <Loader2Icon className="w-3 h-3 animate-spin" />
+                                                        ) : (
+                                                            <TicketIcon className="w-3 h-3" />
+                                                        )}
+                                                        Apply
+                                                    </button>
+                                                )}
+                                            </div>
+                                            {applied && (
+                                                <div className="text-[11.5px] text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-md px-2 py-1 inline-flex items-center gap-1.5">
+                                                    <CheckIcon className="w-3 h-3 shrink-0" />
+                                                    <span className="font-mono font-medium">{applied.code}</span>
+                                                    <span>· {describeDiscount(applied)}</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </Row>
+                                </Section>
 
-            <Section
-                eyebrow="Usage"
-                description="What this workspace is consuming this period."
-            >
-                <UsageRow label="Mailboxes" current={usage?.email_accounts.total ?? 0} max={"Unlimited"} />
-                <UsageRow
-                    label="Sends this period"
-                    current={usage?.campaigns.emails_sent ?? 0}
-                    max={
-                        currentPlan.sendsPerDay === Number.POSITIVE_INFINITY
-                            ? "Custom"
-                            : currentPlan.sendsPerDay
-                    }
-                />
-                <UsageRow label="Warmup" current={usage?.email_accounts.in_warmup ?? 0} max={"Unlimited"} />
-                <UsageRow
-                    label="Dedicated IPs"
-                    current={currentPlan.id === "business" ? 1 : 0}
-                    max={currentPlan.id === "enterprise" ? "Custom" : currentPlan.id === "business" ? 1 : 0}
-                />
-            </Section>
+                                <Section
+                                    eyebrow="Redeemed codes"
+                                    description="Promo and referral codes this workspace has redeemed."
+                                >
+                                    {redemptions.isPending ? (
+                                        <div className="h-16 rounded bg-slate-100 animate-pulse" />
+                                    ) : (redemptions.data?.data.length ?? 0) === 0 ? (
+                                        <p className="text-[12px] text-slate-500 leading-relaxed">
+                                            No codes redeemed yet. Apply a code above to see it here.
+                                        </p>
+                                    ) : (
+                                        <TableSurface>
+                                            <table className="w-full text-[12px]">
+                                                <thead>
+                                                    <tr className="text-left text-[10.5px] uppercase tracking-[0.08em] text-slate-400 border-b border-slate-200">
+                                                        <th className="font-medium px-3 py-2">Code</th>
+                                                        <th className="font-medium px-3 py-2">Discount</th>
+                                                        <th className="font-medium px-3 py-2">Status</th>
+                                                        <th className="font-medium px-3 py-2 text-right">Redeemed</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-100">
+                                                    {(redemptions.data?.data ?? []).map((d) => (
+                                                        <RedemptionRow key={d.id} row={d} />
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </TableSurface>
+                                    )}
+                                </Section>
+                            </>
+                        )}
 
-            <CreditsCard isPaid={currentPlan.id !== "free"} />
+                        {tab === "ai" && (
+                            <>
+                                <CreditsCard isPaid={currentPlan.id !== "free"} />
+                                <AIUsageCard />
+                            </>
+                        )}
 
-            <AIUsageCard />
+                        {tab === "payment" && (
+                            <>
+                                <Section
+                                    eyebrow="Payment"
+                                    description="Card used for renewals and add-ons. Managed through Stripe."
+                                >
+                                    <Row
+                                        label="Payment method"
+                                        description="Card is managed through the billing portal."
+                                    >
+                                        <div className="flex items-center gap-2">
+                                            <span className="inline-flex items-center gap-1.5 text-[12px] text-slate-500">
+                                                <CreditCardIcon className="w-3 h-3" />
+                                                No card on file
+                                            </span>
+                                            <button
+                                                type="button"
+                                                onClick={openPortal}
+                                                className="h-7 px-2.5 rounded-md border border-slate-200 hover:border-slate-300 text-[12px] text-slate-700 hover:text-slate-900 transition-colors"
+                                            >
+                                                Manage
+                                            </button>
+                                        </div>
+                                    </Row>
+                                    <Row
+                                        label="Billing email"
+                                        description="Where invoices and renewal notices are sent."
+                                    >
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-[12px] text-slate-500 font-mono">Owner's account email</span>
+                                            <button
+                                                type="button"
+                                                onClick={openPortal}
+                                                className="h-7 px-2.5 rounded-md border border-slate-200 hover:border-slate-300 text-[12px] text-slate-700 hover:text-slate-900 transition-colors"
+                                            >
+                                                Change
+                                            </button>
+                                        </div>
+                                    </Row>
+                                </Section>
 
-            <Section
-                eyebrow="Payment"
-                description="Card used for renewals and add-ons. Managed through Stripe."
-            >
-                <Row
-                    label="Payment method"
-                    description="Card is managed through the billing portal."
-                >
-                    <div className="flex items-center gap-2">
-                        <span className="inline-flex items-center gap-1.5 text-[12px] text-slate-500">
-                            <CreditCardIcon className="w-3 h-3" />
-                            No card on file
-                        </span>
-                        <button
-                            type="button"
-                            onClick={openPortal}
-                            className="h-7 px-2.5 rounded-md border border-slate-200 hover:border-slate-300 text-[12px] text-slate-700 hover:text-slate-900 transition-colors"
-                        >
-                            Manage
-                        </button>
-                    </div>
-                </Row>
-                <Row
-                    label="Billing email"
-                    description="Where invoices and renewal notices are sent."
-                >
-                    <div className="flex items-center gap-2">
-                        <span className="text-[12px] text-slate-500 font-mono">Owner's account email</span>
-                        <button
-                            type="button"
-                            onClick={openPortal}
-                            className="h-7 px-2.5 rounded-md border border-slate-200 hover:border-slate-300 text-[12px] text-slate-700 hover:text-slate-900 transition-colors"
-                        >
-                            Change
-                        </button>
-                    </div>
-                </Row>
-            </Section>
-
-            <Section
-                eyebrow="Invoices"
-                description="Receipts from your billing portal."
-            >
-                <p className="text-[12px] text-slate-500 leading-relaxed">
-                    Invoices live in Stripe's billing portal. Open the portal to download
-                    PDF receipts.
-                </p>
-                <button
-                    type="button"
-                    onClick={openPortal}
-                    disabled={portal.isPending}
-                    className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border border-slate-200 hover:border-slate-300 text-[12px] text-slate-700 hover:text-slate-900 transition-colors disabled:opacity-60"
-                >
-                    {portal.isPending ? (
-                        <Loader2Icon className="w-3 h-3 animate-spin" />
-                    ) : (
-                        <FileTextIcon className="w-3 h-3" />
-                    )}
-                    Open invoices
-                </button>
-            </Section>
+                                <Section
+                                    eyebrow="Invoices"
+                                    description="Receipts from your billing portal."
+                                >
+                                    <p className="text-[12px] text-slate-500 leading-relaxed">
+                                        Invoices live in Stripe's billing portal. Open the portal to download
+                                        PDF receipts.
+                                    </p>
+                                    <button
+                                        type="button"
+                                        onClick={openPortal}
+                                        disabled={portal.isPending}
+                                        className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border border-slate-200 hover:border-slate-300 text-[12px] text-slate-700 hover:text-slate-900 transition-colors disabled:opacity-60"
+                                    >
+                                        {portal.isPending ? (
+                                            <Loader2Icon className="w-3 h-3 animate-spin" />
+                                        ) : (
+                                            <FileTextIcon className="w-3 h-3" />
+                                        )}
+                                        Open invoices
+                                    </button>
+                                </Section>
+                            </>
+                        )}
+                    </motion.div>
+                </AnimatePresence>
+            </div>
         </SectionShell>
     );
 }
@@ -676,23 +769,17 @@ function UsageRow({
         typeof max === "number" && max > 0
             ? Math.min(100, Math.round((current / max) * 100))
             : 0;
+    const tone: DitherTone = pct >= 90 ? "rose" : pct >= 70 ? "amber" : "slate";
     return (
         <div>
             <div className="flex items-center justify-between text-[11px] mb-1">
                 <span className="text-slate-500">{label}</span>
                 <span className="font-mono tabular-nums text-slate-700">
-                    {current.toLocaleString()}
+                    <AnimatedNumber value={current} />
                     <span className="text-slate-400"> / {typeof max === "number" ? max.toLocaleString() : max}</span>
                 </span>
             </div>
-            <div className="h-1 rounded-full bg-slate-100 overflow-hidden">
-                <div
-                    className={`h-full ${
-                        pct >= 90 ? "bg-red-500" : pct >= 70 ? "bg-amber-500" : "bg-slate-900"
-                    } transition-all`}
-                    style={{ width: `${pct}%` }}
-                />
-            </div>
+            <DitherMeter frac={pct / 100} tone={tone} height={4} />
         </div>
     );
 }
