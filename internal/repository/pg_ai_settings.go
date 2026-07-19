@@ -36,6 +36,7 @@ func NewAISettingsRepository(database *db.DB) AISettingsRepository {
 }
 
 const aiSettingsCols = `org_id, spend_limit_daily, spend_limit_weekly, spend_limit_monthly,
+	member_limit_monthly,
 	low_balance_threshold, low_balance_notified_at,
 	auto_topup_enabled, auto_topup_pack, auto_topup_threshold, auto_topup_max_per_month,
 	created_at, updated_at`
@@ -43,6 +44,7 @@ const aiSettingsCols = `org_id, spend_limit_daily, spend_limit_weekly, spend_lim
 func scanAISettings(row pgx.Row, s *models.AISpendSettings) error {
 	return row.Scan(
 		&s.OrgID, &s.SpendLimitDaily, &s.SpendLimitWeekly, &s.SpendLimitMonthly,
+		&s.MemberLimitMonthly,
 		&s.LowBalanceThreshold, &s.LowBalanceNotifiedAt,
 		&s.AutoTopupEnabled, &s.AutoTopupPack, &s.AutoTopupThreshold, &s.AutoTopupMaxPerMonth,
 		&s.CreatedAt, &s.UpdatedAt,
@@ -66,13 +68,15 @@ func (r *aiSettingsRepository) Upsert(ctx context.Context, in *models.AISpendSet
 	err := scanAISettings(r.DB.QueryRow(ctx, `
 		INSERT INTO org_ai_settings
 			(org_id, spend_limit_daily, spend_limit_weekly, spend_limit_monthly,
+			 member_limit_monthly,
 			 low_balance_threshold, auto_topup_enabled, auto_topup_pack,
 			 auto_topup_threshold, auto_topup_max_per_month)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		ON CONFLICT (org_id) DO UPDATE SET
 			spend_limit_daily = EXCLUDED.spend_limit_daily,
 			spend_limit_weekly = EXCLUDED.spend_limit_weekly,
 			spend_limit_monthly = EXCLUDED.spend_limit_monthly,
+			member_limit_monthly = EXCLUDED.member_limit_monthly,
 			low_balance_threshold = EXCLUDED.low_balance_threshold,
 			auto_topup_enabled = EXCLUDED.auto_topup_enabled,
 			auto_topup_pack = EXCLUDED.auto_topup_pack,
@@ -81,6 +85,7 @@ func (r *aiSettingsRepository) Upsert(ctx context.Context, in *models.AISpendSet
 			updated_at = now()
 		RETURNING `+aiSettingsCols,
 		in.OrgID, in.SpendLimitDaily, in.SpendLimitWeekly, in.SpendLimitMonthly,
+		in.MemberLimitMonthly,
 		in.LowBalanceThreshold, in.AutoTopupEnabled, in.AutoTopupPack,
 		in.AutoTopupThreshold, in.AutoTopupMaxPerMonth), s)
 	if err != nil {

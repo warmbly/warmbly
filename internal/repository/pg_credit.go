@@ -71,6 +71,10 @@ type CreditRepository interface {
 	// starts (calendar day / ISO week / calendar month, all UTC).
 	SpentInWindows(ctx context.Context, orgID uuid.UUID, dayStart, weekStart, monthStart time.Time) (day, week, month int, err error)
 
+	// MemberSpentSince sums the credits a specific member has debited since
+	// `since` (attributed via actor_user_id; system work is not counted).
+	MemberSpentSince(ctx context.Context, orgID, userID uuid.UUID, since time.Time) (int, error)
+
 	// UsageDaily returns per-UTC-day debit totals since `since`, oldest first.
 	UsageDaily(ctx context.Context, orgID uuid.UUID, since time.Time) ([]models.CreditUsagePoint, error)
 
@@ -357,6 +361,19 @@ func (r *creditRepository) SpentInWindows(ctx context.Context, orgID uuid.UUID, 
 		return 0, 0, 0, err
 	}
 	return day, week, month, nil
+}
+
+func (r *creditRepository) MemberSpentSince(ctx context.Context, orgID, userID uuid.UUID, since time.Time) (int, error) {
+	var spent int
+	err := r.DB.QueryRow(ctx, `
+		SELECT COALESCE(SUM(-amount), 0)
+		FROM credit_ledger_transactions
+		WHERE org_id = $1 AND actor_user_id = $2 AND amount < 0 AND created_at >= $3
+	`, orgID, userID, since).Scan(&spent)
+	if err != nil {
+		return 0, err
+	}
+	return spent, nil
 }
 
 func (r *creditRepository) UsageDaily(ctx context.Context, orgID uuid.UUID, since time.Time) ([]models.CreditUsagePoint, error) {

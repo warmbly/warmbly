@@ -39,6 +39,7 @@ export default function AIUsageCard() {
         daily: number | null;
         weekly: number | null;
         monthly: number | null;
+        memberMonthly: number | null;
         lowThreshold: number;
         autoEnabled: boolean;
         autoPack: string;
@@ -52,6 +53,7 @@ export default function AIUsageCard() {
             daily: s.spend_limit_daily,
             weekly: s.spend_limit_weekly,
             monthly: s.spend_limit_monthly,
+            memberMonthly: s.member_limit_monthly,
             lowThreshold: s.low_balance_threshold,
             autoEnabled: s.auto_topup_enabled,
             autoPack: s.auto_topup_pack,
@@ -68,6 +70,7 @@ export default function AIUsageCard() {
                     spend_limit_daily: form.daily,
                     spend_limit_weekly: form.weekly,
                     spend_limit_monthly: form.monthly,
+                    member_limit_monthly: form.memberMonthly,
                     low_balance_threshold: form.lowThreshold,
                     auto_topup_enabled: form.autoEnabled,
                     auto_topup_pack: form.autoPack,
@@ -125,6 +128,16 @@ export default function AIUsageCard() {
                         </div>
                         <p className="mt-1.5 text-[11px] text-slate-400">
                             When a limit is reached, AI features pause until the window rolls over. Leave a limit off for no cap.
+                        </p>
+                    </div>
+
+                    <div>
+                        <div className="text-[10px] uppercase tracking-[0.14em] text-slate-400 mb-2">Per-member limit</div>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                            <LimitField label="Per member, per month" value={form.memberMonthly} onChange={(v) => setForm({ ...form, memberMonthly: v })} />
+                        </div>
+                        <p className="mt-1.5 text-[11px] text-slate-400">
+                            Caps what each teammate can spend on AI per calendar month. Scheduled work (automations, inbox agent) is workspace-level and not counted against anyone. Who can use AI at all is a role permission ("Use AI") under Team.
                         </p>
                     </div>
 
