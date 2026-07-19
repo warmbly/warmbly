@@ -39,6 +39,10 @@ interface TextareaAICaretProps {
     onChange: (next: string) => void;
     // Kicks off the host's thread-grounded draft flow (the draft bar).
     onDraftReply?: () => void;
+    // Menu label + cost hint for the draft row; defaults suit the reply
+    // composer, compose passes its own ("Draft this email with AI").
+    draftLabel?: string;
+    draftCost?: string;
     // Extra context line for freeform prompts (e.g. the subject).
     contextHint?: string;
     maxLen?: number;
@@ -69,6 +73,8 @@ export default function TextareaAICaret({
     value,
     onChange,
     onDraftReply,
+    draftLabel = "Draft a reply from this thread",
+    draftCost = "from 2 credits",
     contextHint,
     maxLen,
 }: TextareaAICaretProps) {
@@ -473,8 +479,8 @@ export default function TextareaAICaret({
                                             className="w-full px-2.5 h-8 flex items-center gap-2 text-[12px] text-slate-700 hover:bg-slate-50 transition-colors"
                                         >
                                             <CornerUpLeftIcon className="w-3.5 h-3.5 text-slate-400" />
-                                            Draft a reply from this thread
-                                            <span className="ml-auto text-[10px] text-slate-300">from 2 credits</span>
+                                            {draftLabel}
+                                            <span className="ml-auto text-[10px] text-slate-300">{draftCost}</span>
                                         </button>
                                     )}
                                     <button
