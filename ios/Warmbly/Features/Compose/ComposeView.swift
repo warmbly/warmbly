@@ -58,7 +58,17 @@ struct ComposeView: View {
     @State private var aiPrompt = ""
     @State private var isRewriting = false
     @State private var aiUndo: String?
+    @State private var selection: TextSelection?
     @FocusState private var aiFocused: Bool
+
+    /// Selection captured for a custom instruction ("Editing selection" mode);
+    /// carries the body it was captured from so a stale range never slices.
+    private struct EditingSelection {
+        var range: Range<String.Index>
+        var body: String
+    }
+
+    @State private var editingSelection: EditingSelection?
 
     init(draft: ComposeDraft? = nil, onSent: @escaping (ComposeSendResponse) -> Void = { _ in }) {
         self.draft = draft
@@ -363,7 +373,7 @@ struct ComposeView: View {
     // MARK: Editor
 
     private var editor: some View {
-        TextEditor(text: $messageBody)
+        TextEditor(text: $messageBody, selection: $selection)
             .font(.body)
             .scrollContentBackground(.hidden)
             .padding(.horizontal, 11)
@@ -441,7 +451,17 @@ struct ComposeView: View {
         .padding(.vertical, 10)
     }
 
-    /// AI dropdown: grounded draft plus quick rewrites of the current body.
+    /// Text the user has highlighted in the editor, if any — AI actions then
+    /// target just that range instead of the whole draft.
+    private var selectedTextRange: Range<String.Index>? {
+        guard let selection, !selection.isInsertion,
+              case let .selection(range) = selection.indices,
+              !range.isEmpty else { return nil }
+        return range
+    }
+
+    /// AI dropdown: grounded draft, selection rewrites when text is
+    /// highlighted, and quick rewrites of the whole body otherwise.
     private var aiMenu: some View {
         Menu {
             Button {
@@ -454,7 +474,21 @@ struct ComposeView: View {
             } label: {
                 Label("Write from instructions", systemImage: "square.and.pencil")
             }
-            if !messageBody.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            // Capture the range at menu build: opening the menu can drop the
+            // editor's focus and clear the live selection state.
+            if let range = selectedTextRange {
+                Section("Selected text") {
+                    ForEach(AISelectionAction.allCases) { action in
+                        Button(action.label) {
+                            Task { await rewriteSelection(action.instruction, range) }
+                        }
+                    }
+                    Button("Custom…") {
+                        editingSelection = EditingSelection(range: range, body: messageBody)
+                        withAnimation(.snappy) { aiBarVisible = true }
+                    }
+                }
+            } else if !messageBody.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Section("Rewrite draft") {
                     Button("Improve writing") {
                         Task { await rewriteDraft("Improve the writing of this email; keep the meaning and roughly the same length") }
@@ -478,18 +512,31 @@ struct ComposeView: View {
         .disabled(isRewriting || draftPhase != .idle)
     }
 
-    /// Instruction bar: what the email should accomplish; feeds the grounded
-    /// draft endpoint rather than the freeform writer.
+    /// Instruction bar: what the email should accomplish (feeds the grounded
+    /// draft endpoint), or the edit to make when a selection is captured.
     private var aiPromptBar: some View {
         HStack(spacing: 10) {
             Image(systemName: "sparkles")
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(Tone.indigo.color)
-            TextField("What should this email do?", text: $aiPrompt, axis: .vertical)
-                .font(.subheadline)
-                .lineLimit(1 ... 3)
-                .focused($aiFocused)
-                .onSubmit { submitPrompt() }
+            if editingSelection != nil {
+                Text("Editing selection")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Tone.indigo.color)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Tone.indigo.background, in: Capsule())
+                    .fixedSize()
+            }
+            TextField(
+                editingSelection == nil ? "What should this email do?" : "Describe the edit",
+                text: $aiPrompt,
+                axis: .vertical
+            )
+            .font(.subheadline)
+            .lineLimit(1 ... 3)
+            .focused($aiFocused)
+            .onSubmit { submitPrompt() }
             Button {
                 submitPrompt()
             } label: {
@@ -501,8 +548,9 @@ struct ComposeView: View {
                     )
             }
             .disabled(aiPrompt.trimmingCharacters(in: .whitespaces).isEmpty)
-            .accessibilityLabel("Draft email")
+            .accessibilityLabel(editingSelection == nil ? "Draft email" : "Rewrite selection")
             Button {
+                editingSelection = nil
                 withAnimation(.snappy) { aiBarVisible = false }
             } label: {
                 Image(systemName: "xmark.circle.fill")
@@ -678,9 +726,28 @@ struct ComposeView: View {
 
     // MARK: AI flow
 
+    /// Routes the prompt bar's go action: a custom selection edit when a
+    /// range is captured, the grounded draft otherwise.
     private func submitPrompt() {
         let instruction = aiPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !instruction.isEmpty else { return }
+        if let editing = editingSelection {
+            guard messageBody == editing.body else {
+                store.setError("The selection changed. Highlight the text again.")
+                editingSelection = nil
+                return
+            }
+            Task {
+                if await rewriteSelection(instruction, editing.range) {
+                    editingSelection = nil
+                    withAnimation(.snappy) {
+                        aiBarVisible = false
+                        aiPrompt = ""
+                    }
+                }
+            }
+            return
+        }
         withAnimation(.snappy) {
             aiBarVisible = false
             aiPrompt = ""
@@ -688,11 +755,45 @@ struct ComposeView: View {
         startAIDraft(instruction: instruction)
     }
 
+    /// Rewrites just the highlighted range through /generation/edit; the full
+    /// draft rides along as fenced context. Bails out if the body changed
+    /// while the request was in flight (the range would slice wrong).
+    @discardableResult
+    private func rewriteSelection(_ instruction: String, _ range: Range<String.Index>) async -> Bool {
+        let original = messageBody
+        let fragment = String(original[range])
+        isRewriting = true
+        defer { isRewriting = false }
+        let subjectLine = subject.trimmingCharacters(in: .whitespaces)
+        let contextBlock = subjectLine.isEmpty ? original : "Subject: \(subjectLine)\n\n\(original)"
+        do {
+            let response: AIWriteResponse = try await env.api.post(
+                "generation/edit",
+                body: AIEditRequest(text: fragment, instruction: instruction, context: contextBlock, tone: nil),
+                idempotent: true
+            )
+            guard messageBody == original else {
+                store.setError("The draft changed while AI was working. Try again.")
+                return false
+            }
+            withAnimation(.snappy) {
+                aiUndo = original
+                messageBody.replaceSubrange(range, with: response.text)
+                selection = nil
+            }
+            return true
+        } catch {
+            handleAIError(error)
+            return false
+        }
+    }
+
     /// Kicks off the grounded compose draft. A `question` result pauses into
     /// the answer phase; a `text` result types in and springs the review bar.
     private func startAIDraft(instruction: String?) {
         guard draftPhase == .idle || draftPhase == .question else { return }
         if draftPhase == .idle { baseInstruction = instruction }
+        selection = nil
         preDraftBody = preDraftBody ?? messageBody
         withAnimation(.snappy) {
             aiBarVisible = false
@@ -871,6 +972,7 @@ struct ComposeView: View {
             withAnimation(.snappy) {
                 aiUndo = original
                 messageBody = response.text
+                selection = nil
             }
         } catch {
             handleAIError(error)
@@ -937,19 +1039,37 @@ struct ComposeView: View {
 
 /// Sender picker fed by `/unibox/compose/candidates`: the Auto row first,
 /// then every active mailbox with auth state, today's budget, history with
-/// the recipient, and the scorer's reasons.
+/// the recipient, and the scorer's reasons. Tag chips (from the org's
+/// mailbox tags, only ones actually in use) filter the list, web parity.
 struct ComposeFromPicker: View {
+    @Environment(AppEnvironment.self) private var env
     @Environment(\.dismiss) private var dismiss
 
     let store: ComposeStore
     @Binding var selection: String
 
     @State private var query = ""
+    /// Mailbox id -> tag ids, from the account directory.
+    @State private var accountTags: [String: Set<String>] = [:]
+    @State private var activeTagID: String?
+
+    /// Tag definitions that at least one candidate mailbox actually carries.
+    private var availableTags: [UserGroup] {
+        let used = Set(store.candidates.flatMap { accountTags[$0.id] ?? [] })
+        guard !used.isEmpty else { return [] }
+        return (env.session.user?.tags ?? [])
+            .filter { used.contains($0.id) }
+            .sorted { ($0.position ?? 0) < ($1.position ?? 0) }
+    }
 
     private var filtered: [ComposeCandidate] {
+        var candidates = store.candidates
+        if let activeTagID {
+            candidates = candidates.filter { accountTags[$0.id]?.contains(activeTagID) == true }
+        }
         let trimmed = query.trimmingCharacters(in: .whitespaces).lowercased()
-        guard !trimmed.isEmpty else { return store.candidates }
-        return store.candidates.filter {
+        guard !trimmed.isEmpty else { return candidates }
+        return candidates.filter {
             $0.email.lowercased().contains(trimmed)
                 || ($0.name ?? "").lowercased().contains(trimmed)
         }
@@ -958,6 +1078,11 @@ struct ComposeFromPicker: View {
     var body: some View {
         NavigationStack {
             List {
+                if !availableTags.isEmpty {
+                    tagChips
+                        .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+                        .listRowSeparator(.hidden)
+                }
                 Button {
                     selection = ""
                     dismiss()
@@ -1022,6 +1147,48 @@ struct ComposeFromPicker: View {
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
+        .task {
+            // Tag membership comes from the account directory; the picker
+            // degrades to search-only when the member can't read it.
+            guard accountTags.isEmpty else { return }
+            if let page: ListResponse<EmailAccount> = try? await env.api.get("emails", query: ["limit": "200"]) {
+                accountTags = Dictionary(
+                    page.data.map { ($0.id, Set($0.tags ?? [])) },
+                    uniquingKeysWith: { first, _ in first }
+                )
+            }
+        }
+    }
+
+    private var tagChips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(availableTags) { tag in
+                    let tint = Color(uniboxHex: tag.color) ?? WTheme.accent
+                    let active = activeTagID == tag.id
+                    Button {
+                        withAnimation(.snappy) { activeTagID = active ? nil : tag.id }
+                    } label: {
+                        HStack(spacing: 5) {
+                            Circle().fill(tint).frame(width: 7, height: 7)
+                            Text(tag.name ?? "Tag")
+                                .font(.footnote.weight(active ? .semibold : .medium))
+                                .foregroundStyle(active ? tint : Color.primary)
+                                .lineLimit(1)
+                        }
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 6)
+                        .background(
+                            active ? AnyShapeStyle(tint.opacity(0.13)) : AnyShapeStyle(Color(.secondarySystemBackground)),
+                            in: Capsule()
+                        )
+                        .overlay(Capsule().strokeBorder(active ? tint.opacity(0.45) : .clear, lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 16)
+        }
     }
 
     private var autoSubtitle: String {

@@ -1106,7 +1106,8 @@ private extension Array where Element == String {
 }
 
 /// Selection quick actions; instruction parity with the web composer.
-private enum AISelectionAction: String, CaseIterable, Identifiable {
+/// Shared by the reply composer and the compose window.
+enum AISelectionAction: String, CaseIterable, Identifiable {
     case improve, shorten, expand, fixGrammar, friendlier, moreFormal
 
     var id: String { rawValue }

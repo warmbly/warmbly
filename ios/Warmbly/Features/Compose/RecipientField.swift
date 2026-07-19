@@ -19,6 +19,7 @@ struct RecipientField<Trailing: View>: View {
     @State private var suggestions: [Contact] = []
     @State private var categories: [ContactCategory] = []
     @State private var activeCategory: ContactCategory?
+    @State private var showPicker = false
     @FocusState private var focused: Bool
 
     private var canSearch: Bool { env.session.can(.viewContacts) }
@@ -91,6 +92,23 @@ struct RecipientField<Trailing: View>: View {
                     }
                     .onChange(of: text) { commitSeparators() }
                     .frame(minWidth: 80)
+            }
+            if canSearch {
+                Button {
+                    showPicker = true
+                } label: {
+                    Image(systemName: "plus.circle")
+                        .font(.system(size: 17, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 28, height: 28)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Choose contacts")
+                .sheet(isPresented: $showPicker) {
+                    ContactPickerSheet(existing: addresses) { emails in
+                        for email in emails { append(email) }
+                    }
+                }
             }
             trailing()
         }
