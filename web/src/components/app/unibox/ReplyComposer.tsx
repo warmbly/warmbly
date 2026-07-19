@@ -5,10 +5,10 @@
 // not pre-populate body text. The user only sees this when they have
 // already committed to writing a reply to a particular message.
 //
-// Layout: a target-message preview card at the top (sender + subject
-// + dismiss), followed by labelled header rows (From, To, Cc, Bcc,
-// Subject), the body textarea, the optional signature preview, and
-// the action bar (Send / Schedule / Template / Discard).
+// Layout: a one-line target strip at the top (Reply/Forward to name and
+// subject, plus dismiss), then plain header rows (To with Cc/Bcc toggles,
+// From, unlabelled Subject), the body textarea, the optional signature
+// preview, and the action bar (Send / Schedule / Template / Discard).
 //
 // ⌘+Enter sends instantly. Each schedule preset calls /unibox/reply
 // with send_mode="scheduled" plus the concrete scheduled_at.
