@@ -20,6 +20,7 @@ import { ConnectionIndicator } from "@/components/shared/ConnectionIndicator";
 import { usePermission } from "@/hooks/usePermission";
 import ShortcutTooltip from "@/components/ui/shortcut-tooltip";
 import PresenceAvatars from "@/components/app/presence/PresenceAvatars";
+import OutboxIndicator from "@/components/app/unibox/compose/OutboxIndicator";
 import { NotificationBell } from "./NotificationBell";
 import { OrgSwitcher } from "./OrgSwitcher";
 import { PlanPill } from "./PlanPill";
@@ -136,6 +137,7 @@ export function AppHeader({ onMenu }: { onMenu?: () => void }) {
                     <CreditsMeter />
                     <div className="h-4 w-px bg-slate-200/80" />
                 </div>
+                <OutboxIndicator />
                 <PresenceAvatars />
                 <ConnectionIndicator />
                 <NotificationBell />

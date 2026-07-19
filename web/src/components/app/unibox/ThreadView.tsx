@@ -28,7 +28,8 @@ import {
 } from "lucide-react";
 
 import { MessageBubble } from "./MessageBubble";
-import { ReplyComposer, type ReplyMode } from "./ReplyComposer";
+import { ReplyComposer, type ReplyMode, type ReplySeed } from "./ReplyComposer";
+import { useOutboxStore } from "@/hooks/useOutboxStore";
 import AgentDraftCard from "./AgentDraftCard";
 import ResourceViewers from "@/components/app/presence/ResourceViewers";
 import { DateTimePicker } from "@/components/ui/DateTimePicker";
@@ -206,9 +207,35 @@ export function ThreadView({ threadId, emailId }: ThreadViewProps) {
     messageId: string;
     mode: ReplyMode;
   } | null>(null);
+  // Restored content for a cancelled undo-send reply; only set alongside
+  // replyState by the restore effect below, cleared on any manual open.
+  const [replySeed, setReplySeed] = React.useState<ReplySeed | null>(null);
+  const openReply = React.useCallback(
+    (messageId: string, mode: ReplyMode, seed: ReplySeed | null = null) => {
+      setReplySeed(seed);
+      setReplyState({ messageId, mode });
+    },
+    [],
+  );
   React.useEffect(() => {
     setReplyState(null);
+    setReplySeed(null);
   }, [threadId]);
+
+  // A cancelled undo-send reply for this thread reopens the composer with
+  // the exact content that was about to go out.
+  const pendingRestore = useOutboxStore((s) => s.pendingReplyRestore);
+  React.useEffect(() => {
+    if (!pendingRestore || pendingRestore.threadId !== threadId) return;
+    useOutboxStore.getState().setReplyRestore(null);
+    openReply(pendingRestore.messageId, pendingRestore.mode, {
+      to: pendingRestore.to,
+      cc: pendingRestore.cc,
+      bcc: pendingRestore.bcc,
+      subject: pendingRestore.subject,
+      body: pendingRestore.body,
+    });
+  }, [pendingRestore, threadId, openReply]);
 
   // Collaboration: claim this thread while it's open so teammates see
   // "X is viewing" (and "replying" once a composer is mounted) instead of
@@ -525,12 +552,8 @@ export function ThreadView({ threadId, emailId }: ThreadViewProps) {
           <MessageBubble
             key={email.id}
             email={email}
-            onReply={() =>
-              setReplyState({ messageId: email.id, mode: "reply" })
-            }
-            onForward={() =>
-              setReplyState({ messageId: email.id, mode: "forward" })
-            }
+            onReply={() => openReply(email.id, "reply")}
+            onForward={() => openReply(email.id, "forward")}
           />
         ))}
         {(scheduledQ.data?.data ?? []).map((item) => (
@@ -557,7 +580,11 @@ export function ThreadView({ threadId, emailId }: ThreadViewProps) {
                 threadId={threadId}
                 replyTo={target}
                 mode={replyState.mode}
-                onClose={() => setReplyState(null)}
+                seed={replySeed ?? undefined}
+                onClose={() => {
+                  setReplyState(null);
+                  setReplySeed(null);
+                }}
               />
             ) : null;
           })()
@@ -575,7 +602,7 @@ export function ThreadView({ threadId, emailId }: ThreadViewProps) {
               onClick={() => {
                 const last = messages[messages.length - 1];
                 if (!last) return;
-                setReplyState({ messageId: last.id, mode: "reply" });
+                openReply(last.id, "reply");
               }}
               className="h-7 px-2.5 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors"
             >
@@ -587,7 +614,7 @@ export function ThreadView({ threadId, emailId }: ThreadViewProps) {
               onClick={() => {
                 const last = messages[messages.length - 1];
                 if (!last) return;
-                setReplyState({ messageId: last.id, mode: "forward" });
+                openReply(last.id, "forward");
               }}
               className="h-7 px-2 rounded-md border border-slate-200 hover:border-slate-300 text-slate-700 hover:text-slate-900 text-[12px] inline-flex items-center gap-1.5 transition-colors"
             >

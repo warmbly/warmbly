@@ -33,6 +33,8 @@ import {
     XIcon,
 } from "lucide-react";
 import { useComposeStore } from "@/hooks/useComposeStore";
+import { resolveSendAt, useOutboxStore } from "@/hooks/useOutboxStore";
+import { useUserProfile } from "@/hooks/context/user";
 import { useAppStore } from "@/stores";
 import useComposeCandidates from "@/lib/api/hooks/app/unibox/useComposeCandidates";
 import useComposeSend from "@/lib/api/hooks/app/unibox/useComposeSend";
@@ -162,6 +164,8 @@ function ComposeWindowInner({
     const minimized = useComposeStore((s) => s.minimized);
     const setMinimized = useComposeStore((s) => s.setMinimized);
     const accounts = useAppStore((s) => s.emails);
+    const { user } = useUserProfile();
+    const addOutbox = useOutboxStore((s) => s.add);
 
     const [to, setTo] = React.useState<string[]>(
         seed ? seed.to : prefillTo ? [prefillTo] : [],
@@ -344,11 +348,36 @@ function ComposeWindowInner({
                     ? { send_mode: "scheduled" as const, scheduled_at: scheduledAt.toISOString() }
                     : { send_mode: "instant" as const }),
             });
-            toast.success(
-                scheduledAt
-                    ? `Scheduled for ${formatFriendly(scheduledAt)} from ${res.account_email}`
-                    : `Sent from ${res.account_email}${res.auto ? " · picked automatically" : ""}`,
-            );
+            if (!scheduledAt && res.send_mode === "instant") {
+                // Undo window: the send is queued a few seconds out. No
+                // "sent" toast; the header pill counts down and can cancel,
+                // reopening the composer from this seed.
+                const nowIso = new Date().toISOString();
+                addOutbox({
+                    taskId: res.task_id,
+                    scheduledAt: resolveSendAt(res.scheduled_at, user.undo_send_seconds || 30),
+                    kind: "compose",
+                    to,
+                    subject: subject.trim(),
+                    seed: {
+                        id: crypto.randomUUID(),
+                        email_account_id: accountSel === "auto" ? null : accountSel,
+                        to,
+                        cc,
+                        bcc,
+                        subject: subject.trim(),
+                        body: trimmedBody,
+                        updated_at: nowIso,
+                        created_at: nowIso,
+                    },
+                });
+            } else {
+                toast.success(
+                    scheduledAt
+                        ? `Scheduled for ${formatFriendly(scheduledAt)} from ${res.account_email}`
+                        : `Sent from ${res.account_email}${res.auto ? " · picked automatically" : ""}`,
+                );
+            }
             // The email is on its way; its draft is done.
             if (everSavedRef.current) deleteMut.mutate(draftIdRef.current);
             closeCompose();

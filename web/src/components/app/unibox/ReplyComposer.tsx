@@ -35,6 +35,8 @@ import TemplatePickerContent from "./TemplatePicker";
 import InsertBookingLink from "./InsertBookingLink";
 import ContactRecipientField from "./compose/ContactRecipientField";
 import useUniboxOverview from "@/lib/api/hooks/app/unibox/useUniboxOverview";
+import { resolveSendAt, useOutboxStore } from "@/hooks/useOutboxStore";
+import { useUserProfile } from "@/hooks/context/user";
 import { useAppStore } from "@/stores";
 import useDraftReply from "@/lib/api/hooks/app/unibox/useDraftReply";
 import AIDraftBar, { useAIDraft } from "@/components/app/ai/AIDraftBar";
@@ -53,10 +55,21 @@ import { cn } from "@/lib/utils";
 
 export type ReplyMode = "reply" | "forward";
 
+// Restored content for a cancelled undo-send reply: the composer reopens
+// with exactly what was about to go out.
+export interface ReplySeed {
+    to: string[];
+    cc: string[];
+    bcc: string[];
+    subject: string;
+    body: string;
+}
+
 interface ReplyComposerProps {
     threadId: string;
     replyTo: UniboxEmail;
     mode: ReplyMode;
+    seed?: ReplySeed;
     onClose: () => void;
 }
 
@@ -153,18 +166,20 @@ function deriveDefaults(replyTo: UniboxEmail, mode: ReplyMode) {
     return { to, subject };
 }
 
-export function ReplyComposer({ threadId, replyTo, mode, onClose }: ReplyComposerProps) {
+export function ReplyComposer({ threadId, replyTo, mode, seed, onClose }: ReplyComposerProps) {
     const accounts = useAppStore((s) => s.emails);
+    const { user } = useUserProfile();
+    const addOutbox = useOutboxStore((s) => s.add);
 
     const initial = React.useMemo(() => deriveDefaults(replyTo, mode), [replyTo, mode]);
 
-    const [body, setBody] = React.useState("");
-    const [subject, setSubject] = React.useState(initial.subject);
-    const [to, setTo] = React.useState<string[]>(initial.to);
-    const [cc, setCc] = React.useState<string[]>([]);
-    const [bcc, setBcc] = React.useState<string[]>([]);
-    const [showCc, setShowCc] = React.useState(false);
-    const [showBcc, setShowBcc] = React.useState(false);
+    const [body, setBody] = React.useState(seed?.body ?? "");
+    const [subject, setSubject] = React.useState(seed?.subject ?? initial.subject);
+    const [to, setTo] = React.useState<string[]>(seed?.to ?? initial.to);
+    const [cc, setCc] = React.useState<string[]>(seed?.cc ?? []);
+    const [bcc, setBcc] = React.useState<string[]>(seed?.bcc ?? []);
+    const [showCc, setShowCc] = React.useState((seed?.cc.length ?? 0) > 0);
+    const [showBcc, setShowBcc] = React.useState((seed?.bcc.length ?? 0) > 0);
     const [isSending, setIsSending] = React.useState(false);
 
     const [scheduleOpen, setScheduleOpen] = React.useState(false);
@@ -194,16 +209,17 @@ export function ReplyComposer({ threadId, replyTo, mode, onClose }: ReplyCompose
 
     // Reset whenever the user picks a different target message or
     // switches between reply and forward. Without this the body, chips,
-    // and subject would persist across separate compose sessions.
+    // and subject would persist across separate compose sessions. A
+    // restore seed (cancelled undo send) wins over the derived defaults.
     React.useEffect(() => {
-        setSubject(initial.subject);
-        setTo(initial.to);
-        setCc([]);
-        setBcc([]);
-        setShowCc(false);
-        setShowBcc(false);
-        setBody("");
-    }, [initial.subject, initial.to, replyTo.id, mode]);
+        setSubject(seed?.subject ?? initial.subject);
+        setTo(seed?.to ?? initial.to);
+        setCc(seed?.cc ?? []);
+        setBcc(seed?.bcc ?? []);
+        setShowCc((seed?.cc.length ?? 0) > 0);
+        setShowBcc((seed?.bcc.length ?? 0) > 0);
+        setBody(seed?.body ?? "");
+    }, [initial.subject, initial.to, replyTo.id, mode, seed]);
 
     // Resolve the sending mailbox from the target message's
     // account_id. We look it up in the global emails store so we have
@@ -245,13 +261,14 @@ export function ReplyComposer({ threadId, replyTo, mode, onClose }: ReplyCompose
         }
 
         setIsSending(true);
+        const sentSubject = subject.trim() || (mode === "forward" ? "Fwd:" : "Re:");
         try {
-            await sendReply({
+            const res = await sendReply({
                 email_account_id: accountId,
                 to,
                 cc: cc.length ? cc : undefined,
                 bcc: bcc.length ? bcc : undefined,
-                subject: subject.trim() || (mode === "forward" ? "Fwd:" : "Re:"),
+                subject: sentSubject,
                 body_plain: trimmedBody,
                 body_html: trimmedBody.replace(/\n/g, "<br />"),
                 thread_id: mode === "reply" ? threadId : undefined,
@@ -262,13 +279,37 @@ export function ReplyComposer({ threadId, replyTo, mode, onClose }: ReplyCompose
                       }
                     : { send_mode: "instant" as const }),
             });
-            toast.success(
-                scheduledAt
-                    ? `Scheduled for ${formatFriendly(scheduledAt)}`
-                    : mode === "forward"
-                      ? "Forward queued"
-                      : "Reply queued",
-            );
+            if (!scheduledAt && res.send_mode === "instant") {
+                // Undo window: no "queued" toast; the header pill counts
+                // down and can cancel, reopening this composer via the
+                // reply payload.
+                addOutbox({
+                    taskId: res.task_id,
+                    scheduledAt: resolveSendAt(res.scheduled_at, user.undo_send_seconds || 30),
+                    kind: "reply",
+                    to,
+                    subject: sentSubject,
+                    threadId,
+                    reply: {
+                        threadId,
+                        messageId: replyTo.id,
+                        mode,
+                        to,
+                        cc,
+                        bcc,
+                        subject: sentSubject,
+                        body: trimmedBody,
+                    },
+                });
+            } else {
+                toast.success(
+                    scheduledAt
+                        ? `Scheduled for ${formatFriendly(scheduledAt)}`
+                        : mode === "forward"
+                          ? "Forward queued"
+                          : "Reply queued",
+                );
+            }
             setScheduleOpen(false);
             setCustomMode(false);
             onClose();
