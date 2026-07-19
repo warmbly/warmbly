@@ -15,9 +15,23 @@ type ComposeAffinity struct {
 	LastAt   *time.Time
 }
 
+// ComposeDraft is an autosaved, per-user working copy of an unsent email
+// from the compose window.
+type ComposeDraft struct {
+	ID             uuid.UUID  `json:"id"`
+	EmailAccountID *uuid.UUID `json:"email_account_id,omitempty"`
+	To             []string   `json:"to"`
+	CC             []string   `json:"cc"`
+	BCC            []string   `json:"bcc"`
+	Subject        string     `json:"subject"`
+	Body           string     `json:"body"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+	CreatedAt      time.Time  `json:"created_at"`
+}
+
 // ComposeRepository backs the compose mailbox picker: which of the org's
 // mailboxes already talk to a recipient, and how much of each mailbox's
-// daily budget is spent.
+// daily budget is spent. It also owns the per-user compose drafts.
 type ComposeRepository interface {
 	// AddressHistoryByAccount returns, per org mailbox, the message count and
 	// most recent timestamp of traffic with the address. It merges synced
@@ -27,6 +41,14 @@ type ComposeRepository interface {
 	// TodaySentCounts returns today's campaign-send count per account
 	// (accounts with no sends today are absent from the map).
 	TodaySentCounts(ctx context.Context, accountIDs []uuid.UUID) (map[uuid.UUID]int, error)
+
+	// UpsertDraft creates or overwrites the draft (id is client-generated so
+	// autosave is idempotent). Ownership is enforced on the (id, user) pair.
+	UpsertDraft(ctx context.Context, userID, orgID uuid.UUID, d *ComposeDraft) error
+	// ListDrafts returns the user's drafts in this org, newest first.
+	ListDrafts(ctx context.Context, userID, orgID uuid.UUID) ([]ComposeDraft, error)
+	// DeleteDraft removes the user's draft; deleting a missing one is a no-op.
+	DeleteDraft(ctx context.Context, userID, id uuid.UUID) error
 }
 
 type composeRepository struct {
@@ -84,6 +106,72 @@ func (r *composeRepository) AddressHistoryByAccount(ctx context.Context, orgID u
 		out[id] = ComposeAffinity{Messages: messages, LastAt: lastAt}
 	}
 	return out, rows.Err()
+}
+
+func (r *composeRepository) UpsertDraft(ctx context.Context, userID, orgID uuid.UUID, d *ComposeDraft) error {
+	query := `
+		INSERT INTO compose_drafts (id, user_id, organization_id, email_account_id, to_addrs, cc, bcc, subject, body, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
+		ON CONFLICT (id) DO UPDATE SET
+			email_account_id = EXCLUDED.email_account_id,
+			to_addrs = EXCLUDED.to_addrs,
+			cc = EXCLUDED.cc,
+			bcc = EXCLUDED.bcc,
+			subject = EXCLUDED.subject,
+			body = EXCLUDED.body,
+			updated_at = NOW()
+		WHERE compose_drafts.user_id = $2
+	`
+	args := []any{d.ID, userID, orgID, d.EmailAccountID, d.To, d.CC, d.BCC, d.Subject, d.Body}
+	if _, err := r.db.Exec(ctx, query, args...); err != nil {
+		db.CaptureError(err, query, args, "exec")
+		return err
+	}
+	return nil
+}
+
+func (r *composeRepository) ListDrafts(ctx context.Context, userID, orgID uuid.UUID) ([]ComposeDraft, error) {
+	query := `
+		SELECT id, email_account_id, to_addrs, cc, bcc, subject, body, updated_at, created_at
+		FROM compose_drafts
+		WHERE user_id = $1 AND organization_id = $2
+		ORDER BY updated_at DESC
+		LIMIT 100
+	`
+	rows, err := r.db.Query(ctx, query, userID, orgID)
+	if err != nil {
+		db.CaptureError(err, query, []any{userID, orgID}, "query")
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []ComposeDraft{}
+	for rows.Next() {
+		var d ComposeDraft
+		if err := rows.Scan(&d.ID, &d.EmailAccountID, &d.To, &d.CC, &d.BCC, &d.Subject, &d.Body, &d.UpdatedAt, &d.CreatedAt); err != nil {
+			continue
+		}
+		if d.To == nil {
+			d.To = []string{}
+		}
+		if d.CC == nil {
+			d.CC = []string{}
+		}
+		if d.BCC == nil {
+			d.BCC = []string{}
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+func (r *composeRepository) DeleteDraft(ctx context.Context, userID, id uuid.UUID) error {
+	query := `DELETE FROM compose_drafts WHERE id = $1 AND user_id = $2`
+	if _, err := r.db.Exec(ctx, query, id, userID); err != nil {
+		db.CaptureError(err, query, []any{id, userID}, "exec")
+		return err
+	}
+	return nil
 }
 
 func (r *composeRepository) TodaySentCounts(ctx context.Context, accountIDs []uuid.UUID) (map[uuid.UUID]int, error) {

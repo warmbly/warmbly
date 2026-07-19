@@ -47,6 +47,11 @@ type Service interface {
 	// otherwise the best-scored candidate. The bool reports whether the
 	// pick was automatic.
 	Resolve(ctx context.Context, userID, orgID uuid.UUID, accountID *uuid.UUID, address string) (*Candidate, bool, *errx.Error)
+
+	// Drafts: autosaved per-user working copies from the compose window.
+	UpsertDraft(ctx context.Context, userID, orgID uuid.UUID, d *repository.ComposeDraft) *errx.Error
+	ListDrafts(ctx context.Context, userID, orgID uuid.UUID) ([]repository.ComposeDraft, *errx.Error)
+	DeleteDraft(ctx context.Context, userID, id uuid.UUID) *errx.Error
 }
 
 type service struct {
@@ -145,6 +150,28 @@ func (s *service) Resolve(ctx context.Context, userID, orgID uuid.UUID, accountI
 		}
 	}
 	return &candidates[0], true, nil
+}
+
+func (s *service) UpsertDraft(ctx context.Context, userID, orgID uuid.UUID, d *repository.ComposeDraft) *errx.Error {
+	if err := s.composeRepo.UpsertDraft(ctx, userID, orgID, d); err != nil {
+		return errx.InternalError()
+	}
+	return nil
+}
+
+func (s *service) ListDrafts(ctx context.Context, userID, orgID uuid.UUID) ([]repository.ComposeDraft, *errx.Error) {
+	drafts, err := s.composeRepo.ListDrafts(ctx, userID, orgID)
+	if err != nil {
+		return nil, errx.InternalError()
+	}
+	return drafts, nil
+}
+
+func (s *service) DeleteDraft(ctx context.Context, userID, id uuid.UUID) *errx.Error {
+	if err := s.composeRepo.DeleteDraft(ctx, userID, id); err != nil {
+		return errx.InternalError()
+	}
+	return nil
 }
 
 // score fills Score + Reasons. Affinity dominates (+1000 band), budget and

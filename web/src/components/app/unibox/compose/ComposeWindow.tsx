@@ -33,12 +33,13 @@ import {
     XIcon,
 } from "lucide-react";
 import { useComposeStore } from "@/hooks/useComposeStore";
-import { useConfirm } from "@/hooks/context/confirm";
 import { useAppStore } from "@/stores";
 import useComposeCandidates from "@/lib/api/hooks/app/unibox/useComposeCandidates";
 import useComposeSend from "@/lib/api/hooks/app/unibox/useComposeSend";
 import useGenerateWrite from "@/lib/api/hooks/app/generation/useGenerateWrite";
 import useComposeDraft from "@/lib/api/hooks/app/unibox/useComposeDraft";
+import { useDeleteComposeDraft, useSaveComposeDraft } from "@/lib/api/hooks/app/unibox/useComposeDrafts";
+import type { ComposeDraft } from "@/lib/api/client/app/unibox/composeDrafts";
 import useTemplates from "@/lib/api/hooks/app/templates/useTemplates";
 import type Template from "@/lib/api/models/app/templates/Template";
 import TemplatePickerContent from "../TemplatePicker";
@@ -107,6 +108,19 @@ function formatFriendly(d: Date): string {
     });
 }
 
+// draftSnapshot serializes the savable fields so autosave can cheaply tell
+// "changed since last save" without deep comparisons.
+function draftSnapshot(d: {
+    to: string[];
+    cc: string[];
+    bcc: string[];
+    subject: string;
+    body: string;
+    email_account_id?: string | null;
+}): string {
+    return JSON.stringify([d.to, d.cc, d.bcc, d.subject, d.body, d.email_account_id ?? "auto"]);
+}
+
 const SCHEDULE_PRESETS: { label: string; at: () => Date }[] = [
     { label: "In 1 hour", at: () => offsetHours(1) },
     { label: "In 3 hours", at: () => offsetHours(3) },
@@ -117,29 +131,38 @@ const SCHEDULE_PRESETS: { label: string; at: () => Date }[] = [
 export default function ComposeWindow() {
     const open = useComposeStore((s) => s.open);
     const prefillTo = useComposeStore((s) => s.prefillTo);
+    const seed = useComposeStore((s) => s.seed);
+    const session = useComposeStore((s) => s.session);
 
     return (
         <AnimatePresence>
-            {open && <ComposeWindowInner key="compose" prefillTo={prefillTo} />}
+            {open && <ComposeWindowInner key={session} prefillTo={prefillTo} seed={seed} />}
         </AnimatePresence>
     );
 }
 
-function ComposeWindowInner({ prefillTo }: { prefillTo: string | null }) {
+function ComposeWindowInner({
+    prefillTo,
+    seed,
+}: {
+    prefillTo: string | null;
+    seed: ComposeDraft | null;
+}) {
     const closeCompose = useComposeStore((s) => s.closeCompose);
     const minimized = useComposeStore((s) => s.minimized);
     const setMinimized = useComposeStore((s) => s.setMinimized);
-    const confirm = useConfirm();
     const accounts = useAppStore((s) => s.emails);
 
-    const [to, setTo] = React.useState<string[]>(prefillTo ? [prefillTo] : []);
-    const [cc, setCc] = React.useState<string[]>([]);
-    const [bcc, setBcc] = React.useState<string[]>([]);
-    const [showCc, setShowCc] = React.useState(false);
-    const [showBcc, setShowBcc] = React.useState(false);
-    const [subject, setSubject] = React.useState("");
-    const [body, setBody] = React.useState("");
-    const [accountSel, setAccountSel] = React.useState("auto");
+    const [to, setTo] = React.useState<string[]>(
+        seed ? seed.to : prefillTo ? [prefillTo] : [],
+    );
+    const [cc, setCc] = React.useState<string[]>(seed?.cc ?? []);
+    const [bcc, setBcc] = React.useState<string[]>(seed?.bcc ?? []);
+    const [showCc, setShowCc] = React.useState((seed?.cc?.length ?? 0) > 0);
+    const [showBcc, setShowBcc] = React.useState((seed?.bcc?.length ?? 0) > 0);
+    const [subject, setSubject] = React.useState(seed?.subject ?? "");
+    const [body, setBody] = React.useState(seed?.body ?? "");
+    const [accountSel, setAccountSel] = React.useState(seed?.email_account_id || "auto");
     const [historyOpen, setHistoryOpen] = React.useState(false);
     const [isSending, setIsSending] = React.useState(false);
     const [scheduleOpen, setScheduleOpen] = React.useState(false);
@@ -239,13 +262,54 @@ function ComposeWindowInner({ prefillTo }: { prefillTo: string | null }) {
         !isSending;
 
     const dirty = to.length > 0 || cc.length > 0 || bcc.length > 0 || !!subject.trim() || !!trimmedBody;
+
+    // ── Autosave. The draft id is client-generated (or the resumed seed's),
+    // so the debounced PUT is idempotent. Everything the user types survives
+    // a close, a reload, or switching to another draft.
+    const draftIdRef = React.useRef(seed?.id ?? crypto.randomUUID());
+    const everSavedRef = React.useRef(!!seed);
+    const lastSavedRef = React.useRef(seed ? draftSnapshot(seed) : "");
+    const saveMut = useSaveComposeDraft();
+    const deleteMut = useDeleteComposeDraft();
+
+    const currentSnapshot = draftSnapshot({ to, cc, bcc, subject, body, email_account_id: accountSel });
+    const saveNow = React.useCallback(() => {
+        if (!dirty) return;
+        if (currentSnapshot === lastSavedRef.current) return;
+        lastSavedRef.current = currentSnapshot;
+        everSavedRef.current = true;
+        saveMut.mutate({
+            id: draftIdRef.current,
+            data: {
+                email_account_id: accountSel === "auto" ? undefined : accountSel,
+                to,
+                cc,
+                bcc,
+                subject,
+                body,
+            },
+        });
+    }, [accountSel, bcc, body, cc, currentSnapshot, dirty, saveMut, subject, to]);
+
+    React.useEffect(() => {
+        if (!dirty || currentSnapshot === lastSavedRef.current) return;
+        const t = window.setTimeout(saveNow, 1200);
+        return () => window.clearTimeout(t);
+    }, [currentSnapshot, dirty, saveNow]);
+
+    const saved = dirty && currentSnapshot === lastSavedRef.current && !saveMut.isPending;
+
+    // Closing never loses work: dirty content is flushed to Drafts, an
+    // emptied-out draft is deleted.
     const requestClose = React.useCallback(() => {
         if (dirty) {
-            confirm.show("Discard this draft?", async () => closeCompose());
-        } else {
-            closeCompose();
+            saveNow();
+            toast.success("Saved to Drafts");
+        } else if (everSavedRef.current) {
+            deleteMut.mutate(draftIdRef.current);
         }
-    }, [closeCompose, confirm, dirty]);
+        closeCompose();
+    }, [closeCompose, deleteMut, dirty, saveNow]);
 
     const send = async (scheduledAt?: Date) => {
         if (!canSend) {
@@ -275,6 +339,8 @@ function ComposeWindowInner({ prefillTo }: { prefillTo: string | null }) {
                     ? `Scheduled for ${formatFriendly(scheduledAt)} from ${res.account_email}`
                     : `Sent from ${res.account_email}${res.auto ? " · picked automatically" : ""}`,
             );
+            // The email is on its way; its draft is done.
+            if (everSavedRef.current) deleteMut.mutate(draftIdRef.current);
             closeCompose();
         } catch (e) {
             toast.error(buildError(e as AppError));
@@ -338,6 +404,11 @@ function ComposeWindowInner({ prefillTo }: { prefillTo: string | null }) {
                         ) : null}
                     </span>
                     <div className="flex items-center gap-0.5 shrink-0">
+                        {!minimized && dirty && (
+                            <span className="mr-1 text-[10px] text-slate-400 select-none">
+                                {saveMut.isPending ? "Saving…" : saved ? "Saved" : ""}
+                            </span>
+                        )}
                         {!minimized && (
                             <button
                                 type="button"

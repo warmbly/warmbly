@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import useUniboxOverview from "@/lib/api/hooks/app/unibox/useUniboxOverview";
 import ShortcutTooltip from "@/components/ui/shortcut-tooltip";
+import ComposeDraftsItem from "@/components/app/unibox/compose/ComposeDraftsItem";
 import { useComposeStore } from "@/hooks/useComposeStore";
 import { cn } from "@/lib/utils";
 
@@ -84,6 +85,7 @@ export function ScopeRail({ scope, onChange }: ScopeRailProps) {
             Compose
           </button>
         </ShortcutTooltip>
+        <ComposeDraftsItem />
       </div>
       <Section label="Inbox">
         <Item
