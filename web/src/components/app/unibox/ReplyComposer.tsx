@@ -33,6 +33,7 @@ import { DateTimePicker } from "@/components/ui/DateTimePicker";
 import useTemplates from "@/lib/api/hooks/app/templates/useTemplates";
 import TemplatePickerContent from "./TemplatePicker";
 import InsertBookingLink from "./InsertBookingLink";
+import ContactRecipientField from "./compose/ContactRecipientField";
 import useUniboxOverview from "@/lib/api/hooks/app/unibox/useUniboxOverview";
 import { useAppStore } from "@/stores";
 import useDraftReply from "@/lib/api/hooks/app/unibox/useDraftReply";
@@ -391,7 +392,7 @@ export function ReplyComposer({ threadId, replyTo, mode, onClose }: ReplyCompose
                 divider column. */}
             <div className="shrink-0 bg-white">
                 <HeaderRow label="To">
-                    <RecipientField value={to} onChange={setTo} placeholder="name@example.com" />
+                    <ContactRecipientField value={to} onChange={setTo} placeholder="name@example.com" />
                     {(!showCc || !showBcc) && (
                         <div className="ml-auto flex items-center gap-0.5 shrink-0 self-start pt-px">
                             {!showCc && (
@@ -424,11 +425,7 @@ export function ReplyComposer({ threadId, replyTo, mode, onClose }: ReplyCompose
                             setShowCc(false);
                         }}
                     >
-                        <RecipientField
-                            value={cc}
-                            onChange={setCc}
-                            placeholder="Add Cc recipients"
-                        />
+                        <ContactRecipientField value={cc} onChange={setCc} placeholder="Add Cc recipients" />
                     </HeaderRow>
                 )}
                 {showBcc && (
@@ -439,11 +436,7 @@ export function ReplyComposer({ threadId, replyTo, mode, onClose }: ReplyCompose
                             setShowBcc(false);
                         }}
                     >
-                        <RecipientField
-                            value={bcc}
-                            onChange={setBcc}
-                            placeholder="Add Bcc recipients"
-                        />
+                        <ContactRecipientField value={bcc} onChange={setBcc} placeholder="Add Bcc recipients" />
                     </HeaderRow>
                 )}
 
@@ -789,90 +782,3 @@ function HeaderRow({
     );
 }
 
-// RecipientField : chip-based editor. Enter / "," / Tab / blur commits
-// the in-progress text as a chip. Backspace on empty input removes the
-// last chip. Chips wrap to multiple lines via the parent's
-// `flex-wrap`, so Cc/Bcc with many recipients stays readable.
-function RecipientField({
-    value,
-    onChange,
-    placeholder,
-}: {
-    value: string[];
-    onChange: (next: string[]) => void;
-    placeholder: string;
-}) {
-    const [input, setInput] = React.useState("");
-
-    const commit = (raw: string) => {
-        const trimmed = raw.trim().replace(/,$/, "").trim();
-        if (!trimmed) return;
-        if (value.includes(trimmed)) {
-            setInput("");
-            return;
-        }
-        onChange([...value, trimmed]);
-        setInput("");
-    };
-
-    return (
-        <>
-            {value.map((v) => (
-                <span
-                    key={v}
-                    className={cn(
-                        "inline-flex items-center gap-1 h-5 pl-1.5 pr-0.5 rounded-md text-[11px] font-medium max-w-full min-w-0 border",
-                        looksLikeEmail(v)
-                            ? "bg-sky-50 text-sky-800 border-sky-200"
-                            : "bg-rose-50 text-rose-800 border-rose-200",
-                    )}
-                    title={v}
-                >
-                    <span className="font-mono truncate">{v}</span>
-                    <button
-                        type="button"
-                        onClick={() => onChange(value.filter((x) => x !== v))}
-                        aria-label={`Remove ${v}`}
-                        className="size-4 shrink-0 inline-flex items-center justify-center rounded hover:bg-black/10"
-                    >
-                        <XIcon className="w-2.5 h-2.5" />
-                    </button>
-                </span>
-            ))}
-            <input
-                type="email"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder={value.length === 0 ? placeholder : ""}
-                onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === "," || e.key === "Tab") {
-                        if (input.trim()) {
-                            e.preventDefault();
-                            commit(input);
-                        }
-                    } else if (e.key === "Backspace" && !input && value.length > 0) {
-                        e.preventDefault();
-                        onChange(value.slice(0, -1));
-                    }
-                }}
-                onBlur={() => commit(input)}
-                onPaste={(e) => {
-                    const text = e.clipboardData.getData("text");
-                    if (text.includes(",") || text.includes(" ")) {
-                        e.preventDefault();
-                        const parts = text
-                            .split(/[,\s]+/)
-                            .map((s) => s.trim())
-                            .filter(Boolean);
-                        const fresh = [...value];
-                        for (const p of parts) {
-                            if (!fresh.includes(p)) fresh.push(p);
-                        }
-                        onChange(fresh);
-                    }
-                }}
-                className="flex-1 min-w-[14ch] h-5 bg-transparent text-[11.5px] text-slate-900 placeholder:text-slate-400 outline-none font-mono"
-            />
-        </>
-    );
-}
