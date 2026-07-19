@@ -85,16 +85,13 @@ export default function MailboxPicker({ value, onChange, candidates, loading }: 
         return m;
     }, [storeEmails]);
 
-    // Derived from the store's mailbox directory, not the candidates
-    // response, so the chips render even while candidates are still
-    // loading for a new recipient.
-    const usedTags = React.useMemo(() => {
-        const used = new Set<string>();
-        for (const e of storeEmails) for (const t of e.tags ?? []) used.add(t);
-        return storeTags
-            .filter((t) => used.has(t.id))
-            .sort((a, b) => a.position - b.position);
-    }, [storeEmails, storeTags]);
+    // Every defined tag is offered (not just ones already in use) so a tag
+    // created moments ago in the bulk bar is immediately selectable here;
+    // filtering to an unused tag lands on the existing no-match state.
+    const usedTags = React.useMemo(
+        () => [...storeTags].sort((a, b) => a.position - b.position),
+        [storeTags],
+    );
 
     const filtered = React.useMemo(() => {
         const q = search.trim().toLowerCase();

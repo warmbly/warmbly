@@ -6,6 +6,7 @@
 // raw addresses, so recipients outside the CRM work too.
 
 import React from "react";
+import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { CheckIcon, TagIcon, UserIcon, UserPlusIcon, XIcon } from "lucide-react";
 import useSearchContacts from "@/lib/api/hooks/app/contacts/useSearchContacts";
@@ -37,6 +38,9 @@ const BROWSE_SORTS: { key: SearchContactsSortBy; label: string }[] = [
     { key: "email", label: "Email" },
 ];
 
+const BROWSE_PANEL_WIDTH = 360;
+const BROWSE_PANEL_HEIGHT = 380;
+
 interface ContactRecipientFieldProps {
     value: string[];
     onChange: (next: string[]) => void;
@@ -65,8 +69,39 @@ export default function ContactRecipientField({
     const [browseCat, setBrowseCat] = React.useState<string | null>(null);
     const [browseSort, setBrowseSort] = React.useState<SearchContactsSortBy>("updated_at");
     const [browsePicked, setBrowsePicked] = React.useState<string[]>([]);
+    // Viewport anchor for the portaled panel (the compose window clips
+    // overflow, so the panel can't render inside it — same as MailboxPicker).
+    const [browseAnchor, setBrowseAnchor] = React.useState<{
+        top: number;
+        left: number;
+        up: boolean;
+    } | null>(null);
     const rootRef = React.useRef<HTMLDivElement>(null);
     useClickOutside(rootRef, () => setBrowseOpen(false));
+
+    const measureBrowse = React.useCallback(() => {
+        const el = rootRef.current;
+        if (!el) return;
+        const r = el.getBoundingClientRect();
+        // clientWidth excludes any scrollbar; innerWidth would let the
+        // panel's right edge slide underneath it.
+        const vw = document.documentElement.clientWidth;
+        const vh = window.innerHeight;
+        const left = Math.min(Math.max(r.left, 8), Math.max(8, vw - BROWSE_PANEL_WIDTH - 8));
+        const up = vh - r.bottom < BROWSE_PANEL_HEIGHT + 12 && r.top > vh - r.bottom;
+        setBrowseAnchor({ top: up ? r.top - 4 : r.bottom + 4, left, up });
+    }, []);
+
+    React.useEffect(() => {
+        if (!browseOpen) return;
+        measureBrowse();
+        window.addEventListener("scroll", measureBrowse, true);
+        window.addEventListener("resize", measureBrowse);
+        return () => {
+            window.removeEventListener("scroll", measureBrowse, true);
+            window.removeEventListener("resize", measureBrowse);
+        };
+    }, [browseOpen, measureBrowse]);
 
     const { user } = useUserProfile();
     const allCategories = React.useMemo<CategoryRef[]>(
@@ -391,15 +426,26 @@ export default function ContactRecipientField({
                 )}
             </AnimatePresence>
 
-            <AnimatePresence>
-                {browseOpen && (
-                    <motion.div
-                        initial={{ opacity: 0, y: -4 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -4 }}
-                        transition={{ duration: 0.12, ease: [0.16, 1, 0.3, 1] }}
-                        className="absolute left-0 right-0 top-full mt-1 z-40 h-[360px] flex flex-col rounded-md border border-slate-200 bg-white shadow-lg overflow-hidden"
-                    >
+            {createPortal(
+                <AnimatePresence>
+                    {browseOpen && browseAnchor && (
+                        <motion.div
+                            data-floating=""
+                            initial={{ opacity: 0, y: browseAnchor.up ? 4 : -4, scale: 0.98 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, y: browseAnchor.up ? 4 : -4, scale: 0.98 }}
+                            transition={{ duration: 0.14, ease: [0.16, 1, 0.3, 1] }}
+                            style={{
+                                position: "fixed",
+                                left: browseAnchor.left,
+                                width: BROWSE_PANEL_WIDTH,
+                                zIndex: 120,
+                                ...(browseAnchor.up
+                                    ? { bottom: window.innerHeight - browseAnchor.top }
+                                    : { top: browseAnchor.top }),
+                            }}
+                            className="max-w-[calc(100vw-16px)] h-[380px] max-h-[70vh] flex flex-col rounded-lg border border-slate-200 bg-white shadow-xl overflow-hidden"
+                        >
                         <div className="shrink-0 px-2.5 py-1.5 border-b border-slate-200">
                             <input
                                 value={browseQuery}
@@ -541,9 +587,11 @@ export default function ContactRecipientField({
                                 Add {browsePicked.length || ""}
                             </button>
                         </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
+                        </motion.div>
+                    )}
+                </AnimatePresence>,
+                document.body,
+            )}
         </div>
     );
 }
