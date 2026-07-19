@@ -29,12 +29,30 @@ export function RealtimeManager({ children }: { children: React.ReactNode }) {
   // Rather than trusting caches that may have silently diverged, mark every
   // query stale on RE-connect (not the initial connect) — active views
   // refetch immediately, background ones on next focus.
+  //
+  // Gated hard: only after a real outage (>5s down, long enough to have
+  // actually missed events) and at most once every 30s. A flapping socket
+  // otherwise refetch-storms every active query and the whole dashboard
+  // visibly reloads over and over.
+  const disconnectedAtRef = useRef<number | null>(null)
+  const lastCatchupRef = useRef(0)
   useEffect(() => {
-    if (!isConnected) return
-    if (hadConnectionRef.current) {
-      void queryClient.invalidateQueries()
+    if (!isConnected) {
+      if (hadConnectionRef.current && disconnectedAtRef.current === null) {
+        disconnectedAtRef.current = Date.now()
+      }
+      return
+    }
+    if (hadConnectionRef.current && disconnectedAtRef.current !== null) {
+      const gap = Date.now() - disconnectedAtRef.current
+      const sinceLast = Date.now() - lastCatchupRef.current
+      if (gap > 5_000 && sinceLast > 30_000) {
+        lastCatchupRef.current = Date.now()
+        void queryClient.invalidateQueries()
+      }
     }
     hadConnectionRef.current = true
+    disconnectedAtRef.current = null
   }, [isConnected, queryClient])
 
   // Sync connection status to store
