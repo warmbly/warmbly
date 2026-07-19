@@ -63,10 +63,12 @@ struct HomeView: View {
     @State private var appeared = false
     @State private var showMailboxes = false
     @State private var showAnalytics = false
+    @State private var showAssistant = false
 
     private var canAnalytics: Bool { env.session.can(.viewAnalytics) }
     private var canEmails: Bool { env.session.can(.manageEmails) }
     private var canCampaigns: Bool { env.session.can(.viewCampaigns) }
+    private var canAssistant: Bool { env.session.can(.useAI) }
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -98,6 +100,9 @@ struct HomeView: View {
             }
             .fullScreenCover(isPresented: $showAnalytics) {
                 AnalyticsRootView(onClose: { showAnalytics = false })
+            }
+            .fullScreenCover(isPresented: $showAssistant) {
+                AssistantView(page: "home")
             }
             .navigationDestination(for: EmailAccount.self) { account in
                 MailboxDetailView(account: account)
@@ -132,6 +137,9 @@ struct HomeView: View {
                         .minimumScaleFactor(0.7)
                 }
                 Spacer()
+                if canAssistant {
+                    assistantButton
+                }
                 PresenceAvatars()
                 orgMenu
             }
@@ -155,6 +163,21 @@ struct HomeView: View {
             return "\(salutation), \(name)"
         }
         return salutation
+    }
+
+    private var assistantButton: some View {
+        Button {
+            showAssistant = true
+        } label: {
+            Image(systemName: "sparkles")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 38, height: 38)
+                .background(.white.opacity(0.16), in: Circle())
+                .overlay(Circle().strokeBorder(.white.opacity(0.25), lineWidth: 1))
+        }
+        .buttonStyle(TapScaleStyle())
+        .accessibilityLabel("AI assistant")
     }
 
     private var orgMenu: some View {
