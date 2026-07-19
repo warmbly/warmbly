@@ -11,12 +11,14 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
     CheckIcon,
     ChevronDownIcon,
+    Loader2Icon,
     MessagesSquareIcon,
     SearchIcon,
     SparklesIcon,
     TagIcon,
 } from "lucide-react";
 import type { ComposeCandidate, ComposeCandidatesResponse } from "@/lib/api/models/app/unibox/Compose";
+import AnimatedHeight from "@/components/app/unibox/compose/AnimatedHeight";
 import FilterMenu from "@/components/app/unibox/compose/FilterMenu";
 import useClickOutside from "@/hooks/useClickOutside";
 import { useAppStore } from "@/stores";
@@ -169,7 +171,11 @@ export default function MailboxPicker({ value, onChange, candidates, loading }: 
                             {/* Search + tag filter header: one compact row */}
                             <div className="px-1.5 pt-1.5 pb-1 border-b border-slate-100 flex items-center gap-1">
                                 <div className="flex-1 min-w-0 flex items-center gap-1.5 px-1.5 h-6 rounded-md border border-slate-200 bg-white focus-within:border-sky-300 focus-within:ring-1 focus-within:ring-sky-100 transition-colors">
-                                    <SearchIcon className="w-3 h-3 text-slate-400 shrink-0" />
+                                    {loading ? (
+                                        <Loader2Icon className="w-3 h-3 animate-spin text-sky-500 shrink-0" />
+                                    ) : (
+                                        <SearchIcon className="w-3 h-3 text-slate-400 shrink-0" />
+                                    )}
                                     <input
                                         autoFocus
                                         value={search}
@@ -216,23 +222,33 @@ export default function MailboxPicker({ value, onChange, candidates, loading }: 
                             </button>
 
                             {/* Candidates, best first */}
-                            <div className="border-t border-slate-100 max-h-52 overflow-y-auto">
-                                {filtered.length === 0 && (
-                                    <div className="px-3 py-3 text-[11px] text-slate-400">
-                                        {accounts.length === 0
-                                            ? "No active mailboxes. Connect one under Emails."
-                                            : "No mailboxes match."}
-                                    </div>
+                            <AnimatedHeight className="border-t border-slate-100 max-h-52 overflow-y-auto">
+                                {loading && accounts.length === 0 ? (
+                                    <>
+                                        <CandidateSkeletonRow />
+                                        <CandidateSkeletonRow />
+                                        <CandidateSkeletonRow />
+                                    </>
+                                ) : (
+                                    <>
+                                        {filtered.length === 0 && (
+                                            <div className="px-3 py-3 text-[11px] text-slate-400">
+                                                {accounts.length === 0
+                                                    ? "No active mailboxes. Connect one under Emails."
+                                                    : "No mailboxes match."}
+                                            </div>
+                                        )}
+                                        {filtered.map((a) => (
+                                            <CandidateRow
+                                                key={a.id}
+                                                candidate={a}
+                                                active={value === a.id}
+                                                onPick={() => pick(a.id)}
+                                            />
+                                        ))}
+                                    </>
                                 )}
-                                {filtered.map((a) => (
-                                    <CandidateRow
-                                        key={a.id}
-                                        candidate={a}
-                                        active={value === a.id}
-                                        onPick={() => pick(a.id)}
-                                    />
-                                ))}
-                            </div>
+                            </AnimatedHeight>
                         </motion.div>
                     )}
                 </AnimatePresence>,
@@ -298,5 +314,16 @@ function CandidateRow({
             </span>
             {active && <CheckIcon className="w-3 h-3 text-sky-600 shrink-0" />}
         </button>
+    );
+}
+
+// Placeholder row while candidates are still being scored for the recipient.
+function CandidateSkeletonRow() {
+    return (
+        <div className="px-2.5 h-8 flex items-center gap-2">
+            <span className="size-1.5 rounded-full bg-slate-200 animate-pulse shrink-0" />
+            <span className="h-2 w-2/5 rounded bg-slate-100 animate-pulse" />
+            <span className="ml-auto h-2 w-8 rounded bg-slate-100/70 animate-pulse" />
+        </div>
     );
 }

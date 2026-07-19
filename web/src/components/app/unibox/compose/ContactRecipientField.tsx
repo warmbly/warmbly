@@ -11,16 +11,19 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
     ArrowUpDownIcon,
     CheckIcon,
+    Loader2Icon,
     SearchIcon,
     TagIcon,
     UserIcon,
     UserPlusIcon,
     XIcon,
 } from "lucide-react";
+import AnimatedHeight from "@/components/app/unibox/compose/AnimatedHeight";
 import FilterMenu from "@/components/app/unibox/compose/FilterMenu";
 import useSearchContacts from "@/lib/api/hooks/app/contacts/useSearchContacts";
 import { useUserProfile } from "@/hooks/context/user";
 import useClickOutside from "@/hooks/useClickOutside";
+import useDebouncedValue from "@/hooks/useDebouncedValue";
 import type Contact from "@/lib/api/models/app/contacts/Contact";
 import type { SearchContactsSortBy } from "@/lib/api/models/app/contacts/search-contacts.types";
 import { cn } from "@/lib/utils";
@@ -47,7 +50,7 @@ const BROWSE_SORTS: { key: SearchContactsSortBy; label: string }[] = [
     { key: "email", label: "Email" },
 ];
 
-const BROWSE_PANEL_WIDTH = 360;
+const BROWSE_PANEL_WIDTH = 400;
 const BROWSE_PANEL_HEIGHT = 380;
 
 interface ContactRecipientFieldProps {
@@ -119,9 +122,13 @@ export default function ContactRecipientField({
     );
 
     const query = input.trim();
+    // Only hit the API once typing pauses; keepPrevious holds the last
+    // suggestions on screen while the next query loads so the menu never
+    // flashes empty between keystrokes.
+    const debouncedQuery = useDebouncedValue(query, 300);
     const search = useSearchContacts({
         options: {
-            query,
+            query: debouncedQuery,
             filters: [],
             campaign_ids: [],
             category_ids: catFilter ? [catFilter.id] : undefined,
@@ -129,7 +136,8 @@ export default function ContactRecipientField({
             reverse: false,
         },
         limit: catFilter ? 8 : 6,
-        enabled: focused && (query.length > 0 || !!catFilter),
+        enabled: focused && (debouncedQuery.length > 0 || !!catFilter),
+        keepPrevious: true,
     });
 
     const suggestions = React.useMemo(() => {
@@ -147,15 +155,17 @@ export default function ContactRecipientField({
         return allCategories.filter((c) => c.title.toLowerCase().includes(q)).slice(0, 3);
     }, [allCategories, catFilter, query]);
 
+    const searching = search.isFetching;
     const showMenu =
         focused &&
         !browseOpen &&
         (query.length > 0 || !!catFilter) &&
-        (suggestions.length > 0 || matchedCats.length > 0);
+        (suggestions.length > 0 || matchedCats.length > 0 || searching);
 
+    const debouncedBrowseQuery = useDebouncedValue(browseQuery.trim(), 300);
     const browseSearch = useSearchContacts({
         options: {
-            query: browseQuery.trim(),
+            query: debouncedBrowseQuery,
             filters: [],
             campaign_ids: [],
             category_ids: browseCat ? [browseCat] : undefined,
@@ -164,6 +174,7 @@ export default function ContactRecipientField({
         },
         limit: 25,
         enabled: browseOpen,
+        keepPrevious: true,
     });
     const browseRows = React.useMemo(
         () => (browseSearch.contacts ?? []).filter((c) => !!c.email).slice(0, 25),
@@ -331,6 +342,9 @@ export default function ContactRecipientField({
                 }}
                 className="flex-1 min-w-[14ch] h-5 bg-transparent text-[11.5px] text-slate-900 placeholder:text-slate-400 outline-none font-mono"
             />
+            {focused && searching && (
+                <Loader2Icon className="w-3 h-3 animate-spin text-slate-300 shrink-0" />
+            )}
             <button
                 type="button"
                 onClick={() => {
@@ -357,6 +371,13 @@ export default function ContactRecipientField({
                         transition={{ duration: 0.12, ease: [0.16, 1, 0.3, 1] }}
                         className="absolute left-0 right-0 top-full mt-1 z-30 rounded-md border border-slate-200 bg-white shadow-lg overflow-hidden"
                     >
+                        <AnimatedHeight>
+                        {suggestions.length === 0 && matchedCats.length === 0 && searching && (
+                            <>
+                                <SkeletonRow />
+                                <SkeletonRow />
+                            </>
+                        )}
                         {matchedCats.map((c, i) => (
                             <button
                                 key={`cat-${c.id}`}
@@ -431,6 +452,7 @@ export default function ContactRecipientField({
                                 </button>
                             );
                         })}
+                        </AnimatedHeight>
                     </motion.div>
                 )}
             </AnimatePresence>
@@ -458,7 +480,11 @@ export default function ContactRecipientField({
                         {/* One compact header row: search + category + sort. */}
                         <div className="shrink-0 px-1.5 pt-1.5 pb-1 border-b border-slate-100 flex items-center gap-1">
                             <div className="flex-1 min-w-0 flex items-center gap-1.5 px-1.5 h-6 rounded-md border border-slate-200 bg-white focus-within:border-sky-300 focus-within:ring-1 focus-within:ring-sky-100 transition-colors">
-                                <SearchIcon className="w-3 h-3 text-slate-400 shrink-0" />
+                                {browseSearch.isFetching ? (
+                                    <Loader2Icon className="w-3 h-3 animate-spin text-sky-500 shrink-0" />
+                                ) : (
+                                    <SearchIcon className="w-3 h-3 text-slate-400 shrink-0" />
+                                )}
                                 <input
                                     value={browseQuery}
                                     onChange={(e) => setBrowseQuery(e.target.value)}
@@ -497,9 +523,14 @@ export default function ContactRecipientField({
                                 }}
                             />
                         </div>
-                        <div className="min-h-0 overflow-y-auto py-1">
+                        <AnimatedHeight className="min-h-0 overflow-y-auto py-1">
                             {browseSearch.isLoading ? (
-                                <div className="px-3 py-4 text-[11.5px] text-slate-400 text-center">Loading…</div>
+                                <>
+                                    <SkeletonRow />
+                                    <SkeletonRow />
+                                    <SkeletonRow />
+                                    <SkeletonRow />
+                                </>
                             ) : browseRows.length === 0 ? (
                                 <div className="px-3 py-4 text-[11.5px] text-slate-400 text-center">No contacts.</div>
                             ) : (
@@ -559,7 +590,7 @@ export default function ContactRecipientField({
                                     );
                                 })
                             )}
-                        </div>
+                        </AnimatedHeight>
                         {browsePicked.length > 0 && (
                             <div className="shrink-0 p-1.5 border-t border-slate-200 flex items-center gap-2">
                                 <span className="pl-1 text-[10.5px] text-slate-400">
@@ -579,6 +610,20 @@ export default function ContactRecipientField({
                 </AnimatePresence>,
                 document.body,
             )}
+        </div>
+    );
+}
+
+// Placeholder row shown while a contact search is in flight and there is
+// nothing previous to keep on screen.
+function SkeletonRow() {
+    return (
+        <div className="px-2.5 h-9 flex items-center gap-2">
+            <span className="size-5 rounded-full bg-slate-100 animate-pulse shrink-0" />
+            <span className="min-w-0 flex-1 space-y-1.5">
+                <span className="block h-2 w-2/5 rounded bg-slate-100 animate-pulse" />
+                <span className="block h-2 w-3/5 rounded bg-slate-100/70 animate-pulse" />
+            </span>
         </div>
     );
 }
