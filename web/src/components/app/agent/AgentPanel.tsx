@@ -33,7 +33,11 @@ import {
     PanelLeftIcon,
     PanelRightIcon,
     PictureInPicture2Icon,
+    SearchIcon,
+    Trash2Icon,
 } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useConfirm } from "@/hooks/context/confirm";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores";
 import {
@@ -47,6 +51,7 @@ import {
     type AgentPending,
 } from "@/stores/slices/agentSlice";
 import createAgentSession from "@/lib/api/client/app/agent/createAgentSession";
+import deleteAgentSession from "@/lib/api/client/app/agent/deleteAgentSession";
 import getAgentMessages from "@/lib/api/client/app/agent/getAgentMessages";
 import streamAgentRun from "@/lib/api/client/app/agent/streamAgentRun";
 import useAgentSessions from "@/lib/api/hooks/app/agent/useAgentSessions";
@@ -1150,6 +1155,17 @@ function DockBar({
 }
 
 // ── History rail ────────────────────────────────────────────────────
+// historyBucket labels a session's recency group for the sidebar sections.
+function historyBucket(iso: string): string {
+    const t = new Date(iso).getTime();
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    if (t >= today) return "Today";
+    if (t >= today - 24 * 60 * 60 * 1000) return "Yesterday";
+    if (t >= today - 6 * 24 * 60 * 60 * 1000) return "This week";
+    return "Earlier";
+}
+
 function SessionSidebar({
     activeSessionId,
     onOpen,
@@ -1160,54 +1176,135 @@ function SessionSidebar({
     onNew: () => void;
 }) {
     const q = useAgentSessions(20);
+    const qc = useQueryClient();
+    const confirm = useConfirm();
+    const [search, setSearch] = React.useState("");
     const sessions = React.useMemo(
         () => (q.data?.pages ?? []).flatMap((p) => p.data),
         [q.data],
     );
+
+    const filtered = React.useMemo(() => {
+        const needle = search.trim().toLowerCase();
+        if (!needle) return sessions;
+        return sessions.filter((s) =>
+            (s.title || "Conversation").toLowerCase().includes(needle),
+        );
+    }, [search, sessions]);
+
+    // Consecutive-run grouping: the list is newest-first, so one pass keeps
+    // both order and section adjacency.
+    const grouped = React.useMemo(() => {
+        const groups: { label: string; rows: AgentSession[] }[] = [];
+        for (const s of filtered) {
+            const label = historyBucket(s.updated_at || s.created_at);
+            const tail = groups[groups.length - 1];
+            if (tail && tail.label === label) tail.rows.push(s);
+            else groups.push({ label, rows: [s] });
+        }
+        return groups;
+    }, [filtered]);
+
+    const remove = (s: AgentSession) => {
+        confirm.show(
+            `Delete "${s.title || "this conversation"}"? Its transcript is removed for good.`,
+            async () => {
+                await deleteAgentSession(s.id);
+                // If the conversation is open as a tab, close it too.
+                const tab = useAppStore
+                    .getState()
+                    .agentTabs.find((t) => t.sessionId === s.id);
+                if (tab) useAppStore.getState().agentCloseTab(tab.key);
+                await qc.invalidateQueries({ queryKey: ["ai", "sessions"] });
+            },
+        );
+    };
+
     return (
-        <div className="hidden sm:flex w-60 shrink-0 flex-col border-r border-slate-200 bg-slate-50/50">
-            <div className="shrink-0 h-12 px-3 flex items-center border-b border-slate-200">
+        <div className="hidden sm:flex w-64 shrink-0 flex-col border-r border-slate-200 bg-slate-50/50">
+            <div className="shrink-0 px-3 pt-3 pb-2 space-y-2 border-b border-slate-200">
                 <button
                     onClick={onNew}
                     className="w-full h-8 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-[12.5px] font-medium inline-flex items-center justify-center gap-1.5 transition-colors"
                 >
                     <PlusIcon className="w-3.5 h-3.5" />
                     New chat
+                    <Kbd combo="alt+n" variant="dark" />
                 </button>
+                <div className="flex items-center gap-1.5 px-2 h-7 rounded-md border border-slate-200 bg-white focus-within:border-sky-300 focus-within:ring-1 focus-within:ring-sky-100 transition-colors">
+                    <SearchIcon className="w-3 h-3 text-slate-400 shrink-0" />
+                    <input
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                        placeholder="Search history…"
+                        className="flex-1 min-w-0 bg-transparent text-[11.5px] text-slate-900 placeholder:text-slate-400 outline-none"
+                    />
+                    {search && (
+                        <button
+                            onClick={() => setSearch("")}
+                            aria-label="Clear search"
+                            className="size-4 shrink-0 inline-flex items-center justify-center rounded text-slate-400 hover:text-slate-600"
+                        >
+                            <XIcon className="w-3 h-3" />
+                        </button>
+                    )}
+                </div>
             </div>
             <div className="flex-1 min-h-0 overflow-y-auto px-2 py-2">
-                <div className="px-1.5 pb-1 text-[10px] uppercase tracking-[0.14em] text-slate-400 font-semibold">
-                    History
-                </div>
-                {sessions.length === 0 && !q.isLoading && (
+                {filtered.length === 0 && !q.isLoading && (
                     <p className="px-1.5 py-3 text-[11.5px] text-slate-400 leading-relaxed">
-                        Your past conversations show up here.
+                        {search
+                            ? "No conversations match."
+                            : "Your past conversations show up here."}
                     </p>
                 )}
-                <div className="space-y-0.5">
-                    {sessions.map((s) => (
-                        <button
-                            key={s.id}
-                            onClick={() => onOpen(s)}
-                            className={cn(
-                                "w-full text-left px-2 py-1.5 rounded-md flex items-start gap-2 transition-colors",
-                                s.id === activeSessionId
-                                    ? "bg-white ring-1 ring-slate-200"
-                                    : "hover:bg-white",
-                            )}
-                        >
-                            <ClockIcon className="w-3 h-3 mt-0.5 shrink-0 text-slate-400" />
-                            <span className="min-w-0 flex-1">
-                                <span className="block truncate text-[12px] text-slate-700">
-                                    {s.title || "Conversation"}
-                                </span>
-                                <span className="block text-[10.5px] text-slate-400">
-                                    {relativeTime(s.updated_at || s.created_at)}
-                                </span>
-                            </span>
-                        </button>
-                    ))}
-                </div>
+                {grouped.map((g) => (
+                    <div key={g.label} className="mb-2">
+                        <div className="px-1.5 pb-1 text-[10px] uppercase tracking-[0.14em] text-slate-400 font-semibold">
+                            {g.label}
+                        </div>
+                        <div className="space-y-0.5">
+                            {g.rows.map((s) => (
+                                <div
+                                    key={s.id}
+                                    role="button"
+                                    tabIndex={0}
+                                    onClick={() => onOpen(s)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === "Enter") onOpen(s);
+                                    }}
+                                    className={cn(
+                                        "group w-full text-left px-2 py-1.5 rounded-md flex items-start gap-2 cursor-pointer transition-colors",
+                                        s.id === activeSessionId
+                                            ? "bg-white ring-1 ring-slate-200"
+                                            : "hover:bg-white",
+                                    )}
+                                >
+                                    <ClockIcon className="w-3 h-3 mt-0.5 shrink-0 text-slate-400" />
+                                    <span className="min-w-0 flex-1">
+                                        <span className="block truncate text-[12px] text-slate-700">
+                                            {s.title || "Conversation"}
+                                        </span>
+                                        <span className="block text-[10.5px] text-slate-400">
+                                            {relativeTime(s.updated_at || s.created_at)}
+                                        </span>
+                                    </span>
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            remove(s);
+                                        }}
+                                        title="Delete conversation"
+                                        aria-label={`Delete ${s.title || "conversation"}`}
+                                        className="size-5 mt-0.5 shrink-0 inline-flex items-center justify-center rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100"
+                                    >
+                                        <Trash2Icon className="w-3 h-3" />
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                ))}
                 {q.hasNextPage && (
                     <button
                         onClick={() => q.fetchNextPage()}
