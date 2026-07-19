@@ -2,6 +2,7 @@ import { useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAppStore } from '@/stores'
 import { useComposeStore } from '@/hooks/useComposeStore'
+import { checkPermission } from '@/hooks/usePermission'
 
 export interface ShortcutDefinition {
   keys: string[]
@@ -43,6 +44,7 @@ export function useKeyboardShortcuts() {
       // (minimized), it restores instead of closing.
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'i') {
         event.preventDefault()
+        if (!checkPermission('USE_AI')) return
         const s = useAppStore.getState()
         if (s.aiAssistantOpen && s.agentMinimized) {
           s.setAgentMinimized(false)

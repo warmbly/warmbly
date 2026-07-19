@@ -395,8 +395,11 @@ func Run(
 			generation := protected.Group("/generation")
 			generation.Use(m.RateLimitMiddleware(models.RateLimitWrite))
 			{
-				generation.POST("/write", m.RequireOrganization(), m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.GenerateWriting)
-				generation.POST("/edit", m.RequireOrganization(), m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.GenerateEdit)
+				// The second RequireAccess layers the use-AI member gate on top
+				// for JWT callers; API keys re-check the same API bit, which is
+				// a no-op.
+				generation.POST("/write", m.RequireOrganization(), m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), m.RequireAccess(models.PermUseAI, models.APIPermWriteCampaigns), h.GenerateWriting)
+				generation.POST("/edit", m.RequireOrganization(), m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), m.RequireAccess(models.PermUseAI, models.APIPermWriteCampaigns), h.GenerateEdit)
 			}
 
 			// AI skills (org playbooks). CRUD gated on manage_settings (JWT) or
@@ -483,14 +486,14 @@ func Run(
 				// Grounded AI draft for compose: contact + history + voice
 				// profile context; may return a clarifying question instead
 				// of a draft. Charges credits, never sends.
-				unibox.POST("/compose/draft", m.RequireOrganization(), m.RequireAccess(models.PermAccessUnibox, models.APIPermReadUnibox), h.DraftCompose)
+				unibox.POST("/compose/draft", m.RequireOrganization(), m.RequireAccess(models.PermAccessUnibox, models.APIPermReadUnibox), m.RequireAccess(models.PermUseAI, models.APIPermReadUnibox), h.DraftCompose)
 				// Autosaved compose drafts (per-user; client-generated ids
 				// make the PUT idempotent for debounced autosave).
 				unibox.GET("/drafts", m.RequireOrganization(), m.RequireAccess(models.PermAccessUnibox, models.APIPermReadUnibox), h.ListComposeDrafts)
 				unibox.PUT("/drafts/:id", m.RequireOrganization(), m.RequireAccess(models.PermAccessUnibox, models.APIPermWriteUnibox), h.UpsertComposeDraft)
 				unibox.DELETE("/drafts/:id", m.RequireOrganization(), m.RequireAccess(models.PermAccessUnibox, models.APIPermWriteUnibox), h.DeleteComposeDraft)
 				// AI reply draft: context-grounded, charges credits, never sends.
-				unibox.POST("/reply/draft", m.RequireOrganization(), m.RequireAccess(models.PermAccessUnibox, models.APIPermReadUnibox), h.DraftReply)
+				unibox.POST("/reply/draft", m.RequireOrganization(), m.RequireAccess(models.PermAccessUnibox, models.APIPermReadUnibox), m.RequireAccess(models.PermUseAI, models.APIPermReadUnibox), h.DraftReply)
 
 				// Inbox agent drafts (M10): review the pending drafts the agent
 				// suggested on inbound human replies, then approve-and-send or
@@ -904,12 +907,17 @@ func Run(
 			ai := jwtOnly.Group("/ai")
 			ai.Use(m.RequireOrganization())
 			{
-				ai.POST("/sessions", h.CreateAgentSession)
-				ai.GET("/sessions", h.ListAgentSessions)
-				ai.DELETE("/sessions/:id", h.DeleteAgentSession)
-				ai.GET("/sessions/:id/messages", h.AgentSessionMessages)
-				ai.POST("/sessions/:id/messages", h.AgentMessage)
-				ai.POST("/sessions/:id/approve", h.AgentApprove)
+				// Assistant conversations sit behind the use-AI member
+				// permission; admins can revoke a member's AI access without
+				// touching the rest of their role.
+				useAI := m.RequirePermission(models.PermUseAI)
+				ai.POST("/sessions", useAI, h.CreateAgentSession)
+				ai.GET("/sessions", useAI, h.ListAgentSessions)
+				ai.DELETE("/sessions", useAI, h.ClearAgentSessions)
+				ai.DELETE("/sessions/:id", useAI, h.DeleteAgentSession)
+				ai.GET("/sessions/:id/messages", useAI, h.AgentSessionMessages)
+				ai.POST("/sessions/:id/messages", useAI, h.AgentMessage)
+				ai.POST("/sessions/:id/approve", useAI, h.AgentApprove)
 
 				// Connected MCP servers (external tools). Admin-only; sealing
 				// credentials and exposing external tools is a settings action.

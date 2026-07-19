@@ -38,6 +38,7 @@ import {
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useConfirm } from "@/hooks/context/confirm";
+import { usePermission } from "@/hooks/usePermission";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores";
 import {
@@ -52,6 +53,7 @@ import {
 } from "@/stores/slices/agentSlice";
 import createAgentSession from "@/lib/api/client/app/agent/createAgentSession";
 import deleteAgentSession from "@/lib/api/client/app/agent/deleteAgentSession";
+import clearAgentSessions from "@/lib/api/client/app/agent/clearAgentSessions";
 import getAgentMessages from "@/lib/api/client/app/agent/getAgentMessages";
 import streamAgentRun from "@/lib/api/client/app/agent/streamAgentRun";
 import useAgentSessions from "@/lib/api/hooks/app/agent/useAgentSessions";
@@ -141,6 +143,10 @@ export default function AgentPanel() {
     // Stick-to-bottom: autoscroll only while the user is pinned near the end,
     // so streaming never yanks them away from scrollback they are reading.
     const [pinned, setPinned] = React.useState(true);
+
+    // Members without the use-AI permission have no assistant at all (the
+    // header button and Cmd+I are gated too; the backend enforces it anyway).
+    const canAI = usePermission("USE_AI");
 
     const activeTab = tabs.find((t) => t.key === activeKey) ?? null;
     const draft = activeTab?.draft ?? "";
@@ -553,6 +559,8 @@ export default function AgentPanel() {
         window.addEventListener("pointermove", onMove);
         window.addEventListener("pointerup", onUp);
     }
+
+    if (!canAI) return null;
 
     return (
         <>
@@ -1315,6 +1323,31 @@ function SessionSidebar({
                     </button>
                 )}
             </div>
+            {sessions.length > 0 && (
+                <div className="shrink-0 px-2 py-2 border-t border-slate-200">
+                    <button
+                        onClick={() =>
+                            confirm.show(
+                                "Clear your entire assistant history in this workspace? Every conversation and transcript is removed for good.",
+                                async () => {
+                                    await clearAgentSessions();
+                                    // Close every tab tied to a stored session;
+                                    // unsaved fresh tabs stay.
+                                    const st = useAppStore.getState();
+                                    for (const t of st.agentTabs.filter((t) => t.sessionId)) {
+                                        st.agentCloseTab(t.key);
+                                    }
+                                    await qc.invalidateQueries({ queryKey: ["ai", "sessions"] });
+                                },
+                            )
+                        }
+                        className="w-full h-7 rounded-md inline-flex items-center justify-center gap-1.5 text-[11.5px] text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                    >
+                        <Trash2Icon className="w-3 h-3" />
+                        Clear history
+                    </button>
+                </div>
+            )}
         </div>
     );
 }

@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import useGenerateWrite from "@/lib/api/hooks/app/generation/useGenerateWrite";
+import { usePermission } from "@/hooks/usePermission";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import ShortcutTooltip, { Kbd } from "@/components/ui/shortcut-tooltip";
@@ -80,6 +81,9 @@ export default function TextareaAICaret({
 }: TextareaAICaretProps) {
     const writeMut = useGenerateWrite();
     const typewriter = useTypewriter();
+    // Single choke point for all AI drafting affordances: members without the
+    // use-AI permission see no caret, companion, or draft bar.
+    const canAI = usePermission("USE_AI");
 
     const [caret, setCaret] = React.useState<number | null>(null);
     const [rect, setRect] = React.useState<RangeRect | null>(null);
@@ -329,7 +333,7 @@ export default function TextareaAICaret({
         run(text);
     };
 
-    if (typeof document === "undefined") return null;
+    if (typeof document === "undefined" || !canAI) return null;
 
     const showCompanion = !open && caret !== null && !!rect;
     const vw = typeof window !== "undefined" ? window.innerWidth : 1024;

@@ -17,6 +17,7 @@ import { Logo } from "@/components/svg";
 import AgentMark from "@/components/app/agent/AgentMark";
 import { useAppStore } from "@/stores";
 import { ConnectionIndicator } from "@/components/shared/ConnectionIndicator";
+import { usePermission } from "@/hooks/usePermission";
 import ShortcutTooltip from "@/components/ui/shortcut-tooltip";
 import PresenceAvatars from "@/components/app/presence/PresenceAvatars";
 import { NotificationBell } from "./NotificationBell";
@@ -167,6 +168,9 @@ function AssistantButton() {
     const setOpen = useAppStore((s) => s.setAIAssistantOpen);
     const setMinimized = useAppStore((s) => s.setAgentMinimized);
     const tabs = useAppStore((s) => s.agentTabs);
+    const canAI = usePermission("USE_AI");
+
+    if (!canAI) return null;
 
     const running = tabs.some((t) => t.running);
     const pending = tabs.some((t) => t.pending);
