@@ -6,6 +6,7 @@
 // is an informed choice, not a guess.
 
 import React from "react";
+import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import {
     CheckIcon,
@@ -27,10 +28,38 @@ interface MailboxPickerProps {
     loading?: boolean;
 }
 
+const PANEL_WIDTH = 320;
+
 export default function MailboxPicker({ value, onChange, candidates, loading }: MailboxPickerProps) {
     const [open, setOpen] = React.useState(false);
+    // Viewport anchor for the portaled panel (the compose window clips
+    // overflow, so the menu can't render inside it).
+    const [anchor, setAnchor] = React.useState<{ top: number; left: number; up: boolean } | null>(null);
     const boxRef = React.useRef<HTMLDivElement>(null);
     useClickOutside(boxRef, () => setOpen(false));
+
+    const measure = React.useCallback(() => {
+        const el = boxRef.current;
+        if (!el) return;
+        const r = el.getBoundingClientRect();
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const left = Math.min(Math.max(r.left, 8), vw - PANEL_WIDTH - 8);
+        // Flip above the trigger when the space below is tight.
+        const up = vh - r.bottom < 320 && r.top > vh - r.bottom;
+        setAnchor({ top: up ? r.top - 4 : r.bottom + 4, left, up });
+    }, []);
+
+    React.useEffect(() => {
+        if (!open) return;
+        measure();
+        window.addEventListener("scroll", measure, true);
+        window.addEventListener("resize", measure);
+        return () => {
+            window.removeEventListener("scroll", measure, true);
+            window.removeEventListener("resize", measure);
+        };
+    }, [open, measure]);
 
     const accounts = candidates?.accounts ?? [];
     const recommended = accounts.find((a) => a.recommended) ?? accounts[0];
@@ -73,14 +102,25 @@ export default function MailboxPicker({ value, onChange, candidates, loading }: 
                 <ChevronDownIcon className="w-3 h-3 text-slate-300 shrink-0 group-hover:text-slate-500 transition-colors" />
             </button>
 
+            {createPortal(
             <AnimatePresence>
-                {open && (
+                {open && anchor && (
                     <motion.div
-                        initial={{ opacity: 0, y: -4, scale: 0.98 }}
+                        data-floating=""
+                        initial={{ opacity: 0, y: anchor.up ? 4 : -4, scale: 0.98 }}
                         animate={{ opacity: 1, y: 0, scale: 1 }}
-                        exit={{ opacity: 0, y: -4, scale: 0.98 }}
+                        exit={{ opacity: 0, y: anchor.up ? 4 : -4, scale: 0.98 }}
                         transition={{ duration: 0.14, ease: [0.16, 1, 0.3, 1] }}
-                        className="absolute left-0 top-full mt-1 z-40 w-[340px] max-w-[86vw] rounded-lg border border-slate-200 bg-white shadow-xl overflow-hidden"
+                        style={{
+                            position: "fixed",
+                            left: anchor.left,
+                            width: PANEL_WIDTH,
+                            zIndex: 120,
+                            ...(anchor.up
+                                ? { bottom: window.innerHeight - anchor.top }
+                                : { top: anchor.top }),
+                        }}
+                        className="max-w-[calc(100vw-16px)] rounded-lg border border-slate-200 bg-white shadow-xl overflow-hidden"
                     >
                         <button
                             type="button"
@@ -111,7 +151,7 @@ export default function MailboxPicker({ value, onChange, candidates, loading }: 
                             </span>
                         </button>
 
-                        <div className="border-t border-slate-100 max-h-64 overflow-y-auto">
+                        <div className="border-t border-slate-100 max-h-56 overflow-y-auto">
                             {accounts.length === 0 && (
                                 <div className="px-3 py-3 text-[11.5px] text-slate-400">
                                     No active mailboxes. Connect one under Emails.
@@ -131,7 +171,9 @@ export default function MailboxPicker({ value, onChange, candidates, loading }: 
                         </div>
                     </motion.div>
                 )}
-            </AnimatePresence>
+            </AnimatePresence>,
+            document.body,
+            )}
         </div>
     );
 }

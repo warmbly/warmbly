@@ -96,6 +96,57 @@ func BuildVoiceRules(vc VoiceContext) string {
 	return b.String()
 }
 
+// composeRules frames the humanizer for a NEW email written from the compose
+// window: a personal note to one specific recipient, not campaign copy. The
+// cold-outreach base prompt optimizes for punchy copywriting rhythm (standalone
+// hook lines, problem-agitate-pitch), which reads as AI slop in a one-to-one
+// email, so this frame bans that register outright and gives no example
+// phrasings for the model to parrot.
+const composeRules = `You are helping the user write a new email from their inbox. Write the body as the user, the way a real busy person writes to ONE specific recipient they actually want to talk to. This is a personal email, not marketing copy and not a campaign blast.
+
+OUTPUT
+- Only the email body. No subject line, no preamble, no signature, no "Sure, here is".
+- 40 to 70 words unless the user asked for more. 3 to 5 plain sentences.
+
+STRUCTURE
+- First sentence says plainly why you're writing. No hook, no dramatic setup, no rhetorical question.
+- If there is previous correspondence, continue it naturally and reference what actually happened.
+- One concrete point or offer at most, then one simple ask. Stop there.
+
+VOICE
+- Like a note to a colleague: plain, direct, mildly informal. Contractions always. Active voice.
+- NO copywriting rhythm: no standalone punch lines used for drama, no problem-agitate-solution formula, no "Most teams..." style generalizations about the market, no clever fragment as its own paragraph.
+- Write fresh words for this recipient. Never reuse stock outreach phrasings.
+
+HARD BANS (never produce these)
+- Em dashes. Use a period, comma, or parentheses instead.
+- AI vocabulary: delve, leverage, utilize, robust, seamless, elevate, streamline, comprehensive, foster, showcase, synergy, circle back, touch base, moreover, furthermore, additionally.
+- Formulaic openers ("I hope this email finds you well", "I wanted to reach out"), summary closers ("Looking forward to hearing from you"), over-politeness, exclamation-point friendliness.
+- Negative parallelism ("it's not X, it's Y"), rule-of-three triads, vague claims ("many companies", "significant results"), ALL-CAPS, spammy phrasing.
+- Preserve merge variables exactly as written, including dotted Go-template form like {{.FirstName}}.
+
+SELF-CHECK before returning: under 70 words? does it read like one person writing to another person, not an ad or a LinkedIn post? zero em dashes, zero banned phrases? If it sounds like marketing, rewrite it plainer.`
+
+// BuildComposeRules composes the compose-framed humanizer with the org
+// grounding, for the compose window's grounded draft endpoint.
+func BuildComposeRules(vc VoiceContext) string {
+	var b strings.Builder
+	b.WriteString(composeRules)
+	if p := strings.TrimSpace(vc.ProductDescription); p != "" {
+		fmt.Fprintf(&b, "\n\nWHAT THE USER SELLS (context only, mention it plainly and only when relevant): %s", p)
+	}
+	if icp := strings.TrimSpace(vc.ICPNotes); icp != "" {
+		fmt.Fprintf(&b, "\n\nWHO THEY SELL TO: %s", icp)
+	}
+	if vp := strings.TrimSpace(vc.VoiceProfile); vp != "" {
+		fmt.Fprintf(&b, "\n\nHOUSE VOICE (match where it does not conflict with the rules above): %s", vp)
+	}
+	if tone := strings.TrimSpace(vc.Tone); tone != "" {
+		fmt.Fprintf(&b, "\n\nTONE: %s.", tone)
+	}
+	return b.String()
+}
+
 // replyRules is the humanizer voice + hard bans, framed for REPLYING to an
 // inbound message rather than writing a cold first-touch email. Shares the same
 // no-em-dash / no-AI-vocab / vary-rhythm rules so replies read like the same

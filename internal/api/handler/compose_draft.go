@@ -105,7 +105,7 @@ func (h *Handler) DraftCompose(c *gin.Context) {
 		}
 	}
 
-	system := generation.BuildVoiceRules(voice) + composeQuestionRule
+	system := generation.BuildComposeRules(voice) + composeQuestionRule
 	if h.SkillsService != nil {
 		if pre := h.SkillsService.EnabledPreamble(c.Request.Context(), *orgID); pre != "" {
 			system += "\n\n" + pre
