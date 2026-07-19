@@ -426,6 +426,24 @@ func (r *uniboxRepository) Search(ctx context.Context, orgID, userID uuid.UUID, 
 		argPos++
 	}
 
+	// Direction resolves against the org's own mailbox addresses. from_addr
+	// entries can be raw headers ("Name <addr>"), so match by containment
+	// rather than exact ANY().
+	switch {
+	case params.Direction != nil && *params.Direction == "sent":
+		inner += ` AND EXISTS (
+				SELECT 1 FROM unnest(ue.from_addr) AS f(addr)
+				JOIN email_accounts ea2 ON ea2.organization_id = $1
+				WHERE f.addr ILIKE '%' || ea2.email || '%'
+			)`
+	case params.Direction != nil && *params.Direction == "received":
+		inner += ` AND NOT EXISTS (
+				SELECT 1 FROM unnest(ue.from_addr) AS f(addr)
+				JOIN email_accounts ea2 ON ea2.organization_id = $1
+				WHERE f.addr ILIKE '%' || ea2.email || '%'
+			)`
+	}
+
 	if len(params.EmailAccountIDs) > 0 {
 		inner += fmt.Sprintf(` AND ue.email_id = ANY($%d)`, argPos)
 		args = append(args, params.EmailAccountIDs)
