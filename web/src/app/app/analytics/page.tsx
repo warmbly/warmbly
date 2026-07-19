@@ -23,7 +23,8 @@ import {
     Stat,
     StatStrip,
 } from "@/components/layout/Page";
-import { DailyBars, type ChartPoint } from "@/components/ui/charts";
+import { DailyTrend, type ChartPoint } from "@/components/ui/charts";
+import type { DitherTone } from "@/components/ui/dither";
 import AnalyticsShareButton from "@/components/app/analytics/AnalyticsShareButton";
 import useDashboard from "@/lib/api/hooks/app/analytics/useDashboard";
 
@@ -36,11 +37,11 @@ const RANGE_LABEL: Record<Range, string> = {
     "90d": "Last 90 days",
 };
 
-const METRICS: { key: Metric; label: string; bar: string }[] = [
-    { key: "sent", label: "Sent", bar: "bg-sky-500" },
-    { key: "opens", label: "Opens", bar: "bg-emerald-500" },
-    { key: "clicks", label: "Clicks", bar: "bg-violet-500" },
-    { key: "replies", label: "Replies", bar: "bg-amber-500" },
+const METRICS: { key: Metric; label: string; tone: DitherTone }[] = [
+    { key: "sent", label: "Sent", tone: "sky" },
+    { key: "opens", label: "Opens", tone: "emerald" },
+    { key: "clicks", label: "Clicks", tone: "violet" },
+    { key: "replies", label: "Replies", tone: "amber" },
 ];
 
 function pct(v: number | undefined): string {
@@ -128,10 +129,10 @@ export default function AnalyticsPage() {
                                 {dash.isPending ? (
                                     <div className="h-52 rounded-md bg-slate-50 animate-pulse" />
                                 ) : (
-                                    <DailyBars
+                                    <DailyTrend
                                         points={series}
                                         height={220}
-                                        barClass={METRICS.find((m) => m.key === metric)?.bar}
+                                        tone={METRICS.find((m) => m.key === metric)?.tone}
                                         emptyLabel="No sends in this window yet"
                                     />
                                 )}

@@ -9,6 +9,7 @@
 
 import React from "react";
 import { cn } from "@/lib/utils";
+import { DitherAreaChart, type DitherBarDatum, type DitherTone } from "@/components/ui/dither";
 
 export interface ChartPoint {
     /** x-tick source — typically an ISO date string. */
@@ -55,82 +56,49 @@ export function EmptyChart({
 }
 
 /**
- * DailyBars — single-series vertical bar chart with date ticks + hover tooltip.
- * Falls back to <EmptyChart> when there is no data (or the series is all zero),
- * keeping the same height so the layout never jumps.
+ * DailyTrend — single-series graph: a smoothed dithered area line with date
+ * ticks and a hover crosshair (see DitherAreaChart). Falls back to
+ * <EmptyChart> when there is no data (or the series is all zero), keeping the
+ * same height so the layout never jumps.
  */
-export function DailyBars({
+export function DailyTrend({
     points,
     height = 200,
-    barClass = "bg-sky-500",
+    tone = "sky",
     emptyLabel = "No activity yet",
     formatValue = (v: number) => v.toLocaleString(),
     className,
 }: {
     points: ChartPoint[];
     height?: number;
-    barClass?: string;
+    tone?: DitherTone;
     emptyLabel?: string;
     formatValue?: (v: number) => string;
     className?: string;
 }) {
-    const [hover, setHover] = React.useState<number | null>(null);
-
     const total = points.reduce((s, p) => s + (p.value || 0), 0);
     const isEmpty = points.length === 0 || total === 0;
-    const max = Math.max(1, ...points.map((p) => p.value || 0));
+
+    const data = React.useMemo<DitherBarDatum[]>(
+        () =>
+            points.map((p) => ({
+                key: p.label,
+                value: p.value || 0,
+                hint: `${formatValue(p.value || 0)} · ${shortDate(p.label)}`,
+            })),
+        // formatValue is typically an inline closure; keying on points alone
+        // keeps the memo stable without re-mapping every render.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [points],
+    );
 
     if (isEmpty) return <EmptyChart height={height} label={emptyLabel} className={className} />;
 
     const tickH = 18;
-    const barAreaH = height - tickH - 4;
 
     return (
         <div className={cn("relative w-full select-none", className)} style={{ height }}>
-            <div className="absolute inset-x-0 top-0 flex items-end gap-px md:gap-[2px]" style={{ height: barAreaH }}>
-                {points.map((p, i) => {
-                    const h = p.value > 0 ? Math.max(2, (p.value / max) * barAreaH) : 0;
-                    return (
-                        <div
-                            key={i}
-                            className="relative flex-1 flex items-end justify-center h-full"
-                            onMouseEnter={() => setHover(i)}
-                            onMouseLeave={() => setHover(null)}
-                            // Touch affordance: tap toggles the tooltip (hover
-                            // emulation on touch devices is unreliable).
-                            onClick={() => setHover((cur) => (cur === i ? null : i))}
-                        >
-                            <div
-                                className={cn(
-                                    "w-full rounded-sm transition-opacity",
-                                    barClass,
-                                    hover === null || hover === i ? "opacity-100" : "opacity-50",
-                                )}
-                                // Cap + center each bar so a sparse series (1–2 points) renders
-                                // as a normal bar, not a full-width block. Dense series have
-                                // cells narrower than the cap, so this is a no-op for them.
-                                style={{ height: h, maxWidth: 64 }}
-                            />
-                            {hover === i && (
-                                <div
-                                    className={cn(
-                                        "absolute -top-7 z-10 whitespace-nowrap rounded bg-slate-900 px-1.5 py-0.5 text-[10px] font-medium text-white shadow-sm",
-                                        // Pin edge tooltips inward so they don't
-                                        // poke past the viewport on the first/last bar.
-                                        i === 0
-                                            ? "left-0"
-                                            : i === points.length - 1
-                                              ? "right-0"
-                                              : "left-1/2 -translate-x-1/2",
-                                    )}
-                                >
-                                    {formatValue(p.value)} · {shortDate(p.label)}
-                                </div>
-                            )}
-                        </div>
-                    );
-                })}
-            </div>
+            <DitherAreaChart data={data} height={height - tickH - 4} tone={tone} />
             <div className="absolute left-0 right-0 h-px bg-slate-200/80" style={{ bottom: tickH }} />
             <div className="absolute left-0 right-0 bottom-0 flex justify-between font-mono text-[9.5px] text-slate-400">
                 <span>{shortDate(points[0].label)}</span>

@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { useCampaignChannel, type ActivityItem } from "@/hooks/useCampaignChannel";
 import useCampaignLogs from "@/lib/api/hooks/app/campaigns/useCampaignLogs";
+import { DitherMeter } from "@/components/ui/dither";
 
 interface TaskPreviewProps {
     campaignId: string;
@@ -189,12 +190,7 @@ export default function TaskPreview({ campaignId, campaignStatus: initialStatus 
                         </span>
                         <span className="font-mono text-[11px] text-slate-700 tabular-nums">{progress}%</span>
                     </div>
-                    <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
-                        <div
-                            className="h-full rounded-full bg-sky-600 transition-all duration-500"
-                            style={{ width: `${progress}%` }}
-                        />
-                    </div>
+                    <DitherMeter frac={progress / 100} height={6} />
                     <div className="flex items-center justify-between mt-1.5">
                         <span className="font-mono text-[10.5px] text-slate-400 tabular-nums">
                             {processed.toLocaleString()} of {total.toLocaleString()} contacts

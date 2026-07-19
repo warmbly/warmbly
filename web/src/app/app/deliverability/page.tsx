@@ -8,7 +8,8 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { AlertTriangleIcon, ArrowUpRightIcon, CheckIcon, RefreshCcwIcon, SlidersHorizontalIcon } from "lucide-react";
 import { EmptyBlock, Page, PageBody, PageTopbar, SectionBar, Stat, StatStrip } from "@/components/layout/Page";
-import { DailyBars, type ChartPoint } from "@/components/ui/charts";
+import { DailyTrend, type ChartPoint } from "@/components/ui/charts";
+import { DitherStack, type DitherTone } from "@/components/ui/dither";
 import {
     PopoverMenu,
     PopoverMenuContent,
@@ -30,12 +31,12 @@ const RANGE_LABEL: Record<Range, string> = {
     "90d": "Last 90 days",
 };
 
-const METRICS: { key: Metric; label: string; bar: string }[] = [
-    { key: "bounces", label: "Bounces", bar: "bg-rose-500" },
-    { key: "complaints", label: "Complaints", bar: "bg-amber-500" },
-    { key: "opens", label: "Opens", bar: "bg-emerald-500" },
-    { key: "replies", label: "Replies", bar: "bg-sky-500" },
-    { key: "sent", label: "Sent", bar: "bg-slate-400" },
+const METRICS: { key: Metric; label: string; tone: DitherTone }[] = [
+    { key: "bounces", label: "Bounces", tone: "rose" },
+    { key: "complaints", label: "Complaints", tone: "amber" },
+    { key: "opens", label: "Opens", tone: "emerald" },
+    { key: "replies", label: "Replies", tone: "sky" },
+    { key: "sent", label: "Sent", tone: "slate" },
 ];
 
 const SECTIONS: { key: SectionKey; label: string }[] = [
@@ -209,10 +210,10 @@ export default function DeliverabilityPage() {
                                         {q.isPending ? (
                                             <div className="h-52 rounded-md bg-slate-50 animate-pulse" />
                                         ) : (
-                                            <DailyBars
+                                            <DailyTrend
                                                 points={series}
                                                 height={220}
-                                                barClass={METRICS.find((m) => m.key === metric)?.bar}
+                                                tone={METRICS.find((m) => m.key === metric)?.tone}
                                                 emptyLabel="No activity in this window yet"
                                             />
                                         )}
@@ -371,18 +372,19 @@ export default function DeliverabilityPage() {
 // bar plus the two rates that matter.
 function ProviderRow({ p }: { p: ProviderPlacement }) {
     const segments = [
-        { n: p.inbox, cls: "bg-emerald-500", label: "Inbox" },
-        { n: p.promotions, cls: "bg-violet-400", label: "Promotions" },
-        { n: p.spam, cls: "bg-rose-500", label: "Spam" },
-        { n: p.other, cls: "bg-slate-300", label: "Other" },
+        { n: p.inbox, tone: "emerald" as DitherTone, label: "Inbox" },
+        { n: p.promotions, tone: "violet" as DitherTone, label: "Promotions" },
+        { n: p.spam, tone: "rose" as DitherTone, label: "Spam" },
+        { n: p.other, tone: "slate" as DitherTone, label: "Other" },
     ].filter((s) => s.n > 0);
     return (
         <div className="h-11 px-5 flex items-center gap-3">
             <span className="text-[12.5px] font-medium text-slate-900 w-28 shrink-0 truncate">{providerLabel(p.provider)}</span>
-            <div className="flex h-1.5 flex-1 min-w-16 rounded-full overflow-hidden bg-slate-100" title={segments.map((s) => `${s.label} ${s.n}`).join(" · ")}>
-                {segments.map((s) => (
-                    <span key={s.label} className={s.cls} style={{ width: `${(s.n / p.samples) * 100}%` }} />
-                ))}
+            <div className="flex-1 min-w-16" title={segments.map((s) => `${s.label} ${s.n}`).join(" · ")}>
+                <DitherStack
+                    segments={segments.map((s) => ({ frac: s.n / Math.max(1, p.samples), tone: s.tone }))}
+                    height={6}
+                />
             </div>
             <span className="flex items-center gap-2 md:gap-4 font-mono text-[11px] tabular-nums shrink-0">
                 <span title="Inbox rate" className="text-emerald-600">{pct(p.inbox_rate)} inbox</span>

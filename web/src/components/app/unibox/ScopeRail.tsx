@@ -31,6 +31,7 @@ import ShortcutTooltip from "@/components/ui/shortcut-tooltip";
 import ComposeDraftsItem from "@/components/app/unibox/compose/ComposeDraftsItem";
 import { useComposeStore } from "@/hooks/useComposeStore";
 import { cn } from "@/lib/utils";
+import { DitherMeter } from "@/components/ui/dither";
 
 export type UniboxScope =
   | { kind: "all" }
@@ -356,15 +357,8 @@ function CollapsibleSection<T extends { id: string }>({
 // cap gets close so the user gets unmissable warning before sends fail.
 function ScheduledMeter({ used, cap }: { used: number; cap: number }) {
   const ratio = Math.min(1, used / cap);
-  const pct = Math.round(ratio * 100);
   const tone = ratio >= 0.95 ? "rose" : ratio >= 0.85 ? "amber" : "sky";
 
-  const barClasses =
-    tone === "rose"
-      ? "bg-rose-500"
-      : tone === "amber"
-        ? "bg-amber-500"
-        : "bg-sky-500";
   const textClasses =
     tone === "rose"
       ? "text-rose-700"
@@ -385,12 +379,7 @@ function ScheduledMeter({ used, cap }: { used: number; cap: number }) {
           {used}/{cap}
         </span>
       </div>
-      <div className="h-1 rounded-full bg-slate-200 overflow-hidden">
-        <div
-          className={cn("h-full transition-all", barClasses)}
-          style={{ width: `${pct}%` }}
-        />
-      </div>
+      <DitherMeter frac={ratio} tone={tone} height={4} />
       {ratio >= 0.95 && (
         <p className="mt-1 text-[10px] text-rose-600 leading-snug">
           Near the limit — cancel a few sends to free up space.
