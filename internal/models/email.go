@@ -193,3 +193,13 @@ type UpdateEmail struct {
 
 	Tags []string `json:"tags"`
 }
+
+// BulkEmailTags adds and removes tags across many mailboxes in one call (the
+// mailboxes list bulk bar). Mailbox ids the caller doesn't own and tag ids
+// they haven't defined are ignored rather than erroring, so a stale
+// selection can't fail the whole batch.
+type BulkEmailTags struct {
+	EmailIDs   []string `json:"email_ids" binding:"required,min=1,max=1000"`
+	AddTags    []string `json:"add_tags" binding:"max=100"`
+	RemoveTags []string `json:"remove_tags" binding:"max=100"`
+}

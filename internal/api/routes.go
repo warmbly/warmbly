@@ -300,6 +300,9 @@ func Run(
 				emails.GET("", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadEmails), h.EmailsSearch)
 				emails.GET("/:id", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadEmails), middleware.RequireAPIKeyEmailAccountParam("id"), h.GetEmail)
 				emails.PATCH("/:id", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails), middleware.RequireAPIKeyEmailAccountParam("id"), h.UpdateEmail)
+				// Bulk tag add/remove across many mailboxes (set semantics,
+				// naturally idempotent). Static path beside /:id like /verify.
+				emails.PATCH("/tags", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails), h.BulkTagEmails)
 				emails.PATCH("/:id/track", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails), middleware.RequireAPIKeyEmailAccountParam("id"), h.UpdateEmailTrackingDomain)
 				emails.POST("/:id/warmup/start", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails), middleware.RequireAPIKeyEmailAccountParam("id"), h.StartWarmup)
 				emails.POST("/:id/warmup/pause", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails), middleware.RequireAPIKeyEmailAccountParam("id"), h.PauseWarmup)
