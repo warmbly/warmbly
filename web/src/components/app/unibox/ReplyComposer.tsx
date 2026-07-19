@@ -354,47 +354,33 @@ export function ReplyComposer({ threadId, replyTo, mode, onClose }: ReplyCompose
             transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
             className="border-t border-slate-200 bg-white shrink-0 flex flex-col shadow-[0_-6px_24px_-12px_rgba(15,23,42,0.10)]"
         >
-            {/* Target message preview : the message being replied to /
-                forwarded, plus a close handle to dismiss the composer
-                entirely. */}
-            <div className="px-4 pt-3 pb-2 flex items-start gap-3 bg-slate-50/60 border-b border-slate-200/70">
-                <span
+            {/* Target strip: one quiet line naming what this composer is
+                doing (same visual language as the compose window's header),
+                plus the close handle. */}
+            <div className="h-8 pl-3.5 pr-1.5 flex items-center gap-2 bg-slate-100/80 border-b border-slate-200 select-none">
+                <CornerUpLeftIcon
                     className={cn(
-                        "size-7 rounded-full flex items-center justify-center text-[10px] font-semibold shrink-0",
-                        mode === "forward"
-                            ? "bg-violet-100 text-violet-700"
-                            : "bg-sky-100 text-sky-700",
+                        "w-3.5 h-3.5 shrink-0",
+                        mode === "forward" ? "rotate-180 text-violet-500" : "text-slate-500",
                     )}
                     aria-hidden
+                />
+                <span
+                    className="min-w-0 flex-1 text-[11.5px] text-slate-500 truncate"
+                    title={replyToAddr ? `${replyToName} <${replyToAddr}>` : replyToName}
                 >
-                    <CornerUpLeftIcon
-                        className={cn("w-3.5 h-3.5", mode === "forward" && "rotate-180")}
-                    />
+                    <span className="font-semibold text-slate-800">
+                        {mode === "forward" ? "Forward" : "Reply"}
+                    </span>{" "}
+                    to {replyToName}
+                    <span className="text-slate-400"> · {replyTargetSubject}</span>
                 </span>
-                <div className="min-w-0 flex-1">
-                    <div className="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">
-                        {mode === "forward" ? "Forwarding" : "Replying to"}
-                    </div>
-                    <div className="flex items-baseline gap-2 mt-0.5 min-w-0">
-                        <span className="text-[12.5px] font-semibold text-slate-900 truncate">
-                            {replyToName}
-                        </span>
-                        {replyToAddr && (
-                            <span className="font-mono text-[10.5px] text-slate-500 truncate">
-                                {replyToAddr}
-                            </span>
-                        )}
-                    </div>
-                    <div className="text-[11.5px] text-slate-500 mt-0.5 truncate">
-                        {replyTargetSubject}
-                    </div>
-                </div>
                 <button
                     type="button"
                     onClick={onClose}
                     aria-label="Close composer"
                     title="Close composer"
-                    className="size-7 inline-flex items-center justify-center rounded-md text-slate-400 hover:text-slate-900 hover:bg-slate-200/60 transition-colors shrink-0"
+                    className="size-6 inline-flex items-center justify-center rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors shrink-0"
                 >
                     <XIcon className="w-3.5 h-3.5" />
                 </button>
