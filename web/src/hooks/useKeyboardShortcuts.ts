@@ -206,6 +206,7 @@ export const shortcutDefinitions = {
     { keys: ['Alt', 'n'], description: 'New chat' },
     { keys: ['Alt', 'w'], description: 'Close tab' },
     { keys: ['Alt', 'm'], description: 'Minimize to dock' },
+    { keys: ['Alt', 'p'], description: 'Pop out / dock the panel' },
     { keys: ['Esc'], description: 'Close the panel' },
   ],
 }

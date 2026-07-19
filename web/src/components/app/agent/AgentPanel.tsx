@@ -32,14 +32,19 @@ import {
     ClockIcon,
     PanelLeftIcon,
     PanelRightIcon,
+    PictureInPicture2Icon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores";
-import type {
-    AgentTab,
-    AgentTurn,
-    AgentToolStep,
-    AgentPending,
+import {
+    AGENT_FLOAT_MIN_W,
+    AGENT_FLOAT_MAX_W,
+    AGENT_FLOAT_MIN_H,
+    type AgentFloatRect,
+    type AgentTab,
+    type AgentTurn,
+    type AgentToolStep,
+    type AgentPending,
 } from "@/stores/slices/agentSlice";
 import createAgentSession from "@/lib/api/client/app/agent/createAgentSession";
 import getAgentMessages from "@/lib/api/client/app/agent/getAgentMessages";
@@ -65,6 +70,30 @@ function deriveTitle(text: string): string {
     return t.length > 40 ? t.slice(0, 40).trimEnd() + "…" : t || "New chat";
 }
 
+// Keep the floating window fully on screen and inside its size bounds.
+function clampFloatRect(r: AgentFloatRect): AgentFloatRect {
+    const vw = document.documentElement.clientWidth;
+    const vh = window.innerHeight;
+    const w = Math.min(Math.max(r.w, AGENT_FLOAT_MIN_W), Math.min(AGENT_FLOAT_MAX_W, vw - 16));
+    const h = Math.min(Math.max(r.h, AGENT_FLOAT_MIN_H), vh - 16);
+    return {
+        w,
+        h,
+        x: Math.min(Math.max(r.x, 8), vw - w - 8),
+        y: Math.min(Math.max(r.y, 8), vh - h - 8),
+    };
+}
+
+function defaultFloatRect(): AgentFloatRect {
+    const vw = document.documentElement.clientWidth;
+    const vh = window.innerHeight;
+    const w = 460;
+    const h = Math.min(640, vh - 48);
+    return clampFloatRect({ x: vw - w - 24, y: vh - h - 24, w, h });
+}
+
+type ResizeDir = "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw";
+
 export default function AgentPanel() {
     const open = useAppStore((s) => s.aiAssistantOpen);
     const setOpen = useAppStore((s) => s.setAIAssistantOpen);
@@ -75,9 +104,28 @@ export default function AgentPanel() {
     const side = useAppStore((s) => s.agentSide);
     const setSide = useAppStore((s) => s.setAgentSide);
     const width = useAppStore((s) => s.agentWidth);
+    const floating = useAppStore((s) => s.agentFloating);
+    const setFloating = useAppStore((s) => s.setAgentFloating);
+    const floatRect = useAppStore((s) => s.agentFloatRect);
     const tabs = useAppStore((s) => s.agentTabs);
     const activeKey = useAppStore((s) => s.agentActiveKey);
     const visible = open && !minimized;
+
+    // Floating is desktop-only; below sm the panel stays a full-width sheet.
+    const [smUp, setSmUp] = React.useState(
+        () => typeof window !== "undefined" && window.matchMedia("(min-width: 640px)").matches,
+    );
+    React.useEffect(() => {
+        const m = window.matchMedia("(min-width: 640px)");
+        const fn = () => setSmUp(m.matches);
+        m.addEventListener("change", fn);
+        return () => m.removeEventListener("change", fn);
+    }, []);
+    const isFloat = floating && !expanded && smUp;
+    const rect = React.useMemo(
+        () => (isFloat ? clampFloatRect(floatRect ?? defaultFloatRect()) : null),
+        [isFloat, floatRect],
+    );
 
     const navigate = useNavigate();
     const location = useLocation();
@@ -392,18 +440,105 @@ export default function AgentPanel() {
                     e.preventDefault();
                     setMinimized(true);
                     return;
+                case "KeyP":
+                    e.preventDefault();
+                    if (smUp && !expanded) setFloating(!floating);
+                    return;
             }
         }
     }
 
     // Drag the panel's inner edge to resize (persisted via the store clamp).
     function startResize(e: React.PointerEvent) {
-        if (expanded) return;
+        if (expanded || isFloat) return;
         e.preventDefault();
         const onMove = (ev: PointerEvent) => {
             const w =
                 side === "right" ? window.innerWidth - ev.clientX : ev.clientX;
             useAppStore.getState().setAgentWidth(w);
+        };
+        const onUp = () => {
+            window.removeEventListener("pointermove", onMove);
+            window.removeEventListener("pointerup", onUp);
+        };
+        window.addEventListener("pointermove", onMove);
+        window.addEventListener("pointerup", onUp);
+    }
+
+    // Keep the floating window inside the viewport when the browser resizes.
+    React.useEffect(() => {
+        if (!isFloat) return;
+        const fn = () => {
+            const r = useAppStore.getState().agentFloatRect;
+            if (r) useAppStore.getState().setAgentFloatRect(clampFloatRect(r));
+        };
+        window.addEventListener("resize", fn);
+        return () => window.removeEventListener("resize", fn);
+    }, [isFloat]);
+
+    // Grab the header to move the window. From docked mode the same gesture
+    // tears the panel off into a floating window once it travels far enough.
+    function startHeaderDrag(e: React.PointerEvent) {
+        if (expanded || !smUp || e.button !== 0) return;
+        if ((e.target as HTMLElement).closest("button, input, textarea, a")) return;
+        const startX = e.clientX;
+        const startY = e.clientY;
+
+        let r = isFloat && rect ? rect : null;
+        // Pointer offset into the window; for a tear-off the pointer lands
+        // near the top center of the new window.
+        let offX = r ? startX - r.x : 0;
+        let offY = r ? startY - r.y : 0;
+        let torn = isFloat;
+
+        const onMove = (ev: PointerEvent) => {
+            if (!torn) {
+                if (Math.abs(ev.clientX - startX) + Math.abs(ev.clientY - startY) < 16) return;
+                const base = defaultFloatRect();
+                r = { ...base, w: Math.min(base.w, useAppStore.getState().agentWidth) };
+                offX = Math.min(r.w / 2, 200);
+                offY = 24;
+                torn = true;
+                useAppStore.getState().setAgentFloating(true);
+            }
+            if (!r) return;
+            ev.preventDefault();
+            useAppStore
+                .getState()
+                .setAgentFloatRect(clampFloatRect({ ...r, x: ev.clientX - offX, y: ev.clientY - offY }));
+        };
+        const onUp = () => {
+            window.removeEventListener("pointermove", onMove);
+            window.removeEventListener("pointerup", onUp);
+        };
+        window.addEventListener("pointermove", onMove);
+        window.addEventListener("pointerup", onUp);
+    }
+
+    // Resize the floating window from any edge or corner.
+    function startFloatResize(e: React.PointerEvent, dir: ResizeDir) {
+        if (!isFloat || !rect) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const start = { ...rect };
+        const sx = e.clientX;
+        const sy = e.clientY;
+        const onMove = (ev: PointerEvent) => {
+            ev.preventDefault();
+            const dx = ev.clientX - sx;
+            const dy = ev.clientY - sy;
+            let { x, y, w, h } = start;
+            if (dir.includes("e")) w = start.w + dx;
+            if (dir.includes("s")) h = start.h + dy;
+            if (dir.includes("w")) {
+                w = start.w - dx;
+                x = start.x + Math.min(dx, start.w - AGENT_FLOAT_MIN_W);
+            }
+            if (dir.includes("n")) {
+                h = start.h - dy;
+                y = start.y + Math.min(dy, start.h - AGENT_FLOAT_MIN_H);
+            }
+            useAppStore.getState().setAgentFloatRect(clampFloatRect({ x, y, w, h }));
         };
         const onUp = () => {
             window.removeEventListener("pointermove", onMove);
@@ -437,25 +572,71 @@ export default function AgentPanel() {
             )}
             <motion.aside
                 initial={false}
-                animate={{ x: visible ? 0 : side === "right" ? "101%" : "-101%" }}
+                animate={
+                    isFloat
+                        ? { x: 0, opacity: visible ? 1 : 0, scale: visible ? 1 : 0.97 }
+                        : {
+                              x: visible ? 0 : side === "right" ? "101%" : "-101%",
+                              opacity: 1,
+                              scale: 1,
+                          }
+                }
                 transition={{ type: "spring", stiffness: 380, damping: 40 }}
                 // inert keeps the off-screen panel out of the tab order.
                 inert={!visible}
                 onKeyDown={onPanelKeyDown}
-                style={{ "--agent-w": `${width}px` } as React.CSSProperties}
+                style={
+                    isFloat && rect
+                        ? ({
+                              "--agent-w": `${width}px`,
+                              left: rect.x,
+                              top: rect.y,
+                              width: rect.w,
+                              height: rect.h,
+                          } as React.CSSProperties)
+                        : ({ "--agent-w": `${width}px` } as React.CSSProperties)
+                }
                 className={cn(
-                    "fixed top-0 z-50 h-full bg-white shadow-[0_0_60px_-12px_rgba(15,23,42,0.3)] flex",
-                    side === "right"
-                        ? "right-0 border-l border-slate-200"
-                        : "left-0 border-r border-slate-200",
-                    expanded
-                        ? "w-full sm:w-[min(1080px,94vw)]"
-                        : "w-full sm:w-[min(var(--agent-w),94vw)]",
+                    "fixed z-50 bg-white flex",
+                    isFloat
+                        ? "rounded-xl border border-slate-200 shadow-2xl overflow-hidden"
+                        : cn(
+                              "top-0 h-full shadow-[0_0_60px_-12px_rgba(15,23,42,0.3)]",
+                              side === "right"
+                                  ? "right-0 border-l border-slate-200"
+                                  : "left-0 border-r border-slate-200",
+                              expanded
+                                  ? "w-full sm:w-[min(1080px,94vw)]"
+                                  : "w-full sm:w-[min(var(--agent-w),94vw)]",
+                          ),
                 )}
                 aria-hidden={!visible}
             >
-                {/* Drag handle on the inner edge (desktop, normal mode). */}
-                {!expanded && (
+                {/* Floating: resize from any edge or corner. */}
+                {isFloat && (
+                    <>
+                        {(
+                            [
+                                ["n", "top-0 left-3 right-3 h-1.5 cursor-ns-resize"],
+                                ["s", "bottom-0 left-3 right-3 h-1.5 cursor-ns-resize"],
+                                ["e", "right-0 top-3 bottom-3 w-1.5 cursor-ew-resize"],
+                                ["w", "left-0 top-3 bottom-3 w-1.5 cursor-ew-resize"],
+                                ["nw", "top-0 left-0 size-3 cursor-nwse-resize"],
+                                ["se", "bottom-0 right-0 size-3 cursor-nwse-resize"],
+                                ["ne", "top-0 right-0 size-3 cursor-nesw-resize"],
+                                ["sw", "bottom-0 left-0 size-3 cursor-nesw-resize"],
+                            ] as [ResizeDir, string][]
+                        ).map(([dir, pos]) => (
+                            <div
+                                key={dir}
+                                onPointerDown={(e) => startFloatResize(e, dir)}
+                                className={cn("absolute z-20 touch-none", pos)}
+                            />
+                        ))}
+                    </>
+                )}
+                {/* Drag handle on the inner edge (desktop, docked mode). */}
+                {!expanded && !isFloat && (
                     <div
                         onPointerDown={startResize}
                         title="Drag to resize"
@@ -476,31 +657,67 @@ export default function AgentPanel() {
 
                 {/* Main column. */}
                 <div className="flex-1 min-w-0 flex flex-col">
-                    {/* Header */}
-                    <div className="shrink-0 px-3 h-12 flex items-center gap-2 border-b border-slate-200">
+                    {/* Header. Grabbing it moves the floating window; from a
+                        docked panel the same drag tears it off into one. */}
+                    <div
+                        onPointerDown={startHeaderDrag}
+                        className={cn(
+                            "shrink-0 px-3 h-12 flex items-center gap-2 border-b border-slate-200",
+                            !expanded && smUp && "touch-none select-none",
+                            isFloat
+                                ? "cursor-grab active:cursor-grabbing"
+                                : !expanded && smUp && "sm:cursor-grab",
+                        )}
+                    >
                         <AgentMark className="w-4 h-4 text-sky-600" />
                         <div className="text-[13px] font-semibold text-slate-900">
                             Assistant
                         </div>
                         <div className="ml-auto flex items-center gap-1">
-                            <button
-                                onClick={() =>
-                                    setSide(side === "right" ? "left" : "right")
-                                }
-                                title={
-                                    side === "right"
-                                        ? "Move to the left edge"
-                                        : "Move to the right edge"
-                                }
-                                aria-label="Switch panel side"
-                                className="size-7 rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100 hidden sm:inline-flex items-center justify-center transition-colors"
-                            >
-                                {side === "right" ? (
-                                    <PanelLeftIcon className="w-4 h-4" />
-                                ) : (
-                                    <PanelRightIcon className="w-4 h-4" />
-                                )}
-                            </button>
+                            {!isFloat && (
+                                <button
+                                    onClick={() =>
+                                        setSide(side === "right" ? "left" : "right")
+                                    }
+                                    title={
+                                        side === "right"
+                                            ? "Move to the left edge"
+                                            : "Move to the right edge"
+                                    }
+                                    aria-label="Switch panel side"
+                                    className="size-7 rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100 hidden sm:inline-flex items-center justify-center transition-colors"
+                                >
+                                    {side === "right" ? (
+                                        <PanelLeftIcon className="w-4 h-4" />
+                                    ) : (
+                                        <PanelRightIcon className="w-4 h-4" />
+                                    )}
+                                </button>
+                            )}
+                            {!expanded && (
+                                <button
+                                    onClick={() => setFloating(!floating)}
+                                    title={
+                                        isFloat
+                                            ? `Dock to the ${side} edge (⌥P)`
+                                            : "Pop out into a window (⌥P)"
+                                    }
+                                    aria-label={
+                                        isFloat ? "Dock panel" : "Pop out into a floating window"
+                                    }
+                                    className="size-7 rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100 hidden sm:inline-flex items-center justify-center transition-colors"
+                                >
+                                    {isFloat ? (
+                                        side === "right" ? (
+                                            <PanelRightIcon className="w-4 h-4" />
+                                        ) : (
+                                            <PanelLeftIcon className="w-4 h-4" />
+                                        )
+                                    ) : (
+                                        <PictureInPicture2Icon className="w-4 h-4" />
+                                    )}
+                                </button>
+                            )}
                             <button
                                 onClick={() => setMinimized(true)}
                                 title="Minimize to dock (⌥M)"
