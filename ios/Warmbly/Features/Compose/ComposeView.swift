@@ -13,8 +13,9 @@ struct ComposeView: View {
 
     /// Resumed draft; nil starts a fresh window.
     var draft: ComposeDraft?
-    /// Called after a successful send so the caller can toast/refresh.
-    var onSent: (ComposeSendResponse) -> Void
+    /// Called after a successful send with the snapshot of what went out, so
+    /// the caller can toast/refresh and offer undo-with-restore.
+    var onSent: (ComposeSendResponse, ComposeDraftPayload) -> Void
 
     @State private var store: ComposeStore
     @State private var to: [String]
@@ -70,7 +71,7 @@ struct ComposeView: View {
 
     @State private var editingSelection: EditingSelection?
 
-    init(draft: ComposeDraft? = nil, onSent: @escaping (ComposeSendResponse) -> Void = { _ in }) {
+    init(draft: ComposeDraft? = nil, onSent: @escaping (ComposeSendResponse, ComposeDraftPayload) -> Void = { _, _ in }) {
         self.draft = draft
         self.onSent = onSent
         _store = State(initialValue: ComposeStore(draft: draft))
@@ -1009,9 +1010,10 @@ struct ComposeView: View {
             scheduledAt: sendMode == .scheduled ? scheduledAt : nil
         )
         do {
+            let sentPayload = draftPayload
             let response = try await store.send(env.api, request: request)
             sentOrDiscarded = true
-            onSent(response)
+            onSent(response, sentPayload)
             dismiss()
         } catch {
             store.setError(error.localizedDescription)

@@ -18,6 +18,12 @@ struct UniboxThreadView: View {
     @State private var actionError: String?
     @State private var snoozed = false
     @State private var autoReplyConsumed = false
+    /// Instant reply inside its undo window.
+    @State private var undoSend: ReplyUndoSend?
+    /// Composer fields to restore after an undo re-presents the sheet.
+    @State private var restoreSnapshot: UniboxReplySnapshot?
+    @State private var toast: String?
+    @State private var toastPulse = 0
 
     /// Jumps straight into the reply composer once the thread loads
     /// (the list row's "Reply" quick action).
@@ -47,10 +53,45 @@ struct UniboxThreadView: View {
             .onChange(of: env.realtime.pulse(for: .unibox)) {
                 Task { await store.load(env.api) }
             }
-            .sheet(isPresented: $showComposer) {
+            .overlay(alignment: .bottom) {
+                VStack(spacing: 8) {
+                    if let toast {
+                        Text(toast)
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 9)
+                            .background(.black.opacity(0.82), in: Capsule())
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
+                    if let undoSend {
+                        UndoSendBanner(scheduledAt: undoSend.scheduledAt) {
+                            await undoReplySend(undoSend)
+                        } onExpired: {
+                            withAnimation(.snappy) { self.undoSend = nil }
+                            Task { await store.load(env.api) }
+                        }
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
+                }
+                .padding(.bottom, 12)
+            }
+            .sensoryFeedback(.success, trigger: toastPulse)
+            .sheet(isPresented: $showComposer, onDismiss: { restoreSnapshot = nil }) {
                 if let context = composeContext {
-                    UniboxComposer(context: context) { _ in
+                    UniboxComposer(context: context, restore: restoreSnapshot) { response, snapshot in
                         Task { await store.load(env.api) }
+                        switch response.sendMode {
+                        case "smart", "scheduled":
+                            break
+                        default:
+                            // Instant replies queue a short undo window server-side.
+                            if let taskID = response.taskID, let scheduledAt = response.scheduledAt {
+                                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                    undoSend = ReplyUndoSend(taskID: taskID, scheduledAt: scheduledAt, snapshot: snapshot)
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -268,6 +309,43 @@ struct UniboxThreadView: View {
     private func cancelScheduled(_ item: ScheduledSend) async {
         try? await store.cancelScheduled(env.api, taskID: item.taskID)
     }
+
+    /// Cancels the queued instant reply and re-presents the composer with the
+    /// sent fields restored. 404 means the send already fired.
+    private func undoReplySend(_ undo: ReplyUndoSend) async {
+        do {
+            let _: EmptyBody = try await env.api.delete("unibox/scheduled/\(undo.taskID)")
+            withAnimation(.snappy) { undoSend = nil }
+            restoreSnapshot = undo.snapshot
+            showComposer = true
+        } catch APIError.server(let status, _) where status == 404 {
+            withAnimation(.snappy) { undoSend = nil }
+            showToast("Already sent")
+            Task { await store.load(env.api) }
+        } catch {
+            // Keep the banner so the user can retry within the window.
+            showToast(error.localizedDescription)
+        }
+    }
+
+    private func showToast(_ text: String) {
+        toastPulse += 1
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { toast = text }
+        let shown = toastPulse
+        Task {
+            try? await Task.sleep(for: .seconds(2.5))
+            guard shown == toastPulse else { return }
+            withAnimation(.snappy) { toast = nil }
+        }
+    }
+}
+
+/// An instant reply waiting out its undo window: the queued task, the moment
+/// it fires, and the composer snapshot to restore on undo.
+private struct ReplyUndoSend {
+    let taskID: String
+    let scheduledAt: Date
+    let snapshot: UniboxReplySnapshot
 }
 
 // MARK: - Message row

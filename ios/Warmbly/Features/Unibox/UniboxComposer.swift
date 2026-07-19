@@ -10,8 +10,12 @@ struct UniboxComposer: View {
     let context: UniboxComposeContext
     /// Opens the AI writer immediately (the thread's sparkle shortcut).
     var openAIOnAppear: Bool = false
-    /// Called after a successful send so the thread can refresh + drop presence.
-    var onSent: (UniboxSendResponse) -> Void
+    /// Fields restored from an undone instant send; overrides the context's
+    /// initial recipients/subject and pre-fills the body.
+    var restore: UniboxReplySnapshot?
+    /// Called after a successful send with the snapshot of what went out, so
+    /// the thread can refresh and offer undo-with-restore.
+    var onSent: (UniboxSendResponse, UniboxReplySnapshot) -> Void
 
     @State private var store = UniboxComposerStore()
     @State private var to: [String]
@@ -75,15 +79,22 @@ struct UniboxComposer: View {
     /// Template names inline in the dropdown; the rest through the browser.
     @State private var templates = TemplatesStore()
 
-    init(context: UniboxComposeContext, openAIOnAppear: Bool = false, onSent: @escaping (UniboxSendResponse) -> Void) {
+    init(
+        context: UniboxComposeContext,
+        openAIOnAppear: Bool = false,
+        restore: UniboxReplySnapshot? = nil,
+        onSent: @escaping (UniboxSendResponse, UniboxReplySnapshot) -> Void
+    ) {
         self.context = context
         self.openAIOnAppear = openAIOnAppear
+        self.restore = restore
         self.onSent = onSent
-        _to = State(initialValue: context.to)
-        _cc = State(initialValue: context.cc)
-        _subject = State(initialValue: context.subject)
-        _messageBody = State(initialValue: "")
-        _showCcBcc = State(initialValue: !context.cc.isEmpty)
+        _to = State(initialValue: restore?.to ?? context.to)
+        _cc = State(initialValue: restore?.cc ?? context.cc)
+        _bcc = State(initialValue: restore?.bcc ?? [])
+        _subject = State(initialValue: restore?.subject ?? context.subject)
+        _messageBody = State(initialValue: restore?.body ?? "")
+        _showCcBcc = State(initialValue: restore.map { !$0.cc.isEmpty || !$0.bcc.isEmpty } ?? !context.cc.isEmpty)
         _aiBarVisible = State(initialValue: openAIOnAppear)
     }
 
@@ -1076,8 +1087,15 @@ struct UniboxComposer: View {
             scheduledAt: sendMode == .scheduled ? scheduledAt : nil
         )
         do {
+            let snapshot = UniboxReplySnapshot(
+                to: recipients,
+                cc: showCcBcc ? cc + addresses(ccText) : [],
+                bcc: showCcBcc ? bcc + addresses(bccText) : [],
+                subject: subject,
+                body: messageBody
+            )
             let response = try await store.send(env.api, request: request)
-            onSent(response)
+            onSent(response, snapshot)
             dismiss()
         } catch {
             store.setError(error.localizedDescription)
@@ -1103,6 +1121,16 @@ struct UniboxComposer: View {
 
 private extension Array where Element == String {
     var nilIfEmpty: [String]? { isEmpty ? nil : self }
+}
+
+/// What an instant reply sent, kept while its undo window runs so the
+/// composer can be re-presented pre-filled if the send is cancelled.
+struct UniboxReplySnapshot {
+    var to: [String]
+    var cc: [String]
+    var bcc: [String]
+    var subject: String
+    var body: String
 }
 
 /// Selection quick actions; instruction parity with the web composer.

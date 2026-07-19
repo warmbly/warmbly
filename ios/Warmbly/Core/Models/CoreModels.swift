@@ -206,6 +206,8 @@ struct User: Codable, Identifiable, Sendable {
     var freeTrialUsed: Bool?
     var isAdmin: Bool?
     var deletionScheduledFor: Date?
+    /// Undo window for instant sends; stale caches may omit it, default 30.
+    var undoSendSeconds: Int
     var tags: [UserGroup]?
     var categories: [UserGroup]?
     var folders: [UserGroup]?
@@ -220,6 +222,25 @@ struct User: Codable, Identifiable, Sendable {
         case freeTrialUsed = "free_trial_used"
         case isAdmin = "is_admin"
         case deletionScheduledFor = "deletion_scheduled_for"
+        case undoSendSeconds = "undo_send_seconds"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        email = try container.decode(String.self, forKey: .email)
+        firstName = try container.decodeIfPresent(String.self, forKey: .firstName)
+        lastName = try container.decodeIfPresent(String.self, forKey: .lastName)
+        avatarURL = try container.decodeIfPresent(String.self, forKey: .avatarURL)
+        onboardingCompletedAt = try container.decodeIfPresent(Date.self, forKey: .onboardingCompletedAt)
+        maxOrganizations = try container.decodeIfPresent(Int.self, forKey: .maxOrganizations)
+        freeTrialUsed = try container.decodeIfPresent(Bool.self, forKey: .freeTrialUsed)
+        isAdmin = try container.decodeIfPresent(Bool.self, forKey: .isAdmin)
+        deletionScheduledFor = try container.decodeIfPresent(Date.self, forKey: .deletionScheduledFor)
+        undoSendSeconds = try container.decodeIfPresent(Int.self, forKey: .undoSendSeconds) ?? 30
+        tags = try container.decodeIfPresent([UserGroup].self, forKey: .tags)
+        categories = try container.decodeIfPresent([UserGroup].self, forKey: .categories)
+        folders = try container.decodeIfPresent([UserGroup].self, forKey: .folders)
     }
 
     var displayName: String {
