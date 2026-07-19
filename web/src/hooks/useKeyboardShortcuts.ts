@@ -1,6 +1,7 @@
 import { useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAppStore } from '@/stores'
+import { useComposeStore } from '@/hooks/useComposeStore'
 
 export interface ShortcutDefinition {
   keys: string[]
@@ -88,6 +89,13 @@ export function useKeyboardShortcuts() {
       if (key === 'b' && !event.ctrlKey && !event.metaKey) {
         event.preventDefault()
         toggleSidebar()
+        return
+      }
+
+      // Handle n for a new email (opens the global compose window)
+      if (key === 'n' && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+        event.preventDefault()
+        useComposeStore.getState().openCompose()
         return
       }
 
@@ -184,7 +192,7 @@ export const shortcutDefinitions = {
   ],
   actions: [
     { keys: ['/'], description: 'Focus search' },
-    { keys: ['n'], description: 'New item' },
+    { keys: ['n'], description: 'Compose a new email' },
     { keys: ['e'], description: 'Edit selected item' },
     { keys: ['b'], description: 'Toggle sidebar' },
     { keys: ['?'], description: 'Show shortcuts' },
