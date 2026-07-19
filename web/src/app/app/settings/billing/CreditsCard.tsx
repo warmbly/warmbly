@@ -14,6 +14,7 @@ import useCreateCreditCheckout from "@/lib/api/hooks/app/subscription/useCreateC
 import type { AppError } from "@/lib/api/client/normalizeError";
 import type { CreditTransaction } from "@/lib/api/models/app/subscription/Credits";
 import buildError from "@/lib/helper/buildError";
+import { AnimatedNumber, DitherRing } from "@/components/ui/dither";
 import { Section, TableSurface } from "../_components/SectionShell";
 
 export default function CreditsCard({ isPaid }: { isPaid: boolean }) {
@@ -64,9 +65,10 @@ export default function CreditsCard({ isPaid }: { isPaid: boolean }) {
                     <BalanceRing monthly={monthly} allowance={allowance} />
                     <div className="min-w-0 flex-1 basis-[200px]">
                         <div className="flex items-baseline gap-1.5">
-                            <span className="text-[22px] font-semibold text-slate-900 tabular-nums">
-                                {total.toLocaleString()}
-                            </span>
+                            <AnimatedNumber
+                                value={total}
+                                className="text-[22px] font-semibold text-slate-900 tabular-nums"
+                            />
                             <span className="text-[12px] text-slate-500">credits available</span>
                         </div>
                         <div className="mt-1.5 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-[11.5px]">
@@ -135,32 +137,15 @@ function Stat({ label, value }: { label: string; value: string }) {
     );
 }
 
-// BalanceRing draws a donut of monthly-pool remaining vs the plan allowance.
+// BalanceRing draws a dithered donut of monthly-pool remaining vs the plan
+// allowance, animating the sweep as the balance changes.
 function BalanceRing({ monthly, allowance }: { monthly: number; allowance: number }) {
     const pct = allowance > 0 ? Math.max(0, Math.min(1, monthly / allowance)) : 0;
-    const r = 26;
-    const c = 2 * Math.PI * r;
-    const dash = c * pct;
     const low = pct <= 0.15;
     return (
-        <div className="relative shrink-0">
-            <svg width="72" height="72" viewBox="0 0 72 72" className="-rotate-90">
-                <circle cx="36" cy="36" r={r} fill="none" stroke="#e2e8f0" strokeWidth="7" />
-                <circle
-                    cx="36"
-                    cy="36"
-                    r={r}
-                    fill="none"
-                    stroke={low ? "#dc2626" : "#0284c7"}
-                    strokeWidth="7"
-                    strokeLinecap="round"
-                    strokeDasharray={`${dash} ${c - dash}`}
-                />
-            </svg>
-            <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <SparklesIcon className={`w-3.5 h-3.5 ${low ? "text-red-500" : "text-sky-600"}`} />
-            </div>
-        </div>
+        <DitherRing frac={pct} size={72} thickness={7} tone={low ? "rose" : "sky"} className="shrink-0">
+            <SparklesIcon className={`w-3.5 h-3.5 ${low ? "text-rose-500" : "text-sky-600"}`} />
+        </DitherRing>
     );
 }
 

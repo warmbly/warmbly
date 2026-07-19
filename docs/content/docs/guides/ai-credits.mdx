@@ -6,7 +6,7 @@ description: How AI credits work in Warmbly, what each AI action costs, the mont
 AI features in Warmbly run on credits. Your plan grants a monthly allowance that refreshes every billing cycle, and you can buy top-up packs that never expire when you need more. This guide covers what each action costs, how the two credit pools work, and how to buy more.
 
 <Callout type="info" title="Who can manage credits">
-The credits card lives under **Settings, Billing** and requires the **Manage billing** permission, the same permission that controls the rest of billing. The owner and any role granted billing access can view the balance and buy packs; other members do not see it.
+The credits card lives on the **AI & credits** tab of **Settings, Billing** and requires the **Manage billing** permission, the same permission that controls the rest of billing. The owner and any role granted billing access can view the balance and buy packs; other members do not see it.
 </Callout>
 
 ## The two credit pools
@@ -46,7 +46,7 @@ How the usage pricing works:
 
 ## Usage overview and spend controls
 
-The **AI usage & spend controls** card under **Settings, Billing** shows today / this week / this month spend, a 30-day usage chart, and breakdowns by feature and by model (credits, tokens, and call counts). It is also where the spend controls live:
+The **AI usage & spend controls** card on the **AI & credits** tab of **Settings, Billing** shows today / this week / this month spend, a 30-day usage chart, and breakdowns by feature and by model (credits, tokens, and call counts). It is also where the spend controls live. Each limit is set with a slider (with quick presets) or an exact number, and shows the window's current spend against the limit as you set it; changes collect into a save bar and nothing applies until you save.
 
 - **Spend limits.** Optional hard caps per calendar day, ISO week, and calendar month. When a limit is reached, AI actions pause with a clear message until the window rolls over. Leave a limit off for no cap.
 - **Per-member limits.** Optional ceilings on what each individual teammate can spend, per calendar day, ISO week, and calendar month, mirroring the workspace windows. They count only charges a member triggered themselves; workspace-level scheduled work (automations, the inbox agent) is not attributed to anyone. Who can use AI at all is separate: the "Use AI" permission on roles (see [Team and roles](/guides/team-roles/)).
@@ -74,7 +74,7 @@ Paid workspaces can buy top-up packs at any time. Three fixed sizes are availabl
 - 2,000 credits
 - 10,000 credits
 
-Open **Settings, Billing**, find the **AI credits** card, and pick a pack. You are taken to Stripe Checkout to pay with the card on file. As soon as the payment settles, the credits land in your purchased pool and the balance on the card updates live.
+Open the **AI & credits** tab of **Settings, Billing**, find the **AI credits** card, and pick a pack. You are taken to Stripe Checkout to pay with the card on file. As soon as the payment settles, the credits land in your purchased pool and the balance on the card updates live.
 
 <Callout type="warn" title="Purchases settle through Stripe">
 Credits are added only after Stripe confirms the payment, not the moment you click. If you close the checkout tab before paying, nothing is charged and nothing is granted. A completed purchase is applied exactly once, even if Stripe retries the confirmation.
