@@ -475,6 +475,11 @@ func Run(
 
 				unibox.PATCH("/seen", m.RequireAccess(models.PermAccessUnibox, models.APIPermWriteUnibox), h.UniboxMarkSeen)
 				unibox.POST("/reply", m.RequireOrganization(), m.RequireAccess(models.PermAccessUnibox, models.APIPermWriteUnibox), h.UniboxReply)
+				// Compose: send a brand-new outbound email. The candidates
+				// endpoint scores mailboxes for a recipient (affinity, budget,
+				// auth) so the picker and Auto mode can explain their choice.
+				unibox.GET("/compose/candidates", m.RequireOrganization(), m.RequireAccess(models.PermAccessUnibox, models.APIPermReadUnibox), h.GetComposeCandidates)
+				unibox.POST("/compose", m.RequireOrganization(), m.RequireAccess(models.PermAccessUnibox, models.APIPermWriteUnibox), h.UniboxCompose)
 				// AI reply draft: context-grounded, charges credits, never sends.
 				unibox.POST("/reply/draft", m.RequireOrganization(), m.RequireAccess(models.PermAccessUnibox, models.APIPermReadUnibox), h.DraftReply)
 

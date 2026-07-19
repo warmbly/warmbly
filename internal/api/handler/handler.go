@@ -11,6 +11,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/audit"
 	"github.com/warmbly/warmbly/internal/app/auth"
 	"github.com/warmbly/warmbly/internal/app/campaign"
+	"github.com/warmbly/warmbly/internal/app/compose"
 	"github.com/warmbly/warmbly/internal/app/contact"
 	"github.com/warmbly/warmbly/internal/app/credits"
 	"github.com/warmbly/warmbly/internal/app/crm"
@@ -116,6 +117,10 @@ type Handler struct {
 	// Email send & templates
 	TemplateService  template.TemplateService
 	EmailSendService emailsend.EmailSendService
+
+	// Compose mailbox picker: scores the org's mailboxes for a recipient
+	// (affinity, budget, auth health) and backs auto selection.
+	ComposeService compose.Service
 
 	// Admin
 	AdminService         admin.AdminService

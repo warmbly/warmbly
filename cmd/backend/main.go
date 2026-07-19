@@ -31,6 +31,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/auth"
 	"github.com/warmbly/warmbly/internal/app/campaign"
 	"github.com/warmbly/warmbly/internal/app/cipher"
+	"github.com/warmbly/warmbly/internal/app/compose"
 	"github.com/warmbly/warmbly/internal/app/contact"
 	"github.com/warmbly/warmbly/internal/app/credits"
 	"github.com/warmbly/warmbly/internal/app/creditwatch"
@@ -184,6 +185,7 @@ func main() {
 	// Email send & templates
 	var templateService template.TemplateService
 	var emailSendService emailsend.EmailSendService
+	var composeService compose.Service
 
 	// Admin
 	var adminService admin.AdminService
@@ -995,6 +997,7 @@ func main() {
 		schedulerService := scheduler.NewSchedulerService(taskRepository, warmupRepository, campaignProgressRepository, emailRepostory, campaignRepostory, contactRepostory, campaignLogRepository)
 		campaignService = campaign.NewService(campaignRepostory, taskRepository, emailRepostory, campaignLogRepository, featureGateService, dailyThrottleService, schedulerService, tasksClient, streamingPublisher)
 		emailSendService = emailsend.NewService(taskRepository, emailRepostory, userRepostory, schedulerService, tasksClient, featureGateService, dailyThrottleService)
+		composeService = compose.NewService(emailRepostory, repository.NewComposeRepository(primaryDB))
 		// uniboxService is constructed here (rather than alongside the
 		// other service constructors above) because cancel-scheduled
 		// needs the Cloud Tasks client for best-effort DeleteTask, and
@@ -1319,6 +1322,7 @@ func main() {
 		// Email send & templates
 		TemplateService:  templateService,
 		EmailSendService: emailSendService,
+		ComposeService:   composeService,
 
 		// Admin
 		AdminService:         adminService,
