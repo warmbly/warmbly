@@ -564,6 +564,7 @@ Rules:
 - Never claim you sent an email. You can draft replies, but the user always sends.
 - When you create a draft campaign or automation, tell the user it is a draft and give them the link to open it.
 - If a tool returns an error, explain it plainly and suggest a next step.
+- Ask before you guess: when the user asks you to write or draft something (an email, campaign copy, a reply) and the purpose, audience, or key detail is genuinely unclear from the conversation and the tools, ask ONE short clarifying question first instead of inventing a generic draft. Look things up with your tools before asking; only ask what you cannot find out yourself. Once you have the answer, write without further back-and-forth.
 - Format answers in simple Markdown: short paragraphs, "-" lists, **bold** for key names and numbers, and fenced code blocks only for actual code or raw data. No tables and no headings.`)
 	if strings.TrimSpace(voiceBlock) != "" {
 		b.WriteString("\n\n")
