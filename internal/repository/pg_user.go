@@ -29,6 +29,11 @@ type UserRepository interface {
 	// banned). Used by middleware to enforce BanScopeLogin etc.
 	// without re-fetching the full user row.
 	GetBanState(ctx context.Context, userID uuid.UUID) (scope uint32, err error)
+
+	// GetUndoSendSeconds returns the user's undo-send window without
+	// fetching the full user row (hot path: every instant send).
+	GetUndoSendSeconds(ctx context.Context, userID uuid.UUID) (int, error)
+	SetUndoSendSeconds(ctx context.Context, userID uuid.UUID, seconds int) error
 }
 
 type userRepository struct {
@@ -105,7 +110,7 @@ func (r *userRepository) getUser(ctx context.Context, key string, value any) (*m
 	q := fmt.Sprintf(
 		`SELECT u.id, u.email, u.first_name, u.last_name, u.avatar_url, u.referral_source, u.onboarding_completed_at,
 		   u.max_organizations, u.free_trial_used, u.admin_permissions,
-		   u.deletion_scheduled_at, u.deletion_scheduled_for,
+		   u.deletion_scheduled_at, u.deletion_scheduled_for, u.undo_send_seconds,
 		   u.updated_at, u.created_at,
 		   COALESCE(array_agg(ur.role_id) FILTER (WHERE ur.role_id IS NOT NULL), '{}') AS role_ids
 		  FROM users u
@@ -126,7 +131,7 @@ func (r *userRepository) getUser(ctx context.Context, key string, value any) (*m
 		params...,
 	).Scan(&u.ID, &u.Email, &u.FirstName, &u.LastName, &u.AvatarURL, &u.ReferralSource, &u.OnboardingCompletedAt,
 		&u.MaxOrganizations, &u.FreeTrialUsed, &adminPerm,
-		&u.DeletionScheduledAt, &u.DeletionScheduledFor,
+		&u.DeletionScheduledAt, &u.DeletionScheduledFor, &u.UndoSendSeconds,
 		&u.UpdatedAt, &u.CreatedAt, &u.Roles)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -184,4 +189,17 @@ func (r *userRepository) GetBanState(ctx context.Context, userID uuid.UUID) (uin
 	var scope uint32
 	err := r.DB.QueryRow(ctx, q, userID).Scan(&scope)
 	return scope, err
+}
+
+func (r *userRepository) GetUndoSendSeconds(ctx context.Context, userID uuid.UUID) (int, error) {
+	const q = `SELECT undo_send_seconds FROM users WHERE id = $1`
+	var seconds int
+	err := r.DB.QueryRow(ctx, q, userID).Scan(&seconds)
+	return seconds, err
+}
+
+func (r *userRepository) SetUndoSendSeconds(ctx context.Context, userID uuid.UUID, seconds int) error {
+	const q = `UPDATE users SET undo_send_seconds = $2, updated_at = NOW() WHERE id = $1`
+	_, err := r.DB.Exec(ctx, q, userID, seconds)
+	return err
 }

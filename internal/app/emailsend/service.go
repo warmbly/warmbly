@@ -183,6 +183,21 @@ func (s *emailSendService) SendEmail(ctx context.Context, userID, orgID, account
 		scheduledAt = time.Now()
 	}
 
+	// Undo send: instant sends are queued a short window into the
+	// future so the user can still cancel them through the existing
+	// DELETE /unibox/scheduled/:task_id path. Clamped to the config
+	// bounds so a bad DB value can never park a send for hours.
+	if sendMode == "instant" {
+		secs := config.UndoSendSecondsDefault
+		if s.userRepo != nil {
+			if v, err := s.userRepo.GetUndoSendSeconds(ctx, userID); err == nil {
+				secs = v
+			}
+		}
+		secs = min(max(secs, config.UndoSendSecondsMin), config.UndoSendSecondsMax)
+		scheduledAt = time.Now().Add(time.Duration(secs) * time.Second)
+	}
+
 	// Create task + email_task records
 	taskID := uuid.New()
 	task := &repository.Task{

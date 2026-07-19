@@ -132,6 +132,13 @@ const (
 	//
 	// Future: per-plan ceiling lookup. Today: single backstop.
 	MaxPendingScheduledSendsPerUser = 10000
+
+	// Undo send: instant sends are queued this many seconds in the
+	// future so the sender can still cancel. Per-user setting stored in
+	// users.undo_send_seconds; the migration CHECK mirrors these bounds.
+	UndoSendSecondsMin     = 5
+	UndoSendSecondsDefault = 30
+	UndoSendSecondsMax     = 120
 )
 
 // InboundClassificationHeaders are the internet headers the API-based inbound

@@ -232,6 +232,8 @@ func Run(
 		protectedAuth.POST("/me/avatar", h.UploadUserAvatar)
 		protectedAuth.DELETE("/me/avatar", h.DeleteUserAvatar)
 		protectedAuth.POST("/me/password", m.RateLimitMiddleware(models.RateLimitWrite), h.ChangePassword)
+		// Undo-send window (user-scoped; current value rides /auth/me).
+		protectedAuth.PUT("/me/send-preferences", h.UpdateSendPreferences)
 
 		// Notification preferences + in-app feed (user-scoped, no org gate).
 		protectedAuth.GET("/me/notification-preferences", h.GetNotificationPreferences)
