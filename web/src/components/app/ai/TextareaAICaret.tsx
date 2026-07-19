@@ -349,7 +349,7 @@ export default function TextareaAICaret({
                         left: taBox.left,
                         width: taBox.width,
                         height: taBox.height,
-                        zIndex: 54,
+                        zIndex: 114,
                     }}
                 />
             )}
@@ -366,7 +366,7 @@ export default function TextareaAICaret({
                                 position: "fixed",
                                 top: rect.top - 1,
                                 left: taRight - 30,
-                                zIndex: 55,
+                                zIndex: 115,
                             }}
                             aria-label="Write with AI"
                             className="size-[22px] rounded-md inline-flex items-center justify-center text-slate-300 hover:text-sky-600 hover:bg-sky-50 transition-colors"
@@ -390,7 +390,7 @@ export default function TextareaAICaret({
                         style={{
                             position: "fixed",
                             left: popLeft,
-                            zIndex: 60,
+                            zIndex: 120,
                             ...(popAbove
                                 ? { bottom: window.innerHeight - rect.top + 6 }
                                 : { top: rect.bottom + 6 }),

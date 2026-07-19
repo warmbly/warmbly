@@ -20,6 +20,7 @@ import {
     CheckIcon,
     ChevronDownIcon,
     ClockIcon,
+    FileTextIcon,
     HistoryIcon,
     Loader2Icon,
     OctagonAlertIcon,
@@ -33,6 +34,10 @@ import { useAppStore } from "@/stores";
 import useComposeCandidates from "@/lib/api/hooks/app/unibox/useComposeCandidates";
 import useComposeSend from "@/lib/api/hooks/app/unibox/useComposeSend";
 import useGenerateWrite from "@/lib/api/hooks/app/generation/useGenerateWrite";
+import useTemplates from "@/lib/api/hooks/app/templates/useTemplates";
+import type Template from "@/lib/api/models/app/templates/Template";
+import TemplatePickerContent from "../TemplatePicker";
+import InsertBookingLink from "../InsertBookingLink";
 import AIDraftBar, { useAIDraft } from "@/components/app/ai/AIDraftBar";
 import TextareaAIEdit from "@/components/app/ai/TextareaAIEdit";
 import TextareaAICaret from "@/components/app/ai/TextareaAICaret";
@@ -133,6 +138,19 @@ function ComposeWindowInner({ prefillTo }: { prefillTo: string | null }) {
     const [scheduleOpen, setScheduleOpen] = React.useState(false);
     const [customMode, setCustomMode] = React.useState(false);
     const [customValue, setCustomValue] = React.useState(() => toLocalInput(offsetHours(2)));
+    const [templateOpen, setTemplateOpen] = React.useState(false);
+
+    const templatesQuery = useTemplates();
+
+    // Body empty → replace; otherwise append under a separator. The template
+    // subject only fills an empty subject line, never overwrites yours.
+    const applyTemplate = (t: Template) => {
+        const plain = t.body_plain ?? "";
+        setBody((b) => (b.trim() ? `${b.trimEnd()}\n\n${plain}` : plain).slice(0, MAX_BODY_LEN));
+        if (t.subject && !subject.trim()) setSubject(t.subject);
+        setTemplateOpen(false);
+        toast.success(`Inserted "${t.name}"`);
+    };
 
     const bodyRef = React.useRef<HTMLTextAreaElement>(null);
 
@@ -302,14 +320,20 @@ function ComposeWindowInner({ prefillTo }: { prefillTo: string | null }) {
         >
             {/* ── Main column ─────────────────────────────────────────── */}
             <div className="flex flex-col w-full sm:w-[540px] min-h-0">
-                <div className="shrink-0 h-9 pl-3.5 pr-1.5 flex items-center gap-2 bg-slate-50 border-b border-slate-200">
-                    <span className="text-[12px] font-medium text-slate-800">New email</span>
-                    {contact && (
-                        <span className="hidden sm:inline text-[11px] text-slate-400 truncate min-w-0">
-                            · {contactDisplay}
-                            {contact.company ? `, ${contact.company}` : ""}
-                        </span>
-                    )}
+                <div className="shrink-0 pl-3 pr-1.5 py-1.5 flex items-center gap-2.5 bg-slate-50/80 border-b border-slate-200">
+                    <span className="size-6 rounded-md bg-white border border-slate-200 text-sky-600 inline-flex items-center justify-center shadow-sm shrink-0">
+                        <PenLineIcon className="w-3 h-3" />
+                    </span>
+                    <div className="min-w-0 flex-1 leading-tight">
+                        <div className="text-[12px] font-semibold text-slate-900 truncate">
+                            New email
+                        </div>
+                        <div className="text-[10px] text-slate-400 truncate">
+                            {contact
+                                ? `${contactDisplay}${contact.company ? ` · ${contact.company}` : ""}`
+                                : primary || "No recipient yet"}
+                        </div>
+                    </div>
                     <div className="ml-auto flex items-center gap-0.5 shrink-0">
                         <button
                             type="button"
@@ -570,6 +594,34 @@ function ComposeWindowInner({ prefillTo }: { prefillTo: string | null }) {
                             )}
                         </PopoverMenuContent>
                     </PopoverMenu>
+
+                    <PopoverMenu align="start" side="top" open={templateOpen} onOpenChange={setTemplateOpen}>
+                        <PopoverMenuTrigger asChild>
+                            <button
+                                type="button"
+                                title="Drop a saved template into the email"
+                                className="h-7 px-2 rounded-md border border-slate-200 hover:border-slate-300 text-slate-700 hover:text-slate-900 text-[12px] inline-flex items-center gap-1 transition-colors"
+                            >
+                                <FileTextIcon className="w-3 h-3" />
+                                Template
+                                <ChevronDownIcon className="w-3 h-3 text-slate-400" />
+                            </button>
+                        </PopoverMenuTrigger>
+                        <PopoverMenuContent minWidth={340} className="max-w-[92vw]">
+                            <TemplatePickerContent
+                                query={templatesQuery}
+                                onPick={applyTemplate}
+                                onClose={() => setTemplateOpen(false)}
+                            />
+                        </PopoverMenuContent>
+                    </PopoverMenu>
+
+                    <InsertBookingLink
+                        email={to[0]}
+                        onInsert={(text) =>
+                            setBody((b) => (b.trim() ? `${b.trimEnd()}\n\n${text}` : text).slice(0, MAX_BODY_LEN))
+                        }
+                    />
 
                     {body && (
                         <button

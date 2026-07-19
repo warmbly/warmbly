@@ -356,7 +356,7 @@ export default function TextareaAIEdit({
                             left: h.left,
                             width: h.width,
                             height: h.height,
-                            zIndex: 54,
+                            zIndex: 114,
                         }}
                     />
                 ))}
@@ -369,7 +369,7 @@ export default function TextareaAIEdit({
                         animate={{ opacity: 1, y: 0, scale: 1, x: "-50%" }}
                         exit={{ opacity: 0, y: 2, scale: 0.95, x: "-50%" }}
                         transition={{ type: "spring", stiffness: 500, damping: 32 }}
-                        style={{ position: "fixed", top: rect.top - 34, left: rect.centerX, zIndex: 60 }}
+                        style={{ position: "fixed", top: rect.top - 34, left: rect.centerX, zIndex: 120 }}
                         className="h-7 pl-2 pr-2.5 rounded-full border border-slate-200 bg-white shadow-[0_6px_20px_-6px_rgba(15,23,42,0.25)] inline-flex items-center gap-1.5 text-[11.5px] font-medium text-slate-700 hover:text-sky-700 hover:border-sky-300 transition-colors"
                         onMouseDown={(e) => {
                             // Keep the textarea focused so the selection survives.
@@ -392,7 +392,7 @@ export default function TextareaAIEdit({
                         style={{
                             position: "fixed",
                             left: popLeft,
-                            zIndex: 60,
+                            zIndex: 120,
                             // Anchored via bottom when flipping above, so no
                             // translate is needed (motion owns transform).
                             ...(popAbove
