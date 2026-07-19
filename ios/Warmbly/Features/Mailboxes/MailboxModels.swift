@@ -505,6 +505,24 @@ struct MailboxUpdateBody: Encodable {
     }
 }
 
+// MARK: - PATCH /emails/tags (bulk tag add/remove, set semantics)
+
+struct MailboxBulkTagsBody: Encodable {
+    var emailIDs: [String]
+    var addTags: [String]?
+    var removeTags: [String]?
+
+    enum CodingKeys: String, CodingKey {
+        case emailIDs = "email_ids"
+        case addTags = "add_tags"
+        case removeTags = "remove_tags"
+    }
+}
+
+struct MailboxBulkTagsResponse: Codable, Sendable {
+    var updated: Int?
+}
+
 // MARK: - Formatting helpers
 
 enum MailboxFormat {
