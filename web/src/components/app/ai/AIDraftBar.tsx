@@ -240,9 +240,13 @@ export default function AIDraftBar({
 
     // Floats over the bottom of the body area; the wrapper is pointer-inert so
     // the textarea stays clickable around the card.
+    //
+    // mode="wait" serializes phase transitions: without it the exiting pill
+    // and the entering card share the centered flex row for a frame, shoving
+    // the card sideways before it snaps back to center.
     return (
         <div className="pointer-events-none absolute inset-x-0 bottom-2 z-10 flex justify-center px-3">
-            <AnimatePresence initial={false}>
+            <AnimatePresence initial={false} mode="wait">
                 {ctrl.phase === "busy" && (
                     <motion.div
                         key="ai-draft-busy"
