@@ -48,7 +48,9 @@ export default function MailboxPicker({ value, onChange, candidates, loading }: 
         const el = boxRef.current;
         if (!el) return;
         const r = el.getBoundingClientRect();
-        const vw = window.innerWidth;
+        // clientWidth excludes any scrollbar; innerWidth would let the
+        // panel's right edge slide underneath it.
+        const vw = document.documentElement.clientWidth;
         const vh = window.innerHeight;
         const left = Math.min(Math.max(r.left, 8), vw - PANEL_WIDTH - 8);
         // Flip above the trigger when the space below is tight.
@@ -83,11 +85,16 @@ export default function MailboxPicker({ value, onChange, candidates, loading }: 
         return m;
     }, [storeEmails]);
 
+    // Derived from the store's mailbox directory, not the candidates
+    // response, so the chips render even while candidates are still
+    // loading for a new recipient.
     const usedTags = React.useMemo(() => {
         const used = new Set<string>();
-        for (const a of accounts) for (const t of tagsByAccount.get(a.id) ?? []) used.add(t);
-        return storeTags.filter((t) => used.has(t.id));
-    }, [accounts, storeTags, tagsByAccount]);
+        for (const e of storeEmails) for (const t of e.tags ?? []) used.add(t);
+        return storeTags
+            .filter((t) => used.has(t.id))
+            .sort((a, b) => a.position - b.position);
+    }, [storeEmails, storeTags]);
 
     const filtered = React.useMemo(() => {
         const q = search.trim().toLowerCase();
@@ -162,7 +169,7 @@ export default function MailboxPicker({ value, onChange, candidates, loading }: 
                         >
                             {/* Search + tag filter header */}
                             <div className="px-1.5 pt-1.5 pb-1 border-b border-slate-100">
-                                <div className="flex items-center gap-1.5 px-1.5 h-6 rounded-md bg-slate-50 focus-within:bg-white focus-within:ring-1 focus-within:ring-sky-200 transition-colors">
+                                <div className="flex items-center gap-1.5 px-1.5 h-6 rounded-md border border-slate-200 bg-white focus-within:border-sky-300 focus-within:ring-1 focus-within:ring-sky-100 transition-colors">
                                     <SearchIcon className="w-3 h-3 text-slate-400 shrink-0" />
                                     <input
                                         autoFocus
