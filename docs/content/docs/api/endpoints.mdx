@@ -86,11 +86,14 @@ AI contact research charges credits (2 per run, billable even when it finds noth
 | POST | `/unibox/reply/draft` | `READ_UNIBOX` |
 | GET | `/unibox/compose/candidates` | `READ_UNIBOX` |
 | POST | `/unibox/compose` | `WRITE_UNIBOX` |
+| POST | `/unibox/compose/draft` | `READ_UNIBOX` |
 | GET | `/unibox/agent-drafts` | `READ_UNIBOX` |
 | POST | `/unibox/agent-drafts/:id/approve` | `WRITE_UNIBOX` |
 | POST | `/unibox/agent-drafts/:id/discard` | `WRITE_UNIBOX` |
 
 `POST /unibox/reply/draft` returns an AI-drafted reply (it never sends) grounded in the thread, the contact, and your [voice profile](/guides/unibox/#ai-reply-drafts). It charges AI credits; see [AI credits](/guides/ai-credits/).
+
+`POST /unibox/compose/draft` returns a grounded AI draft for a new email (it never sends): the recipient's contact record, correspondence history, and the workspace voice profile feed the prompt, and the response carries either `text` or a clarifying `question` plus a `grounding` report. Charges AI credits like the reply draft; see [AI credits](/guides/ai-credits/).
 
 `POST /unibox/compose` sends a brand-new outbound email (not a reply). Omit `email_account_id` (or pass `"auto"`) and the backend picks the best mailbox for the first recipient; the response reports `account_id`, `account_email`, `auto`, and a `picked_reason`. Recipients on the workspace suppression list are rejected with a `400` before anything queues. `GET /unibox/compose/candidates?to=<address>` returns every active mailbox scored for that recipient (conversation history, remaining daily budget, domain-auth health) plus the resolved contact and suppression state; see [composing email](/guides/unibox/#composing-a-new-email).
 

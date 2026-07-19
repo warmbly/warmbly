@@ -15,6 +15,7 @@
 
 import React from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { Link } from "react-router-dom";
 import toast from "react-hot-toast";
 import {
     CheckIcon,
@@ -37,6 +38,7 @@ import { useAppStore } from "@/stores";
 import useComposeCandidates from "@/lib/api/hooks/app/unibox/useComposeCandidates";
 import useComposeSend from "@/lib/api/hooks/app/unibox/useComposeSend";
 import useGenerateWrite from "@/lib/api/hooks/app/generation/useGenerateWrite";
+import useComposeDraft from "@/lib/api/hooks/app/unibox/useComposeDraft";
 import useTemplates from "@/lib/api/hooks/app/templates/useTemplates";
 import type Template from "@/lib/api/models/app/templates/Template";
 import TemplatePickerContent from "../TemplatePicker";
@@ -188,30 +190,20 @@ function ComposeWindowInner({ prefillTo }: { prefillTo: string | null }) {
         return `Usually from ${top.email}`;
     }, [candidates]);
 
-    // AI draft of the whole email, grounded in whatever we know about the
-    // recipient. Same draft-bar review flow as replies.
-    const writeMut = useGenerateWrite();
-    const buildDraftPrompt = React.useCallback(
-        (instruction?: string) => {
-            const lines = [
-                instruction?.trim() ||
-                    "Write a short, specific outbound email that opens a conversation.",
-                "",
-                "You are writing a complete, ready-to-send email body. Return ONLY the body text: no subject line, no signature, and no placeholders like [Name] — if a detail is unknown, write around it.",
-            ];
-            const ctx: string[] = [];
-            if (to.length) ctx.push(`Recipient: ${to.join(", ")}`);
-            if (contactDisplay) ctx.push(`Recipient name: ${contactDisplay}`);
-            if (contact?.company) ctx.push(`Recipient company: ${contact.company}`);
-            if (subject.trim()) ctx.push(`Subject: ${subject.trim()}`);
-            if (ctx.length) lines.push("", ...ctx);
-            return lines.join("\n");
-        },
-        [contact?.company, contactDisplay, subject, to],
-    );
+    // AI draft of the whole email, server-grounded like reply drafts: the
+    // backend folds in the contact record, the correspondence history with the
+    // address, and the org voice profile, and asks a clarifying question when
+    // it can't tell what the email is for.
+    const draftMut = useComposeDraft();
     const generateDraft = React.useCallback(
-        (instruction?: string) => writeMut.mutateAsync({ prompt: buildDraftPrompt(instruction) }),
-        [buildDraftPrompt, writeMut],
+        (instruction?: string) =>
+            draftMut.mutateAsync({
+                to: primary || undefined,
+                subject: subject.trim() || undefined,
+                instruction,
+                idempotency_key: crypto.randomUUID(),
+            }),
+        [draftMut, primary, subject],
     );
     const aiDraft = useAIDraft({
         value: body,
@@ -546,10 +538,25 @@ function ComposeWindowInner({ prefillTo }: { prefillTo: string | null }) {
                     onChange={(next) => setBody(next.slice(0, MAX_BODY_LEN))}
                     onDraftReply={() => aiDraft.start()}
                     draftLabel="Draft this email with AI"
-                    draftCost="from 1 credit"
+                    draftCost="from 2 credits"
                     contextHint={`It is a new outbound email${contactDisplay ? ` to ${contactDisplay}` : ""}${subject.trim() ? ` with the subject "${subject.trim()}"` : ""}.`}
                     maxLen={MAX_BODY_LEN}
                 />
+
+                {/* One-time nudge: drafts came back ungrounded in any product
+                    context, so point at the workspace voice profile. */}
+                {aiDraft.grounding && !aiDraft.grounding.voice_profile && (
+                    <div className="shrink-0 mx-3.5 mb-1.5 px-2.5 py-1.5 rounded-md border border-amber-200/60 bg-amber-50/60 text-[10.5px] text-amber-800 leading-snug">
+                        AI doesn&apos;t know your product yet.{" "}
+                        <Link
+                            to="/app/settings/workspace"
+                            className="font-medium underline underline-offset-2 hover:text-amber-950"
+                        >
+                            Set your voice profile
+                        </Link>{" "}
+                        (what you sell, who to, how you sound) and drafts will stop being generic.
+                    </div>
+                )}
 
                 {/* Action bar */}
                 <div className="shrink-0 px-3 py-2 border-t border-slate-200/60 flex flex-wrap items-center gap-1.5">

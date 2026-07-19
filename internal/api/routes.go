@@ -480,6 +480,10 @@ func Run(
 				// auth) so the picker and Auto mode can explain their choice.
 				unibox.GET("/compose/candidates", m.RequireOrganization(), m.RequireAccess(models.PermAccessUnibox, models.APIPermReadUnibox), h.GetComposeCandidates)
 				unibox.POST("/compose", m.RequireOrganization(), m.RequireAccess(models.PermAccessUnibox, models.APIPermWriteUnibox), h.UniboxCompose)
+				// Grounded AI draft for compose: contact + history + voice
+				// profile context; may return a clarifying question instead
+				// of a draft. Charges credits, never sends.
+				unibox.POST("/compose/draft", m.RequireOrganization(), m.RequireAccess(models.PermAccessUnibox, models.APIPermReadUnibox), h.DraftCompose)
 				// AI reply draft: context-grounded, charges credits, never sends.
 				unibox.POST("/reply/draft", m.RequireOrganization(), m.RequireAccess(models.PermAccessUnibox, models.APIPermReadUnibox), h.DraftReply)
 
