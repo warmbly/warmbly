@@ -14,8 +14,10 @@ import {
     MessagesSquareIcon,
     SearchIcon,
     SparklesIcon,
+    TagIcon,
 } from "lucide-react";
 import type { ComposeCandidate, ComposeCandidatesResponse } from "@/lib/api/models/app/unibox/Compose";
+import FilterMenu from "@/components/app/unibox/compose/FilterMenu";
 import useClickOutside from "@/hooks/useClickOutside";
 import { useAppStore } from "@/stores";
 import { cn } from "@/lib/utils";
@@ -164,9 +166,9 @@ export default function MailboxPicker({ value, onChange, candidates, loading }: 
                             }}
                             className="max-w-[calc(100vw-16px)] rounded-lg border border-slate-200 bg-white shadow-xl overflow-hidden"
                         >
-                            {/* Search + tag filter header */}
-                            <div className="px-1.5 pt-1.5 pb-1 border-b border-slate-100">
-                                <div className="flex items-center gap-1.5 px-1.5 h-6 rounded-md border border-slate-200 bg-white focus-within:border-sky-300 focus-within:ring-1 focus-within:ring-sky-100 transition-colors">
+                            {/* Search + tag filter header: one compact row */}
+                            <div className="px-1.5 pt-1.5 pb-1 border-b border-slate-100 flex items-center gap-1">
+                                <div className="flex-1 min-w-0 flex items-center gap-1.5 px-1.5 h-6 rounded-md border border-slate-200 bg-white focus-within:border-sky-300 focus-within:ring-1 focus-within:ring-sky-100 transition-colors">
                                     <SearchIcon className="w-3 h-3 text-slate-400 shrink-0" />
                                     <input
                                         autoFocus
@@ -177,27 +179,17 @@ export default function MailboxPicker({ value, onChange, candidates, loading }: 
                                     />
                                 </div>
                                 {usedTags.length > 0 && (
-                                    <div className="mt-1 flex items-center gap-1 overflow-x-auto pb-0.5">
-                                        {usedTags.map((t) => (
-                                            <button
-                                                key={t.id}
-                                                type="button"
-                                                onClick={() => setTagFilter((f) => (f === t.id ? null : t.id))}
-                                                className={cn(
-                                                    "h-5 px-1.5 rounded-full text-[10px] font-medium inline-flex items-center gap-1 shrink-0 border transition-colors",
-                                                    tagFilter === t.id
-                                                        ? "border-sky-300 bg-sky-50 text-sky-700"
-                                                        : "border-slate-200 text-slate-500 hover:border-slate-300 hover:text-slate-700",
-                                                )}
-                                            >
-                                                <span
-                                                    className="size-1.5 rounded-full"
-                                                    style={{ backgroundColor: t.color }}
-                                                />
-                                                {t.title}
-                                            </button>
-                                        ))}
-                                    </div>
+                                    <FilterMenu
+                                        icon={TagIcon}
+                                        allLabel="All tags"
+                                        options={usedTags.map((t) => ({
+                                            id: t.id,
+                                            label: t.title,
+                                            color: t.color,
+                                        }))}
+                                        value={tagFilter}
+                                        onChange={setTagFilter}
+                                    />
                                 )}
                             </div>
 
