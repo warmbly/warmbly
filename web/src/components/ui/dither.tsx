@@ -429,6 +429,213 @@ export function DitherAreaChart({
     );
 }
 
+export interface DitherAreaSeries {
+    label: string;
+    tone: DitherTone;
+    values: number[];
+}
+
+// DitherMultiAreaChart — several metrics composed on one graph: a smoothed
+// solid line per series with nested dithered bands underneath (at any pixel
+// the smallest band containing it wins, so overlapping series read as layers,
+// not mush). One shared crosshair lists every series' value for the hovered
+// day.
+export function DitherMultiAreaChart({
+    labels,
+    series,
+    height = 96,
+    className,
+    renderTooltip,
+}: {
+    labels: string[];
+    series: DitherAreaSeries[];
+    height?: number;
+    className?: string;
+    renderTooltip?: (i: number) => React.ReactNode;
+}) {
+    const reduced = useReducedMotion();
+    const [wrapRef, { w }] = useMeasure<HTMLDivElement>();
+    const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
+    const [hover, setHover] = React.useState<number | null>(null);
+    const revealRef = React.useRef(1);
+
+    const max = Math.max(1, ...series.flatMap((s) => s.values));
+    const yCssFor = React.useCallback(
+        (v: number) => AREA_PAD_TOP + (1 - v / max) * (height - AREA_PAD_TOP - AREA_PAD_BOTTOM),
+        [max, height],
+    );
+
+    const paint = React.useCallback(() => {
+        const el = canvasRef.current;
+        if (!el || w <= 0) return;
+        const dpr = Math.max(1, Math.floor(window.devicePixelRatio || 1));
+        const ctx = sizeCanvas(el, w, height, dpr);
+        if (!ctx) return;
+        const W = el.width;
+        const H = el.height;
+        const img = ctx.createImageData(W, H);
+        const buf = img.data;
+        const n = labels.length;
+        const S = series.length;
+        if (n > 0 && S > 0) {
+            const ysAll = series.map((s) => s.values.map((v) => yCssFor(v) * dpr));
+            const tans = ysAll.map(monotoneTangents);
+            const rgbs = series.map((s) => TONES[s.tone]);
+            const revealX = revealRef.current * W;
+            const line = 0.9 * dpr;
+            const ycs = new Array<number>(S);
+            for (let x = 0; x < W; x++) {
+                if (x > revealX) break;
+                const t = n > 1 ? (x / Math.max(1, W - 1)) * (n - 1) : 0;
+                const i = Math.min(n - 2, Math.max(0, Math.floor(t)));
+                const hh = n > 1 ? t - i : 0;
+                const h00 = 2 * hh ** 3 - 3 * hh ** 2 + 1;
+                const h10 = hh ** 3 - 2 * hh ** 2 + hh;
+                const h01 = -2 * hh ** 3 + 3 * hh ** 2;
+                const h11 = hh ** 3 - hh ** 2;
+                for (let s = 0; s < S; s++) {
+                    const ys = ysAll[s];
+                    ycs[s] = n === 1 ? ys[0] : h00 * ys[i] + h10 * tans[s][i] + h01 * ys[i + 1] + h11 * tans[s][i + 1];
+                }
+                // Area bands: walk downward; the series whose line we most
+                // recently crossed owns the pixel (smallest containing band).
+                const order = Array.from({ length: S }, (_, s) => s).sort((a, b) => ycs[a] - ycs[b]);
+                let k = 0;
+                let owner = -1;
+                for (let y = Math.max(0, Math.floor(ycs[order[0]])); y < H; y++) {
+                    while (k < S && y > ycs[order[k]]) {
+                        owner = order[k];
+                        k++;
+                    }
+                    if (owner < 0) continue;
+                    const yc = ycs[owner];
+                    const rel = (y - yc) / Math.max(1, H - yc);
+                    const a = 0.45 - 0.36 * rel;
+                    if (a < bayer(x, y, dpr)) continue;
+                    const o = (y * W + x) * 4;
+                    buf[o] = rgbs[owner][0];
+                    buf[o + 1] = rgbs[owner][1];
+                    buf[o + 2] = rgbs[owner][2];
+                    buf[o + 3] = 255;
+                }
+                // Solid lines on top, later series winning ties.
+                for (let s = 0; s < S; s++) {
+                    const y0 = Math.max(0, Math.floor(ycs[s] - line));
+                    const y1 = Math.min(H - 1, Math.ceil(ycs[s] + line));
+                    for (let y = y0; y <= y1; y++) {
+                        const o = (y * W + x) * 4;
+                        buf[o] = rgbs[s][0];
+                        buf[o + 1] = rgbs[s][1];
+                        buf[o + 2] = rgbs[s][2];
+                        buf[o + 3] = 255;
+                    }
+                }
+            }
+        }
+        ctx.putImageData(img, 0, 0);
+    }, [labels, series, w, height, yCssFor]);
+
+    const paintRef = React.useRef(paint);
+    React.useEffect(() => {
+        paintRef.current = paint;
+        paint();
+    }, [paint]);
+
+    React.useEffect(() => {
+        if (labels.length === 0) return;
+        if (reduced) {
+            revealRef.current = 1;
+            paintRef.current();
+            return;
+        }
+        revealRef.current = 0;
+        const t0 = performance.now();
+        const dur = 700;
+        let raf = 0;
+        const tick = (now: number) => {
+            const c = clamp01((now - t0) / dur);
+            revealRef.current = easeOutCubic(c);
+            paintRef.current();
+            if (c < 1) raf = requestAnimationFrame(tick);
+        };
+        raf = requestAnimationFrame(tick);
+        return () => cancelAnimationFrame(raf);
+    }, [labels, series, reduced]);
+
+    const onMove = (e: React.PointerEvent<HTMLDivElement>) => {
+        if (labels.length === 0 || w <= 0) return;
+        const rect = e.currentTarget.getBoundingClientRect();
+        const i = Math.round(((e.clientX - rect.left) / rect.width) * (labels.length - 1));
+        setHover(i >= 0 && i < labels.length ? i : null);
+    };
+
+    const hoverX = hover !== null && labels.length > 1 ? (hover / (labels.length - 1)) * w : w / 2;
+    const flip = hoverX > w / 2;
+
+    return (
+        <div
+            ref={wrapRef}
+            className={`relative ${className ?? ""}`}
+            style={{ height }}
+            onPointerMove={onMove}
+            onPointerLeave={() => setHover(null)}
+        >
+            <canvas ref={canvasRef} className="absolute inset-0 block h-full w-full" />
+            {hover !== null && (
+                <>
+                    <div
+                        className="pointer-events-none absolute inset-y-0 border-l border-dashed border-slate-300"
+                        style={{ left: hoverX }}
+                    />
+                    {series.map((s) => {
+                        const [cr, cg, cb] = TONES[s.tone];
+                        return (
+                            <div
+                                key={s.label}
+                                className="pointer-events-none absolute size-2 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-sm"
+                                style={{
+                                    left: hoverX,
+                                    top: yCssFor(s.values[hover] ?? 0),
+                                    backgroundColor: `rgb(${cr}, ${cg}, ${cb})`,
+                                }}
+                            />
+                        );
+                    })}
+                    <div
+                        className={`pointer-events-none absolute top-1 z-10 rounded-md border border-slate-200 bg-white px-2 py-1 text-[10.5px] text-slate-600 shadow-sm ${
+                            flip ? "-translate-x-full" : ""
+                        }`}
+                        style={{ left: flip ? hoverX - 8 : hoverX + 8 }}
+                    >
+                        {renderTooltip ? (
+                            renderTooltip(hover)
+                        ) : (
+                            <>
+                                <div className="font-medium text-slate-900 whitespace-nowrap">{labels[hover]}</div>
+                                {series.map((s) => {
+                                    const [cr, cg, cb] = TONES[s.tone];
+                                    return (
+                                        <div key={s.label} className="flex items-center gap-1.5 whitespace-nowrap">
+                                            <span
+                                                className="size-1.5 rounded-full"
+                                                style={{ backgroundColor: `rgb(${cr}, ${cg}, ${cb})` }}
+                                            />
+                                            <span>{s.label}</span>
+                                            <span className="ml-auto pl-2 font-mono tabular-nums text-slate-700">
+                                                {(s.values[hover] ?? 0).toLocaleString()}
+                                            </span>
+                                        </div>
+                                    );
+                                })}
+                            </>
+                        )}
+                    </div>
+                </>
+            )}
+        </div>
+    );
+}
+
 export function DitherMeter({
     frac,
     tone = "sky",

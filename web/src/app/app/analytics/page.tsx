@@ -23,7 +23,8 @@ import {
     Stat,
     StatStrip,
 } from "@/components/layout/Page";
-import { DailyTrend, type ChartPoint } from "@/components/ui/charts";
+import { MultiTrend, type TrendSeries } from "@/components/ui/charts";
+import { TONE_DOT } from "@/components/ui/tones";
 import type { DitherTone } from "@/components/ui/dither";
 import AnalyticsShareButton from "@/components/app/analytics/AnalyticsShareButton";
 import useDashboard from "@/lib/api/hooks/app/analytics/useDashboard";
@@ -54,15 +55,30 @@ function num(v: number | undefined): string {
 export default function AnalyticsPage() {
     const canView = usePermission("VIEW_ANALYTICS");
     const [range, setRange] = useState<Range>("7d");
-    const [metric, setMetric] = useState<Metric>("sent");
+    // Legend toggles: every metric charts together; hidden ones drop out.
+    const [hiddenMetrics, setHiddenMetrics] = useState<Metric[]>([]);
     const dash = useDashboard(range);
     const d = dash.data;
     const os = d?.overall_stats;
 
-    const series: ChartPoint[] = useMemo(
-        () => (d?.daily_trend ?? []).map((p) => ({ label: p.date, value: p[metric] ?? 0 })),
-        [d?.daily_trend, metric],
-    );
+    const toggleMetric = (k: Metric) =>
+        setHiddenMetrics((cur) => {
+            if (cur.includes(k)) return cur.filter((x) => x !== k);
+            // Keep at least one series on the graph.
+            if (cur.length >= METRICS.length - 1) return cur;
+            return [...cur, k];
+        });
+
+    const trend = useMemo(() => {
+        const rows = d?.daily_trend ?? [];
+        const series: TrendSeries[] = METRICS.filter((m) => !hiddenMetrics.includes(m.key)).map((m) => ({
+            key: m.key,
+            label: m.label,
+            tone: m.tone,
+            values: rows.map((p) => p[m.key] ?? 0),
+        }));
+        return { labels: rows.map((p) => p.date), series };
+    }, [d?.daily_trend, hiddenMetrics]);
 
     const breakdown = [
         { label: "Sent", value: os?.total_emails_sent, icon: SendIcon, dot: "bg-slate-400" },
@@ -110,29 +126,33 @@ export default function AnalyticsPage() {
                         <section className="flex flex-col min-h-0 lg:border-r lg:border-slate-200">
                             <SectionBar label="Email performance">
                                 <div className="inline-flex items-center gap-0.5 rounded-md bg-slate-100 p-0.5 max-w-full overflow-x-auto">
-                                    {METRICS.map((m) => (
-                                        <button
-                                            key={m.key}
-                                            onClick={() => setMetric(m.key)}
-                                            className={`h-6 px-2 rounded text-[11px] font-medium transition-colors ${
-                                                metric === m.key
-                                                    ? "bg-white text-slate-900 shadow-sm"
-                                                    : "text-slate-500 hover:text-slate-900"
-                                            }`}
-                                        >
-                                            {m.label}
-                                        </button>
-                                    ))}
+                                    {METRICS.map((m) => {
+                                        const visible = !hiddenMetrics.includes(m.key);
+                                        return (
+                                            <button
+                                                key={m.key}
+                                                onClick={() => toggleMetric(m.key)}
+                                                className={`h-6 px-2 rounded text-[11px] font-medium transition-colors inline-flex items-center gap-1.5 ${
+                                                    visible
+                                                        ? "bg-white text-slate-900 shadow-sm"
+                                                        : "text-slate-400 hover:text-slate-600"
+                                                }`}
+                                            >
+                                                <span className={`size-1.5 rounded-full ${visible ? TONE_DOT[m.tone] : "bg-slate-300"}`} />
+                                                {m.label}
+                                            </button>
+                                        );
+                                    })}
                                 </div>
                             </SectionBar>
                             <div className="flex-1 px-5 py-4">
                                 {dash.isPending ? (
                                     <div className="h-52 rounded-md bg-slate-50 animate-pulse" />
                                 ) : (
-                                    <DailyTrend
-                                        points={series}
+                                    <MultiTrend
+                                        labels={trend.labels}
+                                        series={trend.series}
                                         height={220}
-                                        tone={METRICS.find((m) => m.key === metric)?.tone}
                                         emptyLabel="No sends in this window yet"
                                     />
                                 )}

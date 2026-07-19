@@ -9,7 +9,7 @@
 
 import React from "react";
 import { cn } from "@/lib/utils";
-import { DitherAreaChart, type DitherBarDatum, type DitherTone } from "@/components/ui/dither";
+import { DitherMultiAreaChart, type DitherTone } from "@/components/ui/dither";
 
 export interface ChartPoint {
     /** x-tick source — typically an ISO date string. */
@@ -55,42 +55,42 @@ export function EmptyChart({
     );
 }
 
+export interface TrendSeries {
+    key: string;
+    label: string;
+    tone: DitherTone;
+    values: number[];
+}
+
 /**
- * DailyTrend — single-series graph: a smoothed dithered area line with date
- * ticks and a hover crosshair (see DitherAreaChart). Falls back to
- * <EmptyChart> when there is no data (or the series is all zero), keeping the
- * same height so the layout never jumps.
+ * MultiTrend — several metrics composed on one graph (dither-kit style): a
+ * smoothed dithered area line per series, one shared crosshair listing every
+ * value, plus date ticks. Falls back to <EmptyChart> when there is no data
+ * (or every visible series is all zero), keeping the same height so the
+ * layout never jumps.
  */
-export function DailyTrend({
-    points,
+export function MultiTrend({
+    labels,
+    series,
     height = 200,
-    tone = "sky",
     emptyLabel = "No activity yet",
-    formatValue = (v: number) => v.toLocaleString(),
     className,
 }: {
-    points: ChartPoint[];
+    /** ISO dates, one per x position (shared by every series). */
+    labels: string[];
+    series: TrendSeries[];
     height?: number;
-    tone?: DitherTone;
     emptyLabel?: string;
-    formatValue?: (v: number) => string;
     className?: string;
 }) {
-    const total = points.reduce((s, p) => s + (p.value || 0), 0);
-    const isEmpty = points.length === 0 || total === 0;
+    const total = series.reduce((s, x) => s + x.values.reduce((a, v) => a + (v || 0), 0), 0);
+    const isEmpty = labels.length === 0 || series.length === 0 || total === 0;
 
-    const data = React.useMemo<DitherBarDatum[]>(
-        () =>
-            points.map((p) => ({
-                key: p.label,
-                value: p.value || 0,
-                hint: `${formatValue(p.value || 0)} · ${shortDate(p.label)}`,
-            })),
-        // formatValue is typically an inline closure; keying on points alone
-        // keeps the memo stable without re-mapping every render.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-        [points],
+    const areaSeries = React.useMemo(
+        () => series.map(({ label, tone, values }) => ({ label, tone, values })),
+        [series],
     );
+    const shortLabels = React.useMemo(() => labels.map(shortDate), [labels]);
 
     if (isEmpty) return <EmptyChart height={height} label={emptyLabel} className={className} />;
 
@@ -98,11 +98,11 @@ export function DailyTrend({
 
     return (
         <div className={cn("relative w-full select-none", className)} style={{ height }}>
-            <DitherAreaChart data={data} height={height - tickH - 4} tone={tone} />
+            <DitherMultiAreaChart labels={shortLabels} series={areaSeries} height={height - tickH - 4} />
             <div className="absolute left-0 right-0 h-px bg-slate-200/80" style={{ bottom: tickH }} />
             <div className="absolute left-0 right-0 bottom-0 flex justify-between font-mono text-[9.5px] text-slate-400">
-                <span>{shortDate(points[0].label)}</span>
-                <span>{shortDate(points[points.length - 1].label)}</span>
+                <span>{shortDate(labels[0])}</span>
+                <span>{shortDate(labels[labels.length - 1])}</span>
             </div>
         </div>
     );
