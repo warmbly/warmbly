@@ -327,7 +327,7 @@ const router = createBrowserRouter([
               { path: "teams", element: <TeamsSettingsPage /> },
               { path: "workspace", element: <WorkspaceSettingsPage /> },
               { path: "ai-skills", element: <SkillsSettingsPage /> },
-              { path: "billing", element: <BillingSettingsPage /> },
+              { path: "billing/:tab?", element: <BillingSettingsPage /> },
               { path: "referral", element: <ReferralSettingsPage /> },
               { path: "limits", element: <LimitsSettingsPage /> },
               { path: "roles", element: <RolesSettingsPage /> },

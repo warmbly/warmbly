@@ -25,7 +25,7 @@ export default function CreditsCard({ isPaid }: { isPaid: boolean }) {
     async function buyPack(pack: string) {
         setBuying(pack);
         try {
-            const base = `${window.location.origin}/app/settings/billing`;
+            const base = `${window.location.origin}/app/settings/billing/ai-credits`;
             const { checkout_url } = await toast.promise(
                 checkout.mutateAsync({
                     pack,

@@ -1,7 +1,8 @@
 // Billing — owner-only, organization-scoped, split into tabs so the page is
 // browsable: Overview (plan + usage), Plans (compare/promo), AI & credits,
-// and Payment. The active tab lives in the ?tab= search param so returns from
-// Stripe (?topup=success) land back on the right tab and links can deep-link.
+// and Payment. Each tab is a real path (/app/settings/billing/ai-credits,
+// /plans, /payment) so tabs are linkable and Stripe returns land on the tab
+// they left from.
 //
 // Plan data lives in `lib/plans` so the dashboard mirrors warmbly-web
 // exactly — every value here (limits, descriptions, bullets) comes
@@ -22,7 +23,7 @@ import {
     TicketIcon,
     XIcon,
 } from "lucide-react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import toast from "react-hot-toast";
 import { TopbarAction } from "@/components/layout/Page";
@@ -52,15 +53,24 @@ type BillingInterval = "monthly" | "annual";
 
 type BillingTab = "overview" | "plans" | "ai" | "payment";
 
-const TABS: { id: BillingTab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
-    { id: "overview", label: "Overview", icon: GaugeIcon },
-    { id: "plans", label: "Plans", icon: LayersIcon },
-    { id: "ai", label: "AI & credits", icon: SparklesIcon },
-    { id: "payment", label: "Payment", icon: CreditCardIcon },
+// Tab slugs are path segments under /app/settings/billing; overview is the
+// bare path.
+const TABS: { id: BillingTab; slug: string; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+    { id: "overview", slug: "", label: "Overview", icon: GaugeIcon },
+    { id: "plans", slug: "plans", label: "Plans", icon: LayersIcon },
+    { id: "ai", slug: "ai-credits", label: "AI & credits", icon: SparklesIcon },
+    { id: "payment", slug: "payment", label: "Payment", icon: CreditCardIcon },
 ];
 
-function isBillingTab(v: string | null): v is BillingTab {
-    return v === "overview" || v === "plans" || v === "ai" || v === "payment";
+function tabForSlug(slug: string | undefined): BillingTab | null {
+    if (!slug) return "overview";
+    const hit = TABS.find((t) => t.slug === slug);
+    return hit ? hit.id : null;
+}
+
+function pathForTab(t: BillingTab): string {
+    const slug = TABS.find((x) => x.id === t)?.slug;
+    return slug ? `/app/settings/billing/${slug}` : "/app/settings/billing";
 }
 
 export default function BillingSettingsPage() {
@@ -74,29 +84,21 @@ export default function BillingSettingsPage() {
     const plansQuery = usePlans();
     const redemptions = useAppliedDiscounts();
     const usage = useUsageOverview().data;
-    const [searchParams, setSearchParams] = useSearchParams();
+    const { tab: tabSlug } = useParams();
+    const navigate = useNavigate();
     const [codeInput, setCodeInput] = React.useState("");
     const [applied, setApplied] = React.useState<DiscountPreview | null>(null);
     const [billingInterval, setBillingInterval] =
         React.useState<BillingInterval>("annual");
 
-    // A ?topup= return from Stripe Checkout lands on the AI tab it left from.
-    const spTab = searchParams.get("tab");
-    const tab: BillingTab = isBillingTab(spTab)
-        ? spTab
-        : searchParams.get("topup")
-            ? "ai"
-            : "overview";
-    const setTab = (t: BillingTab) => {
-        setSearchParams(
-            (prev) => {
-                const next = new URLSearchParams(prev);
-                next.set("tab", t);
-                return next;
-            },
-            { replace: true },
-        );
-    };
+    const resolvedTab = tabForSlug(tabSlug);
+    const tab: BillingTab = resolvedTab ?? "overview";
+    const setTab = (t: BillingTab) => navigate(pathForTab(t));
+
+    // Unknown slug (stale link, typo) — normalize the URL to the overview.
+    if (resolvedTab === null) {
+        return <Navigate to="/app/settings/billing" replace />;
+    }
 
     if (!access.loading && !access.isOwner) {
         return (
@@ -213,7 +215,7 @@ export default function BillingSettingsPage() {
                     },
                 );
             } else {
-                const base = `${window.location.origin}/app/settings/billing`;
+                const base = `${window.location.origin}/app/settings/billing/plans`;
                 const { checkout_url } = await toast.promise(
                     checkout.mutateAsync({
                         price_id: priceId as string,
