@@ -90,9 +90,12 @@ type AISpendSettings struct {
 	SpendLimitDaily   *int      `json:"spend_limit_daily"`
 	SpendLimitWeekly  *int      `json:"spend_limit_weekly"`
 	SpendLimitMonthly *int      `json:"spend_limit_monthly"`
-	// MemberLimitMonthly caps what each individual member can spend per
-	// calendar month (nil = no per-member limit). Enforced against the
-	// ledger's actor attribution; scheduled/system work is not counted.
+	// Member limits cap what each individual member can spend per window
+	// (nil = no per-member limit), mirroring the org-wide windows above.
+	// Enforced against the ledger's actor attribution; scheduled/system
+	// work is not counted against anyone.
+	MemberLimitDaily     *int       `json:"member_limit_daily"`
+	MemberLimitWeekly    *int       `json:"member_limit_weekly"`
 	MemberLimitMonthly   *int       `json:"member_limit_monthly"`
 	LowBalanceThreshold  int        `json:"low_balance_threshold"`
 	LowBalanceNotifiedAt *time.Time `json:"low_balance_notified_at,omitempty"`

@@ -5,6 +5,8 @@ export interface UpdateCreditSettingsBody {
     spend_limit_daily: number | null;
     spend_limit_weekly: number | null;
     spend_limit_monthly: number | null;
+    member_limit_daily: number | null;
+    member_limit_weekly: number | null;
     member_limit_monthly: number | null;
     low_balance_threshold: number;
     auto_topup_enabled: boolean;

@@ -39,6 +39,8 @@ export default function AIUsageCard() {
         daily: number | null;
         weekly: number | null;
         monthly: number | null;
+        memberDaily: number | null;
+        memberWeekly: number | null;
         memberMonthly: number | null;
         lowThreshold: number;
         autoEnabled: boolean;
@@ -53,6 +55,8 @@ export default function AIUsageCard() {
             daily: s.spend_limit_daily,
             weekly: s.spend_limit_weekly,
             monthly: s.spend_limit_monthly,
+            memberDaily: s.member_limit_daily,
+            memberWeekly: s.member_limit_weekly,
             memberMonthly: s.member_limit_monthly,
             lowThreshold: s.low_balance_threshold,
             autoEnabled: s.auto_topup_enabled,
@@ -70,6 +74,8 @@ export default function AIUsageCard() {
                     spend_limit_daily: form.daily,
                     spend_limit_weekly: form.weekly,
                     spend_limit_monthly: form.monthly,
+                    member_limit_daily: form.memberDaily,
+                    member_limit_weekly: form.memberWeekly,
                     member_limit_monthly: form.memberMonthly,
                     low_balance_threshold: form.lowThreshold,
                     auto_topup_enabled: form.autoEnabled,
@@ -132,12 +138,14 @@ export default function AIUsageCard() {
                     </div>
 
                     <div>
-                        <div className="text-[10px] uppercase tracking-[0.14em] text-slate-400 mb-2">Per-member limit</div>
+                        <div className="text-[10px] uppercase tracking-[0.14em] text-slate-400 mb-2">Per-member limits</div>
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                            <LimitField label="Per member, per month" value={form.memberMonthly} onChange={(v) => setForm({ ...form, memberMonthly: v })} />
+                            <LimitField label="Per day" value={form.memberDaily} onChange={(v) => setForm({ ...form, memberDaily: v })} />
+                            <LimitField label="Per week" value={form.memberWeekly} onChange={(v) => setForm({ ...form, memberWeekly: v })} />
+                            <LimitField label="Per month" value={form.memberMonthly} onChange={(v) => setForm({ ...form, memberMonthly: v })} />
                         </div>
                         <p className="mt-1.5 text-[11px] text-slate-400">
-                            Caps what each teammate can spend on AI per calendar month. Scheduled work (automations, inbox agent) is workspace-level and not counted against anyone. Who can use AI at all is a role permission ("Use AI") under Team.
+                            Caps what each teammate can spend on AI in each window. Scheduled work (automations, inbox agent) is workspace-level and not counted against anyone. Who can use AI at all is a role permission ("Use AI") under Team.
                         </p>
                     </div>
 
