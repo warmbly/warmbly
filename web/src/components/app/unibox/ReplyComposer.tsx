@@ -386,52 +386,34 @@ export function ReplyComposer({ threadId, replyTo, mode, onClose }: ReplyCompose
                 </button>
             </div>
 
-            {/* Header strip : From / To / Cc / Bcc / Subject. Labels
-                sit in a wider, hairline-divided column so values get
-                proper breathing room. */}
-            <div className="px-4 py-2.5 border-b border-slate-200/70 divide-y divide-slate-200/40 bg-white">
-                <HeaderRow label="From">
-                    {mailbox ? (
-                        <div className="inline-flex items-center gap-2 min-w-0">
-                            <span className="text-[12.5px] text-slate-900 font-medium truncate">
-                                {mailbox.name || mailbox.email}
-                            </span>
-                            <span
-                                className="font-mono text-[10.5px] text-slate-500 bg-slate-50 px-1.5 h-4 inline-flex items-center rounded border border-slate-200 min-w-0 truncate"
-                                title={mailbox.email}
-                            >
-                                {mailbox.email}
-                            </span>
-                        </div>
-                    ) : (
-                        <span className="text-[12px] text-amber-700">
-                            No sending mailbox resolved
-                        </span>
-                    )}
-                    <div className="ml-auto flex items-center gap-1">
-                        {!showCc && (
-                            <button
-                                type="button"
-                                onClick={() => setShowCc(true)}
-                                className="h-5 px-1.5 rounded text-[10.5px] text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors"
-                            >
-                                + Cc
-                            </button>
-                        )}
-                        {!showBcc && (
-                            <button
-                                type="button"
-                                onClick={() => setShowBcc(true)}
-                                className="h-5 px-1.5 rounded text-[10.5px] text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors"
-                            >
-                                + Bcc
-                            </button>
-                        )}
-                    </div>
-                </HeaderRow>
-
+            {/* Header rows. Plain labelled lines matching the compose window:
+                quiet inline label, hairline between rows, no label lane or
+                divider column. */}
+            <div className="shrink-0 bg-white">
                 <HeaderRow label="To">
                     <RecipientField value={to} onChange={setTo} placeholder="name@example.com" />
+                    {(!showCc || !showBcc) && (
+                        <div className="ml-auto flex items-center gap-0.5 shrink-0 self-start pt-px">
+                            {!showCc && (
+                                <button
+                                    type="button"
+                                    onClick={() => setShowCc(true)}
+                                    className="h-5 px-1 rounded text-[11px] text-slate-400 hover:text-slate-700 transition-colors"
+                                >
+                                    Cc
+                                </button>
+                            )}
+                            {!showBcc && (
+                                <button
+                                    type="button"
+                                    onClick={() => setShowBcc(true)}
+                                    className="h-5 px-1 rounded text-[11px] text-slate-400 hover:text-slate-700 transition-colors"
+                                >
+                                    Bcc
+                                </button>
+                            )}
+                        </div>
+                    )}
                 </HeaderRow>
 
                 {showCc && (
@@ -465,15 +447,32 @@ export function ReplyComposer({ threadId, replyTo, mode, onClose }: ReplyCompose
                     </HeaderRow>
                 )}
 
-                <HeaderRow label="Subject">
+                <HeaderRow label="From">
+                    {mailbox ? (
+                        <div className="inline-flex items-center gap-2 min-w-0">
+                            <span className="text-[12.5px] text-slate-800 truncate">
+                                {mailbox.name || mailbox.email}
+                            </span>
+                            <span className="font-mono text-[10.5px] text-slate-400 min-w-0 truncate" title={mailbox.email}>
+                                {mailbox.email}
+                            </span>
+                        </div>
+                    ) : (
+                        <span className="text-[12px] text-amber-700">
+                            No sending mailbox resolved
+                        </span>
+                    )}
+                </HeaderRow>
+
+                <div className="flex items-center gap-2 px-4 border-b border-slate-100">
                     <input
                         type="text"
                         value={subject}
                         onChange={(e) => setSubject(e.target.value)}
                         placeholder="Subject"
-                        className="flex-1 min-w-0 h-6 bg-transparent text-[12.5px] text-slate-900 placeholder:text-slate-400 outline-none"
+                        className="flex-1 min-w-0 h-9 bg-transparent text-[13px] font-medium text-slate-900 placeholder:text-slate-400 placeholder:font-normal outline-none"
                     />
-                </HeaderRow>
+                </div>
             </div>
 
             {/* Body. AI drafting overlays it instead of pushing layout: a
@@ -761,10 +760,8 @@ export function ReplyComposer({ threadId, replyTo, mode, onClose }: ReplyCompose
     );
 }
 
-// HeaderRow : one labelled inline field in the composer header.
-// Wider label column + hairline divider gives the value its own
-// visual lane. Items inside wrap so many recipient chips don't push
-// the field off-screen.
+// HeaderRow : one plain labelled line in the composer header, matching the
+// compose window: quiet inline label, hairline underneath, nothing else.
 function HeaderRow({
     label,
     onRemove,
@@ -775,18 +772,15 @@ function HeaderRow({
     children: React.ReactNode;
 }) {
     return (
-        <div className="flex items-start gap-3 py-1.5">
-            <span className="w-14 shrink-0 pt-[3px] text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">
-                {label}
-            </span>
-            <span className="self-stretch w-px bg-slate-200 shrink-0" aria-hidden />
+        <div className="flex items-start gap-2 px-4 py-[7px] border-b border-slate-100">
+            <span className="w-9 shrink-0 pt-[3px] text-[11px] text-slate-400">{label}</span>
             <div className="flex-1 min-w-0 flex flex-wrap items-center gap-1.5">{children}</div>
             {onRemove && (
                 <button
                     type="button"
                     onClick={onRemove}
                     aria-label={`Remove ${label}`}
-                    className="size-5 inline-flex items-center justify-center rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors shrink-0"
+                    className="size-5 inline-flex items-center justify-center rounded text-slate-300 hover:text-slate-600 hover:bg-slate-100 transition-colors shrink-0"
                 >
                     <XIcon className="w-3 h-3" />
                 </button>
