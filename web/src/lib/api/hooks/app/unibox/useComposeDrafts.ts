@@ -19,13 +19,18 @@ export default function useComposeDrafts(enabled = true) {
 
 // Debounced autosave target. The id is client-generated, so retries and
 // repeated saves of the same draft are idempotent.
+//
+// Invalidation lives inside mutationFn, not onSuccess: closing the composer
+// fires the save and unmounts in the same tick, and observer callbacks
+// (useMutation's onSuccess) are skipped once the owning component is gone,
+// leaving the rail's Drafts list stale until a reload.
 export function useSaveComposeDraft() {
     const qc = useQueryClient();
     return useMutation({
-        mutationFn: ({ id, data }: { id: string; data: ComposeDraftSaveInput }) =>
-            saveComposeDraft(id, data),
-        onSuccess: () => {
+        mutationFn: async ({ id, data }: { id: string; data: ComposeDraftSaveInput }) => {
+            const res = await saveComposeDraft(id, data);
             void qc.invalidateQueries({ queryKey: DRAFTS_KEY });
+            return res;
         },
     });
 }
@@ -33,9 +38,10 @@ export function useSaveComposeDraft() {
 export function useDeleteComposeDraft() {
     const qc = useQueryClient();
     return useMutation({
-        mutationFn: (id: string) => deleteComposeDraft(id),
-        onSuccess: () => {
+        mutationFn: async (id: string) => {
+            const res = await deleteComposeDraft(id);
             void qc.invalidateQueries({ queryKey: DRAFTS_KEY });
+            return res;
         },
     });
 }
