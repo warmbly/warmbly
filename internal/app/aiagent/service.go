@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/warmbly/warmbly/internal/app/aitools"
 	"github.com/warmbly/warmbly/internal/app/credits"
@@ -136,6 +137,7 @@ type Service interface {
 	CreateSession(ctx context.Context, orgID, userID uuid.UUID, page, resource string) (*models.AgentSession, *errx.Error)
 	ListSessions(ctx context.Context, orgID, userID uuid.UUID, limit int, beforeCreatedAt time.Time, beforeID uuid.UUID) ([]models.AgentSession, error)
 	GetSession(ctx context.Context, orgID, userID, sessionID uuid.UUID) (*models.AgentSession, error)
+	DeleteSession(ctx context.Context, orgID, userID, sessionID uuid.UUID) *errx.Error
 
 	// Transcript returns the session's persisted history hydrated into the same
 	// turn/block shape the live stream renders, so a reopened tab looks identical
@@ -183,6 +185,19 @@ func (s *service) ListSessions(ctx context.Context, orgID, userID uuid.UUID, lim
 
 func (s *service) GetSession(ctx context.Context, orgID, userID, sessionID uuid.UUID) (*models.AgentSession, error) {
 	return s.repo.GetSession(ctx, orgID, userID, sessionID)
+}
+
+func (s *service) DeleteSession(ctx context.Context, orgID, userID, sessionID uuid.UUID) *errx.Error {
+	if err := s.repo.DeleteSession(ctx, orgID, userID, sessionID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return errx.ErrNotFound
+		}
+		return errx.New(errx.Internal, "failed to delete session")
+	}
+	if s.audit != nil {
+		s.audit.LogAction(ctx, orgID, userID, models.AuditActionDelete, models.AuditEntityAISession, &sessionID, "", "", nil, nil)
+	}
+	return nil
 }
 
 // HydratedBlock is one rendered piece of a persisted turn, mirroring the

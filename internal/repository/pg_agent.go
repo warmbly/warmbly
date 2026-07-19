@@ -24,6 +24,8 @@ type AgentRepository interface {
 	// future caller can never touch another member's session by raw id.
 	UpdateSessionContext(ctx context.Context, orgID, userID, sessionID uuid.UUID, sctx models.AgentSessionContext) error
 	UpdateSessionTitle(ctx context.Context, orgID, userID, sessionID uuid.UUID, title string) error
+	// DeleteSession removes a conversation and, via FK cascade, its transcript.
+	DeleteSession(ctx context.Context, orgID, userID, sessionID uuid.UUID) error
 
 	AppendMessages(ctx context.Context, orgID, userID, sessionID uuid.UUID, msgs []models.AgentMessageRow) error
 	LoadTranscript(ctx context.Context, orgID, userID, sessionID uuid.UUID) ([]models.AgentMessageRow, error)
@@ -133,6 +135,17 @@ func (r *agentRepository) UpdateSessionContext(ctx context.Context, orgID, userI
 func (r *agentRepository) UpdateSessionTitle(ctx context.Context, orgID, userID, sessionID uuid.UUID, title string) error {
 	_, err := r.DB.Exec(ctx, `UPDATE agent_sessions SET title = $2, updated_at = now() WHERE id = $1 AND title = '' AND org_id = $3 AND user_id = $4`, sessionID, title, orgID, userID)
 	return err
+}
+
+func (r *agentRepository) DeleteSession(ctx context.Context, orgID, userID, sessionID uuid.UUID) error {
+	tag, err := r.DB.Exec(ctx, `DELETE FROM agent_sessions WHERE id = $1 AND org_id = $2 AND user_id = $3`, sessionID, orgID, userID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
 }
 
 func (r *agentRepository) AppendMessages(ctx context.Context, orgID, userID, sessionID uuid.UUID, msgs []models.AgentMessageRow) error {
