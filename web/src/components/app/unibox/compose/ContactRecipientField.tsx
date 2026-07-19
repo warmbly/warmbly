@@ -7,10 +7,12 @@
 
 import React from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { TagIcon, UserIcon, XIcon } from "lucide-react";
+import { CheckIcon, TagIcon, UserIcon, UserPlusIcon, XIcon } from "lucide-react";
 import useSearchContacts from "@/lib/api/hooks/app/contacts/useSearchContacts";
 import { useUserProfile } from "@/hooks/context/user";
+import useClickOutside from "@/hooks/useClickOutside";
 import type Contact from "@/lib/api/models/app/contacts/Contact";
+import type { SearchContactsSortBy } from "@/lib/api/models/app/contacts/search-contacts.types";
 import { cn } from "@/lib/utils";
 
 interface CategoryRef {
@@ -27,6 +29,13 @@ function contactName(c: Contact): string {
     const name = `${c.first_name ?? ""} ${c.last_name ?? ""}`.trim();
     return name || c.email;
 }
+
+// Sort options for the browse panel, mapped onto search sort_by keys.
+const BROWSE_SORTS: { key: SearchContactsSortBy; label: string }[] = [
+    { key: "updated_at", label: "Recent" },
+    { key: "first_name", label: "Name" },
+    { key: "email", label: "Email" },
+];
 
 interface ContactRecipientFieldProps {
     value: string[];
@@ -47,6 +56,17 @@ export default function ContactRecipientField({
     const [catFilter, setCatFilter] = React.useState<CategoryRef | null>(null);
     const inputRef = React.useRef<HTMLInputElement>(null);
     const blurTimer = React.useRef<number | null>(null);
+
+    // Browse panel — click-driven contact picker with its own search,
+    // category filter, sort, and multi-select, separate from the
+    // type-ahead suggestions.
+    const [browseOpen, setBrowseOpen] = React.useState(false);
+    const [browseQuery, setBrowseQuery] = React.useState("");
+    const [browseCat, setBrowseCat] = React.useState<string | null>(null);
+    const [browseSort, setBrowseSort] = React.useState<SearchContactsSortBy>("updated_at");
+    const [browsePicked, setBrowsePicked] = React.useState<string[]>([]);
+    const rootRef = React.useRef<HTMLDivElement>(null);
+    useClickOutside(rootRef, () => setBrowseOpen(false));
 
     const { user } = useUserProfile();
     const allCategories = React.useMemo<CategoryRef[]>(
@@ -84,7 +104,52 @@ export default function ContactRecipientField({
     }, [allCategories, catFilter, query]);
 
     const showMenu =
-        focused && (query.length > 0 || !!catFilter) && (suggestions.length > 0 || matchedCats.length > 0);
+        focused &&
+        !browseOpen &&
+        (query.length > 0 || !!catFilter) &&
+        (suggestions.length > 0 || matchedCats.length > 0);
+
+    const browseSearch = useSearchContacts({
+        options: {
+            query: browseQuery.trim(),
+            filters: [],
+            campaign_ids: [],
+            category_ids: browseCat ? [browseCat] : undefined,
+            sort_by: browseSort,
+            reverse: false,
+        },
+        limit: 25,
+        enabled: browseOpen,
+    });
+    const browseRows = React.useMemo(
+        () => (browseSearch.contacts ?? []).filter((c) => !!c.email).slice(0, 25),
+        [browseSearch.contacts],
+    );
+    const existingEmails = React.useMemo(
+        () => new Set(value.map((v) => v.toLowerCase())),
+        [value],
+    );
+
+    const toggleBrowsePick = (email: string) => {
+        setBrowsePicked((p) =>
+            p.some((e) => e.toLowerCase() === email.toLowerCase())
+                ? p.filter((e) => e.toLowerCase() !== email.toLowerCase())
+                : [...p, email],
+        );
+    };
+
+    const addBrowsePicked = () => {
+        const seen = new Set(value.map((v) => v.toLowerCase()));
+        const next = [...value];
+        for (const e of browsePicked) {
+            if (seen.has(e.toLowerCase())) continue;
+            seen.add(e.toLowerCase());
+            next.push(e);
+        }
+        onChange(next);
+        setBrowseOpen(false);
+        setBrowsePicked([]);
+    };
 
     React.useEffect(() => {
         setHighlight(0);
@@ -113,7 +178,7 @@ export default function ContactRecipientField({
     };
 
     return (
-        <div className="relative flex-1 min-w-0 flex flex-wrap items-center gap-1.5">
+        <div ref={rootRef} className="relative flex-1 min-w-0 flex flex-wrap items-center gap-1.5">
             {value.map((v) => (
                 <span
                     key={v}
@@ -222,6 +287,22 @@ export default function ContactRecipientField({
                 }}
                 className="flex-1 min-w-[14ch] h-5 bg-transparent text-[11.5px] text-slate-900 placeholder:text-slate-400 outline-none font-mono"
             />
+            <button
+                type="button"
+                onClick={() => {
+                    if (!browseOpen) {
+                        setBrowseQuery("");
+                        setBrowseCat(null);
+                        setBrowsePicked([]);
+                    }
+                    setBrowseOpen((o) => !o);
+                }}
+                aria-label="Browse contacts"
+                title="Browse contacts"
+                className="shrink-0 size-5 inline-flex items-center justify-center rounded text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+            >
+                <UserPlusIcon className="w-3.5 h-3.5" />
+            </button>
 
             <AnimatePresence>
                 {showMenu && (
@@ -306,6 +387,160 @@ export default function ContactRecipientField({
                                 </button>
                             );
                         })}
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            <AnimatePresence>
+                {browseOpen && (
+                    <motion.div
+                        initial={{ opacity: 0, y: -4 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -4 }}
+                        transition={{ duration: 0.12, ease: [0.16, 1, 0.3, 1] }}
+                        className="absolute left-0 right-0 top-full mt-1 z-40 h-[360px] flex flex-col rounded-md border border-slate-200 bg-white shadow-lg overflow-hidden"
+                    >
+                        <div className="shrink-0 px-2.5 py-1.5 border-b border-slate-200">
+                            <input
+                                value={browseQuery}
+                                onChange={(e) => setBrowseQuery(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === "Escape") {
+                                        e.stopPropagation();
+                                        setBrowseOpen(false);
+                                    }
+                                }}
+                                placeholder="Search contacts…"
+                                autoFocus
+                                className="w-full h-5 bg-transparent text-[12px] text-slate-900 placeholder:text-slate-400 outline-none"
+                            />
+                        </div>
+                        {allCategories.length > 0 && (
+                            <div className="shrink-0 px-2.5 py-1.5 border-b border-slate-100 flex items-center gap-1 overflow-x-auto">
+                                <button
+                                    type="button"
+                                    onClick={() => setBrowseCat(null)}
+                                    className={cn(
+                                        "shrink-0 h-5 px-1.5 rounded border text-[10.5px] font-medium transition-colors",
+                                        !browseCat
+                                            ? "border-sky-300 bg-sky-50 text-sky-700"
+                                            : "border-slate-200 text-slate-500 hover:text-slate-700",
+                                    )}
+                                >
+                                    All
+                                </button>
+                                {allCategories.map((c) => (
+                                    <button
+                                        key={c.id}
+                                        type="button"
+                                        onClick={() => setBrowseCat(browseCat === c.id ? null : c.id)}
+                                        className={cn(
+                                            "shrink-0 inline-flex items-center gap-1 h-5 px-1.5 rounded border text-[10.5px] font-medium transition-colors",
+                                            browseCat === c.id
+                                                ? "border-sky-300 bg-sky-50 text-sky-700"
+                                                : "border-slate-200 text-slate-500 hover:text-slate-700",
+                                        )}
+                                    >
+                                        <span className="size-1.5 rounded-full" style={{ backgroundColor: c.color }} />
+                                        {c.title}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                        <div className="shrink-0 px-2.5 py-1.5 border-b border-slate-100 flex items-center gap-1">
+                            <span className="text-[9.5px] uppercase tracking-[0.14em] text-slate-400 mr-1">Sort</span>
+                            {BROWSE_SORTS.map((s) => (
+                                <button
+                                    key={s.key}
+                                    type="button"
+                                    onClick={() => setBrowseSort(s.key)}
+                                    className={cn(
+                                        "h-5 px-1.5 rounded text-[10.5px] font-medium transition-colors",
+                                        browseSort === s.key
+                                            ? "bg-slate-100 text-slate-900"
+                                            : "text-slate-500 hover:text-slate-700",
+                                    )}
+                                >
+                                    {s.label}
+                                </button>
+                            ))}
+                        </div>
+                        <div className="flex-1 overflow-y-auto py-1">
+                            {browseSearch.isLoading ? (
+                                <div className="px-3 py-4 text-[11.5px] text-slate-400 text-center">Loading…</div>
+                            ) : browseRows.length === 0 ? (
+                                <div className="px-3 py-4 text-[11.5px] text-slate-400 text-center">No contacts.</div>
+                            ) : (
+                                browseRows.map((c) => {
+                                    const added = existingEmails.has(c.email.toLowerCase());
+                                    const checked = browsePicked.some(
+                                        (e) => e.toLowerCase() === c.email.toLowerCase(),
+                                    );
+                                    return (
+                                        <button
+                                            key={c.id}
+                                            type="button"
+                                            disabled={added}
+                                            onClick={() => toggleBrowsePick(c.email)}
+                                            className={cn(
+                                                "w-full px-2.5 h-9 flex items-center gap-2 text-left transition-colors",
+                                                added ? "opacity-50" : "hover:bg-slate-50",
+                                            )}
+                                        >
+                                            <span
+                                                className={cn(
+                                                    "size-3.5 rounded border flex items-center justify-center transition-colors shrink-0",
+                                                    checked || added
+                                                        ? "border-slate-900 bg-slate-900"
+                                                        : "border-slate-300 bg-white",
+                                                )}
+                                            >
+                                                {(checked || added) && <CheckIcon className="w-2 h-2 text-white" />}
+                                            </span>
+                                            <span className="min-w-0 flex-1">
+                                                <span className="flex items-center gap-1.5 min-w-0">
+                                                    <span className="text-[12px] font-medium text-slate-900 truncate leading-tight">
+                                                        {contactName(c)}
+                                                    </span>
+                                                    {(c.categories ?? []).slice(0, 2).map((cat) => (
+                                                        <span
+                                                            key={cat.id}
+                                                            className="inline-flex items-center gap-0.5 text-[9px] text-slate-400 shrink-0"
+                                                            title={cat.title}
+                                                        >
+                                                            <span
+                                                                className="size-1.5 rounded-full"
+                                                                style={{ backgroundColor: cat.color }}
+                                                            />
+                                                            {cat.title}
+                                                        </span>
+                                                    ))}
+                                                </span>
+                                                <span className="block font-mono text-[10.5px] text-slate-500 truncate leading-tight">
+                                                    {c.email}
+                                                </span>
+                                            </span>
+                                            {added && (
+                                                <span className="shrink-0 text-[9.5px] text-slate-400">Added</span>
+                                            )}
+                                        </button>
+                                    );
+                                })
+                            )}
+                        </div>
+                        <div className="shrink-0 p-1.5 border-t border-slate-200 flex items-center gap-2">
+                            <span className="pl-1 text-[10.5px] text-slate-400">
+                                {browsePicked.length > 0 ? `${browsePicked.length} selected` : ""}
+                            </span>
+                            <button
+                                type="button"
+                                onClick={addBrowsePicked}
+                                disabled={browsePicked.length === 0}
+                                className="ml-auto h-6 px-2.5 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-[11.5px] font-medium transition-colors disabled:opacity-50"
+                            >
+                                Add {browsePicked.length || ""}
+                            </button>
+                        </div>
                     </motion.div>
                 )}
             </AnimatePresence>

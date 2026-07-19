@@ -15,7 +15,7 @@
 
 import React from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import toast from "react-hot-toast";
 import {
     CheckIcon,
@@ -133,6 +133,16 @@ export default function ComposeWindow() {
     const prefillTo = useComposeStore((s) => s.prefillTo);
     const seed = useComposeStore((s) => s.seed);
     const session = useComposeStore((s) => s.session);
+
+    // Navigation collapses the window to the corner bar; the draft follows you.
+    const { pathname } = useLocation();
+    const lastPath = React.useRef(pathname);
+    React.useEffect(() => {
+        if (lastPath.current === pathname) return;
+        lastPath.current = pathname;
+        const s = useComposeStore.getState();
+        if (s.open && !s.minimized) s.setMinimized(true);
+    }, [pathname]);
 
     return (
         <AnimatePresence>
