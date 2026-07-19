@@ -497,7 +497,7 @@ export function ReplyComposer({ threadId, replyTo, mode, onClose }: ReplyCompose
                         onClose();
                     }
                 }}
-                className="w-full min-h-[120px] max-h-72 px-5 py-3 text-[13px] text-slate-800 placeholder:text-slate-400 bg-transparent resize-y focus:outline-none"
+                className="w-full min-h-[120px] max-h-72 px-4 py-3 text-[13px] text-slate-800 placeholder:text-slate-400 bg-transparent resize-y focus:outline-none"
             />
             {aiDraft.phase === "busy" && (
                 <div className="ai-sheen pointer-events-none absolute inset-0" aria-hidden />
@@ -537,7 +537,7 @@ export function ReplyComposer({ threadId, replyTo, mode, onClose }: ReplyCompose
                 always knows what will (or will not) appear at the
                 bottom of their reply on send. */}
             {signatureState.kind === "on" && (
-                <div className="mx-3 sm:mx-5 mb-2 rounded-md border border-emerald-200/60 bg-emerald-50/40 overflow-hidden">
+                <div className="mx-4 mb-2 rounded-md border border-emerald-200/60 bg-emerald-50/40 overflow-hidden">
                     <div className="px-3 py-1.5 flex items-center gap-1.5 border-b border-emerald-200/40 bg-emerald-50/60">
                         <PenLineIcon className="w-3 h-3 text-emerald-700" />
                         <span className="text-[10px] uppercase tracking-[0.14em] text-emerald-800 font-semibold">
@@ -557,7 +557,7 @@ export function ReplyComposer({ threadId, replyTo, mode, onClose }: ReplyCompose
                 </div>
             )}
             {signatureState.kind === "off" && (
-                <div className="mx-3 sm:mx-5 mb-2 px-3 py-2 rounded-md border border-amber-200/60 bg-amber-50/50 flex items-start gap-2 text-[11.5px] text-amber-900">
+                <div className="mx-4 mb-2 px-3 py-2 rounded-md border border-amber-200/60 bg-amber-50/50 flex items-start gap-2 text-[11.5px] text-amber-900">
                     <InfoIcon className="w-3 h-3 mt-0.5 shrink-0 text-amber-700" />
                     <span className="leading-snug">
                         A signature is saved for this mailbox but signature
@@ -568,7 +568,7 @@ export function ReplyComposer({ threadId, replyTo, mode, onClose }: ReplyCompose
                 </div>
             )}
             {signatureState.kind === "none" && (
-                <div className="mx-3 sm:mx-5 mb-2 px-3 py-1.5 rounded-md border border-dashed border-slate-200 text-[11px] text-slate-400 flex items-center gap-1.5">
+                <div className="mx-4 mb-2 px-3 py-1.5 rounded-md border border-dashed border-slate-200 text-[11px] text-slate-400 flex items-center gap-1.5">
                     <PenLineIcon className="w-3 h-3" />
                     No signature on this mailbox. Type one inline or set
                     one in mailbox settings.
