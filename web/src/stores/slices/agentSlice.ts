@@ -26,7 +26,9 @@ export type AgentPending = {
 }
 
 export type AgentBlock =
-  | { kind: 'text'; text: string }
+  // live marks a block still receiving text_delta chunks; the closing full
+  // "text" event replaces its content and clears the flag.
+  | { kind: 'text'; text: string; live?: boolean }
   | { kind: 'tool'; step: AgentToolStep }
   | { kind: 'error'; code?: string; message: string }
 

@@ -52,6 +52,7 @@ import streamAgentRun from "@/lib/api/client/app/agent/streamAgentRun";
 import useAgentSessions from "@/lib/api/hooks/app/agent/useAgentSessions";
 import Markdown from "./Markdown";
 import AgentMark from "./AgentMark";
+import { Kbd } from "@/components/ui/shortcut-tooltip";
 import type {
     AgentStreamEvent,
     AgentSession,
@@ -1239,9 +1240,30 @@ function foldEvent(turns: AgentTurn[], ev: AgentStreamEvent): AgentTurn[] {
 
 function applyEvent(turn: AgentTurn, ev: AgentStreamEvent) {
     switch (ev.type) {
+        // Partial chunk of the block currently being generated.
+        case "text_delta": {
+            const last = turn.blocks[turn.blocks.length - 1];
+            if (last && last.kind === "text" && last.live) {
+                turn.blocks[turn.blocks.length - 1] = {
+                    kind: "text",
+                    text: last.text + (ev.text || ""),
+                    live: true,
+                };
+            } else {
+                turn.blocks.push({ kind: "text", text: ev.text || "", live: true });
+            }
+            break;
+        }
+        // Authoritative full block: replaces the streamed-in live block (its
+        // deltas were cosmetic), or appends for providers without deltas.
         case "text": {
             const last = turn.blocks[turn.blocks.length - 1];
-            if (last && last.kind === "text") {
+            if (last && last.kind === "text" && last.live) {
+                turn.blocks[turn.blocks.length - 1] = {
+                    kind: "text",
+                    text: ev.text || "",
+                };
+            } else if (last && last.kind === "text") {
                 turn.blocks[turn.blocks.length - 1] = {
                     kind: "text",
                     text: last.text + (ev.text || ""),
@@ -1354,14 +1376,14 @@ const TurnView = React.memo(function TurnView({
         <div className="space-y-2">
             {turn.blocks.map((b, i) => {
                 if (b.kind === "text") {
-                    return b.text ? (
-                        <Markdown
-                            key={i}
-                            text={b.text}
-                            onOpen={onOpen}
-                            caret={streaming && i === lastIdx}
-                        />
-                    ) : null;
+                    if (!b.text) return null;
+                    // The trailing block of a live run types itself out; the
+                    // rest of the transcript renders statically.
+                    return streaming && i === lastIdx ? (
+                        <SmoothText key={i} text={b.text} onOpen={onOpen} />
+                    ) : (
+                        <Markdown key={i} text={b.text} onOpen={onOpen} />
+                    );
                 }
                 if (b.kind === "tool") {
                     return <ToolStepRow key={i} step={b.step} onOpen={onOpen} />;
@@ -1379,6 +1401,33 @@ const TurnView = React.memo(function TurnView({
         </div>
     );
 });
+
+// SmoothText renders streamed text as a fast typewriter: each frame reveals a
+// twelfth of whatever is still hidden, so bursts of deltas (or one whole block
+// from a non-streaming provider) type out at a steady pace and the reveal
+// converges within ~200ms of the stream ending. Rendering through Markdown on
+// a prefix is safe; the parser tolerates a mid-token cut for a frame.
+function SmoothText({
+    text,
+    onOpen,
+}: {
+    text: string;
+    onOpen: (url: string) => void;
+}) {
+    const [shown, setShown] = React.useState(0);
+    React.useEffect(() => {
+        if (shown >= text.length) return;
+        const raf = requestAnimationFrame(() => {
+            setShown((s) =>
+                s >= text.length
+                    ? s
+                    : Math.min(text.length, s + Math.max(1, Math.ceil((text.length - s) / 12))),
+            );
+        });
+        return () => cancelAnimationFrame(raf);
+    }, [shown, text]);
+    return <Markdown text={text.slice(0, Math.min(shown, text.length))} onOpen={onOpen} caret />;
+}
 
 function ToolStepRow({
     step,
@@ -1509,6 +1558,26 @@ function EmptyState({ onPick }: { onPick: (q: string) => void }) {
                         {q}
                     </button>
                 ))}
+            </div>
+            <div className="mt-5 flex flex-wrap items-center justify-center gap-x-3 gap-y-1.5 text-[10.5px] text-slate-400">
+                <span className="inline-flex items-center gap-1">
+                    <Kbd combo="mod+i" variant="light" /> toggle
+                </span>
+                <span className="hidden sm:inline-flex items-center gap-1">
+                    <Kbd combo="alt+n" variant="light" /> new chat
+                </span>
+                <span className="hidden sm:inline-flex items-center gap-1">
+                    <Kbd combo="alt+p" variant="light" /> pop out
+                </span>
+                <span className="hidden sm:inline-flex items-center gap-1">
+                    <Kbd combo="alt+m" variant="light" /> minimize
+                </span>
+                <button
+                    onClick={() => useAppStore.getState().setShortcutsModalOpen(true)}
+                    className="underline decoration-dotted underline-offset-2 hover:text-slate-600 transition-colors"
+                >
+                    all shortcuts
+                </button>
             </div>
         </div>
     );

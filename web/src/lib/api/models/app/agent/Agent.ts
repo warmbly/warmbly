@@ -59,6 +59,7 @@ export interface AgentTranscript {
 export interface AgentStreamEvent {
     type:
         | "text"
+        | "text_delta"
         | "tool_start"
         | "tool_result"
         | "approval_required"
