@@ -12,6 +12,10 @@ export interface CategoryPref {
     channels: ChannelPrefs;
 }
 
+// How the email channel batches alerts. Security sign-in alerts always email
+// immediately regardless of cadence.
+export type EmailDigestCadence = "instant" | "smart" | "hourly" | "daily";
+
 export interface NotificationPreferences {
     inbound_reply: CategoryPref;
     inbound_out_of_office: CategoryPref;
@@ -19,9 +23,12 @@ export interface NotificationPreferences {
     health_complaint: CategoryPref;
     health_worker_downtime: CategoryPref;
     security_new_signin: CategoryPref;
+    billing_alert: CategoryPref;
+    team_activity: CategoryPref;
+    email_digest: EmailDigestCadence;
 }
 
-export type NotificationCategoryKey = keyof NotificationPreferences;
+export type NotificationCategoryKey = Exclude<keyof NotificationPreferences, "email_digest">;
 
 export interface AppNotification {
     id: string;

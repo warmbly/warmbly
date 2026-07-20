@@ -3,8 +3,13 @@ import {
     useNotificationPreferences,
     useUpdateNotificationPreferences,
 } from "@/lib/api/hooks/app/notifications/useNotifications";
-import type { NotificationCategoryKey, NotificationPreferences } from "@/lib/api/models/app/notifications/Notification";
+import type {
+    EmailDigestCadence,
+    NotificationCategoryKey,
+    NotificationPreferences,
+} from "@/lib/api/models/app/notifications/Notification";
 import { Row, Section, SectionShell, Toggle } from "../_components/SectionShell";
+import { OptionSelect } from "@/components/app/campaigns/preferences/components/CampaignPreferenceBoolBox";
 import SaveStatus from "../_components/SaveStatus";
 import { useAutosave } from "@/hooks/useAutosave";
 import { useRegisterUnsaved } from "@/hooks/context/unsaved";
@@ -22,6 +27,32 @@ const HEALTH: { key: NotificationCategoryKey; label: string; hint: string }[] = 
 
 const SECURITY: { key: NotificationCategoryKey; label: string; hint: string }[] = [
     { key: "security_new_signin", label: "New sign-in", hint: "Your account was accessed from a device you haven't used before." },
+];
+
+const BILLING: { key: NotificationCategoryKey; label: string; hint: string }[] = [
+    { key: "billing_alert", label: "Trial and billing alerts", hint: "Your trial is about to expire or your workspace was paused. Goes to members who manage billing." },
+];
+
+const TEAM: { key: NotificationCategoryKey; label: string; hint: string }[] = [
+    { key: "team_activity", label: "Teammate joined your workspace", hint: "A new member accepted an invite. Goes to members who manage the team." },
+];
+
+const DIGEST_OPTIONS: { value: EmailDigestCadence; label: React.ReactNode; hint: string }[] = [
+    { value: "instant", label: "Instant", hint: "Every alert is its own email, sent right away." },
+    {
+        value: "smart",
+        label: (
+            <span className="inline-flex items-center gap-1.5">
+                Smart
+                <span className="text-[9.5px] uppercase tracking-[0.08em] font-semibold rounded-sm px-1 py-px bg-sky-100 text-sky-700">
+                    Recommended
+                </span>
+            </span>
+        ),
+        hint: "Waits 15 minutes, then bundles what you have not already read into one email.",
+    },
+    { value: "hourly", label: "Hourly", hint: "At most one bundled email per hour." },
+    { value: "daily", label: "Daily", hint: "At most one bundled email per day." },
 ];
 
 export default function NotificationsSettingsPage() {
@@ -59,6 +90,8 @@ export default function NotificationsSettingsPage() {
         "health_complaint",
         "health_worker_downtime",
         "security_new_signin",
+        "billing_alert",
+        "team_activity",
     ];
     // Channels present globally: "on" when every category carries the channel.
     const channelOn = (ch: "email" | "slack" | "push") =>
@@ -102,6 +135,12 @@ export default function NotificationsSettingsPage() {
                     <Section eyebrow="Security" description="Account access alerts.">
                         {rows(SECURITY)}
                     </Section>
+                    <Section eyebrow="Billing" description="Trial and billing alerts.">
+                        {rows(BILLING)}
+                    </Section>
+                    <Section eyebrow="Team" description="Activity from your teammates.">
+                        {rows(TEAM)}
+                    </Section>
                     <Section eyebrow="Channels" description="Where enabled notifications are delivered. Applies across every category above.">
                         <Row label="In-app" description="The bell in the dashboard chrome (controlled per category above).">
                             <span className="text-[11px] font-medium text-emerald-600">On</span>
@@ -118,6 +157,18 @@ export default function NotificationsSettingsPage() {
                         <Row label="Slack" description="Posts to your connected Slack, on the channel set up for Slack in the Integrations tab. Connect Slack and configure a channel there first.">
                             <Toggle on={channelOn("slack")} onChange={(v) => setChannel("slack", v)} />
                         </Row>
+                    </Section>
+                    <Section eyebrow="Email delivery" description="How often the email channel sends. Bundling keeps a busy day to a few emails instead of one per alert.">
+                        <OptionSelect
+                            aria-label="Email digest cadence"
+                            cols={2}
+                            value={draft.email_digest}
+                            onChange={(v) => setDraft((d) => (d ? { ...d, email_digest: v } : d))}
+                            options={DIGEST_OPTIONS}
+                        />
+                        <p className="text-[11px] text-slate-400 leading-relaxed">
+                            Alerts you read in the app are never emailed. Security sign-in alerts always send immediately, and alerts that concern several teammates arrive as one shared email.
+                        </p>
                     </Section>
                 </>
             )}
