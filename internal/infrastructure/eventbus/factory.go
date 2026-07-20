@@ -7,6 +7,14 @@ import (
 	"github.com/warmbly/warmbly/internal/infrastructure/kafka"
 )
 
+// KafkaConfig builds a KafkaBus. bootstrap is the comma-separated broker list;
+// sasl is optional (nil for plaintext / no auth). Defined here (untagged) so the
+// factory can construct it whether or not the Kafka backend is compiled in.
+type KafkaConfig struct {
+	Bootstrap string
+	SASL      *kafka.SASLConfig
+}
+
 // FromEnv constructs the active EventBus from environment variables.
 //
 //	EVENTBUS_PROVIDER=kafka  -> NewKafka (defaults: existing kafka package)

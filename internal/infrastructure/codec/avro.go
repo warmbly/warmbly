@@ -1,3 +1,8 @@
+//go:build kafka
+
+// The Avro codec depends on the confluent Schema Registry serializer, so it is
+// compiled only with the `kafka` build tag. The default (CGO-free) build uses
+// JSON; selecting CODEC_PROVIDER=avro there returns a clear error (avro_stub.go).
 package codec
 
 import (
@@ -46,6 +51,9 @@ func (c *AvroCodec) Underlying() *kafka.Avrov2 { return c.a }
 
 // Name satisfies Codec.
 func (c *AvroCodec) Name() string { return "avro" }
+
+// Compile-time interface check (kept with the type, which is kafka-tagged).
+var _ Codec = (*AvroCodec)(nil)
 
 // Serialize satisfies Codec. The Schema Registry serializer ignores ctx
 // internally, but the parameter is part of the interface so future codecs
