@@ -37,6 +37,8 @@ export interface ComposeCandidatesResponse {
 export interface ComposeSendInput {
   /** Omit (or send "") to let the backend auto-pick the sender. */
   email_account_id?: string;
+  /** Scopes the auto pick to mailboxes carrying this tag; ignored with an explicit account. */
+  from_tag_id?: string;
   to: string[];
   cc?: string[];
   bcc?: string[];

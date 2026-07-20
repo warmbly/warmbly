@@ -177,6 +177,9 @@ function ComposeWindowInner({
     const [subject, setSubject] = React.useState(seed?.subject ?? "");
     const [body, setBody] = React.useState(seed?.body ?? "");
     const [accountSel, setAccountSel] = React.useState(seed?.email_account_id || "auto");
+    // Tag scoping the Auto pick ("Auto in Sales"); session-only, not part
+    // of the draft payload. Meaningless with an explicit account.
+    const [autoTagId, setAutoTagId] = React.useState<string | null>(null);
     const [historyOpen, setHistoryOpen] = React.useState(false);
     const [isSending, setIsSending] = React.useState(false);
     const [scheduleOpen, setScheduleOpen] = React.useState(false);
@@ -214,11 +217,20 @@ function ComposeWindowInner({
     // resolution) — drives the signature chip.
     const resolvedAccount = React.useMemo(() => {
         const list = candidates?.accounts ?? [];
-        const picked =
-            accountSel === "auto" ? (list.find((a) => a.recommended) ?? list[0]) : list.find((a) => a.id === accountSel);
+        let picked;
+        if (accountSel === "auto") {
+            // Tag-scoped auto resolves to the best-scored member of the tag
+            // (the list arrives score-sorted); unscoped auto keeps the
+            // backend's recommendation.
+            picked = autoTagId
+                ? list.find((a) => (accounts.find((e) => e.id === a.id)?.tags ?? []).includes(autoTagId))
+                : (list.find((a) => a.recommended) ?? list[0]);
+        } else {
+            picked = list.find((a) => a.id === accountSel);
+        }
         if (!picked) return undefined;
         return accounts.find((a) => a.id === picked.id);
-    }, [accounts, accountSel, candidates]);
+    }, [accounts, accountSel, autoTagId, candidates]);
 
     const affinity = React.useMemo(() => {
         const withHistory = (candidates?.accounts ?? []).filter((a) => a.history_messages > 0);
@@ -338,6 +350,7 @@ function ComposeWindowInner({
         try {
             const res = await sendMut.mutateAsync({
                 email_account_id: accountSel === "auto" ? undefined : accountSel,
+                from_tag_id: accountSel === "auto" && autoTagId ? autoTagId : undefined,
                 to,
                 cc: cc.length ? cc : undefined,
                 bcc: bcc.length ? bcc : undefined,
@@ -565,7 +578,11 @@ function ComposeWindowInner({
                     <ComposeRow label="From">
                         <MailboxPicker
                             value={accountSel}
-                            onChange={setAccountSel}
+                            autoTag={autoTagId}
+                            onChange={(next, tag) => {
+                                setAccountSel(next);
+                                setAutoTagId(next === "auto" ? tag : null);
+                            }}
                             candidates={candidates}
                             loading={candidatesQ.isPending}
                         />

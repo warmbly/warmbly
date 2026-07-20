@@ -27,7 +27,9 @@ import { cn } from "@/lib/utils";
 interface MailboxPickerProps {
     // "auto" or an account id.
     value: string;
-    onChange: (next: string) => void;
+    /** Tag scoping the Auto pick ("Auto in Sales"); only meaningful with value "auto". */
+    autoTag: string | null;
+    onChange: (next: string, autoTag: string | null) => void;
     candidates: ComposeCandidatesResponse | undefined;
     // True while candidates refetch for a new recipient.
     loading?: boolean;
@@ -35,7 +37,7 @@ interface MailboxPickerProps {
 
 const PANEL_WIDTH = 300;
 
-export default function MailboxPicker({ value, onChange, candidates, loading }: MailboxPickerProps) {
+export default function MailboxPicker({ value, autoTag, onChange, candidates, loading }: MailboxPickerProps) {
     const [open, setOpen] = React.useState(false);
     const [search, setSearch] = React.useState("");
     const [tagFilter, setTagFilter] = React.useState<string | null>(null);
@@ -78,8 +80,6 @@ export default function MailboxPicker({ value, onChange, candidates, loading }: 
     }, [open, measure]);
 
     const accounts = React.useMemo(() => candidates?.accounts ?? [], [candidates]);
-    const recommended = accounts.find((a) => a.recommended) ?? accounts[0];
-    const selected = value === "auto" ? recommended : accounts.find((a) => a.id === value);
 
     // Tag ids per account come from the store's full mailbox records; only
     // tags actually used by a listed account are offered as filters.
@@ -88,6 +88,21 @@ export default function MailboxPicker({ value, onChange, candidates, loading }: 
         for (const e of storeEmails) m.set(e.id, e.tags ?? []);
         return m;
     }, [storeEmails]);
+
+    const recommended = accounts.find((a) => a.recommended) ?? accounts[0];
+    // Preview of what Auto would pick: within the scoping tag the list's
+    // score order stands in for the backend's scoped pick.
+    const scopedBest = React.useCallback(
+        (tagId: string) => accounts.find((a) => (tagsByAccount.get(a.id) ?? []).includes(tagId)),
+        [accounts, tagsByAccount],
+    );
+    const selected =
+        value === "auto"
+            ? autoTag
+                ? (scopedBest(autoTag) ?? recommended)
+                : recommended
+            : accounts.find((a) => a.id === value);
+    const autoTagTitle = autoTag ? storeTags.find((t) => t.id === autoTag)?.title : undefined;
 
     // Every defined tag is offered (not just ones already in use) so a tag
     // created moments ago in the bulk bar is immediately selectable here;
@@ -106,8 +121,8 @@ export default function MailboxPicker({ value, onChange, candidates, loading }: 
         });
     }, [accounts, search, tagFilter, tagsByAccount]);
 
-    const pick = (next: string) => {
-        onChange(next);
+    const pick = (next: string, tag: string | null = null) => {
+        onChange(next, tag);
         setOpen(false);
     };
 
@@ -129,8 +144,8 @@ export default function MailboxPicker({ value, onChange, candidates, loading }: 
                                 {loading ? "picking a mailbox…" : "no active mailbox"}
                             </span>
                         )}
-                        <span className="h-4 px-1 rounded bg-slate-100 text-slate-500 text-[9.5px] font-medium uppercase tracking-wide shrink-0">
-                            auto
+                        <span className="h-4 px-1 rounded bg-slate-100 text-slate-500 text-[9.5px] font-medium uppercase tracking-wide shrink-0 max-w-[120px] truncate">
+                            {autoTagTitle ? `auto · ${autoTagTitle}` : "auto"}
                         </span>
                     </>
                 ) : selected ? (
@@ -199,27 +214,45 @@ export default function MailboxPicker({ value, onChange, candidates, loading }: 
                                 )}
                             </div>
 
-                            {/* Auto */}
-                            <button
-                                type="button"
-                                onClick={() => pick("auto")}
-                                title={
-                                    recommended
-                                        ? `Picks ${recommended.email}${candidates?.recommended_reason ? `: ${candidates.recommended_reason}` : ""}`
-                                        : "Picks the best mailbox for each recipient"
-                                }
-                                className={cn(
-                                    "w-full h-8 px-2.5 flex items-center gap-2 text-left transition-colors hover:bg-slate-50",
-                                    value === "auto" && "bg-sky-50/60",
-                                )}
-                            >
-                                <SparklesIcon className="w-3 h-3 text-sky-500 shrink-0" />
-                                <span className="text-[11.5px] font-medium text-slate-900">Auto</span>
-                                <span className="min-w-0 flex-1 text-[10.5px] text-slate-400 truncate">
-                                    {recommended ? recommended.email : "best mailbox per recipient"}
-                                </span>
-                                {value === "auto" && <CheckIcon className="w-3 h-3 text-sky-600 shrink-0" />}
-                            </button>
+                            {/* Auto: scoped to the active tag filter when one is set */}
+                            {(() => {
+                                const filterTag = tagFilter
+                                    ? usedTags.find((t) => t.id === tagFilter)
+                                    : undefined;
+                                const preview = tagFilter ? scopedBest(tagFilter) : recommended;
+                                const active =
+                                    value === "auto" && (autoTag ?? null) === (tagFilter ?? null);
+                                return (
+                                    <button
+                                        type="button"
+                                        onClick={() => pick("auto", tagFilter)}
+                                        title={
+                                            filterTag
+                                                ? `Picks the best mailbox tagged ${filterTag.title}`
+                                                : recommended
+                                                  ? `Picks ${recommended.email}${candidates?.recommended_reason ? `: ${candidates.recommended_reason}` : ""}`
+                                                  : "Picks the best mailbox for each recipient"
+                                        }
+                                        className={cn(
+                                            "w-full h-8 px-2.5 flex items-center gap-2 text-left transition-colors hover:bg-slate-50",
+                                            active && "bg-sky-50/60",
+                                        )}
+                                    >
+                                        <SparklesIcon className="w-3 h-3 text-sky-500 shrink-0" />
+                                        <span className="text-[11.5px] font-medium text-slate-900 whitespace-nowrap">
+                                            {filterTag ? `Auto in ${filterTag.title}` : "Auto"}
+                                        </span>
+                                        <span className="min-w-0 flex-1 text-[10.5px] text-slate-400 truncate">
+                                            {preview
+                                                ? preview.email
+                                                : filterTag
+                                                  ? "no mailbox carries this tag"
+                                                  : "best mailbox per recipient"}
+                                        </span>
+                                        {active && <CheckIcon className="w-3 h-3 text-sky-600 shrink-0" />}
+                                    </button>
+                                );
+                            })()}
 
                             {/* Candidates, best first */}
                             <AnimatedHeight className="border-t border-slate-100 max-h-52 overflow-y-auto">
