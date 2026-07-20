@@ -104,6 +104,10 @@ type TaskRepository interface {
 	GetLastEmailTime(ctx context.Context, accountID uuid.UUID) (*time.Time, error)
 	GetScheduledTasksForAccount(ctx context.Context, accountID uuid.UUID, date time.Time) ([]Task, error)
 	GetScheduledTasksToday(ctx context.Context, accountID uuid.UUID) ([]Task, error)
+	// ListDuePendingTaskIDs returns pending tasks whose scheduled_at has passed,
+	// oldest first, capped at limit. Drives the in-process (TASKS_PROVIDER=local)
+	// dispatcher, which fires each due task by id.
+	ListDuePendingTaskIDs(ctx context.Context, limit int) ([]uuid.UUID, error)
 
 	// Update operations
 	UpdateTaskStatus(ctx context.Context, taskID uuid.UUID, status string) error
@@ -576,6 +580,35 @@ func (r *taskRepository) CancelOverduePendingTasks(ctx context.Context, taskType
 		return 0, err
 	}
 	return tag.RowsAffected(), nil
+}
+
+// ListDuePendingTaskIDs returns pending tasks whose slot has arrived, oldest
+// first. The in-process dispatcher fires each; rows stay pending until their
+// handler flips the status, so this is safe to call on a short interval.
+func (r *taskRepository) ListDuePendingTaskIDs(ctx context.Context, limit int) ([]uuid.UUID, error) {
+	query := `
+		SELECT id
+		FROM tasks
+		WHERE status = 'pending'
+		  AND scheduled_at <= NOW()
+		ORDER BY scheduled_at ASC
+		LIMIT $1
+	`
+	rows, err := r.db.Query(ctx, query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var ids []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 // UpdateTaskScheduledAt updates the scheduled time and cloud task name
