@@ -106,6 +106,26 @@ services:
       MP_SMTP_AUTH_ACCEPT_ANY: 1
       MP_SMTP_AUTH_ALLOW_INSECURE: 1
 
+  # Local IMAP host for the sandbox demo (`make sandbox`): the mailbox that
+  # every seeded sender syncs from, so replies and warmup mail actually land in
+  # the unified inbox. Any username logs in with the static password "sandbox";
+  # the self-signed cert is fine because sandbox clients set MAIL_TLS_INSECURE.
+  # In the `sandbox` profile so the lean `make up` self-host never pulls it —
+  # `make sandbox` / `make infra` start it by naming it explicitly.
+  dovecot:
+    image: dovecot/dovecot:latest
+    profiles: ["sandbox"]
+    environment:
+      USER_PASSWORD: "{PLAIN}sandbox"
+    ports:
+      - "10143:31143"  # IMAP (cleartext; debugging only)
+      - "10993:31993"  # IMAPS (self-signed cert; the sandbox worker + simulator dial this)
+    healthcheck:
+      test: ["CMD", "doveadm", "service", "status", "imap-login"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   # ─── application ──────────────────────────────────────────────────────
 
   backend:
