@@ -15,11 +15,20 @@ aws-config = "1.1"
 aws-sdk-ssm = "1.15"
 aws-sdk-secretsmanager = "1.15"
 
-# Kafka with Avro
-rdkafka = { version = "0.36", features = ["cmake-build"] }
-apache-avro = { version = "0.21", features = ["derive"] }
-schema_registry_converter = { version = "4.0", features = ["avro", "blocking"] }
-reqwest = { version = "0.11", features = ["blocking", "json"] }
+# NATS (default event bus): pure-Rust, no native librdkafka to compile.
+async-nats = "0.38"
+
+# Kafka with Avro (optional; enabled with `--features kafka`). rdkafka is the
+# only native/librdkafka dependency, so the default build compiles far faster
+# and needs no libcurl/libsasl system headers.
+rdkafka = { version = "0.36", features = ["cmake-build"], optional = true }
+apache-avro = { version = "0.21", features = ["derive"], optional = true }
+schema_registry_converter = { version = "4.0", features = ["avro", "blocking"], optional = true }
+
+# HTTP client for the click-ticket resolver (always needed by links.rs). Uses
+# rustls (pure Rust TLS) instead of native-tls so the default image needs no
+# OpenSSL system libraries.
+reqwest = { version = "0.11", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 
 # Utils
 uuid = { version = "1", features = ["v4", "serde"] }
@@ -33,6 +42,14 @@ moka = { version = "0.12", features = ["future"] }
 # Logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[features]
+# Default is NATS-only: no rdkafka/librdkafka, so the image builds fast and
+# needs no native Kafka toolchain. Build with `--features kafka` to add the
+# Kafka + Avro + Schema Registry publisher (selected at runtime by
+# EVENTBUS_PROVIDER=kafka).
+default = []
+kafka = ["dep:rdkafka", "dep:apache-avro", "dep:schema_registry_converter"]
 
 [profile.release]
 lto = true
