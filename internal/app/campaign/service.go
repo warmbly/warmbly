@@ -7,11 +7,11 @@ import (
 	"github.com/warmbly/warmbly/internal/app/dailythrottle"
 	"github.com/warmbly/warmbly/internal/app/feature"
 	"github.com/warmbly/warmbly/internal/errx"
-	"github.com/warmbly/warmbly/internal/infrastructure/gtasks"
 	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
 	"github.com/warmbly/warmbly/internal/scheduler"
+	"github.com/warmbly/warmbly/internal/tasksched"
 )
 
 const campaignCooldownSeconds = 60
@@ -48,7 +48,7 @@ type campaignService struct {
 	featureGate        feature.FeatureGateService
 	throttle           dailythrottle.Service
 	scheduler          scheduler.SchedulerService
-	tasksClient        *gtasks.Client
+	tasksClient        tasksched.Scheduler
 	streamingPublisher *pubsub.StreamingPublisher
 }
 
@@ -60,7 +60,7 @@ func NewService(
 	featureGate feature.FeatureGateService,
 	throttle dailythrottle.Service,
 	scheduler scheduler.SchedulerService,
-	tasksClient *gtasks.Client,
+	tasksClient tasksched.Scheduler,
 	streamingPublisher *pubsub.StreamingPublisher,
 ) CampaignService {
 	return &campaignService{

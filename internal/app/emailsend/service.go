@@ -10,11 +10,11 @@ import (
 	"github.com/warmbly/warmbly/internal/app/feature"
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
-	"github.com/warmbly/warmbly/internal/infrastructure/gtasks"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
 	"github.com/warmbly/warmbly/internal/scheduler"
 	"github.com/warmbly/warmbly/internal/tasks/proto"
+	"github.com/warmbly/warmbly/internal/tasksched"
 )
 
 // MaxScheduleHorizon caps how far in the future a send can be queued.
@@ -55,7 +55,7 @@ type emailSendService struct {
 	emailRepo     repository.EmailRepository
 	userRepo      repository.UserRepository
 	scheduler     scheduler.SchedulerService
-	tasksClient   *gtasks.Client
+	tasksClient   tasksched.Scheduler
 	featureGate   feature.FeatureGateService
 	dailyThrottle dailythrottle.Service
 }
@@ -65,7 +65,7 @@ func NewService(
 	emailRepo repository.EmailRepository,
 	userRepo repository.UserRepository,
 	scheduler scheduler.SchedulerService,
-	tasksClient *gtasks.Client,
+	tasksClient tasksched.Scheduler,
 	featureGate feature.FeatureGateService,
 	dailyThrottle dailythrottle.Service,
 ) EmailSendService {
