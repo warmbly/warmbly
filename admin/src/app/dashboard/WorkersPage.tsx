@@ -2,38 +2,26 @@
 // Data is fetched all-at-once from /admin/workers/managed (small N), so search,
 // faceting, and sort run client-side; the Explorer rail mirrors the Users /
 // Organizations / Mailboxes browsers. SSH lifecycle (install / restart /
-// uninstall) still lives in each worker's detail page; provisioning a new
-// worker stays in the page header.
+// uninstall) lives in each worker's detail page.
 
 import { useMemo, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
-import { Rocket } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import {
     Explorer,
     FilterGroup,
     SearchFilter,
-    SegmentedFilter,
     SelectFilter,
     ToggleFilter,
     DateRangeFilter,
     NumberRangeFilter,
 } from "@/components/data/Explorer";
 import { DataTable, type Column } from "@/components/data/DataTable";
-import { StateLegend } from "@/components/StateLegend";
-import { WORKER_RISK_POOL_LEGEND } from "@/lib/legends";
 import { emptyRange, rangeActive, type DateRange } from "@/lib/dateRange";
 import { listManagedWorkers } from "@/lib/api/client/admin/workers";
-import type {
-    ManagedWorker,
-    WorkerInstallState,
-    WorkerRiskPool,
-    WorkerType,
-} from "@/lib/api/models/admin";
-import { ProvisionModal } from "./ProvisionModal";
+import type { ManagedWorker } from "@/lib/api/models/admin";
 
 const OFFLINE_MS = 5 * 60_000;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -68,21 +56,6 @@ const LIVE_LABEL: Record<LiveKey, { label: string; cls: string }> = {
     none: { label: "no heartbeat", cls: "text-zinc-400" },
 };
 
-const STATE_TONE: Record<WorkerInstallState, string> = {
-    pending: "bg-zinc-100 text-zinc-600",
-    provisioning: "bg-amber-100 text-amber-700",
-    installed: "bg-emerald-100 text-emerald-700",
-    error: "bg-red-100 text-red-700",
-    uninstalling: "bg-orange-100 text-orange-700",
-    uninstalled: "bg-zinc-100 text-zinc-500",
-};
-
-const RISK_TONE: Record<WorkerRiskPool, string> = {
-    clean: "border-emerald-300 bg-emerald-50 text-emerald-700",
-    risky: "border-amber-300 bg-amber-50 text-amber-700",
-    quarantine: "border-red-300 bg-red-50 text-red-700",
-};
-
 const columns: Column<ManagedWorker>[] = [
     {
         id: "name",
@@ -110,35 +83,6 @@ const columns: Column<ManagedWorker>[] = [
             </span>
         ),
         csv: (w) => w.ssh_host || w.ip_addr,
-    },
-    {
-        id: "type",
-        header: "Type",
-        cell: (w) => (
-            <span className="text-xs">
-                {w.worker_type}
-                {w.worker_type === "shared" && (
-                    <span className="text-muted-foreground">{w.free_tier ? " · free" : " · premium"}</span>
-                )}
-            </span>
-        ),
-        csv: (w) => (w.worker_type === "shared" ? `shared/${w.free_tier ? "free" : "premium"}` : "dedicated"),
-    },
-    {
-        id: "risk",
-        header: "Risk pool",
-        cell: (w) => (
-            <Badge variant="outline" className={`text-[10px] ${RISK_TONE[w.risk_pool]}`}>
-                {w.risk_pool}
-            </Badge>
-        ),
-        csv: (w) => w.risk_pool,
-    },
-    {
-        id: "install",
-        header: "Install",
-        cell: (w) => <span className={`rounded px-1.5 py-0.5 text-xs ${STATE_TONE[w.install_state]}`}>{w.install_state}</span>,
-        csv: (w) => w.install_state,
     },
     {
         id: "live",
@@ -209,11 +153,7 @@ function compare(a: ManagedWorker, b: ManagedWorker, by: string): number {
     }
 }
 
-type TypeFilter = "all" | WorkerType;
-type TierFilter = "all" | "free" | "premium";
-
 export default function WorkersPage() {
-    const qc = useQueryClient();
     const nav = useNavigate();
     const { data, isLoading, error, refetch } = useQuery({
         queryKey: ["admin", "workers", "managed"],
@@ -222,10 +162,6 @@ export default function WorkersPage() {
     });
 
     const [query, setQuery] = useState("");
-    const [type, setType] = useState<TypeFilter>("all");
-    const [tier, setTier] = useState<TierFilter>("all");
-    const [risk, setRisk] = useState("");
-    const [install, setInstall] = useState("");
     const [live, setLive] = useState("");
     const [activeOnly, setActiveOnly] = useState(false);
     const [hasMailboxes, setHasMailboxes] = useState(false);
@@ -236,22 +172,17 @@ export default function WorkersPage() {
     const [created, setCreated] = useState<DateRange>(emptyRange);
     const [lastSeen, setLastSeen] = useState<DateRange>(emptyRange);
     const [sort, setSort] = useState<{ by: string; desc: boolean }>({ by: "", desc: true });
-    const [provisionOpen, setProvisionOpen] = useState(false);
 
     const rows = useMemo(() => {
         let all = data?.data ?? [];
         const q = query.trim().toLowerCase();
         if (q) {
             all = all.filter((w) =>
-                `${w.name} ${w.id} ${w.ssh_host ?? ""} ${w.ip_addr} ${w.worker_type} ${w.image_version ?? ""} ${(w.tags || []).join(" ")}`
+                `${w.name} ${w.id} ${w.ssh_host ?? ""} ${w.ip_addr} ${w.image_version ?? ""} ${(w.tags || []).join(" ")}`
                     .toLowerCase()
                     .includes(q),
             );
         }
-        if (type !== "all") all = all.filter((w) => w.worker_type === type);
-        if (tier !== "all") all = all.filter((w) => (tier === "free" ? w.free_tier : !w.free_tier));
-        if (risk) all = all.filter((w) => w.risk_pool === risk);
-        if (install) all = all.filter((w) => w.install_state === install);
         if (live) all = all.filter((w) => liveKey(w) === live);
         if (activeOnly) all = all.filter((w) => w.active);
         if (hasMailboxes) all = all.filter((w) => w.account_count > 0);
@@ -265,14 +196,10 @@ export default function WorkersPage() {
             all = [...all].sort((a, b) => compare(a, b, sort.by) * (sort.desc ? -1 : 1));
         }
         return all;
-    }, [data, query, type, tier, risk, install, live, activeOnly, hasMailboxes, hasError, hasTags, mbMin, mbMax, created, lastSeen, sort]);
+    }, [data, query, live, activeOnly, hasMailboxes, hasError, hasTags, mbMin, mbMax, created, lastSeen, sort]);
 
     const activeCount =
         (query ? 1 : 0) +
-        (type !== "all" ? 1 : 0) +
-        (tier !== "all" ? 1 : 0) +
-        (risk ? 1 : 0) +
-        (install ? 1 : 0) +
         (live ? 1 : 0) +
         (activeOnly ? 1 : 0) +
         (hasMailboxes ? 1 : 0) +
@@ -284,10 +211,6 @@ export default function WorkersPage() {
 
     function resetAll() {
         setQuery("");
-        setType("all");
-        setTier("all");
-        setRisk("");
-        setInstall("");
         setLive("");
         setActiveOnly(false);
         setHasMailboxes(false);
@@ -305,21 +228,6 @@ export default function WorkersPage() {
             <PageHeader
                 title="Workers"
                 description="Physical worker processes managed over SSH. One worker = one machine running the Warmbly worker binary."
-            >
-                <StateLegend label="Risk pools explained" entries={WORKER_RISK_POOL_LEGEND} />
-                <Link to="/workers/provisioning-jobs" className="text-xs text-muted-foreground underline hover:text-foreground">
-                    View provisioning jobs
-                </Link>
-                <Button size="sm" onClick={() => setProvisionOpen(true)} className="bg-[var(--admin-accent)] text-white hover:bg-[var(--admin-accent-strong)]">
-                    <Rocket className="size-4" />
-                    Provision new
-                </Button>
-            </PageHeader>
-
-            <ProvisionModal
-                open={provisionOpen}
-                onOpenChange={setProvisionOpen}
-                onJobCreated={() => qc.invalidateQueries({ queryKey: ["admin", "provisioning-jobs"] })}
             />
 
             <Explorer
@@ -329,55 +237,6 @@ export default function WorkersPage() {
                     <>
                         <FilterGroup label="Search">
                             <SearchFilter value={query} onChange={setQuery} placeholder="Name, host, IP, version, tag…" />
-                        </FilterGroup>
-                        <FilterGroup label="Type">
-                            <SegmentedFilter
-                                value={type}
-                                onChange={setType}
-                                options={[
-                                    { value: "all", label: "All" },
-                                    { value: "shared", label: "Shared" },
-                                    { value: "dedicated", label: "Dedicated" },
-                                ]}
-                            />
-                        </FilterGroup>
-                        <FilterGroup label="Tier">
-                            <SegmentedFilter
-                                value={tier}
-                                onChange={setTier}
-                                options={[
-                                    { value: "all", label: "All" },
-                                    { value: "free", label: "Free" },
-                                    { value: "premium", label: "Premium" },
-                                ]}
-                            />
-                        </FilterGroup>
-                        <FilterGroup label="Risk pool">
-                            <SelectFilter
-                                value={risk || "any"}
-                                onChange={(v) => setRisk(v === "any" ? "" : v)}
-                                options={[
-                                    { value: "any", label: "Any risk pool" },
-                                    { value: "clean", label: "Clean" },
-                                    { value: "risky", label: "Risky" },
-                                    { value: "quarantine", label: "Quarantine" },
-                                ]}
-                            />
-                        </FilterGroup>
-                        <FilterGroup label="Install state">
-                            <SelectFilter
-                                value={install || "any"}
-                                onChange={(v) => setInstall(v === "any" ? "" : v)}
-                                options={[
-                                    { value: "any", label: "Any state" },
-                                    { value: "pending", label: "Pending" },
-                                    { value: "provisioning", label: "Provisioning" },
-                                    { value: "installed", label: "Installed" },
-                                    { value: "error", label: "Error" },
-                                    { value: "uninstalling", label: "Uninstalling" },
-                                    { value: "uninstalled", label: "Uninstalled" },
-                                ]}
-                            />
                         </FilterGroup>
                         <FilterGroup label="Liveness">
                             <SelectFilter
@@ -403,7 +262,7 @@ export default function WorkersPage() {
                         <FilterGroup label="Mailbox count">
                             <NumberRangeFilter min={mbMin} max={mbMax} onMinChange={setMbMin} onMaxChange={setMbMax} />
                         </FilterGroup>
-                        <FilterGroup label="Provisioned">
+                        <FilterGroup label="Connected">
                             <DateRangeFilter value={created} onChange={setCreated} />
                         </FilterGroup>
                         <FilterGroup label="Last seen">
