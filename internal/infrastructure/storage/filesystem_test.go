@@ -10,7 +10,7 @@ import (
 )
 
 func TestFilesystemStore_RoundTrip(t *testing.T) {
-	s, err := NewFilesystem(t.TempDir())
+	s, err := NewFilesystem(t.TempDir(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +51,7 @@ func TestFilesystemStore_RoundTrip(t *testing.T) {
 }
 
 func TestFilesystemStore_GetMissingIsErrNotFound(t *testing.T) {
-	s, err := NewFilesystem(t.TempDir())
+	s, err := NewFilesystem(t.TempDir(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +62,7 @@ func TestFilesystemStore_GetMissingIsErrNotFound(t *testing.T) {
 }
 
 func TestFilesystemStore_DeleteMissingIsNoop(t *testing.T) {
-	s, err := NewFilesystem(t.TempDir())
+	s, err := NewFilesystem(t.TempDir(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +72,7 @@ func TestFilesystemStore_DeleteMissingIsNoop(t *testing.T) {
 }
 
 func TestFilesystemStore_RejectsTraversal(t *testing.T) {
-	s, err := NewFilesystem(t.TempDir())
+	s, err := NewFilesystem(t.TempDir(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +82,7 @@ func TestFilesystemStore_RejectsTraversal(t *testing.T) {
 }
 
 func TestFilesystemStore_PresignedUnsupported(t *testing.T) {
-	s, err := NewFilesystem(t.TempDir())
+	s, err := NewFilesystem(t.TempDir(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestFilesystemStore_PresignedUnsupported(t *testing.T) {
 
 func TestFilesystemStore_AtomicWrite(t *testing.T) {
 	dir := t.TempDir()
-	s, err := NewFilesystem(dir)
+	s, err := NewFilesystem(dir, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +112,7 @@ func TestFilesystemStore_AtomicWrite(t *testing.T) {
 }
 
 func TestFilesystemStore_Name(t *testing.T) {
-	s, err := NewFilesystem(t.TempDir())
+	s, err := NewFilesystem(t.TempDir(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
