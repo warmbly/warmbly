@@ -6,17 +6,34 @@ import (
 	"time"
 
 	"github.com/getsentry/sentry-go"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/notify"
 	"github.com/warmbly/warmbly/internal/notify/templates"
 	"github.com/warmbly/warmbly/internal/repository"
 )
+
+// OrgNotifier raises a permission-targeted org notification (in-app feed +
+// each member's enabled channels, email digest-coalesced). Satisfied by
+// *notification.Service; local interface to avoid an import cycle.
+type OrgNotifier interface {
+	NotifyOrg(ctx context.Context, orgID uuid.UUID, perm models.OrganizationPermission, exclude uuid.UUID, category models.NotificationCategory, title, body, link string, meta map[string]any, groupKey string)
+}
 
 // TrialExpirationJob handles expired free trials
 type TrialExpirationJob struct {
 	subRepo                  repository.SubscriptionRepository
 	db                       *pgxpool.Pool
 	emailNotificationService notify.EmailNotificationService
+	notifier                 OrgNotifier
+}
+
+// WireNotifier routes trial-expired alerts through the notification system
+// (billing members, preference-gated, one coalesced email) instead of the
+// legacy direct email to the subscription owner.
+func (j *TrialExpirationJob) WireNotifier(n OrgNotifier) {
+	j.notifier = n
 }
 
 // NewTrialExpirationJob creates a new trial expiration job
@@ -78,7 +95,19 @@ func (j *TrialExpirationJob) Run(ctx context.Context) error {
 			// Continue processing other users
 		}
 
-		// Send notification email to user
+		// Tell whoever can fix it: members with manage_billing, through the
+		// notification system (their prefs gate channels; the shared group
+		// key coalesces several admins into one email). Falls back to the
+		// legacy direct owner email when the notifier isn't wired.
+		if j.notifier != nil && sub.OrganizationID != uuid.Nil {
+			j.notifier.NotifyOrg(ctx, sub.OrganizationID, models.PermManageBilling, uuid.Nil,
+				models.NotifBillingAlert,
+				"Your Warmbly trial has expired",
+				"Campaigns are paused and warmup is disabled until you upgrade.",
+				"/app/settings/billing", nil,
+				"trial_expired:"+sub.OrganizationID.String())
+			continue
+		}
 		userEmail := ""
 		if sub.UserEmail != nil {
 			userEmail = *sub.UserEmail

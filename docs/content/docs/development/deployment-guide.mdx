@@ -82,6 +82,12 @@ APNS_TOPIC=com.warmbly.app
 NOTIFICATION_PUSH_WINDOW=5h                    # optional, default 5h
 ```
 
+Notification email delivery (optional; set on the backend and the consumer). Notification emails bundle on a per-user window (30 minutes minimum, up to daily; there is no per-event mode), and each user additionally has a rolling 24h budget for non-security notification emails:
+
+```
+NOTIFICATION_EMAIL_DAILY_CAP=0                 # optional, default 25; 0 disables the per-user daily budget
+```
+
 Release auto-update (optional; safe to omit on a fresh install):
 
 ```
