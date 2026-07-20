@@ -23,10 +23,10 @@ PROTO_DIR := internal/tasks/proto
 PROTO_GEN_FILES := $(PROTO_DIR)/tasks.pb.go
 
 .PHONY: setup-tools fmt lint proto check-proto \
-        up sim seed seed-plan sandbox sandbox-seed reset logs status stop down tools test-seed \
+        up seed seed-plan sandbox sandbox-seed reset logs status stop down tools test-seed \
         restart restart-go restart-all infra infra-down app app-down app-logs \
-        backend consumer worker worker-premium run dev tracking realtime web \
-        admin site docs grant-admin revoke-admin
+        backend consumer worker run dev tracking realtime web \
+        admin site docs grant-admin revoke-admin gen-key
 
 setup-tools:
 	@echo "Installing required Go tools into $(GO_BIN)"
@@ -60,16 +60,20 @@ check-proto:
 
 # ─── dev / simulation stack ─────────────────────────────────────────────
 
-# Bring up the production-style stack (one worker, foreground).
-# Uses the unchanged docker-compose.yml — every service runs the same
-# image it would run in prod, just wired against local infra. Good
-# for "does the release binary boot?" smoke tests.
+# One-command no-cloud self-host: the entire stack in Docker, no cloud account
+# (no AWS/GCP/Stripe/Kafka). Builds the images (CGO-free, so fast) and starts
+# everything detached. Dashboard :5173, admin :5174, API :8080.
 up:
-	$(COMPOSE) up
-
-# Full simulation: infra + app + premium and dedicated workers.
-sim:
-	$(COMPOSE) --profile sim up
+	@command -v docker >/dev/null || { echo "docker is required: https://docs.docker.com/get-docker/"; exit 1; }
+	$(COMPOSE) up -d --build
+	@echo ""
+	@echo "Warmbly is starting (the first build compiles the images once)."
+	@echo "  Dashboard: http://localhost:5173"
+	@echo "  Admin:     http://localhost:5174"
+	@echo "  API:       http://localhost:8080"
+	@echo ""
+	@echo "  Demo data: $(COMPOSE) --profile seed run --rm seed"
+	@echo "  Logs:      make logs        Stop: make down"
 
 # Fully working demo environment: seeds the "Sunrise Labs" showcase org
 # (live mailboxes on mailpit/dovecot, active campaigns, warmup pool, pro
@@ -216,22 +220,20 @@ restart-all:
 
 DEV_COMPOSE := $(COMPOSE) -f docker-compose.yml -f docker-compose.dev.yml
 
-# Stateful infrastructure. Brought up once and left running.
-# localstack-init is a one-shot that (re)creates the KMS alias and S3
-# bucket. localstack runs with PERSISTENCE=0, so those are wiped on every
-# restart and must be recreated before any service (incl. the natively-run
-# backend) touches KMS/S3.
-INFRA_SVCS  := postgres redis zookeeper kafka kafka-init schema-registry schema-registry-init \
-               mailpit dovecot localstack localstack-init stripe-mock cloud-tasks-emulator
+# Stateful infrastructure for the no-cloud stack: Postgres, Redis, NATS
+# (JetStream event bus), and Mailpit as a local SMTP sink. Brought up once and
+# left running. No Kafka/Zookeeper/Schema-Registry, no LocalStack, no Stripe
+# mock, no Cloud Tasks emulator — the app runs on the local providers.
+INFRA_SVCS  := postgres redis nats mailpit
 
 # Language services. The things you iterate on; recreated per worktree.
-APP_SVCS    := backend consumer worker-shared-1 tracking realtime web
+APP_SVCS    := backend consumer worker tracking realtime web admin
 
 infra:
-	$(DEV_COMPOSE) up -d $(INFRA_SVCS)
+	$(COMPOSE) up -d $(INFRA_SVCS)
 	@echo ""
-	@echo "Infra up under project 'warmbly'. Switch worktrees freely;"
-	@echo "run 'make app' (docker) or 'make backend' (native) to iterate."
+	@echo "Infra up under project 'warmbly' (postgres, redis, nats, mailpit)."
+	@echo "Run 'make run' (backend+consumer+worker native) + 'make web' to iterate."
 
 infra-down:
 	$(COMPOSE) stop $(INFRA_SVCS)
@@ -375,40 +377,49 @@ AI_DEV_ENV := AI_PROVIDER=$(AI_PROVIDER) \
 	$(if $(AI_FREE),AI_FREE=$(AI_FREE),)
 endif
 
+# Local no-cloud dev key (base64 32 bytes). Dev-only; a real deployment sets its
+# own KMS_LOCAL_MASTER_KEY (see `make gen-key`). Losing it makes sealed mailbox
+# credentials unrecoverable.
+KMS_KEY_DEV := L0K8Q0mQ2wq6b1n8H3xO5r7t9v2y4A6D8F1J3M5P7A=
+# Shared local blob dir for the filesystem storage provider (backend + worker
+# run natively on the same host, so they share this path).
+BLOB_FS_ROOT_DEV := /tmp/warmbly-blobs
+
 GO_DEV_ENV := \
 	APP_ENV=dev \
-	CODEC_PROVIDER=json \
-	CREDENTIALS_ENCRYPTION_KEY=$(CREDENTIALS_KEY_DEV) \
 	AWS_CONFIG_ENABLED=false \
-	AWS_ENDPOINT_URL=http://$(INFRA_HOST):4566 \
-	AWS_REGION=us-east-1 \
-	AWS_ACCESS_KEY_ID=test \
-	AWS_SECRET_ACCESS_KEY=test \
+	EVENTBUS_PROVIDER=nats \
+	NATS_URL=nats://$(INFRA_HOST):4222 \
+	CODEC_PROVIDER=json \
+	KMS_PROVIDER=local \
+	KMS_LOCAL_MASTER_KEY=$(KMS_KEY_DEV) \
+	CREDENTIALS_ENCRYPTION_KEY=$(CREDENTIALS_KEY_DEV) \
+	BLOB_PROVIDER=filesystem \
+	BLOB_FS_ROOT=$(BLOB_FS_ROOT_DEV) \
+	BLOB_PUBLIC_BASE_URL=http://localhost:8080/public \
+	TASKS_PROVIDER=local \
+	BILLING_PROVIDER=none \
+	CAPTCHA_PROVIDER=none \
+	PUBSUB_ENABLED=false \
+	ENCRYPTED_KEYS_PROVIDER=postgres \
 	PRIMARY_DB=postgres://warmbly:warmbly@$(INFRA_HOST):15432/warmbly_dev?sslmode=disable \
-	REDIS=redis://$(INFRA_HOST):16379 \
-	KAFKA_BOOTSTRAP_SERVERS=$(INFRA_HOST):9092 \
-	KAFKA_CONSUMER_GROUP=consumer-group \
-	SCHEMA_REGISTRY_URL=http://$(INFRA_HOST):8081 \
-	ASTRA_DB_ID=local-astra-db-id \
-	ASTRA_DB_REGION=local-region \
-	ASTRA_KEYSPACE_NAME=warmbly_dev \
-	ASTRA_APPLICATION_TOKEN=local-astra-token \
-	GCP_PROJECT_ID=
+	REDIS=redis://$(INFRA_HOST):16379
 
-# Worker keeps the infra/AWS env but never Postgres or the consumer group
-# — it has no relational access by design.
+# Worker: NATS + local KMS + shared filesystem blobs; no Postgres by design
+# (relational access is via the backend internal API).
 WORKER_DEV_ENV := \
 	APP_ENV=dev \
-	CODEC_PROVIDER=json \
-	MAIL_TLS_INSECURE=true \
 	AWS_CONFIG_ENABLED=false \
-	AWS_ENDPOINT_URL=http://$(INFRA_HOST):4566 \
-	AWS_REGION=us-east-1 \
-	AWS_ACCESS_KEY_ID=test \
-	AWS_SECRET_ACCESS_KEY=test \
-	REDIS=redis://$(INFRA_HOST):16379 \
-	KAFKA_BOOTSTRAP_SERVERS=$(INFRA_HOST):9092 \
-	SCHEMA_REGISTRY_URL=http://$(INFRA_HOST):8081
+	EVENTBUS_PROVIDER=nats \
+	NATS_URL=nats://$(INFRA_HOST):4222 \
+	CODEC_PROVIDER=json \
+	KMS_PROVIDER=local \
+	KMS_LOCAL_MASTER_KEY=$(KMS_KEY_DEV) \
+	CREDENTIALS_ENCRYPTION_KEY=$(CREDENTIALS_KEY_DEV) \
+	BLOB_PROVIDER=filesystem \
+	BLOB_FS_ROOT=$(BLOB_FS_ROOT_DEV) \
+	MAIL_TLS_INSECURE=true \
+	REDIS=redis://$(INFRA_HOST):16379
 
 # API server on :8080. Applies the embedded migrations on boot against
 # the docker postgres.
@@ -420,21 +431,7 @@ backend:
 	APP_URL=http://$(WEB_HOST):5173 \
 	CORS_ALLOW_ORIGINS=$(CORS_ORIGINS) \
 	WEBSOCKET_URL=ws://$(WEB_HOST):4000/socket/websocket \
-	KAFKA_TRACKING_TOPIC=tracking-events \
 	AUTH_SECRET=local-dev-auth-secret-minimum-32-characters-long \
-	GOOGLE_CLIENT_ID=local-google-client-id \
-	GOOGLE_CLIENT_SECRET=local-google-client-secret \
-	GOOGLE_REDIRECT_URI=http://localhost:3000/auth/google/callback \
-	APPLE_APP_ID=local-apple-app-id \
-	APPLE_TEAM_ID=local-apple-team-id \
-	APPLE_KEY_ID=local-apple-key-id \
-	APPLE_KEY_SECRET=local-apple-key-secret-base64 \
-	TURNSTILE_SECRET=1x0000000000000000000000000000000AA \
-	TURNSTILE_BYPASS_TOKEN=warmbly-local-turnstile-bypass \
-	STRIPE_API_BASE=http://$(INFRA_HOST):12111 \
-	STRIPE_SECRET_KEY=sk_test_local \
-	STRIPE_WEBHOOK_SECRET=whsec_local \
-	STRIPE_PUBLISHABLE_KEY=pk_test_local \
 	EMAIL_NAME='Warmbly Dev' \
 	EMAIL_ADDRESS=dev@warmbly.local \
 	TRACKING_DOMAIN=t.warmbly.com \
@@ -442,10 +439,6 @@ backend:
 	SMTP_PORT=11025 \
 	GEODB_PATH=data/GeoLite2-City.mmdb \
 	INTERNAL_API_TOKEN=local-dev-internal-token \
-	GOOGLE_APPLICATION_CREDENTIALS_JSON=dev@local.iam.gserviceaccount.com \
-	CLOUD_TASKS_EMULATOR_HOST=$(INFRA_HOST):8123 \
-	CLOUD_TASKS_QUEUE_NAME=projects/local/locations/local/queues/default \
-	CLOUD_TASKS_WEBHOOK_URL=http://$(SELF_HOST):8080/webhook/email \
 	go run ./cmd/backend
 
 # Kafka -> postgres consumer.
@@ -470,28 +463,23 @@ worker:
 	ENCRYPTED_KEYS_WORKER_TOKEN=local-dev-internal-token \
 	go run ./cmd/worker
 
-# The premium shared worker (seeded as premium-1, free_tier=false). Paid
-# orgs place strictly onto premium workers, so without this one running
-# natively their mailboxes never send or sync (the sandbox org needs it).
-worker-premium:
-	$(WORKER_DEV_ENV) \
-	WORKER_ID=10c8f5e4-1c39-5b2a-9c8b-3d2f0a8b1a02 \
-	WORKER_TIER=shared \
-	ENCRYPTED_KEYS_PROVIDER=http \
-	ENCRYPTED_KEYS_BACKEND_URL=http://localhost:8080 \
-	ENCRYPTED_KEYS_WORKER_TOKEN=local-dev-internal-token \
-	go run ./cmd/worker
-
 # backend + consumer + worker together in one terminal. Ctrl-C stops all
 # (kill 0 takes down go run and its child binaries). Run `make infra` first.
+# Workers are interchangeable now; run a second `make worker WORKER_ID=<uuid>`
+# in another terminal to add parallelism.
 run:
-	@echo "backend + consumer + both shared workers (native). Ctrl-C stops all. Run 'make infra' first if infra is down."
+	@echo "backend + consumer + worker (native). Ctrl-C stops all. Run 'make infra' first if infra is down."
 	@trap 'kill 0' INT TERM; \
 	$(MAKE) --no-print-directory backend & \
 	$(MAKE) --no-print-directory consumer & \
 	$(MAKE) --no-print-directory worker & \
-	$(MAKE) --no-print-directory worker-premium & \
 	wait
+
+# Generate a fresh base64 KMS master key for a real self-host deployment. Put
+# the output in your .env as KMS_LOCAL_MASTER_KEY (and back it up: losing it
+# makes every stored mailbox credential unrecoverable).
+gen-key:
+	@openssl rand -base64 32
 
 # ─── one-command dev stack ───────────────────────────────────────────────
 #
@@ -515,45 +503,43 @@ dev:
 	@command -v docker >/dev/null || { echo "docker is required: https://docs.docker.com/get-docker/"; exit 1; }
 	@command -v go >/dev/null || { echo "go 1.25+ is required: https://go.dev/dl/"; exit 1; }
 	@command -v pnpm >/dev/null || { echo "pnpm is required: https://pnpm.io/installation"; exit 1; }
-	$(DEV_COMPOSE) up -d $(INFRA_SVCS)
-	@echo "Waiting for infra to be ready (postgres, kafka topics, KMS/S3 init)..."
+	$(COMPOSE) up -d $(INFRA_SVCS)
+	@echo "Waiting for infra to be ready (postgres, redis, nats)..."
 	@until $(COMPOSE) exec -T postgres pg_isready -U warmbly >/dev/null 2>&1; do sleep 1; done
-	@for svc in kafka-init schema-registry-init localstack-init; do \
-		until [ "$$($(COMPOSE) ps -a --format '{{.State}}' $$svc 2>/dev/null | head -1)" = "exited" ]; do sleep 1; done; \
-		code=$$($(COMPOSE) ps -a --format '{{.ExitCode}}' $$svc | head -1); \
-		if [ "$$code" != "0" ]; then echo "$$svc failed (exit $$code); check: make logs $$svc"; exit 1; fi; \
-	done
 	$(GO_DEV_ENV) go run ./cmd/migrate
 	@if [ "$(SEED)" = "true" ]; then $(GO_DEV_ENV) SEED_RICH=true SEED_FULL=true go run ./cmd/seed; fi
 	@if [ ! -d web/node_modules ]; then echo "Installing web dependencies (first run)..."; cd web && pnpm install; fi
+	@if [ ! -d admin/node_modules ]; then echo "Installing admin dependencies (first run)..."; cd admin && pnpm install; fi
+	@echo "Starting realtime + tracking as containers (no host Elixir/cargo needed)..."
+	@BACKEND_INTERNAL_URL=http://host.docker.internal:8080 $(COMPOSE) up -d --build realtime tracking
 	@echo ""
-	@echo "Starting backend + consumer + both workers + dashboard. Ctrl-C stops them (infra stays up)."
-	@echo "Dashboard: http://localhost:5173    Login: dev@warmbly.com / password123"
+	@echo "Starting backend + consumer + worker + dashboard + admin. Ctrl-C stops them (infra stays up)."
+	@echo "Dashboard: http://localhost:5173    Admin: http://localhost:5174    Login: dev@warmbly.com / password123"
 	@echo ""
 	@trap 'kill 0' INT TERM; \
 	$(MAKE) --no-print-directory backend & \
 	$(MAKE) --no-print-directory consumer & \
 	$(MAKE) --no-print-directory worker & \
-	$(MAKE) --no-print-directory worker-premium & \
 	$(MAKE) --no-print-directory web & \
+	$(MAKE) --no-print-directory admin & \
 	wait
 
 # ─── other native services (Rust tracking, Elixir realtime) ──────────────
 #
-# Deliberately NOT part of `make run` — run them on their own only when you
-# need the open/click tracking pixel service or the websocket fanout. Each
-# needs its language toolchain on the host (cargo / elixir+mix).
+# `make dev` runs these as containers, so you don't need cargo/elixir on the
+# host. Use these native targets only if you want to iterate on the Rust or
+# Elixir source directly.
 
-# Open/click tracking service (Rust) on :3000.
+# Open/click tracking service (Rust) on :3000 — NATS by default (no Kafka).
 tracking:
 	cd tracking && \
 	APP_ENV=dev \
 	AWS_CONFIG_ENABLED=false \
 	TRACKING_HOST=0.0.0.0 \
 	TRACKING_PORT=3000 \
-	KAFKA_BOOTSTRAP_SERVERS=localhost:9092 \
+	EVENTBUS_PROVIDER=nats \
+	NATS_URL=nats://localhost:4222 \
 	KAFKA_TRACKING_TOPIC=tracking-events \
-	SCHEMA_REGISTRY_URL=http://localhost:8081 \
 	BACKEND_INTERNAL_URL=http://localhost:8080 \
 	INTERNAL_API_TOKEN=local-dev-internal-token \
 	cargo run
