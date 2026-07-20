@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
+	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/infrastructure/cache"
 	"github.com/warmbly/warmbly/internal/models"
@@ -148,6 +149,10 @@ type CreditService interface {
 	ListTransactionsBefore(ctx context.Context, orgID uuid.UUID, limit int, beforeCreatedAt time.Time, beforeID uuid.UUID) ([]models.CreditTransaction, *errx.Error)
 }
 
+// selfHostBalance is the sentinel balance reported when billing is disabled:
+// large enough to read as effectively unlimited everywhere.
+const selfHostBalance = 1_000_000_000
+
 type creditService struct {
 	repo       repository.CreditRepository
 	settings   repository.AISettingsRepository
@@ -155,6 +160,10 @@ type creditService struct {
 	shortLimit int
 	dailyLimit int
 	monitor    func(orgID uuid.UUID, balance int)
+	// selfHost bypasses the credit ledger (BILLING_PROVIDER=none): the operator
+	// pays their AI provider directly, so Warmbly's credit metering is moot and
+	// every consume succeeds without debiting.
+	selfHost bool
 }
 
 func NewService(repo repository.CreditRepository, settings repository.AISettingsRepository, c *cache.Cache) CreditService {
@@ -164,6 +173,7 @@ func NewService(repo repository.CreditRepository, settings repository.AISettings
 		cache:      c,
 		shortLimit: DefaultShortLimit,
 		dailyLimit: DefaultDailyLimit,
+		selfHost:   config.BillingProvider() == "none",
 	}
 }
 
@@ -252,6 +262,9 @@ func (s *creditService) checkSpendLimits(ctx context.Context, orgID uuid.UUID, a
 }
 
 func (s *creditService) GetBalance(ctx context.Context, orgID uuid.UUID) (int, *errx.Error) {
+	if s.selfHost {
+		return selfHostBalance, nil
+	}
 	ledger, err := s.repo.GetBalance(ctx, orgID)
 	if err != nil {
 		return 0, errx.New(errx.Internal, "failed to read credit balance")
@@ -275,6 +288,10 @@ func (s *creditService) GetLedger(ctx context.Context, orgID uuid.UUID) (*models
 }
 
 func (s *creditService) Consume(ctx context.Context, orgID uuid.UUID, amount int, reason, model string, tokens int, idempotencyKey string) (int, error) {
+	if s.selfHost {
+		// No metering: report a large remaining balance without debiting.
+		return selfHostBalance, nil
+	}
 	if amount <= 0 {
 		return 0, errors.New("credit amount must be positive")
 	}
@@ -308,6 +325,9 @@ func (s *creditService) Consume(ctx context.Context, orgID uuid.UUID, amount int
 }
 
 func (s *creditService) SettleUsage(ctx context.Context, orgID uuid.UUID, alreadyCharged int, model string, tokens int, reason, idempotencyKey string) (int, error) {
+	if s.selfHost {
+		return 0, nil
+	}
 	total := MeteredCost(model, tokens)
 	extra := total - alreadyCharged
 	if extra <= 0 {
