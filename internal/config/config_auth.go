@@ -50,40 +50,18 @@ type AuthConfig struct {
 }
 
 func (c *Config) LoadAuthConfig(ctx context.Context) (*AuthConfig, error) {
-	googleClientID, err := c.GetString(ctx, "GOOGLE_CLIENT_ID", "google-auth/client_id")
-	if err != nil {
-		return nil, err
-	}
+	// Social sign-in (Google/Apple) and captcha (Turnstile) are optional: a
+	// self-hosted install running only email+password / passkeys needs none of
+	// them, so leaving these unset disables the corresponding provider rather
+	// than failing boot. AUTH_SECRET (JWT/session signing) stays required.
+	googleClientID := c.GetStringOptional(ctx, "GOOGLE_CLIENT_ID", "google-auth/client_id", "")
+	googleRedirectURI := c.GetStringOptional(ctx, "GOOGLE_REDIRECT_URI", "google-auth/redirect_uri", "")
+	googleClientSecret := c.GetSecretOptional(ctx, "GOOGLE_CLIENT_SECRET", "google-auth/client_secret", "")
 
-	googleRedirectURI, err := c.GetString(ctx, "GOOGLE_REDIRECT_URI", "google-auth/redirect_uri")
-	if err != nil {
-		return nil, err
-	}
-
-	googleClientSecret, err := c.GetSecret(ctx, "GOOGLE_CLIENT_SECRET", "google-auth/client_secret")
-	if err != nil {
-		return nil, err
-	}
-
-	appleAppID, err := c.GetString(ctx, "APPLE_APP_ID", "apple-auth/app_id")
-	if err != nil {
-		return nil, err
-	}
-
-	appleTeamID, err := c.GetString(ctx, "APPLE_TEAM_ID", "apple-auth/team_id")
-	if err != nil {
-		return nil, err
-	}
-
-	appleKeyID, err := c.GetString(ctx, "APPLE_KEY_ID", "apple-auth/key_id")
-	if err != nil {
-		return nil, err
-	}
-
-	appleKeySecret, err := c.GetSecret(ctx, "APPLE_KEY_SECRET", "apple-auth/key_secret")
-	if err != nil {
-		return nil, err
-	}
+	appleAppID := c.GetStringOptional(ctx, "APPLE_APP_ID", "apple-auth/app_id", "")
+	appleTeamID := c.GetStringOptional(ctx, "APPLE_TEAM_ID", "apple-auth/team_id", "")
+	appleKeyID := c.GetStringOptional(ctx, "APPLE_KEY_ID", "apple-auth/key_id", "")
+	appleKeySecret := c.GetSecretOptional(ctx, "APPLE_KEY_SECRET", "apple-auth/key_secret", "")
 
 	appleIOSBundleID := c.GetStringOptional(ctx, "APPLE_IOS_BUNDLE_ID", "apple-auth/ios_bundle_id", "com.warmbly.app")
 	googleIOSClientID := c.GetStringOptional(ctx, "GOOGLE_IOS_CLIENT_ID", "google-auth/ios_client_id", "")
@@ -93,10 +71,7 @@ func (c *Config) LoadAuthConfig(ctx context.Context) (*AuthConfig, error) {
 		return nil, err
 	}
 
-	turnstileSecret, err := c.GetSecret(ctx, "TURNSTILE_SECRET", "turnstile/secret")
-	if err != nil {
-		return nil, err
-	}
+	turnstileSecret := c.GetSecretOptional(ctx, "TURNSTILE_SECRET", "turnstile/secret", "")
 	turnstileBypass := c.GetSecretOptional(ctx, "TURNSTILE_BYPASS_TOKEN", "turnstile/bypass_token", "")
 
 	// 2FA sealing key. Optional: falls back to AUTH_SECRET so existing
