@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
@@ -78,17 +79,26 @@ type SubscriptionStatus struct {
 type featureGateService struct {
 	subRepo  repository.SubscriptionRepository
 	planRepo repository.PlanRepository
+	// selfHost unlocks every gate. Set when BILLING_PROVIDER=none (the self-host
+	// default): there is no payment provider, so every feature is available and
+	// sending is unlimited. Stripe deployments (BILLING_PROVIDER=stripe) keep the
+	// subscription-based gating below.
+	selfHost bool
 }
 
 func NewService(subRepo repository.SubscriptionRepository, planRepo repository.PlanRepository) FeatureGateService {
 	return &featureGateService{
 		subRepo:  subRepo,
 		planRepo: planRepo,
+		selfHost: config.BillingProvider() == "none",
 	}
 }
 
 // CanSendCampaignEmail checks if an organization can send campaign emails
 func (s *featureGateService) CanSendCampaignEmail(ctx context.Context, orgID uuid.UUID) (bool, *errx.Error) {
+	if s.selfHost {
+		return true, nil
+	}
 	sub, err := s.subRepo.GetByOrganizationID(ctx, orgID)
 	if err != nil {
 		return false, errx.New(errx.Internal, "failed to get subscription")
@@ -117,6 +127,9 @@ func (s *featureGateService) CanSendCampaignEmail(ctx context.Context, orgID uui
 // Free-trial users get warmup access for the 14-day window via the
 // `free` pool; once the trial expires they must upgrade.
 func (s *featureGateService) CanUseWarmup(ctx context.Context, orgID uuid.UUID) (bool, *errx.Error) {
+	if s.selfHost {
+		return true, nil
+	}
 	sub, err := s.subRepo.GetByOrganizationID(ctx, orgID)
 	if err != nil {
 		return false, errx.New(errx.Internal, "failed to get subscription")
@@ -130,6 +143,9 @@ func (s *featureGateService) CanUseWarmup(ctx context.Context, orgID uuid.UUID) 
 // CanUseUnibox checks if an organization can use the unibox feature.
 // Same trial allowance as warmup.
 func (s *featureGateService) CanUseUnibox(ctx context.Context, orgID uuid.UUID) (bool, *errx.Error) {
+	if s.selfHost {
+		return true, nil
+	}
 	sub, err := s.subRepo.GetByOrganizationID(ctx, orgID)
 	if err != nil {
 		return false, errx.New(errx.Internal, "failed to get subscription")
@@ -145,6 +161,9 @@ func (s *featureGateService) CanUseUnibox(ctx context.Context, orgID uuid.UUID) 
 // inboxes; once that cap is reached we refuse so the warmup pool is not
 // seeded with throwaway trial accounts.
 func (s *featureGateService) CanAddInbox(ctx context.Context, orgID uuid.UUID, currentCount int) (bool, *errx.Error) {
+	if s.selfHost {
+		return true, nil
+	}
 	sub, err := s.subRepo.GetByOrganizationID(ctx, orgID)
 	if err != nil {
 		return false, errx.New(errx.Internal, "failed to get subscription")
@@ -163,6 +182,9 @@ func (s *featureGateService) CanAddInbox(ctx context.Context, orgID uuid.UUID, c
 
 // GetDailyEmailLimit returns the daily email limit for an organization
 func (s *featureGateService) GetDailyEmailLimit(ctx context.Context, orgID uuid.UUID) (int, *errx.Error) {
+	if s.selfHost {
+		return UnlimitedEmails, nil
+	}
 	sub, err := s.subRepo.GetByOrganizationID(ctx, orgID)
 	if err != nil {
 		return 0, errx.New(errx.Internal, "failed to get subscription")
@@ -195,6 +217,16 @@ func (s *featureGateService) GetDailyEmailLimit(ctx context.Context, orgID uuid.
 
 // GetSubscriptionStatus returns subscription info for feature checks
 func (s *featureGateService) GetSubscriptionStatus(ctx context.Context, orgID uuid.UUID) (*SubscriptionStatus, *errx.Error) {
+	if s.selfHost {
+		// No billing: present as an unlimited paid subscriber so callers that
+		// branch on status behave as fully-provisioned.
+		return &SubscriptionStatus{
+			HasSubscription:  true,
+			IsPaidSubscriber: true,
+			DailyEmailLimit:  UnlimitedEmails,
+		}, nil
+	}
+
 	status := &SubscriptionStatus{
 		HasSubscription:    false,
 		IsInFreeTrial:      false,
@@ -239,6 +271,9 @@ func (s *featureGateService) GetSubscriptionStatus(ctx context.Context, orgID uu
 // get the larger pool; everyone else (trial or no subscription) gets the free
 // allowance so they can still attach files.
 func (s *featureGateService) GetStorageLimitBytes(ctx context.Context, orgID uuid.UUID) (int64, *errx.Error) {
+	if s.selfHost {
+		return PaidStorageBytes, nil
+	}
 	sub, err := s.subRepo.GetByOrganizationID(ctx, orgID)
 	if err != nil {
 		return 0, errx.New(errx.Internal, "failed to get subscription")
@@ -252,6 +287,9 @@ func (s *featureGateService) GetStorageLimitBytes(ctx context.Context, orgID uui
 // CanUseWritingAssistant — same trial allowance as warmup/unibox: paid
 // subscribers and orgs inside their free-trial window may use the AI assistant.
 func (s *featureGateService) CanUseWritingAssistant(ctx context.Context, orgID uuid.UUID) (bool, *errx.Error) {
+	if s.selfHost {
+		return true, nil
+	}
 	sub, err := s.subRepo.GetByOrganizationID(ctx, orgID)
 	if err != nil {
 		return false, errx.New(errx.Internal, "failed to get subscription")
@@ -266,6 +304,9 @@ func (s *featureGateService) CanUseWritingAssistant(ctx context.Context, orgID u
 // writing assistant, it drafts on inbound replies without a human first asking,
 // so it is not part of the free-trial allowance.
 func (s *featureGateService) CanUseInboxAgent(ctx context.Context, orgID uuid.UUID) (bool, *errx.Error) {
+	if s.selfHost {
+		return true, nil
+	}
 	sub, err := s.subRepo.GetByOrganizationID(ctx, orgID)
 	if err != nil {
 		return false, errx.New(errx.Internal, "failed to get subscription")
@@ -278,6 +319,10 @@ func (s *featureGateService) CanUseInboxAgent(ctx context.Context, orgID uuid.UU
 
 // IsPaidOrganization checks if the organization has an active paid subscription
 func (s *featureGateService) IsPaidOrganization(ctx context.Context, orgID uuid.UUID) (bool, *errx.Error) {
+	if s.selfHost {
+		// Treat as paid so downstream (warmup pool, storage) uses the full tier.
+		return true, nil
+	}
 	sub, err := s.subRepo.GetByOrganizationID(ctx, orgID)
 	if err != nil {
 		return false, errx.New(errx.Internal, "failed to get subscription")

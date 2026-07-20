@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { StateLegend } from "@/components/StateLegend";
-import { WORKER_HEALTH_LEGEND, WORKER_RISK_POOL_LEGEND } from "@/lib/legends";
+import { WORKER_HEALTH_LEGEND } from "@/lib/legends";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -194,7 +194,7 @@ export default function WorkerDetailPage() {
             </Link>
             <PageHeader
                 title={w.name || w.id.slice(0, 12)}
-                description={`${w.worker_type}${w.worker_type === "shared" ? (w.free_tier ? " · free tier" : " · premium tier") : ""} · install state: ${w.install_state}`}
+                description={`Managed worker · install state: ${w.install_state}`}
             >
                 <Button
                     size="sm"
@@ -321,12 +321,9 @@ export default function WorkerDetailPage() {
                         <CardDescription>How this worker is being used today.</CardDescription>
                         <div className="flex flex-wrap gap-3 pt-1">
                             <StateLegend label="Health states" entries={WORKER_HEALTH_LEGEND} />
-                            <StateLegend label="Risk pools" entries={WORKER_RISK_POOL_LEGEND} />
                         </div>
                     </CardHeader>
                     <CardContent className="pt-0 text-sm space-y-2">
-                        <KV label="Type" value={w.worker_type} />
-                        <KV label="Free tier" value={w.free_tier ? "yes" : "no"} />
                         <KV
                             label="Health"
                             value={
@@ -338,18 +335,6 @@ export default function WorkerDetailPage() {
                                 </Badge>
                             }
                         />
-                        <KV
-                            label="Risk pool"
-                            value={
-                                <Badge
-                                    variant="outline"
-                                    className={`text-[10px] ${RISK_TONE[w.risk_pool] ?? "border-zinc-300 text-zinc-600"}`}
-                                >
-                                    {w.risk_pool}
-                                </Badge>
-                            }
-                        />
-                        <KV label="Egress" value={w.egress_kind} />
                         <KV label="Load score" value={w.load_score.toFixed(2)} />
                         <KV label="Mailboxes" value={String(w.account_count)} />
                         <KV label="Image" value={w.image_version || "—"} mono />

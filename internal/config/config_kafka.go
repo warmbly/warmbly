@@ -46,36 +46,12 @@ type TrackingConsumerConfig struct {
 	SASLPassword string
 }
 
-// LoadTrackingConsumerConfig loads configuration for the tracking events consumer
+// LoadTrackingConsumerConfig loads the tracking-events topic + group. Transport
+// (brokers / SASL) is owned by the shared event bus, so this never fails and a
+// NATS self-host that sets no Kafka env still gets a valid topic + group.
 func (c *Config) LoadTrackingConsumerConfig(ctx context.Context) (*TrackingConsumerConfig, error) {
-	brokers, err := c.LoadKafkaBootstrapServers(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	// Default topic and group ID, can be overridden via env or params
-	topic := c.GetStringOptionalRaw(ctx, "KAFKA_TRACKING_TOPIC", "kafka/tracking/topic", "tracking-events")
-	groupID := c.GetStringOptionalRaw(ctx, "KAFKA_CONSUMER_GROUP", "kafka/tracking/group_id", "tracking-consumer")
-
-	// Load SASL credentials - optional for dev environments
-	saslUsername := c.GetSecretOptionalRaw(ctx, "KAFKA_SASL_USERNAME", "kafka/sasl/username", "")
-	if saslUsername == "" {
-		return &TrackingConsumerConfig{
-			Brokers:     brokers,
-			Topic:       topic,
-			GroupID:     groupID,
-			SASLEnabled: false,
-		}, nil
-	}
-
-	saslPassword := c.GetSecretOptionalRaw(ctx, "KAFKA_SASL_PASSWORD", "kafka/sasl/password", "")
-
 	return &TrackingConsumerConfig{
-		Brokers:      brokers,
-		Topic:        topic,
-		GroupID:      groupID,
-		SASLEnabled:  true,
-		SASLUsername: saslUsername,
-		SASLPassword: saslPassword,
+		Topic:   c.GetStringOptionalRaw(ctx, "KAFKA_TRACKING_TOPIC", "kafka/tracking/topic", "tracking-events"),
+		GroupID: c.GetStringOptionalRaw(ctx, "KAFKA_CONSUMER_GROUP", "kafka/tracking/group_id", "tracking-consumer"),
 	}, nil
 }

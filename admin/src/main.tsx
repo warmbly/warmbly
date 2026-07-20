@@ -24,14 +24,6 @@ import OverviewPage from "@/app/dashboard/OverviewPage";
 import WorkersPage from "@/app/dashboard/WorkersPage";
 import WorkerDetailPage from "@/app/dashboard/WorkerDetailPage";
 import AuditPage from "@/app/dashboard/AuditPage";
-import InfrastructurePage from "@/app/settings/InfrastructurePage";
-import CloudProvidersPage from "@/app/settings/CloudProvidersPage";
-import ProvisioningTemplatesPage from "@/app/settings/ProvisioningTemplatesPage";
-import ProvisioningPolicyPage from "@/app/settings/ProvisioningPolicyPage";
-import WorkerProfilesPage from "@/app/settings/WorkerProfilesPage";
-import ReleasesPage from "@/app/settings/ReleasesPage";
-import AwsCredentialsPage from "@/app/settings/AwsCredentialsPage";
-import ProvisioningJobsPage from "@/app/dashboard/ProvisioningJobsPage";
 import OrganizationsPage from "@/app/dashboard/OrganizationsPage";
 import OrganizationDetailPage from "@/app/dashboard/OrganizationDetailPage";
 import UsersPage from "@/app/dashboard/UsersPage";
@@ -45,14 +37,10 @@ import WarmupContentGeneratePage from "@/app/dashboard/warmup-content/GeneratePa
 import WarmupContentJobsPage from "@/app/dashboard/warmup-content/JobsPage";
 import WarmupContentSettingsPage from "@/app/dashboard/warmup-content/SettingsPage";
 import CampaignsPage from "@/app/dashboard/CampaignsPage";
-import EnterprisePage from "@/app/dashboard/EnterprisePage";
-import PlansPage from "@/app/dashboard/PlansPage";
-import DiscountsPage from "@/app/dashboard/DiscountsPage";
 import LimitRequestsPage from "@/app/dashboard/LimitRequestsPage";
 import OutreachPage from "@/app/dashboard/OutreachPage";
 import AnalyticsPage from "@/app/dashboard/AnalyticsPage";
 import MailboxesPage from "@/app/dashboard/MailboxesPage";
-import PlacementPage from "@/app/dashboard/PlacementPage";
 import EventsPage from "@/app/dashboard/EventsPage";
 import SystemStatusPage from "@/app/dashboard/SystemStatusPage";
 import RealtimeManager from "@/lib/realtime/RealtimeManager";
@@ -92,15 +80,12 @@ const router = createBrowserRouter([
                 children: [
                     { index: true, element: <OverviewPage /> },
                     { path: "workers", element: <WorkersPage /> },
-                    { path: "workers/provisioning-jobs", element: <ProvisioningJobsPage /> },
                     { path: "workers/:id", element: <WorkerDetailPage /> },
                     { path: "mailboxes", element: <MailboxesPage /> },
                     { path: "users", element: <UsersPage /> },
                     { path: "users/:id", element: <UserDetailPage /> },
                     { path: "organizations", element: <OrganizationsPage /> },
                     { path: "organizations/:id", element: <OrganizationDetailPage /> },
-                    { path: "plans", element: <PlansPage /> },
-                    { path: "discounts", element: <DiscountsPage /> },
                     { path: "warmup", element: <WarmupPage /> },
                     { path: "warmup/appeals", element: <WarmupAppealsPage /> },
                     {
@@ -120,28 +105,13 @@ const router = createBrowserRouter([
                             { path: "settings", element: <WarmupContentSettingsPage /> },
                         ],
                     },
-                    { path: "placement", element: <PlacementPage /> },
                     { path: "campaigns", element: <CampaignsPage /> },
-                    { path: "enterprise", element: <EnterprisePage /> },
                     { path: "limit-requests", element: <LimitRequestsPage /> },
                     { path: "outreach", element: <OutreachPage /> },
                     { path: "analytics", element: <AnalyticsPage /> },
                     { path: "events", element: <EventsPage /> },
                     { path: "system", element: <SystemStatusPage /> },
                     { path: "audit", element: <AuditPage /> },
-                    {
-                        path: "settings",
-                        children: [
-                            { index: true, element: <Navigate to="/settings/cloud-providers" replace /> },
-                            { path: "cloud-providers", element: <CloudProvidersPage /> },
-                            { path: "aws-credentials", element: <AwsCredentialsPage /> },
-                            { path: "worker-profiles", element: <WorkerProfilesPage /> },
-                            { path: "provisioning-templates", element: <ProvisioningTemplatesPage /> },
-                            { path: "provisioning-policy", element: <ProvisioningPolicyPage /> },
-                            { path: "releases", element: <ReleasesPage /> },
-                            { path: "infrastructure", element: <InfrastructurePage /> },
-                        ],
-                    },
                     { path: "*", element: <NotFoundPage /> },
                 ],
             },

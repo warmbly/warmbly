@@ -13,14 +13,13 @@ import (
 	warmupapp "github.com/warmbly/warmbly/internal/app/warmup"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/events"
-	"github.com/warmbly/warmbly/internal/infrastructure/gtasks"
-	"github.com/warmbly/warmbly/internal/infrastructure/kafka"
 	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/generation"
 	"github.com/warmbly/warmbly/internal/repository"
 	"github.com/warmbly/warmbly/internal/scheduler"
 	"github.com/warmbly/warmbly/internal/tasks/proto"
+	"github.com/warmbly/warmbly/internal/tasksched"
 )
 
 // Type aliases for repository types
@@ -40,10 +39,10 @@ type (
 )
 
 type TasksService interface {
-	// HandleTask routes a Cloud Tasks callback by the task row's task_type.
-	// Every enqueue shares one webhook URL (gtasks.Client holds a single
-	// callback), so the receiving endpoint cannot infer the type from the
-	// route it was hit on.
+	// HandleTask routes a due task by its row's task_type. It is the single
+	// entrypoint for both schedulers: the local poller calls it in-process, and
+	// the Cloud Tasks webhook forwards to it. All enqueues share one dispatch,
+	// so the type is read from the row, not inferred from any route.
 	HandleTask(task *proto.ProcessTask) *errx.Error
 	HandleCampaignTask(task *proto.ProcessTask) *errx.Error
 	HandleEmailTask(task *proto.ProcessTask) *errx.Error
@@ -81,8 +80,7 @@ type AutomationRunner interface {
 
 type tasksService struct {
 	// Infrastructure
-	tasksClient        *gtasks.Client
-	producerClient     *kafka.Producer
+	tasksClient        tasksched.Scheduler
 	generationClient   *generation.GenerationClient
 	streamingPublisher *pubsub.StreamingPublisher
 	eventsPublisher    events.Publisher
@@ -129,8 +127,7 @@ type warmupSettingsCache struct {
 }
 
 func NewService(
-	tasksClient *gtasks.Client,
-	producerClient *kafka.Producer,
+	tasksClient tasksched.Scheduler,
 	generationClient *generation.GenerationClient,
 	streamingPublisher *pubsub.StreamingPublisher,
 	eventsPublisher events.Publisher,
@@ -155,7 +152,6 @@ func NewService(
 ) TasksService {
 	return &tasksService{
 		tasksClient:          tasksClient,
-		producerClient:       producerClient,
 		generationClient:     generationClient,
 		streamingPublisher:   streamingPublisher,
 		eventsPublisher:      eventsPublisher,

@@ -1,10 +1,14 @@
 mod abuse;
 mod aws;
 mod config;
+mod events;
 mod handlers;
+#[cfg(feature = "kafka")]
 mod kafka;
 mod links;
+mod nats;
 mod observability;
+mod producer;
 
 use axum::{routing::get, Router};
 use std::net::SocketAddr;
@@ -17,8 +21,8 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::config::Config;
 use crate::handlers::{health, track_click, track_open, AppState};
-use crate::kafka::KafkaProducer;
 use crate::observability::report_error;
+use crate::producer::Producer;
 
 #[tokio::main]
 async fn main() {
@@ -42,16 +46,17 @@ async fn main() {
     observability::init(&config.env);
     info!("Starting tracking service on {}", config.addr());
 
-    // Initialize Kafka producer with Avro/Schema Registry
-    let kafka = match KafkaProducer::new(&config).await {
-        Ok(k) => k,
+    // Event-bus producer (NATS by default; Kafka when EVENTBUS_PROVIDER=kafka
+    // and the `kafka` feature is compiled in).
+    let producer = match Producer::from_config(&config).await {
+        Ok(p) => p,
         Err(e) => {
-            report_error("Failed to create Kafka producer", e.as_ref());
+            report_error("Failed to create tracking event producer", e.as_ref());
             std::process::exit(1);
         }
     };
 
-    let state = AppState::new(kafka, &config);
+    let state = AppState::new(producer, &config);
 
     // Build router
     let app = Router::new()

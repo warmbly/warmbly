@@ -3,12 +3,14 @@ package jobs
 import (
 	"context"
 
+	"github.com/rs/zerolog/log"
 	"github.com/warmbly/warmbly/internal/app/advanced"
 	warmupapp "github.com/warmbly/warmbly/internal/app/warmup"
 	workerapp "github.com/warmbly/warmbly/internal/app/worker"
 	"github.com/warmbly/warmbly/internal/events"
 	"github.com/warmbly/warmbly/internal/infrastructure/cache"
 	"github.com/warmbly/warmbly/internal/infrastructure/codec"
+	"github.com/warmbly/warmbly/internal/infrastructure/eventbus"
 	"github.com/warmbly/warmbly/internal/infrastructure/kafka"
 	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/models"
@@ -16,10 +18,10 @@ import (
 )
 
 type JobsService struct {
-	Consumer *kafka.Consumer
+	// Bus delivers the jobs.worker-events stream (Kafka or NATS).
+	Bus eventbus.EventBus
 	// Codec decodes bus payloads (jobs.worker-events); it must match the
-	// CODEC_PROVIDER the producing services run with. When nil, the
-	// consumer's attached Avro deserializer is used.
+	// CODEC_PROVIDER the producing services run with.
 	Codec                       codec.Codec
 	UniboxRepository            repository.UniboxRepository
 	MailboxRepository           repository.MailboxRepository
@@ -60,5 +62,7 @@ type JobsService struct {
 }
 
 func (s *JobsService) Start(ctx context.Context) {
-	s.Consumer.Consume(ctx, s.Receive)
+	if err := s.Bus.Subscribe(ctx, []string{kafka.TopicWorkerEvents}, "consumer-group", s.receive); err != nil {
+		log.Error().Err(err).Msg("consumer: worker-events subscription ended")
+	}
 }

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/MicahParks/keyfunc/v3"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconf "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/getsentry/sentry-go"
 	"github.com/meszmate/apple-go"
@@ -110,6 +111,8 @@ import (
 	"github.com/warmbly/warmbly/internal/repository"
 	"github.com/warmbly/warmbly/internal/scheduler"
 	"github.com/warmbly/warmbly/internal/tasks"
+	"github.com/warmbly/warmbly/internal/tasks/proto"
+	"github.com/warmbly/warmbly/internal/tasksched"
 )
 
 func main() {
@@ -216,7 +219,7 @@ func main() {
 	// Surfaced into the handler for avatar uploads and other direct
 	// repository / object-storage needs. Declared up here so they
 	// survive the config block where they're initialized.
-	var s3ForHandler *storage.Client
+	var s3ForHandler storage.Store
 	var emailMessageMapForHandler repository.EmailMessageMapRepository
 	var trackedLinkRepository repository.TrackedLinkRepository
 	var userRepoForHandler repository.UserRepository
@@ -246,19 +249,25 @@ func main() {
 			log.Fatal(err)
 		}
 
-		serviceAccount, err = cfg.LoadGoogleServiceAccount(ctx)
-		if err != nil {
-			sentry.CaptureException(err)
-			log.Fatal(err)
-		}
-
-		keySet, err = keyfunc.NewDefaultCtx(ctx, []string{"https://www.googleapis.com/oauth2/v3/certs"})
-		if err != nil {
-			if cfg.Env == "dev" {
-				log.Printf("Warning: Failed to fetch Google OIDC keys: %v", err)
-			} else {
+		// The Google service account + OIDC key set only authenticate GCP Cloud
+		// Tasks webhook callbacks. Under the default local dispatcher there is no
+		// webhook, so skip both — a self-host boot needs no GCP identity and no
+		// outbound call to Google's cert endpoint.
+		if config.TasksProvider() == "gcloud" {
+			serviceAccount, err = cfg.LoadGoogleServiceAccount(ctx)
+			if err != nil {
 				sentry.CaptureException(err)
 				log.Fatal(err)
+			}
+
+			keySet, err = keyfunc.NewDefaultCtx(ctx, []string{"https://www.googleapis.com/oauth2/v3/certs"})
+			if err != nil {
+				if cfg.Env == "dev" {
+					log.Printf("Warning: Failed to fetch Google OIDC keys: %v", err)
+				} else {
+					sentry.CaptureException(err)
+					log.Fatal(err)
+				}
 			}
 		}
 
@@ -268,11 +277,17 @@ func main() {
 			log.Fatal(err)
 		}
 
-		// AWS config for services that need it (KMS, S3)
-		awscfg, err := awsconf.LoadDefaultConfig(ctx)
-		if err != nil {
-			sentry.CaptureException(err)
-			log.Fatal(err)
+		// AWS SDK config, loaded only when an AWS-backed provider is selected
+		// (KMS_PROVIDER=aws or BLOB_PROVIDER=s3). A fully-local self-host
+		// (local KMS + filesystem blobs) skips this and needs no AWS_REGION or
+		// credentials at all.
+		var awscfg aws.Config
+		if config.AWSNeeded() {
+			awscfg, err = awsconf.LoadDefaultConfig(ctx)
+			if err != nil {
+				sentry.CaptureException(err)
+				log.Fatal(err)
+			}
 		}
 
 		var masterKey string = "alias/master-key"
@@ -306,7 +321,7 @@ func main() {
 			}
 		}
 
-		s3, err := storage.NewClient(ctx, awscfg, "main")
+		s3, err := storage.NewFromEnv(ctx, awscfg, "main")
 		if err != nil {
 			sentry.CaptureException(err)
 			log.Fatal(err)
@@ -414,85 +429,54 @@ func main() {
 			nil,
 		)
 
+		// Apple Sign in is optional. Skip it entirely when unconfigured (a
+		// self-host without Apple creds); only warn — never fatal — when creds
+		// are present but init fails, so Apple simply stays unavailable.
 		var appleAuthClient apple.AppleAuth
-		appleAuthInstance, appleErr := apple.NewB64(
-			authCfg.AppleAppID,
-			authCfg.AppleTeamID,
-			authCfg.AppleKeyID,
-			authCfg.AppleKeySecret,
-		)
-		if appleErr != nil {
-			if cfg.Env == "dev" {
-				log.Printf("Warning: Apple auth initialization failed (expected in dev): %v", appleErr)
+		if authCfg.AppleAppID != "" || authCfg.AppleKeySecret != "" {
+			appleAuthInstance, appleErr := apple.NewB64(
+				authCfg.AppleAppID,
+				authCfg.AppleTeamID,
+				authCfg.AppleKeyID,
+				authCfg.AppleKeySecret,
+			)
+			if appleErr != nil {
+				log.Printf("Warning: Apple auth initialization failed; Apple sign-in disabled: %v", appleErr)
 			} else {
-				sentry.CaptureException(appleErr)
-				log.Fatal(appleErr)
+				appleAuthClient = appleAuthInstance
 			}
-		} else {
-			appleAuthClient = appleAuthInstance
 		}
 
-		kafkaBootstrapServers, err := cfg.LoadKafkaBootstrapServers(ctx)
+		// Event bus + codec. Kafka bootstrap/SASL is only loaded for
+		// EVENTBUS_PROVIDER=kafka; the default NATS path needs none of it. The
+		// codec (codec.FromEnv) owns serialization end-to-end — Avro pulls
+		// SCHEMA_REGISTRY_URL from env, JSON needs nothing — so a NATS + JSON
+		// self-host requires no Kafka or Schema Registry config.
+		var kafkaBootstrapServers string
+		var kafkaSaslConfig *kafka.SASLConfig
+		if config.EventBusProvider() == "kafka" {
+			kafkaBootstrapServers, err = cfg.LoadKafkaBootstrapServers(ctx)
+			if err != nil {
+				sentry.CaptureException(err)
+				log.Fatal(err)
+			}
+			kafkaSaslConfig, err = cfg.LoadKafkaConfigSasl(ctx)
+			if err != nil {
+				sentry.CaptureException(err)
+				log.Fatal(err)
+			}
+		}
+
+		codecImpl, err := codec.FromEnv()
 		if err != nil {
 			sentry.CaptureException(err)
 			log.Fatal(err)
 		}
 
-		kafkaSaslConfig, err := cfg.LoadKafkaConfigSasl(ctx)
-		if err != nil {
-			sentry.CaptureException(err)
-			log.Fatal(err)
-		}
-
-		schemaEndpoint, schemaKey, schemaSecret, err := cfg.LoadSchemaRegistryConfig(ctx)
-		if err != nil {
-			sentry.CaptureException(err)
-			log.Fatal(err)
-		}
-
-		avrov2Client, err := kafka.NewAvrov2Client(schemaEndpoint, schemaKey, schemaSecret)
-		if err != nil {
-			sentry.CaptureException(err)
-			log.Fatal(err)
-		}
-
-		// Codec for EventBus payloads. Must match the worker fleet's
-		// CODEC_PROVIDER: the worker command envelopes (WorkerEvent/JobEvent
-		// carry `any` bodies) only serialize as JSON, so json is required
-		// wherever workers are exercised; avro remains the default for the
-		// historical Schema Registry topics.
-		var codecImpl codec.Codec
-		if os.Getenv("CODEC_PROVIDER") == "json" {
-			codecImpl = codec.NewJSON()
-		} else {
-			codecImpl = codec.NewAvroFromClient(avrov2Client)
-		}
-
-		// Legacy Kafka producer still used by email + tasks services that
-		// haven't been migrated to EventBus yet. Removing this is follow-up
-		// work after the EventBus wiring stabilizes.
-		kafkaProducerConfig := kafka.NewProducer(kafkaBootstrapServers)
-		if kafkaSaslConfig != nil {
-			kafkaProducerConfig.WithSASL(kafkaSaslConfig)
-		}
-		kafkaProducer, err := kafkaProducerConfig.Connect()
-		if err != nil {
-			sentry.CaptureException(err)
-			log.Fatal(err)
-		}
-		kafkaProducer.WithAvrov2(avrov2Client)
-
-		// Event bus. Today this is Kafka in production; flip to NATS by
-		// setting EVENTBUS_PROVIDER=nats and NATS_URL.
 		bus, err := eventbus.FromEnv(kafkaBootstrapServers, kafkaSaslConfig)
 		if err != nil {
 			sentry.CaptureException(err)
 			log.Fatal(err)
-		}
-
-		// Preserve Kafka wire format when both are Kafka-backed + Avro-coded.
-		if kbus, ok := bus.(*eventbus.KafkaBus); ok {
-			kbus.Producer().WithAvrov2(avrov2Client)
 		}
 
 		turnstileBypassToken := ""
@@ -503,9 +487,13 @@ func main() {
 			}
 		}
 
+		// Captcha is off when CAPTCHA_PROVIDER=none or no TURNSTILE_SECRET is set
+		// (a self-host that never configured Cloudflare), so auth endpoints work
+		// without a challenge instead of rejecting every request.
 		captcha := captcha.NewTurnstileFromConfig(captcha.TurnstileConfig{
 			Secret:      authCfg.TurnstileSecret,
 			BypassToken: turnstileBypassToken,
+			Disabled:    config.CaptchaProvider() == "none",
 		})
 
 		userRepostory := repository.NewUserRepostory(primaryDB, kms)
@@ -669,13 +657,20 @@ func main() {
 		// resolver is not hit on every dispatched event.
 		webhookServiceForHandler.WireThrottle(cache, organizationService.WebhookDispatchLimit)
 
-		// Load Stripe config and initialize service
-		stripeCfg, err := cfg.LoadStripeConfig(ctx)
-		if err != nil {
-			sentry.CaptureException(err)
-			log.Fatal(err)
+		// Billing. Default (BILLING_PROVIDER=none, the self-host default): a no-op
+		// Stripe service so the backend boots with no Stripe keys and every
+		// feature is unlocked by the feature gate. BILLING_PROVIDER=stripe wires
+		// the real Stripe integration (keys required).
+		if config.BillingProvider() == "stripe" {
+			stripeCfg, err := cfg.LoadStripeConfig(ctx)
+			if err != nil {
+				sentry.CaptureException(err)
+				log.Fatal(err)
+			}
+			stripeService = stripe.NewService(stripeCfg, subscriptionRepository, planRepository, workerAssignmentService, discountService)
+		} else {
+			stripeService = stripe.NewDisabledService()
 		}
-		stripeService = stripe.NewService(stripeCfg, subscriptionRepository, planRepository, workerAssignmentService, discountService)
 
 		tokenService = token.NewService(primaryDB, tokenRepostory, cache, geoloc, authCfg.AuthSecret)
 		userService = user.NewService(userRepostory, cache)
@@ -919,11 +914,12 @@ func main() {
 			getenvDefault("WORKER_INSTALLER_PATH", "/app/scripts/install-worker.sh"),
 		)
 
-		// Releases service. Env-configurable so self-hosters can point at their
-		// own repo/registry, or disable the feature entirely.
+		// Releases service. Off by default for self-host (no vendor image
+		// auto-roll, no GitHub polling on boot); set RELEASES_ENABLED=true to
+		// point it at your own repo/registry.
 		releasesService = releases.New(
 			releases.Config{
-				Enabled:         getenvDefault("RELEASES_ENABLED", "true") == "true",
+				Enabled:         getenvDefault("RELEASES_ENABLED", "false") == "true",
 				GithubRepo:      getenvDefault("RELEASES_GITHUB_REPO", "warmbly/warmbly"),
 				WorkerImageRepo: getenvDefault("RELEASES_WORKER_IMAGE_REPO", "ghcr.io/warmbly/warmbly/worker"),
 				WebhookSecret:   os.Getenv("RELEASES_WEBHOOK_SECRET"),
@@ -938,13 +934,12 @@ func main() {
 		eventsPublisher := events.NewPublisher(bus, s3, codecImpl, cipherService)
 
 		oauth2Cfg := config.LoadOauth2(apiCfg.Hostname)
-		emailService = email.NewServiceWithKafka(
+		emailService = email.NewServiceWithWorker(
 			emailRepostory,
 			cipherService,
 			featureGateService,
 			warmupService,
 			eventsPublisher,
-			kafkaProducer,
 			cache,
 			&oauth2Cfg.InboxAuthorization,
 			workerAssignmentService,
@@ -979,17 +974,26 @@ func main() {
 		teamService = team.NewService(teamRepository)
 		socketService = socket.NewService(cache, tokenService)
 
-		// Cloud Tasks client
-		cloudTasksCfg, err := cfg.LoadCloudTasksConfig(ctx)
-		if err != nil {
-			sentry.CaptureException(err)
-			log.Fatal(err)
-		}
-
-		tasksClient, err := gtasks.NewClient(ctx, cloudTasksCfg.QueueName, cloudTasksCfg.WebhookURL, serviceAccount, cloudTasksCfg.EmulatorHost)
-		if err != nil {
-			sentry.CaptureException(err)
-			log.Fatal(err)
+		// Task scheduler. Default (TASKS_PROVIDER=local): an in-process Postgres
+		// poller, started below once the dispatch handler exists — no GCP, no
+		// webhook, no emulator. TASKS_PROVIDER=gcloud keeps Google Cloud Tasks.
+		var tasksClient tasksched.Scheduler
+		var localTasks *tasksched.Local
+		if config.TasksProvider() == "gcloud" {
+			cloudTasksCfg, err := cfg.LoadCloudTasksConfig(ctx)
+			if err != nil {
+				sentry.CaptureException(err)
+				log.Fatal(err)
+			}
+			gclient, err := gtasks.NewClient(ctx, cloudTasksCfg.QueueName, cloudTasksCfg.WebhookURL, serviceAccount, cloudTasksCfg.EmulatorHost)
+			if err != nil {
+				sentry.CaptureException(err)
+				log.Fatal(err)
+			}
+			tasksClient = gclient
+		} else {
+			localTasks = tasksched.NewLocal(taskRepository, localTasksPollInterval(), 0)
+			tasksClient = localTasks
 		}
 
 		// Template & email send services
@@ -1129,7 +1133,6 @@ func main() {
 		emailSender := tasks.NewEmailSender(emailRepostory, eventsPublisher)
 		tasksService = tasks.NewService(
 			tasksClient,
-			kafkaProducer,
 			generationClient,
 			streamingPublisher,
 			eventsPublisher,
@@ -1172,11 +1175,26 @@ func main() {
 		tagService = group.NewService(tagRepostory)
 		categoryService = group.NewService(categoryRepostory)
 
-		// Start trial expiration job in background
-		trialExpirationJob := jobs.NewTrialExpirationJobWithDB(subscriptionRepository, primaryDB.Pool, emailNotificationService)
-		trialExpirationJob.WireNotifier(notificationService)
-		trialScheduler := jobs.NewTrialExpirationScheduler(trialExpirationJob, 1*time.Hour)
-		go trialScheduler.Start(ctx)
+		// Start trial expiration job in background. Only meaningful with Stripe
+		// billing: self-host unlocks every feature regardless of trial state, so
+		// there is nothing to expire and no upgrade to nudge toward.
+		if config.BillingProvider() == "stripe" {
+			trialExpirationJob := jobs.NewTrialExpirationJobWithDB(subscriptionRepository, primaryDB.Pool, emailNotificationService)
+			trialExpirationJob.WireNotifier(notificationService)
+			trialScheduler := jobs.NewTrialExpirationScheduler(trialExpirationJob, 1*time.Hour)
+			go trialScheduler.Start(ctx)
+		}
+
+		// Local task dispatcher (TASKS_PROVIDER=local): the in-process poller
+		// that fires due tasks by id. Started here, once tasksService exists to
+		// handle them. Under gcloud this stays nil (the webhook drives dispatch).
+		if localTasks != nil {
+			go localTasks.Run(ctx, func(taskID string) {
+				if xerr := tasksService.HandleTask(&proto.ProcessTask{TaskId: taskID}); xerr != nil {
+					log.Printf("local task dispatch failed for %s: %v", taskID, xerr)
+				}
+			})
+		}
 
 		// Warmup reconciler: seed/repair warmup chains for mailboxes that are
 		// warming or backing a live campaign (the health-check lane). This is
@@ -1261,9 +1279,14 @@ func main() {
 		systemChecker = sysstatus.New()
 		systemChecker.Add("postgres", func(ctx context.Context) error { return primaryDB.Ping(ctx) })
 		systemChecker.Add("redis", func(ctx context.Context) error { return cache.Ping(ctx).Err() })
-		systemChecker.Add("kafka", sysstatus.TCPCheck(kafkaBootstrapServers))
-		if schemaEndpoint != "" {
-			systemChecker.Add("schema-registry", sysstatus.HTTPCheck(strings.TrimRight(schemaEndpoint, "/")+"/subjects"))
+		switch bus.Name() {
+		case "kafka":
+			systemChecker.Add("kafka", sysstatus.TCPCheck(kafkaBootstrapServers))
+		case "nats":
+			systemChecker.Add("nats", sysstatus.TCPCheck(strings.TrimPrefix(getenvDefault("NATS_URL", "nats://localhost:4222"), "nats://")))
+		}
+		if sr := os.Getenv("SCHEMA_REGISTRY_URL"); sr != "" {
+			systemChecker.Add("schema-registry", sysstatus.HTTPCheck(strings.TrimRight(sr, "/")+"/subjects"))
 		}
 		if hu := wsHealthURL(websocketURI); hu != "" {
 			systemChecker.Add("realtime", sysstatus.HTTPCheck(hu))
@@ -1465,6 +1488,16 @@ func getenvDefault(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// localTasksPollInterval is how often the in-process dispatcher scans for due
+// tasks. Default 1s; override with TASKS_LOCAL_POLL_INTERVAL (a Go duration).
+func localTasksPollInterval() time.Duration {
+	d, err := time.ParseDuration(getenvDefault("TASKS_LOCAL_POLL_INTERVAL", "1s"))
+	if err != nil || d <= 0 {
+		return time.Second
+	}
+	return d
 }
 
 // wsHealthURL derives the realtime service's HTTP /health URL from the

@@ -15,7 +15,6 @@ import (
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/events"
 	"github.com/warmbly/warmbly/internal/infrastructure/cache"
-	"github.com/warmbly/warmbly/internal/infrastructure/kafka"
 	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
@@ -58,7 +57,6 @@ type emailService struct {
 	warmupService      warmupapp.Service
 	publisher          events.Publisher
 	streamingPublisher *pubsub.StreamingPublisher
-	producer           *kafka.Producer
 	r                  *cache.Cache
 	oauthInbox         *config.Oauth2Inbox
 	workerAssignment   worker.WorkerAssignmentService
@@ -107,13 +105,16 @@ func NewService(
 	}
 }
 
-func NewServiceWithKafka(
+// NewServiceWithWorker builds the email service with the deps needed for
+// worker-facing flows (credential validation over the event bus, mailbox OAuth,
+// worker assignment). Publishing goes through the events.Publisher, so this is
+// transport-agnostic (Kafka or NATS).
+func NewServiceWithWorker(
 	emailRepository repository.EmailRepository,
 	cipherService cipher.CipherService,
 	featureGate feature.FeatureGateService,
 	warmupService warmupapp.Service,
 	publisher events.Publisher,
-	producer *kafka.Producer,
 	r *cache.Cache,
 	oauthInbox *config.Oauth2Inbox,
 	workerAssignment worker.WorkerAssignmentService,
@@ -131,7 +132,6 @@ func NewServiceWithKafka(
 		warmupService:      warmupService,
 		publisher:          publisher,
 		streamingPublisher: realtime,
-		producer:           producer,
 		r:                  r,
 		oauthInbox:         oauthInbox,
 		workerAssignment:   workerAssignment,

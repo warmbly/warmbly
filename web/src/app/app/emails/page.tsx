@@ -13,6 +13,7 @@ import removeEmail from "@/lib/api/client/app/emails/removeEmail";
 import { useUserProfile } from "@/hooks/context/user";
 import { useConfirm } from "@/hooks/context/confirm";
 import InboxDetails from "@/components/app/emails/InboxDetails";
+import WarmupCoverageNotice from "@/components/app/emails/WarmupCoverageNotice";
 import BulkWarmupDialog from "@/components/app/emails/BulkWarmupDialog";
 import BulkTagPopover from "@/components/app/emails/BulkTagPopover";
 import type Tag from "@/lib/api/models/app/Tag";
@@ -179,6 +180,13 @@ export default function AddressesPage() {
         };
     }, [emailsData.emails]);
 
+    // Mailboxes actively warming (enabled and not paused). Warmup pairs mailboxes
+    // with each other, so too few starves it; the notice below warns on that.
+    const warmupActive = useMemo(
+        () => (emailsData.emails ?? []).filter((e) => !!e.warmup && !e.warmup_paused_at).length,
+        [emailsData.emails],
+    );
+
     function isSelectedAll(): boolean {
         return emailsData.emails
             ? emailsData.emails.length > 0 && selected.length === emailsData.emails.length
@@ -258,6 +266,12 @@ export default function AddressesPage() {
             </SectionBar>
 
             <PageBody>
+                <WarmupCoverageNotice
+                    warmupCount={warmupActive}
+                    totalCount={stats.total}
+                    canWarmup={canWarmup}
+                    onAdd={() => p?.setAddEmail(true)}
+                />
                 {emailsData.isLoading ? (
                     <div className="divide-y divide-slate-200/60">
                         {Array.from({ length: 6 }).map((_, i) => (

@@ -27,6 +27,14 @@ func (h *OidcHandler) Middleware() gin.HandlerFunc {
 			return
 		}
 
+		// No key set means the GCP Cloud Tasks OIDC path isn't configured (the
+		// default local dispatcher calls handlers in-process). Fail closed
+		// rather than deref a nil key set if a webhook request slips through.
+		if h.KeySet == nil {
+			errx.Handle(c, errx.ErrForbidden)
+			return
+		}
+
 		auth := c.GetHeader("Authorization")
 		if auth == "" || !strings.HasPrefix(auth, "Bearer ") {
 			errx.Handle(c, errx.ErrForbidden)

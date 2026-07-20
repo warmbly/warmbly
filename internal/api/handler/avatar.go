@@ -29,9 +29,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
-	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
@@ -43,9 +40,8 @@ import (
 )
 
 const (
-	avatarMaxBytes        int64 = 2 * 1024 * 1024
-	avatarMaxDimension          = 1024 // px — reject anything bigger so a phone-camera dump doesn't sneak through
-	avatarPublicURLFormat       = "https://%s.s3.amazonaws.com/%s"
+	avatarMaxBytes     int64 = 2 * 1024 * 1024
+	avatarMaxDimension       = 1024 // px — reject anything bigger so a phone-camera dump doesn't sneak through
 )
 
 // Intentionally narrow allowlist: only PNG and JPEG. WebP, GIF and
@@ -266,26 +262,14 @@ func putPublicObject(ctx context.Context, store storage.Store, key string, body 
 	if store == nil {
 		return "", errx.New(errx.ServiceUnavailable, "object storage not configured")
 	}
-	// Avatars need a permanent public-read URL with long-lived cache headers.
-	// The generic Store interface can't express ACL or CacheControl, and the
-	// hardcoded https://<bucket>.s3.amazonaws.com URL format is S3-only — so
-	// fall through to the S3 client when available, otherwise reject.
-	s3client, ok := store.(*storage.Client)
-	if !ok {
-		return "", errx.New(errx.ServiceUnavailable, "avatar uploads require an S3-compatible backend")
-	}
-	_, err := s3client.PutObject(ctx, &s3.PutObjectInput{
-		Bucket:       aws.String(s3client.Bucket),
-		Key:          aws.String(key),
-		Body:         bytes.NewReader(body),
-		ContentType:  aws.String(mime),
-		CacheControl: aws.String("public, max-age=31536000, immutable"),
-		ACL:          s3types.ObjectCannedACLPublicRead,
-	})
+	// Public-read URL with long-lived cache. The backend chooses the right
+	// semantics per store (S3 sets an ACL + s3 URL; filesystem writes and
+	// serves via /public), so callers stay backend-agnostic.
+	url, err := store.PutPublic(ctx, key, bytes.NewReader(body), mime)
 	if err != nil {
 		return "", errx.InternalError()
 	}
-	return fmt.Sprintf(avatarPublicURLFormat, s3client.Bucket, key), nil
+	return url, nil
 }
 
 // Imports below are referenced so the file compiles cleanly even if

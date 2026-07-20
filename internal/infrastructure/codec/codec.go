@@ -37,8 +37,6 @@ type Codec interface {
 	Name() string
 }
 
-// Compile-time interface checks.
-var (
-	_ Codec = (*AvroCodec)(nil)
-	_ Codec = (*JSONCodec)(nil)
-)
+// Compile-time interface check. The AvroCodec check lives in avro.go (behind
+// the `kafka` build tag) since that type isn't compiled into the default build.
+var _ Codec = (*JSONCodec)(nil)

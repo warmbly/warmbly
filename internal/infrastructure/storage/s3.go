@@ -10,6 +10,10 @@ import (
 
 type Client struct {
 	Bucket string
+	// PublicBaseURL, when set, overrides the default public URL used by
+	// PutPublic (needed for MinIO / R2 / self-hosted S3 that don't serve at
+	// s3.amazonaws.com). Empty falls back to the AWS virtual-hosted URL.
+	PublicBaseURL string
 	*s3.Client
 }
 

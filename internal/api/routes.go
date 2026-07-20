@@ -29,10 +29,6 @@ func Run(
 		c.JSON(200, gin.H{"status": "ok"})
 	})
 
-	// Public webhook for GitHub release events. Auth comes from
-	// X-Hub-Signature-256 (HMAC-SHA256 with RELEASES_WEBHOOK_SECRET).
-	r.POST("/webhooks/github/releases", h.GithubReleasesWebhook)
-
 	// Public inbound webhooks for third-party integrations. Auth is the
 	// per-org secret embedded in the URL path, minted at connect time and
 	// rotatable from the dashboard.
@@ -50,6 +46,11 @@ func Run(
 	// path-suffixed form covers clients that build the URL from the resource path.
 	r.GET("/.well-known/oauth-protected-resource", h.OAuthProtectedResourceMetadata)
 	r.GET("/.well-known/oauth-protected-resource/v1/mcp", h.OAuthProtectedResourceMetadata)
+
+	// Public blob objects (avatars, org logos) when the filesystem storage
+	// backend is used. The S3 backend serves these from object storage
+	// directly, so this route is only exercised under BLOB_PROVIDER=filesystem.
+	r.GET("/public/*key", h.ServePublicObject)
 
 	// Public worker enrollment. The one-time enrollment token is the
 	// credential; successful exchange returns a dotenv file for the installer
@@ -985,33 +986,10 @@ func Run(
 		adminRoutes.GET("/settings/backends/active/:kind", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminGetActiveStorageBackend)
 		adminRoutes.POST("/settings/backends/:id/activate", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminActivateStorageBackend)
 
-		// Cloud providers (Hetzner API token storage)
-		adminRoutes.GET("/cloud-credentials", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminListCloudCredentials)
-		adminRoutes.POST("/cloud-credentials", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminCreateCloudCredential)
-		adminRoutes.DELETE("/cloud-credentials/:id", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminDeleteCloudCredential)
-		adminRoutes.POST("/cloud-credentials/:id/test", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminTestCloudCredential)
-
-		// Cloud provider catalog (discovery for admin dropdowns)
-		adminRoutes.GET("/cloud-providers/:provider/locations", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminListProviderLocations)
-		adminRoutes.GET("/cloud-providers/:provider/server-types", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminListProviderServerTypes)
-		adminRoutes.GET("/cloud-providers/:provider/images", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminListProviderImages)
-
-		// Provisioning templates (saved configs for one-click provisioning)
-		adminRoutes.GET("/provisioning-templates", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminListProvisioningTemplates)
-		adminRoutes.GET("/provisioning-templates/:id", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminGetProvisioningTemplate)
-		adminRoutes.POST("/provisioning-templates", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminCreateProvisioningTemplate)
-		adminRoutes.PUT("/provisioning-templates/:id", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminUpdateProvisioningTemplate)
-		adminRoutes.DELETE("/provisioning-templates/:id", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminDeleteProvisioningTemplate)
-
-		// Provisioning jobs (state machine + history)
-		adminRoutes.GET("/provisioning-jobs", middleware.RequireAdminPermission(models.AdminPermManageWorkers), h.AdminListProvisioningJobs)
-		adminRoutes.GET("/provisioning-jobs/:id", middleware.RequireAdminPermission(models.AdminPermManageWorkers), h.AdminGetProvisioningJob)
-		adminRoutes.POST("/provisioning-jobs", middleware.RequireAdminPermission(models.AdminPermManageWorkers), h.AdminCreateProvisioningJob)
-		adminRoutes.POST("/provisioning-jobs/:id/retry", middleware.RequireAdminPermission(models.AdminPermManageWorkers), h.AdminRetryProvisioningJob)
-
-		// Provisioning policy (per-provider budget caps + auto-provision toggle)
-		adminRoutes.GET("/provisioning-policy", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminListProvisioningPolicy)
-		adminRoutes.PUT("/provisioning-policy", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminUpdateProvisioningPolicy)
+		// Cloud-VM provisioning (Hetzner credentials, provider catalog, templates,
+		// jobs, policy) is removed for self-host: outbound IPs belong to the mail
+		// provider, so there are no worker VMs to provision. Attach machines you
+		// own via the SSH-managed worker path (POST /admin/workers) instead.
 
 		// User Management
 		adminRoutes.GET("/users", middleware.RequireAdminPermission(models.AdminPermViewUsers), h.AdminSearchUsers)
@@ -1072,33 +1050,14 @@ func Run(
 		adminRoutes.POST("/workers/:id/apply", middleware.RequireAdminPermission(models.AdminPermManageWorkers), h.AdminApplyWorkerConfig)
 		adminRoutes.POST("/workers/:id/system-update", middleware.RequireAdminPermission(models.AdminPermManageWorkers), h.AdminSystemUpdate)
 		adminRoutes.POST("/workers/:id/reboot", middleware.RequireAdminPermission(models.AdminPermManageWorkers), h.AdminRebootWorker)
-		adminRoutes.POST("/workers/:id/convert-to-dedicated", middleware.RequireAdminPermission(models.AdminPermManageWorkers), h.AdminConvertWorkerToDedicated)
-		adminRoutes.PUT("/workers/:id/risk-pool", middleware.RequireAdminPermission(models.AdminPermManageWorkers), h.AdminSetWorkerRiskPool)
 		adminRoutes.POST("/workers/preflight", middleware.RequireAdminPermission(models.AdminPermManageWorkers), h.AdminPreflightWorker)
 		adminRoutes.GET("/workers/tags", middleware.RequireAdminPermission(models.AdminPermViewWorkers), h.AdminListWorkerTags)
 		adminRoutes.PUT("/workers/:id/tags", middleware.RequireAdminPermission(models.AdminPermManageWorkers), h.AdminSetWorkerTags)
 
-		// Reusable AWS credentials (gated under AdminPermManageSettings — these
-		// hold real production secrets, not just worker assignments).
-		adminRoutes.GET("/aws-credentials", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminListAWSCreds)
-		adminRoutes.POST("/aws-credentials", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminCreateAWSCreds)
-		adminRoutes.GET("/aws-credentials/:id", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminGetAWSCreds)
-		adminRoutes.PATCH("/aws-credentials/:id", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminUpdateAWSCreds)
-		adminRoutes.DELETE("/aws-credentials/:id", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminDeleteAWSCreds)
-
-		// Reusable worker profiles
-		adminRoutes.GET("/worker-profiles", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminListProfiles)
-		adminRoutes.POST("/worker-profiles", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminCreateProfile)
-		adminRoutes.GET("/worker-profiles/:id", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminGetProfile)
-		adminRoutes.PATCH("/worker-profiles/:id", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminUpdateProfile)
-		adminRoutes.DELETE("/worker-profiles/:id", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminDeleteProfile)
-		adminRoutes.GET("/worker-profiles/:id/workers", middleware.RequireAdminPermission(models.AdminPermViewWorkers), h.AdminListProfileWorkers)
-		adminRoutes.POST("/worker-profiles/:id/apply", middleware.RequireAdminPermission(models.AdminPermManageWorkers), h.AdminApplyProfile)
-		adminRoutes.PUT("/worker-profiles/:id/release", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminSetProfileRelease)
-
-		// Release auto-update: manual trigger + last-known state for the UI.
-		adminRoutes.POST("/releases/check", middleware.RequireAdminPermission(models.AdminPermManageWorkers), h.AdminCheckReleases)
-		adminRoutes.GET("/releases/state", middleware.RequireAdminPermission(models.AdminPermViewWorkers), h.AdminReleasesState)
+		// Removed for self-host: worker convert-to-dedicated + risk-pool (multi-tenant
+		// IP-reputation fleet constructs), reusable AWS credentials + worker profiles
+		// (cloud-fleet env templating), and GitHub release auto-roll. Attach and manage
+		// machines you own via the SSH worker lifecycle above.
 
 		// Warmup Management
 		adminRoutes.GET("/warmup/pools", middleware.RequireAdminPermission(models.AdminPermViewWarmupPool), h.AdminListWarmupPools)
@@ -1158,29 +1117,13 @@ func Run(
 		adminRoutes.GET("/analytics/trends", middleware.RequireAdminPermission(models.AdminPermViewAnalytics), h.AdminGetAnalyticsTrends)
 		adminRoutes.GET("/analytics/emails/daily", middleware.RequireAdminPermission(models.AdminPermViewAnalytics), h.AdminGetDailyEmailStats)
 		adminRoutes.GET("/analytics/emails/hourly", middleware.RequireAdminPermission(models.AdminPermViewAnalytics), h.AdminGetHourlyEmailStats)
-		adminRoutes.GET("/analytics/workers/load", middleware.RequireAdminPermission(models.AdminPermViewAnalytics), h.AdminGetWorkerLoadStats)
-		adminRoutes.GET("/analytics/workers/distribution", middleware.RequireAdminPermission(models.AdminPermViewAnalytics), h.AdminGetEmailDistribution)
 		adminRoutes.GET("/analytics/users/growth", middleware.RequireAdminPermission(models.AdminPermViewAnalytics), h.AdminGetUserGrowthStats)
 
-		// Plans Management
-		adminRoutes.GET("/plans", middleware.RequireAdminPermission(models.AdminPermManagePlans), h.AdminListPlans)
-		adminRoutes.POST("/plans", middleware.RequireAdminPermission(models.AdminPermManagePlans), h.AdminCreatePlan)
-		adminRoutes.GET("/plans/:id", middleware.RequireAdminPermission(models.AdminPermManagePlans), h.AdminGetPlan)
-		adminRoutes.PATCH("/plans/:id", middleware.RequireAdminPermission(models.AdminPermManagePlans), h.AdminUpdatePlan)
-		adminRoutes.DELETE("/plans/:id", middleware.RequireAdminPermission(models.AdminPermManagePlans), h.AdminDeletePlan)
-
-		// Discount / promo codes
-		adminRoutes.GET("/discounts", middleware.RequireAdminPermission(models.AdminPermManageBilling), h.AdminListDiscounts)
-		adminRoutes.POST("/discounts", middleware.RequireAdminPermission(models.AdminPermManageBilling), h.AdminCreateDiscount)
-		adminRoutes.GET("/discounts/:id", middleware.RequireAdminPermission(models.AdminPermManageBilling), h.AdminGetDiscount)
-		adminRoutes.PATCH("/discounts/:id", middleware.RequireAdminPermission(models.AdminPermManageBilling), h.AdminUpdateDiscount)
-		adminRoutes.DELETE("/discounts/:id", middleware.RequireAdminPermission(models.AdminPermManageBilling), h.AdminDeleteDiscount)
-		adminRoutes.GET("/discounts/:id/redemptions", middleware.RequireAdminPermission(models.AdminPermManageBilling), h.AdminListDiscountRedemptions)
-
-		// Enterprise Inquiries
-		adminRoutes.GET("/enterprise/inquiries", middleware.RequireAdminPermission(models.AdminPermViewEnterpriseInquiries), h.AdminListEnterpriseInquiries)
-		adminRoutes.GET("/enterprise/inquiries/:id", middleware.RequireAdminPermission(models.AdminPermViewEnterpriseInquiries), h.AdminGetEnterpriseInquiry)
-		adminRoutes.PATCH("/enterprise/inquiries/:id", middleware.RequireAdminPermission(models.AdminPermManageEnterpriseInquiries), h.AdminUpdateEnterpriseInquiry)
+		// Removed for self-host: worker load + email-distribution analytics
+		// (premised on multi-worker IP spread, moot when the mail provider owns the
+		// egress IP), and the SaaS commercial surfaces — plans, discount/promo
+		// codes, and the enterprise-sales inquiry queue — which have no role in a
+		// single-org, billing-disabled deployment.
 
 		// Admin Management
 		adminRoutes.GET("/admins", middleware.RequireAdminPermission(models.AdminPermGrantAdminAccess), h.AdminListAdmins)

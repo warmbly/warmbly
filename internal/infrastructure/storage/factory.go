@@ -29,6 +29,7 @@ func NewFromEnv(ctx context.Context, awscfg aws.Config, defaultBucket string) (S
 	if provider == "" {
 		provider = "s3"
 	}
+	publicBaseURL := os.Getenv("BLOB_PUBLIC_BASE_URL")
 	switch provider {
 	case "s3":
 		bucket := os.Getenv("BLOB_BUCKET")
@@ -38,13 +39,18 @@ func NewFromEnv(ctx context.Context, awscfg aws.Config, defaultBucket string) (S
 		if bucket == "" {
 			return nil, fmt.Errorf("storage: s3 provider requires BLOB_BUCKET or default bucket")
 		}
-		return NewClient(ctx, awscfg, bucket)
+		client, err := NewClient(ctx, awscfg, bucket)
+		if err != nil {
+			return nil, err
+		}
+		client.PublicBaseURL = publicBaseURL
+		return client, nil
 	case "filesystem", "fs":
 		root := os.Getenv("BLOB_FS_ROOT")
 		if root == "" {
 			return nil, fmt.Errorf("storage: filesystem provider requires BLOB_FS_ROOT")
 		}
-		return NewFilesystem(root)
+		return NewFilesystem(root, publicBaseURL)
 	default:
 		return nil, fmt.Errorf("storage: unknown BLOB_PROVIDER %q (want: s3, filesystem)", provider)
 	}

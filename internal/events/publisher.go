@@ -36,6 +36,11 @@ type Publisher interface {
 	// Worker change notifications
 	PublishAddEmail(ctx context.Context, workerID uuid.UUID, email *models.AddWorkerEmail) error
 	PublishRemoveEmail(ctx context.Context, workerID uuid.UUID, remove *models.RemoveWorkerEmail) error
+
+	// PublishEmailValidation sends a mailbox credential-validation request to the
+	// worker. Routed through the bus+codec like every other worker event, so it
+	// works on both Kafka and NATS.
+	PublishEmailValidation(ctx context.Context, workerID string, body models.EventWorkerEmailValidation) error
 }
 
 // SendEmailParams contains parameters for publishing a send email event
@@ -275,6 +280,15 @@ func (p *publisher) PublishRemoveEmail(ctx context.Context, workerID uuid.UUID, 
 
 	workerTopic := kafka.GetWorkerTopic(workerID.String())
 	return p.publish(workerTopic, remove.EmailID, workerEvent)
+}
+
+// PublishEmailValidation publishes a credential-validation request to the worker.
+func (p *publisher) PublishEmailValidation(ctx context.Context, workerID string, body models.EventWorkerEmailValidation) error {
+	workerEvent := models.WorkerEvent{
+		Type: models.WorkerEventTypeEmailValidation,
+		Body: body,
+	}
+	return p.publish(kafka.GetWorkerTopic(workerID), body.OrgID.String(), workerEvent)
 }
 
 // publish serializes (via codec) and publishes (via bus) an event.

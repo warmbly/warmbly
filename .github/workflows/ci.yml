@@ -245,12 +245,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install build dependencies
-        # rdkafka-sys builds librdkafka from source which needs
-        # libcurl for HTTPS schema-registry fetches; the GitHub
-        # runner image doesn't ship libcurl headers by default so the
-        # build fails with `curl/curl.h: No such file or directory`.
-        run: sudo apt-get update && sudo apt-get install -y libcurl4-openssl-dev libsasl2-dev libssl-dev pkg-config
+      # The default tracking build is NATS-only (pure Rust, rustls TLS), so it
+      # needs no librdkafka / libcurl / libsasl system headers. Those are only
+      # required for the optional `--features kafka` build.
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable

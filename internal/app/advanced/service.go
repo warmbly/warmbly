@@ -14,10 +14,10 @@ import (
 	"github.com/warmbly/warmbly/internal/app/replyclassify"
 	warmupapp "github.com/warmbly/warmbly/internal/app/warmup"
 	"github.com/warmbly/warmbly/internal/errx"
-	"github.com/warmbly/warmbly/internal/infrastructure/gtasks"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
 	"github.com/warmbly/warmbly/internal/tasks/proto"
+	"github.com/warmbly/warmbly/internal/tasksched"
 )
 
 type Service interface {
@@ -140,7 +140,7 @@ type service struct {
 	campaignProgressRepo repository.CampaignProgressRepository
 	crmRepo              repository.CRMRepository
 	uniboxRepo           repository.UniboxRepository
-	tasksClient          *gtasks.Client
+	tasksClient          tasksched.Scheduler
 	warmupService        warmupapp.Service
 	dispatcher           EventDispatcher
 	notifier             Notifier
@@ -158,7 +158,7 @@ func NewService(
 	campaignProgressRepo repository.CampaignProgressRepository,
 	crmRepo repository.CRMRepository,
 	uniboxRepo repository.UniboxRepository,
-	tasksClient *gtasks.Client,
+	tasksClient tasksched.Scheduler,
 	warmupService warmupapp.Service,
 ) Service {
 	return &service{
