@@ -1103,7 +1103,7 @@ func main() {
 		// onto the backend's advanced service (deliverability webhooks can ingest
 		// here too).
 		notificationService = notification.NewService(repository.NewNotificationRepository(primaryDB.Pool), streamingPublisher)
-		notificationService.WireDelivery(emailNotificationService, integrationServiceForHandler, userRepostory)
+		notificationService.WireDelivery(emailNotificationService, integrationServiceForHandler, userRepostory, organizationRepoForHandler)
 		// Mobile push (APNs): device registration always works; delivery only
 		// activates when the APNS_* env is configured. The Redis client backs
 		// the shared immediate-then-digest push window. The sender stays a nil
@@ -1180,6 +1180,7 @@ func main() {
 		// there is nothing to expire and no upgrade to nudge toward.
 		if config.BillingProvider() == "stripe" {
 			trialExpirationJob := jobs.NewTrialExpirationJobWithDB(subscriptionRepository, primaryDB.Pool, emailNotificationService)
+			trialExpirationJob.WireNotifier(notificationService)
 			trialScheduler := jobs.NewTrialExpirationScheduler(trialExpirationJob, 1*time.Hour)
 			go trialScheduler.Start(ctx)
 		}

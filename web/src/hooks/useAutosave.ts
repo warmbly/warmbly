@@ -41,6 +41,7 @@ export function useAutosave<T>({
     const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const initializedRef = useRef(false);
+    const inflightRef = useRef<Promise<void> | null>(null);
     valueRef.current = value;
 
     const commitSaved = useCallback((v: T) => {
@@ -48,26 +49,39 @@ export function useAutosave<T>({
         setSavedValue(v);
     }, []);
 
-    const run = useCallback(async () => {
-        const toSave = valueRef.current;
-        if (isEqual(toSave, savedRef.current)) return;
-        if (timerRef.current) {
-            clearTimeout(timerRef.current);
-            timerRef.current = null;
-        }
-        setStatus("saving");
-        try {
-            await save(toSave);
-            commitSaved(toSave);
-            if (isEqual(valueRef.current, toSave)) {
+    // Single-flight: the change effect re-arms on every render (save is
+    // typically an inline closure, so its identity changes each render), and
+    // the baseline only moves once the request resolves — without this guard
+    // every render during an in-flight save fired another request, snowballing
+    // into a request storm. Concurrent callers share the in-flight promise;
+    // the loop picks up edits made while a save was running.
+    const run = useCallback((): Promise<void> => {
+        if (inflightRef.current) return inflightRef.current;
+        if (isEqual(valueRef.current, savedRef.current)) return Promise.resolve();
+        const p = (async () => {
+            if (timerRef.current) {
+                clearTimeout(timerRef.current);
+                timerRef.current = null;
+            }
+            setStatus("saving");
+            try {
+                while (!isEqual(valueRef.current, savedRef.current)) {
+                    const toSave = valueRef.current;
+                    await save(toSave);
+                    commitSaved(toSave);
+                }
                 setStatus("saved");
                 if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
                 savedTimerRef.current = setTimeout(() => setStatus("idle"), 2000);
+            } catch {
+                setStatus("error");
+                throw new Error("autosave failed");
+            } finally {
+                inflightRef.current = null;
             }
-        } catch {
-            setStatus("error");
-            throw new Error("autosave failed");
-        }
+        })();
+        inflightRef.current = p;
+        return p;
     }, [save, isEqual, commitSaved]);
 
     useEffect(() => {
@@ -102,9 +116,10 @@ export function useAutosave<T>({
     }, []);
 
     const flush = useCallback(async () => {
-        if (isEqual(valueRef.current, savedRef.current)) return;
+        // run() resolves immediately when clean and returns the shared
+        // promise when a save is already in flight.
         await run();
-    }, [run, isEqual]);
+    }, [run]);
 
     const retry = useCallback(() => void run().catch(() => {}), [run]);
 

@@ -219,6 +219,10 @@ func digestTitle(category models.NotificationCategory, n int) string {
 		return fmt.Sprintf("%d worker alerts", n)
 	case models.NotifSecuritySignIn:
 		return fmt.Sprintf("%d new sign-ins", n)
+	case models.NotifBillingAlert:
+		return fmt.Sprintf("%d billing alerts", n)
+	case models.NotifTeamActivity:
+		return fmt.Sprintf("%d team updates", n)
 	default:
 		return fmt.Sprintf("%d new notifications", n)
 	}

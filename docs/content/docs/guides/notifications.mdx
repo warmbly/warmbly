@@ -44,6 +44,18 @@ For more on what bounces and complaints mean for your reputation, and the thresh
 
 - **New sign-in**: your account was accessed from a device you have not used before, with the browser, OS, and approximate location in the notification body.
 
+### Billing
+
+- **Billing alerts**: your trial expired or your workspace's sending was paused for billing reasons. These go to the members who can act on them, the ones with the manage billing permission, not to everyone in the workspace.
+
+### Team
+
+- **Teammate joined**: someone accepted an invitation to your workspace. Goes to members with the manage team permission; the person who joined is not notified about themselves.
+
+<Callout type="info" title="Who gets notified">
+Workspace-level events never fan out to the whole organization. Warmbly notifies the people a thing concerns: reply and bounce alerts go to the owner of the mailbox or campaign, worker downtime goes to members who can manage mailboxes, billing to members who can manage billing, and team changes to members who can manage the team.
+</Callout>
+
 ## Per-category preferences
 
 You control notifications per category from **Settings → Notifications**. Each category has its own toggle, so you can keep the ones that matter to you and silence the rest.
@@ -53,6 +65,8 @@ The settings page groups the toggles the same way as above:
 - **Inbound activity** Reply received, Out-of-office detected.
 - **Health** Bounce detected, Spam complaint, Worker downtime.
 - **Security** New sign-in.
+- **Billing** Billing alerts.
+- **Team** Teammate joined.
 
 Toggles save automatically as you flip them; the save indicator next to the page title confirms each change has persisted.
 
@@ -66,6 +80,8 @@ The defaults are chosen to be useful without being noisy. The shipped defaults a
 | Spam complaint | Health | On |
 | Worker downtime | Health | On |
 | New sign-in | Security | On |
+| Billing alerts | Billing | On, including email |
+| Teammate joined | Team | On |
 | Reply received | Inbound | Off |
 | Out-of-office detected | Inbound | Off |
 
@@ -83,8 +99,22 @@ The settings page controls where enabled notifications are delivered. The channe
 
 - **In-app**: the bell in the dashboard. Always on, controlled by the per-category toggles above.
 - **Mobile push**: alerts on devices signed in with the Warmbly iOS app. Registration happens automatically when you allow notifications in the app, and signing out on a device stops its pushes. Push is batched so a burst never pings you once per event: the first notification in a quiet stretch is delivered immediately, and anything else that arrives inside the batching window (five hours by default) is held and sent as a single summary, like "3 new replies", when the window closes.
-- **Email**: delivery to your account email. Turn it on to also receive each enabled notification as an email with a link back into the app.
+- **Email**: delivery to your account email, batched by the digest cadence described below rather than one email per event.
 - **Slack**: posts each enabled notification to your connected Slack, on the channel you have configured for Slack in the [Integrations](/guides/integrations) tab. Connect Slack and set up a channel there first; until a Slack channel is configured the toggle saves but nothing is delivered.
+
+## Email digest
+
+Email notifications are designed to cost you as few emails as possible. Nothing is emailed the moment it happens. Each alert with the email channel on waits on a short hold, and what actually reaches your inbox follows three rules:
+
+- **Read means no email.** Anything you read in the dashboard or the mobile app before the hold expires is never emailed. If you live in the dashboard, the email channel stays almost silent.
+- **One email, not a stream.** When the hold expires, everything still unread goes out as a single bundled email, with each item linked back into the app.
+- **Shared events share one email.** When the same event concerns several teammates (a worker outage, a trial expiring), Warmbly sends one email with all of them together in To, instead of a copy per person. Everyone sees who else was told.
+
+The window is yours to pick in **Settings → Notifications**, under Email delivery: presets from every 30 minutes up to once a day, or a custom window anywhere in that range. The default is every 30 minutes. There is deliberately no per-event option; 30 minutes is the floor, so the email channel can never turn into one email per alert.
+
+Security sign-in alerts ignore the window and always send immediately: if someone signs in to your account from a new device, waiting is not an option.
+
+On top of the window, each person has a rolling 24 hour budget of notification emails (25 by default, configurable when self-hosting). Past the budget, alerts stay in the in-app feed instead of emailing. With bundling, normal use never gets near it; it exists so even the busiest day stays a handful of emails.
 
 For richer, event-specific routing (custom messages, branching, multiple destinations), use [Automations](/guides/automations) instead: they can route events like replies, bookings, and record changes to outside tools with full control.
 

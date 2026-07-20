@@ -309,7 +309,7 @@ func main() {
 			notifEmail = ses
 		}
 	}
-	notificationService.WireDelivery(notifEmail, integrationServiceC, repository.NewUserRepostory(primaryDB, kmsClient))
+	notificationService.WireDelivery(notifEmail, integrationServiceC, repository.NewUserRepostory(primaryDB, kmsClient), orgRepoConsumer)
 	// Mobile push (APNs) fires from THIS process too: reply/bounce/complaint
 	// notifications are created here. Redis backs the immediate-then-digest
 	// window shared with the backend. The sender stays a nil interface (not a
@@ -364,6 +364,7 @@ func main() {
 		Cache:                       redisCache,
 		AdminRepo:                   repository.NewAdminRepository(primaryDB.Pool),
 		AssignmentService:           workerAssignmentSvc,
+		Notifier:                    notificationService,
 	}
 
 	jobsService.InitEvents()
