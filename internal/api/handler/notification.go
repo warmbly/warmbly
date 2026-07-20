@@ -47,6 +47,13 @@ func (h *Handler) UpdateNotificationPreferences(c *gin.Context) {
 		errx.JSON(c, errx.New(errx.BadRequest, "invalid payload"))
 		return
 	}
+	if req.Preferences.EmailDigest == "" {
+		req.Preferences.EmailDigest = models.EmailDigestSmart
+	}
+	if !models.ValidEmailDigest(req.Preferences.EmailDigest) {
+		errx.JSON(c, errx.New(errx.BadRequest, "email_digest must be one of instant, smart, hourly, daily"))
+		return
+	}
 	if xerr := h.NotificationService.UpdatePreferences(c.Request.Context(), uid, &req.Preferences); xerr != nil {
 		errx.JSON(c, xerr)
 		return

@@ -52,6 +52,10 @@ type JobsService struct {
 	// workers when a mailbox's risk band changes. Nil disables the job.
 	AssignmentService workerapp.WorkerAssignmentService
 
+	// Notifier tells affected orgs (members with manage_emails) when the
+	// dead-worker job moves or strands their mailboxes. Nil disables it.
+	Notifier OrgNotifier
+
 	eventHandlers map[models.JobEventType]func(ctx context.Context, body any) error
 }
 
