@@ -23,7 +23,7 @@ PROTO_DIR := internal/tasks/proto
 PROTO_GEN_FILES := $(PROTO_DIR)/tasks.pb.go
 
 .PHONY: setup-tools fmt lint proto check-proto \
-        up seed seed-plan sandbox sandbox-seed reset logs status stop down tools test-seed \
+        up seed seed-plan sandbox sandbox-seed sandbox-simulate reset logs status stop down test-seed \
         restart restart-go restart-all infra infra-down app app-down app-logs \
         backend consumer worker run dev tracking realtime web \
         admin site docs grant-admin revoke-admin gen-key
@@ -75,17 +75,55 @@ up:
 	@echo "  Demo data: $(COMPOSE) --profile seed run --rm seed"
 	@echo "  Logs:      make logs        Stop: make down"
 
-# Fully working demo environment: seeds the "Sunrise Labs" showcase org
-# (live mailboxes on mailpit/dovecot, active campaigns, warmup pool, pro
-# plan) and then runs the simulator that plays the internet: delivering
-# captured mail into recipient inboxes, opening pixels, clicking tracked
-# links, and replying as the seeded contacts. Requires the rest of the
-# stack: `make infra` + `make run` + `make tracking` (and `make realtime`
-# + `make web` for the live dashboard). Docs: /development/sandbox/.
+# One-command demo. Seeds the "Sunrise Labs" showcase org (live mailboxes on
+# mailpit + dovecot, active/paused/completed/draft campaigns, a warmup pool, and
+# a full history + analytics dataset) and brings up the WHOLE platform plus a
+# simulator that plays the internet: delivering captured mail into inboxes,
+# opening pixels, clicking tracked links, and replying as the seeded contacts.
+# Everything the dashboard shows is real product code; only the humans are faked.
+#
+#   make sandbox                  # the works; dashboard on :5173
+#   make sandbox SEED=false       # keep existing data, just run the stack
+#
+# Ctrl-C stops the app; infra (incl. mailpit + dovecot) stays up. Log in with
+# sandbox@warmbly.test / password123. Docs: /development/sandbox/.
+SANDBOX_SVCS := postgres redis nats mailpit dovecot
 sandbox:
-	$(GO_DEV_ENV) go run ./cmd/sandbox
+	@command -v docker >/dev/null || { echo "docker is required: https://docs.docker.com/get-docker/"; exit 1; }
+	@command -v go >/dev/null || { echo "go 1.25+ is required: https://go.dev/dl/"; exit 1; }
+	@command -v pnpm >/dev/null || { echo "pnpm is required: https://pnpm.io/installation"; exit 1; }
+	$(COMPOSE) up -d $(SANDBOX_SVCS)
+	@echo "Waiting for infra (postgres, redis, nats, mailpit, dovecot)..."
+	@until $(COMPOSE) exec -T postgres pg_isready -U warmbly >/dev/null 2>&1; do sleep 1; done
+	$(GO_DEV_ENV) go run ./cmd/migrate
+	@if [ "$(SEED)" = "true" ]; then $(GO_DEV_ENV) go run ./cmd/sandbox -seed-only; fi
+	@if [ ! -d web/node_modules ]; then echo "Installing web dependencies (first run)..."; cd web && pnpm install; fi
+	@if [ ! -d admin/node_modules ]; then echo "Installing admin dependencies (first run)..."; cd admin && pnpm install; fi
+	@echo "Starting realtime + tracking as containers (no host Elixir/cargo needed)..."
+	@BACKEND_INTERNAL_URL=http://host.docker.internal:8080 $(COMPOSE) up -d --build realtime tracking
+	@echo ""
+	@echo "Sandbox up. Dashboard http://localhost:5173  Admin http://localhost:5174  Mailpit http://localhost:18025"
+	@echo "Login: sandbox@warmbly.test / password123 (org: Sunrise Labs). Ctrl-C stops the app; infra stays up."
+	@echo ""
+	@trap 'kill 0' INT TERM; \
+	$(MAKE) --no-print-directory backend & \
+	$(MAKE) --no-print-directory consumer & \
+	$(MAKE) --no-print-directory worker & \
+	$(MAKE) --no-print-directory web & \
+	$(MAKE) --no-print-directory admin & \
+	$(MAKE) --no-print-directory sandbox-simulate & \
+	wait
 
+# The simulator on its own (started as part of `make sandbox`). Plays the
+# internet against whatever the running stack has already sent into mailpit.
+sandbox-simulate:
+	$(GO_DEV_ENV) go run ./cmd/sandbox -simulate-only
+
+# Seed (or reset) the sandbox org and exit - no simulator, no app services.
 sandbox-seed:
+	$(COMPOSE) up -d $(SANDBOX_SVCS)
+	@until $(COMPOSE) exec -T postgres pg_isready -U warmbly >/dev/null 2>&1; do sleep 1; done
+	$(GO_DEV_ENV) go run ./cmd/migrate
 	$(GO_DEV_ENV) go run ./cmd/sandbox -seed-only
 
 # Load rich fixture data. Runs natively like the other dev services — the
@@ -118,22 +156,17 @@ seed-plan:
 		-c "INSERT INTO subscriptions (id, user_id, organization_id, plan_id, stripe_customer_id, stripe_subscription_id, stripe_price_id, status, current_period_start, current_period_end, free_trial_started_at, free_trial_ends_at, is_enterprise, created_at, updated_at) VALUES ('88888888-0000-0000-0000-000000000001', '11111111-0000-0000-0000-000000000001', '22222222-0000-0000-0000-000000000001', :'plan_id', 'cus_seed_dev', NULLIF(:'stripe_sub', ''), NULLIF(:'price', ''), :'status', NOW(), NOW() + INTERVAL '30 days', CASE WHEN :'status' = 'trialing' THEN NOW() ELSE NULL END, CASE WHEN :'status' = 'trialing' THEN NOW() + INTERVAL '14 days' ELSE NULL END, :'plan_id' = '00000000-0000-0000-0000-000000000130', NOW(), NOW()) ON CONFLICT (organization_id) DO UPDATE SET plan_id = EXCLUDED.plan_id, stripe_subscription_id = EXCLUDED.stripe_subscription_id, stripe_price_id = EXCLUDED.stripe_price_id, status = EXCLUDED.status, current_period_start = EXCLUDED.current_period_start, current_period_end = EXCLUDED.current_period_end, free_trial_started_at = EXCLUDED.free_trial_started_at, free_trial_ends_at = EXCLUDED.free_trial_ends_at, is_enterprise = EXCLUDED.is_enterprise, updated_at = NOW();"
 	@echo "Seeded dev organization switched to $(PLAN). Log in as dev@warmbly.com / password123."
 
-# Spin up debugging UIs (kafka-ui).
-tools:
-	$(COMPOSE) --profile tools up -d kafka-ui
-	@echo "kafka-ui: http://localhost:18090"
-
 # Stop services, keep volumes.
 stop:
-	$(COMPOSE) --profile sim --profile seed --profile tools stop
+	$(COMPOSE) --profile seed --profile sandbox stop
 
 # Stop + remove containers, keep volumes (postgres, redis, web node_modules).
 down:
-	$(COMPOSE) --profile sim --profile seed --profile tools down
+	$(COMPOSE) --profile seed --profile sandbox down
 
 # Nuke everything including volumes. Useful for "start over".
 reset:
-	$(COMPOSE) --profile sim --profile seed --profile tools down -v
+	$(COMPOSE) --profile seed --profile sandbox down -v
 
 # Wipe ONLY the Postgres data and bring a fresh, empty database back up.
 # Migrations are embedded and re-apply on the next `make backend` boot, so
@@ -193,14 +226,14 @@ restart:
 # something in internal/ and don't want to think about which service uses
 # it. `--parallel` runs the three Go builds concurrently.
 restart-go:
-	$(COMPOSE) build --parallel backend consumer worker-shared-1
-	$(COMPOSE) up -d backend consumer worker-shared-1
+	$(COMPOSE) build --parallel backend consumer worker
+	$(COMPOSE) up -d backend consumer worker
 
 # Same but including Rust (tracking) and Elixir (realtime). Slower; the
 # safe choice when you've touched things across stacks.
 restart-all:
-	$(COMPOSE) build --parallel backend consumer worker-shared-1 tracking realtime
-	$(COMPOSE) up -d backend consumer worker-shared-1 tracking realtime
+	$(COMPOSE) build --parallel backend consumer worker tracking realtime
+	$(COMPOSE) up -d backend consumer worker tracking realtime
 
 # ─── infra + app (hot-reload dev) ───────────────────────────────────────
 #
@@ -208,7 +241,7 @@ restart-all:
 # stuff and only the language services churn per branch:
 #
 #   1. From any worktree (usually root):  make infra
-#      Brings up postgres, redis, kafka, etc. under the pinned
+#      Brings up postgres, redis, nats, and mailpit under the pinned
 #      `warmbly` project. These stay up across worktree switches.
 #
 #   2. From the worktree you're iterating on:  make app
@@ -260,50 +293,27 @@ app-logs:
 # no docker image build, no container recreate. This is the answer to
 # "docker takes too long to restart".
 #
-#   make infra        # once: postgres, redis, kafka, localstack (+init), ...
+#   make infra        # once: postgres, redis, nats, mailpit
 #   make backend      # API on :8080 (own terminal; applies migrations on boot)
-#   make consumer     # kafka -> postgres consumer (own terminal)
+#   make consumer     # event consumer (own terminal)
 #   make worker       # send/sync worker (own terminal)
 #   make run          # all three at once in one terminal (Ctrl-C stops all)
 #   make web          # dashboard dev server, pointed at the native backend
 #
 # Env mirrors the docker-compose service definitions but targets the
-# host-published ports (postgres 15432, redis 16379, kafka 9092,
-# schema-registry 8081, localstack 4566, mailpit smtp 11025,
-# cloud-tasks 8123, stripe-mock 12111) instead of the in-network names.
+# host-published ports (postgres 15432, redis 16379, nats 4222, mailpit smtp
+# 11025, dovecot imaps 10993) instead of the in-network names.
 #
-# Remote infra: by default the native services connect to infra on this
-# same machine (INFRA_HOST=localhost). To run the Go services against
-# infra hosted on a different computer, point them at it:
+# Remote infra: by default the native services connect to infra on this same
+# machine (INFRA_HOST=localhost). To run the Go services against infra hosted on
+# a different computer, point them at it:
 #
 #   make run INFRA_HOST=192.168.1.50
 #
-# That rewrites every infra endpoint (postgres, redis, kafka, schema
-# registry, localstack/AWS, stripe-mock, mailpit, cloud-tasks) to the
-# remote host. Two things must also be true on the infra side:
-#
-#   1. Kafka has to advertise a reachable address, not `localhost`. On the
-#      infra machine bring the stack up with its LAN IP/hostname:
-#        KAFKA_ADVERTISED_HOST=192.168.1.50 make infra
-#      (see KAFKA_ADVERTISED_LISTENERS in docker-compose.yml). Without
-#      this, clients connect to :9092 and get redirected to their own
-#      localhost.
-#   2. The infra machine must publish those ports on an interface the dev
-#      box can reach (the compose `ports:` already bind 0.0.0.0).
-#
-# CLOUD_TASKS_WEBHOOK_URL is the callback the cloud-tasks emulator uses to
-# reach *this* backend, so it points the other way. With remote infra, set
-# SELF_HOST to this machine's address as seen from the infra host:
-#
-#   make run INFRA_HOST=192.168.1.50 SELF_HOST=192.168.1.42
-#
+# That rewrites every infra endpoint (postgres, redis, nats) to the remote host.
+# The infra machine just has to publish those ports on an interface the dev box
+# can reach (the compose `ports:` already bind 0.0.0.0).
 INFRA_HOST ?= localhost
-# SELF_HOST is how the DOCKERIZED cloud-tasks emulator reaches the natively
-# running backend; from inside a container "localhost" is the container
-# itself, so the Docker Desktop host alias is the working default (the
-# emulator's compose service adds a host-gateway mapping so it also resolves
-# on Linux). Override when the backend runs on another machine.
-SELF_HOST  ?= host.docker.internal
 
 # ─── expose the dev servers off-box (Tailscale / LAN) ───────────────────
 #
@@ -441,7 +451,7 @@ backend:
 	INTERNAL_API_TOKEN=local-dev-internal-token \
 	go run ./cmd/backend
 
-# Kafka -> postgres consumer.
+# Event consumer (NATS by default; Kafka with -tags kafka) -> postgres.
 consumer:
 	$(GO_DEV_ENV) \
 	$(AI_DEV_ENV) \
@@ -484,20 +494,19 @@ gen-key:
 # ─── one-command dev stack ───────────────────────────────────────────────
 #
 # `make dev` is the "just make it work" target for a fresh clone or a fresh
-# morning: brings up the docker infra, waits until it is actually ready
-# (postgres accepting connections, kafka topics + KMS/S3 init one-shots
-# done), applies migrations, loads the seed fixtures (idempotent), installs
-# web deps on first run, then starts backend + consumer + both shared
-# workers + the dashboard together in this terminal. Ctrl-C stops the app;
-# infra stays up for next time (`make infra-down` stops it too).
+# morning: brings up the docker infra (postgres, redis, nats, mailpit), waits
+# until postgres is accepting connections, applies migrations, loads the seed
+# fixtures (idempotent), installs web + admin deps on first run, starts realtime
+# and tracking as containers (no host elixir/cargo needed), then runs backend +
+# consumer + worker + dashboard + admin together in this terminal. Ctrl-C stops
+# the app; infra stays up for next time (`make infra-down` stops it too).
 #
 #   make dev                      # everything; dashboard on :5173
 #   make dev SEED=false           # skip fixture seeding
 #   make dev AI_PROVIDER=ollama   # with the AI assistant on (see AI env above)
 #
-# Log in with dev@warmbly.com / password123 (from the seed fixtures).
-# Tracking (:3000) and realtime (:4000) stay separate — `make tracking` /
-# `make realtime` — because they need the cargo / elixir toolchains.
+# Log in with dev@warmbly.com / password123 (from the seed fixtures). For the
+# fully populated demo org instead, use `make sandbox`.
 SEED ?= true
 dev:
 	@command -v docker >/dev/null || { echo "docker is required: https://docs.docker.com/get-docker/"; exit 1; }
