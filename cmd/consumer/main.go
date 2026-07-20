@@ -8,6 +8,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconf "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/getsentry/sentry-go"
 	"github.com/warmbly/warmbly/internal/app/advanced"
@@ -58,10 +59,15 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// AWS config for services that need it (KMS, S3)
-	awscfg, err := awsconf.LoadDefaultConfig(ctx)
-	if err != nil {
-		log.Fatal(err)
+	// AWS SDK config, loaded only when an AWS-backed provider is selected
+	// (KMS_PROVIDER=aws or BLOB_PROVIDER=s3). A fully-local self-host needs no
+	// AWS_REGION or credentials.
+	var awscfg aws.Config
+	if config.AWSNeeded() {
+		awscfg, err = awsconf.LoadDefaultConfig(ctx)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 
 	// PostgreSQL
@@ -104,61 +110,40 @@ func main() {
 	}
 	cipherService := cipher.NewService(kmsClient, redisCache, encryptedKeys)
 
-	// S3
-	s3Client, err := storage.NewClient(ctx, awscfg, "main")
+	// Blob storage (S3 by default, filesystem when BLOB_PROVIDER=filesystem).
+	s3Client, err := storage.NewFromEnv(ctx, awscfg, "main")
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// Schema Registry → Avro v2
-	schemaEndpoint, schemaKey, schemaSecret, err := cfg.LoadSchemaRegistryConfig(ctx)
-	if err != nil {
-		log.Fatal(err)
+	// Event bus + codec. Kafka bootstrap/SASL is only loaded for
+	// EVENTBUS_PROVIDER=kafka; codec.FromEnv owns serialization (Avro pulls
+	// SCHEMA_REGISTRY_URL from env, JSON needs nothing). The bus drives both the
+	// inbound worker-events subscription and outbound publishing, so a NATS +
+	// JSON self-host needs no Kafka or Schema Registry config.
+	var kafkaBootstrapServers string
+	var kafkaSaslConfig *kafka.SASLConfig
+	if config.EventBusProvider() == "kafka" {
+		kafkaBootstrapServers, err = cfg.LoadKafkaBootstrapServers(ctx)
+		if err != nil {
+			log.Fatal(err)
+		}
+		kafkaSaslConfig, err = cfg.LoadKafkaConfigSasl(ctx)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
-	avrov2Client, err := kafka.NewAvrov2Client(schemaEndpoint, schemaKey, schemaSecret)
+
+	consumerCodec, err := codec.FromEnv()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// Kafka bootstrap
-	kafkaBootstrapServers, err := cfg.LoadKafkaBootstrapServers(ctx)
+	consumerBus, err := eventbus.FromEnv(kafkaBootstrapServers, kafkaSaslConfig)
 	if err != nil {
 		log.Fatal(err)
 	}
-	kafkaSaslConfig, err := cfg.LoadKafkaConfigSasl(ctx)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// Kafka producer
-	producerConfig := kafka.NewProducer(kafkaBootstrapServers)
-	if kafkaSaslConfig != nil {
-		producerConfig.WithSASL(kafkaSaslConfig)
-	}
-	kafkaProducer, err := producerConfig.Connect()
-	if err != nil {
-		log.Fatal(err)
-	}
-	kafkaProducer.WithAvrov2(avrov2Client)
-	defer kafkaProducer.Close()
-
-	// Kafka consumer
-	consumerConfig := kafka.NewConsumer(kafkaBootstrapServers)
-	if kafkaSaslConfig != nil {
-		consumerConfig.WithSASL(kafkaSaslConfig)
-	}
-	consumerConfig.Set("group.id", "consumer-group")
-	consumerConfig.Set("auto.offset.reset", "earliest")
-	kafkaConsumer, err := consumerConfig.Connect()
-	if err != nil {
-		log.Fatal(err)
-	}
-	kafkaConsumer.WithAvrov2(avrov2Client)
-	defer kafkaConsumer.Close()
-
-	if err := kafkaConsumer.SubscribeTopics([]string{kafka.TopicWorkerEvents}); err != nil {
-		log.Fatal(err)
-	}
+	defer consumerBus.Close()
 
 	// Realtime event transport, chosen by PUBSUB_ENABLED — the SAME flag the
 	// backend and the Elixir realtime service read, so the three services can
@@ -356,28 +341,11 @@ func main() {
 	)
 	advancedService.WireInboxAgent(inboxAgentServiceC)
 
-	// Events publisher — wraps the existing Kafka producer in an EventBus,
-	// wraps Avrov2 in a Codec. Once EVENTBUS_PROVIDER=nats is exercised in
-	// prod, the kafkaProducer construction above can be deleted in favor of
-	// constructing the bus via eventbus.FromEnv.
-	consumerBus := eventbus.NewKafkaFromProducer(kafkaProducer, eventbus.KafkaConfig{
-		Bootstrap: kafkaBootstrapServers,
-		SASL:      kafkaSaslConfig,
-	})
-	// Same CODEC_PROVIDER contract as backend/worker: the worker event
-	// envelopes only serialize as JSON. tracking-events stays on its own
-	// Avro deserializer (the Rust producer always writes Avro).
-	var consumerCodec codec.Codec
-	if os.Getenv("CODEC_PROVIDER") == "json" {
-		consumerCodec = codec.NewJSON()
-	} else {
-		consumerCodec = codec.NewAvroFromClient(avrov2Client)
-	}
 	eventsPublisher := events.NewPublisher(consumerBus, s3Client, consumerCodec, cipherService)
 
 	// JobsService
 	jobsService := &jobs.JobsService{
-		Consumer:                    kafkaConsumer,
+		Bus:                         consumerBus,
 		Codec:                       consumerCodec,
 		UniboxRepository:            uniboxRepo,
 		MailboxRepository:           mailboxRepo,
@@ -437,17 +405,18 @@ func main() {
 	// or WorkerRepo are nil.
 	go jobsService.StartRiskRebalancer(ctx, 1*time.Hour)
 
-	// Tracking consumer (opens/clicks): a second Kafka consumer on the tracking
-	// topic. It records open/click engagement and fires INSTANT open/click action
-	// chains (advancedService), the open/click analog of the reply path. Wired
-	// best-effort: if the tracking config or connection isn't available in this
-	// environment, log and keep running the worker-event consumer rather than
-	// crashing — opens/clicks simply aren't consumed there.
+	// Tracking consumer (opens/clicks): a second subscription on the shared bus
+	// for the tracking topic. It records open/click engagement and fires INSTANT
+	// open/click action chains (advancedService), the open/click analog of the
+	// reply path. Decodes with the same codec the Rust tracking service writes
+	// (Avro on Kafka, JSON on NATS).
 	if trackingCfg, terr := cfg.LoadTrackingConsumerConfig(ctx); terr != nil {
 		log.Println("tracking consumer config unavailable; opens/clicks not consumed:", terr)
 	} else if trackingConsumer, terr := jobs.NewTrackingConsumer(
-		trackingCfg,
-		avrov2Client,
+		consumerBus,
+		consumerCodec,
+		trackingCfg.Topic,
+		trackingCfg.GroupID,
 		taskRepo,
 		campaignProgressRepo,
 		campaignRepo,
