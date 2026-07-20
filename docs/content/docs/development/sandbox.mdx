@@ -1,20 +1,19 @@
 ---
 title: Sandbox
-description: A fully working local demo environment, with live sending, replies, opens, clicks, and warmup running end to end.
+description: A fully working local demo environment, with live sending, replies, opens, clicks, warmup, and a full history and analytics dataset running end to end.
 ---
 
-The sandbox turns a local stack into a living product demo. It seeds a paid showcase organization ("Sunrise Labs") whose mailboxes really send and really sync, then runs a simulator that plays the internet: it delivers captured mail into recipient inboxes, opens tracking pixels, clicks tracked links, and replies as the seeded contacts. Campaign stats climb, the unibox fills with threaded replies, warmup interactions verify, and the dashboard updates in realtime, all through production code paths. The only simulated thing is the humans.
+The sandbox turns a local stack into a living product demo. It seeds a showcase organization ("Sunrise Labs") whose mailboxes really send and really sync, backfills a complete history and analytics dataset so every dashboard surface is populated on first load, then runs a simulator that plays the internet: it delivers captured mail into recipient inboxes, opens tracking pixels, clicks tracked links, and replies as the seeded contacts. Campaign stats climb, the unibox fills with threaded replies, warmup interactions verify, and the dashboard updates in realtime, all through production code paths. The only simulated thing is the humans.
 
 ## Quick start
 
-Run each in its own terminal:
+One command brings up the whole thing:
 
 ```bash
-make dev        # infra + backend + consumer + workers + dashboard, one command
-make tracking   # open/click tracking (Rust; needs cargo + cmake)
-make realtime   # websocket fanout (Elixir; optional but recommended)
-make sandbox    # seed the showcase org + run the simulator (foreground)
+make sandbox
 ```
+
+It starts the infra (postgres, redis, nats, mailpit, dovecot), runs migrations, seeds the showcase org, brings up realtime and tracking as containers (no host Elixir or cargo needed), then runs the backend, consumer, worker, dashboard, admin, and the simulator together in that terminal. Ctrl-C stops the app; the infra stays up for next time.
 
 Then sign in at `http://localhost:5173`:
 
@@ -24,18 +23,27 @@ Then sign in at `http://localhost:5173`:
 | Password | `password123` |
 | Organization | Sunrise Labs (Starter plan) |
 
-Campaign sending starts within about five minutes (the campaign reconciler's first sweep), warmup within about ten. From there the simulator keeps everything moving: watch `make sandbox`'s output for a running feed of `delivered` / `opened` / `clicked` / `replied` lines, and Mailpit at `http://localhost:18025` for every message on the wire.
+The dashboard is already full from the seeded history. Live activity starts shortly after: watch the `make sandbox` output for a running feed of `delivered` / `opened` / `clicked` / `replied` lines, and Mailpit at `http://localhost:18025` for every message on the wire.
+
+Two other entry points:
+
+- `make sandbox SEED=false` runs the stack against existing data without re-seeding.
+- `make sandbox-seed` seeds (or resets) the showcase org and exits, without the app or simulator.
 
 ## What gets seeded
 
-`make sandbox` (or `make sandbox-seed` for seeding without the simulator) is idempotent and safe to re-run. It provisions:
+`make sandbox-seed` is idempotent and safe to re-run. It provisions:
 
 - the full `internal/seed` fixture first (plans, workers, the demo orgs), so it works on a fresh database
-- the Sunrise Labs org on an active Starter subscription, owned by `sandbox@warmbly.test`
+- the Sunrise Labs org on an active Starter subscription, owned by `sandbox@warmbly.test`, plus a second teammate (Marco Diaz, admin), one pending invitation, and an active developer API key
 - AI credits: the plan's monthly allowance plus a 5,000-credit purchased top-up, so the assistant and every other AI surface work out of the box (re-seeding refills both pools)
-- 6 sender mailboxes on `@sunrise.test`, assigned to the premium shared worker (paid orgs place onto premium workers; `make run` now runs both native workers), warmup enabled 10 days ago (mid-ramp), premium warmup pool, demo-friendly pacing (90s minimum gap, 100/day cap)
-- two active campaigns with tracking enabled ("Sunrise Q3 launch outreach", 3 steps, 24 contacts; "Agency partnerships", 2 steps, 12 contacts) plus one draft; two contacts are unsubscribed so suppression is visible
-- labels everywhere they appear in the product: folders (Outbound, Nurture), mailbox tags (VIP, Cold, Agency), and categories (Lead, Customer, Churn risk) bound to the campaigns, senders, several contacts, and four inbox threads
+- 6 sender mailboxes on `@sunrise.test`, assigned to the worker `make sandbox` runs, warmup enabled 10 days ago (mid-ramp), premium warmup pool, demo-friendly pacing (90s minimum gap, 100/day cap), with 10 days of warmup ramp stats and daily send counts
+- campaigns in every list bucket: two active ("Sunrise Q3 launch outreach", 3 steps, 24 contacts; "Agency partnerships", 2 steps, 12 contacts), one paused, one completed, and one draft, all with tracking enabled and a realistic funnel of sent, opened, clicked, replied, and bounced timestamps
+- a live unified inbox: threaded inbound replies across several senders, including a meeting request, an out-of-office autoreply, a not-interested reply, and a bounce notice, with a mix of read and unread
+- a CRM pipeline with five stages, five deals across them, tasks, contact notes, and per-contact activity timelines
+- the analytics tables behind the deliverability and reporting views: deliverability events (opens, clicks, replies, bounces, complaints, unsubscribes), reply-intent classifications, a suppression list, and resolved and open mailbox errors
+- an org audit trail (campaign created and started, mailbox connected, member invited, deal created, key created) so the audit log has depth
+- reply templates, notifications (some unread), and labels everywhere they appear: folders (Outbound, Nurture), mailbox tags (VIP, Cold, Agency), and categories (Lead, Customer, Churn risk) bound to the campaigns, senders, several contacts, and inbox threads
 - working credentials for every `smtp_imap` account in the database, including the older `make seed` fixtures, sealed with `CREDENTIALS_ENCRYPTION_KEY` so the worker can decrypt and use them
 
 ## How it works
@@ -58,8 +66,8 @@ Personas are derived from a hash of the contact's address, so behavior is stable
 | Piece | Role |
 |-------|------|
 | `cmd/sandbox` | seeder + simulator binary (`-seed-only`, `-simulate-only`) |
-| `internal/sandbox` | seeding, Mailpit client, personas, IMAP delivery |
-| `dovecot` compose service | IMAP host for sandbox inboxes (ports 10143/10993) |
+| `internal/sandbox` | seeding, history and analytics fixtures, Mailpit client, personas, IMAP delivery |
+| `dovecot` compose service | IMAP host for sandbox inboxes (ports 10143/10993), `sandbox` profile |
 | `mailpit` compose service | SMTP sink + capture API (ports 11025/18025) |
 | `CREDENTIALS_ENCRYPTION_KEY` | seals mailbox credentials at rest; fixed dev value in the Makefile |
 | `MAIL_TLS_INSECURE=true` | worker-only dev knob: skip TLS verification and allow the TLS-less Mailpit; never set in production |
@@ -83,20 +91,22 @@ Personas are derived from a hash of the contact's address, so behavior is stable
 
 A tour that shows the platform working end to end:
 
-1. **Campaigns**: open the Sunrise Q3 launch campaign. Sent counts tick up as the scheduler paces sends across the six mailboxes; opens, clicks, and replies accumulate within minutes of each send.
-2. **Unibox**: replies arrive threaded under the original message with full bodies, synced by the worker over IMAP. Out-of-office autoresponders appear but do not count as human replies.
-3. **Mailboxes**: each sender shows warmup activity climbing its ramp; the warmup pool exchanges verified mail between accounts.
-4. **Mailpit** (`http://localhost:18025`): the raw wire view; every message the platform sends, including warmup tokens and tracking rewrites.
-5. **Realtime**: with `make realtime` and a second browser window, watch counts and inbox rows update live without refreshing.
+1. **Dashboard**: the overview lands full. Overall stats, top campaigns, recent activity, account health, and the daily trend chart are all populated from the seeded history before a single live send.
+2. **Campaigns**: all four buckets are filled (active, paused, completed, draft). Open the Sunrise Q3 launch campaign; sent counts tick up as the scheduler paces live sends across the six mailboxes, and opens, clicks, and replies accumulate on top of the seeded funnel.
+3. **Unibox**: replies arrive threaded under the original message with full bodies, synced by the worker over IMAP. Out-of-office autoresponders appear but do not count as human replies.
+4. **Deliverability and analytics**: the deliverability view shows bounces, complaints, and unsubscribes with rates; reply intents and the suppression list are populated; mailboxes surface one resolved and one open error.
+5. **Mailboxes**: each sender shows warmup activity climbing its ramp; the warmup pool exchanges verified mail between accounts.
+6. **Mailpit** (`http://localhost:18025`): the raw wire view; every message the platform sends, including warmup tokens and tracking rewrites.
+7. **Realtime**: open a second browser window and watch counts and inbox rows update live without refreshing.
 
 ## Troubleshooting
 
-**No sends after ~5 minutes.** Check the backend log for campaign reconciler lines and that the worker is running with the account loaded (`email account added to worker`). The worker learns about mailboxes from the backend's reconciler within a minute of both being up.
+**No sends shortly after startup.** Check the backend log for campaign reconciler lines and that the worker is running with the account loaded (`email account added to worker`). The worker learns about mailboxes from the backend's reconciler within a minute of both being up.
 
 **Sends fail with TLS errors.** The worker must run with `MAIL_TLS_INSECURE=true` (set by `make worker`). Production configurations must never set it.
 
-**Replies missing from the unibox.** Confirm the simulator is running and `make consumer` is up: delivery is simulator → Dovecot → worker IMAP sync → Kafka → consumer.
+**Replies missing from the unibox.** Confirm the simulator is running and the consumer is up: delivery is simulator to Dovecot to worker IMAP sync to the event bus to consumer.
 
-**Opens/clicks not counting.** `make tracking` must be running (it needs `cargo` and `cmake` on the host), and the consumer processes `tracking-events` into campaign stats.
+**Opens/clicks not counting.** The tracking service must be up (`make sandbox` runs it as a container; `make tracking` runs it natively if you have cargo). The consumer processes tracking events into campaign stats.
 
-**Start over.** `make db-wipe && make migrate && make sandbox` reseeds from scratch; Dovecot and Mailpit state can be cleared with `docker compose -p warmbly rm -sf dovecot mailpit` followed by `make infra`.
+**Start over.** `make db-wipe && make sandbox` reseeds from scratch. Dovecot and Mailpit state can be cleared with `docker compose -p warmbly rm -sf dovecot mailpit` followed by `make sandbox`.
