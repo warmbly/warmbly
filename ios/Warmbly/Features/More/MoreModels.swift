@@ -243,22 +243,60 @@ struct MoreCategoryPref: Codable, Sendable {
 }
 
 /// The preferences object keyed by category string; decoded dynamically so new
-/// backend categories render without an app update.
+/// backend categories render without an app update. `email_digest` is a sibling
+/// scalar in the same object, so it is split out of the category map.
 struct NotificationPreferences: Codable, Sendable {
     var categories: [String: MoreCategoryPref]
+    var emailDigest: String
 
-    init(categories: [String: MoreCategoryPref] = [:]) {
+    static let emailDigestKey = "email_digest"
+
+    init(categories: [String: MoreCategoryPref] = [:], emailDigest: String = "smart") {
         self.categories = categories
+        self.emailDigest = emailDigest
+    }
+
+    private struct DynamicKey: CodingKey {
+        var stringValue: String
+        var intValue: Int? { nil }
+        init(stringValue: String) { self.stringValue = stringValue }
+        init?(intValue: Int) { nil }
     }
 
     init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        categories = try container.decode([String: MoreCategoryPref].self)
+        let container = try decoder.container(keyedBy: DynamicKey.self)
+        var decoded: [String: MoreCategoryPref] = [:]
+        var digest = "smart"
+        for key in container.allKeys {
+            if key.stringValue == Self.emailDigestKey {
+                digest = (try? container.decode(String.self, forKey: key)) ?? "smart"
+            } else if let pref = try? container.decode(MoreCategoryPref.self, forKey: key) {
+                decoded[key.stringValue] = pref
+            }
+        }
+        // Older servers omit these categories; seed the backend defaults.
+        if decoded["billing_alert"] == nil {
+            decoded["billing_alert"] = MoreCategoryPref(
+                enabled: true,
+                channels: MoreChannelPrefs(inApp: true, email: true, slack: false, push: true)
+            )
+        }
+        if decoded["team_activity"] == nil {
+            decoded["team_activity"] = MoreCategoryPref(
+                enabled: true,
+                channels: MoreChannelPrefs(inApp: true, email: false, slack: false, push: true)
+            )
+        }
+        categories = decoded
+        emailDigest = digest
     }
 
     func encode(to encoder: Encoder) throws {
-        var container = encoder.singleValueContainer()
-        try container.encode(categories)
+        var container = encoder.container(keyedBy: DynamicKey.self)
+        for (key, pref) in categories {
+            try container.encode(pref, forKey: DynamicKey(stringValue: key))
+        }
+        try container.encode(emailDigest, forKey: DynamicKey(stringValue: Self.emailDigestKey))
     }
 }
 
