@@ -94,6 +94,8 @@ The **Compose** button in the Unibox header (or the **n** key anywhere in the da
 
 The **To** field searches your contacts as you type (name, email, company) and also accepts any raw address. If the recipient is on your workspace suppression list (bounced, complained, or unsubscribed), the composer tells you before you write a word and blocks the send.
 
+The **From** menu defaults to **Auto**, which picks the best mailbox for the recipient (existing conversation first, then remaining daily budget and domain auth). The menu is searchable and can be filtered by mailbox tag; with a tag selected, the Auto row becomes **Auto in that tag** and picks the best mailbox from that group only, so a workspace with mailboxes tagged per brand or team can auto-pick within the right one. Through the API this is the optional `from_tag_id` field on `POST /unibox/compose`.
+
 ### Auto mailbox selection
 
 **From** defaults to **Auto**: Warmbly scores every active mailbox for the recipient and picks the best one, preferring the mailbox that already has a conversation with them (contacts should keep hearing from the same address), then the one with the most daily sending budget left, with domain authentication health as a tiebreaker. The picker shows the resolved pick and the reason before you send, and opening it reveals every mailbox with its budget bar (sent today against its daily limit), a history badge for past messages with that recipient, and an auth-health dot, so overriding the pick is an informed choice. The send confirmation reports which mailbox was used.
