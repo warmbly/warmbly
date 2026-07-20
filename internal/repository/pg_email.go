@@ -57,6 +57,11 @@ type EmailRepository interface {
 	GetWorkerID(ctx context.Context, emailAccountID uuid.UUID) (*uuid.UUID, *errx.Error)
 	SetWorkerID(ctx context.Context, emailAccountID, workerID uuid.UUID) *errx.Error
 	Update(ctx context.Context, userID, emailAccountID string, udata *models.UpdateEmail) (*models.Email, *errx.Error)
+	// BulkUpdateTags adds/removes tag links across many of the user's
+	// mailboxes in one transaction; ownership of both mailboxes and tags is
+	// enforced in SQL, unknown ids are skipped. Returns how many of the
+	// requested mailboxes the caller owns.
+	BulkUpdateTags(ctx context.Context, userID string, emailIDs, addTags, removeTags []uuid.UUID) (int, *errx.Error)
 	// SetWarmupLifecycle starts, pauses, resumes, or disables warmup for a
 	// mailbox. "start"/"resume" preserve ramp progress (a paused mailbox
 	// resumes where it left off); "pause" keeps progress; "disable" turns
@@ -850,6 +855,56 @@ func (r *emailRepository) Update(ctx context.Context, userID, emailAccountID str
 	}
 
 	return &i, nil
+}
+
+func (r *emailRepository) BulkUpdateTags(ctx context.Context, userID string, emailIDs, addTags, removeTags []uuid.UUID) (int, *errx.Error) {
+	tx, err := r.DB.Begin(ctx)
+	if err != nil {
+		db.CaptureError(err, "", nil, "begin")
+		return 0, errx.InternalError()
+	}
+	defer tx.Rollback(ctx)
+
+	var owned int
+	countQuery := `SELECT count(*) FROM email_accounts WHERE user_id = $1 AND id = ANY($2)`
+	if err := tx.QueryRow(ctx, countQuery, userID, emailIDs).Scan(&owned); err != nil {
+		db.CaptureError(err, countQuery, []any{userID}, "queryrow")
+		return 0, errx.InternalError()
+	}
+
+	if len(addTags) > 0 {
+		// Cross join owned mailboxes with the caller's own tag definitions;
+		// the composite PK makes re-adding an existing link a no-op.
+		insertQuery := `
+			INSERT INTO email_tags (email_id, tag_id)
+			SELECT a.id, t.id
+			FROM email_accounts a
+			CROSS JOIN tags t
+			WHERE a.user_id = $1 AND a.id = ANY($2)
+			  AND t.user_id = $1 AND t.id = ANY($3)
+			ON CONFLICT (email_id, tag_id) DO NOTHING`
+		if _, err := tx.Exec(ctx, insertQuery, userID, emailIDs, addTags); err != nil {
+			db.CaptureError(err, insertQuery, []any{userID}, "exec")
+			return 0, errx.InternalError()
+		}
+	}
+
+	if len(removeTags) > 0 {
+		deleteQuery := `
+			DELETE FROM email_tags
+			WHERE tag_id = ANY($3)
+			  AND email_id IN (SELECT id FROM email_accounts WHERE user_id = $1 AND id = ANY($2))`
+		if _, err := tx.Exec(ctx, deleteQuery, userID, emailIDs, removeTags); err != nil {
+			db.CaptureError(err, deleteQuery, []any{userID}, "exec")
+			return 0, errx.InternalError()
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		db.CaptureError(err, "", nil, "commit")
+		return 0, errx.InternalError()
+	}
+	return owned, nil
 }
 
 func (r *emailRepository) UpdateTrackingDomain(ctx context.Context, userID, emailAccountID, domain string, verified bool, verifiedAt *time.Time) *errx.Error {

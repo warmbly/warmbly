@@ -29,3 +29,15 @@ func (s *userService) UpdateProfile(ctx context.Context, userID uuid.UUID, first
 
 	return nil
 }
+
+// UpdateUndoSendSeconds persists the user's undo-send window. Bounds are
+// validated at the handler; the DB CHECK backstops.
+func (s *userService) UpdateUndoSendSeconds(ctx context.Context, userID uuid.UUID, seconds int) *errx.Error {
+	if err := s.userRepository.SetUndoSendSeconds(ctx, userID, seconds); err != nil {
+		return errx.InternalError()
+	}
+
+	s.cache.Del(ctx, getUserKey(userID))
+
+	return nil
+}

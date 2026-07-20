@@ -19,11 +19,21 @@ type AgentRepository interface {
 	CreateSession(ctx context.Context, orgID, userID uuid.UUID, title string, sctx models.AgentSessionContext) (*models.AgentSession, error)
 	GetSession(ctx context.Context, orgID, userID, sessionID uuid.UUID) (*models.AgentSession, error)
 	ListSessions(ctx context.Context, orgID, userID uuid.UUID, limit int, beforeCreatedAt time.Time, beforeID uuid.UUID) ([]models.AgentSession, error)
+	// Org-scoped variants for workspaces with shared assistant history: any
+	// member resolves any session, and the listing spans the whole org with
+	// owner names for attribution.
+	GetSessionOrg(ctx context.Context, orgID, sessionID uuid.UUID) (*models.AgentSession, error)
+	ListSessionsOrg(ctx context.Context, orgID uuid.UUID, limit int, beforeCreatedAt time.Time, beforeID uuid.UUID) ([]models.AgentSession, error)
 	// The transcript/context mutators are scoped by (org_id, user_id) at the
 	// SQL layer too, not only via the caller's prior GetSession, so a mis-wired
 	// future caller can never touch another member's session by raw id.
 	UpdateSessionContext(ctx context.Context, orgID, userID, sessionID uuid.UUID, sctx models.AgentSessionContext) error
 	UpdateSessionTitle(ctx context.Context, orgID, userID, sessionID uuid.UUID, title string) error
+	// DeleteSession removes a conversation and, via FK cascade, its transcript.
+	DeleteSession(ctx context.Context, orgID, userID, sessionID uuid.UUID) error
+	// DeleteAllSessions clears the member's entire history in the org and
+	// returns how many conversations were removed.
+	DeleteAllSessions(ctx context.Context, orgID, userID uuid.UUID) (int, error)
 
 	AppendMessages(ctx context.Context, orgID, userID, sessionID uuid.UUID, msgs []models.AgentMessageRow) error
 	LoadTranscript(ctx context.Context, orgID, userID, sessionID uuid.UUID) ([]models.AgentMessageRow, error)
@@ -121,6 +131,66 @@ func (r *agentRepository) ListSessions(ctx context.Context, orgID, userID uuid.U
 	return out, rows.Err()
 }
 
+func (r *agentRepository) GetSessionOrg(ctx context.Context, orgID, sessionID uuid.UUID) (*models.AgentSession, error) {
+	s := &models.AgentSession{}
+	err := scanSession(r.DB.QueryRow(ctx,
+		`SELECT `+agentSessionCols+` FROM agent_sessions WHERE id = $1 AND org_id = $2`,
+		sessionID, orgID), s)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return s, nil
+}
+
+func (r *agentRepository) ListSessionsOrg(ctx context.Context, orgID uuid.UUID, limit int, beforeCreatedAt time.Time, beforeID uuid.UUID) ([]models.AgentSession, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 25
+	}
+	const cols = `s.id, s.org_id, s.user_id, s.title, s.context, s.created_at, s.updated_at,
+		TRIM(COALESCE(u.first_name, '') || ' ' || COALESCE(u.last_name, ''))`
+	query := `
+		SELECT ` + cols + `
+		FROM agent_sessions s
+		LEFT JOIN users u ON u.id = s.user_id
+		WHERE s.org_id = $1
+		ORDER BY s.created_at DESC, s.id DESC
+		LIMIT $2`
+	args := []any{orgID, limit}
+	if !beforeCreatedAt.IsZero() {
+		query = `
+		SELECT ` + cols + `
+		FROM agent_sessions s
+		LEFT JOIN users u ON u.id = s.user_id
+		WHERE s.org_id = $1 AND (s.created_at, s.id) < ($3, $4)
+		ORDER BY s.created_at DESC, s.id DESC
+		LIMIT $2`
+		args = append(args, beforeCreatedAt, beforeID)
+	}
+	rows, err := r.DB.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]models.AgentSession, 0)
+	for rows.Next() {
+		var s models.AgentSession
+		var ctxRaw []byte
+		if err := rows.Scan(&s.ID, &s.OrgID, &s.UserID, &s.Title, &ctxRaw, &s.CreatedAt, &s.UpdatedAt, &s.UserName); err != nil {
+			return nil, err
+		}
+		if len(ctxRaw) > 0 {
+			if err := json.Unmarshal(ctxRaw, &s.Context); err != nil {
+				return nil, err
+			}
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
 func (r *agentRepository) UpdateSessionContext(ctx context.Context, orgID, userID, sessionID uuid.UUID, sctx models.AgentSessionContext) error {
 	ctxRaw, err := json.Marshal(sctx)
 	if err != nil {
@@ -133,6 +203,25 @@ func (r *agentRepository) UpdateSessionContext(ctx context.Context, orgID, userI
 func (r *agentRepository) UpdateSessionTitle(ctx context.Context, orgID, userID, sessionID uuid.UUID, title string) error {
 	_, err := r.DB.Exec(ctx, `UPDATE agent_sessions SET title = $2, updated_at = now() WHERE id = $1 AND title = '' AND org_id = $3 AND user_id = $4`, sessionID, title, orgID, userID)
 	return err
+}
+
+func (r *agentRepository) DeleteSession(ctx context.Context, orgID, userID, sessionID uuid.UUID) error {
+	tag, err := r.DB.Exec(ctx, `DELETE FROM agent_sessions WHERE id = $1 AND org_id = $2 AND user_id = $3`, sessionID, orgID, userID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+func (r *agentRepository) DeleteAllSessions(ctx context.Context, orgID, userID uuid.UUID) (int, error) {
+	tag, err := r.DB.Exec(ctx, `DELETE FROM agent_sessions WHERE org_id = $1 AND user_id = $2`, orgID, userID)
+	if err != nil {
+		return 0, err
+	}
+	return int(tag.RowsAffected()), nil
 }
 
 func (r *agentRepository) AppendMessages(ctx context.Context, orgID, userID, sessionID uuid.UUID, msgs []models.AgentMessageRow) error {

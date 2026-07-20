@@ -1,6 +1,7 @@
 package generation
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -36,6 +37,9 @@ type openAIProvider struct {
 	// uses the adapted shape directly.
 	useMaxCompletionTokens atomic.Bool
 	omitTemperature        atomic.Bool
+	// stream_options is OpenAI's usage-in-stream opt-in; some compatible
+	// backends reject the field entirely.
+	omitStreamOptions atomic.Bool
 }
 
 // defaultOpenAIBaseURL is the public OpenAI API. Overridable for
@@ -126,23 +130,57 @@ type oaiRequest struct {
 	Model string `json:"model"`
 	// Exactly one of MaxTokens / MaxCompletionTokens is set per call, driven
 	// by the provider's useMaxCompletionTokens compatibility flag.
-	MaxTokens           int          `json:"max_tokens,omitempty"`
-	MaxCompletionTokens int          `json:"max_completion_tokens,omitempty"`
-	Messages            []oaiMessage `json:"messages"`
-	Tools               []oaiTool    `json:"tools,omitempty"`
-	ToolChoice          string       `json:"tool_choice,omitempty"`
-	Temperature         *float64     `json:"temperature,omitempty"`
+	MaxTokens           int               `json:"max_tokens,omitempty"`
+	MaxCompletionTokens int               `json:"max_completion_tokens,omitempty"`
+	Messages            []oaiMessage      `json:"messages"`
+	Tools               []oaiTool         `json:"tools,omitempty"`
+	ToolChoice          string            `json:"tool_choice,omitempty"`
+	Temperature         *float64          `json:"temperature,omitempty"`
+	Stream              bool              `json:"stream,omitempty"`
+	StreamOptions       *oaiStreamOptions `json:"stream_options,omitempty"`
+}
+
+type oaiStreamOptions struct {
+	IncludeUsage bool `json:"include_usage"`
+}
+
+// oaiStreamChunk is one `data:` frame of a streamed completion. Tool-call
+// fragments arrive indexed and must be accumulated across chunks.
+type oaiStreamChunk struct {
+	Choices []struct {
+		Delta struct {
+			Content   string `json:"content"`
+			ToolCalls []struct {
+				Index    int    `json:"index"`
+				ID       string `json:"id"`
+				Type     string `json:"type"`
+				Function struct {
+					Name      string `json:"name"`
+					Arguments string `json:"arguments"`
+				} `json:"function"`
+			} `json:"tool_calls"`
+		} `json:"delta"`
+		FinishReason string `json:"finish_reason"`
+	} `json:"choices"`
+	Usage *struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage"`
+	Error *oaiError `json:"error"`
+}
+
+type oaiChoice struct {
+	Message struct {
+		Content   string        `json:"content"`
+		ToolCalls []oaiToolCall `json:"tool_calls"`
+	} `json:"message"`
+	FinishReason string `json:"finish_reason"`
 }
 
 type oaiResponse struct {
-	Choices []struct {
-		Message struct {
-			Content   string        `json:"content"`
-			ToolCalls []oaiToolCall `json:"tool_calls"`
-		} `json:"message"`
-		FinishReason string `json:"finish_reason"`
-	} `json:"choices"`
-	Usage struct {
+	Choices []oaiChoice `json:"choices"`
+	Usage   struct {
 		PromptTokens     int `json:"prompt_tokens"`
 		CompletionTokens int `json:"completion_tokens"`
 		TotalTokens      int `json:"total_tokens"`
@@ -256,6 +294,163 @@ func (p *openAIProvider) complete(ctx context.Context, model string, maxTokens i
 	}
 }
 
+// completeStream performs one chat-completion call with stream=true, invoking
+// onDelta for each content fragment as it arrives and returning the fully
+// accumulated response in the same shape complete() produces (so RunAgent's
+// loop is stream-agnostic). Backends that ignore stream=true and answer with
+// plain JSON are handled transparently.
+func (p *openAIProvider) completeStream(ctx context.Context, model string, maxTokens int, msgs []oaiMessage, tools []oaiTool, temperature *float64, onDelta func(string)) (*oaiResponse, error) {
+	for attempt := 0; ; attempt++ {
+		reqBody := oaiRequest{Model: model, Messages: msgs, Stream: true}
+		if !p.omitStreamOptions.Load() {
+			reqBody.StreamOptions = &oaiStreamOptions{IncludeUsage: true}
+		}
+		if p.useMaxCompletionTokens.Load() {
+			reqBody.MaxCompletionTokens = maxTokens
+		} else {
+			reqBody.MaxTokens = maxTokens
+		}
+		if !p.omitTemperature.Load() {
+			reqBody.Temperature = temperature
+		}
+		if len(tools) > 0 {
+			reqBody.Tools = tools
+			reqBody.ToolChoice = "auto"
+		}
+		body, err := json.Marshal(reqBody)
+		if err != nil {
+			return nil, err
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+"/chat/completions", bytes.NewReader(body))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "text/event-stream")
+		req.Header.Set("Authorization", "Bearer "+p.apiKey)
+
+		resp, err := p.http.Do(req)
+		if err != nil {
+			return nil, err
+		}
+
+		// Errors come back as a plain JSON body regardless of streaming.
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			raw, rerr := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+			resp.Body.Close()
+			if rerr != nil {
+				return nil, rerr
+			}
+			var parsed oaiResponse
+			_ = json.Unmarshal(raw, &parsed)
+			if resp.StatusCode == http.StatusBadRequest && attempt < 3 && p.adaptParams(parsed.Error) {
+				continue
+			}
+			if parsed.Error != nil {
+				return nil, fmt.Errorf("openai: %s: %s", parsed.Error.Type, parsed.Error.Message)
+			}
+			return nil, fmt.Errorf("openai: unexpected status %d", resp.StatusCode)
+		}
+
+		// A compatible backend may ignore stream=true and answer JSON.
+		if ct := resp.Header.Get("Content-Type"); !strings.Contains(ct, "text/event-stream") {
+			raw, rerr := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+			resp.Body.Close()
+			if rerr != nil {
+				return nil, rerr
+			}
+			var parsed oaiResponse
+			if err := json.Unmarshal(raw, &parsed); err != nil {
+				return nil, fmt.Errorf("openai: decode response: %w", err)
+			}
+			if len(parsed.Choices) == 0 {
+				return nil, errors.New("openai: empty completion")
+			}
+			if onDelta != nil && parsed.Choices[0].Message.Content != "" {
+				onDelta(parsed.Choices[0].Message.Content)
+			}
+			return &parsed, nil
+		}
+
+		out, serr := p.readStream(resp.Body, onDelta)
+		resp.Body.Close()
+		return out, serr
+	}
+}
+
+// readStream folds the SSE chunk frames into a complete oaiResponse:
+// content deltas are forwarded to onDelta and concatenated, tool-call
+// fragments are stitched together by index, and the trailing usage frame
+// (stream_options.include_usage) fills Usage.
+func (p *openAIProvider) readStream(body io.Reader, onDelta func(string)) (*oaiResponse, error) {
+	var out oaiResponse
+	out.Choices = make([]oaiChoice, 1)
+
+	var content strings.Builder
+	var calls []oaiToolCall
+	sawChunk := false
+
+	sc := bufio.NewScanner(body)
+	sc.Buffer(make([]byte, 0, 64<<10), 1<<20)
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		if data == "" || data == "[DONE]" {
+			continue
+		}
+		var chunk oaiStreamChunk
+		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+			continue
+		}
+		if chunk.Error != nil {
+			return nil, fmt.Errorf("openai: %s: %s", chunk.Error.Type, chunk.Error.Message)
+		}
+		sawChunk = true
+		if chunk.Usage != nil {
+			out.Usage.PromptTokens = chunk.Usage.PromptTokens
+			out.Usage.CompletionTokens = chunk.Usage.CompletionTokens
+			out.Usage.TotalTokens = chunk.Usage.TotalTokens
+		}
+		if len(chunk.Choices) == 0 {
+			continue
+		}
+		ch := chunk.Choices[0]
+		if ch.FinishReason != "" {
+			out.Choices[0].FinishReason = ch.FinishReason
+		}
+		if ch.Delta.Content != "" {
+			content.WriteString(ch.Delta.Content)
+			if onDelta != nil {
+				onDelta(ch.Delta.Content)
+			}
+		}
+		for _, tc := range ch.Delta.ToolCalls {
+			for len(calls) <= tc.Index {
+				calls = append(calls, oaiToolCall{Type: "function"})
+			}
+			if tc.ID != "" {
+				calls[tc.Index].ID = tc.ID
+			}
+			if tc.Function.Name != "" {
+				calls[tc.Index].Function.Name = tc.Function.Name
+			}
+			calls[tc.Index].Function.Arguments += tc.Function.Arguments
+		}
+	}
+	if err := sc.Err(); err != nil {
+		return nil, fmt.Errorf("openai: read stream: %w", err)
+	}
+	if !sawChunk {
+		return nil, errors.New("openai: empty stream")
+	}
+	out.Choices[0].Message.Content = content.String()
+	out.Choices[0].Message.ToolCalls = calls
+	return &out, nil
+}
+
 // adaptParams flips the sticky compatibility flag matching a 400 that names a
 // parameter this backend rejects. Returns true when a retry makes sense.
 func (p *openAIProvider) adaptParams(e *oaiError) bool {
@@ -274,6 +469,12 @@ func (p *openAIProvider) adaptParams(e *oaiError) bool {
 			return false
 		}
 		p.omitTemperature.Store(true)
+		return true
+	case e.Param == "stream_options" || strings.Contains(e.Message, "stream_options"):
+		if p.omitStreamOptions.Load() {
+			return false
+		}
+		p.omitStreamOptions.Store(true)
 		return true
 	}
 	return false
@@ -319,7 +520,18 @@ func (p *openAIProvider) RunAgent(ctx context.Context, req AgentRequest) (*Agent
 			req.OnEvent(AgentEvent{Type: EventIteration, Iteration: result.Iterations})
 		}
 
-		resp, err := p.complete(ctx, model, maxTokens, transcriptToWire(req.System, messages), wireTools, nil)
+		// With a listener attached, stream the completion so text reaches the
+		// client token by token; the closing EventText below carries the full
+		// block, so deltas stay purely cosmetic.
+		var resp *oaiResponse
+		var err error
+		if req.OnEvent != nil {
+			resp, err = p.completeStream(ctx, model, maxTokens, transcriptToWire(req.System, messages), wireTools, nil, func(delta string) {
+				req.OnEvent(AgentEvent{Type: EventTextDelta, Text: delta})
+			})
+		} else {
+			resp, err = p.complete(ctx, model, maxTokens, transcriptToWire(req.System, messages), wireTools, nil)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -337,6 +549,14 @@ func (p *openAIProvider) RunAgent(ctx context.Context, req AgentRequest) (*Agent
 			result.Messages = messages
 			result.StopReason = "stop"
 			return result, nil
+		}
+
+		// Commentary alongside tool calls streams too; close its block so the
+		// client can finalize it before the tool chips appear.
+		if req.OnEvent != nil {
+			if text := strings.TrimSpace(choice.Message.Content); text != "" {
+				req.OnEvent(AgentEvent{Type: EventText, Text: text})
+			}
 		}
 
 		// Approval gate: check every requested tool BEFORE executing any, so we

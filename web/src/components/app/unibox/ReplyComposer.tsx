@@ -5,10 +5,10 @@
 // not pre-populate body text. The user only sees this when they have
 // already committed to writing a reply to a particular message.
 //
-// Layout: a target-message preview card at the top (sender + subject
-// + dismiss), followed by labelled header rows (From, To, Cc, Bcc,
-// Subject), the body textarea, the optional signature preview, and
-// the action bar (Send / Schedule / Template / Discard).
+// Layout: a one-line target strip at the top (Reply/Forward to name and
+// subject, plus dismiss), then plain header rows (To with Cc/Bcc toggles,
+// From, unlabelled Subject), the body textarea, the optional signature
+// preview, and the action bar (Send / Schedule / Template / Discard).
 //
 // ⌘+Enter sends instantly. Each schedule preset calls /unibox/reply
 // with send_mode="scheduled" plus the concrete scheduled_at.
@@ -16,7 +16,6 @@
 import React from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
-    CalendarPlusIcon,
     CheckIcon,
     ChevronDownIcon,
     ClockIcon,
@@ -25,21 +24,20 @@ import {
     InfoIcon,
     Loader2Icon,
     PenLineIcon,
-    SearchIcon,
     SendIcon,
-    SettingsIcon,
     XIcon,
 } from "lucide-react";
-import { Link } from "react-router-dom";
 import toast from "react-hot-toast";
 import sendReply from "@/lib/api/client/app/unibox/sendReply";
 import { DateTimePicker } from "@/components/ui/DateTimePicker";
 import useTemplates from "@/lib/api/hooks/app/templates/useTemplates";
+import TemplatePickerContent from "./TemplatePicker";
+import InsertBookingLink from "./InsertBookingLink";
+import ContactRecipientField from "./compose/ContactRecipientField";
 import useUniboxOverview from "@/lib/api/hooks/app/unibox/useUniboxOverview";
-import useIntegrationConnections from "@/lib/api/hooks/app/integrations/useIntegrationConnections";
-import { bookingURL, prefilledBookingURL } from "@/lib/api/models/app/integrations/Integration";
+import { resolveSendAt, useOutboxStore } from "@/hooks/useOutboxStore";
+import { useUserProfile } from "@/hooks/context/user";
 import { useAppStore } from "@/stores";
-import type Template from "@/lib/api/models/app/templates/Template";
 import useDraftReply from "@/lib/api/hooks/app/unibox/useDraftReply";
 import AIDraftBar, { useAIDraft } from "@/components/app/ai/AIDraftBar";
 import TextareaAIEdit from "@/components/app/ai/TextareaAIEdit";
@@ -57,10 +55,21 @@ import { cn } from "@/lib/utils";
 
 export type ReplyMode = "reply" | "forward";
 
+// Restored content for a cancelled undo-send reply: the composer reopens
+// with exactly what was about to go out.
+export interface ReplySeed {
+    to: string[];
+    cc: string[];
+    bcc: string[];
+    subject: string;
+    body: string;
+}
+
 interface ReplyComposerProps {
     threadId: string;
     replyTo: UniboxEmail;
     mode: ReplyMode;
+    seed?: ReplySeed;
     onClose: () => void;
 }
 
@@ -128,39 +137,6 @@ function looksLikeEmail(s: string): boolean {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim());
 }
 
-// InsertBookingLink drops the org's scheduling link (prefilled with the
-// recipient's email) into the reply body. Renders only when a Calendly /
-// Cal.com link is configured, so the action never shows as a dead button.
-function InsertBookingLink({
-    email,
-    onInsert,
-}: {
-    email?: string;
-    onInsert: (text: string) => void;
-}) {
-    const { data } = useIntegrationConnections();
-    const url = (data?.connections ?? [])
-        .map((c) => bookingURL(c))
-        .find((u): u is string => !!u);
-    if (!url) return null;
-
-    const cleanEmail = email ? bareEmail(email) : undefined;
-    return (
-        <button
-            type="button"
-            title="Insert your booking link, prefilled for this contact"
-            onClick={() => {
-                onInsert(prefilledBookingURL(url, cleanEmail));
-                toast.success("Booking link added");
-            }}
-            className="h-7 px-2 rounded-md border border-slate-200 hover:border-slate-300 text-slate-700 hover:text-slate-900 text-[12px] inline-flex items-center gap-1 transition-colors"
-        >
-            <CalendarPlusIcon className="w-3 h-3" />
-            Booking link
-        </button>
-    );
-}
-
 function nameFromAddr(s: string): string {
     const m = s.match(/^"?([^"<]+)"?\s*<.+>$/);
     if (m) return m[1].trim();
@@ -190,18 +166,20 @@ function deriveDefaults(replyTo: UniboxEmail, mode: ReplyMode) {
     return { to, subject };
 }
 
-export function ReplyComposer({ threadId, replyTo, mode, onClose }: ReplyComposerProps) {
+export function ReplyComposer({ threadId, replyTo, mode, seed, onClose }: ReplyComposerProps) {
     const accounts = useAppStore((s) => s.emails);
+    const { user } = useUserProfile();
+    const addOutbox = useOutboxStore((s) => s.add);
 
     const initial = React.useMemo(() => deriveDefaults(replyTo, mode), [replyTo, mode]);
 
-    const [body, setBody] = React.useState("");
-    const [subject, setSubject] = React.useState(initial.subject);
-    const [to, setTo] = React.useState<string[]>(initial.to);
-    const [cc, setCc] = React.useState<string[]>([]);
-    const [bcc, setBcc] = React.useState<string[]>([]);
-    const [showCc, setShowCc] = React.useState(false);
-    const [showBcc, setShowBcc] = React.useState(false);
+    const [body, setBody] = React.useState(seed?.body ?? "");
+    const [subject, setSubject] = React.useState(seed?.subject ?? initial.subject);
+    const [to, setTo] = React.useState<string[]>(seed?.to ?? initial.to);
+    const [cc, setCc] = React.useState<string[]>(seed?.cc ?? []);
+    const [bcc, setBcc] = React.useState<string[]>(seed?.bcc ?? []);
+    const [showCc, setShowCc] = React.useState((seed?.cc.length ?? 0) > 0);
+    const [showBcc, setShowBcc] = React.useState((seed?.bcc.length ?? 0) > 0);
     const [isSending, setIsSending] = React.useState(false);
 
     const [scheduleOpen, setScheduleOpen] = React.useState(false);
@@ -231,16 +209,17 @@ export function ReplyComposer({ threadId, replyTo, mode, onClose }: ReplyCompose
 
     // Reset whenever the user picks a different target message or
     // switches between reply and forward. Without this the body, chips,
-    // and subject would persist across separate compose sessions.
+    // and subject would persist across separate compose sessions. A
+    // restore seed (cancelled undo send) wins over the derived defaults.
     React.useEffect(() => {
-        setSubject(initial.subject);
-        setTo(initial.to);
-        setCc([]);
-        setBcc([]);
-        setShowCc(false);
-        setShowBcc(false);
-        setBody("");
-    }, [initial.subject, initial.to, replyTo.id, mode]);
+        setSubject(seed?.subject ?? initial.subject);
+        setTo(seed?.to ?? initial.to);
+        setCc(seed?.cc ?? []);
+        setBcc(seed?.bcc ?? []);
+        setShowCc((seed?.cc.length ?? 0) > 0);
+        setShowBcc((seed?.bcc.length ?? 0) > 0);
+        setBody(seed?.body ?? "");
+    }, [initial.subject, initial.to, replyTo.id, mode, seed]);
 
     // Resolve the sending mailbox from the target message's
     // account_id. We look it up in the global emails store so we have
@@ -282,13 +261,14 @@ export function ReplyComposer({ threadId, replyTo, mode, onClose }: ReplyCompose
         }
 
         setIsSending(true);
+        const sentSubject = subject.trim() || (mode === "forward" ? "Fwd:" : "Re:");
         try {
-            await sendReply({
+            const res = await sendReply({
                 email_account_id: accountId,
                 to,
                 cc: cc.length ? cc : undefined,
                 bcc: bcc.length ? bcc : undefined,
-                subject: subject.trim() || (mode === "forward" ? "Fwd:" : "Re:"),
+                subject: sentSubject,
                 body_plain: trimmedBody,
                 body_html: trimmedBody.replace(/\n/g, "<br />"),
                 thread_id: mode === "reply" ? threadId : undefined,
@@ -299,13 +279,37 @@ export function ReplyComposer({ threadId, replyTo, mode, onClose }: ReplyCompose
                       }
                     : { send_mode: "instant" as const }),
             });
-            toast.success(
-                scheduledAt
-                    ? `Scheduled for ${formatFriendly(scheduledAt)}`
-                    : mode === "forward"
-                      ? "Forward queued"
-                      : "Reply queued",
-            );
+            if (!scheduledAt && res.send_mode === "instant") {
+                // Undo window: no "queued" toast; the header pill counts
+                // down and can cancel, reopening this composer via the
+                // reply payload.
+                addOutbox({
+                    taskId: res.task_id,
+                    scheduledAt: resolveSendAt(res.scheduled_at, user.undo_send_seconds || 30),
+                    kind: "reply",
+                    to,
+                    subject: sentSubject,
+                    threadId,
+                    reply: {
+                        threadId,
+                        messageId: replyTo.id,
+                        mode,
+                        to,
+                        cc,
+                        bcc,
+                        subject: sentSubject,
+                        body: trimmedBody,
+                    },
+                });
+            } else {
+                toast.success(
+                    scheduledAt
+                        ? `Scheduled for ${formatFriendly(scheduledAt)}`
+                        : mode === "forward"
+                          ? "Forward queued"
+                          : "Reply queued",
+                );
+            }
             setScheduleOpen(false);
             setCustomMode(false);
             onClose();
@@ -392,98 +396,66 @@ export function ReplyComposer({ threadId, replyTo, mode, onClose }: ReplyCompose
             transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
             className="border-t border-slate-200 bg-white shrink-0 flex flex-col shadow-[0_-6px_24px_-12px_rgba(15,23,42,0.10)]"
         >
-            {/* Target message preview : the message being replied to /
-                forwarded, plus a close handle to dismiss the composer
-                entirely. */}
-            <div className="px-4 pt-3 pb-2 flex items-start gap-3 bg-slate-50/60 border-b border-slate-200/70">
-                <span
+            {/* Target strip: one quiet line naming what this composer is
+                doing (same visual language as the compose window's header),
+                plus the close handle. */}
+            <div className="h-8 pl-3.5 pr-1.5 flex items-center gap-2 bg-slate-100/80 border-b border-slate-200 select-none">
+                <CornerUpLeftIcon
                     className={cn(
-                        "size-7 rounded-full flex items-center justify-center text-[10px] font-semibold shrink-0",
-                        mode === "forward"
-                            ? "bg-violet-100 text-violet-700"
-                            : "bg-sky-100 text-sky-700",
+                        "w-3.5 h-3.5 shrink-0",
+                        mode === "forward" ? "rotate-180 text-violet-500" : "text-slate-500",
                     )}
                     aria-hidden
+                />
+                <span
+                    className="min-w-0 flex-1 text-[11.5px] text-slate-500 truncate"
+                    title={replyToAddr ? `${replyToName} <${replyToAddr}>` : replyToName}
                 >
-                    <CornerUpLeftIcon
-                        className={cn("w-3.5 h-3.5", mode === "forward" && "rotate-180")}
-                    />
+                    <span className="font-semibold text-slate-800">
+                        {mode === "forward" ? "Forward" : "Reply"}
+                    </span>{" "}
+                    to {replyToName}
+                    <span className="text-slate-400"> · {replyTargetSubject}</span>
                 </span>
-                <div className="min-w-0 flex-1">
-                    <div className="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">
-                        {mode === "forward" ? "Forwarding" : "Replying to"}
-                    </div>
-                    <div className="flex items-baseline gap-2 mt-0.5 min-w-0">
-                        <span className="text-[12.5px] font-semibold text-slate-900 truncate">
-                            {replyToName}
-                        </span>
-                        {replyToAddr && (
-                            <span className="font-mono text-[10.5px] text-slate-500 truncate">
-                                {replyToAddr}
-                            </span>
-                        )}
-                    </div>
-                    <div className="text-[11.5px] text-slate-500 mt-0.5 truncate">
-                        {replyTargetSubject}
-                    </div>
-                </div>
                 <button
                     type="button"
                     onClick={onClose}
                     aria-label="Close composer"
                     title="Close composer"
-                    className="size-7 inline-flex items-center justify-center rounded-md text-slate-400 hover:text-slate-900 hover:bg-slate-200/60 transition-colors shrink-0"
+                    className="size-6 inline-flex items-center justify-center rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors shrink-0"
                 >
                     <XIcon className="w-3.5 h-3.5" />
                 </button>
             </div>
 
-            {/* Header strip : From / To / Cc / Bcc / Subject. Labels
-                sit in a wider, hairline-divided column so values get
-                proper breathing room. */}
-            <div className="px-4 py-2.5 border-b border-slate-200/70 divide-y divide-slate-200/40 bg-white">
-                <HeaderRow label="From">
-                    {mailbox ? (
-                        <div className="inline-flex items-center gap-2 min-w-0">
-                            <span className="text-[12.5px] text-slate-900 font-medium truncate">
-                                {mailbox.name || mailbox.email}
-                            </span>
-                            <span
-                                className="font-mono text-[10.5px] text-slate-500 bg-slate-50 px-1.5 h-4 inline-flex items-center rounded border border-slate-200 min-w-0 truncate"
-                                title={mailbox.email}
-                            >
-                                {mailbox.email}
-                            </span>
-                        </div>
-                    ) : (
-                        <span className="text-[12px] text-amber-700">
-                            No sending mailbox resolved
-                        </span>
-                    )}
-                    <div className="ml-auto flex items-center gap-1">
-                        {!showCc && (
-                            <button
-                                type="button"
-                                onClick={() => setShowCc(true)}
-                                className="h-5 px-1.5 rounded text-[10.5px] text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors"
-                            >
-                                + Cc
-                            </button>
-                        )}
-                        {!showBcc && (
-                            <button
-                                type="button"
-                                onClick={() => setShowBcc(true)}
-                                className="h-5 px-1.5 rounded text-[10.5px] text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors"
-                            >
-                                + Bcc
-                            </button>
-                        )}
-                    </div>
-                </HeaderRow>
-
+            {/* Header rows. Plain labelled lines matching the compose window:
+                quiet inline label, hairline between rows, no label lane or
+                divider column. */}
+            <div className="shrink-0 bg-white">
                 <HeaderRow label="To">
-                    <RecipientField value={to} onChange={setTo} placeholder="name@example.com" />
+                    <ContactRecipientField value={to} onChange={setTo} placeholder="name@example.com" />
+                    {(!showCc || !showBcc) && (
+                        <div className="ml-auto flex items-center gap-0.5 shrink-0 self-start pt-px">
+                            {!showCc && (
+                                <button
+                                    type="button"
+                                    onClick={() => setShowCc(true)}
+                                    className="h-5 px-1 rounded text-[11px] text-slate-400 hover:text-slate-700 transition-colors"
+                                >
+                                    Cc
+                                </button>
+                            )}
+                            {!showBcc && (
+                                <button
+                                    type="button"
+                                    onClick={() => setShowBcc(true)}
+                                    className="h-5 px-1 rounded text-[11px] text-slate-400 hover:text-slate-700 transition-colors"
+                                >
+                                    Bcc
+                                </button>
+                            )}
+                        </div>
+                    )}
                 </HeaderRow>
 
                 {showCc && (
@@ -494,11 +466,7 @@ export function ReplyComposer({ threadId, replyTo, mode, onClose }: ReplyCompose
                             setShowCc(false);
                         }}
                     >
-                        <RecipientField
-                            value={cc}
-                            onChange={setCc}
-                            placeholder="Add Cc recipients"
-                        />
+                        <ContactRecipientField value={cc} onChange={setCc} placeholder="Add Cc recipients" />
                     </HeaderRow>
                 )}
                 {showBcc && (
@@ -509,23 +477,36 @@ export function ReplyComposer({ threadId, replyTo, mode, onClose }: ReplyCompose
                             setShowBcc(false);
                         }}
                     >
-                        <RecipientField
-                            value={bcc}
-                            onChange={setBcc}
-                            placeholder="Add Bcc recipients"
-                        />
+                        <ContactRecipientField value={bcc} onChange={setBcc} placeholder="Add Bcc recipients" />
                     </HeaderRow>
                 )}
 
-                <HeaderRow label="Subject">
+                <HeaderRow label="From">
+                    {mailbox ? (
+                        <div className="inline-flex items-center gap-2 min-w-0">
+                            <span className="text-[12.5px] text-slate-800 truncate">
+                                {mailbox.name || mailbox.email}
+                            </span>
+                            <span className="font-mono text-[10.5px] text-slate-400 min-w-0 truncate" title={mailbox.email}>
+                                {mailbox.email}
+                            </span>
+                        </div>
+                    ) : (
+                        <span className="text-[12px] text-amber-700">
+                            No sending mailbox resolved
+                        </span>
+                    )}
+                </HeaderRow>
+
+                <div className="flex items-center gap-2 px-4 border-b border-slate-100">
                     <input
                         type="text"
                         value={subject}
                         onChange={(e) => setSubject(e.target.value)}
                         placeholder="Subject"
-                        className="flex-1 min-w-0 h-6 bg-transparent text-[12.5px] text-slate-900 placeholder:text-slate-400 outline-none"
+                        className="flex-1 min-w-0 h-9 bg-transparent text-[13px] font-medium text-slate-900 placeholder:text-slate-400 placeholder:font-normal outline-none"
                     />
-                </HeaderRow>
+                </div>
             </div>
 
             {/* Body. AI drafting overlays it instead of pushing layout: a
@@ -550,7 +531,7 @@ export function ReplyComposer({ threadId, replyTo, mode, onClose }: ReplyCompose
                         onClose();
                     }
                 }}
-                className="w-full min-h-[120px] max-h-72 px-5 py-3 text-[13px] text-slate-800 placeholder:text-slate-400 bg-transparent resize-y focus:outline-none"
+                className="w-full min-h-[120px] max-h-72 px-4 py-3 text-[13px] text-slate-800 placeholder:text-slate-400 bg-transparent resize-y focus:outline-none"
             />
             {aiDraft.phase === "busy" && (
                 <div className="ai-sheen pointer-events-none absolute inset-0" aria-hidden />
@@ -590,7 +571,7 @@ export function ReplyComposer({ threadId, replyTo, mode, onClose }: ReplyCompose
                 always knows what will (or will not) appear at the
                 bottom of their reply on send. */}
             {signatureState.kind === "on" && (
-                <div className="mx-3 sm:mx-5 mb-2 rounded-md border border-emerald-200/60 bg-emerald-50/40 overflow-hidden">
+                <div className="mx-4 mb-2 rounded-md border border-emerald-200/60 bg-emerald-50/40 overflow-hidden">
                     <div className="px-3 py-1.5 flex items-center gap-1.5 border-b border-emerald-200/40 bg-emerald-50/60">
                         <PenLineIcon className="w-3 h-3 text-emerald-700" />
                         <span className="text-[10px] uppercase tracking-[0.14em] text-emerald-800 font-semibold">
@@ -610,7 +591,7 @@ export function ReplyComposer({ threadId, replyTo, mode, onClose }: ReplyCompose
                 </div>
             )}
             {signatureState.kind === "off" && (
-                <div className="mx-3 sm:mx-5 mb-2 px-3 py-2 rounded-md border border-amber-200/60 bg-amber-50/50 flex items-start gap-2 text-[11.5px] text-amber-900">
+                <div className="mx-4 mb-2 px-3 py-2 rounded-md border border-amber-200/60 bg-amber-50/50 flex items-start gap-2 text-[11.5px] text-amber-900">
                     <InfoIcon className="w-3 h-3 mt-0.5 shrink-0 text-amber-700" />
                     <span className="leading-snug">
                         A signature is saved for this mailbox but signature
@@ -621,7 +602,7 @@ export function ReplyComposer({ threadId, replyTo, mode, onClose }: ReplyCompose
                 </div>
             )}
             {signatureState.kind === "none" && (
-                <div className="mx-3 sm:mx-5 mb-2 px-3 py-1.5 rounded-md border border-dashed border-slate-200 text-[11px] text-slate-400 flex items-center gap-1.5">
+                <div className="mx-4 mb-2 px-3 py-1.5 rounded-md border border-dashed border-slate-200 text-[11px] text-slate-400 flex items-center gap-1.5">
                     <PenLineIcon className="w-3 h-3" />
                     No signature on this mailbox. Type one inline or set
                     one in mailbox settings.
@@ -813,10 +794,8 @@ export function ReplyComposer({ threadId, replyTo, mode, onClose }: ReplyCompose
     );
 }
 
-// HeaderRow : one labelled inline field in the composer header.
-// Wider label column + hairline divider gives the value its own
-// visual lane. Items inside wrap so many recipient chips don't push
-// the field off-screen.
+// HeaderRow : one plain labelled line in the composer header, matching the
+// compose window: quiet inline label, hairline underneath, nothing else.
 function HeaderRow({
     label,
     onRemove,
@@ -827,18 +806,15 @@ function HeaderRow({
     children: React.ReactNode;
 }) {
     return (
-        <div className="flex items-start gap-3 py-1.5">
-            <span className="w-14 shrink-0 pt-[3px] text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">
-                {label}
-            </span>
-            <span className="self-stretch w-px bg-slate-200 shrink-0" aria-hidden />
+        <div className="flex items-start gap-2 px-4 py-[7px] border-b border-slate-100">
+            <span className="w-9 shrink-0 pt-[3px] text-[11px] text-slate-400">{label}</span>
             <div className="flex-1 min-w-0 flex flex-wrap items-center gap-1.5">{children}</div>
             {onRemove && (
                 <button
                     type="button"
                     onClick={onRemove}
                     aria-label={`Remove ${label}`}
-                    className="size-5 inline-flex items-center justify-center rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors shrink-0"
+                    className="size-5 inline-flex items-center justify-center rounded text-slate-300 hover:text-slate-600 hover:bg-slate-100 transition-colors shrink-0"
                 >
                     <XIcon className="w-3 h-3" />
                 </button>
@@ -847,281 +823,3 @@ function HeaderRow({
     );
 }
 
-// TemplatePickerContent : rich template list rendered inside the
-// PopoverMenu. Custom rows (not PopoverMenuItem) so each entry can
-// run two lines, show a badge, and adopt a hover accent. Includes
-// an inline search when the user has more than a handful of
-// templates, plus skeleton + empty + error states.
-function TemplatePickerContent({
-    query,
-    onPick,
-    onClose,
-}: {
-    query: ReturnType<typeof useTemplates>;
-    onPick: (t: Template) => void;
-    onClose: () => void;
-}) {
-    const [search, setSearch] = React.useState("");
-    const all = React.useMemo(() => query.data ?? [], [query.data]);
-    const showSearch = all.length > 5;
-    const filtered = React.useMemo(() => {
-        const q = search.trim().toLowerCase();
-        if (!q) return all;
-        return all.filter((t) => {
-            const hay = `${t.name} ${t.subject} ${t.body_plain}`.toLowerCase();
-            return hay.includes(q);
-        });
-    }, [all, search]);
-
-    return (
-        <div className="w-[340px] max-w-[92vw]">
-            <div className="px-3 pt-2.5 pb-1 flex items-center justify-between gap-2">
-                <span className="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-semibold">
-                    Templates
-                </span>
-                {all.length > 0 && (
-                    <span className="font-mono text-[10px] text-slate-400 tabular-nums">
-                        {filtered.length === all.length
-                            ? all.length
-                            : `${filtered.length}/${all.length}`}
-                    </span>
-                )}
-            </div>
-
-            {showSearch && (
-                <div className="px-2 pb-2">
-                    <div className="flex items-center gap-1.5 px-2 h-7 rounded-md border border-slate-200 bg-slate-50 focus-within:bg-white focus-within:border-sky-400 focus-within:ring-2 focus-within:ring-sky-100 transition-colors">
-                        <SearchIcon className="w-3 h-3 text-slate-400 shrink-0" />
-                        <input
-                            type="text"
-                            value={search}
-                            onChange={(e) => setSearch(e.target.value)}
-                            placeholder="Search templates"
-                            autoFocus
-                            className="flex-1 min-w-0 h-6 bg-transparent text-[12px] text-slate-900 placeholder:text-slate-400 outline-none"
-                        />
-                        {search && (
-                            <button
-                                type="button"
-                                onClick={() => setSearch("")}
-                                className="size-4 inline-flex items-center justify-center rounded text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 shrink-0"
-                                aria-label="Clear search"
-                            >
-                                <XIcon className="w-2.5 h-2.5" />
-                            </button>
-                        )}
-                    </div>
-                </div>
-            )}
-
-            {query.isPending ? (
-                <div className="px-2 pb-2 space-y-1">
-                    {[0, 1, 2].map((i) => (
-                        <div
-                            key={i}
-                            className="h-12 rounded-md bg-slate-100/70 animate-pulse"
-                        />
-                    ))}
-                </div>
-            ) : query.isError ? (
-                <div className="px-3 py-3 flex items-start gap-2 text-[11.5px] text-rose-600 bg-rose-50/60 mx-2 mb-2 rounded-md border border-rose-200/60">
-                    <span>Couldn't load templates. Try again in a moment.</span>
-                </div>
-            ) : all.length === 0 ? (
-                <TemplatePickerEmpty onClose={onClose} />
-            ) : filtered.length === 0 ? (
-                <div className="px-3 py-6 text-center">
-                    <p className="text-[12px] text-slate-500">
-                        No templates match &ldquo;{search}&rdquo;.
-                    </p>
-                    <button
-                        type="button"
-                        onClick={() => setSearch("")}
-                        className="mt-2 text-[11.5px] text-sky-700 hover:text-sky-900 font-medium"
-                    >
-                        Clear search
-                    </button>
-                </div>
-            ) : (
-                <div className="max-h-[300px] overflow-y-auto px-1 pb-1 space-y-0.5">
-                    {filtered.map((t) => (
-                        <TemplateRow
-                            key={t.id}
-                            template={t}
-                            onPick={() => {
-                                onPick(t);
-                                onClose();
-                            }}
-                        />
-                    ))}
-                </div>
-            )}
-
-            {all.length > 0 && (
-                <div className="border-t border-slate-200/70 px-2 py-1.5 flex items-center justify-between">
-                    <Link
-                        to="/app/templates"
-                        onClick={onClose}
-                        className="inline-flex items-center gap-1.5 h-6 px-1.5 rounded text-[11px] text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors"
-                    >
-                        <SettingsIcon className="w-3 h-3" />
-                        Manage templates
-                    </Link>
-                    <span className="font-mono text-[9.5px] uppercase tracking-[0.14em] text-slate-400">
-                        Click to insert
-                    </span>
-                </div>
-            )}
-        </div>
-    );
-}
-
-// TemplateRow : one template entry. Two compact lines, no icon, no
-// left accent bar : just name on top, single-line body preview
-// underneath. Hover and active states are conveyed by the row
-// background alone.
-function TemplateRow({
-    template,
-    onPick,
-}: {
-    template: Template;
-    onPick: () => void;
-}) {
-    const bodyPreview = (template.body_plain ?? "")
-        .replace(/\s+/g, " ")
-        .trim()
-        .slice(0, 120);
-
-    return (
-        <button
-            type="button"
-            onClick={onPick}
-            className="w-full text-left rounded-md px-2.5 py-1.5 flex flex-col gap-0.5 hover:bg-slate-50 active:bg-slate-100 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200"
-        >
-            <span className="text-[12.5px] font-medium text-slate-900 truncate">
-                {template.name}
-            </span>
-            {bodyPreview && (
-                <span className="text-[11px] text-slate-400 truncate leading-snug">
-                    {bodyPreview}
-                </span>
-            )}
-        </button>
-    );
-}
-
-// TemplatePickerEmpty : the zero-state surface. A blank list is a
-// teaching moment, not a dead-end, so we link straight to the
-// templates settings page where the user can create their first one.
-function TemplatePickerEmpty({ onClose }: { onClose: () => void }) {
-    return (
-        <div className="px-4 pb-4 pt-2 text-center">
-            <div className="size-9 rounded-lg bg-slate-100 text-slate-400 inline-flex items-center justify-center mb-2">
-                <FileTextIcon className="w-4 h-4" />
-            </div>
-            <p className="text-[12.5px] font-medium text-slate-900">
-                No templates yet
-            </p>
-            <p className="text-[11px] text-slate-500 mt-1 leading-relaxed max-w-[34ch] mx-auto">
-                Save your most-used replies once and drop them into any
-                conversation with two clicks.
-            </p>
-            <Link
-                to="/app/templates"
-                onClick={onClose}
-                className="inline-flex items-center gap-1.5 h-7 px-2.5 mt-3 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-[12px] font-medium transition-colors"
-            >
-                <SettingsIcon className="w-3 h-3" />
-                Create a template
-            </Link>
-        </div>
-    );
-}
-
-// RecipientField : chip-based editor. Enter / "," / Tab / blur commits
-// the in-progress text as a chip. Backspace on empty input removes the
-// last chip. Chips wrap to multiple lines via the parent's
-// `flex-wrap`, so Cc/Bcc with many recipients stays readable.
-function RecipientField({
-    value,
-    onChange,
-    placeholder,
-}: {
-    value: string[];
-    onChange: (next: string[]) => void;
-    placeholder: string;
-}) {
-    const [input, setInput] = React.useState("");
-
-    const commit = (raw: string) => {
-        const trimmed = raw.trim().replace(/,$/, "").trim();
-        if (!trimmed) return;
-        if (value.includes(trimmed)) {
-            setInput("");
-            return;
-        }
-        onChange([...value, trimmed]);
-        setInput("");
-    };
-
-    return (
-        <>
-            {value.map((v) => (
-                <span
-                    key={v}
-                    className={cn(
-                        "inline-flex items-center gap-1 h-5 pl-1.5 pr-0.5 rounded-md text-[11px] font-medium max-w-full min-w-0 border",
-                        looksLikeEmail(v)
-                            ? "bg-sky-50 text-sky-800 border-sky-200"
-                            : "bg-rose-50 text-rose-800 border-rose-200",
-                    )}
-                    title={v}
-                >
-                    <span className="font-mono truncate">{v}</span>
-                    <button
-                        type="button"
-                        onClick={() => onChange(value.filter((x) => x !== v))}
-                        aria-label={`Remove ${v}`}
-                        className="size-4 shrink-0 inline-flex items-center justify-center rounded hover:bg-black/10"
-                    >
-                        <XIcon className="w-2.5 h-2.5" />
-                    </button>
-                </span>
-            ))}
-            <input
-                type="email"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder={value.length === 0 ? placeholder : ""}
-                onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === "," || e.key === "Tab") {
-                        if (input.trim()) {
-                            e.preventDefault();
-                            commit(input);
-                        }
-                    } else if (e.key === "Backspace" && !input && value.length > 0) {
-                        e.preventDefault();
-                        onChange(value.slice(0, -1));
-                    }
-                }}
-                onBlur={() => commit(input)}
-                onPaste={(e) => {
-                    const text = e.clipboardData.getData("text");
-                    if (text.includes(",") || text.includes(" ")) {
-                        e.preventDefault();
-                        const parts = text
-                            .split(/[,\s]+/)
-                            .map((s) => s.trim())
-                            .filter(Boolean);
-                        const fresh = [...value];
-                        for (const p of parts) {
-                            if (!fresh.includes(p)) fresh.push(p);
-                        }
-                        onChange(fresh);
-                    }
-                }}
-                className="flex-1 min-w-[14ch] h-5 bg-transparent text-[11.5px] text-slate-900 placeholder:text-slate-400 outline-none font-mono"
-            />
-        </>
-    );
-}

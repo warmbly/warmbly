@@ -42,6 +42,12 @@ type Organization struct {
 	// admin-controlled (manage_settings). The agent never sends on its own.
 	InboxAgentEnabled bool `json:"inbox_agent_enabled"`
 
+	// AssistantSharedHistory makes assistant conversations workspace-shared:
+	// every member with the use-AI permission sees and can continue every
+	// conversation instead of only their own. Off by default (private
+	// history); admin-controlled (manage_settings).
+	AssistantSharedHistory bool `json:"assistant_shared_history"`
+
 	// Joined data
 	Owner *User `json:"owner,omitempty"`
 }
@@ -164,6 +170,9 @@ type UpdateOrganizationRequest struct {
 	VoiceProfile       *string `json:"voice_profile,omitempty"`
 	// InboxAgentEnabled opts the org in/out of the inbox agent (manage_settings).
 	InboxAgentEnabled *bool `json:"inbox_agent_enabled,omitempty"`
+	// AssistantSharedHistory toggles workspace-shared assistant conversations
+	// (manage_settings).
+	AssistantSharedHistory *bool `json:"assistant_shared_history,omitempty"`
 }
 
 // InviteMemberRequest represents the request to invite a new member

@@ -4,6 +4,9 @@ export interface AgentSession {
     id: string;
     org_id: string;
     user_id: string;
+    // Owner display name; present only in workspaces with shared assistant
+    // history, where the listing spans every member's conversations.
+    user_name?: string;
     title: string;
     context: {
         page?: string;
@@ -59,6 +62,7 @@ export interface AgentTranscript {
 export interface AgentStreamEvent {
     type:
         | "text"
+        | "text_delta"
         | "tool_start"
         | "tool_result"
         | "approval_required"

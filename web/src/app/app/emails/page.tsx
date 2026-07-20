@@ -14,6 +14,7 @@ import { useUserProfile } from "@/hooks/context/user";
 import { useConfirm } from "@/hooks/context/confirm";
 import InboxDetails from "@/components/app/emails/InboxDetails";
 import BulkWarmupDialog from "@/components/app/emails/BulkWarmupDialog";
+import BulkTagPopover from "@/components/app/emails/BulkTagPopover";
 import type Tag from "@/lib/api/models/app/Tag";
 import type Inbox from "@/lib/api/models/app/emails/Inbox";
 import type AccountStatus from "@/lib/api/models/app/analytics/AccountStatus";
@@ -356,6 +357,7 @@ export default function AddressesPage() {
                             <PauseIcon className="w-3.5 h-3.5" />
                             Pause
                         </button>
+                        <BulkTagPopover ids={selected} />
                         <div className="w-px h-4 bg-slate-200 mx-0.5" />
                         <button
                             type="button"

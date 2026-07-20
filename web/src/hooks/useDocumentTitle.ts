@@ -83,6 +83,7 @@ const PARAM_ROUTES: ReadonlyArray<readonly [RegExp, string]> = [
   [/^\/app\/campaigns\/[^/]+$/, "Campaign"],
   [/^\/app\/automations\/[^/]+$/, "Automation"],
   [/^\/app\/unibox(\/.*)?$/, "Unibox"],
+  [/^\/app\/settings\/billing\/[^/]+$/, "Billing"],
   [/^\/app\/admin\/workers\/[^/]+$/, "Worker"],
 ];
 

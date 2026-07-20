@@ -52,6 +52,7 @@ import buildError from "@/lib/helper/buildError";
 import EmailEditor from "../EmailEditor";
 import TagSelector from "../popup/select/TagSelector";
 import TimeSelect from "@/components/ui/TimeSelect";
+import { DitherBarChart } from "@/components/ui/dither";
 import WeekdayBitmask from "../campaigns/schedule/WeekdayBitmask";
 import { Loading } from "@/components/loader";
 import { NumberInput, TextInput } from "@/components/ui/field";
@@ -413,7 +414,13 @@ function AnalyticsTab({ warmup, loading }: { warmup?: import("@/lib/api/models/a
         );
     }
     const s = warmup.summary;
-    const max = Math.max(1, ...warmup.daily_stats.map((d) => Math.max(d.emails_sent, d.target_volume)));
+    const chartData = warmup.daily_stats.map((d) => ({
+        key: d.date,
+        value: d.emails_sent,
+        hint: `${d.date}: ${d.emails_sent} sent / ${d.target_volume} target · ${d.emails_replied} replies`,
+    }));
+    const targets = warmup.daily_stats.map((d) => d.target_volume);
+    const selectedIndex = selectedDay ? warmup.daily_stats.findIndex((d) => d.date === selectedDay) : -1;
 
     return (
         <div className="divide-y divide-slate-200/60">
@@ -432,19 +439,18 @@ function AnalyticsTab({ warmup, loading }: { warmup?: import("@/lib/api/models/a
                         <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-slate-200" /> Target</span>
                     </div>
                 </div>
-                <div className="flex items-end gap-0.5 h-28">
-                    {warmup.daily_stats.map((d) => (
-                        <div
-                            key={d.date}
-                            className="flex-1 min-w-0 relative h-full flex items-end group cursor-pointer"
-                            title={`${d.date}: ${d.emails_sent} sent / ${d.target_volume} target · ${d.emails_replied} replies`}
-                            onClick={() => setSelectedDay((cur) => (cur === d.date ? null : d.date))}
-                        >
-                            <div className={cn("absolute inset-x-0 bottom-0 rounded-sm", selectedDay === d.date ? "bg-slate-200" : "bg-slate-100")} style={{ height: `${(d.target_volume / max) * 100}%` }} />
-                            <div className={cn("relative w-full rounded-sm transition-colors", selectedDay === d.date ? "bg-sky-700" : "bg-sky-500 group-hover:bg-sky-600")} style={{ height: `${(d.emails_sent / max) * 100}%`, minHeight: d.emails_sent > 0 ? 2 : 0 }} />
-                        </div>
-                    ))}
-                </div>
+                <DitherBarChart
+                    data={chartData}
+                    ghost={targets}
+                    height={112}
+                    selected={selectedIndex >= 0 ? selectedIndex : null}
+                    onSelect={(i) =>
+                        setSelectedDay((cur) => {
+                            const date = warmup.daily_stats[i]?.date ?? null;
+                            return cur === date ? null : date;
+                        })
+                    }
+                />
                 {selectedDay && (() => {
                     const d = warmup.daily_stats.find((s) => s.date === selectedDay);
                     if (!d) return null;

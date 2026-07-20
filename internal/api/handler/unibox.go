@@ -75,6 +75,18 @@ func (h *Handler) GetUniboxIncoming(c *gin.Context) {
 		params.Sender = &from
 	}
 
+	// Address filter: conversations with this person in either direction
+	// (they sent it or we sent it to them). Powers the compose history panel.
+	if address := c.Query("address"); address != "" {
+		params.Address = &address
+	}
+
+	// Direction: "sent" = messages from the org's own mailboxes,
+	// "received" = everything else. Absent = both.
+	if direction := c.Query("direction"); direction == "sent" || direction == "received" {
+		params.Direction = &direction
+	}
+
 	// Parse subject filter
 	if subject := c.Query("subject"); subject != "" {
 		params.Subject = &subject

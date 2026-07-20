@@ -169,7 +169,9 @@ function SettingsLayoutInner() {
 
     const currentPath = location.pathname.replace(/^\/app\/settings\//, "");
     const allItems = visibleGroups.flatMap((g) => g.items);
-    const current = allItems.find((s) => s.path === currentPath) ?? allItems[0];
+    const current =
+        allItems.find((s) => s.path === currentPath || currentPath.startsWith(`${s.path}/`)) ??
+        allItems[0];
 
     return (
         <Page className="h-full min-h-0">

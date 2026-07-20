@@ -17,11 +17,12 @@
 
 import React from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { CalendarPlusIcon, CheckIcon, CopyIcon, Loader2Icon, XIcon } from "lucide-react";
+import { CalendarPlusIcon, CheckIcon, CopyIcon, Loader2Icon, MailIcon, XIcon } from "lucide-react";
 import toast from "react-hot-toast";
 import useUpdateContact from "@/lib/api/hooks/app/contacts/useUpdateContact";
 import useContact from "@/lib/api/hooks/app/contacts/useContact";
 import { useConfirm } from "@/hooks/context/confirm";
+import { useComposeStore } from "@/hooks/useComposeStore";
 import type Contact from "@/lib/api/models/app/contacts/Contact";
 import type MiniCampaign from "@/lib/api/models/app/campaigns/MiniCampaign";
 import type { AppError } from "@/lib/api/client/normalizeError";
@@ -371,6 +372,16 @@ function ContactHeader({
                     </button>
                 </div>
             </div>
+            <button
+                type="button"
+                onClick={() => useComposeStore.getState().openCompose(contact.email)}
+                className="shrink-0 h-7 px-2 rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100 inline-flex items-center gap-1.5 transition-colors text-[12px]"
+                title="Compose an email to this contact"
+                aria-label="Compose email"
+            >
+                <MailIcon className="w-3.5 h-3.5" />
+                <span className="hidden md:inline">Email</span>
+            </button>
             <button
                 type="button"
                 onClick={() => setMeetingOpen(true)}

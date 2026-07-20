@@ -16,12 +16,17 @@ struct UniboxRootView: View {
     @State private var showBulkLabels = false
     @State private var toast: String?
     @State private var toastPulse = 0
+    @State private var composeItem: ComposeSheetItem?
+    /// Instant send inside its undo window; replaces the sent toast.
+    @State private var undoSend: ComposeUndoSend?
     @FocusState private var searchFocused: Bool
 
     private static let sidebarWidth: CGFloat = 300
 
     private var inSelectionMode: Bool { !selectedIDs.isEmpty }
     private var canAct: Bool { env.session.can(.accessUnibox) }
+    /// Compose sends need the unibox plus mailbox send rights (server gate).
+    private var canCompose: Bool { canAct && env.session.can(.manageEmails) }
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -44,6 +49,10 @@ struct UniboxRootView: View {
                 switch route {
                 case let .thread(thread, reply): UniboxThreadView(thread: thread, openComposerOnAppear: reply)
                 case .scheduled: UniboxScheduledView()
+                case .drafts:
+                    ComposeDraftsView { draft in
+                        composeItem = ComposeSheetItem(id: draft.id, draft: draft)
+                    }
                 }
             }
         }
@@ -82,6 +91,23 @@ struct UniboxRootView: View {
                 await bulkLabel(ids)
             }))
         }
+        .sheet(item: $composeItem) { item in
+            ComposeView(draft: item.draft) { response, payload in
+                switch response.sendMode {
+                case "smart": showToast("Queued for smart send")
+                case "scheduled": showToast("Scheduled")
+                default:
+                    // Instant sends queue a short undo window server-side.
+                    if let taskID = response.taskID, let scheduledAt = response.scheduledAt {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                            undoSend = ComposeUndoSend(taskID: taskID, scheduledAt: scheduledAt, payload: payload)
+                        }
+                    } else {
+                        showToast(response.auto == true ? "Sent from \(response.accountEmail ?? "best mailbox")" : "Sent")
+                    }
+                }
+            }
+        }
     }
 
     // MARK: Main pane
@@ -100,17 +126,32 @@ struct UniboxRootView: View {
         }
         .animation(.snappy, value: searchFocused)
         .background(Color(.systemBackground))
-        .overlay(alignment: .bottom) {
-            if let toast {
-                Text(toast)
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 9)
-                    .background(.black.opacity(0.82), in: Capsule())
-                    .padding(.bottom, 12)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+        .overlay(alignment: .bottomTrailing) {
+            if canCompose, !inSelectionMode {
+                composeFAB
             }
+        }
+        .overlay(alignment: .bottom) {
+            VStack(spacing: 8) {
+                if let toast {
+                    Text(toast)
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 9)
+                        .background(.black.opacity(0.82), in: Capsule())
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+                if let undoSend {
+                    UndoSendBanner(scheduledAt: undoSend.scheduledAt) {
+                        await undoComposeSend(undoSend)
+                    } onExpired: {
+                        withAnimation(.snappy) { self.undoSend = nil }
+                    }
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .padding(.bottom, 12)
         }
         .simultaneousGesture(
             DragGesture(minimumDistance: 25)
@@ -121,6 +162,25 @@ struct UniboxRootView: View {
                     }
                 }
         )
+    }
+
+    /// Gmail-style compose FAB: opens a fresh compose window.
+    private var composeFAB: some View {
+        Button {
+            composeItem = ComposeSheetItem(id: UUID().uuidString, draft: nil)
+        } label: {
+            Image(systemName: "square.and.pencil")
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 56, height: 56)
+                .background(WTheme.accent, in: Circle())
+                .shadow(color: WTheme.accent.opacity(0.35), radius: 12, y: 5)
+        }
+        .buttonStyle(TapScaleStyle())
+        .padding(.trailing, 18)
+        .padding(.bottom, 18)
+        .accessibilityLabel("Compose email")
+        .transition(.scale(scale: 0.6).combined(with: .opacity))
     }
 
     // MARK: Top bar
@@ -711,6 +771,9 @@ struct UniboxRootView: View {
         } onScheduled: {
             closeSidebar()
             path.append(.scheduled)
+        } onDrafts: {
+            closeSidebar()
+            path.append(.drafts)
         }
         .frame(width: Self.sidebarWidth)
         .frame(maxHeight: .infinity)
@@ -788,6 +851,33 @@ struct UniboxRootView: View {
         showToast("Labeled \(labeled) conversation\(labeled == 1 ? "" : "s")")
     }
 
+    /// Cancels the queued instant send and reopens the composer pre-filled
+    /// with what was about to go out. 404 means the send already fired.
+    private func undoComposeSend(_ undo: ComposeUndoSend) async {
+        do {
+            let _: EmptyBody = try await env.api.delete("unibox/scheduled/\(undo.taskID)")
+            withAnimation(.snappy) { undoSend = nil }
+            composeItem = ComposeSheetItem(
+                id: UUID().uuidString,
+                draft: ComposeDraft(
+                    id: UUID().uuidString.lowercased(),
+                    emailAccountID: undo.payload.emailAccountID,
+                    to: undo.payload.to,
+                    cc: undo.payload.cc,
+                    bcc: undo.payload.bcc,
+                    subject: undo.payload.subject,
+                    body: undo.payload.body
+                )
+            )
+        } catch APIError.server(let status, _) where status == 404 {
+            withAnimation(.snappy) { undoSend = nil }
+            showToast("Already sent")
+        } catch {
+            // Keep the banner so the user can retry within the window.
+            showToast(error.localizedDescription)
+        }
+    }
+
     private func showToast(_ text: String) {
         toastPulse += 1
         withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { toast = text }
@@ -836,4 +926,20 @@ struct UniboxRootView: View {
 enum UniboxRoute: Hashable {
     case thread(UniboxThread, reply: Bool)
     case scheduled
+    case drafts
+}
+
+/// One presented compose window; the id keys the sheet so reopening a draft
+/// (or tapping the FAB again) always builds a fresh composer.
+struct ComposeSheetItem: Identifiable {
+    let id: String
+    var draft: ComposeDraft?
+}
+
+/// An instant compose send waiting out its undo window: the queued task, the
+/// moment it fires, and the payload to restore into a composer on undo.
+struct ComposeUndoSend {
+    let taskID: String
+    let scheduledAt: Date
+    let payload: ComposeDraftPayload
 }

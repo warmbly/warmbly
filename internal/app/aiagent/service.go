@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/warmbly/warmbly/internal/app/aitools"
 	"github.com/warmbly/warmbly/internal/app/credits"
@@ -120,12 +121,15 @@ func toolResultEvent(tool, result string) StreamEvent {
 }
 
 const (
-	evText     = "text"
-	evTool     = "tool_start"
-	evToolDone = "tool_result"
-	evApproval = "approval_required"
-	evError    = "error"
-	evDone     = "done"
+	evText = "text"
+	// evTextDelta is a partial text chunk; a closing evText with the full
+	// block always follows (deltas are cosmetic, hydration never sees them).
+	evTextDelta = "text_delta"
+	evTool      = "tool_start"
+	evToolDone  = "tool_result"
+	evApproval  = "approval_required"
+	evError     = "error"
+	evDone      = "done"
 )
 
 // Service is the dashboard-agent application API.
@@ -133,6 +137,10 @@ type Service interface {
 	CreateSession(ctx context.Context, orgID, userID uuid.UUID, page, resource string) (*models.AgentSession, *errx.Error)
 	ListSessions(ctx context.Context, orgID, userID uuid.UUID, limit int, beforeCreatedAt time.Time, beforeID uuid.UUID) ([]models.AgentSession, error)
 	GetSession(ctx context.Context, orgID, userID, sessionID uuid.UUID) (*models.AgentSession, error)
+	DeleteSession(ctx context.Context, orgID, userID, sessionID uuid.UUID) *errx.Error
+	// ClearSessions deletes the member's entire conversation history in the
+	// org, returning the number of conversations removed.
+	ClearSessions(ctx context.Context, orgID, userID uuid.UUID) (int, *errx.Error)
 
 	// Transcript returns the session's persisted history hydrated into the same
 	// turn/block shape the live stream renders, so a reopened tab looks identical
@@ -157,10 +165,35 @@ type service struct {
 	audit    AuditLogger
 	skills   SkillPreamble
 	voice    VoicePreamble
+	// orgs resolves the workspace's assistant_shared_history flag (same
+	// getter slice the voice preamble uses). Nil means always-private.
+	orgs OrgVoiceGetter
 }
 
-func NewService(repo repository.AgentRepository, registry *aitools.Registry, provider generation.Provider, creditSvc credits.CreditService, feature FeatureGate, audit AuditLogger, skills SkillPreamble, voice VoicePreamble) Service {
-	return &service{repo: repo, registry: registry, provider: provider, credits: creditSvc, feature: feature, audit: audit, skills: skills, voice: voice}
+func NewService(repo repository.AgentRepository, registry *aitools.Registry, provider generation.Provider, creditSvc credits.CreditService, feature FeatureGate, audit AuditLogger, skills SkillPreamble, voice VoicePreamble, orgs OrgVoiceGetter) Service {
+	return &service{repo: repo, registry: registry, provider: provider, credits: creditSvc, feature: feature, audit: audit, skills: skills, voice: voice, orgs: orgs}
+}
+
+// sharedHistory reports whether this workspace shares assistant conversations
+// across members.
+func (s *service) sharedHistory(ctx context.Context, orgID uuid.UUID) bool {
+	if s.orgs == nil {
+		return false
+	}
+	org, err := s.orgs.Get(ctx, orgID)
+	return err == nil && org != nil && org.AssistantSharedHistory
+}
+
+// sessionScope resolves which member's rows a session lives under: the
+// caller's own, or — when history is shared — the session owner's, so any
+// member can open, continue, or delete any conversation in the workspace.
+func (s *service) sessionScope(ctx context.Context, orgID, callerID, sessionID uuid.UUID) uuid.UUID {
+	if s.sharedHistory(ctx, orgID) {
+		if sess, err := s.repo.GetSessionOrg(ctx, orgID, sessionID); err == nil && sess != nil {
+			return sess.UserID
+		}
+	}
+	return callerID
 }
 
 func (s *service) CreateSession(ctx context.Context, orgID, userID uuid.UUID, page, resource string) (*models.AgentSession, *errx.Error) {
@@ -175,11 +208,38 @@ func (s *service) CreateSession(ctx context.Context, orgID, userID uuid.UUID, pa
 }
 
 func (s *service) ListSessions(ctx context.Context, orgID, userID uuid.UUID, limit int, beforeCreatedAt time.Time, beforeID uuid.UUID) ([]models.AgentSession, error) {
+	if s.sharedHistory(ctx, orgID) {
+		return s.repo.ListSessionsOrg(ctx, orgID, limit, beforeCreatedAt, beforeID)
+	}
 	return s.repo.ListSessions(ctx, orgID, userID, limit, beforeCreatedAt, beforeID)
 }
 
 func (s *service) GetSession(ctx context.Context, orgID, userID, sessionID uuid.UUID) (*models.AgentSession, error) {
-	return s.repo.GetSession(ctx, orgID, userID, sessionID)
+	return s.repo.GetSession(ctx, orgID, s.sessionScope(ctx, orgID, userID, sessionID), sessionID)
+}
+
+func (s *service) ClearSessions(ctx context.Context, orgID, userID uuid.UUID) (int, *errx.Error) {
+	n, err := s.repo.DeleteAllSessions(ctx, orgID, userID)
+	if err != nil {
+		return 0, errx.New(errx.Internal, "failed to clear history")
+	}
+	if n > 0 && s.audit != nil {
+		s.audit.LogAction(ctx, orgID, userID, models.AuditActionDelete, models.AuditEntityAISession, nil, "", "", nil, map[string]string{"kind": "clear_history", "count": strconv.Itoa(n)})
+	}
+	return n, nil
+}
+
+func (s *service) DeleteSession(ctx context.Context, orgID, userID, sessionID uuid.UUID) *errx.Error {
+	if err := s.repo.DeleteSession(ctx, orgID, s.sessionScope(ctx, orgID, userID, sessionID), sessionID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return errx.ErrNotFound
+		}
+		return errx.New(errx.Internal, "failed to delete session")
+	}
+	if s.audit != nil {
+		s.audit.LogAction(ctx, orgID, userID, models.AuditActionDelete, models.AuditEntityAISession, &sessionID, "", "", nil, nil)
+	}
+	return nil
 }
 
 // HydratedBlock is one rendered piece of a persisted turn, mirroring the
@@ -204,7 +264,7 @@ type HydratedTurn struct {
 }
 
 func (s *service) Transcript(ctx context.Context, orgID, userID, sessionID uuid.UUID) ([]HydratedTurn, *errx.Error) {
-	msgs, xerr := s.loadTranscript(ctx, orgID, userID, sessionID)
+	msgs, xerr := s.loadTranscript(ctx, orgID, s.sessionScope(ctx, orgID, userID, sessionID), sessionID)
 	if xerr != nil {
 		return nil, xerr
 	}
@@ -268,7 +328,8 @@ func (s *service) RunMessage(ctx context.Context, inv aitools.Invocation, sessio
 	if s.provider == nil {
 		return errx.New(errx.ServiceUnavailable, "the AI assistant is not configured")
 	}
-	sess, err := s.repo.GetSession(ctx, inv.OrgID, inv.UserID, sessionID)
+	owner := s.sessionScope(ctx, inv.OrgID, inv.UserID, sessionID)
+	sess, err := s.repo.GetSession(ctx, inv.OrgID, owner, sessionID)
 	if err != nil || sess == nil {
 		return errx.New(errx.NotFound, "session not found")
 	}
@@ -278,12 +339,12 @@ func (s *service) RunMessage(ctx context.Context, inv aitools.Invocation, sessio
 	}
 
 	// Load prior transcript, append the user message, persist it.
-	genMsgs, xerr := s.loadTranscript(ctx, inv.OrgID, inv.UserID, sessionID)
+	genMsgs, xerr := s.loadTranscript(ctx, inv.OrgID, owner, sessionID)
 	if xerr != nil {
 		return xerr
 	}
 	userMsg := generation.AgentMessage{Role: "user", Content: text}
-	if perr := s.persist(ctx, inv.OrgID, inv.UserID, sessionID, []generation.AgentMessage{userMsg}, 0); perr != nil {
+	if perr := s.persist(ctx, inv.OrgID, owner, sessionID, []generation.AgentMessage{userMsg}, 0); perr != nil {
 		return errx.New(errx.Internal, "failed to save message")
 	}
 	genMsgs = append(genMsgs, userMsg)
@@ -293,14 +354,15 @@ func (s *service) RunMessage(ctx context.Context, inv aitools.Invocation, sessio
 	sess.Context.Page = page
 	sess.Context.Resource = resource
 	sess.Context.Pending = nil
-	_ = s.repo.UpdateSessionContext(ctx, inv.OrgID, inv.UserID, sessionID, sess.Context)
-	_ = s.repo.UpdateSessionTitle(ctx, inv.OrgID, inv.UserID, sessionID, deriveTitle(text))
+	_ = s.repo.UpdateSessionContext(ctx, inv.OrgID, owner, sessionID, sess.Context)
+	_ = s.repo.UpdateSessionTitle(ctx, inv.OrgID, owner, sessionID, deriveTitle(text))
 
 	return s.runLoop(ctx, inv, sess, genMsgs, len(genMsgs), messageID, emit)
 }
 
 func (s *service) Resume(ctx context.Context, inv aitools.Invocation, sessionID uuid.UUID, decision string, emit func(StreamEvent)) *errx.Error {
-	sess, err := s.repo.GetSession(ctx, inv.OrgID, inv.UserID, sessionID)
+	owner := s.sessionScope(ctx, inv.OrgID, inv.UserID, sessionID)
+	sess, err := s.repo.GetSession(ctx, inv.OrgID, owner, sessionID)
 	if err != nil || sess == nil {
 		return errx.New(errx.NotFound, "session not found")
 	}
@@ -309,7 +371,7 @@ func (s *service) Resume(ctx context.Context, inv aitools.Invocation, sessionID 
 		return errx.New(errx.BadRequest, "no tool awaiting approval")
 	}
 
-	genMsgs, xerr := s.loadTranscript(ctx, inv.OrgID, inv.UserID, sessionID)
+	genMsgs, xerr := s.loadTranscript(ctx, inv.OrgID, owner, sessionID)
 	if xerr != nil {
 		return xerr
 	}
@@ -395,6 +457,8 @@ func (s *service) runLoop(ctx context.Context, inv aitools.Invocation, sess *mod
 			switch ev.Type {
 			case generation.EventText:
 				emit(StreamEvent{Type: evText, Text: ev.Text})
+			case generation.EventTextDelta:
+				emit(StreamEvent{Type: evTextDelta, Text: ev.Text})
 			case generation.EventToolStart:
 				emit(StreamEvent{Type: evTool, Tool: ev.ToolName, ArgsSummary: summarizeArgs(ev.ToolArgs)})
 			case generation.EventToolResult:
@@ -564,6 +628,7 @@ Rules:
 - Never claim you sent an email. You can draft replies, but the user always sends.
 - When you create a draft campaign or automation, tell the user it is a draft and give them the link to open it.
 - If a tool returns an error, explain it plainly and suggest a next step.
+- Ask before you guess: when the user asks you to write or draft something (an email, campaign copy, a reply) and the purpose, audience, or key detail is genuinely unclear from the conversation and the tools, ask ONE short clarifying question first instead of inventing a generic draft. Look things up with your tools before asking; only ask what you cannot find out yourself. Once you have the answer, write without further back-and-forth.
 - Format answers in simple Markdown: short paragraphs, "-" lists, **bold** for key names and numbers, and fenced code blocks only for actual code or raw data. No tables and no headings.`)
 	if strings.TrimSpace(voiceBlock) != "" {
 		b.WriteString("\n\n")

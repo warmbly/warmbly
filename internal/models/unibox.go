@@ -156,11 +156,19 @@ type MailSearchResult struct {
 }
 
 type MailSearchParams struct {
-	Sender  *string
-	Unseen  *bool
-	Subject *string
-	Since   *time.Time
-	Until   *time.Time
+	Sender *string
+	// Address matches either side of the exchange (from_addr OR to_addr),
+	// giving "every conversation with this person" regardless of direction.
+	// Substring match on the raw header entries, like Sender.
+	Address *string
+	// Direction narrows to messages the org sent ("sent") or received
+	// ("received"), resolved against the org's own mailbox addresses.
+	// nil = both directions.
+	Direction *string
+	Unseen    *bool
+	Subject   *string
+	Since     *time.Time
+	Until     *time.Time
 	// EmailAccountIDs restricts results to messages received by one of
 	// these mailboxes. Empty = no account filter. The frontend tag
 	// filter resolves client-side to the matching account IDs and

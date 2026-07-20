@@ -23,6 +23,7 @@ import { useCreditSettings } from "@/lib/api/hooks/app/subscription/useCreditSet
 import useCreditUsage from "@/lib/api/hooks/app/subscription/useCreditUsage";
 import type { CreditBalance, AISpendSettings } from "@/lib/api/models/app/subscription/Credits";
 import { usePermission } from "@/hooks/usePermission";
+import { DitherMeter } from "@/components/ui/dither";
 import { cn } from "@/lib/utils";
 
 export function CreditsMeter() {
@@ -124,7 +125,7 @@ export function CreditsMeter() {
                     >
                         <MeterPanel credits={c} settings={settings.data} low={low} empty={empty} />
                         <Link
-                            to="/app/settings/billing"
+                            to="/app/settings/billing/ai-credits"
                             onClick={close}
                             className="flex items-center gap-1 px-3 h-9 border-t border-slate-200 text-[11.5px] font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition-colors"
                         >
@@ -204,15 +205,12 @@ function MeterPanel({
                         </span>
                     </span>
                 </div>
-                <div className="mt-1.5 h-1 rounded-full bg-slate-100 overflow-hidden">
-                    <div
-                        className={cn(
-                            "h-full rounded-full transition-[width] duration-300",
-                            empty ? "bg-red-400" : low ? "bg-amber-400" : "bg-slate-700",
-                        )}
-                        style={{ width: `${Math.min(100, Math.max(0, planFraction * 100))}%` }}
-                    />
-                </div>
+                <DitherMeter
+                    frac={Math.min(1, Math.max(0, planFraction))}
+                    tone={empty ? "rose" : low ? "amber" : "slate"}
+                    height={4}
+                    className="mt-1.5"
+                />
                 <div className="mt-1 flex justify-between text-[10.5px] text-slate-400">
                     <span>{planUsed.toLocaleString()} used this cycle</span>
                     {reset && <span>{reset}</span>}
@@ -277,15 +275,12 @@ function SpendRow({ label, spent, limit }: { label: string; spent: number; limit
                 </span>
             </div>
             {fraction != null && (
-                <div className="mt-1 h-1 rounded-full bg-slate-100 overflow-hidden">
-                    <div
-                        className={cn(
-                            "h-full rounded-full",
-                            fraction >= 1 ? "bg-red-400" : fraction >= 0.8 ? "bg-amber-400" : "bg-slate-400",
-                        )}
-                        style={{ width: `${fraction * 100}%` }}
-                    />
-                </div>
+                <DitherMeter
+                    frac={Math.min(1, fraction)}
+                    tone={fraction >= 1 ? "rose" : fraction >= 0.8 ? "amber" : "slate"}
+                    height={4}
+                    className="mt-1"
+                />
             )}
         </div>
     );

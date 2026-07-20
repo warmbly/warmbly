@@ -247,6 +247,27 @@ final class MailboxesStore {
         exitSelection()
     }
 
+    /// PATCH /emails/tags: set-semantics add or remove across the selection.
+    /// The caller reloads the rows and exits selection on success.
+    func bulkTags(_ api: APIClient, add: [String], remove: [String]) async -> Bool {
+        let ids = Array(selectedIDs)
+        guard !ids.isEmpty else { return false }
+        do {
+            let _: MailboxBulkTagsResponse = try await api.patch(
+                "emails/tags",
+                body: MailboxBulkTagsBody(
+                    emailIDs: ids,
+                    addTags: add.isEmpty ? nil : add,
+                    removeTags: remove.isEmpty ? nil : remove
+                )
+            )
+            return true
+        } catch {
+            actionError = error.localizedDescription
+            return false
+        }
+    }
+
     func bulkRemove(_ api: APIClient) async {
         let ids = Array(selectedIDs)
         guard !ids.isEmpty else { return }

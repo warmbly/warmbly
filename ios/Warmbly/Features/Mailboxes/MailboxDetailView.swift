@@ -38,6 +38,7 @@ struct MailboxDetailView: View {
     @State private var replyTo = ""
     @State private var fieldsSeeded = false
     @State private var confirmDisconnect = false
+    @State private var showTagPicker = false
     @FocusState private var focusedField: SetupField?
 
     init(account: EmailAccount) {
@@ -91,6 +92,15 @@ struct MailboxDetailView: View {
             }
         } message: {
             Text("Campaigns stop sending from it and history stays.")
+        }
+        .sheet(isPresented: $showTagPicker) {
+            MailboxTagPickerSheet(
+                title: "Mailbox tags",
+                confirmLabel: "Save",
+                initialSelection: account.tags ?? []
+            ) { tagIDs in
+                await store.update(env.api, body: MailboxUpdateBody(tags: tagIDs)) { $0.tags = tagIDs }
+            }
         }
         .alert(
             "Something went wrong",
@@ -583,6 +593,7 @@ struct MailboxDetailView: View {
     private var setupTab: some View {
         List {
             senderProfileSection
+            tagsSection
             limitsSection
             authSection
             identitySection
@@ -659,6 +670,70 @@ struct MailboxDetailView: View {
             await store.update(env.api, body: MailboxUpdateBody(replyTo: trimmed)) { $0.replyTo = trimmed }
             replyTo = store.account.replyTo ?? ""
         }
+    }
+
+    // MARK: Tags (editable)
+
+    /// The account's tag ids resolved against the session registry; unknown
+    /// (deleted) ids are hidden.
+    private var accountTagGroups: [UserGroup] {
+        let known = env.session.user?.tags ?? []
+        return (account.tags ?? [])
+            .compactMap { id in known.first { $0.id == id } }
+            .sorted { ($0.position ?? 0) < ($1.position ?? 0) }
+    }
+
+    private var tagsSection: some View {
+        Section {
+            Button {
+                showTagPicker = true
+            } label: {
+                HStack(spacing: 12) {
+                    if accountTagGroups.isEmpty {
+                        Text("No tags")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 6) {
+                                ForEach(accountTagGroups) { tag in
+                                    tagChip(tag)
+                                }
+                            }
+                        }
+                    }
+                    Spacer(minLength: 8)
+                    if canManage {
+                        Text("Edit")
+                            .font(.subheadline)
+                            .foregroundStyle(WTheme.accent)
+                    }
+                }
+                .padding(.vertical, 4)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(!canManage)
+            Text("Campaigns can pick senders by tag.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        } header: {
+            EyebrowLabel("Tags")
+        }
+    }
+
+    private func tagChip(_ tag: UserGroup) -> some View {
+        let tint = Color(uniboxHex: tag.color) ?? WTheme.accent
+        return HStack(spacing: 5) {
+            Circle().fill(tint).frame(width: 7, height: 7)
+            Text(tag.name ?? "Tag")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(tint)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .background(tint.opacity(0.12), in: Capsule())
     }
 
     // MARK: Sending limits (editable)

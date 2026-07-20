@@ -71,6 +71,11 @@ type CreditRepository interface {
 	// starts (calendar day / ISO week / calendar month, all UTC).
 	SpentInWindows(ctx context.Context, orgID uuid.UUID, dayStart, weekStart, monthStart time.Time) (day, week, month int, err error)
 
+	// MemberSpentInWindows sums the credits a specific member has debited
+	// since each window start (attributed via actor_user_id; system work is
+	// not counted).
+	MemberSpentInWindows(ctx context.Context, orgID, userID uuid.UUID, dayStart, weekStart, monthStart time.Time) (day, week, month int, err error)
+
 	// UsageDaily returns per-UTC-day debit totals since `since`, oldest first.
 	UsageDaily(ctx context.Context, orgID uuid.UUID, since time.Time) ([]models.CreditUsagePoint, error)
 
@@ -353,6 +358,22 @@ func (r *creditRepository) SpentInWindows(ctx context.Context, orgID uuid.UUID, 
 		FROM credit_ledger_transactions
 		WHERE org_id = $1 AND amount < 0 AND created_at >= LEAST($2, $3, $4)
 	`, orgID, dayStart, weekStart, monthStart).Scan(&day, &week, &month)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	return day, week, month, nil
+}
+
+func (r *creditRepository) MemberSpentInWindows(ctx context.Context, orgID, userID uuid.UUID, dayStart, weekStart, monthStart time.Time) (int, int, int, error) {
+	var day, week, month int
+	err := r.DB.QueryRow(ctx, `
+		SELECT
+			COALESCE(SUM(-amount) FILTER (WHERE created_at >= $3), 0),
+			COALESCE(SUM(-amount) FILTER (WHERE created_at >= $4), 0),
+			COALESCE(SUM(-amount) FILTER (WHERE created_at >= $5), 0)
+		FROM credit_ledger_transactions
+		WHERE org_id = $1 AND actor_user_id = $2 AND amount < 0 AND created_at >= LEAST($3, $4, $5)
+	`, orgID, userID, dayStart, weekStart, monthStart).Scan(&day, &week, &month)
 	if err != nil {
 		return 0, 0, 0, err
 	}

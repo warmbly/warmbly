@@ -10,7 +10,9 @@ import { useCampaign } from "@/hooks/context/campaign";
 import useCampaignAnalytics from "@/lib/api/hooks/app/analytics/useCampaignAnalytics";
 import useCampaignDailyStats from "@/lib/api/hooks/app/analytics/useCampaignDailyStats";
 import { SectionBar, Stat, StatStrip } from "@/components/layout/Page";
-import { DailyBars, type ChartPoint } from "@/components/ui/charts";
+import { MultiTrend, type TrendSeries } from "@/components/ui/charts";
+import { TONE_DOT } from "@/components/ui/tones";
+import type { DitherTone } from "@/components/ui/dither";
 import AnalyticsShareButton from "@/components/app/analytics/AnalyticsShareButton";
 import TaskPreview from "@/components/app/campaigns/TaskPreview";
 import AnimatedNumber from "@/components/ui/AnimatedNumber";
@@ -19,11 +21,11 @@ const pctFmt = (v: number) => `${v.toFixed(1)}%`;
 
 type Metric = "sent" | "opens" | "clicks" | "replies";
 
-const METRICS: { key: Metric; label: string; bar: string }[] = [
-    { key: "sent", label: "Sent", bar: "bg-sky-500" },
-    { key: "opens", label: "Opens", bar: "bg-emerald-500" },
-    { key: "clicks", label: "Clicks", bar: "bg-violet-500" },
-    { key: "replies", label: "Replies", bar: "bg-amber-500" },
+const METRICS: { key: Metric; label: string; tone: DitherTone }[] = [
+    { key: "sent", label: "Sent", tone: "sky" },
+    { key: "opens", label: "Opens", tone: "emerald" },
+    { key: "clicks", label: "Clicks", tone: "violet" },
+    { key: "replies", label: "Replies", tone: "amber" },
 ];
 
 function pct(v: number | undefined): string {
@@ -40,16 +42,30 @@ export default function CampaignOverview() {
     const analytics = useCampaignAnalytics(id);
     const daily = useCampaignDailyStats(id);
 
-    const [metric, setMetric] = useState<Metric>("sent");
+    // Legend toggles: every metric charts together; hidden ones drop out.
+    const [hiddenMetrics, setHiddenMetrics] = useState<Metric[]>([]);
+    const toggleMetric = (k: Metric) =>
+        setHiddenMetrics((cur) => {
+            if (cur.includes(k)) return cur.filter((x) => x !== k);
+            // Keep at least one series on the graph.
+            if (cur.length >= METRICS.length - 1) return cur;
+            return [...cur, k];
+        });
 
     const summary = analytics.data?.summary;
     const sequences = analytics.data?.steps ?? [];
     const dailyStats = daily.data ?? [];
 
-    const series: ChartPoint[] = useMemo(
-        () => (daily.data ?? []).map((d) => ({ label: d.date, value: d[metric] ?? 0 })),
-        [daily.data, metric],
-    );
+    const trend = useMemo(() => {
+        const rows = daily.data ?? [];
+        const series: TrendSeries[] = METRICS.filter((m) => !hiddenMetrics.includes(m.key)).map((m) => ({
+            key: m.key,
+            label: m.label,
+            tone: m.tone,
+            values: rows.map((d) => d[m.key] ?? 0),
+        }));
+        return { labels: rows.map((d) => d.date), series };
+    }, [daily.data, hiddenMetrics]);
 
     const loading = analytics.isPending || daily.isPending;
     const hasSends = (summary?.emails_sent ?? 0) > 0;
@@ -147,31 +163,35 @@ export default function CampaignOverview() {
                     ) : (
                         <div className="rounded-md border border-slate-200 overflow-hidden bg-white">
                             <SectionBar label="Daily performance">
-                                <div className="inline-flex items-center gap-0.5 rounded-md border border-slate-200 bg-white p-0.5">
-                                    {METRICS.map((m) => (
-                                        <button
-                                            key={m.key}
-                                            type="button"
-                                            onClick={() => setMetric(m.key)}
-                                            className={`h-6 px-2 rounded text-[11px] font-medium transition-colors ${
-                                                metric === m.key
-                                                    ? "bg-slate-900 text-white"
-                                                    : "text-slate-500 hover:text-slate-900"
-                                            }`}
-                                        >
-                                            {m.label}
-                                        </button>
-                                    ))}
+                                <div className="inline-flex items-center gap-0.5 rounded-md bg-slate-100 p-0.5">
+                                    {METRICS.map((m) => {
+                                        const visible = !hiddenMetrics.includes(m.key);
+                                        return (
+                                            <button
+                                                key={m.key}
+                                                type="button"
+                                                onClick={() => toggleMetric(m.key)}
+                                                className={`h-6 px-2 rounded text-[11px] font-medium transition-colors inline-flex items-center gap-1.5 ${
+                                                    visible
+                                                        ? "bg-white text-slate-900 shadow-sm"
+                                                        : "text-slate-400 hover:text-slate-600"
+                                                }`}
+                                            >
+                                                <span className={`size-1.5 rounded-full ${visible ? TONE_DOT[m.tone] : "bg-slate-300"}`} />
+                                                {m.label}
+                                            </button>
+                                        );
+                                    })}
                                 </div>
                             </SectionBar>
                             <div className="px-5 py-4">
                                 {loading ? (
                                     <div className="h-52 rounded-md bg-slate-50 animate-pulse" />
                                 ) : (
-                                    <DailyBars
-                                        points={series}
+                                    <MultiTrend
+                                        labels={trend.labels}
+                                        series={trend.series}
                                         height={220}
-                                        barClass={METRICS.find((m) => m.key === metric)?.bar}
                                         emptyLabel={
                                             hasSends
                                                 ? "No activity in this window yet"

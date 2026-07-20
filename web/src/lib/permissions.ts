@@ -23,6 +23,7 @@ export const PERMISSION_BITS = {
     TRANSFER_OWNERSHIP: 1 << 12,
     MANAGE_API_KEYS:    1 << 13,
     USE_INTEGRATIONS:   1 << 14,
+    USE_AI:             1 << 15,
 } as const;
 
 export const ALL_PERMISSIONS = 0xffff;
@@ -46,6 +47,7 @@ export const PERMISSION_CATALOG: PermissionDef[] = [
     { key: "MANAGE_SEQUENCES",   bit: PERMISSION_BITS.MANAGE_SEQUENCES,   label: "Manage steps",  description: "Edit step content + spacing inside a campaign.",          category: "data" },
     { key: "VIEW_ANALYTICS",     bit: PERMISSION_BITS.VIEW_ANALYTICS,     label: "View analytics",    description: "See deliverability + engagement reports.",                category: "data" },
     { key: "USE_INTEGRATIONS",   bit: PERMISSION_BITS.USE_INTEGRATIONS,   label: "Use integrations",  description: "Push contacts and deals to connected CRMs and tools.",    category: "data" },
+    { key: "USE_AI",             bit: PERMISSION_BITS.USE_AI,             label: "Use AI",            description: "Use the AI assistant and AI drafting (spends workspace credits).", category: "data" },
     // People
     { key: "MANAGE_TEAM",        bit: PERMISSION_BITS.MANAGE_TEAM,        label: "Manage team",       description: "Invite, remove and re-role members.",                     category: "people" },
     { key: "TRANSFER_OWNERSHIP", bit: PERMISSION_BITS.TRANSFER_OWNERSHIP, label: "Transfer ownership", description: "Hand workspace ownership to another member.",            category: "people" },

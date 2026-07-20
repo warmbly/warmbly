@@ -1,6 +1,8 @@
 import { useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAppStore } from '@/stores'
+import { useComposeStore } from '@/hooks/useComposeStore'
+import { checkPermission } from '@/hooks/usePermission'
 
 export interface ShortcutDefinition {
   keys: string[]
@@ -42,6 +44,7 @@ export function useKeyboardShortcuts() {
       // (minimized), it restores instead of closing.
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'i') {
         event.preventDefault()
+        if (!checkPermission('USE_AI')) return
         const s = useAppStore.getState()
         if (s.aiAssistantOpen && s.agentMinimized) {
           s.setAgentMinimized(false)
@@ -88,6 +91,13 @@ export function useKeyboardShortcuts() {
       if (key === 'b' && !event.ctrlKey && !event.metaKey) {
         event.preventDefault()
         toggleSidebar()
+        return
+      }
+
+      // Handle n for a new email (opens the global compose window)
+      if (key === 'n' && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+        event.preventDefault()
+        useComposeStore.getState().openCompose()
         return
       }
 
@@ -184,7 +194,7 @@ export const shortcutDefinitions = {
   ],
   actions: [
     { keys: ['/'], description: 'Focus search' },
-    { keys: ['n'], description: 'New item' },
+    { keys: ['n'], description: 'Compose a new email' },
     { keys: ['e'], description: 'Edit selected item' },
     { keys: ['b'], description: 'Toggle sidebar' },
     { keys: ['?'], description: 'Show shortcuts' },
@@ -198,6 +208,7 @@ export const shortcutDefinitions = {
     { keys: ['Alt', 'n'], description: 'New chat' },
     { keys: ['Alt', 'w'], description: 'Close tab' },
     { keys: ['Alt', 'm'], description: 'Minimize to dock' },
+    { keys: ['Alt', 'p'], description: 'Pop out / dock the panel' },
     { keys: ['Esc'], description: 'Close the panel' },
   ],
 }

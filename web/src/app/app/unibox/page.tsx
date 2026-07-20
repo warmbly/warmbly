@@ -152,15 +152,23 @@ export default function UniboxPage() {
   );
 
   // ── Scope → server search params ───────────────────────────────
-  // Mailboxes/tags come from the same overview payload so we don't
-  // race a separate /emails fetch when resolving a tag.
-  const [params, setParams] = React.useState<UniboxSearchParams>({
-    sortBy: "newest",
-  });
-  const overviewData = overview.data;
-  React.useEffect(() => {
-    setParams((prev) => {
-      const next: UniboxSearchParams = { sortBy: prev.sortBy ?? "newest" };
+  // Derived synchronously (initial state + render-phase reset), NOT in
+  // an effect: an effect runs after paint, so on a reload of a scoped
+  // URL the list would fire and render the default "all" query first,
+  // then flash to the scoped one.
+  const storeEmails = useAppStore((s) => s.emails);
+  const tagAccountIds = React.useMemo(
+    () =>
+      scope.kind === "tag"
+        ? storeEmails
+            .filter((m) => (m.tags ?? []).includes(scope.tagId))
+            .map((m) => m.id)
+        : null,
+    [scope, storeEmails],
+  );
+  const paramsForScope = React.useCallback(
+    (sortBy: UniboxSearchParams["sortBy"]): UniboxSearchParams => {
+      const next: UniboxSearchParams = { sortBy: sortBy ?? "newest" };
       switch (scope.kind) {
         case "unread":
           next.unseen = true;
@@ -183,20 +191,13 @@ export default function UniboxPage() {
         case "mailbox":
           next.accountIds = [scope.mailboxId];
           break;
-        case "tag": {
-          // Tag-scoped account resolution: overview already lists
-          // the user's mailboxes, but tag→mailbox membership is
-          // not in the overview payload. We fall back to the
-          // dataSlice's emails, which the existing user-profile
-          // bootstrap populates.
-          const ids = useAppStore
-            .getState()
-            .emails.filter((m) => (m.tags ?? []).includes(scope.tagId))
-            .map((m) => m.id);
-          next.accountIds = ids;
+        case "tag":
+          // Tag→mailbox membership resolves through the store's
+          // mailbox directory (populated by DataSyncProvider); the
+          // server only knows accountIds.
+          next.accountIds = tagAccountIds ?? [];
           next.tagId = scope.tagId;
           break;
-        }
         case "category":
           // Conversation-label scope resolves to a server-side
           // category filter (category_ids); no client resolution
@@ -208,10 +209,25 @@ export default function UniboxPage() {
           break;
       }
       return next;
-    });
-  }, [scope, overviewData]);
+    },
+    [scope, tagAccountIds],
+  );
+  const [params, setParams] = React.useState<UniboxSearchParams>(() =>
+    paramsForScope("newest"),
+  );
+  // Reset filters when the scope changes (or a tag scope re-resolves as
+  // the mailbox directory loads), keeping only the sort. Setting state
+  // during render re-renders before commit, so the stale params never
+  // reach the query.
+  const tagIdsKey = tagAccountIds?.join(",") ?? "";
+  const [prevReset, setPrevReset] = React.useState({ scope, tagIdsKey });
+  if (prevReset.scope !== scope || prevReset.tagIdsKey !== tagIdsKey) {
+    setPrevReset({ scope, tagIdsKey });
+    setParams((prev) => paramsForScope(prev.sortBy));
+  }
 
   // ── Scope label for header chip ────────────────────────────────
+  const overviewData = overview.data;
   const scopeLabel = React.useMemo(() => {
     switch (scope.kind) {
       case "unread":

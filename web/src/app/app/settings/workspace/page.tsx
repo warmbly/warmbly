@@ -69,13 +69,19 @@ export default function WorkspaceSettingsPage() {
     // Inbox agent opt-in (paid). When on, an inbound human reply gets an
     // AI-drafted suggested reply awaiting review in the unibox.
     const [inboxAgent, setInboxAgent] = React.useState(false);
+    const [sharedHistory, setSharedHistory] = React.useState(false);
     React.useEffect(() => {
         if (orgQuery.data) setInboxAgent(orgQuery.data.inbox_agent_enabled ?? false);
+        if (orgQuery.data) setSharedHistory(orgQuery.data.assistant_shared_history ?? false);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [orgQuery.data?.inbox_agent_enabled]);
+    }, [orgQuery.data?.inbox_agent_enabled, orgQuery.data?.assistant_shared_history]);
     const onToggleInboxAgent = (next: boolean) => {
         setInboxAgent(next);
         updateOrg.mutate({ inbox_agent_enabled: next });
+    };
+    const onToggleSharedHistory = (next: boolean) => {
+        setSharedHistory(next);
+        updateOrg.mutate({ assistant_shared_history: next });
     };
 
     // Auto-save the workspace name ~700ms after typing stops. An empty name is
@@ -259,6 +265,19 @@ export default function WorkspaceSettingsPage() {
                     description="When someone replies, the agent writes a suggested reply and attaches it to the thread under Agent drafts. You approve-and-send, edit, or discard it."
                     checked={inboxAgent}
                     onChange={onToggleInboxAgent}
+                    disabled={!canManageSettings}
+                />
+            </Section>
+
+            <Section
+                eyebrow="AI assistant"
+                description="How the assistant's conversation history works across the team."
+            >
+                <ToggleRow
+                    label="Shared history"
+                    description="Every member with the Use AI permission sees and can continue every assistant conversation in this workspace, instead of only their own. Turning it on exposes existing conversations to the whole team."
+                    checked={sharedHistory}
+                    onChange={onToggleSharedHistory}
                     disabled={!canManageSettings}
                 />
             </Section>

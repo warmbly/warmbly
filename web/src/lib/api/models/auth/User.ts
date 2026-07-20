@@ -13,6 +13,10 @@ export default interface User {
     referral_source: string;
     onboarding_completed_at: Date | null;
 
+    // Undo-send window in seconds (5..120). A stale server cache may omit
+    // it briefly, so readers treat 0/undefined as the default 30.
+    undo_send_seconds?: number;
+
     tags: Tag[];
     categories: Category[];
     folders: Folder[];

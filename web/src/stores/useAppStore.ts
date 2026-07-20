@@ -42,9 +42,11 @@ export const useAppStore = create<AppStore>()(
           // Only persist UI preferences
           theme: state.theme,
           sidebarCollapsed: state.sidebarCollapsed,
-          // Assistant panel layout (edge + width)
+          // Assistant panel layout (edge + width + floating window geometry)
           agentSide: state.agentSide,
           agentWidth: state.agentWidth,
+          agentFloating: state.agentFloating,
+          agentFloatRect: state.agentFloatRect,
           // Persist current organization selection
           currentOrganization: state.currentOrganization,
         }),

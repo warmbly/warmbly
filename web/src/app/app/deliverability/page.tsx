@@ -8,7 +8,9 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { AlertTriangleIcon, ArrowUpRightIcon, CheckIcon, RefreshCcwIcon, SlidersHorizontalIcon } from "lucide-react";
 import { EmptyBlock, Page, PageBody, PageTopbar, SectionBar, Stat, StatStrip } from "@/components/layout/Page";
-import { DailyBars, type ChartPoint } from "@/components/ui/charts";
+import { MultiTrend, type TrendSeries } from "@/components/ui/charts";
+import { TONE_DOT } from "@/components/ui/tones";
+import { DitherStack, type DitherTone } from "@/components/ui/dither";
 import {
     PopoverMenu,
     PopoverMenuContent,
@@ -30,12 +32,12 @@ const RANGE_LABEL: Record<Range, string> = {
     "90d": "Last 90 days",
 };
 
-const METRICS: { key: Metric; label: string; bar: string }[] = [
-    { key: "bounces", label: "Bounces", bar: "bg-rose-500" },
-    { key: "complaints", label: "Complaints", bar: "bg-amber-500" },
-    { key: "opens", label: "Opens", bar: "bg-emerald-500" },
-    { key: "replies", label: "Replies", bar: "bg-sky-500" },
-    { key: "sent", label: "Sent", bar: "bg-slate-400" },
+const METRICS: { key: Metric; label: string; tone: DitherTone }[] = [
+    { key: "bounces", label: "Bounces", tone: "rose" },
+    { key: "complaints", label: "Complaints", tone: "amber" },
+    { key: "opens", label: "Opens", tone: "emerald" },
+    { key: "replies", label: "Replies", tone: "sky" },
+    { key: "sent", label: "Sent", tone: "slate" },
 ];
 
 const SECTIONS: { key: SectionKey; label: string }[] = [
@@ -117,7 +119,16 @@ function BandChip({ band }: { band: DeliverabilityBand }) {
 
 export default function DeliverabilityPage() {
     const [view, setView] = useState<ViewPrefs>(loadView);
-    const [metric, setMetric] = useState<Metric>("bounces");
+    // Legend toggles: every metric charts together; "sent" starts hidden so
+    // it doesn't dwarf the failure signals this page exists to surface.
+    const [hiddenMetrics, setHiddenMetrics] = useState<Metric[]>(["sent"]);
+    const toggleMetric = (k: Metric) =>
+        setHiddenMetrics((cur) => {
+            if (cur.includes(k)) return cur.filter((x) => x !== k);
+            // Keep at least one series on the graph.
+            if (cur.length >= METRICS.length - 1) return cur;
+            return [...cur, k];
+        });
     const q = useDeliverability(view.range);
     const d = q.data;
 
@@ -133,10 +144,16 @@ export default function DeliverabilityPage() {
     const toggleSection = (k: SectionKey) =>
         updateView({ ...view, hidden: show(k) ? [...view.hidden, k] : view.hidden.filter((h) => h !== k) });
 
-    const series: ChartPoint[] = useMemo(
-        () => (d?.timeseries ?? []).map((p) => ({ label: p.date, value: p[metric] ?? 0 })),
-        [d?.timeseries, metric],
-    );
+    const trend = useMemo(() => {
+        const rows = d?.timeseries ?? [];
+        const series: TrendSeries[] = METRICS.filter((m) => !hiddenMetrics.includes(m.key)).map((m) => ({
+            key: m.key,
+            label: m.label,
+            tone: m.tone,
+            values: rows.map((p) => p[m.key] ?? 0),
+        }));
+        return { labels: rows.map((p) => p.date), series };
+    }, [d?.timeseries, hiddenMetrics]);
 
     // The score is meaningless before any signal exists; show a dash instead
     // of a perfect 100 on an empty window.
@@ -192,27 +209,31 @@ export default function DeliverabilityPage() {
                                 <section className="flex flex-col min-h-0 lg:border-r lg:border-slate-200">
                                     <SectionBar label="Over time">
                                         <div className="inline-flex items-center gap-0.5 rounded-md bg-slate-100 p-0.5 max-w-full overflow-x-auto">
-                                            {METRICS.map((m) => (
-                                                <button
-                                                    key={m.key}
-                                                    onClick={() => setMetric(m.key)}
-                                                    className={`h-6 px-2 rounded text-[11px] font-medium transition-colors ${
-                                                        metric === m.key ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-900"
-                                                    }`}
-                                                >
-                                                    {m.label}
-                                                </button>
-                                            ))}
+                                            {METRICS.map((m) => {
+                                                const visible = !hiddenMetrics.includes(m.key);
+                                                return (
+                                                    <button
+                                                        key={m.key}
+                                                        onClick={() => toggleMetric(m.key)}
+                                                        className={`h-6 px-2 rounded text-[11px] font-medium transition-colors inline-flex items-center gap-1.5 ${
+                                                            visible ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-600"
+                                                        }`}
+                                                    >
+                                                        <span className={`size-1.5 rounded-full ${visible ? TONE_DOT[m.tone] : "bg-slate-300"}`} />
+                                                        {m.label}
+                                                    </button>
+                                                );
+                                            })}
                                         </div>
                                     </SectionBar>
                                     <div className="flex-1 px-5 py-4">
                                         {q.isPending ? (
                                             <div className="h-52 rounded-md bg-slate-50 animate-pulse" />
                                         ) : (
-                                            <DailyBars
-                                                points={series}
+                                            <MultiTrend
+                                                labels={trend.labels}
+                                                series={trend.series}
                                                 height={220}
-                                                barClass={METRICS.find((m) => m.key === metric)?.bar}
                                                 emptyLabel="No activity in this window yet"
                                             />
                                         )}
@@ -371,18 +392,19 @@ export default function DeliverabilityPage() {
 // bar plus the two rates that matter.
 function ProviderRow({ p }: { p: ProviderPlacement }) {
     const segments = [
-        { n: p.inbox, cls: "bg-emerald-500", label: "Inbox" },
-        { n: p.promotions, cls: "bg-violet-400", label: "Promotions" },
-        { n: p.spam, cls: "bg-rose-500", label: "Spam" },
-        { n: p.other, cls: "bg-slate-300", label: "Other" },
+        { n: p.inbox, tone: "emerald" as DitherTone, label: "Inbox" },
+        { n: p.promotions, tone: "violet" as DitherTone, label: "Promotions" },
+        { n: p.spam, tone: "rose" as DitherTone, label: "Spam" },
+        { n: p.other, tone: "slate" as DitherTone, label: "Other" },
     ].filter((s) => s.n > 0);
     return (
         <div className="h-11 px-5 flex items-center gap-3">
             <span className="text-[12.5px] font-medium text-slate-900 w-28 shrink-0 truncate">{providerLabel(p.provider)}</span>
-            <div className="flex h-1.5 flex-1 min-w-16 rounded-full overflow-hidden bg-slate-100" title={segments.map((s) => `${s.label} ${s.n}`).join(" · ")}>
-                {segments.map((s) => (
-                    <span key={s.label} className={s.cls} style={{ width: `${(s.n / p.samples) * 100}%` }} />
-                ))}
+            <div className="flex-1 min-w-16" title={segments.map((s) => `${s.label} ${s.n}`).join(" · ")}>
+                <DitherStack
+                    segments={segments.map((s) => ({ frac: s.n / Math.max(1, p.samples), tone: s.tone }))}
+                    height={6}
+                />
             </div>
             <span className="flex items-center gap-2 md:gap-4 font-mono text-[11px] tabular-nums shrink-0">
                 <span title="Inbox rate" className="text-emerald-600">{pct(p.inbox_rate)} inbox</span>

@@ -88,9 +88,39 @@ Set your voice profile under **Settings, Workspace**: a short note on what you s
 
 Want Warmbly to draft the reply for you the moment someone replies, without pressing **Draft reply** each time? Turn on the [inbox agent](/guides/inbox-agent/): on every inbound reply it writes a suggested reply and holds it under **Agent drafts** for you to approve, edit, or discard. It still never sends on its own.
 
+## Composing a new email
+
+The **Compose** button in the Unibox header (or the **n** key anywhere in the dashboard, or the **Email** action on a contact) opens a docked compose window in the corner, so you can keep browsing the inbox while you write. The contact drawer variant arrives with the recipient prefilled.
+
+The **To** field searches your contacts as you type (name, email, company) and also accepts any raw address. If the recipient is on your workspace suppression list (bounced, complained, or unsubscribed), the composer tells you before you write a word and blocks the send.
+
+The **From** menu defaults to **Auto**, which picks the best mailbox for the recipient (existing conversation first, then remaining daily budget and domain auth). The menu is searchable and can be filtered by mailbox tag; with a tag selected, the Auto row becomes **Auto in that tag** and picks the best mailbox from that group only, so a workspace with mailboxes tagged per brand or team can auto-pick within the right one. Through the API this is the optional `from_tag_id` field on `POST /unibox/compose`.
+
+### Auto mailbox selection
+
+**From** defaults to **Auto**: Warmbly scores every active mailbox for the recipient and picks the best one, preferring the mailbox that already has a conversation with them (contacts should keep hearing from the same address), then the one with the most daily sending budget left, with domain authentication health as a tiebreaker. The picker shows the resolved pick and the reason before you send, and opening it reveals every mailbox with its budget bar (sent today against its daily limit), a history badge for past messages with that recipient, and an auth-health dot, so overriding the pick is an informed choice. The send confirmation reports which mailbox was used.
+
+### Drafts
+
+Everything you type autosaves to **Drafts** after a moment of quiet (the header shows Saving and Saved as it happens). Closing the window keeps the draft; sending or emptying it out removes it. Your drafts live under the Compose button in the rail: click one to pick up where you left off, on any device, even mid-draft on another one. Drafts are personal, not shared with teammates.
+
+### History with a recipient
+
+Once a recipient is set, the **History** button slides out a panel with every conversation you have had with them, without leaving the draft. Tabs split the full back-and-forth from just the mail you sent them, and a search box narrows by subject. Rows open the real thread in the Unibox, and the panel notes which mailbox you usually email them from.
+
+The same AI experience as replies lives in the compose body: **⌘J** at the cursor to write inline, select text to **Edit with AI**, and a **Suggest** action next to an empty subject line writes one from the body. Sends can also be scheduled with the same presets as replies.
+
+**Draft this email with AI** is grounded the same way reply drafts are: the recipient's contact record (details and campaign membership), your full correspondence history with that address, and your workspace voice profile all feed the draft, and the review card shows exactly what it was grounded in. When the AI genuinely cannot tell what the email is for, it asks you one short question instead of inventing a pitch; answer inline and it writes the email. If no voice profile is set, the composer points you to **Settings, Workspace** so drafts know your product instead of sounding generic.
+
 ### Scheduling a send
 
 Instead of sending immediately, you can queue a reply to go out later. Scheduled sends appear inline at the bottom of the thread (with a dashed card and the time they will fire) and also in the **Scheduled** view in the rail. You can cancel a scheduled send any time before it goes out. There is a cap on how many sends you can have queued at once; the rail shows a small usage meter as you approach it.
+
+### Undo send
+
+Emails you send right away do not actually leave for a short window, so you can still take them back. After you hit **Send** on a compose or a reply, a countdown appears in the dashboard header (and as a banner in the mobile app) showing when the email will go out, with a **Cancel** action next to it. Cancelling returns the email to the composer with everything you wrote intact.
+
+The window is 30 seconds by default and adjustable between 5 and 120 seconds under **Settings, Profile**. It applies per user, to your own sends. Scheduled and smart-queued sends are not affected; those already wait, and you cancel them from the **Scheduled** view as before. This also applies to sends made through the API with `send_mode` set to `instant`: the response's `scheduled_at` reflects the delay, and `DELETE /unibox/scheduled/:task_id` cancels within the window.
 
 ### Snoozing
 

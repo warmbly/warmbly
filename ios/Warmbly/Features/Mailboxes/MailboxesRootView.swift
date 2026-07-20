@@ -8,6 +8,12 @@ import SwiftUI
 /// Owns its NavigationStack; dismissal goes through `onClose` (the
 /// environment DismissAction is unreliable in this app's cover contexts).
 struct MailboxesRootView: View {
+    /// Which bulk tag sheet is open: add applies add_tags, remove remove_tags.
+    private enum BulkTagMode: String, Identifiable {
+        case add, remove
+        var id: String { rawValue }
+    }
+
     var onClose: () -> Void = {}
 
     @Environment(AppEnvironment.self) private var env
@@ -19,6 +25,8 @@ struct MailboxesRootView: View {
     @State private var showConnect = false
     @State private var pendingRemove: EmailAccount?
     @State private var confirmBulkRemove = false
+    @State private var bulkTagMode: BulkTagMode?
+    @State private var tagApplyPulse = 0
     @FocusState private var searchFocused: Bool
 
     private static let sidebarWidth: CGFloat = 300
@@ -84,10 +92,20 @@ struct MailboxesRootView: View {
         .sensoryFeedback(.selection, trigger: scope)
         .sensoryFeedback(.impact(weight: .light), trigger: sidebarOpen)
         .sensoryFeedback(.impact(weight: .medium), trigger: store.isSelecting)
+        .sensoryFeedback(.impact(weight: .light), trigger: tagApplyPulse)
         .fullScreenCover(isPresented: $showConnect) {
             MailboxConnectFlow(onClose: { showConnect = false }, onConnected: { account in
                 store.insert(account)
             })
+        }
+        .sheet(item: $bulkTagMode) { mode in
+            MailboxTagPickerSheet(
+                title: mode == .add ? "Add tags" : "Remove tags",
+                confirmLabel: mode == .add ? "Add" : "Remove",
+                requiresSelection: true
+            ) { tagIDs in
+                await applyBulkTags(mode, tagIDs: tagIDs)
+            }
         }
         .confirmationDialog(
             "Remove \(pendingRemove?.email ?? "this mailbox")?",
@@ -146,6 +164,8 @@ struct MailboxesRootView: View {
                     count: store.selectedCount,
                     onStart: { Task { await store.bulkWarmup(env.api, action: "start") } },
                     onPause: { Task { await store.bulkWarmup(env.api, action: "pause") } },
+                    onAddTags: { bulkTagMode = .add },
+                    onRemoveTags: { bulkTagMode = .remove },
                     onRemove: { confirmBulkRemove = true },
                     onClear: { store.exitSelection() }
                 )
@@ -331,6 +351,12 @@ struct MailboxesRootView: View {
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
                     .contentTransition(.numericText())
+            }
+            if canManage, store.hasLoaded, !store.isSelecting, !visibleAccounts.isEmpty {
+                Button("Select") { store.enterSelection() }
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(WTheme.accent)
+                    .buttonStyle(.plain)
             }
         }
         .padding(.horizontal, 20)
@@ -581,6 +607,23 @@ struct MailboxesRootView: View {
         }
     }
 
+    // MARK: Bulk tags
+
+    /// Bulk add or remove one tag set across the selection, then reload the
+    /// rows and leave select mode with a light tap.
+    private func applyBulkTags(_ mode: BulkTagMode, tagIDs: [String]) async {
+        guard !tagIDs.isEmpty else { return }
+        let ok = await store.bulkTags(
+            env.api,
+            add: mode == .add ? tagIDs : [],
+            remove: mode == .remove ? tagIDs : []
+        )
+        guard ok else { return }
+        await store.load(env.api, includeStatuses: canViewAnalytics)
+        tagApplyPulse += 1
+        store.exitSelection()
+    }
+
     // MARK: Search + initial load
 
     private func runSearch() async {
@@ -678,11 +721,13 @@ struct MailboxRowView: View {
 // MARK: - Selection bar
 
 /// Floating bottom-center bar shown while mailboxes are multi-selected:
-/// count plus bulk warmup start/pause and remove.
+/// count plus bulk warmup start/pause, tag add/remove, and remove.
 struct MailboxSelectionBar: View {
     let count: Int
     let onStart: () -> Void
     let onPause: () -> Void
+    let onAddTags: () -> Void
+    let onRemoveTags: () -> Void
     let onRemove: () -> Void
     let onClear: () -> Void
 
@@ -717,6 +762,24 @@ struct MailboxSelectionBar: View {
             .controlSize(.small)
             .disabled(count == 0)
             .accessibilityLabel("Pause warmup for \(count) mailboxes")
+
+            // One compact entry for both tag actions; the bar is already full.
+            Menu {
+                Button(action: onAddTags) {
+                    Label("Add tags", systemImage: "tag")
+                }
+                Button(action: onRemoveTags) {
+                    Label("Remove tags", systemImage: "tag.slash")
+                }
+            } label: {
+                Image(systemName: "tag")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(WTheme.accent)
+                    .frame(width: 30, height: 30)
+                    .contentShape(Rectangle())
+            }
+            .disabled(count == 0)
+            .accessibilityLabel("Tag \(count) mailboxes")
 
             Button(role: .destructive, action: onRemove) {
                 Image(systemName: "trash")

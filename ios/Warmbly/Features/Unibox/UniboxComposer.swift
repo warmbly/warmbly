@@ -10,13 +10,20 @@ struct UniboxComposer: View {
     let context: UniboxComposeContext
     /// Opens the AI writer immediately (the thread's sparkle shortcut).
     var openAIOnAppear: Bool = false
-    /// Called after a successful send so the thread can refresh + drop presence.
-    var onSent: (UniboxSendResponse) -> Void
+    /// Fields restored from an undone instant send; overrides the context's
+    /// initial recipients/subject and pre-fills the body.
+    var restore: UniboxReplySnapshot?
+    /// Called after a successful send with the snapshot of what went out, so
+    /// the thread can refresh and offer undo-with-restore.
+    var onSent: (UniboxSendResponse, UniboxReplySnapshot) -> Void
 
     @State private var store = UniboxComposerStore()
-    @State private var to: String
-    @State private var cc: String
-    @State private var bcc = ""
+    @State private var to: [String]
+    @State private var toText = ""
+    @State private var cc: [String]
+    @State private var ccText = ""
+    @State private var bcc: [String] = []
+    @State private var bccText = ""
     @State private var subject: String
     @State private var messageBody: String
     @State private var showCcBcc: Bool
@@ -72,19 +79,26 @@ struct UniboxComposer: View {
     /// Template names inline in the dropdown; the rest through the browser.
     @State private var templates = TemplatesStore()
 
-    init(context: UniboxComposeContext, openAIOnAppear: Bool = false, onSent: @escaping (UniboxSendResponse) -> Void) {
+    init(
+        context: UniboxComposeContext,
+        openAIOnAppear: Bool = false,
+        restore: UniboxReplySnapshot? = nil,
+        onSent: @escaping (UniboxSendResponse, UniboxReplySnapshot) -> Void
+    ) {
         self.context = context
         self.openAIOnAppear = openAIOnAppear
+        self.restore = restore
         self.onSent = onSent
-        _to = State(initialValue: context.to.joined(separator: ", "))
-        _cc = State(initialValue: context.cc.joined(separator: ", "))
-        _subject = State(initialValue: context.subject)
-        _messageBody = State(initialValue: "")
-        _showCcBcc = State(initialValue: !context.cc.isEmpty)
+        _to = State(initialValue: restore?.to ?? context.to)
+        _cc = State(initialValue: restore?.cc ?? context.cc)
+        _bcc = State(initialValue: restore?.bcc ?? [])
+        _subject = State(initialValue: restore?.subject ?? context.subject)
+        _messageBody = State(initialValue: restore?.body ?? "")
+        _showCcBcc = State(initialValue: restore.map { !$0.cc.isEmpty || !$0.bcc.isEmpty } ?? !context.cc.isEmpty)
         _aiBarVisible = State(initialValue: openAIOnAppear)
     }
 
-    private var canAI: Bool { env.session.can(.manageCampaigns) }
+    private var canAI: Bool { env.session.can(.useAI) }
     private var canTemplates: Bool { env.session.can(.viewCampaigns) }
 
     private var canSend: Bool {
@@ -95,7 +109,7 @@ struct UniboxComposer: View {
     }
 
     private var recipients: [String] {
-        addresses(to)
+        to + addresses(toText)
     }
 
     var body: some View {
@@ -107,12 +121,7 @@ struct UniboxComposer: View {
                         .lineLimit(1)
                 }
                 hairline
-                labeledRow("To") {
-                    TextField("", text: $to)
-                        .font(.subheadline)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .keyboardType(.emailAddress)
+                RecipientField(label: "To", addresses: $to, text: $toText) {
                     if !showCcBcc {
                         Button {
                             withAnimation(.snappy) { showCcBcc = true }
@@ -127,21 +136,9 @@ struct UniboxComposer: View {
                 }
                 hairline
                 if showCcBcc {
-                    labeledRow("Cc") {
-                        TextField("", text: $cc)
-                            .font(.subheadline)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .keyboardType(.emailAddress)
-                    }
+                    RecipientField(label: "Cc", addresses: $cc, text: $ccText)
                     hairline
-                    labeledRow("Bcc") {
-                        TextField("", text: $bcc)
-                            .font(.subheadline)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .keyboardType(.emailAddress)
-                    }
+                    RecipientField(label: "Bcc", addresses: $bcc, text: $bccText)
                     hairline
                 }
                 TextField("Subject", text: $subject)
@@ -176,7 +173,11 @@ struct UniboxComposer: View {
         .sensoryFeedback(.impact(weight: .light), trigger: draftDonePulse)
         .sensoryFeedback(.selection, trigger: reviewActionPulse)
         .onDisappear { draftTask?.cancel() }
-        .sheet(isPresented: $showSchedulePicker) { scheduleSheet }
+        .sheet(isPresented: $showSchedulePicker) {
+            ComposeScheduleSheet(isPresented: $showSchedulePicker, scheduledAt: $scheduledAt) {
+                withAnimation(.snappy) { sendMode = .scheduled }
+            }
+        }
         .sheet(isPresented: $showTemplateBrowser) {
             UniboxTemplatePicker { template in
                 if let body = template.bodyPlain, !body.isEmpty {
@@ -1059,127 +1060,7 @@ struct UniboxComposer: View {
         startDraftReply(instruction: instruction)
     }
 
-    // MARK: Schedule sheet
-
-    /// Gmail-style scheduling: one-tap presets first, then a calendar and a
-    /// dedicated time row for full control down to the minute.
-    private var scheduleSheet: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(schedulePresets, id: \.label) { preset in
-                        Button {
-                            withAnimation(.snappy) {
-                                scheduledAt = preset.date
-                                sendMode = .scheduled
-                            }
-                            showSchedulePicker = false
-                        } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: preset.symbol)
-                                    .font(.system(size: 15, weight: .medium))
-                                    .foregroundStyle(WTheme.accent)
-                                    .frame(width: 26)
-                                Text(preset.label)
-                                    .font(.subheadline.weight(.medium))
-                                    .foregroundStyle(.primary)
-                                Spacer(minLength: 8)
-                                Text(preset.date.formatted(date: .abbreviated, time: .shortened))
-                                    .font(.footnote)
-                                    .monospacedDigit()
-                                    .foregroundStyle(.secondary)
-                            }
-                            .padding(.horizontal, 16)
-                            .frame(minHeight: 46)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(TapScaleStyle())
-                        Divider().padding(.leading, 54)
-                    }
-
-                    EyebrowLabel("Pick date and time")
-                        .padding(.horizontal, 16)
-                        .padding(.top, 20)
-                        .padding(.bottom, 2)
-                    DatePicker(
-                        "Date",
-                        selection: $scheduledAt,
-                        in: scheduleBounds,
-                        displayedComponents: [.date]
-                    )
-                    .datePickerStyle(.graphical)
-                    .padding(.horizontal, 12)
-                    Divider()
-                    HStack {
-                        Text("Time")
-                            .font(.subheadline.weight(.medium))
-                        Spacer(minLength: 8)
-                        DatePicker(
-                            "Time",
-                            selection: $scheduledAt,
-                            in: scheduleBounds,
-                            displayedComponents: [.hourAndMinute]
-                        )
-                        .labelsHidden()
-                    }
-                    .padding(.horizontal, 16)
-                    .frame(minHeight: 52)
-                    Divider()
-                    Text("Will send \(scheduledAt.formatted(date: .complete, time: .shortened))")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 12)
-                }
-                .padding(.bottom, 24)
-            }
-            .navigationTitle("Schedule send")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { showSchedulePicker = false }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Set") {
-                        withAnimation(.snappy) { sendMode = .scheduled }
-                        showSchedulePicker = false
-                    }
-                    .fontWeight(.semibold)
-                }
-            }
-        }
-        .presentationDetents([.large])
-        .presentationDragIndicator(.visible)
-    }
-
-    /// Gmail-style quick options; only ones inside the server bounds show.
-    private var schedulePresets: [(label: String, symbol: String, date: Date)] {
-        var presets: [(label: String, symbol: String, date: Date)] = []
-        let calendar = Calendar.current
-        let now = Date()
-        if let laterToday = calendar.date(byAdding: .hour, value: 3, to: now),
-           calendar.isDateInToday(laterToday) {
-            presets.append((label: "Later today", symbol: "clock", date: laterToday))
-        }
-        if let tomorrow = calendar.date(byAdding: .day, value: 1, to: now) {
-            if let morning = calendar.date(bySettingHour: 8, minute: 0, second: 0, of: tomorrow) {
-                presets.append((label: "Tomorrow morning", symbol: "sunrise", date: morning))
-            }
-            if let afternoon = calendar.date(bySettingHour: 13, minute: 0, second: 0, of: tomorrow) {
-                presets.append((label: "Tomorrow afternoon", symbol: "sun.max", date: afternoon))
-            }
-        }
-        if let monday = calendar.nextDate(
-            after: now.addingTimeInterval(24 * 3600),
-            matching: DateComponents(hour: 8, minute: 0, weekday: 2),
-            matchingPolicy: .nextTime
-        ) {
-            presets.append((label: "Monday morning", symbol: "briefcase", date: monday))
-        }
-        return presets.filter { scheduleBounds.contains($0.date) }
-    }
-
-    // MARK: Labels + bounds
+    // MARK: Labels
 
     private var sendLabel: String {
         switch sendMode {
@@ -1189,21 +1070,14 @@ struct UniboxComposer: View {
         }
     }
 
-    /// Scheduled sends must be > now+5s and <= now+29 days (server rule).
-    private var scheduleBounds: ClosedRange<Date> {
-        let lower = Date().addingTimeInterval(120)
-        let upper = Date().addingTimeInterval(29 * 24 * 3600 - 3600)
-        return lower ... upper
-    }
-
     // MARK: Send
 
     private func send() async {
         let request = UniboxReplyRequest(
             emailAccountID: context.accountID,
             to: recipients,
-            cc: showCcBcc ? addresses(cc).nilIfEmpty : nil,
-            bcc: showCcBcc ? addresses(bcc).nilIfEmpty : nil,
+            cc: showCcBcc ? (cc + addresses(ccText)).nilIfEmpty : nil,
+            bcc: showCcBcc ? (bcc + addresses(bccText)).nilIfEmpty : nil,
             subject: subject.trimmingCharacters(in: .whitespaces),
             bodyHTML: htmlBody,
             bodyPlain: messageBody,
@@ -1213,8 +1087,15 @@ struct UniboxComposer: View {
             scheduledAt: sendMode == .scheduled ? scheduledAt : nil
         )
         do {
+            let snapshot = UniboxReplySnapshot(
+                to: recipients,
+                cc: showCcBcc ? cc + addresses(ccText) : [],
+                bcc: showCcBcc ? bcc + addresses(bccText) : [],
+                subject: subject,
+                body: messageBody
+            )
             let response = try await store.send(env.api, request: request)
-            onSent(response)
+            onSent(response, snapshot)
             dismiss()
         } catch {
             store.setError(error.localizedDescription)
@@ -1242,8 +1123,19 @@ private extension Array where Element == String {
     var nilIfEmpty: [String]? { isEmpty ? nil : self }
 }
 
+/// What an instant reply sent, kept while its undo window runs so the
+/// composer can be re-presented pre-filled if the send is cancelled.
+struct UniboxReplySnapshot {
+    var to: [String]
+    var cc: [String]
+    var bcc: [String]
+    var subject: String
+    var body: String
+}
+
 /// Selection quick actions; instruction parity with the web composer.
-private enum AISelectionAction: String, CaseIterable, Identifiable {
+/// Shared by the reply composer and the compose window.
+enum AISelectionAction: String, CaseIterable, Identifiable {
     case improve, shorten, expand, fixGrammar, friendlier, moreFormal
 
     var id: String { rawValue }

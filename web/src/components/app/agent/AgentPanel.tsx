@@ -32,21 +32,34 @@ import {
     ClockIcon,
     PanelLeftIcon,
     PanelRightIcon,
+    PictureInPicture2Icon,
+    SearchIcon,
+    Trash2Icon,
 } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useConfirm } from "@/hooks/context/confirm";
+import { usePermission } from "@/hooks/usePermission";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores";
-import type {
-    AgentTab,
-    AgentTurn,
-    AgentToolStep,
-    AgentPending,
+import {
+    AGENT_FLOAT_MIN_W,
+    AGENT_FLOAT_MAX_W,
+    AGENT_FLOAT_MIN_H,
+    type AgentFloatRect,
+    type AgentTab,
+    type AgentTurn,
+    type AgentToolStep,
+    type AgentPending,
 } from "@/stores/slices/agentSlice";
 import createAgentSession from "@/lib/api/client/app/agent/createAgentSession";
+import deleteAgentSession from "@/lib/api/client/app/agent/deleteAgentSession";
+import clearAgentSessions from "@/lib/api/client/app/agent/clearAgentSessions";
 import getAgentMessages from "@/lib/api/client/app/agent/getAgentMessages";
 import streamAgentRun from "@/lib/api/client/app/agent/streamAgentRun";
 import useAgentSessions from "@/lib/api/hooks/app/agent/useAgentSessions";
 import Markdown from "./Markdown";
 import AgentMark from "./AgentMark";
+import { Kbd } from "@/components/ui/shortcut-tooltip";
 import type {
     AgentStreamEvent,
     AgentSession,
@@ -65,6 +78,30 @@ function deriveTitle(text: string): string {
     return t.length > 40 ? t.slice(0, 40).trimEnd() + "…" : t || "New chat";
 }
 
+// Keep the floating window fully on screen and inside its size bounds.
+function clampFloatRect(r: AgentFloatRect): AgentFloatRect {
+    const vw = document.documentElement.clientWidth;
+    const vh = window.innerHeight;
+    const w = Math.min(Math.max(r.w, AGENT_FLOAT_MIN_W), Math.min(AGENT_FLOAT_MAX_W, vw - 16));
+    const h = Math.min(Math.max(r.h, AGENT_FLOAT_MIN_H), vh - 16);
+    return {
+        w,
+        h,
+        x: Math.min(Math.max(r.x, 8), vw - w - 8),
+        y: Math.min(Math.max(r.y, 8), vh - h - 8),
+    };
+}
+
+function defaultFloatRect(): AgentFloatRect {
+    const vw = document.documentElement.clientWidth;
+    const vh = window.innerHeight;
+    const w = 460;
+    const h = Math.min(640, vh - 48);
+    return clampFloatRect({ x: vw - w - 24, y: vh - h - 24, w, h });
+}
+
+type ResizeDir = "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw";
+
 export default function AgentPanel() {
     const open = useAppStore((s) => s.aiAssistantOpen);
     const setOpen = useAppStore((s) => s.setAIAssistantOpen);
@@ -75,9 +112,28 @@ export default function AgentPanel() {
     const side = useAppStore((s) => s.agentSide);
     const setSide = useAppStore((s) => s.setAgentSide);
     const width = useAppStore((s) => s.agentWidth);
+    const floating = useAppStore((s) => s.agentFloating);
+    const setFloating = useAppStore((s) => s.setAgentFloating);
+    const floatRect = useAppStore((s) => s.agentFloatRect);
     const tabs = useAppStore((s) => s.agentTabs);
     const activeKey = useAppStore((s) => s.agentActiveKey);
     const visible = open && !minimized;
+
+    // Floating is desktop-only; below sm the panel stays a full-width sheet.
+    const [smUp, setSmUp] = React.useState(
+        () => typeof window !== "undefined" && window.matchMedia("(min-width: 640px)").matches,
+    );
+    React.useEffect(() => {
+        const m = window.matchMedia("(min-width: 640px)");
+        const fn = () => setSmUp(m.matches);
+        m.addEventListener("change", fn);
+        return () => m.removeEventListener("change", fn);
+    }, []);
+    const isFloat = floating && !expanded && smUp;
+    const rect = React.useMemo(
+        () => (isFloat ? clampFloatRect(floatRect ?? defaultFloatRect()) : null),
+        [isFloat, floatRect],
+    );
 
     const navigate = useNavigate();
     const location = useLocation();
@@ -87,6 +143,10 @@ export default function AgentPanel() {
     // Stick-to-bottom: autoscroll only while the user is pinned near the end,
     // so streaming never yanks them away from scrollback they are reading.
     const [pinned, setPinned] = React.useState(true);
+
+    // Members without the use-AI permission have no assistant at all (the
+    // header button and Cmd+I are gated too; the backend enforces it anyway).
+    const canAI = usePermission("USE_AI");
 
     const activeTab = tabs.find((t) => t.key === activeKey) ?? null;
     const draft = activeTab?.draft ?? "";
@@ -392,13 +452,17 @@ export default function AgentPanel() {
                     e.preventDefault();
                     setMinimized(true);
                     return;
+                case "KeyP":
+                    e.preventDefault();
+                    if (smUp && !expanded) setFloating(!floating);
+                    return;
             }
         }
     }
 
     // Drag the panel's inner edge to resize (persisted via the store clamp).
     function startResize(e: React.PointerEvent) {
-        if (expanded) return;
+        if (expanded || isFloat) return;
         e.preventDefault();
         const onMove = (ev: PointerEvent) => {
             const w =
@@ -412,6 +476,91 @@ export default function AgentPanel() {
         window.addEventListener("pointermove", onMove);
         window.addEventListener("pointerup", onUp);
     }
+
+    // Keep the floating window inside the viewport when the browser resizes.
+    React.useEffect(() => {
+        if (!isFloat) return;
+        const fn = () => {
+            const r = useAppStore.getState().agentFloatRect;
+            if (r) useAppStore.getState().setAgentFloatRect(clampFloatRect(r));
+        };
+        window.addEventListener("resize", fn);
+        return () => window.removeEventListener("resize", fn);
+    }, [isFloat]);
+
+    // Grab the header to move the window. From docked mode the same gesture
+    // tears the panel off into a floating window once it travels far enough.
+    function startHeaderDrag(e: React.PointerEvent) {
+        if (expanded || !smUp || e.button !== 0) return;
+        if ((e.target as HTMLElement).closest("button, input, textarea, a")) return;
+        const startX = e.clientX;
+        const startY = e.clientY;
+
+        let r = isFloat && rect ? rect : null;
+        // Pointer offset into the window; for a tear-off the pointer lands
+        // near the top center of the new window.
+        let offX = r ? startX - r.x : 0;
+        let offY = r ? startY - r.y : 0;
+        let torn = isFloat;
+
+        const onMove = (ev: PointerEvent) => {
+            if (!torn) {
+                if (Math.abs(ev.clientX - startX) + Math.abs(ev.clientY - startY) < 16) return;
+                const base = defaultFloatRect();
+                r = { ...base, w: Math.min(base.w, useAppStore.getState().agentWidth) };
+                offX = Math.min(r.w / 2, 200);
+                offY = 24;
+                torn = true;
+                useAppStore.getState().setAgentFloating(true);
+            }
+            if (!r) return;
+            ev.preventDefault();
+            useAppStore
+                .getState()
+                .setAgentFloatRect(clampFloatRect({ ...r, x: ev.clientX - offX, y: ev.clientY - offY }));
+        };
+        const onUp = () => {
+            window.removeEventListener("pointermove", onMove);
+            window.removeEventListener("pointerup", onUp);
+        };
+        window.addEventListener("pointermove", onMove);
+        window.addEventListener("pointerup", onUp);
+    }
+
+    // Resize the floating window from any edge or corner.
+    function startFloatResize(e: React.PointerEvent, dir: ResizeDir) {
+        if (!isFloat || !rect) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const start = { ...rect };
+        const sx = e.clientX;
+        const sy = e.clientY;
+        const onMove = (ev: PointerEvent) => {
+            ev.preventDefault();
+            const dx = ev.clientX - sx;
+            const dy = ev.clientY - sy;
+            let { x, y, w, h } = start;
+            if (dir.includes("e")) w = start.w + dx;
+            if (dir.includes("s")) h = start.h + dy;
+            if (dir.includes("w")) {
+                w = start.w - dx;
+                x = start.x + Math.min(dx, start.w - AGENT_FLOAT_MIN_W);
+            }
+            if (dir.includes("n")) {
+                h = start.h - dy;
+                y = start.y + Math.min(dy, start.h - AGENT_FLOAT_MIN_H);
+            }
+            useAppStore.getState().setAgentFloatRect(clampFloatRect({ x, y, w, h }));
+        };
+        const onUp = () => {
+            window.removeEventListener("pointermove", onMove);
+            window.removeEventListener("pointerup", onUp);
+        };
+        window.addEventListener("pointermove", onMove);
+        window.addEventListener("pointerup", onUp);
+    }
+
+    if (!canAI) return null;
 
     return (
         <>
@@ -437,25 +586,71 @@ export default function AgentPanel() {
             )}
             <motion.aside
                 initial={false}
-                animate={{ x: visible ? 0 : side === "right" ? "101%" : "-101%" }}
+                animate={
+                    isFloat
+                        ? { x: 0, opacity: visible ? 1 : 0, scale: visible ? 1 : 0.97 }
+                        : {
+                              x: visible ? 0 : side === "right" ? "101%" : "-101%",
+                              opacity: 1,
+                              scale: 1,
+                          }
+                }
                 transition={{ type: "spring", stiffness: 380, damping: 40 }}
                 // inert keeps the off-screen panel out of the tab order.
                 inert={!visible}
                 onKeyDown={onPanelKeyDown}
-                style={{ "--agent-w": `${width}px` } as React.CSSProperties}
+                style={
+                    isFloat && rect
+                        ? ({
+                              "--agent-w": `${width}px`,
+                              left: rect.x,
+                              top: rect.y,
+                              width: rect.w,
+                              height: rect.h,
+                          } as React.CSSProperties)
+                        : ({ "--agent-w": `${width}px` } as React.CSSProperties)
+                }
                 className={cn(
-                    "fixed top-0 z-50 h-full bg-white shadow-[0_0_60px_-12px_rgba(15,23,42,0.3)] flex",
-                    side === "right"
-                        ? "right-0 border-l border-slate-200"
-                        : "left-0 border-r border-slate-200",
-                    expanded
-                        ? "w-full sm:w-[min(1080px,94vw)]"
-                        : "w-full sm:w-[min(var(--agent-w),94vw)]",
+                    "fixed z-50 bg-white flex",
+                    isFloat
+                        ? "rounded-xl border border-slate-200 shadow-2xl overflow-hidden"
+                        : cn(
+                              "top-0 h-full shadow-[0_0_60px_-12px_rgba(15,23,42,0.3)]",
+                              side === "right"
+                                  ? "right-0 border-l border-slate-200"
+                                  : "left-0 border-r border-slate-200",
+                              expanded
+                                  ? "w-full sm:w-[min(1080px,94vw)]"
+                                  : "w-full sm:w-[min(var(--agent-w),94vw)]",
+                          ),
                 )}
                 aria-hidden={!visible}
             >
-                {/* Drag handle on the inner edge (desktop, normal mode). */}
-                {!expanded && (
+                {/* Floating: resize from any edge or corner. */}
+                {isFloat && (
+                    <>
+                        {(
+                            [
+                                ["n", "top-0 left-3 right-3 h-1.5 cursor-ns-resize"],
+                                ["s", "bottom-0 left-3 right-3 h-1.5 cursor-ns-resize"],
+                                ["e", "right-0 top-3 bottom-3 w-1.5 cursor-ew-resize"],
+                                ["w", "left-0 top-3 bottom-3 w-1.5 cursor-ew-resize"],
+                                ["nw", "top-0 left-0 size-3 cursor-nwse-resize"],
+                                ["se", "bottom-0 right-0 size-3 cursor-nwse-resize"],
+                                ["ne", "top-0 right-0 size-3 cursor-nesw-resize"],
+                                ["sw", "bottom-0 left-0 size-3 cursor-nesw-resize"],
+                            ] as [ResizeDir, string][]
+                        ).map(([dir, pos]) => (
+                            <div
+                                key={dir}
+                                onPointerDown={(e) => startFloatResize(e, dir)}
+                                className={cn("absolute z-20 touch-none", pos)}
+                            />
+                        ))}
+                    </>
+                )}
+                {/* Drag handle on the inner edge (desktop, docked mode). */}
+                {!expanded && !isFloat && (
                     <div
                         onPointerDown={startResize}
                         title="Drag to resize"
@@ -476,31 +671,67 @@ export default function AgentPanel() {
 
                 {/* Main column. */}
                 <div className="flex-1 min-w-0 flex flex-col">
-                    {/* Header */}
-                    <div className="shrink-0 px-3 h-12 flex items-center gap-2 border-b border-slate-200">
+                    {/* Header. Grabbing it moves the floating window; from a
+                        docked panel the same drag tears it off into one. */}
+                    <div
+                        onPointerDown={startHeaderDrag}
+                        className={cn(
+                            "shrink-0 px-3 h-12 flex items-center gap-2 border-b border-slate-200",
+                            !expanded && smUp && "touch-none select-none",
+                            isFloat
+                                ? "cursor-grab active:cursor-grabbing"
+                                : !expanded && smUp && "sm:cursor-grab",
+                        )}
+                    >
                         <AgentMark className="w-4 h-4 text-sky-600" />
                         <div className="text-[13px] font-semibold text-slate-900">
                             Assistant
                         </div>
                         <div className="ml-auto flex items-center gap-1">
-                            <button
-                                onClick={() =>
-                                    setSide(side === "right" ? "left" : "right")
-                                }
-                                title={
-                                    side === "right"
-                                        ? "Move to the left edge"
-                                        : "Move to the right edge"
-                                }
-                                aria-label="Switch panel side"
-                                className="size-7 rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100 hidden sm:inline-flex items-center justify-center transition-colors"
-                            >
-                                {side === "right" ? (
-                                    <PanelLeftIcon className="w-4 h-4" />
-                                ) : (
-                                    <PanelRightIcon className="w-4 h-4" />
-                                )}
-                            </button>
+                            {!isFloat && (
+                                <button
+                                    onClick={() =>
+                                        setSide(side === "right" ? "left" : "right")
+                                    }
+                                    title={
+                                        side === "right"
+                                            ? "Move to the left edge"
+                                            : "Move to the right edge"
+                                    }
+                                    aria-label="Switch panel side"
+                                    className="size-7 rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100 hidden sm:inline-flex items-center justify-center transition-colors"
+                                >
+                                    {side === "right" ? (
+                                        <PanelLeftIcon className="w-4 h-4" />
+                                    ) : (
+                                        <PanelRightIcon className="w-4 h-4" />
+                                    )}
+                                </button>
+                            )}
+                            {!expanded && (
+                                <button
+                                    onClick={() => setFloating(!floating)}
+                                    title={
+                                        isFloat
+                                            ? `Dock to the ${side} edge (⌥P)`
+                                            : "Pop out into a window (⌥P)"
+                                    }
+                                    aria-label={
+                                        isFloat ? "Dock panel" : "Pop out into a floating window"
+                                    }
+                                    className="size-7 rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100 hidden sm:inline-flex items-center justify-center transition-colors"
+                                >
+                                    {isFloat ? (
+                                        side === "right" ? (
+                                            <PanelRightIcon className="w-4 h-4" />
+                                        ) : (
+                                            <PanelLeftIcon className="w-4 h-4" />
+                                        )
+                                    ) : (
+                                        <PictureInPicture2Icon className="w-4 h-4" />
+                                    )}
+                                </button>
+                            )}
                             <button
                                 onClick={() => setMinimized(true)}
                                 title="Minimize to dock (⌥M)"
@@ -932,6 +1163,17 @@ function DockBar({
 }
 
 // ── History rail ────────────────────────────────────────────────────
+// historyBucket labels a session's recency group for the sidebar sections.
+function historyBucket(iso: string): string {
+    const t = new Date(iso).getTime();
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    if (t >= today) return "Today";
+    if (t >= today - 24 * 60 * 60 * 1000) return "Yesterday";
+    if (t >= today - 6 * 24 * 60 * 60 * 1000) return "This week";
+    return "Earlier";
+}
+
 function SessionSidebar({
     activeSessionId,
     onOpen,
@@ -942,54 +1184,138 @@ function SessionSidebar({
     onNew: () => void;
 }) {
     const q = useAgentSessions(20);
+    const qc = useQueryClient();
+    const confirm = useConfirm();
+    const [search, setSearch] = React.useState("");
     const sessions = React.useMemo(
         () => (q.data?.pages ?? []).flatMap((p) => p.data),
         [q.data],
     );
+
+    const filtered = React.useMemo(() => {
+        const needle = search.trim().toLowerCase();
+        if (!needle) return sessions;
+        return sessions.filter((s) =>
+            (s.title || "Conversation").toLowerCase().includes(needle),
+        );
+    }, [search, sessions]);
+
+    // Consecutive-run grouping: the list is newest-first, so one pass keeps
+    // both order and section adjacency.
+    const grouped = React.useMemo(() => {
+        const groups: { label: string; rows: AgentSession[] }[] = [];
+        for (const s of filtered) {
+            const label = historyBucket(s.updated_at || s.created_at);
+            const tail = groups[groups.length - 1];
+            if (tail && tail.label === label) tail.rows.push(s);
+            else groups.push({ label, rows: [s] });
+        }
+        return groups;
+    }, [filtered]);
+
+    const remove = (s: AgentSession) => {
+        confirm.show(
+            `Delete "${s.title || "this conversation"}"? Its transcript is removed for good.`,
+            async () => {
+                await deleteAgentSession(s.id);
+                // If the conversation is open as a tab, close it too.
+                const tab = useAppStore
+                    .getState()
+                    .agentTabs.find((t) => t.sessionId === s.id);
+                if (tab) useAppStore.getState().agentCloseTab(tab.key);
+                await qc.invalidateQueries({ queryKey: ["ai", "sessions"] });
+            },
+        );
+    };
+
     return (
-        <div className="hidden sm:flex w-60 shrink-0 flex-col border-r border-slate-200 bg-slate-50/50">
-            <div className="shrink-0 h-12 px-3 flex items-center border-b border-slate-200">
+        <div className="hidden sm:flex w-64 shrink-0 flex-col border-r border-slate-200 bg-slate-50/50">
+            <div className="shrink-0 px-3 pt-3 pb-2 space-y-2 border-b border-slate-200">
                 <button
                     onClick={onNew}
                     className="w-full h-8 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-[12.5px] font-medium inline-flex items-center justify-center gap-1.5 transition-colors"
                 >
                     <PlusIcon className="w-3.5 h-3.5" />
                     New chat
+                    <Kbd combo="alt+n" variant="dark" />
                 </button>
+                <div className="flex items-center gap-1.5 px-2 h-7 rounded-md border border-slate-200 bg-white focus-within:border-sky-300 focus-within:ring-1 focus-within:ring-sky-100 transition-colors">
+                    <SearchIcon className="w-3 h-3 text-slate-400 shrink-0" />
+                    <input
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                        placeholder="Search history…"
+                        className="flex-1 min-w-0 bg-transparent text-[11.5px] text-slate-900 placeholder:text-slate-400 outline-none"
+                    />
+                    {search && (
+                        <button
+                            onClick={() => setSearch("")}
+                            aria-label="Clear search"
+                            className="size-4 shrink-0 inline-flex items-center justify-center rounded text-slate-400 hover:text-slate-600"
+                        >
+                            <XIcon className="w-3 h-3" />
+                        </button>
+                    )}
+                </div>
             </div>
             <div className="flex-1 min-h-0 overflow-y-auto px-2 py-2">
-                <div className="px-1.5 pb-1 text-[10px] uppercase tracking-[0.14em] text-slate-400 font-semibold">
-                    History
-                </div>
-                {sessions.length === 0 && !q.isLoading && (
+                {filtered.length === 0 && !q.isLoading && (
                     <p className="px-1.5 py-3 text-[11.5px] text-slate-400 leading-relaxed">
-                        Your past conversations show up here.
+                        {search
+                            ? "No conversations match."
+                            : "Your past conversations show up here."}
                     </p>
                 )}
-                <div className="space-y-0.5">
-                    {sessions.map((s) => (
-                        <button
-                            key={s.id}
-                            onClick={() => onOpen(s)}
-                            className={cn(
-                                "w-full text-left px-2 py-1.5 rounded-md flex items-start gap-2 transition-colors",
-                                s.id === activeSessionId
-                                    ? "bg-white ring-1 ring-slate-200"
-                                    : "hover:bg-white",
-                            )}
-                        >
-                            <ClockIcon className="w-3 h-3 mt-0.5 shrink-0 text-slate-400" />
-                            <span className="min-w-0 flex-1">
-                                <span className="block truncate text-[12px] text-slate-700">
-                                    {s.title || "Conversation"}
-                                </span>
-                                <span className="block text-[10.5px] text-slate-400">
-                                    {relativeTime(s.updated_at || s.created_at)}
-                                </span>
-                            </span>
-                        </button>
-                    ))}
-                </div>
+                {grouped.map((g) => (
+                    <div key={g.label} className="mb-2">
+                        <div className="px-1.5 pb-1 text-[10px] uppercase tracking-[0.14em] text-slate-400 font-semibold">
+                            {g.label}
+                        </div>
+                        <div className="space-y-0.5">
+                            {g.rows.map((s) => (
+                                <div
+                                    key={s.id}
+                                    role="button"
+                                    tabIndex={0}
+                                    onClick={() => onOpen(s)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === "Enter") onOpen(s);
+                                    }}
+                                    className={cn(
+                                        "group w-full text-left px-2 py-1.5 rounded-md flex items-start gap-2 cursor-pointer transition-colors",
+                                        s.id === activeSessionId
+                                            ? "bg-white ring-1 ring-slate-200"
+                                            : "hover:bg-white",
+                                    )}
+                                >
+                                    <ClockIcon className="w-3 h-3 mt-0.5 shrink-0 text-slate-400" />
+                                    <span className="min-w-0 flex-1">
+                                        <span className="block truncate text-[12px] text-slate-700">
+                                            {s.title || "Conversation"}
+                                        </span>
+                                        <span className="block truncate text-[10.5px] text-slate-400">
+                                            {relativeTime(s.updated_at || s.created_at)}
+                                            {/* Owner attribution, present only in
+                                                shared-history workspaces. */}
+                                            {s.user_name && ` · ${s.user_name}`}
+                                        </span>
+                                    </span>
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            remove(s);
+                                        }}
+                                        title="Delete conversation"
+                                        aria-label={`Delete ${s.title || "conversation"}`}
+                                        className="size-5 mt-0.5 shrink-0 inline-flex items-center justify-center rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100"
+                                    >
+                                        <Trash2Icon className="w-3 h-3" />
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                ))}
                 {q.hasNextPage && (
                     <button
                         onClick={() => q.fetchNextPage()}
@@ -1000,6 +1326,31 @@ function SessionSidebar({
                     </button>
                 )}
             </div>
+            {sessions.length > 0 && (
+                <div className="shrink-0 px-2 py-2 border-t border-slate-200">
+                    <button
+                        onClick={() =>
+                            confirm.show(
+                                "Clear your entire assistant history in this workspace? Every conversation and transcript is removed for good.",
+                                async () => {
+                                    await clearAgentSessions();
+                                    // Close every tab tied to a stored session;
+                                    // unsaved fresh tabs stay.
+                                    const st = useAppStore.getState();
+                                    for (const t of st.agentTabs.filter((t) => t.sessionId)) {
+                                        st.agentCloseTab(t.key);
+                                    }
+                                    await qc.invalidateQueries({ queryKey: ["ai", "sessions"] });
+                                },
+                            )
+                        }
+                        className="w-full h-7 rounded-md inline-flex items-center justify-center gap-1.5 text-[11.5px] text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                    >
+                        <Trash2Icon className="w-3 h-3" />
+                        Clear history
+                    </button>
+                </div>
+            )}
         </div>
     );
 }
@@ -1022,9 +1373,30 @@ function foldEvent(turns: AgentTurn[], ev: AgentStreamEvent): AgentTurn[] {
 
 function applyEvent(turn: AgentTurn, ev: AgentStreamEvent) {
     switch (ev.type) {
+        // Partial chunk of the block currently being generated.
+        case "text_delta": {
+            const last = turn.blocks[turn.blocks.length - 1];
+            if (last && last.kind === "text" && last.live) {
+                turn.blocks[turn.blocks.length - 1] = {
+                    kind: "text",
+                    text: last.text + (ev.text || ""),
+                    live: true,
+                };
+            } else {
+                turn.blocks.push({ kind: "text", text: ev.text || "", live: true });
+            }
+            break;
+        }
+        // Authoritative full block: replaces the streamed-in live block (its
+        // deltas were cosmetic), or appends for providers without deltas.
         case "text": {
             const last = turn.blocks[turn.blocks.length - 1];
-            if (last && last.kind === "text") {
+            if (last && last.kind === "text" && last.live) {
+                turn.blocks[turn.blocks.length - 1] = {
+                    kind: "text",
+                    text: ev.text || "",
+                };
+            } else if (last && last.kind === "text") {
                 turn.blocks[turn.blocks.length - 1] = {
                     kind: "text",
                     text: last.text + (ev.text || ""),
@@ -1137,14 +1509,14 @@ const TurnView = React.memo(function TurnView({
         <div className="space-y-2">
             {turn.blocks.map((b, i) => {
                 if (b.kind === "text") {
-                    return b.text ? (
-                        <Markdown
-                            key={i}
-                            text={b.text}
-                            onOpen={onOpen}
-                            caret={streaming && i === lastIdx}
-                        />
-                    ) : null;
+                    if (!b.text) return null;
+                    // The trailing block of a live run types itself out; the
+                    // rest of the transcript renders statically.
+                    return streaming && i === lastIdx ? (
+                        <SmoothText key={i} text={b.text} onOpen={onOpen} />
+                    ) : (
+                        <Markdown key={i} text={b.text} onOpen={onOpen} />
+                    );
                 }
                 if (b.kind === "tool") {
                     return <ToolStepRow key={i} step={b.step} onOpen={onOpen} />;
@@ -1162,6 +1534,33 @@ const TurnView = React.memo(function TurnView({
         </div>
     );
 });
+
+// SmoothText renders streamed text as a fast typewriter: each frame reveals a
+// twelfth of whatever is still hidden, so bursts of deltas (or one whole block
+// from a non-streaming provider) type out at a steady pace and the reveal
+// converges within ~200ms of the stream ending. Rendering through Markdown on
+// a prefix is safe; the parser tolerates a mid-token cut for a frame.
+function SmoothText({
+    text,
+    onOpen,
+}: {
+    text: string;
+    onOpen: (url: string) => void;
+}) {
+    const [shown, setShown] = React.useState(0);
+    React.useEffect(() => {
+        if (shown >= text.length) return;
+        const raf = requestAnimationFrame(() => {
+            setShown((s) =>
+                s >= text.length
+                    ? s
+                    : Math.min(text.length, s + Math.max(1, Math.ceil((text.length - s) / 12))),
+            );
+        });
+        return () => cancelAnimationFrame(raf);
+    }, [shown, text]);
+    return <Markdown text={text.slice(0, Math.min(shown, text.length))} onOpen={onOpen} caret />;
+}
 
 function ToolStepRow({
     step,
@@ -1292,6 +1691,26 @@ function EmptyState({ onPick }: { onPick: (q: string) => void }) {
                         {q}
                     </button>
                 ))}
+            </div>
+            <div className="mt-5 flex flex-wrap items-center justify-center gap-x-3 gap-y-1.5 text-[10.5px] text-slate-400">
+                <span className="inline-flex items-center gap-1">
+                    <Kbd combo="mod+i" variant="light" /> toggle
+                </span>
+                <span className="hidden sm:inline-flex items-center gap-1">
+                    <Kbd combo="alt+n" variant="light" /> new chat
+                </span>
+                <span className="hidden sm:inline-flex items-center gap-1">
+                    <Kbd combo="alt+p" variant="light" /> pop out
+                </span>
+                <span className="hidden sm:inline-flex items-center gap-1">
+                    <Kbd combo="alt+m" variant="light" /> minimize
+                </span>
+                <button
+                    onClick={() => useAppStore.getState().setShortcutsModalOpen(true)}
+                    className="underline decoration-dotted underline-offset-2 hover:text-slate-600 transition-colors"
+                >
+                    all shortcuts
+                </button>
             </div>
         </div>
     );

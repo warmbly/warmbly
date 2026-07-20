@@ -15,6 +15,7 @@ type UserService interface {
 	GetUser(ctx context.Context, userID uuid.UUID) (*models.User, *errx.Error)
 	CompleteOnboarding(ctx context.Context, userID uuid.UUID, firstName, lastName, referralSource, role, teamSize string) *errx.Error
 	UpdateProfile(ctx context.Context, userID uuid.UUID, firstName, lastName string) *errx.Error
+	UpdateUndoSendSeconds(ctx context.Context, userID uuid.UUID, seconds int) *errx.Error
 }
 
 type userService struct {

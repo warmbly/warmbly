@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import useGenerateWrite from "@/lib/api/hooks/app/generation/useGenerateWrite";
+import { usePermission } from "@/hooks/usePermission";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import ShortcutTooltip, { Kbd } from "@/components/ui/shortcut-tooltip";
@@ -39,6 +40,10 @@ interface TextareaAICaretProps {
     onChange: (next: string) => void;
     // Kicks off the host's thread-grounded draft flow (the draft bar).
     onDraftReply?: () => void;
+    // Menu label + cost hint for the draft row; defaults suit the reply
+    // composer, compose passes its own ("Draft this email with AI").
+    draftLabel?: string;
+    draftCost?: string;
     // Extra context line for freeform prompts (e.g. the subject).
     contextHint?: string;
     maxLen?: number;
@@ -69,11 +74,16 @@ export default function TextareaAICaret({
     value,
     onChange,
     onDraftReply,
+    draftLabel = "Draft a reply from this thread",
+    draftCost = "from 2 credits",
     contextHint,
     maxLen,
 }: TextareaAICaretProps) {
     const writeMut = useGenerateWrite();
     const typewriter = useTypewriter();
+    // Single choke point for all AI drafting affordances: members without the
+    // use-AI permission see no caret, companion, or draft bar.
+    const canAI = usePermission("USE_AI");
 
     const [caret, setCaret] = React.useState<number | null>(null);
     const [rect, setRect] = React.useState<RangeRect | null>(null);
@@ -323,7 +333,7 @@ export default function TextareaAICaret({
         run(text);
     };
 
-    if (typeof document === "undefined") return null;
+    if (typeof document === "undefined" || !canAI) return null;
 
     const showCompanion = !open && caret !== null && !!rect;
     const vw = typeof window !== "undefined" ? window.innerWidth : 1024;
@@ -343,7 +353,7 @@ export default function TextareaAICaret({
                         left: taBox.left,
                         width: taBox.width,
                         height: taBox.height,
-                        zIndex: 54,
+                        zIndex: 114,
                     }}
                 />
             )}
@@ -360,7 +370,7 @@ export default function TextareaAICaret({
                                 position: "fixed",
                                 top: rect.top - 1,
                                 left: taRight - 30,
-                                zIndex: 55,
+                                zIndex: 115,
                             }}
                             aria-label="Write with AI"
                             className="size-[22px] rounded-md inline-flex items-center justify-center text-slate-300 hover:text-sky-600 hover:bg-sky-50 transition-colors"
@@ -384,7 +394,7 @@ export default function TextareaAICaret({
                         style={{
                             position: "fixed",
                             left: popLeft,
-                            zIndex: 60,
+                            zIndex: 120,
                             ...(popAbove
                                 ? { bottom: window.innerHeight - rect.top + 6 }
                                 : { top: rect.bottom + 6 }),
@@ -473,8 +483,8 @@ export default function TextareaAICaret({
                                             className="w-full px-2.5 h-8 flex items-center gap-2 text-[12px] text-slate-700 hover:bg-slate-50 transition-colors"
                                         >
                                             <CornerUpLeftIcon className="w-3.5 h-3.5 text-slate-400" />
-                                            Draft a reply from this thread
-                                            <span className="ml-auto text-[10px] text-slate-300">from 2 credits</span>
+                                            {draftLabel}
+                                            <span className="ml-auto text-[10px] text-slate-300">{draftCost}</span>
                                         </button>
                                     )}
                                     <button

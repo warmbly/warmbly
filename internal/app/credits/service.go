@@ -48,6 +48,10 @@ var ErrCapExceeded = errors.New("generation rate cap exceeded")
 // (→429) keeps working while the message tells the user it was their budget.
 var ErrSpendLimitReached = fmt.Errorf("%w: configured AI spend limit reached", ErrCapExceeded)
 
+// ErrMemberLimitReached signals the acting member hit the org's per-member
+// monthly AI limit. Wraps ErrCapExceeded for the same 429 mapping.
+var ErrMemberLimitReached = fmt.Errorf("%w: your monthly AI limit for this workspace is used up", ErrCapExceeded)
+
 // lowBalanceCooldown bounds the low-credit alert to once per day per org.
 const lowBalanceCooldown = 24 * time.Hour
 
@@ -202,22 +206,47 @@ func (s *creditService) checkSpendLimits(ctx context.Context, orgID uuid.UUID, a
 	if err != nil || cfg == nil {
 		return nil
 	}
-	if cfg.SpendLimitDaily == nil && cfg.SpendLimitWeekly == nil && cfg.SpendLimitMonthly == nil {
+	orgLimits := cfg.SpendLimitDaily != nil || cfg.SpendLimitWeekly != nil || cfg.SpendLimitMonthly != nil
+	memberLimits := cfg.MemberLimitDaily != nil || cfg.MemberLimitWeekly != nil || cfg.MemberLimitMonthly != nil
+	if !orgLimits && !memberLimits {
 		return nil
 	}
 	dayStart, weekStart, monthStart := windowStarts(time.Now())
-	day, week, month, err := s.repo.SpentInWindows(ctx, orgID, dayStart, weekStart, monthStart)
-	if err != nil {
-		return nil
+	if orgLimits {
+		day, week, month, err := s.repo.SpentInWindows(ctx, orgID, dayStart, weekStart, monthStart)
+		if err != nil {
+			return nil
+		}
+		if cfg.SpendLimitDaily != nil && day+amount > *cfg.SpendLimitDaily {
+			return fmt.Errorf("%w (daily limit %d, spent %d)", ErrSpendLimitReached, *cfg.SpendLimitDaily, day)
+		}
+		if cfg.SpendLimitWeekly != nil && week+amount > *cfg.SpendLimitWeekly {
+			return fmt.Errorf("%w (weekly limit %d, spent %d)", ErrSpendLimitReached, *cfg.SpendLimitWeekly, week)
+		}
+		if cfg.SpendLimitMonthly != nil && month+amount > *cfg.SpendLimitMonthly {
+			return fmt.Errorf("%w (monthly limit %d, spent %d)", ErrSpendLimitReached, *cfg.SpendLimitMonthly, month)
+		}
 	}
-	if cfg.SpendLimitDaily != nil && day+amount > *cfg.SpendLimitDaily {
-		return fmt.Errorf("%w (daily limit %d, spent %d)", ErrSpendLimitReached, *cfg.SpendLimitDaily, day)
-	}
-	if cfg.SpendLimitWeekly != nil && week+amount > *cfg.SpendLimitWeekly {
-		return fmt.Errorf("%w (weekly limit %d, spent %d)", ErrSpendLimitReached, *cfg.SpendLimitWeekly, week)
-	}
-	if cfg.SpendLimitMonthly != nil && month+amount > *cfg.SpendLimitMonthly {
-		return fmt.Errorf("%w (monthly limit %d, spent %d)", ErrSpendLimitReached, *cfg.SpendLimitMonthly, month)
+	// Per-member ceilings, attributed via the request's credit meta. Charges
+	// without an actor (scheduled/system work) are exempt by design.
+	if memberLimits {
+		actor := models.CreditMetaFrom(ctx).ActorID
+		if actor == uuid.Nil {
+			return nil
+		}
+		day, week, month, err := s.repo.MemberSpentInWindows(ctx, orgID, actor, dayStart, weekStart, monthStart)
+		if err != nil {
+			return nil
+		}
+		if cfg.MemberLimitDaily != nil && day+amount > *cfg.MemberLimitDaily {
+			return fmt.Errorf("%w (member daily limit %d, you spent %d today)", ErrMemberLimitReached, *cfg.MemberLimitDaily, day)
+		}
+		if cfg.MemberLimitWeekly != nil && week+amount > *cfg.MemberLimitWeekly {
+			return fmt.Errorf("%w (member weekly limit %d, you spent %d this week)", ErrMemberLimitReached, *cfg.MemberLimitWeekly, week)
+		}
+		if cfg.MemberLimitMonthly != nil && month+amount > *cfg.MemberLimitMonthly {
+			return fmt.Errorf("%w (member monthly limit %d, you spent %d this month)", ErrMemberLimitReached, *cfg.MemberLimitMonthly, month)
+		}
 	}
 	return nil
 }
@@ -321,7 +350,7 @@ func (s *creditService) UpdateSpendSettings(ctx context.Context, orgID uuid.UUID
 	if s.settings == nil {
 		return nil, errx.New(errx.Internal, "spend settings unavailable")
 	}
-	for _, limit := range []*int{in.SpendLimitDaily, in.SpendLimitWeekly, in.SpendLimitMonthly} {
+	for _, limit := range []*int{in.SpendLimitDaily, in.SpendLimitWeekly, in.SpendLimitMonthly, in.MemberLimitDaily, in.MemberLimitWeekly, in.MemberLimitMonthly} {
 		if limit != nil && *limit <= 0 {
 			return nil, errx.New(errx.BadRequest, "spend limits must be positive (omit to disable)")
 		}

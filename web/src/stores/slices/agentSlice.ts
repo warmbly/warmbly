@@ -26,7 +26,9 @@ export type AgentPending = {
 }
 
 export type AgentBlock =
-  | { kind: 'text'; text: string }
+  // live marks a block still receiving text_delta chunks; the closing full
+  // "text" event replaces its content and clears the flag.
+  | { kind: 'text'; text: string; live?: boolean }
   | { kind: 'tool'; step: AgentToolStep }
   | { kind: 'error'; code?: string; message: string }
 
@@ -66,6 +68,13 @@ export const AGENT_MIN_WIDTH = 360
 export const AGENT_MAX_WIDTH = 720
 export const AGENT_DEFAULT_WIDTH = 440
 
+// Floating-window geometry bounds (desktop only; mobile stays a sheet).
+export const AGENT_FLOAT_MIN_W = 360
+export const AGENT_FLOAT_MAX_W = 920
+export const AGENT_FLOAT_MIN_H = 400
+
+export type AgentFloatRect = { x: number; y: number; w: number; h: number }
+
 function makeTab(partial?: Partial<AgentTab>): AgentTab {
   return {
     key: newTabKey(),
@@ -96,12 +105,21 @@ export interface AgentSlice {
   // its width in the normal (non-expanded) mode.
   agentSide: 'left' | 'right'
   agentWidth: number
+  // Floating mode: the panel detaches into a movable, resizable window.
+  // agentSide is kept as the dock-back target. Rect is null until the first
+  // pop-out (the component computes a default from the viewport).
+  agentFloating: boolean
+  agentFloatRect: AgentFloatRect | null
 
   setAgentExpanded: (v: boolean) => void
   setAgentMinimized: (v: boolean) => void
   setAgentSide: (v: 'left' | 'right') => void
   // Clamped to [AGENT_MIN_WIDTH, AGENT_MAX_WIDTH].
   setAgentWidth: (v: number) => void
+  setAgentFloating: (v: boolean) => void
+  // Size is clamped to the float bounds; position clamping is the caller's
+  // job (it knows the viewport).
+  setAgentFloatRect: (r: AgentFloatRect) => void
   // Ensure at least one tab exists (called when the panel first opens).
   agentEnsureTab: () => void
   // Open a brand-new empty conversation tab and focus it.
@@ -124,12 +142,24 @@ export const createAgentSlice: StateCreator<AgentSlice, [], [], AgentSlice> = (s
   agentMinimized: false,
   agentSide: 'right',
   agentWidth: AGENT_DEFAULT_WIDTH,
+  agentFloating: false,
+  agentFloatRect: null,
 
   setAgentExpanded: (agentExpanded) => set({ agentExpanded }),
   setAgentMinimized: (agentMinimized) => set({ agentMinimized }),
   setAgentSide: (agentSide) => set({ agentSide }),
   setAgentWidth: (v) =>
     set({ agentWidth: Math.min(AGENT_MAX_WIDTH, Math.max(AGENT_MIN_WIDTH, Math.round(v))) }),
+  setAgentFloating: (agentFloating) => set({ agentFloating }),
+  setAgentFloatRect: (r) =>
+    set({
+      agentFloatRect: {
+        x: Math.round(r.x),
+        y: Math.round(r.y),
+        w: Math.min(AGENT_FLOAT_MAX_W, Math.max(AGENT_FLOAT_MIN_W, Math.round(r.w))),
+        h: Math.max(AGENT_FLOAT_MIN_H, Math.round(r.h)),
+      },
+    }),
 
   agentEnsureTab: () => {
     if (get().agentTabs.length > 0) return

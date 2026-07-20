@@ -236,6 +236,9 @@ func (h *Handler) UpdateCreditSettings(c *gin.Context) {
 		SpendLimitDaily      *int   `json:"spend_limit_daily"`
 		SpendLimitWeekly     *int   `json:"spend_limit_weekly"`
 		SpendLimitMonthly    *int   `json:"spend_limit_monthly"`
+		MemberLimitDaily     *int   `json:"member_limit_daily"`
+		MemberLimitWeekly    *int   `json:"member_limit_weekly"`
+		MemberLimitMonthly   *int   `json:"member_limit_monthly"`
 		LowBalanceThreshold  int    `json:"low_balance_threshold"`
 		AutoTopupEnabled     bool   `json:"auto_topup_enabled"`
 		AutoTopupPack        string `json:"auto_topup_pack"`
@@ -253,6 +256,9 @@ func (h *Handler) UpdateCreditSettings(c *gin.Context) {
 		SpendLimitDaily:      body.SpendLimitDaily,
 		SpendLimitWeekly:     body.SpendLimitWeekly,
 		SpendLimitMonthly:    body.SpendLimitMonthly,
+		MemberLimitDaily:     body.MemberLimitDaily,
+		MemberLimitWeekly:    body.MemberLimitWeekly,
+		MemberLimitMonthly:   body.MemberLimitMonthly,
 		LowBalanceThreshold:  body.LowBalanceThreshold,
 		AutoTopupEnabled:     body.AutoTopupEnabled,
 		AutoTopupPack:        body.AutoTopupPack,

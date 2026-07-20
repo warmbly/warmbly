@@ -1,4 +1,4 @@
-import { useInfiniteQuery, type InfiniteData } from "@tanstack/react-query";
+import { keepPreviousData, useInfiniteQuery, type InfiniteData } from "@tanstack/react-query";
 import { DEFAULT_PAGINATION_LIMIT } from "@/lib/information";
 import type SearchContacts from "@/lib/api/models/app/contacts/SearchContacts";
 import searchContacts from "@/lib/api/client/app/contacts/searchContacts";
@@ -8,9 +8,11 @@ interface UseSearchContactsProps {
     options: SearchContacts;
     limit?: number;
     enabled?: boolean;
+    /** Keep showing the previous results while a new query loads (composer pickers). */
+    keepPrevious?: boolean;
 }
 
-export default function useSearchContacts({ options, limit = DEFAULT_PAGINATION_LIMIT, enabled = true }: UseSearchContactsProps) {
+export default function useSearchContacts({ options, limit = DEFAULT_PAGINATION_LIMIT, enabled = true, keepPrevious = false }: UseSearchContactsProps) {
     const queryResult = useInfiniteQuery<
         SearchContactsResult,
         Error,
@@ -30,6 +32,7 @@ export default function useSearchContacts({ options, limit = DEFAULT_PAGINATION_
         },
         staleTime: 5 * 60 * 1000,
         gcTime: 10 * 60 * 1000,
+        placeholderData: keepPrevious ? keepPreviousData : undefined,
         enabled,
     });
 

@@ -6,7 +6,7 @@ import os
 enum RealtimeDomain: String, CaseIterable, Sendable {
     case unibox, campaigns, contacts, emailAccounts, analytics, team
     case templates, crm, meetings, automations, integrations, apiKeys
-    case settings, notifications, audit, billing, me
+    case settings, notifications, audit, billing, me, ai
 }
 
 // MARK: - Presence
@@ -351,6 +351,7 @@ final class RealtimeService {
         "folder": [.me, .campaigns],
         "tag": [.me, .emailAccounts, .unibox],
         "category": [.me, .contacts],
+        "ai_session": [.ai],
     ]
 
     private static func domains(forEventName name: String) -> [RealtimeDomain] {

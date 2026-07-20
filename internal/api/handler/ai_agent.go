@@ -144,6 +144,50 @@ func (h *Handler) AgentSessionMessages(c *gin.Context) {
 	})
 }
 
+// DeleteAgentSession — DELETE /ai/sessions/:id removes a conversation and its
+// transcript. Sessions are private to the member, so no extra permission gate.
+func (h *Handler) DeleteAgentSession(c *gin.Context) {
+	if h.AIAgentService == nil {
+		errx.JSON(c, errx.New(errx.ServiceUnavailable, "the AI assistant is not configured"))
+		return
+	}
+	inv, xerr := h.jwtInvocation(c)
+	if xerr != nil {
+		errx.JSON(c, xerr)
+		return
+	}
+	sessionID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "invalid session id"))
+		return
+	}
+	if derr := h.AIAgentService.DeleteSession(c.Request.Context(), inv.OrgID, inv.UserID, sessionID); derr != nil {
+		errx.JSON(c, derr)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "session deleted"})
+}
+
+// ClearAgentSessions — DELETE /ai/sessions removes the member's entire
+// conversation history in this workspace.
+func (h *Handler) ClearAgentSessions(c *gin.Context) {
+	if h.AIAgentService == nil {
+		errx.JSON(c, errx.New(errx.ServiceUnavailable, "the AI assistant is not configured"))
+		return
+	}
+	inv, xerr := h.jwtInvocation(c)
+	if xerr != nil {
+		errx.JSON(c, xerr)
+		return
+	}
+	n, derr := h.AIAgentService.ClearSessions(c.Request.Context(), inv.OrgID, inv.UserID)
+	if derr != nil {
+		errx.JSON(c, derr)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "history cleared", "deleted": n})
+}
+
 // AgentMessage — POST /ai/sessions/:id/messages (SSE)
 func (h *Handler) AgentMessage(c *gin.Context) {
 	if h.AIAgentService == nil {
