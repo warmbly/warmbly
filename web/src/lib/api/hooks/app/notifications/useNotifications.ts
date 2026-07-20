@@ -19,11 +19,14 @@ export function useNotificationPreferences() {
     });
 }
 
+// The PUT echoes the saved envelope; write it into the cache instead of
+// invalidating — a refetch per save is wasted traffic and re-rendered the
+// settings page mid-save.
 export function useUpdateNotificationPreferences() {
     const qc = useQueryClient();
     return useMutation({
         mutationFn: (prefs: NotificationPreferences) => updateNotificationPreferences(prefs),
-        onSuccess: () => qc.invalidateQueries({ queryKey: PREFS_KEY }),
+        onSuccess: (envelope) => qc.setQueryData(PREFS_KEY, envelope),
     });
 }
 

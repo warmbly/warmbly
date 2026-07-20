@@ -13,14 +13,13 @@ export async function getNotificationPreferences(): Promise<NotificationPreferen
     });
 }
 
-export async function updateNotificationPreferences(preferences: NotificationPreferences): Promise<NotificationPreferences> {
-    const res = await Request<{ preferences: NotificationPreferences }>({
+export async function updateNotificationPreferences(preferences: NotificationPreferences): Promise<NotificationPreferencesEnvelope> {
+    return await Request<NotificationPreferencesEnvelope>({
         method: "PUT",
         url: "/auth/me/notification-preferences",
         data: { preferences },
         authorization: true,
     });
-    return res.preferences;
 }
 
 export async function listNotifications(unreadOnly = false, limit = 50): Promise<{ notifications: AppNotification[]; unread: number }> {

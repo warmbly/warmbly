@@ -67,14 +67,17 @@ export default function NotificationsSettingsPage() {
     });
     useRegisterUnsaved(autosave, () => setDraft(autosave.savedValue));
 
+    // One-shot hydration: server data seeds the draft once (normalized, since
+    // an older backend or cached response may miss newer categories the rows
+    // index directly). After that the save path owns the baseline — re-adopting
+    // every refetch would stomp edits made while a save was in flight.
+    const hydratedRef = React.useRef(false);
     React.useEffect(() => {
-        if (data) {
-            // An older backend (or cached response) may miss newer categories;
-            // the rows index them directly, so fill gaps with the defaults.
-            const full = normalizeNotificationPreferences(data.preferences);
-            setDraft(full);
-            autosave.markSaved(full);
-        }
+        if (!data || hydratedRef.current) return;
+        hydratedRef.current = true;
+        const full = normalizeNotificationPreferences(data.preferences);
+        setDraft(full);
+        autosave.markSaved(full);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [data]);
 
