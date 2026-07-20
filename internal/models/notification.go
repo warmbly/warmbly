@@ -22,26 +22,6 @@ const (
 	NotifTeamActivity    NotificationCategory = "team_activity"
 )
 
-// EmailDigestCadence controls how the email channel batches: instant sends as
-// soon as the flush loop ticks; the others hold pending emails for the window
-// so several notifications bundle into one message (and anything read in-app
-// before the hold expires is never emailed at all).
-const (
-	EmailDigestInstant = "instant"
-	EmailDigestSmart   = "smart"
-	EmailDigestHourly  = "hourly"
-	EmailDigestDaily   = "daily"
-)
-
-// ValidEmailDigest reports whether v is a known cadence value.
-func ValidEmailDigest(v string) bool {
-	switch v {
-	case EmailDigestInstant, EmailDigestSmart, EmailDigestHourly, EmailDigestDaily:
-		return true
-	}
-	return false
-}
-
 // ChannelPrefs is the per-category delivery toggles: in-app feed, account
 // email, a connected Slack workspace, and mobile push (APNs).
 type ChannelPrefs struct {
@@ -69,9 +49,11 @@ type NotificationPreferences struct {
 	BillingAlert    CategoryPref `json:"billing_alert"`
 	TeamActivity    CategoryPref `json:"team_activity"`
 
-	// EmailDigest is the email-channel batching cadence (EmailDigest*
-	// constants). Security sign-in alerts always go out immediately.
-	EmailDigest string `json:"email_digest"`
+	// EmailDigestMinutes is the email-channel bundling window: pending
+	// notification emails hold this long, then flush as one email. Bounded
+	// by config.NotificationEmailWindow* (30 min floor, 24h ceiling).
+	// Security sign-in alerts always go out immediately.
+	EmailDigestMinutes int `json:"email_digest_minutes"`
 }
 
 // DefaultNotificationPreferences is the merge base. Health categories default ON
@@ -87,15 +69,15 @@ func DefaultNotificationPreferences() NotificationPreferences {
 	// whoever can fix it even when nobody is watching the dashboard.
 	billing := CategoryPref{Enabled: true, Channels: ChannelPrefs{InApp: true, Push: true, Email: true}}
 	return NotificationPreferences{
-		InboundReply:    off,
-		InboundOOO:      off,
-		HealthBounce:    on,
-		HealthComplaint: on,
-		WorkerDowntime:  on,
-		SecuritySignIn:  on,
-		BillingAlert:    billing,
-		TeamActivity:    on,
-		EmailDigest:     EmailDigestSmart,
+		InboundReply:       off,
+		InboundOOO:         off,
+		HealthBounce:       on,
+		HealthComplaint:    on,
+		WorkerDowntime:     on,
+		SecuritySignIn:     on,
+		BillingAlert:       billing,
+		TeamActivity:       on,
+		EmailDigestMinutes: 30,
 	}
 }
 

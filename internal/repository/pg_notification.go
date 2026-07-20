@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/models"
 )
 
@@ -68,9 +69,13 @@ func (r *notificationRepository) GetPreferences(ctx context.Context, userID uuid
 	if len(raw) > 0 {
 		_ = json.Unmarshal(raw, &prefs)
 	}
-	if !models.ValidEmailDigest(prefs.EmailDigest) {
-		prefs.EmailDigest = models.EmailDigestSmart
+	// Absent/zero (older blobs) takes the default; out-of-range clamps.
+	if prefs.EmailDigestMinutes == 0 {
+		prefs.EmailDigestMinutes = config.NotificationEmailWindowDefaultMinutes
 	}
+	prefs.EmailDigestMinutes = min(
+		max(prefs.EmailDigestMinutes, config.NotificationEmailWindowMinMinutes),
+		config.NotificationEmailWindowMaxMinutes)
 	return &prefs, nil
 }
 

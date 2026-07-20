@@ -243,17 +243,20 @@ struct MoreCategoryPref: Codable, Sendable {
 }
 
 /// The preferences object keyed by category string; decoded dynamically so new
-/// backend categories render without an app update. `email_digest` is a sibling
-/// scalar in the same object, so it is split out of the category map.
+/// backend categories render without an app update. `email_digest_minutes` is
+/// a sibling scalar in the same object, so it is split out of the category
+/// map (30 minute floor, 24h ceiling, mirroring the backend bounds).
 struct NotificationPreferences: Codable, Sendable {
     var categories: [String: MoreCategoryPref]
-    var emailDigest: String
+    var emailDigestMinutes: Int
 
-    static let emailDigestKey = "email_digest"
+    static let emailWindowKey = "email_digest_minutes"
+    static let emailWindowMin = 30
+    static let emailWindowMax = 1440
 
-    init(categories: [String: MoreCategoryPref] = [:], emailDigest: String = "smart") {
+    init(categories: [String: MoreCategoryPref] = [:], emailDigestMinutes: Int = 30) {
         self.categories = categories
-        self.emailDigest = emailDigest
+        self.emailDigestMinutes = emailDigestMinutes
     }
 
     private struct DynamicKey: CodingKey {
@@ -266,10 +269,11 @@ struct NotificationPreferences: Codable, Sendable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: DynamicKey.self)
         var decoded: [String: MoreCategoryPref] = [:]
-        var digest = "smart"
+        var window = Self.emailWindowMin
         for key in container.allKeys {
-            if key.stringValue == Self.emailDigestKey {
-                digest = (try? container.decode(String.self, forKey: key)) ?? "smart"
+            if key.stringValue == Self.emailWindowKey {
+                let raw = (try? container.decode(Int.self, forKey: key)) ?? Self.emailWindowMin
+                window = min(max(raw, Self.emailWindowMin), Self.emailWindowMax)
             } else if let pref = try? container.decode(MoreCategoryPref.self, forKey: key) {
                 decoded[key.stringValue] = pref
             }
@@ -288,7 +292,7 @@ struct NotificationPreferences: Codable, Sendable {
             )
         }
         categories = decoded
-        emailDigest = digest
+        emailDigestMinutes = window
     }
 
     func encode(to encoder: Encoder) throws {
@@ -296,7 +300,7 @@ struct NotificationPreferences: Codable, Sendable {
         for (key, pref) in categories {
             try container.encode(pref, forKey: DynamicKey(stringValue: key))
         }
-        try container.encode(emailDigest, forKey: DynamicKey(stringValue: Self.emailDigestKey))
+        try container.encode(emailDigestMinutes, forKey: DynamicKey(stringValue: Self.emailWindowKey))
     }
 }
 
@@ -310,15 +314,16 @@ struct MoreNotificationPreferencesEnvelope: Codable, Sendable {
     }
 }
 
-/// What the deployment's email channel offers: hosted deploys hide the
-/// per-event instant cadence (a cost sink there); self-hosted can enable it.
-/// dailyCap is the rolling 24h notification-email budget per user.
+/// Email-channel bounds from the deployment: the window range clients should
+/// offer, and the rolling 24h per-user email budget (0 = unlimited).
 struct MoreEmailDeliveryInfo: Codable, Sendable {
-    var instantAllowed: Bool?
+    var minMinutes: Int?
+    var maxMinutes: Int?
     var dailyCap: Int?
 
     enum CodingKeys: String, CodingKey {
-        case instantAllowed = "instant_allowed"
+        case minMinutes = "min_minutes"
+        case maxMinutes = "max_minutes"
         case dailyCap = "daily_cap"
     }
 }

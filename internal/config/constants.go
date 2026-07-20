@@ -139,6 +139,15 @@ const (
 	UndoSendSecondsMin     = 5
 	UndoSendSecondsDefault = 30
 	UndoSendSecondsMax     = 120
+
+	// Notification email window: how long email-channel notifications hold
+	// before flushing as one bundled email. Per-user setting; the 30 minute
+	// floor is deliberate — there is no per-event email mode, so the channel
+	// can never become a per-notification firehose. Security sign-in alerts
+	// bypass the window entirely.
+	NotificationEmailWindowMinMinutes     = 30
+	NotificationEmailWindowDefaultMinutes = 30
+	NotificationEmailWindowMaxMinutes     = 1440
 )
 
 // InboundClassificationHeaders are the internet headers the API-based inbound

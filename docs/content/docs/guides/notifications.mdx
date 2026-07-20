@@ -110,18 +110,11 @@ Email notifications are designed to cost you as few emails as possible. Nothing 
 - **One email, not a stream.** When the hold expires, everything still unread goes out as a single bundled email, with each item linked back into the app.
 - **Shared events share one email.** When the same event concerns several teammates (a worker outage, a trial expiring), Warmbly sends one email with all of them together in To, instead of a copy per person. Everyone sees who else was told.
 
-The cadence is yours to pick in **Settings → Notifications**, under Email delivery:
+The window is yours to pick in **Settings → Notifications**, under Email delivery: presets from every 30 minutes up to once a day, or a custom window anywhere in that range. The default is every 30 minutes. There is deliberately no per-event option; 30 minutes is the floor, so the email channel can never turn into one email per alert.
 
-| Cadence | Behavior |
-| --- | --- |
-| Smart (default) | Waits 15 minutes, then bundles whatever you have not read into one email |
-| Hourly | At most one bundled email per hour |
-| Daily | At most one bundled email per day |
-| Instant | Every alert is its own email, sent right away. Self-hosted deployments only |
+Security sign-in alerts ignore the window and always send immediately: if someone signs in to your account from a new device, waiting is not an option.
 
-Security sign-in alerts ignore the cadence and always send immediately: if someone signs in to your account from a new device, waiting an hour is not an option.
-
-Two limits keep the email channel bounded. The per-event **Instant** cadence only appears on self-hosted deployments that enable it (`NOTIFICATION_EMAIL_ALLOW_INSTANT`); on Warmbly cloud the smart hold is the fastest cadence. And outside of security alerts, each person has a rolling 24 hour budget of notification emails (25 by default, configurable when self-hosting). Past the budget, alerts stay in the in-app feed instead of emailing. With bundling on any cadence, normal use never gets near it; it exists so a very high-volume day cannot turn the email channel into a firehose.
+On top of the window, each person has a rolling 24 hour budget of notification emails (25 by default, configurable when self-hosting). Past the budget, alerts stay in the in-app feed instead of emailing. With bundling, normal use never gets near it; it exists so even the busiest day stays a handful of emails.
 
 For richer, event-specific routing (custom messages, branching, multiple destinations), use [Automations](/guides/automations) instead: they can route events like replies, bookings, and record changes to outside tools with full control.
 

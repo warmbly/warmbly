@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -9,16 +10,18 @@ import (
 
 	"github.com/warmbly/warmbly/internal/api/middleware"
 	"github.com/warmbly/warmbly/internal/app/notification"
+	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 )
 
-// emailDeliveryInfo tells clients what the deployment's email channel offers,
-// so pickers can hide the instant cadence on hosted deploys.
+// emailDeliveryInfo tells clients the email-channel bounds so the window
+// control renders the right range without hardcoding it.
 func emailDeliveryInfo() gin.H {
 	return gin.H{
-		"instant_allowed": notification.InstantEmailAllowed(),
-		"daily_cap":       notification.EmailDailyCap(),
+		"min_minutes": config.NotificationEmailWindowMinMinutes,
+		"max_minutes": config.NotificationEmailWindowMaxMinutes,
+		"daily_cap":   notification.EmailDailyCap(),
 	}
 }
 
@@ -57,15 +60,14 @@ func (h *Handler) UpdateNotificationPreferences(c *gin.Context) {
 		errx.JSON(c, errx.New(errx.BadRequest, "invalid payload"))
 		return
 	}
-	if req.Preferences.EmailDigest == "" {
-		req.Preferences.EmailDigest = models.EmailDigestSmart
+	if req.Preferences.EmailDigestMinutes == 0 {
+		req.Preferences.EmailDigestMinutes = config.NotificationEmailWindowDefaultMinutes
 	}
-	if !models.ValidEmailDigest(req.Preferences.EmailDigest) {
-		errx.JSON(c, errx.New(errx.BadRequest, "email_digest must be one of instant, smart, hourly, daily"))
-		return
-	}
-	if req.Preferences.EmailDigest == models.EmailDigestInstant && !notification.InstantEmailAllowed() {
-		errx.JSON(c, errx.New(errx.BadRequest, "the instant email cadence is only available on self-hosted deployments"))
+	if req.Preferences.EmailDigestMinutes < config.NotificationEmailWindowMinMinutes ||
+		req.Preferences.EmailDigestMinutes > config.NotificationEmailWindowMaxMinutes {
+		errx.JSON(c, errx.New(errx.BadRequest, fmt.Sprintf(
+			"email_digest_minutes must be between %d and %d",
+			config.NotificationEmailWindowMinMinutes, config.NotificationEmailWindowMaxMinutes)))
 		return
 	}
 	if xerr := h.NotificationService.UpdatePreferences(c.Request.Context(), uid, &req.Preferences); xerr != nil {

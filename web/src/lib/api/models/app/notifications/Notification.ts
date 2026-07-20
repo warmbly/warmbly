@@ -12,9 +12,13 @@ export interface CategoryPref {
     channels: ChannelPrefs;
 }
 
-// How the email channel batches alerts. Security sign-in alerts always email
-// immediately regardless of cadence.
-export type EmailDigestCadence = "instant" | "smart" | "hourly" | "daily";
+// The email-channel bundling window bounds (also returned by the API so the
+// control never hardcodes them): pending notification emails hold for the
+// user's window, then flush as one bundled email. The 30 minute floor is
+// deliberate — there is no per-event email mode. Security sign-in alerts
+// always email immediately.
+export const EMAIL_WINDOW_MIN_MINUTES = 30;
+export const EMAIL_WINDOW_MAX_MINUTES = 1440;
 
 export interface NotificationPreferences {
     inbound_reply: CategoryPref;
@@ -25,16 +29,16 @@ export interface NotificationPreferences {
     security_new_signin: CategoryPref;
     billing_alert: CategoryPref;
     team_activity: CategoryPref;
-    email_digest: EmailDigestCadence;
+    email_digest_minutes: number;
 }
 
-export type NotificationCategoryKey = Exclude<keyof NotificationPreferences, "email_digest">;
+export type NotificationCategoryKey = Exclude<keyof NotificationPreferences, "email_digest_minutes">;
 
-// What the deployment's email channel offers. instant_allowed is false on the
-// hosted cloud (per-event email is a cost sink there); self-hosted deploys
-// can enable it. daily_cap is the rolling 24h budget per user (0 = unlimited).
+// Email-channel bounds from the deployment: the window range clients should
+// offer, and the rolling 24h per-user email budget (0 = unlimited).
 export interface EmailDeliveryInfo {
-    instant_allowed: boolean;
+    min_minutes: number;
+    max_minutes: number;
     daily_cap: number;
 }
 
@@ -52,7 +56,7 @@ export function normalizeNotificationPreferences(
     const on: CategoryPref = { enabled: true, channels: { in_app: true, email: false, slack: false, push: true } };
     const off: CategoryPref = { enabled: false, channels: { in_app: true, email: false, slack: false, push: true } };
     const billing: CategoryPref = { enabled: true, channels: { in_app: true, email: true, slack: false, push: true } };
-    const cadence: EmailDigestCadence[] = ["instant", "smart", "hourly", "daily"];
+    const minutes = p?.email_digest_minutes ?? EMAIL_WINDOW_MIN_MINUTES;
     return {
         inbound_reply: p?.inbound_reply ?? off,
         inbound_out_of_office: p?.inbound_out_of_office ?? off,
@@ -62,7 +66,7 @@ export function normalizeNotificationPreferences(
         security_new_signin: p?.security_new_signin ?? on,
         billing_alert: p?.billing_alert ?? billing,
         team_activity: p?.team_activity ?? on,
-        email_digest: p?.email_digest && cadence.includes(p.email_digest) ? p.email_digest : "smart",
+        email_digest_minutes: Math.min(Math.max(minutes, EMAIL_WINDOW_MIN_MINUTES), EMAIL_WINDOW_MAX_MINUTES),
     };
 }
 

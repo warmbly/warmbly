@@ -7,10 +7,7 @@ final class MoreNotificationsStore {
     var items: [UserNotification] = []
     var unread = 0
     var preferences: [String: MoreCategoryPref] = [:]
-    var emailDigest = "smart"
-    // Hosted deploys don't offer the per-event instant cadence (email there
-    // is metered spend); shown only when the server says it is available.
-    var instantAllowed = false
+    var emailDigestMinutes = 30
     var loadedOnce = false
     var isLoading = false
     var errorMessage: String?
@@ -30,8 +27,7 @@ final class MoreNotificationsStore {
             PushManager.shared.setBadge(unread)
             let envelope: MoreNotificationPreferencesEnvelope = try await api.get("auth/me/notification-preferences")
             preferences = envelope.preferences?.categories ?? [:]
-            emailDigest = envelope.preferences?.emailDigest ?? "smart"
-            instantAllowed = envelope.emailDelivery?.instantAllowed ?? false
+            emailDigestMinutes = envelope.preferences?.emailDigestMinutes ?? 30
             loadedOnce = true
         } catch {
             errorMessage = error.localizedDescription
@@ -70,13 +66,13 @@ final class MoreNotificationsStore {
         await persist(previous: previous, api)
     }
 
-    /// Email cadence, saved through the same PUT as the toggles.
-    func setEmailDigest(_ cadence: String, _ api: APIClient) async {
-        guard cadence != emailDigest else { return }
+    /// Email bundling window, saved through the same PUT as the toggles.
+    func setEmailWindow(_ minutes: Int, _ api: APIClient) async {
+        guard minutes != emailDigestMinutes else { return }
         let previous = preferences
-        let previousDigest = emailDigest
-        emailDigest = cadence
-        await persist(previous: previous, previousDigest: previousDigest, api)
+        let previousWindow = emailDigestMinutes
+        emailDigestMinutes = minutes
+        await persist(previous: previous, previousWindow: previousWindow, api)
     }
 
     /// Global channel state, like the web settings page: a channel reads "on"
@@ -99,10 +95,10 @@ final class MoreNotificationsStore {
         await persist(previous: previous, api)
     }
 
-    private func persist(previous: [String: MoreCategoryPref], previousDigest: String? = nil, _ api: APIClient) async {
+    private func persist(previous: [String: MoreCategoryPref], previousWindow: Int? = nil, _ api: APIClient) async {
         do {
             let body = MorePreferencesBody(
-                preferences: NotificationPreferences(categories: preferences, emailDigest: emailDigest)
+                preferences: NotificationPreferences(categories: preferences, emailDigestMinutes: emailDigestMinutes)
             )
             let echoed: MoreNotificationPreferencesEnvelope = try await api.put(
                 "auth/me/notification-preferences",
@@ -110,11 +106,11 @@ final class MoreNotificationsStore {
             )
             if let echoedPrefs = echoed.preferences {
                 preferences = echoedPrefs.categories
-                emailDigest = echoedPrefs.emailDigest
+                emailDigestMinutes = echoedPrefs.emailDigestMinutes
             }
         } catch {
             preferences = previous
-            if let previousDigest { emailDigest = previousDigest }
+            if let previousWindow { emailDigestMinutes = previousWindow }
             actionError = error.localizedDescription
         }
     }
@@ -186,19 +182,30 @@ private enum MoreNotificationMeta {
         ("Account", ["billing_alert", "team_activity"]),
     ]
 
-    static let digestOptions: [(value: String, label: String, caption: String)] = [
-        ("instant", "Instant", "Every alert emails right away."),
-        ("smart", "Smart", "Waits 15 minutes and skips anything you already read."),
-        ("hourly", "Hourly", "At most one bundled email per hour."),
-        ("daily", "Daily", "At most one bundled email per day."),
+    // Bundling-window presets in minutes. The 30 minute floor mirrors the
+    // backend: there is no per-event email mode.
+    static let windowOptions: [(minutes: Int, label: String, caption: String)] = [
+        (30, "Every 30 minutes", "The fastest option. Skips anything you already read."),
+        (60, "Every hour", "At most one bundled email per hour."),
+        (180, "Every 3 hours", "A few bundles across a working day."),
+        (360, "Every 6 hours", "Morning, afternoon, evening."),
+        (720, "Every 12 hours", "Twice a day at most."),
+        (1440, "Once a day", "One daily summary of everything unread."),
     ]
 
-    static func digestLabel(_ value: String) -> String {
-        digestOptions.first(where: { $0.value == value })?.label ?? value.capitalized
+    static func windowLabel(_ minutes: Int) -> String {
+        if let match = windowOptions.first(where: { $0.minutes == minutes }) {
+            return match.label
+        }
+        if minutes % 60 == 0 {
+            return "Every \(minutes / 60) hours"
+        }
+        return "Every \(minutes) minutes"
     }
 
-    static func digestCaption(_ value: String) -> String {
-        digestOptions.first(where: { $0.value == value })?.caption ?? "Choose how email alerts are bundled."
+    static func windowCaption(_ minutes: Int) -> String {
+        windowOptions.first(where: { $0.minutes == minutes })?.caption
+            ?? "Bundles everything unread into one email per window."
     }
 }
 
@@ -436,21 +443,18 @@ struct NotificationsView: View {
             channelRow(
                 symbol: "tray.full.fill",
                 tone: .indigo,
-                label: "Cadence",
-                caption: MoreNotificationMeta.digestCaption(store.emailDigest)
+                label: "Bundling window",
+                caption: MoreNotificationMeta.windowCaption(store.emailDigestMinutes)
             ) {
                 Menu {
-                    Picker("Cadence", selection: digestBinding) {
-                        ForEach(
-                            MoreNotificationMeta.digestOptions.filter { store.instantAllowed || $0.value != "instant" },
-                            id: \.value
-                        ) { option in
-                            Text(option.label).tag(option.value)
+                    Picker("Bundling window", selection: windowBinding) {
+                        ForEach(windowChoices, id: \.self) { minutes in
+                            Text(MoreNotificationMeta.windowLabel(minutes)).tag(minutes)
                         }
                     }
                 } label: {
                     HStack(spacing: 4) {
-                        Text(MoreNotificationMeta.digestLabel(store.emailDigest))
+                        Text(MoreNotificationMeta.windowLabel(store.emailDigestMinutes))
                             .font(.subheadline.weight(.medium))
                         Image(systemName: "chevron.up.chevron.down")
                             .font(.caption2.weight(.semibold))
@@ -505,11 +509,22 @@ struct NotificationsView: View {
         )
     }
 
-    private var digestBinding: Binding<String> {
+    // Preset windows, plus the server value when it matches none (set to a
+    // custom window on the web) so the picker never lies about the state.
+    private var windowChoices: [Int] {
+        var choices = MoreNotificationMeta.windowOptions.map(\.minutes)
+        if !choices.contains(store.emailDigestMinutes) {
+            choices.append(store.emailDigestMinutes)
+            choices.sort()
+        }
+        return choices
+    }
+
+    private var windowBinding: Binding<Int> {
         Binding(
-            get: { store.emailDigest },
+            get: { store.emailDigestMinutes },
             set: { newValue in
-                Task { await store.setEmailDigest(newValue, env.api) }
+                Task { await store.setEmailWindow(newValue, env.api) }
             }
         )
     }

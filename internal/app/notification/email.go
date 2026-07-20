@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/notify/templates"
 )
@@ -25,7 +26,6 @@ import (
 // what keeps active users from ever being emailed about things they saw.
 const (
 	emailFlushEvery    = 30 * time.Second
-	emailSmartHold     = 15 * time.Minute
 	emailRetryDelay    = 10 * time.Minute
 	emailMaxAttempts   = 3
 	emailSendTimeout   = 10 * time.Second
@@ -33,24 +33,10 @@ const (
 	emailDailyCapValue = 25
 )
 
-// Hosted-deployment cost guards. Every notification email is provider spend
-// on the cloud, so the per-event instant cadence is opt-in (self-host sets
-// NOTIFICATION_EMAIL_ALLOW_INSTANT) and each user gets a rolling 24h email
-// budget (NOTIFICATION_EMAIL_DAILY_CAP, 0 disables). Security sign-in alerts
-// bypass both — they are rare and must always arrive.
-
-// InstantEmailAllowed reports whether the instant cadence is enabled on this
-// deployment. Off by default: the fastest hosted cadence is the smart hold.
-func InstantEmailAllowed() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("NOTIFICATION_EMAIL_ALLOW_INSTANT"))) {
-	case "1", "true", "yes":
-		return true
-	}
-	return false
-}
-
 // EmailDailyCap is the max non-security notification emails one user receives
-// per rolling 24h. 0 means unlimited.
+// per rolling 24h — a backstop on top of the bundling window (which already
+// bounds the channel: there is no per-event mode, the floor is 30 minutes).
+// NOTIFICATION_EMAIL_DAILY_CAP overrides; 0 means unlimited.
 func EmailDailyCap() int {
 	if raw := os.Getenv("NOTIFICATION_EMAIL_DAILY_CAP"); raw != "" {
 		if n, err := strconv.Atoi(raw); err == nil && n >= 0 {
@@ -60,34 +46,14 @@ func EmailDailyCap() int {
 	return emailDailyCapValue
 }
 
-func smartHold() time.Duration {
-	if raw := os.Getenv("NOTIFICATION_EMAIL_SMART_HOLD"); raw != "" {
-		if d, err := time.ParseDuration(raw); err == nil && d > 0 {
-			return d
-		}
-	}
-	return emailSmartHold
-}
-
-// emailHold maps the user's cadence to the pending window. Security sign-in
-// alerts always go out on the next tick regardless of cadence.
-func emailHold(cadence string, category models.NotificationCategory) time.Duration {
+// emailHold maps the user's bundling window to the pending hold. Security
+// sign-in alerts always go out on the next tick regardless of the window.
+func emailHold(minutes int, category models.NotificationCategory) time.Duration {
 	if category == models.NotifSecuritySignIn {
 		return 0
 	}
-	switch cadence {
-	case models.EmailDigestInstant:
-		if !InstantEmailAllowed() {
-			return smartHold() // stored instant on a hosted deploy degrades to smart
-		}
-		return 0
-	case models.EmailDigestHourly:
-		return time.Hour
-	case models.EmailDigestDaily:
-		return 24 * time.Hour
-	default:
-		return smartHold()
-	}
+	m := min(max(minutes, config.NotificationEmailWindowMinMinutes), config.NotificationEmailWindowMaxMinutes)
+	return time.Duration(m) * time.Minute
 }
 
 // overEmailBudget reports whether a user has spent their rolling 24h email
