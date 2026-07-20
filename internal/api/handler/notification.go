@@ -8,9 +8,19 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/warmbly/warmbly/internal/api/middleware"
+	"github.com/warmbly/warmbly/internal/app/notification"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 )
+
+// emailDeliveryInfo tells clients what the deployment's email channel offers,
+// so pickers can hide the instant cadence on hosted deploys.
+func emailDeliveryInfo() gin.H {
+	return gin.H{
+		"instant_allowed": notification.InstantEmailAllowed(),
+		"daily_cap":       notification.EmailDailyCap(),
+	}
+}
 
 func notifActor(c *gin.Context) (uuid.UUID, bool) {
 	id, err := uuid.Parse(middleware.GetUserID(c))
@@ -33,7 +43,7 @@ func (h *Handler) GetNotificationPreferences(c *gin.Context) {
 		errx.JSON(c, xerr)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"preferences": prefs})
+	c.JSON(http.StatusOK, gin.H{"preferences": prefs, "email_delivery": emailDeliveryInfo()})
 }
 
 // UpdateNotificationPreferences replaces the caller's notification preferences.
@@ -54,11 +64,15 @@ func (h *Handler) UpdateNotificationPreferences(c *gin.Context) {
 		errx.JSON(c, errx.New(errx.BadRequest, "email_digest must be one of instant, smart, hourly, daily"))
 		return
 	}
+	if req.Preferences.EmailDigest == models.EmailDigestInstant && !notification.InstantEmailAllowed() {
+		errx.JSON(c, errx.New(errx.BadRequest, "the instant email cadence is only available on self-hosted deployments"))
+		return
+	}
 	if xerr := h.NotificationService.UpdatePreferences(c.Request.Context(), uid, &req.Preferences); xerr != nil {
 		errx.JSON(c, xerr)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"preferences": req.Preferences})
+	c.JSON(http.StatusOK, gin.H{"preferences": req.Preferences, "email_delivery": emailDeliveryInfo()})
 }
 
 // ListNotifications returns the caller's recent feed + the unread count.

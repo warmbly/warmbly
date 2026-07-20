@@ -30,6 +30,19 @@ export interface NotificationPreferences {
 
 export type NotificationCategoryKey = Exclude<keyof NotificationPreferences, "email_digest">;
 
+// What the deployment's email channel offers. instant_allowed is false on the
+// hosted cloud (per-event email is a cost sink there); self-hosted deploys
+// can enable it. daily_cap is the rolling 24h budget per user (0 = unlimited).
+export interface EmailDeliveryInfo {
+    instant_allowed: boolean;
+    daily_cap: number;
+}
+
+export interface NotificationPreferencesEnvelope {
+    preferences: NotificationPreferences;
+    email_delivery?: EmailDeliveryInfo;
+}
+
 // Client-side mirror of the backend defaults merge: a response from an older
 // backend (or a cached one) may miss newer categories or email_digest, and
 // consumers index categories directly, so fill any gap before use.

@@ -77,12 +77,17 @@ export default function NotificationsSettingsPage() {
         if (data) {
             // An older backend (or cached response) may miss newer categories;
             // the rows index them directly, so fill gaps with the defaults.
-            const full = normalizeNotificationPreferences(data);
+            const full = normalizeNotificationPreferences(data.preferences);
             setDraft(full);
             autosave.markSaved(full);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [data]);
+
+    // Per-event email is a hosted cost sink; the backend only offers instant
+    // on deployments that opted in, and hides it otherwise.
+    const instantAllowed = data?.email_delivery?.instant_allowed === true;
+    const digestOptions = instantAllowed ? DIGEST_OPTIONS : DIGEST_OPTIONS.filter((o) => o.value !== "instant");
 
     const setEnabled = (key: NotificationCategoryKey, on: boolean) =>
         setDraft((d) => (d ? { ...d, [key]: { ...d[key], enabled: on } } : d));
@@ -168,7 +173,7 @@ export default function NotificationsSettingsPage() {
                             cols={2}
                             value={draft.email_digest}
                             onChange={(v) => setDraft((d) => (d ? { ...d, email_digest: v } : d))}
-                            options={DIGEST_OPTIONS}
+                            options={digestOptions}
                         />
                         <p className="text-[11px] text-slate-400 leading-relaxed">
                             Alerts you read in the app are never emailed. Security sign-in alerts always send immediately, and alerts that concern several teammates arrive as one shared email.

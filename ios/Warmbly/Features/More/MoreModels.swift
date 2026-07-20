@@ -302,6 +302,25 @@ struct NotificationPreferences: Codable, Sendable {
 
 struct MoreNotificationPreferencesEnvelope: Codable, Sendable {
     var preferences: NotificationPreferences?
+    var emailDelivery: MoreEmailDeliveryInfo?
+
+    enum CodingKeys: String, CodingKey {
+        case preferences
+        case emailDelivery = "email_delivery"
+    }
+}
+
+/// What the deployment's email channel offers: hosted deploys hide the
+/// per-event instant cadence (a cost sink there); self-hosted can enable it.
+/// dailyCap is the rolling 24h notification-email budget per user.
+struct MoreEmailDeliveryInfo: Codable, Sendable {
+    var instantAllowed: Bool?
+    var dailyCap: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case instantAllowed = "instant_allowed"
+        case dailyCap = "daily_cap"
+    }
 }
 
 struct MorePreferencesBody: Encodable {

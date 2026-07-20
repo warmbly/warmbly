@@ -30,8 +30,15 @@ type NotificationRepository interface {
 	// FOR UPDATE SKIP LOCKED, and stale claims from crashed flushes recover
 	// back to pending first.
 	ClaimDueEmails(ctx context.Context) ([]models.Notification, error)
-	// MarkEmailed settles claimed rows as sent.
+	// MarkEmailed settles claimed rows as sent. On sent rows email_due_at
+	// becomes the send time, which is what the daily budget counts.
 	MarkEmailed(ctx context.Context, ids []uuid.UUID) error
+	// SkipEmails settles claimed rows as skipped (dropped recipient, spent
+	// budget); the in-app feed remains the record.
+	SkipEmails(ctx context.Context, ids []uuid.UUID) error
+	// CountEmailedSince counts notification emails delivered to a user after
+	// since — the rolling daily budget check.
+	CountEmailedSince(ctx context.Context, userID uuid.UUID, since time.Time) (int, error)
 	// RequeueEmails returns claimed rows to pending after a send failure,
 	// with a retry delay; rows that already burned their attempts are
 	// dropped to skipped instead of retrying forever.
@@ -206,9 +213,27 @@ func (r *notificationRepository) MarkEmailed(ctx context.Context, ids []uuid.UUI
 		return nil
 	}
 	_, err := r.db.Exec(ctx, `
-		UPDATE notifications SET email_state = 'sent', email_due_at = NULL
+		UPDATE notifications SET email_state = 'sent', email_due_at = now()
 		WHERE id = ANY($1) AND email_state = 'sending'`, ids)
 	return err
+}
+
+func (r *notificationRepository) SkipEmails(ctx context.Context, ids []uuid.UUID) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	_, err := r.db.Exec(ctx, `
+		UPDATE notifications SET email_state = 'skipped', email_due_at = NULL
+		WHERE id = ANY($1) AND email_state = 'sending'`, ids)
+	return err
+}
+
+func (r *notificationRepository) CountEmailedSince(ctx context.Context, userID uuid.UUID, since time.Time) (int, error) {
+	var c int
+	err := r.db.QueryRow(ctx, `
+		SELECT COUNT(*) FROM notifications
+		WHERE user_id = $1 AND email_state = 'sent' AND email_due_at >= $2`, userID, since).Scan(&c)
+	return c, err
 }
 
 func (r *notificationRepository) RequeueEmails(ctx context.Context, ids []uuid.UUID, delay time.Duration, maxAttempts int) error {

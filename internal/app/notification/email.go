@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,13 +24,50 @@ import (
 // notification in-app cancels its pending email (repo.MarkRead), which is
 // what keeps active users from ever being emailed about things they saw.
 const (
-	emailFlushEvery   = 30 * time.Second
-	emailSmartHold    = 15 * time.Minute
-	emailRetryDelay   = 10 * time.Minute
-	emailMaxAttempts  = 3
-	emailSendTimeout  = 10 * time.Second
-	emailFlushTimeout = 2 * time.Minute
+	emailFlushEvery    = 30 * time.Second
+	emailSmartHold     = 15 * time.Minute
+	emailRetryDelay    = 10 * time.Minute
+	emailMaxAttempts   = 3
+	emailSendTimeout   = 10 * time.Second
+	emailFlushTimeout  = 2 * time.Minute
+	emailDailyCapValue = 25
 )
+
+// Hosted-deployment cost guards. Every notification email is provider spend
+// on the cloud, so the per-event instant cadence is opt-in (self-host sets
+// NOTIFICATION_EMAIL_ALLOW_INSTANT) and each user gets a rolling 24h email
+// budget (NOTIFICATION_EMAIL_DAILY_CAP, 0 disables). Security sign-in alerts
+// bypass both — they are rare and must always arrive.
+
+// InstantEmailAllowed reports whether the instant cadence is enabled on this
+// deployment. Off by default: the fastest hosted cadence is the smart hold.
+func InstantEmailAllowed() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("NOTIFICATION_EMAIL_ALLOW_INSTANT"))) {
+	case "1", "true", "yes":
+		return true
+	}
+	return false
+}
+
+// EmailDailyCap is the max non-security notification emails one user receives
+// per rolling 24h. 0 means unlimited.
+func EmailDailyCap() int {
+	if raw := os.Getenv("NOTIFICATION_EMAIL_DAILY_CAP"); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n >= 0 {
+			return n
+		}
+	}
+	return emailDailyCapValue
+}
+
+func smartHold() time.Duration {
+	if raw := os.Getenv("NOTIFICATION_EMAIL_SMART_HOLD"); raw != "" {
+		if d, err := time.ParseDuration(raw); err == nil && d > 0 {
+			return d
+		}
+	}
+	return emailSmartHold
+}
 
 // emailHold maps the user's cadence to the pending window. Security sign-in
 // alerts always go out on the next tick regardless of cadence.
@@ -39,19 +77,29 @@ func emailHold(cadence string, category models.NotificationCategory) time.Durati
 	}
 	switch cadence {
 	case models.EmailDigestInstant:
+		if !InstantEmailAllowed() {
+			return smartHold() // stored instant on a hosted deploy degrades to smart
+		}
 		return 0
 	case models.EmailDigestHourly:
 		return time.Hour
 	case models.EmailDigestDaily:
 		return 24 * time.Hour
 	default:
-		if raw := os.Getenv("NOTIFICATION_EMAIL_SMART_HOLD"); raw != "" {
-			if d, err := time.ParseDuration(raw); err == nil && d > 0 {
-				return d
-			}
-		}
-		return emailSmartHold
+		return smartHold()
 	}
+}
+
+// overEmailBudget reports whether a user has spent their rolling 24h email
+// budget. Errors count as in-budget — the cap is a cost guard, not a gate
+// worth losing alerts over.
+func (s *service) overEmailBudget(ctx context.Context, userID uuid.UUID) bool {
+	limit := EmailDailyCap()
+	if limit <= 0 {
+		return false
+	}
+	sent, err := s.repo.CountEmailedSince(ctx, userID, time.Now().Add(-24*time.Hour))
+	return err == nil && sent >= limit
 }
 
 func (s *service) emailFlushLoop() {
@@ -111,22 +159,55 @@ func (s *service) flushDueEmails() {
 }
 
 // sendGroupEmail delivers one shared event to all its recipients in a single
-// message, addresses together in To — teammates see who else was told.
+// message, addresses together in To — teammates see who else was told. Before
+// sending it re-verifies each recipient: still an accepted member of the org
+// (permissions were checked at event time, but membership can end during the
+// hold) and still inside their email budget. Dropped recipients' rows go to
+// skipped; the in-app feed remains their record.
 func (s *service) sendGroupEmail(ctx context.Context, rows []models.Notification) {
+	var stillMember map[uuid.UUID]bool
+	if s.members != nil && rows[0].OrganizationID != nil {
+		if members, err := s.members.GetMembers(ctx, *rows[0].OrganizationID); err == nil {
+			stillMember = map[uuid.UUID]bool{}
+			for _, m := range members {
+				if m.AcceptedAt != nil {
+					stillMember[m.UserID] = true
+				}
+			}
+		}
+	}
+
 	to := make([]string, 0, len(rows))
 	seen := map[string]bool{}
+	kept := make([]models.Notification, 0, len(rows))
+	dropped := make([]uuid.UUID, 0)
+	budgetOK := map[uuid.UUID]bool{}
 	for _, n := range rows {
+		if stillMember != nil && !stillMember[n.UserID] {
+			dropped = append(dropped, n.ID)
+			continue
+		}
+		if _, checked := budgetOK[n.UserID]; !checked {
+			budgetOK[n.UserID] = !s.overEmailBudget(ctx, n.UserID)
+		}
+		if !budgetOK[n.UserID] {
+			dropped = append(dropped, n.ID)
+			continue
+		}
+		kept = append(kept, n)
 		if user, err := s.users.GetUser(ctx, n.UserID); err == nil && user != nil && user.Email != "" && !seen[user.Email] {
 			seen[user.Email] = true
 			to = append(to, user.Email)
 		}
 	}
-	ids := notifIDs(rows)
+	_ = s.repo.SkipEmails(ctx, dropped)
+
+	ids := notifIDs(kept)
 	if len(to) == 0 {
 		_ = s.repo.MarkEmailed(ctx, ids) // nobody resolvable — don't retry forever
 		return
 	}
-	first := rows[0]
+	first := kept[0]
 	html, gerr := templates.GenerateNotificationHTML(first.Title, first.Body, absoluteLink(first.Link), "")
 	if gerr != nil {
 		_ = s.repo.RequeueEmails(ctx, ids, emailRetryDelay, emailMaxAttempts)
@@ -136,8 +217,27 @@ func (s *service) sendGroupEmail(ctx context.Context, rows []models.Notification
 }
 
 // sendUserEmail bundles everything pending for one user: a lone row renders
-// as itself, several become a digest listing each item.
+// as itself, several become a digest listing each item. Over the email
+// budget, non-security rows skip (the feed keeps them) and only security
+// sign-in alerts still send.
 func (s *service) sendUserEmail(ctx context.Context, userID uuid.UUID, rows []models.Notification) {
+	if s.overEmailBudget(ctx, userID) {
+		var capped []uuid.UUID
+		kept := rows[:0:0]
+		for _, n := range rows {
+			if n.Category == models.NotifSecuritySignIn {
+				kept = append(kept, n)
+			} else {
+				capped = append(capped, n.ID)
+			}
+		}
+		_ = s.repo.SkipEmails(ctx, capped)
+		if len(kept) == 0 {
+			return
+		}
+		rows = kept
+	}
+
 	ids := notifIDs(rows)
 	user, err := s.users.GetUser(ctx, userID)
 	if err != nil || user == nil || user.Email == "" {

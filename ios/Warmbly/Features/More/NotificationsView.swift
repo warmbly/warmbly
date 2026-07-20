@@ -8,6 +8,9 @@ final class MoreNotificationsStore {
     var unread = 0
     var preferences: [String: MoreCategoryPref] = [:]
     var emailDigest = "smart"
+    // Hosted deploys don't offer the per-event instant cadence (email there
+    // is metered spend); shown only when the server says it is available.
+    var instantAllowed = false
     var loadedOnce = false
     var isLoading = false
     var errorMessage: String?
@@ -28,6 +31,7 @@ final class MoreNotificationsStore {
             let envelope: MoreNotificationPreferencesEnvelope = try await api.get("auth/me/notification-preferences")
             preferences = envelope.preferences?.categories ?? [:]
             emailDigest = envelope.preferences?.emailDigest ?? "smart"
+            instantAllowed = envelope.emailDelivery?.instantAllowed ?? false
             loadedOnce = true
         } catch {
             errorMessage = error.localizedDescription
@@ -437,7 +441,10 @@ struct NotificationsView: View {
             ) {
                 Menu {
                     Picker("Cadence", selection: digestBinding) {
-                        ForEach(MoreNotificationMeta.digestOptions, id: \.value) { option in
+                        ForEach(
+                            MoreNotificationMeta.digestOptions.filter { store.instantAllowed || $0.value != "instant" },
+                            id: \.value
+                        ) { option in
                             Text(option.label).tag(option.value)
                         }
                     }

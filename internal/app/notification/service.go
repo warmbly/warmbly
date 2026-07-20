@@ -107,6 +107,11 @@ func (s *service) GetPreferences(ctx context.Context, userID uuid.UUID) (*models
 	if err != nil {
 		return nil, errx.InternalError()
 	}
+	// Hosted deploys don't offer per-event email; a stored instant (set
+	// while self-hosted, or before the gate) reads back as smart.
+	if p != nil && p.EmailDigest == models.EmailDigestInstant && !InstantEmailAllowed() {
+		p.EmailDigest = models.EmailDigestSmart
+	}
 	return p, nil
 }
 

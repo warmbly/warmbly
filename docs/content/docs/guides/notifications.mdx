@@ -114,12 +114,14 @@ The cadence is yours to pick in **Settings → Notifications**, under Email deli
 
 | Cadence | Behavior |
 | --- | --- |
-| Instant | Every alert is its own email, sent right away |
 | Smart (default) | Waits 15 minutes, then bundles whatever you have not read into one email |
 | Hourly | At most one bundled email per hour |
 | Daily | At most one bundled email per day |
+| Instant | Every alert is its own email, sent right away. Self-hosted deployments only |
 
 Security sign-in alerts ignore the cadence and always send immediately: if someone signs in to your account from a new device, waiting an hour is not an option.
+
+Two limits keep the email channel bounded. The per-event **Instant** cadence only appears on self-hosted deployments that enable it (`NOTIFICATION_EMAIL_ALLOW_INSTANT`); on Warmbly cloud the smart hold is the fastest cadence. And outside of security alerts, each person has a rolling 24 hour budget of notification emails (25 by default, configurable when self-hosting). Past the budget, alerts stay in the in-app feed instead of emailing. With bundling on any cadence, normal use never gets near it; it exists so a very high-volume day cannot turn the email channel into a firehose.
 
 For richer, event-specific routing (custom messages, branching, multiple destinations), use [Automations](/guides/automations) instead: they can route events like replies, bookings, and record changes to outside tools with full control.
 
