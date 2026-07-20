@@ -3,10 +3,11 @@ import {
     useNotificationPreferences,
     useUpdateNotificationPreferences,
 } from "@/lib/api/hooks/app/notifications/useNotifications";
-import type {
-    EmailDigestCadence,
-    NotificationCategoryKey,
-    NotificationPreferences,
+import {
+    normalizeNotificationPreferences,
+    type EmailDigestCadence,
+    type NotificationCategoryKey,
+    type NotificationPreferences,
 } from "@/lib/api/models/app/notifications/Notification";
 import { Row, Section, SectionShell, Toggle } from "../_components/SectionShell";
 import { OptionSelect } from "@/components/app/campaigns/preferences/components/CampaignPreferenceBoolBox";
@@ -74,8 +75,11 @@ export default function NotificationsSettingsPage() {
 
     React.useEffect(() => {
         if (data) {
-            setDraft(data);
-            autosave.markSaved(data);
+            // An older backend (or cached response) may miss newer categories;
+            // the rows index them directly, so fill gaps with the defaults.
+            const full = normalizeNotificationPreferences(data);
+            setDraft(full);
+            autosave.markSaved(full);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [data]);
