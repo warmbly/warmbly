@@ -21,10 +21,11 @@ var (
 	sandboxOrg  = uuid.MustParse("22222222-aaaa-0000-0000-000000000001")
 	sandboxSub  = uuid.MustParse("88888888-aaaa-0000-0000-000000000001")
 
-	// The premium shared worker (`make worker-premium` natively, or the
-	// docker worker-premium-1). Paid orgs place strictly onto premium
-	// workers, so the sandbox mailboxes must live here.
-	sandboxWorker = uuid.MustParse("10c8f5e4-1c39-5b2a-9c8b-3d2f0a8b1a02")
+	// The worker `make worker` / `make dev` / `make sandbox` actually runs
+	// (WORKER_ID ...1a01). seedWorker upserts this row so the mailbox
+	// worker_id FK holds even before the worker first heartbeats; when the
+	// worker boots it adopts this exact row and its assigned mailboxes.
+	sandboxWorker = uuid.MustParse("10c8f5e4-1c39-5b2a-9c8b-3d2f0a8b1a01")
 
 	campaignLaunch  = uuid.MustParse("44444444-aaaa-0000-0000-000000000001")
 	campaignAgency  = uuid.MustParse("44444444-aaaa-0000-0000-000000000002")
@@ -126,6 +127,9 @@ func Seed(ctx context.Context, pool *pgxpool.Pool, cfg Config) error {
 	if err := seedIdentity(ctx, pool); err != nil {
 		return err
 	}
+	if err := seedWorker(ctx, pool); err != nil {
+		return err
+	}
 	if err := seedMailboxes(ctx, pool); err != nil {
 		return err
 	}
@@ -139,6 +143,9 @@ func Seed(ctx context.Context, pool *pgxpool.Pool, cfg Config) error {
 		return err
 	}
 	if err := seedHistory(ctx, pool); err != nil {
+		return err
+	}
+	if err := seedAnalytics(ctx, pool); err != nil {
 		return err
 	}
 	if err := seedLabels(ctx, pool); err != nil {
@@ -160,9 +167,11 @@ func Seed(ctx context.Context, pool *pgxpool.Pool, cfg Config) error {
 	fmt.Println("sandbox seeded:")
 	fmt.Printf("  dashboard  %s / %s (org: Sunrise Labs)\n", SandboxLoginEmail, SandboxLoginPassword)
 	fmt.Printf("  mailboxes  %d senders on @sunrise.test (SMTP -> mailpit, IMAP -> dovecot)\n", len(sandboxMailboxes))
-	fmt.Println("  campaigns  Sunrise Q3 launch + Agency partnerships (active), Dormant reactivation (draft)")
-	fmt.Println("  warmup     enabled on all senders, premium pool")
+	fmt.Println("  campaigns  active, paused, completed, and draft - every list bucket filled")
+	fmt.Println("  warmup     enabled on all senders, premium pool, 10 days of ramp stats")
 	fmt.Println("  history    funnel progress, unified inbox, CRM pipeline, templates, notifications, chart rollups")
+	fmt.Println("  analytics  deliverability events, contact timelines, reply intents, suppression, mailbox errors, audit log")
+	fmt.Println("  team       a second teammate plus a pending invite, and a developer API key")
 	fmt.Println("  labels     folders/tags/categories bound to mailboxes, campaigns, contacts, and inbox threads")
 	fmt.Printf("  credits    plan allowance + %d purchased (AI assistant ready)\n", sandboxTopupCredits)
 	return nil
@@ -249,6 +258,20 @@ func seedIdentity(ctx context.Context, pool *pgxpool.Pool) error {
 			role = 'owner',
 			permissions = EXCLUDED.permissions`,
 		sandboxOrg, sandboxUser, models.RolePermissions[models.RoleOwner])
+	return err
+}
+
+// seedWorker upserts the one worker the native sandbox stack runs (WORKER_ID
+// ...1a01, shared tier). email_accounts.worker_id has an FK to workers, so this
+// must exist before seedMailboxes assigns the senders to it. Left active so
+// placement and the reconciler treat it as live; the real worker process adopts
+// the row on its first heartbeat.
+func seedWorker(ctx context.Context, pool *pgxpool.Pool) error {
+	_, err := pool.Exec(ctx, `
+		INSERT INTO workers (id, name, notes, ip_addr, active, worker_type, account_count, free_tier)
+		VALUES ($1, 'worker-sandbox-1', 'Sandbox worker (make sandbox / make worker)', '127.0.0.1', TRUE, 'shared', 0, FALSE)
+		ON CONFLICT (id) DO UPDATE SET active = TRUE, updated_at = NOW()`,
+		sandboxWorker)
 	return err
 }
 
@@ -532,17 +555,16 @@ func repairContactVerification(ctx context.Context, pool *pgxpool.Pool) error {
 	return nil
 }
 
-// deactivateIdleFixtureWorkers deactivates every seeded worker except the two
-// the native stack actually runs (`make worker` / `make worker-premium`).
-// Fixture workers are seeded active but never heartbeat, so placement keeps
-// choosing them and the dead-worker sweep keeps draining them - an assignment
-// ping-pong that strands mailboxes mid-send. `make seed` re-activates them
-// for the docker `make sim` flow.
+// deactivateIdleFixtureWorkers deactivates every seeded worker except the one
+// the native stack actually runs (sandboxWorker, `make worker` / `make dev` /
+// `make sandbox`). Fixture workers are seeded active but never heartbeat, so
+// placement keeps choosing them and the dead-worker sweep keeps draining them -
+// an assignment ping-pong that strands mailboxes mid-send.
 func deactivateIdleFixtureWorkers(ctx context.Context, pool *pgxpool.Pool) error {
 	tag, err := pool.Exec(ctx, `
 		UPDATE workers SET active = FALSE, updated_at = NOW()
-		WHERE active AND id NOT IN ($1, $2)`,
-		uuid.MustParse("10c8f5e4-1c39-5b2a-9c8b-3d2f0a8b1a01"), sandboxWorker)
+		WHERE active AND id <> $1`,
+		sandboxWorker)
 	if err != nil {
 		return err
 	}
