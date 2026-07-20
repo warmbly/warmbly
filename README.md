@@ -167,7 +167,7 @@ in the [architecture docs](https://docs.warmbly.com/development/architecture/).
 
 ## Self-hosting
 
-Warmbly runs with **no cloud account of any kind** — no AWS, no GCP, no Stripe,
+Warmbly runs with **no cloud account of any kind**: no AWS, no GCP, no Stripe,
 no Kafka. One command brings up the whole platform on local, open-source pieces:
 
 ```bash
@@ -180,16 +180,16 @@ the images once (a couple of minutes; they are CGO-free), then it is up. Load
 optional demo data with `make up` running via
 `docker compose --profile seed run --rm seed`.
 
-Before exposing it, set your own secrets in a `.env` next to `docker-compose.yml`
-— at minimum `AUTH_SECRET`, `CREDENTIALS_ENCRYPTION_KEY`, `INTERNAL_API_TOKEN`,
+Before exposing it, set your own secrets in a `.env` next to `docker-compose.yml`.
+At minimum: `AUTH_SECRET`, `CREDENTIALS_ENCRYPTION_KEY`, `INTERNAL_API_TOKEN`,
 and `KMS_LOCAL_MASTER_KEY` (run `make gen-key`). The full list is in
 [`deploy/config/env.example`](deploy/config/env.example).
 
 **Reaching it from another machine.** Every service already binds to `0.0.0.0`
 (the Docker port mappings), so it listens on all interfaces. To make the app
 usable from a LAN IP or a domain instead of `localhost`, set one variable in
-`.env` — everything (API URL, CORS, websocket, tracking, blob URLs) derives from
-it:
+`.env`, and everything (API URL, CORS, websocket, tracking, blob URLs) derives
+from it:
 
 ```bash
 PUBLIC_HOST=192.168.1.50      # your machine's LAN IP, or your domain
@@ -217,14 +217,14 @@ cloud service only if you want one:
 
 NATS is the default because it is one small binary versus Kafka's
 JVM + Zookeeper + Schema Registry, and it keeps the image CGO-free so builds are
-fast. Kafka is fully supported — build the images with `--build-arg GO_TAGS=kafka`
+fast. Kafka is fully supported: build the images with `--build-arg GO_TAGS=kafka`
 (and the tracking image with `CARGO_FEATURES=kafka`), set `EVENTBUS_PROVIDER=kafka`,
 and point `KAFKA_BOOTSTRAP_SERVERS` at your cluster.
 
 **Scaling is by mailboxes and workers, not IPs.** Outbound mail goes through each
 mailbox's own provider (Gmail API, Microsoft Graph, or the mailbox's SMTP relay),
 so the source IP is the provider's, never the worker's. Add throughput by
-connecting more mailboxes and running more workers — `docker compose up --scale
+connecting more mailboxes and running more workers: `docker compose up --scale
 worker=3`, or attach a machine you already own through the admin panel's SSH
 enrollment. Workers are interchangeable executors.
 
@@ -235,8 +235,8 @@ backend and every worker. Without it you can still connect any mailbox over
 SMTP/IMAP with an app password, and Microsoft 365 over its own OAuth client.
 
 Keep two secrets safe: `KMS_LOCAL_MASTER_KEY` (`make gen-key`) and
-`CREDENTIALS_ENCRYPTION_KEY` seal every stored mailbox credential — losing them is
-unrecoverable. Full env reference and day-2 operations are in the
+`CREDENTIALS_ENCRYPTION_KEY` seal every stored mailbox credential, and losing them
+is unrecoverable. Full env reference and day-2 operations are in the
 [deployment guide](https://docs.warmbly.com/development/deployment-guide/).
 
 ## Tech stack
@@ -256,13 +256,17 @@ unrecoverable. Full env reference and day-2 operations are in the
 
 ## Documentation
 
-| Doc | What it covers |
-|-----|----------------|
-| [Architecture](https://docs.warmbly.com/development/architecture/) | Control plane vs execution plane, encryption model |
-| [Local development](https://docs.warmbly.com/development/local-development/) | Make targets, native services, seeding |
-| [Deployment guide](https://docs.warmbly.com/development/deployment-guide/) | Production control plane and worker fleet |
-| [Event system](https://docs.warmbly.com/development/events/) | Kafka event bus reference |
-| [docs.warmbly.com](https://docs.warmbly.com) | Product guides and public API reference |
+The full docs live at **[docs.warmbly.com](https://docs.warmbly.com)**: product
+guides, the API reference, and the engineering docs. Start here:
+
+| Read this | To learn |
+|-----------|----------|
+| [Local development](https://docs.warmbly.com/development/local-development/) | Every make target, the native services, and how seeding works |
+| [Sandbox](https://docs.warmbly.com/development/sandbox/) | One command spins up a full demo org that sends, replies, opens, clicks, and warms itself |
+| [Architecture](https://docs.warmbly.com/development/architecture/) | How the control plane and the workers split the job, plus the encryption model |
+| [Deployment guide](https://docs.warmbly.com/development/deployment-guide/) | Taking it to production and scaling the worker fleet |
+| [Event system](https://docs.warmbly.com/development/events/) | The event bus and every topic that flows across it |
+| [API reference](https://docs.warmbly.com/api/) | Endpoints, auth, permissions, and webhooks |
 
 ## Contributing
 
