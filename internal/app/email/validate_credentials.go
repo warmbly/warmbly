@@ -8,7 +8,6 @@ import (
 	"github.com/getsentry/sentry-go"
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/errx"
-	"github.com/warmbly/warmbly/internal/infrastructure/kafka"
 	"github.com/warmbly/warmbly/internal/models"
 )
 
@@ -33,24 +32,11 @@ func (s *emailService) ValidateCredentials(ctx context.Context, orgID uuid.UUID,
 		return errx.InternalError()
 	}
 
-	eventData := models.WorkerEvent{
-		Type: models.WorkerEventTypeEmailValidation,
-		Body: models.EventWorkerEmailValidation{
-			OrgID:       orgID,
-			ProcessID:   processID,
-			Credentials: credentials,
-		},
-	}
-
-	topic := kafka.GetWorkerTopic(workerID)
-
-	msgBytes, err := s.producer.Avrov2.Ser.Serialize(topic, eventData)
-	if err != nil {
-		sentry.CaptureException(err)
-		return errx.InternalError()
-	}
-
-	if err := s.producer.Produce(topic, []byte(orgID.String()), msgBytes); err != nil {
+	if err := s.publisher.PublishEmailValidation(ctx, workerID, models.EventWorkerEmailValidation{
+		OrgID:       orgID,
+		ProcessID:   processID,
+		Credentials: credentials,
+	}); err != nil {
 		sentry.CaptureException(err)
 		return errx.InternalError()
 	}
