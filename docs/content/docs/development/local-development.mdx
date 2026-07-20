@@ -23,8 +23,8 @@ Optional, only for the two auxiliary services when run natively:
 make dev
 ```
 
-This is the whole setup for a fresh clone. It brings up the Docker infra
-(postgres, redis, kafka, mailpit, dovecot, localstack, and friends), waits until
+This is the whole setup for a fresh clone. It brings up the no-cloud Docker infra
+(postgres, redis, nats, mailpit), waits until
 everything is actually ready, applies migrations, loads the seed fixtures,
 installs web dependencies on first run, and then starts the backend, consumer,
 both shared workers, and the dashboard together in your terminal.
@@ -49,10 +49,11 @@ redirects, or live dashboard updates. They need the Rust and Elixir toolchains.
 Day-one:
 
 ```bash
-make dev        # one command: infra + migrations + seed + backend/consumer/workers + dashboard
-make infra      # postgres, redis, kafka, mailpit, dovecot, localstack, etc. (leave running)
-make app        # backend, consumer, worker, tracking, realtime, web (hot reload, in Docker)
-make sim        # adds premium + dedicated workers; full simulation (prod-image flow)
+make dev        # one command: infra + migrations + seed + backend/consumer/worker + realtime + tracking + dashboard + admin
+make infra      # postgres, redis, nats, mailpit (leave running)
+make run        # backend + consumer + worker (native, after make infra)
+make up         # the whole no-cloud stack in Docker (docker compose up --build)
+make gen-key    # print a KMS_LOCAL_MASTER_KEY for a real deployment
 make seed       # load rich fixtures (3 orgs, 6 mailboxes, a campaign)
 make sandbox    # fully working demo environment (see /development/sandbox/)
 make tools      # debugging UIs (kafka-ui at :18090)

@@ -127,16 +127,17 @@ git clone https://github.com/warmbly/warmbly && cd warmbly
 make dev
 ```
 
-That one command brings up the backing services in Docker, waits for them to be
-ready, applies migrations, seeds demo data, and starts the backend, consumer,
-both workers, and the dashboard together in your terminal. Open
+That one command brings up the backing services in Docker (Postgres, Redis,
+NATS), waits for them, applies migrations, seeds demo data, and starts the
+backend, consumer, worker, dashboard, and admin natively, with realtime and
+tracking as containers (so you need no Elixir or Rust toolchain). Open
 `http://localhost:5173` and log in with `dev@warmbly.com` / `password123`.
 Ctrl-C stops the app; the Docker infra stays up so the next `make dev` is fast.
 
 The Go services run natively (recompiling in a second or two on save), so the
 same command is also the day-to-day loop. If you prefer separate terminals, the
-stack splits into `make infra` + `make run` + `make web`. To run everything in
-Docker instead, use `make up`.
+stack splits into `make infra` + `make run` + `make web`. To run the whole
+no-cloud stack in Docker instead, use `make up` (see [Self-hosting](#self-hosting)).
 
 The first admin account cannot be created from the UI. Sign up through the
 dashboard, then promote yourself from the host with
@@ -152,45 +153,90 @@ The control plane is the backend API, the event consumer, Postgres, Redis, and
 the event bus. It owns every piece of stateful data and decides what gets sent
 and from where.
 
-The execution plane is the worker fleet: one Go binary per machine, one worker
-process per IP. Workers take commands off the event bus, fetch their encryption
-keys over HTTPS, send and sync mail, and report telemetry back. **Workers never
-connect to Postgres.** Each one is a sending identity rather than a database
-client, so outbound volume spreads across many IPs instead of piling up in a
-single runtime. Reputation is tracked per IP.
+The execution plane is the worker fleet: one Go binary per machine. Workers take
+commands off the event bus, fetch their encryption keys over HTTPS, send and sync
+mail, and report telemetry back. **Workers never connect to Postgres.** They are
+interchangeable executors, so you add throughput by running more of them; outbound
+mail leaves through each mailbox's own provider (Gmail API, Graph, or SMTP relay),
+not the worker's IP.
 
-Secrets use envelope encryption: a per-organization data key, wrapped by KMS, is
-what seals mailbox credentials and message content. The full write-up is in the
-[architecture docs](https://docs.warmbly.com/development/architecture/).
+Secrets use envelope encryption: a per-organization data key, wrapped by a root
+key, seals mailbox credentials and message content. The root key is a local AES
+master key by default (no cloud), or AWS KMS if you prefer. The full write-up is
+in the [architecture docs](https://docs.warmbly.com/development/architecture/).
 
 ## Self-hosting
 
-Every external dependency has an open-source path, picked with an environment
-variable, so a self-hosted install can run without any cloud account.
-
-| Concern        | Self-host default         | Cloud option            |
-|----------------|---------------------------|-------------------------|
-| Database       | PostgreSQL 16             | RDS / Cloud SQL         |
-| Cache          | Redis (or Valkey)         | ElastiCache             |
-| Event bus      | NATS JetStream (1 binary) | Kafka, MSK              |
-| Blob storage   | Filesystem                | S3, MinIO, R2, B2       |
-| KMS / root key | Local AES master key      | AWS KMS, Vault, GCP     |
-| Codec          | JSON                      | Avro + Schema Registry  |
-| Captcha        | Bypass token (trusted)    | Cloudflare Turnstile    |
-| Payments       | Off                       | Stripe                  |
-
-One machine with several attached IPs becomes several sending identities in a
-single command. Each IP gets its own systemd unit and a stable identity, so
-reputation survives reinstalls:
+Warmbly runs with **no cloud account of any kind** — no AWS, no GCP, no Stripe,
+no Kafka. One command brings up the whole platform on local, open-source pieces:
 
 ```bash
-sudo ./scripts/install-worker.sh \
-  --kafka kafka.yourdomain.com:9092 \
-  --redis redis://cache.yourdomain.com:6379 \
-  --ips 5.6.7.11,5.6.7.12,5.6.7.13
+git clone https://github.com/warmbly/warmbly && cd warmbly
+make up               # or: docker compose up --build
 ```
 
-Production deployment, the full env reference, and day-2 operations are in the
+Dashboard on `:5173`, admin on `:5174`, API on `:8080`. The first build compiles
+the images once (a couple of minutes; they are CGO-free), then it is up. Load
+optional demo data with `make up` running via
+`docker compose --profile seed run --rm seed`.
+
+Before exposing it, set your own secrets in a `.env` next to `docker-compose.yml`
+— at minimum `AUTH_SECRET`, `CREDENTIALS_ENCRYPTION_KEY`, `INTERNAL_API_TOKEN`,
+and `KMS_LOCAL_MASTER_KEY` (run `make gen-key`). The full list is in
+[`deploy/config/env.example`](deploy/config/env.example).
+
+**Reaching it from another machine.** Every service already binds to `0.0.0.0`
+(the Docker port mappings), so it listens on all interfaces. To make the app
+usable from a LAN IP or a domain instead of `localhost`, set one variable in
+`.env` — everything (API URL, CORS, websocket, tracking, blob URLs) derives from
+it:
+
+```bash
+PUBLIC_HOST=192.168.1.50      # your machine's LAN IP, or your domain
+```
+
+Then open `http://192.168.1.50:5173`. For a public domain over HTTPS, put a
+reverse proxy (Caddy or nginx) in front terminating TLS, set `PUBLIC_HOST` to the
+domain, and build the frontends as static bundles rather than serving the Vite
+dev server.
+
+Every external dependency is picked by an environment variable, so you swap in a
+cloud service only if you want one:
+
+| Concern        | Self-host default          | Optional / cloud             |
+|----------------|----------------------------|------------------------------|
+| Database       | PostgreSQL 16              | RDS / Cloud SQL, any Postgres |
+| Cache          | Redis (or Valkey)         | ElastiCache                  |
+| Event bus      | **NATS JetStream** (~15 MB, one binary) | Kafka (`-tags kafka`) |
+| Blob storage   | **Filesystem**            | S3, MinIO, R2, B2            |
+| KMS / root key | **Local AES master key**  | AWS KMS                      |
+| Task scheduler | **In-process Postgres poller** | GCP Cloud Tasks         |
+| Codec          | JSON                      | Avro + Schema Registry       |
+| Captcha        | Off                       | Cloudflare Turnstile         |
+| Payments       | **Off (everything unlocked)** | Stripe                   |
+
+NATS is the default because it is one small binary versus Kafka's
+JVM + Zookeeper + Schema Registry, and it keeps the image CGO-free so builds are
+fast. Kafka is fully supported — build the images with `--build-arg GO_TAGS=kafka`
+(and the tracking image with `CARGO_FEATURES=kafka`), set `EVENTBUS_PROVIDER=kafka`,
+and point `KAFKA_BOOTSTRAP_SERVERS` at your cluster.
+
+**Scaling is by mailboxes and workers, not IPs.** Outbound mail goes through each
+mailbox's own provider (Gmail API, Microsoft Graph, or the mailbox's SMTP relay),
+so the source IP is the provider's, never the worker's. Add throughput by
+connecting more mailboxes and running more workers — `docker compose up --scale
+worker=3`, or attach a machine you already own through the admin panel's SSH
+enrollment. Workers are interchangeable executors.
+
+**Connecting Gmail mailboxes** needs your own Google Cloud OAuth client: set
+`BOX_GOOGLE_CLIENT_ID` / `BOX_GOOGLE_CLIENT_SECRET` (a Web application client with
+the authorized redirect URI `<your-api-host>/addresses/google/callback`) on the
+backend and every worker. Without it you can still connect any mailbox over
+SMTP/IMAP with an app password, and Microsoft 365 over its own OAuth client.
+
+Keep two secrets safe: `KMS_LOCAL_MASTER_KEY` (`make gen-key`) and
+`CREDENTIALS_ENCRYPTION_KEY` seal every stored mailbox credential — losing them is
+unrecoverable. Full env reference and day-2 operations are in the
 [deployment guide](https://docs.warmbly.com/development/deployment-guide/).
 
 ## Tech stack

@@ -3,36 +3,81 @@ title: Deployment guide
 description: Deploy the control plane and a distributed worker fleet to production.
 ---
 
-End-to-end guide for deploying Warmbly. The control plane runs on a container host (Railway in production); workers run on as many VPSes as you want and are managed from the admin dashboard.
+End-to-end guide for deploying Warmbly. The default is a no-cloud stack you can
+run on a single machine; every cloud service is opt-in.
 
-## Overview
+## No-cloud quick start
 
-| Plane | What runs | Where |
-|-------|-----------|-------|
-| Control | backend, consumer, tracking, realtime, web | One container host with stable region pinning (Railway, ECS Fargate, Fly, or Kubernetes). Postgres + Redis + Kafka + Schema Registry + S3 + KMS are external dependencies. |
-| Execution | worker | One process per VPS, anywhere in the world, supervised by systemd, configured from the admin dashboard over SSH. |
+On one machine with Docker:
 
-The control plane never needs to scale beyond a few replicas; the worker fleet is what fans out for IP diversity.
+```bash
+git clone https://github.com/warmbly/warmbly && cd warmbly
+make gen-key          # prints a KMS_LOCAL_MASTER_KEY — put it in .env
+make up               # or: docker compose up --build
+```
 
-## What you need
+That runs the whole platform — Postgres, Redis, NATS, backend, consumer, worker,
+tracking, realtime, dashboard, admin — with **no AWS, GCP, Stripe, or Kafka**.
+Before exposing it, set your own secrets in a `.env` next to `docker-compose.yml`:
+`AUTH_SECRET`, `KMS_LOCAL_MASTER_KEY`, `CREDENTIALS_ENCRYPTION_KEY`,
+`INTERNAL_API_TOKEN` (and `BOX_GOOGLE_CLIENT_ID`/`SECRET` to connect Gmail). Full
+list: [`deploy/config/env.example`](https://github.com/warmbly/warmbly/blob/main/deploy/config/env.example).
 
-**For the control plane**:
+**Back up `KMS_LOCAL_MASTER_KEY` and `CREDENTIALS_ENCRYPTION_KEY`** — they seal
+every stored mailbox credential and losing them is unrecoverable.
 
-- A Postgres 16 instance (RDS, Neon, Supabase, or self-hosted)
-- A Redis 7 instance
-- A Kafka broker with a Schema Registry (Confluent Cloud, Aiven, Redpanda, self-hosted)
-- An S3-compatible bucket
-- AWS KMS for envelope-encryption root, or a KMS-compatible service via LocalStack for local dev
-- A Stripe account (or stripe-mock for non-prod)
+## Providers
 
-**For the workers**:
+Each subsystem is an env-var switch. No-cloud defaults on the left:
 
-- A VPS per worker (Hetzner / OVH / Vultr / DigitalOcean / Linode, anywhere with a public IPv4). Spread providers for IP diversity.
-- Root SSH access on the VPS at install time.
+| Subsystem     | Default (no cloud)         | Opt-in                       |
+|---------------|----------------------------|------------------------------|
+| Database      | PostgreSQL 16              | RDS / Cloud SQL / any Postgres |
+| Cache         | Redis 7                   | ElastiCache                  |
+| Event bus     | NATS JetStream (`EVENTBUS_PROVIDER=nats`) | Kafka (`=kafka`, build with `GO_TAGS=kafka`) |
+| Blob storage  | Filesystem (`BLOB_PROVIDER=filesystem`) | S3/MinIO/R2 (`=s3`)      |
+| Root key      | Local AES (`KMS_PROVIDER=local`) | AWS KMS (`=aws`)          |
+| Task scheduler| In-process poller (`TASKS_PROVIDER=local`) | GCP Cloud Tasks (`=gcloud`) |
+| Codec         | JSON (`CODEC_PROVIDER=json`) | Avro + Schema Registry (`=avro`) |
+| Billing       | Off (`BILLING_PROVIDER=none`) | Stripe (`=stripe`)        |
+| Captcha       | Off                       | Cloudflare Turnstile (`CAPTCHA_PROVIDER=turnstile`) |
 
-## Step 1: Provision the control-plane dependencies
+## Reaching it from your network
 
-Whatever your stack, get the external services above running and collect the connection details. Local dev can substitute everything with `make sim` from the repo root (see [local development](/development/local-development/)). That runs LocalStack for KMS/S3 and includes everything else as containers.
+Every service already binds to `0.0.0.0` via the Docker port mappings, so it
+listens on all interfaces. The app's URLs default to `localhost`, so to use it
+from another machine set one variable in `.env` — the API URL, CORS origins,
+websocket URL, tracking domain, and the frontend `VITE_*` URLs all derive from it:
+
+```bash
+PUBLIC_HOST=192.168.1.50        # your machine's LAN IP, or a domain
+```
+
+Then open `http://192.168.1.50:5173`. For a public domain over HTTPS, run a
+reverse proxy (Caddy or nginx) in front terminating TLS, point `PUBLIC_HOST` (or
+the individual `APP_URL` / `CORS_ALLOW_ORIGINS` / `WEBSOCKET_URL` /
+`API_PUBLIC_URL` / `TRACKING_DOMAIN` vars) at your domain, and serve the
+dashboard and admin as static builds rather than the Vite dev servers.
+
+## Scaling
+
+Outbound mail leaves through each mailbox's own provider (Gmail API, Microsoft
+Graph, or the mailbox's SMTP relay), so the source IP is the provider's, not the
+worker's. Add capacity by connecting more mailboxes and running more workers
+(`docker compose up --scale worker=3`, or attach a machine you own via the admin
+panel's SSH enrollment). Workers are interchangeable executors.
+
+## Cloud-scale deployment (optional)
+
+The rest of this page covers running the control plane on a managed host with
+cloud services. You only need this if you are deliberately opting into Kafka, S3,
+KMS, or Stripe.
+
+**For the control plane**: Postgres 16, Redis 7, and — only if you opt in — a
+Kafka broker + Schema Registry, an S3-compatible bucket, AWS KMS, and a Stripe
+account.
+
+**For the workers**: a VPS per worker with root SSH access at install time.
 
 ## Step 2: Configure the backend
 
