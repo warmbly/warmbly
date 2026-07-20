@@ -1,52 +1,47 @@
-# Build stage
+# syntax=docker/dockerfile:1.7
+#
+# Default build is NATS-only (pure Rust, rustls TLS): no rdkafka/librdkafka, so
+# it skips the slow librdkafka source compile and needs none of the cmake /
+# openssl / curl / sasl build deps. Cargo cache mounts keep the registry +
+# target caches warm across builds.
+#
+# Build with --build-arg CARGO_FEATURES=kafka to include the Kafka + Avro
+# publisher (re-adds the librdkafka build chain; slower).
 FROM rust:1.93-alpine AS builder
 
-# Install build dependencies
-RUN apk add --no-cache musl-dev cmake make gcc g++ pkgconfig openssl-dev openssl-libs-static curl-dev zlib-static
+ARG CARGO_FEATURES=""
+RUN apk add --no-cache musl-dev && \
+    if echo "$CARGO_FEATURES" | grep -qw kafka; then \
+      apk add --no-cache cmake make gcc g++ pkgconfig openssl-dev openssl-libs-static curl-dev zlib-static; \
+    fi
 
 WORKDIR /app
-
-# Copy manifest files
 COPY Cargo.toml Cargo.lock* ./
-
-# Create dummy main.rs to cache dependencies
-RUN mkdir src && echo "fn main() {}" > src/main.rs
-
-# Build dependencies only
-RUN cargo build --release
-
-# Remove dummy files
-RUN rm -rf src
-
-# Copy actual source code
 COPY src ./src
 
-# Build the actual application
-RUN touch src/main.rs && cargo build --release
+# The binary is copied out of the (cache-mounted) target dir before the mount is
+# released, so the runtime stage can COPY it.
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/app/target \
+    set -eux; \
+    if [ -n "$CARGO_FEATURES" ]; then FEAT="--features $CARGO_FEATURES"; else FEAT=""; fi; \
+    cargo build --release $FEAT; \
+    cp target/release/tracking /tracking
 
 # Runtime stage
 FROM alpine:3.23
 
-# Install runtime dependencies
-RUN apk add --no-cache ca-certificates libgcc
-
-WORKDIR /app
-
-# Copy the binary from builder
-COPY --from=builder /app/target/release/tracking /app/tracking
-
-# Create non-root user
-RUN addgroup -g 1000 tracking && \
+RUN apk add --no-cache ca-certificates libgcc && \
+    addgroup -g 1000 tracking && \
     adduser -u 1000 -G tracking -s /bin/sh -D tracking
 
-USER tracking
+WORKDIR /app
+COPY --from=builder /tracking /app/tracking
 
-# Expose port
+USER tracking
 EXPOSE 3000
 
-# Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1
 
-# Run the binary
 CMD ["/app/tracking"]
