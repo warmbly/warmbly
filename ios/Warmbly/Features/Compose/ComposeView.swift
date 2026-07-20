@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// New-email composer, the iOS port of the web compose window. Sends through
 /// `POST /v1/unibox/compose` (instant, smart, or scheduled) with backend auto
@@ -29,6 +30,9 @@ struct ComposeView: View {
     @State private var showCcBcc: Bool
     /// Selected sender id; empty means Auto (backend picks the best mailbox).
     @State private var fromAccountID: String
+    /// Tag scope for Auto: the backend picks among mailboxes carrying this
+    /// tag. Session-only (not persisted with the draft), web parity.
+    @State private var autoTagID: String?
     @State private var sendMode: UniboxSendMode = .instant
     @State private var scheduledAt = Date().addingTimeInterval(3600)
     @State private var showSchedulePicker = false
@@ -175,7 +179,7 @@ struct ComposeView: View {
             }
         }
         .sheet(isPresented: $showFromPicker) {
-            ComposeFromPicker(store: store, selection: $fromAccountID)
+            ComposeFromPicker(store: store, selection: $fromAccountID, autoTagID: $autoTagID)
         }
         .task(id: primaryRecipient) {
             // Debounced rescoring as the recipient settles.
@@ -319,6 +323,14 @@ struct ComposeView: View {
     }
 
     private var autoLabel: String {
+        if let autoTagID,
+           let tag = env.session.user?.tags?.first(where: { $0.id == autoTagID }) {
+            let name = tag.name ?? "tag"
+            if let best = store.bestCandidate(inTag: autoTagID) {
+                return "Auto in \(name) · \(best.email)"
+            }
+            return "Auto in \(name)"
+        }
         if let recommended = store.recommendedCandidate {
             return "Auto · \(recommended.email)"
         }
@@ -1000,6 +1012,7 @@ struct ComposeView: View {
     private func send() async {
         let request = ComposeSendRequest(
             emailAccountID: fromAccountID,
+            fromTagID: fromAccountID.isEmpty ? autoTagID : nil,
             to: allTo,
             cc: allCc.isEmpty ? nil : allCc,
             bcc: allBcc.isEmpty ? nil : allBcc,
@@ -1041,33 +1054,43 @@ struct ComposeView: View {
 
 /// Sender picker fed by `/unibox/compose/candidates`: the Auto row first,
 /// then every active mailbox with auth state, today's budget, history with
-/// the recipient, and the scorer's reasons. Tag chips (from the org's
-/// mailbox tags, only ones actually in use) filter the list, web parity.
+/// the recipient, and the scorer's reasons. A compact tag menu (every tag
+/// the user has) filters the list and scopes the Auto pick, web parity.
 struct ComposeFromPicker: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.dismiss) private var dismiss
 
     let store: ComposeStore
     @Binding var selection: String
+    /// Tag scope for Auto: set together with an empty selection when the
+    /// user picks "Auto in <tag>"; cleared by plain Auto or an explicit pick.
+    @Binding var autoTagID: String?
 
     @State private var query = ""
-    /// Mailbox id -> tag ids, from the account directory.
-    @State private var accountTags: [String: Set<String>] = [:]
     @State private var activeTagID: String?
 
-    /// Tag definitions that at least one candidate mailbox actually carries.
-    private var availableTags: [UserGroup] {
-        let used = Set(store.candidates.flatMap { accountTags[$0.id] ?? [] })
-        guard !used.isEmpty else { return [] }
-        return (env.session.user?.tags ?? [])
-            .filter { used.contains($0.id) }
-            .sorted { ($0.position ?? 0) < ($1.position ?? 0) }
+    init(store: ComposeStore, selection: Binding<String>, autoTagID: Binding<String?>) {
+        self.store = store
+        _selection = selection
+        _autoTagID = autoTagID
+        // Open on the scope that is already in effect so Auto shows checked.
+        _activeTagID = State(initialValue: autoTagID.wrappedValue)
+    }
+
+    /// Every tag the user has, sorted by position; a tag created moments ago
+    /// is immediately selectable even before any mailbox carries it.
+    private var allTags: [UserGroup] {
+        (env.session.user?.tags ?? []).sorted { ($0.position ?? 0) < ($1.position ?? 0) }
+    }
+
+    private var activeTag: UserGroup? {
+        allTags.first { $0.id == activeTagID }
     }
 
     private var filtered: [ComposeCandidate] {
         var candidates = store.candidates
         if let activeTagID {
-            candidates = candidates.filter { accountTags[$0.id]?.contains(activeTagID) == true }
+            candidates = candidates.filter { store.accountTags[$0.id]?.contains(activeTagID) == true }
         }
         let trimmed = query.trimmingCharacters(in: .whitespaces).lowercased()
         guard !trimmed.isEmpty else { return candidates }
@@ -1080,13 +1103,9 @@ struct ComposeFromPicker: View {
     var body: some View {
         NavigationStack {
             List {
-                if !availableTags.isEmpty {
-                    tagChips
-                        .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
-                        .listRowSeparator(.hidden)
-                }
                 Button {
                     selection = ""
+                    autoTagID = activeTagID
                     dismiss()
                 } label: {
                     HStack(spacing: 12) {
@@ -1095,7 +1114,7 @@ struct ComposeFromPicker: View {
                             .foregroundStyle(WTheme.accent)
                             .frame(width: 28)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Auto")
+                            Text(activeTag.map { "Auto in \($0.name ?? "tag")" } ?? "Auto")
                                 .font(.body.weight(.medium))
                                 .foregroundStyle(.primary)
                             Text(autoSubtitle)
@@ -1104,7 +1123,7 @@ struct ComposeFromPicker: View {
                                 .lineLimit(2)
                         }
                         Spacer(minLength: 8)
-                        if selection.isEmpty {
+                        if selection.isEmpty, autoTagID == activeTagID {
                             Image(systemName: "checkmark")
                                 .font(.system(size: 14, weight: .semibold))
                                 .foregroundStyle(WTheme.accent)
@@ -1116,16 +1135,21 @@ struct ComposeFromPicker: View {
                 ForEach(filtered) { candidate in
                     Button {
                         selection = candidate.id
+                        autoTagID = nil
                         dismiss()
                     } label: {
                         candidateRow(candidate)
                     }
                 }
 
-                if store.candidatesLoaded, filtered.isEmpty, !query.isEmpty {
-                    Text("No mailbox matches \"\(query)\".")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                if store.candidatesLoaded, filtered.isEmpty, !query.isEmpty || activeTagID != nil {
+                    Text(
+                        query.isEmpty
+                            ? "No mailbox carries this tag."
+                            : "No mailbox matches \"\(query)\"."
+                    )
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
                 }
             }
             .listStyle(.plain)
@@ -1140,6 +1164,11 @@ struct ComposeFromPicker: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close") { dismiss() }
                 }
+                if !allTags.isEmpty {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        tagFilterMenu
+                    }
+                }
             }
             .overlay {
                 if !store.candidatesLoaded {
@@ -1152,48 +1181,47 @@ struct ComposeFromPicker: View {
         .task {
             // Tag membership comes from the account directory; the picker
             // degrades to search-only when the member can't read it.
-            guard accountTags.isEmpty else { return }
-            if let page: ListResponse<EmailAccount> = try? await env.api.get("emails", query: ["limit": "200"]) {
-                accountTags = Dictionary(
-                    page.data.map { ($0.id, Set($0.tags ?? [])) },
-                    uniquingKeysWith: { first, _ in first }
-                )
-            }
+            await store.loadAccountTags(env.api)
         }
     }
 
-    private var tagChips: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                ForEach(availableTags) { tag in
-                    let tint = Color(uniboxHex: tag.color) ?? WTheme.accent
-                    let active = activeTagID == tag.id
-                    Button {
-                        withAnimation(.snappy) { activeTagID = active ? nil : tag.id }
-                    } label: {
-                        HStack(spacing: 5) {
-                            Circle().fill(tint).frame(width: 7, height: 7)
-                            Text(tag.name ?? "Tag")
-                                .font(.footnote.weight(active ? .semibold : .medium))
-                                .foregroundStyle(active ? tint : Color.primary)
-                                .lineLimit(1)
-                        }
-                        .padding(.horizontal, 11)
-                        .padding(.vertical, 6)
-                        .background(
-                            active ? AnyShapeStyle(tint.opacity(0.13)) : AnyShapeStyle(Color(.secondarySystemBackground)),
-                            in: Capsule()
-                        )
-                        .overlay(Capsule().strokeBorder(active ? tint.opacity(0.45) : .clear, lineWidth: 1))
+    /// Compact filter: "All tags" plus every tag with its color dot; the
+    /// trigger names the active tag and takes its tint.
+    private var tagFilterMenu: some View {
+        Menu {
+            Picker("Filter by tag", selection: $activeTagID.animation(.snappy)) {
+                Text("All tags").tag(String?.none)
+                ForEach(allTags) { tag in
+                    Label {
+                        Text(tag.name ?? "Tag")
+                    } icon: {
+                        Image.menuDot(Color(uniboxHex: tag.color) ?? WTheme.accent)
                     }
-                    .buttonStyle(.plain)
+                    .tag(String?.some(tag.id))
                 }
             }
-            .padding(.horizontal, 16)
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "line.3.horizontal.decrease")
+                    .font(.system(size: 12, weight: .semibold))
+                Text(activeTag.map { $0.name ?? "Tag" } ?? "All tags")
+                    .font(.footnote.weight(.medium))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(
+                activeTag.map { Color(uniboxHex: $0.color) ?? WTheme.accent } ?? Color.secondary
+            )
         }
+        .accessibilityLabel("Filter by tag")
     }
 
     private var autoSubtitle: String {
+        if let activeTag {
+            guard let best = store.bestCandidate(inTag: activeTag.id) else {
+                return "No mailbox carries this tag"
+            }
+            return best.email
+        }
         if let reason = store.recommendedReason, !reason.isEmpty,
            let recommended = store.recommendedCandidate {
             return "\(recommended.email) · \(reason)"
@@ -1272,5 +1300,17 @@ struct ComposeFromPicker: View {
         if remaining <= 0 { return .rose }
         if remaining <= 5 { return .amber }
         return .slate
+    }
+}
+
+extension Image {
+    /// Colored dot for Menu rows: menus strip SwiftUI tints, so the color is
+    /// baked into the UIImage with `.alwaysOriginal`.
+    static func menuDot(_ tint: Color) -> Image {
+        let config = UIImage.SymbolConfiguration(pointSize: 9, weight: .regular)
+        guard let dot = UIImage(systemName: "circle.fill", withConfiguration: config)?
+            .withTintColor(UIColor(tint), renderingMode: .alwaysOriginal)
+        else { return Image(systemName: "circle.fill") }
+        return Image(uiImage: dot)
     }
 }

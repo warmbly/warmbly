@@ -55,9 +55,11 @@ struct ComposeCandidatesResponse: Codable, Sendable {
 // MARK: - Send
 
 /// `POST /v1/unibox/compose`; empty `email_account_id` lets the backend pick
-/// the best mailbox for the first recipient.
+/// the best mailbox for the first recipient. With `from_tag_id` set, the
+/// auto pick only considers mailboxes carrying that tag.
 struct ComposeSendRequest: Encodable, Sendable {
     var emailAccountID: String
+    var fromTagID: String?
     var to: [String]
     var cc: [String]?
     var bcc: [String]?
@@ -70,6 +72,7 @@ struct ComposeSendRequest: Encodable, Sendable {
     enum CodingKeys: String, CodingKey {
         case to, cc, bcc, subject
         case emailAccountID = "email_account_id"
+        case fromTagID = "from_tag_id"
         case bodyHTML = "body_html"
         case bodyPlain = "body_plain"
         case sendMode = "send_mode"

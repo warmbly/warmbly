@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// Browse-and-pick contacts for a recipient field: server-side search,
-/// category filter chips, multi-select with checkmarks, Add commits the
-/// picked addresses. Complements the type-ahead in `RecipientField` for
+/// Browse-and-pick contacts for a recipient field: server-side search, a
+/// compact category filter menu, multi-select with checkmarks, Add commits
+/// the picked addresses. Complements the type-ahead in `RecipientField` for
 /// people who want to pick instead of type.
 struct ContactPickerSheet: View {
     @Environment(AppEnvironment.self) private var env
@@ -26,8 +26,12 @@ struct ContactPickerSheet: View {
         NavigationStack {
             VStack(spacing: 0) {
                 if !categories.isEmpty {
-                    categoryChips
-                        .padding(.vertical, 6)
+                    HStack {
+                        categoryMenu
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 6)
                     Divider()
                 }
                 if isLoading, !hasLoaded {
@@ -88,35 +92,54 @@ struct ContactPickerSheet: View {
         .sensoryFeedback(.selection, trigger: picked.count)
     }
 
-    private var categoryChips: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
+    private var activeCategory: ContactCategory? {
+        categories.first { $0.id == activeCategoryID }
+    }
+
+    /// Compact filter: "All categories" plus every category with its color
+    /// dot; the trigger names the active category and takes its tint.
+    private var categoryMenu: some View {
+        let tint = activeCategory.flatMap { Color(uniboxHex: $0.color) } ?? WTheme.accent
+        let active = activeCategory != nil
+        return Menu {
+            Picker("Filter by category", selection: $activeCategoryID.animation(.snappy)) {
+                Text("All categories").tag(String?.none)
                 ForEach(categories) { category in
-                    let tint = Color(uniboxHex: category.color) ?? WTheme.accent
-                    let active = activeCategoryID == category.id
-                    Button {
-                        withAnimation(.snappy) { activeCategoryID = active ? nil : category.id }
-                    } label: {
-                        HStack(spacing: 5) {
-                            Circle().fill(tint).frame(width: 7, height: 7)
-                            Text(category.title ?? "Category")
-                                .font(.footnote.weight(active ? .semibold : .medium))
-                                .foregroundStyle(active ? tint : Color.primary)
-                                .lineLimit(1)
-                        }
-                        .padding(.horizontal, 11)
-                        .padding(.vertical, 6)
-                        .background(
-                            active ? AnyShapeStyle(tint.opacity(0.13)) : AnyShapeStyle(Color(.secondarySystemBackground)),
-                            in: Capsule()
-                        )
-                        .overlay(Capsule().strokeBorder(active ? tint.opacity(0.45) : .clear, lineWidth: 1))
+                    Label {
+                        Text(category.title ?? "Category")
+                    } icon: {
+                        Image.menuDot(Color(uniboxHex: category.color) ?? WTheme.accent)
                     }
-                    .buttonStyle(.plain)
+                    .tag(String?.some(category.id))
                 }
             }
-            .padding(.horizontal, 16)
+        } label: {
+            HStack(spacing: 5) {
+                if active {
+                    Circle().fill(tint).frame(width: 7, height: 7)
+                } else {
+                    Image(systemName: "line.3.horizontal.decrease")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+                Text(activeCategory?.title ?? "All categories")
+                    .font(.footnote.weight(active ? .semibold : .medium))
+                    .foregroundStyle(active ? tint : Color.primary)
+                    .lineLimit(1)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 11)
+            .padding(.vertical, 6)
+            .background(
+                active ? AnyShapeStyle(tint.opacity(0.13)) : AnyShapeStyle(Color(.secondarySystemBackground)),
+                in: Capsule()
+            )
+            .overlay(Capsule().strokeBorder(active ? tint.opacity(0.45) : .clear, lineWidth: 1))
         }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Filter by category")
     }
 
     private func row(_ contact: Contact) -> some View {

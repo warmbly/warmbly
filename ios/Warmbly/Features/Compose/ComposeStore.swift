@@ -83,6 +83,33 @@ final class ComposeStore {
         candidates.first { $0.id == recommendedAccountID } ?? candidates.first { $0.recommended == true }
     }
 
+    // MARK: Account tags
+
+    /// Mailbox id -> tag ids, from the account directory; feeds the picker's
+    /// tag filter and the tag-scoped Auto preview.
+    private(set) var accountTags: [String: Set<String>] = [:]
+    private var accountTagsLoaded = false
+
+    /// Loads tag membership once per window; a failed load retries on the
+    /// next call so the picker degrades to search-only, not permanently.
+    func loadAccountTags(_ api: APIClient) async {
+        guard !accountTagsLoaded else { return }
+        guard let page: ListResponse<EmailAccount> = try? await api.get(
+            "emails", query: ["limit": "200"]
+        ) else { return }
+        accountTags = Dictionary(
+            page.data.map { ($0.id, Set($0.tags ?? [])) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        accountTagsLoaded = true
+    }
+
+    /// Best mailbox carrying the tag: first member in candidate order, which
+    /// is already score-sorted by the backend.
+    func bestCandidate(inTag tagID: String) -> ComposeCandidate? {
+        candidates.first { accountTags[$0.id]?.contains(tagID) == true }
+    }
+
     // MARK: Autosave
 
     /// Debounced upsert; the empty draft is deleted instead of saved so
