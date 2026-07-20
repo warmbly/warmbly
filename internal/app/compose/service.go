@@ -44,9 +44,11 @@ type Service interface {
 	Candidates(ctx context.Context, userID, orgID uuid.UUID, address string) ([]Candidate, *errx.Error)
 	// Resolve returns the mailbox a compose send should use: the explicit
 	// accountID when given (validated against the user's active mailboxes),
-	// otherwise the best-scored candidate. The bool reports whether the
-	// pick was automatic.
-	Resolve(ctx context.Context, userID, orgID uuid.UUID, accountID *uuid.UUID, address string) (*Candidate, bool, *errx.Error)
+	// otherwise the best-scored candidate. A non-nil tagID scopes the
+	// automatic pick to mailboxes carrying that tag ("Auto within a tag");
+	// it is ignored when accountID is explicit. The bool reports whether
+	// the pick was automatic.
+	Resolve(ctx context.Context, userID, orgID uuid.UUID, accountID, tagID *uuid.UUID, address string) (*Candidate, bool, *errx.Error)
 
 	// Drafts: autosaved per-user working copies from the compose window.
 	UpsertDraft(ctx context.Context, userID, orgID uuid.UUID, d *repository.ComposeDraft) *errx.Error
@@ -126,7 +128,7 @@ func (s *service) Candidates(ctx context.Context, userID, orgID uuid.UUID, addre
 	return candidates, nil
 }
 
-func (s *service) Resolve(ctx context.Context, userID, orgID uuid.UUID, accountID *uuid.UUID, address string) (*Candidate, bool, *errx.Error) {
+func (s *service) Resolve(ctx context.Context, userID, orgID uuid.UUID, accountID, tagID *uuid.UUID, address string) (*Candidate, bool, *errx.Error) {
 	candidates, xerr := s.Candidates(ctx, userID, orgID, address)
 	if xerr != nil {
 		return nil, false, xerr
@@ -142,6 +144,35 @@ func (s *service) Resolve(ctx context.Context, userID, orgID uuid.UUID, accountI
 			}
 		}
 		return nil, false, errx.New(errx.NotFound, "mailbox not found or not active")
+	}
+
+	// Tag-scoped auto: restrict the pool to mailboxes carrying the tag,
+	// then apply the same best-with-budget-first rule within it. GetByTags
+	// is already user-scoped, so a foreign tag id just yields no members.
+	if tagID != nil {
+		members, merr := s.emailRepo.GetByTags(ctx, userID.String(), []string{tagID.String()})
+		if merr != nil {
+			return nil, false, merr
+		}
+		in := make(map[uuid.UUID]bool, len(members))
+		for _, m := range members {
+			in[m.ID] = true
+		}
+		scoped := candidates[:0:0]
+		for i := range candidates {
+			if in[candidates[i].Account.ID] {
+				scoped = append(scoped, candidates[i])
+			}
+		}
+		if len(scoped) == 0 {
+			return nil, false, errx.New(errx.BadRequest, "no active mailbox carries the selected tag")
+		}
+		for i := range scoped {
+			if scoped[i].Remaining() > 0 {
+				return &scoped[i], true, nil
+			}
+		}
+		return &scoped[0], true, nil
 	}
 
 	for i := range candidates {

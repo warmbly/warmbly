@@ -131,15 +131,18 @@ func (h *Handler) GetComposeCandidates(c *gin.Context) {
 type UniboxComposeRequest struct {
 	// EmailAccountID empty (or "auto") lets the backend pick the best
 	// mailbox for the first recipient.
-	EmailAccountID string     `json:"email_account_id"`
-	To             []string   `json:"to" binding:"required,min=1"`
-	CC             []string   `json:"cc"`
-	BCC            []string   `json:"bcc"`
-	Subject        string     `json:"subject" binding:"required"`
-	BodyHTML       string     `json:"body_html"`
-	BodyPlain      string     `json:"body_plain"`
-	SendMode       string     `json:"send_mode"`
-	ScheduledAt    *time.Time `json:"scheduled_at,omitempty"`
+	EmailAccountID string `json:"email_account_id"`
+	// FromTagID scopes the automatic pick to mailboxes carrying this tag
+	// ("Auto within a tag"). Ignored when EmailAccountID is explicit.
+	FromTagID   string     `json:"from_tag_id"`
+	To          []string   `json:"to" binding:"required,min=1"`
+	CC          []string   `json:"cc"`
+	BCC         []string   `json:"bcc"`
+	Subject     string     `json:"subject" binding:"required"`
+	BodyHTML    string     `json:"body_html"`
+	BodyPlain   string     `json:"body_plain"`
+	SendMode    string     `json:"send_mode"`
+	ScheduledAt *time.Time `json:"scheduled_at,omitempty"`
 }
 
 // UniboxCompose sends a brand-new outbound email (not a reply). Unlike the
@@ -202,7 +205,19 @@ func (h *Handler) UniboxCompose(c *gin.Context) {
 		accountID = &id
 	}
 
-	candidate, auto, xerr := h.ComposeService.Resolve(c.Request.Context(), userID, *orgID, accountID, bareAddress(req.To[0]))
+	var tagID *uuid.UUID
+	if accountID == nil {
+		if v := strings.TrimSpace(req.FromTagID); v != "" {
+			id, perr := uuid.Parse(v)
+			if perr != nil {
+				errx.Handle(c, errx.ErrUuid)
+				return
+			}
+			tagID = &id
+		}
+	}
+
+	candidate, auto, xerr := h.ComposeService.Resolve(c.Request.Context(), userID, *orgID, accountID, tagID, bareAddress(req.To[0]))
 	if xerr != nil {
 		errx.Handle(c, xerr)
 		return
