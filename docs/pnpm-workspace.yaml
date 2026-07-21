@@ -1,0 +1,4 @@
+# pnpm 11+ settings live here, not in package.json.
+# Clear CVE-2026-59869 (DoS via crafted YAML) in the transitive js-yaml.
+overrides:
+  js-yaml: ^4.3.0
