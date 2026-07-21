@@ -19,7 +19,6 @@ import {
     Handle,
     MarkerType,
     Position,
-    getBezierPath,
     useNodesState,
     useEdgesState,
     useReactFlow,
@@ -100,6 +99,7 @@ import {
     triggerVariables,
     NATIVE_CONNECTION,
     NATIVE_ACTIONS,
+    AI_ALLOWLIST_ACTIONS,
     isNativeAction,
     isAIAction,
     nativeActionNeeds,
@@ -325,7 +325,52 @@ function ActionNode({ data, selected }: NodeProps) {
 
 const nodeTypes = { trigger: TriggerNode, condition: ConditionNode, action: ActionNode };
 
-// ── Convergent edge (labeled bezier), mirrored from CampaignFlow ─────────────
+// ── Convergent edge (geometry-aware curve, mirrored from CampaignFlow) ────────
+// Unit outward direction for a handle side.
+function handleDir(pos?: Position): [number, number] {
+    switch (pos) {
+        case Position.Left:
+            return [-1, 0];
+        case Position.Right:
+            return [1, 0];
+        case Position.Top:
+            return [0, -1];
+        default:
+            return [0, 1]; // Bottom
+    }
+}
+
+// A smooth curve whose exit/entry control lengths shrink when the target sits
+// behind the source's exit direction (e.g. a right-facing yes/error dot whose
+// target is below-left), so the line turns toward the target instead of looping
+// out and back. Vertical bottom->top edges keep their gentle S.
+function getNaturalPath(a: {
+    sourceX: number;
+    sourceY: number;
+    sourcePosition?: Position;
+    targetX: number;
+    targetY: number;
+    targetPosition?: Position;
+}): [string, number, number] {
+    const { sourceX, sourceY, targetX, targetY } = a;
+    const [sdx, sdy] = handleDir(a.sourcePosition);
+    const [tdx, tdy] = handleDir(a.targetPosition);
+    const dist = Math.hypot(targetX - sourceX, targetY - sourceY) || 1;
+    const base = Math.max(34, Math.min(dist * 0.5, 160));
+    const sAlong = ((targetX - sourceX) * sdx + (targetY - sourceY) * sdy) / dist;
+    const sLen = base * (0.32 + 0.68 * Math.max(0, sAlong));
+    const tAlong = ((sourceX - targetX) * tdx + (sourceY - targetY) * tdy) / dist;
+    const tLen = base * (0.32 + 0.68 * Math.max(0, tAlong));
+    const c1x = sourceX + sdx * sLen;
+    const c1y = sourceY + sdy * sLen;
+    const c2x = targetX + tdx * tLen;
+    const c2y = targetY + tdy * tLen;
+    const path = `M${sourceX},${sourceY} C${c1x},${c1y} ${c2x},${c2y} ${targetX},${targetY}`;
+    const labelX = (sourceX + 3 * c1x + 3 * c2x + targetX) / 8;
+    const labelY = (sourceY + 3 * c1y + 3 * c2y + targetY) / 8;
+    return [path, labelX, labelY];
+}
+
 function ConvergeEdge({
     id,
     sourceX,
@@ -342,7 +387,7 @@ function ConvergeEdge({
     selected,
 }: EdgeProps) {
     const { deleteElements } = useReactFlow();
-    const [path, labelX, labelY] = getBezierPath({
+    const [path, labelX, labelY] = getNaturalPath({
         sourceX,
         sourceY,
         sourcePosition,
@@ -785,7 +830,8 @@ export default function AutomationFlow({
                               ? {
                                     action: presetAction,
                                     connection_id: undefined,
-                                    config: {},
+                                    // A fresh AI step defaults to the agent mode (its headline use).
+                                    config: presetAction === "warmbly.ai_step" ? { mode: "agent" } : {},
                                     title: actionLabel(presetAction),
                                     sub: native ? "Built-in action" : "Pick an integration…",
                                     provider: "",
@@ -880,8 +926,33 @@ export default function AutomationFlow({
                     return false;
                 }
                 const aiInstruction = String(d.config?.instruction ?? "").trim();
-                if ((need === "ai_classify" || need === "ai_extract" || need === "ai_generate") && !aiInstruction) {
+                if (
+                    (need === "ai_classify" ||
+                        need === "ai_extract" ||
+                        need === "ai_generate" ||
+                        need === "ai_step" ||
+                        need === "ai_switch") &&
+                    !aiInstruction
+                ) {
                     toast.error("An AI step needs an instruction");
+                    setSelectedId(n.id);
+                    return false;
+                }
+                if (need === "ai_step" && String(d.config?.mode ?? "agent") === "agent") {
+                    const acts = Array.isArray(d.config?.allowed_actions)
+                        ? (d.config.allowed_actions as unknown[]).filter((a) => String(a).trim())
+                        : [];
+                    if (acts.length === 0) {
+                        toast.error("An AI agent step needs at least one allowed action");
+                        setSelectedId(n.id);
+                        return false;
+                    }
+                }
+                if (
+                    need === "ai_switch" &&
+                    !(Array.isArray(d.config?.cases) && (d.config.cases as unknown[]).filter((c) => String(c).trim()).length >= 2)
+                ) {
+                    toast.error("An AI switch needs at least two cases");
                     setSelectedId(n.id);
                     return false;
                 }
@@ -945,16 +1016,24 @@ export default function AutomationFlow({
             }),
             edges: edges.map((e) => {
                 let when = (e.data as { when?: string })?.when ?? "";
-                // Heal stale per-label routes: if the source stopped being an AI
-                // classify step, or the label was removed from its set, fall back
-                // to a plain "always" edge instead of failing the save.
+                // Heal stale per-label routes: if the source is no longer a
+                // routing AI node (classify labels, or switch / decide cases), or
+                // the choice was removed from its set, fall back to a plain
+                // "always" edge instead of failing the save.
                 if (when.startsWith("label:")) {
                     const src = nodes.find((n) => n.id === e.source);
                     const d = src?.data as { action?: string; config?: Record<string, unknown> } | undefined;
-                    const lbls = (Array.isArray(d?.config?.labels) ? (d.config.labels as unknown[]) : []).map((l) =>
+                    const choices =
+                        d?.action === "warmbly.ai_classify"
+                            ? d?.config?.labels
+                            : d?.action === "warmbly.ai_switch" ||
+                                (d?.action === "warmbly.ai_step" && String(d?.config?.mode ?? "") === "decide")
+                              ? d?.config?.cases
+                              : undefined;
+                    const norm = (Array.isArray(choices) ? (choices as unknown[]) : []).map((l) =>
                         String(l).trim().toLowerCase(),
                     );
-                    if (d?.action !== "warmbly.ai_classify" || !lbls.includes(when.slice("label:".length).trim().toLowerCase())) {
+                    if (!norm.includes(when.slice("label:".length).trim().toLowerCase())) {
                         when = "";
                     }
                 }
@@ -1726,12 +1805,19 @@ function NodeEditor({
     const isTrigger = node.type === "trigger";
     const isCondition = node.type === "condition";
     const nodeAction = (node.data as { action?: string }).action;
-    const classifyLabels =
-        nodeAction === "warmbly.ai_classify"
-            ? (((node.data as { config?: Record<string, unknown> }).config?.labels as unknown[]) ?? [])
-                  .map((l) => String(l).trim())
-                  .filter(Boolean)
-            : [];
+    const nodeConfig = (node.data as { config?: Record<string, unknown> }).config ?? {};
+    // The routing choices a node fans out on ("label:<x>" edges): an AI classify
+    // routes by its labels; an AI switch and a decide-mode AI step route by
+    // their cases. Everything else has none.
+    const routeLabels = ((): string[] => {
+        const asList = (v: unknown) =>
+            Array.isArray(v) ? v.map((l) => String(l).trim()).filter(Boolean) : [];
+        if (nodeAction === "warmbly.ai_classify") return asList(nodeConfig.labels);
+        if (nodeAction === "warmbly.ai_switch") return asList(nodeConfig.cases);
+        if (nodeAction === "warmbly.ai_step" && String(nodeConfig.mode ?? "") === "decide")
+            return asList(nodeConfig.cases);
+        return [];
+    })();
 
     const triggerOptions: SelectOption[] = TRIGGER_EVENTS.map((ev) => ({ value: ev, label: triggerLabel(ev) }));
 
@@ -1789,8 +1875,8 @@ function NodeEditor({
                             providerOf={providerOf}
                             onAction={onAction}
                         />
-                        {classifyLabels.length > 0 && onEdgeWhen && (labelRoutes?.length ?? 0) > 0 && (
-                            <AILabelRoutes labels={classifyLabels} routes={labelRoutes!} onEdgeWhen={onEdgeWhen} />
+                        {routeLabels.length > 0 && onEdgeWhen && (labelRoutes?.length ?? 0) > 0 && (
+                            <AILabelRoutes labels={routeLabels} routes={labelRoutes!} onEdgeWhen={onEdgeWhen} />
                         )}
                     </>
                 )}
@@ -2023,6 +2109,8 @@ const ACTION_VISUAL: Record<string, { Icon: typeof TagIcon; tint: string; bg: st
     "warmbly.ai_classify": { Icon: SparklesIcon, tint: "text-purple-600", bg: "bg-purple-50", desc: "Read the event with AI and pick one label (stored as ai_class). Costs 1 credit." },
     "warmbly.ai_extract": { Icon: SparklesIcon, tint: "text-indigo-600", bg: "bg-indigo-50", desc: "Pull named fields out of the event with AI. Costs 1 credit." },
     "warmbly.ai_generate": { Icon: SparklesIcon, tint: "text-cyan-600", bg: "bg-cyan-50", desc: "Write a short piece of text from an instruction (stored as ai_text). Costs 1 credit." },
+    "warmbly.ai_step": { Icon: SparklesIcon, tint: "text-purple-600", bg: "bg-purple-50", desc: "An AI agent that follows your instruction and takes reversible actions (tag, task, deal, label…). Billed 1 credit per step it takes." },
+    "warmbly.ai_switch": { Icon: GitBranchIcon, tint: "text-purple-600", bg: "bg-purple-50", desc: "Route the event: AI picks one of your cases and follows that connection. Costs 1 credit." },
     "slack.notify": { Icon: MessageSquareIcon, tint: "text-violet-600", bg: "bg-violet-50" },
     "discord.notify": { Icon: MessageSquareIcon, tint: "text-indigo-600", bg: "bg-indigo-50" },
     "webhook.ping": { Icon: SendIcon, tint: "text-sky-600", bg: "bg-sky-50" },
@@ -2444,6 +2532,12 @@ function NativeActionConfig({
 
             {need === "ai_generate" && <AIGenerateFields config={config} patchConfig={patchConfig} />}
 
+            {need === "ai_step" && (
+                <AIStepFields config={config} patchConfig={patchConfig} trigger={trigger} selfId={selfId} />
+            )}
+
+            {need === "ai_switch" && <AISwitchFields config={config} patchConfig={patchConfig} />}
+
             {need === "none" && (
                 <p className="text-[11px] text-slate-400 leading-relaxed">
                     Works when the event carries a campaign (reply / bounce / unsubscribe triggers).
@@ -2789,6 +2883,175 @@ function AIGenerateFields({
             <p className="text-[11px] text-slate-400 leading-relaxed">
                 The result is stored, not sent. Use it in a later step (a Slack message, a task). Costs 1 credit.
             </p>
+        </div>
+    );
+}
+
+// The AI step is the agent (and the single-shot transforms). Routing is the AI
+// switch's job, so "decide" is deliberately not offered here — the two nodes
+// stay distinct.
+const AI_STEP_MODE_OPTIONS: SelectOption[] = [
+    { value: "agent", label: "Agent (decide + act)" },
+    { value: "generate", label: "Generate text" },
+    { value: "classify", label: "Classify" },
+    { value: "extract", label: "Extract fields" },
+];
+
+// AIStepFields is the unified AI step editor: a mode selector that swaps between
+// the single-shot sub-forms (classify/extract/generate/decide) and the agent
+// (decide + act) form. Every mode writes into the one shared node config blob.
+function AIStepFields({
+    config,
+    patchConfig,
+    trigger,
+    selfId,
+}: {
+    config: Record<string, unknown>;
+    patchConfig: (p: Record<string, unknown>) => void;
+    trigger: string;
+    selfId: string;
+}) {
+    const mode = String(config.mode ?? "agent");
+    return (
+        <div className="space-y-3">
+            <div>
+                <Label>Mode</Label>
+                <SelectMenu
+                    value={mode}
+                    onChange={(m) => patchConfig({ mode: m })}
+                    options={AI_STEP_MODE_OPTIONS}
+                    className="w-full"
+                    fullWidth
+                />
+            </div>
+            {mode === "classify" && <AIClassifyFields config={config} patchConfig={patchConfig} />}
+            {mode === "extract" && <AIExtractFields config={config} patchConfig={patchConfig} />}
+            {mode === "generate" && <AIGenerateFields config={config} patchConfig={patchConfig} />}
+            {mode === "agent" && (
+                <AIAgentFields config={config} patchConfig={patchConfig} trigger={trigger} selfId={selfId} />
+            )}
+        </div>
+    );
+}
+
+// AIDecideFields: instruction + the cases the model picks from. Route each
+// outgoing connection to a case with the "Route connections by label" control.
+// Also backs the standalone AI switch node.
+function AIDecideFields({
+    config,
+    patchConfig,
+}: {
+    config: Record<string, unknown>;
+    patchConfig: (p: Record<string, unknown>) => void;
+}) {
+    const cases = Array.isArray(config.cases) ? (config.cases as unknown[]).map(String) : [];
+    return (
+        <div className="space-y-3">
+            <AIInstruction
+                value={String(config.instruction ?? "")}
+                onChange={(v) => patchConfig({ instruction: v })}
+                placeholder="Decide which path fits this reply."
+            />
+            <AIStringList
+                label="Cases"
+                values={cases}
+                onChange={(next) => patchConfig({ cases: next })}
+                placeholder="interested"
+                addLabel="Add case"
+            />
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+                The model picks exactly one case. Add at least two, then route each connection to a case with
+                “Route connections by label” below. Costs 1 credit.
+            </p>
+        </div>
+    );
+}
+
+// AISwitchFields — the standalone AI switch router. Same shape as decide.
+function AISwitchFields({
+    config,
+    patchConfig,
+}: {
+    config: Record<string, unknown>;
+    patchConfig: (p: Record<string, unknown>) => void;
+}) {
+    return <AIDecideFields config={config} patchConfig={patchConfig} />;
+}
+
+// AIAgentFields — the agentic AI step: an instruction plus the guarded set of
+// reversible actions the model may call. The agent decides which to use per
+// event; each enabled action that needs config shows its pinned inputs (shared
+// in this one node blob). It can never send or reply.
+function AIAgentFields({
+    config,
+    patchConfig,
+    trigger,
+    selfId,
+}: {
+    config: Record<string, unknown>;
+    patchConfig: (p: Record<string, unknown>) => void;
+    trigger: string;
+    selfId: string;
+}) {
+    const enabled = Array.isArray(config.allowed_actions)
+        ? (config.allowed_actions as unknown[]).map(String)
+        : [];
+    const toggle = (id: string) =>
+        patchConfig({
+            allowed_actions: enabled.includes(id) ? enabled.filter((a) => a !== id) : [...enabled, id],
+        });
+    const needsConfig = enabled.filter((id) => nativeActionNeeds(id) !== "none");
+    return (
+        <div className="space-y-3">
+            <AIInstruction
+                value={String(config.instruction ?? "")}
+                onChange={(v) => patchConfig({ instruction: v })}
+                placeholder="Read the reply. If they ask about pricing, tag them 'pricing' and create a follow-up task."
+            />
+            <div>
+                <Label>Actions the agent may take</Label>
+                <div className="space-y-0.5 rounded-md border border-slate-200 p-1">
+                    {AI_ALLOWLIST_ACTIONS.map((id) => {
+                        const on = enabled.includes(id);
+                        return (
+                            <button
+                                key={id}
+                                type="button"
+                                onClick={() => toggle(id)}
+                                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[12.5px] text-slate-700 transition-colors hover:bg-slate-100"
+                            >
+                                <span
+                                    className={cn(
+                                        "inline-flex size-4 shrink-0 items-center justify-center rounded border",
+                                        on ? "border-sky-500 bg-sky-500 text-white" : "border-slate-300 bg-white",
+                                    )}
+                                >
+                                    {on && <CheckIcon className="w-3 h-3" />}
+                                </span>
+                                {actionLabel(id)}
+                            </button>
+                        );
+                    })}
+                </div>
+                <p className="mt-1.5 text-[11px] text-slate-400 leading-relaxed">
+                    The agent decides which of these to use for each event, and can chain several. It only takes these
+                    reversible actions — it never sends or replies. Billed 1 credit per step it takes.
+                </p>
+            </div>
+            {needsConfig.map((id) => (
+                <div key={id} className="rounded-md border border-slate-200 p-2.5">
+                    <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                        {actionLabel(id)}
+                    </div>
+                    <NativeActionConfig
+                        action={id}
+                        trigger={trigger}
+                        config={config}
+                        patchConfig={patchConfig}
+                        selfId={selfId}
+                    />
+                </div>
+            ))}
         </div>
     );
 }
