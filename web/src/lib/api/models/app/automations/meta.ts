@@ -55,6 +55,8 @@ export const ACTION_LABELS: Record<string, string> = {
     "warmbly.ai_classify": "AI classify",
     "warmbly.ai_extract": "AI extract",
     "warmbly.ai_generate": "AI generate",
+    "warmbly.ai_step": "AI step",
+    "warmbly.ai_switch": "AI switch",
 };
 
 export function actionLabel(a: string): string {
@@ -80,12 +82,36 @@ export const NATIVE_ACTIONS: string[] = [
     "warmbly.ai_classify",
     "warmbly.ai_extract",
     "warmbly.ai_generate",
+    "warmbly.ai_step",
+    "warmbly.ai_switch",
 ];
+
+// AI_ALLOWLIST_ACTIONS is the closed set of reversible native actions an
+// agent-mode AI step may be permitted to call. One source of truth for the
+// editor checklist; it cannot express a send/reply action by construction.
+export const AI_ALLOWLIST_ACTIONS = [
+    "warmbly.add_tag",
+    "warmbly.remove_tag",
+    "warmbly.create_task",
+    "warmbly.create_deal",
+    "warmbly.move_deal_stage",
+    "warmbly.label_email",
+    "warmbly.set_variables",
+    "warmbly.unsubscribe",
+] as const;
+
+export type NativeActionAllow = (typeof AI_ALLOWLIST_ACTIONS)[number];
 
 // AI action nodes run one LLM step over the event and store the result as a
 // variable for later steps to branch on. They cost one credit each.
 export function isAIAction(a: string): boolean {
-    return a === "warmbly.ai_classify" || a === "warmbly.ai_extract" || a === "warmbly.ai_generate";
+    return (
+        a === "warmbly.ai_classify" ||
+        a === "warmbly.ai_extract" ||
+        a === "warmbly.ai_generate" ||
+        a === "warmbly.ai_step" ||
+        a === "warmbly.ai_switch"
+    );
 }
 
 export function isNativeAction(a: string): boolean {
@@ -106,8 +132,14 @@ export function nativeActionNeeds(
     | "ai_classify"
     | "ai_extract"
     | "ai_generate"
+    | "ai_step"
+    | "ai_switch"
     | "none" {
     switch (action) {
+        case "warmbly.ai_step":
+            return "ai_step";
+        case "warmbly.ai_switch":
+            return "ai_switch";
         case "warmbly.add_tag":
         case "warmbly.remove_tag":
             return "tag";

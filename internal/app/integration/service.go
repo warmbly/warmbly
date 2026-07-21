@@ -768,11 +768,11 @@ func (s *service) validateAutomationGraph(ctx context.Context, orgID uuid.UUID, 
 			}
 		case src.Type == models.AutomationNodeAction:
 			if lbl, ok := strings.CutPrefix(e.When, aiLabelEdgePrefix); ok {
-				if src.Action != models.IntegrationActionAIClassify {
-					return errors.New("only an AI classify step can have per-label branches")
+				if !aiNodeRoutesByLabel(src) {
+					return errors.New("only an AI classify, AI step (decide), or AI switch can have per-label branches")
 				}
-				if !aiClassifyHasLabel(src.Config, lbl) {
-					return fmt.Errorf("branch label %q is not one of the AI step's labels", lbl)
+				if !aiNodeHasBranch(src, lbl) {
+					return fmt.Errorf("branch label %q is not one of the AI step's choices", lbl)
 				}
 			} else if e.When != "" && e.When != "error" {
 				return errors.New("an action edge must be a plain path or an on-error branch")

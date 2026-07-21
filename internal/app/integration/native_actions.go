@@ -69,6 +69,81 @@ func validateNativeActionConfig(action models.IntegrationAction, raw json.RawMes
 		if strings.TrimSpace(ai.Instruction) == "" {
 			return fmt.Errorf("an AI generate step needs an instruction")
 		}
+	case models.IntegrationActionAIStep:
+		return validateAIStepConfig(raw)
+	case models.IntegrationActionAISwitch:
+		ai := parseAIConfig(raw)
+		if strings.TrimSpace(ai.Instruction) == "" {
+			return fmt.Errorf("an AI switch needs an instruction")
+		}
+		if len(nonEmptyStrings(ai.Cases)) < 2 {
+			return fmt.Errorf("an AI switch needs at least two cases")
+		}
+	}
+	return nil
+}
+
+// isAllowlistedAIAction is the closed set of REVERSIBLE native actions an
+// agent-mode AI step may call as tools. Defined as its own switch (NOT derived
+// from IsNativeAction) so it can never drift to include run_automation,
+// fire_event, a connection-backed action, or any future send/reply action.
+func isAllowlistedAIAction(a models.IntegrationAction) bool {
+	switch a {
+	case models.IntegrationActionAddTag,
+		models.IntegrationActionRemoveTag,
+		models.IntegrationActionCreateTask,
+		models.IntegrationActionCreateDeal,
+		models.IntegrationActionMoveDealStage,
+		models.IntegrationActionLabelEmail,
+		models.IntegrationActionSetVariables,
+		models.IntegrationActionUnsubscribe:
+		return true
+	default:
+		return false
+	}
+}
+
+// validateAIStepConfig validates the unified AI step by mode, plus the guarded
+// action allowlist for agent mode (every entry must pass isAllowlistedAIAction
+// and carry the config its executor needs, checked against the same node blob).
+func validateAIStepConfig(raw json.RawMessage) error {
+	ai := parseAIConfig(raw)
+	if strings.TrimSpace(ai.Instruction) == "" {
+		return fmt.Errorf("an AI step needs an instruction")
+	}
+	switch strings.TrimSpace(ai.Mode) {
+	case "classify":
+		if len(nonEmptyStrings(ai.Labels)) < 2 {
+			return fmt.Errorf("classify mode needs at least two labels")
+		}
+	case "extract":
+		if len(nonEmptyStrings(ai.OutputKeys)) == 0 {
+			return fmt.Errorf("extract mode needs at least one output key")
+		}
+	case "decide":
+		if len(nonEmptyStrings(ai.Cases)) < 2 {
+			return fmt.Errorf("decide mode needs at least two cases")
+		}
+	case "agent":
+		enabled := nonEmptyStrings(ai.Allowlist)
+		if len(enabled) == 0 {
+			return fmt.Errorf("agent mode needs at least one allowed action")
+		}
+		for _, raw2 := range enabled {
+			id := models.IntegrationAction(strings.TrimSpace(raw2))
+			if !isAllowlistedAIAction(id) {
+				return fmt.Errorf("%q is not an allowed agent action", raw2)
+			}
+			// Each enabled action's pinned config lives in the same node blob,
+			// so validate it the way that action normally would.
+			if err := validateNativeActionConfig(id, raw); err != nil {
+				return fmt.Errorf("allowed action %q: %w", aiToolName(id), err)
+			}
+		}
+	case "generate", "":
+		// generate needs only the instruction (already checked).
+	default:
+		return fmt.Errorf("unknown AI step mode %q", ai.Mode)
 	}
 	return nil
 }

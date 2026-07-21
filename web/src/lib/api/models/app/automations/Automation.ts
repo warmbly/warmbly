@@ -1,4 +1,5 @@
 import type { IntegrationAction } from "@/lib/api/models/app/integrations/Integration";
+import type { NativeActionAllow } from "@/lib/api/models/app/automations/meta";
 
 // A condition (IF) tested against the trigger event's data. For the generic
 // "field" type, `key` names the event-data key to test. For the "expression"
@@ -45,6 +46,31 @@ export interface AutomationEdge {
 export interface AutomationGraph {
     nodes: AutomationNode[];
     edges: AutomationEdge[];
+}
+
+// Read-time parse helpers for the untyped AutomationNode.config blob (jsonb).
+// They are tolerant views, never schemas that reject unknown keys, so the blob
+// stays forward/back-compatible. AIStepConfig is the unified AI step
+// (warmbly.ai_step); its mode selects behavior and, in agent mode, the model
+// may call the reversible actions in allowed_actions[]. AISwitchConfig is the
+// AI router (warmbly.ai_switch), decided over cases[] and routed by
+// "label:<case>" edges (the same edge vocabulary an AI classify node uses).
+export type AIStepMode = "classify" | "extract" | "generate" | "decide" | "agent";
+
+export interface AIStepConfig {
+    mode: AIStepMode;
+    instruction: string;
+    output_key?: string;
+    labels?: string[];
+    output_keys?: string[];
+    cases?: string[];
+    allowed_actions?: NativeActionAllow[];
+}
+
+export interface AISwitchConfig {
+    instruction: string;
+    cases: string[];
+    output_key?: string;
 }
 
 export interface Automation {
