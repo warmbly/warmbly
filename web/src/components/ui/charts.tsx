@@ -9,7 +9,12 @@
 
 import React from "react";
 import { cn } from "@/lib/utils";
-import { DitherMultiAreaChart, type DitherTone } from "@/components/ui/dither";
+import {
+    AREA_PAD_BOTTOM,
+    AREA_PAD_TOP,
+    DitherMultiAreaChart,
+    type DitherTone,
+} from "@/components/ui/dither";
 
 export interface ChartPoint {
     /** x-tick source — typically an ISO date string. */
@@ -23,6 +28,12 @@ function shortDate(iso: string): string {
     } catch {
         return iso;
     }
+}
+
+function compact(n: number): string {
+    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1)}M`;
+    if (n >= 1_000) return `${(n / 1_000).toFixed(n >= 10_000 ? 0 : 1)}k`;
+    return `${Math.round(n)}`;
 }
 
 /**
@@ -72,7 +83,7 @@ export interface TrendSeries {
 export function MultiTrend({
     labels,
     series,
-    height = 200,
+    height = 260,
     emptyLabel = "No activity yet",
     className,
 }: {
@@ -95,10 +106,28 @@ export function MultiTrend({
     if (isEmpty) return <EmptyChart height={height} label={emptyLabel} className={className} />;
 
     const tickH = 18;
+    const chartH = height - tickH - 4;
+    // Same y mapping as the canvas painter, so gridline values line up with
+    // the drawn curves.
+    const max = Math.max(1, ...series.flatMap((s) => s.values));
+    const innerH = chartH - AREA_PAD_TOP - AREA_PAD_BOTTOM;
+    const gridFracs = [0.25, 0.5, 0.75];
 
     return (
         <div className={cn("relative w-full select-none", className)} style={{ height }}>
-            <DitherMultiAreaChart labels={shortLabels} series={areaSeries} height={height - tickH - 4} />
+            {gridFracs.map((f) => (
+                <div
+                    key={f}
+                    className="pointer-events-none absolute left-0 right-0"
+                    style={{ top: AREA_PAD_TOP + (1 - f) * innerH }}
+                >
+                    <div className="h-px bg-slate-100" />
+                    <span className="absolute right-0 -top-3.5 font-mono text-[9px] tabular-nums text-slate-300">
+                        {compact(max * f)}
+                    </span>
+                </div>
+            ))}
+            <DitherMultiAreaChart labels={shortLabels} series={areaSeries} height={chartH} />
             <div className="absolute left-0 right-0 h-px bg-slate-200/80" style={{ bottom: tickH }} />
             <div className="absolute left-0 right-0 bottom-0 flex justify-between font-mono text-[9.5px] text-slate-400">
                 <span>{shortDate(labels[0])}</span>
