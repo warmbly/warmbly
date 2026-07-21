@@ -23,14 +23,16 @@ jobs:
     name: Detect Changes
     runs-on: ubuntu-latest
     outputs:
-      backend: ${{ steps.filter.outputs.backend }}
-      consumer: ${{ steps.filter.outputs.consumer }}
-      worker: ${{ steps.filter.outputs.worker }}
-      tracking: ${{ steps.filter.outputs.tracking }}
-      realtime: ${{ steps.filter.outputs.realtime }}
+      # JSON lists consumed as matrix inputs. `go` services cross-compile both
+      # arches on one runner; `native` services (Rust, Elixir) have no
+      # cross-compiler, so each arch builds on a native runner and the digests
+      # are merged into one manifest.
+      go: ${{ steps.matrix.outputs.go }}
+      native: ${{ steps.matrix.outputs.native }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
+        if: github.event_name == 'push'
         id: filter
         with:
           filters: |
@@ -57,175 +59,91 @@ jobs:
             realtime:
               - 'realtime/**'
               - 'deploy/docker/realtime.Dockerfile'
+      - name: Assemble build matrices
+        id: matrix
+        env:
+          EVENT: ${{ github.event_name }}
+          SELECTED: ${{ github.event.inputs.service }}
+          BACKEND: ${{ steps.filter.outputs.backend }}
+          CONSUMER: ${{ steps.filter.outputs.consumer }}
+          WORKER: ${{ steps.filter.outputs.worker }}
+          TRACKING: ${{ steps.filter.outputs.tracking }}
+          REALTIME: ${{ steps.filter.outputs.realtime }}
+        run: |
+          go=""
+          native=""
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            sel="${SELECTED:-all}"
+            for s in backend consumer worker; do
+              if [ "$sel" = "all" ] || [ "$sel" = "$s" ]; then go="$go\"$s\","; fi
+            done
+            for s in tracking realtime; do
+              if [ "$sel" = "all" ] || [ "$sel" = "$s" ]; then native="$native\"$s\","; fi
+            done
+          else
+            if [ "$BACKEND" = "true" ]; then go="$go\"backend\","; fi
+            if [ "$CONSUMER" = "true" ]; then go="$go\"consumer\","; fi
+            if [ "$WORKER" = "true" ]; then go="$go\"worker\","; fi
+            if [ "$TRACKING" = "true" ]; then native="$native\"tracking\","; fi
+            if [ "$REALTIME" = "true" ]; then native="$native\"realtime\","; fi
+          fi
+          echo "go=[${go%,}]" >> "$GITHUB_OUTPUT"
+          echo "native=[${native%,}]" >> "$GITHUB_OUTPUT"
 
-  build-backend:
-    name: Build Backend
+  # Go services: the Dockerfiles build on $BUILDPLATFORM and cross-compile to
+  # each target arch, so one amd64 runner produces both platforms without QEMU.
+  build-go:
+    name: Build ${{ matrix.service }}
     needs: changes
-    if: |
-      github.event_name == 'workflow_dispatch' && (github.event.inputs.service == 'all' || github.event.inputs.service == 'backend') ||
-      github.event_name == 'push' && needs.changes.outputs.backend == 'true'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: deploy/docker/backend.Dockerfile
-          push: true
-          tags: |
-            ${{ env.IMAGE_PREFIX }}/backend:${{ github.sha }}
-            ${{ env.IMAGE_PREFIX }}/backend:dev
-          platforms: linux/amd64,linux/arm64
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          build-args: |
-            SERVICE=backend
-
-  build-consumer:
-    name: Build Consumer
-    needs: changes
-    if: |
-      github.event_name == 'workflow_dispatch' && (github.event.inputs.service == 'all' || github.event.inputs.service == 'consumer') ||
-      github.event_name == 'push' && needs.changes.outputs.consumer == 'true'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: deploy/docker/consumer.Dockerfile
-          push: true
-          tags: |
-            ${{ env.IMAGE_PREFIX }}/consumer:${{ github.sha }}
-            ${{ env.IMAGE_PREFIX }}/consumer:dev
-          platforms: linux/amd64,linux/arm64
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          build-args: |
-            SERVICE=consumer
-
-  build-worker:
-    name: Build Worker
-    needs: changes
-    if: |
-      github.event_name == 'workflow_dispatch' && (github.event.inputs.service == 'all' || github.event.inputs.service == 'worker') ||
-      github.event_name == 'push' && needs.changes.outputs.worker == 'true'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: deploy/docker/worker.Dockerfile
-          push: true
-          tags: |
-            ${{ env.IMAGE_PREFIX }}/worker:${{ github.sha }}
-            ${{ env.IMAGE_PREFIX }}/worker:dev
-          platforms: linux/amd64,linux/arm64
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          build-args: |
-            SERVICE=worker
-
-  build-tracking:
-    name: Build Tracking
-    needs: changes
-    if: |
-      github.event_name == 'workflow_dispatch' && (github.event.inputs.service == 'all' || github.event.inputs.service == 'tracking') ||
-      github.event_name == 'push' && needs.changes.outputs.tracking == 'true'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: ./tracking
-          file: ./tracking/Dockerfile
-          push: true
-          tags: |
-            ${{ env.IMAGE_PREFIX }}/tracking:${{ github.sha }}
-            ${{ env.IMAGE_PREFIX }}/tracking:dev
-          platforms: linux/amd64,linux/arm64
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-  # Elixir has no cross-compiler, so an emulated arm64 `mix release` under QEMU
-  # runs for hours. Build each arch on a native runner and merge the digests
-  # into one manifest (the Docker-documented multi-runner pattern).
-  build-realtime:
-    name: Build Realtime
-    needs: changes
-    if: |
-      github.event_name == 'workflow_dispatch' && (github.event.inputs.service == 'all' || github.event.inputs.service == 'realtime') ||
-      github.event_name == 'push' && needs.changes.outputs.realtime == 'true'
+    if: needs.changes.outputs.go != '[]'
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - platform: linux/amd64
-            runner: ubuntu-latest
-          - platform: linux/arm64
-            runner: ubuntu-24.04-arm
-    runs-on: ${{ matrix.runner }}
+        service: ${{ fromJSON(needs.changes.outputs.go) }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/${{ matrix.service }}.Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:${{ github.sha }}
+            ${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:dev
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+  # Rust (tracking) and Elixir (realtime) have no cross-compiler; an emulated
+  # arm64 build under QEMU runs for an hour or more. Build each arch on a
+  # native runner and merge the digests into one manifest (the
+  # Docker-documented multi-runner pattern).
+  build-native:
+    name: Build ${{ matrix.service }} (${{ matrix.platform }})
+    needs: changes
+    if: needs.changes.outputs.native != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJSON(needs.changes.outputs.native) }}
+        platform: [linux/amd64, linux/arm64]
+    runs-on: ${{ matrix.platform == 'linux/arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     permissions:
       contents: read
       packages: write
@@ -252,12 +170,12 @@ jobs:
         id: build
         uses: docker/build-push-action@v6
         with:
-          context: .
-          file: deploy/docker/realtime.Dockerfile
+          context: ${{ matrix.service == 'tracking' && './tracking' || '.' }}
+          file: ${{ matrix.service == 'tracking' && './tracking/Dockerfile' || format('deploy/docker/{0}.Dockerfile', matrix.service) }}
           platforms: ${{ matrix.platform }}
-          cache-from: type=gha,scope=realtime-${{ steps.prep.outputs.pair }}
-          cache-to: type=gha,mode=max,scope=realtime-${{ steps.prep.outputs.pair }}
-          outputs: type=image,name=${{ env.IMAGE_PREFIX }}/realtime,push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ matrix.service }}-${{ steps.prep.outputs.pair }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}-${{ steps.prep.outputs.pair }}
+          outputs: type=image,name=${{ env.IMAGE_PREFIX }}/${{ matrix.service }},push-by-digest=true,name-canonical=true,push=true
 
       - name: Export digest
         run: |
@@ -268,14 +186,19 @@ jobs:
       - name: Upload digest
         uses: actions/upload-artifact@v4
         with:
-          name: digests-realtime-${{ steps.prep.outputs.pair }}
+          name: digests-${{ matrix.service }}-${{ steps.prep.outputs.pair }}
           path: /tmp/digests/*
           if-no-files-found: error
           retention-days: 1
 
-  merge-realtime:
-    name: Merge Realtime manifest
-    needs: build-realtime
+  merge-native:
+    name: Merge ${{ matrix.service }} manifest
+    needs: [changes, build-native]
+    if: needs.changes.outputs.native != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJSON(needs.changes.outputs.native) }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -285,7 +208,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: /tmp/digests
-          pattern: digests-realtime-*
+          pattern: digests-${{ matrix.service }}-*
           merge-multiple: true
 
       - name: Log in to GHCR
@@ -302,6 +225,6 @@ jobs:
         working-directory: /tmp/digests
         run: |
           docker buildx imagetools create \
-            -t ${{ env.IMAGE_PREFIX }}/realtime:${{ github.sha }} \
-            -t ${{ env.IMAGE_PREFIX }}/realtime:dev \
-            $(printf '${{ env.IMAGE_PREFIX }}/realtime@sha256:%s ' *)
+            -t ${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:${{ github.sha }} \
+            -t ${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:dev \
+            $(printf '${{ env.IMAGE_PREFIX }}/${{ matrix.service }}@sha256:%s ' *)
