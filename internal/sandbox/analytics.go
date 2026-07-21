@@ -408,6 +408,14 @@ func seedMailboxErrors(ctx context.Context, pool *pgxpool.Pool) error {
 			"This mailbox is close to its configured daily cap. Sends will resume tomorrow or when you raise the limit.",
 			false, 0.3,
 		},
+		{
+			uuid.MustParse("e1e1e1e1-aaaa-0000-0000-000000000003"),
+			sandboxMailboxes[18].id, // Yuki Sato - the watch-state pool member
+			"SPAM_PLACEMENT_RISING", "WARNING", "NONE",
+			"Warmup mail landing in spam more often",
+			"Recent warmup deliveries from this mailbox were placed in spam folders more often than the pool average. Warmup volume was reduced while it recovers.",
+			false, 1.2,
+		},
 	}
 	for _, r := range rows {
 		resolvedExpr := "NULL"

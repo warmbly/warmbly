@@ -22,185 +22,66 @@ jobs:
         id: version
         run: |
           TAG="${{ github.ref_name }}"
-          # Remove 'v' prefix
           VERSION="${TAG#v}"
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
-
-          # Extract major and minor
-          MAJOR=$(echo "$VERSION" | cut -d. -f1)
-          MINOR=$(echo "$VERSION" | cut -d. -f1-2)
-          echo "major=${MAJOR}" >> $GITHUB_OUTPUT
-          echo "minor=${MINOR}" >> $GITHUB_OUTPUT
-
+          echo "major=$(echo "$VERSION" | cut -d. -f1)" >> $GITHUB_OUTPUT
+          echo "minor=$(echo "$VERSION" | cut -d. -f1-2)" >> $GITHUB_OUTPUT
           echo "Release version: ${VERSION}"
-          echo "Major: ${MAJOR}, Minor: ${MINOR}"
 
-  build-backend:
-    name: Build Backend
-    needs: validate-tag
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: deploy/docker/backend.Dockerfile
-          push: true
-          tags: |
-            ${{ env.IMAGE_PREFIX }}/backend:${{ github.ref_name }}
-            ${{ env.IMAGE_PREFIX }}/backend:v${{ needs.validate-tag.outputs.minor }}
-            ${{ env.IMAGE_PREFIX }}/backend:v${{ needs.validate-tag.outputs.major }}
-            ${{ env.IMAGE_PREFIX }}/backend:prod
-          platforms: linux/amd64,linux/arm64
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          build-args: |
-            SERVICE=backend
-            VERSION=${{ needs.validate-tag.outputs.version }}
-
-  build-consumer:
-    name: Build Consumer
-    needs: validate-tag
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: deploy/docker/consumer.Dockerfile
-          push: true
-          tags: |
-            ${{ env.IMAGE_PREFIX }}/consumer:${{ github.ref_name }}
-            ${{ env.IMAGE_PREFIX }}/consumer:v${{ needs.validate-tag.outputs.minor }}
-            ${{ env.IMAGE_PREFIX }}/consumer:v${{ needs.validate-tag.outputs.major }}
-            ${{ env.IMAGE_PREFIX }}/consumer:prod
-          platforms: linux/amd64,linux/arm64
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          build-args: |
-            SERVICE=consumer
-            VERSION=${{ needs.validate-tag.outputs.version }}
-
-  build-worker:
-    name: Build Worker
-    needs: validate-tag
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: deploy/docker/worker.Dockerfile
-          push: true
-          tags: |
-            ${{ env.IMAGE_PREFIX }}/worker:${{ github.ref_name }}
-            ${{ env.IMAGE_PREFIX }}/worker:v${{ needs.validate-tag.outputs.minor }}
-            ${{ env.IMAGE_PREFIX }}/worker:v${{ needs.validate-tag.outputs.major }}
-            ${{ env.IMAGE_PREFIX }}/worker:prod
-          platforms: linux/amd64,linux/arm64
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          build-args: |
-            SERVICE=worker
-            VERSION=${{ needs.validate-tag.outputs.version }}
-
-  build-tracking:
-    name: Build Tracking
-    needs: validate-tag
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: ./tracking
-          file: ./tracking/Dockerfile
-          push: true
-          tags: |
-            ${{ env.IMAGE_PREFIX }}/tracking:${{ github.ref_name }}
-            ${{ env.IMAGE_PREFIX }}/tracking:v${{ needs.validate-tag.outputs.minor }}
-            ${{ env.IMAGE_PREFIX }}/tracking:v${{ needs.validate-tag.outputs.major }}
-            ${{ env.IMAGE_PREFIX }}/tracking:prod
-          platforms: linux/amd64,linux/arm64
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          build-args: |
-            VERSION=${{ needs.validate-tag.outputs.version }}
-
-  # Elixir has no cross-compiler, so an emulated arm64 `mix release` under QEMU
-  # runs for hours. Build each arch on a native runner and merge the digests
-  # into one manifest (the Docker-documented multi-runner pattern).
-  build-realtime:
-    name: Build Realtime
+  # Go services: the Dockerfiles build on $BUILDPLATFORM and cross-compile to
+  # each target arch, so one amd64 runner produces both platforms without QEMU.
+  build-go:
+    name: Build ${{ matrix.service }}
     needs: validate-tag
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - platform: linux/amd64
-            runner: ubuntu-latest
-          - platform: linux/arm64
-            runner: ubuntu-24.04-arm
-    runs-on: ${{ matrix.runner }}
+        service: [backend, consumer, worker]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/${{ matrix.service }}.Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:${{ github.ref_name }}
+            ${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:v${{ needs.validate-tag.outputs.minor }}
+            ${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:v${{ needs.validate-tag.outputs.major }}
+            ${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:prod
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+  # Rust (tracking) and Elixir (realtime) have no cross-compiler; an emulated
+  # arm64 build under QEMU runs for an hour or more. Build each arch on a
+  # native runner and merge the digests into one manifest (the
+  # Docker-documented multi-runner pattern).
+  build-native:
+    name: Build ${{ matrix.service }} (${{ matrix.platform }})
+    needs: validate-tag
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [tracking, realtime]
+        platform: [linux/amd64, linux/arm64]
+    runs-on: ${{ matrix.platform == 'linux/arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     permissions:
       contents: read
       packages: write
@@ -227,14 +108,12 @@ jobs:
         id: build
         uses: docker/build-push-action@v6
         with:
-          context: .
-          file: deploy/docker/realtime.Dockerfile
+          context: ${{ matrix.service == 'tracking' && './tracking' || '.' }}
+          file: ${{ matrix.service == 'tracking' && './tracking/Dockerfile' || format('deploy/docker/{0}.Dockerfile', matrix.service) }}
           platforms: ${{ matrix.platform }}
-          cache-from: type=gha,scope=realtime-${{ steps.prep.outputs.pair }}
-          cache-to: type=gha,mode=max,scope=realtime-${{ steps.prep.outputs.pair }}
-          outputs: type=image,name=${{ env.IMAGE_PREFIX }}/realtime,push-by-digest=true,name-canonical=true,push=true
-          build-args: |
-            VERSION=${{ needs.validate-tag.outputs.version }}
+          cache-from: type=gha,scope=${{ matrix.service }}-${{ steps.prep.outputs.pair }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}-${{ steps.prep.outputs.pair }}
+          outputs: type=image,name=${{ env.IMAGE_PREFIX }}/${{ matrix.service }},push-by-digest=true,name-canonical=true,push=true
 
       - name: Export digest
         run: |
@@ -245,14 +124,18 @@ jobs:
       - name: Upload digest
         uses: actions/upload-artifact@v4
         with:
-          name: digests-realtime-${{ steps.prep.outputs.pair }}
+          name: digests-${{ matrix.service }}-${{ steps.prep.outputs.pair }}
           path: /tmp/digests/*
           if-no-files-found: error
           retention-days: 1
 
-  merge-realtime:
-    name: Merge Realtime manifest
-    needs: [validate-tag, build-realtime]
+  merge-native:
+    name: Merge ${{ matrix.service }} manifest
+    needs: [validate-tag, build-native]
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [tracking, realtime]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -262,7 +145,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: /tmp/digests
-          pattern: digests-realtime-*
+          pattern: digests-${{ matrix.service }}-*
           merge-multiple: true
 
       - name: Log in to GHCR
@@ -279,15 +162,15 @@ jobs:
         working-directory: /tmp/digests
         run: |
           docker buildx imagetools create \
-            -t ${{ env.IMAGE_PREFIX }}/realtime:${{ github.ref_name }} \
-            -t ${{ env.IMAGE_PREFIX }}/realtime:v${{ needs.validate-tag.outputs.minor }} \
-            -t ${{ env.IMAGE_PREFIX }}/realtime:v${{ needs.validate-tag.outputs.major }} \
-            -t ${{ env.IMAGE_PREFIX }}/realtime:prod \
-            $(printf '${{ env.IMAGE_PREFIX }}/realtime@sha256:%s ' *)
+            -t ${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:${{ github.ref_name }} \
+            -t ${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:v${{ needs.validate-tag.outputs.minor }} \
+            -t ${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:v${{ needs.validate-tag.outputs.major }} \
+            -t ${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:prod \
+            $(printf '${{ env.IMAGE_PREFIX }}/${{ matrix.service }}@sha256:%s ' *)
 
   create-release:
     name: Create GitHub Release
-    needs: [validate-tag, build-backend, build-consumer, build-worker, build-tracking, merge-realtime]
+    needs: [validate-tag, build-go, merge-native]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -299,7 +182,6 @@ jobs:
       - name: Generate changelog
         id: changelog
         run: |
-          # Get previous tag
           PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
 
           if [[ -n "$PREV_TAG" ]]; then

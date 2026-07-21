@@ -147,19 +147,31 @@ func classify(i int) funnelState {
 
 // progressRows builds the concrete rows for a contact in a given campaign.
 // Returns nil for queued contacts (no rows means "Queued" in the UI).
-func progressRows(steps []uuid.UUID, state funnelState) []progressStep {
+// The contact index staggers every timestamp so sends spread over ~3 weeks of
+// history (varied per day) instead of clustering on identical offsets — the
+// daily charts and dashboard trend read straight from these sent_at values.
+func progressRows(steps []uuid.UUID, state funnelState, idx int) []progressStep {
+	// When this contact's step 1 went out: 2-19 days ago, varied per contact.
+	anchor := 2.0 + float64((idx*7)%16) + float64(idx%4)*0.2
+	// Clamp follow-up offsets to "a few hours ago" at the freshest.
+	at := func(daysAgo float64) float64 {
+		if daysAgo < 0.25 {
+			return 0.25
+		}
+		return daysAgo
+	}
 	switch state {
 	case stateDone:
 		// Every step sent, staggered; opened on all, clicked on the first.
 		rows := make([]progressStep, 0, len(steps))
 		for i, s := range steps {
-			sent := 6 - float64(i*2) // -6d, -4d, -2d for 3 steps
+			sent := at(anchor - float64(i*2))
 			clicked := -1.0
 			if i == 0 {
-				clicked = sent - 0.1
+				clicked = at(sent - 0.1)
 			}
 			rows = append(rows, progressStep{
-				seq: s, sentDaysAgo: sent, openedDaysAgo: sent - 0.05,
+				seq: s, sentDaysAgo: sent, openedDaysAgo: at(sent - 0.05),
 				clickedDaysAgo: clicked, repliedDaysAgo: -1, bouncedDaysAgo: -1,
 			})
 		}
@@ -167,27 +179,27 @@ func progressRows(steps []uuid.UUID, state funnelState) []progressStep {
 	case stateProcessing:
 		// Step 1 sent+opened, step 2 sent+opened when it exists, rest absent.
 		rows := []progressStep{
-			{seq: steps[0], sentDaysAgo: 4, openedDaysAgo: 3.9, clickedDaysAgo: -1, repliedDaysAgo: -1, bouncedDaysAgo: -1},
+			{seq: steps[0], sentDaysAgo: at(anchor), openedDaysAgo: at(anchor - 0.1), clickedDaysAgo: -1, repliedDaysAgo: -1, bouncedDaysAgo: -1},
 		}
 		if len(steps) > 2 {
-			rows = append(rows, progressStep{seq: steps[1], sentDaysAgo: 2, openedDaysAgo: 1.9, clickedDaysAgo: -1, repliedDaysAgo: -1, bouncedDaysAgo: -1})
+			rows = append(rows, progressStep{seq: steps[1], sentDaysAgo: at(anchor - 2), openedDaysAgo: at(anchor - 2.1), clickedDaysAgo: -1, repliedDaysAgo: -1, bouncedDaysAgo: -1})
 		}
 		return rows
 	case stateReplied:
 		// Step 1 sent+opened, replied on the latest sent step.
 		if len(steps) > 2 {
 			return []progressStep{
-				{seq: steps[0], sentDaysAgo: 5, openedDaysAgo: 4.9, clickedDaysAgo: -1, repliedDaysAgo: -1, bouncedDaysAgo: -1},
-				{seq: steps[1], sentDaysAgo: 3, openedDaysAgo: 2.9, clickedDaysAgo: -1, repliedDaysAgo: 2.5, bouncedDaysAgo: -1},
+				{seq: steps[0], sentDaysAgo: at(anchor), openedDaysAgo: at(anchor - 0.1), clickedDaysAgo: -1, repliedDaysAgo: -1, bouncedDaysAgo: -1},
+				{seq: steps[1], sentDaysAgo: at(anchor - 2), openedDaysAgo: at(anchor - 2.1), clickedDaysAgo: -1, repliedDaysAgo: at(anchor - 2.5), bouncedDaysAgo: -1},
 			}
 		}
 		return []progressStep{
-			{seq: steps[0], sentDaysAgo: 3, openedDaysAgo: 2.9, clickedDaysAgo: -1, repliedDaysAgo: 2.5, bouncedDaysAgo: -1},
+			{seq: steps[0], sentDaysAgo: at(anchor), openedDaysAgo: at(anchor - 0.1), clickedDaysAgo: -1, repliedDaysAgo: at(anchor - 0.5), bouncedDaysAgo: -1},
 		}
 	case stateBounced:
 		// Step 1 sent + bounced, nothing else.
 		return []progressStep{
-			{seq: steps[0], sentDaysAgo: 4, openedDaysAgo: -1, clickedDaysAgo: -1, repliedDaysAgo: -1, bouncedDaysAgo: 3.9},
+			{seq: steps[0], sentDaysAgo: at(anchor), openedDaysAgo: -1, clickedDaysAgo: -1, repliedDaysAgo: -1, bouncedDaysAgo: at(anchor - 0.1)},
 		}
 	default:
 		return nil
@@ -195,16 +207,16 @@ func progressRows(steps []uuid.UUID, state funnelState) []progressStep {
 }
 
 // seedContactProgress writes a realistic funnel across both active campaigns.
-// Unsubscribed contacts (Fiona Hale i=5, Nils Pett i=13) are left with no rows
-// so they read as unsubscribed, not processed.
+// Unsubscribed contacts (Fiona Hale i=5, Nils Pett i=13, Edda Grieg i=30) are
+// left with no rows so they read as unsubscribed, not processed.
 func seedContactProgress(ctx context.Context, pool *pgxpool.Pool) error {
-	unsubscribedLaunch := map[int]bool{5: true, 13: true}
+	unsubscribedLaunch := map[int]bool{5: true, 13: true, 30: true}
 
 	for i := 0; i < len(launchContacts); i++ {
 		if unsubscribedLaunch[i] {
 			continue
 		}
-		for _, row := range progressRows(launchSteps, classify(i)) {
+		for _, row := range progressRows(launchSteps, classify(i), i) {
 			if err := insertProgress(ctx, pool, campaignLaunch, launchContactID(i), row); err != nil {
 				return err
 			}
@@ -212,7 +224,7 @@ func seedContactProgress(ctx context.Context, pool *pgxpool.Pool) error {
 	}
 
 	for i := 0; i < len(agencyContacts); i++ {
-		for _, row := range progressRows(agencySteps, classify(i)) {
+		for _, row := range progressRows(agencySteps, classify(i), i) {
 			if err := insertProgress(ctx, pool, campaignAgency, agencyContactID(i), row); err != nil {
 				return err
 			}
@@ -613,8 +625,8 @@ func seedStatsRollups(ctx context.Context, pool *pgxpool.Pool) error {
 		if _, err := pool.Exec(ctx, `
 			INSERT INTO campaign_daily_sends (campaign_id, send_date, emails_sent, new_leads_started)
 			SELECT $1, d::date,
-				5 + ((EXTRACT(DAY FROM d)::int * 7) % 20),
-				1 + ((EXTRACT(DAY FROM d)::int * 3) % 4)
+				25 + ((EXTRACT(DAY FROM d)::int * 7) % 45),
+				2 + ((EXTRACT(DAY FROM d)::int * 3) % 6)
 			FROM generate_series(NOW() - INTERVAL '13 days', NOW(), INTERVAL '1 day') AS d
 			ON CONFLICT (campaign_id, send_date) DO UPDATE SET
 				emails_sent = EXCLUDED.emails_sent,
@@ -624,32 +636,66 @@ func seedStatsRollups(ctx context.Context, pool *pgxpool.Pool) error {
 		}
 	}
 
-	for _, m := range sandboxMailboxes {
-		// Warmup stats: last 10 days, volume ramping 10 -> ~30 (2/day), target 40.
-		if _, err := pool.Exec(ctx, `
-			INSERT INTO warmup_statistics (email_account_id, date, emails_sent, emails_replied, target_volume)
-			SELECT $1, d::date,
-				LEAST(30, 10 + (9 - g.n) * 2),
-				GREATEST(0, ((9 - g.n) / 2)),
-				40
-			FROM generate_series(0, 9) AS g(n),
-				LATERAL (SELECT NOW() - (g.n || ' days')::interval AS d) s
-			ON CONFLICT (email_account_id, date) DO UPDATE SET
-				emails_sent = EXCLUDED.emails_sent,
-				emails_replied = EXCLUDED.emails_replied,
-				target_volume = EXCLUDED.target_volume`,
-			m.id); err != nil {
-			return fmt.Errorf("warmup_statistics %s: %w", m.email, err)
+	// Per-mailbox rollups follow each account's lifecycle profile, so today's
+	// numbers (warmup current/target, daily usage) and the 14-day charts agree
+	// with what the analytics endpoints compute from the same tables.
+	for i, m := range sandboxMailboxes {
+		p := profileFor(i)
+
+		warmDays := p.warmupDaysAgo
+		if warmDays > 13 {
+			warmDays = 13
+		}
+		for d := 0; d <= warmDays; d++ {
+			// Paused two days ago: history exists up to the pause, nothing after.
+			if p.paused && d < 2 {
+				continue
+			}
+			daysActive := p.warmupDaysAgo - d
+			if daysActive < 0 {
+				continue
+			}
+			target := p.warmupBase + daysActive*p.warmupInc
+			if target > p.warmupMax {
+				target = p.warmupMax
+			}
+			sent := target - (d*3+i)%4 // small daily wobble under target
+			if sent < 1 {
+				sent = 1
+			}
+			if _, err := pool.Exec(ctx, `
+				INSERT INTO warmup_statistics (email_account_id, date, emails_sent, emails_replied, target_volume)
+				VALUES ($1, CURRENT_DATE - $2::int, $3, $4, $5)
+				ON CONFLICT (email_account_id, date) DO UPDATE SET
+					emails_sent = EXCLUDED.emails_sent,
+					emails_replied = EXCLUDED.emails_replied,
+					target_volume = EXCLUDED.target_volume`,
+				m.id, d, sent, sent/3, target); err != nil {
+				return fmt.Errorf("warmup_statistics %s: %w", m.email, err)
+			}
 		}
 
-		// Daily email counts: last 14 days, small counts.
-		if _, err := pool.Exec(ctx, `
-			INSERT INTO daily_email_counts (email_account_id, date, count)
-			SELECT $1, d::date, 3 + ((EXTRACT(DAY FROM d)::int * 5) % 12)
-			FROM generate_series(NOW() - INTERVAL '13 days', NOW(), INTERVAL '1 day') AS d
-			ON CONFLICT (email_account_id, date) DO UPDATE SET count = EXCLUDED.count`,
-			m.id); err != nil {
-			return fmt.Errorf("daily_email_counts %s: %w", m.email, err)
+		// Cold-send counts: bounded by the account's age, varied 70-129% of the
+		// cohort's daily volume.
+		coldDays := 13
+		if p.accountAge-1 < coldDays {
+			coldDays = p.accountAge - 1
+		}
+		for d := 0; d <= coldDays; d++ {
+			c := (p.campaignToday * (70 + ((d*13 + i*7) % 60))) / 100
+			if d == 0 {
+				c = p.campaignToday
+			}
+			if c < 1 {
+				c = 1
+			}
+			if _, err := pool.Exec(ctx, `
+				INSERT INTO daily_email_counts (email_account_id, date, count)
+				VALUES ($1, CURRENT_DATE - $2::int, $3)
+				ON CONFLICT (email_account_id, date) DO UPDATE SET count = EXCLUDED.count`,
+				m.id, d, c); err != nil {
+				return fmt.Errorf("daily_email_counts %s: %w", m.email, err)
+			}
 		}
 	}
 	return nil

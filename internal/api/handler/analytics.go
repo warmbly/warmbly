@@ -134,14 +134,15 @@ func (h *Handler) GetCampaignDailyStats(c *gin.Context) {
 // GetAllAccountStatuses gets status of all email accounts
 // GET /analytics/accounts
 func (h *Handler) GetAllAccountStatuses(c *gin.Context) {
-	userIDStr := middleware.GetUserID(c)
-	userID, err := uuid.Parse(userIDStr)
-	if err != nil {
-		errx.Handle(c, errx.ErrAuth)
+	// Account lookups are org-scoped (emailRepo.Search filters on
+	// organization_id), so pass the selected org, not the user id.
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "no organization selected"))
 		return
 	}
 
-	statuses, xerr := h.AnalyticsService.GetAllAccountStatuses(c.Request.Context(), userID)
+	statuses, xerr := h.AnalyticsService.GetAllAccountStatuses(c.Request.Context(), *orgID)
 	if xerr != nil {
 		errx.Handle(c, xerr)
 		return
@@ -153,10 +154,10 @@ func (h *Handler) GetAllAccountStatuses(c *gin.Context) {
 // GetAccountStatus gets status of a specific email account
 // GET /analytics/accounts/:id
 func (h *Handler) GetAccountStatus(c *gin.Context) {
-	userIDStr := middleware.GetUserID(c)
-	userID, err := uuid.Parse(userIDStr)
-	if err != nil {
-		errx.Handle(c, errx.ErrAuth)
+	// Org-scoped like the list endpoint above.
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "no organization selected"))
 		return
 	}
 
@@ -167,7 +168,7 @@ func (h *Handler) GetAccountStatus(c *gin.Context) {
 		return
 	}
 
-	status, xerr := h.AnalyticsService.GetAccountStatus(c.Request.Context(), userID, accountID)
+	status, xerr := h.AnalyticsService.GetAccountStatus(c.Request.Context(), *orgID, accountID)
 	if xerr != nil {
 		errx.Handle(c, xerr)
 		return

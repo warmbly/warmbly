@@ -732,6 +732,8 @@ func (s *tasksService) executeActionNode(ctx context.Context, campaign *models.C
 	switch cfg.Type {
 	case "wait", "end", "":
 		return nil
+	case "ai_step":
+		return s.execSequenceAIAgentStep(ctx, campaign, contact, sequenceID, cfg)
 	case "add_tag":
 		if cfg.CategoryID == nil || campaign.OrganizationID == nil {
 			return nil

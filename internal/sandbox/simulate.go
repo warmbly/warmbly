@@ -213,7 +213,7 @@ func (s *simulator) actAsContact(ctx context.Context, c contactInfo, msg *mailpi
 
 	if p.Opens {
 		if task := firstMatch(pixelRe, body); task != "" {
-			s.sleep(ctx, 15*time.Second, 90*time.Second)
+			s.sleep(ctx, 5*time.Second, 40*time.Second)
 			s.hitTracking(ctx, "/t/o/"+task+".png", c.Email)
 			fmt.Printf("opened     %-34s %q\n", c.Email, msg.Subject)
 		}
@@ -221,14 +221,14 @@ func (s *simulator) actAsContact(ctx context.Context, c contactInfo, msg *mailpi
 
 	if p.Opens && p.Clicks {
 		if ticket := firstMatch(clickRe, body); ticket != "" {
-			s.sleep(ctx, 20*time.Second, 3*time.Minute)
+			s.sleep(ctx, 10*time.Second, 75*time.Second)
 			s.hitTracking(ctx, "/c/"+ticket, c.Email)
 			fmt.Printf("clicked    %-34s %q\n", c.Email, msg.Subject)
 		}
 	}
 
 	if p.Opens && p.Replies && senderHosted {
-		s.sleep(ctx, 45*time.Second, 5*time.Minute)
+		s.sleep(ctx, 20*time.Second, 2*time.Minute)
 		text, automated := replyBody(p.Flavor, c.First)
 		reply := composeReply(
 			c.First+" "+c.Last, c.Email,

@@ -25,9 +25,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       go-services: ${{ steps.filter.outputs.go-services }}
-      backend: ${{ steps.filter.outputs.backend }}
-      consumer: ${{ steps.filter.outputs.consumer }}
-      worker: ${{ steps.filter.outputs.worker }}
       tracking: ${{ steps.filter.outputs.tracking }}
       realtime: ${{ steps.filter.outputs.realtime }}
       web: ${{ steps.filter.outputs.web }}
@@ -46,15 +43,6 @@ jobs:
               - 'go.sum'
               - 'internal/**'
               - 'cmd/**'
-            backend:
-              - 'cmd/backend/**'
-              - 'deploy/docker/backend.Dockerfile'
-            consumer:
-              - 'cmd/consumer/**'
-              - 'deploy/docker/consumer.Dockerfile'
-            worker:
-              - 'cmd/worker/**'
-              - 'deploy/docker/worker.Dockerfile'
             tracking:
               - 'tracking/**'
             realtime:

@@ -41,7 +41,8 @@ COPY --from=builder /tracking /app/tracking
 USER tracking
 EXPOSE 3000
 
+# 127.0.0.1, not localhost: busybox wget tries ::1 first but the server binds IPv4.
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1
+    CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:3000/health || exit 1
 
 CMD ["/app/tracking"]

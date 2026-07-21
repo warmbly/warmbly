@@ -186,12 +186,12 @@ export default function CampaignOverview() {
                             </SectionBar>
                             <div className="px-5 py-4">
                                 {loading ? (
-                                    <div className="h-52 rounded-md bg-slate-50 animate-pulse" />
+                                    <div className="h-[280px] rounded-md bg-slate-50 animate-pulse" />
                                 ) : (
                                     <MultiTrend
                                         labels={trend.labels}
                                         series={trend.series}
-                                        height={220}
+                                        height={280}
                                         emptyLabel={
                                             hasSends
                                                 ? "No activity in this window yet"

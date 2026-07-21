@@ -12,18 +12,24 @@
 import React from "react";
 import { useReducedMotion } from "framer-motion";
 
+// Ordered 8x8 Bayer matrix: 64 threshold levels, so density ramps render as
+// smooth halftone gradients instead of the harsh stripe patterns a 4x4 gives.
 const BAYER = [
-    [0, 8, 2, 10],
-    [12, 4, 14, 6],
-    [3, 11, 1, 9],
-    [15, 7, 13, 5],
+    [0, 32, 8, 40, 2, 34, 10, 42],
+    [48, 16, 56, 24, 50, 18, 58, 26],
+    [12, 44, 4, 36, 14, 46, 6, 38],
+    [60, 28, 52, 20, 62, 30, 54, 22],
+    [3, 35, 11, 43, 1, 33, 9, 41],
+    [51, 19, 59, 27, 49, 17, 57, 25],
+    [15, 47, 7, 39, 13, 45, 5, 37],
+    [63, 31, 55, 23, 61, 29, 53, 21],
 ];
 
 // Threshold in [0,1) for a device pixel; dots stay 1 CSS px on retina.
 function bayer(x: number, y: number, dpr: number): number {
-    const bx = Math.floor(x / dpr) & 3;
-    const by = Math.floor(y / dpr) & 3;
-    return (BAYER[by][bx] + 0.5) / 16;
+    const bx = Math.floor(x / dpr) & 7;
+    const by = Math.floor(y / dpr) & 7;
+    return (BAYER[by][bx] + 0.5) / 64;
 }
 
 // 500-level hues: the 600s read harsh as full dots on the white theme.
@@ -273,9 +279,311 @@ function monotoneTangents(ys: number[]): number[] {
 }
 
 // Chart paddings in CSS px; shared by the canvas painter and the DOM overlay
-// so the crosshair dot lands exactly on the drawn line.
-const AREA_PAD_TOP = 5;
-const AREA_PAD_BOTTOM = 1;
+// so the crosshair dot lands exactly on the drawn line. Exported so wrappers
+// (MultiTrend gridlines) can map values to the same y coordinates.
+export const AREA_PAD_TOP = 5;
+export const AREA_PAD_BOTTOM = 1;
+
+// Area charts render on a low-res backing canvas scaled up `pixelated` —
+// chunky 2 CSS px dither cells are the texture, per the dither-kit recipe.
+const CELL = 2;
+const MAX_COLS = 520;
+const MAX_ROWS = 200;
+// 4x4 thresholds are the right coarseness at cell scale (8x8 is for the
+// fine-grained device-px surfaces: bars, meters, rings).
+const BAYER4 = [
+    [0, 8, 2, 10],
+    [12, 4, 14, 6],
+    [3, 11, 1, 9],
+    [15, 7, 13, 5],
+].map((row) => row.map((v) => (v + 0.5) / 16));
+
+function sizeCellCanvas(el: HTMLCanvasElement, w: number, h: number) {
+    const cols = Math.min(MAX_COLS, Math.max(8, Math.round(w / CELL)));
+    const rows = Math.min(MAX_ROWS, Math.max(8, Math.round(h / CELL)));
+    if (el.width !== cols) el.width = cols;
+    if (el.height !== rows) el.height = rows;
+    return { ctx: el.getContext("2d"), cols, rows };
+}
+
+// Paint one backing column of an area band: densest just under the value
+// line, dissolving toward the baseline — the airy read of the dashboard's
+// gradient sparklines, but as chunky ordered-dither cells. Cells that miss
+// the threshold still get a whisper of the same color so the fill stays a
+// continuous field instead of speckle on white. The smooth value line is
+// stroked on a separate full-res canvas, so the fill starts strictly below
+// the curve (ceil) and never pokes dots above it. `sparse` raises the
+// threshold to thin out front layers so overlapping series stay readable.
+function paintAreaColumn(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    top: number,
+    rows: number,
+    rgb: readonly [number, number, number],
+    sparse: number,
+    lift: number,
+) {
+    const [r, g, b] = rgb;
+    const t = Math.max(0, Math.ceil(top));
+    const depth = rows - t;
+    if (depth <= 0) return;
+    for (let y = t; y < rows; y++) {
+        const density = 1 - (y - t) / depth;
+        // Hover lift: slightly more dots, slightly brighter — the fill leans
+        // in while the pointer is over the chart.
+        const lit = density > BAYER4[y & 3][x & 3] + sparse - 0.1 * lift;
+        const k = (0.05 + 0.27 * density) * (1 + 0.22 * lift);
+        ctx.fillStyle = `rgba(${r},${g},${b},${(lit ? k : k * 0.3).toFixed(3)})`;
+        ctx.fillRect(x, y, 1, 1);
+    }
+}
+
+// Paint one backing column where several bands overlap. Layering per-series
+// dots reads as two-color confetti, so instead every covering band
+// contributes to ONE blended hue per cell — overlaps deepen and shift color
+// like overlapping watercolor washes, rendered in a single coherent dot
+// pattern. Lines on top keep the pure series colors for identification.
+function paintBlendedColumn(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    tops: number[],
+    rows: number,
+    rgbs: (readonly [number, number, number])[],
+    lift: number,
+) {
+    const S = tops.length;
+    let yStart = rows;
+    for (let s = 0; s < S; s++) yStart = Math.min(yStart, Math.ceil(tops[s]));
+    for (let y = Math.max(0, yStart); y < rows; y++) {
+        let wSum = 0;
+        let r = 0;
+        let g = 0;
+        let b = 0;
+        let trans = 1;
+        let dMax = 0;
+        for (let s = 0; s < S; s++) {
+            const t = tops[s];
+            if (y < Math.ceil(t)) continue;
+            const density = 1 - (y - t) / Math.max(1, rows - t);
+            if (density > dMax) dMax = density;
+            const a = (0.05 + 0.27 * density) * (1 + 0.22 * lift);
+            wSum += a;
+            r += a * rgbs[s][0];
+            g += a * rgbs[s][1];
+            b += a * rgbs[s][2];
+            trans *= 1 - a;
+        }
+        if (wSum <= 0) continue;
+        // Stacked coverage deepens the wash, capped so it stays airy.
+        const A = Math.min(0.5, 1 - trans);
+        const lit = dMax > BAYER4[y & 3][x & 3] - 0.1 * lift;
+        ctx.fillStyle = `rgba(${Math.round(r / wSum)},${Math.round(g / wSum)},${Math.round(
+            b / wSum,
+        )},${(lit ? A : A * 0.3).toFixed(3)})`;
+        ctx.fillRect(x, y, 1, 1);
+    }
+}
+
+// Smooth anti-aliased value lines on the full-res overlay canvas, revealed
+// left-to-right in sync with the dithered fill underneath.
+function strokeCurves(
+    el: HTMLCanvasElement | null,
+    w: number,
+    h: number,
+    curves: { ys: number[]; rgb: readonly [number, number, number] }[],
+    reveal: number,
+) {
+    if (!el || w <= 0) return;
+    const dpr = Math.max(1, Math.floor(window.devicePixelRatio || 1));
+    const ctx = sizeCanvas(el, w, h, dpr);
+    if (!ctx) return;
+    const W = el.width;
+    ctx.clearRect(0, 0, W, el.height);
+    const maxX = Math.floor(reveal * W);
+    if (maxX <= 0) return;
+    ctx.lineWidth = 1.5 * dpr;
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    for (const c of curves) {
+        const pts = sampleCurve(c.ys, monotoneTangents(c.ys), W);
+        ctx.beginPath();
+        ctx.moveTo(0, pts[0]);
+        for (let x = 1; x <= maxX && x < W; x++) ctx.lineTo(x, pts[x]);
+        ctx.strokeStyle = `rgb(${c.rgb[0]},${c.rgb[1]},${c.rgb[2]})`;
+        ctx.stroke();
+    }
+}
+
+// Hermite spline through per-point cell rows, sampled at one y per column.
+function sampleCurve(ys: number[], tans: number[], cols: number): number[] {
+    const n = ys.length;
+    const out = new Array<number>(cols);
+    for (let x = 0; x < cols; x++) {
+        const t = n > 1 ? (x / Math.max(1, cols - 1)) * (n - 1) : 0;
+        const i = Math.min(n - 2, Math.max(0, Math.floor(t)));
+        const hh = n > 1 ? t - i : 0;
+        if (n === 1) {
+            out[x] = ys[0];
+            continue;
+        }
+        const h00 = 2 * hh ** 3 - 3 * hh ** 2 + 1;
+        const h10 = hh ** 3 - 2 * hh ** 2 + hh;
+        const h01 = -2 * hh ** 3 + 3 * hh ** 2;
+        const h11 = hh ** 3 - hh ** 2;
+        out[x] = h00 * ys[i] + h10 * tans[i] + h01 * ys[i + 1] + h11 * tans[i + 1];
+    }
+    return out;
+}
+
+// Latest painted geometry, published by paint() for the sparkle layer.
+type AreaGeom = { curves: number[][]; cols: number; rows: number; points: number };
+
+// Drives area-chart motion: the first paint (or a shape change) sweeps in
+// left-to-right; a same-shape data change glides every point toward its new
+// value instead of replaying the entrance; hovering eases a density lift.
+// All hot state lives in refs — `repaint` runs once per frame while moving.
+function useAreaMotion(target: number[][], repaint: () => void, reduced: boolean | null) {
+    const disp = React.useRef<number[][]>([]);
+    const reveal = React.useRef(1);
+    const revealT0 = React.useRef(0);
+    const intensity = React.useRef(0);
+    const hoverLift = React.useRef(0);
+    const targetRef = React.useRef(target);
+    const raf = React.useRef(0);
+
+    const run = React.useCallback(() => {
+        cancelAnimationFrame(raf.current);
+        const step = (now: number) => {
+            let moving = false;
+            if (revealT0.current > 0) {
+                const c = clamp01((now - revealT0.current) / 700);
+                reveal.current = easeOutCubic(c);
+                if (c < 1) moving = true;
+                else revealT0.current = 0;
+            }
+            const tgt = targetRef.current;
+            const d = disp.current;
+            for (let s = 0; s < tgt.length; s++) {
+                for (let i = 0; i < tgt[s].length; i++) {
+                    const diff = tgt[s][i] - d[s][i];
+                    if (Math.abs(diff) > 0.002) {
+                        d[s][i] += diff * 0.16;
+                        moving = true;
+                    } else d[s][i] = tgt[s][i];
+                }
+            }
+            const li = hoverLift.current - intensity.current;
+            if (Math.abs(li) > 0.004) {
+                intensity.current += li * 0.16;
+                moving = true;
+            } else intensity.current = hoverLift.current;
+            repaint();
+            if (moving) raf.current = requestAnimationFrame(step);
+        };
+        raf.current = requestAnimationFrame(step);
+    }, [repaint]);
+
+    React.useEffect(() => {
+        targetRef.current = target;
+        const d = disp.current;
+        const sameShape =
+            d.length === target.length && d.every((row, s) => row.length === target[s].length);
+        if (reduced || !sameShape) {
+            disp.current = target.map((r) => r.slice());
+            if (reduced) {
+                reveal.current = 1;
+            } else {
+                reveal.current = 0;
+                revealT0.current = performance.now();
+            }
+        }
+        run();
+        return () => cancelAnimationFrame(raf.current);
+    }, [target, reduced, run]);
+
+    const setLift = React.useCallback(
+        (on: boolean) => {
+            hoverLift.current = on ? 1 : 0;
+            run();
+        },
+        [run],
+    );
+
+    return { disp, reveal, intensity, setLift };
+}
+
+// Winking sparkles, dither-kit style: seeded single cells inside the fill
+// that glint in the series color, flaring into a 4-point glint at the peak
+// of the wink. They live on their own cell-res canvas repainted on a slow
+// tick, so the fill and line layers never repaint for them.
+type SparkStar = { s: number; xi: number; depth: number; phase: number };
+
+function useSparkles(
+    starRef: React.RefObject<HTMLCanvasElement | null>,
+    geomRef: React.RefObject<AreaGeom | null>,
+    tones: readonly (readonly [number, number, number])[],
+    reveal: React.RefObject<number>,
+    intensity: React.RefObject<number>,
+    reduced: boolean | null,
+) {
+    React.useEffect(() => {
+        if (reduced) return;
+        let tick = 0;
+        let stars: SparkStar[] = [];
+        let starKey = "";
+        const id = window.setInterval(() => {
+            const el = starRef.current;
+            const g = geomRef.current;
+            if (!el || !g || g.cols <= 0 || g.points === 0) return;
+            const key = `${tones.length}|${g.points}|${g.cols}`;
+            if (key !== starKey) {
+                starKey = key;
+                stars = [];
+                const per = Math.max(3, Math.round(g.cols / 28));
+                for (let s = 0; s < tones.length; s++) {
+                    for (let i = 0; i < per; i++) {
+                        const seed = i * 67 + 13 + s * 131;
+                        stars.push({
+                            s,
+                            xi: seed % g.points,
+                            depth: ((seed * 53 + 7) % 100) / 100,
+                            phase: (seed * 41) % 360,
+                        });
+                    }
+                }
+            }
+            if (el.width !== g.cols) el.width = g.cols;
+            if (el.height !== g.rows) el.height = g.rows;
+            const ctx = el.getContext("2d");
+            if (!ctx) return;
+            tick += 1;
+            ctx.clearRect(0, 0, g.cols, g.rows);
+            const maxX = reveal.current * g.cols;
+            for (const star of stars) {
+                const curve = g.curves[star.s];
+                if (!curve) continue;
+                const sx = Math.round((star.xi / Math.max(g.points - 1, 1)) * (g.cols - 1));
+                if (sx > maxX) continue;
+                const top = curve[sx] ?? 0;
+                const sy = Math.round(top + star.depth * (g.rows - top));
+                const tw = (Math.sin((tick + star.phase) * 0.35) + 1) / 2;
+                const lift = tw * (0.7 + 0.3 * intensity.current);
+                if (lift < 0.55 || sy <= top || sy >= g.rows) continue;
+                const [r, gg, b] = tones[star.s];
+                ctx.fillStyle = `rgba(${r},${gg},${b},${lift.toFixed(3)})`;
+                ctx.fillRect(sx, sy, 1, 1);
+                if (tw > 0.9) {
+                    ctx.fillStyle = `rgba(${r},${gg},${b},${(lift * 0.6 * (tw - 0.9) * 10).toFixed(3)})`;
+                    ctx.fillRect(sx - 1, sy, 1, 1);
+                    ctx.fillRect(sx + 1, sy, 1, 1);
+                    ctx.fillRect(sx, sy - 1, 1, 1);
+                    ctx.fillRect(sx, sy + 1, 1, 1);
+                }
+            }
+        }, 130);
+        return () => window.clearInterval(id);
+    }, [starRef, geomRef, tones, reveal, intensity, reduced]);
+}
 
 export function DitherAreaChart({
     data,
@@ -293,9 +601,10 @@ export function DitherAreaChart({
     const reduced = useReducedMotion();
     const [wrapRef, { w }] = useMeasure<HTMLDivElement>();
     const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
+    const lineRef = React.useRef<HTMLCanvasElement | null>(null);
+    const starRef = React.useRef<HTMLCanvasElement | null>(null);
+    const geomRef = React.useRef<AreaGeom | null>(null);
     const [hover, setHover] = React.useState<number | null>(null);
-    // Left-to-right entrance reveal fraction, mutated by the rAF loop.
-    const revealRef = React.useRef(1);
 
     const max = Math.max(1, ...data.map((d) => d.value));
     const yCssFor = React.useCallback(
@@ -303,89 +612,49 @@ export function DitherAreaChart({
         [max, height],
     );
 
+    const target = React.useMemo(() => [data.map((d) => d.value)], [data]);
+    const paintRef = React.useRef<() => void>(() => {});
+    const repaint = React.useCallback(() => paintRef.current(), []);
+    const { disp, reveal, intensity, setLift } = useAreaMotion(target, repaint, reduced);
+
     const paint = React.useCallback(() => {
         const el = canvasRef.current;
         if (!el || w <= 0) return;
-        const dpr = Math.max(1, Math.floor(window.devicePixelRatio || 1));
-        const ctx = sizeCanvas(el, w, height, dpr);
+        const sized = sizeCellCanvas(el, w, height);
+        const ctx = sized.ctx;
         if (!ctx) return;
-        const W = el.width;
-        const H = el.height;
-        const img = ctx.createImageData(W, H);
-        const buf = img.data;
-        const [cr, cg, cb] = TONES[tone];
+        const { cols, rows } = sized;
+        ctx.clearRect(0, 0, cols, rows);
         const n = data.length;
-        if (n > 0) {
-            const ys = data.map((d) => yCssFor(d.value) * dpr);
-            const m = monotoneTangents(ys);
-            const revealX = revealRef.current * W;
-            const line = 0.9 * dpr;
-            for (let x = 0; x < W; x++) {
-                if (x > revealX) break;
-                const t = n > 1 ? (x / Math.max(1, W - 1)) * (n - 1) : 0;
-                const i = Math.min(n - 2, Math.max(0, Math.floor(t)));
-                const hh = n > 1 ? t - i : 0;
-                let yc: number;
-                if (n === 1) {
-                    yc = ys[0];
-                } else {
-                    const h00 = 2 * hh ** 3 - 3 * hh ** 2 + 1;
-                    const h10 = hh ** 3 - 2 * hh ** 2 + hh;
-                    const h01 = -2 * hh ** 3 + 3 * hh ** 2;
-                    const h11 = hh ** 3 - hh ** 2;
-                    yc = h00 * ys[i] + h10 * m[i] + h01 * ys[i + 1] + h11 * m[i + 1];
-                }
-                for (let y = 0; y < H; y++) {
-                    const o = (y * W + x) * 4;
-                    if (Math.abs(y - yc) <= line) {
-                        buf[o] = cr;
-                        buf[o + 1] = cg;
-                        buf[o + 2] = cb;
-                        buf[o + 3] = 255;
-                        continue;
-                    }
-                    if (y <= yc) continue;
-                    // Dithered area fill fading toward the baseline.
-                    const rel = (y - yc) / Math.max(1, H - yc);
-                    const a = 0.5 - 0.42 * rel;
-                    if (a >= bayer(x, y, dpr)) {
-                        buf[o] = cr;
-                        buf[o + 1] = cg;
-                        buf[o + 2] = cb;
-                        buf[o + 3] = FILL_ALPHA;
-                    }
-                }
-            }
+        if (n === 0) return;
+        const vals = disp.current[0] ?? data.map((d) => d.value);
+        const ys = vals.map((v) => (yCssFor(v) / height) * rows);
+        const curve = sampleCurve(ys, monotoneTangents(ys), cols);
+        const rgb = TONES[tone];
+        const revealX = reveal.current * cols;
+        const lift = intensity.current;
+        for (let x = 0; x < cols; x++) {
+            if (x > revealX) break;
+            paintAreaColumn(ctx, x, curve[x], rows, rgb, 0, lift);
         }
-        ctx.putImageData(img, 0, 0);
-    }, [data, w, height, tone, yCssFor]);
+        geomRef.current = { curves: [curve], cols, rows, points: n };
+        const dpr = Math.max(1, Math.floor(window.devicePixelRatio || 1));
+        strokeCurves(
+            lineRef.current,
+            w,
+            height,
+            [{ ys: vals.map((v) => yCssFor(v) * dpr), rgb }],
+            reveal.current,
+        );
+    }, [data, w, height, tone, yCssFor, disp, reveal, intensity]);
 
-    const paintRef = React.useRef(paint);
     React.useEffect(() => {
         paintRef.current = paint;
         paint();
     }, [paint]);
 
-    React.useEffect(() => {
-        if (data.length === 0) return;
-        if (reduced) {
-            revealRef.current = 1;
-            paintRef.current();
-            return;
-        }
-        revealRef.current = 0;
-        const t0 = performance.now();
-        const dur = 700;
-        let raf = 0;
-        const tick = (now: number) => {
-            const c = clamp01((now - t0) / dur);
-            revealRef.current = easeOutCubic(c);
-            paintRef.current();
-            if (c < 1) raf = requestAnimationFrame(tick);
-        };
-        raf = requestAnimationFrame(tick);
-        return () => cancelAnimationFrame(raf);
-    }, [data, reduced]);
+    const tones = React.useMemo(() => [TONES[tone]] as const, [tone]);
+    useSparkles(starRef, geomRef, tones, reveal, intensity, reduced);
 
     const onMove = (e: React.PointerEvent<HTMLDivElement>) => {
         if (data.length === 0 || w <= 0) return;
@@ -403,10 +672,24 @@ export function DitherAreaChart({
             ref={wrapRef}
             className={`relative ${className ?? ""}`}
             style={{ height }}
+            onPointerEnter={() => setLift(true)}
             onPointerMove={onMove}
-            onPointerLeave={() => setHover(null)}
+            onPointerLeave={() => {
+                setHover(null);
+                setLift(false);
+            }}
         >
-            <canvas ref={canvasRef} className="absolute inset-0 block h-full w-full" />
+            <canvas
+                ref={canvasRef}
+                className="absolute inset-0 block h-full w-full"
+                style={{ imageRendering: "pixelated" }}
+            />
+            <canvas
+                ref={starRef}
+                className="pointer-events-none absolute inset-0 block h-full w-full"
+                style={{ imageRendering: "pixelated" }}
+            />
+            <canvas ref={lineRef} className="absolute inset-0 block h-full w-full" />
             {d && (
                 <>
                     <div
@@ -440,11 +723,10 @@ export interface DitherAreaSeries {
     values: number[];
 }
 
-// DitherMultiAreaChart — several metrics composed on one graph: a smoothed
-// solid line per series with nested dithered bands underneath (at any pixel
-// the smallest band containing it wins, so overlapping series read as layers,
-// not mush). One shared crosshair lists every series' value for the hovered
-// day.
+// DitherMultiAreaChart — several metrics composed on one graph: a smooth
+// anti-aliased line per series over one blended dither fill (overlapping
+// bands mix into a single hue per cell rather than interleaving dots). One
+// shared crosshair lists every series' value for the hovered day.
 export function DitherMultiAreaChart({
     labels,
     series,
@@ -461,8 +743,10 @@ export function DitherMultiAreaChart({
     const reduced = useReducedMotion();
     const [wrapRef, { w }] = useMeasure<HTMLDivElement>();
     const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
+    const lineRef = React.useRef<HTMLCanvasElement | null>(null);
+    const starRef = React.useRef<HTMLCanvasElement | null>(null);
+    const geomRef = React.useRef<AreaGeom | null>(null);
     const [hover, setHover] = React.useState<number | null>(null);
-    const revealRef = React.useRef(1);
 
     const max = Math.max(1, ...series.flatMap((s) => s.values));
     const yCssFor = React.useCallback(
@@ -470,102 +754,59 @@ export function DitherMultiAreaChart({
         [max, height],
     );
 
+    const target = React.useMemo(() => series.map((s) => s.values), [series]);
+    const paintRef = React.useRef<() => void>(() => {});
+    const repaint = React.useCallback(() => paintRef.current(), []);
+    const { disp, reveal, intensity, setLift } = useAreaMotion(target, repaint, reduced);
+
     const paint = React.useCallback(() => {
         const el = canvasRef.current;
         if (!el || w <= 0) return;
-        const dpr = Math.max(1, Math.floor(window.devicePixelRatio || 1));
-        const ctx = sizeCanvas(el, w, height, dpr);
+        const sized = sizeCellCanvas(el, w, height);
+        const ctx = sized.ctx;
         if (!ctx) return;
-        const W = el.width;
-        const H = el.height;
-        const img = ctx.createImageData(W, H);
-        const buf = img.data;
+        const { cols, rows } = sized;
+        ctx.clearRect(0, 0, cols, rows);
         const n = labels.length;
         const S = series.length;
-        if (n > 0 && S > 0) {
-            const ysAll = series.map((s) => s.values.map((v) => yCssFor(v) * dpr));
-            const tans = ysAll.map(monotoneTangents);
-            const rgbs = series.map((s) => TONES[s.tone]);
-            const revealX = revealRef.current * W;
-            const line = 0.9 * dpr;
-            const ycs = new Array<number>(S);
-            for (let x = 0; x < W; x++) {
-                if (x > revealX) break;
-                const t = n > 1 ? (x / Math.max(1, W - 1)) * (n - 1) : 0;
-                const i = Math.min(n - 2, Math.max(0, Math.floor(t)));
-                const hh = n > 1 ? t - i : 0;
-                const h00 = 2 * hh ** 3 - 3 * hh ** 2 + 1;
-                const h10 = hh ** 3 - 2 * hh ** 2 + hh;
-                const h01 = -2 * hh ** 3 + 3 * hh ** 2;
-                const h11 = hh ** 3 - hh ** 2;
-                for (let s = 0; s < S; s++) {
-                    const ys = ysAll[s];
-                    ycs[s] = n === 1 ? ys[0] : h00 * ys[i] + h10 * tans[s][i] + h01 * ys[i + 1] + h11 * tans[s][i + 1];
-                }
-                // Area bands: walk downward; the series whose line we most
-                // recently crossed owns the pixel (smallest containing band).
-                const order = Array.from({ length: S }, (_, s) => s).sort((a, b) => ycs[a] - ycs[b]);
-                let k = 0;
-                let owner = -1;
-                for (let y = Math.max(0, Math.floor(ycs[order[0]])); y < H; y++) {
-                    while (k < S && y > ycs[order[k]]) {
-                        owner = order[k];
-                        k++;
-                    }
-                    if (owner < 0) continue;
-                    const yc = ycs[owner];
-                    const rel = (y - yc) / Math.max(1, H - yc);
-                    const a = 0.45 - 0.36 * rel;
-                    if (a < bayer(x, y, dpr)) continue;
-                    const o = (y * W + x) * 4;
-                    buf[o] = rgbs[owner][0];
-                    buf[o + 1] = rgbs[owner][1];
-                    buf[o + 2] = rgbs[owner][2];
-                    buf[o + 3] = FILL_ALPHA;
-                }
-                // Solid lines on top, later series winning ties.
-                for (let s = 0; s < S; s++) {
-                    const y0 = Math.max(0, Math.floor(ycs[s] - line));
-                    const y1 = Math.min(H - 1, Math.ceil(ycs[s] + line));
-                    for (let y = y0; y <= y1; y++) {
-                        const o = (y * W + x) * 4;
-                        buf[o] = rgbs[s][0];
-                        buf[o + 1] = rgbs[s][1];
-                        buf[o + 2] = rgbs[s][2];
-                        buf[o + 3] = 255;
-                    }
-                }
-            }
+        if (n === 0 || S === 0) return;
+        const revealX = reveal.current * cols;
+        const lift = intensity.current;
+        const curves: number[][] = [];
+        const rgbs: (readonly [number, number, number])[] = [];
+        for (let s = 0; s < S; s++) {
+            const vals = disp.current[s] ?? series[s].values;
+            const ys = vals.map((v) => (yCssFor(v) / height) * rows);
+            curves.push(sampleCurve(ys, monotoneTangents(ys), cols));
+            rgbs.push(TONES[series[s].tone]);
         }
-        ctx.putImageData(img, 0, 0);
-    }, [labels, series, w, height, yCssFor]);
+        const tops = new Array<number>(S);
+        for (let x = 0; x < cols; x++) {
+            if (x > revealX) break;
+            for (let s = 0; s < S; s++) tops[s] = curves[s][x];
+            paintBlendedColumn(ctx, x, tops, rows, rgbs, lift);
+        }
+        geomRef.current = { curves, cols, rows, points: n };
+        const dpr = Math.max(1, Math.floor(window.devicePixelRatio || 1));
+        strokeCurves(
+            lineRef.current,
+            w,
+            height,
+            series.map((s, si) => ({
+                ys: (disp.current[si] ?? s.values).map((v) => yCssFor(v) * dpr),
+                rgb: TONES[s.tone],
+            })),
+            reveal.current,
+        );
+    }, [labels, series, w, height, yCssFor, disp, reveal, intensity]);
 
-    const paintRef = React.useRef(paint);
     React.useEffect(() => {
         paintRef.current = paint;
         paint();
     }, [paint]);
 
-    React.useEffect(() => {
-        if (labels.length === 0) return;
-        if (reduced) {
-            revealRef.current = 1;
-            paintRef.current();
-            return;
-        }
-        revealRef.current = 0;
-        const t0 = performance.now();
-        const dur = 700;
-        let raf = 0;
-        const tick = (now: number) => {
-            const c = clamp01((now - t0) / dur);
-            revealRef.current = easeOutCubic(c);
-            paintRef.current();
-            if (c < 1) raf = requestAnimationFrame(tick);
-        };
-        raf = requestAnimationFrame(tick);
-        return () => cancelAnimationFrame(raf);
-    }, [labels, series, reduced]);
+    const tones = React.useMemo(() => series.map((s) => TONES[s.tone]), [series]);
+    useSparkles(starRef, geomRef, tones, reveal, intensity, reduced);
 
     const onMove = (e: React.PointerEvent<HTMLDivElement>) => {
         if (labels.length === 0 || w <= 0) return;
@@ -582,10 +823,24 @@ export function DitherMultiAreaChart({
             ref={wrapRef}
             className={`relative ${className ?? ""}`}
             style={{ height }}
+            onPointerEnter={() => setLift(true)}
             onPointerMove={onMove}
-            onPointerLeave={() => setHover(null)}
+            onPointerLeave={() => {
+                setHover(null);
+                setLift(false);
+            }}
         >
-            <canvas ref={canvasRef} className="absolute inset-0 block h-full w-full" />
+            <canvas
+                ref={canvasRef}
+                className="absolute inset-0 block h-full w-full"
+                style={{ imageRendering: "pixelated" }}
+            />
+            <canvas
+                ref={starRef}
+                className="pointer-events-none absolute inset-0 block h-full w-full"
+                style={{ imageRendering: "pixelated" }}
+            />
+            <canvas ref={lineRef} className="absolute inset-0 block h-full w-full" />
             {hover !== null && (
                 <>
                     <div

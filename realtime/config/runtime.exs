@@ -10,9 +10,17 @@ if config_env() == :prod do
     System.get_env("SECRET_KEY_BASE") ||
       raise "SECRET_KEY_BASE environment variable is required"
 
+  pubsub_enabled = System.get_env("PUBSUB_ENABLED") == "true"
+
+  # Only the Pub/Sub subscriber needs a GCP project; the no-cloud stack runs
+  # with PUBSUB_ENABLED=false and no GCP account.
   gcp_project_id =
     System.get_env("GCP_PROJECT_ID") ||
-      raise "GCP_PROJECT_ID environment variable is required"
+      if pubsub_enabled do
+        raise "GCP_PROJECT_ID environment variable is required when PUBSUB_ENABLED=true"
+      else
+        ""
+      end
 
   database_url =
     System.get_env("DATABASE_URL") ||
@@ -25,7 +33,7 @@ if config_env() == :prod do
     port: port,
     jwt_secret: jwt_secret,
     gcp_project_id: gcp_project_id,
-    pubsub_enabled: System.get_env("PUBSUB_ENABLED") == "true",
+    pubsub_enabled: pubsub_enabled,
     pubsub_subscriptions: [
       "task-status-sub",
       "campaign-update-sub",

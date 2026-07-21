@@ -12,7 +12,8 @@ export type SequenceActionType =
     | "move_deal_stage"
     | "run_automation"
     | "fire_event"
-    | "switch";
+    | "switch"
+    | "ai_step";
 
 // One templated input passed to a launched automation (value supports the same
 // {{.FirstName}}/{{.Company}} contact templating campaign copy uses).
@@ -80,4 +81,24 @@ export interface SequenceAction {
     // steps keep the richer context.
     ai_no_engagement?: boolean;
     ai_no_replies?: boolean;
+    // ai_step (agent) — an AI agent that follows ai_instruction and may call the
+    // reversible actions listed here (add_tag, remove_tag, label_email,
+    // unsubscribe, create_task, create_deal, move_deal_stage). Each enabled
+    // action's pinned config reuses the fields above in this same blob. The
+    // agent decides which to run per contact; it never sends or replies.
+    ai_allowed_actions?: string[];
+    // Optional tag/label pools the agent picks from when add_tag / remove_tag /
+    // label_email are enabled. The name is carried so the executor can offer it
+    // to the model and resolve the pick to an id without a category lookup. An
+    // empty pool means unrestricted (the agent may use any of the org's tags);
+    // ai_allow_create_tags additionally lets it create a new one.
+    ai_add_tags?: AITagRef[];
+    ai_remove_tags?: AITagRef[];
+    ai_labels?: AITagRef[];
+    ai_allow_create_tags?: boolean;
+}
+
+export interface AITagRef {
+    id: string;
+    name: string;
 }

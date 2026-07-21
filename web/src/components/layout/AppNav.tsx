@@ -46,6 +46,8 @@ import type SearchContacts from "@/lib/api/models/app/contacts/SearchContacts";
 import usePipelines from "@/lib/api/hooks/app/crm/pipelines/usePipelines";
 import useTemplates from "@/lib/api/hooks/app/templates/useTemplates";
 import useUsageOverview from "@/lib/api/hooks/app/analytics/useUsageOverview";
+import useDashboard from "@/lib/api/hooks/app/analytics/useDashboard";
+import mailboxDisplayStatus from "@/lib/mailboxStatus";
 import useAPIKeys from "@/lib/api/hooks/app/api-keys/useAPIKeys";
 import useIntegrationConnections from "@/lib/api/hooks/app/integrations/useIntegrationConnections";
 import AnimatedNumber from "@/components/ui/AnimatedNumber";
@@ -606,24 +608,38 @@ function Section({ section, first = false }: { section: NavSection; first?: bool
  * Data sources at this layer:
  *   - useAppStore.emails  → mailbox count, active count
  *   - useAppStore.connectionStatus → online/offline state
+ *   - useDashboard("30d") daily_trend → today's sent volume + the sparkline
+ *     (shares the dashboard page's query cache; realtime invalidation keeps
+ *     it current)
  *
- * Volume numbers ("42 of 50") will be wired up to a future today-summary
- * endpoint; for now they fall back to a derived cap based on mailbox
- * count × 50 (default cold cap from internal/config/constants.go).
+ * The capacity denominator is a derived cap based on mailbox count × 50
+ * (default cold cap from internal/config/constants.go).
  */
 function LivePanel() {
     const emails = useAppStore((s) => s.emails);
     const connection = useAppStore((s) => s.connectionStatus);
     const latencyMs = useAppStore((s) => s.wsLatencyMs);
     const unseenCount = useAppStore((s) => s.unseenCount);
+    const dash = useDashboard("30d");
 
     const { active, mailboxes, capacity } = useMemo(() => {
         const m = emails.length;
-        const a = emails.filter(
-            (e) => e.status === "healthy" || e.status === "warming",
-        ).length;
+        const a = emails.filter((e) => {
+            const st = mailboxDisplayStatus(e);
+            return st === "healthy" || st === "warming";
+        }).length;
         return { active: a, mailboxes: m, capacity: m * 50 };
     }, [emails]);
+
+    const { sentToday, trend } = useMemo(() => {
+        const days = dash.data?.daily_trend ?? [];
+        const todayKey = new Date().toISOString().slice(0, 10);
+        const today = days.find((d) => d.date?.slice(0, 10) === todayKey);
+        return {
+            sentToday: today?.sent ?? 0,
+            trend: days.slice(-14).map((d) => d.sent),
+        };
+    }, [dash.data]);
 
     const live = connection === "connected";
     // Connected == green, always. When quiet we say READY (not the old "IDLE",
@@ -729,29 +745,46 @@ function LivePanel() {
 
             <div className="mt-1 flex items-center justify-between gap-2 text-[10.5px]">
                 <span className="text-slate-400">Today</span>
-                <span className="font-mono text-slate-400 tabular-nums">
-                    0/{capacity || "—"}
+                <span
+                    className={cn(
+                        "font-mono tabular-nums",
+                        sentToday > 0 ? "text-slate-600" : "text-slate-400",
+                    )}
+                >
+                    {sentToday}/{capacity || "—"}
                 </span>
             </div>
 
-            <Sparkline />
+            <Sparkline values={trend} />
         </Link>
     );
 }
 
 /**
- * Sparkline — 14 thin vertical bars, last hours of today's volume.
- * Placeholder data for now (zeros render as faint bars). When a
- * /summary endpoint lands, swap the array.
+ * Sparkline — 14 thin vertical bars, the last two weeks of send volume
+ * from the dashboard daily trend, normalized to the busiest day. Days
+ * with volume render sky; empty days stay a faint slate baseline.
  */
-function Sparkline() {
-    const bars = useMemo(() => Array.from({ length: 14 }, () => 0), []);
+function Sparkline({ values }: { values: number[] }) {
+    const bars = useMemo(() => {
+        const padded =
+            values.length >= 14
+                ? values.slice(-14)
+                : [...Array.from({ length: 14 - values.length }, () => 0), ...values];
+        const max = Math.max(...padded, 1);
+        return padded.map((v) => Math.round((v / max) * 100));
+    }, [values]);
     return (
         <div className="mt-2 flex items-end gap-0.5 h-4">
             {bars.map((v, i) => (
                 <div
                     key={i}
-                    className="flex-1 rounded-sm bg-slate-200 group-hover:bg-slate-300 transition-colors"
+                    className={cn(
+                        "flex-1 rounded-sm transition-colors",
+                        v > 0
+                            ? "bg-sky-300 group-hover:bg-sky-400"
+                            : "bg-slate-200 group-hover:bg-slate-300",
+                    )}
                     style={{ height: `${Math.max(8, v)}%`, minHeight: "2px" }}
                 />
             ))}

@@ -21,6 +21,7 @@ import {
     BellOffIcon,
     AlertTriangleIcon,
     BracesIcon,
+    CheckIcon,
     CheckSquareIcon,
     ChevronDownIcon,
     ChevronUpIcon,
@@ -52,7 +53,6 @@ import {
     Handle,
     MarkerType,
     Position,
-    getBezierPath,
     useNodesState,
     useEdgesState,
     useUpdateNodeInternals,
@@ -95,7 +95,7 @@ import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import StepEmailArms from "./StepEmailArms";
 import CategoryPicker from "@/components/app/contacts/CategoryPicker";
-import type { ActionKV, SequenceAction, SequenceActionType } from "@/lib/api/models/app/campaigns/sequences/Action";
+import type { ActionKV, AITagRef, SequenceAction, SequenceActionType } from "@/lib/api/models/app/campaigns/sequences/Action";
 import { useAutomations } from "@/lib/api/hooks/app/automations/useAutomations";
 import { triggerLabel } from "@/lib/api/models/app/automations/meta";
 import TaskTypePicker from "@/components/app/crm/TaskTypePicker";
@@ -328,7 +328,10 @@ function StepNode({ data, selected }: NodeProps) {
                     Not connected — drag a link in
                 </div>
             ) : d.endsHere ? (
-                <div className="flex items-center gap-1 border-t border-slate-200/70 px-2.5 py-1 text-[10.5px] text-slate-400">
+                <div
+                    className="flex items-center gap-1 border-t border-slate-200/70 px-2.5 py-1 text-[10.5px] text-slate-400"
+                    title="No outgoing line, so the sequence ends for contacts who reach this step. Drag the bottom dot to continue it."
+                >
                     <FlagIcon className="w-3 h-3 text-slate-400" />
                     Ends here
                 </div>
@@ -350,7 +353,13 @@ function StepNode({ data, selected }: NodeProps) {
                 On reply
             </button>
             {/* One output dot: drag it out to add the next step, action, or condition. */}
-            <Handle type="source" id="s" position={Position.Bottom} className="!h-3 !w-3 pointer-coarse:!h-5 pointer-coarse:!w-5 !border-2 !border-white !bg-sky-500" />
+            <Handle
+                type="source"
+                id="s"
+                position={Position.Bottom}
+                title="What happens next: drag onto a node to connect, or onto empty space to add a step, action, condition, or Stop"
+                className="!h-3 !w-3 pointer-coarse:!h-5 pointer-coarse:!w-5 !border-2 !border-white !bg-sky-500"
+            />
         </div>
     );
 }
@@ -377,7 +386,13 @@ function IfNode({ data, selected }: NodeProps) {
         >
             <Handle type="target" position={Position.Top} className="!h-2 !w-2 !border-2 !border-white !bg-slate-300" />
             {/* Right dot = the THEN path: where this if leads (drag to change). */}
-            <Handle type="source" id="out" position={Position.Right} className="!h-3 !w-3 pointer-coarse:!h-5 pointer-coarse:!w-5 !border-2 !border-white !bg-sky-500" />
+            <Handle
+                type="source"
+                id="out"
+                position={Position.Right}
+                title="Then: where contacts matching this condition go"
+                className="!h-3 !w-3 pointer-coarse:!h-5 pointer-coarse:!w-5 !border-2 !border-white !bg-sky-500"
+            />
             <div className="flex items-center gap-1.5">
                 <GitBranchIcon className="w-3 h-3 shrink-0 text-sky-600" />
                 <span className="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-sky-500">if</span>
@@ -401,7 +416,13 @@ function IfNode({ data, selected }: NodeProps) {
                 </button>
             </div>
             {/* Bottom dot = the ELSE path: drag to add the next condition (else-if). */}
-            <Handle type="source" id="else" position={Position.Bottom} className="!h-3 !w-3 pointer-coarse:!h-5 pointer-coarse:!w-5 !border-2 !border-white !bg-slate-400" />
+            <Handle
+                type="source"
+                id="else"
+                position={Position.Bottom}
+                title="Else: where contacts NOT matching this condition go"
+                className="!h-3 !w-3 pointer-coarse:!h-5 pointer-coarse:!w-5 !border-2 !border-white !bg-slate-400"
+            />
         </div>
     );
 }
@@ -428,6 +449,7 @@ const ACTION_META: Record<string, { label: string; Icon: typeof ClockIcon; tint:
     run_automation: { label: "Run automation", Icon: ZapIcon, tint: "text-indigo-600" },
     fire_event: { label: "Fire event", Icon: SendIcon, tint: "text-sky-600" },
     switch: { label: "Switch", Icon: SplitIcon, tint: "text-purple-600" },
+    ai_step: { label: "AI step", Icon: SparklesIcon, tint: "text-purple-600" },
 };
 
 // actionSummary is the one-line subtitle shown on an action node.
@@ -458,6 +480,12 @@ function actionSummary(a?: SequenceAction | null): string {
             const t = a.ai_instruction?.trim();
             if (!t) return "Tell AI how to route…";
             return t.length > 64 ? `${t.slice(0, 61)}…` : t;
+        }
+        case "ai_step": {
+            const n = a.ai_allowed_actions?.length ?? 0;
+            if (!a.ai_instruction?.trim()) return "Tell the agent what to do…";
+            if (n === 0) return "Pick actions the agent may take…";
+            return `Agent · ${n} action${n === 1 ? "" : "s"}`;
         }
         default:
             return "Action";
@@ -511,13 +539,22 @@ function ActionNode({ data, selected }: NodeProps) {
                     Not connected — drag a link in
                 </div>
             ) : d.endsHere ? (
-                <div className="flex items-center gap-1 border-t border-slate-200/70 px-2.5 py-1 text-[10.5px] text-slate-400">
+                <div
+                    className="flex items-center gap-1 border-t border-slate-200/70 px-2.5 py-1 text-[10.5px] text-slate-400"
+                    title="No outgoing line, so the sequence ends for contacts who reach this step. Drag the bottom dot to continue it."
+                >
                     <FlagIcon className="w-3 h-3 text-slate-400" />
                     Ends here
                 </div>
             ) : null}
             {/* One output dot: drag it out to add the next step, action, or condition. */}
-            <Handle type="source" id="s" position={Position.Bottom} className="!h-3 !w-3 pointer-coarse:!h-5 pointer-coarse:!w-5 !border-2 !border-white !bg-sky-500" />
+            <Handle
+                type="source"
+                id="s"
+                position={Position.Bottom}
+                title="What happens next: drag onto a node to connect, or onto empty space to add a step, action, condition, or Stop"
+                className="!h-3 !w-3 pointer-coarse:!h-5 pointer-coarse:!w-5 !border-2 !border-white !bg-sky-500"
+            />
         </div>
     );
 }
@@ -559,7 +596,13 @@ function ConditionNode({ data, selected }: NodeProps) {
                 {d.endsHere ? "Drag out to add an if branch" : "Routes by your conditions"}
             </div>
             {/* One output dot: drag out to add each conditional path. */}
-            <Handle type="source" id="s" position={Position.Bottom} className="!h-3 !w-3 pointer-coarse:!h-5 pointer-coarse:!w-5 !border-2 !border-white !bg-sky-500" />
+            <Handle
+                type="source"
+                id="s"
+                position={Position.Bottom}
+                title="Drag out once per path: each line from here is an if branch"
+                className="!h-3 !w-3 pointer-coarse:!h-5 pointer-coarse:!w-5 !border-2 !border-white !bg-sky-500"
+            />
         </div>
     );
 }
@@ -649,8 +692,22 @@ function SwitchNode({ id, data, selected }: NodeProps) {
                     Not connected — drag a link in
                 </div>
             )}
-            {/* Bottom dot: the "otherwise" fallback when no case matched. */}
-            <Handle type="source" id="s" position={Position.Bottom} className="!h-3 !w-3 pointer-coarse:!h-5 pointer-coarse:!w-5 !border-2 !border-white !bg-slate-400" />
+            {/* The "otherwise" fallback gets its own labeled row (same visual
+                language as the cases) instead of an unexplained bottom dot. */}
+            <div
+                className="relative flex h-6 items-center rounded-b-xl border-t border-slate-200/70 bg-slate-50/60 pl-2.5 pr-4"
+                title="Where contacts go when no case matched. Drag the dot to a step, or to empty space to add one (or Stop)."
+            >
+                <span className="min-w-0 flex-1 truncate text-[10.5px] font-medium uppercase tracking-[0.1em] text-slate-400">
+                    Otherwise
+                </span>
+                <Handle
+                    type="source"
+                    id="s"
+                    position={Position.Right}
+                    className="!absolute !-right-1.5 !top-1/2 !h-3 !w-3 !-translate-y-1/2 pointer-coarse:!h-5 pointer-coarse:!w-5 !border-2 !border-white !bg-slate-400"
+                />
+            </div>
         </div>
     );
 }
@@ -667,6 +724,55 @@ const nodeTypes = { step: StepNode, ifcond: IfNode, stop: StopNode, action: Acti
 // data.conIndex / data.conTotal are filled in by the layout effect once it
 // knows how many edges share a target.
 type ConvergeEdgeData = { conIndex?: number; conTotal?: number };
+
+// Unit outward direction for a handle side (the way an edge leaves/enters).
+function handleDir(pos?: Position): [number, number] {
+    switch (pos) {
+        case Position.Left:
+            return [-1, 0];
+        case Position.Right:
+            return [1, 0];
+        case Position.Top:
+            return [0, -1];
+        default:
+            return [0, 1]; // Bottom
+    }
+}
+
+// A geometry-aware smooth curve. Control lengths scale with the source/target
+// gap but SHRINK when the target sits behind the exit direction (e.g. a
+// right-facing switch dot whose target is below-left), so the curve turns
+// toward the target instead of looping out and back. Vertical bottom->top
+// edges are unchanged (a gentle S), so the natural flow keeps its curve.
+function getNaturalPath(a: {
+    sourceX: number;
+    sourceY: number;
+    sourcePosition?: Position;
+    targetX: number;
+    targetY: number;
+    targetPosition?: Position;
+}): [string, number, number] {
+    const { sourceX, sourceY, targetX, targetY } = a;
+    const [sdx, sdy] = handleDir(a.sourcePosition);
+    const [tdx, tdy] = handleDir(a.targetPosition);
+    const dist = Math.hypot(targetX - sourceX, targetY - sourceY) || 1;
+    const base = Math.max(34, Math.min(dist * 0.5, 160));
+    // How much the target lies along the source's exit direction (-1..1).
+    const sAlong = ((targetX - sourceX) * sdx + (targetY - sourceY) * sdy) / dist;
+    const sLen = base * (0.32 + 0.68 * Math.max(0, sAlong));
+    // How much the source lies along the target's entry direction.
+    const tAlong = ((sourceX - targetX) * tdx + (sourceY - targetY) * tdy) / dist;
+    const tLen = base * (0.32 + 0.68 * Math.max(0, tAlong));
+    const c1x = sourceX + sdx * sLen;
+    const c1y = sourceY + sdy * sLen;
+    const c2x = targetX + tdx * tLen;
+    const c2y = targetY + tdy * tLen;
+    const path = `M${sourceX},${sourceY} C${c1x},${c1y} ${c2x},${c2y} ${targetX},${targetY}`;
+    // Midpoint of the cubic (t=0.5) for the label.
+    const labelX = (sourceX + 3 * c1x + 3 * c2x + targetX) / 8;
+    const labelY = (sourceY + 3 * c1y + 3 * c2y + targetY) / 8;
+    return [path, labelX, labelY];
+}
 
 function ConvergeEdge({
     sourceX,
@@ -689,7 +795,7 @@ function ConvergeEdge({
     // handle. One inbound edge keeps dead-centre (offset 0).
     const span = Math.min(170, NODE_W * 0.7);
     const offset = total > 1 ? (index - (total - 1) / 2) * (span / Math.max(1, total - 1)) : 0;
-    const [path, labelX, labelY] = getBezierPath({
+    const [path, labelX, labelY] = getNaturalPath({
         sourceX,
         sourceY,
         sourcePosition,
@@ -1109,7 +1215,7 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
     // Create a step of the chosen type and return its id (used by the menu when
     // dragging out of an IF block, which then points the branch at the new node).
     const createTypedStep = React.useCallback(
-        async (choice: CreateChoice): Promise<string | null> => {
+        async (choice: Exclude<CreateChoice, "stop">): Promise<string | null> => {
             if (adding || sequences.length >= MAX_STEPS) return null;
             setAdding(true);
             try {
@@ -1829,7 +1935,7 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                         canvas (touch users remove edges via the editor's Disconnect). */}
                     <div className="hidden md:flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md bg-white/95 px-3 py-1.5 text-[11px] text-slate-500 shadow-sm">
                         <span className="text-slate-400">
-                            drag a node’s bottom dot onto another node to connect, or onto empty space to pick what to add (email, action, or a condition) · click a line to set its condition · add Condition nodes to branch, and chain them for nested trees · click a line then press Delete to remove it · no match = stop
+                            drag a node’s bottom dot onto another node to connect, or onto empty space to pick what comes next (email, action, condition, or Stop) · click a line to set its condition · add Condition nodes to branch, and chain them for nested trees · click a line then press Delete to remove it · a step with no outgoing line just ends
                             {live.active ? " · press / to chat" : ""}
                         </span>
                     </div>
@@ -1844,6 +1950,26 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                     onClose={() => setDragCreate(null)}
                     onPick={async (choice) => {
                         const dc = dragCreate;
+                        if (choice === "stop") {
+                            // Route this path to the Stop terminal (null target):
+                            // no node is created, the sequence just ends there.
+                            if (dc.ifSource) {
+                                if (dc.ifSource.handle === "out") {
+                                    retargetBranch(dc.ifSource.sourceId, dc.ifSource.branchId, null);
+                                } else {
+                                    addUnconditional(dc.ifSource.sourceId, null);
+                                }
+                            } else if (dc.switchCase) {
+                                connectSwitchCase(dc.sourceId, dc.switchCase, null);
+                            } else if (dc.conditional) {
+                                // From a Condition node: "if X → stop". Opens the
+                                // condition editor so you pick the X.
+                                addIfTo(dc.sourceId, null);
+                            } else {
+                                addUnconditional(dc.sourceId, null);
+                            }
+                            return;
+                        }
                         if (dc.ifSource) {
                             // From an IF block: create the node, then point this
                             // branch's then/else path at it.
@@ -2329,11 +2455,15 @@ const ADD_ACTION_OPTIONS: { type: SequenceActionType; label: string }[] = [
 // Switch is a router like Condition, not a side effect — the menus list it in
 // the routing group, so it stays out of ADD_ACTION_OPTIONS.
 const SWITCH_OPTION = { type: "switch" as SequenceActionType, label: "Switch (AI / value)" };
+const AI_STEP_OPTION = { type: "ai_step" as SequenceActionType, label: "AI step (agent)" };
 
-type CreateChoice = "email" | "condition" | SequenceActionType;
+// "stop" is not a node: picking it routes the dragged path to the red Stop
+// terminal (a null branch target), so "in this case, end the sequence" is a
+// first-class choice instead of lore about unconnected dots.
+type CreateChoice = "email" | "condition" | "stop" | SequenceActionType;
 
 // The menu that opens where you drop a dragged connection on empty canvas:
-// pick what the next node is (email, an action, or a condition router).
+// pick what the next node is (email, an action, a condition router, or Stop).
 function DragCreateMenu({
     x,
     y,
@@ -2387,6 +2517,7 @@ function DragCreateMenu({
                         <CreateRow icon={<MailIcon className="w-3.5 h-3.5 text-sky-600" />} label="Email step" onClick={() => pick("email")} />
                         <CreateRow icon={<GitBranchIcon className="w-3.5 h-3.5 text-amber-600" />} label="Condition (branch)" onClick={() => pick("condition")} />
                         <CreateRow icon={<SplitIcon className="w-3.5 h-3.5 text-purple-600" />} label={SWITCH_OPTION.label} onClick={() => pick("switch")} />
+                        <CreateRow icon={<SparklesIcon className="w-3.5 h-3.5 text-purple-600" />} label={AI_STEP_OPTION.label} onClick={() => pick("ai_step")} />
                         <div className="my-1 h-px bg-slate-100" />
                         <div className="px-2 pt-0.5 pb-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">Actions</div>
                         {ADD_ACTION_OPTIONS.map((o) => {
@@ -2401,6 +2532,8 @@ function DragCreateMenu({
                                 />
                             );
                         })}
+                        <div className="my-1 h-px bg-slate-100" />
+                        <CreateRow icon={<FlagIcon className="w-3.5 h-3.5 text-rose-500" />} label="Stop here" onClick={() => pick("stop")} />
                     </motion.div>
                 )}
             </AnimatePresence>
@@ -2506,6 +2639,17 @@ function AddNodeMenu({
                             <SplitIcon className="w-3.5 h-3.5 text-purple-600" />
                             {SWITCH_OPTION.label}
                         </button>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                onAddAction("ai_step");
+                                setOpen(false);
+                            }}
+                            className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[12px] text-slate-700 transition-colors hover:bg-slate-100"
+                        >
+                            <SparklesIcon className="w-3.5 h-3.5 text-purple-600" />
+                            {AI_STEP_OPTION.label}
+                        </button>
                         <div className="my-1 border-t border-slate-100" />
                         {ADD_ACTION_OPTIONS.map((o) => {
                             const meta = ACTION_META[o.type];
@@ -2556,6 +2700,9 @@ function defaultActionFor(type: SequenceActionType): SequenceAction {
         // Two starter cases so the node shows draggable dots immediately.
         return { type, switch_on: "ai", switch_cases: ["interested", "not interested"] };
     }
+    if (type === "ai_step") {
+        return { type, ai_instruction: "", ai_allowed_actions: [] };
+    }
     return { type };
 }
 
@@ -2580,6 +2727,7 @@ function NodeTypeSwitcher({
     const items: { value: "email" | SequenceActionType; label: string; Icon: typeof MailIcon; tint: string }[] = [
         { value: "email", label: "Send email", Icon: MailIcon, tint: "text-sky-600" },
         { value: "switch", label: SWITCH_OPTION.label, Icon: SplitIcon, tint: "text-purple-600" },
+        { value: "ai_step", label: AI_STEP_OPTION.label, Icon: SparklesIcon, tint: "text-purple-600" },
         ...ADD_ACTION_OPTIONS.map((o) => ({
             value: o.type,
             label: o.label,
@@ -2701,6 +2849,7 @@ function ActionEditor({
 
             <ActionConfigFields action={action} setAction={setAction} />
             {action.type === "switch" && <SwitchStepFields action={action} setAction={setAction} />}
+            {action.type === "ai_step" && <AIStepFields action={action} setAction={setAction} />}
 
             <div className="flex items-center justify-end pt-1">
                 <button
@@ -3073,6 +3222,180 @@ function FireEventStepFields({
                         ))}
                     </div>
                 )}
+            </div>
+        </div>
+    );
+}
+
+// The guarded set of reversible actions a campaign AI agent step may call.
+// Mirrors the backend isCampaignAgentAction allowlist; never a send/reply.
+const CAMPAIGN_AI_ALLOWLIST: SequenceActionType[] = [
+    "add_tag",
+    "remove_tag",
+    "label_email",
+    "unsubscribe",
+    "create_task",
+    "create_deal",
+    "move_deal_stage",
+];
+
+// Actions the agent fully drives from the instruction (no pinned config): it
+// writes the task title / deal name and picks a pipeline/stage itself.
+const CAMPAIGN_AI_NO_CONFIG: SequenceActionType[] = [
+    "unsubscribe",
+    "create_task",
+    "create_deal",
+    "move_deal_stage",
+];
+
+// Which optional tag/label pool an action configures (add_tag/remove_tag/label).
+const CAMPAIGN_AI_POOL_KEY: Partial<Record<SequenceActionType, "ai_add_tags" | "ai_remove_tags" | "ai_labels">> = {
+    add_tag: "ai_add_tags",
+    remove_tag: "ai_remove_tags",
+    label_email: "ai_labels",
+};
+
+// TagPoolField — a multi-select pool of tags the agent may add/remove. The
+// display name is stored alongside the id so the backend can offer the tag to
+// the model and resolve its pick without a category lookup.
+function TagPoolField({
+    label,
+    value,
+    onChange,
+}: {
+    label: string;
+    value: AITagRef[];
+    onChange: (refs: AITagRef[]) => void;
+}) {
+    const { user } = useUserProfile();
+    const titleById = React.useMemo(() => {
+        const m = new Map<string, string>();
+        for (const c of user.categories ?? []) m.set(c.id, c.title);
+        return m;
+    }, [user.categories]);
+    const knownName = React.useMemo(() => new Map(value.map((r) => [r.id, r.name])), [value]);
+    return (
+        <div>
+            <Label>{label}</Label>
+            <CategoryPicker
+                value={value.map((r) => r.id)}
+                onChange={(ids) => onChange(ids.map((id) => ({ id, name: titleById.get(id) ?? knownName.get(id) ?? id })))}
+                placeholder="Any — leave empty to let the agent choose"
+            />
+            <p className="mt-1.5 text-[11px] text-slate-400">
+                {value.length
+                    ? "The agent chooses among these for each contact."
+                    : "Empty, so the agent may use any of your tags for each contact."}
+            </p>
+        </div>
+    );
+}
+
+// AIStepFields — the campaign AI agent step. An instruction plus the reversible
+// actions the model may call; the agent decides which to run per contact. When
+// an enabled action needs a target (which tag, which pipeline), that config
+// sits inline under its row (one accent rule, not a nested card) so the editor
+// stays flat.
+function AIStepFields({
+    action,
+    setAction,
+}: {
+    action: SequenceAction;
+    setAction: React.Dispatch<React.SetStateAction<SequenceAction>>;
+}) {
+    const enabled = action.ai_allowed_actions ?? [];
+    const toggle = (id: string) =>
+        setAction((a) => {
+            const cur = a.ai_allowed_actions ?? [];
+            return { ...a, ai_allowed_actions: cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id] };
+        });
+    // Whether any enabled tag/label capability has an empty pool (agent may use
+    // any tag) — only then does the "create new tags" opt-in matter.
+    const anyOpenPool = (["add_tag", "remove_tag", "label_email"] as SequenceActionType[]).some(
+        (id) => enabled.includes(id) && !((action[CAMPAIGN_AI_POOL_KEY[id]!] ?? []).length),
+    );
+    return (
+        <div className="space-y-4">
+            <div>
+                <Label>Instruction</Label>
+                <textarea
+                    value={action.ai_instruction ?? ""}
+                    onChange={(e) => setAction((a) => ({ ...a, ai_instruction: e.target.value }))}
+                    rows={3}
+                    placeholder="Read the reply. If they ask about pricing, tag them 'pricing' and create a follow-up task."
+                    className="w-full resize-y rounded-md border border-slate-200 px-2.5 py-1.5 text-[12.5px] text-slate-700 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100"
+                />
+            </div>
+            <div>
+                <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                    Actions the agent can take
+                </div>
+                <div className="divide-y divide-slate-100">
+                    {CAMPAIGN_AI_ALLOWLIST.map((id) => {
+                        const on = enabled.includes(id);
+                        const Icon = ACTION_META[id]?.Icon ?? SparklesIcon;
+                        const hasConfig = !CAMPAIGN_AI_NO_CONFIG.includes(id);
+                        return (
+                            <div key={id} className="py-1">
+                                <button
+                                    type="button"
+                                    onClick={() => toggle(id)}
+                                    className="flex w-full items-center gap-2 rounded px-1.5 py-1.5 text-left text-[12.5px] text-slate-700 transition-colors hover:bg-slate-50"
+                                >
+                                    <span
+                                        className={`inline-flex size-4 shrink-0 items-center justify-center rounded border ${
+                                            on ? "border-sky-500 bg-sky-500 text-white" : "border-slate-300 bg-white"
+                                        }`}
+                                    >
+                                        {on && <CheckIcon className="w-3 h-3" />}
+                                    </span>
+                                    <Icon className={`w-3.5 h-3.5 ${ACTION_META[id]?.tint ?? "text-slate-400"}`} />
+                                    <span className={on ? "font-medium text-slate-800" : ""}>
+                                        {ACTION_META[id]?.label ?? id}
+                                    </span>
+                                </button>
+                                {on && hasConfig && CAMPAIGN_AI_POOL_KEY[id] && (
+                                    <div className="ml-[1.35rem] mt-1 space-y-3 border-l border-slate-200 pl-3 pb-1.5">
+                                        <TagPoolField
+                                            label={
+                                                id === "add_tag"
+                                                    ? "Tags the agent can add"
+                                                    : id === "remove_tag"
+                                                      ? "Tags the agent can remove"
+                                                      : "Labels the agent can apply"
+                                            }
+                                            value={action[CAMPAIGN_AI_POOL_KEY[id]!] ?? []}
+                                            onChange={(refs) =>
+                                                setAction((a) => ({ ...a, [CAMPAIGN_AI_POOL_KEY[id]!]: refs }))
+                                            }
+                                        />
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+                {anyOpenPool && (
+                    <button
+                        type="button"
+                        onClick={() => setAction((a) => ({ ...a, ai_allow_create_tags: !a.ai_allow_create_tags }))}
+                        className="mt-2 flex w-full items-center gap-2 rounded px-1.5 py-1.5 text-left text-[12px] text-slate-600 transition-colors hover:bg-slate-50"
+                    >
+                        <span
+                            className={`inline-flex size-4 shrink-0 items-center justify-center rounded border ${
+                                action.ai_allow_create_tags ? "border-sky-500 bg-sky-500 text-white" : "border-slate-300 bg-white"
+                            }`}
+                        >
+                            {action.ai_allow_create_tags && <CheckIcon className="w-3 h-3" />}
+                        </span>
+                        Let the agent create a new tag/label when none fits
+                    </button>
+                )}
+                <p className="mt-2 text-[11px] leading-relaxed text-slate-400">
+                    The agent decides which of these to use for each contact, writes any task or deal details itself, and
+                    can chain several. It only takes the actions you enable, never sending or replying. Billed 1 credit
+                    per step it takes.
+                </p>
             </div>
         </div>
     );

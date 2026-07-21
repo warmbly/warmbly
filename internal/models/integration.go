@@ -294,12 +294,25 @@ const (
 	IntegrationActionAIClassify IntegrationAction = "warmbly.ai_classify"
 	IntegrationActionAIExtract  IntegrationAction = "warmbly.ai_extract"
 	IntegrationActionAIGenerate IntegrationAction = "warmbly.ai_generate"
+
+	// IntegrationActionAIStep is the unified AI node. config.mode selects the
+	// behavior: classify | extract | generate | decide (single LLM call, merged
+	// into data like the legacy nodes) or agent (a bounded tool-use loop where
+	// the model, following config.instruction, calls a guarded allowlist of
+	// reversible native actions in config.allowed_actions[]). The three legacy
+	// ids above stay valid so saved graphs keep running unchanged.
+	IntegrationActionAIStep IntegrationAction = "warmbly.ai_step"
+	// IntegrationActionAISwitch is a campaign-style multi-way router: one LLM
+	// call picks exactly one of config.cases[], stored so the "label:<case>"
+	// edges route the walk. Decide-only; it takes no actions.
+	IntegrationActionAISwitch IntegrationAction = "warmbly.ai_switch"
 )
 
 // IsAIAction reports whether an action is an AI node (LLM-backed, credit-charged).
 func IsAIAction(a IntegrationAction) bool {
 	switch a {
-	case IntegrationActionAIClassify, IntegrationActionAIExtract, IntegrationActionAIGenerate:
+	case IntegrationActionAIClassify, IntegrationActionAIExtract, IntegrationActionAIGenerate,
+		IntegrationActionAIStep, IntegrationActionAISwitch:
 		return true
 	default:
 		return false
@@ -314,7 +327,8 @@ func IsNativeAction(a IntegrationAction) bool {
 		IntegrationActionCreateDeal, IntegrationActionMoveDealStage, IntegrationActionUnsubscribe,
 		IntegrationActionRunAutomation, IntegrationActionLabelEmail,
 		IntegrationActionSetVariables, IntegrationActionFireEvent,
-		IntegrationActionAIClassify, IntegrationActionAIExtract, IntegrationActionAIGenerate:
+		IntegrationActionAIClassify, IntegrationActionAIExtract, IntegrationActionAIGenerate,
+		IntegrationActionAIStep, IntegrationActionAISwitch:
 		return true
 	default:
 		return false

@@ -37,6 +37,7 @@ import (
 	"github.com/warmbly/warmbly/internal/infrastructure/kms"
 	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/infrastructure/storage"
+	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/notify"
 	"github.com/warmbly/warmbly/internal/observability"
 	"github.com/warmbly/warmbly/internal/pkg/encrypt"
@@ -272,6 +273,7 @@ func main() {
 		contactRepo,
 		campaignProgressRepo,
 		crmRepo,
+		repository.NewGroupRepostory(primaryDB, models.Categories),
 		uniboxRepo,
 		nil, // tasksClient: the consumer does not schedule Cloud Tasks
 		warmupService,

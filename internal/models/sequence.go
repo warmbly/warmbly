@@ -49,7 +49,7 @@ type Sequence struct {
 // ActionConfig is the persisted config for a non-email (action/wait) node. Type
 // is the switch the task executes on; the remaining fields are type-scoped.
 type ActionConfig struct {
-	Type string `json:"type"` // wait | add_tag | remove_tag | label_email | unsubscribe | notify | create_task | create_deal | move_deal_stage | run_automation | fire_event | switch | end
+	Type string `json:"type"` // wait | add_tag | remove_tag | label_email | unsubscribe | notify | create_task | create_deal | move_deal_stage | run_automation | fire_event | switch | ai_step | end
 
 	// wait
 	WaitMinutes *int `json:"wait_minutes,omitempty"`
@@ -134,6 +134,43 @@ type ActionConfig struct {
 	// existing steps keep the richer context.
 	AINoEngagement bool `json:"ai_no_engagement,omitempty"`
 	AINoReplies    bool `json:"ai_no_replies,omitempty"`
+
+	// ai_step (agent) — a bounded AI agent that follows AIInstruction and may
+	// call the reversible actions in AIAllowedActions (add_tag, remove_tag,
+	// label_email, unsubscribe, create_task, create_deal, move_deal_stage). Most
+	// enabled actions' pinned config lives in this same ActionConfig blob (the
+	// Deal* / Task* / LabelIDs fields above). The agent decides which to run per
+	// contact; it never sends or replies. Billed per iteration.
+	AIAllowedActions []string `json:"ai_allowed_actions,omitempty"`
+	// AIAddTags / AIRemoveTags / AILabels are OPTIONAL pools the agent picks from
+	// by name. An empty pool means unrestricted: the executor lists the org's
+	// tags/labels live at run time and the agent may use any (tags and unibox
+	// labels are the same category registry). AIAllowCreateTags additionally lets
+	// an empty-pool pick mint a brand-new tag/label (opt-in).
+	AIAddTags         []AITagRef `json:"ai_add_tags,omitempty"`
+	AIRemoveTags      []AITagRef `json:"ai_remove_tags,omitempty"`
+	AILabels          []AITagRef `json:"ai_labels,omitempty"`
+	AIAllowCreateTags bool       `json:"ai_allow_create_tags,omitempty"`
+}
+
+// AITagRef is one tag in an AI agent step's add/remove pool (id + display name).
+type AITagRef struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// IsReversibleCampaignAction is the closed set of reversible action types a
+// campaign AI agent step (ai_step) may call as a guarded tool. Its own list
+// (never derived) so it can never include a send, run_automation, fire_event,
+// switch, wait, or end. Shared by write validation and the step executor.
+func IsReversibleCampaignAction(t string) bool {
+	switch t {
+	case "add_tag", "remove_tag", "label_email", "unsubscribe",
+		"create_task", "create_deal", "move_deal_stage":
+		return true
+	default:
+		return false
+	}
 }
 
 // ActionKV is one templated input passed to a launched automation.

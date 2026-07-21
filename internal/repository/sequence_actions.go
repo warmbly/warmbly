@@ -58,6 +58,33 @@ func validateActionConfig(a *models.ActionConfig) *errx.Error {
 			}
 		}
 		return nil
+	case "ai_step":
+		// AI agent step: an instruction plus a guarded allowlist of reversible
+		// actions the model may call. A draft (no instruction / no actions) is a
+		// harmless no-op like other unconfigured nodes, so bound only what IS set.
+		if len(a.AIInstruction) > maxAIStepInstruction {
+			return errx.ErrSequenceAction
+		}
+		if len(a.AIAllowedActions) > maxAIAllowedActions {
+			return errx.ErrSequenceAction
+		}
+		for _, act := range a.AIAllowedActions {
+			if !models.IsReversibleCampaignAction(strings.TrimSpace(act)) {
+				return errx.ErrSequenceAction
+			}
+		}
+		if len(a.AIAddTags) > maxAITagPool || len(a.AIRemoveTags) > maxAITagPool || len(a.AILabels) > maxAITagPool {
+			return errx.ErrSequenceAction
+		}
+		pools := append([]models.AITagRef{}, a.AIAddTags...)
+		pools = append(pools, a.AIRemoveTags...)
+		pools = append(pools, a.AILabels...)
+		for _, r := range pools {
+			if strings.TrimSpace(r.ID) == "" || strings.TrimSpace(r.Name) == "" || len(r.Name) > maxAIStepName {
+				return errx.ErrSequenceAction
+			}
+		}
+		return nil
 	default:
 		return errx.ErrSequenceAction
 	}
@@ -70,4 +97,6 @@ const (
 	maxAIStepName        = 80
 	maxSwitchValue       = 500
 	maxSwitchCases       = 20
+	maxAIAllowedActions  = 12
+	maxAITagPool         = 40
 )

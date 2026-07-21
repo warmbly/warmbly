@@ -36,8 +36,17 @@ const (
 	aiNodeTimeout          = 20 * time.Second
 	aiCreditFailurePauseAt = 20
 
+	// Agent mode: a bounded tool-use loop, billed per iteration (like the
+	// dashboard agent) rather than a flat per-node credit. Kept small so a
+	// single node can't run the graph long or rack up credits.
+	aiAgentMaxIterations = 4
+	aiAgentTimeout       = 45 * time.Second
+
 	aiClassVar         = "ai_class"
 	aiTextVar          = "ai_text"
+	aiCaseVar          = "ai_case"        // ai_step mode=decide default output
+	aiSwitchCaseVar    = "ai_switch_case" // ai_switch default output (distinct key)
+	aiAgentVar         = "ai_agent"       // ai_step mode=agent final text
 	automationRunIDKey = "_run_id"
 
 	// maxAIConditionPrompt bounds an Ask-AI branch question at write time.
@@ -45,14 +54,74 @@ const (
 
 	// aiLabelEdgePrefix marks a per-label edge out of an ai_classify node
 	// ("label:<x>"): the walk follows it only when the model picked <x>, so
-	// one classify node routes multi-way on the canvas.
+	// one classify node routes multi-way on the canvas. Reused verbatim by the
+	// decide mode and the AI switch (their "cases" are labels).
 	aiLabelEdgePrefix = "label:"
 )
 
-// aiClassifyHasLabel reports whether label is one of the classify node's
-// configured labels (case-insensitive). Used to validate per-label edges.
-func aiClassifyHasLabel(raw json.RawMessage, label string) bool {
-	for _, l := range nonEmptyStrings(parseAIConfig(raw).Labels) {
+// aiStepMode enumerates what a warmbly.ai_step node does. The three legacy ids
+// (ai_classify/ai_extract/ai_generate) and ai_switch map onto these modes too,
+// so one shared code path serves every AI node.
+const (
+	aiModeClassify = "classify"
+	aiModeExtract  = "extract"
+	aiModeGenerate = "generate"
+	aiModeDecide   = "decide"
+	aiModeAgent    = "agent"
+)
+
+// resolveMode maps an AI node to its behavior. Legacy ids pin their historical
+// mode so saved graphs run byte-identically; the unified ai_step reads
+// config.mode (defaulting to generate for a malformed/empty blob); ai_switch is
+// always decide.
+func resolveMode(action models.IntegrationAction, cfg aiActionConfig) string {
+	switch action {
+	case models.IntegrationActionAIClassify:
+		return aiModeClassify
+	case models.IntegrationActionAIExtract:
+		return aiModeExtract
+	case models.IntegrationActionAIGenerate:
+		return aiModeGenerate
+	case models.IntegrationActionAISwitch:
+		return aiModeDecide
+	case models.IntegrationActionAIStep:
+		switch strings.TrimSpace(cfg.Mode) {
+		case aiModeClassify, aiModeExtract, aiModeGenerate, aiModeDecide, aiModeAgent:
+			return strings.TrimSpace(cfg.Mode)
+		default:
+			return aiModeGenerate
+		}
+	default:
+		return aiModeGenerate
+	}
+}
+
+// aiNodeRoutesByLabel reports whether an AI node fans out on "label:<x>" edges:
+// classify (Labels) and decide / ai_switch (Cases). Used to authorize per-label
+// edges at write time.
+func aiNodeRoutesByLabel(n models.AutomationNode) bool {
+	switch resolveMode(n.Action, parseAIConfig(n.Config)) {
+	case aiModeClassify, aiModeDecide:
+		return true
+	default:
+		return false
+	}
+}
+
+// aiNodeHasBranch reports whether label is one of the node's routing choices
+// (classify Labels or decide/switch Cases), case-insensitive.
+func aiNodeHasBranch(n models.AutomationNode, label string) bool {
+	cfg := parseAIConfig(n.Config)
+	var opts []string
+	switch resolveMode(n.Action, cfg) {
+	case aiModeClassify:
+		opts = cfg.Labels
+	case aiModeDecide:
+		opts = cfg.Cases
+	default:
+		return false
+	}
+	for _, l := range nonEmptyStrings(opts) {
 		if strings.EqualFold(l, strings.TrimSpace(label)) {
 			return true
 		}
@@ -62,12 +131,19 @@ func aiClassifyHasLabel(raw json.RawMessage, label string) bool {
 
 // actionSuccessEdges picks the edges to follow after an action node ran
 // without an unhandled error. Plain edges always follow; "error" edges never
-// follow here; an ai_classify node's "label:<x>" edges follow only when the
-// model's stored verdict matches x, giving the canvas multi-way AI routing.
+// follow here; a routing AI node's "label:<x>" edges follow only when the
+// model's stored verdict matches x, giving the canvas multi-way AI routing
+// (classify by label, decide / ai_switch by case).
 func actionSuccessEdges(n models.AutomationNode, data map[string]any, edges []models.AutomationEdge) []models.AutomationEdge {
 	verdict := ""
-	if n.Action == models.IntegrationActionAIClassify {
-		verdict = strings.TrimSpace(valueString(data[classifyOutputKey(parseAIConfig(n.Config))]))
+	if models.IsAIAction(n.Action) {
+		cfg := parseAIConfig(n.Config)
+		switch resolveMode(n.Action, cfg) {
+		case aiModeClassify:
+			verdict = strings.TrimSpace(valueString(data[classifyOutputKey(cfg)]))
+		case aiModeDecide:
+			verdict = strings.TrimSpace(valueString(data[decideOutputKey(n.Action, cfg)]))
+		}
 	}
 	out := make([]models.AutomationEdge, 0, len(edges))
 	for _, e := range edges {
@@ -85,18 +161,31 @@ func actionSuccessEdges(n models.AutomationNode, data map[string]any, edges []mo
 	return out
 }
 
-// aiActionConfig is the per-node config for an AI action node.
+// aiActionConfig is the per-node config for an AI action node. The unified
+// ai_step reuses this same blob (Instruction + the mode-specific fields); the
+// legacy nodes only ever set the subset they need.
 type aiActionConfig struct {
+	// Mode drives the unified ai_step (classify|extract|generate|decide|agent).
+	// Empty for legacy nodes (their id fixes the mode via resolveMode).
+	Mode string `json:"mode"`
 	// Instruction is the user's prompt, Go-templated against the event data so
-	// it can reference {{.subject}}, {{.snippet}}, etc.
+	// it can reference {{.subject}}, {{.snippet}}, etc. In agent mode it is the
+	// system instruction the model follows while choosing tools.
 	Instruction string `json:"instruction"`
 	// Labels is the closed set ai_classify must choose from.
 	Labels []string `json:"labels"`
 	// OutputKeys are the variable names ai_extract fills from the text.
 	OutputKeys []string `json:"output_keys"`
-	// OutputKey optionally overrides the default target variable for
-	// ai_classify (ai_class) / ai_generate (ai_text) so two AI nodes in one flow
-	// don't collide.
+	// Cases is the closed set decide / ai_switch route on ("label:<case>" edges).
+	Cases []string `json:"cases"`
+	// Allowlist is the guarded set of reversible native actions an agent-mode
+	// step may call as tools (add_tag, remove_tag, create_task, create_deal,
+	// move_deal_stage, label_email, set_variables, unsubscribe). Validated
+	// against isAllowlistedAIAction at write time and re-checked at run time.
+	Allowlist []string `json:"allowed_actions"`
+	// OutputKey optionally overrides the default target variable so two AI
+	// nodes in one flow don't collide (classify->ai_class, generate->ai_text,
+	// decide->ai_case, agent->ai_agent).
 	OutputKey string `json:"output_key"`
 }
 
@@ -117,9 +206,30 @@ func aiActionLabel(a models.IntegrationAction) string {
 		return "AI extract"
 	case models.IntegrationActionAIGenerate:
 		return "AI generate"
+	case models.IntegrationActionAIStep:
+		return "AI step"
+	case models.IntegrationActionAISwitch:
+		return "AI switch"
 	default:
 		return string(a)
 	}
+}
+
+// decideOutputKey names the variable a decide / ai_switch node writes its
+// chosen case into (overridable), with distinct defaults so an ai_step decide
+// and an ai_switch in the same flow never collide.
+func decideOutputKey(action models.IntegrationAction, cfg aiActionConfig) string {
+	if k := strings.TrimSpace(cfg.OutputKey); k != "" {
+		return k
+	}
+	if action == models.IntegrationActionAISwitch {
+		return aiSwitchCaseVar
+	}
+	return aiCaseVar
+}
+
+func agentOutputKey(cfg aiActionConfig) string {
+	return firstNonEmpty(strings.TrimSpace(cfg.OutputKey), aiAgentVar)
 }
 
 // execAIAction charges one credit, runs the LLM step under a 20s ceiling, and
@@ -134,6 +244,13 @@ func (s *service) execAIAction(ctx context.Context, a models.Automation, n model
 	instruction := strings.TrimSpace(renderTemplate(cfg.Instruction, data))
 	if instruction == "" {
 		return errors.New("this AI step has no instruction")
+	}
+
+	mode := resolveMode(n.Action, cfg)
+	// Agent mode runs a bounded tool-use loop (its own credit lifecycle); the
+	// other modes share the single-shot Complete path below.
+	if mode == aiModeAgent {
+		return s.execAIAgentStep(ctx, a, n, cfg, instruction, data, feedPause)
 	}
 
 	// gate -> consume(Idempotency-Key) -> call -> refund-on-failure. The key is
@@ -169,13 +286,13 @@ func (s *service) execAIAction(ctx context.Context, a models.Automation, n model
 	cctx, cancel := context.WithTimeout(ctx, aiNodeTimeout)
 	defer cancel()
 
-	system, prompt := buildAIPrompt(n.Action, cfg, instruction, data)
+	system, prompt := buildAIPrompt(mode, cfg, instruction, data)
 	res, gerr := s.aiProvider.Complete(cctx, generation.CompletionRequest{
 		System:      system,
 		Prompt:      prompt,
 		Model:       model,
 		MaxTokens:   aiNodeMaxTokens,
-		Temperature: aiTemperature(n.Action),
+		Temperature: aiTemperature(mode),
 	})
 	if gerr != nil || res == nil {
 		// The org paid for a step the provider couldn't complete: refund it. A
@@ -203,6 +320,163 @@ func (s *service) execAIAction(ctx context.Context, a models.Automation, n model
 		_ = s.repo.ResetAutomationAICreditFailures(ctx, a.ID)
 	}
 	return nil
+}
+
+// execAIAgentStep runs the agent mode of an ai_step: a bounded tool-use loop
+// where the model, following the user's instruction, may call a guarded set of
+// reversible native actions (config.allowed_actions[]). It reuses the shared
+// generation.RunAgent harness and bills one credit per loop iteration
+// (credits.CostAgentIteration) via PreIteration, matching the dashboard agent.
+// The final text is merged into data under the node's output variable so
+// downstream conditions can branch on it. On a dry run (feedPause=false) the
+// tools report what they would do but apply nothing.
+func (s *service) execAIAgentStep(ctx context.Context, a models.Automation, n models.AutomationNode, cfg aiActionConfig, instruction string, data map[string]any, feedPause bool) error {
+	if s.aiProvider == nil || s.credits == nil {
+		return errors.New("AI steps are not available on this deployment")
+	}
+	tools := s.guardedAITools(a, n, cfg, data, feedPause)
+
+	model := s.aiProvider.ModelForTier(false)
+	runID := stringFromMap(data, automationRunIDKey)
+	ctx = models.WithCreditMeta(ctx, models.CreditMeta{Context: models.CreditContext{
+		AutomationID:   a.ID.String(),
+		AutomationName: a.Name,
+		NodeID:         n.ID,
+		RunID:          runID,
+		Detail:         "ai_agent",
+	}})
+
+	// Charge per iteration before each model call; out-of-credits stops the loop
+	// cleanly (StopReason "stopped") and, on a live run, advances the auto-pause
+	// counter exactly like the single-shot AI nodes.
+	charged := 0
+	var creditErr error
+	preIteration := func(ctx context.Context, iteration int) error {
+		if s.aiProvider.IsLocal() {
+			return nil
+		}
+		idem := fmt.Sprintf("auto_ai:%s:%s:iter:%d", runID, n.ID, iteration)
+		if _, cerr := s.credits.Consume(ctx, a.OrganizationID, credits.CostAgentIteration, "automation_ai_agent", model, 0, idem); cerr != nil {
+			switch {
+			case errors.Is(cerr, credits.ErrInsufficientCredits):
+				if feedPause {
+					s.noteAICreditFailure(ctx, a)
+				}
+				creditErr = fmt.Errorf("out of AI credits: the agent step needs %d credit per step", credits.CostAgentIteration)
+			case errors.Is(cerr, credits.ErrCapExceeded):
+				creditErr = errors.New("AI usage cap reached; try again later")
+			default:
+				creditErr = cerr
+			}
+			return creditErr
+		}
+		charged++
+		return nil
+	}
+
+	cctx, cancel := context.WithTimeout(ctx, aiAgentTimeout)
+	defer cancel()
+
+	system := "You are an automation agent. Follow the instruction and act on the event by calling the available tools. Only take actions the instruction asks for; if none apply, take none. Each tool applies a reversible change to the contact or event. When done, briefly state what you did." + aiEventGuard
+	res, gerr := s.aiProvider.RunAgent(cctx, generation.AgentRequest{
+		System:        system + "\n\nInstruction: " + instruction,
+		Messages:      []generation.AgentMessage{{Role: "user", Content: "Event data:\n" + fencedEventContext(data)}},
+		Tools:         tools,
+		Model:         model,
+		MaxIterations: aiAgentMaxIterations,
+		MaxTokens:     aiNodeMaxTokens,
+		PreIteration:  preIteration,
+	})
+	// The loop stopped because the org ran out of credits: surface that, not a
+	// generic failure. Iterations already charged stay charged (each was a real
+	// model call), matching the per-iteration dashboard-agent billing.
+	if creditErr != nil {
+		return creditErr
+	}
+	if gerr != nil {
+		return fmt.Errorf("AI agent step failed: %w", gerr)
+	}
+	if res != nil {
+		if !s.aiProvider.IsLocal() && charged > 0 {
+			_, _ = s.credits.SettleUsage(ctx, a.OrganizationID, charged, model, res.TokensUsed, "automation_ai_agent", fmt.Sprintf("auto_ai:%s:%s:usage", runID, n.ID))
+		}
+		data[agentOutputKey(cfg)] = strings.TrimSpace(res.Text)
+	}
+	if feedPause {
+		_ = s.repo.ResetAutomationAICreditFailures(ctx, a.ID)
+	}
+	return nil
+}
+
+// aiToolName is the short, model-facing name for a guarded native action.
+func aiToolName(action models.IntegrationAction) string {
+	return strings.TrimPrefix(string(action), "warmbly.")
+}
+
+// aiToolDescription tells the model what firing a guarded tool does. The
+// side-effect parameters are fixed by the node config, so the model only
+// decides whether to call it.
+func aiToolDescription(action models.IntegrationAction) string {
+	switch action {
+	case models.IntegrationActionAddTag:
+		return "Add the configured tag to the contact."
+	case models.IntegrationActionRemoveTag:
+		return "Remove the configured tag from the contact."
+	case models.IntegrationActionCreateTask:
+		return "Create the configured CRM task for the contact."
+	case models.IntegrationActionCreateDeal:
+		return "Create the configured CRM deal for the contact."
+	case models.IntegrationActionMoveDealStage:
+		return "Move the contact's deal to the configured pipeline stage."
+	case models.IntegrationActionLabelEmail:
+		return "Apply the configured labels to the event's email conversation."
+	case models.IntegrationActionSetVariables:
+		return "Set the configured variables on the event for later steps."
+	case models.IntegrationActionUnsubscribe:
+		return "Unsubscribe the contact from the campaign in the event."
+	default:
+		return "Run the " + aiToolName(action) + " action."
+	}
+}
+
+// guardedAITools builds one tool per allowlisted native action the agent may
+// call. Guarded two ways: only isAllowlistedAIAction ids become tools (never a
+// send/reply or connection action), and the side-effect parameters come from
+// the node config (the model decides WHETHER to fire an effect, not arbitrary
+// CRM targets). On a dry run the tool reports the effect without applying it.
+func (s *service) guardedAITools(a models.Automation, n models.AutomationNode, cfg aiActionConfig, data map[string]any, feedPause bool) []generation.ToolDef {
+	seen := map[models.IntegrationAction]bool{}
+	tools := make([]generation.ToolDef, 0, len(cfg.Allowlist))
+	for _, raw := range cfg.Allowlist {
+		action := models.IntegrationAction(strings.TrimSpace(raw))
+		if !isAllowlistedAIAction(action) || seen[action] {
+			continue
+		}
+		seen[action] = true
+		act := action // capture per iteration for the handler closure
+		tools = append(tools, generation.ToolDef{
+			Name:        aiToolName(act),
+			Description: aiToolDescription(act),
+			InputSchema: map[string]any{"type": "object", "properties": map[string]any{}},
+			Risk:        generation.RiskWrite,
+			Handler: func(ctx context.Context, _ json.RawMessage) (string, error) {
+				if !feedPause {
+					return "(test run: would " + aiToolName(act) + ")", nil
+				}
+				// Re-check the guard at run time, then dispatch through the
+				// existing native executor with the node's pinned config.
+				if !isAllowlistedAIAction(act) {
+					return "", fmt.Errorf("%s is not an allowed action", aiToolName(act))
+				}
+				syn := models.AutomationNode{ID: n.ID, Type: models.AutomationNodeAction, Action: act, Config: n.Config}
+				if err := s.execNativeAction(ctx, a, syn, data); err != nil {
+					return "", err
+				}
+				return "done: " + aiToolName(act), nil
+			},
+		})
+	}
+	return tools
 }
 
 // evalAICondition answers an Ask-AI branch node's yes/no question about the
@@ -309,21 +583,22 @@ func (s *service) noteAICreditFailure(ctx context.Context, a models.Automation) 
 // buildAIPrompt builds the system + user prompt for one AI node. The event data
 // (minus internal keys) is included so the model can read the fields the
 // instruction references.
-func buildAIPrompt(action models.IntegrationAction, cfg aiActionConfig, instruction string, data map[string]any) (system, prompt string) {
+func buildAIPrompt(mode string, cfg aiActionConfig, instruction string, data map[string]any) (system, prompt string) {
 	eventCtx := fencedEventContext(data)
-	switch action {
-	case models.IntegrationActionAIClassify:
+	switch mode {
+	case aiModeClassify:
 		labels := nonEmptyStrings(cfg.Labels)
 		system = "You label an automation event. Follow the instruction, read the event data, and reply with EXACTLY one of these labels and nothing else: " + strings.Join(labels, ", ") + "." + aiEventGuard
-		prompt = "Instruction: " + instruction + "\n\nEvent data:\n" + eventCtx
-	case models.IntegrationActionAIExtract:
+	case aiModeExtract:
 		keys := nonEmptyStrings(cfg.OutputKeys)
 		system = "You extract structured fields from an automation event. Reply with ONLY a JSON object whose keys are exactly: " + strings.Join(keys, ", ") + ". Each value must be a string; use an empty string when the field is not present. No prose, no code fences." + aiEventGuard
-		prompt = "Instruction: " + instruction + "\n\nEvent data:\n" + eventCtx
-	default: // ai_generate
+	case aiModeDecide:
+		cases := nonEmptyStrings(cfg.Cases)
+		system = "You route an automation event. Follow the instruction, read the event data, and reply with EXACTLY one of these cases and nothing else: " + strings.Join(cases, ", ") + "." + aiEventGuard
+	default: // generate
 		system = "You write short, useful text for an automation step based on the instruction and event data. Reply with only the text, no preamble, no quotes." + aiEventGuard
-		prompt = "Instruction: " + instruction + "\n\nEvent data:\n" + eventCtx
 	}
+	prompt = "Instruction: " + instruction + "\n\nEvent data:\n" + eventCtx
 	return system, prompt
 }
 
@@ -378,37 +653,43 @@ func aiEventContext(data map[string]any) string {
 // can branch on it.
 func mergeAIOutput(action models.IntegrationAction, cfg aiActionConfig, text string, data map[string]any) {
 	text = strings.TrimSpace(text)
-	switch action {
-	case models.IntegrationActionAIClassify:
+	switch resolveMode(action, cfg) {
+	case aiModeClassify:
 		data[classifyOutputKey(cfg)] = matchLabel(text, nonEmptyStrings(cfg.Labels))
-	case models.IntegrationActionAIExtract:
+	case aiModeExtract:
 		vals := parseExtractJSON(text)
 		for _, k := range nonEmptyStrings(cfg.OutputKeys) {
 			data[k] = truncate(valueString(vals[k]), 2000)
 		}
-	default: // ai_generate
+	case aiModeDecide:
+		data[decideOutputKey(action, cfg)] = matchLabel(text, nonEmptyStrings(cfg.Cases))
+	default: // generate
 		data[generateOutputKey(cfg)] = text
 	}
 }
 
 // aiOutputKeys names the variables an AI node writes, for the run-history preview.
 func aiOutputKeys(action models.IntegrationAction, cfg aiActionConfig) []string {
-	switch action {
-	case models.IntegrationActionAIClassify:
+	switch resolveMode(action, cfg) {
+	case aiModeClassify:
 		return []string{classifyOutputKey(cfg)}
-	case models.IntegrationActionAIExtract:
+	case aiModeExtract:
 		return nonEmptyStrings(cfg.OutputKeys)
+	case aiModeDecide:
+		return []string{decideOutputKey(action, cfg)}
+	case aiModeAgent:
+		return []string{agentOutputKey(cfg)}
 	default:
 		return []string{generateOutputKey(cfg)}
 	}
 }
 
-// aiTemperature pins classify/extract to deterministic sampling (stable label /
-// structured output); generate keeps the provider default so writing stays
-// natural.
-func aiTemperature(a models.IntegrationAction) *float64 {
-	switch a {
-	case models.IntegrationActionAIClassify, models.IntegrationActionAIExtract:
+// aiTemperature pins classify/extract/decide to deterministic sampling (stable
+// label / structured output / stable routing); generate keeps the provider
+// default so writing stays natural.
+func aiTemperature(mode string) *float64 {
+	switch mode {
+	case aiModeClassify, aiModeExtract, aiModeDecide:
 		return generation.Deterministic()
 	default:
 		return nil
