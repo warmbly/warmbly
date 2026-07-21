@@ -92,6 +92,12 @@ sandbox:
 	@command -v docker >/dev/null || { echo "docker is required: https://docs.docker.com/get-docker/"; exit 1; }
 	@command -v go >/dev/null || { echo "go 1.25+ is required: https://go.dev/dl/"; exit 1; }
 	@command -v pnpm >/dev/null || { echo "pnpm is required: https://pnpm.io/installation"; exit 1; }
+	@if command -v lsof >/dev/null 2>&1 && lsof -nP -iTCP:8080 -sTCP:LISTEN >/dev/null 2>&1; then \
+		echo "Port 8080 is already in use, so the sandbox backend (with your AI_PROVIDER env) can't start."; \
+		echo "A previous backend is probably still running. Free the port, then re-run:"; \
+		echo "    lsof -ti:8080 | xargs kill"; \
+		exit 1; \
+	fi
 	$(COMPOSE) up -d $(SANDBOX_SVCS)
 	@echo "Waiting for infra (postgres, redis, nats, mailpit, dovecot)..."
 	@until $(COMPOSE) exec -T postgres pg_isready -U warmbly >/dev/null 2>&1; do sleep 1; done
@@ -390,7 +396,7 @@ endif
 # Local no-cloud dev key (base64 32 bytes). Dev-only; a real deployment sets its
 # own KMS_LOCAL_MASTER_KEY (see `make gen-key`). Losing it makes sealed mailbox
 # credentials unrecoverable.
-KMS_KEY_DEV := L0K8Q0mQ2wq6b1n8H3xO5r7t9v2y4A6D8F1J3M5P7A=
+KMS_KEY_DEV := Xr0JA7gqF2POy29a7MRByyqddivTNt8WOyKsOXklazk=
 # Shared local blob dir for the filesystem storage provider (backend + worker
 # run natively on the same host, so they share this path).
 BLOB_FS_ROOT_DEV := /tmp/warmbly-blobs
