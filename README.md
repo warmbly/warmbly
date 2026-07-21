@@ -54,7 +54,7 @@ Everything a sending team needs sits in one dashboard:
 - **The unified inbox** pulls every connected mailbox and its replies into one view.
 - **A built-in CRM** tracks contacts, pipelines, deals, tasks, and meetings.
 - **Deliverability** surfaces bounces, complaints, suppression, and inbox placement.
-- **Automations** run branching reply playbooks on a visual canvas.
+- **Automations** run branching reply playbooks on a visual canvas, with AI steps that read a reply and act on it.
 - **Integrations** sync the CRM and automations out to HubSpot, Slack, and more.
 - **Warmup** builds real sender reputation through our pool, covered next.
 
