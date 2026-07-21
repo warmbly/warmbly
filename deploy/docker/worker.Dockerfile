@@ -2,9 +2,11 @@
 #
 # CGO-free by default (NATS + JSON). Build with --build-arg GO_TAGS=kafka to
 # include the Kafka backend (adds librdkafka + CGO). See backend.Dockerfile.
-FROM golang:1.25-alpine AS builder
+# Builder runs on $BUILDPLATFORM and cross-compiles to $TARGETARCH (no QEMU).
+FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS builder
 
 ARG GO_TAGS=""
+ARG TARGETOS TARGETARCH
 RUN apk add --no-cache git ca-certificates && \
     if echo "$GO_TAGS" | grep -qw kafka; then apk add --no-cache gcc musl-dev librdkafka-dev; fi
 
@@ -17,7 +19,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     set -eux; \
     if echo "$GO_TAGS" | grep -qw kafka; then CGO=1; TAGS="musl kafka"; else CGO=0; TAGS=""; fi; \
-    CGO_ENABLED=$CGO GOOS=linux go build -tags "$TAGS" -ldflags="-s -w" -o /out/worker ./cmd/worker
+    CGO_ENABLED=$CGO GOOS=$TARGETOS GOARCH=$TARGETARCH go build -tags "$TAGS" -ldflags="-s -w" -o /out/worker ./cmd/worker
 
 # Runtime stage
 FROM alpine:3.23
