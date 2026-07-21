@@ -54,24 +54,35 @@ func seedLabels(ctx context.Context, pool *pgxpool.Pool) error {
 		}
 	}
 
-	// Mailbox tags: the launch senders are VIP, the agency sender is Agency,
-	// the rest Cold, so tag-based sender selection has something to select.
-	mailboxTags := []struct {
-		mailbox uuid.UUID
-		tag     uuid.UUID
-	}{
-		{sandboxMailboxes[0].id, sbxTagVIP},
-		{sandboxMailboxes[1].id, sbxTagVIP},
-		{sandboxMailboxes[2].id, sbxTagAgency},
-		{sandboxMailboxes[3].id, sbxTagCold},
-		{sandboxMailboxes[4].id, sbxTagCold},
-		{sandboxMailboxes[5].id, sbxTagCold},
-	}
-	for _, mt := range mailboxTags {
+	// Mailbox tags: every sender gets one so tag-based selection and the list
+	// chips have data everywhere. First third VIP (launch senders), next third
+	// Agency, the rest Cold; a couple carry a second tag for realism.
+	for i, m := range sandboxMailboxes {
+		tag := sbxTagCold
+		switch {
+		case i < len(sandboxMailboxes)/3:
+			tag = sbxTagVIP
+		case i < 2*len(sandboxMailboxes)/3:
+			tag = sbxTagAgency
+		}
 		if _, err := pool.Exec(ctx, `
 			INSERT INTO email_tags (email_id, tag_id) VALUES ($1,$2)
 			ON CONFLICT DO NOTHING
-		`, mt.mailbox, mt.tag); err != nil {
+		`, m.id, tag); err != nil {
+			return fmt.Errorf("email tag: %w", err)
+		}
+	}
+	for _, dual := range []struct {
+		mailbox uuid.UUID
+		tag     uuid.UUID
+	}{
+		{sandboxMailboxes[0].id, sbxTagAgency},
+		{sandboxMailboxes[7].id, sbxTagVIP},
+	} {
+		if _, err := pool.Exec(ctx, `
+			INSERT INTO email_tags (email_id, tag_id) VALUES ($1,$2)
+			ON CONFLICT DO NOTHING
+		`, dual.mailbox, dual.tag); err != nil {
 			return fmt.Errorf("email tag: %w", err)
 		}
 	}

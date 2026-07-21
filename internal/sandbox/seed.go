@@ -43,16 +43,112 @@ type mailboxSeed struct {
 	id    uuid.UUID
 	email string
 	name  string
+	title string
 }
 
 // sandboxMailboxes are the org's senders, all hosted on the local dovecot.
+// 20 of them: the dashboard's warmup-coverage notice considers a pool healthy
+// at 20+ warming mailboxes, and the Pro plan allows exactly 20 accounts.
 var sandboxMailboxes = []mailboxSeed{
-	{uuid.MustParse("33333333-aaaa-0000-0000-000000000001"), "sarah.lin@sunrise.test", "Sarah Lin"},
-	{uuid.MustParse("33333333-aaaa-0000-0000-000000000002"), "marcus.reid@sunrise.test", "Marcus Reid"},
-	{uuid.MustParse("33333333-aaaa-0000-0000-000000000003"), "priya.nair@sunrise.test", "Priya Nair"},
-	{uuid.MustParse("33333333-aaaa-0000-0000-000000000004"), "tom.abel@sunrise.test", "Tom Abel"},
-	{uuid.MustParse("33333333-aaaa-0000-0000-000000000005"), "elena.voss@sunrise.test", "Elena Voss"},
-	{uuid.MustParse("33333333-aaaa-0000-0000-000000000006"), "dan.okafor@sunrise.test", "Dan Okafor"},
+	{uuid.MustParse("33333333-aaaa-0000-0000-000000000001"), "sarah.lin@sunrise.test", "Sarah Lin", "Head of Growth"},
+	{uuid.MustParse("33333333-aaaa-0000-0000-000000000002"), "marcus.reid@sunrise.test", "Marcus Reid", "Founder"},
+	{uuid.MustParse("33333333-aaaa-0000-0000-000000000003"), "priya.nair@sunrise.test", "Priya Nair", "Partnerships Lead"},
+	{uuid.MustParse("33333333-aaaa-0000-0000-000000000004"), "tom.abel@sunrise.test", "Tom Abel", "Account Executive"},
+	{uuid.MustParse("33333333-aaaa-0000-0000-000000000005"), "elena.voss@sunrise.test", "Elena Voss", "SDR"},
+	{uuid.MustParse("33333333-aaaa-0000-0000-000000000006"), "dan.okafor@sunrise.test", "Dan Okafor", "SDR"},
+	{uuid.MustParse("33333333-aaaa-0000-0000-000000000007"), "mei.tanaka@sunrise.test", "Mei Tanaka", "Account Executive"},
+	{uuid.MustParse("33333333-aaaa-0000-0000-000000000008"), "lucas.ferro@sunrise.test", "Lucas Ferro", "SDR"},
+	{uuid.MustParse("33333333-aaaa-0000-0000-000000000009"), "ana.duarte@sunrise.test", "Ana Duarte", "Customer Success"},
+	{uuid.MustParse("33333333-aaaa-0000-0000-00000000000a"), "victor.hsu@sunrise.test", "Victor Hsu", "Sales Manager"},
+	{uuid.MustParse("33333333-aaaa-0000-0000-00000000000b"), "nadia.eriksen@sunrise.test", "Nadia Eriksen", "SDR"},
+	{uuid.MustParse("33333333-aaaa-0000-0000-00000000000c"), "omar.haddad@sunrise.test", "Omar Haddad", "Account Executive"},
+	{uuid.MustParse("33333333-aaaa-0000-0000-00000000000d"), "claire.dubois@sunrise.test", "Claire Dubois", "Partnerships"},
+	{uuid.MustParse("33333333-aaaa-0000-0000-00000000000e"), "jonas.weber@sunrise.test", "Jonas Weber", "SDR"},
+	{uuid.MustParse("33333333-aaaa-0000-0000-00000000000f"), "ines.moreau@sunrise.test", "Ines Moreau", "Growth"},
+	{uuid.MustParse("33333333-aaaa-0000-0000-000000000010"), "ravi.menon@sunrise.test", "Ravi Menon", "Account Executive"},
+	{uuid.MustParse("33333333-aaaa-0000-0000-000000000011"), "sofia.petrov@sunrise.test", "Sofia Petrov", "SDR"},
+	{uuid.MustParse("33333333-aaaa-0000-0000-000000000012"), "liam.walsh@sunrise.test", "Liam Walsh", "SDR"},
+	{uuid.MustParse("33333333-aaaa-0000-0000-000000000013"), "yuki.sato@sunrise.test", "Yuki Sato", "Customer Success"},
+	{uuid.MustParse("33333333-aaaa-0000-0000-000000000014"), "erik.lund@sunrise.test", "Erik Lund", "Sales Manager"},
+}
+
+// mailboxProfile places a sender at a specific point in the warmup lifecycle
+// so the accounts list reads like a real, aged fleet rather than twenty
+// identical rows. Volumes feed warmup_statistics / daily_email_counts so the
+// numbers the dashboard computes (current/target, health, usage) line up.
+type mailboxProfile struct {
+	warmupDaysAgo int // days since warmup was enabled
+	warmupBase    int
+	warmupInc     int
+	warmupMax     int
+	paused        bool
+	healthState   string
+	healthScore   int
+	spamScore     int
+	campaignToday int // today's cold sends (daily_email_counts)
+	accountAge    int // created_at, days ago
+}
+
+// profileFor maps a roster index onto a lifecycle cohort:
+//
+//	0-5   graduated: ramp finished weeks ago, holding max warmup volume and
+//	      carrying full (~50/day) cold sending
+//	6-13  mid-ramp: 5-16 days in, climbing
+//	14-16 fresh: connected days ago, first ramp steps
+//	17    late-ramp (Liam) — NOT paused: the coverage notice wants 20 warming
+//	18    watch: reduced health, an open provider warning (Yuki)
+//	19    graduated veteran (Erik)
+func profileFor(i int) mailboxProfile {
+	switch {
+	case i < 6:
+		return mailboxProfile{
+			warmupDaysAgo: 45 + i*3, warmupBase: 10, warmupInc: 1, warmupMax: 40 + (i%3)*5,
+			healthState: "healthy", healthScore: 93 + i%6, spamScore: i % 3,
+			campaignToday: 45 + (i*3)%11, accountAge: 60 + i*4,
+		}
+	case i < 14:
+		return mailboxProfile{
+			warmupDaysAgo: 5 + (i - 6) + (i % 3), warmupBase: 10, warmupInc: 2, warmupMax: 40,
+			healthState: "healthy", healthScore: 84 + (i*7)%12, spamScore: (i * 3) % 6,
+			campaignToday: 14 + (i*5)%17, accountAge: 25 + i,
+		}
+	case i < 17:
+		return mailboxProfile{
+			warmupDaysAgo: i - 13, warmupBase: 10, warmupInc: 2, warmupMax: 40,
+			healthState: "healthy", healthScore: 80 + (i*5)%9, spamScore: 0,
+			campaignToday: 4 + i%5, accountAge: 4 + (i - 13),
+		}
+	case i == 17:
+		return mailboxProfile{
+			warmupDaysAgo: 12, warmupBase: 10, warmupInc: 2, warmupMax: 40,
+			healthState: "healthy", healthScore: 88, spamScore: 1,
+			campaignToday: 18, accountAge: 30,
+		}
+	case i == 18:
+		return mailboxProfile{
+			warmupDaysAgo: 9, warmupBase: 10, warmupInc: 2, warmupMax: 40,
+			healthState: "watch", healthScore: 62, spamScore: 14,
+			campaignToday: 6, accountAge: 28,
+		}
+	default:
+		return mailboxProfile{
+			warmupDaysAgo: 50, warmupBase: 10, warmupInc: 1, warmupMax: 50,
+			healthState: "healthy", healthScore: 90, spamScore: 2,
+			campaignToday: 48, accountAge: 70,
+		}
+	}
+}
+
+// signaturePlain / signatureHTML build each sender's signature; every sandbox
+// mailbox ships configured with one so composer and sent mail look real.
+func signaturePlain(m mailboxSeed) string {
+	return fmt.Sprintf("--\n%s\n%s, Sunrise Labs\nhttps://sunrise.test", m.name, m.title)
+}
+
+func signatureHTML(m mailboxSeed) string {
+	return fmt.Sprintf(
+		`<p>--<br>%s<br>%s, Sunrise Labs<br><a href="https://sunrise.test">sunrise.test</a></p>`,
+		m.name, m.title)
 }
 
 type contactSeed struct {
@@ -60,7 +156,7 @@ type contactSeed struct {
 	subscribed                  bool
 }
 
-// Launch-campaign prospects. Two are unsubscribed so suppression shows up.
+// Launch-campaign prospects. Three are unsubscribed so suppression shows up.
 var launchContacts = []contactSeed{
 	{"Aiden", "Park", "aiden.park@northwind.test", "Northwind", true},
 	{"Beth", "Chen", "beth.chen@initech.test", "Initech", true},
@@ -86,6 +182,30 @@ var launchContacts = []contactSeed{
 	{"Vera", "Xu", "vera.xu@virtucon.test", "Virtucon", true},
 	{"Wes", "York", "wes.york@octan.test", "Octan", true},
 	{"Xena", "Zair", "xena.zair@gringotts.test", "Gringotts", true},
+	{"Yara", "Aziz", "yara.aziz@ingen.test", "InGen", true},
+	{"Zack", "Bram", "zack.bram@weyland.test", "Weyland", true},
+	{"Alba", "Cruz", "alba.cruz@nakatomi.test", "Nakatomi", true},
+	{"Bruno", "Dias", "bruno.dias@oscorp.test", "Oscorp", true},
+	{"Carmen", "Egan", "carmen.egan@rekall.test", "Rekall", true},
+	{"Dario", "Finn", "dario.finn@omni.test", "Omni Consumer", true},
+	{"Edda", "Grieg", "edda.grieg@lexcorp.test", "LexCorp", false},
+	{"Frans", "Holt", "frans.holt@zorg.test", "Zorg Industries", true},
+	{"Greta", "Isak", "greta.isak@wallace.test", "Wallace Corp", true},
+	{"Henrik", "Juul", "henrik.juul@abstergo.test", "Abstergo", true},
+	{"Ida", "Krog", "ida.krog@aviato.test", "Aviato", true},
+	{"Jesper", "Lie", "jesper.lie@bluthco.test", "Bluth Company", true},
+	{"Katya", "Moro", "katya.moro@sterling.test", "Sterling Cooper", true},
+	{"Lars", "Nye", "lars.nye@paperstreet.test", "Paper Street", true},
+	{"Mona", "Odum", "mona.odum@ewing.test", "Ewing Oil", true},
+	{"Noor", "Patel", "noor.patel@genco.test", "Genco", true},
+	{"Otto", "Qvist", "otto.qvist@duff.test", "Duff Beverages", true},
+	{"Petra", "Rask", "petra.rask@vehement.test", "Vehement Capital", true},
+	{"Rasmus", "Skov", "rasmus.skov@hudsucker.test", "Hudsucker", true},
+	{"Selma", "Toft", "selma.toft@wernham.test", "Wernham Hogg", true},
+	{"Teo", "Urso", "teo.urso@pearson.test", "Pearson Hardman", true},
+	{"Uma", "Vang", "uma.vang@compuglobal.test", "CompuGlobal", true},
+	{"Viggo", "Wren", "viggo.wren@initrode.test", "Initrode", true},
+	{"Wanda", "Yee", "wanda.yee@chotchkies.test", "Chotchkies", true},
 }
 
 // Agency-campaign prospects.
@@ -102,6 +222,18 @@ var agencyContacts = []contactSeed{
 	{"Jonas", "Kemp", "jonas.kemp@quotaquest.test", "Quotaquest", true},
 	{"Kira", "Lowe", "kira.lowe@demodesk.test", "Demodesk Partners", true},
 	{"Liam", "Moss", "liam.moss@sequoialeads.test", "Sequoia Leads", true},
+	{"Mara", "Nunn", "mara.nunn@scaledup.test", "ScaledUp", true},
+	{"Noah", "Orr", "noah.orr@leadloft.test", "Leadloft", true},
+	{"Opal", "Pryce", "opal.pryce@bookedcal.test", "BookedCal", true},
+	{"Pier", "Quon", "pier.quon@outflow.test", "Outflow Media", true},
+	{"Rhea", "Sand", "rhea.sand@prospectiv.test", "Prospectiv", true},
+	{"Silas", "Thorn", "silas.thorn@dialedin.test", "DialedIn", true},
+	{"Tess", "Ulm", "tess.ulm@warmintro.test", "Warm Intro Co", true},
+	{"Umi", "Vex", "umi.vex@replyforge.test", "Replyforge", true},
+	{"Vito", "Wynn", "vito.wynn@growthkit.test", "Growthkit", true},
+	{"Willa", "Young", "willa.young@pipestack.test", "Pipestack", true},
+	{"Xavi", "Zorn", "xavi.zorn@closerscrm.test", "Closers CRM", true},
+	{"Yuna", "Ash", "yuna.ash@bookmore.test", "Bookmore", true},
 }
 
 // Seed provisions the sandbox: the full internal/seed fixture (plans, demo
@@ -166,7 +298,7 @@ func Seed(ctx context.Context, pool *pgxpool.Pool, cfg Config) error {
 
 	fmt.Println("sandbox seeded:")
 	fmt.Printf("  dashboard  %s / %s (org: Sunrise Labs)\n", SandboxLoginEmail, SandboxLoginPassword)
-	fmt.Printf("  mailboxes  %d senders on @sunrise.test (SMTP -> mailpit, IMAP -> dovecot)\n", len(sandboxMailboxes))
+	fmt.Printf("  mailboxes  %d senders on @sunrise.test (SMTP -> mailpit, IMAP -> dovecot), signatures + tags on all\n", len(sandboxMailboxes))
 	fmt.Println("  campaigns  active, paused, completed, and draft - every list bucket filled")
 	fmt.Println("  warmup     enabled on all senders, premium pool, 10 days of ramp stats")
 	fmt.Println("  history    funnel progress, unified inbox, CRM pipeline, templates, notifications, chart rollups")
@@ -196,7 +328,7 @@ func seedCredits(ctx context.Context, pool *pgxpool.Pool) error {
 			total_purchased = EXCLUDED.total_purchased,
 			month_reset_at = NOW(),
 			updated_at = NOW()`,
-		sandboxOrg, seed.PlanStarterID, sandboxTopupCredits); err != nil {
+		sandboxOrg, seed.PlanProMonthlyID, sandboxTopupCredits); err != nil {
 		return fmt.Errorf("credit ledger: %w", err)
 	}
 	if _, err := pool.Exec(ctx, `
@@ -205,7 +337,7 @@ func seedCredits(ctx context.Context, pool *pgxpool.Pool) error {
 		SELECT $1, p.monthly_credits, 'monthly_reset', p.monthly_credits, 0, 0, 'sandbox-monthly-grant'
 		FROM plans p WHERE p.id = $2
 		ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING`,
-		sandboxOrg, seed.PlanStarterID); err != nil {
+		sandboxOrg, seed.PlanProMonthlyID); err != nil {
 		return fmt.Errorf("credit grant txn: %w", err)
 	}
 	if _, err := pool.Exec(ctx, `
@@ -214,7 +346,7 @@ func seedCredits(ctx context.Context, pool *pgxpool.Pool) error {
 		SELECT $1, $2, 'credit_topup', p.monthly_credits, $2, $2, 'sandbox-topup'
 		FROM plans p WHERE p.id = $3
 		ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING`,
-		sandboxOrg, sandboxTopupCredits, seed.PlanStarterID); err != nil {
+		sandboxOrg, sandboxTopupCredits, seed.PlanProMonthlyID); err != nil {
 		return fmt.Errorf("credit topup txn: %w", err)
 	}
 	return nil
@@ -276,41 +408,92 @@ func seedWorker(ctx context.Context, pool *pgxpool.Pool) error {
 }
 
 func seedMailboxes(ctx context.Context, pool *pgxpool.Pool) error {
-	for _, m := range sandboxMailboxes {
-		// Warmup started 10 days ago so ramp progression is mid-flight; the
-		// send window is wide open and pacing is demo-friendly (90s min gap).
+	// The free/premium warmup pool rows: nothing else creates them (no
+	// migration seeds warmup_pools and the app only joins existing pools), so
+	// without this the participant insert below is a silent no-op and warmup
+	// partner selection has an empty pool.
+	for _, wp := range []struct {
+		id       string
+		poolType string
+		name     string
+	}{
+		{"77777777-aaaa-0000-0000-000000000001", "free", "Free warmup pool"},
+		{"77777777-aaaa-0000-0000-000000000002", "premium", "Premium warmup pool"},
+	} {
+		if _, err := pool.Exec(ctx, `
+			INSERT INTO warmup_pools (id, pool_type, name, description, max_participants)
+			VALUES ($1, $2::warmup_pool_type, $3, 'Seeded by the sandbox', 1000)
+			ON CONFLICT (id) DO NOTHING`,
+			uuid.MustParse(wp.id), wp.poolType, wp.name); err != nil {
+			return fmt.Errorf("warmup pool %s: %w", wp.poolType, err)
+		}
+	}
+
+	for i, m := range sandboxMailboxes {
+		// Each mailbox sits at its cohort's lifecycle point (see profileFor).
+		// The send window starts at 00:01, NOT 00:00: the scheduler treats a
+		// 00:00 start as unset and defaults the next day's first slot to 8am,
+		// which would idle the demo overnight. created_at is backdated so
+		// accounts read as established senders.
+		p := profileFor(i)
+		replyRate := 30 + (i%3)*8
 		if _, err := pool.Exec(ctx, `
 			INSERT INTO email_accounts (
 				id, user_id, organization_id, worker_id,
 				email, name, signature_plain, signature_html,
 				provider, status,
 				campaign_limit, min_wait_time, timezone,
-				warmup, warmup_tag, warmup_pool_type,
-				warmup_start_time, warmup_end_time
+				warmup, warmup_tag, warmup_pool_type, warmup_reply_rate,
+				warmup_base, warmup_increase, warmup_max,
+				warmup_start_time, warmup_end_time, warmup_paused_at,
+				created_at
 			) VALUES (
 				$1, $2, $3, $4,
-				$5, $6, '', '',
+				$5, $6, $7, $8,
 				'smtp_imap', 'active',
-				100, 90, 'UTC',
-				NOW() - INTERVAL '10 days', 'sandbox', 'premium',
-				'00:00', '23:59'
+				100, 45, 'UTC',
+				NOW() - make_interval(days => $9), 'sandbox', 'premium', $10,
+				$11, $12, $13,
+				'00:01', '23:59', CASE WHEN $14 THEN NOW() - INTERVAL '2 days' END,
+				NOW() - make_interval(days => $15)
 			)
 			ON CONFLICT (id) DO UPDATE SET
 				worker_id = EXCLUDED.worker_id,
 				status = 'active',
+				signature_plain = EXCLUDED.signature_plain,
+				signature_html = EXCLUDED.signature_html,
 				campaign_limit = EXCLUDED.campaign_limit,
 				min_wait_time = EXCLUDED.min_wait_time,
-				warmup = COALESCE(email_accounts.warmup, EXCLUDED.warmup),
-				warmup_paused_at = NULL,
+				warmup = EXCLUDED.warmup,
+				warmup_reply_rate = EXCLUDED.warmup_reply_rate,
+				warmup_base = EXCLUDED.warmup_base,
+				warmup_increase = EXCLUDED.warmup_increase,
+				warmup_max = EXCLUDED.warmup_max,
+				warmup_start_time = EXCLUDED.warmup_start_time,
+				warmup_end_time = EXCLUDED.warmup_end_time,
+				warmup_paused_at = EXCLUDED.warmup_paused_at,
+				created_at = EXCLUDED.created_at,
 				updated_at = NOW()`,
-			m.id, sandboxUser, sandboxOrg, sandboxWorker, m.email, m.name); err != nil {
+			m.id, sandboxUser, sandboxOrg, sandboxWorker, m.email, m.name,
+			signaturePlain(m), signatureHTML(m), p.warmupDaysAgo, replyRate,
+			p.warmupBase, p.warmupInc, p.warmupMax, p.paused, p.accountAge); err != nil {
 			return fmt.Errorf("mailbox %s: %w", m.email, err)
 		}
+		// Pool membership with the cohort's evaluated health record, so the
+		// health column shows a believable spread instead of zeros.
 		if _, err := pool.Exec(ctx, `
-			INSERT INTO warmup_pool_participants (pool_id, email_account_id)
-			SELECT id, $1 FROM warmup_pools WHERE pool_type = 'premium'::warmup_pool_type
-			ON CONFLICT DO NOTHING`,
-			m.id); err != nil {
+			INSERT INTO warmup_pool_participants
+				(pool_id, email_account_id, health_state, last_health_score, spam_score, last_health_evaluated_at)
+			SELECT id, $1, $2, $3, $4, NOW()
+			FROM warmup_pools WHERE pool_type = 'premium'::warmup_pool_type
+			ON CONFLICT (pool_id, email_account_id) DO UPDATE SET
+				health_state = EXCLUDED.health_state,
+				last_health_score = EXCLUDED.last_health_score,
+				spam_score = EXCLUDED.spam_score,
+				last_health_evaluated_at = NOW(),
+				blocked_at = NULL,
+				blocked_until = NULL`,
+			m.id, p.healthState, p.healthScore, p.spamScore); err != nil {
 			return fmt.Errorf("pool join %s: %w", m.email, err)
 		}
 	}
@@ -326,7 +509,7 @@ func seedSubscription(ctx context.Context, pool *pgxpool.Pool) error {
 			is_enterprise, created_at, updated_at
 		) VALUES (
 			$1, $2, $3, $4,
-			'cus_sandbox', 'sub_sandbox_starter', 'price_sandbox_starter',
+			'cus_sandbox', 'sub_sandbox_pro', 'price_sandbox_pro',
 			'active', NOW(), NOW() + INTERVAL '30 days',
 			FALSE, NOW(), NOW()
 		)
@@ -334,10 +517,11 @@ func seedSubscription(ctx context.Context, pool *pgxpool.Pool) error {
 			plan_id = EXCLUDED.plan_id,
 			status = 'active',
 			stripe_subscription_id = EXCLUDED.stripe_subscription_id,
+			stripe_price_id = EXCLUDED.stripe_price_id,
 			current_period_start = EXCLUDED.current_period_start,
 			current_period_end = EXCLUDED.current_period_end,
 			updated_at = NOW()`,
-		sandboxSub, sandboxUser, sandboxOrg, seed.PlanStarterID)
+		sandboxSub, sandboxUser, sandboxOrg, seed.PlanProMonthlyID)
 	return err
 }
 
@@ -349,6 +533,8 @@ type campaignSeed struct {
 	contacts []contactSeed
 	// contactBase is the deterministic UUID prefix for this campaign's contacts.
 	contactBase string
+	// ageDays backdates created_at so the campaign reads as an established run.
+	ageDays int
 }
 
 type stepSeed struct {
@@ -363,8 +549,8 @@ func seedCampaigns(ctx context.Context, pool *pgxpool.Pool) error {
 	campaigns := []campaignSeed{
 		{
 			id: campaignLaunch, name: "Sunrise Q3 launch outreach", status: "active",
-			contactBase: "66666666-aaaa-0000-0001",
-			contacts:    launchContacts,
+			contactBase: "66666666-aaaa-0000-0001", ageDays: 21,
+			contacts: launchContacts,
 			steps: []stepSeed{
 				{uuid.MustParse("55555555-aaaa-0000-0000-000000000011"), "Intro",
 					"Quick question about {{.Company}}",
@@ -379,8 +565,8 @@ func seedCampaigns(ctx context.Context, pool *pgxpool.Pool) error {
 		},
 		{
 			id: campaignAgency, name: "Agency partnerships", status: "active",
-			contactBase: "66666666-aaaa-0000-0002",
-			contacts:    agencyContacts,
+			contactBase: "66666666-aaaa-0000-0002", ageDays: 18,
+			contacts: agencyContacts,
 			steps: []stepSeed{
 				{uuid.MustParse("55555555-aaaa-0000-0000-000000000021"), "Partner intro",
 					"Partnering with {{.Company}}",
@@ -392,7 +578,7 @@ func seedCampaigns(ctx context.Context, pool *pgxpool.Pool) error {
 		},
 		{
 			id: campaignDormant, name: "Dormant accounts reactivation", status: "draft",
-			contactBase: "66666666-aaaa-0000-0003",
+			contactBase: "66666666-aaaa-0000-0003", ageDays: 5,
 			steps: []stepSeed{
 				{uuid.MustParse("55555555-aaaa-0000-0000-000000000031"), "Win-back",
 					"We miss you at {{.Company}}",
@@ -404,6 +590,7 @@ func seedCampaigns(ctx context.Context, pool *pgxpool.Pool) error {
 	for _, c := range campaigns {
 		// Wide-open schedule (all days, 00:00-23:59) so the demo sends now,
 		// not at the next business-hours boundary. Tracking on for both.
+		// created_at is backdated so the campaign reads as an established run.
 		if _, err := pool.Exec(ctx, `
 			INSERT INTO campaigns (
 				id, user_id, organization_id, name, description,
@@ -414,27 +601,57 @@ func seedCampaigns(ctx context.Context, pool *pgxpool.Pool) error {
 				$1, $2, $3, $4, 'Sandbox showcase campaign',
 				$5, 127, '00:00', '23:59', 'UTC',
 				TRUE, TRUE,
-				NOW(), NOW()
+				NOW(), NOW() - make_interval(days => $6)
 			)
 			ON CONFLICT (id) DO UPDATE SET
 				status = EXCLUDED.status,
 				days = EXCLUDED.days,
 				start_time = EXCLUDED.start_time,
 				end_time = EXCLUDED.end_time,
+				created_at = EXCLUDED.created_at,
 				updated_at = NOW()`,
-			c.id, sandboxUser, sandboxOrg, c.name, c.status); err != nil {
+			c.id, sandboxUser, sandboxOrg, c.name, c.status, c.ageDays); err != nil {
 			return fmt.Errorf("campaign %s: %w", c.name, err)
 		}
 
 		for i, s := range c.steps {
+			// Steps are only reachable through explicit branch connections
+			// (there is NO implicit advance-by-position in the scheduler), so
+			// every non-final step carries an unconditional branch to the next
+			// one. Without this the campaign "completes" after step 1.
+			conditions := `{"branches":[]}` // final step: no route out = STOP
+			if i+1 < len(c.steps) {
+				conditions = fmt.Sprintf(`{"branches":[{"branch_id":"sbx-%s-%d","target_step_id":"%s"}]}`,
+					c.id.String()[:8], i, c.steps[i+1].id)
+			}
 			if _, err := pool.Exec(ctx, `
 				INSERT INTO sequences (
 					id, campaign_id, organization_id, name, subject,
-					body_plain, body_html, wait_after, position
-				) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-				ON CONFLICT (id) DO NOTHING`,
-				s.id, c.id, sandboxOrg, s.name, s.subject, s.body, plainToHTML(s.body), s.waitAfter, i); err != nil {
+					body_plain, body_html, wait_after, position, conditions
+				) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+				ON CONFLICT (id) DO UPDATE SET
+					subject = EXCLUDED.subject,
+					body_plain = EXCLUDED.body_plain,
+					body_html = EXCLUDED.body_html,
+					wait_after = EXCLUDED.wait_after,
+					position = EXCLUDED.position,
+					conditions = EXCLUDED.conditions`,
+				s.id, c.id, sandboxOrg, s.name, s.subject, s.body, plainToHTML(s.body), s.waitAfter, i, conditions); err != nil {
 				return fmt.Errorf("sequence %s: %w", s.name, err)
+			}
+		}
+
+		// Explicit sender pool: every sandbox mailbox rotates through the
+		// active campaigns (drives the rotation UI and in_campaign detection).
+		if c.status == "active" {
+			for pos, m := range sandboxMailboxes {
+				if _, err := pool.Exec(ctx, `
+					INSERT INTO campaign_senders (campaign_id, email_account_id, weight, rotation_position, enabled)
+					VALUES ($1, $2, 1, $3, TRUE)
+					ON CONFLICT (campaign_id, email_account_id) DO UPDATE SET enabled = TRUE`,
+					c.id, m.id, pos); err != nil {
+					return fmt.Errorf("campaign sender %s: %w", m.email, err)
+				}
 			}
 		}
 

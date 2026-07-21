@@ -21,7 +21,7 @@ Then sign in at `http://localhost:5173`:
 |-------|-------|
 | Email | `sandbox@warmbly.test` |
 | Password | `password123` |
-| Organization | Sunrise Labs (Starter plan) |
+| Organization | Sunrise Labs (Pro plan) |
 
 The dashboard is already full from the seeded history. Live activity starts shortly after: watch the `make sandbox` output for a running feed of `delivered` / `opened` / `clicked` / `replied` lines, and Mailpit at `http://localhost:18025` for every message on the wire.
 
@@ -35,10 +35,10 @@ Two other entry points:
 `make sandbox-seed` is idempotent and safe to re-run. It provisions:
 
 - the full `internal/seed` fixture first (plans, workers, the demo orgs), so it works on a fresh database
-- the Sunrise Labs org on an active Starter subscription, owned by `sandbox@warmbly.test`, plus a second teammate (Marco Diaz, admin), one pending invitation, and an active developer API key
+- the Sunrise Labs org on an active Pro subscription, owned by `sandbox@warmbly.test`, plus a second teammate (Marco Diaz, admin), one pending invitation, and an active developer API key
 - AI credits: the plan's monthly allowance plus a 5,000-credit purchased top-up, so the assistant and every other AI surface work out of the box (re-seeding refills both pools)
-- 6 sender mailboxes on `@sunrise.test`, assigned to the worker `make sandbox` runs, warmup enabled 10 days ago (mid-ramp), premium warmup pool, demo-friendly pacing (90s minimum gap, 100/day cap), with 10 days of warmup ramp stats and daily send counts
-- campaigns in every list bucket: two active ("Sunrise Q3 launch outreach", 3 steps, 24 contacts; "Agency partnerships", 2 steps, 12 contacts), one paused, one completed, and one draft, all with tracking enabled and a realistic funnel of sent, opened, clicked, replied, and bounced timestamps
+- 20 sender mailboxes on `@sunrise.test` (a healthy warmup pool by the dashboard's own coverage bar), assigned to the worker `make sandbox` runs, spread across the whole warmup lifecycle: seven graduated senders that finished their ramp weeks ago and carry full (~50/day) cold volume, eight mid-ramp, three freshly connected, one with warmup paused, and one on reduced health with an open provider warning. Every account has matching warmup ramp stats and daily send counts backfilled, varied pool health scores, a personal signature, and a tag (VIP, Agency, or Cold); pacing is demo friendly (45s minimum gap, 100/day cap)
+- campaigns in every list bucket: two active ("Sunrise Q3 launch outreach", 3 steps, 48 contacts; "Agency partnerships", 2 steps, 24 contacts), one paused, one completed, and one draft, all with tracking enabled, every step connected to the next (the scheduler only follows explicit step connections), all 20 senders in the rotation, and a realistic funnel of sent, opened, clicked, replied, and bounced timestamps spread over three weeks
 - a live unified inbox: threaded inbound replies across several senders, including a meeting request, an out-of-office autoreply, a not-interested reply, and a bounce notice, with a mix of read and unread
 - a CRM pipeline with five stages, five deals across them, tasks, contact notes, and per-contact activity timelines
 - the analytics tables behind the deliverability and reporting views: deliverability events (opens, clicks, replies, bounces, complaints, unsubscribes), reply-intent classifications, a suppression list, and resolved and open mailbox errors
@@ -59,7 +59,7 @@ The simulator bridges the two and plays every human:
 2. Mail addressed to a hosted mailbox (for example warmup mail between pool members) is appended into that user's Dovecot inbox. The recipient's worker sync picks it up, the warmup token verifies, and engagement actions run against the real IMAP folders.
 3. Mail addressed to a seeded contact triggers a persona: after humanized delays, most contacts open the pixel against the local tracking service, some click the tracked link, and some reply. Replies are composed with correct `In-Reply-To` threading and appended into the sending mailbox's inbox, so reply attribution, the reply classifier, `EMAIL_REPLIED` realtime events, and the unibox all behave exactly as in production. A slice of replies are out-of-office autoresponders (with `Auto-Submitted` headers) so classifier gating is visible too.
 
-Personas are derived from a hash of the contact's address, so behavior is stable across restarts without any extra state: roughly 85% open, 43% of openers click, 36% of openers reply, with reply tones split across interested, question, not-interested, and out-of-office.
+Personas are derived from a hash of the contact's address, so behavior is stable across restarts without any extra state: roughly 92% open, 57% of openers click, 45% of openers reply, with reply tones split across interested, question, not-interested, and out-of-office. The rates are deliberately hotter than real-world outreach so the demo stays lively.
 
 ## Pieces involved
 
@@ -92,7 +92,7 @@ Personas are derived from a hash of the contact's address, so behavior is stable
 A tour that shows the platform working end to end:
 
 1. **Dashboard**: the overview lands full. Overall stats, top campaigns, recent activity, account health, and the daily trend chart are all populated from the seeded history before a single live send.
-2. **Campaigns**: all four buckets are filled (active, paused, completed, draft). Open the Sunrise Q3 launch campaign; sent counts tick up as the scheduler paces live sends across the six mailboxes, and opens, clicks, and replies accumulate on top of the seeded funnel.
+2. **Campaigns**: all four buckets are filled (active, paused, completed, draft). Open the Sunrise Q3 launch campaign; sent counts tick up as the scheduler paces live sends across the twenty mailboxes, and opens, clicks, and replies accumulate on top of the seeded funnel.
 3. **Unibox**: replies arrive threaded under the original message with full bodies, synced by the worker over IMAP. Out-of-office autoresponders appear but do not count as human replies.
 4. **Deliverability and analytics**: the deliverability view shows bounces, complaints, and unsubscribes with rates; reply intents and the suppression list are populated; mailboxes surface one resolved and one open error.
 5. **Mailboxes**: each sender shows warmup activity climbing its ramp; the warmup pool exchanges verified mail between accounts.

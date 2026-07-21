@@ -31,9 +31,9 @@ func personaFor(email string) persona {
 	n := h.Sum32()
 
 	p := persona{
-		Opens:   n%100 < 85,
-		Clicks:  n%7 < 3,  // ~43% of openers
-		Replies: n%11 < 4, // ~36% of openers
+		Opens:   n%100 < 92,
+		Clicks:  n%7 < 4,  // ~57% of openers
+		Replies: n%11 < 5, // ~45% of openers
 	}
 	switch n % 10 {
 	case 0, 1, 2, 3:
