@@ -79,21 +79,27 @@ export default function UniboxPage() {
     [navigate, urlScope, urlThread, urlScopeRef],
   );
 
-  // Mirror URL → store (so a deep link / refresh restores the open thread) and
-  // store → URL (so a ConversationItem click, which sets the store, updates the
-  // path). The two stay in lock-step because each only writes on a real change.
+  // Keep the open thread in sync between the URL (deep-linkable) and the store
+  // (set by row clicks + keyboard nav) through a single reconciler. Tracking
+  // which side actually moved lets the two writers converge; two mutually
+  // writing effects would instead swap the values every commit, remounting the
+  // thread pane in a tight loop whenever the store and URL start out disagreeing
+  // (a stale singleton thread id carried into a fresh /app/unibox/all session).
   const setSelectedThreadId = useAppStore((s) => s.setSelectedThreadId);
-  React.useEffect(() => {
-    setSelectedThreadId(urlThread);
-  }, [urlThread, setSelectedThreadId]);
-
   const storeThread = useAppStore((s) => s.selectedThreadId);
+  const lastUrlThread = React.useRef(urlThread);
+  const lastStoreThread = React.useRef(storeThread);
   React.useEffect(() => {
-    if (storeThread !== urlThread) {
-      goTo({ threadId: storeThread });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storeThread]);
+    const urlMoved = urlThread !== lastUrlThread.current;
+    const storeMoved = storeThread !== lastStoreThread.current;
+    lastUrlThread.current = urlThread;
+    lastStoreThread.current = storeThread;
+    if (urlThread === storeThread) return;
+    // The store wins only when it alone moved (a click / keypress); otherwise
+    // the URL is the source of truth (deep link, back/forward, mount mismatch).
+    if (storeMoved && !urlMoved) goTo({ threadId: storeThread });
+    else setSelectedThreadId(urlThread);
+  }, [urlThread, storeThread, setSelectedThreadId, goTo]);
 
   // ── Scope (derived from URL + ref) ─────────────────────────────
   const scope: UniboxScope = React.useMemo(() => {
