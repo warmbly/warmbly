@@ -142,12 +142,12 @@ func (s *service) fireInstantActions(ctx context.Context, campaignID, contactID,
 			}
 		}
 		// A "wait" node means "not instant" — stop here and let the normal
-		// scheduler resume the contact after the wait. "switch" also hands back
-		// to the scheduler: switch steps run only through the scheduler path,
+		// scheduler resume the contact after the wait. "switch" and "ai_step" also
+		// hand back to the scheduler: they run only through the scheduler path,
 		// where the provider + credit ledger live (the node is NOT stamped sent
 		// here, so the scheduler routes to it and runs it at the next
 		// boundary). "end" terminates the chain.
-		if cfg.Type == "wait" || cfg.Type == "switch" {
+		if cfg.Type == "wait" || cfg.Type == "switch" || cfg.Type == "ai_step" {
 			return
 		}
 		if cfg.Type == "end" || cfg.Type == "" {
