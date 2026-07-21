@@ -76,7 +76,7 @@ func (d Deps) getDashboardAnalytics(ctx context.Context, inv Invocation, args js
 }
 
 func (d Deps) listMailboxes(ctx context.Context, inv Invocation, _ json.RawMessage) (string, error) {
-	accounts, xerr := d.Analytics.GetAllAccountStatuses(ctx, inv.UserID)
+	accounts, xerr := d.Analytics.GetAllAccountStatuses(ctx, inv.OrgID)
 	if xerr != nil {
 		return "", fromErrx(xerr)
 	}
