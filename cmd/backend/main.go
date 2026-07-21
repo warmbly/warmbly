@@ -1063,6 +1063,7 @@ func main() {
 			contactRepostory,
 			campaignProgressRepository,
 			crmRepository,
+			categoryRepostory,
 			uniboxRepository,
 			tasksClient,
 			warmupService,

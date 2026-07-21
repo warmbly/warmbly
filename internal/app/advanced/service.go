@@ -92,6 +92,17 @@ type Service interface {
 	// incoming-email context.
 	LatestInboundFromContact(ctx context.Context, userID uuid.UUID, contactEmail string) (string, string, error)
 
+	// ListCategories returns the user's contact categories, which double as
+	// unibox conversation labels (same registry). An AI agent step offers these
+	// by name and resolves the model's pick to an id. CreateCategory mints a new
+	// one for the agent's create-on-the-fly path (opt-in per step).
+	ListCategories(ctx context.Context, userID uuid.UUID) ([]models.MiniCategory, error)
+	CreateCategory(ctx context.Context, userID uuid.UUID, title, color string) (models.MiniCategory, error)
+	// ListPipelines returns the org's CRM pipelines with stages hydrated (both
+	// ordered by position), so an AI agent step can pick a valid pipeline+stage
+	// (defaulting to the first pipeline and its first stage).
+	ListPipelines(ctx context.Context, orgID uuid.UUID) ([]models.Pipeline, error)
+
 	// WireDispatcher attaches the event dispatcher that fans classified
 	// replies + deliverability events out to customer webhooks and third-party
 	// integration actions (Slack ping, CRM upsert).
@@ -139,6 +150,7 @@ type service struct {
 	contactRepo          repository.ContactRepository
 	campaignProgressRepo repository.CampaignProgressRepository
 	crmRepo              repository.CRMRepository
+	categoryRepo         repository.GroupRepository
 	uniboxRepo           repository.UniboxRepository
 	tasksClient          tasksched.Scheduler
 	warmupService        warmupapp.Service
@@ -157,6 +169,7 @@ func NewService(
 	contactRepo repository.ContactRepository,
 	campaignProgressRepo repository.CampaignProgressRepository,
 	crmRepo repository.CRMRepository,
+	categoryRepo repository.GroupRepository,
 	uniboxRepo repository.UniboxRepository,
 	tasksClient tasksched.Scheduler,
 	warmupService warmupapp.Service,
@@ -169,6 +182,7 @@ func NewService(
 		contactRepo:          contactRepo,
 		campaignProgressRepo: campaignProgressRepo,
 		crmRepo:              crmRepo,
+		categoryRepo:         categoryRepo,
 		uniboxRepo:           uniboxRepo,
 		tasksClient:          tasksClient,
 		warmupService:        warmupService,
@@ -431,6 +445,47 @@ func (s *service) MoveContactDealStage(ctx context.Context, orgID, contactID, pi
 		"source":  "campaign",
 	})
 	return updated, nil
+}
+
+// ListCategories returns the user's categories (contact tags == unibox labels).
+func (s *service) ListCategories(ctx context.Context, userID uuid.UUID) ([]models.MiniCategory, error) {
+	if s.categoryRepo == nil {
+		return nil, nil
+	}
+	groups, err := s.categoryRepo.List(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]models.MiniCategory, 0, len(groups))
+	for _, g := range groups {
+		out = append(out, models.MiniCategory{ID: g.ID, Title: g.Title, Color: g.Color})
+	}
+	return out, nil
+}
+
+// CreateCategory mints a new category (tag/label) for the agent's opt-in
+// create-on-the-fly path. GroupRepository.Create validates the title (1-50) and
+// enforces the per-user cap; color defaults to slate when blank.
+func (s *service) CreateCategory(ctx context.Context, userID uuid.UUID, title, color string) (models.MiniCategory, error) {
+	if s.categoryRepo == nil {
+		return models.MiniCategory{}, errx.New(errx.BadRequest, "categories are not available")
+	}
+	if strings.TrimSpace(color) == "" {
+		color = "#64748b"
+	}
+	g, err := s.categoryRepo.Create(ctx, userID, &models.GroupCreate{Title: strings.TrimSpace(title), Color: color})
+	if err != nil {
+		return models.MiniCategory{}, err
+	}
+	return models.MiniCategory{ID: g.ID, Title: g.Title, Color: g.Color}, nil
+}
+
+// ListPipelines passes through the org's CRM pipelines (stages hydrated).
+func (s *service) ListPipelines(ctx context.Context, orgID uuid.UUID) ([]models.Pipeline, error) {
+	if s.crmRepo == nil {
+		return nil, nil
+	}
+	return s.crmRepo.ListPipelines(ctx, orgID)
 }
 
 func (s *service) Unsubscribe(ctx context.Context, campaignID, contactID uuid.UUID) *errx.Error {
