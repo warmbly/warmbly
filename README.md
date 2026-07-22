@@ -2,9 +2,8 @@
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.svg">
     <source media="(prefers-color-scheme: light)" srcset="docs/assets/logo-light.svg">
-    <img src="docs/assets/logo-dark.svg" alt="Warmbly" width="360">
+    <img src="docs/assets/logo-dark.svg" alt="Warmbly" width="540">
   </picture>
-  <br />
 
   <p>The open-source agentic cold email and warmup platform.</p>
 
@@ -141,8 +140,6 @@ Have a question, found a bug, or want to shape where Warmbly goes next?
 - **Email** - reach us at `team@warmbly.com`
 
 ## Star the repository ⭐
-
-⭐ Help us reach more senders and grow the Warmbly community. Star this repo!
 
 <img width="1280" height="720" alt="warmbly-star" src="https://github.com/user-attachments/assets/c9bd34f7-c384-4f10-91e4-215fcea09986" />
 
