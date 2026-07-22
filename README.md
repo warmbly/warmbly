@@ -141,10 +141,6 @@ Have a question, found a bug, or want to shape where Warmbly goes next?
 - **[GitHub Issues](https://github.com/warmbly/warmbly/issues)** - report bugs and request features
 - **Email** - reach us at `team@warmbly.com`
 
-## Star the repository ⭐
-
-<img width="1280" height="720" alt="warmbly-star" src="https://github.com/user-attachments/assets/c9bd34f7-c384-4f10-91e4-215fcea09986" />
-
 ## Contributing
 
 Pull requests are welcome. Keep each one to a single logical change, and open an
@@ -160,3 +156,11 @@ We prefer responsible disclosure and credit reporters in the release notes.
 ## License
 
 Apache License 2.0. Copyright 2026 Mindroot Ltd. See [LICENSE](./LICENSE).
+
+---
+
+<div align="center">
+  <h3>⭐ Help us reach more senders and grow the Warmbly community. Star this repo!</h3>
+  <br />
+  <img width="1280" height="720" alt="warmbly-star" src="https://github.com/user-attachments/assets/c9bd34f7-c384-4f10-91e4-215fcea09986" />
+</div>
