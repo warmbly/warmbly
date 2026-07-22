@@ -5,7 +5,7 @@ loads quickly on GitHub.
 
 | File                        | Where it shows up                    |
 |-----------------------------|--------------------------------------|
-| `banner.jpg`                | Hero banner at the top of the README |
+| `logo.svg`                  | Logo + wordmark at the top of the README |
 | `dashboard-campaigns.png`   | Gallery: campaigns list              |
 | `dashboard-inbox.png`       | Gallery: unified inbox               |
 | `dashboard-mailboxes.png`   | Gallery: mailboxes and warmup state  |
