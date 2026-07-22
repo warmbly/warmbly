@@ -35,8 +35,7 @@ https://github.com/user-attachments/assets/378a510a-bb99-425f-925e-04300184938b
 
 ## Star the repository ⭐
 
-<img width="1280" height="720" alt="warmbly-star-ezgif com-optimize" src="https://github.com/user-attachments/assets/b6fb6df6-f0ad-4410-805d-4d4f17ac1b50" />
-
+<img width="1280" height="720" alt="warmbly-star" src="https://github.com/user-attachments/assets/c9bd34f7-c384-4f10-91e4-215fcea09986" />
 
 ## Connect your mailboxes
 
