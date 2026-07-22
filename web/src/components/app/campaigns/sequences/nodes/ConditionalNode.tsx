@@ -23,6 +23,10 @@ interface ConditionalAttrs {
     uid: string; // transient, not serialized — flags a just-inserted chip to open once
 }
 
+// The serialized parts of a conditional (everything but the transient uid),
+// used by the token build/parse helpers.
+type ConditionalParts = Pick<ConditionalAttrs, "expr" | "thenText" | "elseText">;
+
 const DEFAULT_ATTRS: ConditionalAttrs = { expr: ".Company", thenText: "", elseText: "", uid: "" };
 
 declare module "@tiptap/core" {
@@ -34,7 +38,7 @@ declare module "@tiptap/core" {
 }
 
 // buildConditionalToken assembles the literal template text from the attrs.
-function buildConditionalToken(a: ConditionalAttrs): string {
+function buildConditionalToken(a: ConditionalParts): string {
     const expr = a.expr.trim() || ".Company";
     const then = a.thenText ?? "";
     if (a.elseText && a.elseText.trim()) {
@@ -45,7 +49,7 @@ function buildConditionalToken(a: ConditionalAttrs): string {
 
 // parseConditionalToken reverses buildConditionalToken so a saved/pasted
 // conditional round-trips back into the builder.
-function parseConditionalToken(token: string): ConditionalAttrs | null {
+function parseConditionalToken(token: string): ConditionalParts | null {
     const m = token.match(/^\{\{\s*if\s+([\s\S]*?)\s*\}\}([\s\S]*?)(?:\{\{\s*else\s*\}\}([\s\S]*?))?\{\{\s*end\s*\}\}$/);
     if (!m) return null;
     return { expr: m[1].trim(), thenText: m[2] ?? "", elseText: m[3] ?? "" };
