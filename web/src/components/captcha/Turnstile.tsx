@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import * as TurnstileObj from "react-turnstile";
+import { TURNSTILE_KEY } from "@/lib/information";
 
 interface Props {
     setToken: (token: string) => void;
@@ -19,7 +20,7 @@ export default function Turnstile({setToken}: Props) {
 
     return <>
         <TurnstileObj.default
-            sitekey={import.meta.env.VITE_TURNSTILE_KEY!}
+            sitekey={TURNSTILE_KEY}
             onVerify={(token: string) => setToken(token)}
             onExpire={() => setToken("")}
             theme={"light"}

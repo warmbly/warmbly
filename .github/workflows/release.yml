@@ -69,6 +69,48 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
 
+  # Frontends (web dashboard, admin panel): the pnpm build runs once on the
+  # build platform and its static output is served from nginx, so a single
+  # buildx build produces both arches without a per-arch rebuild.
+  build-frontend:
+    name: Build ${{ matrix.service }}
+    needs: validate-tag
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [web, admin]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./${{ matrix.service }}
+          file: ./${{ matrix.service }}/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:${{ github.ref_name }}
+            ${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:v${{ needs.validate-tag.outputs.minor }}
+            ${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:v${{ needs.validate-tag.outputs.major }}
+            ${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:prod
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
   # Rust (tracking) and Elixir (realtime) have no cross-compiler; an emulated
   # arm64 build under QEMU runs for an hour or more. Build each arch on a
   # native runner and merge the digests into one manifest (the
@@ -170,7 +212,7 @@ jobs:
 
   create-release:
     name: Create GitHub Release
-    needs: [validate-tag, build-go, merge-native]
+    needs: [validate-tag, build-go, build-frontend, merge-native]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -220,6 +262,8 @@ jobs:
             | Worker | `${{ env.IMAGE_PREFIX }}/worker:${{ github.ref_name }}` |
             | Tracking | `${{ env.IMAGE_PREFIX }}/tracking:${{ github.ref_name }}` |
             | Realtime | `${{ env.IMAGE_PREFIX }}/realtime:${{ github.ref_name }}` |
+            | Dashboard (web) | `${{ env.IMAGE_PREFIX }}/web:${{ github.ref_name }}` |
+            | Admin | `${{ env.IMAGE_PREFIX }}/admin:${{ github.ref_name }}` |
 
             ## Deployment
 

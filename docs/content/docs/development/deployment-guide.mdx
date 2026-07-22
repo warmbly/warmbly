@@ -46,18 +46,23 @@ Each subsystem is an env-var switch. No-cloud defaults on the left:
 
 Every service already binds to `0.0.0.0` via the Docker port mappings, so it
 listens on all interfaces. The app's URLs default to `localhost`, so to use it
-from another machine set one variable in `.env` — the API URL, CORS origins,
-websocket URL, tracking domain, and the frontend `VITE_*` URLs all derive from it:
+from another machine set one variable in `.env`, and the API URL, CORS origins,
+websocket URL, and tracking domain all derive from it:
 
 ```bash
 PUBLIC_HOST=192.168.1.50        # your machine's LAN IP, or a domain
 ```
 
-Then open `http://192.168.1.50:5173`. For a public domain over HTTPS, run a
-reverse proxy (Caddy or nginx) in front terminating TLS, point `PUBLIC_HOST` (or
-the individual `APP_URL` / `CORS_ALLOW_ORIGINS` / `WEBSOCKET_URL` /
-`API_PUBLIC_URL` / `TRACKING_DOMAIN` vars) at your domain, and serve the
-dashboard and admin as static builds rather than the Vite dev servers.
+Then open `http://192.168.1.50:5173`. The dashboard (`web`) and admin panel
+(`admin`) run as production static builds served by nginx, not Vite dev servers.
+Their URLs are injected at container start from `WARMBLY_*` env (rendered into a
+`/config.js`), so the published image is deployment-agnostic: compose derives
+`WARMBLY_API_URL` / `WARMBLY_APP_URL` / `WARMBLY_TRACKING_DOMAIN` from
+`PUBLIC_HOST` and `API_PUBLIC_URL`, and the same image runs anywhere. For a
+public domain over HTTPS, run a reverse proxy (Caddy or nginx) in front
+terminating TLS and point `PUBLIC_HOST` (or the individual `APP_URL` /
+`CORS_ALLOW_ORIGINS` / `WEBSOCKET_URL` / `API_PUBLIC_URL` / `TRACKING_DOMAIN`
+vars) at your domain.
 
 ## Scaling
 
@@ -194,7 +199,7 @@ ghcr.io/<owner>/warmbly/worker:vX
 ghcr.io/<owner>/warmbly/worker:prod
 ```
 
-And the same set of tags for `backend`, `consumer`, `tracking`, `realtime`. The `build-push.yml` workflow on `main` publishes `:{sha}` and `:dev`.
+And the same set of tags for `backend`, `consumer`, `tracking`, `realtime`, and the two frontends `web` (dashboard) and `admin`. The `build-push.yml` workflow on `main` publishes `:{sha}` and `:dev`.
 
 For self-hosters: this works out of the box on any fork as long as you have `packages: write` permission enabled in repo settings.
 

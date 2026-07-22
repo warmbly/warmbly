@@ -8,6 +8,7 @@
 
 import { useCallback, useEffect, useRef, type ComponentProps } from "react";
 import Turnstile, { type BoundTurnstileObject } from "react-turnstile";
+import { TURNSTILE_KEY } from "@/lib/env";
 
 interface Props {
     visible: boolean;
@@ -101,7 +102,7 @@ export function TurnstileModal({ visible, onToken, onError }: Props) {
 
     const turnstileProps = {
         ref: turnstileRef,
-        sitekey: import.meta.env.VITE_TURNSTILE_KEY!,
+        sitekey: TURNSTILE_KEY,
         onVerify: handleVerify,
         onExpire: () => {
             tokenRef.current = "";
