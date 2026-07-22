@@ -5,6 +5,7 @@
 // tokens are just text, so they survive serialization untouched.
 
 import React from "react";
+import { createPortal } from "react-dom";
 import { useEditor, EditorContent, type Editor } from "@tiptap/react";
 import Document from "@tiptap/extension-document";
 import Paragraph from "@tiptap/extension-paragraph";
@@ -30,22 +31,55 @@ import {
     CheckIcon,
     XIcon,
     ChevronDownIcon,
+    SparklesIcon,
+    GitBranchIcon,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import useClickOutside from "@/hooks/useClickOutside";
+import { useAnchoredFloating } from "@/hooks/useAnchoredFloating";
 import RichTextAIEdit from "@/components/app/ai/RichTextAIEdit";
+import RichTextAICaret from "@/components/app/ai/RichTextAICaret";
 import { WEBSITE_URL } from "@/lib/information";
+import { VariableNode } from "./nodes/VariableNode";
+import { AIVariableNode } from "./nodes/AIVariableNode";
+import { ConditionalNode } from "./nodes/ConditionalNode";
+import EditorSuggest from "./nodes/EditorSuggest";
+import {
+    TOKEN_META,
+    cleanFieldName,
+    parseToken,
+    buildToken,
+    isStandardKey,
+    upgradeVariableTokens,
+} from "@/lib/templateVars";
+import useCustomFieldKeys from "@/lib/api/hooks/app/contacts/useCustomFieldKeys";
+
+// A field token ({{.Company}}, or with a default fallback) becomes an atomic
+// chip; conditionals/spintax/other snippets insert as plain text.
+function insertToken(editor: Editor, token: string) {
+    if (parseToken(token)) {
+        editor.chain().focus().insertVariable(token).run();
+    } else {
+        editor.chain().focus().insertContent(token).run();
+    }
+}
 
 export default function RichTextEditor({
     html,
     onChange,
     variables,
     placeholder,
+    minimal = false,
 }: {
     html: string;
     onChange: (html: string) => void;
     variables: string[];
     placeholder?: string;
+    // Compact mode for embedding in a small surface (e.g. the AI-block prompt):
+    // an insert-only toolbar (variables + condition + spintax), no text
+    // formatting, no AI carets, and a short body. Chips, the {{ type-ahead, and
+    // conditionals behave exactly as in the full editor.
+    minimal?: boolean;
 }) {
     const editor = useEditor({
         extensions: [
@@ -61,11 +95,16 @@ export default function RichTextEditor({
             OrderedList,
             ListItem,
             Link.configure({ openOnClick: false, autolink: true }),
+            VariableNode,
+            AIVariableNode,
+            ConditionalNode,
         ],
-        content: html || "",
+        content: upgradeVariableTokens(html || ""),
         editorProps: {
             attributes: {
-                class: "tiptap-body min-h-[260px] px-3 py-2.5 text-[13px] leading-relaxed text-slate-800 focus:outline-none",
+                class: `tiptap-body ${
+                    minimal ? "min-h-[68px] text-[13px]" : "min-h-[260px] px-3 py-2.5 text-[13px]"
+                } leading-relaxed text-slate-800 focus:outline-none`,
             },
         },
         onUpdate: ({ editor }) => onChange(editor.getHTML()),
@@ -77,12 +116,34 @@ export default function RichTextEditor({
     React.useEffect(() => {
         if (!editor) return;
         const current = editor.getHTML();
-        if (html !== current) {
-            editor.commands.setContent(html || "", { emitUpdate: false });
+        const incoming = upgradeVariableTokens(html || "");
+        if (incoming !== current) {
+            editor.commands.setContent(incoming, { emitUpdate: false });
         }
     }, [html, editor]);
 
     if (!editor) return null;
+
+    // Bare mode: no toolbar, no border box — a plain, borderless writing surface
+    // (the small AI-block instruction). Merge tokens still render as chips and the
+    // {{ type-ahead still works; formatting and AI carets are omitted. A soft sky
+    // underline appears on focus, nothing more.
+    if (minimal) {
+        return (
+            <div className="border-b border-transparent pb-1 transition-colors focus-within:border-sky-300">
+                <div className="relative">
+                    <EditorContent editor={editor} />
+                    {placeholder && editor.isEmpty && (
+                        <p className="pointer-events-none absolute left-0 top-0 select-none text-[13px] text-slate-300">
+                            {placeholder}
+                        </p>
+                    )}
+                </div>
+                {/* Type `{{` → variable type-ahead at the caret. */}
+                <EditorSuggest editor={editor} />
+            </div>
+        );
+    }
 
     return (
         <div className="rounded-md border border-slate-200 bg-white focus-within:border-sky-400 focus-within:ring-2 focus-within:ring-sky-100 transition-colors">
@@ -97,6 +158,10 @@ export default function RichTextEditor({
             </div>
             {/* Select text → floating "Edit with AI" pill over the selection. */}
             <RichTextAIEdit editor={editor} />
+            {/* Collapsed caret → sparkle companion + ⌘J to write with AI. */}
+            <RichTextAICaret editor={editor} />
+            {/* Type `{{` → variable type-ahead at the caret. */}
+            <EditorSuggest editor={editor} />
         </div>
     );
 }
@@ -155,7 +220,23 @@ function Toolbar({ editor, variables }: { editor: Editor; variables: string[] })
                 <Link2Icon className="w-3.5 h-3.5" />
             </Btn>
             <Divider />
-            <VariableMenu onPick={(v) => editor.chain().focus().insertContent(v).run()} variables={variables} />
+            <VariableMenu onPick={(v) => insertToken(editor, v)} variables={variables} />
+            <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => editor.chain().focus().insertAIVariable().run()}
+                title="Insert an AI block — writes unique copy for each recipient"
+                className="h-7 px-1.5 inline-flex items-center gap-1 rounded text-sky-600 transition-colors hover:bg-sky-50 hover:text-sky-700"
+            >
+                <SparklesIcon className="w-3.5 h-3.5" />
+                <span className="text-[11.5px] font-medium">AI</span>
+            </button>
+            <Btn
+                onClick={() => editor.chain().focus().insertConditional().run()}
+                title="Insert a condition — show text only when a field matches"
+            >
+                <GitBranchIcon className="w-3.5 h-3.5" />
+            </Btn>
             <Btn
                 onClick={() => editor.chain().focus().insertContent("{option one|option two}").run()}
                 title="Insert spintax — randomly picks one option per send"
@@ -241,90 +322,67 @@ function Divider() {
     return <span className="mx-0.5 h-4 w-px bg-slate-200" />;
 }
 
-// Friendly labels + one-line descriptions for the standard contact tokens, so
-// the menu explains what each value does rather than dumping raw {{.Tokens}}.
-const TOKEN_META: Record<string, { label: string; desc: string }> = {
-    "{{.FirstName}}": { label: "First name", desc: "The contact's first name" },
-    "{{.LastName}}": { label: "Last name", desc: "The contact's last name" },
-    "{{.Email}}": { label: "Email", desc: "The contact's email address" },
-    "{{.Company}}": { label: "Company", desc: "Where the contact works" },
-    "{{.Phone}}": { label: "Phone", desc: "The contact's phone number" },
-};
-
-// cleanFieldName strips braces/leading dots so a pasted "{{.role}}" or ".role"
-// still resolves to the bare key.
-function cleanFieldName(raw: string): string {
-    return raw.replace(/[{}]/g, "").replace(/^\.+/, "").trim();
-}
-
-// Shared variable inserter — a personalization menu that explains each field and
-// can insert a custom field by name. Flips horizontally so it never overflows
-// the editor edge.
+// Shared variable inserter — a personalization menu that explains each field,
+// suggests the org's real custom fields, and can insert a custom field by name.
+// Flips horizontally so it never overflows the editor edge.
 export function VariableMenu({ onPick, variables }: { onPick: (token: string) => void; variables: string[] }) {
     const [open, setOpen] = React.useState(false);
-    // Fixed-viewport coordinates computed from the trigger, so the panel escapes
-    // the editor's overflow-hidden clipping and is clamped fully on-screen.
-    const [pos, setPos] = React.useState<{ left: number; width: number; top?: number; bottom?: number } | null>(null);
     const [custom, setCustom] = React.useState("");
     const ref = React.useRef<HTMLDivElement>(null);
-    const triggerRef = React.useRef<HTMLButtonElement>(null);
+    // Ignores clicks inside the portaled [data-floating] panel, so only a click
+    // truly outside the trigger+panel closes it.
     useClickOutside(ref, () => setOpen(false));
+    // floating-ui keeps the panel glued to the trigger through scroll/resize.
+    const { setReference, setFloating, floatingStyle } = useAnchoredFloating(open, {
+        placement: "bottom-start",
+        gap: 6,
+        maxHeight: true,
+    });
 
-    const toggle = () => {
-        if (!open && triggerRef.current) {
-            const r = triggerRef.current.getBoundingClientRect();
-            const margin = 12;
-            const vw = window.innerWidth;
-            const vh = window.innerHeight;
-            const width = Math.min(vw < 640 ? vw - margin * 2 : 352, vw - margin * 2);
-            // Clamp horizontally so the full width is always on-screen.
-            const left = Math.max(margin, Math.min(r.left, vw - width - margin));
-            // Open upward when the trigger sits low in the viewport.
-            const up = r.bottom > vh * 0.55;
-            setPos(up ? { left, width, bottom: vh - r.top + 6 } : { left, width, top: r.bottom + 6 });
-        }
-        setOpen((o) => !o);
-    };
-
+    const { data: customKeys = [] } = useCustomFieldKeys();
     const customName = cleanFieldName(custom);
     const insertCustom = () => {
         if (!customName) return;
-        onPick(`{{.${customName}}}`);
+        onPick(buildToken(customName));
         setCustom("");
         setOpen(false);
     };
+    // Suggest the org's real custom-field keys, filtered by what's typed and
+    // excluding any that shadow a standard field (the backend resolves those to
+    // the standard value anyway).
+    const q = customName.toLowerCase();
+    const suggestions = customKeys
+        .filter((k) => !isStandardKey(k) && (!q || k.toLowerCase().includes(q)))
+        .slice(0, 8);
+    const shadowsStandard = customName !== "" && isStandardKey(customName);
 
     return (
         <div ref={ref} className="relative">
             <button
-                ref={triggerRef}
+                ref={(el) => setReference(el)}
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
-                onClick={toggle}
+                onClick={() => setOpen((o) => !o)}
                 title="Insert a personalization variable"
                 className="h-7 px-1.5 inline-flex items-center gap-1 rounded text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors"
             >
                 <BracesIcon className="w-3.5 h-3.5" />
                 <ChevronDownIcon className="w-3 h-3" />
             </button>
-            <AnimatePresence>
-                {open && (
-                    <motion.div
-                        initial={{ opacity: 0, y: pos?.bottom !== undefined ? 4 : -4 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: pos?.bottom !== undefined ? 4 : -4 }}
-                        transition={{ duration: 0.12 }}
-                        style={
-                            pos
-                                ? {
-                                      left: pos.left,
-                                      width: pos.width,
-                                      ...(pos.top !== undefined ? { top: pos.top } : { bottom: pos.bottom }),
-                                  }
-                                : undefined
-                        }
-                        className="fixed z-40 max-h-[76dvh] overflow-y-auto rounded-md border border-slate-200 bg-white shadow-[0_12px_32px_-8px_rgba(15,23,42,0.18)] sm:max-h-[80vh]"
-                    >
+            {typeof document !== "undefined" &&
+                createPortal(
+                    <AnimatePresence>
+                        {open && (
+                            <motion.div
+                                ref={setFloating}
+                                data-floating=""
+                                style={floatingStyle}
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                transition={{ duration: 0.12 }}
+                                className="z-[60] w-[340px] max-w-[calc(100vw-24px)] overflow-y-auto rounded-md border border-slate-200 bg-white shadow-[0_12px_32px_-8px_rgba(15,23,42,0.18)]"
+                            >
                         <div className="px-3 py-2 border-b border-slate-100">
                             <p className="text-[12px] font-medium text-slate-800">Personalization</p>
                             <p className="text-[10.5px] text-slate-400 mt-0.5">
@@ -391,47 +449,41 @@ export function VariableMenu({ onPick, variables }: { onPick: (token: string) =>
                                     Insert
                                 </button>
                             </div>
-                            <p className="mt-1 text-[10px] text-slate-400">
-                                Inserts <code className="font-mono text-slate-500">{`{{.${customName || "name"}}}`}</code>{" "}
-                                — exact field name; blank if the contact lacks it.
-                            </p>
-                        </div>
 
-                        {/* Conditionals — compact 2-column snippet grid. */}
-                        <div className="px-2 pb-2 pt-1.5 border-t border-slate-100">
-                            <div className="px-1 pb-1 text-[10px] uppercase tracking-[0.14em] text-slate-400">
-                                Conditionals
-                            </div>
-                            <div className="grid grid-cols-2 gap-1">
-                                {[
-                                    { label: "If set", code: "{{if .Company}}{{end}}" },
-                                    { label: "If / else", code: "{{if .Company}}{{else}}{{end}}" },
-                                    { label: "If equals", code: '{{if eq .Company "Acme"}}{{end}}' },
-                                    { label: "Fallback", code: '{{.FirstName | default "there"}}' },
-                                ].map((s) => (
-                                    <button
-                                        key={s.label}
-                                        type="button"
-                                        title={s.code}
-                                        onMouseDown={(e) => e.preventDefault()}
-                                        onClick={() => {
-                                            onPick(s.code);
-                                            setOpen(false);
-                                        }}
-                                        className="flex min-w-0 flex-col items-start rounded-md border border-slate-200 px-2 py-1 text-left transition-colors hover:border-sky-300 hover:bg-sky-50/50"
-                                    >
-                                        <span className="w-full truncate text-[11.5px] text-slate-700">{s.label}</span>
-                                        <code className="w-full truncate font-mono text-[9.5px] text-slate-400">
-                                            {s.code}
-                                        </code>
-                                    </button>
-                                ))}
-                            </div>
-                            <p className="px-1 pt-1.5 text-[10px] text-slate-400">
-                                Type text between the tags. Every <code className="font-mono">{"{{if}}"}</code> needs an{" "}
-                                <code className="font-mono">{"{{end}}"}</code>; missing fields count as empty. Use{" "}
-                                <code className="font-mono">| default &quot;…&quot;</code> for a fallback when a field is blank.
-                            </p>
+                            {/* Real custom-field keys the org actually uses. */}
+                            {suggestions.length > 0 && (
+                                <div className="mt-1.5 flex flex-wrap gap-1">
+                                    {suggestions.map((k) => (
+                                        <button
+                                            key={k}
+                                            type="button"
+                                            title={`Insert {{.${cleanFieldName(k)}}}`}
+                                            onMouseDown={(e) => e.preventDefault()}
+                                            onClick={() => {
+                                                onPick(buildToken(k));
+                                                setCustom("");
+                                                setOpen(false);
+                                            }}
+                                            className="inline-flex max-w-full items-center truncate rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] text-slate-600 transition-colors hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700"
+                                        >
+                                            {k}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+
+                            {shadowsStandard ? (
+                                <p className="mt-1 text-[10px] text-amber-600">
+                                    A contact field named <code className="font-mono">{customName}</code> is shadowed by
+                                    the standard field above and always uses that value.
+                                </p>
+                            ) : (
+                                <p className="mt-1 text-[10px] text-slate-400">
+                                    Inserts{" "}
+                                    <code className="font-mono text-slate-500">{`{{.${customName || "name"}}}`}</code> —
+                                    exact field name; blank if the contact lacks it.
+                                </p>
+                            )}
                         </div>
 
                         <a
@@ -444,9 +496,11 @@ export function VariableMenu({ onPick, variables }: { onPick: (token: string) =>
                             Full guide &amp; examples
                             <span aria-hidden="true">↗</span>
                         </a>
-                    </motion.div>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>,
+                    document.body,
                 )}
-            </AnimatePresence>
         </div>
     );
 }

@@ -442,6 +442,99 @@ svg.loading circle {
 .tiptap-body strong { font-weight: 600; }
 .tiptap-body:focus { outline: none; }
 
+/* Merge-tag chips shown inside the composer editor. Only the node-view button
+   carries .tpl-var; the resolved `<span data-var>` in the Preview pane is left
+   unstyled on purpose so it reads as the plain value it will send as. */
+.tpl-var-wrap { vertical-align: baseline; }
+.tiptap-body .tpl-var {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  height: 1.25rem;
+  padding: 0 0.375rem;
+  border-radius: 0.25rem;
+  border: 1px solid #e2e8f0; /* slate-200 */
+  background: #f8fafc; /* slate-50 */
+  color: #475569; /* slate-600 */
+  font-size: 11px;
+  line-height: 1;
+  font-weight: 500;
+  white-space: nowrap;
+  vertical-align: baseline;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.12s, border-color 0.12s, color 0.12s;
+}
+.tiptap-body .tpl-var:hover,
+.tiptap-body .tpl-var.tpl-var-active {
+  border-color: #7dd3fc; /* sky-300 */
+  background: #f0f9ff; /* sky-50 */
+  color: #0369a1; /* sky-700 */
+}
+
+/* AI blocks — per-recipient generated copy. A restrained sky tint (with a
+   sparkle icon) distinguishes them from the slate merge chips without leaving
+   the house theme. No gradients or glow. */
+.tpl-ai-wrap { vertical-align: baseline; }
+.tiptap-body .tpl-ai {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  height: 1.25rem;
+  padding: 0 0.4rem;
+  border-radius: 0.25rem;
+  border: 1px solid #bae6fd; /* sky-200 */
+  background: #f0f9ff; /* sky-50 */
+  color: #0369a1; /* sky-700 */
+  font-size: 11px;
+  line-height: 1;
+  font-weight: 500;
+  white-space: nowrap;
+  vertical-align: baseline;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.12s, border-color 0.12s, color 0.12s;
+}
+.tiptap-body .tpl-ai:hover,
+.tiptap-body .tpl-ai.tpl-ai-active {
+  border-color: #7dd3fc; /* sky-300 */
+  background: #e0f2fe; /* sky-100 */
+  color: #075985; /* sky-800 */
+}
+/* Unconfigured AI block: a dashed edge nudges the user to set it up. */
+.tiptap-body .tpl-ai.tpl-ai-empty {
+  border-style: dashed;
+}
+
+/* Conditional (logic) chips — a heavier neutral slate so they read as structure,
+   distinct from the light merge chips and the sky AI chips. Sky hover accent. */
+.tpl-if-wrap { vertical-align: baseline; }
+.tiptap-body .tpl-if {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  height: 1.25rem;
+  padding: 0 0.4rem;
+  border-radius: 0.25rem;
+  border: 1px solid #cbd5e1; /* slate-300 */
+  background: #f1f5f9; /* slate-100 */
+  color: #334155; /* slate-700 */
+  font-size: 11px;
+  line-height: 1;
+  font-weight: 500;
+  white-space: nowrap;
+  vertical-align: baseline;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.12s, border-color 0.12s, color 0.12s;
+}
+.tiptap-body .tpl-if:hover,
+.tiptap-body .tpl-if.tpl-if-active {
+  border-color: #7dd3fc; /* sky-300 */
+  background: #f0f9ff; /* sky-50 */
+  color: #0369a1; /* sky-700 */
+}
+
 /* Campaign flow canvas — smoothly glide nodes when the layout recomputes
    (adding/deleting a step, "Tidy up"). The transition is killed while dragging
    so node drag stays 1:1 with the cursor. Scoped to .campaign-flow so other
