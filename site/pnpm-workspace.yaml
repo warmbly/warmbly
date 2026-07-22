@@ -8,3 +8,5 @@ allowBuilds:
 # Clear CVE-2026-59869 (DoS via crafted YAML) in the transitive js-yaml.
 overrides:
   js-yaml: ^4.3.0
+  # Clear the libvips CVEs inherited by sharp (fixed in 0.35.0).
+  sharp: ^0.35.0
