@@ -1,14 +1,16 @@
 <div align="center">
+  <br />
+  <br />
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.svg">
     <source media="(prefers-color-scheme: light)" srcset="docs/assets/logo-light.svg">
-    <img src="docs/assets/logo-dark.svg" alt="Warmbly" width="360">
+    <img src="docs/assets/logo-dark.svg" alt="Warmbly" width="380">
   </picture>
+  <br />
+  <br />
+  <br />
 
-  <p>
-    <b>Open-source cold email and mailbox warmup you can self-host.</b><br />
-    Connect your mailboxes, run sequenced campaigns, and warm your sender reputation, all on your own IPs and database.
-  </p>
+  <p><b>Cold email and mailbox warmup, self-hosted.</b></p>
 
   <p>
     <a href="https://github.com/warmbly/warmbly/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/warmbly/warmbly/ci.yml?branch=main&style=flat-square&label=CI" alt="CI status" /></a>
@@ -37,25 +39,19 @@ https://github.com/user-attachments/assets/378a510a-bb99-425f-925e-04300184938b
 
 ## What is Warmbly
 
-Warmbly is a cold outreach platform you run on your own infrastructure. Connect
-the mailboxes you already own, write multi-step campaigns, and Warmbly sends the
-mail, tracks every open, click, and reply, and warms your sender reputation so
-more of it lands in the inbox.
-
-The difference from hosted tools is where it runs: your sending IPs, your
-Postgres, your servers. Nothing is tied to a vendor's database, and the same code
-runs on a single VPS or a fleet of cheap machines.
+Self-hosted cold email and mailbox warmup. Connect the mailboxes you own, send
+sequenced campaigns, and warm your reputation, all on your own IPs and Postgres.
 
 ## Features
 
-- **Campaigns** send multi-step sequences with per-mailbox daily caps and spacing.
-- **Unified inbox** pulls every connected mailbox and its replies into one view.
-- **Built-in CRM** tracks contacts, pipelines, deals, tasks, and meetings.
-- **Warmup** builds real sender reputation through a pool of monitored mailboxes.
-- **Deliverability** surfaces bounces, complaints, suppression, and inbox placement.
-- **Automations** run branching reply playbooks on a visual canvas, with AI steps that read a reply and act on it.
-- **Integrations** sync out to HubSpot, Slack, Zapier, and more, plus a REST API, webhooks, and a realtime WebSocket.
-- **Real-time and collaborative** so teammates see each other's presence and edits with no refresh.
+- **Campaigns** - multi-step sequences with per-mailbox caps and spacing
+- **Unified inbox** - every mailbox and reply in one place
+- **CRM** - contacts, pipelines, deals, tasks, meetings
+- **Warmup** - a pool of monitored mailboxes, not throwaway accounts
+- **Deliverability** - bounces, complaints, suppression, inbox placement
+- **Automations** - visual reply playbooks with AI steps
+- **Integrations** - HubSpot, Slack, Zapier, REST API, webhooks
+- **Realtime** - live presence and edits across your team
 
 <p align="center">
   <img src="docs/assets/dashboard-campaigns.png" alt="Campaigns" width="49%" />
