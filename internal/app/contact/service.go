@@ -38,6 +38,11 @@ type ContactService interface {
 	// result counts plus a list of rows that failed (with reasons).
 	ImportCommit(ctx context.Context, userID string, orgID uuid.UUID, file io.Reader, filename string, opts *models.ContactImportCommit) (*models.ContactImportResult, *errx.Error)
 
+	// ListCustomFieldKeys returns the org's distinct contact custom-field keys,
+	// frequency-ranked then alphabetical, capped at 200. Powers the dashboard
+	// variable picker's real-field suggestions.
+	ListCustomFieldKeys(ctx context.Context, orgID uuid.UUID) ([]string, *errx.Error)
+
 	// GetDetail returns the 360 read model used by the contact
 	// slide-over: hydrated contact + engagement summary + suppression.
 	GetDetail(ctx context.Context, userID uuid.UUID, orgID *uuid.UUID, contactID uuid.UUID) (*models.ContactDetail, *errx.Error)

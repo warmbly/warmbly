@@ -95,6 +95,26 @@ func (h *Handler) SearchContacts(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
+// ListContactCustomFields returns the org's distinct contact custom-field keys,
+// frequency-ranked (most common first) then alphabetical, capped at 200, so the
+// dashboard variable picker can suggest fields contacts actually have. Read-only,
+// no body, no query params.
+func (h *Handler) ListContactCustomFields(c *gin.Context) {
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.Handle(c, errx.New(errx.BadRequest, "no organization selected"))
+		return
+	}
+
+	keys, err := h.ContactService.ListCustomFieldKeys(c.Request.Context(), *orgID)
+	if err != nil {
+		errx.Handle(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": keys})
+}
+
 func (h *Handler) UpdateContactBulk(c *gin.Context) {
 	userIDStr := middleware.GetUserID(c)
 
