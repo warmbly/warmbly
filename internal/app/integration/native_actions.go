@@ -48,37 +48,31 @@ func validateNativeActionConfig(action models.IntegrationAction, raw json.RawMes
 		if strings.TrimSpace(cfg.EventName) == "" {
 			return fmt.Errorf("a fire-event action needs an event name")
 		}
-	case models.IntegrationActionAIClassify:
-		ai := parseAIConfig(raw)
-		if strings.TrimSpace(ai.Instruction) == "" {
-			return fmt.Errorf("an AI classify step needs an instruction")
-		}
-		if len(nonEmptyStrings(ai.Labels)) < 2 {
-			return fmt.Errorf("an AI classify step needs at least two labels")
-		}
-	case models.IntegrationActionAIExtract:
-		ai := parseAIConfig(raw)
-		if strings.TrimSpace(ai.Instruction) == "" {
-			return fmt.Errorf("an AI extract step needs an instruction")
-		}
-		if len(nonEmptyStrings(ai.OutputKeys)) == 0 {
-			return fmt.Errorf("an AI extract step needs at least one output key")
-		}
-	case models.IntegrationActionAIGenerate:
-		ai := parseAIConfig(raw)
-		if strings.TrimSpace(ai.Instruction) == "" {
-			return fmt.Errorf("an AI generate step needs an instruction")
-		}
 	case models.IntegrationActionAIStep:
 		return validateAIStepConfig(raw)
 	case models.IntegrationActionAISwitch:
-		ai := parseAIConfig(raw)
-		if strings.TrimSpace(ai.Instruction) == "" {
-			return fmt.Errorf("an AI switch needs an instruction")
+		return validateAISwitchConfig(raw)
+	}
+	return nil
+}
+
+// validateAISwitchConfig validates the AI switch router by decider mode
+// (mirrors the campaign switch): "value" mode needs a value template and at
+// least two cases (no model call, so no instruction); "ai" mode needs an
+// instruction and at least two cases.
+func validateAISwitchConfig(raw json.RawMessage) error {
+	ai := parseAIConfig(raw)
+	if len(nonEmptyStrings(ai.Cases)) < 2 {
+		return fmt.Errorf("an AI switch needs at least two cases")
+	}
+	if strings.TrimSpace(ai.SwitchOn) == "value" {
+		if strings.TrimSpace(ai.SwitchValue) == "" {
+			return fmt.Errorf("a value switch needs a value to match")
 		}
-		if len(nonEmptyStrings(ai.Cases)) < 2 {
-			return fmt.Errorf("an AI switch needs at least two cases")
-		}
+		return nil
+	}
+	if strings.TrimSpace(ai.Instruction) == "" {
+		return fmt.Errorf("an AI switch needs an instruction")
 	}
 	return nil
 }
@@ -103,9 +97,11 @@ func isAllowlistedAIAction(a models.IntegrationAction) bool {
 	}
 }
 
-// validateAIStepConfig validates the unified AI step by mode, plus the guarded
-// action allowlist for agent mode (every entry must pass isAllowlistedAIAction
-// and carry the config its executor needs, checked against the same node blob).
+// validateAIStepConfig validates the unified AI step by mode. Routing lives in
+// the AI switch node, so decide is not a step mode. Agent mode only checks the
+// guarded allowlist: every entry must pass isAllowlistedAIAction, and the agent
+// supplies each action's target (which tag/task/deal) as a tool argument at run
+// time, so no pinned per-action config is required here.
 func validateAIStepConfig(raw json.RawMessage) error {
 	ai := parseAIConfig(raw)
 	if strings.TrimSpace(ai.Instruction) == "" {
@@ -120,10 +116,6 @@ func validateAIStepConfig(raw json.RawMessage) error {
 		if len(nonEmptyStrings(ai.OutputKeys)) == 0 {
 			return fmt.Errorf("extract mode needs at least one output key")
 		}
-	case "decide":
-		if len(nonEmptyStrings(ai.Cases)) < 2 {
-			return fmt.Errorf("decide mode needs at least two cases")
-		}
 	case "agent":
 		enabled := nonEmptyStrings(ai.Allowlist)
 		if len(enabled) == 0 {
@@ -133,11 +125,6 @@ func validateAIStepConfig(raw json.RawMessage) error {
 			id := models.IntegrationAction(strings.TrimSpace(raw2))
 			if !isAllowlistedAIAction(id) {
 				return fmt.Errorf("%q is not an allowed agent action", raw2)
-			}
-			// Each enabled action's pinned config lives in the same node blob,
-			// so validate it the way that action normally would.
-			if err := validateNativeActionConfig(id, raw); err != nil {
-				return fmt.Errorf("allowed action %q: %w", aiToolName(id), err)
 			}
 		}
 	case "generate", "":
@@ -181,6 +168,15 @@ type NativeActions interface {
 	// behalf of the mailbox-owner userID (categories are per user). Backs the
 	// "label_email" action; userID + threadID come from the reply event data.
 	LabelThread(ctx context.Context, userID uuid.UUID, threadID string, categoryIDs []uuid.UUID) error
+
+	// ListCategories / CreateCategory / ListPipelines back the AI agent step's
+	// argument-based tools: the model picks a tag/label/pipeline by name and the
+	// executor resolves it live (empty pool = any of the owner's tags). Keyed by
+	// the org OWNER (categories are per user); pipelines are org-scoped with
+	// stages hydrated in position order. Mirrors the campaign agent tools.
+	ListCategories(ctx context.Context, ownerID uuid.UUID) ([]models.MiniCategory, error)
+	CreateCategory(ctx context.Context, ownerID uuid.UUID, title, color string) (models.MiniCategory, error)
+	ListPipelines(ctx context.Context, orgID uuid.UUID) ([]models.Pipeline, error)
 }
 
 // nativeActionConfig is the per-node config for native action nodes (mirrors the

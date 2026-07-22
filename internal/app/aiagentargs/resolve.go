@@ -6,6 +6,7 @@ package aiagentargs
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/google/uuid"
@@ -107,4 +108,52 @@ func ResolvePipelineStage(pipelines []models.Pipeline, pipelineName, stageName s
 		}
 	}
 	return pl.ID, st.ID, nil
+}
+
+// MatchValueToCases maps a rendered "value" (a template output or event field)
+// onto a switch's case set for the deterministic, no-model "value" decider:
+// normalized equality on plain cases first (case- and whitespace-insensitive),
+// then "/pattern/" regex cases in configured order. First match wins; "" on a
+// miss routes down the fallback path. Deliberately NO prefix/substring fuzziness
+// ("not interested" must never land on an "interested" case). Shared verbatim by
+// the campaign switch step and the automation AI switch so both route identically.
+func MatchValueToCases(value string, cases []string) string {
+	norm := normalizeSwitchText(value)
+	if norm == "" {
+		return ""
+	}
+	for _, c := range cases {
+		if caseRegex(c) == nil && normalizeSwitchText(c) == norm {
+			return c
+		}
+	}
+	trimmed := strings.TrimSpace(value)
+	for _, c := range cases {
+		if re := caseRegex(c); re != nil && re.MatchString(trimmed) {
+			return c
+		}
+	}
+	return ""
+}
+
+// normalizeSwitchText lowercases, trims, and collapses inner whitespace so
+// "VIP  Customer " matches the case "vip customer". Value matching must not fail
+// on casing or stray spaces in the rendered value.
+func normalizeSwitchText(s string) string {
+	return strings.ToLower(strings.Join(strings.Fields(s), " "))
+}
+
+// caseRegex compiles a "/pattern/" case name into a case-insensitive regex, or
+// returns nil for a plain-text case (or an invalid pattern — the write-time
+// validator rejects those, so nil here only means "not a regex").
+func caseRegex(name string) *regexp.Regexp {
+	name = strings.TrimSpace(name)
+	if len(name) < 3 || !strings.HasPrefix(name, "/") || !strings.HasSuffix(name, "/") {
+		return nil
+	}
+	re, err := regexp.Compile("(?i)" + name[1:len(name)-1])
+	if err != nil {
+		return nil
+	}
+	return re
 }

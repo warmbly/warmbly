@@ -52,9 +52,6 @@ export const ACTION_LABELS: Record<string, string> = {
     "warmbly.label_email": "Label the email",
     "warmbly.set_variables": "Set variables",
     "warmbly.fire_event": "Fire event",
-    "warmbly.ai_classify": "AI classify",
-    "warmbly.ai_extract": "AI extract",
-    "warmbly.ai_generate": "AI generate",
     "warmbly.ai_step": "AI step",
     "warmbly.ai_switch": "AI switch",
 };
@@ -79,9 +76,6 @@ export const NATIVE_ACTIONS: string[] = [
     "warmbly.label_email",
     "warmbly.set_variables",
     "warmbly.fire_event",
-    "warmbly.ai_classify",
-    "warmbly.ai_extract",
-    "warmbly.ai_generate",
     "warmbly.ai_step",
     "warmbly.ai_switch",
 ];
@@ -102,16 +96,10 @@ export const AI_ALLOWLIST_ACTIONS = [
 
 export type NativeActionAllow = (typeof AI_ALLOWLIST_ACTIONS)[number];
 
-// AI action nodes run one LLM step over the event and store the result as a
-// variable for later steps to branch on. They cost one credit each.
+// AI action nodes run over the event with the model: the unified AI step (a
+// single-shot transform or an agent) or the AI switch router. They cost credits.
 export function isAIAction(a: string): boolean {
-    return (
-        a === "warmbly.ai_classify" ||
-        a === "warmbly.ai_extract" ||
-        a === "warmbly.ai_generate" ||
-        a === "warmbly.ai_step" ||
-        a === "warmbly.ai_switch"
-    );
+    return a === "warmbly.ai_step" || a === "warmbly.ai_switch";
 }
 
 export function isNativeAction(a: string): boolean {
@@ -129,9 +117,6 @@ export function nativeActionNeeds(
     | "automation"
     | "vars"
     | "event"
-    | "ai_classify"
-    | "ai_extract"
-    | "ai_generate"
     | "ai_step"
     | "ai_switch"
     | "none" {
@@ -156,12 +141,6 @@ export function nativeActionNeeds(
             return "vars";
         case "warmbly.fire_event":
             return "event";
-        case "warmbly.ai_classify":
-            return "ai_classify";
-        case "warmbly.ai_extract":
-            return "ai_extract";
-        case "warmbly.ai_generate":
-            return "ai_generate";
         default:
             return "none";
     }

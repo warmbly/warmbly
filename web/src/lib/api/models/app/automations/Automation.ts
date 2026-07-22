@@ -20,7 +20,9 @@ export interface AutomationCondition {
 // action on a connection.
 export interface AutomationNode {
     id: string;
-    type: "trigger" | "condition" | "action";
+    // "stop" is a terminal marker: a path routed into it ends. It carries no
+    // action or condition (mirrors the campaign Stop node).
+    type: "trigger" | "condition" | "action" | "stop";
     action?: IntegrationAction;
     connection_id?: string;
     config?: Record<string, unknown>;
@@ -50,12 +52,20 @@ export interface AutomationGraph {
 
 // Read-time parse helpers for the untyped AutomationNode.config blob (jsonb).
 // They are tolerant views, never schemas that reject unknown keys, so the blob
-// stays forward/back-compatible. AIStepConfig is the unified AI step
-// (warmbly.ai_step); its mode selects behavior and, in agent mode, the model
-// may call the reversible actions in allowed_actions[]. AISwitchConfig is the
-// AI router (warmbly.ai_switch), decided over cases[] and routed by
-// "label:<case>" edges (the same edge vocabulary an AI classify node uses).
-export type AIStepMode = "classify" | "extract" | "generate" | "decide" | "agent";
+// stays forward/back-compatible. These mirror the campaign step types:
+// AIStepConfig is the unified AI step (warmbly.ai_step) — a single-shot
+// transform (classify/extract/generate) or an agent that calls the reversible
+// actions in allowed_actions[], choosing tags/tasks/deals itself. AISwitchConfig
+// is the AI router (warmbly.ai_switch), decided over cases[] by an AI prompt or
+// a value template and routed by "label:<case>" edges.
+export type AIStepMode = "classify" | "extract" | "generate" | "agent";
+
+// One tag/label the agent may use: id + display name, so the backend can offer
+// it to the model and resolve its pick without a category lookup.
+export interface AITagRef {
+    id: string;
+    name: string;
+}
 
 export interface AIStepConfig {
     mode: AIStepMode;
@@ -63,14 +73,27 @@ export interface AIStepConfig {
     output_key?: string;
     labels?: string[];
     output_keys?: string[];
-    cases?: string[];
     allowed_actions?: NativeActionAllow[];
+    // Agent tag/label pools (empty = any of the org's tags); optional create.
+    ai_add_tags?: AITagRef[];
+    ai_remove_tags?: AITagRef[];
+    ai_labels?: AITagRef[];
+    ai_allow_create_tags?: boolean;
+    // Route any mode to the stronger model tier.
+    thinking?: boolean;
 }
 
 export interface AISwitchConfig {
     instruction: string;
     cases: string[];
     output_key?: string;
+    // "ai" (default) picks a case with one model call; "value" matches
+    // switch_value against the case names deterministically (free, no model).
+    switch_on?: "ai" | "value";
+    switch_value?: string;
+    // ai-mode capabilities.
+    web_search?: boolean;
+    thinking?: boolean;
 }
 
 export interface Automation {

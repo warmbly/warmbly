@@ -22,6 +22,7 @@ import {
     useNodesState,
     useEdgesState,
     useReactFlow,
+    useUpdateNodeInternals,
     type Node,
     type Edge,
     type Connection,
@@ -34,11 +35,14 @@ import { AnimatePresence, motion } from "framer-motion";
 import dagre from "@dagrejs/dagre";
 import {
     ArrowLeftIcon,
+    BracesIcon,
     BriefcaseIcon,
     CheckCircle2Icon,
     CheckIcon,
+    ChevronDownIcon,
     CheckSquareIcon,
     CopyIcon,
+    FlagIcon,
     GitBranchIcon,
     HistoryIcon,
     Link2Icon,
@@ -74,6 +78,7 @@ import type {
     AutomationEdge as GEdge,
     AutomationNodeResult,
     AutomationRun,
+    AITagRef,
     DryRunResponse,
 } from "@/lib/api/models/app/automations/Automation";
 import {
@@ -277,8 +282,137 @@ function ConditionNode({ data, selected }: NodeProps) {
     );
 }
 
-function ActionNode({ data, selected }: NodeProps) {
-    const d = data as { title: string; sub: string; provider: string; native?: boolean; onDelete: () => void };
+// switchCaseHandle is the react-flow handle id for an AI switch case dot. It IS
+// the case's "label:<case>" route, so dragging from the dot creates that edge and
+// an existing case edge re-attaches to its dot on load, with no separate mapping.
+const switchCaseHandle = (name: string) => "label:" + name.trim();
+
+// Fresh config for a newly-created action node: agent mode for the AI step, two
+// starter cases for the AI switch (so its case dots show at once), else empty.
+function defaultConfigForAction(action: string): Record<string, unknown> {
+    if (action === "warmbly.ai_step") return { mode: "agent" };
+    if (action === "warmbly.ai_switch") return { switch_on: "ai", cases: ["interested", "not interested"] };
+    return {};
+}
+
+function ActionNode({ id, data, selected }: NodeProps) {
+    const d = data as {
+        title: string;
+        sub: string;
+        provider: string;
+        native?: boolean;
+        action?: string;
+        config?: Record<string, unknown>;
+        connectedCases?: string[];
+        onDelete: () => void;
+    };
+    const isSwitch = d.action === "warmbly.ai_switch";
+    const cases = isSwitch && Array.isArray(d.config?.cases)
+        ? (d.config!.cases as unknown[]).map((c) => String(c).trim()).filter(Boolean)
+        : [];
+    // Re-measure when the case dots (and so the handles) change.
+    const updateInternals = useUpdateNodeInternals();
+    const casesSig = cases.join("|");
+    React.useEffect(() => {
+        if (isSwitch) updateInternals(id);
+    }, [id, casesSig, isSwitch, updateInternals]);
+
+    const header = (
+        <div
+            className={cn(
+                "flex items-center gap-2 rounded-t-xl border-b px-2.5 py-1.5",
+                isSwitch ? "border-purple-200/60 bg-gradient-to-r from-purple-50/60 to-white" : "border-slate-200/70 bg-gradient-to-r from-slate-50 to-white",
+            )}
+        >
+            {isSwitch ? (
+                <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-md bg-purple-100 text-purple-600 ring-1 ring-purple-200/70">
+                    <GitBranchIcon className="w-3 h-3" />
+                </span>
+            ) : d.provider ? (
+                <ProviderGlyph provider={d.provider} name={d.provider} size={7} />
+            ) : d.native ? (
+                <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-md bg-indigo-100 text-indigo-600 ring-1 ring-indigo-200/70">
+                    <ZapIcon className="w-3 h-3" />
+                </span>
+            ) : (
+                <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-md bg-slate-100 text-slate-400 ring-1 ring-slate-200/70 text-[10px]">?</span>
+            )}
+            <span className="min-w-0 flex-1 truncate text-[12.5px] font-semibold text-slate-800">{d.title}</span>
+            <button
+                type="button"
+                onClick={(e) => {
+                    e.stopPropagation();
+                    d.onDelete();
+                }}
+                title="Delete action"
+                className="nodrag inline-flex size-5 shrink-0 items-center justify-center rounded text-slate-300 transition-colors hover:bg-rose-50 hover:text-rose-600"
+            >
+                <Trash2Icon className="w-3 h-3" />
+            </button>
+        </div>
+    );
+
+    // AI switch: a row per case with its own draggable dot (drag it to the step
+    // that case leads to), plus an "otherwise" fallback row. Mirrors the campaign
+    // switch node so both builders route the same way.
+    if (isSwitch) {
+        const connected = new Set(d.connectedCases ?? []);
+        const aiMode = String(d.config?.switch_on ?? "ai") !== "value";
+        return (
+            <div
+                className={cn(
+                    "w-[248px] rounded-xl border bg-white shadow-sm transition-shadow duration-200 hover:shadow-md",
+                    selected ? "border-purple-400 ring-2 ring-purple-100" : "border-purple-200",
+                )}
+            >
+                <Handle type="target" position={Position.Top} className="!h-3 !w-3 md:!h-2 md:!w-2 !border-2 !border-white !bg-slate-300" />
+                {header}
+                <div className="px-2.5 pt-1.5 pb-1">
+                    <div className="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-slate-300">
+                        {aiMode ? "AI decides" : "Value match"}
+                    </div>
+                    {d.sub && <div className="mt-0.5 truncate text-[11.5px] text-slate-500">{d.sub}</div>}
+                </div>
+                {cases.length === 0 ? (
+                    <div className="px-2.5 pb-2 text-[10.5px] text-slate-400">Open the step to add cases</div>
+                ) : (
+                    <div className="pb-1.5">
+                        {cases.map((c) => {
+                            const on = connected.has(c.toLowerCase());
+                            return (
+                                <div key={c} className="relative flex h-6 items-center pl-2.5 pr-4">
+                                    <span className={cn("min-w-0 flex-1 truncate text-[11.5px]", on ? "text-slate-700" : "text-slate-400")}>{c}</span>
+                                    <Handle
+                                        type="source"
+                                        id={switchCaseHandle(c)}
+                                        position={Position.Right}
+                                        className={cn(
+                                            "!absolute !-right-1.5 !top-1/2 !h-3 !w-3 !-translate-y-1/2 pointer-coarse:!h-5 pointer-coarse:!w-5 !border-2 !border-white",
+                                            on ? "!bg-purple-500" : "!bg-slate-300",
+                                        )}
+                                    />
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+                {/* The "otherwise" fallback: events no case matched follow this dot. */}
+                <div
+                    className="relative flex h-6 items-center rounded-b-xl border-t border-slate-200/70 bg-slate-50/60 pl-2.5 pr-4"
+                    title="Where events go when no case matched. Drag the dot to the next step."
+                >
+                    <span className="min-w-0 flex-1 truncate text-[10.5px] font-medium uppercase tracking-[0.1em] text-slate-400">Otherwise</span>
+                    <Handle
+                        type="source"
+                        id="s"
+                        position={Position.Right}
+                        className="!absolute !-right-1.5 !top-1/2 !h-3 !w-3 !-translate-y-1/2 pointer-coarse:!h-5 pointer-coarse:!w-5 !border-2 !border-white !bg-slate-400"
+                    />
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div
             className={cn(
@@ -287,31 +421,7 @@ function ActionNode({ data, selected }: NodeProps) {
             )}
         >
             <Handle type="target" position={Position.Top} className="!h-3 !w-3 md:!h-2 md:!w-2 !border-2 !border-white !bg-slate-300" />
-            <div className="flex items-center gap-2 rounded-t-xl border-b border-slate-200/70 bg-gradient-to-r from-slate-50 to-white px-2.5 py-1.5">
-                {d.provider ? (
-                    <ProviderGlyph provider={d.provider} name={d.provider} size={7} />
-                ) : d.native ? (
-                    <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-md bg-indigo-100 text-indigo-600 ring-1 ring-indigo-200/70">
-                        <ZapIcon className="w-3 h-3" />
-                    </span>
-                ) : (
-                    <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-md bg-slate-100 text-slate-400 ring-1 ring-slate-200/70 text-[10px]">
-                        ?
-                    </span>
-                )}
-                <span className="min-w-0 flex-1 truncate text-[12.5px] font-semibold text-slate-800">{d.title}</span>
-                <button
-                    type="button"
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        d.onDelete();
-                    }}
-                    title="Delete action"
-                    className="nodrag inline-flex size-5 shrink-0 items-center justify-center rounded text-slate-300 transition-colors hover:bg-rose-50 hover:text-rose-600"
-                >
-                    <Trash2Icon className="w-3 h-3" />
-                </button>
-            </div>
+            {header}
             <div className="px-2.5 py-2">
                 <div className="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-slate-300">Then</div>
                 <div className="mt-0.5 truncate text-[11.5px] text-slate-500">{d.sub || "Pick an integration…"}</div>
@@ -323,7 +433,36 @@ function ActionNode({ data, selected }: NodeProps) {
     );
 }
 
-const nodeTypes = { trigger: TriggerNode, condition: ConditionNode, action: ActionNode };
+// StopNode — a terminal marker a path routes into to end explicitly. Just a
+// target dot and a red "Stop" pill, mirroring the campaign Stop node.
+function StopNode({ data, selected }: NodeProps) {
+    const d = data as { onDelete: () => void };
+    return (
+        <div
+            className={cn(
+                "inline-flex items-center gap-1.5 rounded-full border bg-white px-3 py-1 shadow-sm transition-shadow duration-200 hover:shadow-md",
+                selected ? "border-rose-400 ring-2 ring-rose-100" : "border-rose-200",
+            )}
+        >
+            <Handle type="target" position={Position.Top} className="!h-3 !w-3 md:!h-2 md:!w-2 !border-2 !border-white !bg-slate-300" />
+            <FlagIcon className="w-3.5 h-3.5 text-rose-500" />
+            <span className="text-[12px] font-semibold text-rose-600">Stop</span>
+            <button
+                type="button"
+                onClick={(e) => {
+                    e.stopPropagation();
+                    d.onDelete();
+                }}
+                title="Delete stop"
+                className="nodrag inline-flex size-4 shrink-0 items-center justify-center rounded text-rose-300 transition-colors hover:bg-rose-50 hover:text-rose-600"
+            >
+                <XIcon className="w-3 h-3" />
+            </button>
+        </div>
+    );
+}
+
+const nodeTypes = { trigger: TriggerNode, condition: ConditionNode, action: ActionNode, stop: StopNode };
 
 // ── Convergent edge (geometry-aware curve, mirrored from CampaignFlow) ────────
 // Unit outward direction for a handle side.
@@ -442,13 +581,18 @@ function ConvergeEdge({
 const edgeTypes = { converge: ConvergeEdge };
 
 // "" plain | "true"/"false" condition paths | "error" | "label:<x>" (an AI
-// classify action's per-label route — followed only when the model picks x).
+// switch's per-case route — followed only when the decider picks case x).
 type When = string;
 
+// An AI switch's per-case dots use the case's "label:<case>" route as the handle
+// id, so dragging from a case dot (or loading an existing case edge) round-trips
+// through the same string with no separate encoding.
 function handleToWhen(h?: string | null): When {
+    if (h && h.startsWith("label:")) return h;
     return h === "out" ? "true" : h === "else" ? "false" : h === "err" ? "error" : "";
 }
 function whenToHandle(w?: string): string {
+    if (w && w.startsWith("label:")) return w;
     return w === "true" ? "out" : w === "false" ? "else" : w === "error" ? "err" : "s";
 }
 
@@ -674,6 +818,9 @@ export default function AutomationFlow({
                     data: { condition: n.condition ?? { field: "intent", operator: "equals" }, label: conditionLabel(n.condition), onDelete: () => deleteNode(n.id) },
                 };
             }
+            if (n.type === "stop") {
+                return { id: n.id, type: "stop", position, data: { onDelete: () => deleteNode(n.id) } };
+            }
             return {
                 id: n.id,
                 type: "action",
@@ -683,11 +830,14 @@ export default function AutomationFlow({
                     connection_id: n.connection_id,
                     config: n.config ?? {},
                     title: n.action ? actionLabel(n.action) : "Choose an action",
-                    sub: isAIAction(String(n.action ?? ""))
-                        ? "Built-in AI step · 1 credit"
-                        : isNativeAction(String(n.action ?? ""))
-                          ? "Built-in action"
-                          : connLabel(n.connection_id),
+                    sub:
+                        n.action === "warmbly.ai_switch"
+                            ? "Routes to one case"
+                            : isAIAction(String(n.action ?? ""))
+                              ? "Built-in AI step · 1 credit"
+                              : isNativeAction(String(n.action ?? ""))
+                                ? "Built-in action"
+                                : connLabel(n.connection_id),
                     provider: providerOf(n.connection_id),
                     native: isNativeAction(String(n.action ?? "")),
                     onDelete: () => deleteNode(n.id),
@@ -790,6 +940,27 @@ export default function AutomationFlow({
         [setNodes],
     );
 
+    // Keep each AI switch node's per-case dot coloring in sync with its edges: a
+    // case whose dot is wired to a step shows solid. Only patches when the set
+    // actually changes, so it can't loop with the node state it writes.
+    React.useEffect(() => {
+        setNodes((ns) => {
+            let changed = false;
+            const next = ns.map((n) => {
+                if (n.type !== "action" || (n.data as { action?: string }).action !== "warmbly.ai_switch") return n;
+                const connected = edges
+                    .filter((e) => e.source === n.id && String((e.data as { when?: string })?.when ?? "").startsWith("label:"))
+                    .map((e) => String((e.data as { when?: string }).when).slice("label:".length).trim().toLowerCase());
+                const sig = [...connected].sort().join("|");
+                const prev = [...((n.data as { connectedCases?: string[] }).connectedCases ?? [])].sort().join("|");
+                if (sig === prev) return n;
+                changed = true;
+                return { ...n, data: { ...n.data, connectedCases: connected } };
+            });
+            return changed ? next : ns;
+        });
+    }, [edges, setNodes]);
+
     // Connect / drag handlers -------------------------------------------------
     const onConnect = React.useCallback(
         (c: Connection) => {
@@ -808,14 +979,16 @@ export default function AutomationFlow({
     );
 
     const addNode = React.useCallback(
-        (type: "action" | "condition", at?: { x: number; y: number }, presetAction?: string) => {
+        (type: "action" | "condition" | "stop", at?: { x: number; y: number }, presetAction?: string) => {
             const id = uid();
             const maxY = nodes.reduce((m, n) => Math.max(m, n.position.y), 0);
             const position = at ?? { x: 0, y: maxY + 140 };
             const defCond = defaultConditionForTrigger(trigger);
             const native = !!presetAction && isNativeAction(presetAction);
             const node: Node =
-                type === "condition"
+                type === "stop"
+                    ? { id, type: "stop", position, data: { onDelete: () => deleteNode(id) } }
+                    : type === "condition"
                     ? {
                           id,
                           type: "condition",
@@ -830,10 +1003,11 @@ export default function AutomationFlow({
                               ? {
                                     action: presetAction,
                                     connection_id: undefined,
-                                    // A fresh AI step defaults to the agent mode (its headline use).
-                                    config: presetAction === "warmbly.ai_step" ? { mode: "agent" } : {},
+                                    // A fresh AI step defaults to agent mode; a fresh AI switch
+                                    // seeds two cases so its case dots show immediately.
+                                    config: defaultConfigForAction(presetAction),
                                     title: actionLabel(presetAction),
-                                    sub: native ? "Built-in action" : "Pick an integration…",
+                                    sub: presetAction === "warmbly.ai_switch" ? "Routes to one case" : native ? "Built-in action" : "Pick an integration…",
                                     provider: "",
                                     native,
                                     onDelete: () => deleteNode(id),
@@ -857,7 +1031,11 @@ export default function AutomationFlow({
             const base = src?.position ?? { x: 0, y: 0 };
             const at = { x: base.x, y: base.y + 140 };
             const newId =
-                choice === "condition" ? addNode("condition", at) : addNode("action", at, choice === "action" ? undefined : choice);
+                choice === "condition"
+                    ? addNode("condition", at)
+                    : choice === "stop"
+                      ? addNode("stop", at)
+                      : addNode("action", at, choice === "action" ? undefined : choice);
             setEdges((es) => {
                 const filtered =
                     when === "" ? es : es.filter((e) => !(e.source === sourceId && (e.data as { when?: string })?.when === when));
@@ -926,19 +1104,16 @@ export default function AutomationFlow({
                     return false;
                 }
                 const aiInstruction = String(d.config?.instruction ?? "").trim();
-                if (
-                    (need === "ai_classify" ||
-                        need === "ai_extract" ||
-                        need === "ai_generate" ||
-                        need === "ai_step" ||
-                        need === "ai_switch") &&
-                    !aiInstruction
-                ) {
+                const aiStepMode = String(d.config?.mode ?? "agent");
+                const switchValueMode = need === "ai_switch" && String(d.config?.switch_on ?? "ai") === "value";
+                // Every AI node needs an instruction, except a value-mode switch
+                // (it matches a template with no model call).
+                if ((need === "ai_step" || need === "ai_switch") && !switchValueMode && !aiInstruction) {
                     toast.error("An AI step needs an instruction");
                     setSelectedId(n.id);
                     return false;
                 }
-                if (need === "ai_step" && String(d.config?.mode ?? "agent") === "agent") {
+                if (need === "ai_step" && aiStepMode === "agent") {
                     const acts = Array.isArray(d.config?.allowed_actions)
                         ? (d.config.allowed_actions as unknown[]).filter((a) => String(a).trim())
                         : [];
@@ -949,28 +1124,34 @@ export default function AutomationFlow({
                     }
                 }
                 if (
-                    need === "ai_switch" &&
-                    !(Array.isArray(d.config?.cases) && (d.config.cases as unknown[]).filter((c) => String(c).trim()).length >= 2)
-                ) {
-                    toast.error("An AI switch needs at least two cases");
-                    setSelectedId(n.id);
-                    return false;
-                }
-                if (
-                    need === "ai_classify" &&
+                    need === "ai_step" &&
+                    aiStepMode === "classify" &&
                     !(Array.isArray(d.config?.labels) && (d.config.labels as unknown[]).filter((l) => String(l).trim()).length >= 2)
                 ) {
-                    toast.error("An AI classify step needs at least two labels");
+                    toast.error("Classify mode needs at least two labels");
                     setSelectedId(n.id);
                     return false;
                 }
                 if (
-                    need === "ai_extract" &&
+                    need === "ai_step" &&
+                    aiStepMode === "extract" &&
                     !(Array.isArray(d.config?.output_keys) && (d.config.output_keys as unknown[]).some((k) => String(k).trim()))
                 ) {
-                    toast.error("An AI extract step needs at least one output key");
+                    toast.error("Extract mode needs at least one output key");
                     setSelectedId(n.id);
                     return false;
+                }
+                if (need === "ai_switch") {
+                    if (!(Array.isArray(d.config?.cases) && (d.config.cases as unknown[]).filter((c) => String(c).trim()).length >= 2)) {
+                        toast.error("An AI switch needs at least two cases");
+                        setSelectedId(n.id);
+                        return false;
+                    }
+                    if (switchValueMode && !String(d.config?.switch_value ?? "").trim()) {
+                        toast.error("A value switch needs a value to match");
+                        setSelectedId(n.id);
+                        return false;
+                    }
                 }
                 continue; // native actions need no connection
             }
@@ -1017,19 +1198,13 @@ export default function AutomationFlow({
             edges: edges.map((e) => {
                 let when = (e.data as { when?: string })?.when ?? "";
                 // Heal stale per-label routes: if the source is no longer a
-                // routing AI node (classify labels, or switch / decide cases), or
-                // the choice was removed from its set, fall back to a plain
-                // "always" edge instead of failing the save.
+                // routing AI node (an AI switch's cases), or the choice was removed
+                // from its set, fall back to a plain "always" edge instead of
+                // failing the save.
                 if (when.startsWith("label:")) {
                     const src = nodes.find((n) => n.id === e.source);
                     const d = src?.data as { action?: string; config?: Record<string, unknown> } | undefined;
-                    const choices =
-                        d?.action === "warmbly.ai_classify"
-                            ? d?.config?.labels
-                            : d?.action === "warmbly.ai_switch" ||
-                                (d?.action === "warmbly.ai_step" && String(d?.config?.mode ?? "") === "decide")
-                              ? d?.config?.cases
-                              : undefined;
+                    const choices = d?.action === "warmbly.ai_switch" ? d?.config?.cases : undefined;
                     const norm = (Array.isArray(choices) ? (choices as unknown[]) : []).map((l) =>
                         String(l).trim().toLowerCase(),
                     );
@@ -1333,14 +1508,10 @@ export default function AutomationFlow({
                     )}
                     <Panel position="top-left">
                         <div className="flex items-center gap-1.5">
-                            <button
-                                type="button"
-                                onClick={() => addNode("action")}
-                                className="inline-flex h-8 items-center gap-1.5 rounded-md bg-sky-600 px-2.5 text-[12px] font-medium text-white shadow-sm hover:bg-sky-700"
-                            >
-                                <PlusIcon className="w-3.5 h-3.5" />
-                                Add action
-                            </button>
+                            <AddStepMenu
+                                onAdd={(choice) => (choice === "action" ? addNode("action") : addNode("action", undefined, choice))}
+                                onAddCondition={() => addNode("condition")}
+                            />
                             <button
                                 type="button"
                                 onClick={() => addNode("condition")}
@@ -1370,7 +1541,7 @@ export default function AutomationFlow({
                 )}
 
                 <AnimatePresence>
-                {selectedNode && !panel && (
+                {selectedNode && selectedNode.type !== "stop" && !panel && (
                     <SidePanel key="editor">
                     <NodeEditor
                         key={selectedNode.id}
@@ -1392,7 +1563,7 @@ export default function AutomationFlow({
                         actionsForProvider={actionsForProvider}
                         providerOf={providerOf}
                         onAction={(patch) => updateNodeData(selectedNode.id, patch)}
-                        // AI classify per-label routing: this node's outgoing
+                        // AI switch per-case routing: this node's outgoing
                         // plain/label edges, editable from the node editor.
                         labelRoutes={edges
                             .filter((e) => e.source === selectedNode.id && (e.data as { when?: string })?.when !== "error")
@@ -1806,16 +1977,12 @@ function NodeEditor({
     const isCondition = node.type === "condition";
     const nodeAction = (node.data as { action?: string }).action;
     const nodeConfig = (node.data as { config?: Record<string, unknown> }).config ?? {};
-    // The routing choices a node fans out on ("label:<x>" edges): an AI classify
-    // routes by its labels; an AI switch and a decide-mode AI step route by
-    // their cases. Everything else has none.
+    // The routing choices a node fans out on ("label:<x>" edges): only an AI
+    // switch routes, by its cases. Everything else has none.
     const routeLabels = ((): string[] => {
         const asList = (v: unknown) =>
             Array.isArray(v) ? v.map((l) => String(l).trim()).filter(Boolean) : [];
-        if (nodeAction === "warmbly.ai_classify") return asList(nodeConfig.labels);
         if (nodeAction === "warmbly.ai_switch") return asList(nodeConfig.cases);
-        if (nodeAction === "warmbly.ai_step" && String(nodeConfig.mode ?? "") === "decide")
-            return asList(nodeConfig.cases);
         return [];
     })();
 
@@ -1885,9 +2052,9 @@ function NodeEditor({
     );
 }
 
-// AILabelRoutes — per-label routing for an AI classify node: each outgoing
-// connection can run always, or only when the model picked a specific label,
-// so one classify step branches multi-way on the canvas.
+// AILabelRoutes — per-case routing for an AI switch node from the editor drawer:
+// each outgoing connection can run always, or only when the decider picked a
+// specific case (an alternative to dragging the node's per-case dots).
 function AILabelRoutes({
     labels,
     routes,
@@ -2106,11 +2273,8 @@ const ACTION_VISUAL: Record<string, { Icon: typeof TagIcon; tint: string; bg: st
     "warmbly.label_email": { Icon: TagsIcon, tint: "text-fuchsia-600", bg: "bg-fuchsia-50", desc: "Label the conversation the contact replied on." },
     "warmbly.set_variables": { Icon: WandSparklesIcon, tint: "text-amber-600", bg: "bg-amber-50", desc: "Compute named values from templates for later steps to reuse." },
     "warmbly.fire_event": { Icon: SendIcon, tint: "text-sky-600", bg: "bg-sky-50", desc: "Publish a custom event to the realtime gateway — your app receives it over the API websocket, no public URL." },
-    "warmbly.ai_classify": { Icon: SparklesIcon, tint: "text-purple-600", bg: "bg-purple-50", desc: "Read the event with AI and pick one label (stored as ai_class). Costs 1 credit." },
-    "warmbly.ai_extract": { Icon: SparklesIcon, tint: "text-indigo-600", bg: "bg-indigo-50", desc: "Pull named fields out of the event with AI. Costs 1 credit." },
-    "warmbly.ai_generate": { Icon: SparklesIcon, tint: "text-cyan-600", bg: "bg-cyan-50", desc: "Write a short piece of text from an instruction (stored as ai_text). Costs 1 credit." },
-    "warmbly.ai_step": { Icon: SparklesIcon, tint: "text-purple-600", bg: "bg-purple-50", desc: "An AI agent that follows your instruction and takes reversible actions (tag, task, deal, label…). Billed 1 credit per step it takes." },
-    "warmbly.ai_switch": { Icon: GitBranchIcon, tint: "text-purple-600", bg: "bg-purple-50", desc: "Route the event: AI picks one of your cases and follows that connection. Costs 1 credit." },
+    "warmbly.ai_step": { Icon: SparklesIcon, tint: "text-purple-600", bg: "bg-purple-50", desc: "One AI step: an agent that takes reversible actions (tag, task, deal, label…), or a single-shot classify, extract, or generate over the event. Billed in credits." },
+    "warmbly.ai_switch": { Icon: GitBranchIcon, tint: "text-purple-600", bg: "bg-purple-50", desc: "Route the event: AI picks one of your cases, or match a value template. AI mode costs 1 credit; value mode is free." },
     "slack.notify": { Icon: MessageSquareIcon, tint: "text-violet-600", bg: "bg-violet-50" },
     "discord.notify": { Icon: MessageSquareIcon, tint: "text-indigo-600", bg: "bg-indigo-50" },
     "webhook.ping": { Icon: SendIcon, tint: "text-sky-600", bg: "bg-sky-50" },
@@ -2180,13 +2344,17 @@ function DragCreateMenu({
                         }}
                     >
                         <div className="px-2 pt-1 pb-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">Add</div>
-                        <CreateRow icon={<ZapIcon className="w-3.5 h-3.5 text-sky-600" />} label="Action" onClick={() => pick("action")} />
+                        <CreateRow icon={actionGlyph("warmbly.ai_step")} label={actionLabel("warmbly.ai_step")} onClick={() => pick("warmbly.ai_step")} />
+                        <CreateRow icon={actionGlyph("warmbly.ai_switch")} label={actionLabel("warmbly.ai_switch")} onClick={() => pick("warmbly.ai_switch")} />
                         <CreateRow icon={<GitBranchIcon className="w-3.5 h-3.5 text-amber-600" />} label="Condition (branch)" onClick={() => pick("condition")} />
                         <div className="my-1 h-px bg-slate-100" />
-                        <div className="px-2 pt-0.5 pb-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">Built-in actions</div>
-                        {NATIVE_ACTIONS.map((a) => (
+                        <div className="px-2 pt-0.5 pb-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">Actions</div>
+                        <CreateRow icon={<ZapIcon className="w-3.5 h-3.5 text-sky-600" />} label="Integration action" onClick={() => pick("action")} />
+                        {NATIVE_ACTIONS.filter((a) => !isAIAction(a)).map((a) => (
                             <CreateRow key={a} icon={actionGlyph(a)} label={actionLabel(a)} onClick={() => pick(a)} />
                         ))}
+                        <div className="my-1 h-px bg-slate-100" />
+                        <CreateRow icon={<FlagIcon className="w-3.5 h-3.5 text-rose-500" />} label="Stop here" onClick={() => pick("stop")} />
                     </motion.div>
                 )}
             </AnimatePresence>
@@ -2205,6 +2373,65 @@ function CreateRow({ icon, label, onClick }: { icon: React.ReactNode; label: str
             {icon}
             {label}
         </button>
+    );
+}
+
+// AddStepMenu — the toolbar "Add" split button. The primary click drops a blank
+// action; the chevron opens a dropdown to add an AI step, AI switch, a condition,
+// or any built-in action directly, mirroring the campaign steps "Add step" menu.
+function AddStepMenu({ onAdd, onAddCondition }: { onAdd: (choice: string) => void; onAddCondition: () => void }) {
+    const [open, setOpen] = React.useState(false);
+    const pick = (fn: () => void) => {
+        fn();
+        setOpen(false);
+    };
+    return (
+        <div className="relative inline-flex">
+            <button
+                type="button"
+                onClick={() => onAdd("action")}
+                className="inline-flex h-8 items-center gap-1.5 rounded-l-md bg-sky-600 px-2.5 text-[12px] font-medium text-white shadow-sm transition-colors hover:bg-sky-700"
+            >
+                <PlusIcon className="w-3.5 h-3.5" />
+                Add action
+            </button>
+            <button
+                type="button"
+                aria-label="More step types"
+                onClick={() => setOpen((o) => !o)}
+                className="inline-flex h-8 items-center rounded-r-md border-l border-sky-500/60 bg-sky-600 px-1.5 text-white shadow-sm transition-colors hover:bg-sky-700"
+            >
+                <ChevronDownIcon className="w-3.5 h-3.5" />
+            </button>
+            <AnimatePresence>
+                {open && (
+                    <>
+                        <div className="fixed inset-0 z-40" onMouseDown={() => setOpen(false)} />
+                        <motion.div
+                            key="add-step-menu"
+                            className="absolute left-0 top-full z-50 mt-1 max-h-[360px] w-56 overflow-y-auto rounded-lg border border-slate-200 bg-white p-1 shadow-xl"
+                            style={{ transformOrigin: "top left", willChange: "transform, opacity" }}
+                            role="menu"
+                            initial={{ opacity: 0, scale: 0.95, y: -4 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.97, y: -2 }}
+                            transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+                        >
+                            <div className="px-2 pt-1 pb-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">AI</div>
+                            <CreateRow icon={actionGlyph("warmbly.ai_step")} label={actionLabel("warmbly.ai_step")} onClick={() => pick(() => onAdd("warmbly.ai_step"))} />
+                            <CreateRow icon={actionGlyph("warmbly.ai_switch")} label={actionLabel("warmbly.ai_switch")} onClick={() => pick(() => onAdd("warmbly.ai_switch"))} />
+                            <div className="my-1 h-px bg-slate-100" />
+                            <CreateRow icon={<GitBranchIcon className="w-3.5 h-3.5 text-amber-600" />} label="Condition (branch)" onClick={() => pick(onAddCondition)} />
+                            <div className="my-1 h-px bg-slate-100" />
+                            <div className="px-2 pt-0.5 pb-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">Built-in actions</div>
+                            {NATIVE_ACTIONS.filter((a) => !isAIAction(a)).map((a) => (
+                                <CreateRow key={a} icon={actionGlyph(a)} label={actionLabel(a)} onClick={() => pick(() => onAdd(a))} />
+                            ))}
+                        </motion.div>
+                    </>
+                )}
+            </AnimatePresence>
+        </div>
     );
 }
 
@@ -2267,7 +2494,7 @@ function ActionEditor({
     const pickAction = (action: string) =>
         onAction({
             action,
-            config: {},
+            config: defaultConfigForAction(action),
             title: actionLabel(action),
             native: isNativeAction(action),
             ...(isNativeAction(action) ? { connection_id: undefined } : {}),
@@ -2526,15 +2753,7 @@ function NativeActionConfig({
 
             {need === "vars" && <SetVariablesFields config={config} patchConfig={patchConfig} />}
 
-            {need === "ai_classify" && <AIClassifyFields config={config} patchConfig={patchConfig} />}
-
-            {need === "ai_extract" && <AIExtractFields config={config} patchConfig={patchConfig} />}
-
-            {need === "ai_generate" && <AIGenerateFields config={config} patchConfig={patchConfig} />}
-
-            {need === "ai_step" && (
-                <AIStepFields config={config} patchConfig={patchConfig} trigger={trigger} selfId={selfId} />
-            )}
+            {need === "ai_step" && <AIStepFields config={config} patchConfig={patchConfig} />}
 
             {need === "ai_switch" && <AISwitchFields config={config} patchConfig={patchConfig} />}
 
@@ -2887,9 +3106,8 @@ function AIGenerateFields({
     );
 }
 
-// The AI step is the agent (and the single-shot transforms). Routing is the AI
-// switch's job, so "decide" is deliberately not offered here — the two nodes
-// stay distinct.
+// The AI step mirrors the campaign agent plus single-shot transforms. Routing is
+// the AI switch's job, so "decide" is deliberately not a step mode.
 const AI_STEP_MODE_OPTIONS: SelectOption[] = [
     { value: "agent", label: "Agent (decide + act)" },
     { value: "generate", label: "Generate text" },
@@ -2897,19 +3115,80 @@ const AI_STEP_MODE_OPTIONS: SelectOption[] = [
     { value: "extract", label: "Extract fields" },
 ];
 
-// AIStepFields is the unified AI step editor: a mode selector that swaps between
-// the single-shot sub-forms (classify/extract/generate/decide) and the agent
-// (decide + act) form. Every mode writes into the one shared node config blob.
-function AIStepFields({
+// AIToggle — one capability row (extended thinking, web search) matching the
+// campaign switch's toggle. Purple accent when on.
+function AIToggle({
+    label,
+    detail,
+    on,
+    onToggle,
+}: {
+    label: string;
+    detail: string;
+    on: boolean;
+    onToggle: () => void;
+}) {
+    return (
+        <div
+            className={cn(
+                "flex items-center gap-2 rounded-md px-2 py-1.5 ring-1 transition-colors",
+                on ? "bg-purple-50 ring-purple-200" : "bg-slate-50 ring-slate-200",
+            )}
+        >
+            <div className="min-w-0 flex-1">
+                <div className={cn("text-[11.5px] font-medium", on ? "text-purple-700" : "text-slate-500")}>{label}</div>
+                <div className="text-[10.5px] text-slate-400">{detail}</div>
+            </div>
+            <button
+                type="button"
+                role="switch"
+                aria-checked={on}
+                aria-label={label}
+                onClick={onToggle}
+                className={cn(
+                    "relative inline-flex h-[18px] w-8 shrink-0 items-center rounded-full transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-300",
+                    on ? "bg-purple-600" : "bg-slate-300",
+                )}
+            >
+                <span
+                    className={cn(
+                        "inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-sm transition-transform duration-200",
+                        on ? "translate-x-[15px]" : "translate-x-[2px]",
+                    )}
+                />
+            </button>
+        </div>
+    );
+}
+
+// AIThinkingToggle — the "extended thinking" capability shown on every AI node
+// (step + switch): route to the stronger model tier.
+function AIThinkingToggle({
     config,
     patchConfig,
-    trigger,
-    selfId,
 }: {
     config: Record<string, unknown>;
     patchConfig: (p: Record<string, unknown>) => void;
-    trigger: string;
-    selfId: string;
+}) {
+    return (
+        <AIToggle
+            label="Extended thinking"
+            detail="Uses the stronger model with a bigger reasoning budget. Costs more through usage metering"
+            on={!!config.thinking}
+            onToggle={() => patchConfig({ thinking: !config.thinking })}
+        />
+    );
+}
+
+// AIStepFields is the unified AI step editor: a mode selector swaps between the
+// single-shot transforms (classify/extract/generate) and the agent, and every
+// mode can route to the stronger model tier. All write one shared config blob.
+function AIStepFields({
+    config,
+    patchConfig,
+}: {
+    config: Record<string, unknown>;
+    patchConfig: (p: Record<string, unknown>) => void;
 }) {
     const mode = String(config.mode ?? "agent");
     return (
@@ -2927,80 +3206,80 @@ function AIStepFields({
             {mode === "classify" && <AIClassifyFields config={config} patchConfig={patchConfig} />}
             {mode === "extract" && <AIExtractFields config={config} patchConfig={patchConfig} />}
             {mode === "generate" && <AIGenerateFields config={config} patchConfig={patchConfig} />}
-            {mode === "agent" && (
-                <AIAgentFields config={config} patchConfig={patchConfig} trigger={trigger} selfId={selfId} />
-            )}
+            {mode === "agent" && <AIAgentFields config={config} patchConfig={patchConfig} />}
+            <div>
+                <Label>Capabilities</Label>
+                <AIThinkingToggle config={config} patchConfig={patchConfig} />
+            </div>
         </div>
     );
 }
 
-// AIDecideFields: instruction + the cases the model picks from. Route each
-// outgoing connection to a case with the "Route connections by label" control.
-// Also backs the standalone AI switch node.
-function AIDecideFields({
-    config,
-    patchConfig,
+// The allowlist ids whose agent tool draws from an optional tag/label pool.
+const AI_POOL_KEY: Record<string, "ai_add_tags" | "ai_remove_tags" | "ai_labels"> = {
+    "warmbly.add_tag": "ai_add_tags",
+    "warmbly.remove_tag": "ai_remove_tags",
+    "warmbly.label_email": "ai_labels",
+};
+
+// AITagPoolField — a multi-select pool of tags/labels the agent may use. The
+// display name is stored alongside the id so the backend can offer the tag to
+// the model and resolve its pick without a category lookup. Empty = any.
+function AITagPoolField({
+    label,
+    value,
+    onChange,
 }: {
-    config: Record<string, unknown>;
-    patchConfig: (p: Record<string, unknown>) => void;
+    label: string;
+    value: AITagRef[];
+    onChange: (refs: AITagRef[]) => void;
 }) {
-    const cases = Array.isArray(config.cases) ? (config.cases as unknown[]).map(String) : [];
+    const { user } = useUserProfile();
+    const titleById = React.useMemo(() => {
+        const m = new Map<string, string>();
+        for (const c of user.categories ?? []) m.set(c.id, c.title);
+        return m;
+    }, [user.categories]);
+    const knownName = React.useMemo(() => new Map(value.map((r) => [r.id, r.name])), [value]);
     return (
-        <div className="space-y-3">
-            <AIInstruction
-                value={String(config.instruction ?? "")}
-                onChange={(v) => patchConfig({ instruction: v })}
-                placeholder="Decide which path fits this reply."
+        <div>
+            <Label>{label}</Label>
+            <CategoryPicker
+                value={value.map((r) => r.id)}
+                onChange={(ids) => onChange(ids.map((id) => ({ id, name: titleById.get(id) ?? knownName.get(id) ?? id })))}
+                placeholder="Any — leave empty to let the agent choose"
             />
-            <AIStringList
-                label="Cases"
-                values={cases}
-                onChange={(next) => patchConfig({ cases: next })}
-                placeholder="interested"
-                addLabel="Add case"
-            />
-            <p className="text-[11px] text-slate-400 leading-relaxed">
-                The model picks exactly one case. Add at least two, then route each connection to a case with
-                “Route connections by label” below. Costs 1 credit.
+            <p className="mt-1.5 text-[11px] text-slate-400">
+                {value.length
+                    ? "The agent chooses among these for each event."
+                    : "Empty, so the agent may use any of your tags for each event."}
             </p>
         </div>
     );
 }
 
-// AISwitchFields — the standalone AI switch router. Same shape as decide.
-function AISwitchFields({
-    config,
-    patchConfig,
-}: {
-    config: Record<string, unknown>;
-    patchConfig: (p: Record<string, unknown>) => void;
-}) {
-    return <AIDecideFields config={config} patchConfig={patchConfig} />;
-}
-
-// AIAgentFields — the agentic AI step: an instruction plus the guarded set of
-// reversible actions the model may call. The agent decides which to use per
-// event; each enabled action that needs config shows its pinned inputs (shared
-// in this one node blob). It can never send or reply.
+// AIAgentFields — the agentic AI step: an instruction plus the guarded reversible
+// actions the model may call, choosing which per event and writing task/deal
+// details itself. Tag/label actions carry an optional pool (empty = any of your
+// tags). It never sends or replies.
 function AIAgentFields({
     config,
     patchConfig,
-    trigger,
-    selfId,
 }: {
     config: Record<string, unknown>;
     patchConfig: (p: Record<string, unknown>) => void;
-    trigger: string;
-    selfId: string;
 }) {
-    const enabled = Array.isArray(config.allowed_actions)
-        ? (config.allowed_actions as unknown[]).map(String)
-        : [];
+    const enabled = Array.isArray(config.allowed_actions) ? (config.allowed_actions as unknown[]).map(String) : [];
     const toggle = (id: string) =>
         patchConfig({
             allowed_actions: enabled.includes(id) ? enabled.filter((a) => a !== id) : [...enabled, id],
         });
-    const needsConfig = enabled.filter((id) => nativeActionNeeds(id) !== "none");
+    const poolFor = (id: string): AITagRef[] => {
+        const key = AI_POOL_KEY[id];
+        const v = key ? config[key] : undefined;
+        return Array.isArray(v) ? (v as AITagRef[]) : [];
+    };
+    const anyOpenPool = Object.keys(AI_POOL_KEY).some((id) => enabled.includes(id) && poolFor(id).length === 0);
     return (
         <div className="space-y-3">
             <AIInstruction
@@ -3010,48 +3289,167 @@ function AIAgentFields({
             />
             <div>
                 <Label>Actions the agent may take</Label>
-                <div className="space-y-0.5 rounded-md border border-slate-200 p-1">
+                <div className="divide-y divide-slate-100 rounded-md border border-slate-200 p-1">
                     {AI_ALLOWLIST_ACTIONS.map((id) => {
                         const on = enabled.includes(id);
+                        const poolKey = AI_POOL_KEY[id];
+                        return (
+                            <div key={id} className="py-0.5">
+                                <button
+                                    type="button"
+                                    onClick={() => toggle(id)}
+                                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[12.5px] text-slate-700 transition-colors hover:bg-slate-100"
+                                >
+                                    <span
+                                        className={cn(
+                                            "inline-flex size-4 shrink-0 items-center justify-center rounded border",
+                                            on ? "border-sky-500 bg-sky-500 text-white" : "border-slate-300 bg-white",
+                                        )}
+                                    >
+                                        {on && <CheckIcon className="w-3 h-3" />}
+                                    </span>
+                                    {actionLabel(id)}
+                                </button>
+                                {on && poolKey && (
+                                    <div className="ml-[1.35rem] mt-1 space-y-3 border-l border-slate-200 pl-3 pb-1.5">
+                                        <AITagPoolField
+                                            label={
+                                                id === "warmbly.add_tag"
+                                                    ? "Tags the agent can add"
+                                                    : id === "warmbly.remove_tag"
+                                                      ? "Tags the agent can remove"
+                                                      : "Labels the agent can apply"
+                                            }
+                                            value={poolFor(id)}
+                                            onChange={(refs) => patchConfig({ [poolKey]: refs })}
+                                        />
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+                {anyOpenPool && (
+                    <button
+                        type="button"
+                        onClick={() => patchConfig({ ai_allow_create_tags: !config.ai_allow_create_tags })}
+                        className="mt-2 flex w-full items-center gap-2 rounded px-1.5 py-1.5 text-left text-[12px] text-slate-600 transition-colors hover:bg-slate-50"
+                    >
+                        <span
+                            className={cn(
+                                "inline-flex size-4 shrink-0 items-center justify-center rounded border",
+                                config.ai_allow_create_tags ? "border-sky-500 bg-sky-500 text-white" : "border-slate-300 bg-white",
+                            )}
+                        >
+                            {!!config.ai_allow_create_tags && <CheckIcon className="w-3 h-3" />}
+                        </span>
+                        Let the agent create a new tag/label when none fits
+                    </button>
+                )}
+                <p className="mt-1.5 text-[11px] text-slate-400 leading-relaxed">
+                    The agent decides which of these to use for each event, writes any task or deal details itself, and
+                    can chain several. It only takes these reversible actions — it never sends or replies. Billed 1
+                    credit per step it takes.
+                </p>
+            </div>
+        </div>
+    );
+}
+
+// AISwitchFields — the AI switch router, mirroring the campaign switch: pick the
+// decider (an AI prompt over the event, or a value template matched to the case
+// names), then route each connection to a case with "Route connections by label".
+function AISwitchFields({
+    config,
+    patchConfig,
+}: {
+    config: Record<string, unknown>;
+    patchConfig: (p: Record<string, unknown>) => void;
+}) {
+    const cases = Array.isArray(config.cases) ? (config.cases as unknown[]).map(String) : [];
+    const aiMode = String(config.switch_on ?? "ai") !== "value";
+    return (
+        <div className="space-y-3">
+            <div>
+                <Label>Decided by</Label>
+                <div className="grid grid-cols-2 gap-1.5">
+                    {(
+                        [
+                            { ai: true, Icon: SparklesIcon, title: "AI prompt", detail: "A model reads the event and picks a case. 1 credit." },
+                            { ai: false, Icon: BracesIcon, title: "Value", detail: "A field or template is matched to the cases. Free." },
+                        ] as const
+                    ).map(({ ai, Icon, title, detail }) => {
+                        const active = aiMode === ai;
                         return (
                             <button
-                                key={id}
+                                key={title}
                                 type="button"
-                                onClick={() => toggle(id)}
-                                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[12.5px] text-slate-700 transition-colors hover:bg-slate-100"
+                                onClick={() => patchConfig({ switch_on: ai ? "ai" : "value" })}
+                                className={cn(
+                                    "flex items-start gap-1.5 rounded-md border px-2 py-1.5 text-left transition-colors",
+                                    active ? "border-purple-300 bg-purple-50" : "border-slate-200 bg-white hover:border-slate-300",
+                                )}
                             >
-                                <span
-                                    className={cn(
-                                        "inline-flex size-4 shrink-0 items-center justify-center rounded border",
-                                        on ? "border-sky-500 bg-sky-500 text-white" : "border-slate-300 bg-white",
-                                    )}
-                                >
-                                    {on && <CheckIcon className="w-3 h-3" />}
+                                <Icon className={cn("mt-0.5 w-3.5 h-3.5 shrink-0", active ? "text-purple-600" : "text-slate-400")} />
+                                <span className="min-w-0">
+                                    <span className={cn("block text-[11.5px] font-medium", active ? "text-purple-700" : "text-slate-700")}>
+                                        {title}
+                                    </span>
+                                    <span className="block text-[10.5px] leading-snug text-slate-400">{detail}</span>
                                 </span>
-                                {actionLabel(id)}
                             </button>
                         );
                     })}
                 </div>
-                <p className="mt-1.5 text-[11px] text-slate-400 leading-relaxed">
-                    The agent decides which of these to use for each event, and can chain several. It only takes these
-                    reversible actions — it never sends or replies. Billed 1 credit per step it takes.
-                </p>
             </div>
-            {needsConfig.map((id) => (
-                <div key={id} className="rounded-md border border-slate-200 p-2.5">
-                    <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                        {actionLabel(id)}
-                    </div>
-                    <NativeActionConfig
-                        action={id}
-                        trigger={trigger}
-                        config={config}
-                        patchConfig={patchConfig}
-                        selfId={selfId}
+
+            {aiMode ? (
+                <>
+                    <AIInstruction
+                        value={String(config.instruction ?? "")}
+                        onChange={(v) => patchConfig({ instruction: v })}
+                        placeholder="Decide which path fits this event."
                     />
+                    <div>
+                        <Label>Capabilities</Label>
+                        <div className="space-y-1">
+                            <AIToggle
+                                label="Web search"
+                                detail="Looks up the event's company on the web before deciding. +1 credit when results are found"
+                                on={!!config.web_search}
+                                onToggle={() => patchConfig({ web_search: !config.web_search })}
+                            />
+                            <AIThinkingToggle config={config} patchConfig={patchConfig} />
+                        </div>
+                    </div>
+                </>
+            ) : (
+                <div>
+                    <Label>Value to match</Label>
+                    <TextInput
+                        value={String(config.switch_value ?? "")}
+                        onChange={(v) => patchConfig({ switch_value: v.slice(0, 500) })}
+                        placeholder="e.g. {{.intent}}"
+                        className="w-full font-mono"
+                    />
+                    <p className="mt-1 text-[11px] text-slate-400 leading-relaxed">
+                        Rendered against the event and matched to the case names. Matching ignores casing and extra
+                        spaces; wrap a case in slashes for a regex, e.g. <code className="font-mono">/^(vip|enterprise)/</code>.
+                        First match wins. No model call, no credits.
+                    </p>
                 </div>
-            ))}
+            )}
+
+            <AIStringList
+                label="Cases"
+                values={cases}
+                onChange={(next) => patchConfig({ cases: next })}
+                placeholder="interested"
+                addLabel="Add case"
+            />
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+                Add at least two cases, then route each connection to a case with “Route connections by label” below.
+            </p>
         </div>
     );
 }

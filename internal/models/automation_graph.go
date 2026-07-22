@@ -10,6 +10,10 @@ const (
 	AutomationNodeTrigger   = "trigger"
 	AutomationNodeCondition = "condition"
 	AutomationNodeAction    = "action"
+	// AutomationNodeStop is a terminal marker: a path routed into it ends (the
+	// executor's default case follows its outgoing edges, of which a stop has
+	// none). It carries no action or condition. Mirrors the campaign Stop node.
+	AutomationNodeStop = "stop"
 
 	// The conventional id of the single entry node.
 	AutomationTriggerNodeID = "trigger"

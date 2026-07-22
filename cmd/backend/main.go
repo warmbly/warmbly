@@ -1084,10 +1084,13 @@ func main() {
 			Orgs:     organizationRepository,
 		})
 		integrationServiceForHandler.SetPublisher(streamingPublisher)
-		// AI automation nodes (ai_classify / ai_extract / ai_generate) run over the
-		// same provider + credit ledger as the rest of the AI layer. Nil provider
-		// (no AI_PROVIDER) leaves the nodes returning a clean "not available".
+		// AI automation nodes (ai_step / ai_switch) run over the same provider +
+		// credit ledger as the rest of the AI layer. Nil provider (no AI_PROVIDER)
+		// leaves the nodes returning a clean "not available".
 		integrationServiceForHandler.SetAI(aiProvider, creditService)
+		// The AI switch's optional web search shares the same pluggable backend as
+		// the campaign switch and dashboard agent.
+		integrationServiceForHandler.SetAISearch(aiSearch)
 		// Port reply-classifier Layer 3 onto the platform provider (OpenAI-first,
 		// self-hostable). Platform-paid, never charged to org credits. Nil provider
 		// leaves Layer 3 disabled (the ambiguous middle resolves to "unknown").

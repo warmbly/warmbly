@@ -224,8 +224,8 @@ func main() {
 	webhookService.WireDispatchSink(integrationServiceC.DispatchAny)
 	// AI automation nodes + reply-classifier Layer 3 run in THIS process (reply /
 	// warmup / bounce events dispatch here). Build the credit ledger + provider so
-	// ai_classify / ai_extract / ai_generate nodes can charge + call, and so the
-	// classifier's optional model layer rides the same OpenAI-first provider.
+	// the ai_step / ai_switch nodes can charge + call, and so the classifier's
+	// optional model layer rides the same OpenAI-first provider.
 	creditRepoC := repository.NewCreditRepository(primaryDB)
 	aiSettingsRepoC := repository.NewAISettingsRepository(primaryDB)
 	creditServiceC := credits.NewService(creditRepoC, aiSettingsRepoC, redisCache)
@@ -233,6 +233,13 @@ func main() {
 	// alert. Auto top-up stays backend-only (no Stripe service here).
 	creditServiceC.SetMonitor(creditwatch.New(aiSettingsRepoC, creditRepoC, redisCache, streamingPublisher, nil).OnBalanceChanged)
 	var aiProviderC generation.Provider
+	// Pluggable web search (Serper/SearXNG) backs the AI switch's optional
+	// company lookup on reply-triggered automations that run in the consumer.
+	aiSearchC := generation.NewSearchClient(
+		cfg.GetStringOptional(ctx, "SEARCH_PROVIDER", "search/provider", ""),
+		cfg.GetStringOptional(ctx, "SEARCH_API_URL", "search/api_url", ""),
+		cfg.GetSecretOptional(ctx, "SEARCH_API_KEY", "search/api_key", ""),
+	)
 	// Provider selection mirrors the backend: AI_PROVIDER preset + AI_* vars.
 	if cfgAI, rerr := generation.Resolve(generation.ProviderSettings{
 		Provider:   cfg.GetStringOptional(ctx, "AI_PROVIDER", "ai_provider", ""),
@@ -242,12 +249,14 @@ func main() {
 		ModelTrial: cfg.GetStringOptional(ctx, "AI_MODEL_TRIAL", "ai_model_trial", ""),
 		ModelPaid:  cfg.GetStringOptional(ctx, "AI_MODEL_PAID", "ai_model_paid", ""),
 		Free:       cfg.GetBoolPtr(ctx, "AI_FREE", "ai_free"),
+		Search:     aiSearchC,
 	}); rerr != nil {
 		log.Printf("AI provider misconfigured, AI features disabled: %v", rerr)
 	} else if p, perr := generation.NewProvider(cfgAI); perr == nil {
 		aiProviderC = p
 	}
 	integrationServiceC.SetAI(aiProviderC, creditServiceC)
+	integrationServiceC.SetAISearch(aiSearchC)
 	if aiProviderC != nil {
 		replyclassify.SetModelClassifier(func(ctx context.Context, system, user string) (string, error) {
 			res, err := aiProviderC.Complete(ctx, generation.CompletionRequest{System: system, Prompt: user, MaxTokens: 16, Temperature: generation.Deterministic()})
