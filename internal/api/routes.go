@@ -406,6 +406,8 @@ func Run(
 				// a no-op.
 				generation.POST("/write", m.RequireOrganization(), m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), m.RequireAccess(models.PermUseAI, models.APIPermWriteCampaigns), h.GenerateWriting)
 				generation.POST("/edit", m.RequireOrganization(), m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), m.RequireAccess(models.PermUseAI, models.APIPermWriteCampaigns), h.GenerateEdit)
+				// Preview a per-recipient AI variable block (editor "Preview" button).
+				generation.POST("/ai-variable", m.RequireOrganization(), m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), m.RequireAccess(models.PermUseAI, models.APIPermWriteCampaigns), h.GenerateAIVariable)
 			}
 
 			// AI skills (org playbooks). CRUD gated on manage_settings (JWT) or
@@ -439,6 +441,10 @@ func Run(
 				// Resolve a sender address to a contact (unibox CRM panel).
 				// Registered before /:id so the fixed path wins over the catch-all.
 				contacts.GET("/lookup", m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts), h.LookupContactByEmail)
+
+				// Distinct custom-field keys across the org's contacts, for the
+				// dashboard variable picker. Fixed path, so before /:id.
+				contacts.GET("/custom-fields", m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts), h.ListContactCustomFields)
 
 				// Contact 360 view: hydrated detail, every email sent to
 				// the contact, and the merged activity timeline.
