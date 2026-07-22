@@ -100,6 +100,8 @@ setup lives in the
 
 ## Self-hosting
 
+<a href="https://docs.warmbly.com/development/deployment-guide/"><img src="https://img.shields.io/badge/Runs%20on-Docker%20Compose-2496ED?logo=docker&logoColor=white&style=flat-square" alt="Runs on Docker Compose" /></a>
+
 Warmbly runs with **no cloud account of any kind**: no AWS, no GCP, no Stripe, no
 Kafka. One command brings up the whole platform on local, open-source pieces:
 
@@ -146,16 +148,10 @@ Have a question, found a bug, or want to shape where Warmbly goes next?
 
 ## Support and enterprise
 
-Need a hand? We are happy to help. Ask in [Discord](https://dc.warmbly.com), open a
-[GitHub issue](https://github.com/warmbly/warmbly/issues), or email
-`team@warmbly.com`, and someone on the team will get back to you.
-
-Running Warmbly at scale, or would you rather we run it for you? We offer
-**enterprise support** and **managed infrastructure**. We can host and operate the
-whole platform for your organization, help you deploy and scale the worker fleet,
-tune deliverability, migrate your sending onto Warmbly, and stand behind it with a
-support agreement built around your team. Tell us what you need at
-`team@warmbly.com` or reach out on X, and we will take it from there.
+> [!NOTE]
+> **Need a hand? We are happy to help.** Ask in [Discord](https://dc.warmbly.com), open a [GitHub issue](https://github.com/warmbly/warmbly/issues), or email `team@warmbly.com`, and someone on the team will get back to you.
+>
+> **Running Warmbly at scale, or would you rather we run it for you?** We offer **enterprise support** and **managed infrastructure**: we can host and operate the whole platform for your organization, help you deploy and scale the worker fleet, tune deliverability, migrate your sending onto Warmbly, and stand behind it with a support agreement built around your team. Tell us what you need at `team@warmbly.com` or reach out on X.
 
 <p>
   <a href="https://x.com/WarmblyHQ"><img src="https://img.shields.io/badge/Follow%20@WarmblyHQ%20on%20X-000000?logo=x&logoColor=white&style=flat-square" alt="Follow @WarmblyHQ on X" /></a>
