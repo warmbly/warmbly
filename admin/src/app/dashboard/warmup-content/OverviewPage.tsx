@@ -4,19 +4,15 @@
 // headline counts, and the content-source vs spam-placement A/B comparison.
 
 import { useMemo } from "react";
-import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
     Archive,
-    ArrowRight,
     CheckCircle2,
     CircleAlert,
     CircleDashed,
     Inbox,
     Play,
-    Settings2,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/ErrorState";
 import {
@@ -33,10 +29,8 @@ interface PipelineStep {
     detail: string;
 }
 
-// The four things that must all be true for the library to extend itself
-// without anyone touching the admin. Order mirrors the actual dependency
-// chain: no key → nothing generates; no schedule → only manual runs; no
-// target headroom → scheduler no-ops.
+// The controller is always enabled. The only external dependency is an AI
+// provider; without one, reviewed static content keeps sends operational.
 function pipelineSteps(d: WarmupContentOverview): PipelineStep[] {
     const totalTarget = d.stock.reduce((n, s) => n + s.target, 0);
     const totalStock = d.stock.reduce((n, s) => n + Math.min(s.active, s.target), 0);
@@ -54,14 +48,14 @@ function pipelineSteps(d: WarmupContentOverview): PipelineStep[] {
             ok: d.ai_enabled,
             detail: d.ai_enabled
                 ? `${d.ai_selection_share}% of warmup sends draw AI content`
-                : "Master switch is off — sends use the static library only",
+                : "Static fallback is active",
         },
         {
             label: "Scheduled top-up",
             ok: d.schedule_enabled,
             detail: d.schedule_enabled
                 ? `Tops the library up every ${d.cadence_hours}h`
-                : "Off — content is only generated when you run a job manually",
+                : "Static fallback is active",
         },
         {
             label: "Library stocked",
@@ -69,7 +63,7 @@ function pipelineSteps(d: WarmupContentOverview): PipelineStep[] {
             detail:
                 totalTarget > 0
                     ? `${totalStock.toLocaleString()} of ${totalTarget.toLocaleString()} target threads active`
-                    : "No target set — give the library a target in Settings",
+                    : "Waiting for demand history",
         },
     ];
 }
@@ -102,12 +96,9 @@ function AutomationPanel({ data }: { data: WarmupContentOverview }) {
                             : "Not fully automatic yet — fix the first amber step below and the library will keep itself stocked without manual runs."}
                     </p>
                 </div>
-                <Button asChild size="sm" variant="outline">
-                    <Link to="/warmup-content/settings">
-                        <Settings2 className="size-4" />
-                        Settings
-                    </Link>
-                </Button>
+                <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-700">
+                    Autopilot
+                </span>
             </div>
 
             <ol className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
@@ -166,12 +157,13 @@ function AutomationPanel({ data }: { data: WarmupContentOverview }) {
                             on — recycles the {data.refresh_per_run} most-used threads each run
                         </span>
                     ) : (
-                        <span>off — generation stops at the target (enable in Settings)</span>
+                        <span>static fallback active</span>
                     )}
                 </div>
                 <div>
                     Generated threads are humanized, lint-gated, and any send that fails the
-                    gate falls back to the static library — automation can never break sending.
+                    gate falls back to the static library. Threads with a meaningful sample and
+                    unsafe spam placement are archived automatically.
                 </div>
             </div>
         </section>
@@ -188,6 +180,7 @@ function StockTable({ data }: { data: WarmupContentOverview }) {
                     <thead className="bg-muted/50 text-xs uppercase text-muted-foreground">
                         <tr>
                             <th className="px-3 py-2 text-left font-medium">Segment</th>
+                            <th className="px-3 py-2 text-right font-medium">Daily demand</th>
                             <th className="px-3 py-2 text-right font-medium">Active</th>
                             <th className="px-3 py-2 text-right font-medium">Target</th>
                             <th className="px-3 py-2 text-left font-medium">Fill</th>
@@ -204,6 +197,9 @@ function StockTable({ data }: { data: WarmupContentOverview }) {
                                 <tr key={s.segment || "generic"} className="border-t border-border">
                                     <td className="px-3 py-2 text-xs">
                                         {s.segment || "generic"}
+                                    </td>
+                                    <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
+                                        {s.average_daily_sends.toLocaleString()}
                                     </td>
                                     <td className="px-3 py-2 text-right tabular-nums">
                                         {s.active.toLocaleString()}
@@ -239,8 +235,9 @@ function StockTable({ data }: { data: WarmupContentOverview }) {
                 </table>
             </div>
             <p className="mt-1.5 text-[11px] text-muted-foreground">
-                The scheduler tops each segment up toward its target (max 25 threads per run,
-                bounded by the daily cap). Raise targets in Settings to grow the library.
+                The target is calculated from the last seven days of total warmup sends. The
+                controller keeps at least 200 shared threads, expands the bank automatically,
+                and submits at most 250 new threads in one batch.
             </p>
         </section>
     );
@@ -380,14 +377,8 @@ export default function OverviewPage() {
                                         colSpan={4}
                                         className="py-6 text-center text-sm text-muted-foreground"
                                     >
-                                        No content generated yet.
-                                        <Link
-                                            to="/warmup-content/generate"
-                                            className="ml-1 inline-flex items-center gap-0.5 underline"
-                                        >
-                                            Run a generation job
-                                            <ArrowRight className="size-3" />
-                                        </Link>
+                                        No generated content yet. The controller will submit a
+                                        batch automatically; static content is active meanwhile.
                                     </td>
                                 </tr>
                             )}
@@ -406,8 +397,8 @@ export default function OverviewPage() {
                     ) : null}
                 </h2>
                 <p className="mb-2 text-[11px] text-muted-foreground">
-                    Compares how often AI-generated vs static warmup mail lands in spam. If AI
-                    content ever places worse, lower its selection share in Settings.
+                    Compares how often generated and static warmup mail lands in spam. The
+                    library remains reviewable so unsafe generated content can be archived.
                 </p>
                 {ab.error ? (
                     <ErrorState

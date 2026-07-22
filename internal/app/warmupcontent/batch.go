@@ -16,8 +16,8 @@ import (
 	"github.com/warmbly/warmbly/internal/pkg/warmlint"
 )
 
-// themeForIndex mirrors runJob's theme selection: a pinned theme wins, otherwise
-// rotate through the default theme set so a batch spans varied topics.
+// themeForIndex uses a pinned theme when present, otherwise it rotates through
+// the default theme set so a batch spans varied topics.
 func themeForIndex(pinned string, i int) string {
 	if pinned != "" {
 		return pinned
@@ -26,7 +26,7 @@ func themeForIndex(pinned string, i int) string {
 }
 
 // GenerateBatch submits an async OpenAI Batch API run. It builds N
-// chat-completion requests (theme rotation identical to the sync runJob),
+// chat-completion requests with deterministic theme rotation,
 // uploads them as a batch, and persists a job row in mode='batch' with the
 // OpenAI batch/file identifiers. It returns immediately — the batch is ingested
 // later by PollBatches when OpenAI finishes processing (up to the completion
@@ -39,7 +39,7 @@ func (s *service) GenerateBatch(ctx context.Context, req GenerateRequest) (uuid.
 		req.PoolType = "premium"
 	}
 	if req.Trigger == "" {
-		req.Trigger = "manual"
+		req.Trigger = "schedule"
 	}
 	if req.Count <= 0 {
 		req.Count = 100
@@ -103,16 +103,22 @@ func (s *service) GenerateBatch(ctx context.Context, req GenerateRequest) (uuid.
 		})
 	}
 
+	// Reserve the scheduled job before making the provider call. A partial
+	// unique index permits only one in-flight scheduled job per library segment,
+	// so multiple backend replicas cannot submit duplicate batches.
+	if err := s.repo.CreateGenerationJob(ctx, job); err != nil {
+		return uuid.Nil, err
+	}
+
 	batchID, inputFileID, err := s.gen.SubmitBatch(ctx, requests, window)
 	if err != nil {
-		// Persist a failed job row for visibility rather than dropping silently.
 		now := time.Now()
 		job.Status = "failed"
 		job.Error = err.Error()
 		job.StartedAt = &now
 		job.FinishedAt = &now
-		if cerr := s.repo.CreateGenerationJob(ctx, job); cerr != nil {
-			return uuid.Nil, cerr
+		if updateErr := s.repo.UpdateGenerationJob(ctx, job); updateErr != nil {
+			return uuid.Nil, updateErr
 		}
 		return uuid.Nil, err
 	}
@@ -123,7 +129,7 @@ func (s *service) GenerateBatch(ctx context.Context, req GenerateRequest) (uuid.
 	job.BatchID = batchID
 	job.BatchInputFileID = inputFileID
 	job.StartedAt = &now
-	if err := s.repo.CreateGenerationJob(ctx, job); err != nil {
+	if err := s.repo.UpdateGenerationJob(ctx, job); err != nil {
 		return uuid.Nil, err
 	}
 
@@ -138,7 +144,7 @@ func (s *service) GenerateBatch(ctx context.Context, req GenerateRequest) (uuid.
 }
 
 // PollBatches reconciles every in-flight batch job against OpenAI. Completed
-// batches are downloaded and ingested (clean + lint + cache, mirroring runJob);
+// batches are downloaded and ingested (clean, lint, and cache);
 // failed/expired/cancelled batches mark the job failed; otherwise the latest
 // batch status is persisted so the admin UI reflects progress.
 func (s *service) PollBatches(ctx context.Context) error {
@@ -187,8 +193,8 @@ func (s *service) pollBatchJob(ctx context.Context, job *models.WarmupGeneration
 	}
 }
 
-// ingestBatch downloads a completed batch's output, cleans + lints + caches each
-// conversation (mirroring runJob), and finalises the job row.
+// ingestBatch downloads a completed batch's output, cleans, lints, and caches
+// each conversation, then finalises the job row.
 func (s *service) ingestBatch(ctx context.Context, job *models.WarmupGenerationJob, outputFileID string, counts generation.BatchCounts) error {
 	results, err := s.gen.FetchBatchResults(ctx, outputFileID)
 	if err != nil {
@@ -253,6 +259,7 @@ func (s *service) ingestBatch(ctx context.Context, job *models.WarmupGenerationJ
 			Messages:       messages,
 			Status:         "active",
 			LintPassed:     true,
+			ReplyEligible:  true,
 			GeneratedByJob: &job.ID,
 		}
 		if err := s.repo.InsertConversation(ctx, record); err != nil {

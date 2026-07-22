@@ -169,12 +169,12 @@ func (s *tasksService) HandleEmailTask(task *proto.ProcessTask) *errx.Error {
 	}
 
 	// STEP 6: Determine if this should be a reply or a new warmup email.
-	// When replying, the body is drawn from the same conversation theme as
-	// the original send so the thread stays topically coherent.
+	// Replies advance the exact cached conversation plan used by the parent.
 	replyRate := account.WarmupReplyRate
 	shouldReply := rand.Float64()*100 < float64(replyRate)
 	var subject, emailBody, conversationTheme, contentSource string
 	var conversationID *uuid.UUID
+	var conversationTurn int
 	var inReplyTo string
 
 	if shouldReply {
@@ -191,10 +191,38 @@ func (s *tasksService) HandleEmailTask(task *proto.ProcessTask) *errx.Error {
 			if !strings.HasPrefix(strings.ToLower(subject), "re:") {
 				subject = "Re: " + subject
 			}
-			conv := conversationForTheme(candidate.ConversationTheme)
-			conversationTheme = conv.Theme
-			contentSource = models.WarmupContentSourceStatic
-			emailBody = GenerateConversationEmail(conv, *account, true)
+			nextTurn := candidate.ConversationTurn + 1
+			var conv Conversation
+			if candidate.ContentSource == models.WarmupContentSourceAI && candidate.ConversationID != nil && s.warmupContentRepo != nil {
+				cached, getErr := s.warmupContentRepo.GetConversation(ctx, *candidate.ConversationID)
+				if getErr == nil && cached != nil && cached.LintPassed && cached.ReplyEligible {
+					conv = Conversation{
+						ID:          cached.ID,
+						Theme:       cached.Theme,
+						Description: cached.Description,
+						Messages:    cached.Messages,
+					}
+					conversationTheme = cached.Theme
+					contentSource = models.WarmupContentSourceAI
+					conversationID = candidate.ConversationID
+				}
+			} else {
+				conv = conversationForTheme(candidate.ConversationTheme)
+				conversationTheme = conv.Theme
+				contentSource = models.WarmupContentSourceStatic
+				conversationID = candidate.ConversationID
+			}
+
+			var rendered bool
+			emailBody, rendered = GenerateConversationReplyEmail(conv, *account, nextTurn)
+			if rendered {
+				conversationTurn = nextTurn
+			} else {
+				// The thread is exhausted or no longer safe. Start a fresh one
+				// instead of repeating a reply or switching topics mid-thread.
+				shouldReply = false
+				inReplyTo = ""
+			}
 		} else {
 			shouldReply = false
 		}
@@ -223,7 +251,10 @@ func (s *tasksService) HandleEmailTask(task *proto.ProcessTask) *errx.Error {
 		conversationTheme = conv.Theme
 		fallbackID := conv.ID
 		conversationID = &fallbackID
+		conversationTurn = 0
 		contentSource = models.WarmupContentSourceStatic
+		shouldReply = false
+		inReplyTo = ""
 		subject = generateWarmupSubject()
 		emailBody = GenerateConversationEmail(conv, *account, false)
 		if err2 := lintWarmupContent(subject, emailBody, false); err2 != nil {
@@ -256,6 +287,7 @@ func (s *tasksService) HandleEmailTask(task *proto.ProcessTask) *errx.Error {
 		ConversationTheme:  conversationTheme,
 		ContentSource:      contentSource,
 		ConversationID:     conversationID,
+		ConversationTurn:   conversationTurn,
 		ExpiresAt:          time.Now().Add(7 * 24 * time.Hour),
 	}
 	if err := s.warmupRepo.CreateWarmupToken(ctx, tokenRecord); err != nil {

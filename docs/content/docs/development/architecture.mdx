@@ -120,6 +120,8 @@ Cold-email throughput is mailbox-first, not worker-first. A worker's safe outbou
 
 Pool model: warmup traffic is segregated into `free` and `premium` pools (`internal/infrastructure/db/migrations/000010_warmup_pools.up.sql`). Dedicated-worker customers still pick a pool explicitly; tier and pool are orthogonal.
 
+Warmup content generation is an offline control-plane workload. The autonomous controller runs every six hours, derives a shared-bank target from seven-day send demand, maintains a 200-thread floor, scales up to 5,000 threads, and submits at most 250 replacements per batch within a 1,000-thread daily cap. It deliberately does not split generation by customer mailbox tags, which would create unbounded queues and smaller, more repetitive content cohorts. Scheduled top-ups use `gpt-5-mini` through durable provider batch jobs rather than synchronous model calls, with a database uniqueness guard that prevents duplicate in-flight scheduled batches when several backend replicas are running. Content with at least 20 sampled sends is automatically archived when it has at least 3 spam placements and a placement rate of 15% or more. The send path atomically selects and increments a least-used active conversation through an indexed query, then falls back to the static reviewed library if no generated content is available. Model availability therefore never gates a warmup send.
+
 ## Anti-abuse layers
 
 There is no single ML fraud engine. Layered controls instead:

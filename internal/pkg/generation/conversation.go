@@ -10,7 +10,7 @@ import (
 
 var ConversationSchema = GenerateSchema[Conversation]()
 
-// normalizeMaxMessages clamps the admin-controlled follow-up count into the
+// normalizeMaxMessages clamps the reply-turn count into the
 // range the warmup prompt is tuned for. Shared so the sync and batch paths
 // produce identical thread shapes.
 func normalizeMaxMessages(maxMessages int) int {
@@ -42,7 +42,9 @@ Return:
 - subject: 2-6 words, lowercase-natural, never prefixed with "Re:" or "Fwd:".
 - description: the OPENING body only (no greeting, sign-off, signature, or the
   subject) — 1 to 3 sentences.
-- messages: %d short follow-up lines (one sentence each) that could continue it.
+- messages: %d ORDERED reply bodies (1-2 short sentences each). They alternate
+  naturally between the two people and each one must logically continue the
+  turn before it. Do not write interchangeable options.
 
 Write like a person, by following how people actually write — not by trying to
 "sound human":
@@ -71,8 +73,10 @@ Hard bans (these are the strongest AI tells):
 - Plain text only. No links, URLs, phone numbers, attachments, emoji, ALL-CAPS,
   or marketing/sales language. At most one "!", prefer zero.
 
-Vary the shape across messages — sometimes a fragment plus a question, sometimes
-one longer line — so a batch isn't uniform.`, theme, maxMessages)
+Vary the shape across turns. Sometimes use a fragment plus a question, sometimes
+one longer line. Keep the exchange coherent without inventing a document,
+promise, or event that was not established in an earlier turn. Each body must
+stand on its own when a normal email sign-off is appended.`, theme, maxMessages)
 }
 
 // conversationResponseFormat returns the strict JSON-schema response format
@@ -80,7 +84,7 @@ one longer line — so a batch isn't uniform.`, theme, maxMessages)
 func conversationResponseFormat() openai.ChatCompletionNewParamsResponseFormatUnion {
 	schemaParam := openai.ResponseFormatJSONSchemaJSONSchemaParam{
 		Name:        "conversation",
-		Description: openai.String("Realistic branched email warmup thread"),
+		Description: openai.String("Realistic ordered email warmup thread"),
 		Schema:      ConversationSchema,
 		Strict:      openai.Bool(true),
 	}
@@ -112,7 +116,7 @@ func buildConversationParams(theme, model string, maxMessages int) openai.ChatCo
 // The prompt is tuned for warmup deliverability: plaintext, a few short
 // sentences, one natural question, and explicitly NO links, phone numbers,
 // attachments, emoji, or marketing language (all of which raise spam scores).
-// model and maxMessages are admin-controlled (empty model → gpt-4o-mini).
+// Empty model falls back to gpt-4o-mini for direct callers.
 func (c *GenerationClient) GenerateConversation(ctx context.Context, theme, model string, maxMessages int) (*Conversation, error) {
 	req := buildConversationParams(theme, model, normalizeMaxMessages(maxMessages))
 

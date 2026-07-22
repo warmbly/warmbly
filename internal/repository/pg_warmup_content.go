@@ -43,7 +43,7 @@ type WarmupCohortStat struct {
 type WarmupContentRepository interface {
 	// Conversation bank
 	InsertConversation(ctx context.Context, c *models.WarmupConversation) error
-	// PickConversation draws an active thread for the segment from the SHARED
+	// PickConversation atomically draws and accounts for an active thread from the SHARED
 	// content library, regardless of tier: free/premium separate which mailboxes
 	// warm together (reputation isolation), not what they say, so content is not
 	// split by pool. Prefers an exact segment match, falls back to generic.
@@ -55,8 +55,8 @@ type WarmupContentRepository interface {
 	// for a segment so the scheduler can replace them with fresh generations.
 	// Static-source rows are never touched (they aren't regenerable).
 	RetireMostUsedConversations(ctx context.Context, poolType, segment string, n int) (int, error)
+	RetireRiskyConversations(ctx context.Context, since time.Time, minSends, minSpamPlacements int, maxSpamRate float64) (int, error)
 	DeleteConversation(ctx context.Context, id uuid.UUID) error
-	IncrementConversationUsage(ctx context.Context, id uuid.UUID) error
 	CountActiveConversations(ctx context.Context, poolType, segment string) (int, error)
 	ConversationStats(ctx context.Context) ([]WarmupConversationStat, error)
 	LastGeneratedAt(ctx context.Context) (*time.Time, error)
@@ -70,10 +70,11 @@ type WarmupContentRepository interface {
 	// non-terminal OpenAI batch status), for the poller to reconcile.
 	ListActiveBatchJobs(ctx context.Context) ([]models.WarmupGenerationJob, error)
 	GeneratedCountSince(ctx context.Context, since time.Time) (int, error)
+	ExpireStaleScheduledJobs(ctx context.Context, before time.Time) (int64, error)
+	WarmupSendsSince(ctx context.Context, since time.Time) (int, error)
 
 	// Settings (admin_settings key/value)
 	GetGenerationSettings(ctx context.Context) (*models.WarmupGenerationSettings, error)
-	SetGenerationSettings(ctx context.Context, s *models.WarmupGenerationSettings, updatedBy *uuid.UUID) error
 
 	// Content-cohort A/B analytics
 	SpamPlacementByCohort(ctx context.Context, since time.Time) ([]WarmupCohortStat, error)
@@ -98,12 +99,12 @@ func (r *warmupContentRepository) InsertConversation(ctx context.Context, c *mod
 	}
 	query := `
 		INSERT INTO warmup_conversations
-			(id, pool_type, segment, source, theme, subject, description, messages, status, lint_passed, usage_count, generated_by_job_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+			(id, pool_type, segment, source, theme, subject, description, messages, status, lint_passed, reply_eligible, usage_count, generated_by_job_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 	`
 	_, err = r.db.Exec(ctx, query,
 		c.ID, c.PoolType, c.Segment, c.Source, c.Theme, c.Subject, c.Description,
-		msgs, c.Status, c.LintPassed, c.UsageCount, c.GeneratedByJob,
+		msgs, c.Status, c.LintPassed, c.ReplyEligible, c.UsageCount, c.GeneratedByJob,
 	)
 	return err
 }
@@ -113,7 +114,7 @@ func scanConversation(row pgx.Row) (*models.WarmupConversation, error) {
 	var msgs []byte
 	err := row.Scan(
 		&c.ID, &c.PoolType, &c.Segment, &c.Source, &c.Theme, &c.Subject, &c.Description,
-		&msgs, &c.Status, &c.LintPassed, &c.UsageCount, &c.GeneratedByJob, &c.CreatedAt, &c.UpdatedAt,
+		&msgs, &c.Status, &c.LintPassed, &c.ReplyEligible, &c.UsageCount, &c.GeneratedByJob, &c.CreatedAt, &c.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -124,19 +125,30 @@ func scanConversation(row pgx.Row) (*models.WarmupConversation, error) {
 	return &c, nil
 }
 
-const conversationCols = `id, pool_type, segment, source, theme, subject, description, messages, status, lint_passed, usage_count, generated_by_job_id, created_at, updated_at`
+const conversationCols = `id, pool_type, segment, source, theme, subject, description, messages, status, lint_passed, reply_eligible, usage_count, generated_by_job_id, created_at, updated_at`
+const qualifiedConversationCols = `c.id, c.pool_type, c.segment, c.source, c.theme, c.subject, c.description, c.messages, c.status, c.lint_passed, c.reply_eligible, c.usage_count, c.generated_by_job_id, c.created_at, c.updated_at`
 
-// PickConversation returns a random active conversation from the shared library,
-// preferring an exact segment match and falling back to generic (segment=”)
-// content. Tier (free/premium) is intentionally NOT a filter — content is shared
-// across pools; only mailbox reputation is isolated by pool.
+// PickConversation returns a lightly-used active conversation from the shared
+// library and increments its usage in the same statement. Keeping selection and
+// accounting atomic prevents hot threads and removes one database round trip
+// from every warmup send. A small random tie-break keeps concurrent senders from
+// marching through the bank in the same order.
 func (r *warmupContentRepository) PickConversation(ctx context.Context, segment string) (*models.WarmupConversation, error) {
 	query := `
-		SELECT ` + conversationCols + `
-		FROM warmup_conversations
-		WHERE status = 'active' AND (segment = $1 OR segment = '')
-		ORDER BY (segment = $1) DESC, random()
-		LIMIT 1
+		WITH picked AS (
+			SELECT id
+			FROM warmup_conversations
+			WHERE status = 'active' AND (segment = $1 OR segment = '')
+			ORDER BY (segment = $1) DESC, usage_count ASC, random()
+			LIMIT 1
+			FOR UPDATE SKIP LOCKED
+		)
+		UPDATE warmup_conversations AS c
+		SET usage_count = c.usage_count + 1,
+			updated_at = NOW()
+		FROM picked
+		WHERE c.id = picked.id
+		RETURNING ` + qualifiedConversationCols + `
 	`
 	c, err := scanConversation(r.db.QueryRow(ctx, query, segment))
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -227,13 +239,51 @@ func (r *warmupContentRepository) RetireMostUsedConversations(ctx context.Contex
 	return int(tag.RowsAffected()), nil
 }
 
-func (r *warmupContentRepository) DeleteConversation(ctx context.Context, id uuid.UUID) error {
-	_, err := r.db.Exec(ctx, `DELETE FROM warmup_conversations WHERE id = $1`, id)
-	return err
+// RetireRiskyConversations removes generated threads whose observed placement
+// is clearly unsafe. A minimum sample and absolute placement count prevent one
+// noisy delivery from retiring otherwise healthy content.
+func (r *warmupContentRepository) RetireRiskyConversations(
+	ctx context.Context,
+	since time.Time,
+	minSends, minSpamPlacements int,
+	maxSpamRate float64,
+) (int, error) {
+	tag, err := r.db.Exec(ctx, `
+		WITH performance AS (
+			SELECT wt.conversation_id,
+			       COUNT(DISTINCT wt.token) AS sends,
+			       COUNT(DISTINCT wsr.id) AS spam_placements
+			FROM warmup_tokens wt
+			JOIN tasks t ON t.id = wt.task_id
+			LEFT JOIN warmup_spam_reports wsr
+			  ON wsr.message_id = t.message_id
+			 AND wsr.report_type = 'spam_placement'
+			WHERE wt.content_source = 'ai'
+			  AND wt.conversation_id IS NOT NULL
+			  AND wt.created_at >= $1
+			GROUP BY wt.conversation_id
+		), risky AS (
+			SELECT conversation_id
+			FROM performance
+			WHERE sends >= $2
+			  AND spam_placements >= $3
+			  AND spam_placements::double precision / sends::double precision >= $4
+		)
+		UPDATE warmup_conversations c
+		SET status = 'archived', reply_eligible = false, updated_at = NOW()
+		FROM risky
+		WHERE c.id = risky.conversation_id
+		  AND c.status = 'active'
+		  AND c.source = 'ai'
+	`, since, minSends, minSpamPlacements, maxSpamRate)
+	if err != nil {
+		return 0, err
+	}
+	return int(tag.RowsAffected()), nil
 }
 
-func (r *warmupContentRepository) IncrementConversationUsage(ctx context.Context, id uuid.UUID) error {
-	_, err := r.db.Exec(ctx, `UPDATE warmup_conversations SET usage_count = usage_count + 1 WHERE id = $1`, id)
+func (r *warmupContentRepository) DeleteConversation(ctx context.Context, id uuid.UUID) error {
+	_, err := r.db.Exec(ctx, `DELETE FROM warmup_conversations WHERE id = $1`, id)
 	return err
 }
 
@@ -328,6 +378,26 @@ func (r *warmupContentRepository) UpdateGenerationJob(ctx context.Context, j *mo
 	return err
 }
 
+// ExpireStaleScheduledJobs releases reservations left behind if a backend dies
+// after reserving a batch but before receiving the provider batch ID.
+func (r *warmupContentRepository) ExpireStaleScheduledJobs(ctx context.Context, before time.Time) (int64, error) {
+	tag, err := r.db.Exec(ctx, `
+		UPDATE warmup_generation_jobs
+		SET status = 'failed',
+			error = 'stale scheduled batch reservation',
+			finished_at = NOW(),
+			updated_at = NOW()
+		WHERE trigger = 'schedule'
+		  AND status = 'pending'
+		  AND batch_id = ''
+		  AND created_at < $1
+	`, before)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
 const generationJobCols = `id, requested_by, trigger, mode, pool_type, segment, theme, model, requested_count, generated_count, lint_rejected_count, failed_count, status, error, batch_id, batch_input_file_id, batch_output_file_id, batch_status, completion_window, started_at, finished_at, created_at, updated_at`
 
 func scanGenerationJob(row pgx.Row) (*models.WarmupGenerationJob, error) {
@@ -415,6 +485,16 @@ func (r *warmupContentRepository) GeneratedCountSince(ctx context.Context, since
 	return n, err
 }
 
+func (r *warmupContentRepository) WarmupSendsSince(ctx context.Context, since time.Time) (int, error) {
+	var sends int
+	err := r.db.QueryRow(ctx, `
+		SELECT COALESCE(SUM(emails_sent), 0)::integer
+		FROM warmup_statistics
+		WHERE date >= $1::date
+	`, since).Scan(&sends)
+	return sends, err
+}
+
 func (r *warmupContentRepository) GetGenerationSettings(ctx context.Context) (*models.WarmupGenerationSettings, error) {
 	var raw []byte
 	err := r.db.QueryRow(ctx, `SELECT value FROM admin_settings WHERE key = $1`, models.AdminSettingsKeyWarmupGeneration).Scan(&raw)
@@ -433,21 +513,6 @@ func (r *warmupContentRepository) GetGenerationSettings(ctx context.Context) (*m
 	}
 	s.Normalize()
 	return &s, nil
-}
-
-func (r *warmupContentRepository) SetGenerationSettings(ctx context.Context, s *models.WarmupGenerationSettings, updatedBy *uuid.UUID) error {
-	s.Normalize()
-	raw, err := json.Marshal(s)
-	if err != nil {
-		return err
-	}
-	query := `
-		INSERT INTO admin_settings (key, value, updated_by, updated_at)
-		VALUES ($1, $2, $3, NOW())
-		ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = NOW()
-	`
-	_, err = r.db.Exec(ctx, query, models.AdminSettingsKeyWarmupGeneration, raw, updatedBy)
-	return err
 }
 
 func (r *warmupContentRepository) SpamPlacementByCohort(ctx context.Context, since time.Time) ([]WarmupCohortStat, error) {

@@ -25,6 +25,8 @@ export interface WarmupSegmentStock {
     segment: string;
     active: number;
     target: number;
+    recent_sends: number;
+    average_daily_sends: number;
 }
 
 export interface WarmupContentOverview {
@@ -157,38 +159,6 @@ export function isJobCancellable(job: WarmupGenerationJob): boolean {
     return !TERMINAL_BATCH_STATUS.has(bs);
 }
 
-export interface WarmupGenerationPoolConfig {
-    pool_type: string;
-    enabled: boolean;
-    target_active_threads: number;
-    segments: string[];
-}
-
-export interface WarmupGenerationEngagement {
-    spam_rescue_rate: number;
-    mark_important_rate: number;
-    mark_read_rate: number;
-    star_rate: number;
-    min_dwell_seconds: number;
-    max_dwell_seconds: number;
-}
-
-export interface WarmupGenerationSettings {
-    enabled: boolean;
-    schedule_enabled: boolean;
-    cadence_hours: number;
-    /** Keep generating after the target: recycle most-used threads each run. */
-    refresh_enabled: boolean;
-    refresh_per_run: number;
-    model: string;
-    max_messages_per_thread: number;
-    daily_generation_cap: number;
-    /** 0-100 — share of warmup sends that draw from AI-generated content. */
-    ai_selection_share: number;
-    pools: WarmupGenerationPoolConfig[];
-    engagement: WarmupGenerationEngagement;
-}
-
 export interface WarmupAbRow {
     content_source: string;
     sent: number;
@@ -229,40 +199,6 @@ export interface ListConversationsParams {
 export interface ListJobsParams {
     cursor?: string;
     limit?: number;
-}
-
-export interface GenerateContentRequest {
-    count: number;
-    /**
-     * Reputation pool the threads nominally belong to. Optional — warmup
-     * content is a single shared library, so the UI omits this and the
-     * backend defaults it to "premium".
-     */
-    pool_type?: string;
-    segment?: string;
-    theme?: string;
-    model?: string;
-}
-
-/**
- * Batch generation request. Every field is optional; the backend applies
- * defaults. If `themes` is non-empty the backend fans out one batch job per
- * theme, and `count` is interpreted as threads-per-job (default 100, clamped
- * to 2000 and the daily cap). `completion_window` defaults to "24h".
- */
-export interface GenerateBatchRequest {
-    pool_type?: string;
-    segment?: string;
-    theme?: string;
-    themes?: string[];
-    model?: string;
-    count?: number;
-    max_messages?: number;
-    completion_window?: string;
-}
-
-export interface GenerateBatchResult {
-    job_ids: string[];
 }
 
 // --------------------------------------------------------------------
@@ -327,41 +263,6 @@ export function deleteWarmupConversation(id: string): Promise<{ ok: true }> {
     });
 }
 
-// --------------------------------------------------------------------
-// Generate (offline job)
-// --------------------------------------------------------------------
-
-export function generateWarmupContent(
-    body: GenerateContentRequest,
-): Promise<{ job_id: string }> {
-    return Request({
-        method: "POST",
-        url: "/admin/warmup-content/generate",
-        data: body,
-        authorization: true,
-    });
-}
-
-// --------------------------------------------------------------------
-// Batch generate (OpenAI Batch API — async, cheaper, large volume)
-// --------------------------------------------------------------------
-
-/**
- * Enqueue one or more OpenAI Batch jobs. Returns the created job ids; watch
- * them on the Jobs view via `listWarmupGenerationJobs`. A 400 with code
- * `not_configured` / `daily_cap_reached` means generation can't run yet.
- */
-export function submitWarmupBatch(
-    body: GenerateBatchRequest,
-): Promise<GenerateBatchResult> {
-    return Request({
-        method: "POST",
-        url: "/admin/warmup-content/batch",
-        data: body,
-        authorization: true,
-    });
-}
-
 /** Cancel an in-flight batch job. 400 if it isn't a cancellable batch job. */
 export function cancelWarmupBatch(jobId: string): Promise<{ ok: true }> {
     return Request({
@@ -393,31 +294,6 @@ export function getWarmupGenerationJob(
     return Request({
         method: "GET",
         url: `/admin/warmup-content/jobs/${id}`,
-        authorization: true,
-    });
-}
-
-// --------------------------------------------------------------------
-// Settings
-// --------------------------------------------------------------------
-
-export function getWarmupGenerationSettings(): Promise<{
-    data: WarmupGenerationSettings;
-}> {
-    return Request({
-        method: "GET",
-        url: "/admin/warmup-content/settings",
-        authorization: true,
-    });
-}
-
-export function updateWarmupGenerationSettings(
-    body: WarmupGenerationSettings,
-): Promise<{ ok: true }> {
-    return Request({
-        method: "PUT",
-        url: "/admin/warmup-content/settings",
-        data: body,
         authorization: true,
     });
 }

@@ -33,9 +33,7 @@ import WarmupAppealsPage from "@/app/dashboard/WarmupAppealsPage";
 import WarmupContentLayout from "@/app/dashboard/warmup-content/WarmupContentLayout";
 import WarmupContentOverviewPage from "@/app/dashboard/warmup-content/OverviewPage";
 import WarmupContentLibraryPage from "@/app/dashboard/warmup-content/LibraryPage";
-import WarmupContentGeneratePage from "@/app/dashboard/warmup-content/GeneratePage";
 import WarmupContentJobsPage from "@/app/dashboard/warmup-content/JobsPage";
-import WarmupContentSettingsPage from "@/app/dashboard/warmup-content/SettingsPage";
 import CampaignsPage from "@/app/dashboard/CampaignsPage";
 import LimitRequestsPage from "@/app/dashboard/LimitRequestsPage";
 import OutreachPage from "@/app/dashboard/OutreachPage";
@@ -100,9 +98,7 @@ const router = createBrowserRouter([
                             },
                             { path: "overview", element: <WarmupContentOverviewPage /> },
                             { path: "library", element: <WarmupContentLibraryPage /> },
-                            { path: "generate", element: <WarmupContentGeneratePage /> },
                             { path: "jobs", element: <WarmupContentJobsPage /> },
-                            { path: "settings", element: <WarmupContentSettingsPage /> },
                         ],
                     },
                     { path: "campaigns", element: <CampaignsPage /> },
