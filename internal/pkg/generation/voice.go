@@ -74,6 +74,34 @@ type VoiceContext struct {
 	ICPNotes string
 	// VoiceProfile is the org's free-form voice/style guide (org settings, M4).
 	VoiceProfile string
+	// AvailableVars are the literal Go-template merge tokens the surface may
+	// insert (e.g. {{.FirstName}}). Empty = no merge-variable block is added, so
+	// a zero VoiceContext stays byte-for-byte unchanged.
+	AvailableVars []string
+}
+
+// StandardMergeVars is the fixed set of standard contact merge tokens every
+// Go-template surface exposes. It mirrors web/src/lib/templateVars.ts
+// (STANDARD_VARS) and internal/tasks/template.go buildTemplateData; the three
+// must stay in lockstep.
+var StandardMergeVars = []string{
+	"{{.FirstName}}",
+	"{{.LastName}}",
+	"{{.Email}}",
+	"{{.Company}}",
+	"{{.Phone}}",
+}
+
+// mergeVarsBlock renders the shared "here are the merge variables you may use"
+// instruction, or "" when there are none (so callers append it unconditionally
+// without changing a zero-var prompt).
+func mergeVarsBlock(vars []string) string {
+	if len(vars) == 0 {
+		return ""
+	}
+	return "\n\nMERGE VARIABLES YOU MAY USE: insert these inline where natural, using the EXACT dotted Go-template form: " +
+		strings.Join(vars, ", ") +
+		". Prefer a real variable over inventing a name; if you are unsure a field exists, write around it. Never wrap them in quotes or rename them."
 }
 
 // BuildVoiceRules composes the humanizer foundation with the optional org
@@ -98,6 +126,7 @@ func BuildVoiceRules(vc VoiceContext) string {
 	if tone := strings.TrimSpace(vc.Tone); tone != "" {
 		fmt.Fprintf(&b, "\n\nTONE: match this tone where it doesn't conflict with the rules above: %s.", tone)
 	}
+	b.WriteString(mergeVarsBlock(vc.AvailableVars))
 	return b.String()
 }
 
@@ -149,6 +178,7 @@ func BuildComposeRules(vc VoiceContext) string {
 	if tone := strings.TrimSpace(vc.Tone); tone != "" {
 		fmt.Fprintf(&b, "\n\nTONE: %s.", tone)
 	}
+	b.WriteString(mergeVarsBlock(vc.AvailableVars))
 	return b.String()
 }
 
@@ -209,6 +239,55 @@ func BuildAgentVoiceRules(vc VoiceContext) string {
 	if vp := strings.TrimSpace(vc.VoiceProfile); vp != "" {
 		fmt.Fprintf(&b, "\n\nHOUSE VOICE (match where it does not conflict with the rules above): %s", vp)
 	}
+	b.WriteString(mergeVarsBlock(vc.AvailableVars))
+	return b.String()
+}
+
+// inlineSnippetRules frames the humanizer for a per-recipient AI variable: a
+// SHORT fragment dropped into the middle of an email a real person is sending, not
+// a full email or cold-outreach copy. The cold-outreach base (humanWritingSystemPrompt)
+// pushes punchy copywriting rhythm and a full 80-word email with its own ask, which
+// reads as AI slop inside someone else's sentence, so this frame bans that register
+// and pins the fragment to flow with the text around the gap.
+const inlineSnippetRules = `You are writing a SHORT fragment that gets dropped into the middle of an email a real person is sending to one recipient. Your fragment must read like that same person wrote the whole email in one sitting: plain, human, and continuous with the words right before and right after the gap. It is NOT a standalone line, a subject, a full email, or marketing copy.
+
+OUTPUT
+- Output ONLY the text that fills the gap. No quotes, no preamble, no greeting, no sign-off, no explanation, no label.
+- Usually a phrase or one to two sentences, whatever the instruction asks for. Shorter is better. Never write a whole paragraph unless asked.
+- Make it join the surrounding text cleanly. Match the capitalization, tense, and punctuation of the text before and after the gap so the finished sentence reads correctly. If the text before the gap ends mid-sentence, continue that sentence; if it ends a sentence, start a fresh one. Do not repeat words that already sit right next to the gap.
+
+VOICE
+- Plain and direct, like a quick note to one person. Contractions always. Active voice.
+- NO copywriting rhythm: no standalone punch line for drama, no problem-agitate-solution, no "most teams..." market generalization, no clever fragment as its own beat. Say the plain, true thing.
+- Write fresh words for THIS recipient from the specifics you are given. Never reuse stock outreach phrasings.
+
+HARD BANS (never produce these)
+- Em dashes. Use a period, comma, or parentheses instead.
+- AI vocabulary: delve, leverage, utilize, robust, seamless, elevate, streamline, comprehensive, foster, showcase, synergy, circle back, touch base, moreover, furthermore, additionally.
+- Formulaic openers, over-politeness, exclamation-point friendliness, summary closers, negative parallelism ("not just X, it's Y"), rule-of-three triads, vague claims ("many companies", "significant results"), ALL-CAPS, spammy phrasing.
+- Preserve any merge variables exactly as written, including dotted Go-template form like {{.FirstName}}.
+
+SELF-CHECK before returning: does it slot into the gap so the whole message reads like one continuous human note? is it only the fragment, nothing else? zero em dashes, zero banned phrases? If it sounds like an ad or does not join the text around it, rewrite it plainer.`
+
+// BuildInlineSnippetRules composes the inline-snippet humanizer with the org
+// grounding, for per-recipient AI variables (preview + send). Same org appenders
+// as the compose/reply builders so the fragment sounds like the same person.
+func BuildInlineSnippetRules(vc VoiceContext) string {
+	var b strings.Builder
+	b.WriteString(inlineSnippetRules)
+	if p := strings.TrimSpace(vc.ProductDescription); p != "" {
+		fmt.Fprintf(&b, "\n\nWHAT THE USER SELLS (context only, mention it plainly and only when relevant): %s", p)
+	}
+	if icp := strings.TrimSpace(vc.ICPNotes); icp != "" {
+		fmt.Fprintf(&b, "\n\nWHO THEY SELL TO: %s", icp)
+	}
+	if vp := strings.TrimSpace(vc.VoiceProfile); vp != "" {
+		fmt.Fprintf(&b, "\n\nHOUSE VOICE (match where it does not conflict with the rules above): %s", vp)
+	}
+	if tone := strings.TrimSpace(vc.Tone); tone != "" {
+		fmt.Fprintf(&b, "\n\nTONE: %s.", tone)
+	}
+	b.WriteString(mergeVarsBlock(vc.AvailableVars))
 	return b.String()
 }
 
@@ -229,5 +308,6 @@ func BuildReplyRules(vc VoiceContext) string {
 	if tone := strings.TrimSpace(vc.Tone); tone != "" {
 		fmt.Fprintf(&b, "\n\nTONE: %s.", tone)
 	}
+	b.WriteString(mergeVarsBlock(vc.AvailableVars))
 	return b.String()
 }
