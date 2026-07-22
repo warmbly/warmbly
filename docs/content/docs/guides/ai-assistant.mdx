@@ -1,9 +1,9 @@
 ---
 title: AI assistant
-description: The in-product AI assistant that searches your data, drafts replies, and sets up draft campaigns and automations, asking before it changes anything.
+description: The in-product AI assistant that searches your data, edits records, sends messages with your approval, and manages campaigns, mailboxes, and settings, never doing anything your own role could not.
 ---
 
-The AI assistant is a chat panel built into the dashboard. It can look things up across your contacts, campaigns, unified inbox, and CRM, and it can take actions on your behalf, but it always asks before changing anything, and it never sends email for you. Everything happens live: answers stream in word by word as they are generated, and each tool step appears the moment the assistant starts it.
+The AI assistant is a chat panel built into the dashboard. It can look things up across your contacts, campaigns, mailboxes, unified inbox, CRM, team, and settings, and it can take almost any action you can take yourself, from editing a contact to sending a reply. It always asks before changing anything, sending is held to a stricter bar, and it can never do anything your own role could not, in your workspace and no other. Everything happens live: answers stream in word by word as they are generated, and each tool step appears the moment the assistant starts it.
 
 Open it from the spark button in the top bar, or press `Cmd/Ctrl + I`. The panel stays with you as you move between pages, so you can keep a conversation going while you work.
 
@@ -23,20 +23,24 @@ You do not have to keep the panel open to keep the assistant working:
 - **Close it entirely** and any running work carries on. The spark button in the top bar shows a pulsing dot while a run streams, an amber dot when an action is waiting for your approval, and a solid dot when a response is ready; click it to reopen.
 
 <Callout type="info" title="What it can and cannot do">
-The assistant acts as you. It can only see and do what your own role allows, so it can never reach data or actions you could not reach by hand. It drafts replies but never sends them, and it never starts a campaign on its own.
+The assistant acts as you. It can only see and do what your own role allows, scoped to your workspace, so it can never reach data or actions you could not reach by hand, and never another organization's. Every change asks first, and sending a message is never auto-approved: you approve each send after seeing the full message.
 </Callout>
 
 ## What you can ask
 
-The assistant has a set of tools it uses to answer you:
+The assistant has a large set of tools it uses to answer you and act for you:
 
-- Find and read contacts, and update contact fields, tags, or notes
-- List campaigns, read send/open/click/reply stats, and list a campaign's leads by status (queued, in progress, done with no reply, replied, bounced, unsubscribed) — this is how it finds leads that went cold
-- Read org-wide analytics for a period and list your mailboxes with health and warmup state
-- Read your unified inbox threads and draft a reply for you to review
-- Read CRM pipelines and deals, and create a task, deal, or contact note
+- Find, read, create, and delete contacts, edit their fields, tags, subscription, and notes, and bulk-edit many at once
+- Read a contact's full activity timeline and the emails you have sent them
+- List campaigns, read send/open/click/reply stats, and list a campaign's leads by status (queued, in progress, done with no reply, replied, bounced, unsubscribed), which is how it finds leads that went cold
+- Create, edit, or delete a campaign, manage its sender mailboxes and tracking domain, read its logs, and add, edit, or remove its sequence steps
 - Start or stop a campaign (always asks first)
-- Create a draft campaign or a disabled automation for you to finish and turn on
+- Read org-wide analytics, list your mailboxes, and manage a mailbox: change its sending limits and warmup, set a tracking domain, appeal a warmup ban, or disconnect it
+- Read your unified inbox, draft a reply, or send a reply or a brand-new email for you (each send shows the full message and asks first)
+- Snooze threads, set labels, mark threads read, and cancel a queued send
+- Run your full CRM: deals, tasks, notes, pipelines, and stages, end to end
+- Read and manage automations, including enabling one, which then runs on real events
+- Manage your team (invite, change roles, remove), edit workspace and AI voice settings, read your plan and limits, and manage API keys and webhooks
 - Search the web and read a public page
 
 Because it knows what page you are on, you can say things like "summarize this campaign" or "draft a reply here" and it understands what "this" and "here" mean.
@@ -54,7 +58,7 @@ On an approval card you can:
 - **Skip** to decline it and let the assistant carry on differently
 - **Always allow** to let that kind of action run automatically from now on, for your whole workspace
 
-Sending is different. If an action would send mail it is never auto-approved, and the card shows the full message with an explicit send step. In this version the assistant only ever drafts replies; you send them yourself from the composer.
+Sending is different. An action that sends mail is never auto-approved, even if you have turned on **Always allow** for other actions. The approval card shows the full message and the mailbox it will send from, and it only sends when you approve that exact message. The assistant can send a reply into a thread or compose a brand-new email, and it refuses to send to an address your workspace has suppressed. Starting a campaign and enabling an automation are their own approvals too, since both can put mail in motion.
 
 ## Draft campaigns and automations
 

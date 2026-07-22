@@ -47,13 +47,21 @@ type Tool struct {
 	Risk            generation.RiskClass
 	RequiredAPIPerm uint64
 	RequiredOrgPerm models.OrganizationPermission
-	Handler         Handler
+	// JWTOnly hides the tool from API-key callers entirely. Set it on tools
+	// whose HTTP route is JWT-session-only (team, org settings, billing): those
+	// routes have no API-key permission bit, so a zero RequiredAPIPerm must NOT
+	// be read as "open to keys". The dashboard agent (JWT) still gets them.
+	JWTOnly bool
+	Handler Handler
 }
 
 // allowed reports whether the invocation's permissions grant this tool. A zero
 // required-permission means "no extra gate" (still runs as the user).
 func (t Tool) allowed(inv Invocation) bool {
 	if inv.IsAPIKey {
+		if t.JWTOnly {
+			return false
+		}
 		return t.RequiredAPIPerm == 0 || models.HasAPIPermission(inv.APIPerms, t.RequiredAPIPerm)
 	}
 	return t.RequiredOrgPerm == 0 || inv.OrgPerms&t.RequiredOrgPerm == t.RequiredOrgPerm
@@ -167,6 +175,15 @@ func (r *Registry) ToolDefsByName(inv Invocation, names ...string) []generation.
 		})
 	}
 	return defs
+}
+
+// WebResearchTools returns fresh read-only web tools (search_web, fetch_url)
+// bound to an org, for feature agents that only need public-web lookups (e.g.
+// research-mode campaign AI variables at send time). Read-only web tools require
+// no org permission, so a bare org-scoped invocation suffices. Returned defs are
+// unbudgeted; the caller wraps them with its own per-run budget.
+func (r *Registry) WebResearchTools(orgID uuid.UUID) []generation.ToolDef {
+	return r.ToolDefsByName(Invocation{OrgID: orgID}, "search_web", "fetch_url")
 }
 
 // Call invokes a single tool by name under inv, enforcing its permission gate.

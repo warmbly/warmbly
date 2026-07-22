@@ -51,12 +51,16 @@ All paths below are relative to the versioned base URL `https://api.warmbly.com/
 | GET | `/campaigns/:id/logs` | `READ_CAMPAIGNS` |
 | GET/POST/PATCH/DELETE | `/campaigns/:id/steps[/:sid]` | `READ_CAMPAIGNS` for GET, `WRITE_CAMPAIGNS` otherwise |
 | PATCH | `/campaigns/:id/step-layout` | `WRITE_CAMPAIGNS` |
+| POST | `/generation/write` | `WRITE_CAMPAIGNS` |
+| POST | `/generation/edit` | `WRITE_CAMPAIGNS` |
+| POST | `/generation/ai-variable` | `WRITE_CAMPAIGNS` |
 
 ### Contacts
 
 | Method | Path | API Permission |
 |--------|------|----------------|
 | POST | `/contacts/search` | `READ_CONTACTS` |
+| GET | `/contacts/custom-fields` | `READ_CONTACTS` |
 | POST | `/contacts` | `WRITE_CONTACTS` |
 | DELETE | `/contacts` | `BULK_CONTACTS` |
 | PATCH | `/contacts` | `BULK_CONTACTS` |
@@ -71,6 +75,8 @@ All paths below are relative to the versioned base URL `https://api.warmbly.com/
 | POST | `/contacts/:id/research` | `AI_RESEARCH` |
 | GET | `/contacts/:id/research` | `AI_RESEARCH` |
 | POST | `/contacts/research/batch` | `AI_RESEARCH` |
+
+`GET /contacts/custom-fields` lists the distinct custom-field keys used across your contacts (frequency-ranked), for building personalization pickers. It returns a flat string array under `data`, capped at 200 keys.
 
 AI contact research charges credits (2 per run, billable even when it finds nothing) and only saves cited findings. See the [AI contact research](/guides/ai-contact-research/) guide. The batch endpoint accepts up to 500 contact ids and drains in the background.
 

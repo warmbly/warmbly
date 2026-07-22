@@ -1013,23 +1013,51 @@ func main() {
 		// load_skill tool source.
 		skillsService = skills.NewService(repository.NewSkillRepository(primaryDB))
 
+		// The advanced-outreach brain also answers "is this recipient
+		// suppressed?", which the compose/reply send tools consult before
+		// sending. Constructed here (ahead of its event wiring below) so the AI
+		// tool registry can hold the suppression checker.
+		advancedService = advanced.NewService(
+			advancedRepository,
+			campaignRepostory,
+			emailRepostory,
+			taskRepository,
+			contactRepostory,
+			campaignProgressRepository,
+			crmRepository,
+			categoryRepostory,
+			uniboxRepository,
+			tasksClient,
+			warmupService,
+		)
+
 		// Shared AI tool registry: every tool calls a service-layer function as
 		// the invoking user, so the dashboard agent (M3) and MCP server (M8) can
 		// never exceed the caller's permissions. Built once here with the same
 		// service instances the HTTP handlers use.
 		aiToolRegistry = aitools.BuildRegistry(aitools.Deps{
-			Contacts:    contactService,
-			CRM:         crmService,
-			Campaigns:   campaignService,
-			Analytics:   analyticsService,
-			Unibox:      uniboxService,
-			Automations: integrationServiceForHandler,
-			Audit:       auditService,
-			Search:      aiSearch,
-			Cache:       cache,
-			FeatureGate: featureGateService,
-			Skills:      skillsService,
-			AppBaseURL:  cfg.GetStringOptional(ctx, "APP_BASE_URL", "app_base_url", ""),
+			Contacts:     contactService,
+			CRM:          crmService,
+			Campaigns:    campaignService,
+			Analytics:    analyticsService,
+			Unibox:       uniboxService,
+			Automations:  integrationServiceForHandler,
+			Audit:        auditService,
+			Search:       aiSearch,
+			Cache:        cache,
+			Emails:       emailService,
+			EmailSend:    emailSendService,
+			Compose:      composeService,
+			Warmup:       warmupService,
+			Sequences:    sequenceService,
+			Org:          organizationService,
+			APIKeys:      apiKeyService,
+			Webhooks:     webhookServiceForHandler,
+			Subscription: subscriptionService,
+			Advanced:     advancedService,
+			FeatureGate:  featureGateService,
+			Skills:       skillsService,
+			AppBaseURL:   cfg.GetStringOptional(ctx, "APP_BASE_URL", "app_base_url", ""),
 		})
 
 		// Connected MCP servers (client direction): their enabled tools are
@@ -1055,19 +1083,6 @@ func main() {
 			)
 			researchService.StartDrainPool(ctx)
 		}
-		advancedService = advanced.NewService(
-			advancedRepository,
-			campaignRepostory,
-			emailRepostory,
-			taskRepository,
-			contactRepostory,
-			campaignProgressRepository,
-			crmRepository,
-			categoryRepostory,
-			uniboxRepository,
-			tasksClient,
-			warmupService,
-		)
 		// Fan reply + bounce events from the advanced-outreach brain out to
 		// customer webhooks AND third-party integration actions (Slack / CRM).
 		advancedService.WireDispatcher(webhookService)
@@ -1164,6 +1179,9 @@ func main() {
 		// returning a clean "not available".
 		tasksService.SetAI(aiProvider, creditService)
 		tasksService.SetAISearch(aiSearch)
+		// Research-mode AI variables run a bounded web-research agent over the
+		// shared tool registry at send time.
+		tasksService.SetAITools(aiToolRegistry)
 
 		// Admin outreach composer — sends from the platform mailer
 		// (SES/SMTP) with a configurable Reply-To, audits every send.

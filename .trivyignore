@@ -21,3 +21,15 @@ GHSA-82j2-j2ch-gfr8
 # is a build-time dev dependency and ships in no runtime artifact.
 # Re-evaluate when vite/astro bump esbuild to >= 0.28.1.
 GHSA-gv7w-rqvm-qjhr
+
+# sharp inherits libvips CVEs (GHSA-f88m-g3jw-g9cj / CVE-2026-33327, -33328,
+# -35590, -35591). Fixed in sharp 0.35, and docs/ is on 0.35. The marketing
+# site (site/) stays on 0.34.5 because sharp 0.35 breaks its Cloudflare Pages
+# build. sharp there is build-time optimization of our own static assets with
+# no untrusted input, so the practical risk is nil. Re-evaluate when the
+# Cloudflare build supports sharp 0.35.
+GHSA-f88m-g3jw-g9cj
+CVE-2026-33327
+CVE-2026-33328
+CVE-2026-35590
+CVE-2026-35591

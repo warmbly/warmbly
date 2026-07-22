@@ -80,6 +80,276 @@ func (d Deps) registerCampaignTools(r *Registry) {
 		RequiredAPIPerm: models.APIPermWriteCampaigns,
 		Handler:         d.createCampaignDraft,
 	})
+
+	r.Register(Tool{
+		Name:        "get_campaign",
+		Description: "Get one campaign's full configuration (settings, schedule, tracking, ramp).",
+		InputSchema: objectSchema(map[string]any{
+			"campaign_id": strProp("The campaign's UUID."),
+		}, "campaign_id"),
+		Risk:            generation.RiskRead,
+		RequiredOrgPerm: models.PermViewCampaigns,
+		RequiredAPIPerm: models.APIPermReadCampaigns,
+		Handler:         d.getCampaign,
+	})
+
+	r.Register(Tool{
+		Name:        "update_campaign",
+		Description: "Update a campaign's settings. Only provided fields change. Editing a draft is safe; changing an active campaign takes effect on the next sends.",
+		InputSchema: objectSchema(map[string]any{
+			"campaign_id":    strProp("The campaign's UUID."),
+			"name":           strProp("New name."),
+			"description":    strProp("New description."),
+			"daily_limit":    intProp("Per-day send cap for the campaign."),
+			"stop_on_reply":  boolProp("Stop sequencing a lead once they reply."),
+			"open_tracking":  boolProp("Track opens."),
+			"link_tracking":  boolProp("Track link clicks."),
+			"text_only":      boolProp("Send plain text only."),
+			"ramp_enabled":   boolProp("Gradually ramp daily volume."),
+			"ramp_start":     intProp("Ramp starting volume."),
+			"ramp_increment": intProp("Ramp daily increment."),
+			"ramp_ceiling":   intProp("Ramp ceiling."),
+		}, "campaign_id"),
+		Risk:            generation.RiskWrite,
+		RequiredOrgPerm: models.PermManageCampaigns,
+		RequiredAPIPerm: models.APIPermWriteCampaigns,
+		Handler:         d.updateCampaign,
+	})
+
+	r.Register(Tool{
+		Name:        "delete_campaign",
+		Description: "Delete a campaign. Destructive and not reversible; requires user approval.",
+		InputSchema: objectSchema(map[string]any{
+			"campaign_id": strProp("The campaign's UUID."),
+		}, "campaign_id"),
+		Risk:            generation.RiskWrite,
+		RequiredOrgPerm: models.PermManageCampaigns,
+		RequiredAPIPerm: models.APIPermWriteCampaigns,
+		Handler:         d.deleteCampaign,
+	})
+
+	r.Register(Tool{
+		Name:        "list_campaign_senders",
+		Description: "List the mailboxes assigned to send a campaign, with their weight and enabled state.",
+		InputSchema: objectSchema(map[string]any{
+			"campaign_id": strProp("The campaign's UUID."),
+		}, "campaign_id"),
+		Risk:            generation.RiskRead,
+		RequiredOrgPerm: models.PermViewCampaigns,
+		RequiredAPIPerm: models.APIPermReadCampaigns,
+		Handler:         d.listCampaignSenders,
+	})
+
+	r.Register(Tool{
+		Name:        "set_campaign_senders",
+		Description: "Replace the set of sender mailboxes for a campaign (each with an optional weight and enabled flag).",
+		InputSchema: objectSchema(map[string]any{
+			"campaign_id": strProp("The campaign's UUID."),
+			"senders": arrProp("The full sender set to apply.", objectSchema(map[string]any{
+				"email_account_id": strProp("Mailbox UUID."),
+				"weight":           intProp("Relative send weight."),
+				"enabled":          boolProp("Whether this sender is active."),
+			}, "email_account_id")),
+		}, "campaign_id", "senders"),
+		Risk:            generation.RiskWrite,
+		RequiredOrgPerm: models.PermManageCampaigns,
+		RequiredAPIPerm: models.APIPermWriteCampaigns,
+		Handler:         d.setCampaignSenders,
+	})
+
+	r.Register(Tool{
+		Name:        "verify_campaign_tracking_domain",
+		Description: "Verify a campaign's custom tracking-domain CNAME.",
+		InputSchema: objectSchema(map[string]any{
+			"campaign_id": strProp("The campaign's UUID."),
+		}, "campaign_id"),
+		Risk:            generation.RiskWrite,
+		RequiredOrgPerm: models.PermManageCampaigns,
+		RequiredAPIPerm: models.APIPermWriteCampaigns,
+		Handler:         d.verifyCampaignTrackingDomain,
+	})
+
+	r.Register(Tool{
+		Name:        "get_campaign_logs",
+		Description: "Read a campaign's recent send/event log entries.",
+		InputSchema: objectSchema(map[string]any{
+			"campaign_id": strProp("The campaign's UUID."),
+			"limit":       intProp("Max log rows (1-100, default 50)."),
+		}, "campaign_id"),
+		Risk:            generation.RiskRead,
+		RequiredOrgPerm: models.PermViewCampaigns,
+		RequiredAPIPerm: models.APIPermReadCampaigns,
+		Handler:         d.getCampaignLogs,
+	})
+}
+
+func (d Deps) getCampaign(ctx context.Context, inv Invocation, args json.RawMessage) (string, error) {
+	in, err := decodeArgs[struct {
+		CampaignID string `json:"campaign_id"`
+	}](args)
+	if err != nil {
+		return "", err
+	}
+	if _, err := parseUUIDArg(in.CampaignID); err != nil {
+		return "", err
+	}
+	// Get scopes by org (the handler passes the org id as the first arg).
+	camp, xerr := d.Campaigns.Get(ctx, inv.OrgID.String(), in.CampaignID)
+	if xerr != nil {
+		return "", fromErrx(xerr)
+	}
+	return jsonResult(camp)
+}
+
+func (d Deps) updateCampaign(ctx context.Context, inv Invocation, args json.RawMessage) (string, error) {
+	in, err := decodeArgs[struct {
+		CampaignID    string  `json:"campaign_id"`
+		Name          *string `json:"name"`
+		Description   *string `json:"description"`
+		DailyLimit    *int    `json:"daily_limit"`
+		StopOnReply   *bool   `json:"stop_on_reply"`
+		OpenTracking  *bool   `json:"open_tracking"`
+		LinkTracking  *bool   `json:"link_tracking"`
+		TextOnly      *bool   `json:"text_only"`
+		RampEnabled   *bool   `json:"ramp_enabled"`
+		RampStart     *int    `json:"ramp_start"`
+		RampIncrement *int    `json:"ramp_increment"`
+		RampCeiling   *int    `json:"ramp_ceiling"`
+	}](args)
+	if err != nil {
+		return "", err
+	}
+	cid, err := parseUUIDArg(in.CampaignID)
+	if err != nil {
+		return "", err
+	}
+	upd := &models.UpdateCampaign{
+		Name:          in.Name,
+		Description:   in.Description,
+		DailyLimit:    in.DailyLimit,
+		StopOnReply:   in.StopOnReply,
+		OpenTracking:  in.OpenTracking,
+		LinkTracking:  in.LinkTracking,
+		TextOnly:      in.TextOnly,
+		RampEnabled:   in.RampEnabled,
+		RampStart:     in.RampStart,
+		RampIncrement: in.RampIncrement,
+		RampCeiling:   in.RampCeiling,
+	}
+	camp, xerr := d.Campaigns.Update(ctx, inv.UserID.String(), in.CampaignID, upd)
+	if xerr != nil {
+		return "", fromErrx(xerr)
+	}
+	d.logAudit(ctx, inv, models.AuditActionUpdate, models.AuditEntityCampaign, &cid, nil)
+	return jsonResult(camp)
+}
+
+func (d Deps) deleteCampaign(ctx context.Context, inv Invocation, args json.RawMessage) (string, error) {
+	in, err := decodeArgs[struct {
+		CampaignID string `json:"campaign_id"`
+	}](args)
+	if err != nil {
+		return "", err
+	}
+	cid, err := parseUUIDArg(in.CampaignID)
+	if err != nil {
+		return "", err
+	}
+	if xerr := d.Campaigns.Delete(ctx, inv.UserID.String(), in.CampaignID); xerr != nil {
+		return "", fromErrx(xerr)
+	}
+	d.logAudit(ctx, inv, models.AuditActionDelete, models.AuditEntityCampaign, &cid, nil)
+	return jsonResult(map[string]any{"ok": true, "campaign_id": in.CampaignID})
+}
+
+func (d Deps) listCampaignSenders(ctx context.Context, inv Invocation, args json.RawMessage) (string, error) {
+	in, err := decodeArgs[struct {
+		CampaignID string `json:"campaign_id"`
+	}](args)
+	if err != nil {
+		return "", err
+	}
+	if _, err := parseUUIDArg(in.CampaignID); err != nil {
+		return "", err
+	}
+	senders, xerr := d.Campaigns.ListCampaignSenders(ctx, inv.OrgID, in.CampaignID)
+	if xerr != nil {
+		return "", fromErrx(xerr)
+	}
+	return jsonResult(map[string]any{"senders": senders, "count": len(senders)})
+}
+
+func (d Deps) setCampaignSenders(ctx context.Context, inv Invocation, args json.RawMessage) (string, error) {
+	in, err := decodeArgs[struct {
+		CampaignID string `json:"campaign_id"`
+		Senders    []struct {
+			EmailAccountID string `json:"email_account_id"`
+			Weight         *int   `json:"weight"`
+			Enabled        *bool  `json:"enabled"`
+		} `json:"senders"`
+	}](args)
+	if err != nil {
+		return "", err
+	}
+	cid, err := parseUUIDArg(in.CampaignID)
+	if err != nil {
+		return "", err
+	}
+	inputs := make([]models.CampaignSenderInput, 0, len(in.Senders))
+	for _, s := range in.Senders {
+		aid, perr := parseUUIDArg(s.EmailAccountID)
+		if perr != nil {
+			return "", perr
+		}
+		inputs = append(inputs, models.CampaignSenderInput{EmailAccountID: aid, Weight: s.Weight, Enabled: s.Enabled})
+	}
+	senders, xerr := d.Campaigns.ReplaceCampaignSenders(ctx, inv.OrgID, in.CampaignID, inputs)
+	if xerr != nil {
+		return "", fromErrx(xerr)
+	}
+	d.logAudit(ctx, inv, models.AuditActionUpdate, models.AuditEntityCampaign, &cid, nil)
+	return jsonResult(map[string]any{"senders": senders, "count": len(senders)})
+}
+
+func (d Deps) verifyCampaignTrackingDomain(ctx context.Context, inv Invocation, args json.RawMessage) (string, error) {
+	in, err := decodeArgs[struct {
+		CampaignID string `json:"campaign_id"`
+	}](args)
+	if err != nil {
+		return "", err
+	}
+	cid, err := parseUUIDArg(in.CampaignID)
+	if err != nil {
+		return "", err
+	}
+	status, xerr := d.Campaigns.VerifyCampaignTrackingDomain(ctx, inv.OrgID, in.CampaignID)
+	if xerr != nil {
+		return "", fromErrx(xerr)
+	}
+	d.logAudit(ctx, inv, models.AuditActionUpdate, models.AuditEntityCampaign, &cid, nil)
+	return jsonResult(status)
+}
+
+func (d Deps) getCampaignLogs(ctx context.Context, inv Invocation, args json.RawMessage) (string, error) {
+	in, err := decodeArgs[struct {
+		CampaignID string `json:"campaign_id"`
+		Limit      int    `json:"limit"`
+	}](args)
+	if err != nil {
+		return "", err
+	}
+	if _, err := parseUUIDArg(in.CampaignID); err != nil {
+		return "", err
+	}
+	limit := in.Limit
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	res, xerr := d.Campaigns.GetLogs(ctx, inv.UserID.String(), in.CampaignID, limit, nil)
+	if xerr != nil {
+		return "", fromErrx(xerr)
+	}
+	return jsonResult(res)
 }
 
 func (d Deps) listCampaigns(ctx context.Context, inv Invocation, args json.RawMessage) (string, error) {

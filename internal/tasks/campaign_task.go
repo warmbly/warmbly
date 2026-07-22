@@ -439,6 +439,37 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 		}
 	}
 
+	// STEP 10.5: Resolve per-recipient AI variables (AI blocks in the body that
+	// generate unique copy for THIS contact). Runs before tracking/signature so
+	// the generated copy gets open/click tracking like any other body text. A
+	// zero-cost no-op when the body has no AI blocks. A generation failure fails
+	// the send (recorded like other send failures) so the task retries with the
+	// same cached output.
+	if campaign.OrganizationID != nil && s.aiProvider != nil && s.aiCredits != nil {
+		var aerr error
+		subject, bodyHTML, bodyPlain, aerr = s.resolveAIVariables(ctx, campaign, contact, sequence.ID, subject, bodyHTML, bodyPlain)
+		if aerr != nil {
+			s.taskRepo.RecordTaskFailure(ctx, taskID, "AI variable resolution failed", aerr.Error())
+			if s.campaignLogRepo != nil {
+				s.campaignLogRepo.CreateLog(ctx, &repository.CampaignLogEntry{
+					CampaignID: campaign.ID,
+					EventType:  "email_failed",
+					Message:    fmt.Sprintf("Failed to resolve AI variables for %s", contact.Email),
+					Metadata: map[string]interface{}{
+						"contact_id":  contact.ID.String(),
+						"sequence_id": sequence.ID.String(),
+						"error":       aerr.Error(),
+					},
+				})
+			}
+			if rerr := s.taskRepo.UpdateTaskStatus(ctx, taskID, "pending"); rerr != nil {
+				sentry.CaptureException(rerr)
+			}
+			executionStatus = "failed"
+			return errx.InternalError()
+		}
+	}
+
 	// STEP 11: Add tracking. Resolve the tracking host once: a VERIFIED
 	// campaign-scoped override wins, otherwise the mailbox/default domain.
 	// Only a verified override is honored (an unresolved/unverified host could

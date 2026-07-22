@@ -76,6 +76,14 @@ func (s *contactService) SearchCounts(ctx context.Context, orgID string) (*model
 	return s.contactRepository.SearchCounts(ctx, orgID)
 }
 
+func (s *contactService) ListCustomFieldKeys(ctx context.Context, orgID uuid.UUID) ([]string, *errx.Error) {
+	keys, err := s.contactRepository.DistinctCustomFieldKeys(ctx, orgID)
+	if err != nil {
+		return nil, errx.InternalError()
+	}
+	return keys, nil
+}
+
 func (s *contactService) CampaignLeadCounts(ctx context.Context, orgID, campaignID string) (*models.CampaignLeadCounts, *errx.Error) {
 	if _, err := validate.Uuid(campaignID); err != nil {
 		return nil, err

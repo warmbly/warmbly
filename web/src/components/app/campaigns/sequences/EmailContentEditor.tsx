@@ -24,7 +24,6 @@ import {
     PopoverMenuTrigger,
     SelectButton,
 } from "@/components/ui/popover-menu";
-import WriteWithAI from "./WriteWithAI";
 import ContentScore from "../ContentScore";
 import useTemplates from "@/lib/api/hooks/app/templates/useTemplates";
 import useCreateTemplate from "@/lib/api/hooks/app/templates/useCreateTemplate";
@@ -152,19 +151,6 @@ export default function EmailContentEditor({
                         </div>
                     </PopoverMenuContent>
                 </PopoverMenu>
-
-                <WriteWithAI
-                    onInsert={(text) => {
-                        const html = `<p>${text
-                            .replace(/&/g, "&amp;")
-                            .replace(/</g, "&lt;")
-                            .replace(/>/g, "&gt;")
-                            .replace(/\n{2,}/g, "</p><p>")
-                            .replace(/\n/g, "<br />")}</p>`;
-                        const next = bodyHtml ? `${bodyHtml}${html}` : html;
-                        onBodyChange(next, htmlToPlain(next));
-                    }}
-                />
             </div>
 
             <div>

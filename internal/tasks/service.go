@@ -69,6 +69,20 @@ type TasksService interface {
 	// SetAISearch wires the optional web-search backend the switch step's
 	// web-search capability uses (nil = capability silently unavailable).
 	SetAISearch(sc generation.SearchClient)
+
+	// SetAITools wires the web-tool source so research-mode AI variables can run
+	// a bounded web-research agent at send time (nil = research degrades to a
+	// single completion with one optional web search).
+	SetAITools(src AIToolSource)
+}
+
+// AIToolSource yields the read-only web tools (search_web, fetch_url) a
+// research-mode AI variable agent runs over, bound to an org. Defined here (not
+// imported from aitools) so the tasks package stays free of the aitools import
+// cycle; *aitools.Registry satisfies it structurally via its WebResearchTools
+// method.
+type AIToolSource interface {
+	WebResearchTools(orgID uuid.UUID) []generation.ToolDef
 }
 
 // AutomationRunner launches an automation graph by id. It's satisfied
@@ -113,6 +127,9 @@ type tasksService struct {
 	aiProvider generation.Provider
 	aiCredits  credits.CreditService
 	aiSearch   generation.SearchClient
+	// aiTools sources the web tools research-mode AI variables run a bounded
+	// agent over (SetAITools). Nil = research degrades.
+	aiTools AIToolSource
 
 	// warmupSettings caches the warmup generation settings in-process so the
 	// per-send AI-vs-static decision doesn't hit Postgres on every warmup.
@@ -185,4 +202,8 @@ func (s *tasksService) SetAI(p generation.Provider, c credits.CreditService) {
 
 func (s *tasksService) SetAISearch(sc generation.SearchClient) {
 	s.aiSearch = sc
+}
+
+func (s *tasksService) SetAITools(src AIToolSource) {
+	s.aiTools = src
 }

@@ -11,3 +11,6 @@ allowBuilds:
 # exist on the registry).
 overrides:
   picomatch: ^4.0.4
+  # Clear CVE-2026-59887 (quadratic-complexity ReDoS via `mailto:`) in the
+  # transitive linkify-it.
+  linkify-it: ^5.0.2

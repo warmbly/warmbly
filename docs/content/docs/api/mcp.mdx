@@ -91,9 +91,11 @@ Add to `.cursor/mcp.json`:
 
 ## What is exposed
 
-The server exposes exactly the tools your credential is allowed to use, whether that credential is an OAuth token or an API key. A credential with only read scopes sees only the read tools; one with write scopes sees those too. This is the same tool set the in-product assistant uses, so an MCP client acts with precisely the permissions you granted, and nothing more.
+The server exposes exactly the tools your credential is allowed to use, whether that credential is an OAuth token or an API key. A credential with only read scopes sees only the read tools; one with write scopes sees those too, so an MCP client acts with precisely the permissions you granted, and nothing more.
 
-Every tool is gated by its API permission. `tools/list` returns only the tools your mask allows. Sending-class actions (anything that would transmit email) are never exposed over MCP; the assistant only ever produces drafts.
+This is a subset of what the in-product assistant can do. Two categories are dashboard-only and never reachable by an API key or OAuth token: sending email (`send_reply`, `compose_email`), and workspace governance (team, workspace settings, and billing). Those routes are session-only and have no API scope to grant, so they never appear over MCP.
+
+Every tool is gated by its API permission. `tools/list` returns only the tools your mask allows. Sending-class tools (anything that transmits a message to a recipient) are never exposed over MCP regardless of scope; over MCP the assistant only produces drafts (`draft_reply`).
 
 | Tool | Does | Required scope |
 |------|------|----------------|
@@ -108,12 +110,36 @@ Every tool is gated by its API permission. `tools/list` returns only the tools y
 | `set_campaign_status` | Start or stop a campaign | `SEND_CAMPAIGNS` |
 | `get_dashboard_analytics` | Org-wide sending stats for a period | `READ_ANALYTICS` |
 | `list_mailboxes` | Sender mailboxes with health + warmup state | `READ_ANALYTICS` |
-| `list_pipelines` / `list_deals` | Read CRM pipelines and deals | `READ_CRM` |
+| `add_contact` / `delete_contact` | Create or delete a contact | `WRITE_CONTACTS` |
+| `bulk_edit_contacts` | Tag or subscribe many contacts at once | `BULK_CONTACTS` |
+| `get_contact_timeline` / `get_contact_sent_emails` | Read a contact's activity and sent mail | `READ_CONTACTS` |
+| `list_pipelines` / `list_deals` / `get_deal` / `list_deals_by_contact` | Read CRM pipelines and deals | `READ_CRM` |
 | `create_task` / `create_deal` | Create CRM records | `WRITE_CRM` |
-| `add_contact_note` | Add a note to a contact's timeline | `WRITE_CRM` |
+| `update_deal` / `move_deal_stage` / `delete_deal` | Edit, move, or delete a deal | `WRITE_CRM` |
+| `list_tasks` / `list_task_types` | Read CRM tasks and task types | `READ_CRM` |
+| `update_task` / `complete_task` / `delete_task` | Edit, complete, or delete a task | `WRITE_CRM` |
+| `add_contact_note` / `list_contact_notes` | Add or read contact notes | `WRITE_CRM` / `READ_CRM` |
+| `update_contact_note` / `delete_contact_note` | Edit or delete a note | `WRITE_CRM` |
+| `create_pipeline` / `update_pipeline` / `delete_pipeline` | Manage CRM pipelines | `WRITE_CRM` |
+| `create_pipeline_stage` / `update_pipeline_stage` / `delete_pipeline_stage` | Manage pipeline stages | `WRITE_CRM` |
+| `get_campaign` / `list_campaign_senders` / `get_campaign_logs` | Read a campaign's config, senders, and logs | `READ_CAMPAIGNS` |
+| `update_campaign` / `delete_campaign` | Edit or delete a campaign | `WRITE_CAMPAIGNS` |
+| `set_campaign_senders` / `verify_campaign_tracking_domain` | Set senders, verify tracking domain | `WRITE_CAMPAIGNS` |
+| `list_campaign_steps` | Read a campaign's sequence steps | `READ_CAMPAIGNS` |
+| `add_campaign_step` / `update_campaign_step` / `delete_campaign_step` | Edit a campaign's sequence steps | `WRITE_CAMPAIGNS` |
 | `list_threads` / `get_thread` | Read the unified inbox | `READ_UNIBOX` |
 | `draft_reply` | Draft a reply (never sends) | `READ_UNIBOX` |
-| `create_automation_draft` | Create a disabled automation | `INTEGRATIONS` |
+| `list_scheduled_sends` | List queued outbound messages | `READ_UNIBOX` |
+| `mark_thread_seen` / `set_thread_labels` | Mark seen, set thread labels | `WRITE_UNIBOX` |
+| `snooze_thread` / `unsnooze_thread` / `cancel_scheduled_send` | Snooze a thread, cancel a queued send | `WRITE_UNIBOX` |
+| `get_mailbox` / `get_warmup_ban_status` | Read a mailbox's config and warmup standing | `READ_EMAILS` |
+| `update_mailbox` / `set_mailbox_warmup` / `set_mailbox_tracking_domain` | Edit mailbox settings, warmup, tracking domain | `WRITE_EMAILS` |
+| `submit_warmup_appeal` / `disconnect_mailbox` | Appeal a warmup ban, disconnect a mailbox | `WRITE_EMAILS` |
+| `create_automation_draft` / `list_automations` / `get_automation` | Read automations, create a disabled draft | `INTEGRATIONS` |
+| `update_automation` / `set_automation_enabled` / `delete_automation` | Edit, enable, or delete an automation | `INTEGRATIONS` |
+| `list_api_keys` / `create_api_key` / `update_api_key` / `revoke_api_key` | Manage API keys | `API_KEYS` |
+| `list_webhooks` / `list_webhook_deliveries` | Read webhook endpoints and deliveries | `WEBHOOKS` |
+| `create_webhook` / `update_webhook` / `delete_webhook` / `rotate_webhook_secret` / `verify_webhook` | Manage webhook endpoints | `WEBHOOKS` |
 | `search_web` / `fetch_url` | Search and read public pages | any |
 | `load_skill` | Read one of your playbooks | any |
 

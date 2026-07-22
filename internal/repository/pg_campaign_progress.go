@@ -96,6 +96,16 @@ type CampaignProgressRepository interface {
 	// evaluator / callers that need only the class.
 	GetLatestReplyClass(ctx context.Context, contactID, campaignID uuid.UUID) (string, error)
 
+	// GetResolvedAIVariables returns the per-recipient AI variable text already
+	// generated for this (campaign, contact, step), keyed by variable id (empty
+	// map when the row or column is empty). The send path reads this first so a
+	// task redelivery reuses cached copy instead of re-generating and re-charging.
+	GetResolvedAIVariables(ctx context.Context, campaignID, contactID, sequenceID uuid.UUID) (map[string]string, error)
+	// SaveResolvedAIVariable upserts one resolved AI variable (varID -> text) into
+	// the ai_variables_resolved jsonb, creating the progress row if it is missing
+	// (the AI resolve runs before the row is stamped sent), mirroring RecordAILabel.
+	SaveResolvedAIVariable(ctx context.Context, campaignID, contactID, sequenceID uuid.UUID, varID, text string) error
+
 	// ClaimInstantFire atomically claims the one-time right to run the instant
 	// action chain for the contact's current step FOR A SINGLE EVENT KIND
 	// ("reply" / "open" / "click"). It appends eventKind to the instant_fired
@@ -258,6 +268,49 @@ func (r *campaignProgressRepository) RecordAILabel(ctx context.Context, campaign
 		DO UPDATE SET ai_label = EXCLUDED.ai_label
 	`
 	_, err := r.db.Exec(ctx, query, campaignID, contactID, sequenceID, label)
+	return err
+}
+
+// GetResolvedAIVariables reads the ai_variables_resolved jsonb for the row and
+// decodes it into a var-id -> text map. A missing row or empty column yields an
+// empty (non-nil) map, never an error.
+func (r *campaignProgressRepository) GetResolvedAIVariables(ctx context.Context, campaignID, contactID, sequenceID uuid.UUID) (map[string]string, error) {
+	query := `
+		SELECT COALESCE(ai_variables_resolved, '{}'::jsonb)
+		FROM campaign_contact_progress
+		WHERE campaign_id = $1 AND contact_id = $2 AND sequence_id = $3
+	`
+	var raw []byte
+	err := r.db.QueryRow(ctx, query, campaignID, contactID, sequenceID).Scan(&raw)
+	if err == sql.ErrNoRows {
+		return map[string]string{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]string{}
+	if len(raw) > 0 {
+		if uerr := json.Unmarshal(raw, &out); uerr != nil {
+			return map[string]string{}, nil
+		}
+	}
+	return out, nil
+}
+
+// SaveResolvedAIVariable upserts one key into ai_variables_resolved. It inserts
+// the progress row (jsonb built from the single key) when absent — the AI
+// resolve runs before the row is stamped sent — and otherwise merges the key in
+// with jsonb_set, mirroring RecordAILabel's missing-row handling.
+func (r *campaignProgressRepository) SaveResolvedAIVariable(ctx context.Context, campaignID, contactID, sequenceID uuid.UUID, varID, text string) error {
+	query := `
+		INSERT INTO campaign_contact_progress (campaign_id, contact_id, sequence_id, ai_variables_resolved)
+		VALUES ($1, $2, $3, jsonb_build_object($4::text, $5::text))
+		ON CONFLICT (campaign_id, contact_id, sequence_id)
+		DO UPDATE SET ai_variables_resolved =
+			COALESCE(campaign_contact_progress.ai_variables_resolved, '{}'::jsonb)
+			|| jsonb_build_object($4::text, $5::text)
+	`
+	_, err := r.db.Exec(ctx, query, campaignID, contactID, sequenceID, varID, text)
 	return err
 }
 

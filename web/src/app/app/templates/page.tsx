@@ -35,9 +35,12 @@ import {
     PopoverMenu,
     PopoverMenuContent,
     PopoverMenuItem,
+    PopoverMenuLabel,
     PopoverMenuSeparator,
     PopoverMenuTrigger,
 } from "@/components/ui/popover-menu";
+import useCustomFieldKeys from "@/lib/api/hooks/app/contacts/useCustomFieldKeys";
+import { STANDARD_VARS, VARIABLES, buildToken, isStandardKey } from "@/lib/templateVars";
 import useTemplates from "@/lib/api/hooks/app/templates/useTemplates";
 import useCreateTemplate from "@/lib/api/hooks/app/templates/useCreateTemplate";
 import useUpdateTemplate from "@/lib/api/hooks/app/templates/useUpdateTemplate";
@@ -53,13 +56,9 @@ import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import { TEMPLATE_PRESETS, type TemplatePreset } from "./presets";
 
-const VARIABLE_HINTS = [
-    "{{.FirstName}}",
-    "{{.LastName}}",
-    "{{.Email}}",
-    "{{.Company}}",
-    "{{.Phone}}",
-];
+// Standard merge fields come from the shared catalog (@/lib/templateVars) so
+// this surface never drifts from the campaign editor or the send-time renderer.
+const VARIABLE_HINTS = VARIABLES;
 
 export default function TemplatesPage() {
     const [search, setSearch] = React.useState("");
@@ -725,6 +724,8 @@ function TemplateEditor({
 
 function VariableMenu({ onPick }: { onPick: (token: string) => void }) {
     const [open, setOpen] = React.useState(false);
+    const { data: customKeys = [] } = useCustomFieldKeys();
+    const custom = customKeys.filter((k) => !isStandardKey(k)).slice(0, 12);
 
     return (
         <PopoverMenu open={open} onOpenChange={setOpen} align="end">
@@ -736,12 +737,28 @@ function VariableMenu({ onPick }: { onPick: (token: string) => void }) {
                     + variable
                 </button>
             </PopoverMenuTrigger>
-            <PopoverMenuContent minWidth={176}>
-                {VARIABLE_HINTS.map((v) => (
-                    <PopoverMenuItem key={v} onSelect={() => onPick(v)}>
-                        <span className="font-mono text-[11.5px]">{v}</span>
+            <PopoverMenuContent minWidth={208}>
+                <PopoverMenuLabel>Contact fields</PopoverMenuLabel>
+                {STANDARD_VARS.map((v) => (
+                    <PopoverMenuItem key={v.token} onSelect={() => onPick(v.token)}>
+                        <span className="flex-1 truncate text-[12px] text-slate-700">{v.label}</span>
+                        <code className="ml-2 shrink-0 font-mono text-[10px] text-slate-400">{v.token}</code>
                     </PopoverMenuItem>
                 ))}
+                {custom.length > 0 && (
+                    <>
+                        <PopoverMenuSeparator />
+                        <PopoverMenuLabel>Your custom fields</PopoverMenuLabel>
+                        {custom.map((k) => (
+                            <PopoverMenuItem key={k} onSelect={() => onPick(buildToken(k))}>
+                                <span className="flex-1 truncate text-[12px] text-slate-700">{k}</span>
+                                <code className="ml-2 shrink-0 font-mono text-[10px] text-slate-400">
+                                    {buildToken(k)}
+                                </code>
+                            </PopoverMenuItem>
+                        ))}
+                    </>
+                )}
             </PopoverMenuContent>
         </PopoverMenu>
     );

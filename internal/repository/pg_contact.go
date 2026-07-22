@@ -60,6 +60,11 @@ type ContactRepository interface {
 	Delete(ctx context.Context, userID string, orgID uuid.UUID, contactID string) *errx.Error
 	GetContactCount(ctx context.Context, userID string) (int, *errx.Error)
 
+	// DistinctCustomFieldKeys returns the org's distinct contact custom-field
+	// keys, frequency-ranked (most common first) then alphabetical, capped at
+	// 200. Powers the dashboard variable picker's real-field suggestions.
+	DistinctCustomFieldKeys(ctx context.Context, orgID uuid.UUID) ([]string, error)
+
 	// 360 view read paths. orgID is optional — when nil, the suppression
 	// + deliverability + reply joins are skipped (they're org-scoped).
 	GetDetail(ctx context.Context, userID uuid.UUID, orgID *uuid.UUID, contactID uuid.UUID) (*models.ContactDetail, *errx.Error)
@@ -1107,6 +1112,41 @@ func (r *contactRepository) SearchCounts(ctx context.Context, orgID string) (*mo
 	}
 
 	return counts, nil
+}
+
+// DistinctCustomFieldKeys returns the org's distinct contact custom-field keys,
+// frequency-ranked (most common first) then alphabetical, capped at 200. Used
+// by the dashboard variable picker to suggest fields contacts actually have.
+func (r *contactRepository) DistinctCustomFieldKeys(ctx context.Context, orgID uuid.UUID) ([]string, error) {
+	const query = `
+		SELECT key
+		FROM contacts, jsonb_object_keys(custom_fields) AS key
+		WHERE organization_id = $1 AND custom_fields IS NOT NULL AND custom_fields <> '{}'::jsonb
+		GROUP BY key
+		ORDER BY count(*) DESC, key ASC
+		LIMIT 200
+	`
+	rows, err := r.DB.Query(ctx, query, orgID)
+	if err != nil {
+		db.CaptureError(err, query, []any{orgID}, "query")
+		return nil, err
+	}
+	defer rows.Close()
+
+	keys := make([]string, 0)
+	for rows.Next() {
+		var key string
+		if err := rows.Scan(&key); err != nil {
+			db.CaptureError(err, query, nil, "scan")
+			return nil, err
+		}
+		keys = append(keys, key)
+	}
+	if err := rows.Err(); err != nil {
+		db.CaptureError(err, query, nil, "rows")
+		return nil, err
+	}
+	return keys, nil
 }
 
 // leadStatusClause builds the WHERE predicate for a derived lead status inside
