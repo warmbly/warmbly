@@ -5,7 +5,7 @@
     <img src="docs/assets/logo-dark.svg" alt="Warmbly" width="360">
   </picture>
 
-  <p><b>The open-source cold email and warmup platform you host yourself.</b></p>
+  <p><b>The open-source agentic cold email and warmup platform.</b></p>
 
   <p>
     <a href="https://dc.warmbly.com"><img src="https://img.shields.io/badge/Discord-5865F2?logo=discord&logoColor=white&style=flat-square" alt="Discord" /></a>
@@ -29,8 +29,9 @@
 
 Warmbly runs cold email campaigns from the mailboxes you already own and warms
 them so they keep landing in the inbox. Opens, clicks, replies, and deliverability
-sync back to one dashboard, and because you host it, your sending IPs and your
-data stay yours.
+land in a shared dashboard the moment they happen, your team works in it together
+with live presence and cursors, and AI agents draft replies, research contacts,
+and run the steps inside your automations.
 
 https://github.com/user-attachments/assets/378a510a-bb99-425f-925e-04300184938b
 
