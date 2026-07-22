@@ -5,8 +5,9 @@
     <img src="docs/assets/logo-dark.svg" alt="Warmbly" width="360">
   </picture>
   <br />
+  <br />
 
-  <p><b>The open-source agentic cold email and warmup platform.</b></p>
+  <p>The open-source agentic cold email and warmup platform.</p>
   <br />
 
   <p>
@@ -25,6 +26,10 @@
     <a href="#documentation">Docs</a> ·
     <a href="#community">Community</a>
   </p>
+  <br />
+  <h3>⭐ Help us reach more senders and grow the Warmbly community. Star this repo!</h3>
+  <br />
+  <img width="640" alt="Star Warmbly on GitHub" src="https://github.com/user-attachments/assets/c9bd34f7-c384-4f10-91e4-215fcea09986" />
 </div>
 
 ## Warmbly
@@ -156,11 +161,3 @@ We prefer responsible disclosure and credit reporters in the release notes.
 ## License
 
 Apache License 2.0. Copyright 2026 Mindroot Ltd. See [LICENSE](./LICENSE).
-
----
-
-<div align="center">
-  <h3>⭐ Help us reach more senders and grow the Warmbly community. Star this repo!</h3>
-  <br />
-  <img width="1280" height="720" alt="warmbly-star" src="https://github.com/user-attachments/assets/c9bd34f7-c384-4f10-91e4-215fcea09986" />
-</div>
