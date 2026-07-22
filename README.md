@@ -4,8 +4,10 @@
     <source media="(prefers-color-scheme: light)" srcset="docs/assets/logo-light.svg">
     <img src="docs/assets/logo-dark.svg" alt="Warmbly" width="360">
   </picture>
+  <br />
 
   <p><b>The open-source agentic cold email and warmup platform.</b></p>
+  <br />
 
   <p>
     <a href="https://dc.warmbly.com"><img src="https://img.shields.io/badge/Discord-5865F2?logo=discord&logoColor=white&style=flat-square" alt="Discord" /></a>
@@ -28,10 +30,9 @@
 ## Warmbly
 
 Warmbly runs cold email campaigns from the mailboxes you already own and warms
-them so they keep landing in the inbox. Opens, clicks, replies, and deliverability
-land in a shared dashboard the moment they happen, your team works in it together
-with live presence and cursors, and AI agents draft replies, research contacts,
-and run the steps inside your automations.
+them so they keep landing in the inbox. Opens, clicks, and replies land in a
+shared dashboard the moment they happen, and it's AI-native, so your team and its
+agents work in it together, live.
 
 https://github.com/user-attachments/assets/378a510a-bb99-425f-925e-04300184938b
 
