@@ -1,81 +1,101 @@
 ---
 title: AI steps in automations
-description: Add a classify, extract, or generate step to an automation so a flow can read the event with a model, then branch on what it found.
+description: Add an AI step or an AI switch to an automation so a flow can read the event with a model, take reversible actions, or route down one of your cases.
 ---
 
-An AI step runs one model call in the middle of an automation. It reads the trigger event, does one job (label it, pull fields out of it, or write a line of text), and stores the result back into the flow as a variable. Later conditions and action text can then use that result, so a flow can branch on what the model decided.
+Automations have two AI nodes, and they mirror the AI steps in campaign sequences: an **AI step** that reads the event and either transforms it or acts on it, and an **AI switch** that routes the event down one of your cases. Both are built-in actions, so they need no integration or connection. See [AI credits](/guides/ai-credits/) for how credits work.
 
-AI steps are built-in actions, so they need no integration or connection. They cost one credit each. See [AI credits](/guides/ai-credits/) for how credits work.
+Add one from an action node: pick **Warmbly (built-in)** under **Run**, then choose **AI step** or **AI switch**.
 
-## The three steps
+## The AI step
 
-Add one from an action node: pick **Warmbly (built-in)** under **Run**, then choose the AI step.
+An AI step has a **mode** that decides what it does. Every mode takes an **instruction**, plain-language guidance for the model. The instruction is templated, so you can drop event fields into it with `{{.field}}` (for example `{{.subject}}` or `{{.snippet}}`). The step also sees the rest of the event data, so you do not have to list every field.
 
-| Step | What it does | Where the result lands |
+| Mode | What it does | Where the result lands |
 | --- | --- | --- |
-| AI classify | Picks exactly one of the labels you list | `ai_class` |
-| AI extract | Pulls the fields you name out of the event text | one variable per field |
-| AI generate | Writes a short piece of text from your instruction | `ai_text` |
+| Agent | Follows your instruction and takes the reversible actions you allow | acts on the contact / event |
+| Generate text | Writes a short piece of text from your instruction | `ai_text` |
+| Classify | Picks exactly one of the labels you list | `ai_class` |
+| Extract fields | Pulls the fields you name out of the event text | one variable per field |
 
-Every step takes an **instruction**: plain-language guidance for the model. The instruction is templated, so you can drop event fields into it with `{{.field}}` (for example `{{.subject}}` or `{{.snippet}}`). The step also sees the rest of the event data, so you do not have to list every field in the instruction.
+### Agent
 
-### AI classify
+The agent is the default. You write an instruction and check the reversible actions it may take: **add a tag**, **remove a tag**, **label the email**, **create a task**, **create a deal**, **move the deal stage**, **set variables**, and **unsubscribe**. The agent reads each event, decides which of those actions fit, and can chain several. It writes the details itself: the task title, the deal name and pipeline, the variable value. It only ever takes the actions you enable, and it never sends email or replies.
 
-Give it an instruction and a list of **labels**. The model reads the event and returns exactly one label from your list, stored in the variable `ai_class`. Use it to sort replies, tickets, or inbound leads into buckets your flow already branches on.
+For the tag and label actions you can set an optional **pool**: the tags or labels the agent is allowed to choose from. Leave a pool empty and the agent may use any of your tags for that action. When a pool is empty you can also let the agent create a brand-new tag or label when none of yours fits.
 
-Example: on a **Reply received** trigger, an instruction of "Classify this reply" with labels `interested`, `not_now`, `wrong_person`, `unsubscribe` lets the next condition test `ai_class equals interested` and route only hot replies to a deal.
+Example: on a **Reply received** trigger, an instruction of "If they ask about pricing, tag them and open a follow-up task; if they ask to stop, unsubscribe them" with **add a tag** and **create a task** and **unsubscribe** enabled lets one step handle all three outcomes without a separate node for each.
 
-You need at least two labels. If the model's answer does not match any label exactly, the closest match is used, and if none is close the raw answer is stored so you can see what happened in the run history.
+The agent is billed one credit per step it takes (per model turn), the same way the dashboard agent and the campaign AI step are billed.
 
-A classify step can also branch **multi-way directly on the canvas**: open the node and use **Route connections by label** to mark each outgoing connection as "always" or "when `<label>`". A labeled connection runs only when the model picked that label, so one classify node fans out into one path per label with no IF nodes in between. (Conditions on `ai_class` keep working too; use them when the routing needs to combine the label with other fields.)
-
-### AI extract
-
-Give it an instruction and a list of **output keys**. The model returns one value per key, each stored in a variable of that name. Use it to turn a free-text event into structured fields.
-
-Example: from an inbound webhook body or a reply, extract `company_size`, `budget`, and `timeline` and then branch on them or write them into a CRM deal with a Create deal step. A key the model cannot fill is stored as an empty string, so a later condition can test whether it was found.
-
-### AI generate
+### Generate text
 
 Give it an instruction. The model writes a short piece of text, stored in `ai_text`. Use it to compose a one-line summary, a task title, or a Slack message body that a later step sends.
 
 <Callout type="warn" title="Generated text is never sent on its own">
-An AI generate step only writes text into a variable. Nothing is emailed or sent because a model wrote it. To use the text you connect a later step (a Slack message, a task, a webhook) that you control, and Warmbly never sends outreach email from an AI step. See the sending-safety note below.
+A generate step only writes text into a variable. Nothing is emailed or sent because a model wrote it. To use the text you connect a later step (a Slack message, a task, a webhook) that you control, and Warmbly never sends outreach email from an AI step. See the sending-safety note below.
 </Callout>
+
+### Classify
+
+Give it an instruction and a list of **labels**. The model reads the event and returns exactly one label from your list, stored in `ai_class`. Use it to sort replies, tickets, or inbound leads into buckets your flow already branches on. You need at least two labels. If the model's answer does not match a label exactly, the closest match is used, and if none is close the raw answer is stored so you can see what happened in the run history.
+
+To branch on the result, add an IF node and test `ai_class` (for example `ai_class equals interested`). To route multi-way on the canvas instead, use an **AI switch** below.
+
+### Extract fields
+
+Give it an instruction and a list of **output keys**. The model returns one value per key, each stored in a variable of that name. Use it to turn a free-text event into structured fields, for example pulling `company_size`, `budget`, and `timeline` out of a reply and then branching on them or writing them into a CRM deal. A key the model cannot fill is stored as an empty string, so a later condition can test whether it was found.
+
+## The AI switch
+
+An AI switch routes the event down exactly one of your **cases**. Each case becomes its own dot on the node, and you drag each dot to the step that path leads to. The bottom dot is the "otherwise" fallback for events no case matched. Put ordinary action steps on a path to make things happen for the events routed down it. Add at least two cases.
+
+The switch has two deciders, chosen under **Decided by**:
+
+- **AI prompt.** You write an instruction and the model reads the event and picks one case. One credit per event.
+- **Value.** You write a template under **Value to match** (for example `{{.intent}}`), it is rendered against the event, and the result is matched to the case names. Matching ignores casing and extra spaces, and you can wrap a case in slashes for a regex, for example `/^(vip|enterprise)/`. The first matching case wins. This runs no model and costs nothing.
+
+An unmatched value (or a model that picks no case) follows the fallback path.
+
+## Capabilities
+
+Both AI nodes can turn on **extended thinking**, which routes the call to the stronger model with a larger reasoning budget. It costs more through usage metering rather than a flat credit.
+
+The AI switch (in AI-prompt mode) can also turn on **web search**: before deciding, it looks up the event's company on the web and feeds the results into the prompt as context. The lookup query is built only from event fields such as the company name or a corporate email domain, never from the reply text, and it costs one extra credit only when it actually returns results.
 
 ## The Ask AI branch
 
-Besides the three action steps, a **condition** node can ask the model directly. Pick **Ask AI (yes/no)** as the condition's field and write a plain-language question about the event, for example "Is this reply asking about pricing?". At run time the model reads the event data and answers: yes takes the right (true) path, no takes the bottom (false) path.
+A **condition** node can ask the model directly. Pick **Ask AI (yes/no)** as the condition's field and write a plain-language question about the event, for example "Is this reply asking about pricing?". At run time the model reads the event and answers: yes takes the right (true) path, no takes the bottom (false) path.
 
 - The question is templated like an instruction, so `{{.subject}}` or `{{.snippet}}` work inside it.
 - Each evaluation costs one credit, refunded if the provider call fails.
 - The branch fails safe: if the model can't answer, you are out of credits, or the answer is ambiguous, the **no** path runs and the reason is recorded on the run.
-- Prefer **AI classify** plus a normal condition when you need more than two outcomes; use Ask AI when one yes/no question is all the routing needs.
+- Prefer an **AI switch** when you need more than two outcomes; use Ask AI when one yes/no question is all the routing needs.
 
 ## Using the result downstream
 
-An AI step writes its result into the flow the same way a **Set variables** step does. Every step after it can read the result:
+A classify, extract, or generate step writes its result into the flow the same way a **Set variables** step does. Every step after it can read the result:
 
-- **Conditions.** Add an IF node and test the variable. For classify, `ai_class equals interested`. For extract, `budget exists` or `company_size contains enterprise`. Because a condition tests a named field, any AI output variable is reachable by typing its name.
+- **Conditions.** Add an IF node and test the variable. For classify, `ai_class equals interested`. For extract, `budget exists` or `company_size contains enterprise`.
 - **Action text.** Reference it with `{{.ai_class}}`, `{{.ai_text}}`, or `{{.your_key}}` in any templated field, like a Slack message or a task title.
 
 If two AI steps in one flow would both write `ai_class` or `ai_text`, set an **output variable name** on one of them so they do not overwrite each other.
 
 ## Cost, failures, and safety
 
-- **One credit per step.** Charged to your workspace when the step runs. If the model call fails for a provider reason, the credit is refunded automatically.
+- **Credits.** A single-shot step (classify, extract, generate) costs one credit; the agent is billed one credit per step it takes; an AI switch costs one credit in AI mode and nothing in value mode. If the model call fails for a provider reason, the reserved credit is refunded automatically.
 - **Out of credits.** A step with no credits left fails with a clear message and the run continues down the normal path, so the rest of the flow still runs. Nothing is half-charged. Connect the step's **on error** branch if you want a specific fallback path.
 - **Auto-pause.** If a flow's AI steps keep failing for lack of credits, run after run, Warmbly turns the automation off so it stops trying against an empty balance. Top up your credits and switch it back on.
 - **Timing.** Each AI step is bounded to a few seconds so a slow model never stalls the flow.
-- **Sending safety.** An AI step never sends email and never contacts anyone. It only writes a variable. Any outbound message is a step you added and controls, and Warmbly never sends cold outreach from a model decision.
+- **Sending safety.** An AI step never sends email and never contacts anyone. The agent only takes the reversible actions you enable, and the other modes only write a variable. Any outbound message is a step you added and control, and Warmbly never sends cold outreach from a model decision.
 
 ## AI in campaign sequences
 
-Campaign sequences have a Switch step that runs per contact instead of per event: you define named cases as draggable dots on the node, and an AI prompt (or a plain value match) routes each contact down exactly one of them. See [Sequences](/guides/sequences/#switch-steps).
+Campaign sequences have the same two AI steps, run per contact instead of per event: an AI step (agent) that takes reversible actions, and a Switch step with the AI or value decider. See [Sequences](/guides/sequences/#switch-steps).
 
 ## Testing an AI step
 
-Press **Test** in the builder to dry-run the flow. Unlike other actions, AI steps (and Ask AI branches) run **for real** in a Test so you can see the actual model output and the branch it drives. That means a Test spends one credit per AI step. The trace panel shows each step's output next to the node, and the path the flow took. See [Testing and run history](/guides/automations/#testing-and-run-history).
+Press **Test** in the builder to dry-run the flow. Unlike other actions, AI steps (and Ask AI branches) run **for real** in a Test so you can see the actual model output and the branch it drives. The agent reports what it would do without applying the change on a Test. A Test spends credits for the AI steps it runs. The trace panel shows each step's output next to the node, and the path the flow took. See [Testing and run history](/guides/automations/#testing-and-run-history).
 
 ## See also
 

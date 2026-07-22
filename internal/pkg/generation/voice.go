@@ -11,8 +11,8 @@ import (
 // low-friction ask, <=80 words, and preserves {{.Merge}} variables.
 //
 // This is the shared "voice rules" foundation: the writing assistant, reply
-// drafts, research openers, and automation ai_generate all compose their prompt
-// on top of it via BuildVoiceRules, so a single humanizer definition governs
+// drafts, research openers, and the automation ai_step (generate mode) all
+// compose their prompt on top of it via BuildVoiceRules, so a single humanizer definition governs
 // every AI writing surface.
 const humanWritingSystemPrompt = `You are Warmbly's cold-outreach email writer. You write very short, first-touch cold emails that sound like a real, busy person typed them in 30 seconds. Your only goal is replies. Sounding human and getting replies are the same goal; do not try to "beat detectors."
 
@@ -78,8 +78,8 @@ type VoiceContext struct {
 
 // BuildVoiceRules composes the humanizer foundation with the optional org
 // grounding into a single system prompt. It is the one place every AI writing
-// surface (writing assistant, reply drafts, research openers, automation
-// ai_generate) builds its instruction, so the humanizer and the org's voice are
+// surface (writing assistant, reply drafts, research openers, the automation
+// ai_step in generate mode) builds its instruction, so the humanizer and the org's voice are
 // applied uniformly. A zero VoiceContext yields the base humanizer rules
 // unchanged (preserving the pre-M4 writing-assistant behavior byte-for-byte).
 func BuildVoiceRules(vc VoiceContext) string {

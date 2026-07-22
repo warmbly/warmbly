@@ -94,10 +94,14 @@ type Service interface {
 	SetNativeActions(n NativeActions)
 	SetPublisher(p *pubsub.StreamingPublisher)
 	// SetAI wires the LLM provider + credit ledger the AI automation nodes
-	// (ai_classify / ai_extract / ai_generate) use. Both may be nil (AI steps
-	// then fail with a clear "not available" error); the provider is nil when no
-	// AI_PROVIDER is configured.
+	// (ai_step / ai_switch) use. Both may be nil (AI steps then fail with a clear
+	// "not available" error); the provider is nil when no AI_PROVIDER is
+	// configured.
 	SetAI(p generation.Provider, c credits.CreditService)
+	// SetAISearch wires the optional web-search backend an ai-mode AI switch may
+	// use to look up the event's company. Nil leaves web search unavailable (the
+	// node runs without it). Mirrors tasks.Service.SetAISearch.
+	SetAISearch(sc generation.SearchClient)
 
 	// ListSyncRuns returns recent observability records for a connection.
 	ListSyncRuns(ctx context.Context, orgID, connID uuid.UUID, limit int) ([]models.IntegrationSyncRun, error)
@@ -169,6 +173,7 @@ type service struct {
 	publisher  *pubsub.StreamingPublisher
 	aiProvider generation.Provider
 	credits    credits.CreditService
+	aiSearch   generation.SearchClient
 }
 
 // NewService builds the integration service. cipherSvc seals provider secrets
@@ -188,6 +193,7 @@ func (s *service) SetAI(p generation.Provider, c credits.CreditService) {
 	s.aiProvider = p
 	s.credits = c
 }
+func (s *service) SetAISearch(sc generation.SearchClient) { s.aiSearch = sc }
 
 func (s *service) Repo() repository.IntegrationRepository { return s.repo }
 
@@ -677,6 +683,9 @@ func (s *service) validateAutomationGraph(ctx context.Context, orgID uuid.UUID, 
 		switch n.Type {
 		case models.AutomationNodeTrigger:
 			triggers++
+		case models.AutomationNodeStop:
+			// A terminal marker: no action, no config, no outgoing edges. Accepted
+			// so a path can explicitly end at a visible Stop node.
 		case models.AutomationNodeAction:
 			if strings.TrimSpace(string(n.Action)) == "" {
 				return errors.New("an action node is missing its action")
@@ -769,10 +778,10 @@ func (s *service) validateAutomationGraph(ctx context.Context, orgID uuid.UUID, 
 		case src.Type == models.AutomationNodeAction:
 			if lbl, ok := strings.CutPrefix(e.When, aiLabelEdgePrefix); ok {
 				if !aiNodeRoutesByLabel(src) {
-					return errors.New("only an AI classify, AI step (decide), or AI switch can have per-label branches")
+					return errors.New("only an AI switch can have per-case branches")
 				}
 				if !aiNodeHasBranch(src, lbl) {
-					return fmt.Errorf("branch label %q is not one of the AI step's choices", lbl)
+					return fmt.Errorf("branch case %q is not one of the AI switch's cases", lbl)
 				}
 			} else if e.When != "" && e.When != "error" {
 				return errors.New("an action edge must be a plain path or an on-error branch")

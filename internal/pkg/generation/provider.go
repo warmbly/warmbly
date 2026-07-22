@@ -154,7 +154,7 @@ var (
 )
 
 // CompletionRequest is a single, tool-less generation with an explicit system
-// prompt. Used by reply drafts (M4) and automation ai_generate (M9).
+// prompt. Used by reply drafts (M4) and the automation ai_step (generate mode).
 type CompletionRequest struct {
 	System    string
 	Prompt    string

@@ -18,8 +18,8 @@ const (
 	// CostResearchRun is one contact research run (nothing_found included).
 	CostResearchRun = 2
 
-	// CostAutomationAINode is one ai_classify/ai_extract/ai_generate node
-	// execution, and one Ask-AI branch evaluation.
+	// CostAutomationAINode is one single-shot AI step (classify/extract/generate
+	// mode) or AI switch execution, and one Ask-AI branch evaluation.
 	CostAutomationAINode = 1
 
 	// CostCampaignAIStep is one campaign-sequence AI-decided "switch" step execution (one

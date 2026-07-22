@@ -285,34 +285,30 @@ const (
 	// so it replaces an outbound webhook for "tell my system this happened".
 	IntegrationActionFireEvent IntegrationAction = "warmbly.fire_event"
 
-	// AI nodes: run one LLM step over the event data and merge the output back
-	// via set_variables so downstream conditions can branch on it. Config is
-	// {instruction (templated), output_keys[] | labels[]}. 1 credit per run.
-	//   ai_classify: pick one of labels[] -> variable "ai_class".
-	//   ai_extract:  pull output_keys[] structured values from the text.
-	//   ai_generate: write text from the instruction -> variable "ai_text".
-	IntegrationActionAIClassify IntegrationAction = "warmbly.ai_classify"
-	IntegrationActionAIExtract  IntegrationAction = "warmbly.ai_extract"
-	IntegrationActionAIGenerate IntegrationAction = "warmbly.ai_generate"
-
+	// AI nodes mirror the campaign step types: one unified AI step plus an AI
+	// switch router.
+	//
 	// IntegrationActionAIStep is the unified AI node. config.mode selects the
-	// behavior: classify | extract | generate | decide (single LLM call, merged
-	// into data like the legacy nodes) or agent (a bounded tool-use loop where
-	// the model, following config.instruction, calls a guarded allowlist of
-	// reversible native actions in config.allowed_actions[]). The three legacy
-	// ids above stay valid so saved graphs keep running unchanged.
+	// behavior: classify | extract | generate (single LLM call over the event,
+	// merged into data so downstream conditions can branch) or agent (a bounded
+	// tool-use loop where the model, following config.instruction, calls a
+	// guarded allowlist of reversible native actions in config.allowed_actions[],
+	// choosing tags/tasks/deals itself). config.thinking routes any mode to the
+	// stronger model tier.
 	IntegrationActionAIStep IntegrationAction = "warmbly.ai_step"
-	// IntegrationActionAISwitch is a campaign-style multi-way router: one LLM
-	// call picks exactly one of config.cases[], stored so the "label:<case>"
-	// edges route the walk. Decide-only; it takes no actions.
+	// IntegrationActionAISwitch is a campaign-style multi-way router: it picks
+	// exactly one of config.cases[], stored so the "label:<case>" edges route the
+	// walk. config.switch_on selects the decider — "ai" (one LLM call, optional
+	// web search + thinking) or "value" (config.switch_value rendered against the
+	// event and matched to the case names; free, no model call). Decide-only; it
+	// takes no actions.
 	IntegrationActionAISwitch IntegrationAction = "warmbly.ai_switch"
 )
 
 // IsAIAction reports whether an action is an AI node (LLM-backed, credit-charged).
 func IsAIAction(a IntegrationAction) bool {
 	switch a {
-	case IntegrationActionAIClassify, IntegrationActionAIExtract, IntegrationActionAIGenerate,
-		IntegrationActionAIStep, IntegrationActionAISwitch:
+	case IntegrationActionAIStep, IntegrationActionAISwitch:
 		return true
 	default:
 		return false
@@ -327,7 +323,6 @@ func IsNativeAction(a IntegrationAction) bool {
 		IntegrationActionCreateDeal, IntegrationActionMoveDealStage, IntegrationActionUnsubscribe,
 		IntegrationActionRunAutomation, IntegrationActionLabelEmail,
 		IntegrationActionSetVariables, IntegrationActionFireEvent,
-		IntegrationActionAIClassify, IntegrationActionAIExtract, IntegrationActionAIGenerate,
 		IntegrationActionAIStep, IntegrationActionAISwitch:
 		return true
 	default:

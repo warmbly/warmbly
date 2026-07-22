@@ -356,7 +356,7 @@ func (s *service) dryRunGraph(ctx context.Context, a models.Automation, data map
 			}
 			// A dry run never fails an action, so it follows the normal path and
 			// not the "on error" branch (a skipped action still continues the
-			// walk; a skipped ai_classify has no verdict, so its label branches
+			// walk; a skipped AI switch has no verdict, so its label branches
 			// stay unfollowed).
 			for _, e := range actionSuccessEdges(n, data, outEdges[id]) {
 				queue = append(queue, e.Target)

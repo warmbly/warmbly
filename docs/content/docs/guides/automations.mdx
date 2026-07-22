@@ -17,10 +17,10 @@ The canvas works like the campaign sequence editor:
 
 - The **Trigger** node sits at the top. You can't delete it.
 - Drag from a node's dot to draw a connection to another node.
-- Drag from a dot onto empty canvas to drop a **new action** already connected to that node.
+- Drag from a dot onto empty canvas to open a menu and drop what comes next already connected to that node: an **AI step**, an **AI switch**, a **condition**, a built-in or integration action, or a **Stop** to end that path.
 - Click any node to open its editor panel on the right.
 - Click a connection line, then press `Delete` or `Backspace`, to remove it.
-- Use **Add action** and **Add condition** (top-left) to place new nodes, and **Tidy up** to auto-arrange the layout.
+- Use the **Add** button (its dropdown places an AI step, AI switch, condition, or any action) and **Tidy up** to auto-arrange the layout.
 
 Where you drag the cards sticks. The arrangement saves on its own, so a flow opens exactly how you left it, and moving a card is not a change you have to save. The builder is also a shared canvas: when a teammate is in the same flow you see their cursor, watch cards move as they drag them, and see the cards they have selected outlined in their color. Press `/` to chat from your cursor. See [Collaboration](/guides/collaboration/).
 
@@ -65,7 +65,7 @@ An **IF** node splits the flow into a **yes** path and a **no** path. Add one wi
 - the node's **right** dot to the steps that should run when the condition is **true** (the "yes" path)
 - the node's **bottom** dot to the steps that should run when the condition is **false** (the "no" path)
 
-At run time the flow follows only the branch that matches the outcome. A branch you leave unconnected simply ends there.
+At run time the flow follows only the branch that matches the outcome. A branch you leave unconnected simply ends there, or you can drag it to a **Stop** node to end it explicitly.
 
 ### Building a condition
 
@@ -136,7 +136,8 @@ These act directly on the event's contact and need no external connection. Pick 
 | Unsubscribe the contact | Unsubscribes the contact (works when the event carries a campaign) |
 | Set variables | Computes named values from templates and stores them for later steps to reuse |
 | Fire event | Publishes a custom event to the realtime gateway; your app receives it over the API websocket, with no public URL |
-| AI classify, extract, generate | Runs one AI step over the event and stores its output for later steps to branch on. See [AI steps in automations](/guides/ai-steps-in-automations/) |
+| AI step | One AI node: an agent that takes reversible actions, or a single-shot classify, extract, or generate over the event. See [AI steps in automations](/guides/ai-steps-in-automations/) |
+| AI switch | Routes the event down one of your cases, decided by an AI prompt or a value match. See [AI steps in automations](/guides/ai-steps-in-automations/) |
 
 **Move the deal stage** acts on the contact's most recent open deal in the chosen pipeline. If they have no open deal there, nothing happens. **Unsubscribe the contact** only applies when the triggering event carries a campaign, such as a reply, bounce, or unsubscribe. **Label the email** only works on a **Reply received** automation: it labels the conversation that reply belongs to (the same labels you set by hand in the unibox), so it needs an inbox thread to act on.
 
