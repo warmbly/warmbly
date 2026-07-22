@@ -1,28 +1,21 @@
 <div align="center">
-  <br />
-  <br />
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.svg">
     <source media="(prefers-color-scheme: light)" srcset="docs/assets/logo-light.svg">
-    <img src="docs/assets/logo-dark.svg" alt="Warmbly" width="380">
+    <img src="docs/assets/logo-dark.svg" alt="Warmbly" width="360">
   </picture>
-  <br />
-  <br />
-  <br />
-
-  <p><b>Cold email and mailbox warmup, self-hosted.</b></p>
 
   <p>
-    <a href="https://github.com/warmbly/warmbly/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/warmbly/warmbly/ci.yml?branch=main&style=flat-square&label=CI" alt="CI status" /></a>
-    <a href="https://github.com/warmbly/warmbly/releases"><img src="https://img.shields.io/github/v/release/warmbly/warmbly?style=flat-square" alt="Latest release" /></a>
-    <img src="https://img.shields.io/github/go-mod/go-version/warmbly/warmbly?style=flat-square&label=go" alt="Go version" />
-    <a href="./LICENSE"><img src="https://img.shields.io/github/license/warmbly/warmbly?style=flat-square" alt="License" /></a>
+    <b>The open-source cold email and warmup platform you host yourself.</b><br />
+    Warmbly runs campaigns from your own mailboxes and warms them so they keep landing in the inbox, with every open, click, and reply synced to one dashboard.
   </p>
 
   <p>
-    <a href="https://dc.warmbly.com"><img src="https://img.shields.io/badge/Join%20our%20Discord-5865F2?logo=discord&logoColor=white&style=for-the-badge" alt="Join our Discord" /></a>
-    <a href="https://docs.warmbly.com"><img src="https://img.shields.io/badge/Read%20the%20Docs-1f6feb?logo=readthedocs&logoColor=white&style=for-the-badge" alt="Documentation" /></a>
-    <a href="https://github.com/warmbly/warmbly/stargazers"><img src="https://img.shields.io/github/stars/warmbly/warmbly?style=for-the-badge&logo=github&label=Star&color=181717" alt="Star on GitHub" /></a>
+    <a href="https://dc.warmbly.com"><img src="https://img.shields.io/badge/Discord-5865F2?logo=discord&logoColor=white&style=flat-square" alt="Discord" /></a>
+    <a href="https://docs.warmbly.com"><img src="https://img.shields.io/badge/Docs-1f6feb?style=flat-square" alt="Docs" /></a>
+    <a href="https://github.com/warmbly/warmbly/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/warmbly/warmbly/ci.yml?branch=main&style=flat-square&label=CI" alt="CI status" /></a>
+    <a href="https://github.com/warmbly/warmbly/releases"><img src="https://img.shields.io/github/v/release/warmbly/warmbly?style=flat-square" alt="Latest release" /></a>
+    <a href="./LICENSE"><img src="https://img.shields.io/github/license/warmbly/warmbly?style=flat-square" alt="License" /></a>
   </p>
 
   <p>
@@ -36,11 +29,6 @@
 </div>
 
 https://github.com/user-attachments/assets/378a510a-bb99-425f-925e-04300184938b
-
-## What is Warmbly
-
-Self-hosted cold email and mailbox warmup. Connect the mailboxes you own, send
-sequenced campaigns, and warm your reputation, all on your own IPs and Postgres.
 
 ## Features
 
