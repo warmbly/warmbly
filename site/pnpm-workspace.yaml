@@ -8,5 +8,10 @@ allowBuilds:
 # Clear CVE-2026-59869 (DoS via crafted YAML) in the transitive js-yaml.
 overrides:
   js-yaml: ^4.3.0
-  # Clear the libvips CVEs inherited by sharp (fixed in 0.35.0).
-  sharp: ^0.35.0
+  # Clear GHSA-2p49-hgcm-8545 (SVGO removeScripts can leave some scripts) in the
+  # transitive svgo used for build-time SVG optimization.
+  svgo: ^4.0.2
+  # NOTE: sharp is intentionally NOT bumped here. Its 0.35 line clears the
+  # libvips CVEs but breaks the marketing site's Cloudflare Pages build, so site
+  # stays on 0.34.5 and that one HIGH is suppressed in .trivyignore (build-time
+  # image optimization of our own assets, no untrusted input).
