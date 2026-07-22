@@ -24,7 +24,7 @@
     <a href="#community">Community</a>
   </p>
 
-  <h3>⭐ Help us reach more senders and grow the Warmbly community. Star this repo!</h3>
+  <p><i>⭐ Help us reach more senders and grow the Warmbly community. Star this repo!</i></p>
 </div>
 
 ## Warmbly
