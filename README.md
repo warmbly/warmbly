@@ -9,6 +9,7 @@
 
   <p>
     <a href="https://dc.warmbly.com"><img src="https://img.shields.io/badge/Discord-5865F2?logo=discord&logoColor=white&style=flat-square" alt="Discord" /></a>
+    <a href="https://x.com/WarmblyHQ"><img src="https://img.shields.io/badge/Follow%20on%20X-000000?logo=x&logoColor=white&style=flat-square" alt="Follow @WarmblyHQ on X" /></a>
     <a href="https://docs.warmbly.com"><img src="https://img.shields.io/badge/Docs-1f6feb?style=flat-square" alt="Docs" /></a>
     <a href="https://github.com/warmbly/warmbly/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/warmbly/warmbly/ci.yml?branch=main&style=flat-square&label=CI" alt="CI status" /></a>
     <a href="https://github.com/warmbly/warmbly/releases"><img src="https://img.shields.io/github/v/release/warmbly/warmbly?style=flat-square" alt="Latest release" /></a>
@@ -21,7 +22,8 @@
     <a href="#quick-start">Quick start</a> ·
     <a href="#self-hosting">Self-hosting</a> ·
     <a href="#documentation">Docs</a> ·
-    <a href="#community">Community</a>
+    <a href="#community">Community</a> ·
+    <a href="#support-and-enterprise">Support</a>
   </p>
 
   <p><i>⭐ Help us reach more senders and grow the Warmbly community. Star this repo!</i></p>
@@ -139,7 +141,27 @@ Have a question, found a bug, or want to shape where Warmbly goes next?
 
 - **[Discord](https://dc.warmbly.com)** - chat with the team and other senders
 - **[GitHub Issues](https://github.com/warmbly/warmbly/issues)** - report bugs and request features
+- **[X / @WarmblyHQ](https://x.com/WarmblyHQ)** - follow along for updates and releases
 - **Email** - reach us at `team@warmbly.com`
+
+## Support and enterprise
+
+Need a hand? We are happy to help. Ask in [Discord](https://dc.warmbly.com), open a
+[GitHub issue](https://github.com/warmbly/warmbly/issues), or email
+`team@warmbly.com`, and someone on the team will get back to you.
+
+Running Warmbly at scale, or would you rather we run it for you? We offer
+**enterprise support** and **managed infrastructure**. We can host and operate the
+whole platform for your organization, help you deploy and scale the worker fleet,
+tune deliverability, migrate your sending onto Warmbly, and stand behind it with a
+support agreement built around your team. Tell us what you need at
+`team@warmbly.com` or reach out on X, and we will take it from there.
+
+<p>
+  <a href="https://x.com/WarmblyHQ"><img src="https://img.shields.io/badge/Follow%20@WarmblyHQ%20on%20X-000000?logo=x&logoColor=white&style=flat-square" alt="Follow @WarmblyHQ on X" /></a>
+  <a href="https://dc.warmbly.com"><img src="https://img.shields.io/badge/Join%20the%20Discord-5865F2?logo=discord&logoColor=white&style=flat-square" alt="Join the Discord" /></a>
+  <a href="mailto:team@warmbly.com"><img src="https://img.shields.io/badge/Email%20the%20team-1f6feb?style=flat-square" alt="Email the team" /></a>
+</p>
 
 ## Star the repository ⭐
 
