@@ -23,6 +23,8 @@
     <a href="#documentation">Docs</a> ·
     <a href="#community">Community</a>
   </p>
+
+  <h3>⭐ Help us reach more senders and grow the Warmbly community. Star this repo!</h3>
 </div>
 
 ## Warmbly
