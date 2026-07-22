@@ -935,3 +935,39 @@ Generate outreach copy with the AI writing assistant. Gated to paid and free-tri
 ```
 
 When the organization is out of credits the endpoint returns `402` with `code: "insufficient_credits"` and the standard envelope. A depleted balance is checked before any provider call, so no completion is ever burned on a `402`.
+
+## Preview an AI variable
+
+`POST /generation/ai-variable`
+
+Generate the recipient-specific snippet a per-recipient AI variable block would produce, for the campaign editor's preview. The prompt is rendered against a supplied contact (must belong to the organization) or a sample contact, then generated with the same framing the send path uses, including the surrounding email so the fragment fits. The charge is metered by usage (the model and tokens the snippet uses, plus any web lookup), refunded if the provider call fails, and `Idempotency-Key` is honored so a retried request is not double-charged. See the [AI variables](/guides/ai-variables/) guide. **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_campaigns` and `use_ai`.
+
+### Request body
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `mode` | string | no | `instant` (default) for a single fast completion, or `research` for the deeper, higher-cost path. |
+| `prompt` | string | yes | The block instruction, itself a template rendered against the contact (max 8000 characters). |
+| `tone` | string | no | Desired tone. |
+| `web_search` | boolean | no | Allow one bounded web lookup about the contact's company to enrich context. Implied by `research`. |
+| `contact_id` | string | no | A contact in the organization to render the prompt against. Omit to use a sample contact. |
+| `context_before` | string | no | The email text immediately before the block, so the fragment fits the sentence it lands in. |
+| `context_after` | string | no | The email text immediately after the block. |
+
+```json
+{ "mode": "instant", "prompt": "One line noting something specific about {{company}}.", "contact_id": "4f6c..." }
+```
+
+### Response
+
+```json
+{
+  "text": "Saw Acme just shipped its new billing API.",
+  "credits_remaining": 246,
+  "credits_charged": 1,
+  "tokens_used": 180,
+  "model": "claude-..."
+}
+```
+
+A `contact_id` that is not in the organization returns `404`. When the organization is out of credits the endpoint returns `402` with `code: "insufficient_credits"`, checked before any provider call.

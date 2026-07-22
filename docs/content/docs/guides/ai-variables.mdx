@@ -1,0 +1,37 @@
+---
+title: AI variables
+description: Drop AI blocks into a campaign email that write a unique, personalized snippet for each recipient at send time.
+---
+
+An AI variable is a block you place inside a campaign email that generates its own copy for every recipient. Where a normal variable like `{{first_name}}` substitutes a stored field, an AI variable runs a short instruction against each contact and writes a snippet tailored to them, right where you dropped it. The rest of the email is yours; the AI variable fills one spot with something specific to the person receiving it.
+
+Because it runs per recipient, an AI variable costs credits for each contact it resolves. Plan for that the same way you plan send volume.
+
+## Adding an AI variable
+
+In the campaign email editor, place your cursor where you want the personalized copy and insert an AI variable. Give it a short instruction, for example "one line noting something specific about their company" or "a friendly opener that references {{company}}". The instruction is itself a template, so you can reference contact fields inside it and they render per contact before the model runs.
+
+By default a block writes instantly from the contact's own fields. That is the right choice for most blocks. One optional add-on personalizes deeper:
+
+- **Web search** runs a bounded lookup about the contact's company before writing, so the snippet can reference something beyond their stored fields. It adds the cost of that lookup.
+
+The block always uses the model configured for your workspace; there is no separate model setting to choose. Keep instructions tight: an AI variable is meant to fill a phrase or a sentence or two, not write the whole email.
+
+## Previewing
+
+Use the editor's preview to see the block written for a built-in sample contact, shown inside the whole message so you can check it reads naturally where it lands. A preview costs the same as a send-time resolution, because it runs the same generation, and the editor shows what that example actually cost.
+
+## How it resolves at send time
+
+When the campaign sends to a contact, each AI variable in that email is generated for that contact just before tracking and signature are added, so the AI copy is tracked and styled like the rest of the email. The result is cached per contact and step: if a send is retried, the same snippet is reused instead of generating (and charging) again. Different contacts always get their own copy.
+
+A block whose instruction renders empty for a contact resolves to nothing and costs nothing. A block with a malformed configuration is skipped rather than blocking the send. If the AI provider fails, that recipient's send is retried later with the cached result, so you are never charged for output you did not receive.
+
+## Cost and safety
+
+- A block is billed by usage: the model and the tokens each snippet uses, plus the web search when it is on. See [AI credits](/guides/ai-credits/) for how usage maps to credits.
+- Costs multiply by recipients, not by email: a block that resolves for 500 contacts is charged 500 times over the campaign's run.
+- The contact's fields and any web results are treated as untrusted input, so text a contact controls cannot change the block's instruction.
+- Web lookups are derived only from the contact's company and name, never from anything a contact wrote to you.
+
+AI variables gather and write copy; they do not decide who to send to or when. Your campaign sending rules, warmup, and deliverability guards apply exactly as they would to any other email.
