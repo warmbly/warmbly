@@ -5,10 +5,7 @@
     <img src="docs/assets/logo-dark.svg" alt="Warmbly" width="360">
   </picture>
 
-  <p>
-    <b>The open-source cold email and warmup platform you host yourself.</b><br />
-    Warmbly runs campaigns from your own mailboxes and warms them so they keep landing in the inbox, with every open, click, and reply synced to one dashboard.
-  </p>
+  <p><b>The open-source cold email and warmup platform you host yourself.</b></p>
 
   <p>
     <a href="https://dc.warmbly.com"><img src="https://img.shields.io/badge/Discord-5865F2?logo=discord&logoColor=white&style=flat-square" alt="Discord" /></a>
@@ -27,6 +24,13 @@
     <a href="#community">Community</a>
   </p>
 </div>
+
+## Warmbly
+
+Warmbly runs cold email campaigns from the mailboxes you already own and warms
+them so they keep landing in the inbox. Opens, clicks, replies, and deliverability
+sync back to one dashboard, and because you host it, your sending IPs and your
+data stay yours.
 
 https://github.com/user-attachments/assets/378a510a-bb99-425f-925e-04300184938b
 
