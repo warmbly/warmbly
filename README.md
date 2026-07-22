@@ -26,44 +26,17 @@
   <a href="./CONTRIBUTING.md">Contributing</a>
 </p>
 
-<p align="center">
-  <img src="docs/assets/dashboard-campaigns.png" alt="Campaigns" width="100%" /><br />
-  <sub><b>Campaigns</b> · multi-step sequences with per-mailbox daily caps and spacing</sub>
-</p>
-
-<p align="center">
-  <img src="docs/assets/dashboard-inbox.png" alt="Unified inbox" width="100%" /><br />
-  <sub><b>Unified inbox</b> · every connected mailbox and reply in one place</sub>
-</p>
-
-<p align="center">
-  <img src="docs/assets/dashboard-mailboxes.png" alt="Mailboxes" width="100%" /><br />
-  <sub><b>Mailboxes</b> · warmup state and health for every account</sub>
-</p>
-
 ## What is Warmbly
-
 Warmbly is a cold outreach platform. You connect your mailboxes, write sequenced
 campaigns, and it sends the mail, tracks the replies, and keeps your sender
-reputation healthy. The difference from hosted tools is where it runs: your
-sending IPs, your Postgres, your servers. Nothing is tied to a vendor's database.
+reputation healthy.
 
-Everything a sending team needs sits in one dashboard:
+https://github.com/user-attachments/assets/378a510a-bb99-425f-925e-04300184938b
 
-- **Campaigns** send multi-step sequences with per-mailbox daily caps and spacing.
-- **The unified inbox** pulls every connected mailbox and its replies into one view.
-- **A built-in CRM** tracks contacts, pipelines, deals, tasks, and meetings.
-- **Deliverability** surfaces bounces, complaints, suppression, and inbox placement.
-- **Automations** run branching reply playbooks on a visual canvas, with AI steps that read a reply and act on it.
-- **Integrations** sync the CRM and automations out to HubSpot, Slack, and more.
-- **Warmup** builds real sender reputation through our pool, covered next.
+## Star the repository ⭐
 
-The dashboard is collaborative in real time: teammates see each other's live
-cursors, presence, and edits across campaigns, the CRM, and the automation
-canvas, with no refresh.
+<img width="1280" height="720" alt="warmbly-star-ezgif com-optimize" src="https://github.com/user-attachments/assets/b6fb6df6-f0ad-4410-805d-4d4f17ac1b50" />
 
-The same code runs on a single VPS or across a fleet of cheap servers with many
-IPs per box, so you add capacity by adding machines.
 
 ## Connect your mailboxes
 
