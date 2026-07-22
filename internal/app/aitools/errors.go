@@ -15,3 +15,10 @@ var (
 	// active trial/paid plan.
 	errUniboxNotEntitled = errors.New("the unified inbox requires an active trial or paid subscription")
 )
+
+// errRecipientSuppressed reports a refused send to a suppressed recipient
+// (bounced/complained/unsubscribed), mirroring the compose handler's 400. The
+// message is fed back to the model so it can explain why it did not send.
+func errRecipientSuppressed(msg string) error {
+	return errors.New(msg)
+}

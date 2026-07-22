@@ -8,13 +8,22 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/warmbly/warmbly/internal/app/analytics"
+	"github.com/warmbly/warmbly/internal/app/apikey"
 	"github.com/warmbly/warmbly/internal/app/audit"
 	"github.com/warmbly/warmbly/internal/app/campaign"
+	"github.com/warmbly/warmbly/internal/app/compose"
 	"github.com/warmbly/warmbly/internal/app/contact"
 	"github.com/warmbly/warmbly/internal/app/crm"
+	"github.com/warmbly/warmbly/internal/app/email"
+	"github.com/warmbly/warmbly/internal/app/emailsend"
 	"github.com/warmbly/warmbly/internal/app/feature"
 	"github.com/warmbly/warmbly/internal/app/integration"
+	"github.com/warmbly/warmbly/internal/app/organization"
+	"github.com/warmbly/warmbly/internal/app/sequence"
+	"github.com/warmbly/warmbly/internal/app/subscription"
 	"github.com/warmbly/warmbly/internal/app/unibox"
+	"github.com/warmbly/warmbly/internal/app/warmup"
+	"github.com/warmbly/warmbly/internal/app/webhook"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/infrastructure/cache"
 	"github.com/warmbly/warmbly/internal/models"
@@ -34,6 +43,27 @@ type Deps struct {
 	Audit       audit.AuditService
 	Search      generation.SearchClient
 	Cache       *cache.Cache
+	// Emails / EmailSend / Compose / Warmup back the mailbox-management and
+	// unified-inbox send tools. EmailSend is the only path that transmits mail
+	// to a real recipient (its tools are RiskSend).
+	Emails    email.EmailService
+	EmailSend emailsend.EmailSendService
+	Compose   compose.Service
+	Warmup    warmup.Service
+	// Sequences backs the campaign-step (sequence node) tools.
+	Sequences sequence.SequenceService
+	// Org backs the team, invitation, and org-settings tools (JWT-only: these
+	// HTTP routes have no API-key permission bit).
+	Org organization.OrganizationService
+	// APIKeys / Webhooks back the developer-surface management tools.
+	APIKeys  apikey.APIKeyService
+	Webhooks webhook.Service
+	// Subscription backs the read-only billing tools (JWT-only).
+	Subscription subscription.SubscriptionService
+	// Advanced is the suppression checker mirroring the compose handler's guard
+	// (a bounced/complained/unsubscribed recipient is unreachable). Optional; a
+	// nil checker skips the pre-send suppression gate.
+	Advanced SuppressionChecker
 	// FeatureGate applies the same subscription entitlement checks the HTTP
 	// handlers do (e.g. unibox requires an active trial/paid plan), so a tool
 	// can never read data a 403'd HTTP route would refuse.
@@ -44,6 +74,13 @@ type Deps struct {
 	// artifacts (e.g. https://app.warmbly.com). Empty falls back to a relative
 	// path.
 	AppBaseURL string
+}
+
+// SuppressionChecker reports whether a recipient address is suppressed org-wide
+// (bounced, complained, or unsubscribed). *advanced.service satisfies it. Kept
+// as a local interface so aitools does not import the advanced package.
+type SuppressionChecker interface {
+	ShouldSuppressRecipient(ctx context.Context, orgID uuid.UUID, recipient string) (bool, string, *errx.Error)
 }
 
 // SkillLookup returns an enabled org playbook's full content by name (backs the
@@ -59,9 +96,18 @@ func BuildRegistry(d Deps) *Registry {
 	d.registerContactTools(r)
 	d.registerCRMTools(r)
 	d.registerCampaignTools(r)
+	d.registerSequenceTools(r)
 	d.registerAnalyticsTools(r)
 	d.registerUniboxTools(r)
+	d.registerInboxActionTools(r)
+	d.registerInboxSendTools(r)
+	d.registerMailboxTools(r)
 	d.registerAutomationTools(r)
+	d.registerTeamTools(r)
+	d.registerSettingsTools(r)
+	d.registerBillingTools(r)
+	d.registerAPIKeyTools(r)
+	d.registerWebhookTools(r)
 	d.registerWebTools(r)
 	d.registerSkillTools(r)
 	return r
