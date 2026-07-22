@@ -1073,17 +1073,15 @@ func Run(
 		adminRoutes.POST("/warmup/appeals/:id/approve", middleware.RequireAdminPermission(models.AdminPermReviewAppeals), h.AdminApproveAppeal)
 		adminRoutes.POST("/warmup/appeals/:id/reject", middleware.RequireAdminPermission(models.AdminPermReviewAppeals), h.AdminRejectAppeal)
 
-		// Warmup content bank + offline AI generator. Reads use the warmup
-		// view permission; the A/B analytics uses the analytics permission;
-		// mutations (generate, archive/delete, settings) use ManageSettings.
+		// Warmup content autopilot. Admins observe the controller and may remove
+		// unsafe content or cancel a stuck provider job, but generation volume and
+		// scheduling are not manually controlled.
 		adminRoutes.GET("/warmup-content/overview", middleware.RequireAdminPermission(models.AdminPermViewWarmupPool), h.AdminWarmupContentOverview)
 		adminRoutes.GET("/warmup-content/conversations", middleware.RequireAdminPermission(models.AdminPermViewWarmupPool), h.AdminListWarmupConversations)
 		adminRoutes.GET("/warmup-content/conversations/:id", middleware.RequireAdminPermission(models.AdminPermViewWarmupPool), h.AdminGetWarmupConversation)
 		adminRoutes.POST("/warmup-content/conversations/:id/archive", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminArchiveWarmupConversation)
 		adminRoutes.POST("/warmup-content/conversations/:id/unarchive", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminUnarchiveWarmupConversation)
 		adminRoutes.DELETE("/warmup-content/conversations/:id", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminDeleteWarmupConversation)
-		adminRoutes.POST("/warmup-content/generate", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminGenerateWarmupContent)
-		adminRoutes.POST("/warmup-content/batch", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminSubmitWarmupBatch)
 		adminRoutes.POST("/warmup-content/jobs/:id/cancel", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminCancelWarmupBatch)
 		// Seed inbox-placement testing.
 		adminRoutes.GET("/placement/tests", middleware.RequireAdminPermission(models.AdminPermViewWarmupPool), h.AdminListPlacementTests)
@@ -1095,8 +1093,6 @@ func Run(
 
 		adminRoutes.GET("/warmup-content/jobs", middleware.RequireAdminPermission(models.AdminPermViewWarmupPool), h.AdminListWarmupGenerationJobs)
 		adminRoutes.GET("/warmup-content/jobs/:id", middleware.RequireAdminPermission(models.AdminPermViewWarmupPool), h.AdminGetWarmupGenerationJob)
-		adminRoutes.GET("/warmup-content/settings", middleware.RequireAdminPermission(models.AdminPermViewWarmupPool), h.AdminGetWarmupGenerationSettings)
-		adminRoutes.PUT("/warmup-content/settings", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminUpdateWarmupGenerationSettings)
 		adminRoutes.GET("/warmup-content/ab", middleware.RequireAdminPermission(models.AdminPermViewAnalytics), h.AdminWarmupContentAB)
 
 		// Mailbox admin (cross-org). Reuses ViewUsers since mailboxes

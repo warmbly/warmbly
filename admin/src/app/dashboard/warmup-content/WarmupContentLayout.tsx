@@ -5,19 +5,10 @@
 //
 //   /warmup-content/overview   — headline counts, AI/schedule status, A/B
 //   /warmup-content/library    — generated-thread library + actions
-//   /warmup-content/generate   — sync + OpenAI Batch generation
 //   /warmup-content/jobs       — generation jobs, polled live
-//   /warmup-content/settings   — generation + engagement settings
 
 import { NavLink, Outlet } from "react-router-dom";
-import {
-    CalendarClock,
-    Inbox,
-    Layers,
-    Play,
-    Sparkles,
-    type LucideIcon,
-} from "lucide-react";
+import { Inbox, Layers, Play, type LucideIcon } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { cn } from "@/lib/utils";
 
@@ -30,9 +21,7 @@ interface SubTab {
 const TABS: SubTab[] = [
     { to: "/warmup-content/overview", label: "Overview", icon: Layers },
     { to: "/warmup-content/library", label: "Library", icon: Inbox },
-    { to: "/warmup-content/generate", label: "Generate", icon: Sparkles },
     { to: "/warmup-content/jobs", label: "Jobs", icon: Play },
-    { to: "/warmup-content/settings", label: "Settings", icon: CalendarClock },
 ];
 
 export default function WarmupContentLayout() {
@@ -40,7 +29,7 @@ export default function WarmupContentLayout() {
         <div className="w-full">
             <PageHeader
                 title="Warmup Content"
-                description="Control and observe the offline AI warmup-content generator: review the generated thread library, enqueue background generation (sync or OpenAI Batch), watch jobs, and tune generation + engagement settings."
+                description="Observe the autonomous warmup-content controller, review its generated library, and inspect generation history. Content volume and refresh are managed from live warmup demand."
             />
 
             <div className="mb-6 border-b border-border">

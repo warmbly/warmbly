@@ -139,7 +139,7 @@ Warmbly defaults are deliberately conservative. The goal is a low complaint rate
 A practical starting band for most cold mailboxes is `30`–`50`/day once they are warmed. Start newer mailboxes lower, around `10`–`20`/day, and ramp from there.
 
 <Callout type="warn" title="Keep warmup running">
-Keep mailbox warmup active even after campaigns begin. A mailbox that stops warming and only sends cold mail loses the natural activity that protects its reputation.
+Keep mailbox warmup active even after campaigns begin. Warmbly automatically limits a campaign mailbox to at most five warmup messages per day, so campaign traffic remains primary. Warmup cannot compensate for one repetitive template sent to a poorly targeted list. Use personalization or spintax, test meaningful A/B variants, honor suppression and unsubscribe signals, and let mailbox health reduce or pause cold volume when reputation worsens.
 </Callout>
 
 ## Related guides

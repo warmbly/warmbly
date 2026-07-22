@@ -18,9 +18,11 @@ type WarmupToken struct {
 	// row when the body came from the AI bank (nil for static content).
 	ContentSource  string     `json:"content_source"`
 	ConversationID *uuid.UUID `json:"conversation_id,omitempty"`
-	CreatedAt      time.Time  `json:"created_at"`
-	ConsumedAt     *time.Time `json:"consumed_at,omitempty"`
-	ExpiresAt      time.Time  `json:"expires_at"`
+	// ConversationTurn is zero for the opening and increments for each reply.
+	ConversationTurn int        `json:"conversation_turn"`
+	CreatedAt        time.Time  `json:"created_at"`
+	ConsumedAt       *time.Time `json:"consumed_at,omitempty"`
+	ExpiresAt        time.Time  `json:"expires_at"`
 }
 
 // WarmupEmailAction represents actions to perform on a detected warmup email.

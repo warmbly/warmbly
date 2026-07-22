@@ -18,9 +18,8 @@ const (
 const AdminSettingsKeyWarmupGeneration = "warmup_generation"
 
 // WarmupConversation is a cached conversation thread used as warmup content.
-// Messages are the follow-up question lines the sender can pick from; the
-// Description is the opening body line. Both may contain {a|b|c} spintax,
-// which is expanded at render time.
+// Messages are ordered reply turns; Description is the opening body. Both may
+// contain {a|b|c} spintax, which is expanded at render time.
 type WarmupConversation struct {
 	ID             uuid.UUID  `json:"id"`
 	PoolType       string     `json:"pool_type"`
@@ -32,6 +31,7 @@ type WarmupConversation struct {
 	Messages       []string   `json:"messages"`
 	Status         string     `json:"status"`
 	LintPassed     bool       `json:"lint_passed"`
+	ReplyEligible  bool       `json:"reply_eligible"`
 	UsageCount     int64      `json:"usage_count"`
 	GeneratedByJob *uuid.UUID `json:"generated_by_job_id,omitempty"`
 	CreatedAt      time.Time  `json:"created_at"`
@@ -52,7 +52,7 @@ const (
 type WarmupGenerationJob struct {
 	ID                uuid.UUID  `json:"id"`
 	RequestedBy       *uuid.UUID `json:"requested_by,omitempty"`
-	Trigger           string     `json:"trigger"` // "manual" | "schedule"
+	Trigger           string     `json:"trigger"` // "schedule"; older rows may be "manual"
 	Mode              string     `json:"mode"`    // "sync" | "batch"
 	PoolType          string     `json:"pool_type"`
 	Segment           string     `json:"segment"`
@@ -103,8 +103,8 @@ type WarmupEngagementSettings struct {
 	MaxDwellSeconds int `json:"max_dwell_seconds"`
 }
 
-// WarmupGenerationSettings is the admin-controlled config document for the
-// offline AI thread-bank and recipient engagement. Stored as JSON in
+// WarmupGenerationSettings is the persisted controller policy for the offline
+// AI thread bank and recipient engagement. Stored as JSON in
 // admin_settings under AdminSettingsKeyWarmupGeneration.
 type WarmupGenerationSettings struct {
 	// Enabled is the master switch for using AI-generated content in the
@@ -127,24 +127,25 @@ type WarmupGenerationSettings struct {
 	Engagement           WarmupEngagementSettings     `json:"engagement"`
 }
 
-// DefaultWarmupGenerationSettings returns conservative defaults: AI off (static
-// library only) and engagement rates that keep the strong "not spam" rescue
-// signal while adding variation and dwell. Content is ONE shared library
+// DefaultWarmupGenerationSettings returns autonomous defaults. The AI client is
+// optional and the static library remains the fallback, but when a client is
+// configured the controller continuously maintains and refreshes the bank.
+// Content is ONE shared library
 // (free/premium pools only isolate mailbox reputation, not content), so there's
 // a single library config; "premium" is just its canonical bucket label.
 func DefaultWarmupGenerationSettings() WarmupGenerationSettings {
 	return WarmupGenerationSettings{
-		Enabled:              false,
-		ScheduleEnabled:      false,
-		CadenceHours:         24,
+		Enabled:              true,
+		ScheduleEnabled:      true,
+		CadenceHours:         6,
 		RefreshEnabled:       true,
 		RefreshPerRun:        10,
-		Model:                "gpt-4o-mini",
-		MaxMessagesPerThread: 6,
-		DailyGenerationCap:   200,
-		AISelectionShare:     50,
+		Model:                "gpt-5-mini",
+		MaxMessagesPerThread: 5,
+		DailyGenerationCap:   1000,
+		AISelectionShare:     70,
 		Pools: []WarmupGenerationPoolConfig{
-			{PoolType: "premium", Enabled: true, TargetActiveThreads: 60, Segments: []string{""}},
+			{PoolType: "premium", Enabled: true, TargetActiveThreads: 200, Segments: []string{""}},
 		},
 		Engagement: WarmupEngagementSettings{
 			SpamRescueRate:    85,
@@ -163,28 +164,18 @@ func DefaultWarmupGenerationSettings() WarmupGenerationSettings {
 // Normalize clamps settings into safe ranges so a bad admin payload can't
 // produce nonsense (negative counts, percentages over 100, inverted dwell).
 func (s *WarmupGenerationSettings) Normalize() {
-	if s.CadenceHours < 1 {
-		s.CadenceHours = 1
-	}
-	if s.Model == "" {
-		s.Model = "gpt-4o-mini"
-	}
-	if s.MaxMessagesPerThread < 1 {
-		s.MaxMessagesPerThread = 1
-	}
-	if s.MaxMessagesPerThread > 20 {
-		s.MaxMessagesPerThread = 20
-	}
-	if s.DailyGenerationCap < 0 {
-		s.DailyGenerationCap = 0
-	}
-	if s.RefreshPerRun < 1 {
-		s.RefreshPerRun = 10
-	}
-	if s.RefreshPerRun > 25 {
-		s.RefreshPerRun = 25 // matches the per-segment per-run generation cap
-	}
-	s.AISelectionShare = clampPct(s.AISelectionShare)
+	// Generation is an autopilot subsystem. Provider configuration is the
+	// operational kill switch; stored settings cannot accidentally leave the
+	// content bank in a manual-only mode.
+	s.Enabled = true
+	s.ScheduleEnabled = true
+	s.RefreshEnabled = true
+	s.CadenceHours = 6
+	s.RefreshPerRun = 25
+	s.DailyGenerationCap = 1000
+	s.AISelectionShare = 70
+	s.Model = "gpt-5-mini"
+	s.MaxMessagesPerThread = 5
 	s.Engagement.SpamRescueRate = clampPct(s.Engagement.SpamRescueRate)
 	s.Engagement.MarkImportantRate = clampPct(s.Engagement.MarkImportantRate)
 	s.Engagement.MarkReadRate = clampPct(s.Engagement.MarkReadRate)
@@ -208,7 +199,7 @@ func (s *WarmupGenerationSettings) Normalize() {
 }
 
 func (s *WarmupGenerationSettings) collapsePools() {
-	chosen := WarmupGenerationPoolConfig{PoolType: "premium", Enabled: true, TargetActiveThreads: 60, Segments: []string{""}}
+	chosen := WarmupGenerationPoolConfig{PoolType: "premium", Enabled: true, TargetActiveThreads: 200, Segments: []string{""}}
 	for _, p := range s.Pools {
 		chosen = p
 		if p.Enabled {
@@ -216,9 +207,13 @@ func (s *WarmupGenerationSettings) collapsePools() {
 		}
 	}
 	chosen.PoolType = "premium"
-	if len(chosen.Segments) == 0 {
-		chosen.Segments = []string{""}
+	chosen.Enabled = true
+	if chosen.TargetActiveThreads < 200 {
+		chosen.TargetActiveThreads = 200
 	}
+	// One large shared bank gives the strongest diversity and avoids turning
+	// arbitrary customer mailbox tags into unbounded generation queues.
+	chosen.Segments = []string{""}
 	s.Pools = []WarmupGenerationPoolConfig{chosen}
 }
 
