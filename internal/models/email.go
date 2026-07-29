@@ -118,6 +118,18 @@ type NewSMTPIMAPAccount struct {
 	IMAP           *Service
 }
 
+// NewSharedOutlookMailboxAccount connects a Microsoft 365 shared mailbox as
+// its own Warmbly sender account by reusing a licensed delegate Outlook OAuth
+// account. The parent account must belong to the same user and be provider
+// "outlook". Validation is Graph read-only against /users/{email}/mailFolders/inbox;
+// sending stays behind the normal Warmbly send/campaign gates.
+type NewSharedOutlookMailboxAccount struct {
+	OrganizationID       *uuid.UUID
+	ParentEmailAccountID uuid.UUID
+	Name                 string
+	Email                string
+}
+
 // EmailOnboardingState is stored in Redis for the lifetime of an OAuth round trip.
 type EmailOnboardingState struct {
 	UserID         string     `json:"user_id"`

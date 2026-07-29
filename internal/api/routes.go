@@ -288,6 +288,7 @@ func Run(
 			{
 				onboardingEmails.POST("/oauth/start", h.StartEmailOAuth)
 				onboardingEmails.POST("/oauth/finish", h.FinishEmailOAuth)
+				onboardingEmails.POST("/outlook-shared", h.ConnectEmailOutlookShared)
 				onboardingEmails.POST("/smtp-imap", h.ConnectEmailSMTPIMAP)
 			}
 

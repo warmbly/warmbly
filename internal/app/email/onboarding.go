@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/mail"
+	"net/url"
 	"strings"
 	"time"
 
@@ -172,6 +173,88 @@ func (s *emailService) OAuthFinish(ctx context.Context, userID, code, state stri
 	return acc, xerr
 }
 
+// OnboardOutlookShared validates a Microsoft 365 shared mailbox using an
+// already-connected Outlook delegate account, then stores the shared mailbox as
+// a distinct Warmbly account backed by the delegate OAuth credential. The
+// validation is read-only (/users/{shared}/mailFolders/inbox); this path does
+// not send email, start campaigns, or enable warmup.
+func (s *emailService) OnboardOutlookShared(ctx context.Context, userID string, orgID *uuid.UUID, data *models.NewSharedOutlookMailboxAccount) (*models.Email, *errx.Error) {
+	if xerr := validateSharedOutlookInput(data); xerr != nil {
+		return nil, xerr
+	}
+
+	if xerr := s.guardInboxLimit(ctx, orgID); xerr != nil {
+		return nil, xerr
+	}
+
+	parent, xerr := s.emailRepository.Get(ctx, userID, data.ParentEmailAccountID.String())
+	if xerr != nil {
+		return nil, xerr
+	}
+	if parent == nil || models.InboxProvider(parent.Provider) != models.InboxProviderOutlook {
+		return nil, errx.New(errx.BadRequest, "parent mailbox must be a connected Outlook account")
+	}
+
+	if exists, xerr := s.emailRepository.ExistsForUser(ctx, userID, data.Email); xerr != nil {
+		return nil, xerr
+	} else if exists {
+		return nil, errx.ErrEmailOnboardAlreadyExists
+	}
+
+	creds, xerr := s.emailRepository.GetOAuthCredentials(ctx, parent.ID)
+	if xerr != nil {
+		return nil, xerr
+	}
+	cfg, xerr := s.oauthConfigFor(models.InboxProviderOutlook)
+	if xerr != nil {
+		return nil, xerr
+	}
+
+	tok, err := cfg.TokenSource(ctx, &oauth2.Token{
+		AccessToken:  creds.AccessToken,
+		RefreshToken: creds.RefreshToken,
+		Expiry:       creds.ExpiresAt,
+		TokenType:    "Bearer",
+	}).Token()
+	if err != nil {
+		return nil, errx.ErrEmailOnboardExchange
+	}
+	if tok.RefreshToken == "" {
+		tok.RefreshToken = creds.RefreshToken
+	}
+	if tok.AccessToken != creds.AccessToken || tok.RefreshToken != creds.RefreshToken || !tok.Expiry.Equal(creds.ExpiresAt) {
+		_ = s.emailRepository.RefreshBoxToken(ctx, parent.ID, tok.AccessToken, tok.RefreshToken, tok.Expiry)
+	}
+
+	if xerr := validateOutlookSharedMailboxAccess(ctx, tok.AccessToken, data.Email); xerr != nil {
+		return nil, xerr
+	}
+
+	if xerr := s.guardMailboxThrottle(ctx, orgID); xerr != nil {
+		return nil, xerr
+	}
+
+	data.OrganizationID = orgID
+	acc, xerr := s.emailRepository.NewOauthAccount(ctx, userID, models.NewOauthAccount{
+		OrganizationID: data.OrganizationID,
+		Provider:       models.InboxProviderOutlook,
+		Name:           data.Name,
+		Email:          data.Email,
+		AccessToken:    tok.AccessToken,
+		RefreshToken:   tok.RefreshToken,
+		ExpiresAt:      tok.Expiry,
+	})
+	if xerr == nil && acc != nil {
+		// Shared mailbox onboarding is an approval-gated setup path: validate
+		// read access and persist the sender, but do not enroll it in warmup or
+		// start any send-side activity. Sending remains behind the normal gates.
+		s.publishAccountEvent(ctx, pubsub.EventAccountConnected, acc)
+		s.dispatchAccountConnected(ctx, orgID, acc)
+		s.loadAccountBestEffort(ctx, acc.ID)
+	}
+	return acc, xerr
+}
+
 // OnboardSMTPIMAP validates the supplied SMTP/IMAP credentials against a live worker, then
 // persists the email account on success. Returns ErrEmailCredentials if the worker reports failure.
 func (s *emailService) OnboardSMTPIMAP(ctx context.Context, userID string, orgID *uuid.UUID, data *models.NewSMTPIMAPAccount) (*models.Email, *errx.Error) {
@@ -275,6 +358,42 @@ func (s *emailService) oauthConfigFor(provider models.InboxProvider) (*oauth2.Co
 	default:
 		return nil, errx.ErrEmailOnboardProvider
 	}
+}
+
+func validateSharedOutlookInput(data *models.NewSharedOutlookMailboxAccount) *errx.Error {
+	if data == nil || data.ParentEmailAccountID == uuid.Nil {
+		return errx.ErrInvalid
+	}
+	data.Email = strings.TrimSpace(strings.ToLower(data.Email))
+	if _, err := mail.ParseAddress(data.Email); err != nil {
+		return errx.ErrEmail
+	}
+	if !validNameLen(&data.Name) {
+		return errx.ErrEmailName
+	}
+	return nil
+}
+
+func validateOutlookSharedMailboxAccess(ctx context.Context, accessToken, mailbox string) *errx.Error {
+	u := "https://graph.microsoft.com/v1.0/users/" + url.PathEscape(mailbox) + "/mailFolders/inbox?$select=id,displayName"
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return errx.ErrEmailOnboardUserInfo
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	if resp.StatusCode == http.StatusOK {
+		return nil
+	}
+	if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusUnauthorized {
+		return errx.New(errx.Forbidden, "shared Outlook mailbox is not accessible by the parent delegate token")
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		return errx.New(errx.BadRequest, "shared Outlook mailbox was not found")
+	}
+	return errx.ErrEmailOnboardUserInfo
 }
 
 func validateSMTPIMAPInput(data *models.NewSMTPIMAPAccount) *errx.Error {

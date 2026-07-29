@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/api/middleware"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
@@ -26,6 +27,15 @@ type OnboardingSMTPIMAPRequest struct {
 	Name  string          `json:"name"`
 	SMTP  *models.Service `json:"smtp"`
 	IMAP  *models.Service `json:"imap"`
+}
+
+// OnboardingOutlookSharedRequest connects a shared Microsoft 365 mailbox by
+// cloning/reusing an already connected licensed Outlook delegate account. It
+// performs a read-only Graph validation before persisting a distinct sender row.
+type OnboardingOutlookSharedRequest struct {
+	ParentEmailAccountID string `json:"parent_email_account_id"`
+	Email                string `json:"email"`
+	Name                 string `json:"name"`
 }
 
 func (h *Handler) StartEmailOAuth(c *gin.Context) {
@@ -65,6 +75,43 @@ func (h *Handler) FinishEmailOAuth(c *gin.Context) {
 	h.auditOrg(c, models.AuditActionConnect, models.AuditEntityEmailAccount, &acc.ID, nil, map[string]string{
 		"provider": acc.Provider,
 		"email":    acc.Email,
+	})
+
+	c.JSON(http.StatusCreated, acc)
+}
+
+func (h *Handler) ConnectEmailOutlookShared(c *gin.Context) {
+	userIDStr := middleware.GetUserID(c)
+	orgID := middleware.GetOrganizationID(c)
+
+	var req OnboardingOutlookSharedRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		errx.Handle(c, errx.ErrInvalid)
+		return
+	}
+
+	parentID, err := uuid.Parse(req.ParentEmailAccountID)
+	if err != nil {
+		errx.Handle(c, errx.ErrUuid)
+		return
+	}
+
+	acc, xerr := h.EmailService.OnboardOutlookShared(c.Request.Context(), userIDStr, orgID, &models.NewSharedOutlookMailboxAccount{
+		OrganizationID:       orgID,
+		ParentEmailAccountID: parentID,
+		Email:                req.Email,
+		Name:                 req.Name,
+	})
+	if xerr != nil {
+		errx.Handle(c, xerr)
+		return
+	}
+
+	h.auditOrg(c, models.AuditActionConnect, models.AuditEntityEmailAccount, &acc.ID, nil, map[string]string{
+		"provider":                "outlook",
+		"email":                   acc.Email,
+		"parent_email_account_id": parentID.String(),
+		"shared_mailbox":          "true",
 	})
 
 	c.JSON(http.StatusCreated, acc)
