@@ -11,8 +11,8 @@
 //	Layer 2 (lexicon): deterministic, offline keyword scan. Compliance words
 //	        (unsubscribe / stop / remove me) win first; then clear interest
 //	        phrases (positive) and clear rejection (negative).
-//	Layer 3 (model): OPTIONAL, gated by OPENAI_API_KEY. Only the ambiguous middle
-//	        reaches it. When the key is unset we NEVER call out and fall back to
+//	Layer 3 (model): OPTIONAL, gated by the AI provider. Only the ambiguous middle
+//	        reaches it. When no provider is configured we NEVER call out and fall back to
 //	        "unknown".
 //
 // Layers 1 and 2 are pure and deterministic; only Layer 3 has side effects and
@@ -64,7 +64,7 @@ type Result struct {
 }
 
 // Classify runs the layered pipeline. Layers 1-2 are pure/deterministic and
-// always run offline. Layer 3 (the model) runs only when an OPENAI_API_KEY-gated
+// always run offline. Layer 3 (the model) runs only when a provider-backed
 // classifier is configured; otherwise the ambiguous middle resolves to
 // "unknown" without any network call.
 //
@@ -76,7 +76,7 @@ func Classify(in Input) Result {
 
 // ClassifyContext is Classify with an explicit context for the optional model
 // layer. Layers 1-2 ignore the context entirely (no I/O). The model layer is
-// always allowed (subject only to the OPENAI_API_KEY gate).
+// always allowed (subject only to the AI-provider gate).
 func ClassifyContext(ctx context.Context, in Input) Result {
 	return ClassifyGated(ctx, in, nil)
 }
@@ -91,7 +91,7 @@ type ModelGate func() bool
 
 // ClassifyGated is ClassifyContext with a gate on the optional model layer.
 // gate == nil behaves exactly like the ungated pipeline (model allowed whenever
-// the OPENAI_API_KEY classifier is configured).
+// the model classifier is configured).
 func ClassifyGated(ctx context.Context, in Input, gate ModelGate) Result {
 	// Layer 1: headers (deterministic, offline). An automated message is decided
 	// here and never reaches the lexicon/model layers.
@@ -105,7 +105,7 @@ func ClassifyGated(ctx context.Context, in Input, gate ModelGate) Result {
 		return r
 	}
 
-	// Layer 3: model (optional, OPENAI_API_KEY-gated AND cost-gated). Skipped
+	// Layer 3: model (optional, provider-gated AND cost-gated). Skipped
 	// entirely when the gate declines, with no network call.
 	if gate == nil || gate() {
 		if r, ok := classifyModel(ctx, in); ok {

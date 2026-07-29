@@ -19,11 +19,16 @@ import (
 // is rejected to prevent directory traversal.
 type FilesystemStore struct {
 	root string
+	// publicBaseURL is prefixed onto keys by PutPublic so avatars/logos resolve
+	// through the backend's /public route. Defaults to "/public" (same-origin)
+	// when unset; operators with a split app/API origin set an absolute URL.
+	publicBaseURL string
 }
 
 // NewFilesystem returns a FilesystemStore rooted at the given directory. The
-// directory is created (recursively) if it doesn't exist.
-func NewFilesystem(root string) (*FilesystemStore, error) {
+// directory is created (recursively) if it doesn't exist. publicBaseURL is the
+// URL prefix used for publicly-served objects; pass "" to default to /public.
+func NewFilesystem(root, publicBaseURL string) (*FilesystemStore, error) {
 	if root == "" {
 		return nil, errors.New("filesystem store: root is required")
 	}
@@ -34,7 +39,10 @@ func NewFilesystem(root string) (*FilesystemStore, error) {
 	if err := os.MkdirAll(abs, 0o755); err != nil {
 		return nil, fmt.Errorf("filesystem store: mkdir: %w", err)
 	}
-	return &FilesystemStore{root: abs}, nil
+	if publicBaseURL == "" {
+		publicBaseURL = "/public"
+	}
+	return &FilesystemStore{root: abs, publicBaseURL: strings.TrimRight(publicBaseURL, "/")}, nil
 }
 
 func (s *FilesystemStore) Name() string { return "filesystem" }
@@ -98,6 +106,15 @@ func (s *FilesystemStore) Put(_ context.Context, key string, body io.Reader, _ s
 		return err
 	}
 	return os.Rename(tmpName, path)
+}
+
+// PutPublic writes the object and returns a URL under the configured public
+// base. The backend serves these via its /public/*key route (see routes.go).
+func (s *FilesystemStore) PutPublic(ctx context.Context, key string, body io.Reader, contentType string) (string, error) {
+	if err := s.Put(ctx, key, body, contentType); err != nil {
+		return "", err
+	}
+	return s.publicBaseURL + "/" + key, nil
 }
 
 func (s *FilesystemStore) Delete(_ context.Context, key string) error {

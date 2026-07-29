@@ -128,7 +128,7 @@ type UpdateWorker struct {
 type DedicatedWorkerAssignment struct {
 	ID             uuid.UUID  `json:"id"`
 	WorkerID       uuid.UUID  `json:"worker_id"`
-	UserID         uuid.UUID  `json:"user_id"`
+	OrganizationID uuid.UUID  `json:"organization_id"`
 	SubscriptionID uuid.UUID  `json:"subscription_id"`
 	AssignedAt     time.Time  `json:"assigned_at"`
 	ReleasedAt     *time.Time `json:"released_at,omitempty"`

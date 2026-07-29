@@ -13,6 +13,10 @@ import (
 // The opener (the SPA) is expected to POST the code/state to
 // /emails/onboarding/oauth/finish with the user's bearer token.
 //
+// Without an opener (the native app's ASWebAuthenticationSession, which has
+// no popup parent) it instead redirects to the app's warmbly:// scheme; the
+// session intercepts that navigation and the app calls oauth/finish itself.
+//
 // We keep this on the API rather than the SPA so that the provider's
 // registered redirect_uri stays under our control and survives front-end
 // reshuffles.
@@ -39,11 +43,20 @@ var callbackPage = template.Must(template.New("oauth-cb").Parse(`<!doctype html>
     error: {{.Error}}
   };
   var origin = {{.AppOrigin}};
+  var delivered = false;
   try {
     if (window.opener) {
       window.opener.postMessage(payload, origin || "*");
+      delivered = true;
     }
   } catch (e) { /* ignore */ }
+  if (!delivered) {
+    var q = "provider=" + encodeURIComponent(payload.provider || "") +
+      "&code=" + encodeURIComponent(payload.code || "") +
+      "&state=" + encodeURIComponent(payload.state || "") +
+      "&error=" + encodeURIComponent(payload.error || "");
+    try { window.location.replace("warmbly://email-oauth?" + q); } catch (e) { /* ignore */ }
+  }
   setTimeout(function(){ try { window.close(); } catch(e){} }, 400);
 })();
 </script>

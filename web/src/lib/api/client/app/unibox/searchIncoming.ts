@@ -48,6 +48,8 @@ export default async function searchIncoming(
   // here in case the user passed something.
   if (p.query) usp.set("subject", p.query);
   if (p.from) usp.set("from", p.from);
+  if (p.address) usp.set("address", p.address);
+  if (p.direction) usp.set("direction", p.direction);
   if (p.accountIds && p.accountIds.length > 0) {
     // Backend accepts comma-separated email_ids and falls back to a
     // single email_id for legacy callers; we always use the multi form.
@@ -57,6 +59,7 @@ export default async function searchIncoming(
   if (p.snoozed === true) usp.set("snoozed", "true");
   else if (p.snoozed === "any") usp.set("snoozed", "any");
   if (p.awaitingReply) usp.set("awaiting_reply", "true");
+  if (p.agentDrafts) usp.set("agent_drafts", "true");
   if (p.categoryIds && p.categoryIds.length > 0) {
     usp.set("category_ids", p.categoryIds.join(","));
   }

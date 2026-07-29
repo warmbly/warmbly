@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { useCampaignChannel, type ActivityItem } from "@/hooks/useCampaignChannel";
 import useCampaignLogs from "@/lib/api/hooks/app/campaigns/useCampaignLogs";
+import { DitherMeter } from "@/components/ui/dither";
 
 interface TaskPreviewProps {
     campaignId: string;
@@ -189,12 +190,7 @@ export default function TaskPreview({ campaignId, campaignStatus: initialStatus 
                         </span>
                         <span className="font-mono text-[11px] text-slate-700 tabular-nums">{progress}%</span>
                     </div>
-                    <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
-                        <div
-                            className="h-full rounded-full bg-sky-600 transition-all duration-500"
-                            style={{ width: `${progress}%` }}
-                        />
-                    </div>
+                    <DitherMeter frac={progress / 100} height={6} />
                     <div className="flex items-center justify-between mt-1.5">
                         <span className="font-mono text-[10.5px] text-slate-400 tabular-nums">
                             {processed.toLocaleString()} of {total.toLocaleString()} contacts
@@ -266,12 +262,22 @@ export default function TaskPreview({ campaignId, campaignStatus: initialStatus 
                 ) : (
                     <div className="px-5 py-16 text-center">
                         <p className="text-[12.5px] text-slate-700 font-medium mb-1">
-                            {isActive ? "Waiting for the next send…" : "Nothing sending yet"}
+                            {currentStatus === "completed"
+                                ? "All caught up — sending complete"
+                                : currentStatus === "paused"
+                                  ? "Campaign paused"
+                                  : isActive
+                                    ? "Waiting for the next send…"
+                                    : "Nothing sending yet"}
                         </p>
                         <p className="text-[11.5px] text-slate-400 max-w-[34ch] mx-auto leading-relaxed">
-                            {isActive
-                                ? "Opens, clicks, replies and bounces will stream in here live as your campaign sends."
-                                : "Start the campaign to watch it send live."}
+                            {currentStatus === "completed"
+                                ? "Every lead has finished the sequence. Replies and clicks still stream in here as they arrive."
+                                : currentStatus === "paused"
+                                  ? "Resume the campaign to keep sending. Replies and clicks still stream in here."
+                                  : isActive
+                                    ? "Opens, clicks, replies and bounces will stream in here live as your campaign sends."
+                                    : "Start the campaign to watch it send live."}
                         </p>
                     </div>
                 )}

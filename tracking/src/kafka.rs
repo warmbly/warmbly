@@ -5,13 +5,13 @@ use rdkafka::util::Timeout;
 use schema_registry_converter::async_impl::avro::AvroEncoder;
 use schema_registry_converter::async_impl::schema_registry::SrSettings;
 use schema_registry_converter::schema_registry_common::SubjectNameStrategy;
-use serde::Serialize;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
 use tracing::info;
 
 use crate::config::Config;
+use crate::events::TrackingEvent;
 use crate::observability;
 
 /// Avro schema for tracking events - matches Go events.TrackingEvent
@@ -39,17 +39,13 @@ pub struct KafkaProducer {
     encoder: Arc<RwLock<AvroEncoder<'static>>>,
 }
 
-#[derive(Debug, Serialize, Clone)]
-pub struct TrackingEvent {
-    pub event_type: String,
-    pub task_id: String,
-    pub original_url: Option<String>,
-    pub timestamp: String,
-    pub user_agent: Option<String>,
-    pub ip_hash: Option<String>,
+/// Avro encoding for the shared TrackingEvent (Kafka path only). The struct
+/// itself lives in events.rs so the NATS path can use it without the Avro deps.
+trait ToAvroValue {
+    fn to_avro_value(&self) -> Vec<(&'static str, Value)>;
 }
 
-impl TrackingEvent {
+impl ToAvroValue for TrackingEvent {
     /// Convert to Avro Value for schema registry encoding
     fn to_avro_value(&self) -> Vec<(&'static str, Value)> {
         vec![

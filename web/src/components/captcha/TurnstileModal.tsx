@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback } from "react";
 import Turnstile from "react-turnstile";
+import { TURNSTILE_KEY } from "@/lib/information";
 
 interface Props {
     visible: boolean;
@@ -57,7 +58,7 @@ export function TurnstileModal({ visible, onToken }: Props) {
     // to allow it without disabling TS for the whole call.
     const turnstileProps = {
         ref: turnstileRef,
-        sitekey: import.meta.env.VITE_TURNSTILE_KEY!,
+        sitekey: TURNSTILE_KEY,
         onVerify: handleVerify,
         onExpire: () => { tokenRef.current = ""; turnstileRef.current?.reset(); },
         size: "invisible" as const,

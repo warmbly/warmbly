@@ -12,6 +12,7 @@ import { OrgGate } from "@/hooks/OrgGate";
 import TagsModal from "@/components/app/modals/TagsModal";
 import FoldersModal from "@/components/app/modals/FoldersModal";
 import AddEmailModal from "@/components/app/modals/AddEmailModal";
+import ComposeWindow from "@/components/app/unibox/compose/ComposeWindow";
 import PasskeyEnrollPrompt from "@/components/app/modals/PasskeyEnrollPrompt";
 import PermissionDeniedModal from "@/components/app/modals/PermissionDeniedModal";
 
@@ -43,6 +44,7 @@ export default function RootAppLayout() {
                 <TagsModal />
                 <FoldersModal />
                 <AddEmailModal />
+                <ComposeWindow />
                 <PasskeyEnrollPrompt />
                 <PermissionDeniedModal />
             </ConfirmProvider>

@@ -22,6 +22,8 @@ import {
     XCircle,
 } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { StateLegend } from "@/components/StateLegend";
+import { MAILBOX_HEALTH_LEGEND } from "@/lib/legends";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -56,7 +58,9 @@ export default function WarmupPage() {
             <PageHeader
                 title="Warmup pools"
                 description="Pool health, blocked mailboxes, and pending appeals. Shared paid-pool reputation matters more than any single mailbox — quarantine early."
-            />
+            >
+                <StateLegend label="Health states explained" entries={MAILBOX_HEALTH_LEGEND} />
+            </PageHeader>
 
             <HealthSummary />
 

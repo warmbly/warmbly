@@ -1,0 +1,189 @@
+---
+title: SDKs
+description: Official Warmbly client libraries for JavaScript, Python, and Go.
+---
+
+Warmbly publishes official, fully typed SDKs for JavaScript and TypeScript, Python, and Go. Each one wraps the same surface: the REST API, the OAuth2 authorization flows, and the realtime gateway. You get typed resources, auto-pagination, automatic retries, and a live event stream without hand-rolling HTTP. All three are open source and track the `v1` API.
+
+## Official libraries
+
+<Cards>
+  <Card title="warmbly-js (JavaScript and TypeScript)" href="https://github.com/warmbly/warmbly-js" />
+  <Card title="warmbly-py (Python)" href="https://github.com/warmbly/warmbly-py" />
+  <Card title="warmbly-go (Go)" href="https://github.com/warmbly/warmbly-go" />
+</Cards>
+
+| Language | Package | Runtime | Realtime |
+| --- | --- | --- | --- |
+| JavaScript and TypeScript | `warmbly` (npm) | Node 20+, Bun, Deno, browsers, edge | yes |
+| Python | `warmbly` (PyPI) | Python 3.10+, sync and async | yes |
+| Go | `github.com/warmbly/warmbly-go` | Go 1.23+ | yes |
+
+## Install
+
+<Tabs defaultValue="javascript">
+
+<TabsList>
+  <LangTab lang="javascript" />
+  <LangTab lang="python" />
+  <LangTab lang="go" />
+</TabsList>
+
+<Tab value="javascript">
+
+```bash
+npm install warmbly
+```
+
+Also available on pnpm, yarn, and bun (`pnpm add warmbly`, `yarn add warmbly`, `bun add warmbly`). On Node older than 22 the gateway needs a WebSocket: install the optional `ws` peer and the SDK picks it up automatically.
+
+</Tab>
+
+<Tab value="python">
+
+```bash
+pip install warmbly
+```
+
+Interactive OAuth2 flows and secure token storage are an optional extra: `pip install "warmbly[oauth]"`. Requires Python 3.10+.
+
+</Tab>
+
+<Tab value="go">
+
+```bash
+go get github.com/warmbly/warmbly-go
+```
+
+Requires Go 1.23+ (the auto-paging iterator uses range-over-func).
+
+</Tab>
+
+</Tabs>
+
+## Quickstart
+
+Create an API key in the dashboard under Settings, expose it as `WARMBLY_API_KEY`, then:
+
+<Tabs defaultValue="javascript">
+
+<TabsList>
+  <LangTab lang="javascript" />
+  <LangTab lang="python" />
+  <LangTab lang="go" />
+</TabsList>
+
+<Tab value="javascript">
+
+```ts
+import { Warmbly } from "warmbly";
+
+const warmbly = new Warmbly({ apiKey: process.env.WARMBLY_API_KEY });
+
+// List campaigns (auto-paginated)
+for await (const campaign of await warmbly.campaigns.list()) {
+  console.log(campaign.id, campaign.name);
+}
+```
+
+</Tab>
+
+<Tab value="python">
+
+```python
+import os
+from warmbly import Warmbly
+
+client = Warmbly(api_key=os.environ["WARMBLY_API_KEY"])
+
+for key in client.api_keys.list():
+    print(key.name, key.status)
+```
+
+`Warmbly()` reads `WARMBLY_API_KEY` from the environment on its own, and every method has an awaitable twin on `AsyncWarmbly`.
+
+</Tab>
+
+<Tab value="go">
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+
+	"github.com/warmbly/warmbly-go"
+)
+
+func main() {
+	client, err := warmbly.New(warmbly.WithAPIKey("wmbly_..."))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	ctx := context.Background()
+	page, err := client.Campaigns.List(ctx, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+	for campaign, err := range page.All(ctx) {
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println(campaign.Name)
+	}
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Authentication
+
+Every SDK takes a bearer credential, and both credential types run through the same permission gates:
+
+- an **API key** for your own scripts (prefixed `wmbly_`)
+- an **OAuth access token** for apps acting on behalf of a workspace (prefixed `wmat_`)
+
+```ts
+// warmbly-js
+new Warmbly({ apiKey: "wmbly_..." });       // API key
+new Warmbly({ accessToken: "wmat_..." });   // OAuth access token
+```
+
+```python
+# warmbly-py (falls back to WARMBLY_API_KEY when omitted; any bearer token works)
+Warmbly(api_key="wmbly_...")
+```
+
+```go
+// warmbly-go
+warmbly.New(warmbly.WithAPIKey("wmbly_..."))
+warmbly.New(warmbly.WithAccessToken("..."))
+```
+
+For the full authorization-code and client-credentials flows (PKCE and automatic token refresh), see [OAuth](/api/oauth/). For key format, scoping, and rotation, see [Authentication](/api/authentication/).
+
+## What every SDK gives you
+
+- Typed REST resources across the whole API: mailboxes, campaigns, contacts, the unibox, analytics, templates, CRM, integrations, and webhooks.
+- OAuth2 flows built in: authorization-code with PKCE and client-credentials, plus programmatic OAuth application management.
+- A realtime gateway on one resilient WebSocket, with heartbeats, automatic reconnect, and session resume, delivering typed events. See [Realtime](/api/realtime/).
+- Resilience by default: automatic retries with exponential backoff and jitter, `Retry-After` support, and idempotency keys for safe mutation retries.
+- Cursor pagination with auto-paging iterators, so you loop over every record without tracking cursors yourself.
+- Typed errors carrying the `request_id` and a machine-readable code, matchable against named sentinels. See [Error codes](/api/error-codes/).
+- A small footprint: warmbly-js and warmbly-go ship with zero runtime dependencies.
+
+## No-code and automation
+
+Prefer a visual builder? Warmbly also ships a community [n8n](https://n8n.io) node, [`n8n-nodes-warmbly`](https://github.com/warmbly/n8n-nodes-warmbly), and has first-class [Zapier](/guides/zapier/) and [Make](/guides/make/) guides.
+
+## See also
+
+- [API overview](/api/) for the base URL, versioning, and conventions
+- [Authentication](/api/authentication/) and [OAuth](/api/oauth/)
+- [Permissions](/api/permissions/) for the scopes each token can carry
+- [Realtime](/api/realtime/) for the event gateway

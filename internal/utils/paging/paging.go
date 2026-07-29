@@ -12,6 +12,7 @@ import (
 	"errors"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/errx"
@@ -96,6 +97,51 @@ func DecodeUUID(token string) (uuid.UUID, error) {
 	var id uuid.UUID
 	copy(id[:], raw)
 	return id, nil
+}
+
+// timePrefix versions the composite time-keyset token: (created_at, id). Used
+// by lists sorted chronologically where the id alone is not a monotonic sort
+// key (e.g. random-UUID rows ordered by created_at DESC, id DESC).
+const timePrefix = "t1_"
+
+// EncodeTime wraps a (createdAt, id) keyset position in an opaque token.
+// Returns nil for the zero id ("no next page") so the JSON field serializes as
+// null.
+func EncodeTime(createdAt time.Time, id uuid.UUID) *string {
+	if id == uuid.Nil {
+		return nil
+	}
+	payload := createdAt.UTC().Format(time.RFC3339Nano) + "|" + id.String()
+	tok := timePrefix + base64.RawURLEncoding.EncodeToString([]byte(payload))
+	return &tok
+}
+
+// DecodeTimeCursor reverses EncodeTime. An empty token yields (zeroTime,
+// uuid.Nil, nil) (start from the beginning); an invalid token returns a 400.
+func DecodeTimeCursor(token string) (time.Time, uuid.UUID, *errx.Error) {
+	if token == "" {
+		return time.Time{}, uuid.Nil, nil
+	}
+	if !strings.HasPrefix(token, timePrefix) {
+		return time.Time{}, uuid.Nil, errx.New(errx.BadRequest, "invalid cursor")
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(token, timePrefix))
+	if err != nil {
+		return time.Time{}, uuid.Nil, errx.New(errx.BadRequest, "invalid cursor")
+	}
+	parts := strings.SplitN(string(raw), "|", 2)
+	if len(parts) != 2 {
+		return time.Time{}, uuid.Nil, errx.New(errx.BadRequest, "invalid cursor")
+	}
+	at, err := time.Parse(time.RFC3339Nano, parts[0])
+	if err != nil {
+		return time.Time{}, uuid.Nil, errx.New(errx.BadRequest, "invalid cursor")
+	}
+	id, err := uuid.Parse(parts[1])
+	if err != nil {
+		return time.Time{}, uuid.Nil, errx.New(errx.BadRequest, "invalid cursor")
+	}
+	return at, id, nil
 }
 
 // DecodeCursor decodes an opaque cursor token into the canonical UUID string the

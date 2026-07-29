@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -8,9 +9,21 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/warmbly/warmbly/internal/api/middleware"
+	"github.com/warmbly/warmbly/internal/app/notification"
+	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 )
+
+// emailDeliveryInfo tells clients the email-channel bounds so the window
+// control renders the right range without hardcoding it.
+func emailDeliveryInfo() gin.H {
+	return gin.H{
+		"min_minutes": config.NotificationEmailWindowMinMinutes,
+		"max_minutes": config.NotificationEmailWindowMaxMinutes,
+		"daily_cap":   notification.EmailDailyCap(),
+	}
+}
 
 func notifActor(c *gin.Context) (uuid.UUID, bool) {
 	id, err := uuid.Parse(middleware.GetUserID(c))
@@ -33,7 +46,7 @@ func (h *Handler) GetNotificationPreferences(c *gin.Context) {
 		errx.JSON(c, xerr)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"preferences": prefs})
+	c.JSON(http.StatusOK, gin.H{"preferences": prefs, "email_delivery": emailDeliveryInfo()})
 }
 
 // UpdateNotificationPreferences replaces the caller's notification preferences.
@@ -47,11 +60,21 @@ func (h *Handler) UpdateNotificationPreferences(c *gin.Context) {
 		errx.JSON(c, errx.New(errx.BadRequest, "invalid payload"))
 		return
 	}
+	if req.Preferences.EmailDigestMinutes == 0 {
+		req.Preferences.EmailDigestMinutes = config.NotificationEmailWindowDefaultMinutes
+	}
+	if req.Preferences.EmailDigestMinutes < config.NotificationEmailWindowMinMinutes ||
+		req.Preferences.EmailDigestMinutes > config.NotificationEmailWindowMaxMinutes {
+		errx.JSON(c, errx.New(errx.BadRequest, fmt.Sprintf(
+			"email_digest_minutes must be between %d and %d",
+			config.NotificationEmailWindowMinMinutes, config.NotificationEmailWindowMaxMinutes)))
+		return
+	}
 	if xerr := h.NotificationService.UpdatePreferences(c.Request.Context(), uid, &req.Preferences); xerr != nil {
 		errx.JSON(c, xerr)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"preferences": req.Preferences})
+	c.JSON(http.StatusOK, gin.H{"preferences": req.Preferences, "email_delivery": emailDeliveryInfo()})
 }
 
 // ListNotifications returns the caller's recent feed + the unread count.

@@ -66,12 +66,7 @@ func (c *Client) Connect() *errx.MailError {
 		return errx.ErrMailServerUnreachable
 	}
 
-	client := imapclient.New(conn, nil)
-
-	caps := client.Caps()
-	if !caps.Has(imap.CapCondStore) {
-		return errx.ErrMailCondStoreNotSupported
-	}
+	c.client = imapclient.New(conn, nil)
 
 	var xerr *errx.MailError
 
@@ -81,8 +76,18 @@ func (c *Client) Connect() *errx.MailError {
 	case models.AuthOAuth2:
 		xerr = c.oauth2Auth()
 	}
+	if xerr != nil {
+		return xerr
+	}
 
-	return xerr
+	// CONDSTORE backs the ChangedSince incremental sync. Servers (Gmail,
+	// Dovecot, ...) typically advertise it only after authentication, so the
+	// check must run post-auth.
+	if !c.client.Caps().Has(imap.CapCondStore) {
+		return errx.ErrMailCondStoreNotSupported
+	}
+
+	return nil
 }
 
 func (c *Client) Close() error {
@@ -126,7 +131,14 @@ func (c *Client) oauth2Auth() *errx.MailError {
 func (c *Client) Folders() ([]models.Mailbox, *errx.MailError) {
 	var resp []models.Mailbox
 
-	cmd := c.client.List("", "%", nil)
+	// LIST-STATUS: without requesting these, f.Status is nil for every
+	// folder and the sync loop sees an empty account.
+	cmd := c.client.List("", "%", &imap.ListOptions{
+		ReturnStatus: &imap.StatusOptions{
+			UIDValidity:   true,
+			HighestModSeq: true,
+		},
+	})
 
 	for f := cmd.Next(); f != nil; f = cmd.Next() {
 		if len(resp) >= config.MaxEmailFolders {
@@ -166,8 +178,25 @@ func (c *Client) Mailbox(mailbox string, uidvali, opts *imap.SelectOptions) erro
 	return nil
 }
 
+// SelectForSync opens a mailbox read-only with CONDSTORE enabled and returns
+// its message count. FETCH is only valid against a selected mailbox, so the
+// sync loop must call this before FetchChanges; CONDSTORE on the SELECT is
+// what arms ChangedSince. The count lets the caller skip the fetch entirely
+// for an empty mailbox, where a 1:* set is a server error.
+func (c *Client) SelectForSync(mailbox string) (uint32, *errx.MailError) {
+	data, err := c.client.Select(mailbox, &imap.SelectOptions{ReadOnly: true, CondStore: true}).Wait()
+	if err != nil {
+		return 0, c.handleError(err)
+	}
+	return data.NumMessages, nil
+}
+
 func (c *Client) FetchChanges(ctx context.Context, lastModSeq uint64) *errx.MailError {
-	cmd := c.client.Fetch(&imap.SeqSet{}, &imap.FetchOptions{
+	// 1:* — an empty SeqSet has no encodable ranges and panics inside
+	// go-imap; ChangedSince narrows the result server-side.
+	var allMessages imap.SeqSet
+	allMessages.AddRange(1, 0)
+	cmd := c.client.Fetch(allMessages, &imap.FetchOptions{
 		UID:      true,
 		Envelope: true,
 		BodyStructure: &imap.FetchItemBodyStructure{

@@ -1,14 +1,15 @@
 {
   "title": "API Reference",
   "description": "Build on the Warmbly API",
-  "icon": "Braces",
   "root": true,
   "pages": [
     "index",
     "authentication",
+    "sdks",
     "oauth",
     "permissions",
     "endpoints",
+    "mcp",
     "openapi",
     "reference",
     "realtime",

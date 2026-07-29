@@ -166,7 +166,14 @@ export type IntegrationAction =
     | "warmbly.create_task"
     | "warmbly.create_deal"
     | "warmbly.move_deal_stage"
-    | "warmbly.unsubscribe";
+    | "warmbly.unsubscribe"
+    | "warmbly.run_automation"
+    | "warmbly.label_email"
+    | "warmbly.set_variables"
+    | "warmbly.fire_event"
+    // AI nodes mirroring the campaign step types: one unified AI step + AI switch.
+    | "warmbly.ai_step"
+    | "warmbly.ai_switch";
 
 export interface IntegrationEventSubscription {
     id: string;

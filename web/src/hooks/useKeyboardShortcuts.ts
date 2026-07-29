@@ -1,6 +1,8 @@
 import { useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAppStore } from '@/stores'
+import { useComposeStore } from '@/hooks/useComposeStore'
+import { checkPermission } from '@/hooks/usePermission'
 
 export interface ShortcutDefinition {
   keys: string[]
@@ -18,6 +20,7 @@ export function useKeyboardShortcuts() {
   const setShortcutsModalOpen = useAppStore((state) => state.setShortcutsModalOpen)
   const setCommandPaletteOpen = useAppStore((state) => state.setCommandPaletteOpen)
   const toggleSidebar = useAppStore((state) => state.toggleSidebar)
+  const toggleAIAssistant = useAppStore((state) => state.toggleAIAssistant)
 
   // Navigation shortcuts (g + key)
   const navigationShortcuts: Record<string, string> = {
@@ -36,6 +39,22 @@ export function useKeyboardShortcuts() {
 
   const handleKeyDown = useCallback(
     (event: KeyboardEvent) => {
+      // Cmd/Ctrl+I toggles the AI assistant from anywhere (even while typing),
+      // since it is a modifier combo, not text input. When the panel is docked
+      // (minimized), it restores instead of closing.
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'i') {
+        event.preventDefault()
+        if (!checkPermission('USE_AI')) return
+        const s = useAppStore.getState()
+        if (s.aiAssistantOpen && s.agentMinimized) {
+          s.setAgentMinimized(false)
+        } else {
+          if (!s.aiAssistantOpen) s.setAgentMinimized(false)
+          toggleAIAssistant()
+        }
+        return
+      }
+
       // Ignore if typing in an input, textarea, or contenteditable
       const target = event.target as HTMLElement
       const isEditing =
@@ -72,6 +91,13 @@ export function useKeyboardShortcuts() {
       if (key === 'b' && !event.ctrlKey && !event.metaKey) {
         event.preventDefault()
         toggleSidebar()
+        return
+      }
+
+      // Handle n for a new email (opens the global compose window)
+      if (key === 'n' && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+        event.preventDefault()
+        useComposeStore.getState().openCompose()
         return
       }
 
@@ -131,6 +157,7 @@ export function useKeyboardShortcuts() {
       setShortcutsModalOpen,
       setCommandPaletteOpen,
       toggleSidebar,
+      toggleAIAssistant,
       navigationShortcuts,
     ]
   )
@@ -167,10 +194,21 @@ export const shortcutDefinitions = {
   ],
   actions: [
     { keys: ['/'], description: 'Focus search' },
-    { keys: ['n'], description: 'New item' },
+    { keys: ['n'], description: 'Compose a new email' },
     { keys: ['e'], description: 'Edit selected item' },
     { keys: ['b'], description: 'Toggle sidebar' },
     { keys: ['?'], description: 'Show shortcuts' },
     { keys: ['Ctrl', 'k'], description: 'Command palette' },
+  ],
+  // Panel-scoped shortcuts fire while focus is inside the assistant panel.
+  assistant: [
+    { keys: ['Ctrl', 'i'], description: 'Open / close the assistant' },
+    { keys: ['Ctrl', ']'], description: 'Next conversation tab' },
+    { keys: ['Ctrl', '['], description: 'Previous conversation tab' },
+    { keys: ['Alt', 'n'], description: 'New chat' },
+    { keys: ['Alt', 'w'], description: 'Close tab' },
+    { keys: ['Alt', 'm'], description: 'Minimize to dock' },
+    { keys: ['Alt', 'p'], description: 'Pop out / dock the panel' },
+    { keys: ['Esc'], description: 'Close the panel' },
   ],
 }

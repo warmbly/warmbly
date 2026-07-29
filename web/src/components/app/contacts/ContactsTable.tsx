@@ -28,6 +28,7 @@ import {
     RefreshCcwIcon,
     Settings2Icon,
     SheetIcon,
+    SparklesIcon,
     TrashIcon,
     UploadIcon,
     UserPlusIcon,
@@ -37,6 +38,7 @@ import { useConfirm } from "@/hooks/context/confirm";
 import useSearchContacts from "@/lib/api/hooks/app/contacts/useSearchContacts";
 import type SearchContacts from "@/lib/api/models/app/contacts/SearchContacts";
 import useDeleteContacts from "@/lib/api/hooks/app/contacts/useDeleteContacts";
+import { useBatchResearch } from "@/lib/api/hooks/app/contacts/useContactResearch";
 import useIntegrationConnections from "@/lib/api/hooks/app/integrations/useIntegrationConnections";
 import { usePushContacts } from "@/lib/api/hooks/app/integrations/usePushContacts";
 import {
@@ -161,15 +163,28 @@ export default function ContactsTable({
         );
     }, [contacts, subFilter]);
 
+    // Prefer the server's org-wide facet counts (first page's `counts` block) so
+    // the stat strip is accurate at scale. Before that lands, fall back to a
+    // count over the loaded rows so the strip isn't blank on first paint.
+    const serverCounts = contactsData.data?.pages[0]?.counts;
     const counts = React.useMemo(() => {
-        const stats = { total: contacts?.length ?? 0, subscribed: 0, unsubscribed: 0, inCampaign: 0 };
+        if (serverCounts) {
+            return {
+                total: serverCounts.total,
+                subscribed: serverCounts.subscribed,
+                unsubscribed: serverCounts.unsubscribed,
+                inCampaign: serverCounts.in_campaign,
+                exact: true,
+            };
+        }
+        const stats = { total: contacts?.length ?? 0, subscribed: 0, unsubscribed: 0, inCampaign: 0, exact: false };
         for (const c of contacts ?? []) {
             if (c.subscribed) stats.subscribed++;
             else stats.unsubscribed++;
             if (c.campaigns && c.campaigns.length > 0) stats.inCampaign++;
         }
         return stats;
-    }, [contacts]);
+    }, [serverCounts, contacts]);
 
     const isSelectedAll = React.useMemo(() => {
         if (!filtered.length) return false;
@@ -204,6 +219,22 @@ export default function ContactsTable({
             confirm?.setLoading(false);
             confirm?.setShow(false);
         }
+    }
+
+    // Bulk AI research. Confirms the credit cost (2 per contact) before queuing;
+    // runs drain in the background and the tab refreshes live via realtime.
+    const batchResearch = useBatchResearch();
+    function bulkResearch() {
+        if (selected.length === 0) return;
+        const ids = selected;
+        confirm?.show(
+            `Research ${ids.length} ${ids.length === 1 ? "contact" : "contacts"}? This uses up to ${ids.length * 2} AI credits and runs in the background.`,
+            async () => {
+                const res = await batchResearch.mutateAsync({ contactIds: ids, objective: "" });
+                toast.success(`Queued research for ${res.queued} contacts`);
+                setSelected([]);
+            },
+        );
     }
 
     const embedded = !!current_campaign;
@@ -313,6 +344,8 @@ export default function ContactsTable({
                         pushing={pushContacts.isPending}
                         onPush={pushToCRM}
                         onBulkEdit={() => setBulkEdit(true)}
+                        onResearch={bulkResearch}
+                        researching={batchResearch.isPending}
                         onDelete={() =>
                             confirm?.show(
                                 `Are you sure you want to delete ${selected.length} contacts?`,
@@ -419,7 +452,7 @@ export default function ContactsTable({
                 <Stat
                     label="All"
                     value={counts.total}
-                    sub="on this page"
+                    sub={counts.exact ? "total contacts" : "on this page"}
                     onClick={() => setSubFilter("all")}
                 />
                 <Stat
@@ -518,6 +551,8 @@ export default function ContactsTable({
                 pushing={pushContacts.isPending}
                 onPush={pushToCRM}
                 onBulkEdit={() => setBulkEdit(true)}
+                onResearch={bulkResearch}
+                researching={batchResearch.isPending}
                 onDelete={() =>
                     confirm?.show(
                         `Are you sure you want to delete ${selected.length} contacts?`,
@@ -915,6 +950,7 @@ const LEAD_META: Record<
 > = {
     pending: { label: "Queued", dot: "bg-slate-300", text: "text-slate-500", Icon: ClockIcon },
     active: { label: "Processing", dot: "bg-sky-500", text: "text-sky-700", Icon: ClockIcon },
+    completed: { label: "Done", dot: "bg-indigo-500", text: "text-indigo-700", Icon: CheckIcon },
     replied: { label: "Replied", dot: "bg-emerald-500", text: "text-emerald-700", Icon: CornerUpLeftIcon },
     bounced: { label: "Bounced", dot: "bg-rose-500", text: "text-rose-600", Icon: AlertTriangleIcon },
     unsubscribed: { label: "Unsubscribed", dot: "bg-slate-300", text: "text-slate-400", Icon: BanIcon },
@@ -954,6 +990,7 @@ function LeadProgressStrip({
         const c: Record<LeadStatus, number> = {
             pending: 0,
             active: 0,
+            completed: 0,
             replied: 0,
             bounced: 0,
             unsubscribed: 0,
@@ -967,6 +1004,7 @@ function LeadProgressStrip({
 
     const segs: { key: LeadStatus; color: string }[] = [
         { key: "active", color: "bg-sky-500" },
+        { key: "completed", color: "bg-indigo-500" },
         { key: "replied", color: "bg-emerald-500" },
         { key: "pending", color: "bg-slate-300" },
         { key: "bounced", color: "bg-rose-400" },
@@ -990,6 +1028,7 @@ function LeadProgressStrip({
             </div>
             <div className="flex items-center gap-3 text-[11px] flex-wrap">
                 <StripChip dot="bg-sky-500" label="Processing" n={counts.active} loader={counts.active > 0} />
+                <StripChip dot="bg-indigo-500" label="Done" n={counts.completed} />
                 <StripChip dot="bg-emerald-500" label="Replied" n={counts.replied} />
                 <StripChip dot="bg-slate-300" label="Queued" n={counts.pending} />
                 <StripChip dot="bg-rose-400" label="Bounced" n={counts.bounced} />
@@ -1044,6 +1083,8 @@ function SelectionBar({
     pushing,
     onPush,
     onBulkEdit,
+    onResearch,
+    researching,
     onDelete,
     onClear,
 }: {
@@ -1053,6 +1094,8 @@ function SelectionBar({
     pushing: boolean;
     onPush: (connectionId: string, providerLabel: string) => void;
     onBulkEdit: () => void;
+    onResearch: () => void;
+    researching: boolean;
     onDelete: () => void;
     onClear: () => void;
 }) {
@@ -1100,6 +1143,15 @@ function SelectionBar({
                 className="h-7 px-2.5 rounded text-[12px] text-slate-700 hover:text-slate-900 hover:bg-slate-100 font-medium transition-colors"
             >
                 Edit
+            </button>
+            <button
+                type="button"
+                onClick={onResearch}
+                disabled={researching}
+                className="h-7 px-2.5 rounded text-[12px] text-slate-700 hover:text-sky-700 hover:bg-sky-50 font-medium inline-flex items-center gap-1.5 transition-colors disabled:opacity-60"
+            >
+                {researching ? <Loader2Icon className="w-3 h-3 animate-spin" /> : <SparklesIcon className="w-3 h-3" />}
+                <span className="hidden sm:inline">Research</span>
             </button>
             <button
                 type="button"

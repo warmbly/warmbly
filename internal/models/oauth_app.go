@@ -62,8 +62,15 @@ type OAuthApplication struct {
 	WebhookSecret string         `json:"-"`
 	Scopes        uint64         `json:"scopes"`
 	Status        OAuthAppStatus `json:"status"`
-	CreatedAt     time.Time      `json:"created_at"`
-	UpdatedAt     time.Time      `json:"updated_at"`
+	// IsPublic marks a client that authenticates with PKCE and no secret (native
+	// apps, and every MCP client registered via Dynamic Client Registration). The
+	// token endpoint accepts no secret for these and PKCE is mandatory.
+	IsPublic bool `json:"is_public"`
+	// DynamicallyRegistered is true for clients created at runtime via the RFC 7591
+	// registration endpoint (no owning org/user until a human grants access).
+	DynamicallyRegistered bool      `json:"dynamically_registered"`
+	CreatedAt             time.Time `json:"created_at"`
+	UpdatedAt             time.Time `json:"updated_at"`
 }
 
 // OAuthApplicationWithSecret is returned exactly once, on create or secret

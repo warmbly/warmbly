@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/warmbly/warmbly/internal/infrastructure/secrets"
@@ -131,6 +133,35 @@ func (c *Config) GetStringOptional(ctx context.Context, envKey, awsKey, defaultV
 		}
 	}
 	return defaultVal
+}
+
+// GetBoolOptional retrieves an optional boolean configuration value, parsed
+// with strconv.ParseBool ("1", "t", "true", "0", "false", ...). An unset or
+// unparseable value returns the default.
+func (c *Config) GetBoolOptional(ctx context.Context, envKey, awsKey string, defaultVal bool) bool {
+	raw := c.GetStringOptional(ctx, envKey, awsKey, "")
+	if raw == "" {
+		return defaultVal
+	}
+	if b, err := strconv.ParseBool(strings.TrimSpace(raw)); err == nil {
+		return b
+	}
+	return defaultVal
+}
+
+// GetBoolPtr retrieves an optional boolean, returning nil when the value is
+// unset (rather than a default), so a caller can distinguish "not configured"
+// from an explicit false and fall back to its own default.
+func (c *Config) GetBoolPtr(ctx context.Context, envKey, awsKey string) *bool {
+	raw := c.GetStringOptional(ctx, envKey, awsKey, "")
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	b, err := strconv.ParseBool(strings.TrimSpace(raw))
+	if err != nil {
+		return nil
+	}
+	return &b
 }
 
 // GetStringOptionalRaw retrieves an optional configuration value using raw AWS key.

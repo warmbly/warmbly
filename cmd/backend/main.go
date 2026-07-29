@@ -5,12 +5,15 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/MicahParks/keyfunc/v3"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconf "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/getsentry/sentry-go"
 	"github.com/meszmate/apple-go"
@@ -21,14 +24,18 @@ import (
 	"github.com/warmbly/warmbly/internal/app/admin"
 	"github.com/warmbly/warmbly/internal/app/adminoutreach"
 	"github.com/warmbly/warmbly/internal/app/advanced"
+	"github.com/warmbly/warmbly/internal/app/aiagent"
+	"github.com/warmbly/warmbly/internal/app/aitools"
 	"github.com/warmbly/warmbly/internal/app/analytics"
 	"github.com/warmbly/warmbly/internal/app/apikey"
 	"github.com/warmbly/warmbly/internal/app/audit"
 	"github.com/warmbly/warmbly/internal/app/auth"
 	"github.com/warmbly/warmbly/internal/app/campaign"
 	"github.com/warmbly/warmbly/internal/app/cipher"
+	"github.com/warmbly/warmbly/internal/app/compose"
 	"github.com/warmbly/warmbly/internal/app/contact"
 	"github.com/warmbly/warmbly/internal/app/credits"
+	"github.com/warmbly/warmbly/internal/app/creditwatch"
 	"github.com/warmbly/warmbly/internal/app/crm"
 	"github.com/warmbly/warmbly/internal/app/dailythrottle"
 	"github.com/warmbly/warmbly/internal/app/dangerzone"
@@ -40,8 +47,10 @@ import (
 	"github.com/warmbly/warmbly/internal/app/fleet"
 	"github.com/warmbly/warmbly/internal/app/group"
 	idempotencyapp "github.com/warmbly/warmbly/internal/app/idempotency"
+	"github.com/warmbly/warmbly/internal/app/inboxagent"
 	"github.com/warmbly/warmbly/internal/app/integration"
 	"github.com/warmbly/warmbly/internal/app/leadsync"
+	"github.com/warmbly/warmbly/internal/app/mcp"
 	"github.com/warmbly/warmbly/internal/app/nativeactions"
 	"github.com/warmbly/warmbly/internal/app/notification"
 	"github.com/warmbly/warmbly/internal/app/oauth"
@@ -52,11 +61,15 @@ import (
 	"github.com/warmbly/warmbly/internal/app/ratelimit"
 	"github.com/warmbly/warmbly/internal/app/referral"
 	"github.com/warmbly/warmbly/internal/app/releases"
+	"github.com/warmbly/warmbly/internal/app/replyclassify"
+	"github.com/warmbly/warmbly/internal/app/research"
 	"github.com/warmbly/warmbly/internal/app/sequence"
 	"github.com/warmbly/warmbly/internal/app/settings"
+	"github.com/warmbly/warmbly/internal/app/skills"
 	"github.com/warmbly/warmbly/internal/app/socket"
 	"github.com/warmbly/warmbly/internal/app/stripe"
 	"github.com/warmbly/warmbly/internal/app/subscription"
+	"github.com/warmbly/warmbly/internal/app/sysstatus"
 	"github.com/warmbly/warmbly/internal/app/team"
 	"github.com/warmbly/warmbly/internal/app/template"
 	"github.com/warmbly/warmbly/internal/app/token"
@@ -72,6 +85,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/worker_orchestrator"
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/events"
+	"github.com/warmbly/warmbly/internal/infrastructure/apns"
 	"github.com/warmbly/warmbly/internal/infrastructure/cache"
 	"github.com/warmbly/warmbly/internal/infrastructure/cloudprovider"
 	"github.com/warmbly/warmbly/internal/infrastructure/cloudprovider/hetzner"
@@ -90,11 +104,15 @@ import (
 	"github.com/warmbly/warmbly/internal/observability"
 	"github.com/warmbly/warmbly/internal/pkg/captcha"
 	"github.com/warmbly/warmbly/internal/pkg/emailverify"
+	"github.com/warmbly/warmbly/internal/pkg/encrypt"
 	"github.com/warmbly/warmbly/internal/pkg/generation"
 	"github.com/warmbly/warmbly/internal/pkg/geo"
+	"github.com/warmbly/warmbly/internal/pkg/idtoken"
 	"github.com/warmbly/warmbly/internal/repository"
 	"github.com/warmbly/warmbly/internal/scheduler"
 	"github.com/warmbly/warmbly/internal/tasks"
+	"github.com/warmbly/warmbly/internal/tasks/proto"
+	"github.com/warmbly/warmbly/internal/tasksched"
 )
 
 func main() {
@@ -102,6 +120,7 @@ func main() {
 	var ginMode string
 	var websocketURI string
 	var allowedOrigins []string
+	var systemChecker *sysstatus.Checker
 
 	var tzService tz.TzService
 
@@ -110,6 +129,7 @@ func main() {
 
 	var tokenService token.TokenService
 	var authService auth.AuthService
+	var externalAuthProviders models.ExternalAuthProviders
 	var userService user.UserService
 	var emailService email.EmailService
 	var campaignService campaign.CampaignService
@@ -132,8 +152,17 @@ func main() {
 	var warmupContentRepo repository.WarmupContentRepository
 	var warmupContentService warmupcontent.Service
 	var creditRepository repository.CreditRepository
+	var aiSettingsRepository repository.AISettingsRepository
 	var creditService credits.CreditService
+	var aiDraftRepo repository.AIDraftRepository
 	var writingGenerator generation.WritingGenerator
+	var aiProvider generation.Provider
+	var aiSearch generation.SearchClient
+	var aiToolRegistry *aitools.Registry
+	var aiAgentService aiagent.Service
+	var researchService research.Service
+	var skillsService skills.Service
+	var mcpService mcp.Service
 	var emailVerifyService emailverifyapp.Service
 	var placementRepository repository.PlacementRepository
 	var placementService placement.Service
@@ -159,6 +188,7 @@ func main() {
 	// Email send & templates
 	var templateService template.TemplateService
 	var emailSendService emailsend.EmailSendService
+	var composeService compose.Service
 
 	// Admin
 	var adminService admin.AdminService
@@ -189,7 +219,7 @@ func main() {
 	// Surfaced into the handler for avatar uploads and other direct
 	// repository / object-storage needs. Declared up here so they
 	// survive the config block where they're initialized.
-	var s3ForHandler *storage.Client
+	var s3ForHandler storage.Store
 	var emailMessageMapForHandler repository.EmailMessageMapRepository
 	var trackedLinkRepository repository.TrackedLinkRepository
 	var userRepoForHandler repository.UserRepository
@@ -219,19 +249,25 @@ func main() {
 			log.Fatal(err)
 		}
 
-		serviceAccount, err = cfg.LoadGoogleServiceAccount(ctx)
-		if err != nil {
-			sentry.CaptureException(err)
-			log.Fatal(err)
-		}
-
-		keySet, err = keyfunc.NewDefaultCtx(ctx, []string{"https://www.googleapis.com/oauth2/v3/certs"})
-		if err != nil {
-			if cfg.Env == "dev" {
-				log.Printf("Warning: Failed to fetch Google OIDC keys: %v", err)
-			} else {
+		// The Google service account + OIDC key set only authenticate GCP Cloud
+		// Tasks webhook callbacks. Under the default local dispatcher there is no
+		// webhook, so skip both — a self-host boot needs no GCP identity and no
+		// outbound call to Google's cert endpoint.
+		if config.TasksProvider() == "gcloud" {
+			serviceAccount, err = cfg.LoadGoogleServiceAccount(ctx)
+			if err != nil {
 				sentry.CaptureException(err)
 				log.Fatal(err)
+			}
+
+			keySet, err = keyfunc.NewDefaultCtx(ctx, []string{"https://www.googleapis.com/oauth2/v3/certs"})
+			if err != nil {
+				if cfg.Env == "dev" {
+					log.Printf("Warning: Failed to fetch Google OIDC keys: %v", err)
+				} else {
+					sentry.CaptureException(err)
+					log.Fatal(err)
+				}
 			}
 		}
 
@@ -241,11 +277,17 @@ func main() {
 			log.Fatal(err)
 		}
 
-		// AWS config for services that need it (KMS, S3)
-		awscfg, err := awsconf.LoadDefaultConfig(ctx)
-		if err != nil {
-			sentry.CaptureException(err)
-			log.Fatal(err)
+		// AWS SDK config, loaded only when an AWS-backed provider is selected
+		// (KMS_PROVIDER=aws or BLOB_PROVIDER=s3). A fully-local self-host
+		// (local KMS + filesystem blobs) skips this and needs no AWS_REGION or
+		// credentials at all.
+		var awscfg aws.Config
+		if config.AWSNeeded() {
+			awscfg, err = awsconf.LoadDefaultConfig(ctx)
+			if err != nil {
+				sentry.CaptureException(err)
+				log.Fatal(err)
+			}
 		}
 
 		var masterKey string = "alias/master-key"
@@ -279,7 +321,7 @@ func main() {
 			}
 		}
 
-		s3, err := storage.NewClient(ctx, awscfg, "main")
+		s3, err := storage.NewFromEnv(ctx, awscfg, "main")
 		if err != nil {
 			sentry.CaptureException(err)
 			log.Fatal(err)
@@ -387,77 +429,54 @@ func main() {
 			nil,
 		)
 
+		// Apple Sign in is optional. Skip it entirely when unconfigured (a
+		// self-host without Apple creds); only warn — never fatal — when creds
+		// are present but init fails, so Apple simply stays unavailable.
 		var appleAuthClient apple.AppleAuth
-		appleAuthInstance, appleErr := apple.NewB64(
-			authCfg.AppleAppID,
-			authCfg.AppleTeamID,
-			authCfg.AppleKeyID,
-			authCfg.AppleKeySecret,
-		)
-		if appleErr != nil {
-			if cfg.Env == "dev" {
-				log.Printf("Warning: Apple auth initialization failed (expected in dev): %v", appleErr)
+		if authCfg.AppleAppID != "" || authCfg.AppleKeySecret != "" {
+			appleAuthInstance, appleErr := apple.NewB64(
+				authCfg.AppleAppID,
+				authCfg.AppleTeamID,
+				authCfg.AppleKeyID,
+				authCfg.AppleKeySecret,
+			)
+			if appleErr != nil {
+				log.Printf("Warning: Apple auth initialization failed; Apple sign-in disabled: %v", appleErr)
 			} else {
-				sentry.CaptureException(appleErr)
-				log.Fatal(appleErr)
+				appleAuthClient = appleAuthInstance
 			}
-		} else {
-			appleAuthClient = appleAuthInstance
 		}
 
-		kafkaBootstrapServers, err := cfg.LoadKafkaBootstrapServers(ctx)
+		// Event bus + codec. Kafka bootstrap/SASL is only loaded for
+		// EVENTBUS_PROVIDER=kafka; the default NATS path needs none of it. The
+		// codec (codec.FromEnv) owns serialization end-to-end — Avro pulls
+		// SCHEMA_REGISTRY_URL from env, JSON needs nothing — so a NATS + JSON
+		// self-host requires no Kafka or Schema Registry config.
+		var kafkaBootstrapServers string
+		var kafkaSaslConfig *kafka.SASLConfig
+		if config.EventBusProvider() == "kafka" {
+			kafkaBootstrapServers, err = cfg.LoadKafkaBootstrapServers(ctx)
+			if err != nil {
+				sentry.CaptureException(err)
+				log.Fatal(err)
+			}
+			kafkaSaslConfig, err = cfg.LoadKafkaConfigSasl(ctx)
+			if err != nil {
+				sentry.CaptureException(err)
+				log.Fatal(err)
+			}
+		}
+
+		codecImpl, err := codec.FromEnv()
 		if err != nil {
 			sentry.CaptureException(err)
 			log.Fatal(err)
 		}
 
-		kafkaSaslConfig, err := cfg.LoadKafkaConfigSasl(ctx)
-		if err != nil {
-			sentry.CaptureException(err)
-			log.Fatal(err)
-		}
-
-		schemaEndpoint, schemaKey, schemaSecret, err := cfg.LoadSchemaRegistryConfig(ctx)
-		if err != nil {
-			sentry.CaptureException(err)
-			log.Fatal(err)
-		}
-
-		avrov2Client, err := kafka.NewAvrov2Client(schemaEndpoint, schemaKey, schemaSecret)
-		if err != nil {
-			sentry.CaptureException(err)
-			log.Fatal(err)
-		}
-
-		// Codec wraps the same Avrov2 client so EventBus payloads decode the
-		// same way regardless of transport.
-		codecImpl := codec.NewAvroFromClient(avrov2Client)
-
-		// Legacy Kafka producer still used by email + tasks services that
-		// haven't been migrated to EventBus yet. Removing this is follow-up
-		// work after the EventBus wiring stabilizes.
-		kafkaProducerConfig := kafka.NewProducer(kafkaBootstrapServers)
-		if kafkaSaslConfig != nil {
-			kafkaProducerConfig.WithSASL(kafkaSaslConfig)
-		}
-		kafkaProducer, err := kafkaProducerConfig.Connect()
-		if err != nil {
-			sentry.CaptureException(err)
-			log.Fatal(err)
-		}
-		kafkaProducer.WithAvrov2(avrov2Client)
-
-		// Event bus. Today this is Kafka in production; flip to NATS by
-		// setting EVENTBUS_PROVIDER=nats and NATS_URL.
 		bus, err := eventbus.FromEnv(kafkaBootstrapServers, kafkaSaslConfig)
 		if err != nil {
 			sentry.CaptureException(err)
 			log.Fatal(err)
-		}
-
-		// Preserve Kafka wire format when both are Kafka-backed + Avro-coded.
-		if kbus, ok := bus.(*eventbus.KafkaBus); ok {
-			kbus.Producer().WithAvrov2(avrov2Client)
 		}
 
 		turnstileBypassToken := ""
@@ -468,9 +487,13 @@ func main() {
 			}
 		}
 
+		// Captcha is off when CAPTCHA_PROVIDER=none or no TURNSTILE_SECRET is set
+		// (a self-host that never configured Cloudflare), so auth endpoints work
+		// without a challenge instead of rejecting every request.
 		captcha := captcha.NewTurnstileFromConfig(captcha.TurnstileConfig{
 			Secret:      authCfg.TurnstileSecret,
 			BypassToken: turnstileBypassToken,
+			Disabled:    config.CaptchaProvider() == "none",
 		})
 
 		userRepostory := repository.NewUserRepostory(primaryDB, kms)
@@ -478,7 +501,12 @@ func main() {
 		authRepostory := repository.NewAuthRepostory(primaryDB)
 		tokenRepostory := repository.NewTokenRepostory(primaryDB)
 		webauthnRepository := repository.NewWebAuthnRepository(primaryDB)
-		emailRepostory := repository.NewEmailRepostory(primaryDB)
+		credEncrypter, cerr := encrypt.FromEnv()
+		if cerr != nil {
+			sentry.CaptureException(cerr)
+			log.Fatal("Invalid CREDENTIALS_ENCRYPTION_KEY: ", cerr)
+		}
+		emailRepostory := repository.NewEmailRepostory(primaryDB, credEncrypter)
 		campaignRepostory := repository.NewCampaignRepostory(primaryDB)
 		sequenceRepostory := repository.NewSequenceRepostory(primaryDB)
 		contactRepostory := repository.NewContactRepostory(primaryDB)
@@ -525,34 +553,62 @@ func main() {
 		warmupRoutingRepository := repository.NewWarmupRoutingRepository(primaryDB.Pool)
 		warmupRoutingRepoForHandler = warmupRoutingRepository
 
-		// Warmup content bank + offline AI generator. The generation client is
-		// optional: without OPENAI_API_KEY the live send path simply keeps using
-		// the static library and admin generation returns "not configured".
 		warmupContentRepo = repository.NewWarmupContentRepository(primaryDB.Pool)
+
+		// AI provider layer. AI_PROVIDER picks a preset (openai/openrouter/groq/
+		// ollama/anthropic/custom) that fills in the base URL + free default; the
+		// AI_* vars supply the key/model/endpoint. Pluggable web search
+		// (Serper/SearXNG) backs search_web.
+		aiProviderName := strings.ToLower(strings.TrimSpace(cfg.GetStringOptional(ctx, "AI_PROVIDER", "ai_provider", "")))
+		aiKey := cfg.GetSecretOptional(ctx, "AI_API_KEY", "ai_api_key", "")
+		aiSearch = generation.NewSearchClient(
+			cfg.GetStringOptional(ctx, "SEARCH_PROVIDER", "search/provider", ""),
+			cfg.GetStringOptional(ctx, "SEARCH_API_URL", "search/api_url", ""),
+			cfg.GetSecretOptional(ctx, "SEARCH_API_KEY", "search/api_key", ""),
+		)
+		if cfgAI, rerr := generation.Resolve(generation.ProviderSettings{
+			Provider:   aiProviderName,
+			APIKey:     aiKey,
+			BaseURL:    cfg.GetStringOptional(ctx, "AI_BASE_URL", "ai_base_url", ""),
+			Model:      cfg.GetStringOptional(ctx, "AI_MODEL", "ai_model", ""),
+			ModelTrial: cfg.GetStringOptional(ctx, "AI_MODEL_TRIAL", "ai_model_trial", ""),
+			ModelPaid:  cfg.GetStringOptional(ctx, "AI_MODEL_PAID", "ai_model_paid", ""),
+			Free:       cfg.GetBoolPtr(ctx, "AI_FREE", "ai_free"),
+			Search:     aiSearch,
+		}); rerr != nil {
+			log.Printf("AI provider misconfigured, AI features disabled: %v", rerr)
+		} else if provider, perr := generation.NewProvider(cfgAI); perr == nil {
+			aiProvider = provider
+		}
+
+		// Warmup content bank + offline AI generator. The generator rides OpenAI's
+		// Batch API specifically, so it only runs when the selected provider is
+		// OpenAI itself; otherwise the live send path keeps using the static
+		// library and admin generation returns "not configured".
 		var generationClient *generation.GenerationClient
-		if openaiKey := cfg.GetSecretOptional(ctx, "OPENAI_API_KEY", "openai_api_key", ""); openaiKey != "" {
-			generationClient = generation.NewClient(openaiKey)
+		if (aiProviderName == "" || aiProviderName == "openai") && aiKey != "" {
+			generationClient = generation.NewClient(aiKey)
 		}
 		warmupContentService = warmupcontent.NewService(warmupContentRepo, generationClient)
 
-		// AI writing assistant: prefer Anthropic (claude-haiku free / sonnet paid);
-		// fall back to the existing OpenAI client when ANTHROPIC_API_KEY is unset.
-		// If neither is configured, writingGenerator stays nil and the endpoint
-		// returns 503 "not configured".
-		if anthropicKey := cfg.GetSecretOptional(ctx, "ANTHROPIC_API_KEY", "anthropic_api_key", ""); anthropicKey != "" {
-			writingGenerator = generation.NewAnthropicClient(anthropicKey)
-		} else if generationClient != nil {
-			writingGenerator = generationClient
+		// Writing assistant generator: the OpenAI-compatible provider implements
+		// WritingGenerator directly; the Anthropic connector delegates writing to
+		// the dedicated Anthropic writing client. Neither configured => nil => 503.
+		if wg, ok := aiProvider.(generation.WritingGenerator); ok {
+			writingGenerator = wg
+		} else if aiProviderName == "anthropic" && aiKey != "" {
+			writingGenerator = generation.NewAnthropicClient(aiKey)
 		}
 		creditRepository = repository.NewCreditRepository(primaryDB)
-		creditService = credits.NewService(creditRepository, cache)
+		aiSettingsRepository = repository.NewAISettingsRepository(primaryDB)
+		creditService = credits.NewService(creditRepository, aiSettingsRepository, cache)
 		webhookRepository := repository.NewWebhookRepository(primaryDB.Pool)
 		webhookService := webhook.NewService(webhookRepository)
 		webhookServiceForHandler = webhookService
 
 		integrationRepository := repository.NewIntegrationRepository(primaryDB.Pool)
 		// OAuth 2.1 authorization server (third-party app registration + token flow).
-		oauthService = oauth.NewService(repository.NewOAuthRepository(primaryDB.Pool))
+		oauthService = oauth.NewService(repository.NewOAuthRepository(primaryDB.Pool), cache)
 		// Enforce the per-app webhook-domain allowlist on app-scoped endpoints (at
 		// write time, and re-checked at delivery time via the worker below).
 		webhookService.WireAppDomainResolver(oauthService.AllowedWebhookDomains)
@@ -580,8 +636,10 @@ func main() {
 
 		tzService = tz.NewService()
 
-		// Initialize new services for trial, feature gates, and worker assignment
-		trialService = trial.NewService(subscriptionRepository, userRepostory)
+		// Initialize new services for trial, feature gates, and worker assignment.
+		// The trial service seeds the free plan's monthly AI-credit allowance at
+		// trial start (planRepo + creditService, both already constructed above).
+		trialService = trial.NewService(subscriptionRepository, userRepostory, planRepository, creditService)
 		featureGateService = feature.NewService(subscriptionRepository, planRepository)
 		workerAssignmentService = worker.NewAssignmentService(workerRepository, subscriptionRepository, planRepository)
 		subscriptionService = subscription.NewService(subscriptionRepository, planRepository)
@@ -599,13 +657,20 @@ func main() {
 		// resolver is not hit on every dispatched event.
 		webhookServiceForHandler.WireThrottle(cache, organizationService.WebhookDispatchLimit)
 
-		// Load Stripe config and initialize service
-		stripeCfg, err := cfg.LoadStripeConfig(ctx)
-		if err != nil {
-			sentry.CaptureException(err)
-			log.Fatal(err)
+		// Billing. Default (BILLING_PROVIDER=none, the self-host default): a no-op
+		// Stripe service so the backend boots with no Stripe keys and every
+		// feature is unlocked by the feature gate. BILLING_PROVIDER=stripe wires
+		// the real Stripe integration (keys required).
+		if config.BillingProvider() == "stripe" {
+			stripeCfg, err := cfg.LoadStripeConfig(ctx)
+			if err != nil {
+				sentry.CaptureException(err)
+				log.Fatal(err)
+			}
+			stripeService = stripe.NewService(stripeCfg, subscriptionRepository, planRepository, workerAssignmentService, discountService)
+		} else {
+			stripeService = stripe.NewDisabledService()
 		}
-		stripeService = stripe.NewService(stripeCfg, subscriptionRepository, planRepository, workerAssignmentService, discountService)
 
 		tokenService = token.NewService(primaryDB, tokenRepostory, cache, geoloc, authCfg.AuthSecret)
 		userService = user.NewService(userRepostory, cache)
@@ -616,6 +681,18 @@ func main() {
 		// Bridge audited mutations to typed customer webhooks (campaign/contact/
 		// template/CRM/team/role/settings/subscription .created/.updated/.deleted).
 		auditService.WireWebhookDispatcher(webhookService)
+
+		// Wire AI-credit grants into the Stripe webhook flow: monthly allowance
+		// reset on invoice.paid and top-up fulfillment on checkout.session.completed
+		// (mode=payment). The audit logger fires AUDIT_CREATED so teammates' credit
+		// views refresh live via the spine.
+		stripeService.WireCredits(creditService, auditService)
+
+		// Credit watch: after every fresh debit it fires the low-balance alert
+		// (once per day) and, when enabled, buys the configured pack off-session
+		// (auto top-up). Runs detached so charges are never slowed.
+		creditWatch := creditwatch.New(aiSettingsRepository, creditRepository, cache, streamingPublisher, stripeService)
+		creditService.SetMonitor(creditWatch.OnBalanceChanged)
 
 		authService = auth.NewService(
 			authRepostory,
@@ -637,6 +714,22 @@ func main() {
 		// gate can issue a pending challenge.
 		twofaService = twofa.NewService(repository.NewTOTPRepository(primaryDB.Pool), userRepostory, tokenService, cache, twofa.DeriveKey(authCfg.TwoFASecret))
 		authService.WireTwoFA(twofaService)
+
+		// Native-app social sign-in. Declared as the interface type so an
+		// unconfigured provider stays a true nil (no typed-nil pitfall) and
+		// the service reports it as unavailable.
+		var appleIDTokens, googleIDTokens auth.IDTokenVerifier
+		if authCfg.AppleIOSBundleID != "" {
+			appleIDTokens = idtoken.AppleVerifier(authCfg.AppleIOSBundleID)
+		}
+		if authCfg.GoogleIOSClientID != "" {
+			googleIDTokens = idtoken.GoogleVerifier(authCfg.GoogleIOSClientID)
+		}
+		authService.WireExternalIDTokens(appleIDTokens, googleIDTokens)
+		externalAuthProviders = models.ExternalAuthProviders{
+			AppleBundleID:     authCfg.AppleIOSBundleID,
+			GoogleIOSClientID: authCfg.GoogleIOSClientID,
+		}
 
 		// Referral program. Wired bidirectionally with Stripe (webhooks reward and
 		// claw back; the earnings ledger nets onto the referrer's customer balance)
@@ -821,11 +914,12 @@ func main() {
 			getenvDefault("WORKER_INSTALLER_PATH", "/app/scripts/install-worker.sh"),
 		)
 
-		// Releases service. Env-configurable so self-hosters can point at their
-		// own repo/registry, or disable the feature entirely.
+		// Releases service. Off by default for self-host (no vendor image
+		// auto-roll, no GitHub polling on boot); set RELEASES_ENABLED=true to
+		// point it at your own repo/registry.
 		releasesService = releases.New(
 			releases.Config{
-				Enabled:         getenvDefault("RELEASES_ENABLED", "true") == "true",
+				Enabled:         getenvDefault("RELEASES_ENABLED", "false") == "true",
 				GithubRepo:      getenvDefault("RELEASES_GITHUB_REPO", "warmbly/warmbly"),
 				WorkerImageRepo: getenvDefault("RELEASES_WORKER_IMAGE_REPO", "ghcr.io/warmbly/warmbly/worker"),
 				WebhookSecret:   os.Getenv("RELEASES_WEBHOOK_SECRET"),
@@ -840,13 +934,12 @@ func main() {
 		eventsPublisher := events.NewPublisher(bus, s3, codecImpl, cipherService)
 
 		oauth2Cfg := config.LoadOauth2(apiCfg.Hostname)
-		emailService = email.NewServiceWithKafka(
+		emailService = email.NewServiceWithWorker(
 			emailRepostory,
 			cipherService,
 			featureGateService,
 			warmupService,
 			eventsPublisher,
-			kafkaProducer,
 			cache,
 			&oauth2Cfg.InboxAuthorization,
 			workerAssignmentService,
@@ -881,17 +974,26 @@ func main() {
 		teamService = team.NewService(teamRepository)
 		socketService = socket.NewService(cache, tokenService)
 
-		// Cloud Tasks client
-		cloudTasksCfg, err := cfg.LoadCloudTasksConfig(ctx)
-		if err != nil {
-			sentry.CaptureException(err)
-			log.Fatal(err)
-		}
-
-		tasksClient, err := gtasks.NewClient(ctx, cloudTasksCfg.QueueName, cloudTasksCfg.WebhookURL, serviceAccount, cloudTasksCfg.EmulatorHost)
-		if err != nil {
-			sentry.CaptureException(err)
-			log.Fatal(err)
+		// Task scheduler. Default (TASKS_PROVIDER=local): an in-process Postgres
+		// poller, started below once the dispatch handler exists — no GCP, no
+		// webhook, no emulator. TASKS_PROVIDER=gcloud keeps Google Cloud Tasks.
+		var tasksClient tasksched.Scheduler
+		var localTasks *tasksched.Local
+		if config.TasksProvider() == "gcloud" {
+			cloudTasksCfg, err := cfg.LoadCloudTasksConfig(ctx)
+			if err != nil {
+				sentry.CaptureException(err)
+				log.Fatal(err)
+			}
+			gclient, err := gtasks.NewClient(ctx, cloudTasksCfg.QueueName, cloudTasksCfg.WebhookURL, serviceAccount, cloudTasksCfg.EmulatorHost)
+			if err != nil {
+				sentry.CaptureException(err)
+				log.Fatal(err)
+			}
+			tasksClient = gclient
+		} else {
+			localTasks = tasksched.NewLocal(taskRepository, localTasksPollInterval(), 0)
+			tasksClient = localTasks
 		}
 
 		// Template & email send services
@@ -899,12 +1001,22 @@ func main() {
 		schedulerService := scheduler.NewSchedulerService(taskRepository, warmupRepository, campaignProgressRepository, emailRepostory, campaignRepostory, contactRepostory, campaignLogRepository)
 		campaignService = campaign.NewService(campaignRepostory, taskRepository, emailRepostory, campaignLogRepository, featureGateService, dailyThrottleService, schedulerService, tasksClient, streamingPublisher)
 		emailSendService = emailsend.NewService(taskRepository, emailRepostory, userRepostory, schedulerService, tasksClient, featureGateService, dailyThrottleService)
+		composeService = compose.NewService(emailRepostory, repository.NewComposeRepository(primaryDB))
 		// uniboxService is constructed here (rather than alongside the
 		// other service constructors above) because cancel-scheduled
 		// needs the Cloud Tasks client for best-effort DeleteTask, and
 		// tasksClient isn't initialised until the Cloud Tasks config
 		// block runs.
 		uniboxService = unibox.NewService(cache, s3, uniboxRepository, taskRepository, tasksClient)
+
+		// Org AI skills (playbooks): CRUD for settings + prompt injection + the
+		// load_skill tool source.
+		skillsService = skills.NewService(repository.NewSkillRepository(primaryDB))
+
+		// The advanced-outreach brain also answers "is this recipient
+		// suppressed?", which the compose/reply send tools consult before
+		// sending. Constructed here (ahead of its event wiring below) so the AI
+		// tool registry can hold the suppression checker.
 		advancedService = advanced.NewService(
 			advancedRepository,
 			campaignRepostory,
@@ -913,10 +1025,64 @@ func main() {
 			contactRepostory,
 			campaignProgressRepository,
 			crmRepository,
+			categoryRepostory,
 			uniboxRepository,
 			tasksClient,
 			warmupService,
 		)
+
+		// Shared AI tool registry: every tool calls a service-layer function as
+		// the invoking user, so the dashboard agent (M3) and MCP server (M8) can
+		// never exceed the caller's permissions. Built once here with the same
+		// service instances the HTTP handlers use.
+		aiToolRegistry = aitools.BuildRegistry(aitools.Deps{
+			Contacts:     contactService,
+			CRM:          crmService,
+			Campaigns:    campaignService,
+			Analytics:    analyticsService,
+			Unibox:       uniboxService,
+			Automations:  integrationServiceForHandler,
+			Audit:        auditService,
+			Search:       aiSearch,
+			Cache:        cache,
+			Emails:       emailService,
+			EmailSend:    emailSendService,
+			Compose:      composeService,
+			Warmup:       warmupService,
+			Sequences:    sequenceService,
+			Org:          organizationService,
+			APIKeys:      apiKeyService,
+			Webhooks:     webhookServiceForHandler,
+			Subscription: subscriptionService,
+			Advanced:     advancedService,
+			FeatureGate:  featureGateService,
+			Skills:       skillsService,
+			AppBaseURL:   cfg.GetStringOptional(ctx, "APP_BASE_URL", "app_base_url", ""),
+		})
+
+		// Connected MCP servers (client direction): their enabled tools are
+		// contributed to the dashboard agent per-org (approval-gated, never
+		// auto-allowed).
+		mcpService = mcp.NewService(repository.NewMCPRepository(primaryDB), cipherService)
+		aiToolRegistry.AddDynamicSource(mcpService)
+
+		// Dashboard AI agent: sessions + streamed, approval-gated, credit-charged
+		// runs over the tool registry. Only constructed when a provider is set.
+		if aiProvider != nil {
+			aiAgentService = aiagent.NewService(
+				repository.NewAgentRepository(primaryDB),
+				aiToolRegistry, aiProvider, creditService, featureGateService, auditService, skillsService,
+				aiagent.NewVoicePreamble(organizationService),
+				organizationService,
+			)
+			// Contact research agent + its bounded background drain pool.
+			researchService = research.NewService(
+				repository.NewResearchRepository(primaryDB),
+				aiToolRegistry, aiProvider, creditService, featureGateService,
+				contactService, organizationService, streamingPublisher, skillsService,
+			)
+			researchService.StartDrainPool(ctx)
+		}
 		// Fan reply + bounce events from the advanced-outreach brain out to
 		// customer webhooks AND third-party integration actions (Slack / CRM).
 		advancedService.WireDispatcher(webhookService)
@@ -933,21 +1099,59 @@ func main() {
 			Orgs:     organizationRepository,
 		})
 		integrationServiceForHandler.SetPublisher(streamingPublisher)
+		// AI automation nodes (ai_step / ai_switch) run over the same provider +
+		// credit ledger as the rest of the AI layer. Nil provider (no AI_PROVIDER)
+		// leaves the nodes returning a clean "not available".
+		integrationServiceForHandler.SetAI(aiProvider, creditService)
+		// The AI switch's optional web search shares the same pluggable backend as
+		// the campaign switch and dashboard agent.
+		integrationServiceForHandler.SetAISearch(aiSearch)
+		// Port reply-classifier Layer 3 onto the platform provider (OpenAI-first,
+		// self-hostable). Platform-paid, never charged to org credits. Nil provider
+		// leaves Layer 3 disabled (the ambiguous middle resolves to "unknown").
+		if aiProvider != nil {
+			replyclassify.SetModelClassifier(func(ctx context.Context, system, user string) (string, error) {
+				res, err := aiProvider.Complete(ctx, generation.CompletionRequest{System: system, Prompt: user, MaxTokens: 16, Temperature: generation.Deterministic()})
+				if err != nil {
+					return "", err
+				}
+				return res.Text, nil
+			})
+		}
 		// In-app notifications: API reads/writes happen here; also wire the gate
 		// onto the backend's advanced service (deliverability webhooks can ingest
 		// here too).
 		notificationService = notification.NewService(repository.NewNotificationRepository(primaryDB.Pool), streamingPublisher)
-		notificationService.WireDelivery(emailNotificationService, integrationServiceForHandler, userRepostory)
+		notificationService.WireDelivery(emailNotificationService, integrationServiceForHandler, userRepostory, organizationRepoForHandler)
+		// Mobile push (APNs): device registration always works; delivery only
+		// activates when the APNS_* env is configured. The Redis client backs
+		// the shared immediate-then-digest push window. The sender stays a nil
+		// interface (not a typed-nil *apns.Client) when unconfigured.
+		var pushSender notification.PushSender
+		if apnsClient, aerr := apns.FromEnv(); aerr != nil {
+			log.Printf("Warning: APNs push disabled: %v", aerr)
+		} else if apnsClient != nil {
+			pushSender = apnsClient
+		}
+		notificationService.WirePush(pushSender, repository.NewDeviceTokenRepository(primaryDB.Pool), cache.Client)
 		advancedService.WireNotifier(notificationService)
 		// New-device sign-in alerts: the token service fires this on session
 		// creation from an unrecognized device, delivered as a security
 		// notification (in-app + email per the user's channels).
 		tokenService.WireSignInAlerter(notification.NewSignInAlerter(notificationService))
 		advancedService.WireRealtime(streamingPublisher)
+		// Inbox agent (M10): the draft repo the review endpoints read, plus the
+		// agent wired onto the advanced service so any reply processed here also
+		// drafts. Paid + opt-in checked inside; nil provider leaves it inert.
+		aiDraftRepo = repository.NewAIDraftRepository(primaryDB.Pool)
+		advancedService.WireInboxAgent(inboxagent.NewService(
+			aiProvider, creditService, featureGateService,
+			organizationRepository, uniboxRepository, skillsService,
+			contactRepostory, aiDraftRepo, streamingPublisher,
+		))
 		emailSender := tasks.NewEmailSender(emailRepostory, eventsPublisher)
 		tasksService = tasks.NewService(
 			tasksClient,
-			kafkaProducer,
 			generationClient,
 			streamingPublisher,
 			eventsPublisher,
@@ -970,6 +1174,14 @@ func main() {
 			trackedLinkRepository,
 			integrationServiceForHandler, // AutomationRunner for campaign run_automation steps
 		)
+		// Campaign "ai" sequence steps run over the same provider + credit
+		// ledger as the automation AI nodes. Nil provider leaves them
+		// returning a clean "not available".
+		tasksService.SetAI(aiProvider, creditService)
+		tasksService.SetAISearch(aiSearch)
+		// Research-mode AI variables run a bounded web-research agent over the
+		// shared tool registry at send time.
+		tasksService.SetAITools(aiToolRegistry)
 
 		// Admin outreach composer — sends from the platform mailer
 		// (SES/SMTP) with a configurable Reply-To, audits every send.
@@ -985,10 +1197,26 @@ func main() {
 		tagService = group.NewService(tagRepostory)
 		categoryService = group.NewService(categoryRepostory)
 
-		// Start trial expiration job in background
-		trialExpirationJob := jobs.NewTrialExpirationJobWithDB(subscriptionRepository, primaryDB.Pool, emailNotificationService)
-		trialScheduler := jobs.NewTrialExpirationScheduler(trialExpirationJob, 1*time.Hour)
-		go trialScheduler.Start(ctx)
+		// Start trial expiration job in background. Only meaningful with Stripe
+		// billing: self-host unlocks every feature regardless of trial state, so
+		// there is nothing to expire and no upgrade to nudge toward.
+		if config.BillingProvider() == "stripe" {
+			trialExpirationJob := jobs.NewTrialExpirationJobWithDB(subscriptionRepository, primaryDB.Pool, emailNotificationService)
+			trialExpirationJob.WireNotifier(notificationService)
+			trialScheduler := jobs.NewTrialExpirationScheduler(trialExpirationJob, 1*time.Hour)
+			go trialScheduler.Start(ctx)
+		}
+
+		// Local task dispatcher (TASKS_PROVIDER=local): the in-process poller
+		// that fires due tasks by id. Started here, once tasksService exists to
+		// handle them. Under gcloud this stays nil (the webhook drives dispatch).
+		if localTasks != nil {
+			go localTasks.Run(ctx, func(taskID string) {
+				if xerr := tasksService.HandleTask(&proto.ProcessTask{TaskId: taskID}); xerr != nil {
+					log.Printf("local task dispatch failed for %s: %v", taskID, xerr)
+				}
+			})
+		}
 
 		// Warmup reconciler: seed/repair warmup chains for mailboxes that are
 		// warming or backing a live campaign (the health-check lane). This is
@@ -1067,10 +1295,33 @@ func main() {
 		ginMode = apiCfg.GinMode
 		websocketURI = apiCfg.WebsocketURI
 		allowedOrigins = apiCfg.AllowedOrigins
+
+		// Infrastructure liveness probes for the admin System Status page.
+		// Wired here because the concrete clients live in this scope.
+		systemChecker = sysstatus.New()
+		systemChecker.Add("postgres", func(ctx context.Context) error { return primaryDB.Ping(ctx) })
+		systemChecker.Add("redis", func(ctx context.Context) error { return cache.Ping(ctx).Err() })
+		switch bus.Name() {
+		case "kafka":
+			systemChecker.Add("kafka", sysstatus.TCPCheck(kafkaBootstrapServers))
+		case "nats":
+			systemChecker.Add("nats", sysstatus.TCPCheck(strings.TrimPrefix(getenvDefault("NATS_URL", "nats://localhost:4222"), "nats://")))
+		}
+		if sr := os.Getenv("SCHEMA_REGISTRY_URL"); sr != "" {
+			systemChecker.Add("schema-registry", sysstatus.HTTPCheck(strings.TrimRight(sr, "/")+"/subjects"))
+		}
+		if hu := wsHealthURL(websocketURI); hu != "" {
+			systemChecker.Add("realtime", sysstatus.HTTPCheck(hu))
+		}
+		if v := os.Getenv("TRACKING_SERVICE_URL"); v != "" {
+			systemChecker.Add("tracking", sysstatus.HTTPCheck(strings.TrimRight(v, "/")+"/health"))
+		}
 	}
 
 	h := &handler.Handler{
-		AuthService:      authService,
+		AuthService:           authService,
+		ExternalAuthProviders: externalAuthProviders,
+
 		TokenService:     tokenService,
 		PasskeyService:   passkeyService,
 		UserService:      userService,
@@ -1118,6 +1369,7 @@ func main() {
 		// Email send & templates
 		TemplateService:  templateService,
 		EmailSendService: emailSendService,
+		ComposeService:   composeService,
 
 		// Admin
 		AdminService:         adminService,
@@ -1147,6 +1399,14 @@ func main() {
 		// AI writing assistant + credit ledger
 		CreditService:    creditService,
 		WritingGenerator: writingGenerator,
+		AIProvider:       aiProvider,
+		AISearch:         aiSearch,
+		AITools:          aiToolRegistry,
+		AIAgentService:   aiAgentService,
+		ResearchService:  researchService,
+		SkillsService:    skillsService,
+		MCPService:       mcpService,
+		AIDraftRepo:      aiDraftRepo,
 
 		// Pre-send email verification
 		EmailVerifyService: emailVerifyService,
@@ -1185,6 +1445,9 @@ func main() {
 
 		// Danger zone
 		DangerZoneService: dangerZoneService,
+
+		// Admin System Status probes
+		SystemChecker: systemChecker,
 
 		// Organization-wide audit trail, backed by Postgres. The no-op
 		// fallback (audit.NewNoOpService) remains for entrypoints without
@@ -1247,4 +1510,35 @@ func getenvDefault(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// localTasksPollInterval is how often the in-process dispatcher scans for due
+// tasks. Default 1s; override with TASKS_LOCAL_POLL_INTERVAL (a Go duration).
+func localTasksPollInterval() time.Duration {
+	d, err := time.ParseDuration(getenvDefault("TASKS_LOCAL_POLL_INTERVAL", "1s"))
+	if err != nil || d <= 0 {
+		return time.Second
+	}
+	return d
+}
+
+// wsHealthURL derives the realtime service's HTTP /health URL from the
+// public websocket URI (ws[s]://host[:port]/... -> http[s]://host[:port]/health).
+func wsHealthURL(wsURI string) string {
+	if wsURI == "" {
+		return ""
+	}
+	u, err := url.Parse(wsURI)
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	switch u.Scheme {
+	case "wss":
+		u.Scheme = "https"
+	default:
+		u.Scheme = "http"
+	}
+	u.Path = "/health"
+	u.RawQuery = ""
+	return u.String()
 }

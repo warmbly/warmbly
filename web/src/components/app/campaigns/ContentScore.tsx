@@ -8,11 +8,12 @@ import useScoreTemplate from "@/lib/api/hooks/app/campaigns/useScoreTemplate";
 import type { TemplateScoreIssue } from "@/lib/api/models/app/campaigns/TemplateScore";
 import { Loading } from "@/components/loader";
 import { cn } from "@/lib/utils";
+import { DitherMeter, type DitherTone } from "@/components/ui/dither";
 
 function scoreTone(score: number) {
-    if (score >= 80) return { text: "text-emerald-600", bar: "bg-emerald-500", label: "Looks good" };
-    if (score >= 50) return { text: "text-amber-600", bar: "bg-amber-500", label: "Could improve" };
-    return { text: "text-rose-600", bar: "bg-rose-500", label: "Needs work" };
+    if (score >= 80) return { text: "text-emerald-600", meter: "emerald" as DitherTone, label: "Looks good" };
+    if (score >= 50) return { text: "text-amber-600", meter: "amber" as DitherTone, label: "Could improve" };
+    return { text: "text-rose-600", meter: "rose" as DitherTone, label: "Needs work" };
 }
 
 function IssueRow({ issue }: { issue: TemplateScoreIssue }) {
@@ -75,9 +76,12 @@ export default function ContentScore({
                         <span className="text-[11px] text-slate-400 mb-0.5">/ 100</span>
                         <span className={cn("ml-auto text-[11px] font-medium", tone.text)}>{tone.label}</span>
                     </div>
-                    <div className="mt-2 h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
-                        <div className={cn("h-full rounded-full transition-all", tone.bar)} style={{ width: `${Math.max(0, Math.min(100, data.score))}%` }} />
-                    </div>
+                    <DitherMeter
+                        frac={Math.max(0, Math.min(100, data.score)) / 100}
+                        tone={tone.meter}
+                        height={6}
+                        className="mt-2"
+                    />
                     {data.issues.length > 0 ? (
                         <ul className="mt-2 divide-y divide-slate-200/60">
                             {data.issues.map((issue, i) => (

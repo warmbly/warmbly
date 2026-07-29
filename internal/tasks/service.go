@@ -8,18 +8,18 @@ import (
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/app/advanced"
 	"github.com/warmbly/warmbly/internal/app/cipher"
+	"github.com/warmbly/warmbly/internal/app/credits"
 	"github.com/warmbly/warmbly/internal/app/feature"
 	warmupapp "github.com/warmbly/warmbly/internal/app/warmup"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/events"
-	"github.com/warmbly/warmbly/internal/infrastructure/gtasks"
-	"github.com/warmbly/warmbly/internal/infrastructure/kafka"
 	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/generation"
 	"github.com/warmbly/warmbly/internal/repository"
 	"github.com/warmbly/warmbly/internal/scheduler"
 	"github.com/warmbly/warmbly/internal/tasks/proto"
+	"github.com/warmbly/warmbly/internal/tasksched"
 )
 
 // Type aliases for repository types
@@ -39,6 +39,11 @@ type (
 )
 
 type TasksService interface {
+	// HandleTask routes a due task by its row's task_type. It is the single
+	// entrypoint for both schedulers: the local poller calls it in-process, and
+	// the Cloud Tasks webhook forwards to it. All enqueues share one dispatch,
+	// so the type is read from the row, not inferred from any route.
+	HandleTask(task *proto.ProcessTask) *errx.Error
 	HandleCampaignTask(task *proto.ProcessTask) *errx.Error
 	HandleEmailTask(task *proto.ProcessTask) *errx.Error
 	HandleUserEmailTask(task *proto.ProcessTask) *errx.Error
@@ -55,6 +60,29 @@ type TasksService interface {
 	// task chain died (swallowed enqueue / crash between ticks). Campaigns have
 	// no other bootstrap once started, so this is the stall backstop.
 	StartCampaignReconciler(ctx context.Context, interval time.Duration)
+
+	// SetAI wires the LLM provider + credit ledger the campaign "switch" sequence
+	// steps run over (mirrors integration.Service.SetAI). Nil provider leaves
+	// AI steps returning a clean "not available".
+	SetAI(p generation.Provider, c credits.CreditService)
+
+	// SetAISearch wires the optional web-search backend the switch step's
+	// web-search capability uses (nil = capability silently unavailable).
+	SetAISearch(sc generation.SearchClient)
+
+	// SetAITools wires the web-tool source so research-mode AI variables can run
+	// a bounded web-research agent at send time (nil = research degrades to a
+	// single completion with one optional web search).
+	SetAITools(src AIToolSource)
+}
+
+// AIToolSource yields the read-only web tools (search_web, fetch_url) a
+// research-mode AI variable agent runs over, bound to an org. Defined here (not
+// imported from aitools) so the tasks package stays free of the aitools import
+// cycle; *aitools.Registry satisfies it structurally via its WebResearchTools
+// method.
+type AIToolSource interface {
+	WebResearchTools(orgID uuid.UUID) []generation.ToolDef
 }
 
 // AutomationRunner launches an automation graph by id. It's satisfied
@@ -66,8 +94,7 @@ type AutomationRunner interface {
 
 type tasksService struct {
 	// Infrastructure
-	tasksClient        *gtasks.Client
-	producerClient     *kafka.Producer
+	tasksClient        tasksched.Scheduler
 	generationClient   *generation.GenerationClient
 	streamingPublisher *pubsub.StreamingPublisher
 	eventsPublisher    events.Publisher
@@ -96,6 +123,14 @@ type tasksService struct {
 	// automationRunner launches automations from a campaign "run_automation" step.
 	automationRunner AutomationRunner
 
+	// aiProvider + aiCredits back the campaign "switch" sequence step (SetAI).
+	aiProvider generation.Provider
+	aiCredits  credits.CreditService
+	aiSearch   generation.SearchClient
+	// aiTools sources the web tools research-mode AI variables run a bounded
+	// agent over (SetAITools). Nil = research degrades.
+	aiTools AIToolSource
+
 	// warmupSettings caches the warmup generation settings in-process so the
 	// per-send AI-vs-static decision doesn't hit Postgres on every warmup.
 	warmupSettings *warmupSettingsCache
@@ -109,8 +144,7 @@ type warmupSettingsCache struct {
 }
 
 func NewService(
-	tasksClient *gtasks.Client,
-	producerClient *kafka.Producer,
+	tasksClient tasksched.Scheduler,
 	generationClient *generation.GenerationClient,
 	streamingPublisher *pubsub.StreamingPublisher,
 	eventsPublisher events.Publisher,
@@ -135,7 +169,6 @@ func NewService(
 ) TasksService {
 	return &tasksService{
 		tasksClient:          tasksClient,
-		producerClient:       producerClient,
 		generationClient:     generationClient,
 		streamingPublisher:   streamingPublisher,
 		eventsPublisher:      eventsPublisher,
@@ -159,4 +192,18 @@ func NewService(
 		automationRunner:     automationRunner,
 		warmupSettings:       &warmupSettingsCache{},
 	}
+}
+
+// SetAI wires the LLM provider + credit ledger for campaign "switch" steps.
+func (s *tasksService) SetAI(p generation.Provider, c credits.CreditService) {
+	s.aiProvider = p
+	s.aiCredits = c
+}
+
+func (s *tasksService) SetAISearch(sc generation.SearchClient) {
+	s.aiSearch = sc
+}
+
+func (s *tasksService) SetAITools(src AIToolSource) {
+	s.aiTools = src
 }

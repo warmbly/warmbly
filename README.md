@@ -1,225 +1,167 @@
-<p align="center">
-  <img src="docs/assets/banner.jpg" alt="Warmbly" width="100%" />
-</p>
+<div align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/logo-light.svg">
+    <img src="docs/assets/logo-dark.svg" alt="Warmbly" width="540">
+  </picture>
+
+  <p>The open-source agentic cold email and warmup platform.</p>
+
+  <p>
+    <a href="https://dc.warmbly.com"><img src="https://img.shields.io/badge/Discord-5865F2?logo=discord&logoColor=white&style=flat-square" alt="Discord" /></a>
+    <a href="https://x.com/WarmblyHQ"><img src="https://img.shields.io/badge/Follow%20on%20X-000000?logo=x&logoColor=white&style=flat-square" alt="Follow @WarmblyHQ on X" /></a>
+    <a href="https://docs.warmbly.com"><img src="https://img.shields.io/badge/Docs-1f6feb?style=flat-square" alt="Docs" /></a>
+    <a href="https://github.com/warmbly/warmbly/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/warmbly/warmbly/ci.yml?branch=main&style=flat-square&label=CI" alt="CI status" /></a>
+    <a href="https://github.com/warmbly/warmbly/releases"><img src="https://img.shields.io/github/v/release/warmbly/warmbly?style=flat-square" alt="Latest release" /></a>
+    <a href="./LICENSE"><img src="https://img.shields.io/github/license/warmbly/warmbly?style=flat-square" alt="License" /></a>
+  </p>
+
+  <p>
+    <a href="#features">Features</a> ·
+    <a href="#how-it-works">How it works</a> ·
+    <a href="#quick-start">Quick start</a> ·
+    <a href="#self-hosting">Self-hosting</a> ·
+    <a href="#documentation">Docs</a> ·
+    <a href="#community">Community</a> ·
+    <a href="#support-and-enterprise">Support</a>
+  </p>
+
+  <p><i>⭐ Help us reach more senders and grow the Warmbly community. Star this repo!</i></p>
+</div>
+
+## Warmbly
+
+Warmbly runs cold email campaigns from the mailboxes you already own and warms
+them so they keep landing in the inbox. Opens, clicks, and replies land in a
+shared dashboard the moment they happen, and it's AI-native, so your team and its
+agents work in it together, live.
+
+https://github.com/user-attachments/assets/378a510a-bb99-425f-925e-04300184938b
+
+## Features
+
+- **Campaigns** - multi-step sequences with per-mailbox caps and spacing
+- **Unified inbox** - every mailbox and reply in one place
+- **CRM** - contacts, pipelines, deals, tasks, meetings
+- **Warmup** - a pool of monitored mailboxes, not throwaway accounts
+- **Deliverability** - bounces, complaints, suppression, inbox placement
+- **Automations** - visual reply playbooks with AI steps
+- **Integrations** - HubSpot, Slack, Zapier, REST API, webhooks
+- **Realtime** - live presence and edits across your team
 
 <p align="center">
-  Open-source cold email and mailbox warmup you can self-host.<br />
-  Your sending IPs, your database, your servers.
+  <img src="docs/assets/dashboard-campaigns.png" alt="Campaigns" width="49%" />
+  <img src="docs/assets/dashboard-inbox.png" alt="Unified inbox" width="49%" />
 </p>
 
-<p align="center">
-  <a href="https://github.com/warmbly/warmbly/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/warmbly/warmbly/ci.yml?branch=main&style=flat-square&label=CI" alt="CI status" /></a>
-  <a href="https://github.com/warmbly/warmbly/releases"><img src="https://img.shields.io/github/v/release/warmbly/warmbly?style=flat-square" alt="Latest release" /></a>
-  <img src="https://img.shields.io/github/go-mod/go-version/warmbly/warmbly?style=flat-square&label=go" alt="Go version" />
-  <a href="./LICENSE"><img src="https://img.shields.io/github/license/warmbly/warmbly?style=flat-square" alt="License" /></a>
-  <a href="https://docs.warmbly.com"><img src="https://img.shields.io/badge/docs-docs.warmbly.com-1f6feb?style=flat-square" alt="Documentation" /></a>
-</p>
+## How it works
 
-<p align="center">
-  <a href="#connect-your-mailboxes">Mailboxes</a> ·
-  <a href="#integrations">Integrations</a> ·
-  <a href="#quick-start">Quick start</a> ·
-  <a href="#warmup">Warmup</a> ·
-  <a href="#how-it-works">How it works</a> ·
-  <a href="#self-hosting">Self-hosting</a> ·
-  <a href="#documentation">Docs</a> ·
-  <a href="./CONTRIBUTING.md">Contributing</a>
-</p>
+Warmbly splits into a **control plane** (backend API, consumer, Postgres, Redis,
+and the event bus) that owns all state, and an **execution plane** of
+interchangeable Go workers that send and sync mail. Workers never touch Postgres,
+and outbound mail leaves through each mailbox's own provider, not the worker's IP,
+so you add throughput by running more workers.
 
-<p align="center">
-  <img src="docs/assets/dashboard-campaigns.png" alt="Campaigns" width="100%" /><br />
-  <sub><b>Campaigns</b> · multi-step sequences with per-mailbox daily caps and spacing</sub>
-</p>
+```mermaid
+flowchart LR
+  MB["Your mailboxes"] --> API
+  subgraph CP["Control plane"]
+    direction TB
+    API["Backend API"] --> DB[("Postgres")]
+    API --> BUS{{"Event bus"}}
+  end
+  BUS --> W1["Worker"]
+  BUS --> W2["Worker"]
+  BUS --> W3["Worker"]
+  W1 --> P["Gmail · Microsoft · SMTP"]
+  W2 --> P
+  W3 --> P
+  P --> R["Recipients"]
+```
 
-<p align="center">
-  <img src="docs/assets/dashboard-inbox.png" alt="Unified inbox" width="100%" /><br />
-  <sub><b>Unified inbox</b> · every connected mailbox and reply in one place</sub>
-</p>
-
-<p align="center">
-  <img src="docs/assets/dashboard-mailboxes.png" alt="Mailboxes" width="100%" /><br />
-  <sub><b>Mailboxes</b> · warmup state and health for every account</sub>
-</p>
-
-## What is Warmbly
-
-Warmbly is a cold outreach platform. You connect your mailboxes, write sequenced
-campaigns, and it sends the mail, tracks the replies, and keeps your sender
-reputation healthy. The difference from hosted tools is where it runs: your
-sending IPs, your Postgres, your servers. Nothing is tied to a vendor's database.
-
-Everything a sending team needs sits in one dashboard:
-
-- **Campaigns** send multi-step sequences with per-mailbox daily caps and spacing.
-- **The unified inbox** pulls every connected mailbox and its replies into one view.
-- **A built-in CRM** tracks contacts, pipelines, deals, tasks, and meetings.
-- **Deliverability** surfaces bounces, complaints, suppression, and inbox placement.
-- **Automations** run branching reply playbooks on a visual canvas.
-- **Integrations** sync the CRM and automations out to HubSpot, Slack, and more.
-- **Warmup** builds real sender reputation through our pool, covered next.
-
-The dashboard is collaborative in real time: teammates see each other's live
-cursors, presence, and edits across campaigns, the CRM, and the automation
-canvas, with no refresh.
-
-The same code runs on a single VPS or across a fleet of cheap servers with many
-IPs per box, so you add capacity by adding machines.
-
-## Connect your mailboxes
-
-Warmbly sends and receives through the mailboxes you already own. There are three
-ways to connect one, and you can mix them freely across a workspace:
-
-- **Google / Gmail and Google Workspace.** Connect with one-click OAuth, no app
-  password to store or rotate. Sending goes through the Gmail API.
-- **Microsoft 365 / Outlook.** Connect with one-click OAuth over authenticated
-  SMTP and IMAP.
-- **Any other provider over SMTP + IMAP.** Zoho, Fastmail, a self-hosted mail
-  server, anything that speaks SMTP and IMAP. Add the host, port, and an app
-  password.
-
-Each mailbox warms, sends, and syncs on its own, with its own daily cap, minimum
-spacing between sends, and reputation tracked per IP. Replies stream into the
-unified inbox in near real time. Credentials and OAuth tokens are sealed with
-per-organization envelope encryption and are only decrypted on the worker that
-owns the mailbox, never stored in plaintext.
-
-## Integrations
-
-Automations and the built-in CRM connect out to the tools you already run: ping
-Slack on a positive reply, push a won deal to your CRM, book meetings straight
-from replies, or fan events out to your own stack.
-
-| Category      | Providers                              |
-|---------------|----------------------------------------|
-| CRM           | HubSpot, Salesforce, Pipedrive, Close  |
-| Automation    | Zapier, Make, n8n                      |
-| Notifications | Slack, Discord                         |
-| Meetings      | Calendly, Cal.com                      |
-| Data          | Google Sheets                          |
-
-Everything is also reachable through a scoped REST API, HMAC-signed webhooks, and
-a realtime WebSocket, so you can wire Warmbly into anything that is not on the
-list. Open tracking, click tracking, and reply detection feed the same event
-stream. See the [API reference](https://docs.warmbly.com/api/).
-
-## Warmup
-
-Warmup only produces meaningful results with a pool of real mailboxes warming
-against each other. Warmbly maintains that pool, so the practical path to real
-reputation is to run warmup through Warmbly: your mailboxes hold genuine
-conversations with monitored inboxes instead of throwaway accounts, even if you
-only have a few. If you operate enough mailboxes of your own to sustain a healthy
-pool, you can host warmup yourself instead.
-
-Either way the safeguards are the same. Volume starts low and ramps gradually per
-mailbox, replies happen at a natural rate, and every warmup message carries a
-verification token. Mailboxes that show spam patterns or forged tokens are scored
-and auto-blocked from the pool, so it stays clean for everyone in it. Free and
-premium pools are kept separate.
+Secrets use envelope encryption, with a local AES master key by default or AWS KMS
+if you prefer. Full write-up in the
+[architecture docs](https://docs.warmbly.com/development/architecture/).
 
 ## Quick start
 
 You need Docker, Go 1.25, and pnpm.
 
-Run the whole stack with Docker:
-
 ```bash
 git clone https://github.com/warmbly/warmbly && cd warmbly
-make up
+make dev
 ```
 
-That starts every service against local infra. The dashboard comes up at
-`http://localhost:5173`.
-
-For day-to-day development, skip the Docker app images and run the Go services on
-the host instead. It recompiles in a second or two on save:
-
-```bash
-make infra   # backing services in Docker, run once and leave up
-make run     # backend, consumer, and worker in one terminal
-make web     # dashboard dev server
-```
-
-The first admin account cannot be created from the UI. Sign up through the
-dashboard, then promote yourself from the host with
-`make grant-admin EMAIL=you@example.com` and open the admin app with `make admin`.
-Full local setup, seeding, and troubleshooting live in the
+One command brings up the backing services in Docker, applies migrations, seeds
+demo data, and starts the backend, worker, and dashboard natively. Open
+`http://localhost:5173` and log in with `dev@warmbly.com` / `password123`. Full
+setup lives in the
 [local development guide](https://docs.warmbly.com/development/local-development/).
-
-## How it works
-
-Warmbly is split into a control plane and an execution plane.
-
-The control plane is the backend API, the event consumer, Postgres, Redis, and
-the event bus. It owns every piece of stateful data and decides what gets sent
-and from where.
-
-The execution plane is the worker fleet: one Go binary per machine, one worker
-process per IP. Workers take commands off the event bus, fetch their encryption
-keys over HTTPS, send and sync mail, and report telemetry back. **Workers never
-connect to Postgres.** Each one is a sending identity rather than a database
-client, so outbound volume spreads across many IPs instead of piling up in a
-single runtime. Reputation is tracked per IP.
-
-Secrets use envelope encryption: a per-organization data key, wrapped by KMS, is
-what seals mailbox credentials and message content. The full write-up is in the
-[architecture docs](https://docs.warmbly.com/development/architecture/).
 
 ## Self-hosting
 
-Every external dependency has an open-source path, picked with an environment
-variable, so a self-hosted install can run without any cloud account.
+<a href="https://docs.warmbly.com/development/deployment-guide/"><img src="https://img.shields.io/badge/Runs%20on-Docker%20Compose-2496ED?logo=docker&logoColor=white&style=flat-square" alt="Runs on Docker Compose" /></a>
 
-| Concern        | Self-host default         | Cloud option            |
-|----------------|---------------------------|-------------------------|
-| Database       | PostgreSQL 16             | RDS / Cloud SQL         |
-| Cache          | Redis (or Valkey)         | ElastiCache             |
-| Event bus      | NATS JetStream (1 binary) | Kafka, MSK              |
-| Blob storage   | Filesystem                | S3, MinIO, R2, B2       |
-| KMS / root key | Local AES master key      | AWS KMS, Vault, GCP     |
-| Codec          | JSON                      | Avro + Schema Registry  |
-| Captcha        | Bypass token (trusted)    | Cloudflare Turnstile    |
-| Payments       | Off                       | Stripe                  |
-
-One machine with several attached IPs becomes several sending identities in a
-single command. Each IP gets its own systemd unit and a stable identity, so
-reputation survives reinstalls:
+Warmbly runs with **no cloud account of any kind**: no AWS, no GCP, no Stripe, no
+Kafka. One command brings up the whole platform on local, open-source pieces:
 
 ```bash
-sudo ./scripts/install-worker.sh \
-  --kafka kafka.yourdomain.com:9092 \
-  --redis redis://cache.yourdomain.com:6379 \
-  --ips 5.6.7.11,5.6.7.12,5.6.7.13
+git clone https://github.com/warmbly/warmbly && cd warmbly
+make up               # or: docker compose up --build
 ```
 
-Production deployment, the full env reference, and day-2 operations are in the
+Every external dependency is picked by an environment variable, so you swap in a
+cloud service only if you want one:
+
+| Concern        | Self-host default          | Optional / cloud             |
+|----------------|----------------------------|------------------------------|
+| Database       | PostgreSQL 16              | RDS / Cloud SQL, any Postgres |
+| Cache          | Redis (or Valkey)         | ElastiCache                  |
+| Event bus      | **NATS JetStream**        | Kafka (`-tags kafka`)        |
+| Blob storage   | **Filesystem**            | S3, MinIO, R2, B2            |
+| KMS / root key | **Local AES master key**  | AWS KMS                      |
+| Payments       | **Off (everything unlocked)** | Stripe                   |
+
+Scaling is by mailboxes and workers, not IPs. Reaching it from another machine,
+connecting Gmail, and day-2 operations are all in the
 [deployment guide](https://docs.warmbly.com/development/deployment-guide/).
-
-## Tech stack
-
-| Component   | Tech                              |
-|-------------|-----------------------------------|
-| Backend API | Go 1.25 + Gin                     |
-| Consumer    | Go (event-bus driven)             |
-| Worker      | Go (Kafka / NATS subscriber)      |
-| Tracking    | Rust + Axum                       |
-| Realtime    | Elixir + Phoenix Channels         |
-| Dashboard   | React 19 + Vite + Tailwind v4     |
-| Admin UI    | React 19 + Vite + Tailwind v4     |
-| Database    | PostgreSQL 16                     |
-| Cache       | Redis 7 (or Valkey / KeyDB)       |
-| Event bus   | NATS JetStream (default) or Kafka |
 
 ## Documentation
 
-| Doc | What it covers |
-|-----|----------------|
-| [Architecture](https://docs.warmbly.com/development/architecture/) | Control plane vs execution plane, encryption model |
-| [Local development](https://docs.warmbly.com/development/local-development/) | Make targets, native services, seeding |
-| [Deployment guide](https://docs.warmbly.com/development/deployment-guide/) | Production control plane and worker fleet |
-| [Event system](https://docs.warmbly.com/development/events/) | Kafka event bus reference |
-| [docs.warmbly.com](https://docs.warmbly.com) | Product guides and public API reference |
+The full docs live at **[docs.warmbly.com](https://docs.warmbly.com)**.
+
+| Read this | To learn |
+|-----------|----------|
+| [Local development](https://docs.warmbly.com/development/local-development/) | Every make target, the native services, and how seeding works |
+| [Architecture](https://docs.warmbly.com/development/architecture/) | How the control plane and workers split the job, plus the encryption model |
+| [Deployment guide](https://docs.warmbly.com/development/deployment-guide/) | Taking it to production and scaling the worker fleet |
+| [API reference](https://docs.warmbly.com/api/) | Endpoints, auth, permissions, and webhooks |
+
+## Community
+
+Have a question, found a bug, or want to shape where Warmbly goes next?
+
+- **[Discord](https://dc.warmbly.com)** - chat with the team and other senders
+- **[GitHub Issues](https://github.com/warmbly/warmbly/issues)** - report bugs and request features
+- **[X / @WarmblyHQ](https://x.com/WarmblyHQ)** - follow along for updates and releases
+- **Email** - reach us at `team@warmbly.com`
+
+## Support and enterprise
+
+> [!NOTE]
+> <i>**Need a hand? We are happy to help.** Ask in [Discord](https://dc.warmbly.com), open a [GitHub issue](https://github.com/warmbly/warmbly/issues), or email `team@warmbly.com`, and someone on the team will get back to you.</i>
+>
+> <i>**Running Warmbly at scale, or would you rather we run it for you?** We offer **enterprise support** and **managed infrastructure**: we can host and operate the whole platform for your organization, help you deploy and scale the worker fleet, tune deliverability, migrate your sending onto Warmbly, and stand behind it with a support agreement built around your team. Tell us what you need at `team@warmbly.com` or reach out on X.</i>
+
+<p>
+  <a href="https://x.com/WarmblyHQ"><img src="https://img.shields.io/badge/Follow%20@WarmblyHQ%20on%20X-000000?logo=x&logoColor=white&style=flat-square" alt="Follow @WarmblyHQ on X" /></a>
+  <a href="https://dc.warmbly.com"><img src="https://img.shields.io/badge/Join%20the%20Discord-5865F2?logo=discord&logoColor=white&style=flat-square" alt="Join the Discord" /></a>
+  <a href="mailto:team@warmbly.com"><img src="https://img.shields.io/badge/Email%20the%20team-1f6feb?style=flat-square" alt="Email the team" /></a>
+</p>
+
+## Star the repository ⭐
+
+<img width="1280" height="720" alt="warmbly-star" src="https://github.com/user-attachments/assets/c9bd34f7-c384-4f10-91e4-215fcea09986" />
 
 ## Contributing
 

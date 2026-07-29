@@ -46,6 +46,8 @@ import type SearchContacts from "@/lib/api/models/app/contacts/SearchContacts";
 import usePipelines from "@/lib/api/hooks/app/crm/pipelines/usePipelines";
 import useTemplates from "@/lib/api/hooks/app/templates/useTemplates";
 import useUsageOverview from "@/lib/api/hooks/app/analytics/useUsageOverview";
+import useDashboard from "@/lib/api/hooks/app/analytics/useDashboard";
+import mailboxDisplayStatus from "@/lib/mailboxStatus";
 import useAPIKeys from "@/lib/api/hooks/app/api-keys/useAPIKeys";
 import useIntegrationConnections from "@/lib/api/hooks/app/integrations/useIntegrationConnections";
 import AnimatedNumber from "@/components/ui/AnimatedNumber";
@@ -204,6 +206,42 @@ function NavRow({ item }: { item: NavItem }) {
         (item.requires === "advanced" && !access.hasAdvanced);
 
     const planBadge = locked && item.requires ? REQUIRES_TO_BADGE[item.requires] : null;
+
+    // Plan-gated items the org's plan doesn't include: lock the row and pop an
+    // upgrade dialog on click (mirroring the permission lock), instead of routing
+    // to a teasing empty page. Only the owner gets the direct upgrade CTA.
+    if (locked && planBadge) {
+        return (
+            <>
+                <button
+                    type="button"
+                    onClick={() => setDeniedOpen(true)}
+                    title={`${item.title} · ${planBadge.label} plan`}
+                    className="group w-[calc(100%-1rem)] mx-2 flex items-center gap-2.5 px-2.5 h-7 rounded-md text-[12.5px] text-slate-400 hover:text-slate-700 hover:bg-slate-200/40 transition-colors duration-100"
+                >
+                    <LockIcon className="w-[13px] h-[13px] shrink-0 text-slate-300 group-hover:text-slate-500" strokeWidth={1.8} />
+                    <span className="truncate flex-1 min-w-0 text-left">{item.title}</span>
+                    <span
+                        className={cn(
+                            "h-4 px-1.5 rounded text-[9.5px] font-semibold uppercase tracking-[0.06em] border inline-flex items-center",
+                            planBadge.classes,
+                        )}
+                    >
+                        {planBadge.label}
+                    </span>
+                </button>
+                <AccessLockedDialog
+                    open={deniedOpen}
+                    onClose={() => setDeniedOpen(false)}
+                    feature={item.title}
+                    variant="plan"
+                    planLabel={planBadge.label}
+                    upgradeTo={access.isOwner ? "/app/settings/billing" : "/app/settings/roles"}
+                    canUpgrade={access.isOwner}
+                />
+            </>
+        );
+    }
 
     return (
         <Link
@@ -570,26 +608,43 @@ function Section({ section, first = false }: { section: NavSection; first?: bool
  * Data sources at this layer:
  *   - useAppStore.emails  → mailbox count, active count
  *   - useAppStore.connectionStatus → online/offline state
+ *   - useDashboard("30d") daily_trend → today's sent volume + the sparkline
+ *     (shares the dashboard page's query cache; realtime invalidation keeps
+ *     it current)
  *
- * Volume numbers ("42 of 50") will be wired up to a future today-summary
- * endpoint; for now they fall back to a derived cap based on mailbox
- * count × 50 (default cold cap from internal/config/constants.go).
+ * The capacity denominator is a derived cap based on mailbox count × 50
+ * (default cold cap from internal/config/constants.go).
  */
 function LivePanel() {
     const emails = useAppStore((s) => s.emails);
     const connection = useAppStore((s) => s.connectionStatus);
     const latencyMs = useAppStore((s) => s.wsLatencyMs);
     const unseenCount = useAppStore((s) => s.unseenCount);
+    const dash = useDashboard("30d");
 
     const { active, mailboxes, capacity } = useMemo(() => {
         const m = emails.length;
-        const a = emails.filter(
-            (e) => e.status === "healthy" || e.status === "warming",
-        ).length;
+        const a = emails.filter((e) => {
+            const st = mailboxDisplayStatus(e);
+            return st === "healthy" || st === "warming";
+        }).length;
         return { active: a, mailboxes: m, capacity: m * 50 };
     }, [emails]);
 
+    const { sentToday, trend } = useMemo(() => {
+        const days = dash.data?.daily_trend ?? [];
+        const todayKey = new Date().toISOString().slice(0, 10);
+        const today = days.find((d) => d.date?.slice(0, 10) === todayKey);
+        return {
+            sentToday: today?.sent ?? 0,
+            trend: days.slice(-14).map((d) => d.sent),
+        };
+    }, [dash.data]);
+
     const live = connection === "connected";
+    // Connected == green, always. When quiet we say READY (not the old "IDLE",
+    // which with a gray dot read as "not connected"); when a mailbox is warming
+    // or sending we say LIVE and pulse. Only a real disconnect is gray.
     const label =
         connection === "disconnected"
             ? "OFFLINE"
@@ -597,7 +652,19 @@ function LivePanel() {
                 ? "CONNECTING"
                 : active > 0
                     ? "LIVE"
-                    : "IDLE";
+                    : "READY";
+    const dotClass =
+        connection === "disconnected"
+            ? "bg-slate-300"
+            : connection === "connecting"
+                ? "bg-amber-500"
+                : "bg-emerald-500";
+    const labelTone =
+        connection === "disconnected"
+            ? "text-slate-400"
+            : connection === "connecting"
+                ? "text-amber-600"
+                : "text-emerald-600";
 
     // Latency bucketing: <100ms great, <300ms okay, ≥300ms poor.
     const latencyTone =
@@ -619,20 +686,24 @@ function LivePanel() {
                     <span
                         className={cn(
                             "w-1.5 h-1.5 rounded-full",
-                            connection === "disconnected"
-                                ? "bg-slate-400"
-                                : connection === "connecting"
-                                    ? "bg-amber-500"
-                                    : active > 0
-                                        ? "bg-emerald-500"
-                                        : "bg-slate-400",
+                            dotClass,
+                            connection === "connecting" && "animate-pulse",
                         )}
                     />
-                    {live && active > 0 && (
+                    {/* Active mailboxes ping; a quiet-but-connected workspace gets a
+                        slow breathing glow so "READY" reads alive, not stuck. */}
+                    {live && active > 0 ? (
                         <span className="absolute inset-0 rounded-full bg-emerald-500/40 animate-ping" />
-                    )}
+                    ) : live ? (
+                        <span className="absolute -inset-[3px] rounded-full bg-emerald-400/50 status-breathe" />
+                    ) : null}
                 </span>
-                <span className="text-[10px] uppercase tracking-[0.14em] text-slate-500 font-semibold">
+                <span
+                    className={cn(
+                        "text-[10px] uppercase tracking-[0.14em] font-semibold",
+                        labelTone,
+                    )}
+                >
                     {label}
                 </span>
                 <span
@@ -674,29 +745,46 @@ function LivePanel() {
 
             <div className="mt-1 flex items-center justify-between gap-2 text-[10.5px]">
                 <span className="text-slate-400">Today</span>
-                <span className="font-mono text-slate-400 tabular-nums">
-                    0/{capacity || "—"}
+                <span
+                    className={cn(
+                        "font-mono tabular-nums",
+                        sentToday > 0 ? "text-slate-600" : "text-slate-400",
+                    )}
+                >
+                    {sentToday}/{capacity || "—"}
                 </span>
             </div>
 
-            <Sparkline />
+            <Sparkline values={trend} />
         </Link>
     );
 }
 
 /**
- * Sparkline — 14 thin vertical bars, last hours of today's volume.
- * Placeholder data for now (zeros render as faint bars). When a
- * /summary endpoint lands, swap the array.
+ * Sparkline — 14 thin vertical bars, the last two weeks of send volume
+ * from the dashboard daily trend, normalized to the busiest day. Days
+ * with volume render sky; empty days stay a faint slate baseline.
  */
-function Sparkline() {
-    const bars = useMemo(() => Array.from({ length: 14 }, () => 0), []);
+function Sparkline({ values }: { values: number[] }) {
+    const bars = useMemo(() => {
+        const padded =
+            values.length >= 14
+                ? values.slice(-14)
+                : [...Array.from({ length: 14 - values.length }, () => 0), ...values];
+        const max = Math.max(...padded, 1);
+        return padded.map((v) => Math.round((v / max) * 100));
+    }, [values]);
     return (
         <div className="mt-2 flex items-end gap-0.5 h-4">
             {bars.map((v, i) => (
                 <div
                     key={i}
-                    className="flex-1 rounded-sm bg-slate-200 group-hover:bg-slate-300 transition-colors"
+                    className={cn(
+                        "flex-1 rounded-sm transition-colors",
+                        v > 0
+                            ? "bg-sky-300 group-hover:bg-sky-400"
+                            : "bg-slate-200 group-hover:bg-slate-300",
+                    )}
                     style={{ height: `${Math.max(8, v)}%`, minHeight: "2px" }}
                 />
             ))}

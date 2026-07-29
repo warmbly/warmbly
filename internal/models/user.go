@@ -21,6 +21,11 @@ type User struct {
 	MaxOrganizations int  `json:"max_organizations"`
 	FreeTrialUsed    bool `json:"free_trial_used"`
 
+	// Seconds an instant send is held before it actually leaves, so
+	// the user can still cancel it. Bounds live in config
+	// (UndoSendSecondsMin/Max); default 30.
+	UndoSendSeconds int `json:"undo_send_seconds"`
+
 	// Platform admin access, populated on the /auth/me load. AdminPermissions
 	// is the raw bitmask from users.admin_permissions; IsAdmin is the derived
 	// "has any admin permission" flag the admin app gates on.

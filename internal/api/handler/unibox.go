@@ -75,6 +75,18 @@ func (h *Handler) GetUniboxIncoming(c *gin.Context) {
 		params.Sender = &from
 	}
 
+	// Address filter: conversations with this person in either direction
+	// (they sent it or we sent it to them). Powers the compose history panel.
+	if address := c.Query("address"); address != "" {
+		params.Address = &address
+	}
+
+	// Direction: "sent" = messages from the org's own mailboxes,
+	// "received" = everything else. Absent = both.
+	if direction := c.Query("direction"); direction == "sent" || direction == "received" {
+		params.Direction = &direction
+	}
+
 	// Parse subject filter
 	if subject := c.Query("subject"); subject != "" {
 		params.Subject = &subject
@@ -101,6 +113,11 @@ func (h *Handler) GetUniboxIncoming(c *gin.Context) {
 	if c.Query("awaiting_reply") == "true" {
 		v := true
 		params.AwaitingReply = &v
+	}
+
+	if c.Query("agent_drafts") == "true" {
+		v := true
+		params.AgentDraft = &v
 	}
 
 	// Parse date filters
@@ -137,6 +154,12 @@ func (h *Handler) GetUniboxIncoming(c *gin.Context) {
 	}
 	if v := c.Query("email_ids"); v != "" {
 		collectAccountIDs(v)
+	}
+
+	// Uncategorized: threads carrying no conversation labels at all.
+	if c.Query("uncategorized") == "true" {
+		v := true
+		params.Uncategorized = &v
 	}
 
 	// Conversation-label filter: category_ids=<uuid>,<uuid>. A thread

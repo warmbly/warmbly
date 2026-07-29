@@ -75,7 +75,44 @@ func (h *Handler) SearchContacts(c *gin.Context) {
 		return
 	}
 
+	// Org-wide facet counts for the browse sidebar, returned by default on the
+	// first page (no cursor); a `loadMore` reuses the counts the client already
+	// has. Best-effort: a counts failure must not fail the search itself.
+	if cursor == "" {
+		if counts, cerr := h.ContactService.SearchCounts(c.Request.Context(), orgID.String()); cerr == nil {
+			resp.Counts = counts
+		}
+		// Per-status lead totals for the campaign Leads view: only when the
+		// search targets exactly one campaign. Independent of the request's
+		// lead_status filter so every scope chip shows its own total.
+		if len(data.CampaignIDs) == 1 {
+			if lc, cerr := h.ContactService.CampaignLeadCounts(c.Request.Context(), orgID.String(), data.CampaignIDs[0]); cerr == nil {
+				resp.LeadCounts = lc
+			}
+		}
+	}
+
 	c.JSON(http.StatusOK, resp)
+}
+
+// ListContactCustomFields returns the org's distinct contact custom-field keys,
+// frequency-ranked (most common first) then alphabetical, capped at 200, so the
+// dashboard variable picker can suggest fields contacts actually have. Read-only,
+// no body, no query params.
+func (h *Handler) ListContactCustomFields(c *gin.Context) {
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.Handle(c, errx.New(errx.BadRequest, "no organization selected"))
+		return
+	}
+
+	keys, err := h.ContactService.ListCustomFieldKeys(c.Request.Context(), *orgID)
+	if err != nil {
+		errx.Handle(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": keys})
 }
 
 func (h *Handler) UpdateContactBulk(c *gin.Context) {

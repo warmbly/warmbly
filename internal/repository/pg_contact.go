@@ -47,12 +47,23 @@ type ContactRepository interface {
 	SetContactESP(ctx context.Context, contactID uuid.UUID, provider string) error
 	GetByEmailsAndUser(ctx context.Context, userID uuid.UUID, emails []string) (map[string]models.Contact, *errx.Error)
 	Search(ctx context.Context, userID string, category, cursor *string, filters models.SearchContacts, limit int32) (*models.ContactsResult, *errx.Error)
+	// SearchCounts returns org-wide contact facet totals for the browse
+	// sidebar (independent of any search filters), mirroring campaigns-overview.
+	SearchCounts(ctx context.Context, orgID string) (*models.ContactsCounts, *errx.Error)
+	// CampaignLeadCounts returns per-status lead totals for one campaign (the
+	// Leads-view scope chips), independent of the request's lead_status filter.
+	CampaignLeadCounts(ctx context.Context, orgID, campaignID string) (*models.CampaignLeadCounts, *errx.Error)
 	ExportAll(ctx context.Context, userID string, filters *models.SearchContacts, contactIDs []string, max int) ([]models.Contact, *errx.Error)
 	BulkUpdate(ctx context.Context, userID string, orgID uuid.UUID, data *models.BulkEditContactsData) ([]models.Contact, *errx.Error)
 	Update(ctx context.Context, userID, contactID string, orgID uuid.UUID, data *models.UpdateContact) (*models.Contact, *errx.Error)
 	BulkDelete(ctx context.Context, userID string, orgID uuid.UUID, contactIDs []string) *errx.Error
 	Delete(ctx context.Context, userID string, orgID uuid.UUID, contactID string) *errx.Error
 	GetContactCount(ctx context.Context, userID string) (int, *errx.Error)
+
+	// DistinctCustomFieldKeys returns the org's distinct contact custom-field
+	// keys, frequency-ranked (most common first) then alphabetical, capped at
+	// 200. Powers the dashboard variable picker's real-field suggestions.
+	DistinctCustomFieldKeys(ctx context.Context, orgID uuid.UUID) ([]string, error)
 
 	// 360 view read paths. orgID is optional — when nil, the suppression
 	// + deliverability + reply joins are skipped (they're org-scoped).
@@ -691,6 +702,19 @@ func (r *contactRepository) Search(
 	}
 
 	// -----------------------------
+	// Lead status filter (single-campaign Leads view only)
+	// -----------------------------
+	// The derived status has no stored column, so reproduce the same priority
+	// chain used on read (unsubscribed > bounced > replied > processing >
+	// queued) as a boolean predicate over the campaign's progress rows. Only
+	// meaningful with exactly one campaign bound; ignored otherwise.
+	if filters.LeadStatus != "" && singleCampaignPlaceholder != "" {
+		if clause := leadStatusClause(filters.LeadStatus, singleCampaignPlaceholder); clause != "" {
+			whereClauses = append(whereClauses, clause)
+		}
+	}
+
+	// -----------------------------
 	// Category IDs filter (must have ALL specified categories)
 	// -----------------------------
 	if len(filters.CategoryIDs) > 0 {
@@ -805,6 +829,9 @@ func (r *contactRepository) Search(
 				'replied', COUNT(*) FILTER (WHERE p.replied_at IS NOT NULL),
 				'bounced', COUNT(*) FILTER (WHERE p.bounced_at IS NOT NULL),
 				'last_at', MAX(GREATEST(p.sent_at, p.opened_at, p.clicked_at, p.replied_at, p.bounced_at)),
+				-- Total email steps in the sequence, to tell "still sending" (active)
+				-- apart from "every step sent" (completed/done).
+				'total_steps', (SELECT COUNT(*) FROM sequences st WHERE st.campaign_id = %[1]s AND st.kind = 'email'),
 				-- The step the contact is on now = the latest step actually sent.
 				-- Labelled the same way the canvas does: custom name, else
 				-- "Email N" (Nth email-kind step by position), else action label.
@@ -937,13 +964,14 @@ func (r *contactRepository) Search(
 		// the single display status from the counts + subscription flag.
 		if len(leadProgressJSON) > 0 {
 			var lp struct {
-				Sent    int        `json:"sent"`
-				Opened  int        `json:"opened"`
-				Clicked int        `json:"clicked"`
-				Replied int        `json:"replied"`
-				Bounced int        `json:"bounced"`
-				LastAt  *time.Time `json:"last_at"`
-				Step    *string    `json:"step"`
+				Sent       int        `json:"sent"`
+				Opened     int        `json:"opened"`
+				Clicked    int        `json:"clicked"`
+				Replied    int        `json:"replied"`
+				Bounced    int        `json:"bounced"`
+				TotalSteps int        `json:"total_steps"`
+				LastAt     *time.Time `json:"last_at"`
+				Step       *string    `json:"step"`
 			}
 			if err := json.Unmarshal(leadProgressJSON, &lp); err != nil {
 				sentry.CaptureException(err)
@@ -957,6 +985,10 @@ func (r *contactRepository) Search(
 				status = models.LeadStatusBounced
 			case lp.Replied > 0:
 				status = models.LeadStatusReplied
+			case lp.Sent > 0 && lp.TotalSteps > 0 && lp.Sent >= lp.TotalSteps:
+				// Every email step has been sent and the contact hasn't replied
+				// or bounced: the sequence is exhausted, so the lead is done.
+				status = models.LeadStatusCompleted
 			case lp.Sent > 0:
 				status = models.LeadStatusActive
 			}
@@ -1024,6 +1056,183 @@ func (r *contactRepository) Search(
 			HasMore:    hasMore,
 		},
 	}, nil
+}
+
+// SearchCounts returns org-wide contact facet totals for the browse sidebar.
+// Two small aggregates: the scalar facets over contacts (subscription +
+// campaign membership derived from the campaign_leads count), and per-category
+// contact counts joined through the org's contacts. Independent of any search
+// filter, like the campaigns-overview drawer counts.
+func (r *contactRepository) SearchCounts(ctx context.Context, orgID string) (*models.ContactsCounts, *errx.Error) {
+	counts := &models.ContactsCounts{Categories: []models.ContactCategoryCount{}}
+
+	scalarQuery := `
+		SELECT
+			COUNT(*),
+			COUNT(*) FILTER (WHERE c.subscribed),
+			COUNT(*) FILTER (WHERE NOT c.subscribed),
+			COUNT(*) FILTER (WHERE COALESCE(cl.campaign_count, 0) > 0),
+			COUNT(*) FILTER (WHERE COALESCE(cl.campaign_count, 0) = 0)
+		FROM contacts c
+		LEFT JOIN (
+			SELECT contact_id, COUNT(campaign_id) AS campaign_count
+			FROM campaign_leads
+			GROUP BY contact_id
+		) cl ON c.id = cl.contact_id
+		WHERE c.organization_id = $1
+	`
+	if err := r.DB.QueryRow(ctx, scalarQuery, orgID).Scan(
+		&counts.Total, &counts.Subscribed, &counts.Unsubscribed,
+		&counts.InCampaign, &counts.NotContacted,
+	); err != nil {
+		db.CaptureError(err, scalarQuery, []any{orgID}, "queryrow")
+		return nil, errx.InternalError()
+	}
+
+	categoryQuery := `
+		SELECT cc.category_id, COUNT(*)
+		FROM contact_categories cc
+		JOIN contacts c ON c.id = cc.contact_id
+		WHERE c.organization_id = $1
+		GROUP BY cc.category_id
+	`
+	rows, err := r.DB.Query(ctx, categoryQuery, orgID)
+	if err != nil {
+		db.CaptureError(err, categoryQuery, []any{orgID}, "query")
+		return nil, errx.InternalError()
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cat models.ContactCategoryCount
+		if err := rows.Scan(&cat.CategoryID, &cat.Count); err != nil {
+			db.CaptureError(err, categoryQuery, nil, "scan")
+			return nil, errx.InternalError()
+		}
+		counts.Categories = append(counts.Categories, cat)
+	}
+
+	return counts, nil
+}
+
+// DistinctCustomFieldKeys returns the org's distinct contact custom-field keys,
+// frequency-ranked (most common first) then alphabetical, capped at 200. Used
+// by the dashboard variable picker to suggest fields contacts actually have.
+func (r *contactRepository) DistinctCustomFieldKeys(ctx context.Context, orgID uuid.UUID) ([]string, error) {
+	const query = `
+		SELECT key
+		FROM contacts, jsonb_object_keys(custom_fields) AS key
+		WHERE organization_id = $1 AND custom_fields IS NOT NULL AND custom_fields <> '{}'::jsonb
+		GROUP BY key
+		ORDER BY count(*) DESC, key ASC
+		LIMIT 200
+	`
+	rows, err := r.DB.Query(ctx, query, orgID)
+	if err != nil {
+		db.CaptureError(err, query, []any{orgID}, "query")
+		return nil, err
+	}
+	defer rows.Close()
+
+	keys := make([]string, 0)
+	for rows.Next() {
+		var key string
+		if err := rows.Scan(&key); err != nil {
+			db.CaptureError(err, query, nil, "scan")
+			return nil, err
+		}
+		keys = append(keys, key)
+	}
+	if err := rows.Err(); err != nil {
+		db.CaptureError(err, query, nil, "rows")
+		return nil, err
+	}
+	return keys, nil
+}
+
+// leadStatusClause builds the WHERE predicate for a derived lead status inside
+// ONE campaign, matching pg_contact Search's read-time derivation exactly:
+// unsubscribed > bounced > replied > completed > processing(active) >
+// queued(pending). `cp` is the already-bound placeholder for that campaign id
+// (e.g. "$5"). Returns "" for an unknown status (the caller then applies no lead
+// filter).
+func leadStatusClause(status, cp string) string {
+	// EXISTS a progress row for (this campaign, this contact) with `col` set.
+	has := func(col string) string {
+		return fmt.Sprintf(
+			"EXISTS (SELECT 1 FROM campaign_contact_progress p WHERE p.campaign_id = %s AND p.contact_id = c.id AND p.%s IS NOT NULL)",
+			cp, col,
+		)
+	}
+	sent, replied, bounced := has("sent_at"), has("replied_at"), has("bounced_at")
+	// allSent: every email step of the campaign has been sent to this contact.
+	allSent := fmt.Sprintf(
+		"((SELECT COUNT(*) FROM sequences st WHERE st.campaign_id = %[1]s AND st.kind = 'email') > 0 "+
+			"AND (SELECT COUNT(*) FROM campaign_contact_progress p WHERE p.campaign_id = %[1]s AND p.contact_id = c.id AND p.sent_at IS NOT NULL) "+
+			">= (SELECT COUNT(*) FROM sequences st WHERE st.campaign_id = %[1]s AND st.kind = 'email'))",
+		cp,
+	)
+	switch status {
+	case models.LeadStatusUnsubscribed:
+		return "NOT c.subscribed"
+	case models.LeadStatusBounced:
+		return fmt.Sprintf("(c.subscribed AND %s)", bounced)
+	case models.LeadStatusReplied:
+		return fmt.Sprintf("(c.subscribed AND NOT %s AND %s)", bounced, replied)
+	case models.LeadStatusCompleted:
+		return fmt.Sprintf("(c.subscribed AND NOT %s AND NOT %s AND %s AND %s)", bounced, replied, sent, allSent)
+	case models.LeadStatusActive:
+		return fmt.Sprintf("(c.subscribed AND NOT %s AND NOT %s AND %s AND NOT %s)", bounced, replied, sent, allSent)
+	case models.LeadStatusPending:
+		return fmt.Sprintf("(c.subscribed AND NOT %s AND NOT %s AND NOT %s)", bounced, replied, sent)
+	default:
+		return ""
+	}
+}
+
+// CampaignLeadCounts returns per-status lead totals for one campaign (the
+// campaign Leads view scope chips). A single aggregate over the campaign's
+// leads joined to their contact and a rolled-up view of their progress, so the
+// buckets follow the same unsubscribed > bounced > replied > completed >
+// processing > queued priority as the row-level derived status. Scoped to the
+// org through the contacts join.
+func (r *contactRepository) CampaignLeadCounts(ctx context.Context, orgID, campaignID string) (*models.CampaignLeadCounts, *errx.Error) {
+	// A lead is "done" (completed) when every email step has been sent and it
+	// hasn't replied or bounced; "processing" when some but not all steps sent.
+	const done = "ts.total_steps > 0 AND COALESCE(pr.sent_steps, 0) >= ts.total_steps"
+	query := fmt.Sprintf(`
+		SELECT
+			COUNT(*) AS total,
+			COUNT(*) FILTER (WHERE NOT c.subscribed) AS unsubscribed,
+			COUNT(*) FILTER (WHERE c.subscribed AND COALESCE(pr.has_bounced, false)) AS bounced,
+			COUNT(*) FILTER (WHERE c.subscribed AND NOT COALESCE(pr.has_bounced, false) AND COALESCE(pr.has_replied, false)) AS replied,
+			COUNT(*) FILTER (WHERE c.subscribed AND NOT COALESCE(pr.has_bounced, false) AND NOT COALESCE(pr.has_replied, false) AND COALESCE(pr.has_sent, false) AND (%[1]s)) AS completed,
+			COUNT(*) FILTER (WHERE c.subscribed AND NOT COALESCE(pr.has_bounced, false) AND NOT COALESCE(pr.has_replied, false) AND COALESCE(pr.has_sent, false) AND NOT (%[1]s)) AS processing,
+			COUNT(*) FILTER (WHERE c.subscribed AND NOT COALESCE(pr.has_bounced, false) AND NOT COALESCE(pr.has_replied, false) AND NOT COALESCE(pr.has_sent, false)) AS queued
+		FROM campaign_leads cl
+		JOIN contacts c ON c.id = cl.contact_id AND c.organization_id = $2
+		CROSS JOIN (SELECT COUNT(*) AS total_steps FROM sequences st WHERE st.campaign_id = $1 AND st.kind = 'email') ts
+		LEFT JOIN LATERAL (
+			SELECT
+				bool_or(p.sent_at IS NOT NULL)    AS has_sent,
+				bool_or(p.replied_at IS NOT NULL) AS has_replied,
+				bool_or(p.bounced_at IS NOT NULL) AS has_bounced,
+				COUNT(*) FILTER (WHERE p.sent_at IS NOT NULL) AS sent_steps
+			FROM campaign_contact_progress p
+			WHERE p.campaign_id = cl.campaign_id AND p.contact_id = cl.contact_id
+		) pr ON true
+		WHERE cl.campaign_id = $1
+	`, done)
+	out := &models.CampaignLeadCounts{}
+	if err := r.DB.QueryRow(ctx, query, campaignID, orgID).Scan(
+		&out.Total, &out.Unsubscribed, &out.Bounced, &out.Replied, &out.Completed, &out.Processing, &out.Queued,
+	); err != nil {
+		if err == pgx.ErrNoRows {
+			return out, nil
+		}
+		db.CaptureError(err, query, []any{campaignID, orgID}, "queryrow")
+		return nil, errx.InternalError()
+	}
+	return out, nil
 }
 
 func (r *contactRepository) Update(ctx context.Context, userID, contactID string, orgID uuid.UUID, data *models.UpdateContact) (*models.Contact, *errx.Error) {

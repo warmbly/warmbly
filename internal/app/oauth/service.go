@@ -18,6 +18,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/warmbly/warmbly/internal/app/webhook"
+	"github.com/warmbly/warmbly/internal/infrastructure/cache"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/whdomain"
 	"github.com/warmbly/warmbly/internal/repository"
@@ -35,10 +36,13 @@ type AppWebhookSyncer interface {
 type Service struct {
 	repo        repository.OAuthRepository
 	webhookSync AppWebhookSyncer
+	// cache backs the per-IP rate limit on the open Dynamic Client Registration
+	// endpoint. Optional: nil disables the limit (fails open).
+	cache *cache.Cache
 }
 
-func NewService(repo repository.OAuthRepository) *Service {
-	return &Service{repo: repo}
+func NewService(repo repository.OAuthRepository, c *cache.Cache) *Service {
+	return &Service{repo: repo, cache: c}
 }
 
 // WireWebhookSync attaches the app-webhook materializer so authorizing/revoking

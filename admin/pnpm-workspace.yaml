@@ -9,3 +9,5 @@ allowBuilds:
 # Match the dashboard's overrides so transitive deps don't drift.
 overrides:
   picomatch: ^4.0.4
+  # Clear CVE-2026-59869 (DoS via crafted YAML) in the transitive js-yaml.
+  js-yaml: ^4.3.0

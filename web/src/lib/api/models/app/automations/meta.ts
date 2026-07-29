@@ -52,6 +52,8 @@ export const ACTION_LABELS: Record<string, string> = {
     "warmbly.label_email": "Label the email",
     "warmbly.set_variables": "Set variables",
     "warmbly.fire_event": "Fire event",
+    "warmbly.ai_step": "AI step",
+    "warmbly.ai_switch": "AI switch",
 };
 
 export function actionLabel(a: string): string {
@@ -74,7 +76,31 @@ export const NATIVE_ACTIONS: string[] = [
     "warmbly.label_email",
     "warmbly.set_variables",
     "warmbly.fire_event",
+    "warmbly.ai_step",
+    "warmbly.ai_switch",
 ];
+
+// AI_ALLOWLIST_ACTIONS is the closed set of reversible native actions an
+// agent-mode AI step may be permitted to call. One source of truth for the
+// editor checklist; it cannot express a send/reply action by construction.
+export const AI_ALLOWLIST_ACTIONS = [
+    "warmbly.add_tag",
+    "warmbly.remove_tag",
+    "warmbly.create_task",
+    "warmbly.create_deal",
+    "warmbly.move_deal_stage",
+    "warmbly.label_email",
+    "warmbly.set_variables",
+    "warmbly.unsubscribe",
+] as const;
+
+export type NativeActionAllow = (typeof AI_ALLOWLIST_ACTIONS)[number];
+
+// AI action nodes run over the event with the model: the unified AI step (a
+// single-shot transform or an agent) or the AI switch router. They cost credits.
+export function isAIAction(a: string): boolean {
+    return a === "warmbly.ai_step" || a === "warmbly.ai_switch";
+}
 
 export function isNativeAction(a: string): boolean {
     return a.startsWith("warmbly.");
@@ -83,8 +109,22 @@ export function isNativeAction(a: string): boolean {
 // What config a native action needs, so the editor shows the right picker.
 export function nativeActionNeeds(
     action: string,
-): "tag" | "label" | "deal" | "task" | "automation" | "vars" | "event" | "none" {
+):
+    | "tag"
+    | "label"
+    | "deal"
+    | "task"
+    | "automation"
+    | "vars"
+    | "event"
+    | "ai_step"
+    | "ai_switch"
+    | "none" {
     switch (action) {
+        case "warmbly.ai_step":
+            return "ai_step";
+        case "warmbly.ai_switch":
+            return "ai_switch";
         case "warmbly.add_tag":
         case "warmbly.remove_tag":
             return "tag";
@@ -150,6 +190,9 @@ export const RANDOM_FIELD_KEY = "__random__";
 
 // Sentinel field key for the advanced free-form expression condition.
 export const EXPRESSION_FIELD_KEY = "__expression__";
+
+// Sentinel field key for the Ask-AI yes/no condition.
+export const AI_FIELD_KEY = "__ai__";
 
 export const WARMUP_STATES = [
     { value: "healthy", label: "Healthy" },
@@ -225,10 +268,19 @@ const EXPRESSION_FIELD: TriggerFieldDef = {
     defaultOperator: "",
 };
 
-// The condition fields offered for a trigger: its payload fields + random split
-// + the advanced free-form expression escape hatch.
+// Ask AI: a plain-language yes/no question answered by the model over the
+// event data (true edge = yes). Costs 1 credit per evaluation.
+const AI_FIELD: TriggerFieldDef = {
+    key: AI_FIELD_KEY,
+    label: "Ask AI (yes/no)",
+    type: "string",
+    defaultOperator: "",
+};
+
+// The condition fields offered for a trigger: its payload fields + Ask AI +
+// random split + the advanced free-form expression escape hatch.
 export function triggerConditionFields(triggerEvent: string): TriggerFieldDef[] {
-    return [...(TRIGGER_FIELDS[triggerEvent] ?? GENERIC_FIELDS), RANDOM_FIELD, EXPRESSION_FIELD];
+    return [...(TRIGGER_FIELDS[triggerEvent] ?? GENERIC_FIELDS), AI_FIELD, RANDOM_FIELD, EXPRESSION_FIELD];
 }
 
 export function triggerFieldDef(triggerEvent: string, key: string): TriggerFieldDef | undefined {
@@ -240,6 +292,7 @@ export function triggerFieldDef(triggerEvent: string, key: string): TriggerField
 export function conditionFromFieldKey(triggerEvent: string, key: string): AutomationCondition {
     if (key === RANDOM_FIELD_KEY) return { field: "random", operator: "chance", value: 50 };
     if (key === EXPRESSION_FIELD_KEY) return { field: "expression", operator: "", expression: "" };
+    if (key === AI_FIELD_KEY) return { field: "ai", operator: "", prompt: "" };
     const def = triggerFieldDef(triggerEvent, key);
     return { field: "field", key, operator: def?.defaultOperator ?? "equals" };
 }
@@ -254,6 +307,7 @@ export function defaultConditionForTrigger(triggerEvent: string): AutomationCond
 export function conditionFieldKey(c: AutomationCondition): string {
     if (c.field === "random") return RANDOM_FIELD_KEY;
     if (c.field === "expression") return EXPRESSION_FIELD_KEY;
+    if (c.field === "ai") return AI_FIELD_KEY;
     if (c.field === "field") return c.key ?? "";
     return c.field; // legacy
 }
@@ -379,6 +433,12 @@ export function conditionLabel(c?: AutomationCondition): string {
         const e = (c.expression ?? "").trim();
         if (!e) return "Set an expression";
         return `if ${e.length > 30 ? e.slice(0, 30) + "…" : e}`;
+    }
+    // Ask AI yes/no question.
+    if (c.field === "ai") {
+        const p = (c.prompt ?? "").trim();
+        if (!p) return "Ask AI a question";
+        return `AI: ${p.length > 30 ? p.slice(0, 30) + "…" : p}`;
     }
     // Generic field condition.
     if (c.field === "field") {

@@ -25,7 +25,9 @@ package eventbus
 
 import (
 	"context"
+	"os"
 	"strings"
+	"time"
 )
 
 // EventBus is the transport-level interface. Implementations must be safe for
@@ -81,4 +83,17 @@ type Message struct {
 // the substitution rule.
 func Subject(topic string) string {
 	return strings.ReplaceAll(topic, ":", ".")
+}
+
+// handlerTimeout is the per-message processing budget shared by both bus
+// backends (matches the worker's historical 30s Receive budget). Override with
+// EVENTBUS_HANDLER_TIMEOUT (a Go duration). Lives here (not in the build-tagged
+// kafka.go) so the always-compiled NATS backend can use it too.
+func handlerTimeout() time.Duration {
+	if v := os.Getenv("EVENTBUS_HANDLER_TIMEOUT"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			return d
+		}
+	}
+	return 30 * time.Second
 }

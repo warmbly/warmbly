@@ -51,6 +51,16 @@ func (s *emailService) Update(ctx context.Context, userID, emailAccountID string
 	return account, nil
 }
 
+// BulkUpdateTags is a pure tag-link rewrite: no warmup pool or worker state
+// depends on tags, so no per-account fanout is needed (the caller audits
+// once and the spine refreshes lists).
+func (s *emailService) BulkUpdateTags(ctx context.Context, userID string, emailIDs, addTags, removeTags []uuid.UUID) (int, *errx.Error) {
+	if len(addTags) == 0 && len(removeTags) == 0 {
+		return 0, errx.ErrNotEnough
+	}
+	return s.emailRepository.BulkUpdateTags(ctx, userID, emailIDs, addTags, removeTags)
+}
+
 // SetWarmupLifecycle applies a warmup start/pause/resume/disable transition,
 // then re-syncs pool membership and fans out the change so dashboards update
 // live. Seeding the actual warmup task chain is the caller's responsibility

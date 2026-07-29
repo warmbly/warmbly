@@ -167,7 +167,7 @@ export function OptionSelect<T extends string>({
 }: {
     value: T;
     onChange: (v: T) => void;
-    options: { value: T; label: string; hint?: string }[];
+    options: { value: T; label: React.ReactNode; hint?: string }[];
     /** Columns from the sm breakpoint up. Mobile is always a single column. */
     cols?: 1 | 2 | 3;
     className?: string;

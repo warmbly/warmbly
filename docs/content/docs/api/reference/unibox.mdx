@@ -1,7 +1,6 @@
 ---
 title: Unified inbox
 description: Read, search, and triage incoming mail across every mailbox, then reply, label, snooze, and manage scheduled sends.
-icon: Inbox
 ---
 
 The unified inbox (unibox) is the org-wide view of everything that lands in your connected mailboxes. These endpoints power the dashboard's inbox list, thread view, scope rail, conversation labels, snoozes, and scheduled-send queue. Every route is gated on the unified-inbox feature, so the calling organization needs an active trial or paid subscription; without it the endpoint returns `403`.
@@ -28,6 +27,7 @@ Returns the inbox list, collapsed to one row per thread (the newest message), wi
 | `email_id` | query | string | Restrict to a single mailbox by UUID. |
 | `email_ids` | query | string | Comma-separated mailbox UUIDs. A thread matches if it landed in any of them. Invalid UUIDs are dropped. |
 | `category_ids` | query | string | Comma-separated conversation-label UUIDs. A thread matches if it carries any of them. |
+| `uncategorized` | query | boolean | `true` returns only threads carrying no conversation labels. |
 
 The response is a `data` plus `pagination` envelope. Each row summarises the whole thread behind it (`message_count`, `has_unread`) plus the conversation's labels.
 
@@ -323,6 +323,8 @@ Sends or schedules a reply from one of your mailboxes. The send is routed throug
   "send_mode": "instant"
 }
 ```
+
+Instant sends are held for the sender's undo window (5 to 120 seconds, default 30) before they actually leave, so `scheduled_at` is that far in the future. Within the window the send can still be cancelled with `DELETE /unibox/scheduled/:task_id`.
 
 ## List active snoozes
 

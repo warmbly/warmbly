@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconf "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/app/cipher"
@@ -52,10 +53,15 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// AWS config for services that need it (KMS, S3)
-	awscfg, err := awsconf.LoadDefaultConfig(ctx)
-	if err != nil {
-		log.Fatal(err)
+	// AWS SDK config, loaded only when an AWS-backed provider is selected
+	// (KMS_PROVIDER=aws or BLOB_PROVIDER=s3). A fully-local self-host needs no
+	// AWS_REGION or credentials.
+	var awscfg aws.Config
+	if config.AWSNeeded() {
+		awscfg, err = awsconf.LoadDefaultConfig(ctx)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 
 	// Redis
@@ -98,39 +104,32 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// S3
-	s3Client, err := storage.NewClient(ctx, awscfg, "main")
+	// Blob storage (S3 by default, filesystem when BLOB_PROVIDER=filesystem).
+	s3Client, err := storage.NewFromEnv(ctx, awscfg, "main")
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// Codec (Avro by default, JSON when CODEC_PROVIDER=json).
-	// Avro inputs come from the existing AWS Secrets Manager config so deploys
-	// using Schema Registry don't need to duplicate them as env vars.
-	var codecImpl codec.Codec
-	if os.Getenv("CODEC_PROVIDER") == "json" {
-		codecImpl = codec.NewJSON()
-	} else {
-		schemaEndpoint, schemaKey, schemaSecret, cerr := cfg.LoadSchemaRegistryConfig(ctx)
-		if cerr != nil {
-			log.Fatal(cerr)
-		}
-		avro, cerr := codec.NewAvro(schemaEndpoint, schemaKey, schemaSecret)
-		if cerr != nil {
-			log.Fatal(cerr)
-		}
-		codecImpl = avro
+	// Codec (Avro reads SCHEMA_REGISTRY_URL from env; JSON needs nothing).
+	codecImpl, err := codec.FromEnv()
+	if err != nil {
+		log.Fatal(err)
 	}
 	log.Printf("Codec: %s", codecImpl.Name())
 
-	// Event bus (Kafka by default, NATS when EVENTBUS_PROVIDER=nats).
-	kafkaBootstrapServers, err := cfg.LoadKafkaBootstrapServers(ctx)
-	if err != nil {
-		log.Fatal(err)
-	}
-	kafkaSaslConfig, err := cfg.LoadKafkaConfigSasl(ctx)
-	if err != nil {
-		log.Fatal(err)
+	// Event bus (NATS default; Kafka when EVENTBUS_PROVIDER=kafka). Kafka
+	// bootstrap/SASL is only loaded for the Kafka provider.
+	var kafkaBootstrapServers string
+	var kafkaSaslConfig *kafka.SASLConfig
+	if config.EventBusProvider() == "kafka" {
+		kafkaBootstrapServers, err = cfg.LoadKafkaBootstrapServers(ctx)
+		if err != nil {
+			log.Fatal(err)
+		}
+		kafkaSaslConfig, err = cfg.LoadKafkaConfigSasl(ctx)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 	bus, err := eventbus.FromEnv(kafkaBootstrapServers, kafkaSaslConfig)
 	if err != nil {
@@ -138,15 +137,6 @@ func main() {
 	}
 	defer bus.Close()
 	log.Printf("Event bus: %s", bus.Name())
-
-	// When the bus is Kafka-backed and the codec is Avro-backed, also wire
-	// the underlying Avrov2 client into the Kafka producer so the existing
-	// Avro wire format on Kafka topics is preserved.
-	if kbus, ok := bus.(*eventbus.KafkaBus); ok {
-		if ac, ok := codecImpl.(*codec.AvroCodec); ok {
-			kbus.Producer().WithAvrov2(ac.Underlying())
-		}
-	}
 
 	workerTopic := kafka.GetWorkerTopic(workerID.String())
 

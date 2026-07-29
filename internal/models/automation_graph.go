@@ -10,6 +10,10 @@ const (
 	AutomationNodeTrigger   = "trigger"
 	AutomationNodeCondition = "condition"
 	AutomationNodeAction    = "action"
+	// AutomationNodeStop is a terminal marker: a path routed into it ends (the
+	// executor's default case follows its outgoing edges, of which a stop has
+	// none). It carries no action or condition. Mirrors the campaign Stop node.
+	AutomationNodeStop = "stop"
 
 	// The conventional id of the single entry node.
 	AutomationTriggerNodeID = "trigger"
@@ -21,6 +25,7 @@ const (
 const (
 	AutoCondField      = "field"       // generic: test data[Key] with Operator
 	AutoCondExpression = "expression"  // free-form Go-template predicate
+	AutoCondAI         = "ai"          // ask AI a yes/no question about the event (Prompt); costs 1 credit
 	AutoCondIntent     = "intent"      // legacy: data["intent"]
 	AutoCondConfidence = "confidence"  // legacy: classifier confidence float
 	AutoCondSource     = "source"      // legacy: campaign / provider source
@@ -43,6 +48,7 @@ const (
 var automationConditionFields = map[string]bool{
 	AutoCondField:      true,
 	AutoCondExpression: true,
+	AutoCondAI:         true,
 	AutoCondIntent:     true,
 	AutoCondConfidence: true,
 	AutoCondSource:     true,

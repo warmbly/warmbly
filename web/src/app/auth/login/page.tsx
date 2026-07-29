@@ -21,7 +21,7 @@ import useRegister from "@/lib/api/hooks/auth/useRegister";
 import useRegisterConfirm from "@/lib/api/hooks/auth/useRegisterConfirm";
 import { saveTokens } from "@/lib/auth";
 import getUser from "@/lib/api/client/auth/getUser";
-import { WEBSITE_URL } from "@/lib/information";
+import { WEBSITE_URL, TURNSTILE_KEY } from "@/lib/information";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import * as Sentry from "@sentry/react";
@@ -566,7 +566,7 @@ export default function LoginPage() {
 
             {!turnstileBypassToken && (
                 <Turnstile
-                    sitekey={import.meta.env.VITE_TURNSTILE_KEY!}
+                    sitekey={TURNSTILE_KEY}
                     execution="execute"
                     onLoad={(_widgetId, bound) => {
                         turnstileRef.current = bound;

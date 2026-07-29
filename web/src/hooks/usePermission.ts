@@ -9,6 +9,19 @@ export type PermissionKey = keyof typeof PERMISSION_BITS;
 // are still unknown (undefined) so pages don't flash a denial during load.
 export function usePermission(key: PermissionKey): boolean {
     const org = useAppStore((s) => s.currentOrganization);
+    return orgHasPermission(org, key);
+}
+
+// checkPermission is the non-hook variant for event handlers (keyboard
+// shortcuts, store actions) — same semantics as usePermission.
+export function checkPermission(key: PermissionKey): boolean {
+    return orgHasPermission(useAppStore.getState().currentOrganization, key);
+}
+
+function orgHasPermission(
+    org: { role?: string; permissions?: number } | null | undefined,
+    key: PermissionKey,
+): boolean {
     if (!org) return true; // no org context yet — don't gate prematurely
     if (org.role === "owner") return true;
     if (org.permissions === undefined) return true; // unknown — assume yes until loaded
@@ -33,6 +46,7 @@ export const PERMISSION_LABELS: Record<PermissionKey, string> = {
     TRANSFER_OWNERSHIP: "Transfer ownership",
     MANAGE_API_KEYS: "Manage API keys",
     USE_INTEGRATIONS: "Use integrations",
+    USE_AI: "Use AI",
 };
 
 // Fire the global permission-denied popup (the same one the API client raises

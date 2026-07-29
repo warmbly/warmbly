@@ -18,6 +18,27 @@ function errText(e: unknown, fallback: string): string {
     return o?.error_description ?? o?.message ?? fallback;
 }
 
+// Executable/local pseudo-schemes must never be navigated to: the server already
+// rejects them at client registration, this is the defense-in-depth backstop so a
+// redirect can never run script in the dashboard origin.
+const UNSAFE_REDIRECT_SCHEMES = new Set([
+    "javascript:",
+    "data:",
+    "vbscript:",
+    "file:",
+    "blob:",
+    "about:",
+    "filesystem:",
+]);
+
+function isSafeRedirect(rawUrl: string): boolean {
+    try {
+        return !UNSAFE_REDIRECT_SCHEMES.has(new URL(rawUrl).protocol.toLowerCase());
+    } catch {
+        return false;
+    }
+}
+
 export default function OAuthConsentPage() {
     const [sp] = useSearchParams();
     const params = React.useMemo(() => Object.fromEntries(sp.entries()), [sp]);
@@ -59,6 +80,11 @@ export default function OAuthConsentPage() {
                 code_challenge: params.code_challenge ?? "",
                 code_challenge_method: params.code_challenge_method ?? "",
             });
+            if (!isSafeRedirect(redirect_url)) {
+                setError("This app's redirect URL is not allowed.");
+                setSubmitting(false);
+                return;
+            }
             window.location.href = redirect_url;
         } catch (e) {
             setError(errText(e, "Could not complete authorization."));
@@ -67,7 +93,7 @@ export default function OAuthConsentPage() {
     };
 
     const deny = () => {
-        if (info?.redirect_uri) {
+        if (info?.redirect_uri && isSafeRedirect(info.redirect_uri)) {
             const u = new URL(info.redirect_uri);
             u.searchParams.set("error", "access_denied");
             if (info.state) u.searchParams.set("state", info.state);

@@ -14,10 +14,10 @@ import (
 	"github.com/warmbly/warmbly/internal/app/replyclassify"
 	warmupapp "github.com/warmbly/warmbly/internal/app/warmup"
 	"github.com/warmbly/warmbly/internal/errx"
-	"github.com/warmbly/warmbly/internal/infrastructure/gtasks"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
 	"github.com/warmbly/warmbly/internal/tasks/proto"
+	"github.com/warmbly/warmbly/internal/tasksched"
 )
 
 type Service interface {
@@ -87,6 +87,21 @@ type Service interface {
 	// (which knows the contact but not the thread id). Returns the labeled thread
 	// id, or "" when the contact has no conversation yet.
 	LabelLatestThreadForContact(ctx context.Context, userID uuid.UUID, contactEmail string, categoryIDs []uuid.UUID) (string, error)
+	// LatestInboundFromContact returns the subject + snippet of the newest email
+	// received from the contact ("" when none). Backs the campaign AI step's
+	// incoming-email context.
+	LatestInboundFromContact(ctx context.Context, userID uuid.UUID, contactEmail string) (string, string, error)
+
+	// ListCategories returns the user's contact categories, which double as
+	// unibox conversation labels (same registry). An AI agent step offers these
+	// by name and resolves the model's pick to an id. CreateCategory mints a new
+	// one for the agent's create-on-the-fly path (opt-in per step).
+	ListCategories(ctx context.Context, userID uuid.UUID) ([]models.MiniCategory, error)
+	CreateCategory(ctx context.Context, userID uuid.UUID, title, color string) (models.MiniCategory, error)
+	// ListPipelines returns the org's CRM pipelines with stages hydrated (both
+	// ordered by position), so an AI agent step can pick a valid pipeline+stage
+	// (defaulting to the first pipeline and its first stage).
+	ListPipelines(ctx context.Context, orgID uuid.UUID) ([]models.Pipeline, error)
 
 	// WireDispatcher attaches the event dispatcher that fans classified
 	// replies + deliverability events out to customer webhooks and third-party
@@ -99,6 +114,9 @@ type Service interface {
 	// WireAutomationRunner attaches the automation runner so instant
 	// "run_automation" action nodes (reply/open/click branches) can launch a flow.
 	WireAutomationRunner(r AutomationRunner)
+	// WireInboxAgent attaches the inbox agent so an inbound human reply drafts a
+	// suggested reply for review (M10). Best-effort; nil = feature off.
+	WireInboxAgent(a InboxAgent)
 
 	// EmitCampaignEvent dispatches a campaign event (e.g. from a sequence
 	// "notify" action node) to customer webhooks and wired integrations.
@@ -132,13 +150,15 @@ type service struct {
 	contactRepo          repository.ContactRepository
 	campaignProgressRepo repository.CampaignProgressRepository
 	crmRepo              repository.CRMRepository
+	categoryRepo         repository.GroupRepository
 	uniboxRepo           repository.UniboxRepository
-	tasksClient          *gtasks.Client
+	tasksClient          tasksched.Scheduler
 	warmupService        warmupapp.Service
 	dispatcher           EventDispatcher
 	notifier             Notifier
 	realtime             ReplyRealtimePublisher
 	automationRunner     AutomationRunner
+	inboxAgent           InboxAgent
 }
 
 func NewService(
@@ -149,8 +169,9 @@ func NewService(
 	contactRepo repository.ContactRepository,
 	campaignProgressRepo repository.CampaignProgressRepository,
 	crmRepo repository.CRMRepository,
+	categoryRepo repository.GroupRepository,
 	uniboxRepo repository.UniboxRepository,
-	tasksClient *gtasks.Client,
+	tasksClient tasksched.Scheduler,
 	warmupService warmupapp.Service,
 ) Service {
 	return &service{
@@ -161,6 +182,7 @@ func NewService(
 		contactRepo:          contactRepo,
 		campaignProgressRepo: campaignProgressRepo,
 		crmRepo:              crmRepo,
+		categoryRepo:         categoryRepo,
 		uniboxRepo:           uniboxRepo,
 		tasksClient:          tasksClient,
 		warmupService:        warmupService,
@@ -423,6 +445,47 @@ func (s *service) MoveContactDealStage(ctx context.Context, orgID, contactID, pi
 		"source":  "campaign",
 	})
 	return updated, nil
+}
+
+// ListCategories returns the user's categories (contact tags == unibox labels).
+func (s *service) ListCategories(ctx context.Context, userID uuid.UUID) ([]models.MiniCategory, error) {
+	if s.categoryRepo == nil {
+		return nil, nil
+	}
+	groups, err := s.categoryRepo.List(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]models.MiniCategory, 0, len(groups))
+	for _, g := range groups {
+		out = append(out, models.MiniCategory{ID: g.ID, Title: g.Title, Color: g.Color})
+	}
+	return out, nil
+}
+
+// CreateCategory mints a new category (tag/label) for the agent's opt-in
+// create-on-the-fly path. GroupRepository.Create validates the title (1-50) and
+// enforces the per-user cap; color defaults to slate when blank.
+func (s *service) CreateCategory(ctx context.Context, userID uuid.UUID, title, color string) (models.MiniCategory, error) {
+	if s.categoryRepo == nil {
+		return models.MiniCategory{}, errx.New(errx.BadRequest, "categories are not available")
+	}
+	if strings.TrimSpace(color) == "" {
+		color = "#64748b"
+	}
+	g, err := s.categoryRepo.Create(ctx, userID, &models.GroupCreate{Title: strings.TrimSpace(title), Color: color})
+	if err != nil {
+		return models.MiniCategory{}, err
+	}
+	return models.MiniCategory{ID: g.ID, Title: g.Title, Color: g.Color}, nil
+}
+
+// ListPipelines passes through the org's CRM pipelines (stages hydrated).
+func (s *service) ListPipelines(ctx context.Context, orgID uuid.UUID) ([]models.Pipeline, error) {
+	if s.crmRepo == nil {
+		return nil, nil
+	}
+	return s.crmRepo.ListPipelines(ctx, orgID)
 }
 
 func (s *service) Unsubscribe(ctx context.Context, campaignID, contactID uuid.UUID) *errx.Error {
@@ -844,6 +907,28 @@ func (s *service) ProcessIncomingReply(ctx context.Context, emailAccountID uuid.
 			// campaign without a refresh.
 			if s.realtime != nil && account.OrganizationID != nil {
 				s.realtime.PublishEmailReplied(ctx, account.OrganizationID.String(), account.UserID, cID.String(), ctID.String(), sender, sID.String())
+			}
+
+			// Inbox agent (M10): best-effort, paid + opt-in checked inside. Drafts a
+			// suggested reply for this human reply, awaiting human approval in the
+			// unibox. Self-detaches, so it never blocks reply ingest.
+			if s.inboxAgent != nil && account.OrganizationID != nil {
+				ownerID, _ := uuid.Parse(account.UserID)
+				s.inboxAgent.DraftForReply(ctx, models.InboxAgentReply{
+					OrganizationID:  *account.OrganizationID,
+					EmailAccountID:  emailAccountID,
+					OwnerUserID:     ownerID,
+					SourceMessageID: msg.ID,
+					ThreadID:        msg.ThreadID,
+					Counterpart:     sender,
+					Subject:         msg.Subject,
+					Snippet:         msg.Snippet,
+					InReplyTo:       msg.MessageID,
+					ContactID:       ctID,
+					CampaignID:      cID,
+					IntentClass:     replyResult.Class,
+					Confidence:      replyResult.Confidence,
+				})
 			}
 		}
 

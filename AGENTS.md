@@ -30,9 +30,9 @@ Other CI-touching rules:
 Docs stay in sync:
 
 - the customer docs site lives in `docs/` (Fumadocs, served at docs.warmbly.com); content is MDX under `docs/content/docs/` in three sections: `guides/` (product behavior), `learn/` (fundamentals), `api/` (API reference)
-- any change that alters user-visible behavior must update the matching docs page in the same change: a new or changed endpoint updates `api/endpoints.mdx` (scope map) and, where relevant, `api/authentication.mdx`; a new or changed API permission updates `api/permissions.mdx` including the permission table, presets, and all three language tabs in the constants section; a new or changed error code updates `api/error-codes.mdx`; a new or changed product feature, default, limit, or setting updates the relevant `guides/` page (or adds one, registered in `guides/meta.json` with an `icon`)
+- any change that alters user-visible behavior must update the matching docs page in the same change: a new or changed endpoint updates `api/endpoints.mdx` (scope map) and, where relevant, `api/authentication.mdx`; a new or changed API permission updates `api/permissions.mdx` including the permission table, presets, and all three language tabs in the constants section; a new or changed error code updates `api/error-codes.mdx`; a new or changed product feature, default, limit, or setting updates the relevant `guides/` page (or adds one, registered in `guides/meta.json` under the right section group)
 - removing or renaming a feature, endpoint, or permission means removing or updating its docs too; do not leave stale docs behind
-- follow the docs conventions: frontmatter `title` is the H1 (no `#` heading in the body), every page has a lucide `icon`, sentence-case headings, no em dashes in prose, internal links use trailing slashes (`/guides/mailboxes/`)
+- follow the docs conventions: frontmatter `title` is the H1 (no `#` heading in the body), no decorative sidebar icons (pages and `meta.json` sections carry no `icon`; the source loader has the lucide icon plugin disabled, and code-sample tabs use the real language logo instead), sentence-case headings, no em dashes in prose, internal links use trailing slashes (`/guides/mailboxes/`)
 - verify with `pnpm types:check` and `pnpm lint` in `docs/` (the site is a fully static export; `pnpm build` writes `out/`)
 
 Commit hygiene:
@@ -75,12 +75,16 @@ Do not:
 
 ## Local Development
 
+Event codec: `CODEC_PROVIDER=json` is required wherever workers are exercised (the worker command/result envelopes carry untyped bodies Avro cannot serialize); the Makefile and docker-compose set it everywhere. `tracking-events` keeps its own Avro path regardless.
+
 Infra runs in docker; the Go services and frontends run natively on the host for fast iteration — no docker image rebuilds when you change app code. Targets live in the `Makefile`.
 
+- `make dev` — the one-command stack: brings up the docker infra and waits for readiness (postgres, kafka topics, KMS/S3 init), applies migrations, loads seed fixtures (skip with `SEED=false`), installs web deps on first run, then starts backend + consumer + both shared workers + the dashboard in one terminal. Login: dev@warmbly.com / password123. Ctrl-C stops the app; infra stays up.
 - `make infra` — start the backing services in docker (postgres, redis, kafka, schema-registry, mailpit, localstack + init, cloud-tasks, stripe-mock). Run once; leave running.
 - `make backend` — run the API natively on `:8080` (applies the embedded migrations on boot against the docker postgres).
-- `make consumer` / `make worker` — run those Go services natively, each in its own terminal. The worker reads encrypted DEKs through the backend's `/internal/dek` endpoint (the prod `http` provider, no worker DB), so `make backend` must be running and their `INTERNAL_API_TOKEN` must match (the targets are pre-wired to match).
-- `make run` — backend + consumer + worker together in one terminal (Ctrl-C stops all).
+- `make consumer` / `make worker` / `make worker-premium` — run those Go services natively, each in its own terminal. Two native workers exist because tier placement is strict: free-trial orgs place onto the free-tier worker (`make worker`), paid orgs onto the premium one (`make worker-premium`). The workers read encrypted DEKs through the backend's `/internal/dek` endpoint (the prod `http` provider, no worker DB), so `make backend` must be running and their `INTERNAL_API_TOKEN` must match (the targets are pre-wired to match).
+- `make run` — backend + consumer + both workers together in one terminal (Ctrl-C stops all).
+- `make sandbox` — fully working demo environment: seeds the "Sunrise Labs" showcase org (live mailboxes: SMTP -> mailpit, IMAP -> dovecot, credentials sealed with `CREDENTIALS_ENCRYPTION_KEY`) and runs the simulator that plays the internet (delivers mail into dovecot inboxes, opens pixels, clicks tracked links, replies as contacts). Needs `make run` + `make tracking` alongside. Docs: `docs/content/docs/development/sandbox.mdx`.
 - `make tracking` / `make realtime` — the Rust tracking pixel service (:3000) and Elixir/Phoenix websocket fanout (:4000). Deliberately kept out of `make run`; start them only when needed, and only if you have the cargo / elixir toolchains on the host.
 - `make web` / `make admin` / `make site` — frontend dev servers (5173 / 5174 / 4321), pointed at the native backend.
 - `make seed` — load fixtures (after the backend has applied migrations).

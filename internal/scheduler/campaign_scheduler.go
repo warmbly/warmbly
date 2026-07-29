@@ -271,7 +271,9 @@ func (s *schedulerService) CalculateNextCampaignTime(ctx context.Context, campai
 		// selection, so a mailbox in deliverability trouble doesn't keep blasting
 		// cold volume (the concentration risk the safety policy warns about):
 		//   - quarantined/blocked (still within blocked_until) → don't send at all
-		//   - throttled → halve today's budget (and the wider min-gap still applies)
+		//   - watch/throttled → dampen today's budget by the same multiplier warmup
+		//     uses for that band (watch 0.7x, throttled 0.5x), via adjustmentFor so
+		//     the warmup and cold schedulers can't drift; the wider min-gap still applies
 		// This gate runs FIRST, before any rotation/ESP logic, so a degraded
 		// mailbox is always dropped regardless of weighting.
 		if state, blockedUntil, herr := s.warmupRepo.GetHealthState(ctx, acct.ID); herr == nil {
@@ -280,8 +282,8 @@ func (s *schedulerService) CalculateNextCampaignTime(ctx context.Context, campai
 				if blockedUntil == nil || blockedUntil.After(time.Now()) {
 					continue
 				}
-			case models.WarmupHealthThrottled:
-				remaining /= 2
+			case models.WarmupHealthWatch, models.WarmupHealthThrottled:
+				remaining = int(float64(remaining) * adjustmentFor(state).volumeMultiplier)
 				if remaining <= 0 {
 					continue
 				}

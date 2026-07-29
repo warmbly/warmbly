@@ -79,21 +79,27 @@ export default function UniboxPage() {
     [navigate, urlScope, urlThread, urlScopeRef],
   );
 
-  // Mirror URL → store (so a deep link / refresh restores the open thread) and
-  // store → URL (so a ConversationItem click, which sets the store, updates the
-  // path). The two stay in lock-step because each only writes on a real change.
+  // Keep the open thread in sync between the URL (deep-linkable) and the store
+  // (set by row clicks + keyboard nav) through a single reconciler. Tracking
+  // which side actually moved lets the two writers converge; two mutually
+  // writing effects would instead swap the values every commit, remounting the
+  // thread pane in a tight loop whenever the store and URL start out disagreeing
+  // (a stale singleton thread id carried into a fresh /app/unibox/all session).
   const setSelectedThreadId = useAppStore((s) => s.setSelectedThreadId);
-  React.useEffect(() => {
-    setSelectedThreadId(urlThread);
-  }, [urlThread, setSelectedThreadId]);
-
   const storeThread = useAppStore((s) => s.selectedThreadId);
+  const lastUrlThread = React.useRef(urlThread);
+  const lastStoreThread = React.useRef(storeThread);
   React.useEffect(() => {
-    if (storeThread !== urlThread) {
-      goTo({ threadId: storeThread });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storeThread]);
+    const urlMoved = urlThread !== lastUrlThread.current;
+    const storeMoved = storeThread !== lastStoreThread.current;
+    lastUrlThread.current = urlThread;
+    lastStoreThread.current = storeThread;
+    if (urlThread === storeThread) return;
+    // The store wins only when it alone moved (a click / keypress); otherwise
+    // the URL is the source of truth (deep link, back/forward, mount mismatch).
+    if (storeMoved && !urlMoved) goTo({ threadId: storeThread });
+    else setSelectedThreadId(urlThread);
+  }, [urlThread, storeThread, setSelectedThreadId, goTo]);
 
   // ── Scope (derived from URL + ref) ─────────────────────────────
   const scope: UniboxScope = React.useMemo(() => {
@@ -106,6 +112,8 @@ export default function UniboxPage() {
         return { kind: "week" };
       case "awaiting":
         return { kind: "awaiting" };
+      case "agent_drafts":
+        return { kind: "agent_drafts" };
       case "snoozed":
         return { kind: "snoozed" };
       case "scheduled":
@@ -150,15 +158,23 @@ export default function UniboxPage() {
   );
 
   // ── Scope → server search params ───────────────────────────────
-  // Mailboxes/tags come from the same overview payload so we don't
-  // race a separate /emails fetch when resolving a tag.
-  const [params, setParams] = React.useState<UniboxSearchParams>({
-    sortBy: "newest",
-  });
-  const overviewData = overview.data;
-  React.useEffect(() => {
-    setParams((prev) => {
-      const next: UniboxSearchParams = { sortBy: prev.sortBy ?? "newest" };
+  // Derived synchronously (initial state + render-phase reset), NOT in
+  // an effect: an effect runs after paint, so on a reload of a scoped
+  // URL the list would fire and render the default "all" query first,
+  // then flash to the scoped one.
+  const storeEmails = useAppStore((s) => s.emails);
+  const tagAccountIds = React.useMemo(
+    () =>
+      scope.kind === "tag"
+        ? storeEmails
+            .filter((m) => (m.tags ?? []).includes(scope.tagId))
+            .map((m) => m.id)
+        : null,
+    [scope, storeEmails],
+  );
+  const paramsForScope = React.useCallback(
+    (sortBy: UniboxSearchParams["sortBy"]): UniboxSearchParams => {
+      const next: UniboxSearchParams = { sortBy: sortBy ?? "newest" };
       switch (scope.kind) {
         case "unread":
           next.unseen = true;
@@ -172,26 +188,22 @@ export default function UniboxPage() {
         case "awaiting":
           next.awaitingReply = true;
           break;
+        case "agent_drafts":
+          next.agentDrafts = true;
+          break;
         case "snoozed":
           next.snoozed = true;
           break;
         case "mailbox":
           next.accountIds = [scope.mailboxId];
           break;
-        case "tag": {
-          // Tag-scoped account resolution: overview already lists
-          // the user's mailboxes, but tag→mailbox membership is
-          // not in the overview payload. We fall back to the
-          // dataSlice's emails, which the existing user-profile
-          // bootstrap populates.
-          const ids = useAppStore
-            .getState()
-            .emails.filter((m) => (m.tags ?? []).includes(scope.tagId))
-            .map((m) => m.id);
-          next.accountIds = ids;
+        case "tag":
+          // Tag→mailbox membership resolves through the store's
+          // mailbox directory (populated by DataSyncProvider); the
+          // server only knows accountIds.
+          next.accountIds = tagAccountIds ?? [];
           next.tagId = scope.tagId;
           break;
-        }
         case "category":
           // Conversation-label scope resolves to a server-side
           // category filter (category_ids); no client resolution
@@ -203,10 +215,25 @@ export default function UniboxPage() {
           break;
       }
       return next;
-    });
-  }, [scope, overviewData]);
+    },
+    [scope, tagAccountIds],
+  );
+  const [params, setParams] = React.useState<UniboxSearchParams>(() =>
+    paramsForScope("newest"),
+  );
+  // Reset filters when the scope changes (or a tag scope re-resolves as
+  // the mailbox directory loads), keeping only the sort. Setting state
+  // during render re-renders before commit, so the stale params never
+  // reach the query.
+  const tagIdsKey = tagAccountIds?.join(",") ?? "";
+  const [prevReset, setPrevReset] = React.useState({ scope, tagIdsKey });
+  if (prevReset.scope !== scope || prevReset.tagIdsKey !== tagIdsKey) {
+    setPrevReset({ scope, tagIdsKey });
+    setParams((prev) => paramsForScope(prev.sortBy));
+  }
 
   // ── Scope label for header chip ────────────────────────────────
+  const overviewData = overview.data;
   const scopeLabel = React.useMemo(() => {
     switch (scope.kind) {
       case "unread":
@@ -217,6 +244,8 @@ export default function UniboxPage() {
         return "This week";
       case "awaiting":
         return "Awaiting reply";
+      case "agent_drafts":
+        return "Agent drafts";
       case "snoozed":
         return "Snoozed";
       case "scheduled":

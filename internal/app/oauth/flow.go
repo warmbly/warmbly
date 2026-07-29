@@ -122,7 +122,11 @@ func (s *Service) validateAuthorize(ctx context.Context, req AuthorizeRequest) (
 	if !redirectAllowed(app, req.RedirectURI) {
 		return nil, 0, errInvalidRequest("redirect_uri does not match a registered URI")
 	}
-	// PKCE is an optional extra layer; when a challenge is sent we only accept S256.
+	// Public clients hold no secret, so PKCE is the only thing binding the code to
+	// the caller: it is mandatory for them (and S256-only for everyone).
+	if app.IsPublic && strings.TrimSpace(req.CodeChallenge) == "" {
+		return nil, 0, errInvalidRequest("code_challenge is required for public clients")
+	}
 	if strings.TrimSpace(req.CodeChallenge) != "" && req.CodeChallengeMethod != "S256" {
 		return nil, 0, errInvalidRequest("code_challenge_method must be 'S256'")
 	}
@@ -158,6 +162,11 @@ func (s *Service) ExchangeCode(ctx context.Context, clientID, clientSecret, code
 	}
 	if ac.RedirectURI != redirectURI {
 		return nil, errInvalidGrant("redirect_uri does not match the authorization request")
+	}
+	// A public client's code must carry a PKCE challenge (validateAuthorize enforces
+	// this at issue time; re-check here so a code can never be exchanged without it).
+	if app.IsPublic && ac.CodeChallenge == "" {
+		return nil, errInvalidGrant("PKCE is required for public clients")
 	}
 	// If the authorize request bound a PKCE challenge, the verifier must match.
 	if ac.CodeChallenge != "" && !verifyPKCE(codeVerifier, ac.CodeChallenge) {
@@ -278,8 +287,10 @@ func (s *Service) issueGrant(ctx context.Context, appID, orgID, userID uuid.UUID
 	}, nil
 }
 
-// authenticateClient resolves and authenticates the OAuth client. Every app has
-// a client secret, so a matching secret is always required.
+// authenticateClient resolves and authenticates the OAuth client. Confidential
+// clients present a matching secret; public clients (PKCE, no secret — every
+// dynamically-registered MCP client) present none, and their identity is proven
+// by the PKCE verifier at code exchange instead.
 func (s *Service) authenticateClient(ctx context.Context, clientID, clientSecret string) (*models.OAuthApplication, error) {
 	app, err := s.repo.GetApplicationByClientID(ctx, strings.TrimSpace(clientID))
 	if err != nil {
@@ -287,6 +298,9 @@ func (s *Service) authenticateClient(ctx context.Context, clientID, clientSecret
 	}
 	if app == nil || app.Status != models.OAuthAppActive {
 		return nil, errInvalidClient("unknown or disabled client")
+	}
+	if app.IsPublic {
+		return app, nil
 	}
 	if clientSecret == "" || app.ClientSecretHash == "" || hashToken(clientSecret) != app.ClientSecretHash {
 		return nil, errInvalidClient("invalid client credentials")

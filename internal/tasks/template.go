@@ -343,14 +343,49 @@ func personaPick(p warmpersona.Persona, axis string, opts []string) string {
 	return opts[subset[rand.Intn(len(subset))]]
 }
 
-// GenerateConversationEmail renders a plaintext warmup body from a conversation.
-//
-// Bodies vary three ways to avoid the small-fixed-corpus fingerprint: a
-// per-mailbox persona biases the greeting/sign-off "voice", {a|b|c} spintax in
-// the description/messages is expanded per send, and the structure (optional
-// opener line, optional follow-up question) is randomised. Plaintext only — no
-// links, no HTML, in line with warmup policy.
+// GenerateConversationReplyEmail renders one ordered reply turn. Turn 1 maps
+// to Messages[0]; exhausted threads return false instead of repeating a line.
+func GenerateConversationReplyEmail(conversation Conversation, account models.Email, turn int) (string, bool) {
+	if turn < 1 || turn > len(conversation.Messages) {
+		return "", false
+	}
+	body := spinClean(conversation.Messages[turn-1])
+	if body == "" {
+		return "", false
+	}
+
+	signature := account.Name
+	if signature == "" {
+		signature = account.Email
+	}
+
+	persona := warmpersona.For(account.ID)
+	signoffs := []string{"Best regards,", "Best,", "Cheers,", "Thanks,", "Talk soon,", "All the best,", "Speak soon,", "Take care,"}
+	signoff := personaPick(persona, "signoff", signoffs)
+
+	return body + "\n\n" + signoff + "\n" + signature, true
+}
+
+// GenerateConversationOpeningEmail renders an AI opening without consuming a
+// pre-generated reply turn.
+func GenerateConversationOpeningEmail(conversation Conversation, account models.Email) string {
+	return generateConversationOpeningEmail(conversation, account, false)
+}
+
+// GenerateConversationEmail retains the reviewed static-library renderer.
 func GenerateConversationEmail(conversation Conversation, account models.Email, isReply bool) string {
+	if isReply {
+		if body, ok := GenerateConversationReplyEmail(conversation, account, 1); ok {
+			return body
+		}
+	}
+	return generateConversationOpeningEmail(conversation, account, true)
+}
+
+// generateConversationOpeningEmail renders a plaintext opening. Reviewed
+// static content can append one question; AI openings keep all ordered reply
+// turns unused for the later back-and-forth.
+func generateConversationOpeningEmail(conversation Conversation, account models.Email, includeQuestion bool) string {
 	signature := account.Name
 	if signature == "" {
 		signature = account.Email
@@ -369,31 +404,6 @@ func GenerateConversationEmail(conversation Conversation, account models.Email, 
 			return ""
 		}
 		return spinClean(conversation.Messages[rand.Intn(len(conversation.Messages))])
-	}
-
-	if isReply {
-		replyStarters := []string{
-			"Thanks for your message.",
-			"Appreciate you getting back to me.",
-			"Good to hear from you.",
-			"Thanks for the reply.",
-			"Great to hear back.",
-			"Thanks for the note — good timing.",
-		}
-		lead := replyStarters[rand.Intn(len(replyStarters))]
-		question := pickMessage()
-
-		var sb strings.Builder
-		sb.WriteString(lead)
-		if question != "" {
-			sb.WriteString("\n\n")
-			sb.WriteString(question)
-		}
-		sb.WriteString("\n\n")
-		sb.WriteString(signoff)
-		sb.WriteString("\n")
-		sb.WriteString(signature)
-		return sb.String()
 	}
 
 	description := spinClean(conversation.Description)
@@ -419,9 +429,11 @@ func GenerateConversationEmail(conversation Conversation, account models.Email, 
 	}
 	sb.WriteString(description)
 
-	if question := pickMessage(); question != "" {
-		sb.WriteString("\n\n")
-		sb.WriteString(question)
+	if includeQuestion {
+		if question := pickMessage(); question != "" {
+			sb.WriteString("\n\n")
+			sb.WriteString(question)
+		}
 	}
 
 	sb.WriteString("\n\n")

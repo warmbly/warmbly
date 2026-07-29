@@ -24,12 +24,27 @@ pub struct Config {
     pub env: String,
     pub host: String,
     pub port: u16,
-    pub kafka_brokers: String,
+    /// Event bus provider: "nats" (default) or "kafka".
+    pub eventbus_provider: String,
+    /// NATS connection URL (used when eventbus_provider != "kafka").
+    pub nats_url: String,
+    /// NATS subject prefix; the publish subject is `<prefix>.<kafka_topic>`.
+    pub nats_subject_prefix: String,
+    /// The event topic/subject name (shared by both backends). Default
+    /// "tracking-events".
     pub kafka_topic: String,
+    /// Kafka transport settings (only read by the kafka-feature build).
+    #[cfg_attr(not(feature = "kafka"), allow(dead_code))]
+    pub kafka_brokers: String,
+    #[cfg_attr(not(feature = "kafka"), allow(dead_code))]
     pub kafka_sasl_username: Option<String>,
+    #[cfg_attr(not(feature = "kafka"), allow(dead_code))]
     pub kafka_sasl_password: Option<String>,
+    #[cfg_attr(not(feature = "kafka"), allow(dead_code))]
     pub schema_registry_url: String,
+    #[cfg_attr(not(feature = "kafka"), allow(dead_code))]
     pub schema_registry_key: Option<String>,
+    #[cfg_attr(not(feature = "kafka"), allow(dead_code))]
     pub schema_registry_secret: Option<String>,
     /// Backend base URL for resolving click tickets (required), e.g.
     /// http://backend:8080 — the service calls
@@ -75,16 +90,16 @@ impl Config {
             .and_then(|p| p.parse().ok())
             .unwrap_or(3000);
 
-        // Kafka brokers (required)
-        let kafka_brokers = Self::get_required(
-            "KAFKA_BOOTSTRAP_SERVERS",
-            "kafka/bootstrap_servers",
-            &params,
-        )
-        .await?;
-        info!("Loaded kafka brokers");
+        // Event bus provider (default NATS). NATS needs no Kafka/Schema-Registry
+        // config, so those become optional below.
+        let eventbus_provider =
+            env::var("EVENTBUS_PROVIDER").unwrap_or_else(|_| "nats".to_string());
+        let nats_url = env::var("NATS_URL").unwrap_or_else(|_| "nats://localhost:4222".to_string());
+        let nats_subject_prefix =
+            env::var("NATS_SUBJECT_PREFIX").unwrap_or_else(|_| "warmbly".to_string());
+        info!("Event bus provider: {}", eventbus_provider);
 
-        // Kafka topic (optional with default)
+        // Event topic/subject name (shared by both backends).
         let kafka_topic = Self::get_optional(
             "KAFKA_TRACKING_TOPIC",
             "kafka/tracking/topic",
@@ -92,16 +107,23 @@ impl Config {
             &params,
         )
         .await;
-        info!("Kafka topic: {}", kafka_topic);
+        info!("Tracking topic: {}", kafka_topic);
 
-        // Schema Registry URL (required)
-        let schema_registry_url = Self::get_required(
-            "SCHEMA_REGISTRY_URL",
-            "kafka/schema_registry/endpoint",
+        // Kafka transport (optional; only used when eventbus_provider == "kafka").
+        let kafka_brokers = Self::get_optional(
+            "KAFKA_BOOTSTRAP_SERVERS",
+            "kafka/bootstrap_servers",
+            "",
             &params,
         )
-        .await?;
-        info!("Loaded schema registry URL");
+        .await;
+        let schema_registry_url = Self::get_optional(
+            "SCHEMA_REGISTRY_URL",
+            "kafka/schema_registry/endpoint",
+            "",
+            &params,
+        )
+        .await;
 
         // Optional SASL credentials
         let kafka_sasl_username =
@@ -149,8 +171,11 @@ impl Config {
             env: env_name,
             host,
             port,
-            kafka_brokers,
+            eventbus_provider,
+            nats_url,
+            nats_subject_prefix,
             kafka_topic,
+            kafka_brokers,
             kafka_sasl_username,
             kafka_sasl_password,
             schema_registry_url,
@@ -219,6 +244,10 @@ impl Config {
             env: env.to_string(),
             host,
             port,
+            eventbus_provider: "kafka".to_string(),
+            nats_url: env::var("NATS_URL").unwrap_or_else(|_| "nats://localhost:4222".to_string()),
+            nats_subject_prefix: env::var("NATS_SUBJECT_PREFIX")
+                .unwrap_or_else(|_| "warmbly".to_string()),
             kafka_brokers,
             kafka_topic,
             kafka_sasl_username,
@@ -310,10 +339,12 @@ impl Config {
         format!("{}:{}", self.host, self.port)
     }
 
+    #[cfg_attr(not(feature = "kafka"), allow(dead_code))]
     pub fn sasl_enabled(&self) -> bool {
         self.kafka_sasl_username.is_some() && self.kafka_sasl_password.is_some()
     }
 
+    #[cfg_attr(not(feature = "kafka"), allow(dead_code))]
     pub fn schema_registry_auth(&self) -> Option<(String, String)> {
         match (&self.schema_registry_key, &self.schema_registry_secret) {
             (Some(key), Some(secret)) => Some((key.clone(), secret.clone())),

@@ -13,9 +13,12 @@ import removeEmail from "@/lib/api/client/app/emails/removeEmail";
 import { useUserProfile } from "@/hooks/context/user";
 import { useConfirm } from "@/hooks/context/confirm";
 import InboxDetails from "@/components/app/emails/InboxDetails";
+import WarmupCoverageNotice from "@/components/app/emails/WarmupCoverageNotice";
 import BulkWarmupDialog from "@/components/app/emails/BulkWarmupDialog";
+import BulkTagPopover from "@/components/app/emails/BulkTagPopover";
 import type Tag from "@/lib/api/models/app/Tag";
 import type Inbox from "@/lib/api/models/app/emails/Inbox";
+import mailboxDisplayStatus from "@/lib/mailboxStatus";
 import type AccountStatus from "@/lib/api/models/app/analytics/AccountStatus";
 import {
     ActivityIcon,
@@ -169,14 +172,23 @@ export default function AddressesPage() {
     }, [tag, p]);
 
     const stats = useMemo(() => {
-        if (!emailsData.emails) return { total: 0, healthy: 0, warming: 0, issues: 0 };
-        return {
-            total: emailsData.emails.length,
-            healthy: emailsData.emails.filter((e) => e.status === "healthy").length,
-            warming: emailsData.emails.filter((e) => e.status === "warming").length,
-            issues: emailsData.emails.filter((e) => e.status !== "healthy" && e.status !== "warming").length,
-        };
+        const s = { total: 0, healthy: 0, warming: 0, issues: 0 };
+        for (const e of emailsData.emails ?? []) {
+            s.total++;
+            const st = mailboxDisplayStatus(e);
+            if (st === "healthy") s.healthy++;
+            else if (st === "warming") s.warming++;
+            else s.issues++;
+        }
+        return s;
     }, [emailsData.emails]);
+
+    // Mailboxes actively warming (enabled and not paused). Warmup pairs mailboxes
+    // with each other, so too few starves it; the notice below warns on that.
+    const warmupActive = useMemo(
+        () => (emailsData.emails ?? []).filter((e) => !!e.warmup && !e.warmup_paused_at).length,
+        [emailsData.emails],
+    );
 
     function isSelectedAll(): boolean {
         return emailsData.emails
@@ -257,6 +269,12 @@ export default function AddressesPage() {
             </SectionBar>
 
             <PageBody>
+                <WarmupCoverageNotice
+                    warmupCount={warmupActive}
+                    totalCount={stats.total}
+                    canWarmup={canWarmup}
+                    onAdd={() => p?.setAddEmail(true)}
+                />
                 {emailsData.isLoading ? (
                     <div className="divide-y divide-slate-200/60">
                         {Array.from({ length: 6 }).map((_, i) => (
@@ -317,6 +335,7 @@ export default function AddressesPage() {
                                 <MailboxRow
                                     key={box.id}
                                     box={box}
+                                    tags={p?.user.tags ?? []}
                                     status={statusById.get(box.id)}
                                     canWarmup={canWarmup}
                                     checked={selected.includes(box.id)}
@@ -356,6 +375,7 @@ export default function AddressesPage() {
                             <PauseIcon className="w-3.5 h-3.5" />
                             Pause
                         </button>
+                        <BulkTagPopover ids={selected} />
                         <div className="w-px h-4 bg-slate-200 mx-0.5" />
                         <button
                             type="button"
@@ -394,6 +414,7 @@ export default function AddressesPage() {
 
 function MailboxRow({
     box,
+    tags,
     status,
     canWarmup,
     checked,
@@ -401,6 +422,7 @@ function MailboxRow({
     onOpen,
 }: {
     box: Inbox;
+    tags: Tag[];
     status?: AccountStatus;
     canWarmup: boolean;
     checked: boolean;
@@ -409,6 +431,17 @@ function MailboxRow({
 }) {
     const life = useWarmupLifecycle(box.id);
     const confirm = useConfirm();
+
+    // Resolve the row's tag ids against the user's tag registry; cap the chips
+    // so long tag lists don't crowd the email out of the cell.
+    const rowTags = useMemo(
+        () =>
+            (box.tags ?? [])
+                .map((id) => tags.find((t) => t.id === id))
+                .filter((t): t is Tag => !!t),
+        [box.tags, tags],
+    );
+    const shownTags = rowTags.slice(0, 3);
 
     const off = !box.warmup;
     const paused = !!box.warmup && !!box.warmup_paused_at;
@@ -482,6 +515,21 @@ function MailboxRow({
                     {inCampaign && (
                         <span className="hidden sm:inline-flex items-center gap-1 h-4 px-1.5 rounded-full bg-sky-50 text-sky-600 text-[9.5px] font-medium uppercase tracking-[0.08em]">
                             <ActivityIcon className="w-2.5 h-2.5" /> In campaign
+                        </span>
+                    )}
+                    {shownTags.map((t) => (
+                        <span
+                            key={t.id}
+                            className="hidden md:inline-flex items-center gap-1 h-4 px-1.5 rounded-full text-[9.5px] font-medium shrink-0"
+                            style={{ backgroundColor: `${t.color}1a`, color: t.color }}
+                        >
+                            <span className="size-1.5 rounded-full" style={{ backgroundColor: t.color }} />
+                            {t.title}
+                        </span>
+                    ))}
+                    {rowTags.length > shownTags.length && (
+                        <span className="hidden md:inline-flex items-center h-4 px-1 rounded-full bg-slate-100 text-slate-500 text-[9.5px] font-medium shrink-0">
+                            +{rowTags.length - shownTags.length}
                         </span>
                     )}
                 </button>

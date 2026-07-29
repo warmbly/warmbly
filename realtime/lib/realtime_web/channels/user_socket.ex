@@ -22,6 +22,7 @@ defmodule RealtimeWeb.UserSocket do
   channel("account:*", RealtimeWeb.AccountChannel)
   channel("bulk:*", RealtimeWeb.BulkChannel)
   channel("org:*", RealtimeWeb.OrgChannel)
+  channel("admin:*", RealtimeWeb.AdminChannel)
 
   @impl true
   def connect(%{"token" => token}, socket, connect_info) do

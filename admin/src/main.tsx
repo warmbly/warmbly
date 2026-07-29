@@ -24,10 +24,6 @@ import OverviewPage from "@/app/dashboard/OverviewPage";
 import WorkersPage from "@/app/dashboard/WorkersPage";
 import WorkerDetailPage from "@/app/dashboard/WorkerDetailPage";
 import AuditPage from "@/app/dashboard/AuditPage";
-import InfrastructurePage from "@/app/settings/InfrastructurePage";
-import CloudProvidersPage from "@/app/settings/CloudProvidersPage";
-import ProvisioningTemplatesPage from "@/app/settings/ProvisioningTemplatesPage";
-import ProvisioningJobsPage from "@/app/dashboard/ProvisioningJobsPage";
 import OrganizationsPage from "@/app/dashboard/OrganizationsPage";
 import OrganizationDetailPage from "@/app/dashboard/OrganizationDetailPage";
 import UsersPage from "@/app/dashboard/UsersPage";
@@ -37,18 +33,15 @@ import WarmupAppealsPage from "@/app/dashboard/WarmupAppealsPage";
 import WarmupContentLayout from "@/app/dashboard/warmup-content/WarmupContentLayout";
 import WarmupContentOverviewPage from "@/app/dashboard/warmup-content/OverviewPage";
 import WarmupContentLibraryPage from "@/app/dashboard/warmup-content/LibraryPage";
-import WarmupContentGeneratePage from "@/app/dashboard/warmup-content/GeneratePage";
 import WarmupContentJobsPage from "@/app/dashboard/warmup-content/JobsPage";
-import WarmupContentSettingsPage from "@/app/dashboard/warmup-content/SettingsPage";
 import CampaignsPage from "@/app/dashboard/CampaignsPage";
-import EnterprisePage from "@/app/dashboard/EnterprisePage";
-import PlansPage from "@/app/dashboard/PlansPage";
-import DiscountsPage from "@/app/dashboard/DiscountsPage";
 import LimitRequestsPage from "@/app/dashboard/LimitRequestsPage";
 import OutreachPage from "@/app/dashboard/OutreachPage";
 import AnalyticsPage from "@/app/dashboard/AnalyticsPage";
 import MailboxesPage from "@/app/dashboard/MailboxesPage";
-import PlacementPage from "@/app/dashboard/PlacementPage";
+import EventsPage from "@/app/dashboard/EventsPage";
+import SystemStatusPage from "@/app/dashboard/SystemStatusPage";
+import RealtimeManager from "@/lib/realtime/RealtimeManager";
 import { NotFoundPage } from "@/app/dashboard/StubPages";
 
 // Mirror of web/src/main.tsx's tuned defaults. The admin app sees less
@@ -85,15 +78,12 @@ const router = createBrowserRouter([
                 children: [
                     { index: true, element: <OverviewPage /> },
                     { path: "workers", element: <WorkersPage /> },
-                    { path: "workers/provisioning-jobs", element: <ProvisioningJobsPage /> },
                     { path: "workers/:id", element: <WorkerDetailPage /> },
                     { path: "mailboxes", element: <MailboxesPage /> },
                     { path: "users", element: <UsersPage /> },
                     { path: "users/:id", element: <UserDetailPage /> },
                     { path: "organizations", element: <OrganizationsPage /> },
                     { path: "organizations/:id", element: <OrganizationDetailPage /> },
-                    { path: "plans", element: <PlansPage /> },
-                    { path: "discounts", element: <DiscountsPage /> },
                     { path: "warmup", element: <WarmupPage /> },
                     { path: "warmup/appeals", element: <WarmupAppealsPage /> },
                     {
@@ -108,27 +98,16 @@ const router = createBrowserRouter([
                             },
                             { path: "overview", element: <WarmupContentOverviewPage /> },
                             { path: "library", element: <WarmupContentLibraryPage /> },
-                            { path: "generate", element: <WarmupContentGeneratePage /> },
                             { path: "jobs", element: <WarmupContentJobsPage /> },
-                            { path: "settings", element: <WarmupContentSettingsPage /> },
                         ],
                     },
-                    { path: "placement", element: <PlacementPage /> },
                     { path: "campaigns", element: <CampaignsPage /> },
-                    { path: "enterprise", element: <EnterprisePage /> },
                     { path: "limit-requests", element: <LimitRequestsPage /> },
                     { path: "outreach", element: <OutreachPage /> },
                     { path: "analytics", element: <AnalyticsPage /> },
+                    { path: "events", element: <EventsPage /> },
+                    { path: "system", element: <SystemStatusPage /> },
                     { path: "audit", element: <AuditPage /> },
-                    {
-                        path: "settings",
-                        children: [
-                            { index: true, element: <Navigate to="/settings/cloud-providers" replace /> },
-                            { path: "cloud-providers", element: <CloudProvidersPage /> },
-                            { path: "provisioning-templates", element: <ProvisioningTemplatesPage /> },
-                            { path: "infrastructure", element: <InfrastructurePage /> },
-                        ],
-                    },
                     { path: "*", element: <NotFoundPage /> },
                 ],
             },
@@ -136,11 +115,16 @@ const router = createBrowserRouter([
     },
 ]);
 
-// AppShell renders an <Outlet/> for the page. Wrapping it lets us reach
-// for additional context (theming etc.) here later without touching
-// AppShell directly.
+// AppShell renders an <Outlet/> for the page. RealtimeManager is mounted
+// here (inside QueryClientProvider, only for authenticated admins) so the
+// admin:platform socket connects once and survives route changes.
 function AppShellWithKey() {
-    return <AppShell />;
+    return (
+        <>
+            <RealtimeManager />
+            <AppShell />
+        </>
+    );
 }
 
 // Tiny outlet helper exported so React-Router's typing is happy when

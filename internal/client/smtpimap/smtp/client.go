@@ -228,9 +228,17 @@ func (c *Client) sendRaw(ctx context.Context, from string, to []string, data []b
 	defer client.Quit()
 
 	tlsConf := &tls.Config{
-		ServerName: host,
+		ServerName:         host,
+		InsecureSkipVerify: netbind.InsecureTLS(),
 	}
-	if err := client.StartTLS(tlsConf); err != nil {
+	// TLS is mandatory. The MAIL_TLS_INSECURE dev knob additionally allows a
+	// server with no STARTTLS at all (the local mailpit sink) — never taken in
+	// production, where the env var is unset.
+	if ok, _ := client.Extension("STARTTLS"); ok {
+		if err := client.StartTLS(tlsConf); err != nil {
+			return errx.ErrMailServerUnreachable
+		}
+	} else if !netbind.InsecureTLS() {
 		return errx.ErrMailServerUnreachable
 	}
 

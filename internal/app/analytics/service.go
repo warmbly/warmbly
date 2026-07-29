@@ -19,8 +19,8 @@ type AnalyticsService interface {
 	GetCampaignDailyStats(ctx context.Context, userID, campaignID uuid.UUID, from, to time.Time) ([]models.CampaignDailyStats, *errx.Error)
 
 	// Email account status
-	GetAccountStatus(ctx context.Context, userID, accountID uuid.UUID) (*models.EmailAccountStatus, *errx.Error)
-	GetAllAccountStatuses(ctx context.Context, userID uuid.UUID) ([]models.EmailAccountStatus, *errx.Error)
+	GetAccountStatus(ctx context.Context, orgID, accountID uuid.UUID) (*models.EmailAccountStatus, *errx.Error)
+	GetAllAccountStatuses(ctx context.Context, orgID uuid.UUID) ([]models.EmailAccountStatus, *errx.Error)
 
 	// Usage overview
 	GetUsageOverview(ctx context.Context, userID uuid.UUID, period string) (*models.UsageOverview, *errx.Error)
@@ -150,9 +150,9 @@ func (s *analyticsService) GetCampaignDailyStats(ctx context.Context, userID, ca
 	return s.analyticsRepo.GetCampaignDailyStats(ctx, campaignID, from, to)
 }
 
-func (s *analyticsService) GetAccountStatus(ctx context.Context, userID, accountID uuid.UUID) (*models.EmailAccountStatus, *errx.Error) {
-	// Get email account
-	email, xerr := s.emailRepo.Get(ctx, userID.String(), accountID.String())
+func (s *analyticsService) GetAccountStatus(ctx context.Context, orgID, accountID uuid.UUID) (*models.EmailAccountStatus, *errx.Error) {
+	// Get email account (org-scoped lookup)
+	email, xerr := s.emailRepo.Get(ctx, orgID.String(), accountID.String())
 	if xerr != nil {
 		return nil, xerr
 	}
@@ -303,16 +303,16 @@ func applyWarmupHealth(health *models.AccountHealth, wh *models.WarmupHealthInfo
 	health.Issues = append(health.Issues, issue)
 }
 
-func (s *analyticsService) GetAllAccountStatuses(ctx context.Context, userID uuid.UUID) ([]models.EmailAccountStatus, *errx.Error) {
-	// Get all email accounts for user
-	emailsResult, xerr := s.emailRepo.Search(ctx, userID.String(), "", nil, nil, 1000, nil)
+func (s *analyticsService) GetAllAccountStatuses(ctx context.Context, orgID uuid.UUID) ([]models.EmailAccountStatus, *errx.Error) {
+	// Get all email accounts for the organization
+	emailsResult, xerr := s.emailRepo.Search(ctx, orgID.String(), "", nil, nil, 1000, nil)
 	if xerr != nil {
 		return nil, xerr
 	}
 
 	statuses := make([]models.EmailAccountStatus, 0, len(emailsResult.Data))
 	for _, email := range emailsResult.Data {
-		status, xerr := s.GetAccountStatus(ctx, userID, email.ID)
+		status, xerr := s.GetAccountStatus(ctx, orgID, email.ID)
 		if xerr != nil {
 			continue // Skip failed accounts
 		}

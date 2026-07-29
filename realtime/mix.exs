@@ -25,6 +25,9 @@ defmodule Realtime.MixProject do
       {:phoenix, "~> 1.7"},
       {:phoenix_pubsub, "~> 2.1"},
       {:plug_cowboy, "~> 2.7"},
+      # cowlib has no patched release for EEF-CVE-2026-43966/43969; cowboy >= 2.16
+      # rejects CR/LF response header values before the wire, so keep this floor.
+      {:cowboy, "~> 2.16"},
       {:jason, "~> 1.4"},
 
       # Google Pub/Sub

@@ -185,6 +185,23 @@ type CampaignsResult struct {
 	Pagination Pagination `json:"pagination"`
 }
 
+// CampaignsOverview backs the campaigns browser sidebar: status-bucket
+// counts plus per-folder totals for the org. Paused sums every paused_*
+// variant.
+type CampaignsOverview struct {
+	Total     int64                 `json:"total"`
+	Active    int64                 `json:"active"`
+	Paused    int64                 `json:"paused"`
+	Draft     int64                 `json:"draft"`
+	Completed int64                 `json:"completed"`
+	Folders   []CampaignFolderCount `json:"folders"`
+}
+
+type CampaignFolderCount struct {
+	FolderID uuid.UUID `json:"folder_id"`
+	Total    int64     `json:"total"`
+}
+
 type UpdateCampaign struct {
 	Name        *string `json:"name"`
 	Description *string `json:"description"`

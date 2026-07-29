@@ -9,6 +9,7 @@ package dnsauth
 
 import (
 	"context"
+	"errors"
 	"net"
 	"strings"
 	"time"
@@ -24,7 +25,32 @@ type Result struct {
 	DMARCFound    bool     `json:"dmarc_found"`
 	DMARCPolicy   string   `json:"dmarc_policy,omitempty"`
 	AllAligned    bool     `json:"all_aligned"`
-	Summary       string   `json:"summary"`
+	// LookupError is true when an authoritative lookup (SPF root or DMARC)
+	// failed for a reason other than the record simply not existing (timeout,
+	// SERVFAIL, network). Callers persisting state must treat this as "unknown"
+	// rather than "failing" so a transient resolver hiccup never reads as a
+	// domain misconfiguration.
+	LookupError bool   `json:"lookup_error"`
+	Summary     string `json:"summary"`
+}
+
+// State classifies the result for persistence:
+//   - "unknown" when the domain is empty or an authoritative lookup errored
+//     transiently (never treat that as misconfigured),
+//   - "passing" when the two discoverable authoritative records (SPF + DMARC)
+//     are present,
+//   - "failing" otherwise.
+//
+// DKIM is advisory only: selectors are not discoverable from DNS, so a missing
+// DKIM never forces a "failing" verdict on its own.
+func (r Result) State() string {
+	if r.Domain == "" || r.LookupError {
+		return "unknown"
+	}
+	if r.SPFFound && r.DMARCFound {
+		return "passing"
+	}
+	return "failing"
 }
 
 // defaultSelectors are common DKIM selectors to probe when the caller doesn't
@@ -45,18 +71,27 @@ func Check(ctx context.Context, domain string, dkimSelectors []string) Result {
 	}
 
 	resolver := &net.Resolver{}
-	lookup := func(name string) []string {
+	// lookup returns the TXT records plus whether the failure was transient. A
+	// DNS "not found" (NXDOMAIN/no such host) is authoritative: the record truly
+	// is absent. Any other resolver error is uncertain and must not be read as a
+	// real misconfiguration, so it is reported back as transient=true.
+	lookup := func(name string) (txts []string, transientErr bool) {
 		c, cancel := context.WithTimeout(ctx, lookupTimeout)
 		defer cancel()
 		txts, err := resolver.LookupTXT(c, name)
 		if err != nil {
-			return nil
+			var dnsErr *net.DNSError
+			if errors.As(err, &dnsErr) && dnsErr.IsNotFound {
+				return nil, false
+			}
+			return nil, true
 		}
-		return txts
+		return txts, false
 	}
 
 	// SPF: a TXT record on the root domain beginning v=spf1.
-	for _, t := range lookup(domain) {
+	spfTxts, spfErr := lookup(domain)
+	for _, t := range spfTxts {
 		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(t)), "v=spf1") {
 			res.SPFFound = true
 			res.SPFRecord = strings.TrimSpace(t)
@@ -65,7 +100,8 @@ func Check(ctx context.Context, domain string, dkimSelectors []string) Result {
 	}
 
 	// DMARC: a TXT record at _dmarc.<domain> containing v=DMARC1; capture p=.
-	for _, t := range lookup("_dmarc." + domain) {
+	dmarcTxts, dmarcErr := lookup("_dmarc." + domain)
+	for _, t := range dmarcTxts {
 		if strings.Contains(strings.ToLower(t), "v=dmarc1") {
 			res.DMARCFound = true
 			res.DMARCPolicy = parseDMARCPolicy(t)
@@ -73,12 +109,17 @@ func Check(ctx context.Context, domain string, dkimSelectors []string) Result {
 		}
 	}
 
+	// Only the SPF and DMARC lookups gate the persisted verdict; DKIM is advisory
+	// so its lookups don't influence LookupError.
+	res.LookupError = spfErr || dmarcErr
+
 	// DKIM: a TXT record at <selector>._domainkey.<domain>.
 	if len(dkimSelectors) == 0 {
 		dkimSelectors = defaultSelectors
 	}
 	for _, sel := range dkimSelectors {
-		for _, t := range lookup(sel + "._domainkey." + domain) {
+		txts, _ := lookup(sel + "._domainkey." + domain)
+		for _, t := range txts {
 			lt := strings.ToLower(t)
 			if strings.Contains(lt, "v=dkim1") || strings.Contains(lt, "k=rsa") || strings.Contains(lt, "p=") {
 				res.DKIMFound = true

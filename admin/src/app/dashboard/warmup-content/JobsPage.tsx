@@ -24,6 +24,8 @@ import {
     DialogTitle,
 } from "@/components/ui/dialog";
 import { DataTable, type Column } from "@/components/data/DataTable";
+import { StateLegend } from "@/components/StateLegend";
+import { GENERATION_JOB_LEGEND } from "@/lib/legends";
 import { useCursorPager } from "@/lib/useCursorPager";
 import {
     cancelWarmupBatch,
@@ -279,6 +281,9 @@ export default function JobsPage() {
 
     return (
         <>
+            <div className="mb-2 flex justify-end">
+                <StateLegend label="Job statuses explained" entries={GENERATION_JOB_LEGEND} />
+            </div>
             <DataTable
                 columns={columns}
                 rows={rows}

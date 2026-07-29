@@ -1,7 +1,6 @@
 ---
 title: Endpoint scope map
 description: Every endpoint, which auth types it accepts, and which permission it requires.
-icon: Route
 ---
 
 This page is the source of truth for what an API key can and cannot reach. Every route in the backend falls into one of three buckets:
@@ -23,6 +22,7 @@ All paths below are relative to the versioned base URL `https://api.warmbly.com/
 | GET | `/emails` | `READ_EMAILS` |
 | GET | `/emails/:id` | `READ_EMAILS` |
 | PATCH | `/emails/:id` | `WRITE_EMAILS` |
+| PATCH | `/emails/tags` | `WRITE_EMAILS` |
 | PATCH | `/emails/:id/track` | `WRITE_EMAILS` |
 | DELETE | `/emails/:id` | `WRITE_EMAILS` |
 | POST | `/emails/:id/send` | `SEND_CAMPAIGNS` |
@@ -32,6 +32,7 @@ All paths below are relative to the versioned base URL `https://api.warmbly.com/
 | Method | Path | API Permission |
 |--------|------|----------------|
 | GET | `/campaigns` | `READ_CAMPAIGNS` |
+| GET | `/campaigns-overview` | `READ_CAMPAIGNS` |
 | POST | `/campaigns` | `WRITE_CAMPAIGNS` |
 | GET | `/campaigns/:id` | `READ_CAMPAIGNS` |
 | PATCH | `/campaigns/:id` | `WRITE_CAMPAIGNS` |
@@ -50,12 +51,16 @@ All paths below are relative to the versioned base URL `https://api.warmbly.com/
 | GET | `/campaigns/:id/logs` | `READ_CAMPAIGNS` |
 | GET/POST/PATCH/DELETE | `/campaigns/:id/steps[/:sid]` | `READ_CAMPAIGNS` for GET, `WRITE_CAMPAIGNS` otherwise |
 | PATCH | `/campaigns/:id/step-layout` | `WRITE_CAMPAIGNS` |
+| POST | `/generation/write` | `WRITE_CAMPAIGNS` |
+| POST | `/generation/edit` | `WRITE_CAMPAIGNS` |
+| POST | `/generation/ai-variable` | `WRITE_CAMPAIGNS` |
 
 ### Contacts
 
 | Method | Path | API Permission |
 |--------|------|----------------|
 | POST | `/contacts/search` | `READ_CONTACTS` |
+| GET | `/contacts/custom-fields` | `READ_CONTACTS` |
 | POST | `/contacts` | `WRITE_CONTACTS` |
 | DELETE | `/contacts` | `BULK_CONTACTS` |
 | PATCH | `/contacts` | `BULK_CONTACTS` |
@@ -67,6 +72,13 @@ All paths below are relative to the versioned base URL `https://api.warmbly.com/
 | DELETE | `/contacts/:id/notes/:noteId` | `WRITE_CONTACTS` |
 | GET | `/contacts/:id/activities` | `READ_CONTACTS` |
 | GET | `/contacts/:id/deals` | `READ_CRM` |
+| POST | `/contacts/:id/research` | `AI_RESEARCH` |
+| GET | `/contacts/:id/research` | `AI_RESEARCH` |
+| POST | `/contacts/research/batch` | `AI_RESEARCH` |
+
+`GET /contacts/custom-fields` lists the distinct custom-field keys used across your contacts (frequency-ranked), for building personalization pickers. It returns a flat string array under `data`, capped at 200 keys.
+
+AI contact research charges credits (2 per run, billable even when it finds nothing) and only saves cited findings. See the [AI contact research](/guides/ai-contact-research/) guide. The batch endpoint accepts up to 500 contact ids and drains in the background.
 
 ### Unibox
 
@@ -78,6 +90,28 @@ All paths below are relative to the versioned base URL `https://api.warmbly.com/
 | GET | `/unibox/:id` | `READ_UNIBOX` |
 | PATCH | `/unibox/seen` | `WRITE_UNIBOX` |
 | POST | `/unibox/reply` | `WRITE_UNIBOX` |
+| POST | `/unibox/reply/draft` | `READ_UNIBOX` |
+| GET | `/unibox/compose/candidates` | `READ_UNIBOX` |
+| POST | `/unibox/compose` | `WRITE_UNIBOX` |
+| POST | `/unibox/compose/draft` | `READ_UNIBOX` |
+| GET | `/unibox/drafts` | `READ_UNIBOX` |
+| PUT | `/unibox/drafts/:id` | `WRITE_UNIBOX` |
+| DELETE | `/unibox/drafts/:id` | `WRITE_UNIBOX` |
+| GET | `/unibox/agent-drafts` | `READ_UNIBOX` |
+| POST | `/unibox/agent-drafts/:id/approve` | `WRITE_UNIBOX` |
+| POST | `/unibox/agent-drafts/:id/discard` | `WRITE_UNIBOX` |
+
+`POST /unibox/reply/draft` returns an AI-drafted reply (it never sends) grounded in the thread, the contact, and your [voice profile](/guides/unibox/#ai-reply-drafts). It charges AI credits; see [AI credits](/guides/ai-credits/).
+
+`POST /unibox/compose/draft` returns a grounded AI draft for a new email (it never sends): the recipient's contact record, correspondence history, and the workspace voice profile feed the prompt, and the response carries either `text` or a clarifying `question` plus a `grounding` report. Charges AI credits like the reply draft; see [AI credits](/guides/ai-credits/).
+
+`POST /unibox/compose` sends a brand-new outbound email (not a reply). Omit `email_account_id` (or pass `"auto"`) and the backend picks the best mailbox for the first recipient; the response reports `account_id`, `account_email`, `auto`, and a `picked_reason`. Recipients on the workspace suppression list are rejected with a `400` before anything queues. `GET /unibox/compose/candidates?to=<address>` returns every active mailbox scored for that recipient (conversation history, remaining daily budget, domain-auth health) plus the resolved contact and suppression state; see [composing email](/guides/unibox/#composing-a-new-email).
+
+The `/unibox/drafts` endpoints hold autosaved compose drafts, scoped to the calling user within the organization. The draft id is client-generated, so `PUT` is idempotent (safe for debounced autosave and retries); deleting a missing draft is a no-op.
+
+`GET /unibox` also accepts `address=<value>` (matches sender or recipient, for "every conversation with this person") and `direction=sent|received` (resolved against your own mailbox addresses).
+
+The `agent-drafts` endpoints back the [inbox agent](/guides/inbox-agent/): the agent drafts a suggested reply on an inbound human reply and holds it here for review. `GET` lists the pending drafts; `approve` sends one (optionally with an edited `body`) through the normal reply path and is safe to retry with an `Idempotency-Key`; `discard` dismisses it. Approving is the only path that sends.
 
 ### Templates and CRM
 
@@ -172,6 +206,7 @@ Mutating API requests may include an `Idempotency-Key` header. Warmbly stores th
 These never accept an API key. They depend on a human-bound session: billing flows, governance, OAuth onboarding, websocket bootstrap, and operational destruction.
 
 - `POST /auth/login`, `/auth/login/confirm`, `/auth/register`, `/auth/register/confirm`, `/auth/refresh`, `/auth/reset-password`, `/auth/reset-password/confirm`
+- `GET /auth/providers`, `POST /auth/apple`, `POST /auth/google` (native-app social sign-in)
 - `POST /auth/logout`, `POST /auth/logout-all`, `GET /auth/me`, `PATCH /auth/me/onboarding`
 - `POST /auth/me/avatar`, `DELETE /auth/me/avatar`
 - `POST /emails/onboarding/oauth/start`, `POST /emails/onboarding/oauth/finish`, `POST /emails/onboarding/smtp-imap`
@@ -197,6 +232,57 @@ The referral program and billing discount history are part of `/subscription/*`,
 | GET | `/subscription/referral/earnings` | `manage_billing` |
 | GET | `/subscription/discounts` | `manage_billing` |
 
+### AI credits
+
+Credit balance, top-up purchases, and the transaction log are part of `/subscription/*`, so they are JWT only and never accept an API key. Purchases are fulfilled only in the Stripe webhook, never in the checkout call. See the [AI credits](/guides/ai-credits/) guide for what each action costs and the pack and reset rules.
+
+| Method | Path | JWT permission |
+|--------|------|----------------|
+| GET | `/subscription/credits` | `manage_billing` |
+| GET | `/subscription/credits/transactions` | `manage_billing` |
+| POST | `/subscription/credits/checkout` | `manage_billing` |
+
+### AI assistant
+
+The dashboard AI assistant is JWT only: sessions are private to the member who started them. The message and approval runs stream over Server-Sent Events. Each tool the assistant runs is gated by the member's own organization permission bits, so the assistant can never do more than the member could by hand. See the [AI assistant](/guides/ai-assistant/) guide. (API-key and OAuth callers reach the same tools through the [MCP server](/api/mcp/), gated by the `AI_AGENT` scope.)
+
+| Method | Path | JWT permission |
+|--------|------|----------------|
+| POST | `/ai/sessions` | organization member (use AI) |
+| GET | `/ai/sessions` | organization member (use AI) |
+| DELETE | `/ai/sessions` | organization member (use AI) |
+| DELETE | `/ai/sessions/:id` | organization member (use AI) |
+| GET | `/ai/sessions/:id/messages` | organization member (use AI) |
+| POST | `/ai/sessions/:id/messages` | organization member (use AI, SSE) |
+| POST | `/ai/sessions/:id/approve` | organization member (use AI, SSE) |
+
+### AI skills
+
+Org playbooks the AI features follow (see the [AI skills](/guides/ai-skills/) guide). Gated on `manage_settings` for JWT callers, or the `AI_AGENT` scope for API keys.
+
+| Method | Path | Permission |
+|--------|------|------------|
+| GET | `/ai/skills` | `manage_settings` / `AI_AGENT` |
+| POST | `/ai/skills` | `manage_settings` / `AI_AGENT` |
+| PATCH | `/ai/skills/:id` | `manage_settings` / `AI_AGENT` |
+| DELETE | `/ai/skills/:id` | `manage_settings` / `AI_AGENT` |
+
+### Connected MCP servers
+
+External MCP servers whose tools the assistant can use (see [Connect MCP tools](/guides/connect-mcp-tools/)). JWT-only and `manage_settings`-gated; bearer tokens are sealed with the org key and never returned.
+
+| Method | Path | JWT permission |
+|--------|------|----------------|
+| GET | `/ai/connections` | `manage_settings` |
+| POST | `/ai/connections` | `manage_settings` |
+| PATCH | `/ai/connections/:id` | `manage_settings` |
+| DELETE | `/ai/connections/:id` | `manage_settings` |
+| POST | `/ai/connections/:id/refresh` | `manage_settings` |
+
+## MCP server
+
+`POST /v1/mcp` exposes the tool registry over the [Model Context Protocol](/api/mcp/) streamable-HTTP transport. It accepts an API key or an OAuth 2.1 access token (an unauthenticated request gets the RFC 9728 discovery challenge). Each tool is gated by its scope, `tools/list` reflects only what the credential allows, and send-class tools are never exposed. Per-key rate limits apply.
+
 ## Public
 
 - `GET /health`
@@ -204,8 +290,9 @@ The referral program and billing discount history are part of `/subscription/*`,
 - `POST /webhook/stripe` (Stripe signature)
 - `POST /webhook/campaign`, `/webhook/email`, `/webhook/user-email` (Google OIDC token from Cloud Tasks)
 - `GET /addresses/google/callback`, `GET /addresses/outlook/callback` (OAuth bouncer pages)
-- `POST /oauth/token`, `POST /oauth/revoke` (OAuth token endpoints, authenticated by the client's id and secret)
-- `GET /.well-known/oauth-authorization-server` (OAuth discovery metadata)
+- `POST /oauth/token`, `POST /oauth/revoke` (OAuth token endpoints, authenticated by the client's id and secret, or PKCE for public clients)
+- `POST /oauth/register` (OAuth dynamic client registration, RFC 7591; open and per-IP rate-limited)
+- `GET /.well-known/oauth-authorization-server`, `GET /.well-known/oauth-protected-resource` (OAuth discovery metadata)
 
 ## Notes
 

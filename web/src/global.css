@@ -247,6 +247,47 @@ svg.loading circle {
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* AI writing surfaces — a text shimmer for "thinking/writing" status labels
+   and a caret blink for streaming text. Both quiet down under
+   prefers-reduced-motion. */
+@keyframes ai-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+.ai-shimmer-text {
+  background: linear-gradient(90deg, #64748b 30%, #0ea5e9 50%, #64748b 70%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: ai-shimmer 1.8s linear infinite;
+}
+@keyframes ai-caret-blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+.ai-caret {
+  animation: ai-caret-blink 1s steps(1) infinite;
+}
+/* Soft diagonal light sweep over an input while AI writes into it. */
+.ai-sheen {
+  background: linear-gradient(
+    100deg,
+    transparent 25%,
+    rgba(14, 165, 233, 0.09) 45%,
+    rgba(56, 189, 248, 0.14) 50%,
+    rgba(14, 165, 233, 0.09) 55%,
+    transparent 75%
+  );
+  background-size: 220% 100%;
+  animation: ai-shimmer 1.6s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ai-shimmer-text { animation: none; background: none; color: #64748b; }
+  .ai-caret { animation: none; }
+  .ai-sheen { animation: none; background: rgba(14, 165, 233, 0.06); }
+}
+
 /* 3x3 dot-grid activity indicator (adapted from Temani Afif's css-loaders
    "l26"). Native geometry is a ~52px square block, so the dot + box-shadow
    grid lives on a ::before that is scaled down (origin 0 0, after the
@@ -321,8 +362,18 @@ svg.loading circle {
   75%      { transform: scale(1.05) rotate(1deg); opacity: 1; }
 }
 
+/* Sidebar status halo: a quiet-but-connected workspace (READY) breathes —
+   the glow swells and fades on a slow cycle so it visibly reads as alive. */
+.status-breathe {
+  animation: status-breathe 2.2s ease-in-out infinite;
+}
+@keyframes status-breathe {
+  0%, 100% { transform: scale(0.6); opacity: 0.9; }
+  50%      { transform: scale(1.4); opacity: 0.2; }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .sky-breathe, .sun-glow, .cloud-drift, .animate-card-float, .animate-fade-in, .campaign-grid::before, .flame-flicker { animation: none !important; }
+  .sky-breathe, .sun-glow, .cloud-drift, .animate-card-float, .animate-fade-in, .campaign-grid::before, .flame-flicker, .status-breathe { animation: none !important; }
 }
 
 /* ── Utilities ─────────────────────── */
@@ -390,6 +441,99 @@ svg.loading circle {
 .tiptap-body a { color: #0284c7; text-decoration: underline; }
 .tiptap-body strong { font-weight: 600; }
 .tiptap-body:focus { outline: none; }
+
+/* Merge-tag chips shown inside the composer editor. Only the node-view button
+   carries .tpl-var; the resolved `<span data-var>` in the Preview pane is left
+   unstyled on purpose so it reads as the plain value it will send as. */
+.tpl-var-wrap { vertical-align: baseline; }
+.tiptap-body .tpl-var {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  height: 1.25rem;
+  padding: 0 0.375rem;
+  border-radius: 0.25rem;
+  border: 1px solid #e2e8f0; /* slate-200 */
+  background: #f8fafc; /* slate-50 */
+  color: #475569; /* slate-600 */
+  font-size: 11px;
+  line-height: 1;
+  font-weight: 500;
+  white-space: nowrap;
+  vertical-align: baseline;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.12s, border-color 0.12s, color 0.12s;
+}
+.tiptap-body .tpl-var:hover,
+.tiptap-body .tpl-var.tpl-var-active {
+  border-color: #7dd3fc; /* sky-300 */
+  background: #f0f9ff; /* sky-50 */
+  color: #0369a1; /* sky-700 */
+}
+
+/* AI blocks — per-recipient generated copy. A restrained sky tint (with a
+   sparkle icon) distinguishes them from the slate merge chips without leaving
+   the house theme. No gradients or glow. */
+.tpl-ai-wrap { vertical-align: baseline; }
+.tiptap-body .tpl-ai {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  height: 1.25rem;
+  padding: 0 0.4rem;
+  border-radius: 0.25rem;
+  border: 1px solid #bae6fd; /* sky-200 */
+  background: #f0f9ff; /* sky-50 */
+  color: #0369a1; /* sky-700 */
+  font-size: 11px;
+  line-height: 1;
+  font-weight: 500;
+  white-space: nowrap;
+  vertical-align: baseline;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.12s, border-color 0.12s, color 0.12s;
+}
+.tiptap-body .tpl-ai:hover,
+.tiptap-body .tpl-ai.tpl-ai-active {
+  border-color: #7dd3fc; /* sky-300 */
+  background: #e0f2fe; /* sky-100 */
+  color: #075985; /* sky-800 */
+}
+/* Unconfigured AI block: a dashed edge nudges the user to set it up. */
+.tiptap-body .tpl-ai.tpl-ai-empty {
+  border-style: dashed;
+}
+
+/* Conditional (logic) chips — a heavier neutral slate so they read as structure,
+   distinct from the light merge chips and the sky AI chips. Sky hover accent. */
+.tpl-if-wrap { vertical-align: baseline; }
+.tiptap-body .tpl-if {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  height: 1.25rem;
+  padding: 0 0.4rem;
+  border-radius: 0.25rem;
+  border: 1px solid #cbd5e1; /* slate-300 */
+  background: #f1f5f9; /* slate-100 */
+  color: #334155; /* slate-700 */
+  font-size: 11px;
+  line-height: 1;
+  font-weight: 500;
+  white-space: nowrap;
+  vertical-align: baseline;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.12s, border-color 0.12s, color 0.12s;
+}
+.tiptap-body .tpl-if:hover,
+.tiptap-body .tpl-if.tpl-if-active {
+  border-color: #7dd3fc; /* sky-300 */
+  background: #f0f9ff; /* sky-50 */
+  color: #0369a1; /* sky-700 */
+}
 
 /* Campaign flow canvas — smoothly glide nodes when the layout recomputes
    (adding/deleting a step, "Tidy up"). The transition is killed while dragging

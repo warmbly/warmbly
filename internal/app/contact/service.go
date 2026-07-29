@@ -15,6 +15,10 @@ import (
 type ContactService interface {
 	Add(ctx context.Context, userID string, orgID uuid.UUID, contacts []models.AddContact) ([]models.Contact, *errx.Error)
 	Search(ctx context.Context, userID, cursor, category, limit string, filters models.SearchContacts) (*models.ContactsResult, *errx.Error)
+	// SearchCounts returns org-wide contact facet totals for the browse sidebar.
+	SearchCounts(ctx context.Context, orgID string) (*models.ContactsCounts, *errx.Error)
+	// CampaignLeadCounts returns per-status lead totals for one campaign.
+	CampaignLeadCounts(ctx context.Context, orgID, campaignID string) (*models.CampaignLeadCounts, *errx.Error)
 	BulkUpdate(ctx context.Context, userID string, orgID uuid.UUID, data *models.BulkEditContactsData) ([]models.Contact, *errx.Error)
 	Update(ctx context.Context, userID, contactID string, orgID uuid.UUID, data *models.UpdateContact) (*models.Contact, *errx.Error)
 	BulkDelete(ctx context.Context, userID string, orgID uuid.UUID, contactIDs []string) *errx.Error
@@ -33,6 +37,11 @@ type ContactService interface {
 	// and performs the upsert / skip / dedup work. Returns per-row
 	// result counts plus a list of rows that failed (with reasons).
 	ImportCommit(ctx context.Context, userID string, orgID uuid.UUID, file io.Reader, filename string, opts *models.ContactImportCommit) (*models.ContactImportResult, *errx.Error)
+
+	// ListCustomFieldKeys returns the org's distinct contact custom-field keys,
+	// frequency-ranked then alphabetical, capped at 200. Powers the dashboard
+	// variable picker's real-field suggestions.
+	ListCustomFieldKeys(ctx context.Context, orgID uuid.UUID) ([]string, *errx.Error)
 
 	// GetDetail returns the 360 read model used by the contact
 	// slide-over: hydrated contact + engagement summary + suppression.

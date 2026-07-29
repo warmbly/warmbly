@@ -35,3 +35,18 @@ func (s *service) LabelLatestThreadForContact(ctx context.Context, userID uuid.U
 	}
 	return threadID, s.uniboxRepo.AddThreadLabels(ctx, userID, threadID, categoryIDs)
 }
+
+// LatestInboundFromContact returns the subject and snippet of the most recent
+// email received from contactEmail in userID's unibox ("" when none). Backs
+// the campaign AI step's incoming-email context, which knows the contact but
+// not the thread. Read-only and best-effort.
+func (s *service) LatestInboundFromContact(ctx context.Context, userID uuid.UUID, contactEmail string) (string, string, error) {
+	if s.uniboxRepo == nil || contactEmail == "" {
+		return "", "", nil
+	}
+	res, err := s.uniboxRepo.GetBySender(ctx, userID, contactEmail, 1, "")
+	if err != nil || res == nil || len(res.Data) == 0 {
+		return "", "", err
+	}
+	return res.Data[0].Subject, res.Data[0].Snippet, nil
+}

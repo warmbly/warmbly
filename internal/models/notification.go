@@ -18,14 +18,17 @@ const (
 	NotifHealthComplaint NotificationCategory = "health_complaint"
 	NotifWorkerDowntime  NotificationCategory = "health_worker_downtime"
 	NotifSecuritySignIn  NotificationCategory = "security_new_signin"
+	NotifBillingAlert    NotificationCategory = "billing_alert"
+	NotifTeamActivity    NotificationCategory = "team_activity"
 )
 
-// ChannelPrefs is the per-category delivery toggles. Only InApp is delivered
-// today across in-app, email, and a connected Slack workspace.
+// ChannelPrefs is the per-category delivery toggles: in-app feed, account
+// email, a connected Slack workspace, and mobile push (APNs).
 type ChannelPrefs struct {
 	InApp bool `json:"in_app"`
 	Email bool `json:"email"`
 	Slack bool `json:"slack"`
+	Push  bool `json:"push"`
 }
 
 // CategoryPref is the enable flag + channel toggles for one category.
@@ -43,21 +46,38 @@ type NotificationPreferences struct {
 	HealthComplaint CategoryPref `json:"health_complaint"`
 	WorkerDowntime  CategoryPref `json:"health_worker_downtime"`
 	SecuritySignIn  CategoryPref `json:"security_new_signin"`
+	BillingAlert    CategoryPref `json:"billing_alert"`
+	TeamActivity    CategoryPref `json:"team_activity"`
+
+	// EmailDigestMinutes is the email-channel bundling window: pending
+	// notification emails hold this long, then flush as one email. Bounded
+	// by config.NotificationEmailWindow* (30 min floor, 24h ceiling).
+	// Security sign-in alerts always go out immediately.
+	EmailDigestMinutes int `json:"email_digest_minutes"`
 }
 
 // DefaultNotificationPreferences is the merge base. Health categories default ON
 // (operationally important + low volume); inbound categories default OFF (a big
 // campaign would otherwise flood the feed with a notification per recipient).
+// Push defaults on: it only fires for devices the user explicitly registered by
+// granting the OS notification permission, and enabled categories should reach
+// those devices without a second opt-in.
 func DefaultNotificationPreferences() NotificationPreferences {
-	on := CategoryPref{Enabled: true, Channels: ChannelPrefs{InApp: true}}
-	off := CategoryPref{Enabled: false, Channels: ChannelPrefs{InApp: true}}
+	on := CategoryPref{Enabled: true, Channels: ChannelPrefs{InApp: true, Push: true}}
+	off := CategoryPref{Enabled: false, Channels: ChannelPrefs{InApp: true, Push: true}}
+	// Billing defaults to email on: rare, and a paused workspace must reach
+	// whoever can fix it even when nobody is watching the dashboard.
+	billing := CategoryPref{Enabled: true, Channels: ChannelPrefs{InApp: true, Push: true, Email: true}}
 	return NotificationPreferences{
-		InboundReply:    off,
-		InboundOOO:      off,
-		HealthBounce:    on,
-		HealthComplaint: on,
-		WorkerDowntime:  on,
-		SecuritySignIn:  on,
+		InboundReply:       off,
+		InboundOOO:         off,
+		HealthBounce:       on,
+		HealthComplaint:    on,
+		WorkerDowntime:     on,
+		SecuritySignIn:     on,
+		BillingAlert:       billing,
+		TeamActivity:       on,
+		EmailDigestMinutes: 30,
 	}
 }
 
@@ -76,6 +96,10 @@ func (p NotificationPreferences) CategoryPref(c NotificationCategory) CategoryPr
 		return p.WorkerDowntime
 	case NotifSecuritySignIn:
 		return p.SecuritySignIn
+	case NotifBillingAlert:
+		return p.BillingAlert
+	case NotifTeamActivity:
+		return p.TeamActivity
 	default:
 		return CategoryPref{}
 	}
@@ -93,9 +117,39 @@ type Notification struct {
 	Metadata       map[string]any       `json:"metadata,omitempty"`
 	ReadAt         *time.Time           `json:"read_at,omitempty"`
 	CreatedAt      time.Time            `json:"created_at"`
+
+	// Email-channel digest bookkeeping — internal, never serialized to
+	// clients. GroupKey ties the same org event across users so the flush
+	// loop can coalesce it into one email with every recipient in To.
+	GroupKey      string     `json:"-"`
+	EmailState    string     `json:"-"`
+	EmailDueAt    *time.Time `json:"-"`
+	EmailAttempts int        `json:"-"`
+	// PreRead inserts the row already read: used when the user has the
+	// in-app channel off but email on, so the feed stays the delivery
+	// record without ringing the bell.
+	PreRead bool `json:"-"`
 }
 
 // UpdateNotificationPreferencesRequest is the PUT payload.
 type UpdateNotificationPreferencesRequest struct {
 	Preferences NotificationPreferences `json:"preferences"`
+}
+
+// DeviceToken is one push-capable device registration (APNs).
+type DeviceToken struct {
+	ID          uuid.UUID `json:"id"`
+	UserID      uuid.UUID `json:"user_id"`
+	Platform    string    `json:"platform"`
+	Token       string    `json:"token"`
+	Environment string    `json:"environment"`
+	CreatedAt   time.Time `json:"created_at"`
+	LastSeenAt  time.Time `json:"last_seen_at"`
+}
+
+// RegisterDeviceTokenRequest is the POST payload from the mobile app.
+type RegisterDeviceTokenRequest struct {
+	Token       string `json:"token" binding:"required"`
+	Platform    string `json:"platform"`
+	Environment string `json:"environment"`
 }

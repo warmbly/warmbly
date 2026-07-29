@@ -11,7 +11,9 @@ export type SequenceActionType =
     | "create_deal"
     | "move_deal_stage"
     | "run_automation"
-    | "fire_event";
+    | "fire_event"
+    | "switch"
+    | "ai_step";
 
 // One templated input passed to a launched automation (value supports the same
 // {{.FirstName}}/{{.Company}} contact templating campaign copy uses).
@@ -55,4 +57,48 @@ export interface SequenceAction {
     // value are templated against the contact; the fields become the payload.
     event_name?: string;
     event_fields?: ActionKV[];
+    // switch — a multi-way router. switch_cases are the named case paths shown
+    // as draggable dots on the canvas node; each connected case is stored as a
+    // branch with an "ai_label" condition carrying the case name, and an
+    // unconditional branch is the "otherwise" fallback. switch_on picks the
+    // decider: "ai" (one model call per contact follows ai_instruction and
+    // picks exactly one case; 1 credit) or "value" (switch_value, a template
+    // like {{.Industry}}, rendered against the contact and matched to the case
+    // names; free, no model call). Side effects are ordinary action steps
+    // placed on the chosen path.
+    switch_on?: "ai" | "value";
+    switch_cases?: string[];
+    switch_value?: string;
+    ai_instruction?: string;
+    // AI-decider capabilities: web search runs one lookup about the contact's
+    // company before deciding (+1 credit when results are found); thinking
+    // routes to the stronger model tier (costs more through usage metering).
+    ai_web_search?: boolean;
+    ai_thinking?: boolean;
+    // Context opt-outs for the AI decider: by default the model also sees the
+    // contact's campaign history (steps run, opens/clicks/replies, prior
+    // outcomes) and their newest inbound email. Stored inverted so existing
+    // steps keep the richer context.
+    ai_no_engagement?: boolean;
+    ai_no_replies?: boolean;
+    // ai_step (agent) — an AI agent that follows ai_instruction and may call the
+    // reversible actions listed here (add_tag, remove_tag, label_email,
+    // unsubscribe, create_task, create_deal, move_deal_stage). Each enabled
+    // action's pinned config reuses the fields above in this same blob. The
+    // agent decides which to run per contact; it never sends or replies.
+    ai_allowed_actions?: string[];
+    // Optional tag/label pools the agent picks from when add_tag / remove_tag /
+    // label_email are enabled. The name is carried so the executor can offer it
+    // to the model and resolve the pick to an id without a category lookup. An
+    // empty pool means unrestricted (the agent may use any of the org's tags);
+    // ai_allow_create_tags additionally lets it create a new one.
+    ai_add_tags?: AITagRef[];
+    ai_remove_tags?: AITagRef[];
+    ai_labels?: AITagRef[];
+    ai_allow_create_tags?: boolean;
+}
+
+export interface AITagRef {
+    id: string;
+    name: string;
 }

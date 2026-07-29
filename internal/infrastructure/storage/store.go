@@ -22,6 +22,13 @@ type Store interface {
 	// contentType may be empty.
 	Put(ctx context.Context, key string, body io.Reader, contentType string) error
 
+	// PutPublic writes an object meant to be served publicly (avatars, org
+	// logos) and returns a stable, browser-loadable URL for it. The S3 backend
+	// sets a public-read ACL + long cache and returns the object URL; the
+	// filesystem backend writes the object and returns a URL under the
+	// configured public base (served by the backend's /public route).
+	PutPublic(ctx context.Context, key string, body io.Reader, contentType string) (string, error)
+
 	// Delete removes the object. Deleting a missing key is not an error.
 	Delete(ctx context.Context, key string) error
 

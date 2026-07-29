@@ -23,7 +23,9 @@ func (h *Handler) HandleEmailTask(c *gin.Context) {
 		return
 	}
 
-	if err := h.TasksService.HandleEmailTask(&taskPayload); err != nil {
+	// Dispatch by the task row's type: every enqueue targets this one webhook
+	// URL, so campaign and user-email callbacks land here too.
+	if err := h.TasksService.HandleTask(&taskPayload); err != nil {
 		errx.Handle(c, err)
 		return
 	}

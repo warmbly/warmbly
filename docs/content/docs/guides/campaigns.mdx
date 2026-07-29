@@ -1,7 +1,6 @@
 ---
 title: Campaigns
 description: "Create and send cold outreach campaigns safely."
-icon: Send
 ---
 
 A campaign is a sequence of emails that Warmbly sends to a list of contacts on your behalf, spread across your connected mailboxes. Warmbly handles the timing, the volume limits, and the rotation between mailboxes so your sending looks natural and stays safe.
@@ -86,6 +85,19 @@ The ramp is applied as another minimum on top of the per-mailbox cap, so it only
 
 You can also throttle how many brand-new contacts a campaign starts each day with **Max new leads per day** (set to `0` for no limit, up to `1000`). When the cap is reached, Warmbly keeps sending follow-ups to contacts already in flight and resumes adding new leads the next day. You can optionally prioritize new leads over follow-ups, and choose whether to attempt delivery to addresses flagged risky by verification.
 
+### Lead statuses
+
+The **Leads** tab shows one status per contact so you can see where each lead stands in the sequence at a glance:
+
+- **Queued**: a lead in the campaign that has not been emailed yet.
+- **Processing**: some, but not all, sequence steps have been sent. The lead is still moving through the flow.
+- **Done**: every step in the sequence has been sent and the lead has not replied or bounced. There is nothing left to send this contact.
+- **Replied**: the contact replied. Sending to them stops.
+- **Bounced**: a send hard-bounced.
+- **Unsubscribed**: the contact unsubscribed or is suppressed.
+
+A lead stays **Processing** only while steps remain to send. Once the last step goes out it moves to **Done**, so a finished campaign reads as done rather than stuck mid-flight.
+
 ## Scheduling windows
 
 A campaign only sends inside the **weekly sending windows** you define, expressed in the campaign's timezone. Each day of the week is independent: you can set different hours per day, or several separate windows in one day. Presets like `Mon–Fri 9–5` are available, or you can drag the windows directly on the grid.
@@ -127,7 +139,7 @@ Warmbly defaults are deliberately conservative. The goal is a low complaint rate
 A practical starting band for most cold mailboxes is `30`–`50`/day once they are warmed. Start newer mailboxes lower, around `10`–`20`/day, and ramp from there.
 
 <Callout type="warn" title="Keep warmup running">
-Keep mailbox warmup active even after campaigns begin. A mailbox that stops warming and only sends cold mail loses the natural activity that protects its reputation.
+Keep mailbox warmup active even after campaigns begin. Warmbly automatically limits a campaign mailbox to at most five warmup messages per day, so campaign traffic remains primary. Warmup cannot compensate for one repetitive template sent to a poorly targeted list. Use personalization or spintax, test meaningful A/B variants, honor suppression and unsubscribe signals, and let mailbox health reduce or pause cold volume when reputation worsens.
 </Callout>
 
 ## Related guides

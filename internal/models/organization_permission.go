@@ -75,6 +75,11 @@ const (
 	// This is the operational counterpart to PermManageSettings, which still
 	// gates connecting/disconnecting and editing integration configuration.
 	PermUseIntegrations
+	// PermUseAI allows using the AI features (the dashboard assistant and AI
+	// drafting), all of which consume the org's shared credits. Bit 15 — the
+	// last bit of the 16-bit mask; migration 000073 backfilled it onto every
+	// existing role and member override.
+	PermUseAI
 )
 
 // Role represents predefined permission sets
@@ -97,7 +102,7 @@ var RolePermissions = map[Role]OrganizationPermission{
 	RoleManager: PermManageCampaigns | PermManageContacts | PermManageEmails |
 		PermSendCampaigns | PermManageSequences | PermViewAnalytics |
 		PermViewCampaigns | PermViewContacts | PermAccessUnibox |
-		PermUseIntegrations,
+		PermUseIntegrations | PermUseAI,
 	RoleViewer: PermViewCampaigns | PermViewContacts | PermViewAnalytics,
 }
 
@@ -122,7 +127,7 @@ func DefaultSeedRoles() []SeedRole {
 	allDefined := PermManageTeam | PermManageBilling | PermManageCampaigns | PermManageContacts |
 		PermManageEmails | PermViewAnalytics | PermSendCampaigns | PermAccessUnibox |
 		PermManageSequences | PermManageSettings | PermViewCampaigns | PermViewContacts |
-		PermManageAPIKeys | PermUseIntegrations
+		PermManageAPIKeys | PermUseIntegrations | PermUseAI
 	return []SeedRole{
 		{Name: "Admin", Description: "Everything except transferring ownership.", Color: "#8b5cf6", Permissions: allDefined},
 		{Name: "Manager", Description: "Runs campaigns, contacts, mailboxes, and integrations. No team, billing, or settings access.", Color: "#10b981", Permissions: GetRolePermissions(RoleManager)},

@@ -54,7 +54,7 @@ export default function useFeatureAccess(): FeatureAccess {
     const sub = useSubscription();
     const currentOrg = useAppStore((s) => s.currentOrganization);
 
-    const planId = ((sub.data?.plan_name ?? currentOrg?.plan ?? "free").toLowerCase()) as PlanID;
+    const planId = ((sub.data?.plan?.name ?? currentOrg?.plan ?? "free").toLowerCase()) as PlanID;
     const plan = getPlan(planId).id;
     const status = sub.data?.status;
 

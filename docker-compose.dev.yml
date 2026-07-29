@@ -63,19 +63,16 @@ services:
     depends_on:
       backend:
         condition: service_started
-      kafka:
+      nats:
         condition: service_healthy
-      schema-registry:
-        condition: service_started
 
-  worker-shared-1:
+  worker:
     image: warmbly-go-dev
     build:
       context: .
       dockerfile: deploy/docker/go-dev.Dockerfile
     environment:
       WARMBLY_CMD: worker
-      WORKER_TIER: shared
     volumes:
       - .:/app
       - warmbly_gomodcache:/go/pkg/mod

@@ -35,15 +35,28 @@ type TrialService interface {
 	GetTrialStatus(ctx context.Context, orgID uuid.UUID) (*TrialStatus, *errx.Error)
 }
 
+// CreditGranter is the slice of the credit service the trial flow uses to seed
+// the org's monthly AI-credit allowance once, when the free trial starts.
+type CreditGranter interface {
+	ResetMonthlyAllowance(ctx context.Context, orgID uuid.UUID, allowance int, idempotencyKey string) error
+}
+
 type trialService struct {
 	subRepo  repository.SubscriptionRepository
 	userRepo repository.UserRepository
+	planRepo repository.PlanRepository
+	credits  CreditGranter
 }
 
-func NewService(subRepo repository.SubscriptionRepository, userRepo repository.UserRepository) TrialService {
+// NewService constructs the trial service. planRepo and credits are optional
+// (nil-safe): when both are set, StartFreeTrialWithOrg seeds the free plan's
+// monthly AI-credit allowance so trial orgs can try AI features.
+func NewService(subRepo repository.SubscriptionRepository, userRepo repository.UserRepository, planRepo repository.PlanRepository, credits CreditGranter) TrialService {
 	return &trialService{
 		subRepo:  subRepo,
 		userRepo: userRepo,
+		planRepo: planRepo,
+		credits:  credits,
 	}
 }
 
@@ -85,6 +98,16 @@ func (s *trialService) StartFreeTrialWithOrg(ctx context.Context, userID uuid.UU
 
 	if err := s.subRepo.Create(ctx, sub); err != nil {
 		return err
+	}
+
+	// Seed the free plan's monthly AI-credit allowance once, at trial start.
+	// Trial orgs never hit invoice.paid, so this is their only grant until they
+	// convert. Set-to-N with a per-org idempotency key so a re-trigger can't
+	// double-grant. Best-effort: a credit failure must not fail trial creation.
+	if s.credits != nil && s.planRepo != nil {
+		if plan, perr := s.planRepo.GetByID(ctx, freePlanUUID); perr == nil && plan != nil && plan.MonthlyCredits > 0 {
+			_ = s.credits.ResetMonthlyAllowance(ctx, orgID, plan.MonthlyCredits, "trial_grant:"+orgID.String())
+		}
 	}
 
 	// Mark the user's free trial as used

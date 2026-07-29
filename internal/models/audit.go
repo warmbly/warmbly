@@ -96,6 +96,21 @@ const (
 	// = a reward or clawback on the referrer's earnings ledger.
 	AuditEntityReferral       AuditEntityType = "referral"
 	AuditEntityReferralCredit AuditEntityType = "referral_credit"
+
+	// AI credits. credit_purchase = a top-up pack was fulfilled; credit_grant =
+	// the monthly plan allowance was reset/granted. Both change the org's
+	// billing/credits view, so the spine refreshes teammates on either.
+	AuditEntityCreditPurchase AuditEntityType = "credit_purchase"
+	AuditEntityCreditGrant    AuditEntityType = "credit_grant"
+
+	// AI assistant session (per-user dashboard agent conversation).
+	AuditEntityAISession AuditEntityType = "ai_session"
+
+	// AI skill (org playbook) create/update/delete.
+	AuditEntityAISkill AuditEntityType = "ai_skill"
+
+	// Connected MCP server (external tools) connect/update/disconnect.
+	AuditEntityMCPServer AuditEntityType = "mcp_server"
 )
 
 // AuditActor is the minimal identity of the member who performed an action,

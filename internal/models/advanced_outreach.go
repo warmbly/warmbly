@@ -1,6 +1,7 @@
 package models
 
 import (
+	"math"
 	"time"
 
 	"github.com/google/uuid"
@@ -276,10 +277,17 @@ type DeliverabilityDashboard struct {
 
 	// Overall health band for the org window (from the documented thresholds).
 	Band string `json:"band"`
+	// Score is the 0-100 composite deliverability score for the window.
+	Score int `json:"score"`
 
 	Timeseries []DeliverabilityDailyPoint `json:"timeseries"`
 	ByMailbox  []MailboxDeliverability    `json:"by_mailbox"`
 	ByCampaign []CampaignDeliverability   `json:"by_campaign"`
+	// ByProvider breaks seed placement results down per recipient provider.
+	ByProvider []ProviderPlacement `json:"by_provider"`
+	// WarmupPlacement is the continuous warmup-derived placement signal per
+	// recipient domain (inbox = verified arrivals not flagged spam).
+	WarmupPlacement []WarmupDomainPlacement `json:"warmup_placement"`
 }
 
 // DeliverabilityDailyPoint is one UTC day in the deliverability timeseries.
@@ -318,6 +326,30 @@ type CampaignDeliverability struct {
 	Band          string    `json:"band"`
 }
 
+// ProviderPlacement is one recipient provider's seed placement rollup in the
+// window (from placement_results; folders mirror the table CHECK constraint).
+type ProviderPlacement struct {
+	Provider   string  `json:"provider"`
+	Samples    int     `json:"samples"`
+	Inbox      int     `json:"inbox"`
+	Promotions int     `json:"promotions"`
+	Spam       int     `json:"spam"`
+	Other      int     `json:"other"`
+	InboxRate  float64 `json:"inbox_rate"`
+	SpamRate   float64 `json:"spam_rate"`
+}
+
+// WarmupDomainPlacement is one recipient domain's warmup placement rollup:
+// Delivered counts verified warmup arrivals, Spam the ones flagged into junk.
+type WarmupDomainPlacement struct {
+	Provider  string  `json:"provider"`
+	Domain    string  `json:"domain"`
+	Delivered int     `json:"delivered"`
+	Spam      int     `json:"spam"`
+	InboxRate float64 `json:"inbox_rate"`
+	SpamRate  float64 `json:"spam_rate"`
+}
+
 // DeliverabilityBand maps bounce%/complaint%/spam-placement% to a health band
 // using the documented shared-pool thresholds (see CLAUDE.md). Rates are on the
 // percent scale (0-100), so complaintRate>=0.03 means 0.03% (3 basis points),
@@ -333,6 +365,20 @@ func DeliverabilityBand(bounceRate, complaintRate, spamRate float64) string {
 	default:
 		return "healthy"
 	}
+}
+
+// DeliverabilityScore folds the same three rates the band uses into a 0-100
+// score: each penalty saturates at the "blocked" threshold of its metric, so
+// any single metric in the blocked band alone costs its full weight.
+func DeliverabilityScore(bounceRate, complaintRate, spamRate float64) int {
+	penalty := math.Min(40, bounceRate*4) + // 10% bounce = full 40
+		math.Min(30, complaintRate*100) + // 0.30% complaints = full 30
+		math.Min(40, spamRate) // 40% spam placement = full 40
+	score := int(math.Round(100 - penalty))
+	if score < 0 {
+		return 0
+	}
+	return score
 }
 
 // Rate is a divide-by-zero-safe percentage (count/total*100).

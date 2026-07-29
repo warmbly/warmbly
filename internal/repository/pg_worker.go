@@ -43,7 +43,7 @@ type WorkerRepository interface {
 	CreateDedicatedAssignment(ctx context.Context, assignment *models.DedicatedWorkerAssignment) error
 	CreateDedicatedAssignmentIfNotExists(ctx context.Context, assignment *models.DedicatedWorkerAssignment) (bool, error)
 	GetActiveDedicatedAssignment(ctx context.Context, userID uuid.UUID) (*models.DedicatedWorkerAssignment, error)
-	GetDedicatedWorkerByUserID(ctx context.Context, userID uuid.UUID) (*models.Worker, error)
+	GetDedicatedWorkerByOrgID(ctx context.Context, orgID uuid.UUID) (*models.Worker, error)
 	ReleaseDedicatedAssignment(ctx context.Context, userID uuid.UUID) error
 
 	// Email account worker queries
@@ -282,14 +282,14 @@ func (r *workerRepository) SetWorkerType(ctx context.Context, workerID uuid.UUID
 // CreateDedicatedAssignment creates a new dedicated worker assignment
 func (r *workerRepository) CreateDedicatedAssignment(ctx context.Context, assignment *models.DedicatedWorkerAssignment) error {
 	query := `
-		INSERT INTO dedicated_worker_assignments (id, worker_id, user_id, subscription_id, assigned_at)
+		INSERT INTO dedicated_worker_assignments (id, worker_id, organization_id, subscription_id, assigned_at)
 		VALUES ($1, $2, $3, $4, $5)
 	`
 
 	_, err := r.db.Exec(ctx, query,
 		assignment.ID,
 		assignment.WorkerID,
-		assignment.UserID,
+		assignment.OrganizationID,
 		assignment.SubscriptionID,
 		assignment.AssignedAt,
 	)
@@ -297,21 +297,21 @@ func (r *workerRepository) CreateDedicatedAssignment(ctx context.Context, assign
 }
 
 // CreateDedicatedAssignmentIfNotExists atomically creates a dedicated worker assignment
-// only if no active (released_at IS NULL) assignment exists for the user.
+// only if no active (released_at IS NULL) assignment exists for the organization.
 // Returns (true, nil) if created, (false, nil) if already exists.
 func (r *workerRepository) CreateDedicatedAssignmentIfNotExists(ctx context.Context, assignment *models.DedicatedWorkerAssignment) (bool, error) {
 	query := `
-		INSERT INTO dedicated_worker_assignments (id, worker_id, user_id, subscription_id, assigned_at)
+		INSERT INTO dedicated_worker_assignments (id, worker_id, organization_id, subscription_id, assigned_at)
 		SELECT $1, $2, $3, $4, $5
 		WHERE NOT EXISTS (
 			SELECT 1 FROM dedicated_worker_assignments
-			WHERE user_id = $3 AND released_at IS NULL
+			WHERE organization_id = $3 AND released_at IS NULL
 		)
 	`
 	result, err := r.db.Exec(ctx, query,
 		assignment.ID,
 		assignment.WorkerID,
-		assignment.UserID,
+		assignment.OrganizationID,
 		assignment.SubscriptionID,
 		assignment.AssignedAt,
 	)
@@ -321,17 +321,17 @@ func (r *workerRepository) CreateDedicatedAssignmentIfNotExists(ctx context.Cont
 	return result.RowsAffected() > 0, nil
 }
 
-// GetActiveDedicatedAssignment retrieves the active dedicated assignment for a user
+// GetActiveDedicatedAssignment retrieves the active dedicated assignment for an organization
 func (r *workerRepository) GetActiveDedicatedAssignment(ctx context.Context, userID uuid.UUID) (*models.DedicatedWorkerAssignment, error) {
 	query := `
-		SELECT id, worker_id, user_id, subscription_id, assigned_at, released_at
+		SELECT id, worker_id, organization_id, subscription_id, assigned_at, released_at
 		FROM dedicated_worker_assignments
-		WHERE user_id = $1 AND released_at IS NULL
+		WHERE organization_id = $1 AND released_at IS NULL
 	`
 
 	var a models.DedicatedWorkerAssignment
 	err := r.db.QueryRow(ctx, query, userID).Scan(
-		&a.ID, &a.WorkerID, &a.UserID, &a.SubscriptionID, &a.AssignedAt, &a.ReleasedAt,
+		&a.ID, &a.WorkerID, &a.OrganizationID, &a.SubscriptionID, &a.AssignedAt, &a.ReleasedAt,
 	)
 	if err == pgx.ErrNoRows {
 		return nil, nil
@@ -342,17 +342,17 @@ func (r *workerRepository) GetActiveDedicatedAssignment(ctx context.Context, use
 	return &a, nil
 }
 
-// GetDedicatedWorkerByUserID retrieves the dedicated worker assigned to a user
-func (r *workerRepository) GetDedicatedWorkerByUserID(ctx context.Context, userID uuid.UUID) (*models.Worker, error) {
+// GetDedicatedWorkerByOrgID retrieves the dedicated worker assigned to an organization
+func (r *workerRepository) GetDedicatedWorkerByOrgID(ctx context.Context, orgID uuid.UUID) (*models.Worker, error) {
 	query := `
 		SELECT w.id, w.ip_addr, w.active, w.free_tier, w.worker_type, w.account_count, w.created_at, w.updated_at
 		FROM workers w
 		JOIN dedicated_worker_assignments dwa ON w.id = dwa.worker_id
-		WHERE dwa.user_id = $1 AND dwa.released_at IS NULL
+		WHERE dwa.organization_id = $1 AND dwa.released_at IS NULL
 	`
 
 	var w models.Worker
-	err := r.db.QueryRow(ctx, query, userID).Scan(
+	err := r.db.QueryRow(ctx, query, orgID).Scan(
 		&w.ID, &w.IPAddr, &w.Active, &w.FreeTier, &w.WorkerType, &w.AccountCount,
 		&w.CreatedAt, &w.UpdatedAt,
 	)
@@ -370,7 +370,7 @@ func (r *workerRepository) ReleaseDedicatedAssignment(ctx context.Context, userI
 	query := `
 		UPDATE dedicated_worker_assignments
 		SET released_at = $1
-		WHERE user_id = $2 AND released_at IS NULL
+		WHERE organization_id = $2 AND released_at IS NULL
 	`
 
 	_, err := r.db.Exec(ctx, query, time.Now(), userID)

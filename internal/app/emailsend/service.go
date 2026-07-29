@@ -10,11 +10,11 @@ import (
 	"github.com/warmbly/warmbly/internal/app/feature"
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
-	"github.com/warmbly/warmbly/internal/infrastructure/gtasks"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
 	"github.com/warmbly/warmbly/internal/scheduler"
 	"github.com/warmbly/warmbly/internal/tasks/proto"
+	"github.com/warmbly/warmbly/internal/tasksched"
 )
 
 // MaxScheduleHorizon caps how far in the future a send can be queued.
@@ -55,7 +55,7 @@ type emailSendService struct {
 	emailRepo     repository.EmailRepository
 	userRepo      repository.UserRepository
 	scheduler     scheduler.SchedulerService
-	tasksClient   *gtasks.Client
+	tasksClient   tasksched.Scheduler
 	featureGate   feature.FeatureGateService
 	dailyThrottle dailythrottle.Service
 }
@@ -65,7 +65,7 @@ func NewService(
 	emailRepo repository.EmailRepository,
 	userRepo repository.UserRepository,
 	scheduler scheduler.SchedulerService,
-	tasksClient *gtasks.Client,
+	tasksClient tasksched.Scheduler,
 	featureGate feature.FeatureGateService,
 	dailyThrottle dailythrottle.Service,
 ) EmailSendService {
@@ -181,6 +181,21 @@ func (s *emailSendService) SendEmail(ctx context.Context, userID, orgID, account
 	default:
 		sendMode = "instant"
 		scheduledAt = time.Now()
+	}
+
+	// Undo send: instant sends are queued a short window into the
+	// future so the user can still cancel them through the existing
+	// DELETE /unibox/scheduled/:task_id path. Clamped to the config
+	// bounds so a bad DB value can never park a send for hours.
+	if sendMode == "instant" {
+		secs := config.UndoSendSecondsDefault
+		if s.userRepo != nil {
+			if v, err := s.userRepo.GetUndoSendSeconds(ctx, userID); err == nil {
+				secs = v
+			}
+		}
+		secs = min(max(secs, config.UndoSendSecondsMin), config.UndoSendSecondsMax)
+		scheduledAt = time.Now().Add(time.Duration(secs) * time.Second)
 	}
 
 	// Create task + email_task records

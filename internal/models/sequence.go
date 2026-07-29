@@ -49,7 +49,7 @@ type Sequence struct {
 // ActionConfig is the persisted config for a non-email (action/wait) node. Type
 // is the switch the task executes on; the remaining fields are type-scoped.
 type ActionConfig struct {
-	Type string `json:"type"` // wait | add_tag | remove_tag | label_email | unsubscribe | notify | create_task | create_deal | move_deal_stage | run_automation | fire_event | end
+	Type string `json:"type"` // wait | add_tag | remove_tag | label_email | unsubscribe | notify | create_task | create_deal | move_deal_stage | run_automation | fire_event | switch | ai_step | end
 
 	// wait
 	WaitMinutes *int `json:"wait_minutes,omitempty"`
@@ -97,6 +97,80 @@ type ActionConfig struct {
 	// templated against the contact; the fields become the event payload.
 	EventName   string     `json:"event_name,omitempty"`
 	EventFields []ActionKV `json:"event_fields,omitempty"`
+
+	// switch — a multi-way router. SwitchCases are the named case paths shown
+	// as draggable dots on the canvas node; each connected case is stored as an
+	// outgoing branch with an "ai_label" condition carrying the case name, and
+	// an unconditional branch is the "otherwise" fallback. SwitchOn picks the
+	// decider:
+	//   "ai"    — one model call per contact follows AIInstruction (templated
+	//             against the contact) and picks EXACTLY one case. Costs one AI
+	//             credit per contact.
+	//   "value" — SwitchValue (a template like {{.Industry}}) is rendered
+	//             against the contact and matched to the case names. Free,
+	//             deterministic, no model call.
+	// Either way the chosen case lands on the progress row (RecordAILabel) and
+	// routing reads it at the step boundary; a contact matching no case follows
+	// the fallback. Side effects are ordinary action steps placed on the chosen
+	// path, never executed by the decider. Always runs through the scheduler
+	// (never the instant chain), so an instant branch pauses at it.
+	SwitchOn      string   `json:"switch_on,omitempty"` // "ai" (default) | "value"
+	SwitchCases   []string `json:"switch_cases,omitempty"`
+	SwitchValue   string   `json:"switch_value,omitempty"`
+	AIInstruction string   `json:"ai_instruction,omitempty"`
+
+	// AI-decider capabilities. AIWebSearch runs one bounded web search about
+	// the contact's company before deciding and feeds the results in as fenced
+	// untrusted context (+1 credit when results are found). AIThinking routes
+	// the call to the stronger model tier with a larger output budget; the
+	// extra cost flows through usage metering.
+	AIWebSearch bool `json:"ai_web_search,omitempty"`
+	AIThinking  bool `json:"ai_thinking,omitempty"`
+
+	// Context opt-outs for the AI-decided switch. By default the model also
+	// sees the contact's campaign history (which steps ran, opens/clicks/
+	// replies, prior outcomes) and the newest email received from them, so
+	// decisions can be grounded in "what happened so far". Stored inverted so
+	// existing steps keep the richer context.
+	AINoEngagement bool `json:"ai_no_engagement,omitempty"`
+	AINoReplies    bool `json:"ai_no_replies,omitempty"`
+
+	// ai_step (agent) — a bounded AI agent that follows AIInstruction and may
+	// call the reversible actions in AIAllowedActions (add_tag, remove_tag,
+	// label_email, unsubscribe, create_task, create_deal, move_deal_stage). Most
+	// enabled actions' pinned config lives in this same ActionConfig blob (the
+	// Deal* / Task* / LabelIDs fields above). The agent decides which to run per
+	// contact; it never sends or replies. Billed per iteration.
+	AIAllowedActions []string `json:"ai_allowed_actions,omitempty"`
+	// AIAddTags / AIRemoveTags / AILabels are OPTIONAL pools the agent picks from
+	// by name. An empty pool means unrestricted: the executor lists the org's
+	// tags/labels live at run time and the agent may use any (tags and unibox
+	// labels are the same category registry). AIAllowCreateTags additionally lets
+	// an empty-pool pick mint a brand-new tag/label (opt-in).
+	AIAddTags         []AITagRef `json:"ai_add_tags,omitempty"`
+	AIRemoveTags      []AITagRef `json:"ai_remove_tags,omitempty"`
+	AILabels          []AITagRef `json:"ai_labels,omitempty"`
+	AIAllowCreateTags bool       `json:"ai_allow_create_tags,omitempty"`
+}
+
+// AITagRef is one tag in an AI agent step's add/remove pool (id + display name).
+type AITagRef struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// IsReversibleCampaignAction is the closed set of reversible action types a
+// campaign AI agent step (ai_step) may call as a guarded tool. Its own list
+// (never derived) so it can never include a send, run_automation, fire_event,
+// switch, wait, or end. Shared by write validation and the step executor.
+func IsReversibleCampaignAction(t string) bool {
+	switch t {
+	case "add_tag", "remove_tag", "label_email", "unsubscribe",
+		"create_task", "create_deal", "move_deal_stage":
+		return true
+	default:
+		return false
+	}
 }
 
 // ActionKV is one templated input passed to a launched automation.
@@ -192,13 +266,20 @@ type BranchCondition struct {
 	// replies (auto_reply / out_of_office) — only a human reply sets replied_at,
 	// so a vacation autoresponder never trips "replied" or stop_on_reply. Use the
 	// reply_automated field to branch specifically on an automated reply.
+	//
+	// "ai_label" (operator "is", value in Label) matches when the AI step that
+	// owns this branch stored that label for the contact — deterministic at
+	// schedule time, no model call.
 	Field string `json:"field"`
 	// Operator is the comparison. "within_days" (the signal occurred in the last
 	// Value days) and "ever" (the signal occurred at all). For the not_* fields
 	// the meaning inverts (did NOT happen within / ever). The reply_* fields take
-	// operator "ever" (no Value).
+	// operator "ever" (no Value). "is" pairs with "ai_label" (compare to Label).
 	Operator string `json:"operator"`
 	// Value is the day window for "within_days". nil for operators that take no
 	// argument (e.g. "ever").
 	Value *int `json:"value"`
+	// Label is the AI-step label an "ai_label" condition compares against
+	// (case-insensitive). Empty for every other field.
+	Label string `json:"label,omitempty"`
 }

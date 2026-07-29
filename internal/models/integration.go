@@ -284,7 +284,36 @@ const (
 	// with REALTIME_SUBSCRIBE on the org websocket) receive it with no public URL,
 	// so it replaces an outbound webhook for "tell my system this happened".
 	IntegrationActionFireEvent IntegrationAction = "warmbly.fire_event"
+
+	// AI nodes mirror the campaign step types: one unified AI step plus an AI
+	// switch router.
+	//
+	// IntegrationActionAIStep is the unified AI node. config.mode selects the
+	// behavior: classify | extract | generate (single LLM call over the event,
+	// merged into data so downstream conditions can branch) or agent (a bounded
+	// tool-use loop where the model, following config.instruction, calls a
+	// guarded allowlist of reversible native actions in config.allowed_actions[],
+	// choosing tags/tasks/deals itself). config.thinking routes any mode to the
+	// stronger model tier.
+	IntegrationActionAIStep IntegrationAction = "warmbly.ai_step"
+	// IntegrationActionAISwitch is a campaign-style multi-way router: it picks
+	// exactly one of config.cases[], stored so the "label:<case>" edges route the
+	// walk. config.switch_on selects the decider — "ai" (one LLM call, optional
+	// web search + thinking) or "value" (config.switch_value rendered against the
+	// event and matched to the case names; free, no model call). Decide-only; it
+	// takes no actions.
+	IntegrationActionAISwitch IntegrationAction = "warmbly.ai_switch"
 )
+
+// IsAIAction reports whether an action is an AI node (LLM-backed, credit-charged).
+func IsAIAction(a IntegrationAction) bool {
+	switch a {
+	case IntegrationActionAIStep, IntegrationActionAISwitch:
+		return true
+	default:
+		return false
+	}
+}
 
 // IsNativeAction reports whether an action is a Warmbly-internal CRM/contact
 // mutation (no external connection required).
@@ -293,7 +322,8 @@ func IsNativeAction(a IntegrationAction) bool {
 	case IntegrationActionAddTag, IntegrationActionRemoveTag, IntegrationActionCreateTask,
 		IntegrationActionCreateDeal, IntegrationActionMoveDealStage, IntegrationActionUnsubscribe,
 		IntegrationActionRunAutomation, IntegrationActionLabelEmail,
-		IntegrationActionSetVariables, IntegrationActionFireEvent:
+		IntegrationActionSetVariables, IntegrationActionFireEvent,
+		IntegrationActionAIStep, IntegrationActionAISwitch:
 		return true
 	default:
 		return false
@@ -378,13 +408,16 @@ type AutomationEdge struct {
 // For the generic "field" type, Key names the event-data key to test. For the
 // "expression" type, Expression is a Go-template predicate (truthy when it
 // renders a non-empty, non-false value) evaluated against the native event data,
-// giving full string/number/boolean logic.
+// giving full string/number/boolean logic. For the "ai" type, Prompt is a
+// plain-language yes/no question the model answers over the event data (the
+// true edge is YES, false is NO; costs one AI credit per evaluation).
 type AutomationCondition struct {
 	Field      string `json:"field"`
 	Key        string `json:"key,omitempty"`
 	Operator   string `json:"operator"`
 	Value      any    `json:"value,omitempty"`
 	Expression string `json:"expression,omitempty"`
+	Prompt     string `json:"prompt,omitempty"`
 }
 
 // AutomationWrite is the create/update payload from the flow builder.

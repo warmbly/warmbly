@@ -8,9 +8,11 @@
 // pill always sits on the left edge so it stays reachable even when
 // the rest of the strip scrolls horizontally.
 
-import { LayoutGridIcon, XIcon } from "lucide-react";
+import { LayoutGridIcon, PenLineIcon, XIcon } from "lucide-react";
 import useUniboxOverview from "@/lib/api/hooks/app/unibox/useUniboxOverview";
 import AnimatedNumber from "@/components/ui/AnimatedNumber";
+import ShortcutTooltip from "@/components/ui/shortcut-tooltip";
+import { useComposeStore } from "@/hooks/useComposeStore";
 import { cn } from "@/lib/utils";
 
 interface UniboxHeaderProps {
@@ -83,12 +85,26 @@ export function UniboxHeader({
                 />
             </div>
 
-            <div className="ml-auto inline-flex items-center gap-1.5 text-[11px] text-emerald-600 font-medium shrink-0">
-                <span className="relative flex size-1.5">
-                    <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-60 animate-ping" />
-                    <span className="relative inline-flex size-1.5 rounded-full bg-emerald-500" />
+            <div className="ml-auto flex items-center gap-2.5 shrink-0">
+                <span className="inline-flex items-center gap-1.5 text-[11px] text-emerald-600 font-medium">
+                    <span className="relative flex size-1.5">
+                        <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-60 animate-ping" />
+                        <span className="relative inline-flex size-1.5 rounded-full bg-emerald-500" />
+                    </span>
+                    live
                 </span>
-                live
+                {/* Desktop gets the rail's Compose button; this is the
+                    phone/tablet entry where the rail is hidden. */}
+                <ShortcutTooltip label="New email" combo="n">
+                    <button
+                        type="button"
+                        onClick={() => useComposeStore.getState().openCompose()}
+                        className="lg:hidden inline-flex items-center gap-1.5 h-6 px-2.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-[11.5px] font-medium shadow-sm shadow-sky-600/20 transition-colors"
+                    >
+                        <PenLineIcon className="w-3 h-3" />
+                        Compose
+                    </button>
+                </ShortcutTooltip>
             </div>
         </header>
     );

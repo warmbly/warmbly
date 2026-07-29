@@ -33,7 +33,13 @@ type CampaignRepository interface {
 	// variant used by the instant reply-trigger executor to find the matched
 	// branch and follow its action chain.
 	GetSequencesRoutingByCampaignID(ctx context.Context, campaignID uuid.UUID) ([]models.Sequence, error)
-	Search(ctx context.Context, userID, query string, cursor, folder *string, limit int32) (*models.CampaignsResult, error)
+	// Search filters by name substring, folder id, and status bucket
+	// ("draft" | "active" | "paused" | "completed"; paused matches every
+	// paused_* variant; empty means all).
+	Search(ctx context.Context, userID, query string, cursor, folder *string, status string, limit int32) (*models.CampaignsResult, error)
+	// Overview returns status-bucket counts plus per-folder totals for the
+	// campaigns browser sidebar.
+	Overview(ctx context.Context, orgID string) (*models.CampaignsOverview, error)
 	Update(ctx context.Context, userID, query string, data *models.UpdateCampaign) (*models.Campaign, *errx.Error)
 	UpdateStatus(ctx context.Context, campaignID uuid.UUID, status string) error
 	UpdateStatusWithLock(ctx context.Context, campaignID uuid.UUID, status string) error
@@ -603,7 +609,7 @@ func (r *campaignRepository) Get(ctx context.Context, orgID, id string) (*models
 	return &campaign, nil
 }
 
-func (r *campaignRepository) Search(ctx context.Context, orgID, query string, cursor, folder *string, limit int32) (*models.CampaignsResult, error) {
+func (r *campaignRepository) Search(ctx context.Context, orgID, query string, cursor, folder *string, status string, limit int32) (*models.CampaignsResult, error) {
 	tx, err := r.DB.Begin(ctx)
 	if err != nil {
 		db.CaptureError(err, "", nil, "begin")
@@ -627,6 +633,7 @@ func (r *campaignRepository) Search(ctx context.Context, orgID, query string, cu
 		 AND ($4::uuid IS NULL OR EXISTS (
 		  SELECT 1 FROM campaign_folders cf WHERE cf.campaign_id = c.id AND cf.folder_id = $4
 		 ))
+		 AND ($5 = '' OR CASE WHEN $5 = 'paused' THEN c.status::text LIKE 'paused%%' ELSE c.status::text = $5 END)
 		GROUP BY c.id
 		ORDER BY created_at DESC
 		LIMIT %d`,
@@ -644,6 +651,7 @@ func (r *campaignRepository) Search(ctx context.Context, orgID, query string, cu
 			  AND ($3::uuid IS NULL OR EXISTS (
 				SELECT 1 FROM campaign_folders cf WHERE cf.campaign_id = c.id AND cf.folder_id = $3
 			  ))
+			  AND ($4 = '' OR CASE WHEN $4 = 'paused' THEN c.status::text LIKE 'paused%' ELSE c.status::text = $4 END)
 		`
 	}
 
@@ -652,6 +660,7 @@ func (r *campaignRepository) Search(ctx context.Context, orgID, query string, cu
 		cursor,
 		query,
 		folder,
+		status,
 	}
 
 	rows, err := tx.Query(
@@ -693,9 +702,10 @@ func (r *campaignRepository) Search(ctx context.Context, orgID, query string, cu
 			orgID,
 			query,
 			folder,
+			status,
 		}
 		var tmp int64
-		err = tx.QueryRow(ctx, countSQL, orgID, query, folder).Scan(&tmp)
+		err = tx.QueryRow(ctx, countSQL, orgID, query, folder, status).Scan(&tmp)
 		if err != nil {
 			db.CaptureError(err, countSQL, params, "queryrow")
 			return nil, err
@@ -711,6 +721,54 @@ func (r *campaignRepository) Search(ctx context.Context, orgID, query string, cu
 			HasMore:    hasMore,
 		},
 	}, nil
+}
+
+func (r *campaignRepository) Overview(ctx context.Context, orgID string) (*models.CampaignsOverview, error) {
+	overview := models.CampaignsOverview{Folders: []models.CampaignFolderCount{}}
+
+	countsSQL := `
+		SELECT
+			COUNT(*),
+			COUNT(*) FILTER (WHERE status = 'active'),
+			COUNT(*) FILTER (WHERE status::text LIKE 'paused%'),
+			COUNT(*) FILTER (WHERE status = 'draft'),
+			COUNT(*) FILTER (WHERE status = 'completed')
+		FROM campaigns
+		WHERE organization_id = $1`
+	err := r.DB.QueryRow(ctx, countsSQL, orgID).Scan(
+		&overview.Total,
+		&overview.Active,
+		&overview.Paused,
+		&overview.Draft,
+		&overview.Completed,
+	)
+	if err != nil {
+		db.CaptureError(err, countsSQL, []any{orgID}, "queryrow")
+		return nil, err
+	}
+
+	foldersSQL := `
+		SELECT cf.folder_id, COUNT(*)
+		FROM campaign_folders cf
+		JOIN campaigns c ON c.id = cf.campaign_id
+		WHERE c.organization_id = $1
+		GROUP BY cf.folder_id`
+	rows, err := r.DB.Query(ctx, foldersSQL, orgID)
+	if err != nil {
+		db.CaptureError(err, foldersSQL, []any{orgID}, "query")
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var count models.CampaignFolderCount
+		if err := rows.Scan(&count.FolderID, &count.Total); err != nil {
+			db.CaptureError(err, "", nil, "scan")
+			return nil, err
+		}
+		overview.Folders = append(overview.Folders, count)
+	}
+
+	return &overview, nil
 }
 
 func (r *campaignRepository) Delete(ctx context.Context, userID, campaignID string) error {
@@ -1072,8 +1130,11 @@ func (r *campaignRepository) Update(ctx context.Context, userID, campaignID stri
 func (r *campaignRepository) GetByID(ctx context.Context, campaignID uuid.UUID) (*models.Campaign, error) {
 	var campaign models.Campaign
 
+	// organization_id is scanned explicitly: callers (start/stop, sender pool,
+	// advanced settings, tracking domain) gate on campaign.OrganizationID, so it
+	// must be populated or those org checks 404 every campaign.
 	query := fmt.Sprintf(
-		`SELECT c.user_id, %s
+		`SELECT c.user_id, c.organization_id, %s
 		 FROM campaigns c
 		 LEFT JOIN campaign_email_tags cet ON cet.campaign_id = c.id
 		 LEFT JOIN campaign_folders cec ON cec.campaign_id = c.id
@@ -1084,7 +1145,7 @@ func (r *campaignRepository) GetByID(ctx context.Context, campaignID uuid.UUID) 
 
 	row := r.DB.QueryRow(ctx, query, campaignID)
 	err := row.Scan(
-		&campaign.UserID,
+		&campaign.UserID, &campaign.OrganizationID,
 		&campaign.ID, &campaign.Name, &campaign.Description, &campaign.Status,
 		&campaign.StopOnReply, &campaign.OpenTracking, &campaign.LinkTracking,
 		&campaign.TextOnly, &campaign.DailyLimit, &campaign.UnsubscribeHeader, &campaign.RiskyEmails,

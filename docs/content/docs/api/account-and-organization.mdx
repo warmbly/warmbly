@@ -1,12 +1,11 @@
 ---
 title: Account and organization
 description: Authentication, sessions, your profile and security settings, organization governance, teams, and subscription billing.
-icon: Users
 ---
 
 This group covers everything tied to a human account and the workspace it belongs to: signing in, managing sessions, editing your profile and security settings (notification preferences, two-factor authentication, passkeys), running an organization (members, invitations, custom roles), grouping members into teams, and billing.
 
-Almost every endpoint here is session only. They depend on a human-bound JWT and are never reachable with an API key. The two exceptions are the team endpoints, which accept either a JWT or an API key, and the public auth endpoints (login, register, refresh, password reset, passkey login, 2FA verify), which carry no session at all because they exist to create one. Each endpoint below states its auth explicitly.
+Almost every endpoint here is session only. They depend on a human-bound JWT and are never reachable with an API key. The two exceptions are the team endpoints, which accept either a JWT or an API key, and the public auth endpoints (login, register, refresh, password reset, passkey login, social sign-in, 2FA verify), which carry no session at all because they exist to create one. Each endpoint below states its auth explicitly.
 
 All error responses use the shared envelope (`error`, `message`, `code`, `request_id`). See [Error codes](/api/error-codes/).
 
@@ -229,6 +228,61 @@ Auth: public (not available to API keys).
 |-------|------|----------|-------------|
 | `session` | string | yes | The session value from the begin step. |
 | `credential` | object | yes | The raw WebAuthn assertion (`PublicKeyCredential`) from the browser. |
+
+#### Response
+
+A token pair (same shape as the login confirm success response).
+
+### List sign-in providers
+
+`GET /auth/providers`
+
+Advertises which native-app social sign-in options this deployment supports, so the mobile app adapts to hosted and self-hosted backends without a rebuild. Client IDs are public identifiers, not secrets.
+
+Auth: public (not available to API keys).
+
+#### Response
+
+```json
+{
+  "apple": { "enabled": true, "client_id": "com.warmbly.app" },
+  "google": { "enabled": true, "client_id": "1234-abc.apps.googleusercontent.com" }
+}
+```
+
+### Sign in with Apple
+
+`POST /auth/apple`
+
+Exchanges a native Sign in with Apple identity token for a session. The token is verified against Apple's published keys (signature, issuer, audience, expiry). A provider-verified identity is strong auth, so there is no email code step. The first sign-in creates the account, organization, and free trial.
+
+Auth: public (not available to API keys).
+
+#### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `identity_token` | string | yes | The `identityToken` from the Apple authorization credential. |
+| `first_name` | string | no | Apple shares the name only with the app, never inside the token; forwarded for first-sign-in profile prefill. |
+| `last_name` | string | no | See `first_name`. |
+
+#### Response
+
+A token pair (same shape as the login confirm success response).
+
+### Sign in with Google
+
+`POST /auth/google`
+
+Exchanges a native Google Sign-In ID token for a session. The token is verified against Google's published keys and must be issued for the client ID advertised by `/auth/providers`. The first sign-in creates the account, organization, and free trial.
+
+Auth: public (not available to API keys).
+
+#### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id_token` | string | yes | The ID token from Google Sign-In. |
 
 #### Response
 
@@ -477,12 +531,12 @@ Auth: Session only (not available to API keys).
 ```json
 {
   "preferences": {
-    "inbound_reply": { "enabled": false, "channels": { "in_app": true, "email": false, "slack": false } },
-    "inbound_out_of_office": { "enabled": false, "channels": { "in_app": true, "email": false, "slack": false } },
-    "health_bounce": { "enabled": true, "channels": { "in_app": true, "email": false, "slack": false } },
-    "health_complaint": { "enabled": true, "channels": { "in_app": true, "email": false, "slack": false } },
-    "health_worker_downtime": { "enabled": true, "channels": { "in_app": true, "email": false, "slack": false } },
-    "security_new_signin": { "enabled": true, "channels": { "in_app": true, "email": false, "slack": false } }
+    "inbound_reply": { "enabled": false, "channels": { "in_app": true, "email": false, "slack": false, "push": true } },
+    "inbound_out_of_office": { "enabled": false, "channels": { "in_app": true, "email": false, "slack": false, "push": true } },
+    "health_bounce": { "enabled": true, "channels": { "in_app": true, "email": false, "slack": false, "push": true } },
+    "health_complaint": { "enabled": true, "channels": { "in_app": true, "email": false, "slack": false, "push": true } },
+    "health_worker_downtime": { "enabled": true, "channels": { "in_app": true, "email": false, "slack": false, "push": true } },
+    "security_new_signin": { "enabled": true, "channels": { "in_app": true, "email": false, "slack": false, "push": true } }
   }
 }
 ```
@@ -499,17 +553,17 @@ Auth: Session only (not available to API keys).
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `preferences` | object | yes | The complete preferences object. Each of the six categories has `enabled` plus a `channels` object (`in_app`, `email`, `slack`). |
+| `preferences` | object | yes | The complete preferences object. Each of the six categories has `enabled` plus a `channels` object (`in_app`, `email`, `slack`, `push`). |
 
 ```json
 {
   "preferences": {
-    "inbound_reply": { "enabled": true, "channels": { "in_app": true, "email": true, "slack": false } },
-    "inbound_out_of_office": { "enabled": false, "channels": { "in_app": true, "email": false, "slack": false } },
-    "health_bounce": { "enabled": true, "channels": { "in_app": true, "email": false, "slack": false } },
-    "health_complaint": { "enabled": true, "channels": { "in_app": true, "email": false, "slack": false } },
-    "health_worker_downtime": { "enabled": true, "channels": { "in_app": true, "email": false, "slack": false } },
-    "security_new_signin": { "enabled": true, "channels": { "in_app": true, "email": false, "slack": false } }
+    "inbound_reply": { "enabled": true, "channels": { "in_app": true, "email": true, "slack": false, "push": true } },
+    "inbound_out_of_office": { "enabled": false, "channels": { "in_app": true, "email": false, "slack": false, "push": true } },
+    "health_bounce": { "enabled": true, "channels": { "in_app": true, "email": false, "slack": false, "push": true } },
+    "health_complaint": { "enabled": true, "channels": { "in_app": true, "email": false, "slack": false, "push": true } },
+    "health_worker_downtime": { "enabled": true, "channels": { "in_app": true, "email": false, "slack": false, "push": true } },
+    "security_new_signin": { "enabled": true, "channels": { "in_app": true, "email": false, "slack": false, "push": true } }
   }
 }
 ```
@@ -577,6 +631,50 @@ Auth: Session only (not available to API keys).
 | Parameter | In | Type | Description |
 |-----------|----|------|-------------|
 | `id` | path | uuid | The notification id. |
+
+#### Response
+
+```json
+{ "ok": true }
+```
+
+### Register a device token
+
+`POST /auth/me/device-tokens`
+
+Registers an APNs device token for mobile push delivery. The mobile app calls this automatically after the user allows notifications; it is an upsert, so repeating it on every launch is safe. A token already registered by another account moves to the caller (the device changed accounts). Delivery of enabled notifications follows the `push` channel in the preferences above, batched server-side: the first event in a quiet stretch pushes immediately, later events inside the batching window arrive as one summary.
+
+Auth: Session only (not available to API keys).
+
+#### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `token` | string | yes | The hex APNs device token. |
+| `platform` | string | no | Only `ios` today (the default). |
+| `environment` | string | no | `production` (default) or `development` for sandbox builds. |
+
+```json
+{ "token": "a1b2c3...", "platform": "ios", "environment": "production" }
+```
+
+#### Response
+
+```json
+{ "ok": true }
+```
+
+### Delete a device token
+
+`DELETE /auth/me/device-tokens/:token`
+
+Removes one of the caller's device tokens. The mobile app calls this on sign-out so the device stops receiving the account's pushes.
+
+Auth: Session only (not available to API keys).
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `token` | path | string | The hex device token to remove. |
 
 #### Response
 

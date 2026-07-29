@@ -51,7 +51,7 @@ type stubWorkerRepo struct {
 	promotedToPool *models.Worker                            // PromoteWorkerToPool result
 }
 
-func (r *stubWorkerRepo) GetDedicatedWorkerByUserID(_ context.Context, _ uuid.UUID) (*models.Worker, error) {
+func (r *stubWorkerRepo) GetDedicatedWorkerByOrgID(_ context.Context, _ uuid.UUID) (*models.Worker, error) {
 	return r.dedicatedForOrg, nil
 }
 func (r *stubWorkerRepo) GetSharedWorkersByTier(_ context.Context, freeTier bool) ([]models.Worker, error) {

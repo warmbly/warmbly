@@ -42,6 +42,19 @@ type Email struct {
 	TrackingDomainVerified   bool       `json:"tracking_domain_verified"`
 	TrackingDomainVerifiedAt *time.Time `json:"tracking_domain_verified_at"`
 
+	// Sending-domain authentication (SPF/DKIM/DMARC), refreshed by the
+	// background auth-check sweep. Observe-only: surfaced to warn about
+	// unauthenticated domains, not yet a hard send gate. AuthState is "unknown"
+	// until checked (or when a DNS lookup failed transiently), distinct from a
+	// real "failing".
+	AuthState       string     `json:"auth_state"`
+	AuthSPF         bool       `json:"auth_spf"`
+	AuthDKIM        bool       `json:"auth_dkim"`
+	AuthDMARC       bool       `json:"auth_dmarc"`
+	AuthDMARCPolicy string     `json:"auth_dmarc_policy,omitempty"`
+	AuthReason      string     `json:"auth_reason,omitempty"`
+	AuthCheckedAt   *time.Time `json:"auth_checked_at,omitempty"`
+
 	Warmup          *time.Time `json:"warmup"`
 	WarmupPausedAt  *time.Time `json:"warmup_paused_at"`
 	WarmupBase      int        `json:"warmup_base"`
@@ -75,6 +88,14 @@ func (e *Email) IsWarmingActive() bool {
 // mailbox keeps its ramp progress (the anchor is shifted forward on resume).
 func (e *Email) IsWarmupPaused() bool {
 	return e.Warmup != nil && e.WarmupPausedAt != nil
+}
+
+// EmailAuthTarget is a mailbox due for a sending-domain authentication check,
+// returned to the background sweep. Auth is a per-domain property, so the sweep
+// dedupes these by the domain part of Email before running DNS lookups.
+type EmailAuthTarget struct {
+	ID    uuid.UUID
+	Email string
 }
 
 type Service struct {
@@ -183,4 +204,14 @@ type UpdateEmail struct {
 	WarmupDays      *int    `json:"warmup_days"`
 
 	Tags []string `json:"tags"`
+}
+
+// BulkEmailTags adds and removes tags across many mailboxes in one call (the
+// mailboxes list bulk bar). Mailbox ids the caller doesn't own and tag ids
+// they haven't defined are ignored rather than erroring, so a stale
+// selection can't fail the whole batch.
+type BulkEmailTags struct {
+	EmailIDs   []string `json:"email_ids" binding:"required,min=1,max=1000"`
+	AddTags    []string `json:"add_tags" binding:"max=100"`
+	RemoveTags []string `json:"remove_tags" binding:"max=100"`
 }

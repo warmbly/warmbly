@@ -15,7 +15,6 @@ import (
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/events"
 	"github.com/warmbly/warmbly/internal/infrastructure/cache"
-	"github.com/warmbly/warmbly/internal/infrastructure/kafka"
 	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
@@ -25,6 +24,9 @@ type EmailService interface {
 	Search(ctx context.Context, userID, search, cursor, tag, limit string, allowedAccountIDs []uuid.UUID) (*models.EmailsResult, *errx.Error)
 	Get(ctx context.Context, userID, emailAccountID string) (*models.Email, *errx.Error)
 	Update(ctx context.Context, userID, emailAccountID string, udata *models.UpdateEmail) (*models.Email, *errx.Error)
+	// BulkUpdateTags adds/removes tags across many of the user's mailboxes
+	// in one call; returns how many of the requested mailboxes were owned.
+	BulkUpdateTags(ctx context.Context, userID string, emailIDs, addTags, removeTags []uuid.UUID) (int, *errx.Error)
 	// SetWarmupLifecycle starts, pauses, resumes, or disables warmup for a
 	// mailbox. start/resume preserve ramp progress; disable turns warmup off.
 	SetWarmupLifecycle(ctx context.Context, userID, emailAccountID, action string) (*models.Email, *errx.Error)
@@ -56,7 +58,6 @@ type emailService struct {
 	warmupService      warmupapp.Service
 	publisher          events.Publisher
 	streamingPublisher *pubsub.StreamingPublisher
-	producer           *kafka.Producer
 	r                  *cache.Cache
 	oauthInbox         *config.Oauth2Inbox
 	workerAssignment   worker.WorkerAssignmentService
@@ -105,13 +106,16 @@ func NewService(
 	}
 }
 
-func NewServiceWithKafka(
+// NewServiceWithWorker builds the email service with the deps needed for
+// worker-facing flows (credential validation over the event bus, mailbox OAuth,
+// worker assignment). Publishing goes through the events.Publisher, so this is
+// transport-agnostic (Kafka or NATS).
+func NewServiceWithWorker(
 	emailRepository repository.EmailRepository,
 	cipherService cipher.CipherService,
 	featureGate feature.FeatureGateService,
 	warmupService warmupapp.Service,
 	publisher events.Publisher,
-	producer *kafka.Producer,
 	r *cache.Cache,
 	oauthInbox *config.Oauth2Inbox,
 	workerAssignment worker.WorkerAssignmentService,
@@ -129,7 +133,6 @@ func NewServiceWithKafka(
 		warmupService:      warmupService,
 		publisher:          publisher,
 		streamingPublisher: realtime,
-		producer:           producer,
 		r:                  r,
 		oauthInbox:         oauthInbox,
 		workerAssignment:   workerAssignment,

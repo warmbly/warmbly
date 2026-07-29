@@ -12,9 +12,6 @@ import {
   KeyIcon,
   SettingsIcon,
   CreditCardIcon,
-  MoonIcon,
-  SunIcon,
-  MonitorIcon,
 } from 'lucide-react'
 import {
   CommandDialog,
@@ -38,7 +35,6 @@ export function CommandPalette() {
   const navigate = useNavigate()
   const open = useAppStore((state) => state.commandPaletteOpen)
   const setOpen = useAppStore((state) => state.setCommandPaletteOpen)
-  const setTheme = useAppStore((state) => state.setTheme)
   const setShortcutsModalOpen = useAppStore((state) => state.setShortcutsModalOpen)
 
   const runCommand = (command: () => void) => {
@@ -59,12 +55,6 @@ export function CommandPalette() {
     { icon: KeyIcon, label: 'API Keys', shortcut: 'g k', onSelect: () => navigate('/app/api-keys') },
     { icon: SettingsIcon, label: 'Settings', shortcut: 'g s', onSelect: () => navigate('/app/settings') },
     { icon: CreditCardIcon, label: 'Billing', onSelect: () => navigate('/app/settings/billing') },
-  ]
-
-  const themeCommands: CommandItem[] = [
-    { icon: SunIcon, label: 'Light theme', onSelect: () => setTheme('light') },
-    { icon: MoonIcon, label: 'Dark theme', onSelect: () => setTheme('dark') },
-    { icon: MonitorIcon, label: 'System theme', onSelect: () => setTheme('system') },
   ]
 
   return (
@@ -93,20 +83,6 @@ export function CommandPalette() {
                   {command.shortcut}
                 </span>
               )}
-            </CommandItem>
-          ))}
-        </CommandGroup>
-
-        <CommandSeparator />
-
-        <CommandGroup heading="Theme">
-          {themeCommands.map((command) => (
-            <CommandItem
-              key={command.label}
-              onSelect={() => runCommand(command.onSelect)}
-            >
-              <command.icon className="mr-2 size-4" />
-              <span>{command.label}</span>
             </CommandItem>
           ))}
         </CommandGroup>

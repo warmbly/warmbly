@@ -7,10 +7,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/infrastructure/cache"
-	"github.com/warmbly/warmbly/internal/infrastructure/gtasks"
 	"github.com/warmbly/warmbly/internal/infrastructure/storage"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
+	"github.com/warmbly/warmbly/internal/tasksched"
 )
 
 type UniboxService interface {
@@ -70,7 +70,7 @@ type UniboxService interface {
 type uniboxService struct {
 	uniboxRepository repository.UniboxRepository
 	taskRepo         repository.TaskRepository
-	tasksClient      *gtasks.Client
+	tasksClient      tasksched.Scheduler
 	cache            *cache.Cache
 	blob             storage.Store
 }
@@ -80,7 +80,7 @@ func NewService(
 	blob storage.Store,
 	uniboxRepository repository.UniboxRepository,
 	taskRepo repository.TaskRepository,
-	tasksClient *gtasks.Client,
+	tasksClient tasksched.Scheduler,
 ) UniboxService {
 	return &uniboxService{
 		uniboxRepository: uniboxRepository,

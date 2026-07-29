@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -69,6 +70,68 @@ func (h *Handler) UpdateEmail(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, resp)
+}
+
+// BulkTagEmails adds/removes tags across many mailboxes in one call — the
+// mailboxes list bulk bar. Naturally idempotent (set semantics), so retries
+// are safe without an Idempotency-Key.
+// PATCH /emails/tags
+func (h *Handler) BulkTagEmails(c *gin.Context) {
+	userIDStr := middleware.GetUserID(c)
+
+	var data models.BulkEmailTags
+	if err := c.ShouldBindJSON(&data); err != nil {
+		errx.Handle(c, errx.ErrInvalid)
+		return
+	}
+
+	parse := func(raw []string) ([]uuid.UUID, bool) {
+		out := make([]uuid.UUID, 0, len(raw))
+		seen := make(map[uuid.UUID]struct{}, len(raw))
+		for _, s := range raw {
+			id, err := uuid.Parse(s)
+			if err != nil {
+				return nil, false
+			}
+			if _, dup := seen[id]; dup {
+				continue
+			}
+			seen[id] = struct{}{}
+			out = append(out, id)
+		}
+		return out, true
+	}
+
+	emailIDs, ok := parse(data.EmailIDs)
+	if !ok {
+		errx.Handle(c, errx.ErrUuid)
+		return
+	}
+	addTags, ok := parse(data.AddTags)
+	if !ok {
+		errx.Handle(c, errx.ErrUuid)
+		return
+	}
+	removeTags, ok := parse(data.RemoveTags)
+	if !ok {
+		errx.Handle(c, errx.ErrUuid)
+		return
+	}
+
+	updated, err := h.EmailService.BulkUpdateTags(c.Request.Context(), userIDStr, emailIDs, addTags, removeTags)
+	if err != nil {
+		errx.Handle(c, err)
+		return
+	}
+
+	h.auditOrg(c, models.AuditActionUpdate, models.AuditEntityEmailAccount, nil, nil, map[string]string{
+		"bulk_tags": "true",
+		"accounts":  strconv.Itoa(updated),
+		"added":     strconv.Itoa(len(addTags)),
+		"removed":   strconv.Itoa(len(removeTags)),
+	})
+
+	c.JSON(http.StatusOK, gin.H{"updated": updated})
 }
 
 // StartWarmup enables (or resumes) warmup for a mailbox, preserving ramp

@@ -10,6 +10,46 @@ import (
 	"github.com/warmbly/warmbly/internal/models"
 )
 
+// OrgNotifier raises a permission-targeted org notification (in-app feed +
+// each member's enabled channels, email digest-coalesced). Satisfied by
+// *notification.Service; local interface to avoid an import cycle.
+type OrgNotifier interface {
+	NotifyOrg(ctx context.Context, orgID uuid.UUID, perm models.OrganizationPermission, exclude uuid.UUID, category models.NotificationCategory, title, body, link string, meta map[string]any, groupKey string)
+}
+
+// notifyWorkerDown tells each affected org's manage_emails members about a
+// dead worker, at most once per worker incident: detection reruns every
+// interval while the worker stays down, and the SetNX guard keeps that from
+// re-alerting. The shared group key coalesces an org's recipients into one
+// email with everyone in To.
+func (s *JobsService) notifyWorkerDown(ctx context.Context, workerID uuid.UUID, orgs map[uuid.UUID]int, reassigned bool) {
+	if s.Notifier == nil || len(orgs) == 0 {
+		return
+	}
+	ok, err := s.Cache.SetNX(ctx, "worker:downnotify:"+workerID.String(), "1", 6*time.Hour).Result()
+	if err != nil || !ok {
+		return
+	}
+	for orgID, n := range orgs {
+		noun := fmt.Sprintf("%d of your mailboxes were", n)
+		if n == 1 {
+			noun = "One of your mailboxes was"
+		}
+		body := noun + " on a sending worker that stopped responding. "
+		if reassigned {
+			body += "They were moved to a healthy worker automatically; no action is needed."
+			if n == 1 {
+				body = noun + " on a sending worker that stopped responding. It was moved to a healthy worker automatically; no action is needed."
+			}
+		} else {
+			body += "Sending from them is paused until a replacement worker is available."
+		}
+		s.Notifier.NotifyOrg(ctx, orgID, models.PermManageEmails, uuid.Nil, models.NotifWorkerDowntime,
+			"Sending worker went offline", body, "/app/emails", nil,
+			"worker_down:"+workerID.String())
+	}
+}
+
 // StartDeadWorkerDetection periodically checks for workers whose heartbeat has
 // expired and reassigns their email accounts to healthy workers.
 // Runs every interval until the context is cancelled.
@@ -70,11 +110,13 @@ func (s *JobsService) detectDeadWorkers(ctx context.Context) {
 		replacement, err := s.findHealthyWorker(ctx, w)
 		if err != nil || replacement == nil {
 			log.Warn().Str("worker_id", w.ID.String()).Msg("no healthy replacement worker found")
+			s.notifyWorkerDown(ctx, w.ID, s.accountOrgs(ctx, accountIDs), false)
 			continue
 		}
 
 		// Reassign accounts to the healthy worker
 		reassigned := 0
+		affectedOrgs := map[uuid.UUID]int{}
 		for _, accountID := range accountIDs {
 			if err := s.WorkerRepo.UpdateEmailAccountWorker(ctx, accountID, replacement.ID); err != nil {
 				log.Error().Err(err).Str("account_id", accountID.String()).Msg("failed to reassign email account")
@@ -82,19 +124,24 @@ func (s *JobsService) detectDeadWorkers(ctx context.Context) {
 			}
 			reassigned++
 
+			account, aerr := s.EmailRepository.GetByID(ctx, accountID)
+			if aerr != nil || account == nil {
+				continue
+			}
+			if account.OrganizationID != nil {
+				affectedOrgs[*account.OrganizationID]++
+			}
+
 			// Publish AddEmail event to the new worker so it picks up the account
 			if s.Publisher != nil {
-				account, aerr := s.EmailRepository.GetByID(ctx, accountID)
-				if aerr == nil && account != nil {
-					userUUID, _ := uuid.Parse(account.UserID)
-					_ = s.Publisher.PublishAddEmail(ctx, replacement.ID, &models.AddWorkerEmail{
-						ID:       account.ID,
-						UserID:   userUUID,
-						Email:    account.Email,
-						Type:     models.InboxProvider(account.Provider),
-						ImapSync: true,
-					})
-				}
+				userUUID, _ := uuid.Parse(account.UserID)
+				_ = s.Publisher.PublishAddEmail(ctx, replacement.ID, &models.AddWorkerEmail{
+					ID:       account.ID,
+					UserID:   userUUID,
+					Email:    account.Email,
+					Type:     models.InboxProvider(account.Provider),
+					ImapSync: true,
+				})
 			}
 		}
 
@@ -125,8 +172,21 @@ func (s *JobsService) detectDeadWorkers(ctx context.Context) {
 					CreatedAt: time.Now(),
 				})
 			}
+
+			s.notifyWorkerDown(ctx, w.ID, affectedOrgs, true)
 		}
 	}
+}
+
+// accountOrgs resolves which orgs own the given accounts (org -> count).
+func (s *JobsService) accountOrgs(ctx context.Context, accountIDs []uuid.UUID) map[uuid.UUID]int {
+	orgs := map[uuid.UUID]int{}
+	for _, id := range accountIDs {
+		if account, err := s.EmailRepository.GetByID(ctx, id); err == nil && account != nil && account.OrganizationID != nil {
+			orgs[*account.OrganizationID]++
+		}
+	}
+	return orgs
 }
 
 func (s *JobsService) findHealthyWorker(ctx context.Context, deadWorker models.Worker) (*models.Worker, error) {

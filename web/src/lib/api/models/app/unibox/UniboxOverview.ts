@@ -33,6 +33,8 @@ export default interface UniboxOverview {
   week: number;
   snoozed: number;
   awaiting_reply: number;
+  /** Threads with a pending inbox-agent draft awaiting human review. */
+  awaiting_agent_draft: number;
   /** Pending outbound email tasks queued by the user. */
   scheduled_pending: number;
   /**

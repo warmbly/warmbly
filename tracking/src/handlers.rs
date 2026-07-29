@@ -11,8 +11,9 @@ use std::time::Duration;
 
 use crate::abuse::{is_prefetch, is_scanner, RateLimiter};
 use crate::config::Config;
-use crate::kafka::{KafkaProducer, TrackingEvent};
+use crate::events::TrackingEvent;
 use crate::links::{LinkResolver, Resolution};
+use crate::producer::Producer;
 
 // 1x1 transparent GIF (43 bytes)
 const TRANSPARENT_GIF: &[u8] = &[
@@ -27,7 +28,7 @@ type DedupeCache = Cache<String, ()>;
 
 #[derive(Clone)]
 pub struct AppState {
-    pub kafka: KafkaProducer,
+    pub producer: Producer,
     /// Cache to deduplicate tracking events
     /// Each event type + task + IP is cached for 1 hour
     pub dedupe_cache: Arc<DedupeCache>,
@@ -38,7 +39,7 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(kafka: KafkaProducer, config: &Config) -> Self {
+    pub fn new(producer: Producer, config: &Config) -> Self {
         // Create cache with:
         // - Max 100k entries
         // - TTL of 1 hour per entry
@@ -50,7 +51,7 @@ impl AppState {
             .build();
 
         Self {
-            kafka,
+            producer,
             dedupe_cache: Arc::new(dedupe_cache),
             rate_limiter: Arc::new(RateLimiter::new(config.rate_limit_per_min)),
             links: Arc::new(LinkResolver::new(
@@ -133,9 +134,9 @@ pub async fn track_open(
     }
 
     // Publish event asynchronously (fire and forget)
-    let kafka = state.kafka.clone();
+    let producer = state.producer.clone();
     tokio::spawn(async move {
-        kafka
+        producer
             .publish(TrackingEvent {
                 event_type: "EMAIL_OPENED".to_string(),
                 task_id,
@@ -202,10 +203,10 @@ pub async fn track_click(
     }
 
     // Publish event asynchronously (fire and forget)
-    let kafka = state.kafka.clone();
+    let producer = state.producer.clone();
     let destination = link.destination.clone();
     tokio::spawn(async move {
-        kafka
+        producer
             .publish(TrackingEvent {
                 event_type: "EMAIL_CLICKED".to_string(),
                 task_id: link.task_id,

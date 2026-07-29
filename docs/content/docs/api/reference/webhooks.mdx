@@ -1,7 +1,6 @@
 ---
 title: Webhooks
 description: Subscribe to Warmbly platform events and receive HMAC-signed delivery callbacks at your own HTTPS endpoints.
-icon: Webhook
 ---
 
 Webhooks let your systems react to Warmbly activity in real time. You register one or more HTTPS endpoints, optionally filter them to specific event types, and Warmbly POSTs a signed JSON payload to each matching endpoint whenever a subscribed event fires. Every delivery is signed with HMAC-SHA256 and carries a unique event id so you can verify authenticity and dedupe replays. Failed deliveries are retried with exponential backoff and their history is queryable for debugging.

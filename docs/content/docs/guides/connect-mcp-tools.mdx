@@ -1,0 +1,38 @@
+---
+title: Connect MCP tools
+description: Give the AI assistant extra tools by connecting an external MCP server, reviewing what it exposes, and turning it on.
+---
+
+The AI assistant can use tools from external [MCP](https://modelcontextprotocol.io) servers you connect, on top of Warmbly's built-in ones. Connect your own server or a third-party one, review the tools it offers, and enable it. From then on the assistant can call those tools, always asking you first.
+
+Connections live under **Settings, Connections** and require the **Manage settings** permission.
+
+## Connecting a server
+
+Press **Add server** and provide:
+
+- **Name**: how the connection appears, and part of each tool's name in the assistant.
+- **Server URL**: an `https` URL to a streamable-HTTP MCP endpoint. Only public https URLs are allowed; internal or private addresses are rejected.
+- **Authentication**: **None**, or a **Bearer token**. A bearer token is stored encrypted with your workspace key and is never shown again or returned by the API.
+
+When you connect, Warmbly reaches out to the server, runs the MCP handshake, and lists the tools it offers. The connection starts **disabled** so nothing is exposed to the assistant until you have looked at the tools.
+
+## Reviewing and enabling
+
+Each connected server shows the tools Warmbly discovered. Read them, and when you are comfortable, flip the toggle to enable the server. Only enabled servers' tools reach the assistant.
+
+If the server could not be reached, the connection shows the error instead of a tool list. Fix the URL or token and press the refresh icon to try discovery again. Refresh also picks up any new tools a server has added.
+
+## How the assistant uses external tools
+
+External tools behave like Warmbly's own write actions with one important difference: they are **always** approval-gated. The assistant can never run an external tool automatically, even if you have used "always allow" for built-in actions. Every external tool call shows you what it will do and waits for your approval.
+
+Each tool appears in the assistant namespaced by your connection, so it is always clear which server a tool belongs to.
+
+## Removing a connection
+
+Disconnect a server any time from its card. Its tools are removed from the assistant immediately, and the stored credentials are deleted.
+
+<Callout type="warn" title="Trust the servers you connect">
+An enabled MCP server's tools run with the assistant, on behalf of the member using it. Only connect servers you trust, and prefer scoped tokens. Because external tool calls always require your approval, nothing runs without you seeing it first.
+</Callout>

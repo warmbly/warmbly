@@ -3,17 +3,11 @@
 // spintax), and a malformed-template heuristic. Used by the step composer and
 // the A/B variant editor so both preview and validate content identically.
 
-export const VARIABLES = ["{{.FirstName}}", "{{.LastName}}", "{{.Email}}", "{{.Company}}", "{{.Phone}}"];
-
-export const SAMPLE: Record<string, string> = {
-    FirstName: "Alex",
-    LastName: "Rivera",
-    Email: "alex@acme.com",
-    Company: "Acme",
-    Phone: "+1 555-0100",
-    role: "Engineer",
-    city: "Berlin",
-};
+// The standard merge fields and their sample values live in one catalog
+// (@/lib/templateVars); imported for local use (renderPreview's default context)
+// and re-exported so existing imports keep working.
+import { VARIABLES, SAMPLE } from "@/lib/templateVars";
+export { VARIABLES, SAMPLE };
 
 // Derive plain text from the editor HTML so both alternatives ship populated.
 export function htmlToPlain(html: string): string {
@@ -24,6 +18,19 @@ export function htmlToPlain(html: string): string {
     const tmp = document.createElement("div");
     tmp.innerHTML = withBreaks;
     return (tmp.textContent || "").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+// promptToHtml wraps a plain template string (a stored AI-block instruction) into
+// editor HTML: each line becomes a paragraph and the text is escaped. The editor
+// then upgrades any {{.Field}} tokens into chips itself, so this only needs to
+// produce safe paragraph HTML. htmlToPlain is the inverse on the way back out.
+export function promptToHtml(text: string): string {
+    if (!text.trim()) return "";
+    const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    return text
+        .split(/\r?\n/)
+        .map((line) => `<p>${line ? esc(line) : "<br>"}</p>`)
+        .join("");
 }
 
 type PreviewCtx = Record<string, string>;
@@ -61,14 +68,22 @@ function splitGroups(s: string): string[] {
 
 function evalCond(expr: string, ctx: PreviewCtx): boolean {
     expr = expr.trim();
-    let m = expr.match(/^eq\s+\.([A-Za-z0-9_]+)\s+"([^"]*)"$/);
+    // `not <expr>` — negate recursively (so `not (eq .X "v")` composes). The
+    // builder emits this for the "is empty" operator; without it the client
+    // preview always took the wrong branch.
+    const notM = expr.match(/^not\s+([\s\S]+)$/);
+    if (notM) return !evalCond(notM[1].replace(/^\(|\)$/g, ""), ctx);
+    // Fields may contain spaces/dashes (custom fields), so widen the class.
+    let m = expr.match(/^eq\s+\.([A-Za-z0-9_ -]+?)\s+"([^"]*)"$/);
     if (m) return (ctx[m[1]] ?? "") === m[2];
+    m = expr.match(/^ne\s+\.([A-Za-z0-9_ -]+?)\s+"([^"]*)"$/);
+    if (m) return (ctx[m[1]] ?? "") !== m[2];
     const logical = expr.match(/^(and|or)\s+(.*)$/s);
     if (logical) {
         const vals = splitGroups(logical[2]).map((p) => evalCond(p.replace(/^\(|\)$/g, ""), ctx));
         return logical[1] === "and" ? vals.every(Boolean) : vals.some(Boolean);
     }
-    m = expr.match(/^\.([A-Za-z0-9_]+)$/);
+    m = expr.match(/^\.([A-Za-z0-9_ -]+)$/);
     if (m) return truthy(ctx[m[1]]);
     return false;
 }

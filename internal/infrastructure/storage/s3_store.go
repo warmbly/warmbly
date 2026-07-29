@@ -3,7 +3,9 @@ package storage
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -47,6 +49,28 @@ func (c *Client) Put(ctx context.Context, key string, body io.Reader, contentTyp
 	}
 	_, err := c.PutObject(ctx, in)
 	return err
+}
+
+// PutPublic writes a public-read object with a long immutable cache and
+// returns its public URL. Used for avatars and org logos.
+func (c *Client) PutPublic(ctx context.Context, key string, body io.Reader, contentType string) (string, error) {
+	in := &s3.PutObjectInput{
+		Bucket:       aws.String(c.Bucket),
+		Key:          aws.String(key),
+		Body:         body,
+		CacheControl: aws.String("public, max-age=31536000, immutable"),
+		ACL:          types.ObjectCannedACLPublicRead,
+	}
+	if contentType != "" {
+		in.ContentType = aws.String(contentType)
+	}
+	if _, err := c.PutObject(ctx, in); err != nil {
+		return "", err
+	}
+	if c.PublicBaseURL != "" {
+		return strings.TrimRight(c.PublicBaseURL, "/") + "/" + key, nil
+	}
+	return fmt.Sprintf("https://%s.s3.amazonaws.com/%s", c.Bucket, key), nil
 }
 
 func (c *Client) Delete(ctx context.Context, key string) error {

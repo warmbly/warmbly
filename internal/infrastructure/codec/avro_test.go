@@ -1,3 +1,5 @@
+//go:build kafka
+
 package codec
 
 import (

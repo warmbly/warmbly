@@ -6,6 +6,10 @@
 //     shared worker, two connected email accounts (warmup-pooled), and
 //     a sample webhook endpoint pointing at the docker-compose
 //     webhook-sink service for end-to-end testing
+//   - dev-org enrichment (seed.SeedDevOrg): four warmed mailboxes, labels
+//     with real bindings, ~30 contacts, an actively sending campaign with
+//     14 days of funnel + stats history, a live unified inbox, CRM,
+//     reply templates, AI credits, and notifications
 //
 // When SEED_RICH=true (default in docker-compose), also loads:
 //
@@ -44,21 +48,23 @@ import (
 	"github.com/warmbly/warmbly/internal/seed"
 )
 
-// Stable UUIDs so fixture data is referenceable across runs.
+// Stable UUIDs so fixture data is referenceable across runs. The dev
+// user/org/worker anchors live in internal/seed so the dev-org enrichment
+// (seed.SeedDevOrg) targets the same rows.
 var (
-	userDev   = uuid.MustParse("11111111-0000-0000-0000-000000000001")
+	userDev   = seed.DevUserID
 	userAcme  = uuid.MustParse("11111111-0000-0000-0000-000000000002")
 	userBeta  = uuid.MustParse("11111111-0000-0000-0000-000000000003")
 	userGamma = uuid.MustParse("11111111-0000-0000-0000-000000000004")
 
-	orgDev   = uuid.MustParse("22222222-0000-0000-0000-000000000001")
+	orgDev   = seed.DevOrgID
 	orgAcme  = uuid.MustParse("22222222-0000-0000-0000-000000000002")
 	orgBeta  = uuid.MustParse("22222222-0000-0000-0000-000000000003")
 	orgGamma = uuid.MustParse("22222222-0000-0000-0000-000000000004")
 
 	// Match docker-compose.yml worker hostnames so seeded workers correspond
 	// to running containers.
-	workerShared    = uuid.MustParse("10c8f5e4-1c39-5b2a-9c8b-3d2f0a8b1a01")
+	workerShared    = seed.DevWorkerID
 	workerPremium   = uuid.MustParse("10c8f5e4-1c39-5b2a-9c8b-3d2f0a8b1a02")
 	workerDedicated = uuid.MustParse("10c8f5e4-1c39-5b2a-9c8b-3d2f0a8b1a03")
 )
@@ -89,6 +95,13 @@ func main() {
 	if err := seedBaseline(ctx, pool); err != nil {
 		log.Fatalf("baseline: %v", err)
 	}
+
+	// Enrich the dev org into a mid-flight workspace (mailboxes, labels,
+	// contacts, an active campaign with history, unibox, CRM, credits).
+	if err := seed.SeedDevOrg(ctx, pool); err != nil {
+		log.Fatalf("dev org: %v", err)
+	}
+	fmt.Println("dev org enriched: 4 mailboxes, 30 contacts, active campaign with 14d history, unibox, CRM, credits")
 
 	if os.Getenv("SEED_RICH") == "true" {
 		if err := seedRich(ctx, pool); err != nil {
@@ -136,8 +149,8 @@ func seedBaseline(ctx context.Context, pool *pgxpool.Pool) error {
 		warmupTag string
 		poolType  string
 	}{
-		{uuid.MustParse("33333333-0000-0000-0000-0000dddd0001"), "dev.send@warmbly.test", "Dev Sender", "dev-warmup-a", "premium"},
-		{uuid.MustParse("33333333-0000-0000-0000-0000dddd0002"), "dev.outbound@warmbly.test", "Dev Outbound", "dev-warmup-b", "premium"},
+		{seed.DevMailboxSendID, "dev.send@warmbly.test", "Dev Sender", "dev-warmup-a", "premium"},
+		{seed.DevMailboxOutboundID, "dev.outbound@warmbly.test", "Dev Outbound", "dev-warmup-b", "premium"},
 	}
 	for _, a := range devAccounts {
 		if err := upsertEmailAccount(ctx, pool, a.id, userDev, orgDev, workerShared, a.email, a.name, a.warmupTag, a.poolType); err != nil {
@@ -201,7 +214,6 @@ func seedBaseline(ctx context.Context, pool *pgxpool.Pool) error {
 	}
 
 	fmt.Println("baseline ok: dev@warmbly.com / password123")
-	fmt.Println("  dev accounts: dev.send@warmbly.test, dev.outbound@warmbly.test (premium pool)")
 	fmt.Println("  dev webhook : sample endpoint at http://webhook-sink:8080/in (disabled by default)")
 	return nil
 }

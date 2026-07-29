@@ -48,6 +48,89 @@ func validateNativeActionConfig(action models.IntegrationAction, raw json.RawMes
 		if strings.TrimSpace(cfg.EventName) == "" {
 			return fmt.Errorf("a fire-event action needs an event name")
 		}
+	case models.IntegrationActionAIStep:
+		return validateAIStepConfig(raw)
+	case models.IntegrationActionAISwitch:
+		return validateAISwitchConfig(raw)
+	}
+	return nil
+}
+
+// validateAISwitchConfig validates the AI switch router by decider mode
+// (mirrors the campaign switch): "value" mode needs a value template and at
+// least two cases (no model call, so no instruction); "ai" mode needs an
+// instruction and at least two cases.
+func validateAISwitchConfig(raw json.RawMessage) error {
+	ai := parseAIConfig(raw)
+	if len(nonEmptyStrings(ai.Cases)) < 2 {
+		return fmt.Errorf("an AI switch needs at least two cases")
+	}
+	if strings.TrimSpace(ai.SwitchOn) == "value" {
+		if strings.TrimSpace(ai.SwitchValue) == "" {
+			return fmt.Errorf("a value switch needs a value to match")
+		}
+		return nil
+	}
+	if strings.TrimSpace(ai.Instruction) == "" {
+		return fmt.Errorf("an AI switch needs an instruction")
+	}
+	return nil
+}
+
+// isAllowlistedAIAction is the closed set of REVERSIBLE native actions an
+// agent-mode AI step may call as tools. Defined as its own switch (NOT derived
+// from IsNativeAction) so it can never drift to include run_automation,
+// fire_event, a connection-backed action, or any future send/reply action.
+func isAllowlistedAIAction(a models.IntegrationAction) bool {
+	switch a {
+	case models.IntegrationActionAddTag,
+		models.IntegrationActionRemoveTag,
+		models.IntegrationActionCreateTask,
+		models.IntegrationActionCreateDeal,
+		models.IntegrationActionMoveDealStage,
+		models.IntegrationActionLabelEmail,
+		models.IntegrationActionSetVariables,
+		models.IntegrationActionUnsubscribe:
+		return true
+	default:
+		return false
+	}
+}
+
+// validateAIStepConfig validates the unified AI step by mode. Routing lives in
+// the AI switch node, so decide is not a step mode. Agent mode only checks the
+// guarded allowlist: every entry must pass isAllowlistedAIAction, and the agent
+// supplies each action's target (which tag/task/deal) as a tool argument at run
+// time, so no pinned per-action config is required here.
+func validateAIStepConfig(raw json.RawMessage) error {
+	ai := parseAIConfig(raw)
+	if strings.TrimSpace(ai.Instruction) == "" {
+		return fmt.Errorf("an AI step needs an instruction")
+	}
+	switch strings.TrimSpace(ai.Mode) {
+	case "classify":
+		if len(nonEmptyStrings(ai.Labels)) < 2 {
+			return fmt.Errorf("classify mode needs at least two labels")
+		}
+	case "extract":
+		if len(nonEmptyStrings(ai.OutputKeys)) == 0 {
+			return fmt.Errorf("extract mode needs at least one output key")
+		}
+	case "agent":
+		enabled := nonEmptyStrings(ai.Allowlist)
+		if len(enabled) == 0 {
+			return fmt.Errorf("agent mode needs at least one allowed action")
+		}
+		for _, raw2 := range enabled {
+			id := models.IntegrationAction(strings.TrimSpace(raw2))
+			if !isAllowlistedAIAction(id) {
+				return fmt.Errorf("%q is not an allowed agent action", raw2)
+			}
+		}
+	case "generate", "":
+		// generate needs only the instruction (already checked).
+	default:
+		return fmt.Errorf("unknown AI step mode %q", ai.Mode)
 	}
 	return nil
 }
@@ -85,6 +168,15 @@ type NativeActions interface {
 	// behalf of the mailbox-owner userID (categories are per user). Backs the
 	// "label_email" action; userID + threadID come from the reply event data.
 	LabelThread(ctx context.Context, userID uuid.UUID, threadID string, categoryIDs []uuid.UUID) error
+
+	// ListCategories / CreateCategory / ListPipelines back the AI agent step's
+	// argument-based tools: the model picks a tag/label/pipeline by name and the
+	// executor resolves it live (empty pool = any of the owner's tags). Keyed by
+	// the org OWNER (categories are per user); pipelines are org-scoped with
+	// stages hydrated in position order. Mirrors the campaign agent tools.
+	ListCategories(ctx context.Context, ownerID uuid.UUID) ([]models.MiniCategory, error)
+	CreateCategory(ctx context.Context, ownerID uuid.UUID, title, color string) (models.MiniCategory, error)
+	ListPipelines(ctx context.Context, orgID uuid.UUID) ([]models.Pipeline, error)
 }
 
 // nativeActionConfig is the per-node config for native action nodes (mirrors the

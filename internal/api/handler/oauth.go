@@ -464,13 +464,35 @@ func (h *Handler) RevokeAuthorizedApp(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"revoked": true})
 }
 
-// --- Discovery (RFC 8414) ---------------------------------------------------
+// --- Dynamic Client Registration (RFC 7591) ---------------------------------
 
-// OAuthServerMetadata advertises the authorization server's endpoints and
-// capabilities. The authorization endpoint is the dashboard consent page; token
-// and revocation are this API. APP_URL/API_PUBLIC_URL drive the absolute URLs.
-func (h *Handler) OAuthServerMetadata(c *gin.Context) {
-	appURL := strings.TrimRight(os.Getenv("APP_URL"), "/")
+// OAuthRegisterClient is the open (unauthenticated) client-registration endpoint.
+// MCP clients call it to self-register as a public (PKCE, no-secret) client so a
+// customer can connect with one `claude mcp add` and a browser sign-in. Per-IP
+// rate-limited in the service; registration mints only a client_id and grants no
+// access on its own (a human still approves scopes at consent).
+//
+// POST /v1/oauth/register
+func (h *Handler) OAuthRegisterClient(c *gin.Context) {
+	var req oauth.DCRRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_client_metadata", "error_description": "invalid request body"})
+		return
+	}
+	resp, err := h.OAuthService.RegisterDynamicClient(c.Request.Context(), c.ClientIP(), req)
+	if err != nil {
+		respondOAuthError(c, err)
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	c.JSON(http.StatusCreated, resp)
+}
+
+// --- Discovery (RFC 8414 + RFC 9728) ----------------------------------------
+
+// publicAPIBaseURL is the absolute base of this API (issuer + resource origin),
+// from API_PUBLIC_URL, falling back to the request host. No trailing slash.
+func publicAPIBaseURL(c *gin.Context) string {
 	apiURL := strings.TrimRight(os.Getenv("API_PUBLIC_URL"), "/")
 	if apiURL == "" {
 		scheme := "https"
@@ -479,15 +501,41 @@ func (h *Handler) OAuthServerMetadata(c *gin.Context) {
 		}
 		apiURL = scheme + "://" + c.Request.Host
 	}
+	return apiURL
+}
+
+// OAuthServerMetadata advertises the authorization server's endpoints and
+// capabilities. The authorization endpoint is the dashboard consent page; token,
+// revocation, and registration are this API. APP_URL/API_PUBLIC_URL drive the URLs.
+func (h *Handler) OAuthServerMetadata(c *gin.Context) {
+	appURL := strings.TrimRight(os.Getenv("APP_URL"), "/")
+	apiURL := publicAPIBaseURL(c)
 	c.JSON(http.StatusOK, gin.H{
 		"issuer":                                apiURL,
 		"authorization_endpoint":                appURL + "/oauth/authorize",
 		"token_endpoint":                        apiURL + "/v1/oauth/token",
 		"revocation_endpoint":                   apiURL + "/v1/oauth/revoke",
+		"registration_endpoint":                 apiURL + "/v1/oauth/register",
 		"response_types_supported":              []string{"code"},
 		"grant_types_supported":                 []string{"authorization_code", "refresh_token"},
 		"code_challenge_methods_supported":      []string{"S256"},
-		"token_endpoint_auth_methods_supported": []string{"client_secret_basic", "client_secret_post"},
+		"token_endpoint_auth_methods_supported": []string{"none", "client_secret_basic", "client_secret_post"},
 		"scopes_supported":                      oauth.ScopeList(models.AllAPIPermissionsMask),
+	})
+}
+
+// OAuthProtectedResourceMetadata is the RFC 9728 protected-resource metadata for
+// the MCP endpoint. An MCP client discovers it from the WWW-Authenticate challenge
+// on /v1/mcp, reads the authorization server from here, then runs the OAuth flow.
+//
+// GET /.well-known/oauth-protected-resource (and the /v1/mcp path-suffixed form)
+func (h *Handler) OAuthProtectedResourceMetadata(c *gin.Context) {
+	apiURL := publicAPIBaseURL(c)
+	c.JSON(http.StatusOK, gin.H{
+		"resource":                 apiURL + "/v1/mcp",
+		"authorization_servers":    []string{apiURL},
+		"scopes_supported":         oauth.ScopeList(oauth.MCPRegistrableScopes()),
+		"bearer_methods_supported": []string{"header"},
+		"resource_documentation":   "https://docs.warmbly.com/api/mcp/",
 	})
 }

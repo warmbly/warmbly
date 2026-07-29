@@ -4,11 +4,14 @@ import (
 	"github.com/warmbly/warmbly/internal/app/admin"
 	"github.com/warmbly/warmbly/internal/app/adminoutreach"
 	"github.com/warmbly/warmbly/internal/app/advanced"
+	"github.com/warmbly/warmbly/internal/app/aiagent"
+	"github.com/warmbly/warmbly/internal/app/aitools"
 	"github.com/warmbly/warmbly/internal/app/analytics"
 	"github.com/warmbly/warmbly/internal/app/apikey"
 	"github.com/warmbly/warmbly/internal/app/audit"
 	"github.com/warmbly/warmbly/internal/app/auth"
 	"github.com/warmbly/warmbly/internal/app/campaign"
+	"github.com/warmbly/warmbly/internal/app/compose"
 	"github.com/warmbly/warmbly/internal/app/contact"
 	"github.com/warmbly/warmbly/internal/app/credits"
 	"github.com/warmbly/warmbly/internal/app/crm"
@@ -21,6 +24,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/group"
 	"github.com/warmbly/warmbly/internal/app/integration"
 	"github.com/warmbly/warmbly/internal/app/leadsync"
+	"github.com/warmbly/warmbly/internal/app/mcp"
 	"github.com/warmbly/warmbly/internal/app/notification"
 	"github.com/warmbly/warmbly/internal/app/oauth"
 	"github.com/warmbly/warmbly/internal/app/organization"
@@ -29,10 +33,13 @@ import (
 	"github.com/warmbly/warmbly/internal/app/ratelimit"
 	"github.com/warmbly/warmbly/internal/app/referral"
 	"github.com/warmbly/warmbly/internal/app/releases"
+	"github.com/warmbly/warmbly/internal/app/research"
 	"github.com/warmbly/warmbly/internal/app/sequence"
+	"github.com/warmbly/warmbly/internal/app/skills"
 	"github.com/warmbly/warmbly/internal/app/socket"
 	"github.com/warmbly/warmbly/internal/app/stripe"
 	"github.com/warmbly/warmbly/internal/app/subscription"
+	"github.com/warmbly/warmbly/internal/app/sysstatus"
 	"github.com/warmbly/warmbly/internal/app/team"
 	"github.com/warmbly/warmbly/internal/app/template"
 	"github.com/warmbly/warmbly/internal/app/token"
@@ -51,21 +58,25 @@ import (
 	"github.com/warmbly/warmbly/internal/infrastructure/encryptedkeys"
 	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/infrastructure/storage"
+	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/notify"
 	"github.com/warmbly/warmbly/internal/repository"
 	"github.com/warmbly/warmbly/internal/tasks"
 )
 
 type Handler struct {
-	AuthService     auth.AuthService
-	TokenService    token.TokenService
-	PasskeyService  passkey.Service
-	UserService     user.UserService
-	EmailService    email.EmailService
-	CampaignService campaign.CampaignService
-	ContactService  contact.ContactService
-	SequenceService sequence.SequenceService
-	UniboxService   unibox.UniboxService
+	AuthService    auth.AuthService
+	TokenService   token.TokenService
+	PasskeyService passkey.Service
+
+	// Native-app social sign-in discovery (GET /auth/providers).
+	ExternalAuthProviders models.ExternalAuthProviders
+	UserService           user.UserService
+	EmailService          email.EmailService
+	CampaignService       campaign.CampaignService
+	ContactService        contact.ContactService
+	SequenceService       sequence.SequenceService
+	UniboxService         unibox.UniboxService
 
 	FolderService   group.GroupService
 	TagService      group.GroupService
@@ -107,6 +118,10 @@ type Handler struct {
 	TemplateService  template.TemplateService
 	EmailSendService emailsend.EmailSendService
 
+	// Compose mailbox picker: scores the org's mailboxes for a recipient
+	// (affinity, budget, auth health) and backs auto selection.
+	ComposeService compose.Service
+
 	// Admin
 	AdminService         admin.AdminService
 	AdminOutreachService adminoutreach.Service
@@ -141,6 +156,35 @@ type Handler struct {
 	// AI writing assistant + credit ledger.
 	CreditService    credits.CreditService
 	WritingGenerator generation.WritingGenerator
+
+	// AI provider layer (RunAgent tool-loop backend) + pluggable web search,
+	// shared by the dashboard agent, research, automation AI nodes, and the
+	// inbox agent. Nil when no LLM provider is configured.
+	AIProvider generation.Provider
+	AISearch   generation.SearchClient
+
+	// AITools is the shared tool registry the dashboard agent and MCP server
+	// run on. Handlers bound to the invoking user's permissions.
+	AITools *aitools.Registry
+
+	// AIAgentService orchestrates the dashboard agent (sessions, SSE runs,
+	// approvals, per-iteration credits). Nil when no LLM provider is configured.
+	AIAgentService aiagent.Service
+
+	// ResearchService runs the AI contact-research agent (sync + batch).
+	ResearchService research.Service
+
+	// SkillsService manages org AI skills (playbooks) and injects them into AI
+	// prompts.
+	SkillsService skills.Service
+
+	// MCPService manages org-connected MCP servers (external tools).
+	MCPService mcp.Service
+
+	// AIDraftRepo stores inbox-agent reply drafts awaiting human review (M10).
+	// The draft is created in the consumer; these list/approve/discard handlers
+	// read + resolve it. Nil disables the review endpoints.
+	AIDraftRepo repository.AIDraftRepository
 
 	// Seed inbox-placement testing.
 	PlacementRepo    repository.PlacementRepository
@@ -202,4 +246,8 @@ type Handler struct {
 
 	// Danger zone (delayed deletions for orgs & user accounts)
 	DangerZoneService dangerzone.Service
+
+	// Infrastructure liveness probes for the admin System Status page.
+	// Wired in cmd/backend/main.go where the concrete clients live.
+	SystemChecker *sysstatus.Checker
 }

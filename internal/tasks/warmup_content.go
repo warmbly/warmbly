@@ -64,12 +64,11 @@ func (s *tasksService) pickNewWarmupContent(ctx context.Context, account Email) 
 		conv, err := s.warmupContentRepo.PickConversation(ctx, segment)
 		if err == nil && conv != nil {
 			c := Conversation{ID: conv.ID, Theme: conv.Theme, Description: conv.Description, Messages: conv.Messages}
-			body := GenerateConversationEmail(c, account, false)
+			body := GenerateConversationOpeningEmail(c, account)
 			subject := spinClean(conv.Subject)
 			if subject == "" {
 				subject = generateWarmupSubject()
 			}
-			_ = s.warmupContentRepo.IncrementConversationUsage(ctx, conv.ID)
 			id := conv.ID
 			return warmupContent{
 				subject:        subject,

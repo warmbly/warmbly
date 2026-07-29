@@ -313,6 +313,31 @@ defmodule Realtime.Auth do
     end
   end
 
+  @doc """
+  Check if a user is a platform admin (users.admin_permissions > 0).
+
+  Gate for the internal `admin:platform` channel; returns the admin
+  permission bitmap so future per-permission event filtering can use it.
+  """
+  def check_admin(user_id) do
+    query = """
+    SELECT u.admin_permissions
+    FROM users u
+    WHERE u.id = $1 AND u.admin_permissions > 0
+    """
+
+    case dump_and_query(query, [user_id]) do
+      {:ok, %{rows: [[permissions] | _]}} ->
+        {:ok, %{permissions: permissions}}
+
+      {:ok, %{rows: []}} ->
+        {:error, :not_an_admin}
+
+      {:error, _reason} ->
+        {:error, :database_error}
+    end
+  end
+
   # Postgrex encodes uuid params as 16-byte binaries; accept both the raw
   # binary (from a prior query's row) and the canonical string form.
   defp dump_uuid(<<_::128>> = bin), do: {:ok, bin}

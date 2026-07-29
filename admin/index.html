@@ -19,6 +19,11 @@
 
     <meta name="apple-mobile-web-app-title" content="Admin · Warmbly" />
     <meta name="robots" content="noindex, nofollow" />
+
+    <!-- Runtime config: the production image overwrites this with values from
+         container env so one build serves any deployment. Empty in dev. Loads
+         before the app module so window.__WARMBLY_ENV__ is set first. -->
+    <script src="/config.js"></script>
   </head>
   <body>
     <div id="root"></div>

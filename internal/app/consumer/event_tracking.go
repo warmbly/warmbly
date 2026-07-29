@@ -4,24 +4,25 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
 	"time"
 
-	ckf "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 	"github.com/warmbly/warmbly/internal/app/advanced"
-	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/events"
-	"github.com/warmbly/warmbly/internal/infrastructure/kafka"
+	"github.com/warmbly/warmbly/internal/infrastructure/codec"
+	"github.com/warmbly/warmbly/internal/infrastructure/eventbus"
 	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
-// TrackingConsumer handles tracking events from the Rust tracking service
+// TrackingConsumer handles tracking events from the Rust tracking service. It
+// subscribes on the shared event bus (Kafka or NATS) and decodes with the same
+// codec the tracking producer writes (Avro on Kafka, JSON on NATS).
 type TrackingConsumer struct {
-	consumer             *kafka.Consumer
+	bus                  eventbus.EventBus
+	codec                codec.Codec
 	taskRepo             repository.TaskRepository
 	campaignProgressRepo repository.CampaignProgressRepository
 	campaignRepo         repository.CampaignRepository
@@ -34,13 +35,14 @@ type TrackingConsumer struct {
 	// are still recorded and routed at the next step boundary by the scheduler.
 	advancedService advanced.Service
 	topic           string
+	group           string
 }
 
-// NewTrackingConsumer creates a new tracking consumer using existing Kafka infrastructure
-// Config is loaded from AWS Parameter Store/Secrets Manager via config.LoadTrackingConsumerConfig
+// NewTrackingConsumer wires the tracking consumer to the shared event bus.
 func NewTrackingConsumer(
-	cfg *config.TrackingConsumerConfig,
-	avrov2 *kafka.Avrov2,
+	bus eventbus.EventBus,
+	cdc codec.Codec,
+	topic, group string,
 	taskRepo repository.TaskRepository,
 	campaignProgressRepo repository.CampaignProgressRepository,
 	campaignRepo repository.CampaignRepository,
@@ -49,36 +51,9 @@ func NewTrackingConsumer(
 	dedupeRepo repository.TrackingDedupeRepository,
 	advancedService advanced.Service,
 ) (*TrackingConsumer, error) {
-	// Create Kafka consumer using existing infrastructure
-	consumerConfig := kafka.NewConsumer(cfg.Brokers)
-	consumerConfig.Set("group.id", cfg.GroupID)
-	consumerConfig.Set("auto.offset.reset", "earliest")
-	consumerConfig.Set("enable.auto.commit", false)
-
-	// Configure SASL if enabled (credentials from AWS Secrets Manager)
-	if cfg.SASLEnabled {
-		consumerConfig.WithSASL(&kafka.SASLConfig{
-			Username: cfg.SASLUsername,
-			Password: cfg.SASLPassword,
-		})
-	}
-
-	consumer, err := consumerConfig.Connect()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create tracking consumer: %w", err)
-	}
-
-	// Attach Avrov2 for deserialization
-	consumer.WithAvrov2(avrov2)
-
-	// Subscribe to tracking events topic
-	if err := consumer.SubscribeTopics([]string{cfg.Topic}); err != nil {
-		consumer.Close()
-		return nil, fmt.Errorf("failed to subscribe to tracking topic: %w", err)
-	}
-
 	return &TrackingConsumer{
-		consumer:             consumer,
+		bus:                  bus,
+		codec:                cdc,
 		taskRepo:             taskRepo,
 		campaignProgressRepo: campaignProgressRepo,
 		campaignRepo:         campaignRepo,
@@ -86,32 +61,27 @@ func NewTrackingConsumer(
 		streamingPublisher:   streamingPublisher,
 		dedupeRepo:           dedupeRepo,
 		advancedService:      advancedService,
-		topic:                cfg.Topic,
+		topic:                topic,
+		group:                group,
 	}, nil
 }
 
-// Start begins consuming tracking events
+// Start subscribes to the tracking topic and blocks until ctx is cancelled.
 func (tc *TrackingConsumer) Start(ctx context.Context) error {
-	return tc.consumer.Consume(ctx, tc.handleMessage)
+	return tc.bus.Subscribe(ctx, []string{tc.topic}, tc.group, tc.receive)
 }
 
-// Close closes the consumer
-func (tc *TrackingConsumer) Close() {
-	if tc.consumer != nil {
-		tc.consumer.Close()
-	}
-}
+// Close is a no-op: the event bus lifecycle is owned by the consumer main,
+// which subscribes both worker-events and tracking on the same bus.
+func (tc *TrackingConsumer) Close() {}
 
-// handleMessage processes a raw Kafka message using Avro deserialization
-func (tc *TrackingConsumer) handleMessage(msg *ckf.Message) error {
+// receive decodes a tracking-events bus message and dispatches it.
+func (tc *TrackingConsumer) receive(_ context.Context, msg eventbus.Message) error {
 	var event events.TrackingEvent
-
-	// Deserialize using Confluent Avrov2
-	if err := tc.consumer.Avrov2.Deser.DeserializeInto(tc.topic, msg.Value, &event); err != nil {
+	if err := tc.codec.Deserialize(context.Background(), tc.topic, msg.Payload, &event); err != nil {
 		log.Warn().Err(err).Msg("failed to deserialize tracking event")
-		return nil // Don't fail - skip invalid events
+		return nil // don't fail - skip invalid events
 	}
-
 	return tc.HandleTrackingEvent(context.Background(), &event)
 }
 

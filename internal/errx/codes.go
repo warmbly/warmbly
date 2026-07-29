@@ -7,6 +7,7 @@ type Code int
 const (
 	BadRequest         Code = http.StatusBadRequest
 	Unauthorized       Code = http.StatusUnauthorized
+	PaymentRequired    Code = http.StatusPaymentRequired
 	Forbidden          Code = http.StatusForbidden
 	NotFound           Code = http.StatusNotFound
 	Conflict           Code = http.StatusConflict
@@ -20,6 +21,7 @@ const (
 var codeToHTTP = map[Code]int{
 	BadRequest:         http.StatusBadRequest,
 	Unauthorized:       http.StatusUnauthorized,
+	PaymentRequired:    http.StatusPaymentRequired,
 	Forbidden:          http.StatusForbidden,
 	NotFound:           http.StatusNotFound,
 	Conflict:           http.StatusConflict,
@@ -33,6 +35,7 @@ var codeToHTTP = map[Code]int{
 var codeToString = map[Code]string{
 	BadRequest:         "Bad Request",
 	Unauthorized:       "Unauthorized",
+	PaymentRequired:    "Payment Required",
 	Forbidden:          "Forbidden",
 	NotFound:           "Not Found",
 	Conflict:           "Conflict",
@@ -44,8 +47,10 @@ var codeToString = map[Code]string{
 }
 
 var codeToIdentifier = map[Code]string{
-	BadRequest:         "bad_request",
-	Unauthorized:       "unauthorized",
+	BadRequest:   "bad_request",
+	Unauthorized: "unauthorized",
+	// 402 is only ever raised for a depleted AI-credit balance in this app.
+	PaymentRequired:    "insufficient_credits",
 	Forbidden:          "forbidden",
 	NotFound:           "not_found",
 	Conflict:           "conflict",

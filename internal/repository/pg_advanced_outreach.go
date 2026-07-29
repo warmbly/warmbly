@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -534,29 +535,56 @@ func (r *advancedOutreachRepository) GetDeliverabilityDashboard(ctx context.Cont
 	out.ByCampaign = r.deliverabilityByCampaign(ctx, organizationID, from, to)
 	out.ByMailbox = r.deliverabilityByMailbox(ctx, organizationID, from, to)
 
-	// Seed inbox-placement (optional — nil rates when there are no seed samples).
+	// Seed inbox-placement per provider (optional — nil rates when there are no
+	// seed samples). The flat org totals are derived from the same rows.
 	var spam, inbox, placementTotal int
+	byProvider := map[string]*models.ProviderPlacement{}
 	placementQuery := `
-		SELECT pr.folder, COUNT(*)
+		SELECT pr.provider, pr.folder, COUNT(*)
 		FROM placement_results pr JOIN placement_tests pt ON pt.id = pr.test_id
 		WHERE pt.organization_id = $1 AND pr.detected_at >= $2 AND pr.detected_at <= $3 AND pr.folder <> 'pending'
-		GROUP BY pr.folder`
+		GROUP BY pr.provider, pr.folder`
 	if rows, perr := r.db.Query(ctx, placementQuery, organizationID, from, to); perr == nil {
 		for rows.Next() {
-			var folder string
+			var provider, folder string
 			var n int
-			if rows.Scan(&folder, &n) == nil {
+			if rows.Scan(&provider, &folder, &n) == nil {
 				placementTotal += n
+				p := byProvider[provider]
+				if p == nil {
+					p = &models.ProviderPlacement{Provider: provider}
+					byProvider[provider] = p
+				}
+				p.Samples += n
 				switch folder {
 				case "spam":
-					spam = n
+					spam += n
+					p.Spam += n
 				case "inbox":
-					inbox = n
+					inbox += n
+					p.Inbox += n
+				case "promotions":
+					p.Promotions += n
+				default:
+					p.Other += n
 				}
 			}
 		}
 		rows.Close()
 	}
+	out.ByProvider = make([]models.ProviderPlacement, 0, len(byProvider))
+	for _, p := range byProvider {
+		p.InboxRate = models.Rate(p.Inbox, p.Samples)
+		p.SpamRate = models.Rate(p.Spam, p.Samples)
+		out.ByProvider = append(out.ByProvider, *p)
+	}
+	sort.Slice(out.ByProvider, func(i, j int) bool {
+		if out.ByProvider[i].Samples != out.ByProvider[j].Samples {
+			return out.ByProvider[i].Samples > out.ByProvider[j].Samples
+		}
+		return out.ByProvider[i].Provider < out.ByProvider[j].Provider
+	})
+
 	out.PlacementSamples = placementTotal
 	spamRate := 0.0
 	if placementTotal > 0 {
@@ -567,8 +595,83 @@ func (r *advancedOutreachRepository) GetDeliverabilityDashboard(ctx context.Cont
 		spamRate = sr
 	}
 
+	out.WarmupPlacement = r.warmupPlacementByDomain(ctx, organizationID, from, to)
+
 	out.Band = models.DeliverabilityBand(out.BounceRate, out.ComplaintRate, spamRate)
+	out.Score = models.DeliverabilityScore(out.BounceRate, out.ComplaintRate, spamRate)
 	return out, nil
+}
+
+// warmupPlacementByDomain rolls the continuous warmup placement signal up per
+// recipient domain: delivered = verified warmup arrivals at partner mailboxes
+// (warmup_received), spam = the subset the recipient's provider filed into
+// junk (warmup_spam_reports, report_type=spam_placement). Org scope is the
+// sending account. Best-effort: an error returns an empty list.
+func (r *advancedOutreachRepository) warmupPlacementByDomain(ctx context.Context, orgID uuid.UUID, from, to time.Time) []models.WarmupDomainPlacement {
+	out := []models.WarmupDomainPlacement{}
+	byDomain := map[string]*models.WarmupDomainPlacement{}
+
+	deliveredQ := `
+		SELECT rcpt.provider, split_part(lower(rcpt.email), '@', 2), COUNT(*)
+		FROM warmup_received wr
+		JOIN email_accounts snd ON snd.id = wr.sender_account_id
+		JOIN email_accounts rcpt ON rcpt.id = wr.email_account_id
+		WHERE snd.organization_id = $1 AND wr.created_at >= $2 AND wr.created_at <= $3
+		GROUP BY 1, 2`
+	if rows, err := r.db.Query(ctx, deliveredQ, orgID, from, to); err == nil {
+		for rows.Next() {
+			var provider, domain string
+			var n int
+			if rows.Scan(&provider, &domain, &n) == nil && domain != "" {
+				byDomain[domain] = &models.WarmupDomainPlacement{Provider: provider, Domain: domain, Delivered: n}
+			}
+		}
+		rows.Close()
+	}
+
+	spamQ := `
+		SELECT sr.recipient_provider, sr.recipient_domain, COUNT(*)
+		FROM warmup_spam_reports sr
+		JOIN email_accounts snd ON snd.id = sr.reported_account_id
+		WHERE snd.organization_id = $1 AND sr.report_type = 'spam_placement'
+		  AND sr.created_at >= $2 AND sr.created_at <= $3 AND sr.recipient_domain <> ''
+		GROUP BY 1, 2`
+	if rows, err := r.db.Query(ctx, spamQ, orgID, from, to); err == nil {
+		for rows.Next() {
+			var provider, domain string
+			var n int
+			if rows.Scan(&provider, &domain, &n) == nil {
+				p := byDomain[domain]
+				if p == nil {
+					p = &models.WarmupDomainPlacement{Provider: provider, Domain: domain}
+					byDomain[domain] = p
+				}
+				p.Spam += n
+				// A spam-flagged arrival can be reported without (or before) its
+				// warmup_received row; keep delivered >= spam so rates stay sane.
+				if p.Delivered < p.Spam {
+					p.Delivered = p.Spam
+				}
+			}
+		}
+		rows.Close()
+	}
+
+	for _, p := range byDomain {
+		p.InboxRate = models.Rate(p.Delivered-p.Spam, p.Delivered)
+		p.SpamRate = models.Rate(p.Spam, p.Delivered)
+		out = append(out, *p)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Delivered != out[j].Delivered {
+			return out[i].Delivered > out[j].Delivered
+		}
+		return out[i].Domain < out[j].Domain
+	})
+	if len(out) > 25 {
+		out = out[:25]
+	}
+	return out
 }
 
 // deliverabilityTimeseries returns gap-filled UTC daily points for the window.

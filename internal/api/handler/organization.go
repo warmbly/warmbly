@@ -1,8 +1,11 @@
 package handler
 
 import (
+	"context"
 	"fmt"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -431,6 +434,27 @@ func (h *Handler) AcceptInvitation(c *gin.Context) {
 	}
 
 	h.auditOrg(c, models.AuditActionCreate, models.AuditEntityOrganizationMember, &member.UserID, nil, map[string]string{"via": "invitation"})
+
+	// Tell the members who manage the team (not the whole org, and not the
+	// joiner). Detached + best-effort: a notification hiccup must not fail
+	// the accept.
+	if h.NotificationService != nil {
+		joiner := strings.TrimSpace(strings.TrimSpace(user.FirstName) + " " + strings.TrimSpace(user.LastName))
+		if joiner == "" {
+			joiner = user.Email
+		}
+		orgID, joinerID := member.OrganizationID, member.UserID
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			h.NotificationService.NotifyOrg(ctx, orgID, models.PermManageTeam, joinerID,
+				models.NotifTeamActivity,
+				joiner+" joined your workspace",
+				user.Email+" accepted their invitation.",
+				"/app/settings/members", nil,
+				"member_joined:"+joinerID.String())
+		}()
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "invitation accepted",

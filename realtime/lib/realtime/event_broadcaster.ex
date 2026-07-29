@@ -29,6 +29,12 @@ defmodule Realtime.EventBroadcaster do
     end
 
     broadcast_to_entity_channels(event)
+
+    # Mirror every event to the internal admin firehose. AdminChannel joins
+    # are gated on users.admin_permissions, and with no admin connected this
+    # is a broadcast to an empty topic (near-free).
+    Phoenix.PubSub.broadcast(Realtime.PubSub, "admin:platform", {:pubsub_event, event})
+
     Logger.debug("Broadcast #{event_type}")
     :ok
   end

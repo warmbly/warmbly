@@ -8,19 +8,26 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconf "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/getsentry/sentry-go"
 	"github.com/warmbly/warmbly/internal/app/advanced"
 	"github.com/warmbly/warmbly/internal/app/cipher"
 	jobs "github.com/warmbly/warmbly/internal/app/consumer"
+	"github.com/warmbly/warmbly/internal/app/credits"
+	"github.com/warmbly/warmbly/internal/app/creditwatch"
+	"github.com/warmbly/warmbly/internal/app/feature"
+	"github.com/warmbly/warmbly/internal/app/inboxagent"
 	"github.com/warmbly/warmbly/internal/app/integration"
 	"github.com/warmbly/warmbly/internal/app/nativeactions"
 	"github.com/warmbly/warmbly/internal/app/notification"
+	"github.com/warmbly/warmbly/internal/app/replyclassify"
 	warmupapp "github.com/warmbly/warmbly/internal/app/warmup"
 	"github.com/warmbly/warmbly/internal/app/webhook"
 	workerapp "github.com/warmbly/warmbly/internal/app/worker"
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/events"
+	"github.com/warmbly/warmbly/internal/infrastructure/apns"
 	"github.com/warmbly/warmbly/internal/infrastructure/cache"
 	"github.com/warmbly/warmbly/internal/infrastructure/codec"
 	"github.com/warmbly/warmbly/internal/infrastructure/db"
@@ -30,8 +37,11 @@ import (
 	"github.com/warmbly/warmbly/internal/infrastructure/kms"
 	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/infrastructure/storage"
+	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/notify"
 	"github.com/warmbly/warmbly/internal/observability"
+	"github.com/warmbly/warmbly/internal/pkg/encrypt"
+	"github.com/warmbly/warmbly/internal/pkg/generation"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
@@ -50,10 +60,15 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// AWS config for services that need it (KMS, S3)
-	awscfg, err := awsconf.LoadDefaultConfig(ctx)
-	if err != nil {
-		log.Fatal(err)
+	// AWS SDK config, loaded only when an AWS-backed provider is selected
+	// (KMS_PROVIDER=aws or BLOB_PROVIDER=s3). A fully-local self-host needs no
+	// AWS_REGION or credentials.
+	var awscfg aws.Config
+	if config.AWSNeeded() {
+		awscfg, err = awsconf.LoadDefaultConfig(ctx)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 
 	// PostgreSQL
@@ -96,61 +111,40 @@ func main() {
 	}
 	cipherService := cipher.NewService(kmsClient, redisCache, encryptedKeys)
 
-	// S3
-	s3Client, err := storage.NewClient(ctx, awscfg, "main")
+	// Blob storage (S3 by default, filesystem when BLOB_PROVIDER=filesystem).
+	s3Client, err := storage.NewFromEnv(ctx, awscfg, "main")
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// Schema Registry → Avro v2
-	schemaEndpoint, schemaKey, schemaSecret, err := cfg.LoadSchemaRegistryConfig(ctx)
-	if err != nil {
-		log.Fatal(err)
+	// Event bus + codec. Kafka bootstrap/SASL is only loaded for
+	// EVENTBUS_PROVIDER=kafka; codec.FromEnv owns serialization (Avro pulls
+	// SCHEMA_REGISTRY_URL from env, JSON needs nothing). The bus drives both the
+	// inbound worker-events subscription and outbound publishing, so a NATS +
+	// JSON self-host needs no Kafka or Schema Registry config.
+	var kafkaBootstrapServers string
+	var kafkaSaslConfig *kafka.SASLConfig
+	if config.EventBusProvider() == "kafka" {
+		kafkaBootstrapServers, err = cfg.LoadKafkaBootstrapServers(ctx)
+		if err != nil {
+			log.Fatal(err)
+		}
+		kafkaSaslConfig, err = cfg.LoadKafkaConfigSasl(ctx)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
-	avrov2Client, err := kafka.NewAvrov2Client(schemaEndpoint, schemaKey, schemaSecret)
+
+	consumerCodec, err := codec.FromEnv()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// Kafka bootstrap
-	kafkaBootstrapServers, err := cfg.LoadKafkaBootstrapServers(ctx)
+	consumerBus, err := eventbus.FromEnv(kafkaBootstrapServers, kafkaSaslConfig)
 	if err != nil {
 		log.Fatal(err)
 	}
-	kafkaSaslConfig, err := cfg.LoadKafkaConfigSasl(ctx)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// Kafka producer
-	producerConfig := kafka.NewProducer(kafkaBootstrapServers)
-	if kafkaSaslConfig != nil {
-		producerConfig.WithSASL(kafkaSaslConfig)
-	}
-	kafkaProducer, err := producerConfig.Connect()
-	if err != nil {
-		log.Fatal(err)
-	}
-	kafkaProducer.WithAvrov2(avrov2Client)
-	defer kafkaProducer.Close()
-
-	// Kafka consumer
-	consumerConfig := kafka.NewConsumer(kafkaBootstrapServers)
-	if kafkaSaslConfig != nil {
-		consumerConfig.WithSASL(kafkaSaslConfig)
-	}
-	consumerConfig.Set("group.id", "consumer-group")
-	consumerConfig.Set("auto.offset.reset", "earliest")
-	kafkaConsumer, err := consumerConfig.Connect()
-	if err != nil {
-		log.Fatal(err)
-	}
-	kafkaConsumer.WithAvrov2(avrov2Client)
-	defer kafkaConsumer.Close()
-
-	if err := kafkaConsumer.SubscribeTopics([]string{kafka.TopicWorkerEvents}); err != nil {
-		log.Fatal(err)
-	}
+	defer consumerBus.Close()
 
 	// Realtime event transport, chosen by PUBSUB_ENABLED — the SAME flag the
 	// backend and the Elixir realtime service read, so the three services can
@@ -182,7 +176,12 @@ func main() {
 	}
 
 	// Repositories
-	emailRepo := repository.NewEmailRepostory(primaryDB)
+	credEncrypter, err := encrypt.FromEnv()
+	if err != nil {
+		sentry.CaptureException(err)
+		log.Fatal("Invalid CREDENTIALS_ENCRYPTION_KEY: ", err)
+	}
+	emailRepo := repository.NewEmailRepostory(primaryDB, credEncrypter)
 	uniboxRepo := repository.NewUniboxRepository(primaryDB)
 	mailboxRepo := repository.NewMailboxRepository(primaryDB)
 	emailHistoryIDRepo := repository.NewEmailHistoryIDRepository(primaryDB)
@@ -223,6 +222,50 @@ func main() {
 	integrationRepoC := repository.NewIntegrationRepository(primaryDB.Pool)
 	integrationServiceC := integration.NewService(integrationRepoC, cipherService, integration.NewOAuthManager())
 	webhookService.WireDispatchSink(integrationServiceC.DispatchAny)
+	// AI automation nodes + reply-classifier Layer 3 run in THIS process (reply /
+	// warmup / bounce events dispatch here). Build the credit ledger + provider so
+	// the ai_step / ai_switch nodes can charge + call, and so the classifier's
+	// optional model layer rides the same OpenAI-first provider.
+	creditRepoC := repository.NewCreditRepository(primaryDB)
+	aiSettingsRepoC := repository.NewAISettingsRepository(primaryDB)
+	creditServiceC := credits.NewService(creditRepoC, aiSettingsRepoC, redisCache)
+	// Consumer-side debits (automation AI nodes) also feed the low-balance
+	// alert. Auto top-up stays backend-only (no Stripe service here).
+	creditServiceC.SetMonitor(creditwatch.New(aiSettingsRepoC, creditRepoC, redisCache, streamingPublisher, nil).OnBalanceChanged)
+	var aiProviderC generation.Provider
+	// Pluggable web search (Serper/SearXNG) backs the AI switch's optional
+	// company lookup on reply-triggered automations that run in the consumer.
+	aiSearchC := generation.NewSearchClient(
+		cfg.GetStringOptional(ctx, "SEARCH_PROVIDER", "search/provider", ""),
+		cfg.GetStringOptional(ctx, "SEARCH_API_URL", "search/api_url", ""),
+		cfg.GetSecretOptional(ctx, "SEARCH_API_KEY", "search/api_key", ""),
+	)
+	// Provider selection mirrors the backend: AI_PROVIDER preset + AI_* vars.
+	if cfgAI, rerr := generation.Resolve(generation.ProviderSettings{
+		Provider:   cfg.GetStringOptional(ctx, "AI_PROVIDER", "ai_provider", ""),
+		APIKey:     cfg.GetSecretOptional(ctx, "AI_API_KEY", "ai_api_key", ""),
+		BaseURL:    cfg.GetStringOptional(ctx, "AI_BASE_URL", "ai_base_url", ""),
+		Model:      cfg.GetStringOptional(ctx, "AI_MODEL", "ai_model", ""),
+		ModelTrial: cfg.GetStringOptional(ctx, "AI_MODEL_TRIAL", "ai_model_trial", ""),
+		ModelPaid:  cfg.GetStringOptional(ctx, "AI_MODEL_PAID", "ai_model_paid", ""),
+		Free:       cfg.GetBoolPtr(ctx, "AI_FREE", "ai_free"),
+		Search:     aiSearchC,
+	}); rerr != nil {
+		log.Printf("AI provider misconfigured, AI features disabled: %v", rerr)
+	} else if p, perr := generation.NewProvider(cfgAI); perr == nil {
+		aiProviderC = p
+	}
+	integrationServiceC.SetAI(aiProviderC, creditServiceC)
+	integrationServiceC.SetAISearch(aiSearchC)
+	if aiProviderC != nil {
+		replyclassify.SetModelClassifier(func(ctx context.Context, system, user string) (string, error) {
+			res, err := aiProviderC.Complete(ctx, generation.CompletionRequest{System: system, Prompt: user, MaxTokens: 16, Temperature: generation.Deterministic()})
+			if err != nil {
+				return "", err
+			}
+			return res.Text, nil
+		})
+	}
 	// Warmup health transitions happen in THIS process (the health sweep + all
 	// event-driven re-evaluations run in the consumer). Without wiring the
 	// webhook dispatcher here, dispatchHealthEvent saw s.webhooks == nil and
@@ -239,6 +282,7 @@ func main() {
 		contactRepo,
 		campaignProgressRepo,
 		crmRepo,
+		repository.NewGroupRepostory(primaryDB, models.Categories),
 		uniboxRepo,
 		nil, // tasksClient: the consumer does not schedule Cloud Tasks
 		warmupService,
@@ -276,25 +320,44 @@ func main() {
 			notifEmail = ses
 		}
 	}
-	notificationService.WireDelivery(notifEmail, integrationServiceC, repository.NewUserRepostory(primaryDB, kmsClient))
+	notificationService.WireDelivery(notifEmail, integrationServiceC, repository.NewUserRepostory(primaryDB, kmsClient), orgRepoConsumer)
+	// Mobile push (APNs) fires from THIS process too: reply/bounce/complaint
+	// notifications are created here. Redis backs the immediate-then-digest
+	// window shared with the backend. The sender stays a nil interface (not a
+	// typed-nil *apns.Client) when unconfigured.
+	var pushSender notification.PushSender
+	if apnsClient, aerr := apns.FromEnv(); aerr != nil {
+		log.Printf("Warning: APNs push disabled: %v", aerr)
+	} else if apnsClient != nil {
+		pushSender = apnsClient
+	}
+	notificationService.WirePush(pushSender, repository.NewDeviceTokenRepository(primaryDB.Pool), redisCache.Client)
 	advancedService.WireNotifier(notificationService)
 	// Reply pulses fire in THIS process too (inbox ingest classifies replies).
 	advancedService.WireRealtime(streamingPublisher)
+	// Inbox agent (M10): inbound human replies are ingested + classified in THIS
+	// process, so the agent that drafts a suggested reply must be wired here. It
+	// is paid + opt-in (checked inside) and self-detaches, so a slow model never
+	// blocks reply ingest. Nil provider leaves it inert.
+	inboxAgentServiceC := inboxagent.NewService(
+		aiProviderC,
+		creditServiceC,
+		feature.NewService(subscriptionRepoConsumer, planRepoConsumer),
+		orgRepoConsumer,
+		uniboxRepo,
+		nil, // skills preamble optional; not constructed in the consumer
+		contactRepo,
+		repository.NewAIDraftRepository(primaryDB.Pool),
+		streamingPublisher,
+	)
+	advancedService.WireInboxAgent(inboxAgentServiceC)
 
-	// Events publisher — wraps the existing Kafka producer in an EventBus,
-	// wraps Avrov2 in a Codec. Once EVENTBUS_PROVIDER=nats is exercised in
-	// prod, the kafkaProducer construction above can be deleted in favor of
-	// constructing the bus via eventbus.FromEnv.
-	consumerBus := eventbus.NewKafkaFromProducer(kafkaProducer, eventbus.KafkaConfig{
-		Bootstrap: kafkaBootstrapServers,
-		SASL:      kafkaSaslConfig,
-	})
-	consumerCodec := codec.NewAvroFromClient(avrov2Client)
 	eventsPublisher := events.NewPublisher(consumerBus, s3Client, consumerCodec, cipherService)
 
 	// JobsService
 	jobsService := &jobs.JobsService{
-		Consumer:                    kafkaConsumer,
+		Bus:                         consumerBus,
+		Codec:                       consumerCodec,
 		UniboxRepository:            uniboxRepo,
 		MailboxRepository:           mailboxRepo,
 		EmailRepository:             emailRepo,
@@ -312,6 +375,7 @@ func main() {
 		Cache:                       redisCache,
 		AdminRepo:                   repository.NewAdminRepository(primaryDB.Pool),
 		AssignmentService:           workerAssignmentSvc,
+		Notifier:                    notificationService,
 	}
 
 	jobsService.InitEvents()
@@ -332,6 +396,10 @@ func main() {
 	// Start warmup health evaluation sweep (every hour)
 	go jobsService.StartWarmupHealthSweep(ctx, 1*time.Hour)
 
+	// Persist each mailbox's sending-domain SPF/DKIM/DMARC state (observe-only,
+	// not yet a send gate): sweep hourly, rechecking each domain at most daily.
+	go jobsService.StartAuthCheckSweep(ctx, 1*time.Hour, 24*time.Hour)
+
 	// Drains the durable delayed-engagement schedule (read/important/star) so the
 	// recipient-side dwell survives worker restarts. Short interval keeps the
 	// effective dwell close to the requested value.
@@ -349,17 +417,18 @@ func main() {
 	// or WorkerRepo are nil.
 	go jobsService.StartRiskRebalancer(ctx, 1*time.Hour)
 
-	// Tracking consumer (opens/clicks): a second Kafka consumer on the tracking
-	// topic. It records open/click engagement and fires INSTANT open/click action
-	// chains (advancedService), the open/click analog of the reply path. Wired
-	// best-effort: if the tracking config or connection isn't available in this
-	// environment, log and keep running the worker-event consumer rather than
-	// crashing — opens/clicks simply aren't consumed there.
+	// Tracking consumer (opens/clicks): a second subscription on the shared bus
+	// for the tracking topic. It records open/click engagement and fires INSTANT
+	// open/click action chains (advancedService), the open/click analog of the
+	// reply path. Decodes with the same codec the Rust tracking service writes
+	// (Avro on Kafka, JSON on NATS).
 	if trackingCfg, terr := cfg.LoadTrackingConsumerConfig(ctx); terr != nil {
 		log.Println("tracking consumer config unavailable; opens/clicks not consumed:", terr)
 	} else if trackingConsumer, terr := jobs.NewTrackingConsumer(
-		trackingCfg,
-		avrov2Client,
+		consumerBus,
+		consumerCodec,
+		trackingCfg.Topic,
+		trackingCfg.GroupID,
 		taskRepo,
 		campaignProgressRepo,
 		campaignRepo,

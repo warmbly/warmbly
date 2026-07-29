@@ -15,13 +15,7 @@ import (
 	"github.com/warmbly/warmbly/internal/pkg/emsg"
 )
 
-func (w *WorkerService) HandleSendEmail(ctx context.Context, body any) error {
-	sendEmail, ok := body.(models.SendEmail)
-	if !ok {
-		log.Debug().Msg("Invalid HandleSendEmail body type")
-		return fmt.Errorf("invalid body type")
-	}
-
+func (w *WorkerService) HandleSendEmail(ctx context.Context, sendEmail models.SendEmail) error {
 	log.Info().
 		Str("task_id", sendEmail.TaskID.String()).
 		Str("email_id", sendEmail.EmailID.String()).

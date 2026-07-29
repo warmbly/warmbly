@@ -24,9 +24,13 @@ export type BranchField =
     | "reply_positive"
     | "reply_negative"
     | "reply_neutral"
-    | "reply_automated";
+    | "reply_automated"
+    // The AI step that owns this branch stored this label for the contact
+    // (campaign_contact_progress.ai_label). Operator is "is"; the label rides
+    // in `label`. Only meaningful on branches out of an AI step.
+    | "ai_label";
 
-export type BranchOperator = "within_days" | "ever" | "chance";
+export type BranchOperator = "within_days" | "ever" | "chance" | "is";
 
 // The reply-class fields are evaluated with operator "ever" and carry no value.
 export const REPLY_BRANCH_FIELDS: BranchField[] = [
@@ -68,6 +72,8 @@ export interface BranchCondition {
     operator: BranchOperator;
     // Days for `within_days`; percent (1-99) for `random`/`chance`. Omitted for `ever`.
     value?: number;
+    // The AI-step label an `ai_label` condition compares against (operator "is").
+    label?: string;
 }
 
 export interface SequenceBranch {
@@ -99,4 +105,5 @@ export const BRANCH_FIELD_LABELS: Record<BranchField, string> = {
     reply_negative: "replied: negative",
     reply_neutral: "replied: neutral",
     reply_automated: "auto-reply / out of office",
+    ai_label: "AI label is",
 };

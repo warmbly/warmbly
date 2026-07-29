@@ -1,7 +1,8 @@
 import React from "react";
 import { useUserProfile } from "@/hooks/context/user";
-import { TextInput } from "@/components/ui/field";
+import { NumberInput, TextInput } from "@/components/ui/field";
 import useUpdateProfile from "@/lib/api/hooks/auth/useUpdateProfile";
+import useUpdateSendPreferences from "@/lib/api/hooks/auth/useUpdateSendPreferences";
 import { AvatarUploader } from "@/components/app/avatar/AvatarUploader";
 import {
     useDeleteUserAvatar,
@@ -9,8 +10,16 @@ import {
 } from "@/lib/api/hooks/app/avatar/useUserAvatar";
 import { Row, Section, SectionShell, initials } from "../_components/SectionShell";
 import SaveStatus from "../_components/SaveStatus";
-import { useAutosave } from "@/hooks/useAutosave";
+import { useAutosave, type AutosaveStatus } from "@/hooks/useAutosave";
 import { useRegisterUnsaved } from "@/hooks/context/unsaved";
+
+// Header indicator priority when two autosaves share one SaveStatus.
+function combineStatus(a: AutosaveStatus, b: AutosaveStatus): AutosaveStatus {
+    for (const s of ["saving", "error", "saved"] as const) {
+        if (a === s || b === s) return s;
+    }
+    return "idle";
+}
 
 export default function ProfileSettingsPage() {
     const { user } = useUserProfile();
@@ -46,11 +55,33 @@ export default function ProfileSettingsPage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user.first_name, user.last_name]);
 
+    // Undo-send window. Same autosave idiom as the names; the mutation
+    // patches the cached /auth/me user so the value sticks immediately.
+    // 0/undefined means the server cache hasn't caught up yet: show 30.
+    const [undoSeconds, setUndoSeconds] = React.useState(user.undo_send_seconds || 30);
+    const updateSendPrefs = useUpdateSendPreferences();
+    const undoAutosave = useAutosave({
+        value: undoSeconds,
+        debounceMs: 700,
+        save: async (v) => {
+            await updateSendPrefs.mutateAsync(Math.min(120, Math.max(5, v)));
+        },
+    });
+    useRegisterUnsaved(undoAutosave, () => {
+        setUndoSeconds(undoAutosave.savedValue);
+    });
+
+    const status = combineStatus(autosave.status, undoAutosave.status);
+    const retry = () => {
+        autosave.retry();
+        undoAutosave.retry();
+    };
+
     return (
         <SectionShell
             title="Profile"
             description="Used in emails sent on your behalf, the sidebar avatar, and any invitation you send out."
-            actions={<SaveStatus status={autosave.status} onRetry={autosave.retry} />}
+            actions={<SaveStatus status={status} onRetry={retry} />}
         >
             <Section eyebrow="Identity" description="Names appear on outgoing emails.">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -85,6 +116,26 @@ export default function ProfileSettingsPage() {
                         value={Intl.DateTimeFormat().resolvedOptions().timeZone}
                         readOnly
                         className="w-full max-w-[280px] h-7 px-2.5 rounded-md border border-slate-200 bg-slate-50 text-[12.5px] text-slate-500 font-mono"
+                    />
+                </Row>
+            </Section>
+
+            <Section
+                eyebrow="Undo send"
+                description="Outgoing emails wait this long before sending so you can cancel them from the top bar."
+            >
+                <Row
+                    label="Undo window"
+                    description="Between 5 and 120 seconds. Applies to instant sends from the composer and replies."
+                >
+                    <NumberInput
+                        value={undoSeconds}
+                        onChange={setUndoSeconds}
+                        min={5}
+                        max={120}
+                        step={5}
+                        suffix="seconds"
+                        className="w-[150px]"
                     />
                 </Row>
             </Section>

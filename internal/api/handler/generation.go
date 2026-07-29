@@ -22,6 +22,7 @@ import (
 	"github.com/warmbly/warmbly/internal/api/middleware"
 	"github.com/warmbly/warmbly/internal/app/credits"
 	"github.com/warmbly/warmbly/internal/errx"
+	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/generation"
 )
 
@@ -100,32 +101,52 @@ func (h *Handler) GenerateWriting(c *gin.Context) {
 	}
 	model := h.WritingGenerator.ModelForTier(paid)
 
-	// Consume one credit up front. The DB enforces the no-negative / no-replay
-	// invariants; on a depleted balance this returns 402 with no provider call.
+	// Consume one credit up front, unless this is a free/local model, which runs
+	// un-metered (AI_FREE). On the metered path the DB enforces the
+	// no-negative / no-replay invariants and returns 402 on a depleted balance.
 	idemKey := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
-	remaining, err := h.CreditService.Consume(
-		c.Request.Context(), *orgID, creditsPerWrite,
-		"writing_assistant", model, 0, idemKey,
-	)
-	if err != nil {
-		switch {
-		case errors.Is(err, credits.ErrInsufficientCredits):
-			paymentRequiredJSON(c, "You're out of AI credits. Upgrade or purchase more to keep using the writing assistant.")
-		case errors.Is(err, credits.ErrCapExceeded):
-			errx.JSON(c, errx.New(errx.TooManyRequests, "AI writing assistant usage limit reached, please try again later."))
-		default:
-			errx.JSON(c, errx.InternalError())
+	local := h.WritingGenerator.IsLocal()
+	// Attribute the charge to the teammate who asked for the draft.
+	reqCtx := c.Request.Context()
+	if actor, aerr := middleware.GetUserUUID(c); aerr == nil {
+		reqCtx = models.WithCreditMeta(reqCtx, models.CreditMeta{ActorID: actor})
+	}
+
+	var remaining int
+	if local {
+		if bal, berr := h.CreditService.GetBalance(reqCtx, *orgID); berr == nil {
+			remaining = bal
 		}
-		return
+	} else {
+		var err error
+		remaining, err = h.CreditService.Consume(
+			reqCtx, *orgID, creditsPerWrite,
+			"writing_assistant", model, 0, idemKey,
+		)
+		if err != nil {
+			switch {
+			case errors.Is(err, credits.ErrInsufficientCredits):
+				paymentRequiredJSON(c, "You're out of AI credits. Upgrade or purchase more to keep using the writing assistant.")
+			case errors.Is(err, credits.ErrCapExceeded):
+				errx.JSON(c, errx.New(errx.TooManyRequests, "AI writing assistant usage limit reached, please try again later."))
+			default:
+				errx.JSON(c, errx.InternalError())
+			}
+			return
+		}
 	}
 
 	// Generate. On provider failure, refund the credit so the customer is not
-	// charged for a completion they never received. The refund is best-effort;
-	// a failed refund is logged via the audit trail rather than surfaced.
-	result, gerr := h.WritingGenerator.GenerateWriting(c.Request.Context(), model, req.Prompt, req.Tone)
+	// charged for a completion they never received (nothing to refund on the
+	// free/local path). The refund is best-effort; a failed refund is logged via
+	// the audit trail rather than surfaced.
+	voice := h.orgVoice(c.Request.Context(), *orgID, req.Tone)
+	result, gerr := h.WritingGenerator.GenerateWriting(c.Request.Context(), model, req.Prompt, voice)
 	if gerr != nil {
-		if bal, rerr := h.CreditService.Grant(c.Request.Context(), *orgID, creditsPerWrite, "writing_assistant_refund"); rerr == nil {
-			remaining = bal
+		if !local {
+			if bal, rerr := h.CreditService.Grant(reqCtx, *orgID, creditsPerWrite, "writing_assistant_refund"); rerr == nil {
+				remaining = bal
+			}
 		}
 		if errors.Is(gerr, generation.ErrNotConfigured) {
 			errx.JSON(c, errx.New(errx.ServiceUnavailable, "AI writing assistant is not configured."))
@@ -135,9 +156,31 @@ func (h *Handler) GenerateWriting(c *gin.Context) {
 		return
 	}
 
+	// Usage-based settle: price the actual tokens and charge any overage
+	// beyond the flat minimum (best-effort; never fails the delivered text).
+	charged := 0
+	if !local {
+		charged = creditsPerWrite
+		if extra, serr := h.CreditService.SettleUsage(reqCtx, *orgID, creditsPerWrite, result.Model, result.TokensUsed, "writing_assistant", settleKey(idemKey)); serr == nil && extra > 0 {
+			remaining -= extra
+			charged += extra
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"text":              result.Text,
 		"credits_remaining": remaining,
+		"credits_charged":   charged,
+		"tokens_used":       result.TokensUsed,
 		"model":             result.Model,
 	})
+}
+
+// settleKey derives the usage-settle idempotency key from the call's key. An
+// empty key stays empty (non-idempotent call, non-idempotent settle).
+func settleKey(idemKey string) string {
+	if idemKey == "" {
+		return ""
+	}
+	return idemKey + ":usage"
 }

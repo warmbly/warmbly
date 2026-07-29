@@ -204,7 +204,7 @@ func (r *adminRepository) SearchUsers(ctx context.Context, search *models.AdminU
 		whereClause += ` AND EXISTS (SELECT 1 FROM user_bans ub WHERE ub.user_id = u.id)`
 	}
 	if search.HasDedicatedWorker {
-		whereClause += ` AND EXISTS (SELECT 1 FROM dedicated_worker_assignments dwa WHERE dwa.user_id = u.id AND dwa.released_at IS NULL)`
+		whereClause += ` AND EXISTS (SELECT 1 FROM dedicated_worker_assignments dwa JOIN organizations o ON o.id = dwa.organization_id WHERE o.owner_user_id = u.id AND dwa.released_at IS NULL)`
 	}
 
 	// Count / numeric ranges

@@ -16,6 +16,7 @@ import TemplatingShowcase from '../components/TemplatingShowcase.astro';
 import ChangelogShowcase from '../components/ChangelogShowcase.astro';
 import OpenSourceShowcase from '../components/OpenSourceShowcase.astro';
 import AutomationsShowcase from '../components/AutomationsShowcase.astro';
+import MobileAppShowcase from '../components/MobileAppShowcase.astro';
 
 const compare = [
   ['Per-mailbox cold cap',     '50 / day default',                 '200 / day if you ask for it'],
@@ -145,7 +146,7 @@ const softwareJsonLd = {
       </a>
 
       <h1 class="mt-8 md:mt-10 text-[44px] sm:text-6xl md:text-[72px] lg:text-[84px] font-semibold tracking-[-0.04em] leading-[0.98] text-white max-w-5xl mx-auto">
-        The biggest open-source cold email platform.
+        The largest open-source cold email platform.
       </h1>
 
       <p class="mt-6 text-[17px] md:text-[19px] text-white/80 max-w-2xl mx-auto leading-relaxed">
@@ -343,6 +344,12 @@ const softwareJsonLd = {
     >
       <IntegrationsMock />
     </FeatureSection>
+
+    <!-- ============================================================
+         MOBILE APP — sky band with the iOS app in a half-cut iPhone,
+         air-glass tabs flipping between the real app's screens.
+    ============================================================ -->
+    <MobileAppShowcase />
 
     <!-- ============================================================
          AUTOMATIONS — full-width centerpiece: the live builder demo

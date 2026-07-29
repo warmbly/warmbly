@@ -156,11 +156,19 @@ type MailSearchResult struct {
 }
 
 type MailSearchParams struct {
-	Sender  *string
-	Unseen  *bool
-	Subject *string
-	Since   *time.Time
-	Until   *time.Time
+	Sender *string
+	// Address matches either side of the exchange (from_addr OR to_addr),
+	// giving "every conversation with this person" regardless of direction.
+	// Substring match on the raw header entries, like Sender.
+	Address *string
+	// Direction narrows to messages the org sent ("sent") or received
+	// ("received"), resolved against the org's own mailbox addresses.
+	// nil = both directions.
+	Direction *string
+	Unseen    *bool
+	Subject   *string
+	Since     *time.Time
+	Until     *time.Time
 	// EmailAccountIDs restricts results to messages received by one of
 	// these mailboxes. Empty = no account filter. The frontend tag
 	// filter resolves client-side to the matching account IDs and
@@ -175,11 +183,17 @@ type MailSearchParams struct {
 	// message in the thread was sent by the user (i.e. the recipient
 	// hasn't replied yet). nil = no filter.
 	AwaitingReply *bool
+	// AgentDraft, when true, narrows to threads that have a pending
+	// inbox-agent draft awaiting human review (M10). nil = no filter.
+	AgentDraft *bool
 	// CategoryIDs restricts results to threads carrying at least one of
 	// these conversation labels. Empty = no category filter.
 	CategoryIDs []uuid.UUID
-	PageSize    int
-	Cursor      string
+	// Uncategorized, when true, narrows to threads carrying no
+	// conversation labels at all. nil = no filter.
+	Uncategorized *bool
+	PageSize      int
+	Cursor        string
 }
 
 type MarkSeen struct {
@@ -235,13 +249,16 @@ type UniboxCategoryOverview struct {
 // UniboxOverview powers the scope rail + top metric strip in one
 // request. Computed at /unibox/overview.
 type UniboxOverview struct {
-	Total            int64 `json:"total"`
-	Unread           int64 `json:"unread"`
-	Today            int64 `json:"today"`
-	Week             int64 `json:"week"`
-	Snoozed          int64 `json:"snoozed"`
-	AwaitingReply    int64 `json:"awaiting_reply"`
-	ScheduledPending int64 `json:"scheduled_pending"`
+	Total         int64 `json:"total"`
+	Unread        int64 `json:"unread"`
+	Today         int64 `json:"today"`
+	Week          int64 `json:"week"`
+	Snoozed       int64 `json:"snoozed"`
+	AwaitingReply int64 `json:"awaiting_reply"`
+	// AwaitingAgentDraft is the count of threads with a pending inbox-agent draft
+	// waiting for human review (M10).
+	AwaitingAgentDraft int64 `json:"awaiting_agent_draft"`
+	ScheduledPending   int64 `json:"scheduled_pending"`
 	// ScheduledPendingMax is the hard cap on pending scheduled email
 	// tasks per user. The dashboard shows current/max so the user
 	// sees how close they are to the limit before hitting it.

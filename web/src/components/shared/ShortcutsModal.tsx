@@ -66,6 +66,7 @@ export function ShortcutsModal() {
         <div className="grid gap-6 md:grid-cols-2">
           <div className="space-y-6">
             <ShortcutGroup title="Navigation" shortcuts={shortcutDefinitions.navigation} />
+            <ShortcutGroup title="Assistant" shortcuts={shortcutDefinitions.assistant} />
           </div>
           <div className="space-y-6">
             <ShortcutGroup title="List Navigation" shortcuts={shortcutDefinitions.list} />

@@ -1,39 +1,88 @@
 ---
 title: Deployment guide
 description: Deploy the control plane and a distributed worker fleet to production.
-icon: Server
 ---
 
-End-to-end guide for deploying Warmbly. The control plane runs on a container host (Railway in production); workers run on as many VPSes as you want and are managed from the admin dashboard.
+End-to-end guide for deploying Warmbly. The default is a no-cloud stack you can
+run on a single machine; every cloud service is opt-in.
 
-## Overview
+## No-cloud quick start
 
-| Plane | What runs | Where |
-|-------|-----------|-------|
-| Control | backend, consumer, tracking, realtime, web | One container host with stable region pinning (Railway, ECS Fargate, Fly, or Kubernetes). Postgres + Redis + Kafka + Schema Registry + S3 + KMS are external dependencies. |
-| Execution | worker | One process per VPS, anywhere in the world, supervised by systemd, configured from the admin dashboard over SSH. |
+On one machine with Docker:
 
-The control plane never needs to scale beyond a few replicas; the worker fleet is what fans out for IP diversity.
+```bash
+git clone https://github.com/warmbly/warmbly && cd warmbly
+make gen-key          # prints a KMS_LOCAL_MASTER_KEY — put it in .env
+make up               # or: docker compose up --build
+```
 
-## What you need
+That runs the whole platform — Postgres, Redis, NATS, backend, consumer, worker,
+tracking, realtime, dashboard, admin — with **no AWS, GCP, Stripe, or Kafka**.
+Before exposing it, set your own secrets in a `.env` next to `docker-compose.yml`:
+`AUTH_SECRET`, `KMS_LOCAL_MASTER_KEY`, `CREDENTIALS_ENCRYPTION_KEY`,
+`INTERNAL_API_TOKEN` (and `BOX_GOOGLE_CLIENT_ID`/`SECRET` to connect Gmail). Full
+list: [`deploy/config/env.example`](https://github.com/warmbly/warmbly/blob/main/deploy/config/env.example).
 
-**For the control plane**:
+**Back up `KMS_LOCAL_MASTER_KEY` and `CREDENTIALS_ENCRYPTION_KEY`** — they seal
+every stored mailbox credential and losing them is unrecoverable.
 
-- A Postgres 16 instance (RDS, Neon, Supabase, or self-hosted)
-- A Redis 7 instance
-- A Kafka broker with a Schema Registry (Confluent Cloud, Aiven, Redpanda, self-hosted)
-- An S3-compatible bucket
-- AWS KMS for envelope-encryption root, or a KMS-compatible service via LocalStack for local dev
-- A Stripe account (or stripe-mock for non-prod)
+## Providers
 
-**For the workers**:
+Each subsystem is an env-var switch. No-cloud defaults on the left:
 
-- A VPS per worker (Hetzner / OVH / Vultr / DigitalOcean / Linode, anywhere with a public IPv4). Spread providers for IP diversity.
-- Root SSH access on the VPS at install time.
+| Subsystem     | Default (no cloud)         | Opt-in                       |
+|---------------|----------------------------|------------------------------|
+| Database      | PostgreSQL 16              | RDS / Cloud SQL / any Postgres |
+| Cache         | Redis 7                   | ElastiCache                  |
+| Event bus     | NATS JetStream (`EVENTBUS_PROVIDER=nats`) | Kafka (`=kafka`, build with `GO_TAGS=kafka`) |
+| Blob storage  | Filesystem (`BLOB_PROVIDER=filesystem`) | S3/MinIO/R2 (`=s3`)      |
+| Root key      | Local AES (`KMS_PROVIDER=local`) | AWS KMS (`=aws`)          |
+| Task scheduler| In-process poller (`TASKS_PROVIDER=local`) | GCP Cloud Tasks (`=gcloud`) |
+| Codec         | JSON (`CODEC_PROVIDER=json`) | Avro + Schema Registry (`=avro`) |
+| Billing       | Off (`BILLING_PROVIDER=none`) | Stripe (`=stripe`)        |
+| Captcha       | Off                       | Cloudflare Turnstile (`CAPTCHA_PROVIDER=turnstile`) |
 
-## Step 1: Provision the control-plane dependencies
+## Reaching it from your network
 
-Whatever your stack, get the external services above running and collect the connection details. Local dev can substitute everything with `make sim` from the repo root (see [local development](/development/local-development/)). That runs LocalStack for KMS/S3 and includes everything else as containers.
+Every service already binds to `0.0.0.0` via the Docker port mappings, so it
+listens on all interfaces. The app's URLs default to `localhost`, so to use it
+from another machine set one variable in `.env`, and the API URL, CORS origins,
+websocket URL, and tracking domain all derive from it:
+
+```bash
+PUBLIC_HOST=192.168.1.50        # your machine's LAN IP, or a domain
+```
+
+Then open `http://192.168.1.50:5173`. The dashboard (`web`) and admin panel
+(`admin`) run as production static builds served by nginx, not Vite dev servers.
+Their URLs are injected at container start from `WARMBLY_*` env (rendered into a
+`/config.js`), so the published image is deployment-agnostic: compose derives
+`WARMBLY_API_URL` / `WARMBLY_APP_URL` / `WARMBLY_TRACKING_DOMAIN` from
+`PUBLIC_HOST` and `API_PUBLIC_URL`, and the same image runs anywhere. For a
+public domain over HTTPS, run a reverse proxy (Caddy or nginx) in front
+terminating TLS and point `PUBLIC_HOST` (or the individual `APP_URL` /
+`CORS_ALLOW_ORIGINS` / `WEBSOCKET_URL` / `API_PUBLIC_URL` / `TRACKING_DOMAIN`
+vars) at your domain.
+
+## Scaling
+
+Outbound mail leaves through each mailbox's own provider (Gmail API, Microsoft
+Graph, or the mailbox's SMTP relay), so the source IP is the provider's, not the
+worker's. Add capacity by connecting more mailboxes and running more workers
+(`docker compose up --scale worker=3`, or attach a machine you own via the admin
+panel's SSH enrollment). Workers are interchangeable executors.
+
+## Cloud-scale deployment (optional)
+
+The rest of this page covers running the control plane on a managed host with
+cloud services. You only need this if you are deliberately opting into Kafka, S3,
+KMS, or Stripe.
+
+**For the control plane**: Postgres 16, Redis 7, and — only if you opt in — a
+Kafka broker + Schema Registry, an S3-compatible bucket, AWS KMS, and a Stripe
+account.
+
+**For the workers**: a VPS per worker with root SSH access at install time.
 
 ## Step 2: Configure the backend
 
@@ -73,6 +122,22 @@ WORKER_AWS_ACCESS_KEY_ID=...
 WORKER_AWS_SECRET_ACCESS_KEY=...
 ```
 
+Mobile push via APNs (optional; omit to disable push delivery while device registration keeps working). Set on the backend and the consumer; the digest window controls how push bursts are batched (first event immediate, the rest summarized when the window closes):
+
+```
+APNS_KEY_PATH=/etc/warmbly/AuthKey_ABC123.p8   # or APNS_KEY with the PEM contents inline
+APNS_KEY_ID=ABC123DEFG
+APNS_TEAM_ID=TEAM123456
+APNS_TOPIC=com.warmbly.app
+NOTIFICATION_PUSH_WINDOW=5h                    # optional, default 5h
+```
+
+Notification email delivery (optional; set on the backend and the consumer). Notification emails bundle on a per-user window (30 minutes minimum, up to daily; there is no per-event mode), and each user additionally has a rolling 24h budget for non-security notification emails:
+
+```
+NOTIFICATION_EMAIL_DAILY_CAP=0                 # optional, default 25; 0 disables the per-user daily budget
+```
+
 Release auto-update (optional; safe to omit on a fresh install):
 
 ```
@@ -81,6 +146,44 @@ RELEASES_GITHUB_REPO=warmbly/warmbly             # or your fork
 RELEASES_WORKER_IMAGE_REPO=ghcr.io/warmbly/warmbly/worker
 RELEASES_WEBHOOK_SECRET=<shared with GitHub>
 RELEASES_GITHUB_TOKEN=<optional PAT for higher API limits>
+```
+
+AI provider (optional; omit all of it to run with the AI features off, in which case the assistant returns a clean `503`). Warmbly is OpenAI-first, but the provider is a plain OpenAI-compatible client. Pick a backend with `AI_PROVIDER` and supply a key plus a model; the preset fills in the base URL. Set these on the backend and the consumer:
+
+```
+AI_PROVIDER=openai       # openai | openrouter | groq | ollama | anthropic | custom
+AI_API_KEY=sk-...        # the key for that provider (not needed for ollama)
+AI_MODEL=                # model id; blank uses the provider's default
+AI_BASE_URL=             # override the preset endpoint (required for custom)
+AI_FREE=                 # true => free/un-metered model (skips credits); auto-true for ollama
+
+SEARCH_PROVIDER=         # optional; enables the assistant's web-search tool
+SEARCH_API_URL=
+SEARCH_API_KEY=
+```
+
+The presets:
+
+| `AI_PROVIDER` | Endpoint | Key | Notes |
+|---|---|---|---|
+| `openai` | api.openai.com | required | default `gpt-4o-mini` / `gpt-4o` |
+| `openrouter` | openrouter.ai | required | one key fronts every vendor; switch models via `AI_MODEL` (e.g. `anthropic/claude-3.7-sonnet`, `deepseek/deepseek-chat`, `...:free`) |
+| `groq` | api.groq.com | required (free tier) | fast; e.g. `AI_MODEL=openai/gpt-oss-20b` |
+| `ollama` | localhost:11434 | none | free local model; `AI_FREE` defaults true |
+| `anthropic` | api.anthropic.com | required | the Anthropic connector |
+| `custom` | your `AI_BASE_URL` | as needed | any OpenAI-compatible endpoint (vLLM, LocalAI, LM Studio) |
+
+Examples:
+
+```
+# OpenRouter: one key, switch models by changing AI_MODEL
+AI_PROVIDER=openrouter
+AI_API_KEY=sk-or-...
+AI_MODEL=deepseek/deepseek-chat
+
+# Free local model (Ollama): no key, un-metered
+AI_PROVIDER=ollama
+AI_MODEL=llama3.1        # or qwen2.5
 ```
 
 A full env reference is `deploy/config/env.example`.
@@ -96,7 +199,7 @@ ghcr.io/<owner>/warmbly/worker:vX
 ghcr.io/<owner>/warmbly/worker:prod
 ```
 
-And the same set of tags for `backend`, `consumer`, `tracking`, `realtime`. The `build-push.yml` workflow on `main` publishes `:{sha}` and `:dev`.
+And the same set of tags for `backend`, `consumer`, `tracking`, `realtime`, and the two frontends `web` (dashboard) and `admin`. The `build-push.yml` workflow on `main` publishes `:{sha}` and `:dev`.
 
 For self-hosters: this works out of the box on any fork as long as you have `packages: write` permission enabled in repo settings.
 

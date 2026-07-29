@@ -1,7 +1,6 @@
 ---
 title: Permissions reference
 description: Complete reference for the 22 API permissions available in Warmbly.
-icon: ShieldCheck
 ---
 
 Warmbly uses a bitmask system for API permissions. Each permission is one bit in a `uint64`, so a single integer can express any combination of the permissions below.
@@ -34,6 +33,8 @@ These same permissions are the [OAuth](/api/oauth/) scopes, lowercased: `READ_EM
 | `READ_AUDIT_LOGS` | 19 | 524288 | read | View organization audit logs |
 | `INTEGRATIONS` | 20 | 1048576 | special | Connect and manage third-party integrations |
 | `WARMUP_ROUTING` | 21 | 2097152 | special | Manage warmup routing rules |
+| `AI_AGENT` | 22 | 4194304 | special | Run the AI assistant and MCP tools |
+| `AI_RESEARCH` | 23 | 8388608 | special | Run AI contact research |
 
 `SEND_CAMPAIGNS` is intentionally separate from `WRITE_CAMPAIGNS`: editing a campaign draft and starting one that actually transmits mail are different blast radii, so a key can be granted the first without the second.
 
@@ -53,7 +54,7 @@ High-volume operations. These can touch large numbers of rows in a single reques
 
 ### Special
 
-Realtime subscriptions, webhooks, integrations, warmup routing, and self-service key management. Grant individually.
+Realtime subscriptions, webhooks, integrations, warmup routing, AI assistant / MCP access, AI contact research, and self-service key management. Grant individually.
 
 ## Preset combinations
 
@@ -70,12 +71,12 @@ READ_EMAILS | READ_CAMPAIGNS | READ_CONTACTS | READ_UNIBOX | READ_ANALYTICS
 = 688159
 ```
 
-### Full access (4194303)
+### Full access (16777215)
 
-All 22 permissions:
+All 24 permissions:
 
 ```
-(1 << 22) - 1 = 4194303
+(1 << 24) - 1 = 16777215
 ```
 
 ## Working with bitmasks
@@ -150,9 +151,15 @@ Same as above, plus `SEND_CAMPAIGNS` (16384). Grant only when the integration ge
 
 ## Permission constants
 
-<Tabs items={['JavaScript', 'Python', 'Go']}>
+<Tabs defaultValue="javascript">
 
-<Tab value="JavaScript">
+<TabsList>
+  <LangTab lang="javascript" />
+  <LangTab lang="python" />
+  <LangTab lang="go" />
+</TabsList>
+
+<Tab value="javascript">
 
 ```typescript
 export const Permissions = {
@@ -178,12 +185,14 @@ export const Permissions = {
   READ_AUDIT_LOGS: 524288,
   INTEGRATIONS: 1048576,
   WARMUP_ROUTING: 2097152,
+  AI_AGENT: 4194304,
+  AI_RESEARCH: 8388608,
 } as const;
 ```
 
 </Tab>
 
-<Tab value="Python">
+<Tab value="python">
 
 ```python
 class Permissions:
@@ -209,11 +218,13 @@ class Permissions:
     READ_AUDIT_LOGS = 524288
     INTEGRATIONS = 1048576
     WARMUP_ROUTING = 2097152
+    AI_AGENT = 4194304
+    AI_RESEARCH = 8388608
 ```
 
 </Tab>
 
-<Tab value="Go">
+<Tab value="go">
 
 ```go
 const (
@@ -239,6 +250,8 @@ const (
     APIPermReadAuditLogs                        // 524288
     APIPermIntegrations                         // 1048576
     APIPermWarmupRouting                        // 2097152
+    APIPermAIAgent                              // 4194304
+    APIPermAIResearch                           // 8388608
 )
 ```
 

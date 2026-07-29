@@ -1,7 +1,6 @@
 ---
 title: Mailboxes
 description: Connect, configure, warm up, verify, and send from sender mailboxes (email accounts).
-icon: Mail
 ---
 
 Mailboxes are the sender accounts Warmbly sends campaign and warmup mail from. These endpoints live under `/emails` and let you list and inspect connected mailboxes, update their sending and warmup settings, point a custom tracking domain at a mailbox, drive the warmup lifecycle, check authentication and ban status, verify addresses before sending, and send a one-off message from a specific mailbox.
@@ -51,6 +50,13 @@ A `data` array of mailbox objects plus a `pagination` envelope.
       "tracking_domain": "t.acme.com",
       "tracking_domain_verified": true,
       "tracking_domain_verified_at": "2026-06-01T12:00:00Z",
+      "auth_state": "passing",
+      "auth_spf": true,
+      "auth_dkim": true,
+      "auth_dmarc": true,
+      "auth_dmarc_policy": "quarantine",
+      "auth_reason": "SPF, DKIM and DMARC all present (DMARC policy: quarantine)",
+      "auth_checked_at": "2026-06-11T03:00:00Z",
       "warmup": "2026-05-20T00:00:00Z",
       "warmup_paused_at": null,
       "warmup_base": 10,
@@ -76,7 +82,7 @@ A `data` array of mailbox objects plus a `pagination` envelope.
 }
 ```
 
-`provider` is one of `gmail`, `outlook`, or `smtp_imap`. `status` is one of `active`, `inactive`, or `revoked`. `warmup` is the warmup anchor timestamp (null when warmup has never been enabled); a non-null `warmup_paused_at` means warmup is enabled but paused. `total` and `next_cursor` may be null when not applicable.
+`provider` is one of `gmail`, `outlook`, or `smtp_imap`. `status` is one of `active`, `inactive`, or `revoked`. `warmup` is the warmup anchor timestamp (null when warmup has never been enabled); a non-null `warmup_paused_at` means warmup is enabled but paused. `auth_state` is the sending domain's authentication state, one of `passing` (SPF and DMARC present), `failing` (SPF or DMARC missing), or `unknown` (not checked yet, or the DNS lookup could not complete); it is refreshed by a background check and `auth_dkim` is advisory (DKIM selectors are not discoverable from DNS). `total` and `next_cursor` may be null when not applicable.
 
 ## Get a mailbox
 
@@ -108,6 +114,8 @@ A bare mailbox object, same shape as one element of the list `data` array.
   "warmup_pool_type": "premium",
   "tracking_domain": "t.acme.com",
   "tracking_domain_verified": true,
+  "auth_state": "passing",
+  "auth_checked_at": "2026-06-11T03:00:00Z",
   "tags": ["outbound"],
   "created_at": "2026-05-19T18:00:00Z",
   "updated_at": "2026-06-11T09:14:00Z"
@@ -502,6 +510,8 @@ Response:
   "state": "n0nc3-opaque-state"
 }
 ```
+
+After the user approves, the provider redirects to the API's callback page, which hands `code` and `state` back to the client: a web opener receives them via `postMessage`, and when there is no opener (a native in-app browser session) the page redirects to `warmbly://email-oauth?provider=...&code=...&state=...&error=...` instead. Either way, the client then calls Finish OAuth.
 
 ### Finish OAuth
 

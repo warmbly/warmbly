@@ -1,12 +1,15 @@
+//go:build kafka
+
+// This file is compiled only with the `kafka` build tag. The default build is
+// pure-Go (NATS + JSON), so it never links confluent-kafka-go / librdkafka and
+// needs no CGO. Build with `-tags kafka` to include the Kafka backend.
 package eventbus
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"sync"
-	"time"
 
 	ckf "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/rs/zerolog/log"
@@ -31,13 +34,6 @@ type KafkaBus struct {
 	mu        sync.Mutex
 	consumers []*kafka.Consumer
 	closed    bool
-}
-
-// KafkaConfig builds a KafkaBus. bootstrap is the comma-separated broker list.
-// sasl is optional (nil for plaintext / no auth).
-type KafkaConfig struct {
-	Bootstrap string
-	SASL      *kafka.SASLConfig
 }
 
 // NewKafka constructs a KafkaBus and opens the shared producer connection.
@@ -178,19 +174,6 @@ func (b *KafkaBus) Close() error {
 // need the Avrov2 serializer attached or other Kafka-specific knobs. New code
 // should not depend on this; it exists to keep the migration incremental.
 func (b *KafkaBus) Producer() *kafka.Producer { return b.producer }
-
-// handlerTimeout matches the 30s budget the worker's Receive path uses today
-// so behaviour stays consistent after the swap.
-func handlerTimeout() time.Duration {
-	// Hard-coded today; pulled into a helper to make the override point obvious
-	// if we want to revisit per-handler timeouts later.
-	if v := os.Getenv("EVENTBUS_HANDLER_TIMEOUT"); v != "" {
-		if d, err := time.ParseDuration(v); err == nil {
-			return d
-		}
-	}
-	return 30 * time.Second
-}
 
 // Compile-time interface check.
 var _ EventBus = (*KafkaBus)(nil)

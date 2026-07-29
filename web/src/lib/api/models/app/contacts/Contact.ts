@@ -2,8 +2,15 @@ import type MiniCampaign from "../campaigns/MiniCampaign";
 import type MiniCategory from "./MiniCategory";
 
 // LeadStatus mirrors models.ContactCampaignProgress.Status — a contact's
-// processing state inside a single campaign.
-export type LeadStatus = "pending" | "active" | "replied" | "bounced" | "unsubscribed";
+// processing state inside a single campaign. "completed" = every step sent, no
+// reply (done); "active" = some but not all steps sent (still processing).
+export type LeadStatus =
+    | "pending"
+    | "active"
+    | "completed"
+    | "replied"
+    | "bounced"
+    | "unsubscribed";
 
 // ContactCampaignProgress is set only on contacts returned by a single-campaign
 // (Leads view) search; it summarises how far the lead is through the campaign.

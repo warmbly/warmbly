@@ -1,11 +1,13 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/api/middleware"
+	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
 )
 
@@ -128,4 +130,40 @@ func (h *Handler) UpdateUserProfile(c *gin.Context) {
 	}
 
 	c.Status(http.StatusNoContent)
+}
+
+type updateSendPreferencesRequest struct {
+	UndoSendSeconds int `json:"undo_send_seconds"`
+}
+
+// UpdateSendPreferences persists the user's undo-send window: how long an
+// instant send is held (and still cancellable) before it actually leaves.
+// PUT /me/send-preferences
+func (h *Handler) UpdateSendPreferences(c *gin.Context) {
+	var req updateSendPreferencesRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		errx.Handle(c, errx.ErrInvalid)
+		return
+	}
+	if req.UndoSendSeconds < config.UndoSendSecondsMin || req.UndoSendSeconds > config.UndoSendSecondsMax {
+		errx.Handle(c, errx.New(errx.BadRequest, fmt.Sprintf(
+			"undo_send_seconds must be between %d and %d",
+			config.UndoSendSecondsMin, config.UndoSendSecondsMax,
+		)))
+		return
+	}
+
+	userID := middleware.GetUserID(c)
+	uid, err := uuid.Parse(userID)
+	if err != nil {
+		errx.Handle(c, errx.ErrUser)
+		return
+	}
+
+	if xerr := h.UserService.UpdateUndoSendSeconds(c.Request.Context(), uid, req.UndoSendSeconds); xerr != nil {
+		errx.Handle(c, xerr)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"undo_send_seconds": req.UndoSendSeconds})
 }

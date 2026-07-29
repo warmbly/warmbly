@@ -2,15 +2,14 @@ package handler
 
 import (
 	"encoding/base64"
-	"errors"
 	"net/http"
+	"sort"
 	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
-	"github.com/warmbly/warmbly/internal/api/middleware"
 	"github.com/warmbly/warmbly/internal/app/warmupcontent"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
@@ -56,7 +55,19 @@ func pageMetaFor(offset, limit, returned, total int) pageMeta {
 	return pageMeta{Total: total, HasMore: hasMore, NextCursor: next}
 }
 
-// AdminWarmupContentOverview returns content-bank counts + generator status.
+// warmupSegmentStock is one row of the library's stock-vs-target breakdown.
+type warmupSegmentStock struct {
+	Segment           string `json:"segment"`
+	Active            int    `json:"active"`
+	Target            int    `json:"target"`
+	RecentSends       int    `json:"recent_sends"`
+	AverageDailySends int    `json:"average_daily_sends"`
+}
+
+// AdminWarmupContentOverview returns content-bank counts + generator status,
+// including everything the UI needs to render the automatic top-up pipeline:
+// whether an AI client is wired, today's spend against the daily cap, and
+// per-segment stock against the scheduler's targets.
 func (h *Handler) AdminWarmupContentOverview(c *gin.Context) {
 	ctx := c.Request.Context()
 	stats, err := h.WarmupContentRepo.ConversationStats(ctx)
@@ -76,13 +87,50 @@ func (h *Handler) AdminWarmupContentOverview(c *gin.Context) {
 		settings = &def
 	}
 
+	aiConfigured := h.WarmupContentService != nil && h.WarmupContentService.Enabled()
+	// Same daily window the scheduler uses for its cap accounting.
+	generatedToday, _ := h.WarmupContentRepo.GeneratedCountSince(ctx, time.Now().Truncate(24*time.Hour))
+
+	totalDemand, _ := h.WarmupContentRepo.WarmupSendsSince(ctx, time.Now().AddDate(0, 0, -7))
+
+	stock := make([]warmupSegmentStock, 0, 1)
+	for _, pool := range settings.Pools {
+		if !pool.Enabled {
+			continue
+		}
+		segmentSet := map[string]struct{}{"": {}}
+		for _, segment := range pool.Segments {
+			segmentSet[segment] = struct{}{}
+		}
+		for seg := range segmentSet {
+			active, _ := h.WarmupContentRepo.CountActiveConversations(ctx, pool.PoolType, seg)
+			recent := totalDemand
+			stock = append(stock, warmupSegmentStock{
+				Segment:           seg,
+				Active:            active,
+				Target:            warmupcontent.AdaptiveThreadTarget(recent, settings.AISelectionShare, pool.TargetActiveThreads),
+				RecentSends:       recent,
+				AverageDailySends: (recent + 6) / 7,
+			})
+		}
+	}
+	sort.Slice(stock, func(i, j int) bool { return stock[i].Segment < stock[j].Segment })
+
 	c.JSON(http.StatusOK, gin.H{
-		"total_active":      totalActive,
-		"total_archived":    totalArchived,
-		"by_pool":           stats,
-		"last_generated_at": lastGen,
-		"ai_enabled":        settings.Enabled,
-		"schedule_enabled":  settings.ScheduleEnabled,
+		"total_active":         totalActive,
+		"total_archived":       totalArchived,
+		"by_pool":              stats,
+		"last_generated_at":    lastGen,
+		"ai_enabled":           settings.Enabled,
+		"schedule_enabled":     settings.ScheduleEnabled,
+		"ai_configured":        aiConfigured,
+		"cadence_hours":        settings.CadenceHours,
+		"refresh_enabled":      settings.RefreshEnabled,
+		"refresh_per_run":      settings.RefreshPerRun,
+		"ai_selection_share":   settings.AISelectionShare,
+		"daily_generation_cap": settings.DailyGenerationCap,
+		"generated_today":      generatedToday,
+		"stock":                stock,
 	})
 }
 
@@ -195,53 +243,6 @@ func (h *Handler) AdminDeleteWarmupConversation(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
-type generateWarmupRequest struct {
-	Count    int    `json:"count"`
-	PoolType string `json:"pool_type"`
-	Segment  string `json:"segment"`
-	Theme    string `json:"theme"`
-	Model    string `json:"model"`
-}
-
-// AdminGenerateWarmupContent kicks off an offline generation run.
-func (h *Handler) AdminGenerateWarmupContent(c *gin.Context) {
-	if h.WarmupContentService == nil {
-		errx.JSON(c, errx.New(errx.BadRequest, "warmup generation is not configured"))
-		return
-	}
-	var req generateWarmupRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		errx.JSON(c, errx.New(errx.BadRequest, "invalid request body"))
-		return
-	}
-
-	adminID := middleware.GetAdminUserID(c)
-	jobID, err := h.WarmupContentService.Generate(c.Request.Context(), warmupcontent.GenerateRequest{
-		RequestedBy: adminID,
-		Trigger:     "manual",
-		PoolType:    req.PoolType,
-		Segment:     req.Segment,
-		Theme:       req.Theme,
-		Model:       req.Model,
-		Count:       req.Count,
-	})
-	if err != nil {
-		if errors.Is(err, warmupcontent.ErrNotConfigured) {
-			errx.JSON(c, errx.New(errx.BadRequest, "warmup AI generation is not configured (set OPENAI_API_KEY)"))
-			return
-		}
-		errx.JSON(c, errx.InternalError())
-		return
-	}
-
-	h.audit(c, models.AuditActionCreate, warmupContentEntity, &jobID, map[string]string{
-		"pool_type": req.PoolType,
-		"segment":   req.Segment,
-		"count":     strconv.Itoa(req.Count),
-	})
-	c.JSON(http.StatusOK, gin.H{"job_id": jobID})
-}
-
 // AdminListWarmupGenerationJobs lists generation runs (visibility).
 func (h *Handler) AdminListWarmupGenerationJobs(c *gin.Context) {
 	offset, ok := decodeOffsetCursor(c.Query("cursor"))
@@ -276,35 +277,6 @@ func (h *Handler) AdminGetWarmupGenerationJob(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"data": job})
-}
-
-// AdminGetWarmupGenerationSettings returns the current generation settings.
-func (h *Handler) AdminGetWarmupGenerationSettings(c *gin.Context) {
-	settings, err := h.WarmupContentRepo.GetGenerationSettings(c.Request.Context())
-	if err != nil {
-		errx.JSON(c, errx.InternalError())
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"data": settings})
-}
-
-// AdminUpdateWarmupGenerationSettings replaces the generation settings.
-func (h *Handler) AdminUpdateWarmupGenerationSettings(c *gin.Context) {
-	var settings models.WarmupGenerationSettings
-	if err := c.ShouldBindJSON(&settings); err != nil {
-		errx.JSON(c, errx.New(errx.BadRequest, "invalid request body"))
-		return
-	}
-	adminID := middleware.GetAdminUserID(c)
-	if err := h.WarmupContentRepo.SetGenerationSettings(c.Request.Context(), &settings, adminID); err != nil {
-		errx.JSON(c, errx.InternalError())
-		return
-	}
-	h.audit(c, models.AuditActionUpdate, warmupContentEntity, nil, map[string]string{
-		"enabled":          strconv.FormatBool(settings.Enabled),
-		"schedule_enabled": strconv.FormatBool(settings.ScheduleEnabled),
-	})
-	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
 type abRow struct {

@@ -16,7 +16,7 @@
     "fumadocs-mdx": "14.2.6",
     "fumadocs-ui": "16.4.11",
     "lucide-react": "^0.563.0",
-    "next": "16.2.6",
+    "next": "16.2.11",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "tailwind-merge": "^3.4.0"
@@ -28,15 +28,9 @@
     "@types/react": "^19.2.9",
     "@types/react-dom": "^19.2.3",
     "eslint": "^9.39.2",
-    "eslint-config-next": "16.2.6",
-    "postcss": "^8.5.6",
+    "eslint-config-next": "16.2.11",
+    "postcss": "^8.5.23",
     "tailwindcss": "^4.1.18",
     "typescript": "^5.9.3"
-  },
-  "pnpm": {
-    "overrides": {
-      "picomatch": "^4.0.4",
-      "path-to-regexp": "^8.4.0"
-    }
   }
 }

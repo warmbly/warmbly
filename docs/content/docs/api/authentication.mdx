@@ -1,7 +1,6 @@
 ---
 title: Authentication
 description: Learn how to authenticate with the Warmbly API using API keys.
-icon: KeyRound
 ---
 
 The Warmbly API uses API keys for authentication. Each API key has specific permissions that control what operations it can perform.
@@ -157,6 +156,10 @@ Set an expiration date for temporary access:
 ```
 
 After expiration, the key returns `401 Unauthorized`.
+
+## Using a credential with MCP
+
+An [MCP client](/api/mcp/) (Claude Code, Claude Desktop, Cursor) authenticates to Warmbly with either an OAuth sign-in (the one-command path, no key to paste) or a static API key. For a key, send it as a bearer token to `https://api.warmbly.com/v1/mcp`; the client then sees exactly the tools the credential's scopes allow. See the [MCP server](/api/mcp/) page for both paths.
 
 ## Error responses
 

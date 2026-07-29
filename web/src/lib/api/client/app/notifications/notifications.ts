@@ -1,23 +1,25 @@
-import type { AppNotification, NotificationPreferences } from "@/lib/api/models/app/notifications/Notification";
+import type {
+    AppNotification,
+    NotificationPreferences,
+    NotificationPreferencesEnvelope,
+} from "@/lib/api/models/app/notifications/Notification";
 import Request from "../../Request";
 
-export async function getNotificationPreferences(): Promise<NotificationPreferences> {
-    const res = await Request<{ preferences: NotificationPreferences }>({
+export async function getNotificationPreferences(): Promise<NotificationPreferencesEnvelope> {
+    return await Request<NotificationPreferencesEnvelope>({
         method: "GET",
         url: "/auth/me/notification-preferences",
         authorization: true,
     });
-    return res.preferences;
 }
 
-export async function updateNotificationPreferences(preferences: NotificationPreferences): Promise<NotificationPreferences> {
-    const res = await Request<{ preferences: NotificationPreferences }>({
+export async function updateNotificationPreferences(preferences: NotificationPreferences): Promise<NotificationPreferencesEnvelope> {
+    return await Request<NotificationPreferencesEnvelope>({
         method: "PUT",
         url: "/auth/me/notification-preferences",
         data: { preferences },
         authorization: true,
     });
-    return res.preferences;
 }
 
 export async function listNotifications(unreadOnly = false, limit = 50): Promise<{ notifications: AppNotification[]; unread: number }> {
