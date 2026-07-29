@@ -148,9 +148,10 @@ func NewWMail(
 
 		mail.GraphData = &GraphData{
 			Client: &msgraph.Client{
-				Email:     data.Email,
-				FirstName: data.FirstName,
-				LastName:  data.LastName,
+				Email:        data.Email,
+				MailboxEmail: data.Graph.MailboxEmail,
+				FirstName:    data.FirstName,
+				LastName:     data.LastName,
 
 				Cache:      mail.Cache,
 				DeltaLinks: cloneStringMap(deltaLinks),

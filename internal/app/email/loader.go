@@ -169,8 +169,9 @@ func (s *emailService) buildAddWorkerEmail(ctx context.Context, acc *models.Emai
 			return nil, cerr
 		}
 		out.Graph = &models.AddWorkerEmailGraphData{
-			Token:      oauthToken(creds),
-			DeltaLinks: s.deltaLinksFor(ctx, userID, acc.ID),
+			Token:        oauthToken(creds),
+			MailboxEmail: acc.Email,
+			DeltaLinks:   s.deltaLinksFor(ctx, userID, acc.ID),
 		}
 	case models.InboxProviderSMTPIMAP:
 		creds, cerr := s.emailRepository.GetSMTPCredentials(ctx, acc.ID)

@@ -13,6 +13,8 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/url"
+	"strings"
 	"sync"
 
 	"github.com/warmbly/warmbly/internal/errx"
@@ -23,8 +25,7 @@ import (
 )
 
 const (
-	// graphBase is the Microsoft Graph v1.0 root. All mail calls are made
-	// against the signed-in user (/me) using the delegated token.
+	// graphBase is the Microsoft Graph v1.0 root.
 	graphBase = "https://graph.microsoft.com/v1.0"
 
 	// Well-known mail folder ids Graph accepts directly in a path or as a
@@ -35,9 +36,10 @@ const (
 
 // Client is a single Microsoft 365 mailbox reached over Graph.
 type Client struct {
-	Email     string
-	FirstName string
-	LastName  string
+	Email        string
+	MailboxEmail string
+	FirstName    string
+	LastName     string
 
 	hc    *http.Client
 	Cache *cache.Cache
@@ -122,4 +124,20 @@ func (c *Client) doJSON(ctx context.Context, method, url string, in, out any) er
 	}
 	_, _ = io.Copy(io.Discard, resp.Body)
 	return nil
+}
+
+// mailboxBase returns the Graph resource root for this sender mailbox. Warmbly
+// must not assume /me for Outlook transport: shared Microsoft 365 mailboxes use a
+// delegate's OAuth token but their own mailbox resource, so send, delta sync, and
+// warmup engagement all have to target /users/{mailbox}. Falling back to Email
+// preserves compatibility with older worker payloads that predate MailboxEmail.
+func (c *Client) mailboxBase() string {
+	mailbox := strings.TrimSpace(c.MailboxEmail)
+	if mailbox == "" {
+		mailbox = strings.TrimSpace(c.Email)
+	}
+	if mailbox == "" {
+		return graphBase + "/me"
+	}
+	return graphBase + "/users/" + url.PathEscape(mailbox)
 }

@@ -63,7 +63,7 @@ func (c *Client) SendMessage(
 
 	// MIME sendMail: the request body is the base64 of the RFC 5322 message.
 	encoded := base64.StdEncoding.EncodeToString(raw)
-	resp, err := c.do(ctx, http.MethodPost, graphBase+"/me/sendMail", "text/plain", []byte(encoded))
+	resp, err := c.do(ctx, http.MethodPost, c.mailboxBase()+"/sendMail", "text/plain", []byte(encoded))
 	if err != nil {
 		return errx.ErrMailServerUnreachable
 	}

@@ -176,8 +176,9 @@ func (s *emailService) OAuthFinish(ctx context.Context, userID, code, state stri
 // OnboardOutlookShared validates a Microsoft 365 shared mailbox using an
 // already-connected Outlook delegate account, then stores the shared mailbox as
 // a distinct Warmbly account backed by the delegate OAuth credential. The
-// validation is read-only (/users/{shared}/mailFolders/inbox); this path does
-// not send email, start campaigns, or enable warmup.
+// validation is read-only (/users/{shared}/mailFolders/inbox); after connect the
+// mailbox is loaded like any other Outlook sender so normal campaign and warmup
+// gates can send through /users/{shared}/sendMail.
 func (s *emailService) OnboardOutlookShared(ctx context.Context, userID string, orgID *uuid.UUID, data *models.NewSharedOutlookMailboxAccount) (*models.Email, *errx.Error) {
 	if xerr := validateSharedOutlookInput(data); xerr != nil {
 		return nil, xerr
@@ -245,9 +246,11 @@ func (s *emailService) OnboardOutlookShared(ctx context.Context, userID string, 
 		ExpiresAt:      tok.Expiry,
 	})
 	if xerr == nil && acc != nil {
-		// Shared mailbox onboarding is an approval-gated setup path: validate
-		// read access and persist the sender, but do not enroll it in warmup or
-		// start any send-side activity. Sending remains behind the normal gates.
+		// Keep shared Outlook mailboxes on the exact same post-connect path as
+		// regular OAuth mailboxes: pool membership for warmup health/recipient
+		// participation, lifecycle events, webhook dispatch, and immediate worker
+		// load. Actual warmup sends still require the normal warmup start gate.
+		s.syncWarmupPoolMembership(ctx, acc)
 		s.publishAccountEvent(ctx, pubsub.EventAccountConnected, acc)
 		s.dispatchAccountConnected(ctx, orgID, acc)
 		s.loadAccountBestEffort(ctx, acc.ID)

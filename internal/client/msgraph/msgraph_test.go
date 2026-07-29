@@ -95,3 +95,21 @@ func TestToEmailData_MappingAndFlags(t *testing.T) {
 		t.Errorf("from formatting: %v", d.From)
 	}
 }
+
+func TestMailboxBaseTargetsSenderMailbox(t *testing.T) {
+	c := &Client{Email: "delegate@example.com", MailboxEmail: "Shared Mailbox@example.com"}
+	got := c.mailboxBase()
+	want := graphBase + "/users/Shared%20Mailbox@example.com"
+	if got != want {
+		t.Fatalf("mailboxBase() = %q, want %q", got, want)
+	}
+}
+
+func TestMailboxBaseFallsBackToEmailForLegacyPayloads(t *testing.T) {
+	c := &Client{Email: "sender@example.com"}
+	got := c.mailboxBase()
+	want := graphBase + "/users/sender@example.com"
+	if got != want {
+		t.Fatalf("mailboxBase() = %q, want %q", got, want)
+	}
+}

@@ -202,12 +202,19 @@ type AddWorkerEmailSmtpImapData struct {
 }
 
 // AddWorkerEmailGraphData seeds a Microsoft Graph mailbox on the worker: the
-// delegated OAuth token and the opaque per-folder delta cursors persisted by the
-// control plane (empty on first connect, which primes the cursor without
-// backfilling history).
+// delegated OAuth token, the mailbox address whose Graph mail endpoint should be
+// used, and the opaque per-folder delta cursors persisted by the control plane
+// (empty on first connect, which primes the cursor without backfilling history).
+//
+// MailboxEmail is intentionally explicit instead of assuming /me: shared
+// Microsoft 365 mailboxes reuse a licensed delegate token but must send, sync,
+// and run warmup actions against /users/{shared-mailbox}. Regular Outlook
+// accounts pass their own email address, which keeps the worker payload shape
+// identical across normal and shared Outlook senders.
 type AddWorkerEmailGraphData struct {
-	Token      *oauth2.Token     `json:"token" avro:"token"`
-	DeltaLinks map[string]string `json:"delta_links" avro:"delta_links"`
+	Token        *oauth2.Token     `json:"token" avro:"token"`
+	MailboxEmail string            `json:"mailbox_email" avro:"mailbox_email"`
+	DeltaLinks   map[string]string `json:"delta_links" avro:"delta_links"`
 }
 
 type AddWorkerEmail struct {
