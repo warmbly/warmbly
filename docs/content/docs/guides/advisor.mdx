@@ -123,9 +123,33 @@ Opening a recommendation walks three short screens, in the order people actually
 
 Nothing is applied until you have seen the second screen. The change runs as you, with your permissions, and is written to the audit log like any change you make by hand. If you can see a recommendation but do not have permission to make the change it proposes, applying it is refused rather than silently escalated.
 
-Recommendations that need a judgement call, like adding a DNS record or fixing a broken merge variable, have no button. Those open the same flow, and the second screen is the ordered set of steps to do it by hand, along with a link to the screen where you would do it. A missing DKIM record tells you to generate a key in your provider's console, publish the record it gives you, and then turn signing on, which is a separate switch. Where the remedy is genuinely one sentence, like shortening a subject line, it stays one sentence rather than being padded into a list.
+Recommendations that need a judgement call have no settings change to preview. Those open the same flow, and the second screen is the ordered set of steps to do it by hand, along with a link to the screen where you would do it. A missing DKIM record tells you to generate a key in your provider's console, publish the record it gives you, and then turn signing on, which is a separate switch. Where the remedy is genuinely one sentence, like shortening a subject line, it stays one sentence rather than being padded into a list.
 
 Where the same check fired on many rows, the summary above the list offers **Fix all**, which works through them one at a time and names every row it will touch before it starts.
+
+### Letting an agent do it
+
+Findings with no settings change offer **Fix with agent**. That runs an agent against that one finding: it reads the current campaign, step, or list, makes the smallest change that resolves the problem, and reports back.
+
+It runs as you, with your permissions, and only ever gets the tools that finding's category needs. A copy problem gets read access to the campaign and the ability to edit that step, and nothing else. Nothing in any of those tool sets can send mail, delete a campaign or a contact, or touch team, billing, or API keys. Each loop costs one AI credit.
+
+When it finishes you get its account of what it did plus the list of tools it actually called, which is the part you can check against the audit log. An agent that reads your campaign and concludes nothing needs changing says so, and the finding stays open rather than being quietly marked fixed.
+
+### Autopilot
+
+Under **Settings > Workspace** you can let the Advisor apply the safe fixes without asking. It is off by default.
+
+Autopilot only ever takes a fix that is bounded, moves in the safe direction, and can be undone:
+
+- lowering a mailbox cap that is above the safe band, or that a new mailbox jumped to too early
+- cutting the cap on a mailbox drawing complaints
+- widening a send gap that is too short
+- matching a campaign's daily limit to what its mailboxes can actually carry
+- turning on one-click unsubscribe
+
+It never pauses sending, never edits your copy, never starts or resumes warmup, and never makes a change without an undo. Findings it is allowed to take are marked **Auto** on the card, whether or not it is switched on, so the set is visible before you enable it rather than after.
+
+It acts as the member who turned it on, with their permissions, and each fix is written to the audit log as them. If that person leaves the workspace, autopilot stops until somebody else enables it. It applies at most ten fixes per evaluation.
 
 ## Making one go away
 
@@ -135,7 +159,7 @@ Where the same check fired on many rows, the summary above the list offers **Fix
 
 ## Settings
 
-Under **Settings > Workspace** you can switch the Advisor off entirely, mute whole categories (deliverability, mailbox, warmup, campaign, copy, list), or raise the minimum severity so only serious findings surface. Changing these needs the manage-settings permission, and it applies to everyone in the workspace.
+Under **Settings > Workspace** you can switch the Advisor off entirely, turn autopilot on, mute whole categories (deliverability, mailbox, warmup, campaign, copy, list), or raise the minimum severity so only serious findings surface. Changing these needs the manage-settings permission, and it applies to everyone in the workspace.
 
 ## Timing
 
