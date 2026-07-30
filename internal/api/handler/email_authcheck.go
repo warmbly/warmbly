@@ -16,13 +16,13 @@ import (
 // most common silent deliverability failure, so this lets the user confirm
 // their domain is set up correctly without leaving the dashboard.
 func (h *Handler) GetEmailAuthCheck(c *gin.Context) {
-	userID, err := middleware.GetUserUUID(c)
-	if err != nil {
-		errx.JSON(c, errx.ErrUnauthorized)
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "no organization selected"))
 		return
 	}
 
-	account, xerr := h.EmailService.Get(c.Request.Context(), userID.String(), c.Param("id"))
+	account, xerr := h.EmailService.Get(c.Request.Context(), orgID.String(), c.Param("id"))
 	if xerr != nil {
 		errx.JSON(c, xerr)
 		return

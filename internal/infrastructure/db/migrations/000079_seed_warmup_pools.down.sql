@@ -1,0 +1,5 @@
+DELETE FROM warmup_pools
+WHERE id IN (
+    '77777777-aaaa-0000-0000-000000000001'::uuid,
+    '77777777-aaaa-0000-0000-000000000002'::uuid
+);
