@@ -120,16 +120,23 @@ export default function AdvisorCard({ finding, onFix, compact = false, defaultOp
                 </button>
 
                 <div className="flex shrink-0 items-center gap-1">
-                    {finding.action && !applied ? (
+                    {/* A finding with no one-click fix still opens the flow:
+                        that is where its ordered how-to lives, and without this
+                        the steps would be unreachable from a card. */}
+                    {!applied ? (
                         <button
                             type="button"
                             onClick={(e) => {
                                 e.stopPropagation();
                                 onFix(finding);
                             }}
-                            className="inline-flex h-7 items-center rounded-md bg-sky-600 px-2 text-[12px] font-medium text-white opacity-100 transition hover:bg-sky-700 md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
+                            className={`inline-flex h-7 items-center rounded-md px-2 text-[12px] font-medium opacity-100 transition md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100 ${
+                                finding.action
+                                    ? "bg-sky-600 text-white hover:bg-sky-700"
+                                    : "border border-slate-200 text-slate-600 hover:bg-slate-50"
+                            }`}
                         >
-                            Fix
+                            {finding.action ? "Fix" : "How to fix"}
                         </button>
                     ) : null}
 

@@ -151,15 +151,15 @@ export default function AdvisorGroupCard({ group, onFix }: Props) {
                                             </span>
                                             {m.status === "applied" ? (
                                                 <span className="shrink-0 text-[11px] text-emerald-600">Applied</span>
-                                            ) : m.action ? (
+                                            ) : (
                                                 <button
                                                     type="button"
                                                     onClick={() => onFix(m)}
                                                     className="shrink-0 rounded-md border border-slate-200 px-1.5 py-0.5 text-[11px] text-slate-600 transition hover:bg-slate-50"
                                                 >
-                                                    Fix
+                                                    {m.action ? "Fix" : "How"}
                                                 </button>
-                                            ) : null}
+                                            )}
                                         </li>
                                     ))}
                                 </ul>
