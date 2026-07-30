@@ -145,8 +145,8 @@ services:
       CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-http://${PUBLIC_HOST:-localhost}:5173,http://${PUBLIC_HOST:-localhost}:5174}
       WEBSOCKET_URL: ${WEBSOCKET_URL:-ws://${PUBLIC_HOST:-localhost}:4000/socket/websocket}
       ENCRYPTED_KEYS_PROVIDER: postgres
-      EMAIL_NAME: ${EMAIL_NAME:-Warmbly}
-      EMAIL_ADDRESS: ${EMAIL_ADDRESS:-noreply@warmbly.local}
+      EMAIL_NAME: ${EMAIL_NAME:-Pattrn Data}
+      EMAIL_ADDRESS: ${EMAIL_ADDRESS:-no-reply@pattrndata.io}
       SMTP_HOST: ${SMTP_HOST:-mailpit}
       SMTP_PORT: ${SMTP_PORT:-1025}
       TRACKING_DOMAIN: ${TRACKING_DOMAIN:-${PUBLIC_HOST:-localhost}:3000}
