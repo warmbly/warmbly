@@ -99,6 +99,8 @@ services:
   # Point mailbox SMTP at mailpit:1025 (or use it as the notification relay).
   mailpit:
     image: axllent/mailpit:latest
+    env_file:
+      - ./secrets/mailpit-relay.env
     ports:
       - "18025:8025"
       - "11025:1025"
