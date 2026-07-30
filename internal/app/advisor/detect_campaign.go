@@ -359,6 +359,13 @@ func detectNoSenders(s *repository.AdvisorSnapshot) []Finding {
 				"%s is active, but no connected active mailbox resolves for it, so it is sending nothing at all. This usually happens after a tag is renamed or the mailbox it depended on was disconnected.",
 				camp.Name),
 			Remedy: "Attach a mailbox to the campaign, or fix the tag it selects senders by. Nothing else in the campaign matters until this is resolved.",
+			Steps: []string{
+				"Open the campaign's sender settings.",
+				"If it selects senders by tag, check that the tag still exists and still has mailboxes on it. A renamed tag is the usual cause.",
+				"If it names mailboxes directly, check they are still connected and active. A disconnected mailbox drops out of the pool silently.",
+				"Attach at least one healthy mailbox and save.",
+				"Sending resumes on the next scheduling pass. Nothing queued was lost.",
+			},
 			Evidence: map[string]any{
 				"campaign":        camp.Name,
 				"sender_strategy": camp.SenderStrategy,

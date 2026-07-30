@@ -252,6 +252,13 @@ func detectWarmupPoolBlocked(s *repository.AdvisorSnapshot) []Finding {
 				m.Email, state, m.PoolSpamScore,
 				map[bool]string{true: ". This mailbox is still running cold campaigns", false: ""}[m.InActiveCampaign]),
 			Remedy: "Stop cold sending from this mailbox until it requalifies. Re-entry needs healthy authentication, no recent complaints or hard-bounce spikes, and spam placement back under 10% on a fresh sample.",
+			Steps: []string{
+				"Take the mailbox off every active campaign. Nothing else matters while it is still mailing strangers.",
+				"Confirm SPF, DKIM and DMARC all pass on its sending domain. A failing record is the most common reason a mailbox reaches this state.",
+				"Look at what it sent recently. Pool standing drops on complaints, hard bounces and invalid warmup tokens, and one bad list usually explains all three.",
+				"Leave warmup running. It is what rebuilds standing, and the cooldown is measured on behaviour, not just elapsed time.",
+				"When it requalifies, bring it back at 5 to 10 sends a day and hold there for a week before going further.",
+			},
 			Evidence: map[string]any{
 				"mailbox":                m.Email,
 				"pool_state":             state,

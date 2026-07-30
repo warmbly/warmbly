@@ -209,9 +209,15 @@ func detectMissingPersonalizationData(s *repository.AdvisorSnapshot) []Finding {
 			Impact:      clampImpact(40 + int(r)),
 			Title:       fmt.Sprintf("%s of %s has no first name to greet", pct(r), cl.Campaign.Name),
 			Detail: fmt.Sprintf(
-				"%s uses {{first_name}} in its copy, but %s in the list have that field empty. Those emails go out with a gap where the name should be, which is the most recognisable tell of automated outreach there is.",
+				"%s greets contacts by first name, but %s in the list have that field empty. Those emails go out with a gap where the name should be, which is the most recognisable tell of automated outreach there is.",
 				cl.Campaign.Name, plural(cl.List.MissingFirstName, "contact", "contacts")),
 			Remedy: "Give the variable a fallback, or fill the missing names before the campaign reaches those contacts.",
+			Steps: []string{
+				"The quickest fix is a fallback in the copy. Replace {{.FirstName}} with {{if .FirstName}}{{.FirstName}}{{else}}there{{end}} so the greeting still reads properly when the field is empty.",
+				"The better fix is the data. Open Contacts, filter the campaign's list to contacts with no first name, and fill them in or remove them.",
+				"If you cannot source the names, drop the greeting from this campaign entirely. An email that opens on the reason you are writing beats one that opens on a guessed name.",
+				"Preview against one of the contacts that was missing a name before you resume.",
+			},
 			Evidence: map[string]any{
 				"campaign":                    cl.Campaign.Name,
 				"contacts_missing_first_name": cl.List.MissingFirstName,
@@ -245,6 +251,12 @@ func detectUnsubscribedEnrolled(s *repository.AdvisorSnapshot) []Finding {
 				"%s in %s have unsubscribed but are still enrolled. Mailing someone who opted out is the fastest way to earn a spam complaint, and in several jurisdictions it is not merely impolite.",
 				plural(cl.List.Unsubscribed, "contact", "contacts"), cl.Campaign.Name),
 			Remedy: "Remove them from the campaign. If they are still receiving mail, that is a routing problem worth understanding before anything else in this campaign.",
+			Steps: []string{
+				"Open the campaign's contacts and filter to unsubscribed.",
+				"Remove them from the campaign. Suppression stops future sends, but leaving them enrolled keeps the campaign reporting an audience it must not mail.",
+				"Check whether any of them were sent to after they unsubscribed. If so, stop the campaign: that is a routing problem, and every further send compounds it.",
+				"Check where the list came from. Unsubscribed contacts reappearing usually means a re-import overwrote their status.",
+			},
 			Evidence: map[string]any{
 				"campaign":     cl.Campaign.Name,
 				"unsubscribed": cl.List.Unsubscribed,

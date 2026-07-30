@@ -176,6 +176,13 @@ func detectBrokenTemplate(s *repository.AdvisorSnapshot) []Finding {
 				"The %s in %s cannot be parsed as a template (%s). Sending does not fail on this: it falls back to plain replacement, so conditionals and merge variables go out to the recipient as literal text.",
 				joinWords(fields), stepLabel(sc), broken[fields[0]]),
 			Remedy: "Fix the template syntax. Check that every {{if}} has a matching {{end}}, that quotes are balanced, and that field names have no stray characters.",
+			Steps: []string{
+				fmt.Sprintf("Open the campaign and go to %s.", stepLabel(sc)),
+				fmt.Sprintf("The parser stopped here: %s.", broken[fields[0]]),
+				"Every {{if}} and {{range}} needs its own {{end}}. A missing {{end}} is the most common cause and the error usually points past it, not at it.",
+				"Field names are case-sensitive and start with a dot: {{.FirstName}}, not {{firstname}}. For a custom field use {{index . \"city\"}}.",
+				"Save, then use the preview to check it renders against a real contact rather than trusting that it looks right.",
+			},
 			Evidence: map[string]any{
 				"campaign":    sc.campaign,
 				"step":        stepLabel(sc),
