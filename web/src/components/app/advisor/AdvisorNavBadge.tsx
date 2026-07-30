@@ -34,11 +34,15 @@ export default function AdvisorNavBadge({ surface }: { surface: AdvisorSurface }
             transition={{ type: "spring", stiffness: 500, damping: 26 }}
             title={label}
             aria-label={label}
-            // Solid and saturated, like every other indicator in this sidebar,
-            // and the same orange as the high-severity dot on the row it points
-            // at. A pale chip read as a disabled control next to them.
-            className={`inline-flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-[10px] font-medium tabular-nums text-white ${
-                counts.critical > 0 ? "bg-rose-500" : "bg-orange-500"
+            // A translucent wash of the severity colour with the colour carried
+            // by the text, not a filled pill. A solid badge in a light sidebar
+            // shouts louder than a nav item should, and legibility comes from
+            // the dark text rather than from the fill, so the background can
+            // stay soft without the number getting hard to read.
+            className={`inline-flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-[10px] font-semibold tabular-nums ring-1 ${
+                counts.critical > 0
+                    ? "bg-rose-500/15 text-rose-600 ring-rose-500/25"
+                    : "bg-orange-500/15 text-orange-600 ring-orange-500/25"
             }`}
         >
             {counts.urgent > 99 ? "99+" : counts.urgent}

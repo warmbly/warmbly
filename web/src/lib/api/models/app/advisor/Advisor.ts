@@ -84,6 +84,10 @@ export interface AdvisorFinding {
     // The ordered manual steps, set only by checks with no one-click fix. When
     // empty the card falls back to the remedy prose.
     steps?: string[];
+    // Whether an agent can resolve this by editing something the platform owns.
+    // False for anything living outside it, like a DNS record, so those show
+    // their steps rather than a button that cannot succeed.
+    agent_fixable?: boolean;
     // False while the card carries the built-in copy rather than AI-written
     // copy. The card is fully usable either way.
     narrated: boolean;
@@ -148,11 +152,15 @@ export const SEVERITY_LABEL: Record<AdvisorSeverity, string> = {
     low: "Suggestion",
 };
 
+// Tints rather than fills. A translucent wash of the severity colour lets
+// whatever is underneath (a row hover, the drawer's frosted panel) show
+// through, so a chip reads as a mark on the surface instead of a sticker
+// sitting on top of it.
 export const SEVERITY_CHIP: Record<AdvisorSeverity, string> = {
-    critical: "bg-rose-50 text-rose-700 border-rose-200",
-    high: "bg-orange-50 text-orange-700 border-orange-200",
-    medium: "bg-amber-50 text-amber-700 border-amber-200",
-    low: "bg-sky-50 text-sky-700 border-sky-200",
+    critical: "bg-rose-500/10 text-rose-700 border-rose-500/20",
+    high: "bg-orange-500/10 text-orange-700 border-orange-500/20",
+    medium: "bg-amber-500/10 text-amber-700 border-amber-500/25",
+    low: "bg-sky-500/10 text-sky-700 border-sky-500/20",
 };
 
 export const SEVERITY_DOT: Record<AdvisorSeverity, string> = {
@@ -173,10 +181,10 @@ export const SEVERITY_RANK: Record<AdvisorSeverity, number> = {
 // has to read as a status on someone else's row rather than a control of its
 // own, so it stays borderless until hovered.
 export const SEVERITY_ROW: Record<AdvisorSeverity, string> = {
-    critical: "bg-rose-50 text-rose-700 hover:bg-rose-100",
-    high: "bg-orange-50 text-orange-700 hover:bg-orange-100",
-    medium: "bg-amber-50 text-amber-700 hover:bg-amber-100",
-    low: "bg-sky-50 text-sky-700 hover:bg-sky-100",
+    critical: "bg-rose-500/10 text-rose-700 hover:bg-rose-500/20",
+    high: "bg-orange-500/10 text-orange-700 hover:bg-orange-500/20",
+    medium: "bg-amber-500/10 text-amber-700 hover:bg-amber-500/25",
+    low: "bg-sky-500/10 text-sky-700 hover:bg-sky-500/20",
 };
 
 // The one-word verdict the row indicator shows. Deliberately shorter than

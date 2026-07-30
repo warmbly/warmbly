@@ -88,8 +88,8 @@ export default function AdvisorCard({ finding, onFix, compact = false, defaultOp
 
     return (
         <div
-            className={`group rounded-md border bg-white transition ${
-                applied ? "border-emerald-200 bg-emerald-50/30" : "border-slate-200 hover:border-slate-300"
+            className={`group rounded-md border bg-white/70 backdrop-blur-sm transition ${
+                applied ? "border-emerald-500/25 bg-emerald-500/[0.07]" : "border-slate-200/80 hover:border-slate-300"
             }`}
         >
             <div className="flex items-start gap-2 px-2.5 py-2">
@@ -114,14 +114,14 @@ export default function AdvisorCard({ finding, onFix, compact = false, defaultOp
                         {finding.action?.auto && !applied ? (
                             <span
                                 title="Autopilot can apply this one on its own when it is switched on"
-                                className="inline-flex shrink-0 items-center gap-1 rounded-md border border-sky-200 bg-sky-50 px-1.5 py-0.5 text-[10px] font-medium text-sky-700"
+                                className="inline-flex shrink-0 items-center gap-1 rounded-md border border-sky-500/25 bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-medium text-sky-700"
                             >
                                 <ZapIcon className="h-2.5 w-2.5" />
                                 Auto
                             </span>
                         ) : null}
                         {applied ? (
-                            <span className="inline-flex shrink-0 items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
+                            <span className="inline-flex shrink-0 items-center gap-1 rounded-md border border-emerald-500/25 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
                                 <CheckCircle2Icon className="h-2.5 w-2.5" />
                                 Applied
                             </span>
@@ -149,7 +149,7 @@ export default function AdvisorCard({ finding, onFix, compact = false, defaultOp
                                     : "border border-slate-200 text-slate-600 hover:bg-slate-50"
                             }`}
                         >
-                            {finding.action ? "Fix" : "Fix with agent"}
+                            {finding.action ? "Fix" : finding.agent_fixable ? "Fix with agent" : "How to fix"}
                         </button>
                     ) : null}
 
@@ -224,10 +224,10 @@ export default function AdvisorCard({ finding, onFix, compact = false, defaultOp
                         transition={{ duration: 0.16, ease: "easeOut" }}
                         className="overflow-hidden"
                     >
-                        <div className="space-y-2.5 border-t border-slate-100 px-2.5 py-2.5">
+                        <div className="space-y-2.5 border-t border-slate-200/60 px-2.5 py-2.5">
                             <p className="text-[12.5px] leading-relaxed text-slate-600">{finding.detail}</p>
 
-                            <div className="rounded-md border border-slate-200 bg-slate-50/60 px-2.5 py-2">
+                            <div className="rounded-md border border-slate-200/70 bg-white/50 px-2.5 py-2">
                                 <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">
                                     What to do
                                 </p>
@@ -243,7 +243,7 @@ export default function AdvisorCard({ finding, onFix, compact = false, defaultOp
                                         {evidence.map(([key, value]) => (
                                             <div
                                                 key={key}
-                                                className="inline-flex items-baseline gap-1.5 rounded-md border border-slate-200 bg-white px-1.5 py-0.5"
+                                                className="inline-flex items-baseline gap-1.5 rounded-md border border-slate-200/70 bg-white/60 px-1.5 py-0.5"
                                             >
                                                 <dt className="text-[11px] text-slate-500">{evidenceLabel(key)}</dt>
                                                 <dd className="text-[11.5px] font-medium text-slate-800">
@@ -263,7 +263,7 @@ export default function AdvisorCard({ finding, onFix, compact = false, defaultOp
                                         {SEVERITY_LABEL[finding.severity]}
                                     </span>
                                     {!compact ? (
-                                        <span className="inline-flex items-center rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em] text-slate-500">
+                                        <span className="inline-flex items-center rounded-md border border-slate-200/70 bg-slate-500/[0.06] px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em] text-slate-500">
                                             {CATEGORY_LABEL[finding.category]}
                                         </span>
                                     ) : null}

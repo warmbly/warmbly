@@ -56,7 +56,7 @@ export default function AdvisorRowFlag({ findings, subject, className = "" }: Pr
                         // link's navigation.
                         aria-label={`${findings.length} suggestion${findings.length > 1 ? "s" : ""} for this row`}
                         className={`inline-flex h-5 shrink-0 items-center gap-1 rounded-full px-1.5 text-[10px] font-medium uppercase tracking-[0.08em] transition ${
-                            settled ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100" : SEVERITY_ROW[severity]
+                            settled ? "bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20" : SEVERITY_ROW[severity]
                         } ${className}`}
                     >
                         {settled ? (
@@ -82,8 +82,14 @@ export default function AdvisorRowFlag({ findings, subject, className = "" }: Pr
                     </motion.button>
                 </PopoverMenuTrigger>
 
-                <PopoverMenuContent minWidth={320} className="max-w-[380px] py-0">
-                    <div className="flex items-center gap-1.5 border-b border-slate-100 px-2.5 py-2">
+                {/* Frosted rather than opaque: the panel floats over the row it
+                    belongs to, and letting that row stay faintly visible keeps
+                    the connection between the two. */}
+                <PopoverMenuContent
+                    minWidth={320}
+                    className="max-w-[380px] border-slate-200/70 bg-white/80 py-0 backdrop-blur-xl"
+                >
+                    <div className="flex items-center gap-1.5 border-b border-slate-200/60 px-2.5 py-2">
                         <SparklesIcon className="h-3 w-3 shrink-0 text-slate-400" />
                         <span className="min-w-0 flex-1 truncate text-[11px] text-slate-500">
                             {subject || "This row"}
@@ -93,7 +99,7 @@ export default function AdvisorRowFlag({ findings, subject, className = "" }: Pr
                         </span>
                     </div>
 
-                    <ul className="max-h-[300px] divide-y divide-slate-100 overflow-y-auto">
+                    <ul className="max-h-[300px] divide-y divide-slate-200/50 overflow-y-auto">
                         {findings.map((f, i) => (
                             <motion.li
                                 key={f.id}
@@ -136,7 +142,7 @@ export default function AdvisorRowFlag({ findings, subject, className = "" }: Pr
                                             }}
                                             className="inline-flex h-6 items-center gap-1 rounded-md border border-slate-200 px-1.5 text-[11px] font-medium text-slate-700 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700"
                                         >
-                                            {f.action ? "Review the fix" : "Fix this"}
+                                            {f.action ? "Review the fix" : f.agent_fixable ? "Fix with agent" : "How to fix it"}
                                             <ArrowRightIcon className="h-2.5 w-2.5" />
                                         </button>
                                     )}

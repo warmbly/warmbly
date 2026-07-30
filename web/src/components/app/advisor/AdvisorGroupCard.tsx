@@ -69,7 +69,7 @@ export default function AdvisorGroupCard({ group, onFix }: Props) {
     const busy = progress !== null;
 
     return (
-        <div className="group rounded-md border border-slate-200 bg-white transition hover:border-slate-300">
+        <div className="group rounded-md border border-slate-200/80 bg-white/70 backdrop-blur-sm transition hover:border-slate-300">
             <div className="flex items-start gap-2 px-2.5 py-2">
                 <span
                     className={`mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full ${SEVERITY_DOT[lead.severity]}`}
@@ -84,7 +84,7 @@ export default function AdvisorGroupCard({ group, onFix }: Props) {
                 >
                     <div className="flex items-center gap-1.5">
                         <span className="truncate text-[12.5px] font-medium text-slate-900">{title}</span>
-                        <span className="shrink-0 rounded border border-slate-200 bg-slate-50 px-1 text-[10px] tabular-nums text-slate-500">
+                        <span className="shrink-0 rounded border border-slate-200/70 bg-slate-500/[0.06] px-1 text-[10px] tabular-nums text-slate-500">
                             {members.length}
                         </span>
                     </div>
@@ -129,10 +129,10 @@ export default function AdvisorGroupCard({ group, onFix }: Props) {
                         transition={{ duration: 0.16, ease: "easeOut" }}
                         className="overflow-hidden"
                     >
-                        <div className="space-y-2.5 border-t border-slate-100 px-2.5 py-2.5">
+                        <div className="space-y-2.5 border-t border-slate-200/60 px-2.5 py-2.5">
                             <p className="text-[12.5px] leading-relaxed text-slate-600">{lead.detail}</p>
 
-                            <div className="rounded-md border border-slate-200 bg-slate-50/60 px-2.5 py-2">
+                            <div className="rounded-md border border-slate-200/70 bg-white/50 px-2.5 py-2">
                                 <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">
                                     What to do
                                 </p>
@@ -143,7 +143,7 @@ export default function AdvisorGroupCard({ group, onFix }: Props) {
                                 <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">
                                     Affected
                                 </p>
-                                <ul className="mt-1.5 divide-y divide-slate-100 rounded-md border border-slate-200">
+                                <ul className="mt-1.5 divide-y divide-slate-200/50 rounded-md border border-slate-200/70">
                                     {members.map((m) => (
                                         <li key={m.id} className="flex items-center gap-2 px-2 py-1.5">
                                             <span className="min-w-0 flex-1 truncate text-[12px] text-slate-700">
@@ -171,7 +171,7 @@ export default function AdvisorGroupCard({ group, onFix }: Props) {
                                 >
                                     {SEVERITY_LABEL[lead.severity]}
                                 </span>
-                                <span className="inline-flex items-center rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em] text-slate-500">
+                                <span className="inline-flex items-center rounded-md border border-slate-200/70 bg-slate-500/[0.06] px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em] text-slate-500">
                                     {CATEGORY_LABEL[lead.category]}
                                 </span>
                             </div>

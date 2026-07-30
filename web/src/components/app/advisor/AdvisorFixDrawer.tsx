@@ -15,6 +15,7 @@ import {
     ArrowLeftIcon,
     ArrowRightIcon,
     CheckIcon,
+    InfoIcon,
     Loader2Icon,
     ShieldCheckIcon,
     SparklesIcon,
@@ -131,13 +132,16 @@ export default function AdvisorFixDrawer({ finding, onClose }: Props) {
             direction.current = 1;
             setStage("done");
         } catch {
-            setFailed("The agent could not complete this. Nothing was changed.");
+            // Not an error state to alarm anyone with: the steps above are still
+            // the answer, and nothing was touched.
+            setFailed("The agent could not finish this one, so nothing was changed. The steps above still apply.");
         }
     }
 
-    // Findings the agent can act on: the ones with no settings change to make,
-    // where the fix is an edit to copy, a sequence, or a list.
-    const canAgentFix = !action && finding.status !== "applied";
+    // The server decides this, not the client: whether an agent can resolve a
+    // finding depends on the tool allowlist, and guessing from "has no action"
+    // is what put a Fix-with-agent button on a missing DNS record.
+    const canAgentFix = !action && finding.agent_fixable === true && finding.status !== "applied";
 
     // The rail only claims the steps this finding actually has. A finding with
     // nothing to land on never shows a third dot it can't reach.
@@ -163,7 +167,7 @@ export default function AdvisorFixDrawer({ finding, onClose }: Props) {
             transition={{ duration: 0.12 }}
         >
             <div
-                className="absolute inset-0 bg-slate-900/20 backdrop-blur-[1px]"
+                className="absolute inset-0 bg-slate-900/25 backdrop-blur-sm"
                 onMouseDown={() => {
                     if (!applying) onClose();
                 }}
@@ -173,7 +177,7 @@ export default function AdvisorFixDrawer({ finding, onClose }: Props) {
                 role="dialog"
                 aria-modal="true"
                 aria-label={finding.title}
-                className="relative w-full max-w-lg overflow-hidden rounded-t-lg border border-slate-200 bg-white shadow-[0_16px_48px_-12px_rgba(15,23,42,0.25)] sm:rounded-md"
+                className="relative w-full max-w-lg overflow-hidden rounded-t-lg border border-white/60 bg-white/85 shadow-[0_16px_48px_-12px_rgba(15,23,42,0.25)] backdrop-blur-2xl sm:rounded-md"
                 initial={{ y: 16, opacity: 0, scale: 0.99 }}
                 animate={{ y: 0, opacity: 1, scale: 1 }}
                 exit={{ y: 8, opacity: 0, scale: 0.99 }}
@@ -211,7 +215,7 @@ export default function AdvisorFixDrawer({ finding, onClose }: Props) {
                 {/* Progress rail. Segments already passed stay filled, so the
                     flow reads as a short path with a visible end rather than an
                     open-ended interrogation. */}
-                <div className="mt-2.5 flex items-center gap-1.5 border-b border-slate-200 px-3 pb-2">
+                <div className="mt-2.5 flex items-center gap-1.5 border-b border-slate-200/70 px-3 pb-2">
                     {rail.map((s, i) => (
                         <div key={s.id} className="flex flex-1 items-center gap-1.5">
                             <div className="min-w-0 flex-1">
@@ -274,7 +278,7 @@ export default function AdvisorFixDrawer({ finding, onClose }: Props) {
                     </AnimatePresence>
                 </motion.div>
 
-                <div className="flex shrink-0 items-center justify-between gap-2 border-t border-slate-200 px-3 py-2.5">
+                <div className="flex shrink-0 items-center justify-between gap-2 border-t border-slate-200/70 px-3 py-2.5">
                     <div>
                         {stage === "change" && !applying ? (
                             <button
@@ -383,7 +387,7 @@ function WhyStep({
                                 initial={{ opacity: 0, y: 4 }}
                                 animate={{ opacity: 1, y: 0 }}
                                 transition={{ delay: 0.04 + i * 0.03, duration: 0.18 }}
-                                className="rounded-md border border-slate-200 bg-slate-50/60 px-2 py-1.5"
+                                className="rounded-md border border-slate-200/70 bg-white/50 px-2 py-1.5"
                             >
                                 <dt className="truncate text-[10.5px] text-slate-500">
                                     {evidenceLabel(key)}
@@ -423,7 +427,7 @@ function ChangeStep({
                             initial={{ opacity: 0, y: 6 }}
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ delay: i * 0.05, duration: 0.2, ease: EASE }}
-                            className="rounded-md border border-slate-200 bg-slate-50/60 px-2.5 py-2"
+                            className="rounded-md border border-slate-200/70 bg-white/50 px-2.5 py-2"
                         >
                             <p className="text-[11px] text-slate-500">{change.field}</p>
                             <div className="mt-1 flex items-center gap-2 text-[12.5px]">
@@ -478,7 +482,7 @@ function ChangeStep({
             ) : null}
 
             {action ? (
-                <div className="flex items-start gap-2 rounded-md border border-slate-200 px-2.5 py-2">
+                <div className="flex items-start gap-2 rounded-md border border-slate-200/70 bg-white/40 px-2.5 py-2">
                     <ShieldCheckIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
                     <p className="text-[11.5px] leading-relaxed text-slate-500">
                         This runs as you, with your permissions, and is written to the audit log like any
@@ -494,9 +498,10 @@ function ChangeStep({
                         initial={{ opacity: 0, height: 0 }}
                         animate={{ opacity: 1, height: "auto" }}
                         exit={{ opacity: 0, height: 0 }}
-                        className="rounded-md border border-rose-200 bg-rose-50 px-2.5 py-2 text-[12px] text-rose-700"
+                        className="flex items-start gap-2 rounded-md border border-amber-500/25 bg-amber-500/[0.08] px-2.5 py-2 text-[12px] leading-relaxed text-amber-800"
                     >
-                        {failed}
+                        <InfoIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+                        <span>{failed}</span>
                     </motion.p>
                 ) : null}
             </AnimatePresence>

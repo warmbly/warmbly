@@ -72,21 +72,23 @@ export default function AdvisorSummaryBar({
     const forceOpen = view.critical > 0 || view.unattached.length > 0;
     const expanded = manuallyOpen ?? forceOpen;
 
+    // Tinted washes rather than fills, so the bar sits on the page instead of
+    // covering a strip of it.
     const tone =
         view.critical > 0
-            ? "border-rose-200 bg-rose-50/40"
+            ? "border-rose-500/20 bg-rose-500/[0.06]"
             : view.open.length > 0
-              ? "border-slate-200 bg-white"
-              : "border-emerald-200 bg-emerald-50/30";
+              ? "border-slate-200/80 bg-white/60"
+              : "border-emerald-500/20 bg-emerald-500/[0.06]";
 
     return (
         <>
-            <section className={`overflow-hidden rounded-md border ${tone} ${className}`}>
+            <section className={`overflow-hidden rounded-md border backdrop-blur-sm ${tone} ${className}`}>
                 <button
                     type="button"
                     onClick={() => setManuallyOpen(!expanded)}
                     aria-expanded={expanded}
-                    className="flex w-full items-center gap-2 px-2.5 py-2 text-left transition hover:bg-slate-50/60"
+                    className="flex w-full items-center gap-2 px-2.5 py-2 text-left transition hover:bg-slate-500/[0.04]"
                 >
                     <SparklesIcon className="h-3.5 w-3.5 shrink-0 text-slate-400" />
 
@@ -108,7 +110,7 @@ export default function AdvisorSummaryBar({
                             return (
                                 <span
                                     key={s}
-                                    className="inline-flex items-center gap-1 rounded-full bg-slate-50 px-1.5 py-0.5 text-[10px] tabular-nums text-slate-600"
+                                    className="inline-flex items-center gap-1 rounded-full bg-slate-500/[0.08] px-1.5 py-0.5 text-[10px] tabular-nums text-slate-600"
                                 >
                                     <span className={`h-1.5 w-1.5 rounded-full ${SEVERITY_DOT[s]}`} />
                                     {n}
@@ -134,7 +136,7 @@ export default function AdvisorSummaryBar({
                             transition={{ duration: 0.22, ease: EASE }}
                             className="overflow-hidden"
                         >
-                            <div className="space-y-1.5 border-t border-slate-200/70 px-2.5 py-2.5">
+                            <div className="space-y-1.5 border-t border-slate-200/60 px-2.5 py-2.5">
                                 {view.groups.map((group, i) => (
                                     <motion.div
                                         key={group.key}
