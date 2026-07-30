@@ -1,5 +1,5 @@
 import ContactsTable from "@/components/app/contacts/ContactsTable";
-import AdvisorStrip from "@/components/app/advisor/AdvisorStrip";
+import AdvisorSummaryBar from "@/components/app/advisor/AdvisorSummaryBar";
 import { NoAccess } from "@/components/layout/NoAccess";
 import { usePermission } from "@/hooks/usePermission";
 
@@ -9,7 +9,7 @@ export default function ContactsPage() {
     return (
         <>
             {/* List-hygiene findings live where the list does. */}
-            <AdvisorStrip surface="contacts" className="px-3 pt-2.5" limit={3} />
+            <AdvisorSummaryBar surface="contacts" noun="list" nounPlural="lists" className="mx-3 mt-3" />
             <ContactsTable />
         </>
     );

@@ -20,7 +20,7 @@ import {
     SelectButton,
 } from "@/components/ui/popover-menu";
 import useDeliverability from "@/lib/api/hooks/app/analytics/useDeliverability";
-import AdvisorStrip from "@/components/app/advisor/AdvisorStrip";
+import AdvisorSummaryBar from "@/components/app/advisor/AdvisorSummaryBar";
 import type { DeliverabilityBand, ProviderPlacement, WarmupDomainPlacement } from "@/lib/api/models/app/analytics/Deliverability";
 
 type Range = "7d" | "30d" | "90d";
@@ -200,7 +200,12 @@ export default function DeliverabilityPage() {
 
             {/* The Advisor's deliverability findings, above the numbers that
                 produced them. Absent entirely when there is nothing wrong. */}
-            <AdvisorStrip surface="deliverability" className="border-b border-slate-200 px-3 py-2.5" limit={5} />
+            <AdvisorSummaryBar
+                surface="deliverability"
+                noun="mailbox"
+                nounPlural="mailboxes"
+                className="mx-3 mt-3"
+            />
 
             {q.isError ? (
                 <PageBody>
