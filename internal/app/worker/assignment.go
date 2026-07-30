@@ -19,6 +19,11 @@ import (
 // placement than to silently under-count and let a worker over-commit.
 const defaultMailboxWeight = 1.0
 
+// workerFreshnessTTL is stricter than the Redis heartbeat TTL: workers post to
+// the control plane every 90s, so five minutes allows a couple of missed beats
+// without ever selecting a dead/restarted worker for new OAuth/shared mailboxes.
+const workerFreshnessTTL = 5 * time.Minute
+
 var (
 	ErrNoAvailableWorkers = errors.New("no available workers")
 	ErrNoDedicatedWorkers = errors.New("no dedicated workers available")
@@ -251,7 +256,13 @@ func (s *workerAssignmentService) selectSharedWorkerForWeight(ctx context.Contex
 		Headroom    float64
 	}
 	candidates := make([]scored, 0, len(rows))
+	now := time.Now()
+	freshRowsSeen := false
 	for _, row := range rows {
+		if now.Sub(row.LastSeenAt) > workerFreshnessTTL {
+			continue
+		}
+		freshRowsSeen = true
 		cap := ComputeCapacity(WorkerCapacityRow{
 			WorkerID:         row.WorkerID,
 			WorkerType:       row.WorkerType,
@@ -280,6 +291,9 @@ func (s *workerAssignmentService) selectSharedWorkerForWeight(ctx context.Contex
 		})
 	}
 	if len(candidates) == 0 {
+		if !freshRowsSeen {
+			return nil, ErrNoAvailableWorkers
+		}
 		// Every healthy worker is full. The legacy path will at least
 		// pick the least-loaded one and the operator can react to the
 		// alert this throws via the saturated load_score values.

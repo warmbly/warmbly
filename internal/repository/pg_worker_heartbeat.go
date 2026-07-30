@@ -25,6 +25,9 @@ func (r *workerRepository) UpsertOnHeartbeat(ctx context.Context, id uuid.UUID, 
 		ON CONFLICT (id) DO UPDATE
 		   SET ip_addr = EXCLUDED.ip_addr,
 		       active = TRUE,
+		       free_tier = EXCLUDED.free_tier,
+		       worker_type = EXCLUDED.worker_type,
+		       egress_kind = EXCLUDED.egress_kind,
 		       install_state = CASE
 		         WHEN workers.install_state IN ('pending', 'provisioning', 'error') THEN 'installed'::worker_install_state
 		         ELSE workers.install_state

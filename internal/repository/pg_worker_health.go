@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -19,6 +20,7 @@ type WorkerCapacityRowDB struct {
 	FreeTier         bool
 	EgressKind       models.WorkerEgressKind
 	HealthState      models.WorkerHealthState
+	LastSeenAt       time.Time
 	LoadScore        float64
 	BaseCapacity     float64
 	HealthMultiplier float64
@@ -87,7 +89,7 @@ func (r *workerRepository) ListCapacityCandidates(
 
 	rows, err := r.db.Query(ctx, `
 		SELECT worker_id, worker_type, free_tier, egress_kind, health_state,
-		       load_score, base_capacity, health_multiplier, age_multiplier,
+		       last_seen_at, load_score, base_capacity, health_multiplier, age_multiplier,
 		       sends_attempted_1h, sends_succeeded_1h,
 		       bounces_hard_1h, bounces_soft_1h, complaints_1h, auth_errors_1h
 		  FROM worker_capacity_view
@@ -105,7 +107,7 @@ func (r *workerRepository) ListCapacityCandidates(
 		var c WorkerCapacityRowDB
 		if err := rows.Scan(
 			&c.WorkerID, &c.WorkerType, &c.FreeTier, &c.EgressKind, &c.HealthState,
-			&c.LoadScore, &c.BaseCapacity, &c.HealthMultiplier, &c.AgeMultiplier,
+			&c.LastSeenAt, &c.LoadScore, &c.BaseCapacity, &c.HealthMultiplier, &c.AgeMultiplier,
 			&c.SendsAttempted1h, &c.SendsSucceeded1h,
 			&c.BouncesHard1h, &c.BouncesSoft1h, &c.Complaints1h, &c.AuthErrors1h,
 		); err != nil {
@@ -123,14 +125,14 @@ func (r *workerRepository) GetCapacityRow(ctx context.Context, workerID uuid.UUI
 	var c WorkerCapacityRowDB
 	err := r.db.QueryRow(ctx, `
 		SELECT worker_id, worker_type, free_tier, egress_kind, health_state,
-		       load_score, base_capacity, health_multiplier, age_multiplier,
+		       last_seen_at, load_score, base_capacity, health_multiplier, age_multiplier,
 		       sends_attempted_1h, sends_succeeded_1h,
 		       bounces_hard_1h, bounces_soft_1h, complaints_1h, auth_errors_1h
 		  FROM worker_capacity_view
 		 WHERE worker_id = $1
 	`, workerID).Scan(
 		&c.WorkerID, &c.WorkerType, &c.FreeTier, &c.EgressKind, &c.HealthState,
-		&c.LoadScore, &c.BaseCapacity, &c.HealthMultiplier, &c.AgeMultiplier,
+		&c.LastSeenAt, &c.LoadScore, &c.BaseCapacity, &c.HealthMultiplier, &c.AgeMultiplier,
 		&c.SendsAttempted1h, &c.SendsSucceeded1h,
 		&c.BouncesHard1h, &c.BouncesSoft1h, &c.Complaints1h, &c.AuthErrors1h,
 	)

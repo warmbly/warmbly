@@ -16,6 +16,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/models"
@@ -415,6 +416,7 @@ func capacityRow(id uuid.UUID, base, load float64) repository.WorkerCapacityRowD
 		FreeTier:         true,
 		EgressKind:       models.WorkerEgressColdSMTP,
 		HealthState:      models.WorkerHealthHealthy,
+		LastSeenAt:       time.Now(),
 		LoadScore:        load,
 		BaseCapacity:     base,
 		HealthMultiplier: 1.0,
@@ -491,6 +493,32 @@ func TestSelectSharedWorker_CapacityAware_FallsBackWhenAllSaturated(t *testing.T
 	}
 	if got.ID != a.ID {
 		t.Errorf("fallback should still return the only worker, got %s", got.ID)
+	}
+}
+
+func TestSelectSharedWorker_CapacityAware_FiltersOutStaleWorkers(t *testing.T) {
+	stale := uuid.New()
+	fresh := uuid.New()
+	staleRow := capacityRow(stale, 16, 0)
+	staleRow.LastSeenAt = time.Now().Add(-(workerFreshnessTTL + time.Minute))
+
+	wr := &stubWorkerRepo{
+		capacityFree: []repository.WorkerCapacityRowDB{
+			staleRow,
+			capacityRow(fresh, 16, 8),
+		},
+		workersByID: map[uuid.UUID]models.Worker{
+			stale: {ID: stale, FreeTier: true, WorkerType: models.WorkerTypeShared, Active: true},
+			fresh: {ID: fresh, FreeTier: true, WorkerType: models.WorkerTypeShared, Active: true},
+		},
+	}
+	svc := NewAssignmentService(wr, &stubSubRepo{}, &stubPlanRepo{})
+	got, err := svc.SelectSharedWorker(context.Background(), true)
+	if err != nil {
+		t.Fatalf("SelectSharedWorker: %v", err)
+	}
+	if got.ID != fresh {
+		t.Errorf("stale worker should be filtered even if least-loaded, got %s, want %s", got.ID, fresh)
 	}
 }
 

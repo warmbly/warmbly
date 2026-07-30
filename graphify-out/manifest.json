@@ -3725,13 +3725,13 @@
     "semantic_hash": ""
   },
   "internal/app/worker/assignment.go": {
-    "mtime": 1785394382.681535,
-    "ast_hash": "266388f3b7d60766a209805f55ac6ca9",
+    "mtime": 1785443912.8310797,
+    "ast_hash": "76a69073a015e96b256c872bf3d32d57",
     "semantic_hash": ""
   },
   "internal/app/worker/assignment_test.go": {
-    "mtime": 1785394382.682535,
-    "ast_hash": "a3ccf3f68a222ce0b895317ee8c278f9",
+    "mtime": 1785443691.8716514,
+    "ast_hash": "3bf88c8bdeca2a96e9aabeb8ca32252c",
     "semantic_hash": ""
   },
   "internal/app/worker/cache.go": {
@@ -6395,13 +6395,13 @@
     "semantic_hash": ""
   },
   "internal/repository/pg_worker_health.go": {
-    "mtime": 1785394382.7355347,
-    "ast_hash": "39b8117f03b9905a968d955cb19d8470",
+    "mtime": 1785443843.8257425,
+    "ast_hash": "5153e275c45764d2e187932157823bd6",
     "semantic_hash": ""
   },
   "internal/repository/pg_worker_heartbeat.go": {
-    "mtime": 1785394382.7355347,
-    "ast_hash": "9aecbda1d0ae4a57834240c6668c3865",
+    "mtime": 1785443937.4441798,
+    "ast_hash": "3c6de2871a1c80e1190a63fde70d0083",
     "semantic_hash": ""
   },
   "internal/repository/pg_worker_risk.go": {
@@ -14357,6 +14357,16 @@
   "web/public/web-app-manifest-512x512.png": {
     "mtime": 1785394382.827534,
     "ast_hash": "5bab85c4c3d52837edec83a1eb207554",
+    "semantic_hash": ""
+  },
+  "internal/infrastructure/db/migrations/000080_worker_capacity_last_seen.down.sql": {
+    "mtime": 1785444004.9624047,
+    "ast_hash": "afa75e4644bcae2565ffd411d73f29b6",
+    "semantic_hash": ""
+  },
+  "internal/infrastructure/db/migrations/000080_worker_capacity_last_seen.up.sql": {
+    "mtime": 1785443974.243311,
+    "ast_hash": "9221c25d1a3b239245e66b37b2ff716f",
     "semantic_hash": ""
   }
 }
