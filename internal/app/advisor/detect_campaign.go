@@ -279,11 +279,11 @@ func detectUnsubscribeHeaderOff(s *repository.AdvisorSnapshot) []Finding {
 				"sends_30d":      camp.Sent,
 				"complaints_30d": camp.Complaints,
 			},
-			Action: withUndo(campaignAction(camp.ID,
+			Action: auto(withUndo(campaignAction(camp.ID,
 				"Turn on one-click unsubscribe",
 				map[string]any{"unsubscribe_header": true},
 				change("List-Unsubscribe header", "off", "on"),
-			), map[string]any{"campaign_id": camp.ID.String(), "unsubscribe_header": false}),
+			), map[string]any{"campaign_id": camp.ID.String(), "unsubscribe_header": false})),
 		})
 	}
 	return out
@@ -327,11 +327,11 @@ func detectCapacityShortfall(s *repository.AdvisorSnapshot) []Finding {
 				"mailbox_capacity": capacity,
 				"sender_count":     camp.SenderCount,
 			},
-			Action: withUndo(campaignAction(camp.ID,
+			Action: auto(withUndo(campaignAction(camp.ID,
 				fmt.Sprintf("Match the campaign to %d/day", capacity),
 				map[string]any{"daily_limit": capacity},
 				change("Campaign daily limit", fmt.Sprintf("%d/day", camp.DailyLimit), fmt.Sprintf("%d/day", capacity)),
-			), map[string]any{"campaign_id": camp.ID.String(), "daily_limit": camp.DailyLimit}),
+			), map[string]any{"campaign_id": camp.ID.String(), "daily_limit": camp.DailyLimit})),
 		})
 	}
 	return out
@@ -591,11 +591,11 @@ func detectNarrowWindow(s *repository.AdvisorSnapshot) []Finding {
 				"sender_count":     camp.SenderCount,
 				"min_gap_seconds":  gap,
 			},
-			Action: withUndo(campaignAction(camp.ID,
+			Action: auto(withUndo(campaignAction(camp.ID,
 				fmt.Sprintf("Set the daily limit to %d", achievable),
 				map[string]any{"daily_limit": achievable},
 				change("Campaign daily limit", fmt.Sprintf("%d/day", camp.DailyLimit), fmt.Sprintf("%d/day", achievable)),
-			), map[string]any{"campaign_id": camp.ID.String(), "daily_limit": camp.DailyLimit}),
+			), map[string]any{"campaign_id": camp.ID.String(), "daily_limit": camp.DailyLimit})),
 		})
 	}
 	return out

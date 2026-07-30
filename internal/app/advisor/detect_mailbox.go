@@ -98,11 +98,11 @@ func detectCapTooHigh(s *repository.AdvisorSnapshot) []Finding {
 				"bounce_rate_percent": band(bounceRate),
 				"proven":              proven,
 			},
-			Action: withUndo(mailboxAction(m.ID,
+			Action: auto(withUndo(mailboxAction(m.ID,
 				fmt.Sprintf("Set the cap to %d/day", defaultColdCap),
 				map[string]any{"campaign_limit": defaultColdCap},
 				change("Daily cold cap", fmt.Sprintf("%d/day", m.CampaignLimit), fmt.Sprintf("%d/day", defaultColdCap)),
-			), map[string]any{"email_account_id": m.ID.String(), "campaign_limit": m.CampaignLimit}),
+			), map[string]any{"email_account_id": m.ID.String(), "campaign_limit": m.CampaignLimit})),
 		})
 	}
 	return out
@@ -141,11 +141,11 @@ func detectNewMailboxRampingFast(s *repository.AdvisorSnapshot) []Finding {
 				"warmup_running": m.WarmupActive,
 				"cold_sends_7d":  m.ColdSent7d,
 			},
-			Action: withUndo(mailboxAction(m.ID,
+			Action: auto(withUndo(mailboxAction(m.ID,
 				fmt.Sprintf("Start at %d/day instead", newMailboxSafeCap),
 				map[string]any{"campaign_limit": newMailboxSafeCap},
 				change("Daily cold cap", fmt.Sprintf("%d/day", m.CampaignLimit), fmt.Sprintf("%d/day", newMailboxSafeCap)),
-			), map[string]any{"email_account_id": m.ID.String(), "campaign_limit": m.CampaignLimit}),
+			), map[string]any{"email_account_id": m.ID.String(), "campaign_limit": m.CampaignLimit})),
 		})
 	}
 	return out
@@ -179,11 +179,11 @@ func detectGapTooShort(s *repository.AdvisorSnapshot) []Finding {
 				"recommended_seconds": defaultMinGap,
 				"daily_cap":           m.CampaignLimit,
 			},
-			Action: withUndo(mailboxAction(m.ID,
+			Action: auto(withUndo(mailboxAction(m.ID,
 				fmt.Sprintf("Widen the gap to %d minutes", defaultMinGap/60),
 				map[string]any{"min_wait_time": defaultMinGap},
 				change("Minimum gap between sends", humanSeconds(m.MinWaitTime), humanSeconds(defaultMinGap)),
-			), map[string]any{"email_account_id": m.ID.String(), "min_wait_time": m.MinWaitTime}),
+			), map[string]any{"email_account_id": m.ID.String(), "min_wait_time": m.MinWaitTime})),
 		})
 	}
 	return out

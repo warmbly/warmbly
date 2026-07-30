@@ -528,3 +528,46 @@ func TestMissingFirstNameOnlyFiresWhenTheCopyUsesIt(t *testing.T) {
 		t.Error("missing-first-name did not fire on copy that does greet by name")
 	}
 }
+
+func TestAutopilotOnlyGetsReversibleSafeFixes(t *testing.T) {
+	// Autopilot applies changes with nobody watching, so the set of fixes it is
+	// allowed to touch is a safety boundary, not a convenience. This pins it:
+	// an auto fix must be undoable, and the checks that stop a customer's
+	// sending or edit their copy must never drift into the set.
+	m := healthyMailbox()
+	m.CampaignLimit = 120
+	m.MinWaitTime = 30
+	m.Complaints30d = 5
+	m.ColdSent30d = 4000
+	m.WarmupSent7d = 60
+	m.WarmupSpam7d = 30
+	m.InActiveCampaign = true
+
+	// Detectors whose one-click fix is deliberately hand-only: each either
+	// halts sending or generates new outbound mail the member did not ask for.
+	handOnly := map[string]bool{
+		"mailbox_spam_placement": true,
+		"warmup_pool_blocked":    true,
+		"warmup_off":             true,
+		"warmup_paused":          true,
+		"warmup_ceiling_low":     true,
+		"warmup_reply_rate_low":  true,
+	}
+
+	autos := 0
+	for _, f := range Detect(snapshotOf(m), defaults()) {
+		if f.Action == nil || !f.Action.Auto {
+			continue
+		}
+		autos++
+		if f.Action.Undo == nil {
+			t.Errorf("finding %q is auto-applied but cannot be undone", f.Key)
+		}
+		if handOnly[f.Key] {
+			t.Errorf("finding %q must not be auto-applied: it changes sending without asking", f.Key)
+		}
+	}
+	if autos == 0 {
+		t.Fatal("no auto-safe fix fired, so this test is not checking anything")
+	}
+}

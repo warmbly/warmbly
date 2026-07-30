@@ -94,11 +94,11 @@ func detectComplaintRate(s *repository.AdvisorSnapshot) []Finding {
 			target = 5
 		}
 		if target < m.CampaignLimit {
-			f.Action = withUndo(mailboxAction(m.ID,
+			f.Action = auto(withUndo(mailboxAction(m.ID,
 				fmt.Sprintf("Cut the daily cap to %d", target),
 				map[string]any{"campaign_limit": target},
 				change("Daily cold cap", fmt.Sprintf("%d/day", m.CampaignLimit), fmt.Sprintf("%d/day", target)),
-			), map[string]any{"email_account_id": m.ID.String(), "campaign_limit": m.CampaignLimit})
+			), map[string]any{"email_account_id": m.ID.String(), "campaign_limit": m.CampaignLimit}))
 		}
 		out = append(out, f)
 	}

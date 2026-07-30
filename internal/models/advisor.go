@@ -110,6 +110,12 @@ type AdvisorAction struct {
 	Args json.RawMessage `json:"args"`
 	// Label is the button text ("Lower the daily cap to 35").
 	Label string `json:"label"`
+	// Auto marks a fix that autopilot may apply unattended. It is true only for
+	// a bounded settings change that moves in the safe direction and can be
+	// undone: lowering a cap, widening a gap, resuming warmup. Anything that
+	// stops sending, edits copy, or cannot be reverted stays false and waits
+	// for a person, however obvious the fix looks.
+	Auto bool `json:"auto,omitempty"`
 	// Preview is the exact before/after the drawer renders.
 	Preview []AdvisorPreviewChange `json:"preview,omitempty"`
 	// Undo, when set, is the tool call that reverts this one. Surfaced as

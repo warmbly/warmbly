@@ -275,6 +275,21 @@ func withUndo(a *models.AdvisorAction, args map[string]any) *models.AdvisorActio
 	return a
 }
 
+// auto marks a fix as safe for autopilot to apply on its own.
+//
+// The bar is deliberately narrow. It must be a bounded settings change, it must
+// move in the direction that reduces risk, and it must already carry an Undo.
+// Pausing a mailbox qualifies on risk and reverts cleanly, but it stops a
+// customer's sending without warning, so it is not on this list: autopilot is
+// for the changes nobody would argue with.
+func auto(a *models.AdvisorAction) *models.AdvisorAction {
+	if a == nil || a.Undo == nil {
+		return a
+	}
+	a.Auto = true
+	return a
+}
+
 // change is shorthand for one preview line.
 func change(field, from, to string) models.AdvisorPreviewChange {
 	return models.AdvisorPreviewChange{Field: field, From: from, To: to}
